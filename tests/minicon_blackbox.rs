@@ -2034,3 +2034,51 @@ fn offline_cli_preserves_unicode_diagnostics_through_redirected_stderr() {
     let stderr = String::from_utf8(output.stderr).expect("stderr remains UTF-8");
     assert!(stderr.contains("--未知选项"), "{stderr}");
 }
+
+/// `--status` is the answer to "which binary is this and what did it pick",
+/// so it has to work on a machine where opening a terminal is the thing that
+/// does not work. That means no window, no session, and a clean exit.
+#[test]
+fn status_reports_the_machine_without_opening_a_window() {
+    let output = Command::new(binary())
+        .arg("--status")
+        .output()
+        .expect("run --status");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "status wrote to stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("minicon "), "{stdout}");
+    assert!(stdout.contains("pty backend"), "{stdout}");
+    assert!(stdout.contains("font"), "{stdout}");
+    assert!(stdout.contains("diagnostics"), "{stdout}");
+}
+
+/// The whole point is that it reports the *running* machine, so the forced
+/// fallback has to change what it says. A status that reads the same either
+/// way would answer nothing.
+#[test]
+fn status_follows_the_backend_the_machine_will_actually_use() {
+    let normal = Command::new(binary())
+        .arg("--status")
+        .output()
+        .expect("run --status");
+    let forced = Command::new(binary())
+        .arg("--status")
+        .env("AGENTERM_FORCE_CONSOLE_AGENT", "1")
+        .output()
+        .expect("run --status forced");
+    let forced_text = String::from_utf8_lossy(&forced.stdout);
+    assert!(
+        forced_text.contains("console-agent"),
+        "forcing the fallback must show it: {forced_text}"
+    );
+    assert_ne!(
+        String::from_utf8_lossy(&normal.stdout),
+        forced_text,
+        "status must reflect the machine, not a constant"
+    );
+}

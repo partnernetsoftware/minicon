@@ -117,6 +117,15 @@ minicon cli --control ENDPOINT close-window</code></pre>
         then collect the result.
       </p>
 
+      <h2>Checking what you are talking to</h2>
+      <pre><code>minicon --status</code></pre>
+      <p>
+        Reports the build, the PTY backend this machine selected, the font face the system
+        resolved to and its measured cell width, and where MiniCon writes when something fails.
+        It opens no window, so a script can call it before deciding whether to start a session
+        at all.
+      </p>
+
       <h2>Discovering the surface</h2>
       <pre><code>minicon cli list-commands</code></pre>
       <p>

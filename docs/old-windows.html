@@ -121,10 +121,34 @@ api-ms-win-crt-string-l1-1-0.dll</code></pre>
       </div>
 
       <h2>Checking your own machine</h2>
+
+      <h3>Ask MiniCon first</h3>
       <p>
-        If MiniCon does not start, the cause is almost always a static import the system cannot
-        resolve, and the loader names exactly one of them at a time — so fixing the one it named
-        just reveals the next.
+        <code>--status</code> reports what this machine actually gave it. It opens no window and
+        starts no session, so it works on a machine where opening a terminal is the thing that
+        does not work:
+      </p>
+      <pre><code>minicon.exe --status</code></pre>
+      <pre><code>minicon 0.1.0
+
+  pty backend    console-agent
+                 Windows build 14393 has no ConPTY; a pseudoconsole needs build 17763 (1809)
+  font           新宋体 (8x15 cells)
+                 half/full width correct
+  diagnostics    C:\Users\you\AppData\Roaming\agenterm-diagnostics.log</code></pre>
+      <p>
+        Every line is a property of the running system rather than of the build, which is why
+        none of it can be answered by reading the source. If you are reporting a problem, this
+        output is the most useful thing to send — it identifies the binary, the Windows, the
+        backend it chose and the font the system really resolved to, and it names the file
+        MiniCon writes to when something fails.
+      </p>
+
+      <h3>If it will not start at all</h3>
+      <p>
+        Then <code>--status</code> cannot run either, and the cause is almost always a static
+        import the system cannot resolve. The loader names exactly one of them at a time — so
+        fixing the one it named just reveals the next.
       </p>
       <p>
         <code>scripts/probe-imports.ps1</code> answers the whole question at once. Run it

@@ -499,6 +499,65 @@ const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under th
 const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under the user config directory\n\
      (Unix: ~/.config/minicon.json via runtime::user_config_directory).";
 
+/// The facts a bug report needs, gathered from the machine it runs on.
+///
+/// Every line here answers a question that has actually cost a round trip:
+/// which binary is this, which Windows is it on, which PTY backend did it
+/// choose, which font face did the system really give it, and where does it
+/// write when something fails. None of these can be answered by reading the
+/// source, because all of them depend on the machine.
+///
+/// Opens no window and starts no session — the point is to be runnable on a
+/// machine where starting a session is the thing that does not work.
+fn status_text() -> String {
+    use std::fmt::Write as _;
+
+    let mut text = String::with_capacity(512);
+    let _ = writeln!(text, "minicon {}", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(text);
+
+    let backend = agenterm_platform::pty::backend_report();
+    let _ = writeln!(text, "  pty backend    {}", backend.kind);
+    if !backend.detail.is_empty() {
+        let _ = writeln!(text, "                 {}", backend.detail);
+    }
+
+    match agenterm_platform::font::primary_face_report(DEFAULT_FONT_PX as u16) {
+        Ok(report) => {
+            let _ = writeln!(
+                text,
+                "  font           {} ({}x{} cells)",
+                report.face, report.cell_width, report.cell_height
+            );
+            // The measurement, not just the name: a face can be resolved and
+            // still be the wrong shape for a character grid, and that is
+            // exactly the failure a user describes as "the font is off".
+            let width = match report.full_width_is_double() {
+                Some(true) => "half/full width correct".to_owned(),
+                Some(false) => format!(
+                    "FULL WIDTH IS NOT DOUBLE (ascii {:?}, full {:?})",
+                    report.ascii_advance, report.full_width_advance
+                ),
+                None => "width unmeasured on this platform".to_owned(),
+            };
+            let _ = writeln!(text, "                 {width}");
+        }
+        Err(error) => {
+            let _ = writeln!(text, "  font           unavailable: {error}");
+        }
+    }
+
+    let _ = writeln!(
+        text,
+        "  diagnostics    {}",
+        agenterm_platform::diagnostics::log_path().map_or_else(
+            || "unavailable".to_owned(),
+            |path| path.display().to_string()
+        )
+    );
+    text
+}
+
 fn usage_text() -> String {
     format!(
         "\
@@ -507,6 +566,7 @@ Usage: minicon [--no-activate] [--working-dir DIR]
                    [--control ENDPOINT] [--emit-snapshot PATH]
                    [-e PROGRAM [ARGS...]]
        minicon --version
+       minicon --status
        minicon --help
        minicon cli --control ENDPOINT COMMAND [ARGS...]
 
@@ -597,13 +657,17 @@ fn offline_cli_exit(args: &[String]) -> Option<i32> {
             ));
             Some(0)
         }
+        Some("--status") if alone => {
+            let _ = agenterm_platform::parent_console::write_stdout(&status_text());
+            Some(0)
+        }
         Some("--help" | "-h") if alone => {
             let _ = agenterm_platform::parent_console::write_stdout(&usage_text());
             Some(0)
         }
-        Some("--version" | "-V" | "--help" | "-h") => {
+        Some("--version" | "-V" | "--help" | "-h" | "--status") => {
             let _ = agenterm_platform::parent_console::write_stderr(
-                "error: --version/--help must be used alone",
+                "error: --version/--status/--help must be used alone",
             );
             Some(2)
         }
@@ -6767,9 +6831,59 @@ mod tests {
     fn offline_help_and_version_are_solo() {
         assert_eq!(offline_cli_exit(&["--version".to_owned()]), Some(0));
         assert_eq!(offline_cli_exit(&["--help".to_owned()]), Some(0));
+        assert_eq!(offline_cli_exit(&["--status".to_owned()]), Some(0));
         assert_eq!(
             offline_cli_exit(&["--version".to_owned(), "x".to_owned()]),
             Some(2)
+        );
+        assert_eq!(
+            offline_cli_exit(&["--status".to_owned(), "x".to_owned()]),
+            Some(2)
+        );
+    }
+
+    /// `--status` exists to end a round trip, so it has to carry the facts a
+    /// round trip would otherwise have to ask for. A status line that omits
+    /// one of them just produces a second question.
+    #[test]
+    fn status_reports_the_facts_a_bug_report_needs() {
+        let status = status_text();
+        assert!(
+            status.starts_with(&format!("minicon {}", env!("CARGO_PKG_VERSION"))),
+            "the build identifies itself first: {status}"
+        );
+        assert!(status.contains("pty backend"), "{status}");
+        assert!(status.contains("font"), "{status}");
+        assert!(status.contains("diagnostics"), "{status}");
+    }
+
+    /// The backend line must name one of the backends that exist, not a
+    /// placeholder. Whichever this machine has, it is the answer that decides
+    /// where to look first on an old Windows.
+    #[test]
+    fn status_names_a_real_pty_backend() {
+        let status = status_text();
+        assert!(
+            ["conpty", "console-agent", "unix-pty"]
+                .iter()
+                .any(|kind| status.contains(kind)),
+            "no known backend named: {status}"
+        );
+    }
+
+    /// The font line reports a measurement, not just a name. The name alone
+    /// cannot distinguish "resolved the right face" from "resolved a face that
+    /// is the wrong shape for a grid", which is the failure it exists to
+    /// diagnose.
+    #[test]
+    fn status_reports_measured_font_width_not_only_a_face_name() {
+        let status = status_text();
+        assert!(
+            status.contains("half/full width correct")
+                || status.contains("FULL WIDTH IS NOT DOUBLE")
+                || status.contains("width unmeasured")
+                || status.contains("font           unavailable"),
+            "the font line carries no measurement: {status}"
         );
     }
 

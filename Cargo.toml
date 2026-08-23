@@ -42,35 +42,35 @@ name = "minicon_console_agent"
 path = "tests/minicon_console_agent.rs"
 
 [dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["clipboard", "filesystem-publish", "filesystem-read", "font", "ime", "ipc", "parent-console", "pty", "runtime", "screenshot", "window"] }
-agenterm-ui-core = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", features = ["terminal-selection"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["clipboard", "filesystem-publish", "filesystem-read", "font", "ime", "ipc", "parent-console", "pty", "runtime", "screenshot", "window"] }
+agenterm-ui-core = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", features = ["terminal-selection"] }
 itoa = "1"
 unicode-width = "0.2"
 vt100 = "0.16"
 
 [dev-dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["input-inject"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["input-inject"] }
 png = "0.17"
 serde_json = "1"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["a11y-tree"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["a11y-tree"] }
 
 [target.'cfg(windows)'.dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["native-pixel-window"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["native-pixel-window"] }
 
 # Reads the shipped PE's import table so a static import of an API the
 # oldest supported Windows lacks cannot silently return. Same parser as
 # agenterm-abi's export gate: pure Rust, no dumpbin on PATH.
 [target.'cfg(windows)'.dev-dependencies]
 object = { version = "0.39.1", default-features = false, features = ["read", "std"] }
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["runtime"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["runtime"] }
 
 [target.'cfg(unix)'.dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["portable-pixel-window"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["portable-pixel-window"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f", default-features = false, features = ["a11y-publish"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a", default-features = false, features = ["a11y-publish"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
@@ -107,5 +107,5 @@ incremental = true
 # conversion. Both are pinned to the same agenterm revision as the crates
 # above, so the fork keeps one source of truth instead of being copied here.
 [patch.crates-io]
-vt100 = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f" }
-softbuffer = { git = "https://github.com/partnernetsoftware/agenterm", rev = "54c3fa5f" }
+vt100 = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a" }
+softbuffer = { git = "https://github.com/partnernetsoftware/agenterm", rev = "3b63c87a" }
