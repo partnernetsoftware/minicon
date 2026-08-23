@@ -308,12 +308,6 @@ fn closing_the_host_takes_the_agent_and_its_child_with_it() {
     );
 }
 
-/// The argument is `--agenterm-console-agent` and stays that way: it is
-/// `agenterm-platform`'s own constant, matched as literal text on both
-/// sides, so renaming it here alone would silently stop the two from
-/// agreeing. A blanket product rename mangled it into `--miniconsole-agent`
-/// once already, which no compiler could catch.
-///
 /// Counts agent processes by their command line, which is the only thing that
 /// distinguishes them from the product: they are the same executable.
 fn console_agent_processes() -> usize {
@@ -334,19 +328,24 @@ fn console_agent_processes() -> usize {
     };
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter(|line| line.contains("--agenterm-console-agent"))
+        .filter(|line| line.contains(agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT))
         .count()
 }
 
 /// Guards the argument itself: the host builds it and the agent matches it as
 /// literal text, so a rename on one side alone is a silent product that spawns
 /// a second copy of itself as a terminal.
+///
+/// Referred to through `agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT` and
+/// never spelled out here. A copy of the text is what a blanket product
+/// rename can rewrite on one side only — which is exactly what happened, and
+/// what silently switched these journeys off.
 #[test]
 fn the_agent_argument_is_the_one_both_sides_agree_on() {
     let path: &Path = &binary();
     assert!(path.is_file());
     let output = Command::new(path)
-        .arg("--agenterm-console-agent")
+        .arg(agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT)
         .arg("not-a-handle")
         .output()
         .expect("run agent mode");
