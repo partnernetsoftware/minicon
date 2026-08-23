@@ -509,6 +509,47 @@ const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under th
 ///
 /// Opens no window and starts no session — the point is to be runnable on a
 /// machine where starting a session is the thing that does not work.
+/// The short name a program is known by: `C:\Windows\system32\cmd.exe` → `cmd`.
+fn program_stem(program: &str) -> String {
+    let stem = std::path::Path::new(program)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if stem.is_empty() {
+        "terminal".to_owned()
+    } else {
+        stem
+    }
+}
+
+/// What a tab should be called, given what the child said about itself.
+///
+/// A child names its own executable and calls that a title — `cmd.exe` sets
+/// its window title to its own full path — and taking that literally is what
+/// made every tab in the tree read `C:\Windows\system32\cmd.exe`. Long,
+/// truncated in a narrow column, and identical across every tab, which defeats
+/// the tab tree this product is built around.
+///
+/// A title that only repeats the program is not a title: it tells the user
+/// nothing they did not already know from opening it. So it is treated as
+/// absent, and the short program name is used instead. A title the child
+/// genuinely sets — `title deploy` in cmd, or any shell's prompt escape — is
+/// information, and it wins.
+fn session_label(reported: &str, program_path: &str, program_label: &str) -> String {
+    let trimmed = reported.trim();
+    if trimmed.is_empty() {
+        return program_label.to_owned();
+    }
+    let names_itself = trimmed.eq_ignore_ascii_case(program_path)
+        || std::path::Path::new(program_path)
+            .file_name()
+            .is_some_and(|file| trimmed.eq_ignore_ascii_case(&file.to_string_lossy()));
+    if names_itself {
+        return program_label.to_owned();
+    }
+    trimmed.to_owned()
+}
+
 fn status_text() -> String {
     use std::fmt::Write as _;
 
@@ -686,6 +727,10 @@ struct ConTerminal {
     /// steal the one-shot `.take()` the render loop uses to notify the OS
     /// window.
     current_title: String,
+    /// The program this session runs, and its short name. Kept so a title the
+    /// child sets can be distinguished from the child naming itself.
+    program_path: String,
+    program_label: String,
 
     /// `--emit-snapshot`: written after each render when set. See
     /// `agent_interface` module docs.
@@ -1084,11 +1129,7 @@ impl ConApp {
     }
 
     fn refresh_title(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
-        let session = self.active_session()?;
-        let id = self.workspace.active().ok_or_else(|| {
-            PixelWindowError::failed("con_session_missing", "no active terminal session")
-        })?;
-        let title = format!("{} [@{}]", session.current_title, id.get());
+        let title = self.active_session()?.window_title();
         window.set_title(&title);
         self.current_window_title = title;
         self.mark_a11y_dirty();
@@ -2967,6 +3008,18 @@ impl ConApp {
 }
 
 impl ConTerminal {
+    /// The one place a window title is built, so the OSC path and the
+    /// activation path cannot format it differently. They did, which is how
+    /// the same window showed two different titles depending on which one had
+    /// last written it.
+    fn window_title(&self) -> String {
+        // Product last, context first: a title is read left to right and the
+        // part that changes belongs in front. No tab id — that is a machine
+        // identifier, and it is already in the tab column and in `list-tabs`;
+        // a taskbar entry is read by a person.
+        format!("{} — MiniCon", self.current_title)
+    }
+
     fn shutdown_pty(&mut self) {
         // First release product backpressure, then transfer both ownership
         // halves. ClosePseudoConsole may block while a flooded client drains,
@@ -2983,7 +3036,9 @@ impl ConTerminal {
         Self {
             working_dir,
             command: None,
-            current_title: String::new(),
+            current_title: String::from("terminal"),
+            program_path: String::new(),
+            program_label: String::from("terminal"),
             snapshot_path: None,
             parser: vt100::Parser::new_with_callbacks(24, 80, SCROLLBACK, ConCallbacks::default()),
             master: None,
@@ -3303,6 +3358,12 @@ impl ConTerminal {
         if let Some(dir) = &self.working_dir {
             command = command.current_dir(dir.clone());
         }
+
+        // Remembered so a title the child sets can be told apart from the
+        // child merely naming itself — see `session_label`.
+        self.program_path = program.clone();
+        self.program_label = program_stem(&program);
+        self.current_title = self.program_label.clone();
 
         let spawned = command.spawn().map_err(|error| {
             // Name the program: "failed to spawn" with no subject is the kind
@@ -4583,8 +4644,10 @@ impl ConTerminal {
         };
         self.recompute_metrics(scale);
         self.scale = scale;
-        self.current_title = format!("minicon — {}", font::resolved_name());
-        window.set_title(&self.current_title);
+        // Not the font. That was a development diagnostic living in the one
+        // piece of chrome a user always sees; `--status` reports the resolved
+        // face now, which is where someone diagnosing a font actually looks.
+        window.set_title(&self.window_title());
         // Request keyboard focus so winit delivers KeyboardInput events on Windows.
         window.focus();
         let (cols, rows) = Self::compute_grid(
@@ -4755,8 +4818,8 @@ impl ConTerminal {
     ) -> Result<PixelWindowDirective, PixelWindowError> {
         // Apply OSC title changes (shell emits \e]0;title\a).
         if let Some(title) = self.parser.callbacks_mut().title.take() {
-            self.current_title = title;
-            window.set_title(&self.current_title);
+            self.current_title = session_label(&title, &self.program_path, &self.program_label);
+            window.set_title(&self.window_title());
         }
 
         let fw = width;
@@ -6840,6 +6903,60 @@ mod tests {
             offline_cli_exit(&["--status".to_owned(), "x".to_owned()]),
             Some(2)
         );
+    }
+
+    /// The defect this exists for: `cmd.exe` reports its own path as its
+    /// window title, so every tab in the tree read the same long string and
+    /// the tree could not tell its tabs apart.
+    #[test]
+    fn a_child_naming_itself_is_not_a_title() {
+        let path = r"C:\Windows\system32\cmd.exe";
+        assert_eq!(session_label(path, path, "cmd"), "cmd", "the full path");
+        assert_eq!(session_label("cmd.exe", path, "cmd"), "cmd", "the file name");
+        assert_eq!(
+            session_label(r"C:\WINDOWS\SYSTEM32\CMD.EXE", path, "cmd"),
+            "cmd",
+            "Windows paths are not case sensitive and neither is this"
+        );
+        assert_eq!(session_label("   ", path, "cmd"), "cmd", "blank is absent");
+    }
+
+    /// A title the child genuinely set is information the user asked for, and
+    /// must win. Suppressing it would be the opposite defect.
+    #[test]
+    fn a_real_title_from_the_child_is_kept() {
+        let path = r"C:\Windows\system32\cmd.exe";
+        assert_eq!(session_label("deploy", path, "cmd"), "deploy");
+        assert_eq!(session_label("  build 3  ", path, "cmd"), "build 3");
+        // Contains the program name but says more than it: still a title.
+        assert_eq!(session_label("cmd.exe — release", path, "cmd"), "cmd.exe — release");
+    }
+
+    /// One builder, because two of them drifted: the OSC path and the
+    /// activation path formatted the window title independently, so the same
+    /// window read differently depending on which had written it last.
+    #[test]
+    fn every_path_builds_the_same_window_title() {
+        let mut terminal = ConTerminal::new(None);
+        terminal.current_title = "deploy".to_owned();
+        assert_eq!(terminal.window_title(), "deploy — MiniCon");
+        terminal.current_title = "cmd".to_owned();
+        assert_eq!(terminal.window_title(), "cmd — MiniCon");
+        assert!(
+            !terminal.window_title().contains("新宋体")
+                && !terminal.window_title().contains('@'),
+            "a taskbar title carries neither a font diagnostic nor a machine id"
+        );
+    }
+
+    #[test]
+    fn a_program_is_known_by_its_short_name() {
+        assert_eq!(program_stem(r"C:\Windows\system32\cmd.exe"), "cmd");
+        assert_eq!(program_stem("/bin/bash"), "bash");
+        assert_eq!(program_stem("pwsh"), "pwsh");
+        // Never empty: an unnamed tab is worse than a generic one.
+        assert_eq!(program_stem(""), "terminal");
+        assert_eq!(program_stem("/"), "terminal");
     }
 
     /// `--status` exists to end a round trip, so it has to carry the facts a

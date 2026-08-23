@@ -9,6 +9,29 @@ focus ownership. The shared physical VT selection kernel remains owned by
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
+## Tab and window naming
+
+- [x] a tab is named by what distinguishes it, not by what it runs. `cmd.exe`
+  reports its own full path as its window title, so taking a child's title
+  literally made every tab in the tree read the shell's own full path: long,
+  truncated in a narrow column, and identical across every tab, which
+  defeats the tab tree this product is built around.
+- [x] a title that only repeats the program is treated as absent. It tells the
+  user nothing they did not already know from opening it, so the short program
+  name is used instead: `cmd`. A title the child genuinely sets — `title
+  deploy`, or any shell's prompt escape — is information and wins.
+- [x] the window title is `<title> — MiniCon`. Context first, product last: a
+  title is read left to right and the part that changes belongs in front.
+- [x] it carries no tab id. That is a machine identifier and it is already in
+  the tab column and in `list-tabs`; a taskbar entry is read by a person.
+- [x] it carries no font name either. The resolved face was in the window
+  title as a development diagnostic, in the one piece of chrome a user always
+  sees; `--status` reports it now, which is where someone diagnosing a font
+  actually looks.
+- [x] one function builds it. The OSC path and the activation path formatted it
+  independently and drifted, so the same window read differently depending on
+  which had written it last.
+
 ## Tab tree authority
 
 - [x] `Workspace` is the sole authority for tree order, parentage and stable tab

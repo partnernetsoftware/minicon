@@ -52,10 +52,6 @@ fn renderer() -> &'static Renderer {
     })
 }
 
-pub fn resolved_name() -> String {
-    agenterm_platform::font::rasterizer_name().unwrap_or_else(|_| "bitmap-8x8".to_owned())
-}
-
 pub fn cell_metrics(size_px: u16) -> CellMetrics {
     let size = size_px.clamp(8, 72);
     agenterm_platform::font::primary_metrics(size)
