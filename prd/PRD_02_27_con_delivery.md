@@ -48,8 +48,10 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   agenterm-rh 的产物，未随本仓迁出。本仓目前**没有任何自动体积门**，1 MiB 上限暂时只是
   文字要求。参考：2026-08-23 本机 macOS `release` 产物 1,393,056 字节；该数字不是交付物
   （交付物是 Windows PE，历史实测 561,152），列在此处只为说明本仓当前无门可依。
-- [ ] **独立 CI 没有跟过来。** `ci-agenterm-con.yml` 仍留在 agenterm 且处于 `.disabled`
-  状态，本仓尚无 workflow。
+- [~] **独立 CI 已移植，但停放中。** `ci-agenterm-con.yml` 已从 agenterm 移到本仓
+  `.github/workflows/ci-minicon.yml.disabled`，`.disabled` 后缀期间不触发，一条
+  `git mv` 即可启用。两处适配：`--profile con-release-fast` → `--profile release-fast`、
+  去掉 `-p agenterm-con`（本仓单包）。**它从未在本仓跑过**，`build-std` 那几格尤其未验证。
 
 ## Unwind profiles and panic containment
 

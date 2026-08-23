@@ -1,0 +1,136 @@
+# PARKED — GitHub only reads `*.yml` / `*.yaml` here, so this never triggers
+# while it ends in `.disabled`. Enable with one rename:
+#
+#   git mv .github/workflows/ci-minicon.yml.disabled .github/workflows/ci-minicon.yml
+#
+# Ported from agenterm's `ci-agenterm-con.yml.disabled` when the product moved
+# to its own repo. Two adaptations, both because the escape hatches this needed
+# inside agenterm no longer exist here: `--profile con-release-fast` became
+# `--profile release-fast` (a standalone repo is unwind by default, so the
+# `con-*` indirection is gone) and `-p agenterm-con` is dropped since this repo
+# is a single package. It has never run in this repo — the `build-std` cells in
+# particular are unproven here.
+name: CI / minicon
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+concurrency:
+  # An exact-SHA manual qualification must survive later main pushes. Ordinary
+  # push/PR feedback remains replaceable within its mutable ref.
+  group: ci-minicon-${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-authoritative:
+    name: minicon Windows unwind and public black-box
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      AGENTERM_NO_ACTIVATE: "1"
+      RUSTC_BOOTSTRAP: "1"
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+      - name: Install minicon toolchain components
+        run: rustup component add rust-src clippy rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy exact minicon profile
+        run: >-
+          cargo clippy -Z build-std=std,panic_unwind,compiler_builtins
+          -Z build-std-features=panic-unwind,backtrace-trace-only
+          --locked --profile release-fast --target x86_64-pc-windows-msvc
+          --all-targets -- -D warnings
+      - name: Validate minicon capability and evidence contract
+        run: >-
+          cargo test -Z build-std=std,panic_unwind,compiler_builtins
+          -Z build-std-features=panic-unwind,backtrace-trace-only
+          --locked --profile release-fast --target x86_64-pc-windows-msvc
+          --test minicon_alignment
+      - name: Qualify minicon sustained long output
+        run: >-
+          cargo test -Z build-std=std,panic_unwind,compiler_builtins
+          -Z build-std-features=panic-unwind,backtrace-trace-only
+          --locked --profile release-fast --target x86_64-pc-windows-msvc
+          --test minicon_throughput -- --ignored --nocapture
+      - name: Test exact minicon profile
+        run: >-
+          cargo test -Z build-std=std,panic_unwind,compiler_builtins
+          -Z build-std-features=panic-unwind,backtrace-trace-only
+          --locked --profile release-fast --target x86_64-pc-windows-msvc
+
+      - name: Build exact minicon artifact
+        run: >-
+          cargo build -Z build-std=std,panic_unwind,compiler_builtins
+          -Z build-std-features=panic-unwind,backtrace-trace-only
+          --locked --profile release-fast --target x86_64-pc-windows-msvc
+          --bin minicon
+
+  target-cells:
+    name: minicon / ${{ matrix.cell }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: win-aarch64
+            runner: ubuntu-latest
+            target: aarch64-pc-windows-msvc
+            kind: xwin
+          - cell: lnx-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            kind: native
+          - cell: lnx-aarch64
+            runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            kind: linux-cross
+          - cell: osx-aarch64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            kind: native
+          - cell: osx-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            kind: native
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+      - name: Install target
+        run: rustup target add ${{ matrix.target }}
+      - name: Install Windows cross tooling
+        if: matrix.kind == 'xwin'
+        run: cargo install cargo-xwin --locked
+      - name: Install Linux aarch64 linker
+        if: matrix.kind == 'linux-cross'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Check minicon through cargo-xwin
+        if: matrix.kind == 'xwin'
+        run: cargo xwin check --locked --all-targets --target ${{ matrix.target }}
+      - name: Check minicon native/cross target
+        if: matrix.kind != 'xwin'
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo check --locked --all-targets --target ${{ matrix.target }}
+      - name: Install Linux AT-SPI runtime
+        if: matrix.cell == 'lnx-x86_64'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          at-spi2-core dbus-x11 libxkbcommon-x11-0 xvfb
+      - name: Test real Linux AT-SPI minicon chrome
+        if: matrix.cell == 'lnx-x86_64'
+        env:
+          AGENTERM_NO_ACTIVATE: "1"
+        run: >-
+          xvfb-run -a dbus-run-session --
+          cargo test --locked
+          --test minicon_accessibility_linux -- --nocapture
