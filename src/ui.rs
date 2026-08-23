@@ -41,6 +41,9 @@ pub struct Layout {
     pub composer_send: Rect,
     pub zoom_out: Rect,
     pub zoom_in: Rect,
+    /// The two language entries, left of the size controls.
+    pub language_chinese: Rect,
+    pub language_english: Rect,
 }
 
 impl Layout {
@@ -109,6 +112,21 @@ impl Layout {
             width: tool_size,
             height: tool_size,
         };
+        // Language before size, reading right to left: `En` `中` `z` `Z`. The
+        // sidebar is at least 180 dip and a tool is 24, so four of them and the
+        // product name coexist even at the narrowest layout.
+        let language_english = Rect {
+            x: zoom_out.x.saturating_sub(tool_size),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
+        let language_chinese = Rect {
+            x: language_english.x.saturating_sub(tool_size),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
         Self {
             sidebar: Rect {
                 x: 0,
@@ -123,6 +141,8 @@ impl Layout {
             composer_send: send,
             zoom_out,
             zoom_in,
+            language_chinese,
+            language_english,
         }
     }
 
@@ -172,6 +192,7 @@ pub enum TreeHit {
     Background,
     ZoomOut,
     ZoomIn,
+    Language(UiLanguage),
     Select(usize),
     Close(usize),
 }
@@ -181,6 +202,69 @@ pub enum ComposerHit {
     Outside,
     Input,
     Send,
+}
+
+/// The language MiniCon labels itself in.
+///
+/// Only the chrome is translated — the tab column, the send strip and the
+/// paste failure. Everything a child process prints belongs to that process
+/// and is passed through untouched, which is the line this must not cross: a
+/// terminal that rewrote program output would be lying about what ran.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum UiLanguage {
+    #[default]
+    English,
+    Chinese,
+}
+
+impl UiLanguage {
+    /// The stable identifier used by the control surface, so automation can
+    /// read and assert the language without matching a display label.
+    #[must_use]
+    pub const fn tag(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::Chinese => "zh",
+        }
+    }
+
+    /// The label painted on this language's own entry. Each is written in the
+    /// language it selects: a switch labelled in the language you are leaving
+    /// is unreadable to the person who needs it.
+    #[must_use]
+    pub const fn entry_label(self) -> &'static str {
+        match self {
+            Self::English => "En",
+            Self::Chinese => "中",
+        }
+    }
+
+    #[must_use]
+    pub const fn strings(self) -> ChromeStrings {
+        match self {
+            Self::English => ChromeStrings {
+                paste_failed: "PASTE FAILED",
+                send: "SEND",
+                send_to: "SEND TO @",
+            },
+            Self::Chinese => ChromeStrings {
+                paste_failed: "貼上失敗",
+                send: "送出",
+                send_to: "送往 @",
+            },
+        }
+    }
+}
+
+/// The chrome MiniCon writes itself.
+///
+/// A struct rather than a lookup by key: a missing translation is then a
+/// compile error instead of a blank label discovered by a user.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChromeStrings {
+    pub paste_failed: &'static str,
+    pub send: &'static str,
+    pub send_to: &'static str,
 }
 
 pub fn tree_hit(
@@ -193,6 +277,12 @@ pub fn tree_hit(
 ) -> TreeHit {
     if !layout.sidebar.contains(x, y) {
         return TreeHit::Outside;
+    }
+    if layout.language_chinese.contains(x, y) {
+        return TreeHit::Language(UiLanguage::Chinese);
+    }
+    if layout.language_english.contains(x, y) {
+        return TreeHit::Language(UiLanguage::English);
     }
     if layout.zoom_out.contains(x, y) {
         return TreeHit::ZoomOut;
@@ -323,6 +413,95 @@ mod tests {
         assert!(layout.composer_input.width > layout.composer_send.width);
         assert!(layout.composer_input.x >= layout.composer.x);
         assert!(layout.composer_input.x + layout.composer_input.width < layout.composer_send.x);
+    }
+
+    /// The two language entries sit left of the size controls and never
+    /// overlap them or each other — four tool rects share one header row, and
+    /// an overlap would make one of them unreachable.
+    #[test]
+    fn the_header_tools_are_ordered_and_disjoint() {
+        for (width, scale) in [(1000, 1.0), (760, 1.0), (1600, 1.5), (2400, 2.0)] {
+            let layout = Layout::new(width, 600, scale);
+            let tools = [
+                layout.language_chinese,
+                layout.language_english,
+                layout.zoom_out,
+                layout.zoom_in,
+            ];
+            for pair in tools.windows(2) {
+                assert!(
+                    pair[0].x + pair[0].width <= pair[1].x,
+                    "tools overlap at {width}x{scale}: {pair:?}"
+                );
+            }
+            assert!(
+                tools[3].x + tools[3].width <= layout.sidebar.width,
+                "the rightmost tool leaves the sidebar at {width}x{scale}"
+            );
+            assert!(
+                tools[0].y + tools[0].height <= layout.tree_header_height,
+                "tools spill into the tab rows at {width}x{scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_language_entry_is_hit_separately() {
+        let layout = Layout::new(1000, 500, 1.0);
+        assert_eq!(
+            tree_hit(
+                layout,
+                layout.language_chinese.x + 1,
+                layout.language_chinese.y + 1,
+                0,
+                4,
+                1.0
+            ),
+            TreeHit::Language(UiLanguage::Chinese)
+        );
+        assert_eq!(
+            tree_hit(
+                layout,
+                layout.language_english.x + 1,
+                layout.language_english.y + 1,
+                0,
+                4,
+                1.0
+            ),
+            TreeHit::Language(UiLanguage::English)
+        );
+    }
+
+    /// Every entry is labelled in the language it selects, and every language
+    /// has a complete set of chrome strings. A struct rather than a map is
+    /// what makes the second half a compile error instead of a blank label.
+    #[test]
+    fn each_language_labels_itself_and_translates_every_string() {
+        for language in [UiLanguage::English, UiLanguage::Chinese] {
+            assert!(!language.entry_label().is_empty());
+            assert!(!language.tag().is_empty());
+            let strings = language.strings();
+            assert!(!strings.paste_failed.is_empty());
+            assert!(!strings.send.is_empty());
+            assert!(!strings.send_to.is_empty());
+        }
+        assert_eq!(UiLanguage::Chinese.entry_label(), "中");
+        assert_eq!(UiLanguage::English.entry_label(), "En");
+        assert_ne!(
+            UiLanguage::English.strings().send,
+            UiLanguage::Chinese.strings().send,
+            "a language that translates nothing is a switch with no effect"
+        );
+        // The tab identifier travels with the label, so a translated prefix
+        // must still leave the `@` that names the tab.
+        assert!(UiLanguage::Chinese.strings().send_to.ends_with('@'));
+        assert!(UiLanguage::English.strings().send_to.ends_with('@'));
+    }
+
+    #[test]
+    fn english_is_the_default_language() {
+        assert_eq!(UiLanguage::default(), UiLanguage::English);
+        assert_eq!(UiLanguage::default().tag(), "en");
     }
 
     #[test]

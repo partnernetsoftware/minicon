@@ -746,6 +746,9 @@ struct ConApp {
     workspace: workspace::Workspace,
     sessions: SessionStore<ConTerminal>,
     composer: composer::ComposerState,
+    /// The language MiniCon labels its own chrome in. Child output is never
+    /// touched by this.
+    ui_language: ui::UiLanguage,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
     sidebar_resizing: bool,
@@ -920,6 +923,7 @@ impl ConApp {
             workspace,
             sessions,
             composer: composer::ComposerState::default(),
+            ui_language: ui::UiLanguage::default(),
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_resizing: false,
@@ -1437,6 +1441,16 @@ impl ConApp {
             }
             ui::TreeHit::ZoomIn => {
                 self.active_session_mut()?.zoom_font(window, true);
+                return Ok(true);
+            }
+            ui::TreeHit::Language(language) => {
+                // Repainting only on a real change keeps clicking the active
+                // entry from costing a frame.
+                if self.ui_language != language {
+                    self.ui_language = language;
+                    self.mark_chrome_full();
+                    self.request_dirty_redraw(window);
+                }
                 return Ok(true);
             }
             ui::TreeHit::Close(index) => {
@@ -2056,6 +2070,7 @@ impl ConApp {
                                     ),
                                 ]),
                             ),
+                            ("ui_language", self.ui_language.tag().into()),
                             ("composer_focused", self.composer.focused.into()),
                             ("composer_text", self.composer.text.as_str().into()),
                             ("composer_preedit", self.composer.preedit.as_str().into()),
@@ -2639,9 +2654,11 @@ impl ConApp {
             14,
             9,
             if self.terminal_clipboard_error.is_some() {
-                "PASTE FAILED"
+                self.ui_language.strings().paste_failed
             } else {
-                "TERMINALS"
+                // The product name, not a translated noun: it is the trademark
+                // and reads the same in every language.
+                "MiniCon"
             },
             if self.terminal_clipboard_error.is_some() {
                 error_accent
@@ -2651,6 +2668,28 @@ impl ConApp {
             12,
             tree_width.saturating_sub(28),
         );
+        // The selected language is drawn in the accent and the other muted, so
+        // the switch also reports the current state instead of only offering
+        // one. Two entries rather than one toggle: a toggle labelled with the
+        // language you are leaving is unreadable to whoever needs it.
+        for (entry, language) in [
+            (layout.language_chinese, ui::UiLanguage::Chinese),
+            (layout.language_english, ui::UiLanguage::English),
+        ] {
+            paint_chrome_text(
+                &mut surface,
+                entry.x + 4,
+                entry.y + 5,
+                language.entry_label(),
+                if self.ui_language == language {
+                    accent
+                } else {
+                    muted
+                },
+                12,
+                entry.width.saturating_sub(4),
+            );
+        }
         paint_chrome_text(
             &mut surface,
             layout.zoom_out.x + 6,
@@ -2734,7 +2773,10 @@ impl ConApp {
             &mut surface,
             header_x,
             input_y + 7,
-            &["SEND TO @", active_id_text.format(active_id)],
+            &[
+                self.ui_language.strings().send_to,
+                active_id_text.format(active_id),
+            ],
             if self.composer.submit_error.is_some() {
                 error_accent
             } else if self.composer.focused {
@@ -2847,7 +2889,7 @@ impl ConApp {
             &mut surface,
             layout.composer_send.x + 17,
             layout.composer_send.y + 12,
-            "SEND",
+            self.ui_language.strings().send,
             if self.composer.submit_error.is_some() {
                 error_accent
             } else {
