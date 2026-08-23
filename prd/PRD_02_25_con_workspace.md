@@ -77,17 +77,24 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 ## Local chrome
 
 - [x] the local chrome owns a vertically scrollable left tree with row-level
-  close targets and top `z`/`Z` font controls, plus a distinct bottom composer
+  close targets and top `A-`/`A+` font controls, plus a distinct bottom composer
   input and send action.
 - [x] the tree header names the product, not a category. It reads `MiniCon`,
   which is the trademark and reads the same in every language, rather than a
   translatable noun.
 - [x] the header row carries a language switch left of the size controls,
-  giving `MiniCon 中 En z Z`. Two entries rather than one toggle: a toggle
+  giving `MiniCon 中 En A- A+`. Two entries rather than one toggle: a toggle
   labelled with the language you are leaving is unreadable to exactly the
   person who needs it. Each is written in the language it selects, and the
   active one is drawn in the accent colour, so the control reports state as
   well as offering a change.
+- [x] the size controls are `A-` and `A+`, not `z` and `Z`. `A` is the common
+  glyph for text size and the signs are unambiguous, where the letter `z` meant
+  nothing to anyone who had not read the source.
+- [x] both are muted and the same size, because they are **actions**. The accent
+  colour means "current state" for the language entries beside them, and one
+  visual language must not carry two meanings in a single row — the old `Z` was
+  accented merely for being the larger one.
 - [x] **only chrome is translated.** Everything a child process prints is
   passed through untouched, and that line does not move: a terminal that
   rewrote program output would be lying about what ran. Chrome strings live in
@@ -155,6 +162,36 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   layers instead of copying server, Fleet or script policy into this binary.
 
 ## External composer input
+
+The input area is a deliberate feature, not a leftover. Most terminals make you
+type into the same region a running program is printing into, so a long command
+and a burst of output interleave on screen and you lose track of what you have
+actually typed. A separate area removes that collision entirely, which is why
+`agenterm` uses the same design, and why this band keeps its permanent share of
+the window rather than being hidden to save pixels.
+
+- [x] a sent line survives being sent. Up and Down walk previously submitted
+  lines, so resending or amending one does not mean retyping it — this is what
+  a dedicated area can do that a terminal region cannot, and without it the
+  area is a box that forgets.
+- [x] entering recall keeps whatever was half-typed, and stepping forward past
+  the newest entry puts it back exactly. Losing an in-progress line to a
+  stray arrow key would make the feature a trap.
+- [x] recall stops at the oldest entry rather than wrapping. Wrapping lands on
+  the newest and reads as an entry that vanished.
+- [x] a recalled line arrives with the caret at its end and no selection: it is
+  a starting point to extend, and a leftover select-all would delete it on the
+  next keystroke.
+- [x] adjacent duplicates are not stored, so sending the same command twice
+  does not cost two presses to step past. History is bounded at 64 entries and
+  drops the oldest first, because recall reaches backwards from the present.
+- [x] sending ends the recall, so the next Up starts from the newest entry
+  rather than resuming wherever the last browse stopped.
+- [x] a line is remembered before delivery is attempted: one that failed to
+  send is exactly the one worth recalling.
+- [x] the label names the target tab rather than only numbering it —
+  `SEND TO  cmd`. Saying where text is going is the reason the band earns its
+  space, and `` is only an answer to someone who already knows what `` is.
 
 - [x] the composer has a caret, as a byte offset into its text. Typing inserts
   there, Backspace deletes before it and Delete at it, Left/Right move by

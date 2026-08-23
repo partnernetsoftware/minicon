@@ -1744,6 +1744,12 @@ impl ConApp {
             LogicalKey::Named(NamedKey::Delete) => {
                 composer::delete_forward(&mut self.composer);
             }
+            LogicalKey::Named(NamedKey::ArrowUp) => {
+                self.composer.recall_previous();
+            }
+            LogicalKey::Named(NamedKey::ArrowDown) => {
+                self.composer.recall_next();
+            }
             LogicalKey::Named(NamedKey::ArrowLeft) => {
                 composer::move_caret(&mut self.composer, composer::Move::Left);
             }
@@ -1777,6 +1783,9 @@ impl ConApp {
         let Some(input) = self.composer.take_submission() else {
             return;
         };
+        // Remembered before delivery is attempted: a line that failed to send
+        // is exactly the one worth recalling.
+        self.composer.remember(&input);
         let result = (|| {
             let session = self
                 .active_session_mut()
@@ -2795,24 +2804,23 @@ impl ConApp {
                 entry.width.saturating_sub(4),
             );
         }
-        paint_chrome_text(
-            &mut surface,
-            layout.zoom_out.x + 6,
-            layout.zoom_out.y + 5,
-            "z",
-            muted,
-            12,
-            layout.zoom_out.width.saturating_sub(6),
-        );
-        paint_chrome_text(
-            &mut surface,
-            layout.zoom_in.x + 5,
-            layout.zoom_in.y + 4,
-            "Z",
-            accent,
-            14,
-            layout.zoom_in.width.saturating_sub(5),
-        );
+        // `A-` and `A+` rather than `z` and `Z`: `A` is the common glyph for
+        // text size and the signs are unambiguous, where the letter `z` meant
+        // nothing. Both muted and both the same size, because these are
+        // actions -- the accent colour means "current state" for the language
+        // entries beside them, and one visual language must not carry two
+        // meanings in one row.
+        for (entry, label) in [(layout.zoom_out, "A-"), (layout.zoom_in, "A+")] {
+            paint_chrome_text(
+                &mut surface,
+                entry.x + 3,
+                entry.y + 5,
+                label,
+                muted,
+                12,
+                entry.width.saturating_sub(3),
+            );
+        }
 
         let nodes = self.workspace.nodes();
         let depths = self.workspace.depths();
@@ -2878,9 +2886,19 @@ impl ConApp {
             &mut surface,
             header_x,
             input_y + 7,
+            // Names the tab, not just its number. The tab column and the
+            // window title both call it by name now, and the input area saying
+            // where text is going is the whole reason this band is worth its
+            // permanent share of the window — "@1" is only an answer if you
+            // already know what @1 is.
             &[
                 self.ui_language.strings().send_to,
                 active_id_text.format(active_id),
+                " ",
+                self.workspace
+                    .active()
+                    .and_then(|id| self.sessions.get(&id))
+                    .map_or("", |session| session.current_title.as_str()),
             ],
             if self.composer.submit_error.is_some() {
                 error_accent

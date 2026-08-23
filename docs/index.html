@@ -319,6 +319,35 @@
       </div>
     </section>
 
+    <section>
+      <div class="wrap">
+        <h2 data-i18n="inputTitle">A place to type that is not the output.</h2>
+        <p class="section-lead" data-i18n="inputLead">
+          Most terminals make you type into the same region a running program is printing
+          into. A long command and a burst of output interleave on screen, and you lose track
+          of what you have actually typed. MiniCon gives input its own area — and once input
+          has its own area, it can do things the output region cannot.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <span class="index" data-i18n="input1Index">01 / NO COLLISION</span>
+            <h3 data-i18n="input1Title">Compose while it scrolls</h3>
+            <p data-i18n="input1Body">Write and review a long command while output keeps arriving. Nothing you type is interleaved with anything a program prints, and a screen clear cannot take your line with it.</p>
+          </div>
+          <div class="card">
+            <span class="index" data-i18n="input2Index">02 / RECALL</span>
+            <h3 data-i18n="input2Title">A sent line survives being sent</h3>
+            <p data-i18n="input2Body">Up and Down walk what you sent before, so resending or amending it is not retyping it. Half-typed text is kept when you start browsing and put back exactly if you step past the newest entry.</p>
+          </div>
+          <div class="card">
+            <span class="index" data-i18n="input3Index">03 / IT SAYS WHERE</span>
+            <h3 data-i18n="input3Title">Named, not numbered</h3>
+            <p data-i18n="input3Body">The label names the tab the text is going to. With a tab tree, knowing which terminal is about to receive a command is the difference between confidence and a guess.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="script">
       <div class="wrap">
         <h2 data-i18n="scriptTitle">A terminal a script can see into.</h2>
@@ -470,6 +499,17 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           old4Index: "04 / NO REDISTRIBUTABLE",
           old4Title: "Nothing to install first",
           old4Body: "The VC runtime is linked in. A test parses the shipped executable's import table and fails if anything outside the Windows-provided set appears, so it cannot quietly regress.",
+          inputTitle: "A place to type that is not the output.",
+          inputLead: "Most terminals make you type into the same region a running program is printing into. A long command and a burst of output interleave on screen, and you lose track of what you have actually typed. MiniCon gives input its own area — and once input has its own area, it can do things the output region cannot.",
+          input1Index: "01 / NO COLLISION",
+          input1Title: "Compose while it scrolls",
+          input1Body: "Write and review a long command while output keeps arriving. Nothing you type is interleaved with anything a program prints, and a screen clear cannot take your line with it.",
+          input2Index: "02 / RECALL",
+          input2Title: "A sent line survives being sent",
+          input2Body: "Up and Down walk what you sent before, so resending or amending it is not retyping it. Half-typed text is kept when you start browsing and put back exactly if you step past the newest entry.",
+          input3Index: "03 / IT SAYS WHERE",
+          input3Title: "Named, not numbered",
+          input3Body: "The label names the tab the text is going to. With a tab tree, knowing which terminal is about to receive a command is the difference between confidence and a guess.",
           scriptTitle: "A terminal a script can see into.",
           scriptLead: "Sending a keystroke is the easy half. MiniCon's control CLI drives the real UI and reads back what the window is actually showing — text, screenshots, focus, tab state — so automation can wait on a condition instead of guessing with a timer.",
           scriptSnapshot: "Focus, IME state, input contents, pending work and control geometry, as JSON.",
@@ -549,6 +589,17 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           old4Index: "04 / 免可轉散發套件",
           old4Title: "不必先裝別的東西",
           old4Body: "VC 執行期是靜態連結進去的。有一項測試會解析發佈執行檔的匯入表，一旦出現 Windows 自帶集合以外的東西就失敗，所以不可能悄悄退步。",
+          inputTitle: "一個不與輸出混在一起的輸入區。",
+          inputLead: "多數終端機要你在「程式正在輸出的同一塊區域」裡打字。一長串指令和一波輸出交錯在畫面上，你會弄不清自己到底打了什麼。MiniCon 給輸入一塊自己的區域——而輸入一旦有了自己的區域，就能做到輸出區做不到的事。",
+          input1Index: "01 / 不互相干擾",
+          input1Title: "一邊滾一邊寫",
+          input1Body: "輸出持續進來的同時，照樣書寫並檢查一長串指令。你打的字不會和程式印的東西交錯，清畫面也帶不走你寫到一半的那行。",
+          input2Index: "02 / 歷史回叫",
+          input2Title: "送出去的那行不會就此消失",
+          input2Body: "上下鍵走訪先前送出的內容，重送或改一改都不必重打。開始翻閱時你打到一半的字會被保留，往前翻過最新一筆會原樣放回。",
+          input3Index: "03 / 它會說送去哪",
+          input3Title: "叫名字，不是叫號碼",
+          input3Body: "標籤上寫的是文字要送往哪個分頁的名字。在分頁樹裡，知道哪個終端機即將收到這道指令，是「有把握」和「用猜的」之間的差別。",
           scriptTitle: "一個腳本看得進去的終端機。",
           scriptLead: "送出一個按鍵是簡單的那一半。MiniCon 的控制 CLI 驅動的是真正的介面，並把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁狀態——讓自動化可以等待條件成立，而不是用計時器猜。",
           scriptSnapshot: "焦點、輸入法狀態、輸入內容、待處理工作與控制項座標，以 JSON 回傳。",

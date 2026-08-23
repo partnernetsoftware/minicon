@@ -27,7 +27,24 @@ pub struct ComposerState {
     /// character boundary and never past the end, so slicing on it cannot
     /// panic.
     pub caret: usize,
+    /// Lines already sent, oldest first.
+    ///
+    /// A dedicated input area only earns its permanent share of the window if
+    /// it can do something the terminal cannot. Recall is that thing: a
+    /// submitted line survives being sent, so resending or amending it does
+    /// not mean retyping it. Without this the area is a box that forgets.
+    history: Vec<String>,
+    /// Position in `history` while recalling; `None` while editing your own
+    /// text. The distinction is what lets returning past the newest entry put
+    /// back exactly what you were typing.
+    recall: Option<usize>,
+    /// The text being edited when recall started.
+    draft: String,
 }
+
+/// Enough to reach back through a working session, bounded because this is a
+/// convenience and must never become a reason the process grows.
+const MAX_HISTORY: usize = 64;
 
 impl ComposerState {
     /// Moves the caret onto a character boundary and returns it.
@@ -49,6 +66,79 @@ impl ComposerState {
         self.submit_error = None;
     }
 
+    /// Records a line that was sent, so it can be recalled.
+    ///
+    /// Adjacent duplicates are dropped: sending the same command twice should
+    /// not make you press Up twice to get past it. Older entries are dropped
+    /// first when the bound is reached, because recall reaches backwards from
+    /// the present.
+    pub fn remember(&mut self, entry: &str) {
+        let entry = entry.trim_end_matches(['\r', '\n']);
+        if entry.is_empty() || self.history.last().is_some_and(|last| last == entry) {
+            return;
+        }
+        if self.history.len() == MAX_HISTORY {
+            self.history.remove(0);
+        }
+        self.history.push(entry.to_owned());
+    }
+
+    /// Steps back through history. Returns whether anything changed, so a
+    /// caller can decide whether the key was consumed.
+    pub fn recall_previous(&mut self) -> bool {
+        if self.history.is_empty() {
+            return false;
+        }
+        let index = match self.recall {
+            // Entering recall: keep what was being typed so returning past the
+            // newest entry can put it back exactly.
+            None => {
+                self.draft = std::mem::take(&mut self.text);
+                self.history.len() - 1
+            }
+            // Already at the oldest: stay there rather than wrapping. Wrapping
+            // would silently jump to the newest and look like a lost entry.
+            Some(0) => return false,
+            Some(index) => index - 1,
+        };
+        self.apply_recall(Some(index));
+        true
+    }
+
+    /// Steps forward through history, and past the newest back to the draft.
+    pub fn recall_next(&mut self) -> bool {
+        let Some(index) = self.recall else {
+            return false;
+        };
+        if index + 1 < self.history.len() {
+            self.apply_recall(Some(index + 1));
+        } else {
+            let draft = std::mem::take(&mut self.draft);
+            self.set_recalled_text(draft);
+            self.recall = None;
+        }
+        true
+    }
+
+    fn apply_recall(&mut self, index: Option<usize>) {
+        self.recall = index;
+        let text = index
+            .and_then(|index| self.history.get(index))
+            .cloned()
+            .unwrap_or_default();
+        self.set_recalled_text(text);
+    }
+
+    /// A recalled line arrives ready to run or to amend, so the caret goes to
+    /// the end and any selection is dropped — the next keystroke should extend
+    /// the line, not replace it.
+    fn set_recalled_text(&mut self, text: String) {
+        self.text = text;
+        self.caret = self.text.len();
+        self.select_all = false;
+        self.preedit.clear();
+    }
+
     /// Returns one terminal submission and resets all transient edit state.
     pub fn take_submission(&mut self) -> Option<String> {
         let mut submission = (!self.text.is_empty()).then(|| std::mem::take(&mut self.text));
@@ -59,6 +149,11 @@ impl ComposerState {
         self.preedit.clear();
         self.select_all = false;
         self.submit_error = None;
+        self.caret = 0;
+        // Sending ends a recall: the next Up should start from the newest
+        // entry, not from wherever the last browse happened to stop.
+        self.recall = None;
+        self.draft.clear();
         submission
     }
 
@@ -603,6 +698,119 @@ mod tests {
         }
     }
 
+    // --- recall -----------------------------------------------------------
+
+    /// The reason the input area is worth its permanent share of the window:
+    /// a sent line survives being sent.
+    #[test]
+    fn a_sent_line_can_be_recalled_and_resent() {
+        let mut composer = state("");
+        for line in ["build", "test", "deploy"] {
+            composer.text = line.to_owned();
+            composer.caret = line.len();
+            let sent = composer.take_submission().expect("a submission");
+            composer.remember(&sent);
+        }
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "deploy", "newest first");
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "test");
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "build");
+        assert_eq!(composer.caret, composer.text.len(), "ready to amend or run");
+    }
+
+    /// Recall must not lose what you were in the middle of typing — that is
+    /// the difference between a convenience and a trap.
+    #[test]
+    fn returning_past_the_newest_entry_restores_the_draft() {
+        let mut composer = state("");
+        composer.remember("build");
+        composer.text = "half-typed".to_owned();
+        composer.caret = composer.text.len();
+
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "build");
+        assert!(composer.recall_next());
+        assert_eq!(composer.text, "half-typed", "exactly what was being typed");
+        assert_eq!(composer.caret, composer.text.len());
+        // Already back at the draft: nothing further to step to.
+        assert!(!composer.recall_next());
+    }
+
+    /// Stopping at the oldest rather than wrapping. Wrapping would jump to the
+    /// newest and read as an entry that vanished.
+    #[test]
+    fn recall_stops_at_the_ends_instead_of_wrapping() {
+        let mut composer = state("");
+        composer.remember("only");
+        assert!(composer.recall_previous());
+        assert!(!composer.recall_previous(), "oldest is a floor, not a loop");
+        assert_eq!(composer.text, "only");
+
+        let mut empty = state("");
+        assert!(!empty.recall_previous(), "no history is not an error");
+        assert!(!empty.recall_next());
+    }
+
+    #[test]
+    fn repeating_a_command_does_not_repeat_it_in_history() {
+        let mut composer = state("");
+        composer.remember("status");
+        composer.remember("status");
+        composer.remember("status\r");
+        composer.recall_previous();
+        assert_eq!(composer.text, "status");
+        assert!(
+            !composer.recall_previous(),
+            "one entry, however many times it was sent"
+        );
+    }
+
+    #[test]
+    fn history_is_bounded_and_drops_the_oldest_first() {
+        let mut composer = state("");
+        for index in 0..MAX_HISTORY + 10 {
+            composer.remember(&format!("line {index}"));
+        }
+        assert_eq!(composer.history.len(), MAX_HISTORY);
+        assert_eq!(
+            composer.history.first().map(String::as_str),
+            Some("line 10"),
+            "recall reaches backwards, so the oldest is what goes"
+        );
+    }
+
+    /// Sending must end the recall, or the next Up resumes from wherever the
+    /// last browse stopped rather than from the newest entry.
+    #[test]
+    fn sending_ends_the_recall() {
+        let mut composer = state("");
+        composer.remember("first");
+        composer.remember("second");
+        composer.recall_previous();
+        composer.recall_previous();
+        assert_eq!(composer.text, "first");
+
+        let sent = composer.take_submission().expect("a submission");
+        composer.remember(&sent);
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "first", "the newest entry, not where we were");
+    }
+
+    /// A recalled line is a starting point, so typing extends it rather than
+    /// replacing it — a leftover select-all would delete it on the next key.
+    #[test]
+    fn a_recalled_line_is_not_left_selected() {
+        let mut composer = state("");
+        composer.remember("cargo test");
+        select_all(&mut composer);
+        composer.recall_previous();
+        assert!(!composer.select_all);
+        insert(&mut composer, " --release");
+        assert_eq!(composer.text, "cargo test --release");
+    }
+
     // --- selection and limits --------------------------------------------
 
     #[test]
@@ -676,6 +884,7 @@ mod tests {
             select_all: true,
             submit_error: Some("old failure".to_owned()),
             caret: 7,
+            ..ComposerState::default()
         };
         assert_eq!(composer.take_submission().as_deref(), Some("echo ok\r"));
         assert_eq!(composer.text, "");
