@@ -34,7 +34,7 @@ fn scratch() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    std::env::temp_dir().join(format!("agenterm-con-a11y-{}-{nonce}", std::process::id()))
+    std::env::temp_dir().join(format!("minicon-a11y-{}-{nonce}", std::process::id()))
 }
 
 fn cli(executable: &str, endpoint: &str, args: &[&str]) -> Output {
@@ -44,7 +44,7 @@ fn cli(executable: &str, endpoint: &str, args: &[&str]) -> Output {
         .arg(endpoint)
         .args(args)
         .output()
-        .expect("agenterm-con CLI starts")
+        .expect("minicon CLI starts")
 }
 
 fn cli_json(executable: &str, endpoint: &str, args: &[&str]) -> serde_json::Value {
@@ -67,13 +67,13 @@ fn wait_for<T>(
         if let Some(value) = probe(running) {
             return value;
         }
-        if let Some(status) = running.child.try_wait().expect("poll agenterm-con") {
+        if let Some(status) = running.child.try_wait().expect("poll minicon") {
             let mut stderr = String::new();
             if let Some(mut stream) = running.child.stderr.take() {
                 let _ = stream.read_to_string(&mut stderr);
             }
             panic!(
-                "agenterm-con exited before {label}: {status}\nstderr:\n{}",
+                "minicon exited before {label}: {status}\nstderr:\n{}",
                 stderr.trim()
             );
         }
@@ -88,7 +88,7 @@ fn named<'a>(nodes: &'a [AccessibilityNode], name: &str) -> Option<&'a Accessibi
 
 #[test]
 fn real_atspi_tree_edits_command_and_activates_send() {
-    let executable = env!("CARGO_BIN_EXE_agenterm-con");
+    let executable = env!("CARGO_BIN_EXE_minicon");
     let scratch = scratch();
     std::fs::create_dir_all(&scratch).expect("create a11y scratch directory");
     std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700))
@@ -101,7 +101,7 @@ fn real_atspi_tree_edits_command_and_activates_send() {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("launch agenterm-con under AT-SPI session");
+        .expect("launch minicon under AT-SPI session");
     let mut running = RunningCon { child, scratch };
 
     wait_for(&mut running, "control endpoint", |_| {

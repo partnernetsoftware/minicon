@@ -10,7 +10,7 @@
 //! It shipped exactly that way: `CreatePseudoConsole`, `ResizePseudoConsole`
 //! and `ClosePseudoConsole` were imported statically. They arrived in Windows
 //! 10 build 17763 (1809), so on Windows Server 2016 (build 14393, still in
-//! support) `agenterm-con.exe` could not start at all. The adapter now
+//! support) `minicon.exe` could not start at all. The adapter now
 //! resolves them through `GetProcAddress`, and this gate is what keeps them
 //! resolved that way: re-adding the plain `use` is a one-line change that
 //! nothing else would notice.
@@ -91,11 +91,11 @@ fn shipped_binary() -> PathBuf {
     let mut path = std::env::current_exe().expect("test executable path");
     path.pop();
     path.pop();
-    path.push("agenterm-con.exe");
+    path.push("minicon.exe");
     assert!(
         path.is_file(),
-        "agenterm-con is missing at {}; build it with \
-         `cargo build -p agenterm-con --bin agenterm-con`",
+        "minicon is missing at {}; build it with \
+         `cargo build --bin minicon`",
         path.display()
     );
     path
@@ -143,7 +143,7 @@ fn no_static_import_locks_the_product_out_of_a_supported_windows() {
         .collect();
     assert!(
         blocking.is_empty(),
-        "agenterm-con.exe statically imports {blocking:?}. The PE loader \
+        "minicon.exe statically imports {blocking:?}. The PE loader \
          resolves these before `main`, so the program will not start on an \
          older supported Windows — it is not a degraded feature, it is an \
          entry-point dialog. Resolve them with GetProcAddress instead, as \
@@ -163,7 +163,7 @@ fn every_module_the_loader_needs_is_an_os_component_or_a_recorded_exception() {
         .collect();
     assert!(
         unexpected.is_empty(),
-        "agenterm-con.exe now depends on {unexpected:?}, which is neither a \
+        "minicon.exe now depends on {unexpected:?}, which is neither a \
          Windows Server 2016 OS component nor a recorded exception. A module \
          the target system lacks stops the program at load time. Either drop \
          the dependency or add it to KNOWN_NON_OS_MODULES with what it costs \

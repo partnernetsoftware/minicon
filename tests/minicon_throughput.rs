@@ -39,7 +39,7 @@ fn unique_suffix() -> String {
 
 fn control_endpoint(suffix: &str) -> String {
     if cfg!(windows) {
-        format!(r"pipe:\\.\pipe\agenterm-con-throughput-{suffix}")
+        format!(r"pipe:\\.\pipe\minicon-throughput-{suffix}")
     } else {
         let base = agenterm_platform::ipc::native_runtime_directory();
         let _ = std::fs::create_dir_all(&base);
@@ -56,14 +56,14 @@ fn control_endpoint(suffix: &str) -> String {
     }
 }
 
-fn agenterm_con_binary() -> PathBuf {
+fn minicon_binary() -> PathBuf {
     let mut path = std::env::current_exe().expect("test executable path");
     path.pop();
     path.pop();
-    path.push(format!("agenterm-con{}", std::env::consts::EXE_SUFFIX));
+    path.push(format!("minicon{}", std::env::consts::EXE_SUFFIX));
     assert!(
         path.is_file(),
-        "agenterm-con is missing at {}",
+        "minicon is missing at {}",
         path.display()
     );
     path
@@ -74,7 +74,7 @@ fn invoke(exe: &Path, endpoint: &str, arguments: &[&str]) -> Output {
         .args(["cli", "--control", endpoint])
         .args(arguments)
         .output()
-        .expect("agenterm-con CLI must start")
+        .expect("minicon CLI must start")
 }
 
 fn error_text(output: &Output) -> String {
@@ -118,7 +118,7 @@ fn tab_id(value: &Value) -> &str {
 #[test]
 #[ignore = "owned by the dedicated sustained-output qualification gate"]
 fn sustained_long_output_keeps_control_and_sibling_responsive() {
-    let exe = agenterm_con_binary();
+    let exe = minicon_binary();
     let exe = exe.as_path();
     let endpoint = control_endpoint(&unique_suffix());
     let mut host = Command::new(exe);
@@ -128,7 +128,7 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     } else {
         host.args(["-e", "/bin/bash", "--norc", "--noprofile"]);
     }
-    let child = host.spawn().expect("agenterm-con GUI must start");
+    let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui(child);
 
     let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
@@ -274,7 +274,7 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     );
 
     eprintln!(
-        "AGENTERM_CON_EVIDENCE agenterm_con_throughput::sustained_long_output_keeps_control_and_sibling_responsive {}",
+        "AGENTERM_CON_EVIDENCE minicon_throughput::sustained_long_output_keeps_control_and_sibling_responsive {}",
         serde_json::json!({
             "bytes": OUTPUT_BYTES,
             "elapsed_ms": elapsed.as_millis(),

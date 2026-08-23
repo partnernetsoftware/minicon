@@ -1,4 +1,4 @@
-//! Black-box integration tests for `agenterm-con`, run against the real
+//! Black-box integration tests for `minicon`, run against the real
 //! compiled binary — not the `#[cfg(test)]` unit tests inside the binary
 //! itself, which exercise pure functions in isolation and cannot prove the
 //! *wiring* between a real window/PTY session and those functions is
@@ -12,7 +12,7 @@
 //!
 //! The public control CLI drives the real session while `--emit-snapshot`
 //! supplies structured observation. Journey JSON exists only in this test
-//! harness and is translated into ordinary `agenterm-con cli` invocations;
+//! harness and is translated into ordinary `minicon cli` invocations;
 //! the product binary intentionally has no script runtime.
 //!
 //! Ordinary CI remains no-activate and cannot prove a desktop IME. The ignored
@@ -79,8 +79,8 @@ unsafe extern "system" {
 const TEST_JOURNEY_ARG: &str = "--test-control-journey";
 
 fn binary() -> &'static str {
-    // `agenterm-con` is its own workspace package now, so
-    // `CARGO_BIN_EXE_agenterm-con` is no longer defined when compiling this
+    // `minicon` is its own workspace package now, so
+    // `CARGO_BIN_EXE_minicon` is no longer defined when compiling this
     // package's tests -- that variable only covers bins declared in the *same*
     // package, and the compile error it produces took linux-x86_64 red at the
     // all-target Clippy gate. Resolve the path at run time instead: an
@@ -91,13 +91,13 @@ fn binary() -> &'static str {
         let mut path = std::env::current_exe().expect("test executable path");
         path.pop();
         path.pop();
-        path.push(format!("agenterm-con{}", std::env::consts::EXE_SUFFIX));
+        path.push(format!("minicon{}", std::env::consts::EXE_SUFFIX));
         assert!(
             path.is_file(),
-            "agenterm-con is missing at {}; build it with \
-             `cargo build -p agenterm-con --bin agenterm-con`. It left this \
+            "minicon is missing at {}; build it with \
+             `cargo build --bin minicon`. It left this \
              package in the lightweight-package split, so a bare \
-             `cargo test -p agenterm` no longer builds it as a side effect.",
+             `cargo test` no longer builds it as a side effect.",
             path.display()
         );
         path.to_string_lossy().into_owned()
@@ -287,7 +287,7 @@ fn write_journey(dir: &Path, commands_json: &str) -> PathBuf {
 fn unique_control_endpoint(dir: &Path) -> String {
     if cfg!(windows) {
         return format!(
-            r"pipe:\\.\pipe\agenterm-con-blackbox-{}-{}",
+            r"pipe:\\.\pipe\minicon-blackbox-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -686,7 +686,7 @@ fn invoke_mouse(
     )
 }
 
-/// Owns a spawned `agenterm-con` child and guarantees it is killed even if
+/// Owns a spawned `minicon` child and guarantees it is killed even if
 /// an assertion panics mid-test — otherwise a failing test leaks a live GUI
 /// process (and its own child shell) for the rest of the run.
 struct ConSession {
@@ -697,7 +697,7 @@ struct ConSession {
 }
 
 impl ConSession {
-    /// Spawns `agenterm-con --no-activate <extra_args before -e>`. `extra_args`
+    /// Spawns `minicon --no-activate <extra_args before -e>`. `extra_args`
     /// must come before any `-e`, matching this binary's own contract that
     /// `-e` consumes the remainder of the command line verbatim.
     fn spawn<S: AsRef<std::ffi::OsStr>>(dir: &Path, extra_args: &[S]) -> Self {
@@ -739,7 +739,7 @@ impl ConSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("spawn agenterm-con");
+            .expect("spawn minicon");
         let host_pid = child.id();
         let driver_error = std::sync::Arc::new(std::sync::Mutex::new(None));
         let driver = journey.map(|journey| {
@@ -898,7 +898,7 @@ fn version_and_help_are_synchronous_and_never_open_a_window() {
         .output()
         .expect("run --version");
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).starts_with("agenterm-con "));
+    assert!(String::from_utf8_lossy(&version.stdout).starts_with("minicon "));
 
     let help = Command::new(binary())
         .arg("--help")
@@ -977,7 +977,7 @@ fn nonexistent_program_via_dash_e_exits_cleanly_instead_of_hanging() {
     let _dir = scratch_dir("bad-e");
     let mut child = Command::new(binary())
         .arg("--no-activate")
-        .args(["-e", "definitely-not-a-real-program-agenterm-con-test"])
+        .args(["-e", "definitely-not-a-real-program-minicon-test"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -990,7 +990,7 @@ fn nonexistent_program_via_dash_e_exits_cleanly_instead_of_hanging() {
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
-            panic!("agenterm-con hung instead of exiting on a spawn failure");
+            panic!("minicon hung instead of exiting on a spawn failure");
         }
         std::thread::sleep(Duration::from_millis(30));
     };
@@ -1037,7 +1037,7 @@ fn controlled_text_and_paste_both_reach_the_pty() {
 #[test]
 fn cjk_output_from_a_real_child_process_appears_as_actual_characters() {
     let _guard = gui_test_guard();
-    // Complements the pixel-level CJK regression test (agenterm-con.rs's own
+    // Complements the pixel-level CJK regression test (minicon.rs's own
     // font fallback fix) with the layer it cannot cover: that real UTF-8
     // bytes from a real child process survive PTY -> vt100 -> snapshot
     // intact. This does not prove the glyphs were *painted* (no pixels
@@ -1588,7 +1588,7 @@ fn repeated_ctrl_wheel_zoom_cycles_survive_without_crashing() {
     while Instant::now() < deadline {
         if let Ok(Some(status)) = session.child.try_wait() {
             panic!(
-                "agenterm-con exited on its own during/after Ctrl+wheel zoom cycling \
+                "minicon exited on its own during/after Ctrl+wheel zoom cycling \
                  (status: {status:?}) — this is the crash under investigation"
             );
         }
@@ -1717,7 +1717,7 @@ fn controlled_screenshot_produces_a_valid_nonempty_png() {
     let _guard = gui_test_guard();
     // --emit-snapshot proves text; this proves the *feedback* half the
     // product's north star calls out by name — screenshots, not just
-    // structured text — actually exists for agenterm-con specifically. Not
+    // structured text — actually exists for minicon specifically. Not
     // a pixel-content assertion (paint_cells's own tests own that); this is
     // "the file exists, decodes, and is the right size," which is what a
     // driving agent needs to trust before it looks at the image at all.
@@ -1854,7 +1854,7 @@ fn controlled_resize_storm_reports_successful_frames_and_exits_cleanly() {
     let stats: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&stats_path).expect("read resize perf stats"))
             .expect("parse resize perf stats");
-    eprintln!("agenterm-con resize perf: {stats}");
+    eprintln!("minicon resize perf: {stats}");
     let frames = stats["frames"].as_u64().expect("frames");
     assert!(frames > 0, "resize journey rendered no frames");
     if cfg!(windows) {
@@ -1943,7 +1943,7 @@ fn zooming_in_while_the_shell_is_actively_producing_output_survives() {
     while Instant::now() < deadline {
         if let Ok(Some(status)) = session.child.try_wait() {
             panic!(
-                "agenterm-con exited on its own while zooming in against a busy shell \
+                "minicon exited on its own while zooming in against a busy shell \
                  (status: {status:?}) — this is the crash under investigation"
             );
         }
@@ -1957,14 +1957,14 @@ fn rapid_ctrl_wheel_zoom_burst_against_a_repainting_tui_survives() {
     let _guard = gui_test_guard();
     // A third hypothesis on the same user-reported "Ctrl+wheel zoom
     // crashes" report, and the one that led to an actual fix: it might not
-    // be agenterm-con itself panicking, but the *hosted program* struggling
+    // be minicon itself panicking, but the *hosted program* struggling
     // under a burst of resize notifications. Before this test prompted it,
     // `zoom_font` fired a real ConPTY resize on *every single notch* with
     // zero debouncing — unlike a window drag-resize, which already goes
     // through `RESIZE_DEBOUNCE`. A hosted program that repaints on every
     // resize (a real TUI, unlike an idle `cmd.exe` prompt) getting a dozen
     // resizes within milliseconds is a real, previously-untested stress
-    // shape, and if the child crashed, agenterm-con would correctly (by its
+    // shape, and if the child crashed, minicon would correctly (by its
     // own child-exit design) close its window right alongside it — which
     // from the user's side would look exactly like "the terminal window
     // just vanishes, no error."
@@ -2006,7 +2006,7 @@ fn rapid_ctrl_wheel_zoom_burst_against_a_repainting_tui_survives() {
         if let Ok(Some(status)) = session.child.try_wait() {
             eprintln!("PROCESS SELF-EXITED: status={status:?}, last snapshot: {last_snapshot:?}");
             panic!(
-                "CRASH REPRODUCED: agenterm-con exited on its own during rapid zoom burst against less"
+                "CRASH REPRODUCED: minicon exited on its own during rapid zoom burst against less"
             );
         }
         if let Ok(bytes) = std::fs::read(&session.snapshot_path)

@@ -15,31 +15,31 @@ path = "src/main.rs"
 
 [[test]]
 name = "minicon_blackbox"
-path = "tests/agenterm_con_blackbox.rs"
+path = "tests/minicon_blackbox.rs"
 
 [[test]]
 name = "minicon_control"
-path = "tests/agenterm_con_control.rs"
+path = "tests/minicon_control.rs"
 
 [[test]]
 name = "minicon_alignment"
-path = "tests/agenterm_con_alignment.rs"
+path = "tests/minicon_alignment.rs"
 
 [[test]]
 name = "minicon_throughput"
-path = "tests/agenterm_con_throughput.rs"
+path = "tests/minicon_throughput.rs"
 
 [[test]]
 name = "minicon_accessibility_linux"
-path = "tests/agenterm_con_accessibility_linux.rs"
+path = "tests/minicon_accessibility_linux.rs"
 
 [[test]]
 name = "minicon_load_portability"
-path = "tests/agenterm_con_load_portability.rs"
+path = "tests/minicon_load_portability.rs"
 
 [[test]]
 name = "minicon_console_agent"
-path = "tests/agenterm_con_console_agent.rs"
+path = "tests/minicon_console_agent.rs"
 
 [dependencies]
 agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4c80da07dbd21461199c1aeb16a475e6c76f7444", default-features = false, features = ["clipboard", "filesystem-publish", "filesystem-read", "font", "ime", "ipc", "parent-console", "pty", "runtime", "screenshot", "window"] }
@@ -77,3 +77,35 @@ winresource = "0.1"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("default"))'] }
+# agenterm-con carried `con-dev` / `con-release` / `con-release-fast` for one
+# reason: agenterm's workspace profiles are `panic = "abort"`, and native
+# callbacks must not unwind across FFI while panics must still be contained.
+# A standalone repo has no aborting workspace to escape — Cargo's defaults are
+# already unwind — so the indirection is gone and the requirement is stated
+# directly here instead of being inherited by accident.
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = true
+
+# Fast optimized builds for local iteration; keeps the delivery profile focused
+# on size.
+[profile.release-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+# agenterm-con was built against agenterm's vendored forks, not the crates.io
+# releases, and the extraction dropped them. vt100 is not optional: the product
+# needs `take_damage` / `ScreenDamage` / `RowRange` / cursor shape+blink /
+# `scrollback_len`, none of which exist upstream — line-level VT damage is the
+# render path's whole design. softbuffer is vendored so macOS frames carry the
+# display's color space and Core Animation presents without a per-frame vImage
+# conversion. Both are pinned to the same agenterm revision as the crates
+# above, so the fork keeps one source of truth instead of being copied here.
+[patch.crates-io]
+vt100 = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4c80da07dbd21461199c1aeb16a475e6c76f7444" }
+softbuffer = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4c80da07dbd21461199c1aeb16a475e6c76f7444" }

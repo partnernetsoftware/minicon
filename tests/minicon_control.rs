@@ -47,7 +47,7 @@ fn unique_suffix() -> String {
 
 fn control_endpoint(suffix: &str) -> String {
     if cfg!(windows) {
-        format!(r"pipe:\\.\pipe\agenterm-con-test-{suffix}")
+        format!(r"pipe:\\.\pipe\minicon-test-{suffix}")
     } else {
         let base = agenterm_platform::ipc::native_runtime_directory();
         let _ = fs::create_dir_all(&base);
@@ -113,7 +113,7 @@ fn invoke(exe: &Path, endpoint: &str, arguments: &[&str]) -> Output {
     let mut command = Command::new(exe);
     command.args(["cli", "--control", endpoint]);
     command.args(arguments);
-    command.output().expect("agenterm-con CLI must start")
+    command.output().expect("minicon CLI must start")
 }
 
 fn output_text(output: &Output) -> String {
@@ -169,23 +169,23 @@ fn tab_id(value: &Value) -> &str {
     value.as_str().expect("tab ID must be a string")
 }
 
-/// Resolve `agenterm-con` next to the test executable.
+/// Resolve `minicon` next to the test executable.
 ///
-/// `CARGO_BIN_EXE_agenterm-con` only exists for bins declared in the *same*
-/// package, and `agenterm-con` moved to its own workspace package -- the
+/// `CARGO_BIN_EXE_minicon` only exists for bins declared in the *same*
+/// package, and `minicon` moved to its own workspace package -- the
 /// compile error that produces is what took linux-x86_64 red at the all-target
 /// Clippy gate. An integration test runs from `target/<profile>/deps/`, so the
-/// binary sits one directory up. Same resolution as `tests/agenterm_con_blackbox.rs`.
-fn agenterm_con_binary() -> PathBuf {
+/// binary sits one directory up. Same resolution as `tests/minicon_blackbox.rs`.
+fn minicon_binary() -> PathBuf {
     let mut path = std::env::current_exe().expect("test executable path");
     path.pop();
     path.pop();
-    path.push(format!("agenterm-con{}", std::env::consts::EXE_SUFFIX));
+    path.push(format!("minicon{}", std::env::consts::EXE_SUFFIX));
     assert!(
         path.is_file(),
-        "agenterm-con is missing at {}; build it with \
-         `cargo build -p agenterm-con --bin agenterm-con`. It left this package \
-         in the lightweight-package split, so a bare `cargo test -p agenterm` no \
+        "minicon is missing at {}; build it with \
+         `cargo build --bin minicon`. It left this package \
+         in the lightweight-package split, so a bare `cargo test` no \
          longer builds it as a side effect.",
         path.display()
     );
@@ -194,12 +194,12 @@ fn agenterm_con_binary() -> PathBuf {
 
 #[test]
 fn gui_control_surface_isolated_multitab_black_box() {
-    let exe = agenterm_con_binary();
+    let exe = minicon_binary();
     let exe = exe.as_path();
     let suffix = unique_suffix();
     let endpoint = control_endpoint(&suffix);
     let screenshot = if cfg!(windows) {
-        std::env::temp_dir().join(format!("agenterm-con-{suffix}.png"))
+        std::env::temp_dir().join(format!("minicon-{suffix}.png"))
     } else {
         agenterm_platform::ipc::native_runtime_directory().join(format!("shot-{suffix}.png"))
     };
@@ -212,7 +212,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
         host.arg(arg);
     }
     // Launch with an interactive shell; inject ROOT_READY after control is up.
-    let child = host.spawn().expect("agenterm-con GUI must start");
+    let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
     let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
@@ -916,7 +916,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
     let mut screenshot_jobs = Vec::new();
     for (index, flood_id) in flood_ids.iter().enumerate() {
         let path =
-            std::env::temp_dir().join(format!("agenterm-con-{suffix}-concurrent-shot-{index}.png"));
+            std::env::temp_dir().join(format!("minicon-{suffix}-concurrent-shot-{index}.png"));
         let child = Command::new(exe)
             .args([
                 "cli",
@@ -978,7 +978,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
     assert_eq!(after_concurrent_shots["pending_control_screenshots"], 0);
     assert_eq!(after_concurrent_shots["active"], active_before_shots);
 
-    let raced_path = std::env::temp_dir().join(format!("agenterm-con-{suffix}-raced-shot.png"));
+    let raced_path = std::env::temp_dir().join(format!("minicon-{suffix}-raced-shot.png"));
     let raced_path_text = raced_path
         .to_str()
         .expect("raced screenshot path is Unicode")

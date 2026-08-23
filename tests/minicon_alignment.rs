@@ -6,15 +6,11 @@ use std::process::Command;
 use serde_json::Value;
 
 fn repo_root() -> PathBuf {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    if manifest
-        .join("crates/agenterm-con/alignment-contract.json")
-        .is_file()
-    {
-        manifest.to_owned()
-    } else {
-        manifest.join("../..")
-    }
+    // minicon is its own repository: the package manifest directory *is* the
+    // repo root, and the contract, the evidence registry and the PRD all sit
+    // on it. Inside agenterm this used to have to climb out of
+    // `crates/minicon/`.
+    Path::new(env!("CARGO_MANIFEST_DIR")).to_owned()
 }
 
 fn load_json(path: &Path) -> Value {
@@ -47,7 +43,7 @@ fn assert_exact_keys(value: &Value, expected: &[&str], context: &str) {
 #[test]
 fn machine_contract_matches_public_cli_and_registered_journeys() {
     let root = repo_root();
-    let package = root.join("crates/agenterm-con");
+    let package = root.clone();
     let contract = load_json(&package.join("alignment-contract.json"));
     let registry = load_json(&package.join("evidence-registry.json"));
 
@@ -69,11 +65,11 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
 
     for document in [&contract, &registry] {
         assert_eq!(document["schema_version"], 1, "unsupported schema");
-        assert_eq!(document["product"], "agenterm-con", "wrong product");
+        assert_eq!(document["product"], "minicon", "wrong product");
     }
 
     let mut registered = BTreeMap::new();
-    let manifest = fs::read_to_string(package.join("Cargo.toml")).expect("read con manifest");
+    let manifest = fs::read_to_string(package.join("Cargo.toml")).expect("read minicon manifest");
     for item in required_array(&registry, "evidence") {
         assert_exact_keys(
             item,
@@ -92,9 +88,12 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         let target = required_str(item, "test_target");
         let test_name = required_str(item, "test_name");
         let source = required_str(item, "source");
-        let package_source = source
-            .strip_prefix("crates/agenterm-con/")
-            .unwrap_or_else(|| panic!("con evidence source must be package-owned: {source}"));
+        // Sources are package-relative now that the package owns the repo.
+        assert!(
+            !source.starts_with('/') && !source.contains(".."),
+            "minicon evidence source must be package-owned: {source}"
+        );
+        let package_source = source;
         assert_eq!(required_str(item, "kind"), "public-black-box");
         assert_eq!(required_str(item, "emitter"), "cargo-test-harness");
         assert_eq!(required_str(item, "platform"), "windows-x86_64");
@@ -131,7 +130,7 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         "duplicate public command"
     );
     let control_prd = fs::read_to_string(root.join("prd/PRD_02_26_con_control_cli.md"))
-        .expect("read con control PRD");
+        .expect("read minicon control PRD");
     for capability in required_array(&contract, "capabilities") {
         assert_exact_keys(
             capability,
@@ -231,13 +230,13 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         );
     }
 
-    let Some(executable) = option_env!("CARGO_BIN_EXE_agenterm-con") else {
+    let Some(executable) = option_env!("CARGO_BIN_EXE_minicon") else {
         return;
     };
     let output = Command::new(executable)
         .args(["cli", "list-commands"])
         .output()
-        .expect("launch agenterm-con cli list-commands");
+        .expect("launch minicon cli list-commands");
     assert!(
         output.status.success(),
         "list-commands failed: {}",
@@ -247,6 +246,6 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
     let public_commands: BTreeSet<_> = stdout.lines().filter(|line| !line.is_empty()).collect();
     assert_eq!(
         public_commands, contracted_commands,
-        "machine contract and running agenterm-con CLI catalog diverged"
+        "machine contract and running minicon CLI catalog diverged"
     );
 }

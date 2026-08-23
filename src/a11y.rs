@@ -299,7 +299,7 @@ mod tests {
     fn snapshot_has_inner_named_controls() {
         let layout = Layout::new(960, 600, 1.0);
         let tree = tree(
-            "agenterm-con",
+            "minicon",
             "Inspect [@1]",
             layout,
             960,
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn extreme_frame_bounds_saturate_instead_of_collapsing() {
         let tree = tree(
-            "agenterm-con",
+            "minicon",
             "terminal",
             Layout::new(u32::MAX, u32::MAX, 1.0),
             u32::MAX,

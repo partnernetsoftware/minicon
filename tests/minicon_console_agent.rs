@@ -1,6 +1,6 @@
 //! The pre-ConPTY terminal backend, driven end to end.
 //!
-//! Windows Server 2016 has no pseudoconsole, so `agenterm-con` falls back to
+//! Windows Server 2016 has no pseudoconsole, so `minicon` falls back to
 //! hosting the child in a hidden console and scraping its screen buffer. That
 //! path can only be reached on a system old enough to lack ConPTY — which is
 //! neither CI nor any developer's machine — and a backend nobody can run is a
@@ -27,11 +27,11 @@ fn binary() -> PathBuf {
     let mut path = std::env::current_exe().expect("test executable path");
     path.pop();
     path.pop();
-    path.push("agenterm-con.exe");
+    path.push("minicon.exe");
     assert!(
         path.is_file(),
-        "agenterm-con is missing at {}; build it with \
-         `cargo build -p agenterm-con --bin agenterm-con`",
+        "minicon is missing at {}; build it with \
+         `cargo build --bin minicon`",
         path.display()
     );
     path
@@ -40,7 +40,7 @@ fn binary() -> PathBuf {
 fn scratch(label: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!(
-        "agenterm-con-console-agent-{label}-{}-{}",
+        "minicon-console-agent-{label}-{}-{}",
         std::process::id(),
         Instant::now().elapsed().as_nanos()
     ));
@@ -59,7 +59,7 @@ impl Session {
     fn start(label: &str) -> Self {
         let directory = scratch(label);
         let endpoint = format!(
-            r"pipe:\\.\pipe\agenterm-con-agent-{}-{label}",
+            r"pipe:\\.\pipe\minicon-agent-{}-{label}",
             std::process::id()
         );
         let child = Command::new(binary())
@@ -72,7 +72,7 @@ impl Session {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn agenterm-con");
+            .expect("spawn minicon");
         let session = Self { child, endpoint };
         session.wait_ready();
         session
@@ -318,7 +318,7 @@ fn console_agent_processes() -> usize {
         .args([
             "process",
             "where",
-            "name='agenterm-con.exe'",
+            "name='minicon.exe'",
             "get",
             "commandline",
         ])
@@ -328,7 +328,7 @@ fn console_agent_processes() -> usize {
     };
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter(|line| line.contains("--agenterm-console-agent"))
+        .filter(|line| line.contains("--miniconsole-agent"))
         .count()
 }
 
@@ -340,7 +340,7 @@ fn the_agent_argument_is_the_one_both_sides_agree_on() {
     let path: &Path = &binary();
     assert!(path.is_file());
     let output = Command::new(path)
-        .arg("--agenterm-console-agent")
+        .arg("--miniconsole-agent")
         .arg("not-a-handle")
         .output()
         .expect("run agent mode");

@@ -130,7 +130,7 @@ fn run_initializers(start: &'static Option<Initializer>, end: &'static Option<In
 
 #[cfg(windows)]
 #[unsafe(no_mangle)]
-pub extern "system" fn agenterm_con_entry() -> ! {
+pub extern "system" fn minicon_entry() -> ! {
     // Before the `.CRT$XI*` walk: those initializers may already unwind, and
     // unwinding is one of the things this call makes work.
     // SAFETY: no arguments, called exactly once, first in the process.

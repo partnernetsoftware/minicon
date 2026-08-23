@@ -1,4 +1,4 @@
-//! Machine-readable introspection and control for `agenterm-con`.
+//! Machine-readable introspection and control for `minicon`.
 //!
 //! Every other check in this codebase — is a color right, does a cursor
 //! appear where it should — is either a unit test against the pure encoding
@@ -17,7 +17,7 @@
 //!   session's visible state, written after each render when `--emit-snapshot
 //!   <path>` is set. A test (or another agent) polls this file instead of
 //!   capturing and OCRing pixels.
-//! - The public `agenterm-con cli` control endpoint drives keyboard, paste,
+//! - The public `minicon cli` control endpoint drives keyboard, paste,
 //!   pointer, wheel, wait and screenshot operations through the same product
 //!   paths as physical input, without embedding a second script runtime.
 //!
@@ -225,7 +225,7 @@ fn png_worker() -> std::io::Result<&'static mpsc::SyncSender<PngJob>> {
     match WORKER.get_or_init(|| {
         let (sender, receiver) = mpsc::sync_channel::<PngJob>(1);
         agenterm_platform::threading::spawn_named_detached(
-            "agenterm-con-png",
+            "minicon-png",
             Box::new(move || {
                 while let Ok(job) = receiver.recv() {
                     let PngJob {
@@ -301,7 +301,7 @@ mod tests {
 
     fn scratch(name: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "agenterm-con-{name}-{}-{}",
+            "minicon-{name}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -317,7 +317,7 @@ mod tests {
         let snapshot = ScreenSnapshot {
             cols: 80,
             rows: 24,
-            title: "agenterm-con".to_owned(),
+            title: "minicon".to_owned(),
             rows_text: vec!["hello".to_owned(), String::new()],
             cursor: CursorSnapshot {
                 row: 0,

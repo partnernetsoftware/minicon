@@ -19,12 +19,30 @@
               agenterm ──git依赖──> minicon 的 core(复用)
 ```
 
+## 产品文档
+
+PRD 根：[`prd/PRD_02_23_minicon.md`](prd/PRD_02_23_minicon.md)（终端渲染 / workspace 输入 /
+控制协议 CLI / 打包交付四个子模块）。机器契约：[`alignment-contract.json`](alignment-contract.json)
+与 [`evidence-registry.json`](evidence-registry.json)，由 `cargo test --test minicon_alignment` 强制。
+
 ## 构建
 
 ```bash
 cargo build --release        # 产物 target/release/minicon
 cargo test                   # 全量(含黑盒/吞吐门)
 ```
+
+## 已知状态（2026-08-23）
+
+- 依赖 agenterm 的 `agenterm-platform` / `agenterm-ui-core`，以及 agenterm 内 vendored 的
+  `vt100` / `softbuffer` fork，全部按同一 revision 钉死。vt100 fork 不是可选项：产品用到
+  `take_damage` / `ScreenDamage` / `RowRange` / cursor shape+blink / `scrollback_len`，
+  上游 0.16 都没有——行级 VT damage 是渲染路径的整个设计。
+- `cargo test`：130 单元 + alignment 契约 + 21 条公共黑盒中 20 条通过。
+  `controlled_resize_storm_reports_successful_frames_and_exits_cleanly` 在本机 macOS 红
+  （36 帧 > 非 Windows 分支的 24 帧预算）；同一条测试在 agenterm 的 `agenterm-con` 上
+  **同样红、同样 36 帧**，是既有的本机预算问题，与迁出无关。
+- 体积门与独立 CI 未随迁出带过来，见 [交付子模块](prd/PRD_02_27_con_delivery.md)。
 
 ## 本仓规则
 
