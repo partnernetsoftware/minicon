@@ -982,12 +982,22 @@ dependencies = [
  "agenterm-platform",
  "agenterm-ui-core",
  "itoa",
+ "minicon-core",
  "object",
  "png",
  "serde_json",
  "unicode-width",
  "vt100",
  "winresource",
+]
+
+[[package]]
+name = "minicon-core"
+version = "0.1.0"
+dependencies = [
+ "itoa",
+ "serde_json",
+ "unicode-width",
 ]
 
 [[package]]

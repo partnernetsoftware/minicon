@@ -33,6 +33,54 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   earlier retired executable names. `dist/minicon.exe` is the sole Windows
   con artifact users can accidentally select after a successful build.
 
+## Load-time portability
+
+The oldest Windows this product claims is **Windows Server 2016 / Windows 10
+version 1607 (build 14393)**. That claim is a delivery property, not a runtime
+one: the PE loader resolves every static import before `main`, so a single
+import the target lacks refuses the whole program with a dialog naming a symbol
+the user cannot act on. No panic hook, log or diagnostic sink can observe it,
+and no other gate in this repository can see it either, because they all run on
+machines new enough to satisfy the import.
+
+- [x] no static import locks the product out of a supported Windows. ConPTY's
+  three entry points (build 17763) and `SetThreadDescription` are resolved at
+  run time instead.
+- [x] a documented minimum version is treated as evidence, not proof.
+  `SetThreadDescription` is documented as available in 1607 — which *is* Server
+  2016 — and is still absent there, because 1607 implements it only in
+  `KernelBase.dll` and the `kernel32` forwarder arrived in 1703. SDK header
+  guards do not catch this. Only the target machine settles it.
+- [x] **no Visual C++ redistributable.** The VC runtime is linked statically and
+  every remaining module is a Windows component; the Universal CRT is an
+  operating-system component, not a redistributable. `panic = "unwind"` is
+  preserved — panic containment is not traded away for the dependency.
+- [x] a custom PE entry (`/ENTRY`) obliges the program to run the CRT
+  initialization the MSVC startup object would have. `__vcrt_initialize` is
+  required and is not reachable through the `.CRT$XI*` table this product walks;
+  omitting it links cleanly and then dies on the first panic at
+  `STATUS_STACK_BUFFER_OVERRUN`, which reads as stack corruption and is a
+  missing constructor. `__security_init_cookie` is *not* required — measured,
+  not assumed: the cookie is already random without it.
+- [x] a gate parses the shipped executable's import table with a pure-Rust
+  parser (no `dumpbin` on PATH) and fails on any blocker symbol, or on any
+  module that is neither a Server 2016 OS component nor a recorded exception.
+  The exception list is empty, which is what makes a future redistributable
+  dependency turn it red instead of quietly widening what a user must install.
+  The gate was negative-controlled — adding an actually-imported symbol to the
+  blocker list turns it red — so it is not a vacuous assertion.
+- [x] `scripts/probe-imports.ps1` answers the whole question from the target
+  machine in one pass, because the loader names only one missing symbol at a
+  time and iterating costs a round trip per symbol, paid by whoever owns that
+  machine. It parses the PE itself (the target has no Visual Studio) and
+  self-tests that a nonexistent export fails to resolve and a universal one
+  succeeds before printing an all-clear — an all-clear being also what a broken
+  probe prints.
+
+Verified on a user's Windows Server 2016 on 2026-08-23: all named imports
+resolve, the program starts, and `--status` reports the fallback backend and a
+correct half/full-width font measurement.
+
 ## 迁出后的交付差异（2026-08-23）
 
 本子树随代码从 agenterm 迁入独立仓 `partnernetsoftware/minicon`。以下三条是**迁出时确实
@@ -43,11 +91,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   没有要逃的 aborting workspace，Cargo 默认就是 unwind，所以本仓改为直接在
   `[profile.release]` 里显式写 `panic = "unwind"`，不再要那层间接。下方 `con-*` 条目描述的
   是 agenterm 时期的实现。
-- [ ] **体积门没有跟过来。** `release_budget_bytes = 1,048,575` 的强制点在 agenterm 的 rh
-  管线里（`scripts/artifacts.json`、`scripts/rh/*.rh`、`tests/rh_regression.rs`），那是
-  agenterm-rh 的产物，未随本仓迁出。本仓目前**没有任何自动体积门**，1 MiB 上限暂时只是
-  文字要求。参考：2026-08-23 本机 macOS `release` 产物 1,393,056 字节；该数字不是交付物
-  （交付物是 Windows PE，历史实测 561,152），列在此处只为说明本仓当前无门可依。
+- [x] **体积门已在本仓重建。** agenterm 的 rh 管线（`scripts/artifacts.json`、
+  `scripts/rh/*.rh`、`tests/rh_regression.rs`）未随迁出带过来，一度使「严格小于 1 MiB」
+  成为无人检查的文字要求——而产品页面同时宣称该上限是被强制的。一个没有度量的预算是
+  愿望，一条没有门的公开承诺比不承诺更糟。现由
+  `tests/minicon_load_portability.rs::the_shipped_executable_stays_under_the_product_budget`
+  直接量取交付产物字节数并在超限时失败，同时打印余量，让裕度收窄在变成失败之前可见。
+  2026-08-23 实测 Windows PE 761,856 字节，余量 286,719。
+  它刻意不是警告阈值：这个数字是产品承诺，构建就应该在它上面失败。
 - [~] **独立 CI 已移植，但停放中。** `ci-agenterm-con.yml` 已从 agenterm 移到本仓
   `.github/workflows/ci-minicon.yml.disabled`，`.disabled` 后缀期间不触发，一条
   `git mv` 即可启用。两处适配：`--profile con-release-fast` → `--profile release-fast`、

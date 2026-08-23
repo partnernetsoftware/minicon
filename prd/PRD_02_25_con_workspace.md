@@ -56,6 +56,25 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 - [x] the local chrome owns a vertically scrollable left tree with row-level
   close targets and top `z`/`Z` font controls, plus a distinct bottom composer
   input and send action.
+- [x] the tree header names the product, not a category. It reads `MiniCon`,
+  which is the trademark and reads the same in every language, rather than a
+  translatable noun.
+- [x] the header row carries a language switch left of the size controls,
+  giving `MiniCon 中 En z Z`. Two entries rather than one toggle: a toggle
+  labelled with the language you are leaving is unreadable to exactly the
+  person who needs it. Each is written in the language it selects, and the
+  active one is drawn in the accent colour, so the control reports state as
+  well as offering a change.
+- [x] **only chrome is translated.** Everything a child process prints is
+  passed through untouched, and that line does not move: a terminal that
+  rewrote program output would be lying about what ran. Chrome strings live in
+  a struct rather than a keyed lookup, so a missing translation is a compile
+  error and not a blank label found by a user.
+- [x] the language is reported by `ui-snapshot` as a stable tag, so automation
+  can read and assert it without matching a display label.
+- [x] the four header tools stay ordered and disjoint across window widths and
+  DPI scales. An overlap would make one of them unreachable, which is a defect
+  no rendering test would notice.
 - [x] Linux `minicon` publishes that chrome as a real AT-SPI child tree
   (`Tabs`, `Session`, `Command`, `SEND`, plus Session child `OffscreenField`)
   so `cu tree --window` is not the one-node X11 title frame. winit/softbuffer
@@ -114,6 +133,32 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
 ## External composer input
 
+- [x] the composer has a caret, as a byte offset into its text. Typing inserts
+  there, Backspace deletes before it and Delete at it, Left/Right move by
+  characters and Home/End to the ends, and a pointer click places it. Before
+  this the widget had no caret at all — editing appended and deleted at the end,
+  so text that scrolled out of view was not merely hidden but unreachable, there
+  being nothing to move.
+- [x] a click resolves the pointer column against the **same window the painter
+  drew**. For a scrolled line an offset into the full buffer is a different
+  character than the one under the pointer. Clicking the right half of a
+  double-width character puts the caret after it, which is where the pointer
+  visually is.
+- [x] the painted window follows the caret, not the end of the line. Anchoring
+  to the end was correct only while the caret could not move; a caret moved left
+  must bring the view with it. A leading marker states that content is hidden,
+  rather than letting the line appear to begin where it does not.
+- [x] the caret is drawn as a rule, not as a `|` character. A character occupies
+  a cell and pushes everything after it sideways, which would make the column a
+  click lands on disagree with the column the text is painted at.
+- [x] every caret invariant exists because the offset is a byte index into
+  UTF-8: it is clamped onto a character boundary, and the clamp is *stored*, so
+  an edge case that returns early cannot leave a stale mid-character offset for
+  the next slice to panic on. The caret can outlive the text it pointed into,
+  because the accessibility bus can replace the contents underneath it.
+- [x] the composer stays a single line on purpose. Its content is submitted to a
+  shell, where a newline means "run", so wrapping would misrepresent what Enter
+  does; pasted newlines are folded to spaces.
 - [x] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY. `Ctrl+A/C/V/X` provide select-all, copy,
   bounded single-line paste and cut semantics. Every keyboard, IME, paste and

@@ -1,6 +1,6 @@
 //! Small bounded JSON codec for the fixed `minicon` schemas.
 
-pub(crate) const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_DEPTH: usize = 32;
 const MAX_NODES: usize = 65_536;
 const MAX_OBJECT_FIELDS: usize = 256;
@@ -532,7 +532,12 @@ fn hex(byte: u8) -> Option<u16> {
     }
 }
 
-#[cfg(test)]
+/// Serializes a value.
+///
+/// Was `#[cfg(test)]` while this lived inside the binary, where a test build
+/// compiled it. Across a crate boundary that no longer holds: a consumer's
+/// test build does not enable this crate's `test` cfg, so a test-only helper
+/// simply disappears. Public now, which is what it always effectively was.
 pub fn to_vec(value: &JsonValue) -> Vec<u8> {
     let mut output = Vec::new();
     write_value(value, &mut output, None, 0);

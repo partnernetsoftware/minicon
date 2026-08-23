@@ -1,0 +1,25 @@
+[package]
+name = "minicon-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "Host-neutral MiniCon logic: single-line editing and a bounded JSON codec"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/partnernetsoftware/minicon"
+
+[lib]
+path = "src/lib.rs"
+
+# Deliberately no platform, OS, window, or terminal-backend dependency, and no
+# `cfg` on architecture or operating system anywhere in the crate. That is the
+# property that makes this consumable from another product without dragging a
+# platform layer along, and it is enforced by a test rather than by intent.
+[dependencies]
+itoa = "1"
+unicode-width = "0.2"
+
+# Oracle only. The codec exists because `serde_json` is too large for this
+# product's budget, so the test compares against it rather than shipping it —
+# a dev-dependency cannot reach the production graph.
+[dev-dependencies]
+serde_json = "1"

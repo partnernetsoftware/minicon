@@ -19,11 +19,11 @@
 
 mod a11y;
 mod agent_interface;
-mod composer;
+use minicon_core::{composer, json};
+
 mod control;
 mod control_pending;
 mod font;
-mod json;
 mod palette;
 mod perf;
 mod raster_surface;

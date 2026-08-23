@@ -23,6 +23,31 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 - The two CLIs do not share a wire: the workbench uses its documented public
   transport, while con uses the private `ATC1` frame described below.
 
+## Self-description
+
+- [x] `minicon --status` reports what the running machine gave this build:
+  version, the PTY backend it selected and why, the font face the system
+  actually resolved to with its measured cell width, and the path it writes
+  diagnostics to. None of these can be answered by reading the source, because
+  all of them are properties of the machine rather than of the build.
+- [x] it opens no window and starts no session, deliberately. The machine that
+  most needs it is the one where starting a session is the thing that does not
+  work, so it shares the offline path with `--version` and `--help`.
+- [x] the font line carries a **measurement**, not just a face name. A face can
+  resolve and still be the wrong shape for a character grid — the failure a user
+  describes as "the font is off" — and a name cannot distinguish those. Where an
+  advance cannot be measured it says so, rather than reporting a width it does
+  not have: "not measured" is not "measured and wrong".
+- [x] the report re-runs the same questions the real paths ask, in the same
+  order, instead of reading a cached value. A status that can disagree with the
+  behaviour is worse than none, because it sends whoever reads it after the
+  wrong thing. A test pins that the output differs under
+  `AGENTERM_FORCE_CONSOLE_AGENT`, since a status that reads the same either way
+  is reporting a constant rather than a machine.
+- [x] `--status` is a top-level flag, not a control verb: it needs no endpoint
+  and no running GUI, so it is outside the `public_commands` contract that
+  governs `minicon cli`.
+
 ## Public command set
 
 - [x] `minicon cli list-commands` is an offline, no-window and no-endpoint

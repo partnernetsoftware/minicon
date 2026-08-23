@@ -273,7 +273,7 @@
           configure, no account to create.
         </p>
         <figure class="shot">
-          <img src="assets/minicon-window.png" width="960" height="600" loading="lazy"
+          <img src="assets/minicon-window.png" width="940" height="560" loading="lazy"
                data-i18n-alt="shotAlt"
                alt="The MiniCon window: a tab column on the left, a cmd.exe session filling the terminal area, and a send-to-tab input line along the bottom.">
           <figcaption data-i18n="shotCaption">An unmodified screenshot. Half-width and full-width characters occupy exactly one and two cells, which is the property most small terminals get wrong.</figcaption>
@@ -304,6 +304,11 @@
             <span class="index" data-i18n="old3Index">03 / CAPABILITY, NOT VERSION</span>
             <h3 data-i18n="old3Title">It asks the system, not a table</h3>
             <p data-i18n="old3Body">The backend is chosen by whether the exports exist. A version-number comparison would need revisiting the moment anything changed; the version is only used for the message you read.</p>
+          </div>
+          <div class="card">
+            <span class="index" data-i18n="old5Index">05 / SELF-DESCRIBING</span>
+            <h3 data-i18n="old5Title">It tells you what it got</h3>
+            <p data-i18n="old5Body">`--status` reports the backend this machine selected and why, the font face the system actually resolved to with its measured cell width, and where failures are written. It opens no window, so it works where opening a terminal is the thing that does not.</p>
           </div>
           <div class="card">
             <span class="index" data-i18n="old4Index">04 / NO REDISTRIBUTABLE</span>
@@ -447,7 +452,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           shotTitle: "This is the whole application.",
           shotLead: "A tab column, a terminal, and an input line. No panels to arrange, no workspace to configure, no account to create.",
           shotAlt: "The MiniCon window: a tab column on the left, a cmd.exe session filling the terminal area, and a send-to-tab input line along the bottom.",
-          shotCaption: "An unmodified screenshot. Half-width and full-width characters occupy exactly one and two cells, which is the property most small terminals get wrong.",
+          shotCaption: "An unmodified screenshot. The header carries the language switch; the last line is a live half-width/full-width alignment check, which is the property most small terminals get wrong.",
           oldTitle: "It runs where modern terminals cannot.",
           oldLead: "Windows gained a pseudoconsole in build 17763 (version 1809). Terminals built on it stop there — and Microsoft's ConPTY redistributable does not lower the floor, because it supports the same version as the in-box API. MiniCon runs on Windows Server 2016.",
           old1Index: "01 / RESOLVED, NOT IMPORTED",
@@ -459,6 +464,9 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           old3Index: "03 / CAPABILITY, NOT VERSION",
           old3Title: "It asks the system, not a table",
           old3Body: "The backend is chosen by whether the exports exist. A version-number comparison would need revisiting the moment anything changed; the version is only used for the message you read.",
+          old5Index: "05 / SELF-DESCRIBING",
+          old5Title: "It tells you what it got",
+          old5Body: "`--status` reports the backend this machine selected and why, the font face the system actually resolved to with its measured cell width, and where failures are written. It opens no window, so it works where opening a terminal is the thing that does not.",
           old4Index: "04 / NO REDISTRIBUTABLE",
           old4Title: "Nothing to install first",
           old4Body: "The VC runtime is linked in. A test parses the shipped executable's import table and fails if anything outside the Windows-provided set appears, so it cannot quietly regress.",
@@ -523,7 +531,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           shotTitle: "這就是應用程式的全部。",
           shotLead: "一欄分頁、一個終端機、一行輸入。沒有面板要排、沒有工作區要設定、沒有帳號要註冊。",
           shotAlt: "MiniCon 視窗：左側分頁欄、中間填滿終端區的 cmd.exe 工作階段、底部一行送往分頁的輸入列。",
-          shotCaption: "未經修圖的實際截圖。半形與全形字元剛好各佔一格與兩格——這正是多數小型終端機做錯的地方。",
+          shotCaption: "未經修圖的實際截圖。標題列帶語言切換；最後一行是即時的半形/全形對齊檢查——這正是多數小型終端機做錯的地方。",
           oldTitle: "在現代終端機跑不動的地方，它跑得動。",
           oldLead: "Windows 到 build 17763（1809 版）才有虛擬主控台。建構在它之上的終端機就停在那裡——而微軟的 ConPTY 可轉散發套件並不能往下相容，因為它支援的版本和系統內建的一模一樣。MiniCon 在 Windows Server 2016 上照樣跑。",
           old1Index: "01 / 執行期解析，而非匯入",
@@ -535,6 +543,9 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           old3Index: "03 / 看能力，不看版本號",
           old3Title: "它問系統，不查表",
           old3Body: "後端是依「匯出是否存在」來選的。用版本號比對的話，只要情況一變就得重新檢討；版本號只用在給你看的訊息裡。",
+          old5Index: "05 / 自我描述",
+          old5Title: "它會告訴你它拿到了什麼",
+          old5Body: "`--status` 回報這台機器選了哪個後端與原因、系統實際解析到哪個字體與其實測字寬，以及失敗寫在哪裡。它不開視窗，所以在「開終端機這件事本身就壞掉」的機器上照樣能跑。",
           old4Index: "04 / 免可轉散發套件",
           old4Title: "不必先裝別的東西",
           old4Body: "VC 執行期是靜態連結進去的。有一項測試會解析發佈執行檔的匯入表，一旦出現 Windows 自帶集合以外的東西就失敗，所以不可能悄悄退步。",

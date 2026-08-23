@@ -5,7 +5,7 @@
 
 This module is the root of the `minicon` product subtree. It owns the
 product definition, boundary, invariants, cross-cutting evidence, and the safe
-failure result. Its four child modules own third-level requirements, status, and
+failure result. Its child modules own third-level requirements, status, and
 measured evidence; a requirement stated in a child is not restated here.
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
@@ -17,7 +17,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 | 24 | [Terminal and rendering](PRD_02_24_con_terminal.md) | PTY、VT、行级 damage、present、字形、ISA、渲染性能 |
 | 25 | [Workspace and input](PRD_02_25_con_workspace.md) | Tab 树、chrome、composer、滚动条、选择、剪贴板、焦点 |
 | 26 | [Control protocol and public CLI](PRD_02_26_con_control_cli.md) | `minicon cli`、`ATC1` 帧、JSON 契约、快照/截图证据 |
-| 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、`con-*` profile、严格小于 1 MiB、独立 CI、体积历史 |
+| 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、`con-*` profile、严格小于 1 MiB、独立 CI、体积历史、加载期可移植性 |
+| 28 | [Shared core and reuse boundary](PRD_02_28_shared_core.md) | `minicon-core`、跨产品复用的可测边界、与 agenterm 的依赖方向分期 |
 
 ## Product outcome
 

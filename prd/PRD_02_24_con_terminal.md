@@ -75,6 +75,60 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   tab remains capturable but rejects further PTY input, parent promotion still
   holds, and closing the final retained tab ends the GUI cleanly.
 
+## PTY backend selection
+
+- [x] the pseudoconsole entry points are resolved at run time rather than
+  imported. Every static import is resolved by the PE loader before `main`, so
+  importing an API a supported Windows lacks does not degrade a feature — it
+  refuses to start the program, naming a symbol the user cannot act on. This is
+  a load-time property and belongs to [27](PRD_02_27_con_delivery.md); it is
+  restated here only because it is what makes a second backend reachable.
+- [x] the backend is selected by **capability, not by version number**. The
+  system either exports the pseudoconsole entry points or it does not, and that
+  is the whole decision. A build-number comparison would need revisiting the
+  moment a redistributable or servicing update changed the floor. The build
+  number is used only in the message a person reads.
+- [x] where ConPTY is absent, a **console agent** stands in: the executable
+  re-executes itself with an internal argument, that process takes a hidden
+  console, spawns the child into it, and polls the screen buffer with
+  `ReadConsoleOutputW`, synthesizing a terminal stream from what changed. The
+  agent is this product, not a third-party binary — nothing extra is deployed.
+- [x] the agent argument carries no product name. This adapter is shared with
+  `agenterm`, so any product name in it would appear in some other product's
+  command line, and a process list is public.
+- [x] the difference is sealed below the session contract: both backends use the
+  same pipes, the same output pump, the same command line and the same
+  environment block, and differ only in who creates the child. Nothing above
+  the adapter can tell which backend it got, and no terminal, chrome or control
+  code branches on it.
+- [x] the agent survives the interrupts it raises. `WriteConsoleInput` does not
+  generate a console control event — the console synthesizes one only for real
+  keyboard input — so Ctrl+C is delivered as `GenerateConsoleCtrlEvent` for the
+  console's process group, with pending keystrokes flushed first so they arrive
+  before the interrupt. The agent installs a handler that reports the event
+  handled; without one it dies and its Job Object takes the shell with it.
+  The inherited Ctrl+C-ignore flag is cleared, because that flag is inherited by
+  children and would leave the shell permanently uninterruptible.
+- [x] a resize is recorded by the control thread and applied by the polling
+  thread. Resizing the console from another thread races the poll's
+  `ReadConsoleOutputW`, whose rectangle is then larger than the buffer it reads;
+  a single failed read is survivable and no longer ends the session.
+- [~] the fallback is a screen-buffer mirror on a timer, not a pseudoconsole.
+  Output latency has a floor set by the polling interval, and a program driving
+  the console API in ways a screen buffer cannot express will not round-trip
+  perfectly. Both are accepted costs of running where no pseudoconsole exists.
+
+Evidence: seven journeys against a real forced-backend session — a shell starts
+and paints, typed input reaches the child and its *computed* output returns, a
+session survives resizes and stays usable, a wide character is not emitted twice
+for its two cells, closing the host leaves no orphan on an invisible console,
+Ctrl+C interrupts a running command and leaves the shell alive, and both sides
+agree on the argument. `AGENTERM_FORCE_CONSOLE_AGENT=1` selects the fallback on
+a modern system, without which this path would be reachable only on a machine
+old enough to need it — which is neither CI nor any developer's.
+
+Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
+
 ## Scheduling
 
 - [x] a native Wake services the bounded control queue first and shares one
@@ -142,6 +196,33 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   paint, and fails closed on bounded-queue overflow or nonconvergence.
 
 ## Fonts and glyphs
+
+- [x] the grid face is chosen by **measuring** candidates, not by taking the
+  first name that resolves. `CreateFontW` never fails on a missing family: the
+  GDI mapper substitutes the closest installed face and `FIXED_PITCH|FF_MODERN`
+  is a scoring hint, not a constraint — so the family a build asks for and the
+  face a machine renders with are different questions. Variable-pitch faces are
+  refused; `i`, `W` and `A` must share an advance; a family whose full-width
+  characters measure exactly two cells wins outright, because then one face
+  covers both halves and the ratio is exact by construction.
+- [x] cell width is the measured advance, not `tmAveCharWidth` — a font-wide
+  average that equals the real advance only when the face is monospaced, which
+  was the unchecked property. Glyph lookup starts at the selected family, or
+  ASCII would be drawn from a face whose advance has nothing to do with the
+  cell width.
+- [x] the resolved face is never validated by name. `GetTextFaceW` returns the
+  localized name, so a requested family and its own report of itself do not
+  compare equal; measurement is the only test that works.
+- [x] selection is memoized per size. `primary_metrics` is on the paint path —
+  every chrome string asks for the metrics of its own size — and measuring per
+  call turned one repaint into dozens of `CreateFontW` calls, which showed up as
+  intermittent failures under rapid font-size change. A test pins the cost,
+  since the absence of one is what let it through.
+- [x] the invariant is asserted, not assumed: the selected face is monospaced at
+  every size the product offers, and a full-width character occupies exactly two
+  cells. Nothing tested this before, which is why a machine-dependent
+  substitution could ship. Reported by `--status` as a measurement so a user can
+  confirm it on their own machine — see [26](PRD_02_26_con_control_cli.md).
 
 - [x] Windows glyph selection and gray8 coverage execute behind the platform
   `RasterGlyph` contract through bounded GDI calls with deterministic DC/font
