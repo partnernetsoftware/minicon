@@ -1,0 +1,98 @@
+/* Shared chrome for MiniCon documentation pages. Kept in one file so the
+   docs and the landing page cannot drift apart visually. */
+:root {
+  color-scheme: dark;
+  --bg: #0b1016;
+  --surface: #111821;
+  --border: #2b3948;
+  --text: #eef4f8;
+  --muted: #9baab8;
+  --green: #7ee787;
+  --cyan: #68d8f0;
+  --blue: #8bc8ff;
+  --amber: #f0c86b;
+  --mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 80% 0%, rgba(55, 129, 151, .12), transparent 24rem),
+    var(--bg);
+  font-family: var(--sans);
+  line-height: 1.65;
+}
+a { color: var(--blue); text-underline-offset: .18em; }
+a:hover { color: var(--text); }
+a:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
+
+.wrap { width: min(760px, 92vw); margin: 0 auto; }
+
+header.site {
+  border-bottom: 1px solid var(--border);
+  background: rgba(11, 16, 22, .84);
+  backdrop-filter: blur(10px);
+  position: sticky; top: 0; z-index: 10;
+}
+header.site .wrap {
+  display: flex; align-items: center; gap: 1.2rem;
+  padding: .85rem 0; flex-wrap: wrap;
+}
+.brand {
+  font-family: var(--mono); font-weight: 700; font-size: 1.05rem;
+  color: var(--text); text-decoration: none;
+  display: inline-flex; align-items: baseline; gap: .1rem;
+}
+.brand .tm { font-size: .6em; color: var(--muted); }
+header.site nav { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: .93rem; }
+header.site nav a { color: var(--muted); text-decoration: none; }
+header.site nav a:hover { color: var(--text); }
+
+main { padding: 3rem 0 4rem; }
+h1 { font-size: clamp(1.8rem, 4.5vw, 2.6rem); line-height: 1.15; margin: 0 0 .4rem; letter-spacing: -.02em; }
+.subtitle { color: var(--muted); margin: 0 0 2.4rem; font-size: 1.02rem; }
+h2 {
+  font-size: 1.32rem; margin: 2.6rem 0 .7rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--border);
+}
+h3 { font-size: 1.05rem; margin: 1.8rem 0 .5rem; color: var(--cyan); }
+p { margin: 0 0 1rem; }
+p, li { color: var(--muted); }
+strong { color: var(--text); }
+ul, ol { padding-left: 1.3rem; margin: 0 0 1rem; }
+li { margin-bottom: .4rem; }
+
+code {
+  font-family: var(--mono); font-size: .9em;
+  background: #070b10; border: 1px solid var(--border);
+  border-radius: .3rem; padding: .1rem .35rem; color: var(--text);
+}
+pre {
+  background: #070b10; border: 1px solid var(--border);
+  border-radius: .7rem; padding: 1rem 1.1rem;
+  overflow-x: auto; margin: 0 0 1.2rem;
+}
+pre code { background: none; border: 0; padding: 0; font-size: .87rem; }
+
+table { border-collapse: collapse; width: 100%; margin: 0 0 1.3rem; font-size: .93rem; }
+th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+th { background: var(--surface); color: var(--text); font-weight: 600; }
+td { color: var(--muted); }
+td code { white-space: nowrap; }
+
+.note {
+  border: 1px solid var(--border); border-left: 3px solid var(--amber);
+  border-radius: .5rem; background: var(--surface);
+  padding: 1rem 1.15rem; margin: 0 0 1.3rem;
+}
+.note p:last-child { margin-bottom: 0; }
+
+footer.site {
+  border-top: 1px solid var(--border);
+  padding: 2rem 0 3rem; color: var(--muted); font-size: .88rem;
+}
+footer.site a { color: var(--muted); }
+footer.site .links { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-bottom: .8rem; }

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en" data-locale="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1016">
+  <title>MiniCon™ — A terminal that is one file</title>
+  <meta name="description" content="MiniCon — a single-executable Windows terminal under 1 MiB. No installer, no runtime, no redistributable. Runs on Windows Server 2016 where ConPTY does not exist. Open source, scriptable, MIT OR Apache-2.0.">
+  <link rel="canonical" href="https://minicon.agenterm.work/">
+  <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
+  <link rel="alternate" hreflang="zh-Hant" href="https://minicon.agenterm.work/?lang=zh-Hant">
+  <link rel="alternate" hreflang="x-default" href="https://minicon.agenterm.work/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MiniCon">
+  <meta property="og:url" content="https://minicon.agenterm.work/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="zh_TW">
+  <meta property="og:title" content="MiniCon™ — A terminal that is one file">
+  <meta property="og:description" content="One executable under 1 MiB. No installer, no runtime, no redistributable. Runs where modern terminals cannot.">
+  <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="MiniCon™ — A terminal that is one file">
+  <meta name="twitter:description" content="One executable under 1 MiB. No installer, no runtime, no redistributable. Runs where modern terminals cannot.">
+  <meta name="twitter:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1016;
+      --surface: #111821;
+      --surface-2: #17212c;
+      --border: #2b3948;
+      --text: #eef4f8;
+      --muted: #9baab8;
+      --green: #7ee787;
+      --green-strong: #49c760;
+      --cyan: #68d8f0;
+      --blue: #8bc8ff;
+      --amber: #f0c86b;
+      --mono: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 78% 0%, rgba(55, 129, 151, .14), transparent 26rem),
+        linear-gradient(rgba(255, 255, 255, .018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .018) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, 32px 32px, 32px 32px, auto;
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    a { color: var(--blue); text-underline-offset: .18em; }
+    a:hover { color: var(--text); }
+    a:focus-visible, button:focus-visible {
+      outline: 3px solid var(--cyan);
+      outline-offset: 3px;
+    }
+    code { font-family: var(--mono); font-size: .92em; }
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+    .skip {
+      position: absolute; left: -999px; top: 0;
+      background: var(--surface-2); padding: .7rem 1rem;
+      border-radius: 0 0 .5rem 0; z-index: 20;
+    }
+    .skip:focus { left: 0; }
+
+    .wrap { width: min(1080px, 92vw); margin: 0 auto; }
+
+    header.site {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: blur(10px);
+      background: rgba(11, 16, 22, .84);
+      border-bottom: 1px solid var(--border);
+    }
+    header.site .wrap {
+      display: flex; align-items: center; gap: 1.2rem;
+      padding: .85rem 0; flex-wrap: wrap;
+    }
+    .brand {
+      font-family: var(--mono); font-weight: 700;
+      font-size: 1.05rem; letter-spacing: .02em;
+      color: var(--text); text-decoration: none;
+      display: inline-flex; align-items: baseline; gap: .1rem;
+    }
+    .brand .tm { font-size: .6em; color: var(--muted); }
+    header.site nav { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: .93rem; }
+    header.site nav a { color: var(--muted); text-decoration: none; }
+    header.site nav a:hover { color: var(--text); }
+    .header-tail { margin-left: auto; display: flex; align-items: center; gap: .75rem; }
+    .language-switch { display: inline-flex; border: 1px solid var(--border); border-radius: .5rem; overflow: hidden; }
+    .language-switch button {
+      background: transparent; border: 0; color: var(--muted);
+      font: inherit; font-size: .85rem; padding: .3rem .6rem; cursor: pointer;
+    }
+    .language-switch button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+
+    section { padding: 4rem 0; }
+    .hero { padding: 5rem 0 3rem; }
+    .eyebrow {
+      font-family: var(--mono); font-size: .82rem;
+      letter-spacing: .08em; text-transform: uppercase;
+      color: var(--green); margin: 0 0 1rem;
+    }
+    h1 {
+      font-size: clamp(2.1rem, 5.2vw, 3.5rem);
+      line-height: 1.12; margin: 0 0 .6rem; letter-spacing: -.02em;
+    }
+    h1 em { font-style: normal; color: var(--green); }
+    .hero-emotion { font-size: 1.15rem; color: var(--cyan); margin: 0 0 1.1rem; font-family: var(--mono); }
+    .lead { font-size: 1.08rem; color: var(--muted); max-width: 60ch; margin: 0 0 1.6rem; }
+    .cta-row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; margin-bottom: .9rem; }
+    .button {
+      display: inline-block; padding: .62rem 1.15rem;
+      border: 1px solid var(--border); border-radius: .55rem;
+      background: var(--surface); color: var(--text);
+      text-decoration: none; font-size: .95rem;
+    }
+    .button:hover { border-color: var(--cyan); color: var(--text); }
+    .button.primary { background: var(--green-strong); border-color: var(--green-strong); color: #04180a; font-weight: 600; }
+    .button.primary:hover { background: var(--green); border-color: var(--green); }
+    .hero-cta-hint { font-size: .87rem; color: var(--muted); margin: 0 0 1.4rem; }
+
+    .spec-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .spec-pill {
+      font-family: var(--mono); font-size: .78rem;
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: .28rem .7rem; color: var(--muted); background: var(--surface);
+    }
+    .spec-pill strong { color: var(--text); font-weight: 600; }
+
+    .invariant-strip { padding: 2.2rem 0; border-block: 1px solid var(--border); background: var(--surface); }
+    .invariant-grid { display: grid; gap: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+    .invariant-grid .rule { font-family: var(--mono); color: var(--green); font-size: .95rem; display: block; margin-bottom: .3rem; }
+    .invariant-grid p { margin: 0; color: var(--muted); font-size: .93rem; }
+
+    h2 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); margin: 0 0 .7rem; letter-spacing: -.01em; }
+    .section-lead { color: var(--muted); max-width: 62ch; margin: 0 0 2.2rem; }
+
+    .cards { display: grid; gap: 1.1rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+    .card {
+      border: 1px solid var(--border); border-radius: .8rem;
+      background: var(--surface); padding: 1.3rem;
+    }
+    .card .index {
+      font-family: var(--mono); font-size: .74rem;
+      letter-spacing: .09em; color: var(--green); display: block; margin-bottom: .6rem;
+    }
+    .card h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
+    .card p { margin: 0; color: var(--muted); font-size: .93rem; }
+
+    figure.shot { margin: 0; }
+    figure.shot img {
+      width: 100%; height: auto; display: block;
+      border: 1px solid var(--border); border-radius: .8rem;
+      background: #000;
+    }
+    figure.shot figcaption { color: var(--muted); font-size: .87rem; margin-top: .8rem; }
+
+    pre.code {
+      background: #070b10; border: 1px solid var(--border);
+      border-radius: .7rem; padding: 1rem 1.1rem;
+      overflow-x: auto; font-family: var(--mono); font-size: .87rem;
+      color: var(--text); margin: 0 0 1rem;
+    }
+    pre.code .c { color: var(--muted); }
+    pre.code .k { color: var(--green); }
+
+    .dl { display: grid; gap: .9rem; }
+    .dl > div { border-left: 2px solid var(--border); padding-left: 1rem; }
+    .dl dt { font-family: var(--mono); color: var(--cyan); font-size: .9rem; }
+    .dl dd { margin: .25rem 0 0; color: var(--muted); font-size: .93rem; }
+
+    .honest {
+      border: 1px solid var(--border); border-left: 3px solid var(--amber);
+      border-radius: .5rem; background: var(--surface);
+      padding: 1.1rem 1.2rem; color: var(--muted); font-size: .93rem;
+    }
+    .honest strong { color: var(--text); }
+
+    footer.site { border-top: 1px solid var(--border); padding: 2.5rem 0 3.5rem; color: var(--muted); font-size: .88rem; }
+    footer.site a { color: var(--muted); }
+    footer.site .links { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="#main">MiniCon<span class="tm">™</span></a>
+      <nav aria-label="Primary navigation" data-i18n-aria-label="navLabel">
+        <a href="#what" data-i18n="navWhat">What</a>
+        <a href="#old" data-i18n="navOld">Old Windows</a>
+        <a href="#script" data-i18n="navScript">Scripting</a>
+        <a href="#install" data-i18n="navInstall">Get it</a>
+        <a href="#docs" data-i18n="navDocs">Docs</a>
+      </nav>
+      <div class="header-tail">
+        <span class="language-switch" role="group" aria-label="Language" data-i18n-aria-label="languageLabel">
+          <button type="button" data-locale-choice="en" aria-pressed="true">EN</button>
+          <button type="button" data-locale-choice="zh-Hant" aria-pressed="false">繁</button>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow" data-i18n="heroEyebrow">Standalone terminal · Windows · v0.1.0</p>
+        <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
+        <p class="hero-emotion" data-i18n="heroEmotion">Copy it. Run it. That is the install.</p>
+        <p class="lead" data-i18n="heroLead">
+          MiniCon is a single Windows executable under 1 MiB. No installer, no runtime, no
+          Visual C++ redistributable — every library it loads is part of Windows. It opens a
+          real PTY, renders a real terminal, and a script can drive and read every part of it.
+        </p>
+        <div class="cta-row">
+          <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
+          <a class="button" href="https://github.com/partnernetsoftware/minicon" data-i18n="ctaSource">Source on GitHub</a>
+          <a class="button" href="old-windows.html" data-i18n="ctaOld">Old Windows support</a>
+        </div>
+        <p class="hero-cta-hint" data-i18n="heroCtaHint">MIT OR Apache-2.0 · nothing to uninstall · no background service</p>
+        <div class="spec-row" aria-label="Product specs" data-i18n-aria-label="specLabel">
+          <span class="spec-pill" data-i18n-html="specSize"><strong>752 KB</strong> executable</span>
+          <span class="spec-pill" data-i18n-html="specBudget"><strong>1 MiB</strong> enforced ceiling</span>
+          <span class="spec-pill" data-i18n="specDeps">OS libraries only</span>
+          <span class="spec-pill" data-i18n="specOld">Windows Server 2016 and newer</span>
+          <span class="spec-pill" data-i18n="specOpen">MIT / Apache-2.0</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="invariant-strip" id="what" aria-labelledby="invariant-heading">
+      <div class="wrap">
+        <h2 id="invariant-heading" class="visually-hidden" data-i18n="invariantHeading">What MiniCon is</h2>
+        <div class="invariant-grid">
+          <div>
+            <span class="rule" data-i18n="inv1Rule">One file</span>
+            <p data-i18n="inv1Body">The whole product is the executable. Nothing is installed, nothing runs in the background, and deleting the file removes it completely.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="inv2Rule">Small on purpose</span>
+            <p data-i18n="inv2Body">A release gate fails the build above 1 MiB. Size is a budget the tests enforce, not an aspiration in a README.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="inv3Rule">Small ≠ toy</span>
+            <p data-i18n="inv3Body">Real PTY, real VT parsing, tab tree, IME, mouse, scrollback, and a control surface a script can drive.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2 data-i18n="shotTitle">This is the whole application.</h2>
+        <p class="section-lead" data-i18n="shotLead">
+          A tab column, a terminal, and an input line. No panels to arrange, no workspace to
+          configure, no account to create.
+        </p>
+        <figure class="shot">
+          <img src="assets/minicon-window.png" width="960" height="600" loading="lazy"
+               data-i18n-alt="shotAlt"
+               alt="The MiniCon window: a tab column on the left, a cmd.exe session filling the terminal area, and a send-to-tab input line along the bottom.">
+          <figcaption data-i18n="shotCaption">An unmodified screenshot. Half-width and full-width characters occupy exactly one and two cells, which is the property most small terminals get wrong.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="old">
+      <div class="wrap">
+        <h2 data-i18n="oldTitle">It runs where modern terminals cannot.</h2>
+        <p class="section-lead" data-i18n="oldLead">
+          Windows gained a pseudoconsole in build 17763 (version 1809). Terminals built on it
+          stop there — and Microsoft's ConPTY redistributable does not lower the floor, because
+          it supports the same version as the in-box API. MiniCon runs on Windows Server 2016.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <span class="index" data-i18n="old1Index">01 / RESOLVED, NOT IMPORTED</span>
+            <h3 data-i18n="old1Title">A missing API is not a dead program</h3>
+            <p data-i18n="old1Body">The pseudoconsole entry points are looked up at run time. Imported statically, one missing symbol stops the program before it starts — a dialog naming something you cannot act on.</p>
+          </div>
+          <div class="card">
+            <span class="index" data-i18n="old2Index">02 / FALLBACK</span>
+            <h3 data-i18n="old2Title">It brings its own console agent</h3>
+            <p data-i18n="old2Body">Without ConPTY, MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary to ship.</p>
+          </div>
+          <div class="card">
+            <span class="index" data-i18n="old3Index">03 / CAPABILITY, NOT VERSION</span>
+            <h3 data-i18n="old3Title">It asks the system, not a table</h3>
+            <p data-i18n="old3Body">The backend is chosen by whether the exports exist. A version-number comparison would need revisiting the moment anything changed; the version is only used for the message you read.</p>
+          </div>
+          <div class="card">
+            <span class="index" data-i18n="old4Index">04 / NO REDISTRIBUTABLE</span>
+            <h3 data-i18n="old4Title">Nothing to install first</h3>
+            <p data-i18n="old4Body">The VC runtime is linked in. A test parses the shipped executable's import table and fails if anything outside the Windows-provided set appears, so it cannot quietly regress.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="script">
+      <div class="wrap">
+        <h2 data-i18n="scriptTitle">A terminal a script can see into.</h2>
+        <p class="section-lead" data-i18n="scriptLead">
+          Sending a keystroke is the easy half. MiniCon's control CLI drives the real UI and
+          reads back what the window is actually showing — text, screenshots, focus, tab state
+          — so automation can wait on a condition instead of guessing with a timer.
+        </p>
+        <pre class="code"><span class="c"># start a session with a control endpoint</span>
+minicon --control pipe:\\.\pipe\build
+
+<span class="c"># run something, then wait for it — no sleeps</span>
+minicon cli --control pipe:\\.\pipe\build send-text <span class="k">"cargo test\r"</span>
+minicon cli --control pipe:\\.\pipe\build wait-text --timeout-ms 600000 <span class="k">"test result"</span>
+
+<span class="c"># read the result as text, or as a picture</span>
+minicon cli --control pipe:\\.\pipe\build capture-pane
+minicon cli --control pipe:\\.\pipe\build screenshot-pane --output run.png</pre>
+        <div class="dl">
+          <div>
+            <dt>ui-snapshot</dt>
+            <dd data-i18n="scriptSnapshot">Focus, IME state, input contents, pending work and control geometry, as JSON.</dd>
+          </div>
+          <div>
+            <dt>wait-text · wait-tab-exit</dt>
+            <dd data-i18n="scriptWait">Block until the condition holds or the timeout expires, and say which happened.</dd>
+          </div>
+          <div>
+            <dt>send-keys · send-mouse · send-wheel · send-ui-ime</dt>
+            <dd data-i18n="scriptInput">Named keys, pointer events in terminal cells, scrolling, and IME preedit — the same paths a person's input takes.</dd>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="wrap">
+        <h2 data-i18n="installTitle">Getting it</h2>
+        <p class="section-lead" data-i18n="installLead">
+          Download the executable and run it. There is no installer because there is nothing to
+          install.
+        </p>
+        <div class="cta-row">
+          <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
+          <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
+        </div>
+        <pre class="code"><span class="c"># or build it yourself</span>
+git clone https://github.com/partnernetsoftware/minicon
+cd minicon
+cargo build --release   <span class="c"># target/release/minicon.exe</span></pre>
+        <p class="honest" data-i18n-html="installHonest">
+          <strong>Honest scope.</strong> MiniCon is a Windows product first: the small-binary,
+          no-runtime and old-Windows work is all Windows work, and that is where it is tested.
+          It builds for Linux and macOS and the terminal core is shared, but those hosts do not
+          carry the same guarantees yet.
+        </p>
+      </div>
+    </section>
+
+    <section id="docs">
+      <div class="wrap">
+        <h2 data-i18n="docsTitle">Documentation</h2>
+        <p class="section-lead" data-i18n="docsLead">Written to be checkable. Where a number appears, it came from a measurement.</p>
+        <div class="cards">
+          <div class="card">
+            <h3><a href="old-windows.html" data-i18n="docsOldTitle">Running on old Windows</a></h3>
+            <p data-i18n="docsOldBody">Why other terminals stop at build 17763, what MiniCon does instead, the exact dependency set, and how to diagnose a machine that still refuses to start it.</p>
+          </div>
+          <div class="card">
+            <h3><a href="control-cli.html" data-i18n="docsCliTitle">Driving MiniCon from a script</a></h3>
+            <p data-i18n="docsCliBody">The full control surface: reading state, waiting on conditions, sending input, managing the tab tree, and running one command instead of a shell.</p>
+          </div>
+          <div class="card">
+            <h3><a href="https://github.com/partnernetsoftware/minicon" data-i18n="docsRepoTitle">Source and tests</a></h3>
+            <p data-i18n="docsRepoBody">The behaviour claimed here is pinned by the test suite — including gates for the import table, the size budget, and the CLI's own contract.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <div class="links">
+        <a href="https://github.com/partnernetsoftware/minicon" data-i18n="footerRepo">GitHub</a>
+        <a href="https://github.com/partnernetsoftware/minicon/releases" data-i18n="footerReleases">Releases</a>
+        <a href="old-windows.html" data-i18n="footerOld">Old Windows</a>
+        <a href="control-cli.html" data-i18n="footerCli">Control CLI</a>
+        <a href="https://agenterm.mega.tech/" data-i18n="footerAgenterm">AgenTerm</a>
+      </div>
+      <p data-i18n="footerLicense">MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.</p>
+      <p data-i18n="footerOrigin">MiniCon began as AgenTerm's minimal console host and became its own product in August 2026.</p>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const copy = {
+        en: {
+          title: "MiniCon™ — A terminal that is one file",
+          description: "MiniCon — a single-executable Windows terminal under 1 MiB. No installer, no runtime, no redistributable. Runs on Windows Server 2016 where ConPTY does not exist.",
+          skip: "Skip to content",
+          navLabel: "Primary navigation",
+          languageLabel: "Language",
+          navWhat: "What",
+          navOld: "Old Windows",
+          navScript: "Scripting",
+          navInstall: "Get it",
+          navDocs: "Docs",
+          heroEyebrow: "Standalone terminal · Windows · v0.1.0",
+          heroTitle: "A terminal that is <em>one file</em>.",
+          heroEmotion: "Copy it. Run it. That is the install.",
+          heroLead: "MiniCon is a single Windows executable under 1 MiB. No installer, no runtime, no Visual C++ redistributable — every library it loads is part of Windows. It opens a real PTY, renders a real terminal, and a script can drive and read every part of it.",
+          ctaGet: "Get MiniCon",
+          ctaSource: "Source on GitHub",
+          ctaOld: "Old Windows support",
+          heroCtaHint: "MIT OR Apache-2.0 · nothing to uninstall · no background service",
+          specLabel: "Product specs",
+          specSize: "<strong>752 KB</strong> executable",
+          specBudget: "<strong>1 MiB</strong> enforced ceiling",
+          specDeps: "OS libraries only",
+          specOld: "Windows Server 2016 and newer",
+          specOpen: "MIT / Apache-2.0",
+          invariantHeading: "What MiniCon is",
+          inv1Rule: "One file",
+          inv1Body: "The whole product is the executable. Nothing is installed, nothing runs in the background, and deleting the file removes it completely.",
+          inv2Rule: "Small on purpose",
+          inv2Body: "A release gate fails the build above 1 MiB. Size is a budget the tests enforce, not an aspiration in a README.",
+          inv3Rule: "Small ≠ toy",
+          inv3Body: "Real PTY, real VT parsing, tab tree, IME, mouse, scrollback, and a control surface a script can drive.",
+          shotTitle: "This is the whole application.",
+          shotLead: "A tab column, a terminal, and an input line. No panels to arrange, no workspace to configure, no account to create.",
+          shotAlt: "The MiniCon window: a tab column on the left, a cmd.exe session filling the terminal area, and a send-to-tab input line along the bottom.",
+          shotCaption: "An unmodified screenshot. Half-width and full-width characters occupy exactly one and two cells, which is the property most small terminals get wrong.",
+          oldTitle: "It runs where modern terminals cannot.",
+          oldLead: "Windows gained a pseudoconsole in build 17763 (version 1809). Terminals built on it stop there — and Microsoft's ConPTY redistributable does not lower the floor, because it supports the same version as the in-box API. MiniCon runs on Windows Server 2016.",
+          old1Index: "01 / RESOLVED, NOT IMPORTED",
+          old1Title: "A missing API is not a dead program",
+          old1Body: "The pseudoconsole entry points are looked up at run time. Imported statically, one missing symbol stops the program before it starts — a dialog naming something you cannot act on.",
+          old2Index: "02 / FALLBACK",
+          old2Title: "It brings its own console agent",
+          old2Body: "Without ConPTY, MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary to ship.",
+          old3Index: "03 / CAPABILITY, NOT VERSION",
+          old3Title: "It asks the system, not a table",
+          old3Body: "The backend is chosen by whether the exports exist. A version-number comparison would need revisiting the moment anything changed; the version is only used for the message you read.",
+          old4Index: "04 / NO REDISTRIBUTABLE",
+          old4Title: "Nothing to install first",
+          old4Body: "The VC runtime is linked in. A test parses the shipped executable's import table and fails if anything outside the Windows-provided set appears, so it cannot quietly regress.",
+          scriptTitle: "A terminal a script can see into.",
+          scriptLead: "Sending a keystroke is the easy half. MiniCon's control CLI drives the real UI and reads back what the window is actually showing — text, screenshots, focus, tab state — so automation can wait on a condition instead of guessing with a timer.",
+          scriptSnapshot: "Focus, IME state, input contents, pending work and control geometry, as JSON.",
+          scriptWait: "Block until the condition holds or the timeout expires, and say which happened.",
+          scriptInput: "Named keys, pointer events in terminal cells, scrolling, and IME preedit — the same paths a person's input takes.",
+          installTitle: "Getting it",
+          installLead: "Download the executable and run it. There is no installer because there is nothing to install.",
+          installRelease: "Latest release",
+          installBuild: "Build from source",
+          installHonest: "<strong>Honest scope.</strong> MiniCon is a Windows product first: the small-binary, no-runtime and old-Windows work is all Windows work, and that is where it is tested. It builds for Linux and macOS and the terminal core is shared, but those hosts do not carry the same guarantees yet.",
+          docsTitle: "Documentation",
+          docsLead: "Written to be checkable. Where a number appears, it came from a measurement.",
+          docsOldTitle: "Running on old Windows",
+          docsOldBody: "Why other terminals stop at build 17763, what MiniCon does instead, the exact dependency set, and how to diagnose a machine that still refuses to start it.",
+          docsCliTitle: "Driving MiniCon from a script",
+          docsCliBody: "The full control surface: reading state, waiting on conditions, sending input, managing the tab tree, and running one command instead of a shell.",
+          docsRepoTitle: "Source and tests",
+          docsRepoBody: "The behaviour claimed here is pinned by the test suite — including gates for the import table, the size budget, and the CLI's own contract.",
+          footerRepo: "GitHub",
+          footerReleases: "Releases",
+          footerOld: "Old Windows",
+          footerCli: "Control CLI",
+          footerAgenterm: "AgenTerm",
+          footerLicense: "MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.",
+          footerOrigin: "MiniCon began as AgenTerm's minimal console host and became its own product in August 2026."
+        },
+        "zh-Hant": {
+          title: "MiniCon™ — 一個檔案就是一個終端機",
+          description: "MiniCon —— 單一執行檔的 Windows 終端機，不到 1 MiB。免安裝、免執行環境、免 VC++ 可轉散發套件。在沒有 ConPTY 的 Windows Server 2016 上照樣跑。",
+          skip: "跳到內容",
+          navLabel: "主導覽",
+          languageLabel: "語言",
+          navWhat: "是什麼",
+          navOld: "舊版 Windows",
+          navScript: "腳本操控",
+          navInstall: "取得",
+          navDocs: "文件",
+          heroEyebrow: "獨立終端機 · Windows · v0.1.0",
+          heroTitle: "一個<em>檔案</em>就是一個終端機。",
+          heroEmotion: "複製過去，執行。安裝就這樣結束了。",
+          heroLead: "MiniCon 是單一 Windows 執行檔，不到 1 MiB。沒有安裝程式、沒有執行環境、沒有 Visual C++ 可轉散發套件——它載入的每一個程式庫都是 Windows 自帶的。它開真正的 PTY、畫真正的終端機，而且每一個部分都可以被腳本操控與讀取。",
+          ctaGet: "取得 MiniCon",
+          ctaSource: "GitHub 原始碼",
+          ctaOld: "舊版 Windows 支援",
+          heroCtaHint: "MIT 或 Apache-2.0 · 沒有東西需要解除安裝 · 不留背景服務",
+          specLabel: "產品規格",
+          specSize: "<strong>752 KB</strong> 執行檔",
+          specBudget: "<strong>1 MiB</strong> 強制上限",
+          specDeps: "只依賴系統程式庫",
+          specOld: "Windows Server 2016 起",
+          specOpen: "MIT / Apache-2.0",
+          invariantHeading: "MiniCon 是什麼",
+          inv1Rule: "就一個檔案",
+          inv1Body: "整個產品就是那個執行檔。不安裝任何東西、不留背景程式，刪掉檔案就等於完全移除。",
+          inv2Rule: "小是刻意的",
+          inv2Body: "超過 1 MiB 建置直接失敗。體積是測試強制執行的預算，不是 README 裡的願望。",
+          inv3Rule: "小，但不是玩具",
+          inv3Body: "真 PTY、真 VT 解析、分頁樹、輸入法、滑鼠、回捲，還有一套腳本可驅動的控制介面。",
+          shotTitle: "這就是應用程式的全部。",
+          shotLead: "一欄分頁、一個終端機、一行輸入。沒有面板要排、沒有工作區要設定、沒有帳號要註冊。",
+          shotAlt: "MiniCon 視窗：左側分頁欄、中間填滿終端區的 cmd.exe 工作階段、底部一行送往分頁的輸入列。",
+          shotCaption: "未經修圖的實際截圖。半形與全形字元剛好各佔一格與兩格——這正是多數小型終端機做錯的地方。",
+          oldTitle: "在現代終端機跑不動的地方，它跑得動。",
+          oldLead: "Windows 到 build 17763（1809 版）才有虛擬主控台。建構在它之上的終端機就停在那裡——而微軟的 ConPTY 可轉散發套件並不能往下相容，因為它支援的版本和系統內建的一模一樣。MiniCon 在 Windows Server 2016 上照樣跑。",
+          old1Index: "01 / 執行期解析，而非匯入",
+          old1Title: "缺一個 API 不等於程式報廢",
+          old1Body: "虛擬主控台的進入點是執行期查找的。若採靜態匯入，少一個符號程式就在啟動前被擋下——跳出一個你無從處理的符號名稱。",
+          old2Index: "02 / 後備方案",
+          old2Title: "它自備主控台代理",
+          old2Body: "沒有 ConPTY 時，MiniCon 重新執行自己，把你的 shell 放進一個隱藏主控台並讀取畫面緩衝區。那個代理就是 MiniCon 本身——不必額外發佈第二個執行檔。",
+          old3Index: "03 / 看能力，不看版本號",
+          old3Title: "它問系統，不查表",
+          old3Body: "後端是依「匯出是否存在」來選的。用版本號比對的話，只要情況一變就得重新檢討；版本號只用在給你看的訊息裡。",
+          old4Index: "04 / 免可轉散發套件",
+          old4Title: "不必先裝別的東西",
+          old4Body: "VC 執行期是靜態連結進去的。有一項測試會解析發佈執行檔的匯入表，一旦出現 Windows 自帶集合以外的東西就失敗，所以不可能悄悄退步。",
+          scriptTitle: "一個腳本看得進去的終端機。",
+          scriptLead: "送出一個按鍵是簡單的那一半。MiniCon 的控制 CLI 驅動的是真正的介面，並把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁狀態——讓自動化可以等待條件成立，而不是用計時器猜。",
+          scriptSnapshot: "焦點、輸入法狀態、輸入內容、待處理工作與控制項座標，以 JSON 回傳。",
+          scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
+          scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
+          installTitle: "取得方式",
+          installLead: "下載執行檔，然後執行。沒有安裝程式，因為沒有東西需要安裝。",
+          installRelease: "最新發行版",
+          installBuild: "自行建置",
+          installHonest: "<strong>範圍要說清楚。</strong>MiniCon 首先是個 Windows 產品：小體積、免執行環境、舊版 Windows 這些工作全都是 Windows 上的工作，也是在那裡受測的。它能為 Linux 與 macOS 建置、終端核心也是共用的，但那些平台目前還沒有同等的保證。",
+          docsTitle: "文件",
+          docsLead: "寫成可查核的樣子。只要出現數字，都是量出來的。",
+          docsOldTitle: "在舊版 Windows 上執行",
+          docsOldBody: "為什麼其他終端機停在 build 17763、MiniCon 改用什麼做法、確切的相依集合，以及機器仍然啟動失敗時該怎麼診斷。",
+          docsCliTitle: "用腳本驅動 MiniCon",
+          docsCliBody: "完整控制介面：讀取狀態、等待條件、送出輸入、管理分頁樹，以及用單一指令取代 shell。",
+          docsRepoTitle: "原始碼與測試",
+          docsRepoBody: "這裡宣稱的行為都由測試套件釘住——包含匯入表、體積預算與 CLI 自身契約的把關。",
+          footerRepo: "GitHub",
+          footerReleases: "發行版",
+          footerOld: "舊版 Windows",
+          footerCli: "控制 CLI",
+          footerAgenterm: "AgenTerm",
+          footerLicense: "MIT 或 Apache-2.0。MiniCon™ 為 PartnerNet Software 之商標。",
+          footerOrigin: "MiniCon 源自 AgenTerm 的最小主控台宿主，於 2026 年 8 月獨立成為自有產品。"
+        }
+      };
+
+      const supported = new Set(Object.keys(copy));
+      const choices = [...document.querySelectorAll("[data-locale-choice]")];
+      const metaDescription = document.querySelector('meta[name="description"]');
+      const openGraphLocale = document.querySelector('meta[property="og:locale"]');
+      const openGraphTitle = document.querySelector('meta[property="og:title"]');
+      const openGraphDescription = document.querySelector('meta[property="og:description"]');
+      const twitterTitle = document.querySelector('meta[name="twitter:title"]');
+      const twitterDescription = document.querySelector('meta[name="twitter:description"]');
+
+      function applyLocale(locale) {
+        const selected = supported.has(locale) ? locale : "en";
+        const values = copy[selected];
+        document.documentElement.lang = selected;
+        document.documentElement.dataset.locale = selected;
+        document.title = values.title;
+        metaDescription.content = values.description;
+        openGraphLocale.content = selected === "zh-Hant" ? "zh_TW" : "en_US";
+        openGraphTitle.content = values.title;
+        openGraphDescription.content = values.heroTitle.replace(/<[^>]+>/g, "");
+        twitterTitle.content = values.title;
+        twitterDescription.content = openGraphDescription.content;
+        document.querySelectorAll("[data-i18n]").forEach((element) => {
+          const value = values[element.dataset.i18n];
+          if (value !== undefined) { element.textContent = value; }
+        });
+        document.querySelectorAll("[data-i18n-html]").forEach((element) => {
+          const value = values[element.dataset.i18nHtml];
+          if (value !== undefined) { element.innerHTML = value; }
+        });
+        document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
+          const value = values[element.dataset.i18nAlt];
+          if (value !== undefined) { element.alt = value; }
+        });
+        document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+          const value = values[element.dataset.i18nAriaLabel];
+          if (value !== undefined) { element.setAttribute("aria-label", value); }
+        });
+        choices.forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.localeChoice === selected));
+        });
+        try { localStorage.setItem("minicon-locale", selected); } catch (_) {}
+      }
+
+      choices.forEach((button) => {
+        button.addEventListener("click", () => applyLocale(button.dataset.localeChoice));
+      });
+
+      const queryLocale = new URLSearchParams(location.search).get("lang");
+      let savedLocale = null;
+      try { savedLocale = localStorage.getItem("minicon-locale"); } catch (_) {}
+      const browserLocale = navigator.language.toLowerCase().startsWith("zh") ? "zh-Hant" : "en";
+      applyLocale(queryLocale || savedLocale || browserLocale);
+    })();
+  </script>
+</body>
+</html>

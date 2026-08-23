@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1016">
+  <title>Driving MiniCon from a script — MiniCon™</title>
+  <meta name="description" content="MiniCon's control CLI: reading state, waiting on conditions instead of sleeping, sending input, managing the tab tree, and running one command instead of a shell.">
+  <link rel="canonical" href="https://minicon.agenterm.work/control-cli.html">
+  <link rel="stylesheet" href="doc.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="./">MiniCon<span class="tm">™</span></a>
+      <nav aria-label="Documentation">
+        <a href="./">Home</a>
+        <a href="old-windows.html">Old Windows</a>
+        <a href="control-cli.html">Control CLI</a>
+        <a href="https://github.com/partnernetsoftware/minicon">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <h1>Driving MiniCon from a script</h1>
+      <p class="subtitle">
+        MiniCon exposes the same surface to a script that a person uses through the window.
+        There is no separate automation mode: the control CLI drives the real UI, and what you
+        read back is what the window is actually showing.
+      </p>
+      <p>
+        This exists because a terminal an agent can drive has to be <em>observable</em>, not just
+        controllable. Sending a key is easy; knowing what happened next is the hard half.
+      </p>
+
+      <h2>Opening an endpoint</h2>
+      <p>Start MiniCon with a control endpoint, then talk to it with the same executable:</p>
+      <pre><code>minicon --control pipe:\\.\pipe\my-session
+minicon cli --control pipe:\\.\pipe\my-session list-tabs</code></pre>
+      <p>
+        The endpoint is a named pipe on Windows and a Unix socket elsewhere. The Windows form
+        needs the full local namespace — <code>pipe:\\.\pipe\NAME</code>. A bare name is refused
+        rather than silently misinterpreted.
+      </p>
+      <p>
+        Every command prints JSON on stdout and exits nonzero on failure, so a script can branch
+        on the exit status and parse the body without scraping prose.
+      </p>
+
+      <h2>Reading state</h2>
+      <table>
+        <thead><tr><th>Command</th><th>Answers</th></tr></thead>
+        <tbody>
+          <tr><td><code>list-tabs</code></td><td>every tab, its <code>@ID</code>, title, parent, and whether its child is alive</td></tr>
+          <tr><td><code>ui-snapshot</code></td><td>focus, IME state, input contents, pending work, control geometry</td></tr>
+          <tr><td><code>capture-pane</code></td><td>the pane as text</td></tr>
+          <tr><td><code>screenshot-pane</code></td><td>the pane as a PNG</td></tr>
+          <tr><td><code>perf-stats</code></td><td>frame and throughput counters</td></tr>
+        </tbody>
+      </table>
+      <p>
+        <code>list-tabs</code> reporting <code>"child_alive": false</code> with an exit code is
+        how a script learns a command finished — without polling the screen for a prompt.
+      </p>
+
+      <h2>Waiting instead of sleeping</h2>
+      <pre><code>minicon cli --control ENDPOINT wait-text --timeout-ms 20000 "BUILD OK"
+minicon cli --control ENDPOINT wait-tab-exit --target @2 --timeout-ms 60000</code></pre>
+      <p>
+        Both block until the condition holds or the timeout expires, and report which happened.
+        A fixed <code>sleep</code> is either too short and flaky or too long and slow; these are
+        neither.
+      </p>
+
+      <h2>Sending input</h2>
+      <table>
+        <thead><tr><th>Command</th><th>Use</th></tr></thead>
+        <tbody>
+          <tr><td><code>send-text</code></td><td>type text into a terminal</td></tr>
+          <tr><td><code>send-paste</code></td><td>paste, with bracketed-paste handling</td></tr>
+          <tr><td><code>send-keys</code></td><td>named keys — <code>Enter</code>, <code>Escape</code>, <code>Tab</code>, <code>Up</code>, <code>F1</code>, <code>Ctrl+C</code></td></tr>
+          <tr><td><code>send-ui-keys</code></td><td>follows current UI focus rather than a terminal</td></tr>
+          <tr><td><code>send-ui-ime</code></td><td>drive an IME preedit and commit</td></tr>
+          <tr><td><code>send-mouse</code></td><td>pointer events in terminal cells</td></tr>
+          <tr><td><code>send-wheel</code></td><td>scroll; positive notches scroll up</td></tr>
+        </tbody>
+      </table>
+      <p>
+        <code>send-keys</code> always addresses a terminal; <code>send-ui-keys</code> addresses
+        whatever has focus, which is how you reach the tab column and the input line.
+      </p>
+
+      <h2>Managing tabs</h2>
+      <pre><code>minicon cli --control ENDPOINT new-tab [--parent TAB]
+minicon cli --control ENDPOINT select-tab --target @2
+minicon cli --control ENDPOINT close-tab --target @2
+minicon cli --control ENDPOINT resize-window --width 1000 --height 700
+minicon cli --control ENDPOINT close-window</code></pre>
+      <p>
+        Tabs form a tree. Closing a parent promotes its children rather than taking them with
+        it. <code>@ID</code> values are stable for the life of a tab, so a script can hold one
+        across many commands without re-reading the list.
+      </p>
+
+      <h2>Running one command instead of a shell</h2>
+      <p>
+        <code>-e</code> replaces the default shell. Everything after it is passed through
+        verbatim, so it has to come last:
+      </p>
+      <pre><code>minicon -e cmd.exe /k my-build.bat</code></pre>
+      <p>
+        Combined with <code>wait-tab-exit</code>, this makes MiniCon a way to run something in a
+        real terminal — with a real PTY, real VT handling, and a screen you can screenshot — and
+        then collect the result.
+      </p>
+
+      <h2>Discovering the surface</h2>
+      <pre><code>minicon cli list-commands</code></pre>
+      <p>
+        Prints the command list with no endpoint and no running window, which is what lets a
+        script check what a given build supports before depending on it.
+      </p>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <div class="links">
+        <a href="./">Home</a>
+        <a href="old-windows.html">Old Windows</a>
+        <a href="https://github.com/partnernetsoftware/minicon">GitHub</a>
+        <a href="https://agenterm.mega.tech/">AgenTerm</a>
+      </div>
+      <p>MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.</p>
+    </div>
+  </footer>
+</body>
+</html>

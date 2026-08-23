@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1016">
+  <title>Running on old Windows — MiniCon™</title>
+  <meta name="description" content="Why terminals stop at Windows 10 build 17763, what MiniCon does instead, its exact dependency set, and how to diagnose a machine that still refuses to start it.">
+  <link rel="canonical" href="https://minicon.agenterm.work/old-windows.html">
+  <link rel="stylesheet" href="doc.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="./">MiniCon<span class="tm">™</span></a>
+      <nav aria-label="Documentation">
+        <a href="./">Home</a>
+        <a href="old-windows.html">Old Windows</a>
+        <a href="control-cli.html">Control CLI</a>
+        <a href="https://github.com/partnernetsoftware/minicon">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <h1>Running on old Windows</h1>
+      <p class="subtitle">
+        MiniCon runs on Windows Server 2016 and Windows 10 version 1607 (build 14393). Most
+        modern terminals do not, and the reasons are specific enough to be worth writing
+        down — both so you can verify the claim and so you can diagnose it if your machine
+        is older still.
+      </p>
+
+      <h2>Why other terminals stop there</h2>
+      <p>
+        Windows gained a pseudoconsole — <code>CreatePseudoConsole</code>, usually called
+        ConPTY — in <strong>Windows 10 build 17763 (version 1809)</strong>. A terminal built
+        on it cannot run on anything earlier.
+      </p>
+      <p>
+        Microsoft does publish ConPTY as a redistributable
+        (<code>Microsoft.Windows.Console.ConPTY</code>: <code>conpty.dll</code> plus
+        <code>OpenConsole.exe</code>, which is what WezTerm bundles). It does <strong>not</strong>
+        lower the floor: the package states it supports <code>10.0.17763.0</code> and above,
+        the same version as the in-box API. Shipping it does not buy you Server 2016.
+      </p>
+
+      <h2>What MiniCon does instead</h2>
+
+      <h3>It resolves ConPTY at run time, and falls back</h3>
+      <p>
+        The three entry points are looked up with <code>GetProcAddress</code> rather than
+        imported. That distinction matters more than it sounds: every <em>static</em> import is
+        resolved by the PE loader before <code>main</code> runs, so one missing symbol does not
+        disable a feature — it refuses to start the program at all, with a dialog naming a
+        symbol you cannot act on.
+      </p>
+      <p>
+        When the lookup fails, MiniCon starts a <strong>console agent</strong>: it re-executes
+        itself with an internal argument, that second process takes a hidden console, spawns
+        your shell into it, and polls the screen buffer with <code>ReadConsoleOutputW</code>,
+        turning what changed into a terminal stream. This is the mechanism every Windows
+        terminal used before 1809. The APIs are as old as Win32.
+      </p>
+      <p>
+        The agent is MiniCon itself. No third-party binary, no <code>winpty-agent.exe</code>,
+        no extra file to deploy.
+      </p>
+
+      <h3>Selection is by capability, not by version number</h3>
+      <p>
+        MiniCon asks the system whether the exports are there. A build-number comparison would
+        have to be revisited if anything ever lowered the floor; the version number is only
+        used for the message you read.
+      </p>
+      <p>
+        Everything above the adapter is identical either way — the same pipes, the same command
+        line, the same environment. Nothing in the terminal knows which backend it got.
+      </p>
+
+      <h2>No Visual C++ redistributable</h2>
+      <p>
+        A clean Server 2016 has no <code>VCRUNTIME140.dll</code>. MiniCon links the VC runtime
+        statically and depends only on modules Windows itself provides:
+      </p>
+      <pre><code>advapi32.dll   gdi32.dll     gdiplus.dll   imm32.dll
+kernel32.dll   ntdll.dll     shell32.dll   user32.dll
+api-ms-win-core-synch-l1-2-0.dll
+api-ms-win-crt-heap-l1-1-0.dll
+api-ms-win-crt-runtime-l1-1-0.dll
+api-ms-win-crt-string-l1-1-0.dll</code></pre>
+      <p>
+        The <code>api-ms-win-crt-*</code> entries are the Universal CRT, an operating-system
+        component since Windows 10 RTM — not a redistributable. A gate in the test suite parses
+        the shipped executable's import table and fails if anything outside that set appears,
+        so this cannot quietly regress.
+      </p>
+      <p>
+        <code>panic = "unwind"</code> is preserved. Panic containment is not traded away for the
+        dependency: a panic in a background thread is caught rather than taking the process
+        down.
+      </p>
+
+      <h2><code>SetThreadDescription</code>, or why documentation is not proof</h2>
+      <div class="note">
+        <p>
+          Worth knowing if you port anything else to build 14393.
+        </p>
+        <p>
+          Microsoft documents <code>SetThreadDescription</code> as available in Windows 10
+          version 1607. Windows Server 2016 <strong>is</strong> 1607. It is still missing there,
+          because 1607 implements it only in <code>KernelBase.dll</code> and the
+          <code>kernel32</code> forwarder did not appear until 1703. The SDK's own header guards
+          do not catch this either — the guard passes.
+        </p>
+        <p>
+          <strong>A documented minimum version is evidence. Only the target machine is proof.</strong>
+        </p>
+      </div>
+
+      <h2>Checking your own machine</h2>
+      <p>
+        If MiniCon does not start, the cause is almost always a static import the system cannot
+        resolve, and the loader names exactly one of them at a time — so fixing the one it named
+        just reveals the next.
+      </p>
+      <p>
+        <code>scripts/probe-imports.ps1</code> answers the whole question at once. Run it
+        <strong>on the machine that fails</strong>:
+      </p>
+      <pre><code>powershell -ExecutionPolicy Bypass -File probe-imports.ps1 -Path .\minicon.exe</code></pre>
+      <p>
+        It parses the executable's import table itself — the target needs no Visual Studio —
+        resolves every named import against the running system, and prints the complete missing
+        set. Send that list rather than the first name.
+      </p>
+
+      <h2>What you give up</h2>
+      <p>
+        The fallback reads a console screen buffer on a timer. It is a faithful terminal for a
+        shell and for the console programs Windows ships, but it is not a pseudoconsole:
+      </p>
+      <ul>
+        <li>Output latency has a floor set by the polling interval rather than arriving as the child writes it.</li>
+        <li>Programs that drive the console API in ways a screen buffer cannot express will not round-trip perfectly.</li>
+      </ul>
+      <p>
+        On Windows 10 1809 and newer, none of this applies — MiniCon uses ConPTY and the agent
+        never starts.
+      </p>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <div class="links">
+        <a href="./">Home</a>
+        <a href="control-cli.html">Control CLI</a>
+        <a href="https://github.com/partnernetsoftware/minicon">GitHub</a>
+        <a href="https://agenterm.mega.tech/">AgenTerm</a>
+      </div>
+      <p>MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.</p>
+    </div>
+  </footer>
+</body>
+</html>
