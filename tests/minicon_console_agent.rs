@@ -308,6 +308,12 @@ fn closing_the_host_takes_the_agent_and_its_child_with_it() {
     );
 }
 
+/// The argument is `--agenterm-console-agent` and stays that way: it is
+/// `agenterm-platform`'s own constant, matched as literal text on both
+/// sides, so renaming it here alone would silently stop the two from
+/// agreeing. A blanket product rename mangled it into `--miniconsole-agent`
+/// once already, which no compiler could catch.
+///
 /// Counts agent processes by their command line, which is the only thing that
 /// distinguishes them from the product: they are the same executable.
 fn console_agent_processes() -> usize {
@@ -328,7 +334,7 @@ fn console_agent_processes() -> usize {
     };
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter(|line| line.contains("--miniconsole-agent"))
+        .filter(|line| line.contains("--agenterm-console-agent"))
         .count()
 }
 
@@ -340,7 +346,7 @@ fn the_agent_argument_is_the_one_both_sides_agree_on() {
     let path: &Path = &binary();
     assert!(path.is_file());
     let output = Command::new(path)
-        .arg("--miniconsole-agent")
+        .arg("--agenterm-console-agent")
         .arg("not-a-handle")
         .output()
         .expect("run agent mode");

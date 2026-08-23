@@ -1115,11 +1115,7 @@ impl ConApp {
                 ) => {
                     self.composer.focused = true;
                     self.composer.submit_error = None;
-                    composer::replace_text(
-                        &mut self.composer.text,
-                        &mut self.composer.select_all,
-                        &text,
-                    );
+                    composer::replace_text(&mut self.composer, &text);
                     self.composer.preedit.clear();
                     let _ = self.update_composer_ime_anchor(window);
                     self.mark_composer_dirty();
@@ -1132,24 +1128,14 @@ impl ConApp {
                     match agenterm_platform::accessibility_publish::published_key_effect(&key) {
                         agenterm_platform::accessibility_publish::KeyEffect::Insert(text) => {
                             self.composer.submit_error = None;
-                            composer::insert(
-                                &mut self.composer.text,
-                                &mut self.composer.select_all,
-                                &text,
-                            );
+                            composer::insert(&mut self.composer, &text);
                         }
                         agenterm_platform::accessibility_publish::KeyEffect::Backspace => {
                             self.composer.submit_error = None;
-                            composer::backspace(
-                                &mut self.composer.text,
-                                &mut self.composer.select_all,
-                            );
+                            composer::backspace(&mut self.composer);
                         }
                         agenterm_platform::accessibility_publish::KeyEffect::SelectAll => {
-                            composer::select_all(
-                                &self.composer.text,
-                                &mut self.composer.select_all,
-                            );
+                            composer::select_all(&mut self.composer);
                         }
                         agenterm_platform::accessibility_publish::KeyEffect::Submit => {
                             self.submit_composer();
@@ -1525,11 +1511,16 @@ impl ConApp {
         let visible = composer::visible_window(
             &self.composer.text,
             &self.composer.preedit,
+            self.composer.caret,
             1,
             (text_width / cell_width) as usize,
         );
+        let caret = self
+            .composer
+            .caret
+            .clamp(visible.text, self.composer.text.len());
         let caret_cells = usize::from(visible.truncated)
-            + composer::cells(&self.composer.text[visible.text..])
+            + composer::cells(&self.composer.text[visible.text..caret])
             + composer::cells(&self.composer.preedit[visible.preedit..]);
         let caret_offset = cell_width.saturating_mul(caret_cells as u32).min(text_width);
         let x = f64::from(
@@ -1546,6 +1537,50 @@ impl ConApp {
         Ok(())
     }
 
+    /// Puts the caret where the pointer landed.
+    ///
+    /// The column is measured against the same window the painter used, so a
+    /// click resolves to the character the user can actually see under the
+    /// pointer rather than to an offset in the full buffer, which for a
+    /// scrolled line is a different character entirely.
+    fn place_composer_caret(
+        &mut self,
+        window: &PixelWindow,
+        position: &LogicalPoint,
+    ) -> Result<(), PixelWindowError> {
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let layout = self.layout(
+            metrics.physical_width,
+            metrics.physical_height,
+            metrics.scale_factor,
+        );
+        let cell_width = font::cell_metrics(COMPOSER_TEXT_SIZE_PX).width.max(1);
+        let text_width = layout
+            .composer_input
+            .width
+            .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
+        let visible = composer::visible_window(
+            &self.composer.text,
+            &self.composer.preedit,
+            self.composer.caret,
+            1,
+            (text_width / cell_width) as usize,
+        );
+        let physical_x = agenterm_platform::numeric::round_f64(position.x * scale) as u32;
+        let origin = layout
+            .composer_input
+            .x
+            .saturating_add(COMPOSER_TEXT_INSET)
+            // The truncation marker occupies a leading cell that belongs to no
+            // character, so a click must not be charged for it.
+            .saturating_add(u32::from(visible.truncated).saturating_mul(cell_width));
+        let cell = physical_x.saturating_sub(origin) / cell_width;
+        self.composer.caret =
+            composer::caret_at_cell(&self.composer.text, visible.text, cell as usize);
+        Ok(())
+    }
+
     fn handle_composer_key(&mut self, window: &PixelWindow, key: &NormalizedKeyEvent) -> bool {
         if key.state != KeyPressState::Pressed {
             return true;
@@ -1558,7 +1593,7 @@ impl ConApp {
             && let LogicalKey::Character(text) = &key.logical
         {
             if text.eq_ignore_ascii_case("a") {
-                composer::select_all(&self.composer.text, &mut self.composer.select_all);
+                composer::select_all(&mut self.composer);
             } else if text.eq_ignore_ascii_case("c") {
                 if let Some(text) =
                     composer::selected_text(&self.composer.text, &self.composer.select_all)
@@ -1567,7 +1602,7 @@ impl ConApp {
                 }
             } else if text.eq_ignore_ascii_case("x") {
                 if let Some(text) =
-                    composer::cut(&mut self.composer.text, &mut self.composer.select_all)
+                    composer::cut(&mut self.composer)
                 {
                     let _ = agenterm_platform::clipboard::set_text(&text);
                 }
@@ -1575,11 +1610,7 @@ impl ConApp {
                 && let Ok(text) =
                     agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES)
             {
-                composer::paste(
-                    &mut self.composer.text,
-                    &mut self.composer.select_all,
-                    &text,
-                );
+                composer::paste(&mut self.composer, &text);
             }
             let _ = self.update_composer_ime_anchor(window);
             return true;
@@ -1589,18 +1620,33 @@ impl ConApp {
                 self.submit_composer();
             }
             LogicalKey::Named(NamedKey::Backspace) => {
-                composer::backspace(&mut self.composer.text, &mut self.composer.select_all);
+                composer::backspace(&mut self.composer);
+            }
+            LogicalKey::Named(NamedKey::Delete) => {
+                composer::delete_forward(&mut self.composer);
+            }
+            LogicalKey::Named(NamedKey::ArrowLeft) => {
+                composer::move_caret(&mut self.composer, composer::Move::Left);
+            }
+            LogicalKey::Named(NamedKey::ArrowRight) => {
+                composer::move_caret(&mut self.composer, composer::Move::Right);
+            }
+            LogicalKey::Named(NamedKey::Home) => {
+                composer::move_caret(&mut self.composer, composer::Move::LineStart);
+            }
+            LogicalKey::Named(NamedKey::End) => {
+                composer::move_caret(&mut self.composer, composer::Move::LineEnd);
             }
             LogicalKey::Named(NamedKey::Escape) => {
                 self.composer.cancel_focus();
             }
             LogicalKey::Named(NamedKey::Space) if !key.modifiers.control && !key.modifiers.alt => {
-                composer::insert(&mut self.composer.text, &mut self.composer.select_all, " ");
+                composer::insert(&mut self.composer, " ");
             }
             LogicalKey::Character(text)
                 if !key.modifiers.control && !key.modifiers.alt && !text.is_empty() =>
             {
-                composer::insert(&mut self.composer.text, &mut self.composer.select_all, text);
+                composer::insert(&mut self.composer, text);
             }
             _ => {}
         }
@@ -1643,11 +1689,7 @@ impl ConApp {
             ImeAction::CommitText(text) => {
                 self.composer.submit_error = None;
                 self.composer.preedit.clear();
-                composer::insert(
-                    &mut self.composer.text,
-                    &mut self.composer.select_all,
-                    &text,
-                );
+                composer::insert(&mut self.composer, &text);
             }
             ImeAction::None => {}
             _ => self.composer.preedit.clear(),
@@ -2749,43 +2791,58 @@ impl ConApp {
             layout.composer_send.height,
             active_bg.to_xrgb(),
         );
-        let composer_cursor = if self.composer.focused && !self.composer.select_all {
-            "|"
-        } else {
-            ""
-        };
-        // Slide the painted window to the end of the line. `paint_chrome_text_parts`
-        // clips whatever exceeds its box, and it clips the tail -- so without
-        // this the composer keeps showing the text you typed first while the
-        // characters you are typing now, and the caret after them, fall
-        // outside the box entirely.
+        let show_caret = self.composer.focused && !self.composer.select_all;
+        // The painted window follows the caret, and `paint_chrome_text_parts`
+        // clips whatever exceeds its box -- it clips the tail -- so without
+        // this the composer keeps showing the text typed first while the
+        // characters being typed now fall outside the box entirely.
+        let composer_cell_width = font::cell_metrics(COMPOSER_TEXT_SIZE_PX).width.max(1);
         let composer_text_width = layout
             .composer_input
             .width
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
-        let composer_cells = (composer_text_width
-            / font::cell_metrics(COMPOSER_TEXT_SIZE_PX).width.max(1))
-            as usize;
+        let composer_cells = (composer_text_width / composer_cell_width) as usize;
         let window = composer::visible_window(
             &self.composer.text,
             &self.composer.preedit,
-            composer_cursor.len(),
+            self.composer.caret,
+            usize::from(show_caret),
             composer_cells,
         );
+        let caret = self.composer.caret.clamp(window.text, self.composer.text.len());
+        // Drawn as a rule rather than as a `|` character: a character would
+        // occupy a cell and push everything after the caret sideways, which
+        // makes the column a click lands on disagree with the column the text
+        // is painted at.
+        let caret_cells = usize::from(window.truncated)
+            + composer::cells(&self.composer.text[window.text..caret])
+            + composer::cells(&self.composer.preedit[window.preedit..]);
         paint_chrome_text_parts(
             &mut surface,
             layout.composer_input.x + COMPOSER_TEXT_INSET,
             layout.composer_input.y + 12,
             &[
                 if window.truncated { "…" } else { "" },
-                &self.composer.text[window.text..],
+                &self.composer.text[window.text..caret],
                 &self.composer.preedit[window.preedit..],
-                composer_cursor,
+                &self.composer.text[caret..],
             ],
             text,
             COMPOSER_TEXT_SIZE_PX,
             composer_text_width,
         );
+        if show_caret {
+            let offset = composer_cell_width
+                .saturating_mul(caret_cells as u32)
+                .min(composer_text_width.saturating_sub(1));
+            surface.fill_rect(
+                layout.composer_input.x + COMPOSER_TEXT_INSET + offset,
+                layout.composer_input.y + 12,
+                2,
+                font::cell_metrics(COMPOSER_TEXT_SIZE_PX).height.max(1),
+                accent.to_xrgb(),
+            );
+        }
         paint_chrome_text(
             &mut surface,
             layout.composer_send.x + 17,
@@ -4949,6 +5006,7 @@ impl PixelWindowApplication for ConApp {
                 ui::ComposerHit::Input => {
                     self.composer.focused = true;
                     self.composer.select_all = false;
+                    self.place_composer_caret(window, position)?;
                     self.update_composer_ime_anchor(window)?;
                     self.mark_composer_dirty();
                     // A physical client click has already activated and
