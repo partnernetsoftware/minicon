@@ -1,0 +1,241 @@
+# Builds and publishes the three MiniCon clients.
+#
+# Deliberately one workflow rather than the candidate/promote pair `agenterm`
+# uses. That split exists because agenterm ships several executables, a cdylib
+# and metadata, and needs a reviewable artifact set before anything is tagged.
+# MiniCon ships one file per platform, so the same discipline fits in one
+# place: build, verify the bytes, publish.
+#
+# Run it with `dry_run: true` first. That does everything except create the
+# release, so a build failure is discovered before a tag exists rather than
+# after — a tag that has to be deleted is worse than a run that has to be
+# repeated.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify everything, but publish nothing
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: minicon-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.platform_id }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_id: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: minicon.exe
+          - platform_id: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: minicon
+          # Apple Silicon runner, which can also produce the Intel slice, so
+          # both go into one universal binary below. A product whose promise is
+          # "one file" should not hand macOS users a choice of two.
+          - platform_id: macos-universal
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            binary: minicon
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - name: Install target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install the Intel slice target
+        if: matrix.platform_id == 'macos-universal'
+        run: rustup target add x86_64-apple-darwin
+
+      # The set winit and softbuffer need to link and run. Taken from
+      # agenterm's candidate pipeline rather than rediscovered by failing.
+      - name: Install Linux display libraries
+        if: matrix.platform_id == 'linux-x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon0 libxkbcommon-x11-0 libwayland-client0
+
+      - name: Build
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Build the Intel slice
+        if: matrix.platform_id == 'macos-universal'
+        run: cargo build --locked --release --target x86_64-apple-darwin
+
+      - name: Combine the macOS slices into one binary
+        if: matrix.platform_id == 'macos-universal'
+        run: |
+          set -euo pipefail
+          lipo -create -output minicon \
+            target/aarch64-apple-darwin/release/minicon \
+            target/x86_64-apple-darwin/release/minicon
+          lipo -info minicon
+          mkdir -p target/${{ matrix.target }}/release
+          mv minicon target/${{ matrix.target }}/release/minicon
+
+      # The artifact is verified as an artifact, not as a build that exited
+      # zero: a linker can succeed and still leave something that will not run.
+      - name: Verify the built binary runs and describes itself
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          test -f "$binary"
+          version="$("$binary" --version)"
+          echo "$version"
+          expected="minicon $(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          [[ "$version" == "$expected" ]] || {
+            echo "reported '$version', manifest says '$expected'" >&2
+            exit 1
+          }
+          "$binary" --status
+
+      - name: Package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          name="minicon-$version-${{ matrix.platform_id }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cp scripts/probe-imports.ps1 "dist/$name/" 2>/dev/null || true
+          cd dist
+          if [[ "${{ matrix.platform_id }}" == windows-* ]]; then
+            archive="$name.zip"
+            7z a -tzip "$archive" "$name" >/dev/null
+          else
+            archive="$name.tar.gz"
+            tar -czf "$archive" "$name"
+          fi
+          # Checksums are what let someone verify the download rather than
+          # trust it, so they ship beside every archive.
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$archive" > "$archive.sha256"
+          else
+            shasum -a 256 "$archive" > "$archive.sha256"
+          fi
+          cat "$archive.sha256"
+          echo "archive=$archive" >>"$GITHUB_OUTPUT"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: minicon-${{ matrix.platform_id }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: incoming
+          merge-multiple: true
+
+      - name: Confirm all three clients arrived
+        id: bundle
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          cd incoming
+          ls -la
+          # Named explicitly rather than counted: a missing platform must fail
+          # here, not be discovered by a user who cannot find their download.
+          for platform in windows-x86_64 linux-x86_64 macos-universal; do
+            archive="$(ls "minicon-$version-$platform".* 2>/dev/null | grep -v '\.sha256$' | head -n1)"
+            test -n "$archive"
+            test -f "$archive.sha256"
+            echo "$platform -> $archive"
+          done
+          # Re-verified here, on a different machine than the one that wrote
+          # them: a checksum computed and checked in the same step proves only
+          # that the file did not change between two adjacent lines.
+          for sum in *.sha256; do
+            sha256sum -c "$sum"
+          done
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "tag=v$version" >>"$GITHUB_OUTPUT"
+
+      - name: Dry run summary
+        if: inputs.dry_run
+        run: |
+          echo "Dry run: built and verified ${{ steps.bundle.outputs.tag }} on all three platforms."
+          echo "Nothing was tagged or published. Re-run with dry_run disabled to release."
+
+      - name: Publish the release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.bundle.outputs.tag }}
+          VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists; refusing to overwrite a published release." >&2
+            exit 1
+          fi
+          notes="$(cat <<'NOTES'
+          MiniCon is a standalone terminal in a single executable: no installer,
+          no runtime, and no Visual C++ redistributable.
+
+          **Downloads** — one file per platform, with a SHA-256 beside it.
+
+          | Platform | Archive |
+          | --- | --- |
+          | Windows x86_64 | `minicon-VERSION-windows-x86_64.zip` |
+          | Linux x86_64 | `minicon-VERSION-linux-x86_64.tar.gz` |
+          | macOS (Apple Silicon and Intel) | `minicon-VERSION-macos-universal.tar.gz` |
+
+          The macOS build is a universal binary; the same file runs on both
+          architectures.
+
+          **Windows Server 2016 and Windows 10 1607** are supported. Those
+          builds have no pseudoconsole, so MiniCon hosts the shell in a hidden
+          console instead — see https://minicon.agenterm.work/old-windows.html
+
+          Run `minicon --status` to see which backend and font your machine
+          gave it. That output is the most useful thing to include in a bug
+          report.
+
+          Verify a download before running it:
+
+              sha256sum -c minicon-VERSION-linux-x86_64.tar.gz.sha256
+
+          MIT OR Apache-2.0.
+          NOTES
+          )"
+          notes="${notes//VERSION/$VERSION}"
+          gh release create "$TAG" \
+            --title "MiniCon $VERSION" \
+            --notes "$notes" \
+            incoming/*
