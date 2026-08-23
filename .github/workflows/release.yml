@@ -204,38 +204,12 @@ jobs:
             echo "$TAG already exists; refusing to overwrite a published release." >&2
             exit 1
           fi
-          notes="$(cat <<'NOTES'
-          MiniCon is a standalone terminal in a single executable: no installer,
-          no runtime, and no Visual C++ redistributable.
-
-          **Downloads** — one file per platform, with a SHA-256 beside it.
-
-          | Platform | Archive |
-          | --- | --- |
-          | Windows x86_64 | `minicon-VERSION-windows-x86_64.zip` |
-          | Linux x86_64 | `minicon-VERSION-linux-x86_64.tar.gz` |
-          | macOS (Apple Silicon and Intel) | `minicon-VERSION-macos-universal.tar.gz` |
-
-          The macOS build is a universal binary; the same file runs on both
-          architectures.
-
-          **Windows Server 2016 and Windows 10 1607** are supported. Those
-          builds have no pseudoconsole, so MiniCon hosts the shell in a hidden
-          console instead — see https://minicon.agenterm.work/old-windows.html
-
-          Run `minicon --status` to see which backend and font your machine
-          gave it. That output is the most useful thing to include in a bug
-          report.
-
-          Verify a download before running it:
-
-              sha256sum -c minicon-VERSION-linux-x86_64.tar.gz.sha256
-
-          MIT OR Apache-2.0.
-          NOTES
-          )"
-          notes="${notes//VERSION/$VERSION}"
+          # Notes live in a reviewable file rather than inside this YAML. An
+          # indented heredoc here does not terminate at an indented delimiter,
+          # and even when it does, YAML's leading spaces turn the whole body
+          # into a Markdown code block — both were true of the first version.
+          sed "s/VERSION/$VERSION/g" .github/release-notes.md > notes.md
           gh release create "$TAG" \
             --title "MiniCon $VERSION" \
-            --notes "$notes" \
+            --notes-file notes.md \
             incoming/*
