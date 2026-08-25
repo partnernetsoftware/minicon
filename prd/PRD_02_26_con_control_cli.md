@@ -1,13 +1,12 @@
 # `minicon` control protocol and public CLI
 
-Parent: [Lightweight terminal host (`minicon`)](PRD_02_23_minicon.md)
+Parent: [MiniCon product requirements](../PRD.md)
 
 This module owns the standalone host's automation surface: the public
 `minicon cli` command set, the private `ATC1` wire, the bounded JSON
 contract, and the snapshot/screenshot evidence products. The workbench's
-`agenterm cli` is a separate contract owned by
-[command line](PRD_02_15_command_line.md); the two are deliberately not the same
-surface.
+`agenterm cli` is a separate contract owned by the AgenTerm repository; the two
+are deliberately not the same surface.
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 

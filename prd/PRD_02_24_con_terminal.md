@@ -1,12 +1,12 @@
 # `minicon` terminal and rendering
 
-Parent: [Lightweight terminal host (`minicon`)](PRD_02_23_minicon.md)
+Parent: [MiniCon product requirements](../PRD.md)
 
 This module owns the standalone host's PTY ownership, VT parsing, damage,
-rasterization, native present, glyph and ISA behavior. Shared kernels stay in
-[terminal runtime](PRD_02_01_terminal_runtime.md) and
-[native platform](PRD_02_20_native_platform.md); this module owns only what con
-decides for itself.
+rasterization, native present, glyph and ISA behavior. Shared mechanism may
+remain upstream while reuse is being inverted; this module owns MiniCon's
+terminal product decisions and evidence. Dependency direction and extraction
+stages are owned by [shared core](PRD_02_28_shared_core.md).
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
@@ -69,7 +69,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   closes every flooded tab within a strict per-tab deadline, verifies stable IDs
   leave the tree, and proves an unaffected sibling remains interactive after
   every close. The generic bounded-close rule for a tab and its workers stays
-  with [terminal runtime](PRD_02_01_terminal_runtime.md).
+  with the selected platform terminal runtime.
 - [x] a public multi-tab journey uses `wait-tab-exit` to prove one child can
   exit with a non-zero code while a sibling continues accepting input, the dead
   tab remains capturable but rejects further PTY input, parent promotion still

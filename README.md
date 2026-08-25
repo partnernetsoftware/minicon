@@ -98,7 +98,7 @@ libwayland-client0`.
 | --- | --- |
 | `src/` | the binary: terminal, chrome, control protocol |
 | `crates/minicon-core/` | host-neutral logic — no platform, OS, or `cfg` on architecture |
-| `prd/` | what the product promises, and why, by module |
+| [`PRD.md`](PRD.md) | product tree, decision map, and links to owning module PRDs |
 | `docs/` | the website at `minicon.agenterm.work` |
 | `tests/` | black-box journeys and the gates below |
 

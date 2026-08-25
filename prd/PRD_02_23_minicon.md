@@ -1,5 +1,7 @@
 # Lightweight terminal host (`minicon`)
 
+Parent and product index: [`PRD.md`](../PRD.md)
+
 本仓 PRD 根。源于 agenterm 的 `agenterm-con` 子树，2026-08-23 随代码迁出独立仓。
 迁出后的交付差异（体积门与 CI 未随行）记在 [交付子模块](PRD_02_27_con_delivery.md)。
 
@@ -17,7 +19,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 | 24 | [Terminal and rendering](PRD_02_24_con_terminal.md) | PTY、VT、行级 damage、present、字形、ISA、渲染性能 |
 | 25 | [Workspace and input](PRD_02_25_con_workspace.md) | Tab 树、chrome、composer、滚动条、选择、剪贴板、焦点 |
 | 26 | [Control protocol and public CLI](PRD_02_26_con_control_cli.md) | `minicon cli`、`ATC1` 帧、JSON 契约、快照/截图证据 |
-| 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、`con-*` profile、严格小于 1 MiB、独立 CI、体积历史、加载期可移植性 |
+| 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、unwind profile、按平台/目标陈述体积、独立 CI、加载期可移植性 |
 | 28 | [Shared core and reuse boundary](PRD_02_28_shared_core.md) | `minicon-core`、跨产品复用的可测边界、与 agenterm 的依赖方向分期 |
 
 ## Product outcome
@@ -26,8 +28,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   console host. It provides several independently owned local terminals without
   the workbench authority, background server, Fleet, mux, MCP, or script engines
   of `agenterm`. Its sustained-throughput qualification is shipped in
-  [24](PRD_02_24_con_terminal.md), and the strict sub-1-MiB artifact budget in
-  [27](PRD_02_27_con_delivery.md) is recovered, and the native Chinese-IME
+  [24](PRD_02_24_con_terminal.md), platform-qualified artifact measurements in
+  [27](PRD_02_27_con_delivery.md) are explicit, and the native Chinese-IME
   keyboard acceptance in [25](PRD_02_25_con_workspace.md) is shipped.
 
 The product succeeds when a user can launch one small executable, organize
@@ -128,12 +130,11 @@ or reduced permission model.
 
 ## Delivery ownership
 
-Package identity, `con-*` unwind profiles, artifact budget, the independent
+Package identity, unwind profiles, platform-qualified artifact measurements, the independent
 `.github/workflows/ci-minicon.yml` feedback owner, and the exact-SHA
 two-workflow Candidate precondition are owned by
-[27](PRD_02_27_con_delivery.md). The cross-product release contract itself
-remains owned by
-[delivery and quality](PRD_02_17_delivery_quality.md).
+[27](PRD_02_27_con_delivery.md). Historical agenterm delivery requirements are
+context only; this repository's delivery PRD and workflows are authoritative.
 
 ## Shared improvement boundary
 
@@ -144,9 +145,7 @@ font rasterization, retained frame mechanics, input normalization, clipboard,
 IME, native window contracts, and bounded failure types should converge rather
 than fork.
 
-Shared kernels consumed by both products keep their requirement in the owning
-shared module and are only referenced from this subtree:
-[terminal runtime](PRD_02_01_terminal_runtime.md) owns physical VT selection
-semantics, `RetainedXrgbFrame`, and the architecture pixel kernels;
-[native platform](PRD_02_20_native_platform.md) owns the window, input, IME,
-DPI, clipboard and font adapter contracts.
+Shared kernels consumed by both products keep their requirement in their
+owning source repository. Within MiniCon, [shared core](PRD_02_28_shared_core.md)
+owns the dependency direction and extraction stages; historical agenterm PRD
+numbers are not local authorities.

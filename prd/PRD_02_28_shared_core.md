@@ -1,7 +1,7 @@
 # Shared core and reuse boundary (`minicon-core`)
 
 Owner of the question "what can another product take from MiniCon, and what
-has to stay". Its parent is [23](PRD_02_23_minicon.md).
+has to stay". Parent: [MiniCon product requirements](../PRD.md).
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 

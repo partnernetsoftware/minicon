@@ -1,13 +1,12 @@
 # `minicon` package, budget and delivery
 
-Parent: [Lightweight terminal host (`minicon`)](PRD_02_23_minicon.md)
+Parent: [MiniCon product requirements](../PRD.md)
 
 This module owns the standalone host's package identity, unwind profiles,
 artifact budget, dependency-graph bans, independent CI ownership, and its
-measured artifact-size history. The cross-product release contract, receipt and
-sealing rules stay in
-[delivery and quality](PRD_02_17_delivery_quality.md); the binary-role registry
-stays in [executable family](PRD_02_02_executable_family.md).
+measured artifact-size history. Historical cross-product release context stays
+with AgenTerm; this repository's workflows and machine-readable contracts are
+authoritative for MiniCon delivery.
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
@@ -166,7 +165,7 @@ correct half/full-width font measurement.
 - [x] Candidate preflight requires a successful run of both workflows at the
   exact source SHA before integrated qualification and six-platform sealing. The
   rule itself is owned by
-  [delivery and quality](PRD_02_17_delivery_quality.md).
+  this repository's release workflow.
 - [x] Windows x86_64 runs the matching custom-std `con-release-fast` Clippy,
   unit, public GUI black-box, panic-containment and artifact build path;
   `{x86_64,aarch64} x {win,lnx,osx}` compile cells prove the product and its
@@ -179,7 +178,7 @@ correct half/full-width font measurement.
   evidence. `evidence-registry.json` owns those Cargo test
   identities independently from workbench qualification.
 - [x] con capabilities must not be registered in
-  [`prd/alignment-contract.json`](alignment-contract.json). That contract's
+  [`alignment-contract.json`](../alignment-contract.json). That contract's
   evidence identifiers must exactly match the evidence emitted by the workbench
   qualification suites in `scripts/qualification-gates.json` and
   `scripts/host-native-evidence-gates.json`, and its command catalog comes from

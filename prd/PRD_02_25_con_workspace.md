@@ -1,11 +1,11 @@
 # `minicon` workspace and input
 
-Parent: [Lightweight terminal host (`minicon`)](PRD_02_23_minicon.md)
+Parent: [MiniCon product requirements](../PRD.md)
 
 This module owns the standalone host's tab tree, local chrome, external composer
 input, scrollbar and divider interaction, selection and clipboard behavior, and
-focus ownership. The shared physical VT selection kernel remains owned by
-[terminal runtime](PRD_02_01_terminal_runtime.md).
+focus ownership. Shared physical VT selection mechanism may remain upstream;
+this module owns MiniCon's interaction meaning and evidence.
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
@@ -271,7 +271,7 @@ the window rather than being hidden to save pixels.
 - The auto-copy rule itself — a completed non-empty selection copies normalized
   text, while a rangeless click, application-owned gesture, scrollbar drag or
   divider resize must not mutate the clipboard — is shared and owned by
-  [terminal runtime](PRD_02_01_terminal_runtime.md).
+  the selected platform terminal runtime.
 - [x] Windows selection auto-copy counts UTF-16 units, performs one checked
   movable `GlobalAlloc`, and encodes directly into the locked system allocation
   instead of first collecting a Rust vector and copying it. The caller frees
