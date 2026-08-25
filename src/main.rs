@@ -2949,13 +2949,18 @@ impl ConApp {
             }
             .to_xrgb(),
         );
-        surface.fill_rect(
-            layout.composer_send.x,
-            layout.composer_send.y,
-            layout.composer_send.width,
-            layout.composer_send.height,
-            active_bg.to_xrgb(),
-        );
+        // Both buttons get the same plate. Filling only one left the other as
+        // floating text with no edge -- it read as a label rather than
+        // something to press, which is the whole difference a button makes.
+        for button in [layout.composer_send, layout.composer_newline] {
+            surface.fill_rect(
+                button.x,
+                button.y,
+                button.width,
+                button.height,
+                active_bg.to_xrgb(),
+            );
+        }
         let show_caret = self.composer.focused && !self.composer.select_all;
         // The painted window follows the caret, and `paint_chrome_text_parts`
         // clips whatever exceeds its box -- it clips the tail -- so without
@@ -2988,9 +2993,12 @@ impl ConApp {
             layout.composer_input.y + 12,
             &[
                 if window.truncated { "…" } else { "" },
-                &self.composer.text[window.text..caret],
+                // Sliced on the stored text, converted for painting: the glyph
+                // is wider in bytes than the newline it stands for, so an
+                // offset taken from the converted string would not index back.
+                &composer::display(&self.composer.text[window.text..caret]),
                 &self.composer.preedit[window.preedit..],
-                &self.composer.text[caret..],
+                &composer::display(&self.composer.text[caret..]),
             ],
             text,
             COMPOSER_TEXT_SIZE_PX,
@@ -3008,19 +3016,22 @@ impl ConApp {
                 accent.to_xrgb(),
             );
         }
-        paint_chrome_text(
+        let send_label = self.ui_language.strings().send;
+        let newline_label = self.ui_language.strings().newline;
+        // Centred per button rather than at a fixed inset: the pair is half as
+        // tall as the single control it replaced, and the two labels differ in
+        // width, so one hard-coded offset cannot suit both.
+        paint_button_label(
             &mut surface,
-            layout.composer_send.x + 17,
-            layout.composer_send.y + 12,
-            self.ui_language.strings().send,
+            layout.composer_send,
+            send_label,
             if self.composer.submit_error.is_some() {
                 error_accent
             } else {
                 accent
             },
-            13,
-            layout.composer_send.width.saturating_sub(20),
         );
+        paint_button_label(&mut surface, layout.composer_newline, newline_label, accent);
         Ok(())
     }
 }
@@ -5211,6 +5222,17 @@ impl PixelWindowApplication for ConApp {
                     self.request_dirty_redraw(window);
                     return Ok(PixelWindowDirective::Continue);
                 }
+                ui::ComposerHit::Newline => {
+                    // A break in the text, not a submission: the line goes on
+                    // being edited. Sending here would make the two buttons the
+                    // same button with different labels.
+                    composer::insert(&mut self.composer, "\n");
+                    self.composer.focused = true;
+                    self.update_composer_ime_anchor(window)?;
+                    self.mark_composer_dirty();
+                    self.request_dirty_redraw(window);
+                    return Ok(PixelWindowDirective::Continue);
+                }
                 ui::ComposerHit::Outside => {}
             }
             self.composer.focused = false;
@@ -5729,6 +5751,37 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
         .clip(width, height)
         .bounds()
         .unwrap_or_else(PixelRect::empty)
+}
+
+/// Paints one chrome button's label centred in its box.
+///
+/// Centring is computed rather than tuned: the composer's two buttons differ
+/// in label width and each is half the height of the single control they
+/// replaced, so any fixed inset that suits one misplaces the other. A label
+/// wider than its box is left-aligned and clipped by the painter, which keeps
+/// the first characters readable instead of centring the middle of a word.
+const BUTTON_LABEL_SIZE_PX: u16 = 13;
+
+fn paint_button_label(surface: &mut Surface<'_>, button: ui::Rect, label: &str, color: Rgb) {
+    let metrics = font::cell_metrics(BUTTON_LABEL_SIZE_PX);
+    let label_width = metrics.width.max(1).saturating_mul(
+        u32::try_from(composer::cells(label)).unwrap_or(u32::MAX),
+    );
+    let x = button
+        .x
+        .saturating_add(button.width.saturating_sub(label_width) / 2);
+    let y = button
+        .y
+        .saturating_add(button.height.saturating_sub(metrics.height.max(1)) / 2);
+    paint_chrome_text(
+        surface,
+        x,
+        y,
+        label,
+        color,
+        BUTTON_LABEL_SIZE_PX,
+        button.width,
+    );
 }
 
 fn paint_chrome_text(

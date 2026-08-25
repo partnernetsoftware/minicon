@@ -39,6 +39,12 @@ pub struct Layout {
     pub composer: Rect,
     pub composer_input: Rect,
     pub composer_send: Rect,
+    /// Directly under [`Self::composer_send`], same column.
+    ///
+    /// Stacked rather than placed side by side: the pair shares one strip of
+    /// width the input would otherwise have, and taking a second column from a
+    /// single-line input is what makes a long command stop fitting.
+    pub composer_newline: Rect,
     pub zoom_out: Rect,
     pub zoom_in: Rect,
     /// The two language entries, left of the size controls.
@@ -80,11 +86,24 @@ impl Layout {
             .height
             .saturating_sub(label_height)
             .saturating_sub(padding);
+        let button_x = width.saturating_sub(padding).saturating_sub(send_width);
+        let button_gap = dip(6.0, scale);
+        let send_height = control_height.saturating_sub(button_gap) / 2;
         let send = Rect {
-            x: width.saturating_sub(padding).saturating_sub(send_width),
+            x: button_x,
             y: control_y,
             width: send_width,
-            height: control_height,
+            height: send_height,
+        };
+        let newline = Rect {
+            x: button_x,
+            y: control_y
+                .saturating_add(send_height)
+                .saturating_add(button_gap),
+            width: send_width,
+            height: control_height
+                .saturating_sub(send_height)
+                .saturating_sub(button_gap),
         };
         let input_x = composer.x.saturating_add(padding);
         let input = Rect {
@@ -139,6 +158,7 @@ impl Layout {
             composer,
             composer_input: input,
             composer_send: send,
+            composer_newline: newline,
             zoom_out,
             zoom_in,
             language_chinese,
@@ -202,6 +222,7 @@ pub enum ComposerHit {
     Outside,
     Input,
     Send,
+    Newline,
 }
 
 /// The language MiniCon labels itself in.
@@ -245,11 +266,13 @@ impl UiLanguage {
             Self::English => ChromeStrings {
                 paste_failed: "PASTE FAILED",
                 send: "SEND",
+                newline: "NEWLINE",
                 send_to: "SEND TO @",
             },
             Self::Chinese => ChromeStrings {
                 paste_failed: "貼上失敗",
                 send: "送出",
+                newline: "換行",
                 send_to: "送往 @",
             },
         }
@@ -264,6 +287,7 @@ impl UiLanguage {
 pub struct ChromeStrings {
     pub paste_failed: &'static str,
     pub send: &'static str,
+    pub newline: &'static str,
     pub send_to: &'static str,
 }
 
@@ -308,6 +332,8 @@ pub fn tree_hit(
 pub fn composer_hit(layout: Layout, x: u32, y: u32) -> ComposerHit {
     if layout.composer_send.contains(x, y) {
         ComposerHit::Send
+    } else if layout.composer_newline.contains(x, y) {
+        ComposerHit::Newline
     } else if layout.composer.contains(x, y) {
         ComposerHit::Input
     } else {
@@ -568,7 +594,33 @@ mod tests {
             ),
             ComposerHit::Send
         );
+        assert_eq!(
+            composer_hit(
+                layout,
+                layout.composer_newline.x + 1,
+                layout.composer_newline.y + 1
+            ),
+            ComposerHit::Newline
+        );
         assert_eq!(composer_hit(layout, 500, 100), ComposerHit::Outside);
+    }
+
+    #[test]
+    fn the_two_composer_buttons_stack_without_overlapping() {
+        let layout = Layout::new(1000, 500, 1.0);
+        let send = layout.composer_send;
+        let newline = layout.composer_newline;
+        // Same column: the pair replaced one control and must not take a
+        // second bite out of the input's width.
+        assert_eq!(send.x, newline.x);
+        assert_eq!(send.width, newline.width);
+        // Newline sits below with a gap, and neither box is empty -- a
+        // zero-height button is unclickable while still passing a hit test
+        // written against its rect.
+        assert!(send.height > 0 && newline.height > 0);
+        assert!(newline.y >= send.y + send.height);
+        // Still inside the strip the input yields to them.
+        assert!(layout.composer_input.x + layout.composer_input.width <= send.x);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Pure single-line composer editing rules.
+//! Pure composer editing rules.
 //!
 //! Clipboard I/O stays in the host. This module only owns deterministic text
 //! and selection changes so the behavior can later converge with the shared
@@ -140,9 +140,17 @@ impl ComposerState {
     }
 
     /// Returns one terminal submission and resets all transient edit state.
+    ///
+    /// Embedded newlines become carriage returns, because that is what the
+    /// terminal receives when a person presses Enter. Sending `\n` instead
+    /// would reach the line discipline as a different key and a shell would
+    /// not treat the line as entered.
     pub fn take_submission(&mut self) -> Option<String> {
         let mut submission = (!self.text.is_empty()).then(|| std::mem::take(&mut self.text));
         if let Some(text) = submission.as_mut() {
+            if text.contains('\n') {
+                *text = text.replace('\n', "\r");
+            }
             text.push('\r');
         }
         self.text.clear();
@@ -169,10 +177,10 @@ impl ComposerState {
     }
 }
 
-/// Where the painted window into a single-line composer begins.
+/// Where the painted window into the composer begins.
 ///
-/// The composer stays one line on purpose: its content is submitted to a
-/// shell, where a newline means "run", so wrapping would misrepresent what
+/// The composer paints on one visual line on purpose: its content is submitted
+/// to a shell, where a newline means "run", so wrapping would misrepresent what
 /// pressing Enter does. What is *not* on purpose is painting from the head
 /// and clipping the tail, which is what the chrome painter does with any
 /// string too wide for its box. Past that width the composer showed stale
@@ -198,10 +206,39 @@ pub struct VisibleWindow {
 /// The painter's own width rule, so the measurement here and the advance
 /// there cannot disagree: a double-width character owns two cells.
 fn character_cells(character: char) -> usize {
+    // A newline is stored, measured and painted as one cell. It has no width
+    // of its own -- `unicode_width` answers `None` for it -- so without a
+    // deliberate answer here the caret column and the painted column would
+    // disagree by one for every break in the line, and a click would land on
+    // the wrong character.
+    if character == '\n' {
+        return 1;
+    }
     if unicode_width::UnicodeWidthChar::width(character).unwrap_or(1) > 1 {
         2
     } else {
         1
+    }
+}
+
+/// The visible stand-in for a stored newline.
+///
+/// The break has to be *seen*: an invisible one turns "this will run as two
+/// commands" into a surprise at the moment it is least recoverable.
+pub const NEWLINE_GLYPH: char = '\u{21b5}';
+
+/// Text as painted: stored newlines shown as [`NEWLINE_GLYPH`].
+///
+/// Borrowed unless there is something to replace, so the common line pays
+/// nothing. Byte offsets are never derived from the result -- callers slice
+/// the stored text and convert each piece -- because the glyph is three bytes
+/// where the newline was one.
+#[must_use]
+pub fn display(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains('\n') {
+        std::borrow::Cow::Owned(text.replace('\n', &NEWLINE_GLYPH.to_string()))
+    } else {
+        std::borrow::Cow::Borrowed(text)
     }
 }
 
@@ -905,5 +942,31 @@ mod tests {
         assert_eq!(composer.preedit, "");
         assert!(!composer.select_all);
         assert_eq!(composer.submit_error, None);
+    }
+
+    #[test]
+    fn a_stored_newline_is_submitted_as_a_carriage_return() {
+        let mut composer = ComposerState::default();
+        insert(&mut composer, "first");
+        insert(&mut composer, "\n");
+        insert(&mut composer, "second");
+        let sent = composer.take_submission().expect("a submission");
+        // What a terminal receives when Enter is pressed, for the embedded
+        // break as much as for the final one. Sending `\n` would arrive as a
+        // different key and the shell would not treat the line as entered.
+        assert_eq!(sent, "first\rsecond\r");
+        assert!(!sent.contains('\n'));
+    }
+
+    #[test]
+    fn a_newline_is_painted_as_a_visible_glyph_and_measures_one_cell() {
+        assert_eq!(display("a\nb").as_ref(), "a\u{21b5}b");
+        // Borrowed when there is nothing to replace: the common line pays
+        // no allocation for a feature it is not using.
+        assert!(matches!(display("plain"), std::borrow::Cow::Borrowed(_)));
+        // One cell, so the caret column and the painted column agree. Left
+        // to `unicode_width` the newline has no width at all and they drift
+        // by one for every break.
+        assert_eq!(cells("a\nb"), 3);
     }
 }

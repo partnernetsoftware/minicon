@@ -17,6 +17,15 @@ use crate::ui::{Layout, Rect};
 
 pub const COMMAND_NAME: &str = "Command";
 pub const SEND_NAME: &str = "SEND";
+pub const NEWLINE_NAME: &str = "NEWLINE";
+
+/// Published id for the newline button.
+///
+/// Defined here rather than in `agenterm-platform` because that crate is
+/// pinned by revision and its ids stop at 6; 7 is the next free value and the
+/// adapter only needs the number to be stable, which a constant in one place
+/// makes it. Move it upstream when the pin next moves.
+pub const NODE_NEWLINE: u32 = 7;
 pub const TABS_NAME: &str = "Tabs";
 pub const SESSION_NAME: &str = "Session";
 pub const OFFSCREEN_FIELD_NAME: &str = "OffscreenField";
@@ -202,6 +211,15 @@ pub fn tree(
                 layout.composer_send,
                 Flags::FOCUSABLE.with_click(),
             ),
+            published(
+                NODE_NEWLINE,
+                Some(NODE_FRAME),
+                PublishedRole::Button,
+                NEWLINE_NAME,
+                "",
+                layout.composer_newline,
+                Flags::FOCUSABLE.with_click(),
+            ),
         ],
     }
 }
@@ -316,10 +334,21 @@ mod tests {
         assert!(command.editable);
         let send = tree.node(NODE_SEND).expect("send button is published");
         assert_eq!(send.name, SEND_NAME);
+        let newline = tree
+            .node(NODE_NEWLINE)
+            .expect("newline button is published");
+        assert_eq!(newline.name, NEWLINE_NAME);
+        assert_eq!(newline.role, PublishedRole::Button);
+        // Distinct boxes, or a screen reader and a click-by-name automation
+        // would reach whichever one the hit test happened to find first.
+        assert_ne!(send.bounds, newline.bounds);
         assert_eq!(send.role, PublishedRole::Button);
         assert_ne!(send.role.as_str(), "frame");
         assert_ne!(send.role.as_str(), "application");
-        assert_eq!(tree.children_of(NODE_FRAME).len(), 4);
+        // Five since the send control became a pair: tabs, session, command,
+        // send, newline. Counted rather than spot-checked so a node that stops
+        // being published fails here instead of going quiet in the tree.
+        assert_eq!(tree.children_of(NODE_FRAME).len(), 5);
         let field = tree
             .node(NODE_OFFSCREEN_FIELD)
             .expect("offscreen field is published");
