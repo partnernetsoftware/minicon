@@ -8,7 +8,7 @@ PTY, renders a real terminal, and a script can drive and read every part of it.
 
 | | |
 | --- | --- |
-| Executable | ~760 KB, under a 1 MiB ceiling the test suite enforces |
+| Executable | 664 KB on Windows arm64, 716 KB on x64; larger on Linux and macOS |
 | Dependencies | operating-system libraries only |
 | Supported | Windows Server 2016 / Windows 10 1607 and newer; Linux; macOS |
 | Licence | MIT OR Apache-2.0 |
@@ -102,15 +102,13 @@ libwayland-client0`.
 | `docs/` | the website at `minicon.agenterm.work` |
 | `tests/` | black-box journeys and the gates below |
 
-Three gates are worth knowing about, because each one exists where a claim
+Two gates are worth knowing about, because each one exists where a claim
 would otherwise be unchecked:
 
 - **Import table** — the shipped executable must depend on nothing but
   operating-system modules. The exception list is empty, so a future
   redistributable dependency turns it red rather than quietly widening what a
   user has to install.
-- **Size** — strictly below 1 MiB, measured on the artifact. A budget nothing
-  measures is a wish.
 - **Alignment** — the public CLI must match the machine-readable contract in
   `alignment-contract.json`, which is in turn pinned to the PRDs.
 
@@ -128,7 +126,7 @@ server, workspace persistence, multiplexer, or script runtime.
 **一个文件就是一个终端。** 免安装、免运行时、免 VC++ 可再发行组件——它载入的每一个
 库都是操作系统自带的。它开真正的 PTY、画真正的终端,而且每一部分都能被脚本驱动和读取。
 
-- 产物约 760 KB,上限 1 MiB 由测试强制
+- 产物 Windows arm64 664 KB、x64 716 KB;Linux 与 macOS 更大
 - 只依赖操作系统库
 - 支持 Windows Server 2016 / Windows 10 1607 及以上、Linux、macOS
 - MIT 或 Apache-2.0
