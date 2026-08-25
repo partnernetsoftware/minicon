@@ -91,13 +91,17 @@ correct half/full-width font measurement.
   没有要逃的 aborting workspace，Cargo 默认就是 unwind，所以本仓改为直接在
   `[profile.release]` 里显式写 `panic = "unwind"`，不再要那层间接。下方 `con-*` 条目描述的
   是 agenterm 时期的实现。
-- [x] **体积门已在本仓重建。** agenterm 的 rh 管线（`scripts/artifacts.json`、
-  `scripts/rh/*.rh`、`tests/rh_regression.rs`）未随迁出带过来，一度使「严格小于 1 MiB」
-  成为无人检查的文字要求——而产品页面同时宣称该上限是被强制的。一个没有度量的预算是
-  愿望，一条没有门的公开承诺比不承诺更糟。现由
-  `tests/minicon_load_portability.rs::the_shipped_executable_stays_under_the_product_budget`
-  直接量取交付产物字节数并在超限时失败，同时打印余量，让裕度收窄在变成失败之前可见。
-  2026-08-23 实测 Windows PE 761,856 字节，余量 286,719。
+- [ ] ~~**体积门已在本仓重建。**~~ **已撤除（2026-08-25）。** 该门自始至终只是
+  **Windows 承诺**：`tests/minicon_load_portability.rs` 整个文件是 `#![cfg(windows)]`，
+  其 `shipped_binary()` 硬编码 `minicon.exe`，所以它从未在 Linux 或 macOS 上运行过一次，
+  而 README 把「1 MiB 上限由测试强制」与「支持 Windows、Linux、macOS」并列，
+  读起来像是可执行文件的固有属性。
+  单宿主六格实测（`strip=true`）：Windows arm64 677,376 / x64 731,136、
+  macOS 1,413,408 / 1,455,424、**Linux 4,846,400 / 5,732,544**——
+  Linux 是上限的 5 倍以上，且已确认是代码而非符号。
+  一个在三个平台里两个必红的门会挡住即将开始的瘦身工作，却量不出新东西，
+  所以撤门、改为在 README 直接写各平台实测字节数。
+  上限若要回来，必须先明确它约束哪几个平台。
   它刻意不是警告阈值：这个数字是产品承诺，构建就应该在它上面失败。
 - [~] **独立 CI 已移植，但停放中。** `ci-agenterm-con.yml` 已从 agenterm 移到本仓
   `.github/workflows/ci-minicon.yml.disabled`，`.disabled` 后缀期间不触发，一条
@@ -133,9 +137,13 @@ correct half/full-width font measurement.
   removing redundant mip sizes: `.rsrc` fell from 90,112 to 8,704 bytes, the
   source ICO is capped at 16 KiB by the build script, and Windows shell icon
   extraction still succeeds.
-- [x] Every released `minicon` artifact must be strictly below 1 MiB
-  (`release_budget_bytes = 1,048,575`), not merely an observed development size, and every
-  size statement must name its profile. At the icon reduction the LTO
+- [ ] ~~Every released `minicon` artifact must be strictly below 1 MiB
+  (`release_budget_bytes = 1,048,575`)~~ — **the ceiling was withdrawn on
+  2026-08-25**; see the entry above. What survives it is the second half of the
+  sentence, which was never platform-specific and still binds: a size statement
+  is not an observed development number, and every size statement must name its
+  profile **and its target**. The omission of the target is what let a Windows
+  measurement stand as the product's size. At the icon reduction the LTO
   `con-release` PE measured 8,704 bytes below the historical 512 KiB target,
   while the no-LTO `con-release-fast` PE was separately 543,744 bytes and is not
   release-size evidence. After the product ceiling changed to a strict 1 MiB,
