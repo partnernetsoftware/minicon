@@ -61,7 +61,10 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     // so linking it statically would cost bytes to duplicate something the
     // target already has.
     "api-ms-win-crt-heap-l1-1-0.dll",
+    "api-ms-win-crt-locale-l1-1-0.dll",
+    "api-ms-win-crt-math-l1-1-0.dll",
     "api-ms-win-crt-runtime-l1-1-0.dll",
+    "api-ms-win-crt-stdio-l1-1-0.dll",
     "api-ms-win-crt-string-l1-1-0.dll",
     "gdi32.dll",
     "gdiplus.dll",
@@ -84,6 +87,15 @@ const OS_PROVIDED_MODULES: &[&str] = &[
 const KNOWN_NON_OS_MODULES: &[&str] = &[];
 
 fn shipped_binary() -> PathBuf {
+    if let Some(path) = std::env::var_os("MINICON_TEST_BINARY") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "MINICON_TEST_BINARY is missing at {}",
+            path.display()
+        );
+        return path;
+    }
     // An integration test runs from `target/<profile>/deps/`, so the binary
     // it exercises is two directories up — the same resolution the black-box
     // suite uses, and for the same reason: `CARGO_BIN_EXE_*` does not cover

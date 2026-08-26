@@ -20,11 +20,22 @@ MiniCon remains useful precisely because it is not AgenTerm: it has no server,
 persistent workspace, Fleet, mux, MCP, script runtime, plugin host, or Agent
 permission policy.
 
+Portfolio context does not enlarge MiniCon's authority. The current product
+program prioritizes six-cell desktop delivery for MiniCon and AgenTerm together
+with iOS/Android PhoneApps. Reproducible UTM runners may later seed dedicated-OS
+experiments, including a HarmonyOS feasibility court, but that horizon cannot
+displace current desktop/mobile evidence or be presented as committed scope.
+
 ## Product tree
 
 ```text
 MiniCon — one-file local terminal
 ├── Product charter and boundaries
+│   ├── current product focus: six-cell desktop MiniCon
+│   ├── portfolio context: desktop MiniCon/AgenTerm + iOS/Android PhoneApps
+│   ├── future exploration, not current scope
+│   │   ├── dedicated operating-system test targets
+│   │   └── HarmonyOS feasibility
 │   └── prd/PRD_02_23_minicon.md
 ├── User capability branches
 │   ├── Terminal runtime and rendering
@@ -47,6 +58,30 @@ MiniCon — one-file local terminal
 │   │   ├── one executable and OS-library-only load boundary
 │   │   ├── unwind-safe native callback containment
 │   │   ├── platform-qualified size claims and exact-SHA delivery
+│   │   ├── Mac-hosted six-cell qualification
+│   │   │   ├── host builds every artifact; guests are runtime test targets only
+│   │   │   │   ├── no compiler or source checkout required in a guest
+│   │   │   │   └── copy exact linked artifacts into disposable runtime courts
+│   │   │   ├── macOS runtime courts
+│   │   │   │   ├── host-native arm64 + Rosetta x86_64 fast courts
+│   │   │   │   └── clean ARM64 macOS VM release/permission court (building)
+│   │   │   │       ├── official IPSW + Apple Virtualization baseline
+│   │   │   │       ├── VirtioFS exact-artifact job bridge; no Cargo or source
+│   │   │   │       └── clean-user, first-launch, TCC and packaging evidence
+│   │   │   ├── Debian/glibc Lima runtime courts for Linux cells
+│   │   │   │   ├── ARM64 VZ native + x86_64 Rosetta function court
+│   │   │   │   └── x86_64 QEMU kernel/logic court
+│   │   │   ├── Windows runtime courts
+│   │   │   │   ├── UTM guest-agent artifact bridge
+│   │   │   │   ├── InteractiveToken desktop dispatcher
+│   │   │   │   ├── Windows 11 ARM64 + Guest Tools baseline
+│   │   │   │   └── ARM64-native + Prism-x64 full runtime evidence
+│   │   │   ├── Reproducible runner images
+│   │   │   │   ├── signed upstream ISO/QCOW2 + immutable digest
+│   │   │   │   ├── cloud-init/Autounattend provisioning recipe
+│   │   │   │   ├── sealed local baseline + disposable overlay
+│   │   │   │   └── low-power idle baseline; raise resources only for owning test
+│   │   │   └── exact-artifact machine receipt
 │   │   └── prd/PRD_02_27_con_delivery.md
 │   └── Shared core and reuse boundary
 │       ├── host-neutral minicon-core leaves
@@ -87,7 +122,21 @@ flowchart LR
         A["alignment-contract.json"]
         R["evidence-registry.json"]
         X["public black-box tests"]
+        BH["Mac mini build owner<br/>build · link · artifact identity"]
+        Q["runtime-only guest courts<br/>no build toolchain · disposable state"]
+        M["six-cell evidence gate<br/>runtime results · receipt"]
+        O["OSX runtime<br/>host fast court · clean VM release court"]
+        G["macOS UTM bridge<br/>VirtioFS queue · SHA-256 manifest<br/>login-session agent · no Cargo"]
+        L["Debian/glibc Lima<br/>Linux runtime"]
+        V["Windows UTM courts<br/>ARM64 native + Prism x64 · PASS"]
+        I["Runner image provenance<br/>upstream digest · recipe · sealed baseline"]
         D["delivery qualification<br/>target + profile + exact SHA"]
+    end
+
+    subgraph Z["Portfolio horizon · context, not MiniCon scope"]
+        DS["Now<br/>six-cell desktop apps<br/>MiniCon · AgenTerm"]
+        MB["Next<br/>iOS + Android<br/>PhoneApps"]
+        OS["Future exploration<br/>dedicated OS targets<br/>HarmonyOS feasibility"]
     end
 
     U --> T
@@ -104,7 +153,24 @@ flowchart LR
     C --> A
     A --> R
     R --> X
-    X --> D
+    BH -- exact linked artifacts --> Q
+    X --> O
+    X --> L
+    X --> V
+    I --> L
+    I --> V
+    Q --> O
+    BH --> G
+    G --> O
+    Q --> L
+    Q --> V
+    O --> M
+    L --> M
+    V --> M
+    M --> D
+    U --> DS
+    DS --> MB
+    Q -. reusable VM and evidence method .-> OS
     D -- failures revise claims --> T
     D -- failures revise claims --> W
     D -- failures revise claims --> C
@@ -142,6 +208,22 @@ flowchart LR
 
 - [~] Independent CI is present as `.github/workflows/ci-minicon.yml.disabled`
   but has not yet run as this repository's active feedback owner.
+- [x] `scripts/six-cell-qualify.sh` builds and links every Cargo target for all
+  six `{x86_64,aarch64} × {win,lnx,osx}` cells from one Apple Silicon Mac and
+  runs the complete macOS arm64 suite. Rosetta runs the same macOS x86_64
+  suite. A Debian/glibc ARM64 Lima court runs the cross-linked Linux ARM64
+  artifact through unit, public GUI/PTY, AT-SPI, control, and sustained-output
+  tests. The same VZ guest uses Rosetta for Linux plus Debian amd64 multiarch
+  libraries to run the complete x86_64 suite; a QEMU guest separately proves
+  x86_64-kernel startup and logic tests. A UTM Windows 11 ARM64 guest with
+  Guest Tools runs both the native ARM64 and Prism-translated x86_64 product,
+  portability, console-agent, control, GUI black-box, and throughput courts.
+  The exact-byte integrated 2026-08-26 receipt records
+  `PASS 38 / FAIL 0 / BLOCKED 0` with a stable dirty-tree fingerprint. Every
+  absent future court is
+  recorded as `BLOCKED`, never inferred from link success. Runner portability
+  means an immutable upstream digest plus a declarative provisioning recipe
+  and disposable local overlay, not an untrusted redistributed guest disk.
 - [ ] Define any future artifact-size ceiling per target and profile before
   restoring a hard gate. Current measured sizes are evidence, not a universal
   sub-1-MiB promise.

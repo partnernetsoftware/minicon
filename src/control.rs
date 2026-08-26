@@ -481,10 +481,7 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
             CliCommand::WaitTabExit { target, timeout_ms }
         }
         _ => {
-            return Err(format!(
-                "unknown minicon cli command {verb:?}\n{}",
-                usage()
-            ));
+            return Err(format!("unknown minicon cli command {verb:?}\n{}", usage()));
         }
     };
 

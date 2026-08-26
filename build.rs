@@ -9,7 +9,9 @@ fn main() {
         icon_bytes <= ICON_BUDGET,
         "minicon icon is {icon_bytes} bytes; compact resource budget is {ICON_BUDGET}"
     );
-    #[cfg(windows)]
+    // Build scripts compile for the host, so `#[cfg(windows)]` would silently
+    // remove this target policy from macOS/Linux cross-builds. Cargo's target
+    // environment is the only authority here.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         // The MSVC runtime is three separable pieces: the C startup files, the
         // VC runtime, and the Universal CRT. They normally have to share a
@@ -42,9 +44,15 @@ fn main() {
         // XL through the TLS Directory. The default CRT entry is intentionally
         // absent, so link.exe cannot infer that every `.CRT` family is handled.
         println!("cargo:rustc-link-arg-bin=minicon=/IGNORE:4210");
-        winresource::WindowsResource::new()
+        let mut resource = winresource::WindowsResource::new();
+        resource
             .set_icon(ICON)
+            .set("ProductName", "MiniCon")
+            .set("FileDescription", "MiniCon standalone terminal")
+            .set("OriginalFilename", "minicon.exe")
+            .set("InternalName", "minicon");
+        resource
             .compile()
-            .expect("failed to embed minicon icon");
+            .expect("failed to embed minicon resources");
     }
 }

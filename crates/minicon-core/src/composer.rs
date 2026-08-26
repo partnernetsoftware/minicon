@@ -414,7 +414,9 @@ pub fn caret_at_cell(text: &str, from: usize, cell: usize) -> usize {
         // character, which is what makes clicking "between" two glyphs land
         // where the pointer visually is.
         if consumed + width > cell {
-            return from + index + usize::from(cell >= consumed + width.div_ceil(2)) * character.len_utf8();
+            return from
+                + index
+                + usize::from(cell >= consumed + width.div_ceil(2)) * character.len_utf8();
         }
         consumed += width;
     }
@@ -463,7 +465,10 @@ fn clamp_caret(text: &str, caret: usize) -> usize {
 }
 
 fn previous_boundary(text: &str, caret: usize) -> Option<usize> {
-    text[..caret].chars().next_back().map(|c| caret - c.len_utf8())
+    text[..caret]
+        .chars()
+        .next_back()
+        .map(|c| caret - c.len_utf8())
 }
 
 fn next_boundary(text: &str, caret: usize) -> Option<usize> {
@@ -681,13 +686,19 @@ mod tests {
         let mut composer = state("中");
         composer.caret = 1;
         backspace(&mut composer);
-        assert_eq!(composer.text, "中", "no character is deleted from a bad offset");
+        assert_eq!(
+            composer.text, "中",
+            "no character is deleted from a bad offset"
+        );
         assert!(composer.text.is_char_boundary(composer.caret));
 
         let mut composer = state("中x");
         composer.caret = 2; // inside the wide character
         delete_forward(&mut composer);
-        assert_eq!(composer.text, "x", "clamped down, so the wide character goes");
+        assert_eq!(
+            composer.text, "x",
+            "clamped down, so the wide character goes"
+        );
         assert!(composer.text.is_char_boundary(composer.caret));
     }
 
@@ -832,7 +843,10 @@ mod tests {
         let sent = composer.take_submission().expect("a submission");
         composer.remember(&sent);
         assert!(composer.recall_previous());
-        assert_eq!(composer.text, "first", "the newest entry, not where we were");
+        assert_eq!(
+            composer.text, "first",
+            "the newest entry, not where we were"
+        );
     }
 
     /// A recalled line is a starting point, so typing extends it rather than

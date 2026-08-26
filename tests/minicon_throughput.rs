@@ -57,15 +57,20 @@ fn control_endpoint(suffix: &str) -> String {
 }
 
 fn minicon_binary() -> PathBuf {
+    if let Some(path) = std::env::var_os("MINICON_TEST_BINARY") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "MINICON_TEST_BINARY is missing at {}",
+            path.display()
+        );
+        return path;
+    }
     let mut path = std::env::current_exe().expect("test executable path");
     path.pop();
     path.pop();
     path.push(format!("minicon{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        path.is_file(),
-        "minicon is missing at {}",
-        path.display()
-    );
+    assert!(path.is_file(), "minicon is missing at {}", path.display());
     path
 }
 
@@ -89,7 +94,7 @@ fn cli_json(exe: &Path, endpoint: &str, arguments: &[&str]) -> Value {
     let output = invoke(exe, endpoint, arguments);
     assert!(
         output.status.success(),
-        "CLI failed: {}",
+        "CLI {arguments:?} failed: {}",
         error_text(&output)
     );
     serde_json::from_slice(&output.stdout).expect("successful CLI output must be JSON")
@@ -109,6 +114,45 @@ fn wait_until_ready(exe: &Path, endpoint: &str, timeout: Duration) -> Value {
         );
         thread::sleep(Duration::from_millis(25));
     }
+}
+
+fn shell_marker_command(prefix: &str, suffix: &str) -> String {
+    if cfg!(windows) {
+        format!("[Console]::Out.WriteLine(('{prefix}'+'{suffix}'))\r")
+    } else {
+        format!("printf '{prefix}%s\\n' '{suffix}'\r")
+    }
+}
+
+fn wait_for_shell(
+    exe: &Path,
+    endpoint: &str,
+    tab: &str,
+    prefix: &str,
+    suffix: &str,
+    timeout: Duration,
+) {
+    let marker = format!("{prefix}{suffix}");
+    let command = shell_marker_command(prefix, suffix);
+    cli_json(exe, endpoint, &["send-text", "--target", tab, &command]);
+    let timeout_ms = timeout.as_millis().to_string();
+    let waited = invoke(
+        exe,
+        endpoint,
+        &[
+            "wait-text",
+            "--target",
+            tab,
+            "--timeout-ms",
+            &timeout_ms,
+            &marker,
+        ],
+    );
+    assert!(
+        waited.status.success(),
+        "shell did not execute readiness marker {marker}: {}",
+        error_text(&waited)
+    );
 }
 
 fn tab_id(value: &Value) -> &str {
@@ -131,22 +175,52 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui(child);
 
-    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
+    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(60));
     let producer = tab_id(&listed["tabs"][0]["id"]).to_owned();
     // The control endpoint becoming ready proves only that the GUI can accept
     // commands; it does not prove that the child shell has finished startup.
     // Inject the marker through the public interface after control readiness
     // on every host, so buffered terminal input becomes the shell-readiness
     // rendezvous instead of racing output from the process launch arguments.
+    wait_for_shell(
+        exe,
+        &endpoint,
+        &producer,
+        "THROUGHPUT_",
+        "READY",
+        Duration::from_secs(60),
+    );
+    let created = cli_json(exe, &endpoint, &["new-tab", "--parent", &producer]);
+    let sibling = tab_id(&created["id"]).to_owned();
+    // A tab record exists before its newly spawned shell necessarily begins
+    // reading input. Prove that startup separately so the five-second sibling
+    // criterion below measures responsiveness during output, not first-process
+    // launch or antivirus scanning of a new cross-built PE.
+    wait_for_shell(
+        exe,
+        &endpoint,
+        &sibling,
+        "SIBLING_",
+        "READY",
+        Duration::from_secs(60),
+    );
+    // Separate cold process/font/renderer/antivirus startup from the sustained
+    // throughput interval. This bounded payload must fully drain before perf
+    // counters and the 32 MiB clock are reset below.
+    let warmup = if cfg!(windows) {
+        "$w=[Text.Encoding]::ASCII.GetBytes((('W'*4096)+\"`r`n\")*256);\
+         $o=[Console]::OpenStandardOutput();$o.Write($w,0,$w.Length);\
+         [Console]::Out.WriteLine(('WARMUP_'+'DONE'))\r"
+            .to_owned()
+    } else {
+        "python3 -c \"import sys;b=(b'W'*4096+b'\\r\\n')*256;\
+         sys.stdout.buffer.write(b);print('WARMUP_'+'DONE')\"\r"
+            .to_owned()
+    };
     cli_json(
         exe,
         &endpoint,
-        &[
-            "send-text",
-            "--target",
-            &producer,
-            "echo THROUGHPUT_READY\r",
-        ],
+        &["send-text", "--target", &producer, &warmup],
     );
     cli_json(
         exe,
@@ -156,21 +230,37 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
             "--target",
             &producer,
             "--timeout-ms",
-            "15000",
-            "THROUGHPUT_READY",
+            "60000",
+            "WARMUP_DONE",
         ],
     );
-    let created = cli_json(exe, &endpoint, &["new-tab", "--parent", &producer]);
-    let sibling = tab_id(&created["id"]).to_owned();
     cli_json(exe, &endpoint, &["reset-perf-stats"]);
 
     let command = if cfg!(windows) {
-        format!(
+        let prepare = format!(
             "$b=[Text.Encoding]::ASCII.GetBytes(((('0123456789ABCDEF'*255)+\"`r`n\")*{OUTPUT_ITERATIONS}));\
-             $o=[Console]::OpenStandardOutput();\
-             $o.Write($b,0,$b.Length);\
-             [Console]::Out.WriteLine(('THROUGHPUT_'+'DONE_32M'))\r"
-        )
+             [Console]::Out.WriteLine(('PAYLOAD_'+'READY'))\r"
+        );
+        cli_json(
+            exe,
+            &endpoint,
+            &["send-text", "--target", &producer, &prepare],
+        );
+        cli_json(
+            exe,
+            &endpoint,
+            &[
+                "wait-text",
+                "--target",
+                &producer,
+                "--timeout-ms",
+                "60000",
+                "PAYLOAD_READY",
+            ],
+        );
+        "$o=[Console]::OpenStandardOutput();$o.Write($b,0,$b.Length);\
+         [Console]::Out.WriteLine(('THROUGHPUT_'+'DONE_32M'))\r"
+            .to_owned()
     } else {
         // Same payload shape as the Windows PowerShell generator: 8192 lines of
         // 16*255 ASCII + CRLF, then a done marker. Python is present on macOS CI
@@ -187,15 +277,11 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     );
 
     let sibling_started = Instant::now();
+    let sibling_marker = shell_marker_command("SIBLING_", "RESPONSIVE");
     cli_json(
         exe,
         &endpoint,
-        &[
-            "send-text",
-            "--target",
-            &sibling,
-            "echo SIBLING_RESPONSIVE\r",
-        ],
+        &["send-text", "--target", &sibling, &sibling_marker],
     );
     cli_json(
         exe,
@@ -231,7 +317,7 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
             "--target",
             &producer,
             "--timeout-ms",
-            "30000",
+            "60000",
             "THROUGHPUT_DONE_32M",
         ],
     );

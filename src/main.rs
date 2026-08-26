@@ -510,15 +510,29 @@ const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under th
 /// Opens no window and starts no session — the point is to be runnable on a
 /// machine where starting a session is the thing that does not work.
 /// The short name a program is known by: `C:\Windows\system32\cmd.exe` → `cmd`.
+fn program_leaf(program: &str) -> &str {
+    program
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|leaf| !leaf.is_empty())
+        .unwrap_or("")
+}
+
 fn program_stem(program: &str) -> String {
-    let stem = std::path::Path::new(program)
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    // Command configuration and restored sessions may contain a path written
+    // for a different host. `Path` only recognizes the current host's
+    // separator, so using it made Windows paths render differently in a macOS
+    // build and vice versa. Program labels are lexical, not filesystem I/O:
+    // accept both separators on every target.
+    let leaf = program_leaf(program);
+    let stem = leaf
+        .rsplit_once('.')
+        .filter(|(stem, _extension)| !stem.is_empty())
+        .map_or(leaf, |(stem, _extension)| stem);
     if stem.is_empty() {
         "terminal".to_owned()
     } else {
-        stem
+        stem.to_owned()
     }
 }
 
@@ -541,9 +555,7 @@ fn session_label(reported: &str, program_path: &str, program_label: &str) -> Str
         return program_label.to_owned();
     }
     let names_itself = trimmed.eq_ignore_ascii_case(program_path)
-        || std::path::Path::new(program_path)
-            .file_name()
-            .is_some_and(|file| trimmed.eq_ignore_ascii_case(&file.to_string_lossy()));
+        || trimmed.eq_ignore_ascii_case(program_leaf(program_path));
     if names_itself {
         return program_label.to_owned();
     }
@@ -1641,7 +1653,9 @@ impl ConApp {
         let caret_cells = usize::from(visible.truncated)
             + composer::cells(&self.composer.text[visible.text..caret])
             + composer::cells(&self.composer.preedit[visible.preedit..]);
-        let caret_offset = cell_width.saturating_mul(caret_cells as u32).min(text_width);
+        let caret_offset = cell_width
+            .saturating_mul(caret_cells as u32)
+            .min(text_width);
         let x = f64::from(
             layout
                 .composer_input
@@ -1720,9 +1734,7 @@ impl ConApp {
                     let _ = agenterm_platform::clipboard::set_text(text);
                 }
             } else if text.eq_ignore_ascii_case("x") {
-                if let Some(text) =
-                    composer::cut(&mut self.composer)
-                {
+                if let Some(text) = composer::cut(&mut self.composer) {
                     let _ = agenterm_platform::clipboard::set_text(&text);
                 }
             } else if text.eq_ignore_ascii_case("v")
@@ -2979,7 +2991,10 @@ impl ConApp {
             usize::from(show_caret),
             composer_cells,
         );
-        let caret = self.composer.caret.clamp(window.text, self.composer.text.len());
+        let caret = self
+            .composer
+            .caret
+            .clamp(window.text, self.composer.text.len());
         // Drawn as a rule rather than as a `|` character: a character would
         // occupy a cell and push everything after the caret sideways, which
         // makes the column a click lands on disagree with the column the text
@@ -5038,10 +5053,7 @@ impl PixelWindowApplication for ConApp {
             );
         }
         self.refresh_title(window)?;
-        match agenterm_platform::accessibility_publish::start(
-            "minicon",
-            window.native_identity(),
-        ) {
+        match agenterm_platform::accessibility_publish::start("minicon", window.native_identity()) {
             // Keep a reconnectable publisher even if the first bus connect
             // failed. Snapshots stay in the store and go out on reconnect.
             // A no-op backend reports retains_snapshots() == false.
@@ -5764,9 +5776,10 @@ const BUTTON_LABEL_SIZE_PX: u16 = 13;
 
 fn paint_button_label(surface: &mut Surface<'_>, button: ui::Rect, label: &str, color: Rgb) {
     let metrics = font::cell_metrics(BUTTON_LABEL_SIZE_PX);
-    let label_width = metrics.width.max(1).saturating_mul(
-        u32::try_from(composer::cells(label)).unwrap_or(u32::MAX),
-    );
+    let label_width = metrics
+        .width
+        .max(1)
+        .saturating_mul(u32::try_from(composer::cells(label)).unwrap_or(u32::MAX));
     let x = button
         .x
         .saturating_add(button.width.saturating_sub(label_width) / 2);
@@ -6983,7 +6996,11 @@ mod tests {
     fn a_child_naming_itself_is_not_a_title() {
         let path = r"C:\Windows\system32\cmd.exe";
         assert_eq!(session_label(path, path, "cmd"), "cmd", "the full path");
-        assert_eq!(session_label("cmd.exe", path, "cmd"), "cmd", "the file name");
+        assert_eq!(
+            session_label("cmd.exe", path, "cmd"),
+            "cmd",
+            "the file name"
+        );
         assert_eq!(
             session_label(r"C:\WINDOWS\SYSTEM32\CMD.EXE", path, "cmd"),
             "cmd",
@@ -7000,7 +7017,10 @@ mod tests {
         assert_eq!(session_label("deploy", path, "cmd"), "deploy");
         assert_eq!(session_label("  build 3  ", path, "cmd"), "build 3");
         // Contains the program name but says more than it: still a title.
-        assert_eq!(session_label("cmd.exe — release", path, "cmd"), "cmd.exe — release");
+        assert_eq!(
+            session_label("cmd.exe — release", path, "cmd"),
+            "cmd.exe — release"
+        );
     }
 
     /// One builder, because two of them drifted: the OSC path and the
@@ -7014,8 +7034,7 @@ mod tests {
         terminal.current_title = "cmd".to_owned();
         assert_eq!(terminal.window_title(), "cmd — MiniCon");
         assert!(
-            !terminal.window_title().contains("新宋体")
-                && !terminal.window_title().contains('@'),
+            !terminal.window_title().contains("新宋体") && !terminal.window_title().contains('@'),
             "a taskbar title carries neither a font diagnostic nor a machine id"
         );
     }
@@ -7024,6 +7043,7 @@ mod tests {
     fn a_program_is_known_by_its_short_name() {
         assert_eq!(program_stem(r"C:\Windows\system32\cmd.exe"), "cmd");
         assert_eq!(program_stem("/bin/bash"), "bash");
+        assert_eq!(program_stem(r"bin\bash"), "bash");
         assert_eq!(program_stem("pwsh"), "pwsh");
         // Never empty: an unnamed tab is worse than a generic one.
         assert_eq!(program_stem(""), "terminal");

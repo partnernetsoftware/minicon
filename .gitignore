@@ -1,4 +1,6 @@
 /target/
+/target-six/
+__pycache__/
 *.swp
 *.log
 *.tmp

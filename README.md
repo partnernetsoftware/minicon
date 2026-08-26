@@ -87,7 +87,15 @@ all of it depends on the machine.
 ```bash
 cargo build --release       # target/release/minicon
 cargo test                  # unit, GUI black-box, and gates
+./scripts/six-cell-qualify.sh # one Mac: link all six cells, run available tests
 ```
+
+The six-cell gate writes `target-six/receipt.json`. A missing runtime runner is
+reported as `BLOCKED`; a successful cross-link is not mislabeled as a runtime
+test pass. On Apple Silicon, `scripts/setup-linux-runners.sh` provisions the
+Debian/glibc Lima courts used for both Linux architectures. A Windows UTM VM
+with Guest Tools can use `scripts/windows-utm-runner.sh` as both Windows runner
+variables; the gate transfers the exact PE/test tree before execution.
 
 Rust 1.97. The Linux build needs `libxkbcommon0 libxkbcommon-x11-0
 libwayland-client0`.

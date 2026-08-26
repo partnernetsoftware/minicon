@@ -24,6 +24,15 @@ fn gui_guard() -> std::sync::MutexGuard<'static, ()> {
 }
 
 fn binary() -> PathBuf {
+    if let Some(path) = std::env::var_os("MINICON_TEST_BINARY") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "MINICON_TEST_BINARY is missing at {}",
+            path.display()
+        );
+        return path;
+    }
     let mut path = std::env::current_exe().expect("test executable path");
     path.pop();
     path.pop();
@@ -91,7 +100,10 @@ impl Session {
             }
             std::thread::sleep(Duration::from_millis(200));
         }
-        panic!("control endpoint never came up: {last}\ndiagnostics:\n{}", diagnostics());
+        panic!(
+            "control endpoint never came up: {last}\ndiagnostics:\n{}",
+            diagnostics()
+        );
     }
 
     fn try_control(&self, arguments: &[&str]) -> Result<String, String> {
@@ -288,48 +300,42 @@ fn a_wide_character_is_not_emitted_twice() {
 #[test]
 fn closing_the_host_takes_the_agent_and_its_child_with_it() {
     let _guard = gui_guard();
-    let before = console_agent_processes();
+    let before = minicon_processes();
     {
         let session = Session::start("teardown");
         session.wait_for_pane("Microsoft Windows", Duration::from_secs(20));
         assert!(
-            console_agent_processes() > before,
-            "no agent process was started"
+            minicon_processes() >= before + 2,
+            "the host and agent process pair was not started"
         );
     }
     let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline && console_agent_processes() > before {
+    while Instant::now() < deadline && minicon_processes() > before {
         std::thread::sleep(Duration::from_millis(250));
     }
-    assert_eq!(
-        console_agent_processes(),
-        before,
-        "an agent survived its host"
-    );
+    assert_eq!(minicon_processes(), before, "an agent survived its host");
 }
 
-/// Counts agent processes by their command line, which is the only thing that
-/// distinguishes them from the product: they are the same executable.
-fn console_agent_processes() -> usize {
-    // Invoked directly rather than through `cmd /c`: the query contains
-    // quotes, and routing it through a shell means Rust's argument escaping
-    // and cmd's parsing have to agree about them, which they do not.
-    let output = Command::new("wmic")
-        .args([
-            "process",
-            "where",
-            "name='minicon.exe'",
-            "get",
-            "commandline",
-        ])
-        .output();
-    let Ok(output) = output else {
+/// Counts product processes. A live forced-backend session owns exactly two:
+/// the GUI host and its console agent. Taking a baseline keeps unrelated
+/// MiniCon windows out of the assertion, while avoiding WMIC, which current
+/// Windows 11 installations disable by default.
+fn minicon_processes() -> usize {
+    let script = if std::env::var_os("MINICON_TEST_BINARY").is_some() {
+        "(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:MINICON_TEST_BINARY } | Measure-Object).Count"
+    } else {
+        "(Get-Process -Name minicon -ErrorAction SilentlyContinue | Measure-Object).Count"
+    };
+    let Ok(output) = Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", script])
+        .output()
+    else {
         return 0;
     };
     String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| line.contains(agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT))
-        .count()
+        .trim()
+        .parse()
+        .unwrap_or(0)
 }
 
 /// Guards the argument itself: the host builds it and the agent matches it as
