@@ -16,7 +16,13 @@ WORKFLOW = "d" * 40
 LOG = b"runtime log\n"
 
 
-def receipt(cell: str, attempt: int, status: str, probe: str = "none") -> dict:
+def receipt(
+    cell: str,
+    attempt: int,
+    status: str,
+    probe: str = "none",
+    probe_injected: bool = False,
+) -> dict:
     family = "Windows" if cell.startswith("win") else "macOS" if cell.startswith("osx") else "Linux"
     arch = "ARM64" if "aarch64" in cell else "X64"
     return {
@@ -26,6 +32,7 @@ def receipt(cell: str, attempt: int, status: str, probe: str = "none") -> dict:
         "bundle_ref": BUNDLE, "source_sha": SOURCE, "source_tree_sha256": TREE,
         "suite": "test", "job_status": status, "workflow_sha": WORKFLOW,
         "evidence_probe_cell": probe,
+        "evidence_probe_injected": probe_injected,
         "runtime_log_bytes": len(LOG), "runtime_log_sha256": hashlib.sha256(LOG).hexdigest(),
     }
 
@@ -60,13 +67,31 @@ with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as tempora
 with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as temporary:
     root = Path(temporary)
     for cell in CELLS:
-        write(root, receipt(cell, 1, "failure" if cell == "osx-x86_64" else "success", "osx-x86_64"))
+        write(root, receipt(
+            cell,
+            1,
+            "failure" if cell == "osx-x86_64" else "success",
+            "osx-x86_64",
+            cell == "osx-x86_64",
+        ))
     write(root, receipt("osx-x86_64", 2, "success", "osx-x86_64"))
     result = run(root, 0, "osx-x86_64")
     assert result["verdict"] == "PASS"
     assert result["cells"]["osx-x86_64"]["verdict"] == "reverified-pass"
     assert [item["job_status"] for item in result["cells"]["osx-x86_64"]["attempts"]] == ["failure", "success"]
     assert result["cells"]["osx-x86_64"]["attempts"][0]["failure_class"] == "intentional-probe"
+
+with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as temporary:
+    root = Path(temporary)
+    for cell in CELLS:
+        write(root, receipt(
+            cell,
+            1,
+            "failure" if cell == "osx-x86_64" else "success",
+            "osx-x86_64",
+        ))
+    result = run(root, 1, "osx-x86_64")
+    assert result["cells"]["osx-x86_64"]["attempts"][0]["failure_class"] == "runtime-or-environment"
 
 with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as temporary:
     root = Path(temporary)

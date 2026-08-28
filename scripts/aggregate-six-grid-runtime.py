@@ -70,6 +70,15 @@ def aggregate(args: argparse.Namespace) -> tuple[dict, bool]:
             errors.append(f"{cell} attempt {attempt}: runner OS mismatch")
         if receipt.get("job_status") not in STATUSES:
             errors.append(f"{cell} attempt {attempt}: invalid job status")
+        probe_injected = receipt.get("evidence_probe_injected")
+        if not isinstance(probe_injected, bool):
+            errors.append(f"{cell} attempt {attempt}: invalid probe-injected marker")
+        elif probe_injected and not (
+            cell == args.evidence_probe_cell
+            and attempt == 1
+            and receipt.get("job_status") == "failure"
+        ):
+            errors.append(f"{cell} attempt {attempt}: impossible probe-injected marker")
         if not isinstance(receipt.get("run_id"), int) or receipt["run_id"] < 1:
             errors.append(f"{cell} attempt {attempt}: invalid run ID")
         if not re.fullmatch(r"[0-9a-f]{40}", str(receipt.get("workflow_sha", ""))):
@@ -121,11 +130,11 @@ def aggregate(args: argparse.Namespace) -> tuple[dict, bool]:
                     "workflow_sha": receipt["workflow_sha"],
                     "runtime_log_bytes": receipt.get("runtime_log_bytes"),
                     "runtime_log_sha256": receipt.get("runtime_log_sha256"),
+                    "evidence_probe_injected": receipt.get("evidence_probe_injected"),
                     "failure_class": (
                         "intentional-probe"
                         if receipt["job_status"] != "success"
-                        and receipt.get("evidence_probe_cell") == cell
-                        and receipt["run_attempt"] == 1
+                        and receipt.get("evidence_probe_injected") is True
                         else "runtime-or-environment"
                         if receipt["job_status"] != "success"
                         else None

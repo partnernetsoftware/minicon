@@ -191,6 +191,7 @@ jobs:
         if: inputs.evidence_probe_cell == matrix.cell && github.run_attempt == 1
         shell: bash
         run: |
+          : > evidence-probe-injected
           printf 'intentional receipt-chain probe: cell=%s attempt=%s\n' "$CELL" "$GITHUB_RUN_ATTEMPT" | tee -a runtime-body.log
           exit 86
 
@@ -216,6 +217,7 @@ jobs:
               "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
               "source_tree_sha256": os.environ["EXPECTED_TREE_SHA256"], "suite": os.environ["SUITE"],
               "evidence_probe_cell": os.environ["EVIDENCE_PROBE_CELL"],
+              "evidence_probe_injected": Path("evidence-probe-injected").is_file(),
               "job_status": os.environ["JOB_STATUS"],
               "workflow_sha": os.environ["GITHUB_SHA"],
               "runtime_log_bytes": log_bytes, "runtime_log_sha256": log_sha,
