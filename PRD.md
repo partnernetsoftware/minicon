@@ -82,10 +82,11 @@ MiniCon — one-file local terminal
 │   │   │   │   │   └── pending owned capture yields Wake-side PTY backlog to redraw; the 10-second product deadline remains unchanged
 │   │   │   │   ├── public-repo standard runners are free; manual/candidate trigger + 20-minute cell deadline still bound waste
 │   │   │   │   └── six runtime receipts bind source SHA + source-tree digest + OCI digest + actual runner OS/ISA
-│   │   │   │       └── twin-court contract
-│   │   │   │           ├── GitHub native runners: elastic, zero-resident-memory regression verdict
-│   │   │   │           ├── local UTM/Lima: interactive debug, offline and failure-reproduction court
-│   │   │   │           └── both consume the same digest and converge on one evidence ledger
+│   │   │   │       └── independent dual-lane contract
+│   │   │   │           ├── GitHub native runners: elastic fast-development regression lane + real-ISA backstop
+│   │   │   │           ├── local UTM/Lima: controlled-image release-qualification lane + interactive reproduction
+│   │   │   │           ├── lanes share test contracts and may consume identical bytes, but neither executes through nor depends on the other
+│   │   │   │           └── receipts remain lane-labelled; local release authority becomes final only after all required baselines are sealed
 │   │   │   ├── macOS runtime courts
 │   │   │   │   ├── host-native arm64 + Rosetta x86_64 fast courts
 │   │   │   │   └── clean ARM64 macOS VM release/permission court
@@ -115,13 +116,13 @@ MiniCon — one-file local terminal
 │   │   │   │       ├── disk-only cold boot + auto-login + QGA + visible XFCE desktop
 │   │   │   │       ├── exact x86_64 artifact: help + control + pane text + PNG + close
 │   │   │   │       └── 2 vCPU / 4 GiB / QEMU TCG; correctness, not performance
-│   │   │   ├── Six independent guest identities
-│   │   │   │   ├── `minicon-lnx-arm-64` + `minicon-lnx-x86-64`
-│   │   │   │   ├── `minicon-osx-arm-64` + `minicon-osx-x86-64`
+│   │   │   ├── Six desired local guest identities (inventory truth, not completion claim)
+│   │   │   │   ├── [~] present + automation-ready + local-unsealed: `minicon-lnx-arm-64`, `minicon-lnx-x86-64`, `minicon-osx-arm-64`, `minicon-win-arm-64`
+│   │   │   │   ├── [ ] present installer/provisioning state only: `minicon-win-x86-64`; registry automation/template state remains `planned`
+│   │   │   │   ├── [ ] absent VM, registry plan only: `minicon-osx-x86-64`
 │   │   │   │   │   └── x86 route: preregistered `plan/design-osx-x86-64-court-experiment.md`; QEMU/OpenCore C2 gate → real Intel runner fallback
-│   │   │   │   ├── `minicon-win-arm-64` + `minicon-win-x86-64`
-│   │   │   │   ├── each owns a sealed baseline, auto-login, agent and cold-boot receipt
-│   │   │   │   └── QEMU/VZ is registry metadata, never part of canonical VM identity
+│   │   │   │   ├── [ ] no local cell yet owns a sealed release baseline
+│   │   │   │   └── registry row ≠ VM presence ≠ installed OS ≠ automation-ready ≠ sealed release authority
 │   │   │   ├── Supplemental translation courts
 │   │   │   │   ├── Rosetta and Prism measure translation compatibility only
 │   │   │   │   └── translated execution never substitutes for an x86-64 guest
@@ -207,15 +208,17 @@ flowchart LR
         BH["Mac mini build owner<br/>build · link · artifact identity"]
         PK["minimal six-grid test bodies<br/>product · owning harness · manifest"]
         AR["GHCR OCI artifact court<br/>independent from source history<br/>immutable @sha256 digest"]
-        CR["GitHub native six-grid<br/>lnx · win · osx × arm · x86<br/>runtime only · paid on demand"]
-        Q["local runtime guest courts<br/>debug · offline · reproduction<br/>no build toolchain · disposable state"]
-        M["six-cell evidence gate<br/>runtime results · receipt"]
+        CR["GitHub native six-grid<br/>fast development regression<br/>real OS/ISA · zero resident RAM"]
+        Q["local UTM/Lima six-grid<br/>release qualification · permissions<br/>controlled images · disposable state"]
+        DV["development-lane verdict<br/>independent receipt"]
+        RQ["release-lane verdict<br/>independent receipt"]
+        M["lane-labelled evidence catalog<br/>shared contract · no execution dependency"]
         O["OSX runtime<br/>host fast court · clean VM release court"]
         G["macOS UTM bridge<br/>VirtioFS queue · SHA-256 manifest<br/>one-click bootstrap ISO · no Cargo"]
         GC["clean macOS receipt leaves<br/>status · test · throughput · idle<br/>missing runner = BLOCKED"]
         L["Debian/glibc Lima<br/>Linux runtime"]
         LD["Linux desktop UTM court<br/>LTS glibc · GUI · AT-SPI · packaging"]
-        S6["six independent guests<br/>lnx · osx · win × arm-64 · x86-64<br/>one sealed identity per cell"]
+        S6["six desired local slots<br/>4 ready-unsealed · 1 provisioning · 1 absent<br/>0 sealed release baselines"]
         LQ["Linux ARM64 desktop<br/>minicon-lnx-arm-64<br/>QEMU/HVF in registry"]
         LX["Linux x86-64 desktop<br/>minicon-lnx-x86-64<br/>QEMU/TCG in registry"]
         OX["macOS x86-64 court<br/>QEMU/OpenCore experiment<br/>Intel Mac runner fallback"]
@@ -254,9 +257,11 @@ flowchart LR
     BH --> PK
     PK --> AR
     AR --> CR
-    CR --> M
+    CR --> DV
+    DV --> M
     BH --> Q
-    Q --> M
+    Q --> RQ
+    RQ --> M
     R --> X
     BH -- exact linked artifacts --> Q
     X --> O

@@ -247,13 +247,31 @@ correct half/full-width font measurement.
   next unchecked or regressed leaf here and must upsert new evidence before it
   is considered durable.
 
-  The runtime system is deliberately a **twin court**. GitHub's native runners
-  are elastic, consume no Mac mini RAM while idle, and give routine real-OS/ISA
-  regression verdicts. Local UTM/Lima courts retain interactive UI inspection,
-  offline execution, breakpoints and a reusable failure scene. They are not
-  competing authorities: both must consume the same content-addressed test body
-  and report into one evidence ledger. A GitHub failure should become a local
-  reproducible journey; a local fix returns to GitHub for the six-grid verdict.
+  The runtime system has **two independent six-grid lanes**, not a serial
+  twin-court pipeline. GitHub's native runners are the elastic fast-development
+  regression lane: they consume no Mac mini RAM while idle, return routine
+  real-OS/ISA feedback quickly, and remain especially valuable where the local
+  host lacks real Intel hardware. Local UTM/Lima courts are the controlled-image
+  release-qualification lane: they own clean boot, first launch, permissions,
+  packaging, interactive inspection, offline execution and reusable failure
+  scenes. The lanes share test contracts and may consume byte-identical bodies,
+  but neither invokes, waits for, or derives success from the other. Each emits
+  its own lane-labelled receipt. Local release authority is the intended final
+  qualification boundary only after every required baseline is sealed and the
+  integrated local receipt has no required `BLOCKED` leaf; until then GitHub's
+  native result remains an independent coverage backstop, not a substitute
+  claim that unfinished local images are release-ready.
+
+  The local inventory must keep five states separate: registry slot, physical
+  VM presence, installed OS, automation readiness, and sealed release
+  authority. The checked inventory currently contains five UTM VM definitions,
+  not six. `minicon-osx-arm-64`, both Linux VMs, and
+  `minicon-win-arm-64` are automation-ready but `local-unsealed`.
+  `minicon-win-x86-64` physically exists in installer/provisioning state while
+  its automation and template remain `planned`. `minicon-osx-x86-64` is only a
+  planned registry row and has no UTM VM definition. No local cell currently
+  owns a sealed release baseline. A six-row registry or a six-cell GitHub PASS
+  must never be summarized as six deployed local UTM guests.
 
   Measured 2026-08-28, packaging reports both uncompressed payload bytes and
   compressed archive bytes per cell. The exact six-cell body totals about 151
@@ -348,16 +366,19 @@ flowchart LR
     LX & LA & WX & WA & MX & MA --> A1[Attempt-scoped receipt + runtime log SHA-256]
     A1 --> PM[Executed-probe marker<br/>requested cell alone proves nothing]
     PM --> R[All-attempt evidence ledger]
-    R --> G{All exact cells pass?}
-    G -->|yes| C[Candidate may reuse the same bytes]
+    R --> G{All exact cloud cells pass?}
+    G -->|yes| DV[Fast-development regression PASS]
     G -->|no| F[Fail closed; retain first failure<br/>reverify failed cell on same digest]
     F --> K{Reverification result}
     K -->|pass| Q[reverified-pass<br/>keep both attempts]
-    K -->|fail| D
+    K -->|fail| DV
     MX --> SP[Pending capture owns next frame<br/>Wake yields PTY backlog to redraw]
     SP --> A1
-    B -. same digest .-> D[Local UTM/Lima court<br/>interactive · offline · failure scene]
-    D --> R
+    B --> LP[Local exact-artifact payload<br/>no GHCR or Actions dependency]
+    LP --> D[Local UTM/Lima six-grid<br/>controlled-image release court]
+    D --> LG{Required local cells pass<br/>with sealed baselines?}
+    LG -->|yes| C[Release-qualification receipt]
+    LG -->|no| LB[BLOCKED or FAIL<br/>never inferred from GitHub]
     Q --> R
     TF[Time folding<br/>cache · sealed image · immutable body] --> B
     PF[Parallel thinking<br/>independent cells] --> B
