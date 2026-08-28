@@ -1,0 +1,82 @@
+# MiniCon 六格流水线记忆宫殿 — 单源 SSOT
+# tree 与 mermaid 均由 palace-gen.py 从此生成，只改这里。
+
+level: project
+title: "MiniCon 六格流水线 · 构建 × 测试（正交两维）"
+
+nodes:
+  - id: pipeline
+    label: "六格流水线"
+    fact: "六格={win,lnx,osx}×{x86_64,aarch64}；构建(3选)与测试(2选)是正交两维，勿混为一路"
+
+  - id: build
+    label: "构建"
+    parent: pipeline
+    layer: "构建"
+
+  - id: local-crossbuild
+    label: "本地交叉编译 ✅"
+    parent: build
+    layer: "构建"
+    fact: "Mac 宿主：cargo-xwin(win)+cargo-zigbuild(linux)+原生/Rosetta(macos)；scripts/six-cell-qualify.sh"
+
+  - id: remote-crossbuild
+    label: "远端交叉编译（未做）"
+    parent: build
+    layer: "构建"
+    fact: "远程 Linux 宿主（GitHub Linux runner / 其他 Linux 机）交叉出六格"
+
+  - id: six-native-compile
+    label: "六环境原生编译 ⏸"
+    parent: build
+    layer: "构建"
+    fact: "各目标 OS 各自原生编译；暂缓（成本高）"
+
+  - id: test
+    label: "测试"
+    parent: pipeline
+    layer: "测试"
+
+  - id: local-utm-test
+    label: "本地 UTM 六环境测试 ✅"
+    parent: test
+    layer: "测试"
+    fact: "本机 UTM VM（utm-court/lima-court）；交互调试 + 离线复现"
+
+  - id: remote-six-test
+    label: "远程六环境测试 ✅"
+    parent: test
+    layer: "测试"
+    fact: "GitHub native runners；发布体 OCI @sha256 拉取执行，无编译"
+
+  - id: six-artifacts
+    label: "六格产物"
+    parent: pipeline
+    layer: "产物/判定"
+    fact: "6 个二进制；由任一构建路径产出"
+
+  - id: receipt
+    label: "receipt.json"
+    parent: pipeline
+    layer: "产物/判定"
+    fact: "唯一权威判定 PASS/FAIL/BLOCKED + 源码指纹；数字不算数"
+
+edges:
+  - from: six-artifacts
+    to: local-crossbuild
+    note: "由本地交叉编译产出"
+  - from: six-artifacts
+    to: remote-crossbuild
+    note: "由远端交叉编译产出"
+  - from: six-artifacts
+    to: six-native-compile
+    note: "由六环境原生编译产出"
+  - from: local-utm-test
+    to: six-artifacts
+    note: "测试六格产物"
+  - from: remote-six-test
+    to: six-artifacts
+    note: "测试六格产物（经 OCI 发布体）"
+  - from: receipt
+    to: six-artifacts
+    note: "绑定产物 + 源码指纹"
