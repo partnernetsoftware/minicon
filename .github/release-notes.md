@@ -1,6 +1,16 @@
 MiniCon is a standalone terminal in a single executable: no installer, no
 runtime, and no Visual C++ redistributable.
 
+## Highlights
+
+- Separates Send and Newline so external input can be composed and submitted
+  deliberately.
+- Prioritizes screenshot completion while terminals produce sustained output.
+- Makes Windows control requests replay-safe across named-pipe disconnects
+  without repeating mutations.
+- Qualifies the same product behavior across the Windows, Linux and macOS
+  x86_64/ARM64 test grid; the downloadable macOS client remains universal.
+
 ## Downloads
 
 One file per platform, with a SHA-256 beside it.

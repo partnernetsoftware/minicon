@@ -47,7 +47,7 @@ There is no installer because there is nothing to install. Each archive ships a
 SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.0-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.2-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a universal binary — the same file runs on Apple Silicon and
