@@ -132,7 +132,7 @@ jobs:
 
       - name: Install Linux runtime libraries
         if: matrix.family == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y dbus-x11 file libxkbcommon-x11-0 xvfb
+        run: sudo apt-get update && sudo apt-get install -y at-spi2-core dbus-x11 file libxkbcommon-x11-0 xvfb
 
       - name: Run Linux runtime body
         if: matrix.family == 'linux'
