@@ -285,9 +285,28 @@ correct half/full-width font measurement.
   deadline. Five repeated local journeys passed, and run `33144329432` passed
   all six native cells plus the aggregate receipt on its first attempt. This
   is evidence of timing sensitivity, not permission to hide it with blanket
-  retries. The next reliability leaf is to retain and classify first-attempt
-  diagnostics in receipts so a future explicit same-digest re-verification
-  never erases the original failure.
+  retries.
+
+  Runtime evidence is now attempt-aware. Each cell uploads an attempt-scoped
+  receipt plus the complete runtime log; the receipt binds run ID, attempt,
+  status, log byte count and log SHA-256. The exact aggregator is itself pinned
+  inside the OCI index, verified before use, groups all cell histories by
+  attempt, writes a `FAIL` aggregate even when the gate fails, and distinguishes
+  ordinary `pass`, latest failure and `reverified-pass`. A diagnostic workflow
+  input can inject one post-test exit on attempt one only, explicitly classified
+  as `intentional-probe`; it is not an automatic retry or a way to turn product
+  failure green. Run `33145060107` proved the first half of this contract in the
+  hosted court: its aggregate `FAIL` artifact preserved three attempt-one logs
+  and classified the selected macOS Intel failure as intentional while two
+  independently exposed harness failures remained `runtime-or-environment`.
+  Those failures produced two further corrections: a screenshot that completes
+  before pending state can be observed is fast success rather than failure, and
+  the Windows console cleanup journey now tracks the exact PIDs introduced by
+  its session instead of comparing a volatile machine-wide process count. The
+  final same-run failed-job rerun and `reverified-pass` aggregate remain open
+  until concurrent documentation work lands and the repository again has one
+  stable clean source identity; authoritative publication from a drifting or
+  dirty tree remains correctly forbidden.
 
 ```mermaid
 flowchart LR
@@ -304,12 +323,13 @@ flowchart LR
     O --> WA[Windows ARM64 runner]
     O --> MX[macOS Intel runner]
     O --> MA[macOS ARM64 runner]
-    LX & LA & WX & WA & MX & MA --> R[Shared evidence ledger]
+    LX & LA & WX & WA & MX & MA --> A1[Attempt-scoped receipt + runtime log SHA-256]
+    A1 --> R[All-attempt evidence ledger]
     R --> G{All exact cells pass?}
     G -->|yes| C[Candidate may reuse the same bytes]
     G -->|no| F[Fail closed; retain first failure<br/>reverify failed cell on same digest]
     F --> K{Reverification result}
-    K -->|pass| Q[Classify timing sensitivity<br/>keep both attempts]
+    K -->|pass| Q[reverified-pass<br/>keep both attempts]
     K -->|fail| D
     B -. same digest .-> D[Local UTM/Lima court<br/>interactive · offline · failure scene]
     D --> R

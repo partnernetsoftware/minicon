@@ -73,6 +73,10 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── six bounded parallel layer uploads → one canonical serial top-level seal
 │   │   │   │   ├── GitHub native `{lnx,win,osx} × {arm,x86}-64` runners pull and execute; no checkout/Rust/Cargo
 │   │   │   │   ├── aggregate native `test` verdict: six-cell PASS; failed-cell rerun classifies timing flakes without rebuilding
+│   │   │   │   ├── attempt-aware evidence ledger
+│   │   │   │   │   ├── every attempt retains cell status + runtime log size/SHA-256 under an attempt-scoped artifact
+│   │   │   │   │   ├── aggregate FAIL is itself uploaded; a rerun cannot erase first-failure evidence
+│   │   │   │   │   └── [~] controlled failure → same-digest `reverified-pass` live chain pending a stable clean source tree
 │   │   │   │   ├── public-repo standard runners are free; manual/candidate trigger + 20-minute cell deadline still bound waste
 │   │   │   │   └── six runtime receipts bind source SHA + source-tree digest + OCI digest + actual runner OS/ISA
 │   │   │   │       └── twin-court contract
