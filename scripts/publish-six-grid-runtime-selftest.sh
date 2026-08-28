@@ -8,6 +8,7 @@ trap cleanup EXIT
 
 mkdir -p "$fixture/scripts" "$fixture/target-six/cloud-runtime" "$fixture/bin"
 cp "$repo_root/scripts/publish-six-grid-runtime.sh" "$fixture/scripts/"
+cp "$repo_root/scripts/aggregate-six-grid-runtime.py" "$fixture/scripts/"
 identity=1111111111111111111111111111111111111111111111111111111111111111
 source_sha=2222222222222222222222222222222222222222
 printf '{"source_tree_sha256":"%s"}\n' "$identity" >"$fixture/target-six/receipt.json"
@@ -63,7 +64,10 @@ grep -F 'upload_jobs=6' <<<"$output" >/dev/null
 grep -F 'payload_bytes=600' <<<"$output" >/dev/null
 grep -F 'archive_bytes=240' <<<"$output" >/dev/null
 grep -F 'workflow run six-grid-runtime.yml' "$GH_LOG" >/dev/null
+grep -F 'evidence_probe_cell=none' "$GH_LOG" >/dev/null
 published="$fixture/target-six/cloud-runtime/minicon-six-grid-$identity-published.json"
+[ "$(jq -r .schema "$published")" -eq 2 ]
+[ "$(jq -r .runtime_aggregator_sha256 "$published")" = "$(shasum -a 256 "$fixture/scripts/aggregate-six-grid-runtime.py" | awk '{print $1}')" ]
 [ "$(jq '.cells | length' "$published")" -eq 6 ]
 for cell in "${cells[@]}"; do
   [ "$(jq -r --arg cell "$cell" '.cells[$cell]' "$published")" = \
@@ -86,6 +90,10 @@ fi
 
 if (cd "$fixture" && MINICON_OCI_UPLOAD_JOBS=0 scripts/publish-six-grid-runtime.sh ghcr.io/example/minicon-six-grid test >/dev/null 2>&1); then
   echo 'publisher accepted invalid upload concurrency' >&2
+  exit 1
+fi
+if (cd "$fixture" && MINICON_EVIDENCE_PROBE_CELL=invalid scripts/publish-six-grid-runtime.sh ghcr.io/example/minicon-six-grid test >/dev/null 2>&1); then
+  echo 'publisher accepted an invalid evidence probe cell' >&2
   exit 1
 fi
 

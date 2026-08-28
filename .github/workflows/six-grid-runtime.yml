@@ -21,6 +21,12 @@ on:
         default: test
         type: choice
         options: [status, test, full]
+      evidence_probe_cell:
+        description: Attempt-one failure probe for receipt-chain qualification only
+        required: true
+        default: none
+        type: choice
+        options: [none, lnx-x86_64, lnx-aarch64, win-x86_64, win-aarch64, osx-x86_64, osx-aarch64]
 
 permissions:
   contents: none
@@ -54,6 +60,7 @@ jobs:
       EXPECTED_RUNNER_OS: ${{ matrix.expected_os }}
       EXPECTED_RUNNER_ARCH: ${{ matrix.expected_arch }}
       SUITE: ${{ inputs.suite }}
+      EVIDENCE_PROBE_CELL: ${{ inputs.evidence_probe_cell }}
     steps:
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
         if: matrix.cell != 'win-aarch64'
@@ -86,9 +93,14 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
           mkdir index body payload
           oras pull "$BUNDLE_REF" --output index
+          # OCI member names are producer-controlled and space-free; retain Bash 3.2 compatibility on macOS.
+          # shellcheck disable=SC2207
           published_matches=($(find index -type f -name 'minicon-six-grid-*-published.json'))
+          # shellcheck disable=SC2207
           manifest_matches=($(find index -type f -name 'minicon-six-grid-*-manifest.json'))
-          test "${#published_matches[@]}" -eq 1 && test "${#manifest_matches[@]}" -eq 1
+          # shellcheck disable=SC2207
+          aggregator_matches=($(find index -type f -name 'aggregate-six-grid-runtime.py'))
+          test "${#published_matches[@]}" -eq 1 && test "${#manifest_matches[@]}" -eq 1 && test "${#aggregator_matches[@]}" -eq 1
           published="${published_matches[0]}"; build_manifest="${manifest_matches[0]}"
           test "$(jq -r .source_sha "$published")" = "$EXPECTED_SOURCE_SHA"
           test "$(jq -r .source_tree_sha256 "$published")" = "$EXPECTED_TREE_SHA256"
@@ -97,10 +109,13 @@ jobs:
           expected_manifest_sha="$(jq -r .build_manifest_sha256 "$published")"
           sha256_file() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"; }
           test "$(sha256_file "$build_manifest")" = "$expected_manifest_sha"
+          test "$(sha256_file "${aggregator_matches[0]}")" = "$(jq -r .runtime_aggregator_sha256 "$published")"
+          cp "${aggregator_matches[0]}" runtime-aggregate.py
           cell_ref="$(jq -r --arg cell "$CELL" '.cells[$cell]' "$published")"
           test "${cell_ref%@*}" = "$expected_package"
           [[ "${cell_ref#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
           oras pull "$cell_ref" --output body
+          # shellcheck disable=SC2207
           asset_matches=($(find body -type f -name "*-$CELL.tar.gz"))
           test "${#asset_matches[@]}" -eq 1
           asset="${asset_matches[0]}"
@@ -141,9 +156,11 @@ jobs:
           set -euo pipefail
           chmod +x payload/linux-runtime-qualify.sh payload/target/debug/minicon payload/target/debug/deps/* payload/target/release-fast/minicon payload/target/release-fast/deps/*
           export MINICON_REPO_ROOT="$PWD/payload/source"
-          payload/linux-runtime-qualify.sh payload/target status
-          [[ "$SUITE" == status ]] || payload/linux-runtime-qualify.sh payload/target test
-          [[ "$SUITE" != full ]] || payload/linux-runtime-qualify.sh payload/target throughput
+          {
+            payload/linux-runtime-qualify.sh payload/target status
+            [[ "$SUITE" == status ]] || payload/linux-runtime-qualify.sh payload/target test
+            [[ "$SUITE" != full ]] || payload/linux-runtime-qualify.sh payload/target throughput
+          } 2>&1 | tee runtime-body.log
 
       - name: Run macOS runtime body
         if: matrix.family == 'macos'
@@ -151,17 +168,31 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x payload/macos-runtime-qualify.sh payload/target/debug/minicon payload/target/debug/deps/* payload/target/release-fast/minicon payload/target/release-fast/deps/*
-          payload/macos-runtime-qualify.sh payload/target status
-          [[ "$SUITE" == status ]] || payload/macos-runtime-qualify.sh payload/target test
-          [[ "$SUITE" != full ]] || payload/macos-runtime-qualify.sh payload/target throughput
+          {
+            payload/macos-runtime-qualify.sh payload/target status
+            [[ "$SUITE" == status ]] || payload/macos-runtime-qualify.sh payload/target test
+            [[ "$SUITE" != full ]] || payload/macos-runtime-qualify.sh payload/target throughput
+          } 2>&1 | tee runtime-body.log
 
       - name: Run Windows runtime body
         if: matrix.family == 'windows'
         shell: pwsh
         run: |
-          & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode status
-          if ($env:SUITE -ne 'status') { & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode test }
-          if ($env:SUITE -eq 'full') { & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode throughput }
+          try {
+            & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode status *>&1 | Tee-Object -FilePath runtime-body.log
+            if ($env:SUITE -ne 'status') { & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode test *>&1 | Tee-Object -FilePath runtime-body.log -Append }
+            if ($env:SUITE -eq 'full') { & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode throughput *>&1 | Tee-Object -FilePath runtime-body.log -Append }
+          } catch {
+            $_ | Out-String | Tee-Object -FilePath runtime-body.log -Append
+            throw
+          }
+
+      - name: Inject attempt-one receipt-chain probe
+        if: inputs.evidence_probe_cell == matrix.cell && github.run_attempt == 1
+        shell: bash
+        run: |
+          printf 'intentional receipt-chain probe: cell=%s attempt=%s\n' "$CELL" "$GITHUB_RUN_ATTEMPT" | tee -a runtime-body.log
+          exit 86
 
       - name: Write runtime receipt
         if: always()
@@ -170,25 +201,35 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           python3 - <<'PY'
-          import json, os
+          import hashlib, json, os
           from pathlib import Path
+          log = Path("runtime-body.log")
+          log_bytes = log.stat().st_size if log.is_file() else None
+          log_sha = hashlib.sha256(log.read_bytes()).hexdigest() if log.is_file() else None
           Path("runtime-receipt.json").write_text(json.dumps({
-              "schema": 1, "cell": os.environ["CELL"],
+              "schema": 2, "cell": os.environ["CELL"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "runner_arch": os.environ["RUNNER_ARCH"], "runner_os": os.environ["RUNNER_OS"],
               "expected_runner_arch": os.environ["EXPECTED_RUNNER_ARCH"],
               "expected_runner_os": os.environ["EXPECTED_RUNNER_OS"],
               "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
               "source_tree_sha256": os.environ["EXPECTED_TREE_SHA256"], "suite": os.environ["SUITE"],
+              "evidence_probe_cell": os.environ["EVIDENCE_PROBE_CELL"],
               "job_status": os.environ["JOB_STATUS"],
               "workflow_sha": os.environ["GITHUB_SHA"],
+              "runtime_log_bytes": log_bytes, "runtime_log_sha256": log_sha,
           }, indent=2) + "\n")
           PY
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: six-grid-runtime-${{ matrix.cell }}
-          path: runtime-receipt.json
+          name: six-grid-runtime-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
+          path: |
+            runtime-receipt.json
+            runtime-body.log
+            runtime-aggregate.py
           if-no-files-found: error
           retention-days: 14
 
@@ -206,40 +247,30 @@ jobs:
           pattern: six-grid-runtime-*
           path: receipts
 
-      - name: Require six successful native cells
+      - name: Aggregate all attempts and require six latest successes
         env:
           BUNDLE_REF: ${{ inputs.bundle_ref }}
           EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
           EXPECTED_TREE_SHA256: ${{ inputs.source_tree_sha256 }}
           SUITE: ${{ inputs.suite }}
+          EVIDENCE_PROBE_CELL: ${{ inputs.evidence_probe_cell }}
         run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          cells = {"lnx-x86_64", "lnx-aarch64", "win-x86_64", "win-aarch64", "osx-x86_64", "osx-aarch64"}
-          receipts = [json.loads(path.read_text()) for path in Path("receipts").rglob("runtime-receipt.json")]
-          by_cell = {receipt["cell"]: receipt for receipt in receipts}
-          assert set(by_cell) == cells
-          for cell, receipt in by_cell.items():
-              assert receipt["job_status"] == "success", (cell, receipt["job_status"])
-              assert receipt["runner_arch"] == receipt["expected_runner_arch"], receipt
-              assert receipt["runner_os"] == receipt["expected_runner_os"], receipt
-              assert receipt["bundle_ref"] == os.environ["BUNDLE_REF"]
-              assert receipt["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
-              assert receipt["source_tree_sha256"] == os.environ["EXPECTED_TREE_SHA256"]
-              assert receipt["suite"] == os.environ["SUITE"]
-              assert len(receipt["workflow_sha"]) == 40
-          aggregate = {
-              "schema": 1, "verdict": "PASS", "cells": sorted(cells),
-              "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
-              "source_tree_sha256": os.environ["EXPECTED_TREE_SHA256"], "suite": os.environ["SUITE"],
-          }
-          Path("six-grid-runtime-receipt.json").write_text(json.dumps(aggregate, indent=2) + "\n")
-          PY
+          set -euo pipefail
+          # Artifact paths are generated from fixed cell/attempt names and contain no spaces.
+          # shellcheck disable=SC2207
+          aggregators=($(find receipts -type f -name runtime-aggregate.py))
+          test "${#aggregators[@]}" -ge 6
+          expected_sha=$(sha256sum "${aggregators[0]}" | cut -d' ' -f1)
+          for aggregator in "${aggregators[@]}"; do test "$(sha256sum "$aggregator" | cut -d' ' -f1)" = "$expected_sha"; done
+          python3 "${aggregators[0]}" --receipts receipts --output six-grid-runtime-receipt.json \
+            --bundle-ref "$BUNDLE_REF" --source-sha "$EXPECTED_SOURCE_SHA" \
+            --source-tree-sha256 "$EXPECTED_TREE_SHA256" --suite "$SUITE" \
+            --evidence-probe-cell "$EVIDENCE_PROBE_CELL"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
         with:
-          name: six-grid-runtime-aggregate
+          name: six-grid-runtime-aggregate-attempt-${{ github.run_attempt }}
           path: six-grid-runtime-receipt.json
           if-no-files-found: error
           retention-days: 30

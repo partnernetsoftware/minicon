@@ -5,6 +5,8 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 workflow="$repo_root/.github/workflows/six-grid-runtime.yml"
 
 python3 -m py_compile "$repo_root/scripts/package-six-grid-runtime.py"
+python3 -m py_compile "$repo_root/scripts/aggregate-six-grid-runtime.py"
+python3 "$repo_root/scripts/aggregate-six-grid-runtime-selftest.py"
 bash -n "$repo_root/scripts/publish-six-grid-runtime.sh"
 bash "$repo_root/scripts/publish-six-grid-runtime-selftest.sh"
 
@@ -31,4 +33,7 @@ grep -F "test \"\$RUNNER_OS\" = \"\$EXPECTED_RUNNER_OS\"" "$workflow" >/dev/null
 grep -F 'packages: read' "$workflow" >/dev/null
 grep -F '@sha256:' "$workflow" >/dev/null
 grep -F 'timeout-minutes: 20' "$workflow" >/dev/null
+grep -F 'run_attempt' "$workflow" >/dev/null
+grep -F 'runtime-body.log' "$workflow" >/dev/null
+grep -F 'reverified-pass' "$repo_root/scripts/aggregate-six-grid-runtime.py" >/dev/null
 printf 'six-grid-cloud-selftest: PASS\n'
