@@ -38,7 +38,11 @@ jobs:
       matrix:
         include:
           - platform_id: windows-x86_64
-            runner: windows-latest
+            # Keep the reviewed static-VCRUNTIME + system-UCRT link contract on
+            # the VS 2022 toolset. `windows-latest` moved to VS 18/MSVC 14.51
+            # and its libcmt requires private __acrt_* exports that ucrt.lib
+            # intentionally does not provide, breaking old-Windows packaging.
+            runner: windows-2022
             target: x86_64-pc-windows-msvc
             binary: minicon.exe
           - platform_id: linux-x86_64
