@@ -15,6 +15,7 @@ case "$suite" in status|test|full) ;; *) echo "invalid suite: $suite" >&2; exit 
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
+started=$(date +%s)
 for tool in gh jq oras python3; do
   command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 2; }
 done
@@ -30,7 +31,7 @@ printf '{"schema":1,"source_sha":"%s","source_tree_sha256":"%s","package":"%s","
   "$source_sha" "$identity" "$package" "$manifest_sha" >"$published_index"
 for asset in target-six/cloud-runtime/minicon-six-grid-"$identity"-{lnx-aarch64,lnx-x86_64,win-aarch64,win-x86_64,osx-aarch64,osx-x86_64}.tar.gz; do
   cell=${asset##*-"$identity"-}; cell=${cell%.tar.gz}
-  output=$(oras push --format json "$package:$identity-$cell" \
+  output=$(oras push --no-tty --format json "$package:$identity-$cell" \
     "$asset:application/vnd.minicon.runtime-body.v1+tar+gzip")
   digest=$(printf '%s' "$output" | jq -r '.manifest.digest')
   [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "invalid OCI digest for $cell" >&2; exit 1; }
@@ -39,7 +40,7 @@ for asset in target-six/cloud-runtime/minicon-six-grid-"$identity"-{lnx-aarch64,
   mv "$tmp" "$published_index"
 done
 
-index_output=$(oras push --format json "$package:$identity" \
+index_output=$(oras push --no-tty --format json "$package:$identity" \
   "$published_index:application/vnd.minicon.six-grid-index.v1+json" \
   "$manifest:application/vnd.minicon.build-manifest.v1+json")
 index_digest=$(printf '%s' "$index_output" | jq -r '.manifest.digest')
@@ -50,4 +51,7 @@ source_repo=${MINICON_SOURCE_GITHUB_REPO:-$(gh repo view --json nameWithOwner -q
 gh workflow run six-grid-runtime.yml --repo "$source_repo" \
   -f bundle_ref="$bundle_ref" -f source_sha="$source_sha" \
   -f source_tree_sha256="$identity" -f suite="$suite"
-printf 'published=%s\ndispatched=%s/.github/workflows/six-grid-runtime.yml\n' "$bundle_ref" "$source_repo"
+bytes=$(jq '[.assets[].bytes] | add' "$manifest")
+elapsed=$(( $(date +%s) - started ))
+printf 'published=%s\ndispatched=%s/.github/workflows/six-grid-runtime.yml\nbytes=%s\nelapsed_seconds=%s\n' \
+  "$bundle_ref" "$source_repo" "$bytes" "$elapsed"

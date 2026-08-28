@@ -37,6 +37,7 @@ COMMON_TESTS = (
 )
 LINUX_TESTS = COMMON_TESTS + ("minicon_accessibility_linux",)
 THROUGHPUT_TEST = ("minicon_throughput",)
+MAX_CELL_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 
 def digest(path: Path) -> str:
@@ -94,7 +95,11 @@ def package_cell(repo: Path, build_root: Path, output: Path, identity: str, cell
         root = Path(temporary) / "payload"
         tests_by_profile: dict[str, dict[str, str]] = {}
         for profile, prefixes in (("debug", LINUX_TESTS if linux else COMMON_TESTS), ("release-fast", THROUGHPUT_TEST)):
-            source_profile = build_root / relative / profile
+            # Linux debug harnesses carry 130+ MiB of DWARF each. Runtime
+            # qualification needs executable semantics, not debug symbols, and
+            # the owning build already links all release-fast test targets.
+            source_profile_name = "release-fast" if linux else profile
+            source_profile = build_root / relative / source_profile_name
             product = source_profile / product_name
             if not product.is_file():
                 raise SystemExit(f"missing {cell} product: {product}")
@@ -142,7 +147,13 @@ def package_cell(repo: Path, build_root: Path, output: Path, identity: str, cell
 
         archive = output / f"minicon-six-grid-{identity}-{cell}.tar.gz"
         write_deterministic_archive(root, archive)
-    return {"cell": cell, "asset": archive.name, "bytes": archive.stat().st_size, "sha256": digest(archive)}
+    archive_bytes = archive.stat().st_size
+    if archive_bytes > MAX_CELL_ARCHIVE_BYTES:
+        raise SystemExit(
+            f"{cell} runtime body is {archive_bytes} bytes; "
+            f"limit is {MAX_CELL_ARCHIVE_BYTES} (debug symbols or unrelated files leaked)"
+        )
+    return {"cell": cell, "asset": archive.name, "bytes": archive_bytes, "sha256": digest(archive)}
 
 
 def reusable_manifest(path: Path, receipt: dict[str, object], receipt_path: Path, output: Path) -> bool:

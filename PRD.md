@@ -326,7 +326,9 @@ flowchart LR
   shared host cache. A stable ignored Cargo cache preserves incremental work;
   clean receipts bind the current source fingerprint and exact artifact hashes
   instead of forcing a cold target tree after every PRD edit. Cloud archives
-  normalize tar/gzip metadata and reuse only a fully reverified manifest.
+  normalize tar/gzip metadata and reuse only a fully reverified manifest. Linux
+  bodies use release-fast harnesses rather than 130–170 MiB DWARF-bearing debug
+  executables; a 64 MiB cell-body ceiling catches their return.
   Runtime guest leases remain bounded and serial. It runs
   the complete macOS arm64 suite. Rosetta runs the same macOS x86_64
   suite. A Debian/glibc ARM64 Lima court runs the cross-linked Linux ARM64

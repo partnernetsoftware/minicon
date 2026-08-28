@@ -218,6 +218,15 @@ correct half/full-width font measurement.
   manifest is reused without another compression pass. `status` and `full` may
   replace `test` only by explicit invocation.
 
+  The first upload attempt exposed a rejected packaging mistake: Linux debug
+  products and libtest harnesses each carried roughly 130–170 MiB of DWARF,
+  making a compressed cell about 181 MiB even though the release-fast product
+  is only 6.7–7.4 MiB. Cloud Linux bodies now select the already-linked
+  release-fast product and harnesses; no semantic test is omitted. A hard 64
+  MiB per-cell archive ceiling fails packaging if debug symbols or unrelated
+  Cargo output leak back in. This is a test-body budget, not a new product-size
+  promise.
+
 ```mermaid
 flowchart LR
     S[Reviewed source state] --> B[Mac mini six-cell cross-build]
