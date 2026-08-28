@@ -14,11 +14,12 @@ RECEIPT="$OUT_DIR/receipt.json"
 mkdir -p "$OUT_DIR/logs"
 : >"$RESULTS"
 
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 2
 export AGENTERM_NO_ACTIVATE=1
 
 record() {
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" >>"$RESULTS"
+  results_file="${RESULT_SINK:-$RESULTS}"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" >>"$results_file"
 }
 
 run_stage() {
@@ -27,7 +28,7 @@ run_stage() {
   shift 2
   log="$OUT_DIR/logs/${cell}-${stage}.log"
   started="$(date +%s)"
-  printf '[six-cell] %-14s %-18s ... ' "$cell" "$stage"
+  printf '[six-cell] %-14s %-18s START\n' "$cell" "$stage"
   if "$@" >"$log" 2>&1; then
     status="PASS"
     rc=0
@@ -36,7 +37,7 @@ run_stage() {
     status="FAIL"
   fi
   elapsed="$(( $(date +%s) - started ))"
-  printf '%s (%ss)\n' "$status" "$elapsed"
+  printf '[six-cell] %-14s %-18s %s (%ss)\n' "$cell" "$stage" "$status" "$elapsed"
   record "$cell" "$stage" "$status" "$elapsed" "target-six/logs/${cell}-${stage}.log" "exit=$rc"
   return 0
 }
@@ -174,6 +175,13 @@ require_tool cargo-xwin
 require_tool cargo-zigbuild
 require_tool python3
 
+BUILD_JOBS="${MINICON_BUILD_JOBS:-6}"
+CARGO_JOBS_PER_CELL="${MINICON_CARGO_JOBS_PER_CELL:-2}"
+case "$BUILD_JOBS:$CARGO_JOBS_PER_CELL" in
+  *[!0-9:]*|0:*|*:0) printf 'build concurrency must be positive integers\n' >&2; exit 2 ;;
+esac
+export CARGO_BUILD_JOBS="$CARGO_JOBS_PER_CELL"
+
 SOURCE_STATE_START="$(python3 scripts/source-fingerprint.py)"
 SOURCE_TREE_SHA256="$(printf '%s' "$SOURCE_STATE_START" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
 BUILD_DIR="$OUT_DIR/builds/$SOURCE_TREE_SHA256"
@@ -192,14 +200,90 @@ lima_stop_if_running "$LNX_AARCH64_LIMA"
 
 run_stage common fmt cargo fmt --all -- --check
 
-run_stage osx-aarch64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
-  cargo clippy --locked --workspace --all-targets --target aarch64-apple-darwin -- -D warnings
-run_stage osx-aarch64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
-  cargo test --locked --workspace --all-targets --target aarch64-apple-darwin
-run_stage osx-aarch64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
-  cargo test --locked --profile release-fast --target aarch64-apple-darwin \
-    --test minicon_throughput -- --ignored --nocapture
-inspect_artifact osx-aarch64 "$BUILD_DIR/osx-aarch64/aarch64-apple-darwin/debug/minicon" "Mach-O 64-bit executable arm64"
+build_osx_aarch64() {
+  run_stage osx-aarch64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
+    cargo clippy --locked --workspace --all-targets --target aarch64-apple-darwin -- -D warnings
+  run_stage osx-aarch64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
+    cargo test --locked --workspace --all-targets --target aarch64-apple-darwin
+  run_stage osx-aarch64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
+    cargo test --locked --profile release-fast --target aarch64-apple-darwin \
+      --test minicon_throughput -- --ignored --nocapture
+  inspect_artifact osx-aarch64 "$BUILD_DIR/osx-aarch64/aarch64-apple-darwin/debug/minicon" "Mach-O 64-bit executable arm64"
+}
+
+build_osx_x86_64() {
+  run_stage osx-x86_64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
+    cargo clippy --locked --workspace --all-targets --target x86_64-apple-darwin -- -D warnings
+  run_stage osx-x86_64 test-link env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
+    cargo test --locked --workspace --all-targets --target x86_64-apple-darwin --no-run
+  inspect_artifact osx-x86_64 "$BUILD_DIR/osx-x86_64/x86_64-apple-darwin/debug/minicon" "Mach-O 64-bit executable x86_64"
+  if arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+    run_stage osx-x86_64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
+      cargo test --locked --workspace --all-targets --target x86_64-apple-darwin
+    run_stage osx-x86_64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
+      cargo test --locked --profile release-fast --target x86_64-apple-darwin \
+        --test minicon_throughput -- --ignored --nocapture
+  else
+    blocked osx-x86_64 test "Rosetta 2 is not installed"
+    blocked osx-x86_64 throughput "Rosetta 2 is not installed"
+  fi
+}
+
+build_win_x86_64() {
+  run_stage win-x86_64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
+    cargo xwin build --locked --workspace --all-targets --target x86_64-pc-windows-msvc
+  run_stage win-x86_64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
+    cargo xwin build --locked --profile release-fast --workspace --all-targets \
+      --target x86_64-pc-windows-msvc
+  inspect_artifact win-x86_64 "$BUILD_DIR/win-x86_64/x86_64-pc-windows-msvc/debug/minicon.exe" "GUI) x86-64"
+}
+
+build_win_aarch64() {
+  run_stage win-aarch64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
+    cargo xwin build --locked --workspace --all-targets --target aarch64-pc-windows-msvc
+  run_stage win-aarch64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
+    cargo xwin build --locked --profile release-fast --workspace --all-targets \
+      --target aarch64-pc-windows-msvc
+  inspect_artifact win-aarch64 "$BUILD_DIR/win-aarch64/aarch64-pc-windows-msvc/debug/minicon.exe" "GUI) Aarch64"
+}
+
+build_lnx_x86_64() {
+  run_stage lnx-x86_64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-x86_64" \
+    cargo zigbuild --locked --workspace --all-targets --target x86_64-unknown-linux-gnu
+  run_stage lnx-x86_64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-x86_64" \
+    cargo zigbuild --locked --profile release-fast --workspace --all-targets \
+      --target x86_64-unknown-linux-gnu
+  inspect_artifact lnx-x86_64 "$BUILD_DIR/lnx-x86_64/x86_64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, x86-64"
+}
+
+build_lnx_aarch64() {
+  run_stage lnx-aarch64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-aarch64" \
+    cargo zigbuild --locked --workspace --all-targets --target aarch64-unknown-linux-gnu
+  run_stage lnx-aarch64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-aarch64" \
+    cargo zigbuild --locked --profile release-fast --workspace --all-targets \
+      --target aarch64-unknown-linux-gnu
+  inspect_artifact lnx-aarch64 "$BUILD_DIR/lnx-aarch64/aarch64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, ARM aarch64"
+}
+
+build_cells=(osx-aarch64 osx-x86_64 win-x86_64 win-aarch64 lnx-x86_64 lnx-aarch64)
+build_functions=(build_osx_aarch64 build_osx_x86_64 build_win_x86_64 build_win_aarch64 build_lnx_x86_64 build_lnx_aarch64)
+result_dir="$OUT_DIR/results.d"
+mkdir -p "$result_dir"
+pids=()
+wait_build_batch() {
+  for pid in "${pids[@]}"; do wait "$pid"; done
+  pids=()
+}
+printf '[six-cell] build fan-out: cells=%s cargo-jobs-per-cell=%s\n' "$BUILD_JOBS" "$CARGO_JOBS_PER_CELL"
+for index in 0 1 2 3 4 5; do
+  cell="${build_cells[$index]}"
+  function_name="${build_functions[$index]}"
+  (RESULT_SINK="$result_dir/$cell.tsv"; : >"$RESULT_SINK"; "$function_name") &
+  pids+=("$!")
+  if [ "${#pids[@]}" -ge "$BUILD_JOBS" ]; then wait_build_batch; fi
+done
+[ "${#pids[@]}" -eq 0 ] || wait_build_batch
+for cell in "${build_cells[@]}"; do cat "$result_dir/$cell.tsv" >>"$RESULTS"; done
 
 # The clean macOS guest is a release/permission court for the ARM64 artifact,
 # not a seventh architecture cell. It consumes the exact host-linked bytes and
@@ -225,28 +309,6 @@ else
     "MINICON_MACOS_AARCH64_RUNNER is not configured"
 fi
 
-run_stage osx-x86_64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
-  cargo clippy --locked --workspace --all-targets --target x86_64-apple-darwin -- -D warnings
-run_stage osx-x86_64 test-link env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
-  cargo test --locked --workspace --all-targets --target x86_64-apple-darwin --no-run
-inspect_artifact osx-x86_64 "$BUILD_DIR/osx-x86_64/x86_64-apple-darwin/debug/minicon" "Mach-O 64-bit executable x86_64"
-if arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
-  run_stage osx-x86_64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
-    cargo test --locked --workspace --all-targets --target x86_64-apple-darwin
-  run_stage osx-x86_64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
-    cargo test --locked --profile release-fast --target x86_64-apple-darwin \
-      --test minicon_throughput -- --ignored --nocapture
-else
-  blocked osx-x86_64 test "Rosetta 2 is not installed"
-  blocked osx-x86_64 throughput "Rosetta 2 is not installed"
-fi
-
-run_stage win-x86_64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
-  cargo xwin build --locked --workspace --all-targets --target x86_64-pc-windows-msvc
-run_stage win-x86_64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
-  cargo xwin build --locked --profile release-fast --workspace --all-targets \
-    --target x86_64-pc-windows-msvc
-inspect_artifact win-x86_64 "$BUILD_DIR/win-x86_64/x86_64-pc-windows-msvc/debug/minicon.exe" "GUI) x86-64"
 if [ -n "${MINICON_WIN_X86_64_RUNNER:-}" ] && [ -x "$MINICON_WIN_X86_64_RUNNER" ]; then
   run_windows_runner_stage win-x86_64 runtime-status "$MINICON_WIN_X86_64_RUNNER" \
     "$BUILD_REL/win-x86_64/x86_64-pc-windows-msvc" status
@@ -262,12 +324,6 @@ fi
 
 run_stage common windows-cell-boundary stop_windows_runners
 
-run_stage win-aarch64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
-  cargo xwin build --locked --workspace --all-targets --target aarch64-pc-windows-msvc
-run_stage win-aarch64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
-  cargo xwin build --locked --profile release-fast --workspace --all-targets \
-    --target aarch64-pc-windows-msvc
-inspect_artifact win-aarch64 "$BUILD_DIR/win-aarch64/aarch64-pc-windows-msvc/debug/minicon.exe" "GUI) Aarch64"
 if [ -n "${MINICON_WIN_AARCH64_RUNNER:-}" ] && [ -x "$MINICON_WIN_AARCH64_RUNNER" ]; then
   run_windows_runner_stage win-aarch64 runtime-status "$MINICON_WIN_AARCH64_RUNNER" \
     "$BUILD_REL/win-aarch64/aarch64-pc-windows-msvc" status
@@ -283,12 +339,6 @@ fi
 
 run_stage common windows-idle stop_windows_runners
 
-run_stage lnx-x86_64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-x86_64" \
-  cargo zigbuild --locked --workspace --all-targets --target x86_64-unknown-linux-gnu
-run_stage lnx-x86_64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-x86_64" \
-  cargo zigbuild --locked --profile release-fast --workspace --all-targets \
-    --target x86_64-unknown-linux-gnu
-inspect_artifact lnx-x86_64 "$BUILD_DIR/lnx-x86_64/x86_64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, x86-64"
 "$LIMA_COURT" lease lnx-x86_64-rosetta >/dev/null 2>&1 || true
 if lima_running "$LNX_X86_64_LIMA"; then
   run_lima_linux_stage lnx-x86_64 runtime-status "$LNX_X86_64_LIMA" \
@@ -329,12 +379,6 @@ else
     "MINICON_LNX_X86_64_DESKTOP_RUNNER is not configured"
 fi
 
-run_stage lnx-aarch64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-aarch64" \
-  cargo zigbuild --locked --workspace --all-targets --target aarch64-unknown-linux-gnu
-run_stage lnx-aarch64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-aarch64" \
-  cargo zigbuild --locked --profile release-fast --workspace --all-targets \
-    --target aarch64-unknown-linux-gnu
-inspect_artifact lnx-aarch64 "$BUILD_DIR/lnx-aarch64/aarch64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, ARM aarch64"
 "$LIMA_COURT" lease lnx-aarch64-fast >/dev/null 2>&1 || true
 if lima_running "$LNX_AARCH64_LIMA"; then
   run_lima_linux_stage lnx-aarch64 runtime-status "$LNX_AARCH64_LIMA" \
