@@ -319,11 +319,16 @@ correct half/full-width font measurement.
   next frame, the Wake path now yields before draining and reposting PTY
   backlog; readers retain their bytes and wake again after capture. The fix
   passed the ARM64 journey once and the x86-64 Rosetta journey five consecutive
-  times without extending the deadline. Hosted Intel revalidation and the
-  final controlled same-run `reverified-pass` chain remain open until
-  concurrent documentation work lands and the repository again has one stable
-  clean source identity; authoritative publication from a drifting or dirty
-  tree remains correctly forbidden.
+  times without extending the deadline. Run `33148879259` then supplied the
+  decisive hosted evidence on one immutable OCI digest: all six native runtime
+  bodies passed, including macOS Intel; Linux x86-64 alone wrote the executed
+  probe marker and failed attempt one after its real tests passed. A failed-job
+  rerun executed only that cell plus aggregation. Attempt two passed without a
+  marker, and the final aggregate was **PASS** with Linux x86-64 classified
+  `reverified-pass`; it retained both attempt log sizes and SHA-256 identities
+  while the other five cells remained selected from attempt one. This closes
+  the controlled failure → same-digest rerun → retained-history verdict chain.
+  Authoritative publication from a drifting or dirty tree remains forbidden.
 
 ```mermaid
 flowchart LR

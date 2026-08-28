@@ -77,7 +77,7 @@ MiniCon — one-file local terminal
 │   │   │   │   │   ├── every attempt retains cell status + runtime log size/SHA-256 under an attempt-scoped artifact
 │   │   │   │   │   ├── aggregate FAIL is itself uploaded; a rerun cannot erase first-failure evidence
 │   │   │   │   │   ├── intentional failure classification requires an executed probe marker, not merely a requested probe cell
-│   │   │   │   │   └── [~] controlled failure → same-digest `reverified-pass` live chain pending a stable clean source tree
+│   │   │   │   │   └── [x] controlled failure → same-digest failed-job rerun → `reverified-pass`, with both attempt logs retained
 │   │   │   │   ├── screenshot response scheduling
 │   │   │   │   │   └── pending owned capture yields Wake-side PTY backlog to redraw; the 10-second product deadline remains unchanged
 │   │   │   │   ├── public-repo standard runners are free; manual/candidate trigger + 20-minute cell deadline still bound waste
