@@ -68,16 +68,16 @@
     },
     {
       "id": "win-x86_64-desktop",
-      "image": "minicon/windows-desktop-x86-64:planned",
+      "image": "minicon/windows-desktop-x86-64:local-unsealed",
       "cell": "win-x86_64",
       "os": "win",
       "isa": "x86_64",
       "vm": "minicon-win-x86-64",
       "adapter": "qemu-guest-agent",
-      "automation_state": "planned",
+      "automation_state": "ready",
       "idle": "stop",
-      "memory_mib": 6144,
-      "template_state": "planned"
+      "memory_mib": 4096,
+      "template_state": "local-unsealed"
     }
   ]
 }

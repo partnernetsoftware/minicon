@@ -217,6 +217,8 @@ build_osx_x86_64() {
     cargo test --locked --workspace --all-targets --target x86_64-apple-darwin --no-run
   inspect_artifact osx-x86_64 "$BUILD_DIR/osx-x86_64/x86_64-apple-darwin/debug/minicon" "Mach-O 64-bit executable x86_64"
   if arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+    run_stage osx-x86_64 rosetta-proof bash -c \
+      '[ "$(arch -x86_64 /usr/bin/uname -m)" = x86_64 ] && [ "$(arch -x86_64 /usr/sbin/sysctl -n sysctl.proc_translated)" = 1 ]'
     run_stage osx-x86_64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
       cargo test --locked --workspace --all-targets --target x86_64-apple-darwin
     run_stage osx-x86_64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \

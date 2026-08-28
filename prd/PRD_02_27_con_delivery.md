@@ -265,13 +265,13 @@ correct half/full-width font measurement.
   The local inventory must keep five states separate: registry slot, physical
   VM presence, installed OS, automation readiness, and sealed release
   authority. The checked inventory currently contains five UTM VM definitions,
-  not six. `minicon-osx-arm-64`, both Linux VMs, and
-  `minicon-win-arm-64` are automation-ready but `local-unsealed`.
-  `minicon-win-x86-64` physically exists in installer/provisioning state while
-  its automation and template remain `planned`. `minicon-osx-x86-64` is only a
-  planned registry row and has no UTM VM definition. No local cell currently
-  owns a sealed release baseline. A six-row registry or a six-cell GitHub PASS
-  must never be summarized as six deployed local UTM guests.
+  not six. All five are installed, automation-ready and `local-unsealed`;
+  `minicon-win-x86-64` most recently crossed those boundaries after Windows 11
+  build 26200, automatic desktop login, official VC++ Runtime and QEMU Guest
+  Agent were proven. The logical OSX x86_64 userspace court is host Rosetta and
+  therefore has no routine physical UTM VM. No local cell currently owns a
+  sealed release baseline. A six-row registry or a six-cell GitHub PASS must
+  never be summarized as six deployed local UTM guests or six sealed courts.
 
   Measured 2026-08-28, packaging reports both uncompressed payload bytes and
   compressed archive bytes per cell. The exact six-cell body totals about 151
@@ -376,6 +376,8 @@ flowchart LR
     SP --> A1
     B --> LP[Local exact-artifact payload<br/>no GHCR or Actions dependency]
     LP --> D[Local UTM/Lima six-grid<br/>controlled-image release court]
+    D --> WXU[Windows x86 TCG<br/>QGA ready · status PASS<br/>control reply OS 233]
+    WXU --> LG
     D --> LG{Required local cells pass<br/>with sealed baselines?}
     LG -->|yes| C[Release-qualification receipt]
     LG -->|no| LB[BLOCKED or FAIL<br/>never inferred from GitHub]
@@ -545,6 +547,30 @@ flowchart LR
   console login and a visible Windows desktop. OS inventory reports an ARM
   64-bit processor; the x64 Guest Agent process reports AMD64/X64 under Prism,
   preserving the distinction between guest ISA and translated tool process.
+
+  The real x86_64 Windows court now cold-boots, reaches its automatic desktop
+  session, answers QGA, and passes an exact-artifact status probe before
+  returning to `stopped`. Its official VC++ Runtime bootstrap exposed an
+  infrastructure invariant: one large QGA push produced a shorter, different
+  SHA-256 file and a corrupt-container installer error, while downloading the
+  same Microsoft permalink inside the guest produced the complete installer.
+  Every large Guest-Agent transport must therefore verify byte length and
+  digest; external prerequisites should use guest-side upstream download or a
+  chunked verified transport.
+
+  The cell is not runtime-qualified. On two exact-source runs, 125 host tests,
+  38 shared-core tests and both PE portability tests passed, but the serialized
+  forced console-agent suite passed only 4/7 and 5/7. A separate
+  `release-fast` throughput run lost the same public control reply pipe during
+  setup. Windows reported OS error 233; Application Error/WER contained no
+  MiniCon crash, and the diagnostics log did not record the hypothesized
+  persistent screen-read failure. Replacing a 50-poll accidental recovery
+  budget with a bounded elapsed-time window was valid robustness work but did
+  not close this defect. The next owning experiment must capture MiniCon,
+  console-agent, child and named-pipe lifetimes around one isolated failure;
+  blindly extending the timeout or rerunning the whole suite is rejected.
+  Registry state is consequently `ready` + `local-unsealed`, while runtime and
+  sealed authority remain explicitly open.
 
   The macOS clean runner now uses the same UTM `lease`, version-2
   `wait-ready`, and `release` operations; its remaining code owns only bootstrap
@@ -773,28 +799,35 @@ flowchart LR
   AT-SPI samples; it does not own performance or the full high-frequency GUI
   suite. Existing Lima courts remain the fast function and kernel-logic owners.
 
-  The desktop infrastructure outcome is six independent stopped guest
-  baselines: `{minicon}-{lnx,osx,win}-{arm,x86}-64`. Every identity owns its
-  own guest OS/ISA installation, automatic test-user login, agent bootstrap,
-  exact-artifact transport, cold-start readiness and release receipt. Rosetta
-  and Prism remain useful supplemental translation courts, but a translated
-  process inside an ARM64 guest cannot satisfy the corresponding x86-64 guest
-  leaf. Backend choice and translation mode remain machine-readable registry
-  fields; neither changes the canonical guest name.
+  The local infrastructure outcome is six independent logical execution cells,
+  not six mandatory resident guests. Linux and Windows retain stopped guest
+  baselines with automatic login, agent bootstrap, exact-artifact transport,
+  cold-start readiness and release receipts. macOS ARM64 retains the clean UTM
+  permission/package court. On Apple Silicon, routine `osx-x86_64` qualification
+  instead uses host Rosetta 2 because MiniCon is a small userspace application:
+  the receipt must prove an x86_64 Mach-O, force execution with
+  `arch -x86_64`, and record translated-process state. This court owns x86_64
+  userspace behavior, not an Intel kernel, kernel extensions, drivers, old
+  installers or old-macOS compatibility.
 
-  `minicon-osx-x86-64` remains a real Intel-ISA guest requirement. On an Apple
-  Silicon host, UTM's supported Apple Virtualization macOS path is ARM64-only;
-  therefore the local discovery branch is explicitly a time-boxed QEMU/TCG +
-  OpenCore experiment, not an assumed deliverable. It advances only if it can
-  prove an Apple-origin installer, an Intel kernel, unattended cold boot,
-  automatic test-user login, exact-artifact transport, and a repeatable GUI
-  launch receipt. Failure to reach the installer or deterministic disk boot
-  inside the experiment box kills that local branch and assigns the formal
-  cell to a real Intel Mac runner. Host Rosetta and Rosetta inside the ARM64
-  macOS guest remain fast compatibility evidence only and never close this
-  leaf. The safe failure is an explicit `runner-unavailable` receipt with the
-  rejected local route recorded; the non-goal is maintaining an open-ended,
-  update-fragile Hackintosh as production infrastructure.
+  The first explicit Rosetta receipt now proves `uname -m=x86_64` and
+  `sysctl.proc_translated=1` before accepting execution. The exact x86_64 Mach-O
+  body passed 124 main units, 22 GUI/PTY black boxes, the isolated control
+  journey, 38 shared-core units and the dedicated `release-fast` sustained
+  output gate. That gate drained 33,439,744 measured bytes at 11,565,347 B/s
+  with zero present failures. `scripts/six-cell-qualify.sh` now owns the same
+  architecture/translation preflight, so a native ARM64 fallback cannot be
+  mislabeled as OSX x86_64 evidence.
+
+  The Catalina/OpenCore QEMU experiment is stopped and retained as recoverable
+  research evidence, not a release prerequisite and not a deployed
+  `minicon-osx-x86-64` VM. A real Intel Mac runner becomes necessary only when a
+  defect depends on an Intel kernel, CPUID/untranslated timing, a kernel
+  extension or an old Intel-only macOS release. The safe failure for those
+  exceptional leaves is an explicit `runner-unavailable` receipt. Maintaining
+  an update-fragile Hackintosh as routine production infrastructure remains a
+  non-goal. Prism does not receive this exception: Windows keeps its real
+  x86_64 UTM guest and labels Prism evidence supplemental.
 
   Its preparation owner is `scripts/prepare-linux-x86_64-utm.sh`: it accepts
   only the pinned official Ubuntu 24.04.4 Server AMD64 release ISO with

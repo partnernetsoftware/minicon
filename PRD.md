@@ -88,7 +88,8 @@ MiniCon — one-file local terminal
 │   │   │   │           ├── lanes share test contracts and may consume identical bytes, but neither executes through nor depends on the other
 │   │   │   │           └── receipts remain lane-labelled; local release authority becomes final only after all required baselines are sealed
 │   │   │   ├── macOS runtime courts
-│   │   │   │   ├── host-native arm64 + Rosetta x86_64 fast courts
+│   │   │   │   ├── host-native arm64 + Rosetta x86_64 local function courts
+│   │   │   │   │   └── x86_64 receipt must prove Mach-O ISA + forced `arch -x86_64` execution + translated-process state
 │   │   │   │   └── clean ARM64 macOS VM release/permission court
 │   │   │   │       ├── official IPSW + Apple Virtualization baseline
 │   │   │   │       ├── VirtioFS exact-artifact job bridge; no Cargo or source
@@ -116,23 +117,28 @@ MiniCon — one-file local terminal
 │   │   │   │       ├── disk-only cold boot + auto-login + QGA + visible XFCE desktop
 │   │   │   │       ├── exact x86_64 artifact: help + control + pane text + PNG + close
 │   │   │   │       └── 2 vCPU / 4 GiB / QEMU TCG; correctness, not performance
-│   │   │   ├── Six desired local guest identities (inventory truth, not completion claim)
+│   │   │   ├── Local six-cell execution inventory (logical courts, not six mandatory VMs)
 │   │   │   │   ├── [~] present + automation-ready + local-unsealed: `minicon-lnx-arm-64`, `minicon-lnx-x86-64`, `minicon-osx-arm-64`, `minicon-win-arm-64`
-│   │   │   │   ├── [ ] present installer/provisioning state only: `minicon-win-x86-64`; registry automation/template state remains `planned`
-│   │   │   │   ├── [ ] absent VM, registry plan only: `minicon-osx-x86-64`
-│   │   │   │   │   ├── first real C1 preflight: FAIL; required local media absent, so VM creation remains unauthorized
-│   │   │   │   │   └── x86 route: one pinned Catalina/OpenCore candidate pair → C1 local hash → QEMU/OpenCore C2 gate → real Intel runner fallback
+│   │   │   │   ├── [~] present + installed + QGA-ready + local-unsealed: `minicon-win-x86-64`
+│   │   │   │   │   ├── exact x86_64 status PASS on Windows 11 build 26200; VM returns to stopped
+│   │   │   │   │   └── full/throughput qualification BLOCKED: TCG runs intermittently lose the public control reply pipe (OS 233)
+│   │   │   │   ├── [~] host Rosetta court replaces routine `minicon-osx-x86-64` VM work on Apple Silicon
+│   │   │   │   │   ├── PASS: forced x86_64 + translated=1; 124 units + 22 GUI/PTY + control + 38 core + release-fast throughput
+│   │   │   │   │   ├── owns small CLI/App x86_64 userspace behavior; does not claim an Intel kernel or old-macOS compatibility
+│   │   │   │   │   └── stopped Catalina/OpenCore scratch remains recoverable research evidence; real Intel runner is the exceptional fallback
 │   │   │   │   ├── [ ] no local cell yet owns a sealed release baseline
 │   │   │   │   └── registry row ≠ VM presence ≠ installed OS ≠ automation-ready ≠ sealed release authority
-│   │   │   ├── Supplemental translation courts
-│   │   │   │   ├── Rosetta and Prism measure translation compatibility only
-│   │   │   │   └── translated execution never substitutes for an x86-64 guest
+│   │   │   ├── Translation courts
+│   │   │   │   ├── Rosetta is the accepted local OSX x86_64 userspace court for MiniCon
+│   │   │   │   ├── Prism remains supplemental to the real Windows x86_64 UTM guest
+│   │   │   │   └── neither translation court claims an x86_64 kernel
 │   │   │   ├── Windows runtime courts
 │   │   │   │   ├── UTM guest-agent artifact bridge
 │   │   │   │   │   └── Guest Tools = VirtIO/SPICE desktop drivers + QEMU Guest Agent control plane
 │   │   │   │   ├── InteractiveToken desktop dispatcher
 │   │   │   │   ├── Windows 11 ARM64 + Guest Tools baseline
-│   │   │   │   └── ARM64-native + Prism-x64 full runtime evidence
+│   │   │   │   ├── ARM64-native + Prism-x64 full runtime evidence
+│   │   │   │   └── Windows 11 x86_64 TCG baseline: QGA ready, status PASS, runtime qualification still BLOCKED
 │   │   │   ├── Reproducible runner images
 │   │   │   │   ├── image-first supply: official gallery → trusted versioned community box → official cloud image → ISO install
 │   │   │   │   │   ├── importable `.utm`/QCOW2 must prove OS, ISA, provenance, digest and update age
@@ -219,12 +225,13 @@ flowchart LR
         GC["clean macOS receipt leaves<br/>status · test · throughput · idle<br/>missing runner = BLOCKED"]
         L["Debian/glibc Lima<br/>Linux runtime"]
         LD["Linux desktop UTM court<br/>LTS glibc · GUI · AT-SPI · packaging"]
-        S6["six desired local slots<br/>4 ready-unsealed · 1 provisioning · 1 absent<br/>0 sealed release baselines"]
+        S6["six logical local cells<br/>five VM-backed · OSX x86 via host Rosetta<br/>0 sealed release baselines"]
         LQ["Linux ARM64 desktop<br/>minicon-lnx-arm-64<br/>QEMU/HVF in registry"]
         LX["Linux x86-64 desktop<br/>minicon-lnx-x86-64<br/>QEMU/TCG in registry"]
-        OX["macOS x86-64 court<br/>QEMU/OpenCore experiment<br/>Intel Mac runner fallback"]
-        TR["supplemental translation<br/>Rosetta · Prism<br/>never replaces x86-64 guest"]
-        V["Windows UTM courts<br/>ARM64 native + Prism x64 · PASS"]
+        OX["macOS x86-64 function court · PASS<br/>host Rosetta · forced x86_64 · translated=1<br/>Intel kernel explicitly unclaimed"]
+        TR["translation evidence<br/>Rosetta accepted for OSX userspace<br/>Prism supplemental for Windows"]
+        V["Windows UTM courts<br/>ARM64 native + Prism x64 · PASS<br/>real x86 TCG · unsealed"]
+        WXU["Windows x86 qualification<br/>status PASS · QGA ready · stopped<br/>control pipe OS 233 → BLOCKED"]
         I["Runner image provenance<br/>upstream digest · recipe · sealed baseline"]
         VC["VM court services<br/>UTM + Lima registries<br/>image · lease · exec · release · reap"]
         ST["sealed template<br/>version · digest · no credentials"]
@@ -296,10 +303,11 @@ flowchart LR
     LD --> LQ
     LD --> LX
     Q --> V
+    V --> WXU
     O --> M
     L --> M
     LD --> M
-    V --> M
+    WXU --> M
     M --> D
     U --> DS
     DS --> MB
@@ -370,11 +378,12 @@ flowchart LR
   recorded as `BLOCKED`, never inferred from link success. Runner portability
   means an immutable upstream digest plus a declarative provisioning recipe
   and disposable local overlay, not an untrusted redistributed guest disk.
-  This proves the six artifact cells and the existing native/translation
-  runtime coverage; it does not yet prove the newer six-independent-guest
-  outcome. Until each `{minicon}-{lnx,osx,win}-{arm,x86}-64` baseline has its
-  own cold-start receipt, translation results remain supplemental and the
-  missing guest leaves remain `BLOCKED`.
+  This proves the six artifact cells and the recorded native/translation
+  runtime coverage; it does not yet prove local release qualification. The
+  logical OSX x86_64 userspace cell is host Rosetta, while any Intel-kernel
+  requirement remains explicitly unavailable. Every unfinished VM-backed
+  runtime leaf remains `BLOCKED` until its own cold-start and exact-body receipt
+  passes.
 - [~] `scripts/utm-court.sh` and `scripts/utm-courts.json` are the first
   product-neutral agent interface over the VM fleet. Discovery, normalized
   status, lifecycle, Guest-Agent execution, exact-byte file transfer, idle
@@ -417,6 +426,19 @@ flowchart LR
   before the process disappeared. This cell is runtime-PASS and
   `local-unsealed`; sealing, disposable-clone qualification, AT-SPI/IME samples
   and a declared packaging dependency check remain open.
+  Windows x86_64 has also crossed presence, OS-install and automation-readiness
+  boundaries: Windows 11 build 26200 cold-boots with automatic desktop login,
+  official VC++ Runtime and QEMU Guest Agent; exact status passes and the VM
+  returns to `stopped`. Large QGA uploads must be size/hash verified: a VC++
+  installer arrived truncated through one large push, while guest-side download
+  from the official permalink produced the complete matching installer. Two
+  exact-source TCG qualification attempts passed 125 host units, 38 core units
+  and two PE portability tests, but the forced console-agent set remained
+  unstable (4/7 then 5/7) and sustained throughput lost the public control
+  reply pipe before setup, all as Windows OS error 233. No WER/Application Error
+  crash was recorded. The cell is therefore `local-unsealed` and
+  automation-ready, not runtime-PASS or sealed; the next leaf is a focused
+  control-pipe/process-lifetime probe rather than another retry-budget increase.
   The CLI is therefore useful but not yet the complete reusable six-court
   substrate.
 - [ ] Define any future artifact-size ceiling per target and profile before
