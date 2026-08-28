@@ -63,6 +63,7 @@ MiniCon — one-file local terminal
 │   │   ├── one executable and OS-library-only load boundary
 │   │   ├── unwind-safe native callback containment
 │   │   ├── platform-qualified size claims and exact-SHA delivery
+│   │   ├── repository-pinned Rust 1.97 toolchain; release builders never inherit rolling `stable`
 │   │   ├── Mac-hosted six-cell qualification
 │   │   │   ├── host builds every artifact; remote runners and local guests are runtime test targets only
 │   │   │   │   ├── no compiler or source checkout required in a guest
