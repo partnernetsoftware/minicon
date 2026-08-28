@@ -67,6 +67,13 @@ jobs:
         if: matrix.platform_id == 'windows-x86_64'
         run: cargo install cargo-xwin --locked --version 0.23.1
 
+      - name: Install Windows resource compiler
+        if: matrix.platform_id == 'windows-x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm
+          command -v llvm-rc
+
       - name: Install the Intel slice target
         if: matrix.platform_id == 'macos-universal'
         run: rustup target add x86_64-apple-darwin
