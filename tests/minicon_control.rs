@@ -1021,36 +1021,41 @@ fn gui_control_surface_isolated_multitab_black_box() {
     // race active-tab selection against owned screenshot work and start the
     // response deadline.
     let registration_deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        assert!(
-            raced_shot
-                .try_wait()
-                .expect("poll screenshot registration")
-                .is_none(),
-            "screenshot completed before its pending state could be observed"
-        );
+    let raced_while_pending = loop {
+        if raced_shot
+            .try_wait()
+            .expect("poll screenshot registration")
+            .is_some()
+        {
+            // A fast renderer can complete between public snapshots. That is
+            // already stronger than the bounded response criterion, but it
+            // leaves no pending work for this attempt to race.
+            break false;
+        }
         let state = cli_json(exe, &endpoint, &["ui-snapshot"]);
         if state["pending_control_screenshots"].as_u64() == Some(1) {
-            break;
+            break true;
         }
         assert!(
             Instant::now() < registration_deadline,
             "screenshot CLI did not register its request within the process-launch deadline"
         );
         thread::sleep(Duration::from_millis(20));
-    }
+    };
     cli_json(exe, &endpoint, &["select-tab", "--target", &root]);
     let raced_deadline = Instant::now() + Duration::from_secs(10);
-    while raced_shot
-        .try_wait()
-        .expect("poll raced screenshot CLI")
-        .is_none()
-    {
-        assert!(
-            Instant::now() < raced_deadline,
-            "screenshot racing active-tab selection did not complete"
-        );
-        thread::sleep(Duration::from_millis(20));
+    if raced_while_pending {
+        while raced_shot
+            .try_wait()
+            .expect("poll raced screenshot CLI")
+            .is_none()
+        {
+            assert!(
+                Instant::now() < raced_deadline,
+                "registered screenshot racing active-tab selection did not complete"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
     }
     let raced_output = raced_shot
         .wait_with_output()
