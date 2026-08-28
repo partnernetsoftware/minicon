@@ -300,42 +300,50 @@ fn a_wide_character_is_not_emitted_twice() {
 #[test]
 fn closing_the_host_takes_the_agent_and_its_child_with_it() {
     let _guard = gui_guard();
-    let before = minicon_processes();
+    let before = minicon_process_ids();
+    let owned: std::collections::BTreeSet<u32>;
     {
         let session = Session::start("teardown");
         session.wait_for_pane("Microsoft Windows", Duration::from_secs(20));
+        let started = minicon_process_ids();
+        owned = started.difference(&before).copied().collect();
         assert!(
-            minicon_processes() >= before + 2,
+            owned.len() >= 2,
             "the host and agent process pair was not started"
         );
     }
     let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline && minicon_processes() > before {
+    while Instant::now() < deadline && !minicon_process_ids().is_disjoint(&owned) {
         std::thread::sleep(Duration::from_millis(250));
     }
-    assert_eq!(minicon_processes(), before, "an agent survived its host");
+    let current = minicon_process_ids();
+    let survivors = current.intersection(&owned).copied().collect::<Vec<_>>();
+    assert!(
+        survivors.is_empty(),
+        "session processes survived their host: {survivors:?}"
+    );
 }
 
-/// Counts product processes. A live forced-backend session owns exactly two:
-/// the GUI host and its console agent. Taking a baseline keeps unrelated
-/// MiniCon windows out of the assertion, while avoiding WMIC, which current
-/// Windows 11 installations disable by default.
-fn minicon_processes() -> usize {
+/// Lists exact-product process IDs without WMIC, which current Windows 11
+/// installations disable by default. Tracking the session's new IDs instead
+/// of comparing total counts keeps an unrelated window that exits during the
+/// journey from looking like a leaked agent.
+fn minicon_process_ids() -> std::collections::BTreeSet<u32> {
     let script = if std::env::var_os("MINICON_TEST_BINARY").is_some() {
-        "(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:MINICON_TEST_BINARY } | Measure-Object).Count"
+        "Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:MINICON_TEST_BINARY } | Select-Object -ExpandProperty Id"
     } else {
-        "(Get-Process -Name minicon -ErrorAction SilentlyContinue | Measure-Object).Count"
+        "Get-Process -Name minicon -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"
     };
     let Ok(output) = Command::new("powershell.exe")
         .args(["-NoProfile", "-Command", script])
         .output()
     else {
-        return 0;
+        return std::collections::BTreeSet::new();
     };
     String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .unwrap_or(0)
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .collect()
 }
 
 /// Guards the argument itself: the host builds it and the agent matches it as
