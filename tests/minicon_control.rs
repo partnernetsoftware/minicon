@@ -1013,6 +1013,32 @@ fn gui_control_surface_isolated_multitab_black_box() {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("raced screenshot CLI must start");
+    // Starting a second public CLI process is not the screenshot response
+    // boundary. On a cold or contended native runner that process can remain
+    // unscheduled while another CLI connection selects the tab, causing this
+    // test to charge process-launch latency to the 10-second GUI response
+    // criterion. Observe the request in the public snapshot first; only then
+    // race active-tab selection against owned screenshot work and start the
+    // response deadline.
+    let registration_deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        assert!(
+            raced_shot
+                .try_wait()
+                .expect("poll screenshot registration")
+                .is_none(),
+            "screenshot completed before its pending state could be observed"
+        );
+        let state = cli_json(exe, &endpoint, &["ui-snapshot"]);
+        if state["pending_control_screenshots"].as_u64() == Some(1) {
+            break;
+        }
+        assert!(
+            Instant::now() < registration_deadline,
+            "screenshot CLI did not register its request within the process-launch deadline"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
     cli_json(exe, &endpoint, &["select-tab", "--target", &root]);
     let raced_deadline = Instant::now() + Duration::from_secs(10);
     while raced_shot
