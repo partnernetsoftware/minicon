@@ -144,10 +144,20 @@ decision trace.
 
 ## §8 — conclusion backfill
 
-Status: **specified, C1 preflight not yet recorded**.
+Status: **C1 preflight executed and failed; VM creation remains unauthorized**.
 
-After execution, replace this section with the C1→C7 decision trace, the exact
-checkpoint table, deviations from this specification, rerun commands, the
-honesty statement that criteria were not changed to improve the result, and any
-finding that overturned the expected outcome. A result without
+The first preflight passed the host-capability and explicit-unqualified-state
+checks, but found no local Apple Intel installer, pinned OpenCore image, or
+provenance-qualified preinstalled image. It exited 2 through §4 step 1, so C2
+was not attempted. One bounded candidate pair is now identified for a future
+C1 retry: `EFI-MODERN` 0.6.6 plus Apple Catalina recovery fetched through
+OpenCorePkg 1.0.7 `macrecovery.py`. Candidate identification is not media
+identity and does not change the registry from `planned`; local bytes and
+hashes are still absent. The full decision trace and rerun command live in
+`research/osx-x86-64-court/RESULTS.md`.
+
+After each later authorized execution, extend this section with the C1→C7
+decision trace, exact checkpoint table, deviations from this specification,
+rerun commands, the honesty statement that criteria were not changed to improve
+the result, and any finding that overturned the expected outcome. A result without
 `research/osx-x86-64-court/RESULTS.md` is not a decision.

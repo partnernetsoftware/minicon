@@ -120,7 +120,8 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── [~] present + automation-ready + local-unsealed: `minicon-lnx-arm-64`, `minicon-lnx-x86-64`, `minicon-osx-arm-64`, `minicon-win-arm-64`
 │   │   │   │   ├── [ ] present installer/provisioning state only: `minicon-win-x86-64`; registry automation/template state remains `planned`
 │   │   │   │   ├── [ ] absent VM, registry plan only: `minicon-osx-x86-64`
-│   │   │   │   │   └── x86 route: preregistered `plan/design-osx-x86-64-court-experiment.md`; QEMU/OpenCore C2 gate → real Intel runner fallback
+│   │   │   │   │   ├── first real C1 preflight: FAIL; required local media absent, so VM creation remains unauthorized
+│   │   │   │   │   └── x86 route: one pinned Catalina/OpenCore candidate pair → C1 local hash → QEMU/OpenCore C2 gate → real Intel runner fallback
 │   │   │   │   ├── [ ] no local cell yet owns a sealed release baseline
 │   │   │   │   └── registry row ≠ VM presence ≠ installed OS ≠ automation-ready ≠ sealed release authority
 │   │   │   ├── Supplemental translation courts
