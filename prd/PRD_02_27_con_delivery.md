@@ -237,10 +237,13 @@ flowchart LR
 - [x] `scripts/six-cell-qualify.sh` is the local Mac qualification owner. It
   gives every cell an isolated Cargo target directory, links all Cargo targets
   through native Cargo, cargo-xwin, or cargo-zigbuild, and fans the six
-  dependency-independent build cells out concurrently. The default uses six
-  cell workers with two Cargo jobs each on the 24 GiB Mac mini;
+  dependency-independent build cells out concurrently. Measurement rejected
+  six fully independent workers because two fresh `cargo-xwin` processes race
+  while creating their shared host `clang-cl` shim. The proven graph therefore
+  uses five concurrent groups—macOS ×2, Linux ×2, and one ordered Windows ×2
+  group—with two Cargo jobs per group on the 24 GiB Mac mini;
   `MINICON_BUILD_JOBS` and `MINICON_CARGO_JOBS_PER_CELL` are explicit tuning
-  controls. Results land in per-cell shards and are merged in canonical order,
+  controls. Results land in per-group shards and are merged in canonical order,
   so concurrent writes cannot corrupt the receipt. Runtime VM leases remain a
   later, bounded phase and are not accidentally parallelized with compilation.
   The owner runs the complete native

@@ -175,7 +175,7 @@ require_tool cargo-xwin
 require_tool cargo-zigbuild
 require_tool python3
 
-BUILD_JOBS="${MINICON_BUILD_JOBS:-6}"
+BUILD_JOBS="${MINICON_BUILD_JOBS:-5}"
 CARGO_JOBS_PER_CELL="${MINICON_CARGO_JOBS_PER_CELL:-2}"
 case "$BUILD_JOBS:$CARGO_JOBS_PER_CELL" in
   *[!0-9:]*|0:*|*:0) printf 'build concurrency must be positive integers\n' >&2; exit 2 ;;
@@ -265,8 +265,16 @@ build_lnx_aarch64() {
   inspect_artifact lnx-aarch64 "$BUILD_DIR/lnx-aarch64/aarch64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, ARM aarch64"
 }
 
-build_cells=(osx-aarch64 osx-x86_64 win-x86_64 win-aarch64 lnx-x86_64 lnx-aarch64)
-build_functions=(build_osx_aarch64 build_osx_x86_64 build_win_x86_64 build_win_aarch64 build_lnx_x86_64 build_lnx_aarch64)
+build_windows() {
+  build_win_x86_64
+  build_win_aarch64
+}
+
+# cargo-xwin owns a shared host cache and races while installing its clang-cl
+# shim when two targets start together on a fresh machine. Keep the two Windows
+# cells in one worker; the other four target directories are independent.
+build_groups=(osx-aarch64 osx-x86_64 windows lnx-x86_64 lnx-aarch64)
+build_functions=(build_osx_aarch64 build_osx_x86_64 build_windows build_lnx_x86_64 build_lnx_aarch64)
 result_dir="$OUT_DIR/results.d"
 mkdir -p "$result_dir"
 pids=()
@@ -274,16 +282,20 @@ wait_build_batch() {
   for pid in "${pids[@]}"; do wait "$pid"; done
   pids=()
 }
-printf '[six-cell] build fan-out: cells=%s cargo-jobs-per-cell=%s\n' "$BUILD_JOBS" "$CARGO_JOBS_PER_CELL"
-for index in 0 1 2 3 4 5; do
-  cell="${build_cells[$index]}"
+build_started="$(date +%s)"
+printf '[six-cell] build fan-out: groups=%s cargo-jobs-per-group=%s\n' "$BUILD_JOBS" "$CARGO_JOBS_PER_CELL"
+for index in 0 1 2 3 4; do
+  cell="${build_groups[$index]}"
   function_name="${build_functions[$index]}"
   (RESULT_SINK="$result_dir/$cell.tsv"; : >"$RESULT_SINK"; "$function_name") &
   pids+=("$!")
   if [ "${#pids[@]}" -ge "$BUILD_JOBS" ]; then wait_build_batch; fi
 done
 [ "${#pids[@]}" -eq 0 ] || wait_build_batch
-for cell in "${build_cells[@]}"; do cat "$result_dir/$cell.tsv" >>"$RESULTS"; done
+for cell in "${build_groups[@]}"; do cat "$result_dir/$cell.tsv" >>"$RESULTS"; done
+build_elapsed="$(( $(date +%s) - build_started ))"
+record common build-fanout PASS "$build_elapsed" "" \
+  "groups=5,max-parallel=$BUILD_JOBS,cargo-jobs-per-group=$CARGO_JOBS_PER_CELL"
 
 # The clean macOS guest is a release/permission court for the ARM64 artifact,
 # not a seventh architecture cell. It consumes the exact host-linked bytes and

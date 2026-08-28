@@ -320,9 +320,11 @@ flowchart LR
   but has not yet run as this repository's active feedback owner.
 - [x] `scripts/six-cell-qualify.sh` builds and links every Cargo target for all
   six `{x86_64,aarch64} × {win,lnx,osx}` cells from one Apple Silicon Mac and
-  fans the six isolated target directories out concurrently (six cell workers,
-  two Cargo jobs per cell by default); runtime guest leases remain bounded and
-  serial. It runs the complete macOS arm64 suite. Rosetta runs the same macOS x86_64
+  fans the isolated target directories into five concurrent groups (macOS ×2,
+  Linux ×2, ordered Windows ×2; two Cargo jobs per group). The Windows pair is
+  deliberately serialized because fresh `cargo-xwin` processes race in their
+  shared host cache. Runtime guest leases remain bounded and serial. It runs
+  the complete macOS arm64 suite. Rosetta runs the same macOS x86_64
   suite. A Debian/glibc ARM64 Lima court runs the cross-linked Linux ARM64
   artifact through unit, public GUI/PTY, AT-SPI, control, and sustained-output
   tests. The same VZ guest uses Rosetta for Linux plus Debian amd64 multiarch
