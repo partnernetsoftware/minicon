@@ -5101,6 +5101,16 @@ impl PixelWindowApplication for ConApp {
             if self.exit {
                 return Ok(PixelWindowDirective::Exit);
             }
+            // A screenshot reply is owned by the next rendered frame. Under
+            // sustained output, draining every PTY and reposting Wake here can
+            // keep a slower native event loop on the Wake path indefinitely,
+            // even though the control request already asked for a redraw.
+            // Yield immediately so redraw gets the frame before more terminal
+            // backlog; the readers retain their data and will wake us again.
+            if self.pending_control.has_pending_screenshot() {
+                window.request_redraw();
+                return Ok(PixelWindowDirective::Continue);
+            }
             let active = self.workspace.active();
             let session_budget = pty_drain_budget_per_session(self.workspace.nodes().len());
             let mut active_redraw = false;

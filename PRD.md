@@ -76,7 +76,10 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── attempt-aware evidence ledger
 │   │   │   │   │   ├── every attempt retains cell status + runtime log size/SHA-256 under an attempt-scoped artifact
 │   │   │   │   │   ├── aggregate FAIL is itself uploaded; a rerun cannot erase first-failure evidence
+│   │   │   │   │   ├── intentional failure classification requires an executed probe marker, not merely a requested probe cell
 │   │   │   │   │   └── [~] controlled failure → same-digest `reverified-pass` live chain pending a stable clean source tree
+│   │   │   │   ├── screenshot response scheduling
+│   │   │   │   │   └── pending owned capture yields Wake-side PTY backlog to redraw; the 10-second product deadline remains unchanged
 │   │   │   │   ├── public-repo standard runners are free; manual/candidate trigger + 20-minute cell deadline still bound waste
 │   │   │   │   └── six runtime receipts bind source SHA + source-tree digest + OCI digest + actual runner OS/ISA
 │   │   │   │       └── twin-court contract

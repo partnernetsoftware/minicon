@@ -303,10 +303,27 @@ correct half/full-width font measurement.
   before pending state can be observed is fast success rather than failure, and
   the Windows console cleanup journey now tracks the exact PIDs introduced by
   its session instead of comparing a volatile machine-wide process count. The
-  final same-run failed-job rerun and `reverified-pass` aggregate remain open
-  until concurrent documentation work lands and the repository again has one
-  stable clean source identity; authoritative publication from a drifting or
-  dirty tree remains correctly forbidden.
+  next exact-body run, `33147891690`, exposed a second evidence defect and a
+  real scheduling failure. Merely requesting a probe for a cell was not proof
+  that its post-test probe step ran: macOS Intel failed inside the screenshot
+  journey before that step, yet the first aggregator mislabeled the failure as
+  intentional. Runtime receipts now carry a boolean marker written only by the
+  executing probe step, and the aggregator rejects impossible markers and
+  otherwise classifies a pre-probe failure as `runtime-or-environment`.
+
+  The same macOS Intel artifact then failed the unchanged 10-second
+  screenshot/active-tab deadline on both attempt one and a failed-job rerun,
+  while the other five cells passed. The owning journey passed locally with
+  the identical x86-64 bytes, isolating the slow-host condition to sustained
+  PTY Wake traffic starving a requested redraw. When a screenshot owns the
+  next frame, the Wake path now yields before draining and reposting PTY
+  backlog; readers retain their bytes and wake again after capture. The fix
+  passed the ARM64 journey once and the x86-64 Rosetta journey five consecutive
+  times without extending the deadline. Hosted Intel revalidation and the
+  final controlled same-run `reverified-pass` chain remain open until
+  concurrent documentation work lands and the repository again has one stable
+  clean source identity; authoritative publication from a drifting or dirty
+  tree remains correctly forbidden.
 
 ```mermaid
 flowchart LR
@@ -324,13 +341,16 @@ flowchart LR
     O --> MX[macOS Intel runner]
     O --> MA[macOS ARM64 runner]
     LX & LA & WX & WA & MX & MA --> A1[Attempt-scoped receipt + runtime log SHA-256]
-    A1 --> R[All-attempt evidence ledger]
+    A1 --> PM[Executed-probe marker<br/>requested cell alone proves nothing]
+    PM --> R[All-attempt evidence ledger]
     R --> G{All exact cells pass?}
     G -->|yes| C[Candidate may reuse the same bytes]
     G -->|no| F[Fail closed; retain first failure<br/>reverify failed cell on same digest]
     F --> K{Reverification result}
     K -->|pass| Q[reverified-pass<br/>keep both attempts]
     K -->|fail| D
+    MX --> SP[Pending capture owns next frame<br/>Wake yields PTY backlog to redraw]
+    SP --> A1
     B -. same digest .-> D[Local UTM/Lima court<br/>interactive · offline · failure scene]
     D --> R
     Q --> R
