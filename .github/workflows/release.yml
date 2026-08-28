@@ -38,10 +38,9 @@ jobs:
       matrix:
         include:
           - platform_id: windows-x86_64
-            # Keep the reviewed static-VCRUNTIME + system-UCRT link contract on
-            # the VS 2022 toolset. `windows-latest` moved to VS 18/MSVC 14.51
-            # and its libcmt requires private __acrt_* exports that ucrt.lib
-            # intentionally does not provide, breaking old-Windows packaging.
+            # cargo-xwin supplies the reviewed Windows SDK/CRT archive set;
+            # keeping a Windows host lets this same job execute the resulting
+            # PE before packaging it.
             runner: windows-2022
             target: x86_64-pc-windows-msvc
             binary: minicon.exe
@@ -64,9 +63,9 @@ jobs:
       - name: Install target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Install Windows standard-library sources
+      - name: Install pinned Windows cross linker
         if: matrix.platform_id == 'windows-x86_64'
-        run: rustup component add rust-src
+        run: cargo install cargo-xwin --locked --version 0.23.1
 
       - name: Install the Intel slice target
         if: matrix.platform_id == 'macos-universal'
@@ -80,14 +79,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxkbcommon0 libxkbcommon-x11-0 libwayland-client0
 
-      - name: Build Windows with the qualified unwind CRT contract
+      - name: Build Windows with the qualified SDK and CRT archives
         if: matrix.platform_id == 'windows-x86_64'
-        env:
-          RUSTC_BOOTSTRAP: "1"
-        run: >-
-          cargo build -Z build-std=std,panic_unwind,compiler_builtins
-          -Z build-std-features=panic-unwind,backtrace-trace-only
-          --locked --release --target ${{ matrix.target }}
+        run: cargo xwin build --locked --release --target ${{ matrix.target }}
 
       - name: Build Unix client
         if: matrix.platform_id != 'windows-x86_64'
