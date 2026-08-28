@@ -206,10 +206,25 @@ jobs:
           if ($actual -ne $expected) { throw "Windows archive checksum mismatch" }
           Expand-Archive -LiteralPath $archive -DestinationPath unpacked
           $binary = Join-Path $PWD "unpacked/minicon-$version-windows-x86_64/minicon.exe"
-          $reported = & $binary --version
+
+          function Invoke-Captured([string[]] $Arguments) {
+            $stem = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString("N"))
+            $stdout = "$stem.out"
+            $stderr = "$stem.err"
+            $process = Start-Process -FilePath $binary -ArgumentList $Arguments -Wait -PassThru `
+              -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+            $out = if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Raw } else { "" }
+            $err = if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Raw } else { "" }
+            if ($err) { Write-Host $err }
+            if ($process.ExitCode -ne 0) { throw "packaged minicon.exe exited $($process.ExitCode)" }
+            return $out
+          }
+
+          $reported = (Invoke-Captured @("--version")).Trim()
           if ($reported -ne "minicon $version") { throw "reported '$reported', expected minicon $version" }
-          & $binary --status
-          if ($LASTEXITCODE -ne 0) { throw "packaged minicon.exe --status failed: $LASTEXITCODE" }
+          $status = Invoke-Captured @("--status")
+          if (-not $status.Trim()) { throw "packaged minicon.exe --status returned no output" }
+          Write-Host $status
 
   publish:
     name: Publish
