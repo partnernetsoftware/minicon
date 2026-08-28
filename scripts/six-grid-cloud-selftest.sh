@@ -6,6 +6,7 @@ workflow="$repo_root/.github/workflows/six-grid-runtime.yml"
 
 python3 -m py_compile "$repo_root/scripts/package-six-grid-runtime.py"
 bash -n "$repo_root/scripts/publish-six-grid-runtime.sh"
+bash "$repo_root/scripts/publish-six-grid-runtime-selftest.sh"
 
 for forbidden in 'cargo ' 'rustup ' 'actions/checkout'; do
   if grep -F "$forbidden" "$workflow" >/dev/null; then
