@@ -64,6 +64,10 @@ jobs:
       - name: Install target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Install Windows standard-library sources
+        if: matrix.platform_id == 'windows-x86_64'
+        run: rustup component add rust-src
+
       - name: Install the Intel slice target
         if: matrix.platform_id == 'macos-universal'
         run: rustup target add x86_64-apple-darwin
@@ -76,7 +80,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxkbcommon0 libxkbcommon-x11-0 libwayland-client0
 
-      - name: Build
+      - name: Build Windows with the qualified unwind CRT contract
+        if: matrix.platform_id == 'windows-x86_64'
+        env:
+          RUSTC_BOOTSTRAP: "1"
+        run: >-
+          cargo build -Z build-std=std,panic_unwind,compiler_builtins
+          -Z build-std-features=panic-unwind,backtrace-trace-only
+          --locked --release --target ${{ matrix.target }}
+
+      - name: Build Unix client
+        if: matrix.platform_id != 'windows-x86_64'
         run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Build the Intel slice
