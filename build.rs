@@ -13,6 +13,7 @@ fn main() {
     // remove this target policy from macOS/Linux cross-builds. Cargo's target
     // environment is the only authority here.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        override_msvcrt_defaultlib();
         // The MSVC runtime is three separable pieces: the C startup files, the
         // VC runtime, and the Universal CRT. They normally have to share a
         // linkage model, with one documented exception -- startup and VC
@@ -33,7 +34,16 @@ fn main() {
         // links the release CRT on windows-msvc regardless of profile, so
         // naming `libvcruntimed.lib` here leaves `__CxxFrameHandler3`
         // unresolved and the dev build stops linking.
-        for library in ["vcruntime.lib", "msvcrt.lib", "libucrt.lib"] {
+        for library in [
+            "libvcruntimed.lib",
+            "vcruntime.lib",
+            "vcruntimed.lib",
+            "libcmtd.lib",
+            "msvcrt.lib",
+            "msvcrtd.lib",
+            "libucrt.lib",
+            "libucrtd.lib",
+        ] {
             println!("cargo:rustc-link-arg=/NODEFAULTLIB:{library}");
         }
         for library in ["libcmt.lib", "libvcruntime.lib", "ucrt.lib"] {
@@ -55,4 +65,34 @@ fn main() {
             .compile()
             .expect("failed to embed minicon resources");
     }
+}
+
+/// Shadows rustc's hard-coded `msvcrt.lib` directive with an empty COFF
+/// object. `/NODEFAULTLIB` alone is insufficient on newer MSVC toolsets: the
+/// unresolved default can still make `libcmt` contribute startup objects that
+/// require private static-UCRT symbols, defeating the deliberate dynamic-UCRT
+/// boundary above.
+///
+/// The compact COFF archive technique is adapted from Chris Denton's
+/// `static_vcruntime` implementation, also distributed under MIT/Apache-2.0.
+fn override_msvcrt_defaultlib() {
+    let machine: &[u8] = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("x86_64") => &[0x64, 0x86],
+        Ok("x86") => &[0x4c, 0x01],
+        _ => return,
+    };
+    let object: &[u8] = &[
+        1, 0, 94, 3, 96, 98, 60, 0, 0, 0, 1, 0, 0, 0, 0, 0, 132, 1, 46, 100, 114, 101, 99, 116,
+        118, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 10, 16, 0, 46, 100, 114, 101, 99, 116, 118, 101, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0, 4, 0,
+        0, 0,
+    ];
+    let output =
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo must provide OUT_DIR"));
+    let library = output.join("msvcrt.lib");
+    let mut bytes = Vec::with_capacity(machine.len() + object.len());
+    bytes.extend_from_slice(machine);
+    bytes.extend_from_slice(object);
+    std::fs::write(&library, bytes).expect("failed to write msvcrt override library");
+    println!("cargo:rustc-link-search=native={}", output.display());
 }
