@@ -8,13 +8,13 @@
   <meta name="description" content="MiniCon — a single-executable Windows terminal under 1 MiB. No installer, no runtime, no redistributable. Runs on Windows Server 2016 where ConPTY does not exist. Open source, scriptable, MIT OR Apache-2.0.">
   <link rel="canonical" href="https://minicon.agenterm.work/">
   <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
-  <link rel="alternate" hreflang="zh-Hant" href="https://minicon.agenterm.work/?lang=zh-Hant">
+  <link rel="alternate" hreflang="zh-CN" href="https://minicon.agenterm.work/?lang=zh-CN">
   <link rel="alternate" hreflang="x-default" href="https://minicon.agenterm.work/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="MiniCon">
   <meta property="og:url" content="https://minicon.agenterm.work/">
   <meta property="og:locale" content="en_US">
-  <meta property="og:locale:alternate" content="zh_TW">
+  <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:title" content="MiniCon™ — A terminal that is one file">
   <meta property="og:description" content="One executable under 1 MiB. No installer, no runtime, no redistributable. Runs where modern terminals cannot.">
   <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
@@ -233,7 +233,7 @@
       <div class="header-tail">
         <span class="language-switch" role="group" aria-label="Language" data-i18n-aria-label="languageLabel">
           <button type="button" data-locale-choice="en" aria-pressed="true">EN</button>
-          <button type="button" data-locale-choice="zh-Hant" aria-pressed="false">繁</button>
+          <button type="button" data-locale-choice="zh-CN" aria-pressed="false">简</button>
         </span>
       </div>
     </div>
@@ -557,6 +557,96 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           footerLicense: "MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.",
           footerOrigin: "MiniCon began as AgenTerm's minimal console host and became its own product in August 2026."
         },
+        "zh-CN": {
+          title: "MiniCon™ —— 一个文件就是一个终端",
+          description: "MiniCon —— 单文件 Windows 终端，不到 1 MiB。免安装、免运行时、免 VC++ 运行库。连没有 ConPTY 的 Windows Server 2016 也能跑。",
+          skip: "跳到正文",
+          navLabel: "主导航",
+          languageLabel: "语言",
+          navWhat: "是什么",
+          navOld: "旧版 Windows",
+          navScript: "脚本",
+          navInstall: "获取",
+          navDocs: "文档",
+          heroEyebrow: "独立终端 · Windows · v0.1.0",
+          heroTitle: "一个<em>文件</em>就是一个终端。",
+          heroEmotion: "拷过去，跑起来。安装就结束了。",
+          heroLead: "MiniCon 是一个不到 1 MiB 的单文件 Windows 可执行程序。没有安装包、没有运行时、没有 Visual C++ 运行库——它加载的每个库都是 Windows 自带的。它打开的是真正的 PTY，渲染的是真正的终端，而且每一处都能被脚本驱动和读取。",
+          ctaGet: "获取 MiniCon",
+          ctaSource: "GitHub 源码",
+          ctaOld: "旧版 Windows 支持",
+          heroCtaHint: "MIT 或 Apache-2.0 · 无需卸载 · 无后台服务",
+          specLabel: "产品规格",
+          specSize: "<strong>752 KB</strong> 可执行文件",
+          specBudget: "<strong>1 MiB</strong> 硬性上限",
+          specDeps: "只依赖系统库",
+          specOld: "Windows Server 2016 及更高版本",
+          specOpen: "MIT / Apache-2.0",
+          invariantHeading: "MiniCon 是什么",
+          inv1Rule: "一个文件",
+          inv1Body: "整个产品就是那一个可执行文件。什么都不装、后台什么都不跑，删掉文件就等于彻底卸载。",
+          inv2Rule: "刻意做小",
+          inv2Body: "超过 1 MiB，构建直接失败。体积是测试强制执行的预算，不是 README 里的一句口号。",
+          inv3Rule: "小 ≠ 玩具",
+          inv3Body: "真 PTY、真 VT 解析、标签树、输入法、鼠标、回滚，还有一套脚本能驱动的控制接口。",
+          shotTitle: "这就是整个应用。",
+          shotLead: "一列标签、一个终端、一行输入。没有面板要摆、没有工作区要配、没有账号要注册。",
+          shotAlt: "MiniCon 窗口：左侧是标签栏，中间是填满终端区的 cmd.exe 会话，底部一行发往标签的输入栏。",
+          shotCaption: "未修图的真实截图。标题栏带语言切换；最后一行是实时的半角/全角对齐检查——这正是多数小终端做错的地方。",
+          oldTitle: "现代终端跑不动的地方，它跑得动。",
+          oldLead: "Windows 从 build 17763（1809 版）起才内置伪控制台（ConPTY）。基于它的终端只能到此为止——而微软的 ConPTY 运行库并不能降低门槛，因为它支持的版本和系统自带的一模一样。MiniCon 在 Windows Server 2016 上照样能跑。",
+          old1Index: "01 / 运行时解析，不做静态导入",
+          old1Title: "缺一个 API，不等于程序就废了",
+          old1Body: "伪控制台的入口点是运行时查找的。要是静态导入，少一个符号程序在启动前就被拦下——弹出一个你根本无从处理的提示。",
+          old2Index: "02 / 兜底方案",
+          old2Title: "自带控制台代理",
+          old2Body: "没有 ConPTY 时，MiniCon 会重新拉起自己，把你的 shell 放进一个隐藏控制台，再读屏幕缓冲区。那个代理就是 MiniCon 自己——不用再单独发第二个二进制。",
+          old3Index: "03 / 看能力，不看版本号",
+          old3Title: "问系统，不查表",
+          old3Body: "后端靠「导出函数是否存在」来选。用版本号比较的话，情况一变就得重改；版本号只用在你看得到的那条提示里。",
+          old5Index: "05 / 自描述",
+          old5Title: "它会告诉你拿到了什么",
+          old5Body: "`--status` 会报告这台机器选了哪个后端、为什么，系统实际解析到哪个字体、实测单元格宽度是多少，以及失败信息写到了哪里。它不弹窗口，所以在「连打开终端这件事本身都做不了」的机器上照样能用。",
+          old4Index: "04 / 免运行库",
+          old4Title: "不用先装任何东西",
+          old4Body: "VC 运行时是静态链接进去的。有一项测试会解析发布二进制的导入表，只要出现 Windows 自带集合之外的依赖就失败，所以它不可能悄悄退化。",
+          inputTitle: "一个不跟输出混在一起的输入区。",
+          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字。长命令和一屏输出搅在一起，你会搞不清自己到底敲了什么。MiniCon 给输入单独一块区域——输入一旦有了自己的区域，就能做输出区做不到的事。",
+          input1Index: "01 / 互不干扰",
+          input1Title: "一边滚动一边写",
+          input1Body: "输出不断刷新的同时，照样能写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起，清屏也带不走你写到一半的那行。",
+          input2Index: "02 / 历史回看",
+          input2Title: "发出去的命令不会消失",
+          input2Body: "上下键可以翻回之前发过的内容，重发或改一改都不用重敲。开始翻历史时，你敲到一半的字会被保留，翻过最新一条再翻回来时会原样放回。",
+          input3Index: "03 / 明确去向",
+          input3Title: "叫名字，不叫编号",
+          input3Body: "标签上写的是文字要发往哪个标签页的名字。在标签树里，知道哪个终端即将收到这条命令，就是「有把握」和「靠猜」的区别。",
+          scriptTitle: "一个脚本能「看进去」的终端。",
+          scriptLead: "发一个按键只是简单的那一半。MiniCon 的控制 CLI 驱动的是真实界面，并把窗口实际显示的内容读回来——文字、截图、焦点、标签状态——让自动化可以等待条件成立，而不是靠计时器去猜。",
+          scriptSnapshot: "焦点、输入法状态、输入内容、待处理工作和控件坐标，以 JSON 返回。",
+          scriptWait: "阻塞到条件成立或超时为止，并告诉你到底是哪一种。",
+          scriptInput: "具名按键、以终端单元格为单位的鼠标事件、滚动，以及输入法预编辑——走的都是真人输入的同一条路径。",
+          installTitle: "获取",
+          installLead: "下载可执行文件，直接跑。没有安装程序，因为根本没什么要装。",
+          installRelease: "最新版本",
+          installBuild: "从源码构建",
+          installHonest: "<strong>先把范围说清楚。</strong>MiniCon 首先是个 Windows 产品：小体积、免运行时、兼容旧 Windows 这些活儿全是 Windows 上的工作，也只在 Windows 上测试。它能为 Linux 和 macOS 构建、终端核心也是共用的，但这些平台目前还没有同等保障。",
+          docsTitle: "文档",
+          docsLead: "写得可核查：只要出现数字，都是从实测里来的。",
+          docsOldTitle: "在旧版 Windows 上运行",
+          docsOldBody: "为什么其他终端停在 build 17763、MiniCon 改用了什么做法、确切的依赖集合，以及机器还是起不来时该怎么排查。",
+          docsCliTitle: "用脚本驱动 MiniCon",
+          docsCliBody: "完整的控制接口：读状态、等条件、发输入、管理标签树，以及用一条命令取代整个 shell。",
+          docsRepoTitle: "源码与测试",
+          docsRepoBody: "这里宣称的行为都由测试套件钉死——包括导入表、体积预算和 CLI 自身契约的把关。",
+          footerRepo: "GitHub",
+          footerReleases: "版本发布",
+          footerOld: "旧版 Windows",
+          footerCli: "控制 CLI",
+          footerAgenterm: "AgenTerm",
+          footerLicense: "MIT 或 Apache-2.0。MiniCon™ 是 PartnerNet Software 的商标。",
+          footerOrigin: "MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成为自有产品。"
+        },
         "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
           description: "MiniCon —— 單一執行檔的 Windows 終端機，不到 1 MiB。免安裝、免執行環境、免 VC++ 可轉散發套件。在沒有 ConPTY 的 Windows Server 2016 上照樣跑。",
@@ -665,7 +755,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
         document.documentElement.dataset.locale = selected;
         document.title = values.title;
         metaDescription.content = values.description;
-        openGraphLocale.content = selected === "zh-Hant" ? "zh_TW" : "en_US";
+        openGraphLocale.content = selected === "zh-CN" ? "zh_CN" : (selected === "zh-Hant" ? "zh_TW" : "en_US");
         openGraphTitle.content = values.title;
         openGraphDescription.content = values.heroTitle.replace(/<[^>]+>/g, "");
         twitterTitle.content = values.title;
@@ -699,7 +789,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
       const queryLocale = new URLSearchParams(location.search).get("lang");
       let savedLocale = null;
       try { savedLocale = localStorage.getItem("minicon-locale"); } catch (_) {}
-      const browserLocale = navigator.language.toLowerCase().startsWith("zh") ? "zh-Hant" : "en";
+      const browserLocale = navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
       applyLocale(queryLocale || savedLocale || browserLocale);
     })();
   </script>
