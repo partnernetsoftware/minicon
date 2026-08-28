@@ -3,10 +3,12 @@
 //! This deliberately models only direct terminal interaction.  It is not a
 //! scripting language, mux protocol, workspace store, or background service.
 
-use std::io::{Read as _, Write as _};
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::io::{self, Read as _, Write as _};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use agenterm_platform::ime::ImeEvent;
 use agenterm_platform::ipc::{IpcEndpoint, IpcTransportErrorCode, NativeListener, NativeStream};
@@ -26,6 +28,22 @@ const BUSY_REPLY_TIMEOUT: Duration = Duration::from_millis(100);
 const CONTROL_WORKERS: usize = 4;
 const CONNECTION_QUEUE_CAPACITY: usize = 32;
 const REQUEST_QUEUE_CAPACITY: usize = 32;
+const RESPONSE_REPLAY_CACHE_CAPACITY: usize = 1024;
+const RESPONSE_REPLAY_CACHE_MAX_BYTES: usize = 8 * 1024 * 1024;
+const RESPONSE_REPLAY_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+const LOST_REPLY_ATTEMPTS: usize = 3;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RequestId(u128);
+
+impl RequestId {
+    fn fresh() -> Result<Self, String> {
+        agenterm_platform::entropy::secure_random_array::<16>()
+            .map(u128::from_le_bytes)
+            .map(Self)
+            .map_err(|error| format!("control request id: {error}"))
+    }
+}
 
 pub(crate) fn contains_utf8(haystack: &str, needle: &str) -> bool {
     contains_bytes(haystack.as_bytes(), needle.as_bytes())
@@ -919,6 +937,90 @@ struct ConnectionQueue {
     alive: Arc<AtomicBool>,
 }
 
+struct CachedResponse {
+    id: RequestId,
+    created: Instant,
+    state: CachedResponseState,
+}
+
+enum CachedResponseState {
+    Pending,
+    Complete(Vec<u8>),
+    Tombstone,
+}
+
+enum ReplayClaim {
+    Owner,
+    Replay(Vec<u8>),
+    Pending,
+    Tombstone,
+    Full,
+}
+
+#[derive(Default)]
+struct ResponseReplayCache {
+    entries: Mutex<VecDeque<CachedResponse>>,
+}
+
+impl ResponseReplayCache {
+    fn claim(&self, id: RequestId) -> ReplayClaim {
+        let now = Instant::now();
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        entries.retain(|entry| {
+            matches!(entry.state, CachedResponseState::Pending)
+                || now.saturating_duration_since(entry.created) < RESPONSE_REPLAY_CACHE_TTL
+        });
+        if let Some(entry) = entries.iter().find(|entry| entry.id == id) {
+            return match &entry.state {
+                CachedResponseState::Pending => ReplayClaim::Pending,
+                CachedResponseState::Complete(payload) => ReplayClaim::Replay(payload.clone()),
+                CachedResponseState::Tombstone => ReplayClaim::Tombstone,
+            };
+        }
+        if entries.len() >= RESPONSE_REPLAY_CACHE_CAPACITY {
+            return ReplayClaim::Full;
+        }
+        entries.push_back(CachedResponse {
+            id,
+            created: now,
+            state: CachedResponseState::Pending,
+        });
+        ReplayClaim::Owner
+    }
+
+    fn complete(&self, id: RequestId, payload: Vec<u8>) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let complete_bytes = entries
+            .iter()
+            .filter_map(|entry| match &entry.state {
+                CachedResponseState::Complete(payload) => Some(payload.len()),
+                CachedResponseState::Pending | CachedResponseState::Tombstone => None,
+            })
+            .sum::<usize>();
+        let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) else {
+            return;
+        };
+        if !matches!(entry.state, CachedResponseState::Pending) {
+            return;
+        }
+        entry.created = Instant::now();
+        entry.state =
+            if complete_bytes.saturating_add(payload.len()) <= RESPONSE_REPLAY_CACHE_MAX_BYTES {
+                CachedResponseState::Complete(payload)
+            } else {
+                // Preserve the identity even when its result exceeds the byte
+                // budget, so a retry fails closed instead of executing twice.
+                CachedResponseState::Tombstone
+            };
+    }
+}
+
 impl ConnectionQueue {
     fn new(alive: Arc<AtomicBool>) -> Self {
         Self {
@@ -989,16 +1091,38 @@ impl ControlServer {
         let alive = Arc::new(AtomicBool::new(true));
         let requests = Arc::new(RequestQueue::new(Arc::clone(&alive)));
         let connections = Arc::new(ConnectionQueue::new(Arc::clone(&alive)));
+        let replay_cache = Arc::new(ResponseReplayCache::default());
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
         for _ in 0..CONTROL_WORKERS {
             let worker_connections = Arc::clone(&connections);
             let request_tx = Arc::clone(&requests);
             let worker_wake = Arc::clone(&wake);
+            let worker_replay_cache = Arc::clone(&replay_cache);
             if let Err(error) = agenterm_platform::threading::spawn_named_detached(
                 "minicon-control-worker",
                 Box::new(move || {
                     while let Some(stream) = worker_connections.pop() {
-                        serve_one(stream, Arc::clone(&request_tx), Arc::clone(&worker_wake));
+                        let result = catch_unwind(AssertUnwindSafe(|| {
+                            serve_one(
+                                stream,
+                                Arc::clone(&request_tx),
+                                Arc::clone(&worker_wake),
+                                Arc::clone(&worker_replay_cache),
+                            )
+                        }));
+                        match result {
+                            Ok(Ok(())) => {}
+                            Ok(Err(error)) => agenterm_platform::diagnostics::record(
+                                "minicon-control",
+                                "response_write_failed",
+                                &error,
+                            ),
+                            Err(payload) => agenterm_platform::diagnostics::record(
+                                "minicon-control",
+                                "worker_panic",
+                                panic_payload(&payload),
+                            ),
+                        }
                     }
                 }),
             ) {
@@ -1018,7 +1142,14 @@ impl ControlServer {
                         Err(error) if error.code == IpcTransportErrorCode::AcceptTimeout => {
                             continue;
                         }
-                        Err(_) => break,
+                        Err(error) => {
+                            agenterm_platform::diagnostics::record(
+                                "minicon-control",
+                                "listener_accept_failed",
+                                &error.to_string(),
+                            );
+                            break;
+                        }
                     };
                     if let Err(stream) = listener_connections.push(stream) {
                         reject_busy(stream);
@@ -1055,39 +1186,105 @@ pub fn run_cli(args: &[String]) -> Result<String, String> {
     }
     let request = parse_cli(args)?;
     let endpoint = parse_native_endpoint(&request.control)?;
-    let mut stream = NativeStream::connect(&endpoint, CONNECT_TIMEOUT)
-        .map_err(|error| format!("connect {}: {error}", request.control))?;
+    let payload = encode_wire_request(RequestId::fresh()?, request.command)?;
+    let mut last_error = String::new();
+    for attempt in 0..LOST_REPLY_ATTEMPTS {
+        match run_cli_exchange(&endpoint, &request.control, &payload) {
+            Ok(response) => return decode_response(&response),
+            Err((lost_reply, error)) if lost_reply && attempt + 1 < LOST_REPLY_ATTEMPTS => {
+                last_error = error;
+            }
+            Err((_, error)) => return Err(error),
+        }
+    }
+    Err(last_error)
+}
+
+fn run_cli_exchange(
+    endpoint: &IpcEndpoint,
+    control: &str,
+    payload: &[u8],
+) -> Result<Vec<u8>, (bool, String)> {
+    let mut stream = NativeStream::connect(endpoint, CONNECT_TIMEOUT)
+        .map_err(|error| (false, format!("connect {control}: {error}")))?;
     stream
         .set_io_timeout(GUI_RESPONSE_TIMEOUT)
-        .map_err(|error| error.to_string())?;
-    let payload = encode_request(request.command)?;
-    write_frame(&mut stream, &payload, REQUEST_MAX_BYTES)?;
-    decode_response(&read_frame(&mut stream, RESPONSE_MAX_BYTES)?)
+        .map_err(|error| (false, error.to_string()))?;
+    write_frame(&mut stream, payload, REQUEST_MAX_BYTES).map_err(|error| {
+        let lost_request = error.is_lost_connection();
+        (lost_request, format!("write control request: {error}"))
+    })?;
+    read_frame(&mut stream, RESPONSE_MAX_BYTES).map_err(|error| {
+        let lost_reply = error.is_lost_reply();
+        (lost_reply, format!("read control response: {error}"))
+    })
 }
 
 fn serve_one(
     mut stream: NativeStream,
     request_tx: Arc<RequestQueue>,
     wake: Arc<dyn Fn() + Send + Sync>,
-) {
+    replay_cache: Arc<ResponseReplayCache>,
+) -> Result<(), String> {
     let _ = stream.set_io_timeout(CONNECT_TIMEOUT);
-    let response = read_wire_request(&mut stream).and_then(|command| {
-        stream
-            .set_io_timeout(GUI_RESPONSE_TIMEOUT)
-            .map_err(|error| error.to_string())?;
-        let (reply, response_rx) = reply_channel();
-        let should_wake = request_tx
-            .push(IncomingRequest { command, reply })
-            .map_err(|reason| reason.message().to_owned())?;
-        if should_wake {
-            wake();
+    let request = read_wire_request(&mut stream)?;
+    let payload = match request.id.map(|id| replay_cache.claim(id)) {
+        Some(ReplayClaim::Replay(payload)) => payload,
+        Some(ReplayClaim::Pending) => encode_response(Err(
+            "control request is still pending; retry only with the same request id".to_owned(),
+        )),
+        Some(ReplayClaim::Tombstone) => encode_response(Err(
+            "control request ran but its result is no longer replayable; it was not executed again"
+                .to_owned(),
+        )),
+        Some(ReplayClaim::Full) => encode_response(Err(
+            "control replay cache is full; request was not executed".to_owned(),
+        )),
+        Some(ReplayClaim::Owner) | None => {
+            let response = (|| {
+                stream
+                    .set_io_timeout(GUI_RESPONSE_TIMEOUT)
+                    .map_err(|error| error.to_string())?;
+                let (reply, response_rx) = reply_channel();
+                let should_wake = request_tx
+                    .push(IncomingRequest {
+                        command: request.command,
+                        reply,
+                    })
+                    .map_err(|reason| reason.message().to_owned())?;
+                if should_wake {
+                    wake();
+                }
+                response_rx
+                    .recv_timeout(GUI_RESPONSE_TIMEOUT)
+                    .map_err(|_| "terminal GUI did not respond before timeout".to_owned())?
+            })();
+            let payload = encode_response(response);
+            if let Some(id) = request.id {
+                // Publish before touching the fallible reply transport. A
+                // client that loses only the reply can reconnect with the same
+                // request id without executing a mutation twice.
+                replay_cache.complete(id, payload.clone());
+            }
+            payload
         }
-        response_rx
-            .recv_timeout(GUI_RESPONSE_TIMEOUT)
-            .map_err(|_| "terminal GUI did not respond before timeout".to_owned())?
-    });
-    let payload = encode_response(response);
-    let _ = write_frame(&mut stream, &payload, RESPONSE_MAX_BYTES);
+    };
+    write_frame(&mut stream, &payload, RESPONSE_MAX_BYTES).map_err(|error| error.to_string())?;
+    // A completed overlapped write only places bytes in the Windows pipe
+    // buffer. The platform finish operation follows the native server contract
+    // and keeps this instance alive until the client has consumed the reply;
+    // Unix streams need no additional work.
+    stream
+        .finish_server_response()
+        .map_err(|error| format!("finish control response: {error}"))
+}
+
+fn panic_payload(payload: &Box<dyn std::any::Any + Send>) -> &str {
+    payload
+        .downcast_ref::<&'static str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload")
 }
 
 fn reject_busy(mut stream: NativeStream) {
@@ -1096,8 +1293,13 @@ fn reject_busy(mut stream: NativeStream) {
     let _ = write_frame(&mut stream, &payload, RESPONSE_MAX_BYTES);
 }
 
-fn read_wire_request(stream: &mut NativeStream) -> Result<CliCommand, String> {
-    decode_request(&read_frame(stream, REQUEST_MAX_BYTES)?)
+struct WireRequest {
+    id: Option<RequestId>,
+    command: CliCommand,
+}
+
+fn read_wire_request(stream: &mut NativeStream) -> Result<WireRequest, String> {
+    decode_wire_request(&read_frame(stream, REQUEST_MAX_BYTES).map_err(|error| error.to_string())?)
 }
 
 fn parse_native_endpoint(value: &str) -> Result<IpcEndpoint, String> {
@@ -1117,45 +1319,178 @@ mod native_endpoint_tests {
         );
         assert!(parse_native_endpoint("tcp:127.0.0.1:42").is_err());
     }
+
+    #[test]
+    fn request_id_round_trip_preserves_a_mutation_for_safe_reply_replay() {
+        let id = RequestId(0x1234_5678_9abc_def0_1357_2468_ace0_bdf1);
+        let bytes = encode_wire_request(
+            id,
+            CliCommand::SendText {
+                target: None,
+                text: "once".to_owned(),
+            },
+        )
+        .unwrap();
+        let decoded = decode_wire_request(&bytes).unwrap();
+        assert_eq!(decoded.id, Some(id));
+        assert_eq!(
+            decoded.command,
+            CliCommand::SendText {
+                target: None,
+                text: "once".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn response_replay_cache_is_bounded_and_never_replaces_an_id() {
+        let cache = ResponseReplayCache::default();
+        let first = RequestId(1);
+        assert!(matches!(cache.claim(first), ReplayClaim::Owner));
+        assert!(matches!(cache.claim(first), ReplayClaim::Pending));
+        cache.complete(first, vec![1]);
+        cache.complete(first, vec![2]);
+        assert!(matches!(
+            cache.claim(first),
+            ReplayClaim::Replay(payload) if payload == vec![1]
+        ));
+
+        for value in 2..=RESPONSE_REPLAY_CACHE_CAPACITY as u128 {
+            let id = RequestId(value);
+            assert!(matches!(cache.claim(id), ReplayClaim::Owner));
+            cache.complete(id, vec![value as u8]);
+        }
+        assert!(matches!(
+            cache.claim(RequestId(RESPONSE_REPLAY_CACHE_CAPACITY as u128 + 1)),
+            ReplayClaim::Full
+        ));
+        assert!(matches!(
+            cache.claim(first),
+            ReplayClaim::Replay(payload) if payload == vec![1]
+        ));
+        assert_eq!(
+            cache
+                .entries
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .len(),
+            RESPONSE_REPLAY_CACHE_CAPACITY
+        );
+    }
+
+    #[test]
+    fn only_disconnect_errors_authorize_same_id_transport_recovery() {
+        assert!(FrameError::Io(io::Error::from_raw_os_error(233)).is_lost_connection());
+        assert!(FrameError::Io(io::Error::from_raw_os_error(109)).is_lost_connection());
+        assert!(FrameError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)).is_lost_connection());
+        assert!(!FrameError::Io(io::Error::from(io::ErrorKind::TimedOut)).is_lost_connection());
+        assert!(!FrameError::Protocol("bad frame".to_owned()).is_lost_connection());
+    }
 }
 
 const MAX_WIRE_KEYS: usize = 16_384;
 
-fn write_frame(stream: &mut NativeStream, payload: &[u8], max_bytes: usize) -> Result<(), String> {
-    if payload.is_empty() || payload.len() > max_bytes {
-        return Err("control frame payload is empty or oversized".to_owned());
+#[derive(Debug)]
+enum FrameError {
+    Io(io::Error),
+    Protocol(String),
+}
+
+impl FrameError {
+    fn is_lost_connection(&self) -> bool {
+        match self {
+            Self::Io(error) => {
+                error.kind() == io::ErrorKind::UnexpectedEof
+                    || matches!(error.raw_os_error(), Some(109 | 233))
+            }
+            Self::Protocol(_) => false,
+        }
     }
-    let length =
-        u32::try_from(payload.len()).map_err(|_| "control frame payload exceeds u32".to_owned())?;
+
+    fn is_lost_reply(&self) -> bool {
+        self.is_lost_connection()
+    }
+}
+
+impl std::fmt::Display for FrameError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => error.fmt(formatter),
+            Self::Protocol(error) => formatter.write_str(error),
+        }
+    }
+}
+
+fn write_frame(
+    stream: &mut NativeStream,
+    payload: &[u8],
+    max_bytes: usize,
+) -> Result<(), FrameError> {
+    if payload.is_empty() || payload.len() > max_bytes {
+        return Err(FrameError::Protocol(
+            "control frame payload is empty or oversized".to_owned(),
+        ));
+    }
+    let length = u32::try_from(payload.len())
+        .map_err(|_| FrameError::Protocol("control frame payload exceeds u32".to_owned()))?;
     let [m0, m1, m2, m3] = WIRE_MAGIC;
     let [l0, l1, l2, l3] = length.to_le_bytes();
     let header = [m0, m1, m2, m3, l0, l1, l2, l3];
-    stream
-        .write_all(&header)
-        .map_err(|error| error.to_string())?;
-    stream
-        .write_all(payload)
-        .map_err(|error| error.to_string())?;
-    stream.flush().map_err(|error| error.to_string())
+    stream.write_all(&header).map_err(FrameError::Io)?;
+    stream.write_all(payload).map_err(FrameError::Io)?;
+    stream.flush().map_err(FrameError::Io)
 }
 
-fn read_frame(stream: &mut NativeStream, max_bytes: usize) -> Result<Vec<u8>, String> {
+fn read_frame(stream: &mut NativeStream, max_bytes: usize) -> Result<Vec<u8>, FrameError> {
     let mut header = [0u8; 8];
-    stream
-        .read_exact(&mut header)
-        .map_err(|error| error.to_string())?;
+    stream.read_exact(&mut header).map_err(FrameError::Io)?;
     if [header[0], header[1], header[2], header[3]] != WIRE_MAGIC {
-        return Err("unsupported control frame version".to_owned());
+        return Err(FrameError::Protocol(
+            "unsupported control frame version".to_owned(),
+        ));
     }
     let length = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
     if length == 0 || length > max_bytes {
-        return Err("control frame payload is empty or oversized".to_owned());
+        return Err(FrameError::Protocol(
+            "control frame payload is empty or oversized".to_owned(),
+        ));
     }
     let mut payload = vec![0u8; length];
-    stream
-        .read_exact(&mut payload)
-        .map_err(|error| error.to_string())?;
+    stream.read_exact(&mut payload).map_err(FrameError::Io)?;
     Ok(payload)
+}
+
+fn encode_wire_request(id: RequestId, command: CliCommand) -> Result<Vec<u8>, String> {
+    let command = encode_request(command)?;
+    let mut payload = Vec::with_capacity(17 + command.len());
+    payload.push(21);
+    payload.extend_from_slice(&id.0.to_le_bytes());
+    payload.extend_from_slice(&command);
+    if payload.len() > REQUEST_MAX_BYTES {
+        return Err("control request is oversized".to_owned());
+    }
+    Ok(payload)
+}
+
+fn decode_wire_request(bytes: &[u8]) -> Result<WireRequest, String> {
+    if bytes.first() != Some(&21) {
+        return Ok(WireRequest {
+            id: None,
+            command: decode_request(bytes)?,
+        });
+    }
+    let envelope = bytes
+        .get(1..)
+        .ok_or_else(|| "truncated control request envelope".to_owned())?;
+    let (id, command) = envelope
+        .split_at_checked(16)
+        .ok_or_else(|| "control request envelope has no request id".to_owned())?;
+    Ok(WireRequest {
+        id: Some(RequestId(u128::from_le_bytes(
+            id.try_into().expect("sixteen-byte request id"),
+        ))),
+        command: decode_request(command)?,
+    })
 }
 
 fn encode_request(command: CliCommand) -> Result<Vec<u8>, String> {

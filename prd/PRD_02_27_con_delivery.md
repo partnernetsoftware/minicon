@@ -270,8 +270,10 @@ correct half/full-width font measurement.
   build 26200, automatic desktop login, official VC++ Runtime and QEMU Guest
   Agent were proven. The logical OSX x86_64 userspace court is host Rosetta and
   therefore has no routine physical UTM VM. No local cell currently owns a
-  sealed release baseline. A six-row registry or a six-cell GitHub PASS must
-  never be summarized as six deployed local UTM guests or six sealed courts.
+  sealed release baseline. A five-row UTM registry or a six-cell GitHub PASS
+  must never be summarized as six deployed local UTM guests or six sealed
+  courts. `scripts/utm-runner-registry-selftest.sh` rejects reintroducing an
+  OSX x86_64 planned-VM row: that logical cell belongs to host Rosetta.
 
   Measured 2026-08-28, packaging reports both uncompressed payload bytes and
   compressed archive bytes per cell. The exact six-cell body totals about 151
@@ -376,7 +378,7 @@ flowchart LR
     SP --> A1
     B --> LP[Local exact-artifact payload<br/>no GHCR or Actions dependency]
     LP --> D[Local UTM/Lima six-grid<br/>controlled-image release court]
-    D --> WXU[Windows x86 TCG<br/>QGA ready · status PASS<br/>control reply OS 233]
+    D --> WXU[Windows x86 TCG<br/>exact runtime PASS · QGA ready · stopped<br/>real-x86 performance unclaimed]
     WXU --> LG
     D --> LG{Required local cells pass<br/>with sealed baselines?}
     LG -->|yes| C[Release-qualification receipt]
@@ -497,9 +499,10 @@ flowchart LR
 
 - [~] UTM automation is a reusable test-infrastructure capability, not a set of
   MiniCon-specific VM shell fragments. `scripts/utm-courts.json` is the first
-  machine-readable registry for the six logical `{os, isa}` courts, their UTM
-  VM identity, automation adapter, translation caveat, idle policy, and template
-  state. `scripts/utm-court.sh` is the initial uniform facade: agents can
+  machine-readable registry for the five VM-backed logical `{os, isa}` courts,
+  their UTM VM identity, automation adapter, idle policy, and template state.
+  The sixth local cell, OSX x86_64, is host Rosetta and deliberately absent.
+  `scripts/utm-court.sh` is the initial uniform facade: agents can
   discover and inspect courts, validate registration, start or resume them,
   wait for automation readiness, execute commands, transfer exact files, apply
   idle policy, and clone a stopped baseline without learning UTM command syntax.
@@ -558,19 +561,29 @@ flowchart LR
   digest; external prerequisites should use guest-side upstream download or a
   chunked verified transport.
 
-  The cell is not runtime-qualified. On two exact-source runs, 125 host tests,
-  38 shared-core tests and both PE portability tests passed, but the serialized
-  forced console-agent suite passed only 4/7 and 5/7. A separate
-  `release-fast` throughput run lost the same public control reply pipe during
-  setup. Windows reported OS error 233; Application Error/WER contained no
-  MiniCon crash, and the diagnostics log did not record the hypothesized
-  persistent screen-read failure. Replacing a 50-poll accidental recovery
-  budget with a bounded elapsed-time window was valid robustness work but did
-  not close this defect. The next owning experiment must capture MiniCon,
-  console-agent, child and named-pipe lifetimes around one isolated failure;
-  blindly extending the timeout or rerunning the whole suite is rejected.
-  Registry state is consequently `ready` + `local-unsealed`, while runtime and
-  sealed authority remain explicitly open.
+  The exact x86_64 runtime court is now qualified. Its tested implementation
+  fingerprint before this evidence write-back,
+  `7470ddfb354561285b4736a24ed6d0a1a325662ce2e2d6f80473bc4b4d4c9f16`
+  passed 128 host tests, 38 shared-core tests, both PE portability tests, all
+  seven console-agent journeys, isolated multi-tab control and 25 GUI/PTY
+  black boxes; the Microsoft-Pinyin-only journey remained explicitly ignored.
+  The fix did not lengthen a retry timeout or replay mutations blindly. Control
+  protocol V2 wraps each request in a CSPRNG identity, atomically claims it
+  before GUI dispatch, and retains pending/completed/tombstone state in a
+  1024-identity, 8 MiB, ten-minute cache. Windows pipe 109/233 during request
+  write or response read reconnects with the same identity; a completed result
+  is returned without executing the command twice, while pending, cache-full
+  and result-budget cases fail closed. The server also finishes the Windows
+  reply before releasing its pipe instance.
+
+  The release-fast QEMU/TCG probe is measured but not performance-PASS:
+  33,439,744 bytes drained in 32.09 s and 32.57 s against the unchanged 30 s
+  gate. That does not weaken the product deadline. This software-emulated court
+  owns true-x86 kernel, desktop and runtime correctness; sustained-performance
+  authority remains a real x86_64 runner. After qualification, disposable lease
+  `20260828T134738Z-86066-20795` was released and its lifecycle receipt records
+  `final_state=stopped`. Registry and template state remain `ready` plus
+  `local-unsealed`; neither runtime PASS nor a stopped receipt means sealed.
 
   The macOS clean runner now uses the same UTM `lease`, version-2
   `wait-ready`, and `release` operations; its remaining code owns only bootstrap
@@ -829,6 +842,13 @@ flowchart LR
   non-goal. Prism does not receive this exception: Windows keeps its real
   x86_64 UTM guest and labels Prism evidence supplemental.
 
+  Rosetta is an intentionally provisional court, not the permanent retirement
+  of an Intel-macOS guest. Reopen a bounded agent exploration when UTM or its
+  image community offers a stable, reusable, automatable x86_64 macOS baseline
+  with materially better acquisition and execution cost than today's
+  OpenCore/TCG experiment. Until that trigger exists, speculative VM setup is a
+  non-goal and must not block the accepted userspace qualification path.
+
   Its preparation owner is `scripts/prepare-linux-x86_64-utm.sh`: it accepts
   only the pinned official Ubuntu 24.04.4 Server AMD64 release ISO with
   SHA-256 `e907d92eeec9df64163a7e454cbc8d7755e8ddc7ed42f99dbc80c40f1a138433`
@@ -1082,7 +1102,8 @@ interactive Linux x86 installation.
 
 - [x] `scripts/windows-utm-runner.sh` owns the local UTM bridge. It
   selects a VM per Windows cell, replaces only that cell's dedicated guest
-  staging directory, pushes the exact linked product plus hashed test PE files
+  staging directory, pushes the exact linked product plus only the hashed test
+  PE files required by the selected status/test/throughput/diagnostic mode
   through UTM's QEMU guest agent, and invokes the target-side PowerShell owner.
   The host emits a source-fingerprint-bearing manifest that names exactly one
   hashed executable for every target-side harness. The guest may retain older
@@ -1111,7 +1132,9 @@ interactive Linux x86 installation.
   returning zero, so process exit status alone is explicitly insufficient.
   The logged-in test account starts `windows-utm-agent.cmd` from Startup; its
   PowerShell worker uses a named mutex for idempotence and never kills unrelated
-  PowerShell processes. Both an ordinary cold stop/start and the default hidden
+  PowerShell processes. The job invokes the target qualifier in-process rather
+  than adding a third nested PowerShell host, and success is explicit rather
+  than inherited from ambient `$LASTEXITCODE`. Both an ordinary cold stop/start and the default hidden
   disposable cold start have completed a Windows status court without manual
   guest action.
 

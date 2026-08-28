@@ -120,11 +120,15 @@ MiniCon — one-file local terminal
 │   │   │   ├── Local six-cell execution inventory (logical courts, not six mandatory VMs)
 │   │   │   │   ├── [~] present + automation-ready + local-unsealed: `minicon-lnx-arm-64`, `minicon-lnx-x86-64`, `minicon-osx-arm-64`, `minicon-win-arm-64`
 │   │   │   │   ├── [~] present + installed + QGA-ready + local-unsealed: `minicon-win-x86-64`
-│   │   │   │   │   ├── exact x86_64 status PASS on Windows 11 build 26200; VM returns to stopped
-│   │   │   │   │   └── full/throughput qualification BLOCKED: TCG runs intermittently lose the public control reply pipe (OS 233)
+│   │   │   │   │   ├── exact x86_64 runtime PASS on Windows 11 build 26200: 128 host + 38 core + 2 portability + 7 console-agent + control + 25 GUI/PTY
+│   │   │   │   │   ├── request-id/result replay closes TCG pipe 109/233 without repeating mutations
+│   │   │   │   │   ├── QEMU/TCG throughput measured 32.09 s and 32.57 s for 33,439,744 bytes; correctness evidence only, not the 30 s performance authority
+│   │   │   │   │   └── disposable lease receipt ends `released` + `stopped`; baseline remains local-unsealed
 │   │   │   │   ├── [~] host Rosetta court replaces routine `minicon-osx-x86-64` VM work on Apple Silicon
 │   │   │   │   │   ├── PASS: forced x86_64 + translated=1; 124 units + 22 GUI/PTY + control + 38 core + release-fast throughput
 │   │   │   │   │   ├── owns small CLI/App x86_64 userspace behavior; does not claim an Intel kernel or old-macOS compatibility
+│   │   │   │   │   ├── absent from the UTM registry by design; self-test rejects a planned x86_64 macOS VM row
+│   │   │   │   │   ├── provisional, not permanent: revisit when UTM/community offers a stable, reusable and automatable Intel-macOS image path
 │   │   │   │   │   └── stopped Catalina/OpenCore scratch remains recoverable research evidence; real Intel runner is the exceptional fallback
 │   │   │   │   ├── [ ] no local cell yet owns a sealed release baseline
 │   │   │   │   └── registry row ≠ VM presence ≠ installed OS ≠ automation-ready ≠ sealed release authority
@@ -138,7 +142,7 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── InteractiveToken desktop dispatcher
 │   │   │   │   ├── Windows 11 ARM64 + Guest Tools baseline
 │   │   │   │   ├── ARM64-native + Prism-x64 full runtime evidence
-│   │   │   │   └── Windows 11 x86_64 TCG baseline: QGA ready, status PASS, runtime qualification still BLOCKED
+│   │   │   │   └── Windows 11 x86_64 TCG baseline: QGA ready, exact runtime PASS, stopped, local-unsealed
 │   │   │   ├── Reproducible runner images
 │   │   │   │   ├── image-first supply: official gallery → trusted versioned community box → official cloud image → ISO install
 │   │   │   │   │   ├── importable `.utm`/QCOW2 must prove OS, ISA, provenance, digest and update age
@@ -228,10 +232,10 @@ flowchart LR
         S6["six logical local cells<br/>five VM-backed · OSX x86 via host Rosetta<br/>0 sealed release baselines"]
         LQ["Linux ARM64 desktop<br/>minicon-lnx-arm-64<br/>QEMU/HVF in registry"]
         LX["Linux x86-64 desktop<br/>minicon-lnx-x86-64<br/>QEMU/TCG in registry"]
-        OX["macOS x86-64 function court · PASS<br/>host Rosetta · forced x86_64 · translated=1<br/>Intel kernel explicitly unclaimed"]
+        OX["macOS x86-64 function court · provisional PASS<br/>host Rosetta · forced x86_64 · translated=1<br/>revisit on viable UTM Intel-macOS path"]
         TR["translation evidence<br/>Rosetta accepted for OSX userspace<br/>Prism supplemental for Windows"]
         V["Windows UTM courts<br/>ARM64 native + Prism x64 · PASS<br/>real x86 TCG · unsealed"]
-        WXU["Windows x86 qualification<br/>status PASS · QGA ready · stopped<br/>control pipe OS 233 → BLOCKED"]
+        WXU["Windows x86 TCG qualification<br/>exact runtime PASS · QGA ready · stopped<br/>throughput measured, real-x86 performance unclaimed"]
         I["Runner image provenance<br/>upstream digest · recipe · sealed baseline"]
         VC["VM court services<br/>UTM + Lima registries<br/>image · lease · exec · release · reap"]
         ST["sealed template<br/>version · digest · no credentials"]
@@ -426,19 +430,25 @@ flowchart LR
   before the process disappeared. This cell is runtime-PASS and
   `local-unsealed`; sealing, disposable-clone qualification, AT-SPI/IME samples
   and a declared packaging dependency check remain open.
-  Windows x86_64 has also crossed presence, OS-install and automation-readiness
-  boundaries: Windows 11 build 26200 cold-boots with automatic desktop login,
-  official VC++ Runtime and QEMU Guest Agent; exact status passes and the VM
-  returns to `stopped`. Large QGA uploads must be size/hash verified: a VC++
+  Windows x86_64 has crossed presence, OS-install, automation-readiness and
+  exact-runtime boundaries: Windows 11 build 26200 cold-boots with automatic
+  desktop login, official VC++ Runtime and QEMU Guest Agent. The tested
+  implementation fingerprint before this evidence write-back,
+  `7470ddfb354561285b4736a24ed6d0a1a325662ce2e2d6f80473bc4b4d4c9f16`
+  passed 128 host, 38 core, two PE portability, seven console-agent, isolated
+  control and 25 GUI/PTY black-box tests; the Microsoft-Pinyin-only interactive
+  leaf remained explicitly ignored. Large QGA uploads must be size/hash
+  verified: a VC++
   installer arrived truncated through one large push, while guest-side download
-  from the official permalink produced the complete matching installer. Two
-  exact-source TCG qualification attempts passed 125 host units, 38 core units
-  and two PE portability tests, but the forced console-agent set remained
-  unstable (4/7 then 5/7) and sustained throughput lost the public control
-  reply pipe before setup, all as Windows OS error 233. No WER/Application Error
-  crash was recorded. The cell is therefore `local-unsealed` and
-  automation-ready, not runtime-PASS or sealed; the next leaf is a focused
-  control-pipe/process-lifetime probe rather than another retry-budget increase.
+  from the official permalink produced the complete matching installer.
+  Intermittent named-pipe 109/233 disconnects are recovered with a CSPRNG
+  request id and a bounded pending/result cache; reconnecting fetches the same
+  result and never repeats a mutation. The release-fast TCG court drained the
+  fixed 33,439,744 bytes in 32.09 s and 32.57 s, consistently missing the
+  unchanged 30 s performance gate. TCG therefore owns true-x86 correctness,
+  while real x86_64 hardware retains performance authority. The final
+  disposable lease receipt records `released` and `stopped`. This court is
+  runtime-PASS and `local-unsealed`, never sealed.
   The CLI is therefore useful but not yet the complete reusable six-court
   substrate.
 - [ ] Define any future artifact-size ceiling per target and profile before

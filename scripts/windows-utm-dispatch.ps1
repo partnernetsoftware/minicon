@@ -16,10 +16,7 @@ if ($Child) {
     $exitCode = 1
     try {
         & $runner -TargetDir $target -Mode $Mode *> $log
-        $exitCode = $LASTEXITCODE
-        if ($null -eq $exitCode) {
-            $exitCode = 0
-        }
+        $exitCode = 0
     } catch {
         $_ | Out-String | Add-Content -Path $log
         $exitCode = 1

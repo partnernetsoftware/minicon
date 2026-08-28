@@ -122,8 +122,13 @@ impl Session {
 
     fn control(&self, arguments: &[&str]) -> String {
         self.try_control(arguments).unwrap_or_else(|error| {
+            let host_pid = self.child.id();
+            let exact_binary_pids = minicon_process_ids();
             panic!(
-                "control {arguments:?} failed: {error}\ndiagnostics:\n{}",
+                "control {arguments:?} failed: {error}\n\
+                 host_pid={host_pid} host_alive={} exact_binary_pids={exact_binary_pids:?}\n\
+                 diagnostics:\n{}",
+                exact_binary_pids.contains(&host_pid),
                 diagnostics()
             )
         })

@@ -66,6 +66,10 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     "api-ms-win-crt-runtime-l1-1-0.dll",
     "api-ms-win-crt-stdio-l1-1-0.dll",
     "api-ms-win-crt-string-l1-1-0.dll",
+    // BCryptGenRandom is the fail-closed request-id entropy source. bcrypt.dll
+    // is an OS component from Windows Vista / Server 2008 onward, so Server
+    // 2016 does not need a redistributable for it.
+    "bcrypt.dll",
     "gdi32.dll",
     "gdiplus.dll",
     "imm32.dll",

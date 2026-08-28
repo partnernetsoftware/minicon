@@ -7,13 +7,14 @@
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
-  echo "usage: scripts/windows-utm-runner.sh CELL TARGET_DIR status|test|throughput|stop" >&2
+  echo "usage: scripts/windows-utm-runner.sh CELL TARGET_DIR status|test|throughput|console-agent|stop" >&2
   exit 2
 fi
 
 CELL="$1"
 TARGET_DIR="$2"
 MODE="$3"
+CONSOLE_AGENT_FILTER="${MINICON_WINDOWS_CONSOLE_AGENT_FILTER:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 UTMCTL="${MINICON_UTMCTL:-/Applications/UTM.app/Contents/MacOS/utmctl}"
@@ -33,12 +34,17 @@ case "$CELL" in
 esac
 
 case "$MODE" in
-  status|test|throughput|stop) ;;
+  status|test|throughput|console-agent|stop) ;;
   *)
     echo "unsupported Windows runner mode: $MODE" >&2
     exit 2
     ;;
 esac
+if [ -n "$CONSOLE_AGENT_FILTER" ] &&
+   ! [[ "$CONSOLE_AGENT_FILTER" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "invalid console-agent test filter: $CONSOLE_AGENT_FILTER" >&2
+  exit 2
+fi
 
 [ -x "$UTMCTL" ] || {
   echo "utmctl not found: $UTMCTL" >&2
@@ -98,7 +104,7 @@ guest_product="minicon-$build_identity-$PROFILE.exe"
 court push "$COURT" "$HOST_PROFILE/minicon.exe" \
   "$GUEST_ROOT\\target\\debug\\$guest_product"
 
-python3 - "$HOST_PROFILE/deps" "$build_identity" "$PROFILE" \
+python3 - "$HOST_PROFILE/deps" "$build_identity" "$PROFILE" "$MODE" \
     >"$runner_tmp/test-manifest.json" <<'PY'
 import json
 import re
@@ -108,16 +114,20 @@ from pathlib import Path
 deps = Path(sys.argv[1])
 identity = sys.argv[2]
 profile = sys.argv[3]
-prefixes = (
-    "minicon",
-    "minicon_core",
-    "minicon_alignment",
-    "minicon_load_portability",
-    "minicon_console_agent",
-    "minicon_control",
-    "minicon_blackbox",
-    "minicon_throughput",
-)
+mode = sys.argv[4]
+prefixes = {
+    "status": (),
+    "console-agent": ("minicon_console_agent",),
+    "test": (
+        "minicon",
+        "minicon_core",
+        "minicon_load_portability",
+        "minicon_console_agent",
+        "minicon_control",
+        "minicon_blackbox",
+    ),
+    "throughput": ("minicon_throughput",),
+}[mode]
 tests = {}
 for prefix in prefixes:
     pattern = re.compile(rf"^{re.escape(prefix)}-[0-9a-f]+\.exe$")
@@ -159,11 +169,11 @@ LOG="C:\\minicon-six\\job-$job_id.log"
 printf '%s\n' \
   '$ErrorActionPreference = "Stop"' \
   '$PSDefaultParameterValues["Out-File:Encoding"] = "utf8"' \
+  "\$env:MINICON_WINDOWS_CONSOLE_AGENT_FILTER = '$CONSOLE_AGENT_FILTER'" \
   '$exitCode = 1' \
   'try {' \
-  "    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '$GUEST_ROOT\\windows-runtime-qualify.ps1' -TargetDir '$GUEST_ROOT\\target' -Mode '$MODE' *> '$LOG'" \
-  '    $exitCode = $LASTEXITCODE' \
-  '    if ($null -eq $exitCode) { $exitCode = 1 }' \
+  "    & '$GUEST_ROOT\\windows-runtime-qualify.ps1' -TargetDir '$GUEST_ROOT\\target' -Mode '$MODE' *> '$LOG'" \
+  '    $exitCode = 0' \
   '} catch {' \
   "    \$_ | Out-String | Add-Content -LiteralPath '$LOG'" \
   '    $exitCode = 1' \

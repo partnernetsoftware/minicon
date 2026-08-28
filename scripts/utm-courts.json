@@ -15,19 +15,6 @@
       "template_state": "local-unsealed"
     },
     {
-      "id": "osx-x86_64-clean",
-      "image": "minicon/osx-x86-64:planned",
-      "cell": "osx-x86_64",
-      "os": "osx",
-      "isa": "x86_64",
-      "vm": "minicon-osx-x86-64",
-      "adapter": "virtiofs-agent",
-      "automation_state": "planned",
-      "idle": "stop",
-      "memory_mib": 6144,
-      "template_state": "planned"
-    },
-    {
       "id": "lnx-aarch64-desktop",
       "image": "minicon/ubuntu-desktop-aarch64:local-unsealed",
       "cell": "lnx-aarch64",

@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$TargetDir,
     [Parameter(Mandatory = $true)]
-    [ValidateSet("status", "logic", "test", "throughput")]
+    [ValidateSet("status", "logic", "test", "throughput", "console-agent")]
     [string]$Mode
 )
 
@@ -70,6 +70,9 @@ function Invoke-Test([string]$Prefix, [switch]$Ignored) {
     if ($Ignored) {
         $arguments = @("--ignored") + $arguments
     }
+    if ($Prefix -eq "minicon_console_agent" -and -not [string]::IsNullOrWhiteSpace($env:MINICON_WINDOWS_CONSOLE_AGENT_FILTER)) {
+        $arguments = @($env:MINICON_WINDOWS_CONSOLE_AGENT_FILTER, "--exact") + $arguments
+    }
     $testExit = Invoke-NativeWait $testBinary $arguments
     if ($testExit -ne 0) {
         throw "$Prefix failed with exit code $testExit"
@@ -83,40 +86,34 @@ function Invoke-Status {
     }
 }
 
-try {
-    switch ($Mode) {
-        "status" {
-            Invoke-Status
-        }
-        "logic" {
-            Invoke-Status
-            Invoke-Test "minicon"
-            Invoke-Test "minicon_core"
-            # Alignment is a source/PRD registry court owned on the build host; it
-            # intentionally does not require a source checkout in runtime guests.
-            Invoke-Test "minicon_load_portability"
-        }
-        "test" {
-            Invoke-Status
-            Invoke-Test "minicon"
-            Invoke-Test "minicon_core"
-            # Alignment is a source/PRD registry court owned on the build host; it
-            # intentionally does not require a source checkout in runtime guests.
-            Invoke-Test "minicon_load_portability"
-            Invoke-Test "minicon_console_agent"
-            Invoke-Test "minicon_control"
-            Invoke-Test "minicon_blackbox"
-        }
-        "throughput" {
-            Invoke-Test "minicon_throughput" -Ignored
-        }
+switch ($Mode) {
+    "status" {
+        Invoke-Status
     }
-} catch {
-    [Console]::Error.WriteLine(($_ | Out-String))
-    exit 1
+    "logic" {
+        Invoke-Status
+        Invoke-Test "minicon"
+        Invoke-Test "minicon_core"
+        # Alignment is a source/PRD registry court owned on the build host; it
+        # intentionally does not require a source checkout in runtime guests.
+        Invoke-Test "minicon_load_portability"
+    }
+    "test" {
+        Invoke-Status
+        Invoke-Test "minicon"
+        Invoke-Test "minicon_core"
+        # Alignment is a source/PRD registry court owned on the build host; it
+        # intentionally does not require a source checkout in runtime guests.
+        Invoke-Test "minicon_load_portability"
+        Invoke-Test "minicon_console_agent"
+        Invoke-Test "minicon_control"
+        Invoke-Test "minicon_blackbox"
+    }
+    "throughput" {
+        Invoke-Test "minicon_throughput" -Ignored
+    }
+    "console-agent" {
+        Invoke-Status
+        Invoke-Test "minicon_console_agent"
+    }
 }
-
-# Start-Process exposes its code through the Process object and does not own
-# PowerShell's ambient $LASTEXITCODE. Publish an explicit success so the UTM
-# job wrapper cannot inherit a stale code from an earlier native probe.
-exit 0
