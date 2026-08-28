@@ -123,13 +123,16 @@ jobs:
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           cp scripts/probe-imports.ps1 "dist/$name/" 2>/dev/null || true
           cd dist
-          if [[ "${{ matrix.platform_id }}" == windows-* ]]; then
-            archive="$name.zip"
-            7z a -tzip "$archive" "$name" >/dev/null
-          else
-            archive="$name.tar.gz"
-            tar -czf "$archive" "$name"
-          fi
+          case "${{ matrix.platform_id }}" in
+            windows-*)
+              archive="$name.zip"
+              7z a -tzip "$archive" "$name" >/dev/null
+              ;;
+            *)
+              archive="$name.tar.gz"
+              tar -czf "$archive" "$name"
+              ;;
+          esac
           # Checksums are what let someone verify the download rather than
           # trust it, so they ship beside every archive.
           if command -v sha256sum >/dev/null; then
@@ -176,7 +179,8 @@ jobs:
           # Named explicitly rather than counted: a missing platform must fail
           # here, not be discovered by a user who cannot find their download.
           for platform in windows-x86_64 linux-x86_64 macos-universal; do
-            archive="$(ls "minicon-$version-$platform".* 2>/dev/null | grep -v '\.sha256$' | head -n1)"
+            archive="$(find . -maxdepth 1 -type f -name "minicon-$version-$platform.*" ! -name '*.sha256' -print -quit)"
+            archive="${archive#./}"
             test -n "$archive"
             test -f "$archive.sha256"
             echo "$platform -> $archive"
