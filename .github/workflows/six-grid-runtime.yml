@@ -86,9 +86,9 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
           mkdir index body payload
           oras pull "$BUNDLE_REF" --output index
-          shopt -s nullglob
-          published_matches=(index/minicon-six-grid-*-published.json)
-          manifest_matches=(index/minicon-six-grid-*-manifest.json)
+          shopt -s nullglob globstar
+          published_matches=(index/**/minicon-six-grid-*-published.json)
+          manifest_matches=(index/**/minicon-six-grid-*-manifest.json)
           test "${#published_matches[@]}" -eq 1 && test "${#manifest_matches[@]}" -eq 1
           published="${published_matches[0]}"; build_manifest="${manifest_matches[0]}"
           test "$(jq -r .source_sha "$published")" = "$EXPECTED_SOURCE_SHA"
@@ -101,7 +101,7 @@ jobs:
           test "${cell_ref%@*}" = "$expected_package"
           [[ "${cell_ref#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
           oras pull "$cell_ref" --output body
-          asset_matches=(body/*-"$CELL".tar.gz)
+          asset_matches=(body/**/*-"$CELL".tar.gz)
           test "${#asset_matches[@]}" -eq 1
           asset="${asset_matches[0]}"
           expected_asset_sha="$(jq -r --arg cell "$CELL" '.assets[] | select(.cell == $cell) | .sha256' "$build_manifest")"
