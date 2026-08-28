@@ -233,10 +233,13 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         );
     }
 
-    let Some(executable) = option_env!("CARGO_BIN_EXE_minicon") else {
+    let executable = std::env::var_os("MINICON_TEST_BINARY")
+        .map(PathBuf::from)
+        .or_else(|| option_env!("CARGO_BIN_EXE_minicon").map(PathBuf::from));
+    let Some(executable) = executable else {
         return;
     };
-    let output = Command::new(executable)
+    let output = Command::new(&executable)
         .args(["cli", "list-commands"])
         .output()
         .expect("launch minicon cli list-commands");

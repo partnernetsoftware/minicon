@@ -24,7 +24,7 @@ if ($manifest.schema -eq 2) {
     $profileManifest = $manifest
 }
 $depsDir = Join-Path $TargetDir "$profile\deps"
-$product = Join-Path $TargetDir "$profile\$($profileManifest.product)"
+$product = (Resolve-Path -LiteralPath (Join-Path $TargetDir "$profile\$($profileManifest.product)")).Path
 $env:MINICON_TEST_BINARY = $product
 
 function Invoke-NativeWait([string]$Path, [string[]]$Arguments, [switch]$Quiet) {

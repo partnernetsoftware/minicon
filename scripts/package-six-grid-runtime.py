@@ -145,6 +145,8 @@ def package_cell(repo: Path, build_root: Path, output: Path, identity: str, cell
             encoding="utf-8",
         )
 
+        payload_bytes = sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+
         archive = output / f"minicon-six-grid-{identity}-{cell}.tar.gz"
         write_deterministic_archive(root, archive)
     archive_bytes = archive.stat().st_size
@@ -153,7 +155,22 @@ def package_cell(repo: Path, build_root: Path, output: Path, identity: str, cell
             f"{cell} runtime body is {archive_bytes} bytes; "
             f"limit is {MAX_CELL_ARCHIVE_BYTES} (debug symbols or unrelated files leaked)"
         )
-    return {"cell": cell, "asset": archive.name, "bytes": archive_bytes, "sha256": digest(archive)}
+    compression_ratio = archive_bytes / payload_bytes if payload_bytes else 0.0
+    print(json.dumps({
+        "cell": cell,
+        "payload_bytes": payload_bytes,
+        "archive_bytes": archive_bytes,
+        "compression_ratio": round(compression_ratio, 4),
+    }))
+    return {
+        "cell": cell,
+        "asset": archive.name,
+        "payload_bytes": payload_bytes,
+        "archive_bytes": archive_bytes,
+        "compression_ratio": round(compression_ratio, 4),
+        "bytes": archive_bytes,
+        "sha256": digest(archive),
+    }
 
 
 def reusable_manifest(path: Path, receipt: dict[str, object], receipt_path: Path, output: Path) -> bool:

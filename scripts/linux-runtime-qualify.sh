@@ -33,6 +33,7 @@ require_tool timeout
   echo "missing MiniCon product executable: $PRODUCT" >&2
   exit 2
 }
+export MINICON_TEST_BINARY="$PRODUCT"
 
 case "$MODE" in
   test|throughput)
