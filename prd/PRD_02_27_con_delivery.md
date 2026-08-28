@@ -213,7 +213,10 @@ correct half/full-width font measurement.
   The publisher refuses a dirty or stale build receipt, missing/ambiguous
   harness, incomplete six-cell body, mutable runtime input, or overwrite by
   implication: every runner receives the resolved OCI digest, not its upload
-  tag. `status` and `full` may replace `test` only by explicit invocation.
+  tag. Cell archives normalize tar ownership, modes and timestamps plus gzip
+  `mtime=0`; `--force` must reproduce the same bytes. A fully revalidated
+  manifest is reused without another compression pass. `status` and `full` may
+  replace `test` only by explicit invocation.
 
 ```mermaid
 flowchart LR
@@ -246,6 +249,11 @@ flowchart LR
   controls. Results land in per-group shards and are merged in canonical order,
   so concurrent writes cannot corrupt the receipt. Runtime VM leases remain a
   later, bounded phase and are not accidentally parallelized with compilation.
+  Cargo output lives in one stable ignored `target-six/builds/current` cache;
+  a PRD or harness edit therefore gets ordinary incremental recompilation
+  instead of allocating another source-digest-sized build tree. The clean
+  receipt binds the current source fingerprint and hashes every selected
+  artifact, so cache reuse does not weaken exact-byte authority.
   The owner runs the complete native
   macOS arm64 suite plus sustained-throughput gate, and uses Rosetta for the
   same macOS x86_64 runtime evidence when installed. Linux runtime evidence is

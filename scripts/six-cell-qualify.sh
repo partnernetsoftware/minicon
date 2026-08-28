@@ -183,8 +183,7 @@ esac
 export CARGO_BUILD_JOBS="$CARGO_JOBS_PER_CELL"
 
 SOURCE_STATE_START="$(python3 scripts/source-fingerprint.py)"
-SOURCE_TREE_SHA256="$(printf '%s' "$SOURCE_STATE_START" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
-BUILD_DIR="$OUT_DIR/builds/$SOURCE_TREE_SHA256"
+BUILD_DIR="${MINICON_SIX_CELL_BUILD_DIR:-$OUT_DIR/builds/current}"
 BUILD_REL="${BUILD_DIR#"$REPO_ROOT"/}"
 mkdir -p "$BUILD_DIR"
 
@@ -490,6 +489,7 @@ receipt = {
     "source_dirty": bool(output("git", "status", "--porcelain")),
     "source_tree_sha256": source_state_end["sha256"],
     "source_file_count": source_state_end["files"],
+    "build_root": build_dir.relative_to(Path.cwd()).as_posix(),
     "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "host": {"system": platform.system(), "machine": platform.machine()},
     "stages": stages,

@@ -323,7 +323,11 @@ flowchart LR
   fans the isolated target directories into five concurrent groups (macOS ×2,
   Linux ×2, ordered Windows ×2; two Cargo jobs per group). The Windows pair is
   deliberately serialized because fresh `cargo-xwin` processes race in their
-  shared host cache. Runtime guest leases remain bounded and serial. It runs
+  shared host cache. A stable ignored Cargo cache preserves incremental work;
+  clean receipts bind the current source fingerprint and exact artifact hashes
+  instead of forcing a cold target tree after every PRD edit. Cloud archives
+  normalize tar/gzip metadata and reuse only a fully reverified manifest.
+  Runtime guest leases remain bounded and serial. It runs
   the complete macOS arm64 suite. Rosetta runs the same macOS x86_64
   suite. A Debian/glibc ARM64 Lima court runs the cross-linked Linux ARM64
   artifact through unit, public GUI/PTY, AT-SPI, control, and sustained-output

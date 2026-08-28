@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -68,6 +69,23 @@ def copy_executable(source: Path, destination: Path) -> None:
     destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def write_deterministic_archive(root: Path, archive: Path) -> None:
+    with archive.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as target:
+                for path in sorted(root.rglob("*")):
+                    info = target.gettarinfo(str(path), arcname=path.relative_to(root).as_posix())
+                    info.uid = info.gid = 0
+                    info.uname = info.gname = ""
+                    info.mtime = 0
+                    info.mode = 0o755 if path.is_dir() or os.access(path, os.X_OK) else 0o644
+                    if path.is_file():
+                        with path.open("rb") as source:
+                            target.addfile(info, source)
+                    else:
+                        target.addfile(info)
+
+
 def package_cell(repo: Path, build_root: Path, output: Path, identity: str, cell: str) -> dict[str, object]:
     relative, product_name, driver_name = CELLS[cell]
     windows = cell.startswith("win-")
@@ -123,10 +141,32 @@ def package_cell(repo: Path, build_root: Path, output: Path, identity: str, cell
         )
 
         archive = output / f"minicon-six-grid-{identity}-{cell}.tar.gz"
-        with tarfile.open(archive, "w:gz", format=tarfile.PAX_FORMAT) as target:
-            for path in sorted(root.rglob("*")):
-                target.add(path, arcname=path.relative_to(root), recursive=False)
+        write_deterministic_archive(root, archive)
     return {"cell": cell, "asset": archive.name, "bytes": archive.stat().st_size, "sha256": digest(archive)}
+
+
+def reusable_manifest(path: Path, receipt: dict[str, object], receipt_path: Path, output: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if manifest.get("source_sha") != receipt.get("source_sha"):
+            return False
+        if manifest.get("source_tree_sha256") != receipt.get("source_tree_sha256"):
+            return False
+        if manifest.get("build_receipt_sha256") != digest(receipt_path):
+            return False
+        assets = manifest.get("assets", [])
+        if {asset.get("cell") for asset in assets} != set(CELLS):
+            return False
+        return all(
+            (output / asset["asset"]).is_file()
+            and digest(output / asset["asset"]) == asset["sha256"]
+            and (output / asset["asset"]).stat().st_size == asset["bytes"]
+            for asset in assets
+        )
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
 
 
 def main() -> None:
@@ -134,6 +174,7 @@ def main() -> None:
     parser.add_argument("--receipt", default="target-six/receipt.json")
     parser.add_argument("--output", default="target-six/cloud-runtime")
     parser.add_argument("--allow-dirty", action="store_true", help="diagnostic packaging only; publisher never enables this")
+    parser.add_argument("--force", action="store_true", help="rebuild deterministic archives even when verified outputs exist")
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parent.parent
@@ -151,9 +192,15 @@ def main() -> None:
     ))
     if current_state.get("sha256") != identity and not args.allow_dirty:
         raise SystemExit("build receipt does not represent the current source tree; rerun scripts/six-cell-qualify.sh")
-    build_root = Path(receipt_path.parent / "builds" / identity)
+    build_root_value = receipt.get("build_root")
+    build_root = (repo / build_root_value).resolve() if build_root_value else receipt_path.parent / "builds" / identity
     output = (repo / args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
+
+    manifest_path = output / f"minicon-six-grid-{identity}-manifest.json"
+    if not args.force and reusable_manifest(manifest_path, receipt, receipt_path, output):
+        print(json.dumps({"manifest": str(manifest_path.relative_to(repo)), "sha256": digest(manifest_path), "assets": 6, "reused": True}))
+        return
 
     assets = [package_cell(repo, build_root, output, identity, cell) for cell in CELLS]
     manifest = {
@@ -164,7 +211,6 @@ def main() -> None:
         "build_receipt_sha256": digest(receipt_path),
         "assets": assets,
     }
-    manifest_path = output / f"minicon-six-grid-{identity}-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     checksum_path = manifest_path.with_suffix(manifest_path.suffix + ".sha256")
     checksum_path.write_text(f"{digest(manifest_path)}  {manifest_path.name}\n", encoding="utf-8")
