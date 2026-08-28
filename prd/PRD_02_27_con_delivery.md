@@ -237,9 +237,45 @@ correct half/full-width font measurement.
   Cargo output leak back in. This is a test-body budget, not a new product-size
   promise.
 
+  The persistent development goal is now this PRD branch rather than a
+  conversation-only task. Four methods govern it: tree management splits one
+  outcome into behavior, evidence, delivery and explicit non-goal leaves;
+  Mermaid is the spatial memory palace for dependencies and court roles; time
+  folding reuses incremental Cargo output, sealed guest images and immutable
+  OCI bodies; parallel thinking runs independent cells concurrently and joins
+  them only at reviewed manifests and receipts. A session goal points at the
+  next unchecked or regressed leaf here and must upsert new evidence before it
+  is considered durable.
+
+  The runtime system is deliberately a **twin court**. GitHub's native runners
+  are elastic, consume no Mac mini RAM while idle, and give routine real-OS/ISA
+  regression verdicts. Local UTM/Lima courts retain interactive UI inspection,
+  offline execution, breakpoints and a reusable failure scene. They are not
+  competing authorities: both must consume the same content-addressed test body
+  and report into one evidence ledger. A GitHub failure should become a local
+  reproducible journey; a local fix returns to GitHub for the six-grid verdict.
+
+  Measured 2026-08-28, packaging reports both uncompressed payload bytes and
+  compressed archive bytes per cell. The exact six-cell body totals about 151
+  MB before compression and 54,973,329 bytes after gzip; individual archive
+  ratios are 30.65%–42.05%. Publishing the six independent layers serially took
+  207–290 seconds, so parallel cell upload followed by one serial top-level
+  index is the next accepted time-folding optimization. The first complete
+  remote `test` iterations exposed and fixed build-host paths embedded by
+  `CARGO_BIN_EXE_minicon` and a relative Windows product path. The current
+  verdict is five native cells passing; Linux x86-64 alone timed out waiting
+  for AT-SPI chrome while Linux ARM64 passed the identical accessibility
+  journey. A bounded failed-cell rerun reproduced the same 20-second timeout,
+  deciding this is a stable x86 desktop-service gap rather than one observed
+  startup fluctuation. The next leaf is explicit AT-SPI bus preflight and
+  diagnostics before changing any product deadline; it is not yet six-grid
+  PASS.
+
 ```mermaid
 flowchart LR
-    S[Reviewed source state] --> B[Mac mini six-cell cross-build]
+    T[Tree management<br/>outcome → verifiable leaves] --> S[Reviewed source state]
+    M[Memory palace<br/>dependency + court map] --> S
+    S --> B[Mac mini six-cell cross-build]
     B --> P[Per-cell minimal runtime body]
     P --> H[SHA-256 leaf + build manifest]
     H --> O[GHCR OCI index @sha256]
@@ -249,11 +285,16 @@ flowchart LR
     O --> WA[Windows ARM64 runner]
     O --> MX[macOS Intel runner]
     O --> MA[macOS ARM64 runner]
-    LX & LA & WX & WA & MX & MA --> R[Six runtime receipts]
+    LX & LA & WX & WA & MX & MA --> R[Shared evidence ledger]
     R --> G{All exact cells pass?}
     G -->|yes| C[Candidate may reuse the same bytes]
-    G -->|no| F[Fail closed; rerun only failed cell]
-    B -. same bytes .-> D[Local UTM/Lima debug and reproduction]
+    G -->|no| F[Fail closed; rerun failed cell]
+    B -. same digest .-> D[Local UTM/Lima court<br/>interactive · offline · failure scene]
+    D --> R
+    F --> D
+    TF[Time folding<br/>cache · sealed image · immutable body] --> B
+    PF[Parallel thinking<br/>independent cells] --> B
+    PF --> O
 ```
 
 - [x] `scripts/six-cell-qualify.sh` is the local Mac qualification owner. It

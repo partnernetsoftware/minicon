@@ -55,6 +55,11 @@ MiniCon — one-file local terminal
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Product integrity branches
 │   ├── Package, portability and delivery
+│   │   ├── persistent development goal (PRD is the cross-session SSOT)
+│   │   │   ├── tree management: outcome → capability → behavior/evidence/delivery/non-goal leaves
+│   │   │   ├── memory palace: Mermaid keeps dependencies and court roles spatially recoverable
+│   │   │   ├── time folding: caches + sealed images + immutable bodies turn prior hours into seconds
+│   │   │   └── parallel thinking: independent builds, uploads and runtime courts converge at one receipt
 │   │   ├── one executable and OS-library-only load boundary
 │   │   ├── unwind-safe native callback containment
 │   │   ├── platform-qualified size claims and exact-SHA delivery
@@ -68,7 +73,10 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── GitHub native `{lnx,win,osx} × {arm,x86}-64` runners pull and execute; no checkout/Rust/Cargo
 │   │   │   │   ├── public-repo standard runners are free; manual/candidate trigger + 20-minute cell deadline still bound waste
 │   │   │   │   └── six runtime receipts bind source SHA + source-tree digest + OCI digest + actual runner OS/ISA
-│   │   │   │       └── local UTM/Lima courts remain interactive debug, offline and failure-reproduction fallback
+│   │   │   │       └── twin-court contract
+│   │   │   │           ├── GitHub native runners: elastic, zero-resident-memory regression verdict
+│   │   │   │           ├── local UTM/Lima: interactive debug, offline and failure-reproduction court
+│   │   │   │           └── both consume the same digest and converge on one evidence ledger
 │   │   │   ├── macOS runtime courts
 │   │   │   │   ├── host-native arm64 + Rosetta x86_64 fast courts
 │   │   │   │   └── clean ARM64 macOS VM release/permission court
