@@ -1,0 +1,228 @@
+name: Six-grid runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_ref:
+        description: Immutable ghcr.io/OWNER/PACKAGE@sha256:<digest> six-grid index
+        required: true
+        type: string
+      source_sha:
+        description: Git source SHA represented by the local cross-build
+        required: true
+        type: string
+      source_tree_sha256:
+        description: Local source-tree SHA-256 represented by the test bodies
+        required: true
+        type: string
+      suite:
+        description: Runtime depth; no option compiles source
+        required: true
+        default: test
+        type: choice
+        options: [status, test, full]
+
+permissions:
+  contents: none
+  packages: read
+
+concurrency:
+  group: six-grid-runtime-${{ inputs.source_tree_sha256 }}
+  cancel-in-progress: false
+
+jobs:
+  runtime:
+    name: ${{ matrix.cell }} / ${{ inputs.suite }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: lnx-x86_64, runner: ubuntu-24.04, family: linux, expected_os: Linux, expected_arch: X64}
+          - {cell: lnx-aarch64, runner: ubuntu-24.04-arm, family: linux, expected_os: Linux, expected_arch: ARM64}
+          - {cell: win-x86_64, runner: windows-2025, family: windows, expected_os: Windows, expected_arch: X64}
+          - {cell: win-aarch64, runner: windows-11-arm, family: windows, expected_os: Windows, expected_arch: ARM64}
+          - {cell: osx-x86_64, runner: macos-15-intel, family: macos, expected_os: macOS, expected_arch: X64}
+          - {cell: osx-aarch64, runner: macos-15, family: macos, expected_os: macOS, expected_arch: ARM64}
+    runs-on: ${{ matrix.runner }}
+    env:
+      BUNDLE_REF: ${{ inputs.bundle_ref }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_TREE_SHA256: ${{ inputs.source_tree_sha256 }}
+      CELL: ${{ matrix.cell }}
+      FAMILY: ${{ matrix.family }}
+      EXPECTED_RUNNER_OS: ${{ matrix.expected_os }}
+      EXPECTED_RUNNER_ARCH: ${{ matrix.expected_arch }}
+      SUITE: ${{ inputs.suite }}
+    steps:
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+
+      - name: Validate and pull immutable bodies
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$BUNDLE_REF" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_TREE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
+          test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+          printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          mkdir index body payload
+          oras pull "$BUNDLE_REF" --output index
+          shopt -s nullglob
+          published_matches=(index/minicon-six-grid-*-published.json)
+          manifest_matches=(index/minicon-six-grid-*-manifest.json)
+          test "${#published_matches[@]}" -eq 1 && test "${#manifest_matches[@]}" -eq 1
+          published="${published_matches[0]}"; build_manifest="${manifest_matches[0]}"
+          test "$(jq -r .source_sha "$published")" = "$EXPECTED_SOURCE_SHA"
+          test "$(jq -r .source_tree_sha256 "$published")" = "$EXPECTED_TREE_SHA256"
+          expected_package="${BUNDLE_REF%@*}"
+          test "$(jq -r .package "$published")" = "$expected_package"
+          expected_manifest_sha="$(jq -r .build_manifest_sha256 "$published")"
+          test "$(shasum -a 256 "$build_manifest" | awk '{print $1}')" = "$expected_manifest_sha"
+          cell_ref="$(jq -r --arg cell "$CELL" '.cells[$cell]' "$published")"
+          test "${cell_ref%@*}" = "$expected_package"
+          [[ "${cell_ref#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          oras pull "$cell_ref" --output body
+          asset_matches=(body/*-"$CELL".tar.gz)
+          test "${#asset_matches[@]}" -eq 1
+          asset="${asset_matches[0]}"
+          expected_asset_sha="$(jq -r --arg cell "$CELL" '.assets[] | select(.cell == $cell) | .sha256' "$build_manifest")"
+          test "$(shasum -a 256 "$asset" | awk '{print $1}')" = "$expected_asset_sha"
+          export ASSET="$asset"
+          python3 - <<'PY'
+          import hashlib, json, os, tarfile
+          from pathlib import Path, PurePosixPath
+          root = Path("payload")
+          with tarfile.open(os.environ["ASSET"], "r:gz") as archive:
+              members = archive.getmembers()
+              assert len(members) <= 10000
+              assert sum(member.size for member in members) <= 4 * 1024**3
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  assert not path.is_absolute() and ".." not in path.parts
+                  assert member.isfile() or member.isdir()
+              archive.extractall(root, members=members, filter="data")
+          bundle = json.loads((root / "bundle.json").read_text())
+          expected = {leaf["path"] for leaf in bundle["files"]} | {"bundle.json"}
+          actual = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+          assert actual == expected
+          for leaf in bundle["files"]:
+              path = root / leaf["path"]
+              assert path.is_file() and path.stat().st_size == leaf["bytes"]
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == leaf["sha256"]
+          PY
+
+      - name: Install Linux runtime libraries
+        if: matrix.family == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11 file libxkbcommon-x11-0 xvfb
+
+      - name: Run Linux runtime body
+        if: matrix.family == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x payload/linux-runtime-qualify.sh payload/target/debug/minicon payload/target/debug/deps/* payload/target/release-fast/minicon payload/target/release-fast/deps/*
+          export MINICON_REPO_ROOT="$PWD/payload/source"
+          payload/linux-runtime-qualify.sh payload/target status
+          [[ "$SUITE" == status ]] || payload/linux-runtime-qualify.sh payload/target test
+          [[ "$SUITE" != full ]] || payload/linux-runtime-qualify.sh payload/target throughput
+
+      - name: Run macOS runtime body
+        if: matrix.family == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x payload/macos-runtime-qualify.sh payload/target/debug/minicon payload/target/debug/deps/* payload/target/release-fast/minicon payload/target/release-fast/deps/*
+          payload/macos-runtime-qualify.sh payload/target status
+          [[ "$SUITE" == status ]] || payload/macos-runtime-qualify.sh payload/target test
+          [[ "$SUITE" != full ]] || payload/macos-runtime-qualify.sh payload/target throughput
+
+      - name: Run Windows runtime body
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode status
+          if ($env:SUITE -ne 'status') { & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode test }
+          if ($env:SUITE -eq 'full') { & ./payload/windows-runtime-qualify.ps1 -TargetDir ./payload/target -Mode throughput }
+
+      - name: Write runtime receipt
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("runtime-receipt.json").write_text(json.dumps({
+              "schema": 1, "cell": os.environ["CELL"],
+              "runner_arch": os.environ["RUNNER_ARCH"], "runner_os": os.environ["RUNNER_OS"],
+              "expected_runner_arch": os.environ["EXPECTED_RUNNER_ARCH"],
+              "expected_runner_os": os.environ["EXPECTED_RUNNER_OS"],
+              "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "source_tree_sha256": os.environ["EXPECTED_TREE_SHA256"], "suite": os.environ["SUITE"],
+              "job_status": os.environ["JOB_STATUS"],
+          }, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: six-grid-runtime-${{ matrix.cell }}
+          path: runtime-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: Aggregate exact six-grid receipt
+    if: always()
+    needs: runtime
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: none
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: six-grid-runtime-*
+          path: receipts
+
+      - name: Require six successful native cells
+        env:
+          BUNDLE_REF: ${{ inputs.bundle_ref }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          EXPECTED_TREE_SHA256: ${{ inputs.source_tree_sha256 }}
+          SUITE: ${{ inputs.suite }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          cells = {"lnx-x86_64", "lnx-aarch64", "win-x86_64", "win-aarch64", "osx-x86_64", "osx-aarch64"}
+          receipts = [json.loads(path.read_text()) for path in Path("receipts").rglob("runtime-receipt.json")]
+          by_cell = {receipt["cell"]: receipt for receipt in receipts}
+          assert set(by_cell) == cells
+          for cell, receipt in by_cell.items():
+              assert receipt["job_status"] == "success", (cell, receipt["job_status"])
+              assert receipt["runner_arch"] == receipt["expected_runner_arch"], receipt
+              assert receipt["runner_os"] == receipt["expected_runner_os"], receipt
+              assert receipt["bundle_ref"] == os.environ["BUNDLE_REF"]
+              assert receipt["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
+              assert receipt["source_tree_sha256"] == os.environ["EXPECTED_TREE_SHA256"]
+              assert receipt["suite"] == os.environ["SUITE"]
+          aggregate = {
+              "schema": 1, "verdict": "PASS", "cells": sorted(cells),
+              "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "source_tree_sha256": os.environ["EXPECTED_TREE_SHA256"], "suite": os.environ["SUITE"],
+          }
+          Path("six-grid-runtime-receipt.json").write_text(json.dumps(aggregate, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: six-grid-runtime-aggregate
+          path: six-grid-runtime-receipt.json
+          if-no-files-found: error
+          retention-days: 30

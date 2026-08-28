@@ -58,6 +58,10 @@ run_test() {
 
 export AGENTERM_NO_ACTIVATE=1
 export MINICON_TEST_BINARY="$PRODUCT"
+if [ -d "$(dirname "$TARGET_DIR")/source" ]; then
+  MINICON_REPO_ROOT="$(cd "$(dirname "$TARGET_DIR")/source" && pwd)"
+  export MINICON_REPO_ROOT
+fi
 
 case "$MODE" in
   status)

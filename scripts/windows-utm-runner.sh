@@ -17,13 +17,14 @@ MODE="$3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 UTMCTL="${MINICON_UTMCTL:-/Applications/UTM.app/Contents/MacOS/utmctl}"
+COURT_CLI="${MINICON_UTM_COURT_CLI:-$SCRIPT_DIR/utm-court.sh}"
 
 case "$CELL" in
   win-aarch64)
-    VM="${MINICON_WINDOWS_UTM_AARCH64_VM:-minicon-win-arm64}"
+    VM="${MINICON_WINDOWS_UTM_AARCH64_VM:-minicon-win-arm-64}"
     ;;
   win-x86_64)
-    VM="${MINICON_WINDOWS_UTM_X86_64_VM:-${MINICON_WINDOWS_UTM_AARCH64_VM:-minicon-win-arm64}}"
+    VM="${MINICON_WINDOWS_UTM_X86_64_VM:-minicon-win-x86-64}"
     ;;
   *)
     echo "unsupported Windows cell: $CELL" >&2
@@ -43,66 +44,33 @@ esac
   echo "utmctl not found: $UTMCTL" >&2
   exit 2
 }
+[ -x "$COURT_CLI" ] || {
+  echo "UTM court CLI not found: $COURT_CLI" >&2
+  exit 2
+}
+case "$CELL" in
+  win-aarch64) COURT=win-aarch64-desktop ;;
+  win-x86_64) COURT=win-x86_64-desktop ;;
+esac
+court() { UTM_COURT_VM="$VM" UTMCTL="$UTMCTL" "$COURT_CLI" "$@"; }
 
 if [ "$MODE" = stop ]; then
-  vm_status="$($UTMCTL status "$VM" 2>/dev/null || true)"
-  if [ "$vm_status" != stopped ]; then
-    "$UTMCTL" stop "$VM" >/dev/null 2>&1 || true
-    for _ in $(seq 1 90); do
-      [ "$($UTMCTL status "$VM" 2>/dev/null || true)" = stopped ] && exit 0
-      sleep 1
-    done
-    echo "UTM VM did not reach stopped state within 90 seconds: $VM" >&2
-    exit 1
-  fi
-  exit 0
+  court release "$COURT" >/dev/null
+  exit $?
 fi
 
 runner_tmp="$(mktemp -d)"
 trap 'rm -rf "$runner_tmp"' EXIT
 
-vm_status="$($UTMCTL status "$VM" 2>/dev/null || true)"
-case "$vm_status" in
-  started)
-    ;;
-  stopped)
-    if [ "${MINICON_WINDOWS_UTM_DISPOSABLE:-1}" = 1 ]; then
-      "$UTMCTL" start --hide --disposable "$VM" >/dev/null 2>&1
-    else
-      "$UTMCTL" start --hide "$VM" >/dev/null 2>&1
-    fi
-    ;;
-  suspended)
-    "$UTMCTL" start --hide "$VM" >/dev/null 2>&1
-    ;;
-  *)
-    echo "cannot start UTM VM '$VM' from status '${vm_status:-unknown}'" >&2
-    exit 1
-    ;;
-esac
+if [ "${MINICON_WINDOWS_UTM_DISPOSABLE:-1}" = 1 ]; then
+  court lease "$COURT" --disposable >/dev/null
+else
+  court lease "$COURT" >/dev/null
+fi
 
-# A running VM can expose networking and the desktop before QEMU Guest Agent
-# finishes service startup. utmctl may report an OSStatus error yet still exit
-# zero, so an exit-code-only probe is not evidence. Require a nonce to survive
-# a complete host -> guest -> host round trip before transferring artifacts.
-guest_ready=0
-ready_token="minicon-$CELL-$$-$RANDOM"
-for _ in $(seq 1 120); do
-  : >"$runner_tmp/guest-agent.ready"
-  printf '%s' "$ready_token" | "$UTMCTL" file push "$VM" \
-    'C:\minicon-six\guest-agent.ready' >/dev/null 2>&1 || true
-  "$UTMCTL" file pull "$VM" 'C:\minicon-six\guest-agent.ready' \
-    >"$runner_tmp/guest-agent.ready" 2>/dev/null || true
-  if [ "$(cat "$runner_tmp/guest-agent.ready")" = "$ready_token" ]; then
-    guest_ready=1
-    break
-  fi
-  sleep 1
-done
-[ "$guest_ready" -eq 1 ] || {
-  echo "UTM guest agent did not become ready within 120 seconds: $VM" >&2
-  exit 1
-}
+# Product-neutral court automation owns Guest Agent readiness. MiniCon begins
+# only after that shared adapter reports a typed ready state.
+court wait-ready "$COURT" 120 >/dev/null
 
 HOST_TARGET="$REPO_ROOT/$TARGET_DIR"
 if [ "$MODE" = throughput ]; then
@@ -122,13 +90,13 @@ build_identity="$(printf '%s\n' "$TARGET_DIR" | sed -n 's#.*target-six/builds/\(
   exit 2
 }
 GUEST_ROOT="C:\\minicon-six\\$CELL"
-"$UTMCTL" file push "$VM" "$GUEST_ROOT\\windows-runtime-qualify.ps1" \
-  <"$SCRIPT_DIR/windows-runtime-qualify.ps1"
+court push "$COURT" "$SCRIPT_DIR/windows-runtime-qualify.ps1" \
+  "$GUEST_ROOT\\windows-runtime-qualify.ps1"
 
 GUEST_DEPS="$GUEST_ROOT\\target\\debug\\deps"
 guest_product="minicon-$build_identity-$PROFILE.exe"
-"$UTMCTL" file push "$VM" "$GUEST_ROOT\\target\\debug\\$guest_product" \
-  <"$HOST_PROFILE/minicon.exe"
+court push "$COURT" "$HOST_PROFILE/minicon.exe" \
+  "$GUEST_ROOT\\target\\debug\\$guest_product"
 
 python3 - "$HOST_PROFILE/deps" "$build_identity" "$PROFILE" \
     >"$runner_tmp/test-manifest.json" <<'PY'
@@ -165,8 +133,8 @@ print(json.dumps({
 }))
 PY
 while IFS=$'\t' read -r host_name guest_name; do
-  "$UTMCTL" file push "$VM" "$GUEST_DEPS\\$guest_name" \
-    <"$HOST_PROFILE/deps/$host_name"
+  court push "$COURT" "$HOST_PROFILE/deps/$host_name" \
+    "$GUEST_DEPS\\$guest_name"
 done < <(python3 - "$runner_tmp/test-manifest.json" <<'PY'
 import json
 import sys
@@ -178,8 +146,8 @@ for guest_name in manifest["tests"].values():
     print(f"{guest_name[len(identity) + len(profile) + 2:]}\t{guest_name}")
 PY
 )
-"$UTMCTL" file push "$VM" "$GUEST_ROOT\\target\\test-manifest.json" \
-  <"$runner_tmp/test-manifest.json"
+court push "$COURT" "$runner_tmp/test-manifest.json" \
+  "$GUEST_ROOT\\target\\test-manifest.json"
 
 JOB="C:\\minicon-six\\job.pending.ps1"
 READY="C:\\minicon-six\\job.ready"
@@ -203,15 +171,15 @@ printf '%s\n' \
   "    [IO.File]::WriteAllText('$RESULT_TMP', [string]\$exitCode)" \
   "    Move-Item -LiteralPath '$RESULT_TMP' -Destination '$RESULT' -Force" \
   '}' \
-  'exit $exitCode' | "$UTMCTL" file push "$VM" "$JOB"
-printf 'ready' | "$UTMCTL" file push "$VM" "$READY"
+  'exit $exitCode' | court push "$COURT" - "$JOB"
+printf 'ready' | court push "$COURT" - "$READY"
 
 # Each job publishes a unique result path atomically, so no prior run can be
 # mistaken for current-source evidence.
 deadline="$((SECONDS + 1200))"
 while :; do
   : >"$runner_tmp/exit"
-  "$UTMCTL" file pull "$VM" "$RESULT" >"$runner_tmp/exit" 2>/dev/null || true
+  court pull "$COURT" "$RESULT" "$runner_tmp/exit" 2>/dev/null || true
   [ -s "$runner_tmp/exit" ] && break
   if [ "$SECONDS" -ge "$deadline" ]; then
     echo "interactive Windows test job exceeded its 20-minute deadline" >&2
@@ -219,7 +187,7 @@ while :; do
   fi
   sleep 1
 done
-"$UTMCTL" file pull "$VM" "$LOG" || true
+court pull "$COURT" "$LOG" - || true
 runner_rc="$(tr -d '\r\n' <"$runner_tmp/exit")"
 case "$runner_rc" in
   ''|*[!0-9]*)

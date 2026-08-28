@@ -7,6 +7,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LIMA_COURT="${MINICON_LIMA_COURT_CLI:-$SCRIPT_DIR/lima-court.sh}"
 OUT_DIR="${MINICON_SIX_CELL_OUT:-$REPO_ROOT/target-six}"
 RESULTS="$OUT_DIR/results.tsv"
 RECEIPT="$OUT_DIR/receipt.json"
@@ -31,8 +32,8 @@ run_stage() {
     status="PASS"
     rc=0
   else
-    status="FAIL"
     rc=$?
+    status="FAIL"
   fi
   elapsed="$(( $(date +%s) - started ))"
   printf '%s (%ss)\n' "$status" "$elapsed"
@@ -81,7 +82,12 @@ run_lima_linux_stage() {
   instance="$3"
   target_dir="$4"
   mode="$5"
-  run_stage "$cell" "$stage" limactl shell "$instance" -- \
+  case "$cell:$instance" in
+    lnx-x86_64:"$LNX_X86_64_KERNEL_LIMA") court=lnx-x86_64-kernel ;;
+    lnx-aarch64:*) court=lnx-aarch64-fast ;;
+    *) court=lnx-x86_64-rosetta ;;
+  esac
+  run_stage "$cell" "$stage" "$LIMA_COURT" exec "$court" -- \
     bash -lc "cd '$REPO_ROOT' && scripts/linux-runtime-qualify.sh '$target_dir' '$mode'"
 }
 
@@ -92,6 +98,37 @@ run_windows_runner_stage() {
   target_dir="$4"
   mode="$5"
   run_stage "$cell" "$stage" "$runner" "$cell" "$target_dir" "$mode"
+}
+
+run_macos_runner_stage() {
+  cell="$1"
+  stage="$2"
+  runner="$3"
+  target_dir="$4"
+  mode="$5"
+  run_stage "$cell" "$stage" "$runner" osx-aarch64 "$target_dir" "$mode"
+}
+
+run_linux_desktop_runner_stage() {
+  cell="$1"
+  stage="$2"
+  runner="$3"
+  target_dir="$4"
+  mode="$5"
+  run_stage "$cell" "$stage" "$runner" "$cell" "$target_dir" "$mode"
+}
+
+stop_linux_desktop_runner() {
+  cell="$1"; runner="$2"
+  [ -n "$runner" ] && [ -x "$runner" ] || return 0
+  "$runner" "$cell" . stop
+}
+
+stop_macos_runner() {
+  if [ -n "${MINICON_MACOS_AARCH64_RUNNER:-}" ] &&
+     [ -x "$MINICON_MACOS_AARCH64_RUNNER" ]; then
+    "$MINICON_MACOS_AARCH64_RUNNER" osx-aarch64 . stop
+  fi
 }
 
 stop_windows_runners() {
@@ -164,6 +201,30 @@ run_stage osx-aarch64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
     --test minicon_throughput -- --ignored --nocapture
 inspect_artifact osx-aarch64 "$BUILD_DIR/osx-aarch64/aarch64-apple-darwin/debug/minicon" "Mach-O 64-bit executable arm64"
 
+# The clean macOS guest is a release/permission court for the ARM64 artifact,
+# not a seventh architecture cell. It consumes the exact host-linked bytes and
+# returns to an idle state before Rosetta or another runtime guest is scheduled.
+if [ -n "${MINICON_MACOS_AARCH64_RUNNER:-}" ] &&
+   [ -x "$MINICON_MACOS_AARCH64_RUNNER" ]; then
+  run_macos_runner_stage osx-aarch64 clean-runtime-status \
+    "$MINICON_MACOS_AARCH64_RUNNER" \
+    "$BUILD_REL/osx-aarch64/aarch64-apple-darwin" status
+  run_macos_runner_stage osx-aarch64 clean-test \
+    "$MINICON_MACOS_AARCH64_RUNNER" \
+    "$BUILD_REL/osx-aarch64/aarch64-apple-darwin" test
+  run_macos_runner_stage osx-aarch64 clean-throughput \
+    "$MINICON_MACOS_AARCH64_RUNNER" \
+    "$BUILD_REL/osx-aarch64/aarch64-apple-darwin" throughput
+  run_stage common macos-clean-idle stop_macos_runner
+else
+  blocked osx-aarch64 clean-runtime-status \
+    "MINICON_MACOS_AARCH64_RUNNER is not configured"
+  blocked osx-aarch64 clean-test \
+    "MINICON_MACOS_AARCH64_RUNNER is not configured"
+  blocked osx-aarch64 clean-throughput \
+    "MINICON_MACOS_AARCH64_RUNNER is not configured"
+fi
+
 run_stage osx-x86_64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
   cargo clippy --locked --workspace --all-targets --target x86_64-apple-darwin -- -D warnings
 run_stage osx-x86_64 test-link env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
@@ -228,7 +289,7 @@ run_stage lnx-x86_64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-x86_64
   cargo zigbuild --locked --profile release-fast --workspace --all-targets \
     --target x86_64-unknown-linux-gnu
 inspect_artifact lnx-x86_64 "$BUILD_DIR/lnx-x86_64/x86_64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, x86-64"
-lima_start_if_needed "$LNX_X86_64_LIMA" || true
+"$LIMA_COURT" lease lnx-x86_64-rosetta >/dev/null 2>&1 || true
 if lima_running "$LNX_X86_64_LIMA"; then
   run_lima_linux_stage lnx-x86_64 runtime-status "$LNX_X86_64_LIMA" \
     "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" status
@@ -241,13 +302,31 @@ else
   blocked lnx-x86_64 test "Lima instance $LNX_X86_64_LIMA is not running"
   blocked lnx-x86_64 throughput "Lima instance $LNX_X86_64_LIMA is not running"
 fi
-lima_start_if_needed "$LNX_X86_64_KERNEL_LIMA" || true
+"$LIMA_COURT" release lnx-x86_64-rosetta >/dev/null 2>&1 || true
+"$LIMA_COURT" lease lnx-x86_64-kernel >/dev/null 2>&1 || true
 if lima_running "$LNX_X86_64_KERNEL_LIMA"; then
   run_lima_linux_stage lnx-x86_64 x86-kernel-logic "$LNX_X86_64_KERNEL_LIMA" \
     "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" logic
 else
   blocked lnx-x86_64 x86-kernel-logic \
     "Lima instance $LNX_X86_64_KERNEL_LIMA is not running"
+fi
+"$LIMA_COURT" release lnx-x86_64-kernel >/dev/null 2>&1 || true
+if [ -n "${MINICON_LNX_X86_64_DESKTOP_RUNNER:-}" ] &&
+   [ -x "$MINICON_LNX_X86_64_DESKTOP_RUNNER" ]; then
+  run_linux_desktop_runner_stage lnx-x86_64 desktop-runtime-status \
+    "$MINICON_LNX_X86_64_DESKTOP_RUNNER" \
+    "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" status
+  run_linux_desktop_runner_stage lnx-x86_64 desktop-test \
+    "$MINICON_LNX_X86_64_DESKTOP_RUNNER" \
+    "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" test
+  run_stage common linux-x86_64-desktop-idle stop_linux_desktop_runner \
+    lnx-x86_64 "$MINICON_LNX_X86_64_DESKTOP_RUNNER"
+else
+  blocked lnx-x86_64 desktop-runtime-status \
+    "MINICON_LNX_X86_64_DESKTOP_RUNNER is not configured"
+  blocked lnx-x86_64 desktop-test \
+    "MINICON_LNX_X86_64_DESKTOP_RUNNER is not configured"
 fi
 
 run_stage lnx-aarch64 all-target-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-aarch64" \
@@ -256,7 +335,7 @@ run_stage lnx-aarch64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/lnx-aarch
   cargo zigbuild --locked --profile release-fast --workspace --all-targets \
     --target aarch64-unknown-linux-gnu
 inspect_artifact lnx-aarch64 "$BUILD_DIR/lnx-aarch64/aarch64-unknown-linux-gnu/debug/minicon" "ELF 64-bit LSB pie executable, ARM aarch64"
-lima_start_if_needed "$LNX_AARCH64_LIMA" || true
+"$LIMA_COURT" lease lnx-aarch64-fast >/dev/null 2>&1 || true
 if lima_running "$LNX_AARCH64_LIMA"; then
   run_lima_linux_stage lnx-aarch64 runtime-status "$LNX_AARCH64_LIMA" \
     "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" status
@@ -268,6 +347,28 @@ else
   blocked lnx-aarch64 runtime-status "Lima instance $LNX_AARCH64_LIMA is not running"
   blocked lnx-aarch64 test "Lima instance $LNX_AARCH64_LIMA is not running"
   blocked lnx-aarch64 throughput "Lima instance $LNX_AARCH64_LIMA is not running"
+fi
+"$LIMA_COURT" release lnx-aarch64-fast >/dev/null 2>&1 || true
+if [ -n "${MINICON_LNX_AARCH64_DESKTOP_RUNNER:-}" ] &&
+   [ -x "$MINICON_LNX_AARCH64_DESKTOP_RUNNER" ]; then
+  run_linux_desktop_runner_stage lnx-aarch64 desktop-runtime-status \
+    "$MINICON_LNX_AARCH64_DESKTOP_RUNNER" \
+    "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" status
+  run_linux_desktop_runner_stage lnx-aarch64 desktop-test \
+    "$MINICON_LNX_AARCH64_DESKTOP_RUNNER" \
+    "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" test
+  run_linux_desktop_runner_stage lnx-aarch64 desktop-throughput \
+    "$MINICON_LNX_AARCH64_DESKTOP_RUNNER" \
+    "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" throughput
+  run_stage common linux-aarch64-desktop-idle stop_linux_desktop_runner \
+    lnx-aarch64 "$MINICON_LNX_AARCH64_DESKTOP_RUNNER"
+else
+  blocked lnx-aarch64 desktop-runtime-status \
+    "MINICON_LNX_AARCH64_DESKTOP_RUNNER is not configured"
+  blocked lnx-aarch64 desktop-test \
+    "MINICON_LNX_AARCH64_DESKTOP_RUNNER is not configured"
+  blocked lnx-aarch64 desktop-throughput \
+    "MINICON_LNX_AARCH64_DESKTOP_RUNNER is not configured"
 fi
 
 lima_stop_if_running "$LNX_X86_64_LIMA"

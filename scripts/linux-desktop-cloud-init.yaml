@@ -1,0 +1,41 @@
+#cloud-config
+hostname: minicon-linux-desktop
+manage_etc_hosts: true
+ssh_pwauth: false
+users:
+  - default
+  - name: minicon
+    gecos: MiniCon runtime target
+    groups: [adm, audio, cdrom, dialout, plugdev, sudo, video]
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: '@PASSWORD_HASH@'
+    sudo: ALL=(ALL) ALL
+package_update: true
+packages:
+  - ubuntu-desktop-minimal
+  - at-spi2-core
+  - dbus-x11
+  - fonts-noto-cjk
+  - qemu-guest-agent
+  - spice-vdagent
+  - xauth
+  - xvfb
+write_files:
+  - path: /etc/gdm3/custom.conf
+    permissions: '0644'
+    content: |
+      [daemon]
+      AutomaticLoginEnable=True
+      AutomaticLogin=minicon
+runcmd:
+  - [systemctl, start, qemu-guest-agent]
+  - [systemctl, add-wants, multi-user.target, qemu-guest-agent.service]
+  - [systemctl, set-default, graphical.target]
+  - [systemctl, enable, gdm3]
+power_state:
+  delay: now
+  mode: poweroff
+  message: MiniCon Linux desktop provisioning complete
+  timeout: 120
+  condition: true

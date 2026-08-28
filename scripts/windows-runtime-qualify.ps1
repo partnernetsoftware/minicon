@@ -7,13 +7,24 @@ param(
 
 $ErrorActionPreference = "Stop"
 $env:AGENTERM_NO_ACTIVATE = "1"
-$depsDir = Join-Path $TargetDir "debug\deps"
 $manifestPath = Join-Path $TargetDir "test-manifest.json"
 if (-not (Test-Path -LiteralPath $manifestPath)) {
     throw "missing exact-artifact test manifest: $manifestPath"
 }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$product = Join-Path $TargetDir "debug\$($manifest.product)"
+$profile = if ($Mode -eq "throughput") { "release-fast" } else { "debug" }
+if ($manifest.schema -eq 2) {
+    $profileManifest = $manifest.profiles.$profile
+    if ($null -eq $profileManifest) {
+        throw "exact-artifact manifest has no profile: $profile"
+    }
+} else {
+    # Schema 1 is the compatibility contract used by existing UTM payloads.
+    $profile = "debug"
+    $profileManifest = $manifest
+}
+$depsDir = Join-Path $TargetDir "$profile\deps"
+$product = Join-Path $TargetDir "$profile\$($profileManifest.product)"
 $env:MINICON_TEST_BINARY = $product
 
 function Invoke-NativeWait([string]$Path, [string[]]$Arguments, [switch]$Quiet) {
@@ -37,7 +48,7 @@ function Invoke-NativeWait([string]$Path, [string[]]$Arguments, [switch]$Quiet) 
 }
 
 function Find-TestBinary([string]$Prefix) {
-    $name = $manifest.tests.$Prefix
+    $name = $profileManifest.tests.$Prefix
     if ([string]::IsNullOrWhiteSpace($name)) {
         throw "exact-artifact manifest has no harness for $Prefix"
     }

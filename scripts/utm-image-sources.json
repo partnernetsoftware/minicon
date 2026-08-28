@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "observed": "2026-08-28",
+  "policy": [
+    "official-gallery",
+    "reviewed-community-box",
+    "vendor-cloud-image",
+    "automated-official-media-recipe"
+  ],
+  "cells": [
+    {
+      "cell": "osx-aarch64",
+      "selection": "recipe-selected",
+      "source": "apple-ipsw-via-utm",
+      "reason": "UTM and Apple provide the supported ARM64 macOS restore path"
+    },
+    {
+      "cell": "osx-x86_64",
+      "selection": "no-qualified-image",
+      "source": null,
+      "reason": "UTM Gallery has no Intel macOS appliance; discovered preinstalled qcow2 uploads are old or lack a reproducible builder and Apple-media provenance manifest",
+      "candidates": [
+        {
+          "kind": "preinstalled-qcow2",
+          "url": "https://archive.org/details/osx1068-qemu",
+          "qualification": "rejected-old-unverified"
+        },
+        {
+          "kind": "opencore-only-image",
+          "url": "https://github.com/kholia/OSX-KVM",
+          "qualification": "candidate-requires-install"
+        },
+        {
+          "kind": "opencore-only-image",
+          "url": "https://github.com/LongQT-sea/OpenCore-ISO",
+          "qualification": "candidate-requires-install"
+        }
+      ]
+    },
+    {
+      "cell": "lnx-aarch64",
+      "selection": "recipe-selected",
+      "source": "canonical-noble-cloud",
+      "reason": "the local pinned Canonical cloud image is qualified; community boxes remain unpinned recovery candidates",
+      "candidates": [
+        {
+          "kind": "community-box",
+          "url": "https://naveenrajm7.github.io/utm-gallery/vms/noble.html",
+          "qualification": "candidate-unverified"
+        }
+      ]
+    },
+    {
+      "cell": "lnx-x86_64",
+      "selection": "recipe-selected",
+      "source": "canonical-noble-server-iso",
+      "reason": "the discovered Debian 12 AMD64 box is cloud-only and remains unpinned; the proven desktop baseline uses the qualified Canonical recipe",
+      "candidates": [
+        {
+          "kind": "community-box",
+          "url": "https://naveenrajm7.github.io/utm-gallery/vms/bookworm.html",
+          "qualification": "candidate-unverified"
+        }
+      ]
+    },
+    {
+      "cell": "win-aarch64",
+      "selection": "recipe-selected",
+      "source": "official-windows-media",
+      "reason": "the local baseline is qualified; the discovered community box lacks a repository-pinned digest",
+      "candidates": [
+        {
+          "kind": "community-box",
+          "url": "https://naveenrajm7.github.io/utm-gallery/vms/windows-11.html",
+          "qualification": "candidate-unverified"
+        }
+      ]
+    },
+    {
+      "cell": "win-x86_64",
+      "selection": "recipe-selected",
+      "source": "official-windows-media",
+      "reason": "the discovered current Windows 11 UTM community box is ARM64-only"
+    }
+  ]
+}

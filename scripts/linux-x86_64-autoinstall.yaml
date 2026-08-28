@@ -1,0 +1,44 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  timezone: Etc/UTC
+  identity:
+    hostname: minicon-x86-court
+    username: minicon
+    password: "@PASSWORD_HASH@"
+  ssh:
+    install-server: true
+    allow-pw: true
+  storage:
+    layout:
+      name: direct
+  packages:
+    - xubuntu-desktop-minimal
+    - qemu-guest-agent
+    # winit/xkbcommon-dl needs the X11 bridge at runtime; a healthy XFCE login
+    # alone does not prove the shipped MiniCon ELF can start.
+    - libxkbcommon-x11-0
+    - at-spi2-core
+    - dbus-x11
+    - fonts-noto-cjk
+    - xdotool
+    - xterm
+  late-commands:
+    - >-
+      curtin in-target --target=/target -- systemctl add-wants multi-user.target qemu-guest-agent.service
+    # UTM's removable edk2 NVRAM is not a durable boot contract. Publish the
+    # standard fallback loader as well as the ordinary ubuntu boot entry.
+    - >-
+      curtin in-target --target=/target -- apt-get install -y grub-efi-amd64-bin
+    - >-
+      curtin in-target --target=/target -- grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --removable --no-nvram --no-uefi-secure-boot
+    - >-
+      curtin in-target --target=/target -- update-grub
+    - >-
+      curtin in-target --target=/target -- sh -c "mkdir -p /etc/lightdm/lightdm.conf.d && printf '[Seat:*]\\nautologin-user=minicon\\nautologin-user-timeout=0\\n' > /etc/lightdm/lightdm.conf.d/50-minicon-autologin.conf"
+    - >-
+      curtin in-target --target=/target -- sh -c "printf 'minicon ALL=(ALL) NOPASSWD: ALL\\n' > /etc/sudoers.d/90-minicon-nopasswd && chmod 0440 /etc/sudoers.d/90-minicon-nopasswd"
+  shutdown: poweroff

@@ -10,13 +10,15 @@ LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 PLIST="$LAUNCH_AGENTS/io.minicon.utm-agent.plist"
 LABEL="io.minicon.utm-agent"
 
-[ -f "$SCRIPT_DIR/macos-utm-agent.sh" ] || {
+AGENT_SOURCE="$SCRIPT_DIR/macos-utm-agent-v2.sh"
+[ -f "$AGENT_SOURCE" ] || AGENT_SOURCE="$SCRIPT_DIR/macos-utm-agent.sh"
+[ -f "$AGENT_SOURCE" ] || {
   echo "macos-utm-agent.sh must be next to this provisioning script" >&2
   exit 2
 }
 
 mkdir -p "$INSTALL_DIR" "$LAUNCH_AGENTS"
-install -m 700 "$SCRIPT_DIR/macos-utm-agent.sh" "$INSTALL_DIR/macos-utm-agent.sh"
+install -m 700 "$AGENT_SOURCE" "$INSTALL_DIR/macos-utm-agent.sh"
 
 escaped_program="$(printf '%s' "$INSTALL_DIR/macos-utm-agent.sh" |
   sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
@@ -40,6 +42,10 @@ plutil -lint "$PLIST"
 
 domain="gui/$(id -u)"
 launchctl bootout "$domain/$LABEL" >/dev/null 2>&1 || true
-launchctl bootstrap "$domain" "$PLIST"
+for attempt in 1 2 3 4 5; do
+  launchctl bootstrap "$domain" "$PLIST" && break
+  [ "$attempt" -lt 5 ] || exit 1
+  sleep 1
+done
 launchctl kickstart -k "$domain/$LABEL"
 launchctl print "$domain/$LABEL" | sed -n '1,24p'

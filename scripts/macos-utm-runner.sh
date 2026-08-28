@@ -20,63 +20,55 @@ case "$MODE" in prepare|status|test|throughput|stop) ;; *) exit 2 ;; esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 UTMCTL="${MINICON_UTMCTL:-/Applications/UTM.app/Contents/MacOS/utmctl}"
-VM="${MINICON_MACOS_UTM_VM:-minicon-osx-arm64}"
+COURT_CLI="${MINICON_UTM_COURT_CLI:-$SCRIPT_DIR/utm-court.sh}"
+VM="${MINICON_MACOS_UTM_VM:-minicon-osx-arm-64}"
 BRIDGE="${MINICON_MACOS_UTM_BRIDGE:-$REPO_ROOT/target-six/macos-utm-bridge}"
+BOOTSTRAP_ISO="${MINICON_MACOS_UTM_BOOTSTRAP_ISO:-$REPO_ROOT/target-six/macos-utm-bootstrap.iso}"
 
 [ -x "$UTMCTL" ] || { echo "utmctl not found: $UTMCTL" >&2; exit 2; }
+[ -x "$COURT_CLI" ] || { echo "UTM court CLI not found: $COURT_CLI" >&2; exit 2; }
+court() {
+  UTM_COURT_VM="$VM" UTMCTL="$UTMCTL" UTM_COURT_MACOS_BRIDGE="$BRIDGE" \
+    "$COURT_CLI" "$@"
+}
 
 if [ "$MODE" = prepare ]; then
-  mkdir -p "$BRIDGE/bootstrap" "$BRIDGE/jobs" "$BRIDGE/payloads" "$BRIDGE/results"
+  mkdir -p "$BRIDGE/bootstrap" "$BRIDGE/boot-requests" "$BRIDGE/boot-acks" \
+    "$BRIDGE/jobs" "$BRIDGE/payloads" "$BRIDGE/results"
   install -m 700 "$SCRIPT_DIR/macos-utm-agent.sh" \
     "$BRIDGE/bootstrap/macos-utm-agent.sh"
+  install -m 700 "$SCRIPT_DIR/macos-utm-agent.sh" \
+    "$BRIDGE/bootstrap/macos-utm-agent-v2.sh"
   install -m 700 "$SCRIPT_DIR/setup-macos-utm-runner.sh" \
     "$BRIDGE/bootstrap/setup-macos-utm-runner.sh"
-  printf '%s\n' "$BRIDGE"
+  install -m 700 "$SCRIPT_DIR/setup-macos-utm-runner.sh" \
+    "$BRIDGE/bootstrap/setup-macos-utm-runner-v2.sh"
+  install -m 700 "$SCRIPT_DIR/bootstrap-macos-utm.command" \
+    "$BRIDGE/bootstrap/bootstrap-macos-utm.command"
+  iso_root="$(mktemp -d)"
+  trap 'rm -rf "$iso_root"' EXIT
+  install -m 755 "$SCRIPT_DIR/bootstrap-macos-utm.command" \
+    "$iso_root/Install MiniCon UTM Agent.command"
+  rm -f "$BOOTSTRAP_ISO"
+  hdiutil makehybrid -quiet -iso -joliet \
+    -default-volume-name MINICON_UTM_BOOTSTRAP \
+    -o "$BOOTSTRAP_ISO" "$iso_root"
+  printf 'bridge=%s\nbootstrap_iso=%s\n' "$BRIDGE" "$BOOTSTRAP_ISO"
   exit 0
 fi
 
 if [ "$MODE" = stop ]; then
-  status="$($UTMCTL status "$VM" 2>/dev/null || true)"
-  if [ "$status" != stopped ]; then
-    "$UTMCTL" stop "$VM" >/dev/null 2>&1 || true
-    for _ in $(seq 1 90); do
-      [ "$($UTMCTL status "$VM" 2>/dev/null || true)" = stopped ] && exit 0
-      sleep 1
-    done
-    echo "UTM VM did not stop within 90 seconds: $VM" >&2
-    exit 1
-  fi
-  exit 0
+  court release osx-aarch64 >/dev/null
+  exit $?
 fi
 
-mkdir -p "$BRIDGE/jobs" "$BRIDGE/payloads" "$BRIDGE/results"
-status="$($UTMCTL status "$VM" 2>/dev/null || true)"
-case "$status" in
-  started) ;;
-  stopped)
-    if [ "${MINICON_MACOS_UTM_DISPOSABLE:-1}" = 1 ]; then
-      "$UTMCTL" start --hide --disposable "$VM" >/dev/null 2>&1
-    else
-      "$UTMCTL" start --hide "$VM" >/dev/null 2>&1
-    fi
-    ;;
-  suspended) "$UTMCTL" start --hide "$VM" >/dev/null 2>&1 ;;
-  *) echo "cannot start UTM VM '$VM' from status '${status:-unknown}'" >&2; exit 1 ;;
-esac
-
-boot_token="minicon-$CELL-$$-$RANDOM"
-printf '%s' "$boot_token" >"$BRIDGE/boot-request.tmp"
-mv -f "$BRIDGE/boot-request.tmp" "$BRIDGE/boot-request"
-ready=0
-for _ in $(seq 1 180); do
-  if [ -f "$BRIDGE/agent-ready" ] &&
-     [ "$(cat "$BRIDGE/agent-ready")" = "$boot_token" ]; then
-    ready=1
-    break
-  fi
-  sleep 1
-done
-[ "$ready" -eq 1 ] || { echo "macOS guest login agent did not become ready" >&2; exit 1; }
+mkdir -p "$BRIDGE/boot-requests" "$BRIDGE/boot-acks" \
+  "$BRIDGE/jobs" "$BRIDGE/payloads" "$BRIDGE/results"
+# Apple Virtualization does not implement UTM disposable start. This clean
+# release court uses a cold baseline lease; sealed-clone isolation is the image
+# service's owning future boundary.
+court lease osx-aarch64 >/dev/null
+court wait-ready osx-aarch64 180 >/dev/null
 
 if [ "$MODE" = throughput ]; then PROFILE=release-fast; else PROFILE=debug; fi
 HOST_TARGET="$REPO_ROOT/$TARGET_DIR"
@@ -101,6 +93,10 @@ cp "$SCRIPT_DIR/macos-runtime-qualify.sh" "$payload_tmp/macos-runtime-qualify.sh
 printf 'mode=%s\n' "$MODE" >"$payload_tmp/job.env"
 
 if [ "$MODE" = test ]; then
+  mkdir -p "$payload_tmp/source"
+  cp "$REPO_ROOT/Cargo.toml" "$REPO_ROOT/alignment-contract.json" \
+    "$REPO_ROOT/evidence-registry.json" "$payload_tmp/source/"
+  cp -R "$REPO_ROOT/prd" "$REPO_ROOT/tests" "$payload_tmp/source/"
   prefixes="minicon minicon_core minicon_alignment minicon_load_portability minicon_console_agent minicon_control minicon_blackbox"
 else
   prefixes="minicon_throughput"

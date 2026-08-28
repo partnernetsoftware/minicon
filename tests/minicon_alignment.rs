@@ -6,6 +6,9 @@ use std::process::Command;
 use serde_json::Value;
 
 fn repo_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("MINICON_REPO_ROOT") {
+        return PathBuf::from(root);
+    }
     // minicon is its own repository: the package manifest directory *is* the
     // repo root, and the contract, the evidence registry and the PRD all sit
     // on it. Inside agenterm this used to have to climb out of

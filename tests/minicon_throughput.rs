@@ -213,9 +213,7 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
          [Console]::Out.WriteLine(('WARMUP_'+'DONE'))\r"
             .to_owned()
     } else {
-        "python3 -c \"import sys;b=(b'W'*4096+b'\\r\\n')*256;\
-         sys.stdout.buffer.write(b);print('WARMUP_'+'DONE')\"\r"
-            .to_owned()
+        "yes W | head -c 1048576; printf '%s%s\\n' WARMUP_ DONE\r".to_owned()
     };
     cli_json(
         exe,
@@ -262,11 +260,11 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
          [Console]::Out.WriteLine(('THROUGHPUT_'+'DONE_32M'))\r"
             .to_owned()
     } else {
-        // Same payload shape as the Windows PowerShell generator: 8192 lines of
-        // 16*255 ASCII + CRLF, then a done marker. Python is present on macOS CI
-        // and local dev; keeps the evidence comparable across hosts.
+        // Keep a clean macOS runtime target independent of Xcode/Python. The
+        // fixed byte count remains identical to the Windows payload; the test
+        // measures PTY draining rather than generator implementation.
         format!(
-            "python3 -c \"import sys;b=(b'0123456789ABCDEF'*255+b'\\r\\n')*{OUTPUT_ITERATIONS};sys.stdout.buffer.write(b);print('THROUGHPUT_DONE_32M')\"\r"
+            "yes 0123456789ABCDEF | head -c {OUTPUT_BYTES}; printf '%s%s\\n' THROUGHPUT_DONE_ 32M\r"
         )
     };
     let started = Instant::now();
