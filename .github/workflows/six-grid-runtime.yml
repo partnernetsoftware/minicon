@@ -86,9 +86,8 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
           mkdir index body payload
           oras pull "$BUNDLE_REF" --output index
-          shopt -s nullglob globstar
-          published_matches=(index/**/minicon-six-grid-*-published.json)
-          manifest_matches=(index/**/minicon-six-grid-*-manifest.json)
+          published_matches=($(find index -type f -name 'minicon-six-grid-*-published.json'))
+          manifest_matches=($(find index -type f -name 'minicon-six-grid-*-manifest.json'))
           test "${#published_matches[@]}" -eq 1 && test "${#manifest_matches[@]}" -eq 1
           published="${published_matches[0]}"; build_manifest="${manifest_matches[0]}"
           test "$(jq -r .source_sha "$published")" = "$EXPECTED_SOURCE_SHA"
@@ -96,16 +95,17 @@ jobs:
           expected_package="${BUNDLE_REF%@*}"
           test "$(jq -r .package "$published")" = "$expected_package"
           expected_manifest_sha="$(jq -r .build_manifest_sha256 "$published")"
-          test "$(shasum -a 256 "$build_manifest" | awk '{print $1}')" = "$expected_manifest_sha"
+          sha256_file() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"; }
+          test "$(sha256_file "$build_manifest")" = "$expected_manifest_sha"
           cell_ref="$(jq -r --arg cell "$CELL" '.cells[$cell]' "$published")"
           test "${cell_ref%@*}" = "$expected_package"
           [[ "${cell_ref#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
           oras pull "$cell_ref" --output body
-          asset_matches=(body/**/*-"$CELL".tar.gz)
+          asset_matches=($(find body -type f -name "*-$CELL.tar.gz"))
           test "${#asset_matches[@]}" -eq 1
           asset="${asset_matches[0]}"
           expected_asset_sha="$(jq -r --arg cell "$CELL" '.assets[] | select(.cell == $cell) | .sha256' "$build_manifest")"
-          test "$(shasum -a 256 "$asset" | awk '{print $1}')" = "$expected_asset_sha"
+          test "$(sha256_file "$asset")" = "$expected_asset_sha"
           export ASSET="$asset"
           python3 - <<'PY'
           import hashlib, json, os, tarfile
