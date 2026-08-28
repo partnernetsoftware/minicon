@@ -141,7 +141,7 @@ fn real_atspi_tree_edits_command_and_activates_send() {
     perform_node_action(None, &send_id, AccessibilityNodeAction::Click)
         .expect("AT-SPI SEND action");
     let matched = cli_json(
-        executable,
+        &executable,
         &endpoint,
         &["wait-text", "--timeout-ms", "10000", "ATSPI_OK"],
     );
