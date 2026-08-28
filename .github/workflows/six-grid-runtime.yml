@@ -56,6 +56,21 @@ jobs:
       SUITE: ${{ inputs.suite }}
     steps:
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+        if: matrix.cell != 'win-aarch64'
+
+      - name: Install verified x64 ORAS on Windows ARM64
+        if: matrix.cell == 'win-aarch64'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "oras.zip"
+          $directory = Join-Path $env:RUNNER_TEMP "oras"
+          Invoke-WebRequest -Uri "https://github.com/oras-project/oras/releases/download/v1.3.0/oras_1.3.0_windows_amd64.zip" -OutFile $archive
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if ($actual -ne "b050e93aa0dc7a79a61fa8e4074dfa302c41d4af01b634fe393c5dd687536aee") {
+            throw "ORAS archive checksum mismatch: $actual"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $directory
 
       - name: Validate and pull immutable bodies
         shell: bash
@@ -165,6 +180,7 @@ jobs:
               "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
               "source_tree_sha256": os.environ["EXPECTED_TREE_SHA256"], "suite": os.environ["SUITE"],
               "job_status": os.environ["JOB_STATUS"],
+              "workflow_sha": os.environ["GITHUB_SHA"],
           }, indent=2) + "\n")
           PY
 
@@ -212,6 +228,7 @@ jobs:
               assert receipt["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
               assert receipt["source_tree_sha256"] == os.environ["EXPECTED_TREE_SHA256"]
               assert receipt["suite"] == os.environ["SUITE"]
+              assert len(receipt["workflow_sha"]) == 40
           aggregate = {
               "schema": 1, "verdict": "PASS", "cells": sorted(cells),
               "bundle_ref": os.environ["BUNDLE_REF"], "source_sha": os.environ["EXPECTED_SOURCE_SHA"],

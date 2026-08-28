@@ -203,6 +203,16 @@ correct half/full-width font measurement.
   they are no longer the only possible release runtime authority and never
   justify keeping six heavyweight guests resident.
 
+  The first real six-runner `status` dispatch proved all runner labels but
+  failed before execution. Command-line GHCR publication had not linked the new
+  package to its source repository, so each otherwise-valid workflow token saw
+  the digest as `not found`; the Windows ARM64 setup action also lacked an ORAS
+  ARM64 release. Publication now adds the standard
+  `org.opencontainers.image.source` annotation to every manifest. Windows ARM64
+  downloads the pinned official x64 ORAS archive, verifies its SHA-256, and
+  relies on Windows compatibility execution. Runtime receipts also bind the
+  workflow SHA, separating test-body identity from orchestration identity.
+
   The operator path, from repository root, is:
 
   ```bash
