@@ -259,9 +259,16 @@ correct half/full-width font measurement.
   compressed archive bytes per cell. The exact six-cell body totals about 151
   MB before compression and 54,973,329 bytes after gzip; individual archive
   ratios are 30.65%–42.05%. Publishing the six independent layers serially took
-  207–290 seconds, so parallel cell upload followed by one serial top-level
-  index is the next accepted time-folding optimization. The first complete
-  remote `test` iterations exposed and fixed build-host paths embedded by
+  207–290 seconds. The publisher now runs six bounded, independently owned ORAS
+  workers, records one digest per cell, and lets only the primary process build
+  the canonical index and publish its top-level seal after every worker passes.
+  An isolated fake-registry test proves actual overlap, rejects concurrency
+  outside 1–6, and proves one failed layer prevents both the top-level push and
+  workflow dispatch. Two real measurements reduced the layer phase to 116 and
+  60 seconds; the warm result is 71%–79% below the serial baseline. The final
+  measured body reports 150,839,308 payload bytes and 54,984,196 gzip bytes,
+  while the complete package/publish/dispatch path took 79 seconds. The first
+  complete remote `test` iterations exposed and fixed build-host paths embedded by
   `CARGO_BIN_EXE_minicon` and a relative Windows product path. Run
   `33142937582` then tested the same immutable body on all six native runners.
   Explicitly installing `at-spi2-core` closed the reproducible Linux x86-64
@@ -269,12 +276,18 @@ correct half/full-width font measurement.
   journey without weakening its 20-second deadline. The first attempt also
   exposed one Windows x86-64 host/agent cleanup timing failure and one macOS
   x86-64 screenshot/active-tab race; both passed a bounded failed-job rerun,
-  after which the aggregate exact-body receipt was **six-grid PASS**. This is
-  evidence of timing sensitivity, not permission to hide it with blanket
-  retries. The next reliability leaf is to classify such failures in receipts,
-  retain their first-attempt diagnostics, and permit only explicit failed-cell
-  re-verification against the same OCI digest. The next time-folding leaf
-  remains six parallel layer uploads followed by one serial top-level index.
+  after which the aggregate exact-body receipt was **six-grid PASS**. A later
+  exact-body run reproduced the macOS Intel screenshot/active-tab failure and
+  exposed the measurement defect: the black box started its 10-second GUI
+  response deadline before the newly spawned CLI process had registered a
+  request with the GUI. It now observes ownership through public
+  `ui-snapshot`, then races tab selection and starts the unchanged response
+  deadline. Five repeated local journeys passed, and run `33144329432` passed
+  all six native cells plus the aggregate receipt on its first attempt. This
+  is evidence of timing sensitivity, not permission to hide it with blanket
+  retries. The next reliability leaf is to retain and classify first-attempt
+  diagnostics in receipts so a future explicit same-digest re-verification
+  never erases the original failure.
 
 ```mermaid
 flowchart LR
@@ -282,7 +295,8 @@ flowchart LR
     M[Memory palace<br/>dependency + court map] --> S
     S --> B[Mac mini six-cell cross-build]
     B --> P[Per-cell minimal runtime body]
-    P --> H[SHA-256 leaf + build manifest]
+    P --> U[Six bounded parallel layer uploads]
+    U --> H[Canonical digests + build manifest]
     H --> O[GHCR OCI index @sha256]
     O --> LX[Linux x86-64 runner]
     O --> LA[Linux ARM64 runner]
