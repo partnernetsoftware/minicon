@@ -2,7 +2,7 @@
 
 use std::io::Read as _;
 use std::os::unix::fs::PermissionsExt as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -37,7 +37,7 @@ fn scratch() -> PathBuf {
     std::env::temp_dir().join(format!("minicon-a11y-{}-{nonce}", std::process::id()))
 }
 
-fn cli(executable: &str, endpoint: &str, args: &[&str]) -> Output {
+fn cli(executable: &Path, endpoint: &str, args: &[&str]) -> Output {
     Command::new(executable)
         .arg("cli")
         .arg("--control")
@@ -47,7 +47,7 @@ fn cli(executable: &str, endpoint: &str, args: &[&str]) -> Output {
         .expect("minicon CLI starts")
 }
 
-fn cli_json(executable: &str, endpoint: &str, args: &[&str]) -> serde_json::Value {
+fn cli_json(executable: &Path, endpoint: &str, args: &[&str]) -> serde_json::Value {
     let output = cli(executable, endpoint, args);
     assert!(
         output.status.success(),
@@ -88,13 +88,15 @@ fn named<'a>(nodes: &'a [AccessibilityNode], name: &str) -> Option<&'a Accessibi
 
 #[test]
 fn real_atspi_tree_edits_command_and_activates_send() {
-    let executable = env!("CARGO_BIN_EXE_minicon");
+    let executable = std::env::var_os("MINICON_TEST_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_minicon")));
     let scratch = scratch();
     std::fs::create_dir_all(&scratch).expect("create a11y scratch directory");
     std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700))
         .expect("make a11y scratch directory private");
     let endpoint = format!("unix:{}", scratch.join("control.sock").display());
-    let child = Command::new(executable)
+    let child = Command::new(&executable)
         .args(["--no-activate", "--control", &endpoint, "-e", "sh"])
         .env("RUST_BACKTRACE", "1")
         .stdin(Stdio::null())
@@ -105,7 +107,7 @@ fn real_atspi_tree_edits_command_and_activates_send() {
     let mut running = RunningCon { child, scratch };
 
     wait_for(&mut running, "control endpoint", |_| {
-        let output = cli(executable, &endpoint, &["ui-snapshot"]);
+        let output = cli(&executable, &endpoint, &["ui-snapshot"]);
         output.status.success().then_some(())
     });
 
@@ -127,12 +129,12 @@ fn real_atspi_tree_edits_command_and_activates_send() {
     perform_node_action(None, &command_id, AccessibilityNodeAction::Focus)
         .expect("AT-SPI Command focus");
     wait_for(&mut running, "composer focus", |_| {
-        let snapshot = cli_json(executable, &endpoint, &["ui-snapshot"]);
+        let snapshot = cli_json(&executable, &endpoint, &["ui-snapshot"]);
         (snapshot["composer_focused"] == true).then_some(())
     });
     set_node_text(None, &command_id, "printf ATSPI_OK").expect("AT-SPI SetTextContents");
     wait_for(&mut running, "composer text", |_| {
-        let snapshot = cli_json(executable, &endpoint, &["ui-snapshot"]);
+        let snapshot = cli_json(&executable, &endpoint, &["ui-snapshot"]);
         (snapshot["composer_text"] == "printf ATSPI_OK").then_some(())
     });
 
@@ -147,7 +149,7 @@ fn real_atspi_tree_edits_command_and_activates_send() {
 
     set_node_text(None, &command_id, "HELLO").expect("seed Command text for selection");
     wait_for(&mut running, "HELLO in composer", |_| {
-        let snapshot = cli_json(executable, &endpoint, &["ui-snapshot"]);
+        let snapshot = cli_json(&executable, &endpoint, &["ui-snapshot"]);
         (snapshot["composer_text"] == "HELLO").then_some(())
     });
     let before_sel =
@@ -186,7 +188,7 @@ fn real_atspi_tree_edits_command_and_activates_send() {
         "ScrollTo must move OffscreenField |Δy|>=20, before={before:?} after={after:?}"
     );
 
-    let closed = cli_json(executable, &endpoint, &["close-window"]);
+    let closed = cli_json(&executable, &endpoint, &["close-window"]);
     assert_eq!(closed["closing"], true);
     wait_for(&mut running, "clean window exit", |running| {
         running.child.try_wait().ok().flatten()
