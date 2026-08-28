@@ -262,14 +262,19 @@ correct half/full-width font measurement.
   207–290 seconds, so parallel cell upload followed by one serial top-level
   index is the next accepted time-folding optimization. The first complete
   remote `test` iterations exposed and fixed build-host paths embedded by
-  `CARGO_BIN_EXE_minicon` and a relative Windows product path. The current
-  verdict is five native cells passing; Linux x86-64 alone timed out waiting
-  for AT-SPI chrome while Linux ARM64 passed the identical accessibility
-  journey. A bounded failed-cell rerun reproduced the same 20-second timeout,
-  deciding this is a stable x86 desktop-service gap rather than one observed
-  startup fluctuation. The next leaf is explicit AT-SPI bus preflight and
-  diagnostics before changing any product deadline; it is not yet six-grid
-  PASS.
+  `CARGO_BIN_EXE_minicon` and a relative Windows product path. Run
+  `33142937582` then tested the same immutable body on all six native runners.
+  Explicitly installing `at-spi2-core` closed the reproducible Linux x86-64
+  desktop-service gap; both Linux cells passed the identical accessibility
+  journey without weakening its 20-second deadline. The first attempt also
+  exposed one Windows x86-64 host/agent cleanup timing failure and one macOS
+  x86-64 screenshot/active-tab race; both passed a bounded failed-job rerun,
+  after which the aggregate exact-body receipt was **six-grid PASS**. This is
+  evidence of timing sensitivity, not permission to hide it with blanket
+  retries. The next reliability leaf is to classify such failures in receipts,
+  retain their first-attempt diagnostics, and permit only explicit failed-cell
+  re-verification against the same OCI digest. The next time-folding leaf
+  remains six parallel layer uploads followed by one serial top-level index.
 
 ```mermaid
 flowchart LR
@@ -288,10 +293,13 @@ flowchart LR
     LX & LA & WX & WA & MX & MA --> R[Shared evidence ledger]
     R --> G{All exact cells pass?}
     G -->|yes| C[Candidate may reuse the same bytes]
-    G -->|no| F[Fail closed; rerun failed cell]
+    G -->|no| F[Fail closed; retain first failure<br/>reverify failed cell on same digest]
+    F --> K{Reverification result}
+    K -->|pass| Q[Classify timing sensitivity<br/>keep both attempts]
+    K -->|fail| D
     B -. same digest .-> D[Local UTM/Lima court<br/>interactive · offline · failure scene]
     D --> R
-    F --> D
+    Q --> R
     TF[Time folding<br/>cache · sealed image · immutable body] --> B
     PF[Parallel thinking<br/>independent cells] --> B
     PF --> O

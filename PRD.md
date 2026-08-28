@@ -71,6 +71,7 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── Mac mini cross-builds six exact products + owning test harnesses once
 │   │   │   │   ├── minimal per-cell bodies → GHCR OCI artifacts addressed only by `@sha256:`
 │   │   │   │   ├── GitHub native `{lnx,win,osx} × {arm,x86}-64` runners pull and execute; no checkout/Rust/Cargo
+│   │   │   │   ├── aggregate native `test` verdict: six-cell PASS; failed-cell rerun classifies timing flakes without rebuilding
 │   │   │   │   ├── public-repo standard runners are free; manual/candidate trigger + 20-minute cell deadline still bound waste
 │   │   │   │   └── six runtime receipts bind source SHA + source-tree digest + OCI digest + actual runner OS/ISA
 │   │   │   │       └── twin-court contract
