@@ -38,10 +38,10 @@ jobs:
       matrix:
         include:
           - platform_id: windows-x86_64
-            # cargo-xwin supplies the reviewed Windows SDK/CRT archive set;
-            # keeping a Windows host lets this same job execute the resulting
-            # PE before packaging it.
-            runner: windows-2022
+            # Build away from an installed Visual Studio so its rolling LIB
+            # environment cannot contaminate cargo-xwin's reviewed CRT set.
+            # The packaged bytes execute in the verify-windows job below.
+            runner: ubuntu-24.04
             target: x86_64-pc-windows-msvc
             binary: minicon.exe
           - platform_id: linux-x86_64
@@ -105,6 +105,7 @@ jobs:
       # The artifact is verified as an artifact, not as a build that exited
       # zero: a linker can succeed and still leave something that will not run.
       - name: Verify the built binary runs and describes itself
+        if: matrix.platform_id != 'windows-x86_64'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,6 +119,15 @@ jobs:
             exit 1
           }
           "$binary" --status
+
+      - name: Verify the Windows artifact shape before packaging
+        if: matrix.platform_id == 'windows-x86_64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          test -f "$binary"
+          file "$binary" | grep -F 'PE32+ executable (GUI) x86-64'
 
       - name: Package
         id: package
@@ -162,9 +172,41 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  verify-windows:
+    name: Verify Windows package
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: minicon-windows-x86_64
+          path: incoming
+
+      - name: Verify checksum and execute exact packaged PE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = (Select-String -LiteralPath Cargo.toml -Pattern '^version = "([^"]+)"$').Matches[0].Groups[1].Value
+          $archive = Join-Path $PWD "incoming/minicon-$version-windows-x86_64.zip"
+          $sumFile = "$archive.sha256"
+          $expected = ((Get-Content -LiteralPath $sumFile -Raw) -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Windows archive checksum mismatch" }
+          Expand-Archive -LiteralPath $archive -DestinationPath unpacked
+          $binary = Join-Path $PWD "unpacked/minicon-$version-windows-x86_64/minicon.exe"
+          $reported = & $binary --version
+          if ($reported -ne "minicon $version") { throw "reported '$reported', expected minicon $version" }
+          & $binary --status
+          if ($LASTEXITCODE -ne 0) { throw "packaged minicon.exe --status failed: $LASTEXITCODE" }
+
   publish:
     name: Publish
-    needs: build
+    needs: [build, verify-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
