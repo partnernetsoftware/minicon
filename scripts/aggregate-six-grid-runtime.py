@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -27,7 +28,7 @@ def valid_digest_ref(value: str) -> bool:
 
 def aggregate(args: argparse.Namespace) -> tuple[dict, bool]:
     paths = sorted(Path(args.receipts).rglob("runtime-receipt.json"))
-    receipts = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+    receipts = [(path, json.loads(path.read_text(encoding="utf-8"))) for path in paths]
     errors: list[str] = []
     histories: dict[str, list[dict]] = {cell: [] for cell in CELLS}
     seen: set[tuple[str, int]] = set()
@@ -39,7 +40,7 @@ def aggregate(args: argparse.Namespace) -> tuple[dict, bool]:
     if not re.fullmatch(r"[0-9a-f]{64}", args.source_tree_sha256):
         errors.append("source_tree_sha256 is invalid")
 
-    for receipt in receipts:
+    for receipt_path, receipt in receipts:
         cell = receipt.get("cell")
         attempt = receipt.get("run_attempt")
         if cell not in histories:
@@ -73,6 +74,26 @@ def aggregate(args: argparse.Namespace) -> tuple[dict, bool]:
             errors.append(f"{cell} attempt {attempt}: invalid run ID")
         if not re.fullmatch(r"[0-9a-f]{40}", str(receipt.get("workflow_sha", ""))):
             errors.append(f"{cell} attempt {attempt}: invalid workflow SHA")
+        log_bytes = receipt.get("runtime_log_bytes")
+        log_sha = receipt.get("runtime_log_sha256")
+        log_path = receipt_path.with_name("runtime-body.log")
+        if (log_bytes is None) != (log_sha is None):
+            errors.append(f"{cell} attempt {attempt}: incomplete runtime log identity")
+        elif log_bytes is None:
+            if receipt.get("job_status") == "success":
+                errors.append(f"{cell} attempt {attempt}: successful cell has no runtime log")
+        elif not isinstance(log_bytes, int) or log_bytes < 0:
+            errors.append(f"{cell} attempt {attempt}: invalid runtime log size")
+        elif not re.fullmatch(r"[0-9a-f]{64}", str(log_sha)):
+            errors.append(f"{cell} attempt {attempt}: invalid runtime log SHA-256")
+        elif not log_path.is_file():
+            errors.append(f"{cell} attempt {attempt}: runtime log is missing")
+        else:
+            actual = log_path.read_bytes()
+            if len(actual) != log_bytes:
+                errors.append(f"{cell} attempt {attempt}: runtime log size mismatch")
+            if hashlib.sha256(actual).hexdigest() != log_sha:
+                errors.append(f"{cell} attempt {attempt}: runtime log hash mismatch")
         histories[cell].append(receipt)
 
     cells: dict[str, dict] = {}

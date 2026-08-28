@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +13,7 @@ BUNDLE = "ghcr.io/example/minicon@sha256:" + "a" * 64
 SOURCE = "b" * 40
 TREE = "c" * 64
 WORKFLOW = "d" * 40
+LOG = b"runtime log\n"
 
 
 def receipt(cell: str, attempt: int, status: str, probe: str = "none") -> dict:
@@ -24,7 +26,7 @@ def receipt(cell: str, attempt: int, status: str, probe: str = "none") -> dict:
         "bundle_ref": BUNDLE, "source_sha": SOURCE, "source_tree_sha256": TREE,
         "suite": "test", "job_status": status, "workflow_sha": WORKFLOW,
         "evidence_probe_cell": probe,
-        "runtime_log_bytes": 12, "runtime_log_sha256": "e" * 64,
+        "runtime_log_bytes": len(LOG), "runtime_log_sha256": hashlib.sha256(LOG).hexdigest(),
     }
 
 
@@ -44,6 +46,7 @@ def write(root: Path, value: dict) -> None:
     path = root / f"{value['cell']}-attempt-{value['run_attempt']}"
     path.mkdir()
     (path / "runtime-receipt.json").write_text(json.dumps(value) + "\n")
+    (path / "runtime-body.log").write_bytes(LOG)
 
 
 with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as temporary:
@@ -73,5 +76,15 @@ with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as tempora
     assert result["verdict"] == "FAIL"
     assert result["cells"]["win-aarch64"]["verdict"] == "fail"
     assert result["errors"] == ["win-aarch64: latest attempt 1 is failure"]
+
+with tempfile.TemporaryDirectory(prefix="minicon-runtime-aggregate-") as temporary:
+    root = Path(temporary)
+    for cell in CELLS:
+        write(root, receipt(cell, 1, "success"))
+    (root / "lnx-aarch64-attempt-1" / "runtime-body.log").write_text("tampered\n")
+    result = run(root, 1)
+    assert result["verdict"] == "FAIL"
+    assert "lnx-aarch64 attempt 1: runtime log size mismatch" in result["errors"]
+    assert "lnx-aarch64 attempt 1: runtime log hash mismatch" in result["errors"]
 
 print("aggregate-six-grid-runtime-selftest: PASS")
