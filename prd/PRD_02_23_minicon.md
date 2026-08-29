@@ -25,9 +25,11 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 ## Product outcome
 
 - [x] `minicon` is the lightweight, green, GUI replacement for a system
-  console host. It provides several independently owned local terminals without
-  the workbench authority, background server, Fleet, mux, MCP, or script engines
-  of `agenterm`. Its sustained-throughput qualification is shipped in
+  console host. AgenTerm is the Agent-era workbench on the same platform
+  layer (rendering + dedicated input): it keeps a real terminal at the core
+  and adds a longer-lived server identity, Fleet, mux, persistence, and Agent
+  policy. MiniCon provides several independently owned local terminals without
+  that workbench authority. Its sustained-throughput qualification is shipped in
   [24](PRD_02_24_con_terminal.md), platform-qualified artifact measurements in
   [27](PRD_02_27_con_delivery.md) are explicit, and the native Chinese-IME
   keyboard acceptance in [25](PRD_02_25_con_workspace.md) is shipped.

@@ -15,9 +15,12 @@ type through a dedicated input area, and automate the visible GUI through a
 bounded local CLI. Failure in one child, tab, callback, parser or request does
 not destroy unrelated sessions or the host.
 
-MiniCon remains useful precisely because it is not AgenTerm: it has no server,
-persistent workspace, Fleet, mux, MCP, script runtime, plugin host, or Agent
-permission policy.
+MiniCon remains useful precisely because it is not AgenTerm: it has no
+workbench server, persistent workspace, Fleet, mux, MCP, script runtime,
+plugin host, or Agent permission policy. AgenTerm is the Agent-era workbench
+on the same platform layer. MiniCon `--control` is a GUI-lifetime local
+socket/pipe inside that window, not AgenTerm's server. Details:
+`prd/PRD_02_23_minicon.md`, `prd/PRD_02_26_con_control_cli.md`.
 
 ## Markdown-tree DAG PRD
 

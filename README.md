@@ -182,10 +182,19 @@ would otherwise be unchecked:
 
 ## Relationship to AgenTerm
 
-MiniCon began as [AgenTerm](https://github.com/partnernetsoftware/agenterm)'s
-minimal console host and became its own product in August 2026. It shares
-AgenTerm's platform layer and its input-area design; it deliberately has no
-server, workspace persistence, multiplexer, or script runtime.
+[AgenTerm](https://github.com/partnernetsoftware/agenterm) is the Agent-era
+workbench on the same platform layer (native rendering, dedicated input area).
+MiniCon is the one-file **local terminal**. AgenTerm adds what MiniCon refuses:
+a longer-lived server identity, Fleet, mux, persistence, and Agent permission
+policy.
+
+MiniCon automation is `--control`: an explicit Unix socket or named pipe bound
+**inside that GUI process**. `minicon cli` is a short-lived client on that
+socket. Close the window and the endpoint is gone. That is not AgenTerm's
+server. Verb spellings may match; the wire and lifetime do not.
+
+MiniCon began as AgenTerm's minimal console host and became its own product in
+August 2026.
 
 ---
 
@@ -210,8 +219,9 @@ server, workspace persistence, multiplexer, or script runtime.
 一波输出交错,你会弄不清自己打了什么。MiniCon 给输入一块自己的地方——而输入一旦有了
 自己的区域,就能做更多:上下键回叫送出过的内容,标签上写着文字要送往哪个分页。
 
-**脚本能看进去。** 控制 CLI 驱动的是真正的界面,并把窗口实际显示的内容读回来——文字、
-截图、焦点、分页状态——让自动化可以等待条件成立,而不是用计时器猜。
+**脚本能看进去。** 控制 CLI 驱动真正的界面并把窗口实际显示读回来。`--control` 是这一窗
+里的本机 Unix socket / 命名管道，不是守护进程；关窗即拆。需要 Fleet、mux、Agent 权限时
+用 [AgenTerm](https://github.com/partnernetsoftware/agenterm)。
 
 出问题时请运行 `minicon --status` 并附上输出:它报告构建版本、这台机器选了哪个 PTY
 后端及原因、系统实际解析到哪个字体与实测字宽,以及失败写在哪个文件。这些都无法通过读

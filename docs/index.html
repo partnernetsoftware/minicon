@@ -227,6 +227,7 @@
         <a href="#what" data-i18n="navWhat">What</a>
         <a href="#old" data-i18n="navOld">Old Windows</a>
         <a href="#script" data-i18n="navScript">Scripting</a>
+        <a href="#family" data-i18n="navFamily">AgenTerm</a>
         <a href="#install" data-i18n="navInstall">Get it</a>
         <a href="#docs" data-i18n="navDocs">Docs</a>
       </nav>
@@ -385,6 +386,23 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
       </div>
     </section>
 
+    <section id="family">
+      <div class="wrap">
+        <h2 data-i18n="familyTitle">MiniCon is the terminal. AgenTerm is the Agent-era workbench.</h2>
+        <p class="section-lead" data-i18n="familyLead">Same platform layer, different job. MiniCon is one file and one window. AgenTerm is what you run when a session must outlive that window — Fleet, mux, persistence, Agent permissions.</p>
+        <div class="dl">
+          <div>
+            <dt data-i18n="familyMiniDt">MiniCon</dt>
+            <dd data-i18n="familyMiniDd">Local conhost: PTY, tabs, composer, IME. Automation is <code>--control</code> on a Unix socket or named pipe inside that GUI process. Close the window and the endpoint is gone. No daemon, no default port, no remote.</dd>
+          </div>
+          <div>
+            <dt data-i18n="familyAgenDt">AgenTerm</dt>
+            <dd data-i18n="familyAgenDd">The Agent-era upgrade on the same rendering and input-area design: a workbench whose server identity can outlive one terminal. Shared verb spellings, different wire and lifetime.</dd>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="install">
       <div class="wrap">
         <h2 data-i18n="installTitle">Getting it</h2>
@@ -449,6 +467,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navWhat: "What",
           navOld: "Old Windows",
           navScript: "Scripting",
+          navFamily: "AgenTerm",
           navInstall: "Get it",
           navDocs: "Docs",
           heroEyebrow: "one file · no install · no runtime",
@@ -505,7 +524,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input3Title: "Named, not numbered",
           input3Body: "The label names the tab the text is going to. In a tab tree, that's the difference between confidence and a guess.",
           scriptTitle: "A terminal your scripts can see into.",
-          scriptLead: "Sending a keystroke is easy and blind. MiniCon's control CLI reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits on a real condition, not a timer. And it's all local: a named pipe on Windows or a Unix socket on Linux and macOS, with no server or cloud.",
+          scriptLead: "Sending a keystroke is easy and blind. MiniCon's control CLI reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits on a real condition, not a timer. The window binds a local Unix socket or named pipe only if you pass --control; close the window and that endpoint dies. That is not AgenTerm's workbench server.",
           scriptSnapshot: "Focus, IME state, input, pending work, geometry — as JSON.",
           scriptWait: "Block until the condition holds or the timeout expires, and say which.",
           scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
@@ -513,7 +532,13 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           installLead: "Download the executable and run it. There's no installer because there's nothing to install.",
           installRelease: "Latest release",
           installBuild: "Build from source",
-          installHonest: "<strong>Honest scope.</strong> MiniCon qualifies Windows, Linux, and macOS on x86_64 and aarch64. Old-Windows fallback and PE import-table checks are Windows-specific; the terminal, UI, and control contract span all six cells. No server, persistence, MCP, or plugins — on purpose. When you want those, that's AgenTerm.",
+          familyTitle: "MiniCon is the terminal. AgenTerm is the Agent-era workbench.",
+          familyLead: "Same platform layer, different job. MiniCon is one file and one window. AgenTerm is what you run when a session must outlive that window — Fleet, mux, persistence, Agent permissions.",
+          familyMiniDt: "MiniCon",
+          familyMiniDd: "Local conhost: PTY, tabs, composer, IME. Automation is --control on a Unix socket or named pipe inside that GUI process. Close the window and the endpoint is gone. No daemon, no default port, no remote.",
+          familyAgenDt: "AgenTerm",
+          familyAgenDd: "The Agent-era upgrade on the same rendering and input-area design: a workbench whose server identity can outlive one terminal. Shared verb spellings, different wire and lifetime.",
+          installHonest: "<strong>Honest scope.</strong> MiniCon qualifies Windows, Linux, and macOS on x86_64 and aarch64. Old-Windows fallback and PE import-table checks are Windows-specific; the terminal, UI, and control contract span all six cells. No workbench server, persistence, MCP, or plugins — on purpose. When you want those, that's AgenTerm.",
           docsTitle: "Documentation",
           docsLead: "Written to be checkable. Every number came from a measurement.",
           docsOldTitle: "Running on old Windows",
@@ -528,7 +553,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerCli: "Control CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.",
-          footerOrigin: "MiniCon began as AgenTerm's minimal console host and became its own product in August 2026.",
+          footerOrigin: "MiniCon is the one-file local terminal. AgenTerm is the Agent-era workbench on the same platform. MiniCon began as AgenTerm's console host and became its own product in August 2026.",
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
@@ -539,6 +564,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navWhat: "是什么",
           navOld: "旧版 Windows",
           navScript: "脚本",
+          navFamily: "AgenTerm",
           navInstall: "获取",
           navDocs: "文档",
           heroEyebrow: "一个文件 · 免安装 · 免运行时",
@@ -595,7 +621,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input3Title: "叫名字，不叫编号",
           input3Body: "标签上写的是文字要发往哪个标签页。在标签页树里，这就是「有把握」和「靠猜」的区别。",
           scriptTitle: "一个脚本能「看进去」的终端。",
-          scriptLead: "发一个按键简单，但是个瞎子。MiniCon 的控制 CLI 把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实条件，而不是计时器。而且全在本地：Windows 用命名管道，Linux/macOS 用 Unix socket，没有服务器、没有云端。",
+          scriptLead: "发一个按键简单，但是个瞎子。MiniCon 的控制 CLI 把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实条件，而不是计时器。只有你传了 --control，这一窗才会在本机 Unix socket 或命名管道上听；关窗即拆。那不是 AgenTerm 工作台的 server。",
           scriptSnapshot: "焦点、输入法状态、输入、待处理工作、坐标——以 JSON 返回。",
           scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
           scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
@@ -603,7 +629,13 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           installLead: "下载可执行文件，直接跑。没有安装程序，因为没什么要装。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
-          installHonest: "<strong>先把范围说清楚。</strong>MiniCon 对 Windows、Linux、macOS × x86_64、aarch64 六格做资格验证。旧版 Windows 兜底和 PE 导入表门禁是 Windows 专属，终端、界面与控制契约覆盖全部六格。没有服务器、持久化、MCP、插件——这是有意的；需要这些时请选择 AgenTerm。",
+          familyTitle: "MiniCon 是终端。AgenTerm 是 Agent 时代的工作台。",
+          familyLead: "同一套平台层，活法不同。MiniCon 是一个文件、一扇窗。需要会话比这一窗更长——Fleet、mux、持久化、Agent 权限——那就是 AgenTerm。",
+          familyMiniDt: "MiniCon",
+          familyMiniDd: "本机 conhost：PTY、标签、输入条、输入法。自动化是这一 GUI 进程里的 --control（Unix socket / 命名管道）。关窗，endpoint 就没了。没有守护进程、没有默认端口、没有远程。",
+          familyAgenDt: "AgenTerm",
+          familyAgenDd: "同一套原生绘制和独立输入区之上的 Agent 时代升级：工作台的 server 身份可以比单扇终端更长。动词拼写可以相同，线和寿命不同。",
+          installHonest: "<strong>先把范围说清楚。</strong>MiniCon 对 Windows、Linux、macOS × x86_64、aarch64 六格做资格验证。旧版 Windows 兜底和 PE 导入表门禁是 Windows 专属，终端、界面与控制契约覆盖全部六格。没有工作台 server、持久化、MCP、插件——这是有意的；需要这些时请选择 AgenTerm。",
           docsTitle: "文档",
           docsLead: "写得可核查：每个数字都来自实测。",
           docsOldTitle: "在旧版 Windows 上运行",
@@ -618,7 +650,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerCli: "控制 CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 是 PartnerNet Software 的商标。",
-          footerOrigin: "MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成为自有产品。",
+          footerOrigin: "MiniCon 是一文件本机终端。AgenTerm 是同一平台上的 Agent 时代工作台。MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成产品。",
         },
 "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
@@ -629,6 +661,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navWhat: "是什麼",
           navOld: "舊版 Windows",
           navScript: "腳本操控",
+          navFamily: "AgenTerm",
           navInstall: "取得",
           navDocs: "文件",
           heroEyebrow: "一個檔案 · 六格平台 · v0.1.2",
@@ -685,7 +718,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input3Title: "叫名字，不是叫號碼",
           input3Body: "標籤上寫的是文字要送往哪個分頁的名字。在分頁樹裡，知道哪個終端機即將收到這道指令，是「有把握」和「用猜的」之間的差別。",
           scriptTitle: "一個腳本看得進去的終端機。",
-          scriptLead: "送出一個按鍵是簡單的那一半。MiniCon 的控制 CLI 驅動的是真正的介面，並把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁狀態——讓自動化可以等待條件成立，而不是用計時器猜。",
+          scriptLead: "送出一個按鍵是簡單的那一半。MiniCon 的控制 CLI 把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等真實條件，而不是計時器。只有傳了 --control，這一窗才會在本機 Unix socket 或命名管道上聽；關窗即拆。那不是 AgenTerm 工作臺的 server。",
           scriptSnapshot: "焦點、輸入法狀態、輸入內容、待處理工作與控制項座標，以 JSON 回傳。",
           scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
           scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
@@ -693,7 +726,13 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           installLead: "下載執行檔，然後執行。沒有安裝程式，因為沒有東西需要安裝。",
           installRelease: "最新發行版",
           installBuild: "自行建置",
-          installHonest: "<strong>範圍要說清楚。</strong>MiniCon 對 Windows、Linux、macOS × x86_64、aarch64 六格做資格驗證。舊版 Windows 後備與 PE 匯入表門禁是 Windows 專屬；終端、介面與控制契約涵蓋全部六格。沒有伺服器、持久化、MCP 或外掛，這是刻意的。",
+          familyTitle: "MiniCon 是終端機。AgenTerm 是 Agent 時代的工作臺。",
+          familyLead: "同一套平台層，職責不同。MiniCon 是一個檔案、一扇窗。需要工作階段比這一窗更長——Fleet、mux、持久化、Agent 權限——那就是 AgenTerm。",
+          familyMiniDt: "MiniCon",
+          familyMiniDd: "本機 conhost：PTY、分頁、輸入列、輸入法。自動化是這一 GUI 行程裡的 --control（Unix socket / 命名管道）。關窗，endpoint 就沒了。沒有常駐服務、沒有預設連接埠、沒有遠端。",
+          familyAgenDt: "AgenTerm",
+          familyAgenDd: "同一套原生繪製與獨立輸入區之上的 Agent 時代升級：工作臺的 server 身分可以比單一終端更長。動詞拼寫可以相同，線與壽命不同。",
+          installHonest: "<strong>範圍要說清楚。</strong>MiniCon 對 Windows、Linux、macOS × x86_64、aarch64 六格做資格驗證。舊版 Windows 後備與 PE 匯入表門禁是 Windows 專屬；終端、介面與控制契約涵蓋全部六格。沒有工作臺 server、持久化、MCP 或外掛，這是刻意的；需要那些時請用 AgenTerm。",
           docsTitle: "文件",
           docsLead: "寫成可查核的樣子。只要出現數字，都是量出來的。",
           docsOldTitle: "在舊版 Windows 上執行",
@@ -708,7 +747,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerCli: "控制 CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 為 PartnerNet Software 之商標。",
-          footerOrigin: "MiniCon 源自 AgenTerm 的最小主控台宿主，於 2026 年 8 月獨立成為自有產品。"
+          footerOrigin: "MiniCon 是一檔案本機終端。AgenTerm 是同一平台上的 Agent 時代工作臺。MiniCon 源自 AgenTerm 的最小主控台宿主，於 2026 年 8 月獨立成產品。"
         }
       };
 

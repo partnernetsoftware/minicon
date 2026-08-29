@@ -36,6 +36,29 @@
         controllable. Sending a key is easy; knowing what happened next is the hard half.
       </p>
 
+      <h2>This is not a server</h2>
+      <p>
+        <code>--control</code> binds a <em>local</em> named pipe or Unix socket
+        <em>inside the GUI process</em>, and only if you pass the flag. A second
+        invocation, <code>minicon cli --control …</code>, is a short-lived client:
+        it connects, sends one ATC1 request, prints JSON, and exits. Close the
+        window and the endpoint is gone. There is no daemon, no default port, and
+        no remote transport.
+      </p>
+      <p>
+        Capture and screenshots use that same socket
+        (<code>capture-pane</code>, <code>screenshot-pane</code>,
+        <code>ui-snapshot</code>). Alternatively, <code>--emit-snapshot PATH</code>
+        writes screen text after each render with no listener at all.
+      </p>
+      <p>
+        <a href="https://agenterm.mega.tech/">AgenTerm</a> is the Agent-era
+        workbench on the same platform layer: Fleet, mux, persistence, and Agent
+        permissions, with a server identity that can outlive one window. Shared
+        verb spellings; different wire and lifetime. MiniCon stays the one-file
+        local terminal.
+      </p>
+
       <h2>Opening an endpoint</h2>
       <p>Start MiniCon with a control endpoint, then talk to it with the same executable:</p>
       <pre><code>minicon --control pipe:\\.\pipe\my-session
