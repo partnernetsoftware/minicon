@@ -242,26 +242,21 @@
   <main id="main">
     <section class="hero">
       <div class="wrap">
-        <p class="eyebrow" data-i18n="heroEyebrow">Standalone terminal · Windows · v0.1.2</p>
+        <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · no runtime</p>
         <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
-        <p class="hero-emotion" data-i18n="heroEmotion">Copy it. Run it. That is the install.</p>
-        <p class="lead" data-i18n="heroLead">
-          MiniCon is a real terminal delivered as one executable per platform. No installer,
-          no bundled runtime, no background service. The Windows build needs no Visual C++
-          redistributable: every library it loads is part of Windows. It opens a real PTY,
-          renders a real terminal, and a script can drive and read every part of it.
-        </p>
+        <p class="hero-emotion" data-i18n="heroEmotion">Copy it over. Run it. That's the install.</p>
+        <p class="lead" data-i18n="heroLead">A real terminal in a single file. No installer, no runtime, no VC++ redistributable — everything it loads is part of Windows. It runs where modern terminals cannot, and a script can drive every part of it.</p>
         <div class="cta-row">
           <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon" data-i18n="ctaSource">Source on GitHub</a>
           <a class="button" href="old-windows.html" data-i18n="ctaOld">Old Windows support</a>
         </div>
-        <p class="hero-cta-hint" data-i18n="heroCtaHint">MIT OR Apache-2.0 · nothing to uninstall · no background service</p>
+        <p class="hero-cta-hint" data-i18n="heroCtaHint">MIT OR Apache-2.0 · delete it and it's gone · no background service</p>
         <div class="spec-row" aria-label="Product specs" data-i18n-aria-label="specLabel">
-          <span class="spec-pill" data-i18n-html="specSize"><strong>Target-qualified</strong> measurements</span>
-          <span class="spec-pill" data-i18n-html="specBudget"><strong>Profile-aware</strong> size reporting</span>
+          <span class="spec-pill" data-i18n-html="specSize"><strong>~700 KB</strong> on Windows</span>
+          <span class="spec-pill" data-i18n-html="specBudget"><strong>Measured</strong>, per target</span>
           <span class="spec-pill" data-i18n="specDeps">OS libraries only</span>
-          <span class="spec-pill" data-i18n="specOld">Windows Server 2016 and newer</span>
+          <span class="spec-pill" data-i18n="specOld">Windows Server 2016+</span>
           <span class="spec-pill" data-i18n="specOpen">MIT / Apache-2.0</span>
         </div>
       </div>
@@ -273,15 +268,15 @@
         <div class="invariant-grid">
           <div>
             <span class="rule" data-i18n="inv1Rule">One file</span>
-            <p data-i18n="inv1Body">The whole product is the executable. Nothing is installed, nothing runs in the background, and deleting the file removes it completely.</p>
+            <p data-i18n="inv1Body">The executable is the whole product. Nothing installs, nothing runs in the background. Delete the file and it's gone.</p>
           </div>
           <div>
-            <span class="rule" data-i18n="inv2Rule">Small with evidence</span>
-            <p data-i18n="inv2Body">The Windows import table is checked against OS libraries. Executable size is measured and reported for each target and profile.</p>
+            <span class="rule" data-i18n="inv2Rule">Small, verified</span>
+            <p data-i18n="inv2Body">The import table is gated to OS libraries, and every size you see was measured, not promised.</p>
           </div>
           <div>
             <span class="rule" data-i18n="inv3Rule">Small ≠ toy</span>
-            <p data-i18n="inv3Body">Real PTY, real VT parsing, tab tree, IME, mouse, scrollback, and a control surface a script can drive.</p>
+            <p data-i18n="inv3Body">Real PTY, real VT parsing, tabs, IME, mouse, scrollback — small is the size, not the feature list.</p>
           </div>
         </div>
       </div>
@@ -290,15 +285,12 @@
     <section>
       <div class="wrap">
         <h2 data-i18n="shotTitle">This is the whole application.</h2>
-        <p class="section-lead" data-i18n="shotLead">
-          A tab column, a terminal, and an input line. No panels to arrange, no workspace to
-          configure, no account to create.
-        </p>
+        <p class="section-lead" data-i18n="shotLead">A tab column, a terminal, an input line. That's it.</p>
         <figure class="shot">
           <img src="assets/minicon-window.png" width="940" height="560" loading="lazy"
                data-i18n-alt="shotAlt"
                alt="The MiniCon window: a tab column on the left, a cmd.exe session filling the terminal area, and a send-to-tab input line along the bottom.">
-          <figcaption data-i18n="shotCaption">An unmodified screenshot. Half-width and full-width characters occupy exactly one and two cells, which is the property most small terminals get wrong.</figcaption>
+          <figcaption data-i18n="shotCaption">An unmodified screenshot. Half- and full-width characters land in exactly one and two cells — the detail most small terminals get wrong.</figcaption>
         </figure>
       </div>
     </section>
@@ -306,36 +298,32 @@
     <section id="old">
       <div class="wrap">
         <h2 data-i18n="oldTitle">It runs where modern terminals cannot.</h2>
-        <p class="section-lead" data-i18n="oldLead">
-          Windows gained a pseudoconsole in build 17763 (version 1809). Terminals built on it
-          stop there — and Microsoft's ConPTY redistributable does not lower the floor, because
-          it supports the same version as the in-box API. MiniCon runs on Windows Server 2016.
-        </p>
+        <p class="section-lead" data-i18n="oldLead">Windows Terminal needs build 17763, and so does ConPTY. Your Server 2016 box has neither. MiniCon doesn't care — it finds the pseudoconsole at run time, or hosts the shell itself.</p>
         <div class="cards">
           <div class="card">
-            <span class="index" data-i18n="old1Index">01 / RESOLVED, NOT IMPORTED</span>
+            <span class="index" data-i18n="old1Index">01 / NO DEAD END</span>
             <h3 data-i18n="old1Title">A missing API is not a dead program</h3>
-            <p data-i18n="old1Body">The pseudoconsole entry points are looked up at run time. Imported statically, one missing symbol stops the program before it starts — a dialog naming something you cannot act on.</p>
+            <p data-i18n="old1Body">The pseudoconsole entry points are resolved at run time. Imported statically, one missing symbol stops the program before it starts.</p>
           </div>
           <div class="card">
-            <span class="index" data-i18n="old2Index">02 / FALLBACK</span>
-            <h3 data-i18n="old2Title">It brings its own console agent</h3>
-            <p data-i18n="old2Body">Without ConPTY, MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary to ship.</p>
+            <span class="index" data-i18n="old2Index">02 / ITS OWN FALLBACK</span>
+            <h3 data-i18n="old2Title">No ConPTY? It hosts the shell itself</h3>
+            <p data-i18n="old2Body">MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary.</p>
           </div>
           <div class="card">
             <span class="index" data-i18n="old3Index">03 / CAPABILITY, NOT VERSION</span>
             <h3 data-i18n="old3Title">It asks the system, not a table</h3>
-            <p data-i18n="old3Body">The backend is chosen by whether the exports exist. A version-number comparison would need revisiting the moment anything changed; the version is only used for the message you read.</p>
+            <p data-i18n="old3Body">The backend is chosen by whether the exports exist. Version numbers are only for the message you read.</p>
           </div>
           <div class="card">
             <span class="index" data-i18n="old5Index">05 / SELF-DESCRIBING</span>
             <h3 data-i18n="old5Title">It tells you what it got</h3>
-            <p data-i18n="old5Body">`--status` reports the backend this machine selected and why, the font face the system actually resolved to with its measured cell width, and where failures are written. It opens no window, so it works where opening a terminal is the thing that does not.</p>
+            <p data-i18n="old5Body">`--status` reports the backend this machine selected and why, the font the system resolved to, and where failures are written. It opens no window.</p>
           </div>
           <div class="card">
             <span class="index" data-i18n="old4Index">04 / NO REDISTRIBUTABLE</span>
             <h3 data-i18n="old4Title">Nothing to install first</h3>
-            <p data-i18n="old4Body">The VC runtime is linked in. A test parses the shipped executable's import table and fails if anything outside the Windows-provided set appears, so it cannot quietly regress.</p>
+            <p data-i18n="old4Body">The VC runtime is linked in. A test parses the import table and fails on anything outside Windows' own set.</p>
           </div>
         </div>
       </div>
@@ -344,27 +332,22 @@
     <section>
       <div class="wrap">
         <h2 data-i18n="inputTitle">A place to type that is not the output.</h2>
-        <p class="section-lead" data-i18n="inputLead">
-          Most terminals make you type into the same region a running program is printing
-          into. A long command and a burst of output interleave on screen, and you lose track
-          of what you have actually typed. MiniCon gives input its own area — and once input
-          has its own area, it can do things the output region cannot.
-        </p>
+        <p class="section-lead" data-i18n="inputLead">Most terminals make you type into the same region a program is printing into — so a long command and a burst of output get tangled. MiniCon gives input its own area.</p>
         <div class="cards">
           <div class="card">
             <span class="index" data-i18n="input1Index">01 / NO COLLISION</span>
             <h3 data-i18n="input1Title">Compose while it scrolls</h3>
-            <p data-i18n="input1Body">Write and review a long command while output keeps arriving. Nothing you type is interleaved with anything a program prints, and a screen clear cannot take your line with it.</p>
+            <p data-i18n="input1Body">Write a long command while output keeps arriving. Nothing you type interleaves with anything a program prints.</p>
           </div>
           <div class="card">
             <span class="index" data-i18n="input2Index">02 / RECALL</span>
             <h3 data-i18n="input2Title">A sent line survives being sent</h3>
-            <p data-i18n="input2Body">Up and Down walk what you sent before, so resending or amending it is not retyping it. Half-typed text is kept when you start browsing and put back exactly if you step past the newest entry.</p>
+            <p data-i18n="input2Body">Up and Down walk what you sent before. Half-typed text is kept while you browse.</p>
           </div>
           <div class="card">
             <span class="index" data-i18n="input3Index">03 / IT SAYS WHERE</span>
             <h3 data-i18n="input3Title">Named, not numbered</h3>
-            <p data-i18n="input3Body">The label names the tab the text is going to. With a tab tree, knowing which terminal is about to receive a command is the difference between confidence and a guess.</p>
+            <p data-i18n="input3Body">The label names the tab the text is going to. In a tab tree, that's the difference between confidence and a guess.</p>
           </div>
         </div>
       </div>
@@ -372,12 +355,8 @@
 
     <section id="script">
       <div class="wrap">
-        <h2 data-i18n="scriptTitle">A terminal a script can see into.</h2>
-        <p class="section-lead" data-i18n="scriptLead">
-          Sending a keystroke is the easy half. MiniCon's control CLI drives the real UI and
-          reads back what the window is actually showing — text, screenshots, focus, tab state
-          — so automation can wait on a condition instead of guessing with a timer.
-        </p>
+        <h2 data-i18n="scriptTitle">A terminal your scripts can see into.</h2>
+        <p class="section-lead" data-i18n="scriptLead">Sending a keystroke is easy and blind. MiniCon's control CLI reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits on a real condition, not a timer. And it's all local: a named pipe, no server, no cloud.</p>
         <pre class="code"><span class="c"># start a session with a control endpoint</span>
 minicon --control pipe:\\.\pipe\build
 
@@ -391,15 +370,15 @@ minicon cli --control pipe:\\.\pipe\build screenshot-pane --output run.png</pre>
         <div class="dl">
           <div>
             <dt>ui-snapshot</dt>
-            <dd data-i18n="scriptSnapshot">Focus, IME state, input contents, pending work and control geometry, as JSON.</dd>
+            <dd data-i18n="scriptSnapshot">Focus, IME state, input, pending work, geometry — as JSON.</dd>
           </div>
           <div>
             <dt>wait-text · wait-tab-exit</dt>
-            <dd data-i18n="scriptWait">Block until the condition holds or the timeout expires, and say which happened.</dd>
+            <dd data-i18n="scriptWait">Block until the condition holds or the timeout expires, and say which.</dd>
           </div>
           <div>
             <dt>send-keys · send-mouse · send-wheel · send-ui-ime</dt>
-            <dd data-i18n="scriptInput">Named keys, pointer events in terminal cells, scrolling, and IME preedit — the same paths a person's input takes.</dd>
+            <dd data-i18n="scriptInput">Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.</dd>
           </div>
         </div>
       </div>
@@ -408,10 +387,7 @@ minicon cli --control pipe:\\.\pipe\build screenshot-pane --output run.png</pre>
     <section id="install">
       <div class="wrap">
         <h2 data-i18n="installTitle">Getting it</h2>
-        <p class="section-lead" data-i18n="installLead">
-          Download the executable and run it. There is no installer because there is nothing to
-          install.
-        </p>
+        <p class="section-lead" data-i18n="installLead">Download the executable and run it. There's no installer because there's nothing to install.</p>
         <div class="cta-row">
           <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
@@ -420,31 +396,26 @@ minicon cli --control pipe:\\.\pipe\build screenshot-pane --output run.png</pre>
 git clone https://github.com/partnernetsoftware/minicon
 cd minicon
 cargo build --release   <span class="c"># target/release/minicon.exe</span></pre>
-        <p class="honest" data-i18n-html="installHonest">
-          <strong>Honest scope.</strong> MiniCon is a Windows product first: the small-binary,
-          no-runtime and old-Windows work is all Windows work, and that is where it is tested.
-          It builds for Linux and macOS and the terminal core is shared, but those hosts do not
-          carry the same guarantees yet.
-        </p>
+        <p class="honest" data-i18n-html="installHonest"><strong>Honest scope.</strong> MiniCon is Windows-first and tested there; Linux and macOS build but carry fewer guarantees. No server, no persistence, no MCP, no plugins — on purpose. When you want those, that's AgenTerm.</p>
       </div>
     </section>
 
     <section id="docs">
       <div class="wrap">
         <h2 data-i18n="docsTitle">Documentation</h2>
-        <p class="section-lead" data-i18n="docsLead">Written to be checkable. Where a number appears, it came from a measurement.</p>
+        <p class="section-lead" data-i18n="docsLead">Written to be checkable. Every number came from a measurement.</p>
         <div class="cards">
           <div class="card">
             <h3><a href="old-windows.html" data-i18n="docsOldTitle">Running on old Windows</a></h3>
-            <p data-i18n="docsOldBody">Why other terminals stop at build 17763, what MiniCon does instead, the exact dependency set, and how to diagnose a machine that still refuses to start it.</p>
+            <p data-i18n="docsOldBody">Why terminals stop at build 17763, what MiniCon does instead, and how to diagnose a machine that still won't start it.</p>
           </div>
           <div class="card">
             <h3><a href="control-cli.html" data-i18n="docsCliTitle">Driving MiniCon from a script</a></h3>
-            <p data-i18n="docsCliBody">The full control surface: reading state, waiting on conditions, sending input, managing the tab tree, and running one command instead of a shell.</p>
+            <p data-i18n="docsCliBody">The full control surface: read state, wait on conditions, send input, manage tabs, run one command.</p>
           </div>
           <div class="card">
             <h3><a href="https://github.com/partnernetsoftware/minicon" data-i18n="docsRepoTitle">Source and tests</a></h3>
-            <p data-i18n="docsRepoBody">The behaviour claimed here is pinned by the test suite — including the import table, target-qualified artifact evidence, and the CLI's own contract.</p>
+            <p data-i18n="docsRepoBody">The behaviour claimed here is pinned by the test suite — import table, size gates, and the CLI's own contract.</p>
           </div>
         </div>
       </div>
@@ -468,9 +439,9 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
   <script>
     (function () {
       const copy = {
-        en: {
+                en: {
           title: "MiniCon™ — A terminal that is one file",
-          description: "MiniCon — a real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. Runs on Windows Server 2016 where modern terminals cannot. Open source, scriptable, MIT OR Apache-2.0.",
+          description: "MiniCon — a real terminal, one file per platform. No installer, no runtime, no background service. Runs on Windows Server 2016 where modern terminals cannot. Open source, MIT OR Apache-2.0.",
           skip: "Skip to content",
           navLabel: "Primary navigation",
           languageLabel: "Language",
@@ -479,88 +450,88 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           navScript: "Scripting",
           navInstall: "Get it",
           navDocs: "Docs",
-          heroEyebrow: "one executable · no install · no bundled runtime",
+          heroEyebrow: "one file · no install · no runtime",
           heroTitle: "A terminal that is <em>one file</em>.",
-          heroEmotion: "Copy it over. Run it. That's the whole install.",
-          heroLead: "MiniCon is a real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. The Windows build needs no VC++ redistributable — everything it loads is already part of Windows. It runs on machines modern terminals gave up on, and a script can drive and read every part of it.",
+          heroEmotion: "Copy it over. Run it. That's the install.",
+          heroLead: "A real terminal in a single file. No installer, no runtime, no VC++ redistributable — everything it loads is part of Windows. It runs where modern terminals cannot, and a script can drive every part of it.",
           ctaGet: "Get MiniCon",
           ctaSource: "Source on GitHub",
           ctaOld: "Old Windows support",
-          heroCtaHint: "MIT OR Apache-2.0 · delete the file and it's gone · no background service",
+          heroCtaHint: "MIT OR Apache-2.0 · delete it and it's gone · no background service",
           specLabel: "Product specs",
-          specSize: "<strong>Target-qualified</strong> measurements",
-          specBudget: "<strong>Profile-aware</strong> size reporting",
+          specSize: "<strong>~700 KB</strong> on Windows",
+          specBudget: "<strong>Measured</strong>, per target",
           specDeps: "OS libraries only",
-          specOld: "Windows Server 2016 and newer",
+          specOld: "Windows Server 2016+",
           specOpen: "MIT / Apache-2.0",
           invariantHeading: "What MiniCon is",
-          inv1Rule: "One file is the whole product",
-          inv1Body: "The whole product is the executable. Nothing is installed, nothing runs in the background — delete the file and it is completely gone.",
-          inv2Rule: "Small with evidence",
-          inv2Body: "The Windows import table is checked against OS libraries. Executable size is measured and reported for each target and profile.",
-          inv3Rule: "Small, not stripped-down",
-          inv3Body: "Real PTY, real VT parsing, a tab tree, IME, mouse, scrollback. Small is the size — not the feature list.",
+          inv1Rule: "One file",
+          inv1Body: "The executable is the whole product. Nothing installs, nothing runs in the background. Delete the file and it's gone.",
+          inv2Rule: "Small, verified",
+          inv2Body: "The import table is gated to OS libraries, and every size you see was measured, not promised.",
+          inv3Rule: "Small ≠ toy",
+          inv3Body: "Real PTY, real VT parsing, tabs, IME, mouse, scrollback — small is the size, not the feature list.",
           shotTitle: "This is the whole application.",
-          shotLead: "A tab column, a terminal, and an input line. No panels to arrange, no workspace to configure, no account to create — there is nothing else to see.",
+          shotLead: "A tab column, a terminal, an input line. That's it.",
           shotAlt: "The MiniCon window: a tab column on the left, a cmd.exe session filling the terminal area, and a send-to-tab input line along the bottom.",
-          shotCaption: "An unmodified screenshot. Half-width and full-width characters occupy exactly one and two cells — the property most small terminals get wrong.",
+          shotCaption: "An unmodified screenshot. Half- and full-width characters land in exactly one and two cells — the detail most small terminals get wrong.",
           oldTitle: "It runs where modern terminals cannot.",
-          oldLead: "Windows Terminal needs build 17763 (version 1809) — and so does ConPTY itself. Even Microsoft's redistributable doesn't lower that floor, because it supports the same version as the in-box API. But the machine running the production line or the cash register is often still on Windows Server 2016. MiniCon resolves the pseudoconsole at run time, and when it isn't there, it hosts the shell itself.",
+          oldLead: "Windows Terminal needs build 17763, and so does ConPTY. Your Server 2016 box has neither. MiniCon doesn't care — it finds the pseudoconsole at run time, or hosts the shell itself.",
           old1Index: "01 / NO DEAD END",
           old1Title: "A missing API is not a dead program",
-          old1Body: "The pseudoconsole entry points are resolved at run time. Import them statically and one missing symbol stops the program before it starts — a dialog naming something you cannot act on.",
+          old1Body: "The pseudoconsole entry points are resolved at run time. Imported statically, one missing symbol stops the program before it starts.",
           old2Index: "02 / ITS OWN FALLBACK",
           old2Title: "No ConPTY? It hosts the shell itself",
-          old2Body: "Without ConPTY, MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary to ship.",
+          old2Body: "MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary.",
           old3Index: "03 / CAPABILITY, NOT VERSION",
           old3Title: "It asks the system, not a table",
-          old3Body: "The backend is chosen by whether the exports exist. A version-number comparison would need revisiting the moment anything changed; the version is only used for the message you read.",
+          old3Body: "The backend is chosen by whether the exports exist. Version numbers are only for the message you read.",
           old5Index: "05 / SELF-DESCRIBING",
           old5Title: "It tells you what it got",
-          old5Body: "`--status` reports the backend this machine selected and why, the font face the system actually resolved to with its measured cell width, and where failures are written. It opens no window, so it works where opening a terminal is the thing that does not.",
+          old5Body: "`--status` reports the backend this machine selected and why, the font the system resolved to, and where failures are written. It opens no window.",
           old4Index: "04 / NO REDISTRIBUTABLE",
           old4Title: "Nothing to install first",
-          old4Body: "The VC runtime is linked in. A test parses the shipped executable's import table and fails if anything outside the Windows-provided set appears, so it cannot quietly regress.",
+          old4Body: "The VC runtime is linked in. A test parses the import table and fails on anything outside Windows' own set.",
           inputTitle: "A place to type that is not the output.",
-          inputLead: "Most terminals make you type into the same region a running program is printing into. A long command and a burst of output interleave on screen, and you lose track of what you have actually typed. MiniCon gives input its own area — and once input has its own area, it can do things the output region cannot.",
+          inputLead: "Most terminals make you type into the same region a program is printing into — so a long command and a burst of output get tangled. MiniCon gives input its own area.",
           input1Index: "01 / NO COLLISION",
           input1Title: "Compose while it scrolls",
-          input1Body: "Write and review a long command while output keeps arriving. Nothing you type is interleaved with anything a program prints, and a screen clear cannot take your line with it.",
+          input1Body: "Write a long command while output keeps arriving. Nothing you type interleaves with anything a program prints.",
           input2Index: "02 / RECALL",
           input2Title: "A sent line survives being sent",
-          input2Body: "Up and Down walk what you sent before, so resending or amending it is not retyping it. Half-typed text is kept when you start browsing and put back exactly if you step past the newest entry.",
+          input2Body: "Up and Down walk what you sent before. Half-typed text is kept while you browse.",
           input3Index: "03 / IT SAYS WHERE",
           input3Title: "Named, not numbered",
-          input3Body: "The label names the tab the text is going to. With a tab tree, knowing which terminal is about to receive a command is the difference between confidence and a guess.",
+          input3Body: "The label names the tab the text is going to. In a tab tree, that's the difference between confidence and a guess.",
           scriptTitle: "A terminal your scripts can see into.",
-          scriptLead: "Sending a keystroke is the easy half — and it is blind. MiniCon's control CLI drives the real UI and reads back what the window is actually showing: text, screenshots, focus, tab state. Automation waits on a real condition instead of sleeping and hoping. It talks to your terminal over a local named pipe — no server, no cloud. Your terminal stays yours.",
-          scriptSnapshot: "Focus, IME state, input contents, pending work and control geometry, as JSON.",
-          scriptWait: "Block until the condition holds or the timeout expires, and say which happened.",
-          scriptInput: "Named keys, pointer events in terminal cells, scrolling, and IME preedit — the same paths a person's input takes.",
+          scriptLead: "Sending a keystroke is easy and blind. MiniCon's control CLI reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits on a real condition, not a timer. And it's all local: a named pipe, no server, no cloud.",
+          scriptSnapshot: "Focus, IME state, input, pending work, geometry — as JSON.",
+          scriptWait: "Block until the condition holds or the timeout expires, and say which.",
+          scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
           installTitle: "Getting it",
-          installLead: "Download the executable and run it. There is no installer because there is nothing to install.",
+          installLead: "Download the executable and run it. There's no installer because there's nothing to install.",
           installRelease: "Latest release",
           installBuild: "Build from source",
-          installHonest: "<strong>Honest scope.</strong> MiniCon is a Windows product first: the small-binary, no-runtime and old-Windows work is all Windows work, and that is where it is tested. It builds for Linux and macOS and the terminal core is shared, but those hosts do not carry the same guarantees yet. It also has no server, no persistence, no MCP, and no plugin host — on purpose. When you want those, that is what its bigger sibling AgenTerm is for.",
+          installHonest: "<strong>Honest scope.</strong> MiniCon is Windows-first and tested there; Linux and macOS build but carry fewer guarantees. No server, no persistence, no MCP, no plugins — on purpose. When you want those, that's AgenTerm.",
           docsTitle: "Documentation",
-          docsLead: "Written to be checkable. Where a number appears, it came from a measurement.",
+          docsLead: "Written to be checkable. Every number came from a measurement.",
           docsOldTitle: "Running on old Windows",
-          docsOldBody: "Why other terminals stop at build 17763, what MiniCon does instead, the exact dependency set, and how to diagnose a machine that still refuses to start it.",
+          docsOldBody: "Why terminals stop at build 17763, what MiniCon does instead, and how to diagnose a machine that still won't start it.",
           docsCliTitle: "Driving MiniCon from a script",
-          docsCliBody: "The full control surface: reading state, waiting on conditions, sending input, managing the tab tree, and running one command instead of a shell.",
+          docsCliBody: "The full control surface: read state, wait on conditions, send input, manage tabs, run one command.",
           docsRepoTitle: "Source and tests",
-          docsRepoBody: "The behaviour claimed here is pinned by the test suite — including the import table, target-qualified artifact evidence, and the CLI's own contract.",
+          docsRepoBody: "The behaviour claimed here is pinned by the test suite — import table, size gates, and the CLI's own contract.",
           footerRepo: "GitHub",
           footerReleases: "Releases",
           footerOld: "Old Windows",
           footerCli: "Control CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.",
-          footerOrigin: "MiniCon began as AgenTerm's minimal console host and became its own product in August 2026."
+          footerOrigin: "MiniCon began as AgenTerm's minimal console host and became its own product in August 2026.",
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
-          description: "MiniCon —— 每个平台一个可执行文件的真终端。免安装、免捆绑运行时、免后台服务。在 Windows Server 2016 这类现代终端跑不动的机器上照常运行。开源、可脚本化，MIT 或 Apache-2.0。",
+          description: "MiniCon —— 一个真终端，每个平台一个文件。免安装、免运行时、免后台服务。在 Windows Server 2016 这类现代终端跑不动的机器上照常运行。开源，MIT 或 Apache-2.0。",
           skip: "跳到正文",
           navLabel: "主导航",
           languageLabel: "语言",
@@ -569,86 +540,86 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           navScript: "脚本",
           navInstall: "获取",
           navDocs: "文档",
-          heroEyebrow: "一个可执行文件 · 免安装 · 无捆绑运行时",
+          heroEyebrow: "一个文件 · 免安装 · 免运行时",
           heroTitle: "一个<em>文件</em>就是一个终端。",
           heroEmotion: "拷过去，跑起来。安装就完事了。",
-          heroLead: "MiniCon 是一个真正的终端，每个平台各有一个可执行文件。没有安装包、没有捆绑运行时、没有后台服务。Windows 版本不需要 VC++ 运行库——它加载的每一个库都是 Windows 自带的。现代终端已经放弃的机器上它能跑，而且每一处都能被脚本驱动和读取。",
+          heroLead: "一个文件，就是一个真终端。没有安装包、没有运行时、没有 VC++ 运行库——它加载的每一个库都是 Windows 自带的。现代终端跑不动的地方它照跑，每一处都能被脚本驱动。",
           ctaGet: "获取 MiniCon",
           ctaSource: "GitHub 源码",
           ctaOld: "旧版 Windows 支持",
-          heroCtaHint: "MIT 或 Apache-2.0 · 删掉文件就彻底卸载 · 无后台服务",
+          heroCtaHint: "MIT 或 Apache-2.0 · 删掉即卸载 · 无后台服务",
           specLabel: "产品规格",
-          specSize: "<strong>按目标</strong> 实测体积",
-          specBudget: "<strong>按 profile</strong> 报告体积",
+          specSize: "Windows 版 <strong>约 700 KB</strong>",
+          specBudget: "<strong>实测</strong>，按目标",
           specDeps: "只依赖系统库",
-          specOld: "Windows Server 2016 及更高版本",
+          specOld: "Windows Server 2016+",
           specOpen: "MIT / Apache-2.0",
           invariantHeading: "MiniCon 是什么",
-          inv1Rule: "一个文件就是全部",
-          inv1Body: "整个产品就是那一个可执行文件。什么都不装、后台什么都不跑——删掉文件，就彻底没了。",
-          inv2Rule: "小，也要有证据",
-          inv2Body: "Windows 导入表受系统库检查；可执行文件体积按每个目标和 profile 实测、报告。",
-          inv3Rule: "小，不等于缩水",
-          inv3Body: "真 PTY、真 VT 解析、标签页树、输入法、鼠标、回滚，一样不少。小的是体积，不是功能。",
+          inv1Rule: "一个文件",
+          inv1Body: "可执行文件就是整个产品。什么都不装、后台什么都不跑。删掉文件，就没了。",
+          inv2Rule: "小，但有证据",
+          inv2Body: "导入表被系统库把关，你看到的每个体积都是实测来的，不是嘴上说说。",
+          inv3Rule: "小 ≠ 缩水",
+          inv3Body: "真 PTY、真 VT 解析、标签页、输入法、鼠标、回滚——小的是体积，不是功能。",
           shotTitle: "这就是整个应用。",
-          shotLead: "一列标签页、一个终端、一行输入。没有面板要摆、没有工作区要配、没有账号要注册——再没有别的了。",
-          shotAlt: "MiniCon 窗口：左侧是标签栏，中间是填满终端区的 cmd.exe 会话，底部一行发往标签页的输入栏。",
-          shotCaption: "未修图的真实截图。标题栏带语言切换；最后一行是实时的半角/全角对齐检查——这正是多数小终端做错的地方。",
+          shotLead: "一列标签页、一个终端、一行输入。就这些。",
+          shotAlt: "MiniCon 窗口：左侧标签栏，中间是填满终端区的 cmd.exe 会话，底部一行发往标签页的输入栏。",
+          shotCaption: "未修图的真实截图。半角/全角各占一格/两格——这正是多数小终端做错的地方。",
           oldTitle: "现代终端跑不动的地方，它跑得动。",
-          oldLead: "Windows Terminal 需要 build 17763（1809 版），ConPTY 也一样——就连微软自己的运行库也压不低这道门槛，因为它支持的版本和系统自带的一模一样。可那些跑产线、跑 ATM、跑收银机的机器，往往还停在 Windows Server 2016。MiniCon 在运行时解析伪控制台，没有它，就自己托管 shell。没有死路。",
+          oldLead: "Windows Terminal 要 build 17763，ConPTY 也要。你的 Server 2016 两样都没有。MiniCon 不在乎——运行时找到伪控制台就用，找不到就自己托管 shell。",
           old1Index: "01 / 没有死路",
           old1Title: "缺一个 API，不等于程序就废了",
-          old1Body: "伪控制台的入口点是运行时解析的。要是静态导入，少一个符号程序在启动前就被拦下——弹出一个你根本无从下手的提示。",
+          old1Body: "伪控制台的入口点是运行时解析的。要是静态导入，少一个符号程序在启动前就被拦下。",
           old2Index: "02 / 自备兜底",
           old2Title: "没有 ConPTY？它自己托管 shell",
-          old2Body: "没有 ConPTY 时，MiniCon 会重新拉起自己，把你的 shell 放进一个隐藏控制台，再读屏幕缓冲区。那个代理就是 MiniCon 自己——不用再单独发第二个二进制。",
+          old2Body: "MiniCon 会重新拉起自己，把你的 shell 放进一个隐藏控制台，再读屏幕缓冲区。那个代理就是它自己——不用第二个二进制。",
           old3Index: "03 / 看能力，不看版本号",
           old3Title: "问系统，不查表",
-          old3Body: "后端靠「导出函数是否存在」来选。用版本号比较的话，情况一变就得重改；版本号只用在你看得到的那条提示里。",
+          old3Body: "后端靠「导出函数是否存在」来选。版本号只用在你看得到的那条提示里。",
           old5Index: "05 / 自描述",
           old5Title: "它会告诉你拿到了什么",
-          old5Body: "`--status` 会报告这台机器选了哪个后端、为什么，系统实际解析到哪个字体、实测单元格宽度是多少，以及失败信息写到了哪里。它不弹窗口，所以在「连打开终端这件事本身都做不了」的机器上照样能用。",
+          old5Body: "`--status` 会报告这台机器选了哪个后端、系统解析到哪个字体、失败写到了哪里。它不弹窗口。",
           old4Index: "04 / 免运行库",
           old4Title: "不用先装任何东西",
-          old4Body: "VC 运行时是静态链接进去的。有一项测试会解析发布二进制的导入表，只要出现 Windows 自带集合之外的依赖就失败，所以它不可能悄悄退化。",
+          old4Body: "VC 运行时是静态链接进去的。有一项测试解析导入表，出现 Windows 自带集合之外的就失败。",
           inputTitle: "一个不跟输出混在一起的输入区。",
-          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字。长命令和一屏输出搅在一起，你会搞不清自己到底敲了什么。MiniCon 给输入单独一块区域——输入一旦有了自己的区域，就能做输出区做不到的事。",
+          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字，长命令和一屏输出搅成一团。MiniCon 给输入单独一块区域。",
           input1Index: "01 / 互不干扰",
           input1Title: "一边滚动一边写",
-          input1Body: "输出不断刷新的同时，照样能写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起，清屏也带不走你写到一半的那行。",
+          input1Body: "输出不断刷新，照样写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起。",
           input2Index: "02 / 历史回看",
           input2Title: "发出去的命令不会消失",
-          input2Body: "上下键可以翻回之前发过的内容，重发或改一改都不用重敲。开始翻历史时，你敲到一半的字会被保留，翻过最新一条再翻回来时会原样放回。",
+          input2Body: "上下键翻回之前发过的内容，重发或改改都不用重敲。翻历史时敲到一半的字会被保留。",
           input3Index: "03 / 明确去向",
           input3Title: "叫名字，不叫编号",
-          input3Body: "标签上写的是文字要发往哪个标签页的名字。在标签页树里，知道哪个终端即将收到这条命令，就是「有把握」和「靠猜」的区别。",
+          input3Body: "标签上写的是文字要发往哪个标签页。在标签页树里，这就是「有把握」和「靠猜」的区别。",
           scriptTitle: "一个脚本能「看进去」的终端。",
-          scriptLead: "发一个按键只是简单的那一半——而且是个瞎子。MiniCon 的控制 CLI 驱动的是真实界面，并把窗口实际显示的内容读回来：文字、截图、焦点、标签页状态。自动化可以等一个真实条件成立，而不是睡一觉再赌一把。它通过本地命名管道和你的终端通信——没有服务器、没有云端，你的终端始终是你的。",
-          scriptSnapshot: "焦点、输入法状态、输入内容、待处理工作和控件坐标，以 JSON 返回。",
-          scriptWait: "阻塞到条件成立或超时为止，并告诉你到底是哪一种。",
-          scriptInput: "具名按键、以终端单元格为单位的鼠标事件、滚动，以及输入法预编辑——走的都是真人输入的同一条路径。",
+          scriptLead: "发一个按键简单，但是个瞎子。MiniCon 的控制 CLI 把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实条件，而不是计时器。而且全在本地：命名管道，没有服务器、没有云端。",
+          scriptSnapshot: "焦点、输入法状态、输入、待处理工作、坐标——以 JSON 返回。",
+          scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
+          scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
           installTitle: "获取",
-          installLead: "下载可执行文件，直接跑。没有安装程序，因为根本没什么要装。",
+          installLead: "下载可执行文件，直接跑。没有安装程序，因为没什么要装。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
-          installHonest: "<strong>先把范围说清楚。</strong>MiniCon 首先是个 Windows 产品：小体积、免运行时、兼容旧 Windows 这些活儿全是 Windows 上的工作，也只在 Windows 上测试。它能为 Linux 和 macOS 构建、终端核心也是共用的，但这些平台目前还没有同等保障。它也没有服务器、没有持久化、没有 MCP、没有插件宿主——这是故意的。等哪天你想要这些，那就是它更大的兄弟产品 AgenTerm 的事了。",
+          installHonest: "<strong>先把范围说清楚。</strong>MiniCon 以 Windows 为先、只在 Windows 上测试；Linux 和 macOS 能构建，但保障较少。没有服务器、没有持久化、没有 MCP、没有插件——故意的。想要这些，找它的兄弟产品 AgenTerm。",
           docsTitle: "文档",
-          docsLead: "写得可核查：只要出现数字，都是从实测里来的。",
+          docsLead: "写得可核查：每个数字都来自实测。",
           docsOldTitle: "在旧版 Windows 上运行",
-          docsOldBody: "为什么其他终端停在 build 17763、MiniCon 改用了什么做法、确切的依赖集合，以及机器还是起不来时该怎么排查。",
+          docsOldBody: "为什么终端停在 build 17763、MiniCon 改用了什么做法、机器还是起不来时怎么排查。",
           docsCliTitle: "用脚本驱动 MiniCon",
-          docsCliBody: "完整的控制接口：读状态、等条件、发输入、管理标签页树，以及用一条命令取代整个 shell。",
+          docsCliBody: "完整控制接口：读状态、等条件、发输入、管理标签页、跑一条命令。",
           docsRepoTitle: "源码与测试",
-          docsRepoBody: "这里宣称的行为都由测试套件钉死——包括导入表、按目标验证的产物证据和 CLI 自身契约。",
+          docsRepoBody: "这里宣称的行为都由测试钉死——导入表、体积门槛、CLI 自身契约。",
           footerRepo: "GitHub",
           footerReleases: "版本发布",
           footerOld: "旧版 Windows",
           footerCli: "控制 CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 是 PartnerNet Software 的商标。",
-          footerOrigin: "MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成为自有产品。"
+          footerOrigin: "MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成为自有产品。",
         },
-        "zh-Hant": {
+"zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
           description: "MiniCon —— 每個平台各有一個執行檔的真終端機。免安裝、免捆綁執行環境、免背景服務。在沒有 ConPTY 的 Windows Server 2016 上照樣跑。",
           skip: "跳到內容",

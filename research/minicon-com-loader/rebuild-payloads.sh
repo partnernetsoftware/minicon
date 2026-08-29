@@ -1,0 +1,47 @@
+#!/bin/bash
+# Rebuild six release-fast minicon bins from this tree (Cargo.toml version).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+OUT="${PAYLOAD_BUILD:-$ROOT/research/minicon-com-loader/payload-build}"
+cd "$ROOT"
+export AGENTERM_NO_ACTIVATE=1
+mkdir -p "$OUT"
+
+build_one() {
+  cell="$1"
+  target="$2"
+  kind="$3" # native|zig|xwin
+  dir="$OUT/$cell"
+  mkdir -p "$dir"
+  echo "[payload] $cell $target ($kind)"
+  case "$kind" in
+    native)
+      CARGO_TARGET_DIR="$dir" cargo build --locked --profile release-fast --bin minicon --target "$target"
+      ;;
+    zig)
+      CARGO_TARGET_DIR="$dir" cargo zigbuild --locked --profile release-fast --bin minicon --target "$target"
+      ;;
+    xwin)
+      CARGO_TARGET_DIR="$dir" cargo xwin build --locked --profile release-fast --bin minicon --target "$target"
+      ;;
+  esac
+}
+
+# Independent target dirs: 4-way parallel, Windows serial (xwin shim race).
+build_one osx-aarch64 aarch64-apple-darwin native &
+p1=$!
+build_one osx-x86_64 x86_64-apple-darwin native &
+p2=$!
+build_one lnx-aarch64 aarch64-unknown-linux-gnu zig &
+p3=$!
+build_one lnx-x86_64 x86_64-unknown-linux-gnu zig &
+p4=$!
+fail=0
+wait $p1 || fail=1
+wait $p2 || fail=1
+wait $p3 || fail=1
+wait $p4 || fail=1
+build_one win-x86_64 x86_64-pc-windows-msvc xwin || fail=1
+build_one win-aarch64 aarch64-pc-windows-msvc xwin || fail=1
+[[ "$fail" -eq 0 ]] || exit 1
+echo "[payload] OK $OUT"
