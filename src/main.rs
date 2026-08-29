@@ -1650,6 +1650,7 @@ impl ConApp {
         let composer_font_size = scaled_chrome_font(
             COMPOSER_TEXT_SIZE_PX,
             self.active_session()?.font_size_logical,
+            scale,
         );
         let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
@@ -1708,6 +1709,7 @@ impl ConApp {
         let composer_font_size = scaled_chrome_font(
             COMPOSER_TEXT_SIZE_PX,
             self.active_session()?.font_size_logical,
+            scale,
         );
         let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
@@ -2761,7 +2763,7 @@ impl ConApp {
         let tree_width = layout.sidebar.width;
         let header_height = layout.tree_header_height;
         let row_height = layout.tree_row_height;
-        let chrome_size = |nominal| scaled_chrome_font(nominal, session.font_size_logical);
+        let chrome_size = |nominal| scaled_chrome_font(nominal, session.font_size_logical, scale);
         // High-contrast monochrome chrome. Applications still retain their
         // explicit ANSI colors inside the terminal; only the host UI uses
         // black/white/gray so controls remain legible without color cues.
@@ -5830,11 +5832,15 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 /// the first characters readable instead of centring the middle of a word.
 const BUTTON_LABEL_SIZE_PX: u16 = 15;
 
-fn scaled_chrome_font(nominal: u16, logical_font_size: f64) -> u16 {
-    agenterm_platform::numeric::round_f64(f64::from(nominal) * logical_font_size / DEFAULT_FONT_PX)
-        // Chrome rows remain compact even at the terminal's 36 px extreme;
-        // the shared value still changes every label without clipping tabs.
-        .clamp(7.0, 20.0) as u16
+fn scaled_chrome_font(nominal: u16, logical_font_size: f64, display_scale: f64) -> u16 {
+    let display_scale = display_scale.clamp(1.0, 4.0);
+    agenterm_platform::numeric::round_f64(
+        f64::from(nominal) * logical_font_size / DEFAULT_FONT_PX * display_scale,
+    )
+    // Layout dimensions are already expressed as DIPs multiplied by the
+    // display scale. Apply the same rule to glyphs: omitting it made chrome
+    // text half-sized beside terminal text on a Retina display.
+    .clamp(7.0 * display_scale, 20.0 * display_scale) as u16
 }
 
 fn paint_button_label(
@@ -5935,11 +5941,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chrome_font_tracks_terminal_zoom_and_has_a_readable_ceiling() {
-        assert_eq!(scaled_chrome_font(15, DEFAULT_FONT_PX), 15);
-        assert!(scaled_chrome_font(15, 8.0) < 15);
-        assert!(scaled_chrome_font(15, 24.0) > 15);
-        assert_eq!(scaled_chrome_font(15, 36.0), 20);
+    fn chrome_font_tracks_terminal_zoom_and_display_scale() {
+        assert_eq!(scaled_chrome_font(15, DEFAULT_FONT_PX, 1.0), 15);
+        assert_eq!(scaled_chrome_font(15, DEFAULT_FONT_PX, 2.0), 30);
+        assert!(scaled_chrome_font(15, 8.0, 1.0) < 15);
+        assert!(scaled_chrome_font(15, 24.0, 1.0) > 15);
+        assert_eq!(scaled_chrome_font(15, 36.0, 1.0), 20);
+        assert_eq!(scaled_chrome_font(15, 36.0, 2.0), 40);
     }
 
     #[test]
