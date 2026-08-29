@@ -1368,6 +1368,13 @@ interactive Linux x86 installation.
   until the Public Trust profile and OIDC federation exist and the first exact
   run is green.
 
+  Unsigned rehearsal run `33259779184` at source `033e582` exercised the new
+  input side on GitHub: pack 4m38s, G3 green, six GUI/control cells green, SHA
+  identity exact, 8,909,562 bytes, and an empty signable Security Directory
+  (`SizeOfOptionalHeader=240`, 16 data directories, security offset/size zero).
+  This proves the signing precondition but is not a Candidate and cannot be
+  promoted because it has no company signature.
+
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
   suffix, and its own header records that it has never run in this repository.

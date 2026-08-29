@@ -168,6 +168,11 @@ flowchart LR
   Trust identity/OIDC setup, signed-byte Defender rerun, and
   explicit user Promotion remain open. No tag
   or Release exists.
+- [x] Unsigned exact-SHA rehearsal `33259779184` at `033e582` independently
+  re-proved the new signing input contract: one pack, G3 green, all six native
+  GUI/control cells green, APE Authenticode layout ready, SHA matched, and
+  8,909,562 bytes under 9 MiB. It is rehearsal evidence, not a Candidate,
+  because no company signature was applied.
 - [~] Formal releases should carry `PARTNERNET SOFTWARE PTY LTD` publisher
   identity. Authenticode-compatible APE header layout is now proven locally;
   company identity validation, timestamped signing and signed-byte six-grid /
@@ -176,8 +181,9 @@ flowchart LR
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
   toolbar space. Owner: `prd/PRD_02_25_con_workspace.md`.
-- [ ] Warm `minicon.com` pack is 5m29s against an approximately one-minute
-  target; profile and remove setup/cache/repeated-build waste without weakening
+- [ ] Warm `minicon.com` pack improved from 5m29s to 4m38s in rehearsal
+  `33259779184`, still far above the approximately one-minute target; profile
+  and remove setup/cache/repeated-build waste without weakening
   one-pack/six-execute coverage. Owner: `prd/PRD_02_27_con_delivery.md`.
 - [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
   other's verdict; unavailable runtime evidence is `BLOCKED`.
