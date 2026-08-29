@@ -97,6 +97,26 @@ v0.1.2 three packages. Gates: `v0.1.3-candidate-plan.md`. G3/G4: `loader-lifecyc
 `ci-control.sh` (HOME + `--control` + `list-tabs` poll). These two lanes are smoke until G2 GUI/control
 and G8 human promote. Do not tag here.
 
+G6 keeps antivirus judgment outside the immutable build receipt. The Candidate
+workflow scans the sealed APE with Microsoft Defender and publishes
+`defender-receipt.json`. After scanning that same SHA with 360, record a local
+`minicon-360-court` JSON object containing `schema: 1`, `verdict: "clean"`, the
+exact `candidate_run`, `minicon_com_sha256`, non-empty `provider`,
+`product_version`, `engine_version`, `signature_version`, `scanned_at`, and the
+SHA-256 of the accompanying screenshot as `screenshot_sha256`. Then run:
+
+```sh
+python3 research/minicon-com-loader/reputation_court.py qualify \
+  --manifest candidate-manifest.json --defender defender-receipt.json \
+  --court360 360-receipt.json --screenshot 360-scan.png \
+  --output reputation-qualification.json
+```
+
+The qualifier fails closed on a hit, missing engine metadata, a changed
+screenshot, a different Candidate run, or a different executable SHA. Raw scan
+evidence stays outside Git; only a redacted qualification summary may enter the
+delivery record.
+
 ## Non-goals
 
 - Linking MiniCon crates against cosmocc

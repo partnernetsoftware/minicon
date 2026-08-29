@@ -287,7 +287,7 @@ jobs:
             schema = 1
             kind = "minicon-defender-court"
             source_sha = $env:SOURCE_SHA
-            candidate_run = @{ id = "$env:GITHUB_RUN_ID"; attempt = "$env:GITHUB_RUN_ATTEMPT" }
+            candidate_run = @{ id = [long]$env:GITHUB_RUN_ID; attempt = [int]$env:GITHUB_RUN_ATTEMPT }
             minicon_com_sha256 = $after
             verdict = "clean"
             provider = "Microsoft Defender"
