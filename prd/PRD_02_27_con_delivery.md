@@ -29,7 +29,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   sidecars. Executable gates: `research/minicon-com-loader/v0.1.3-candidate-plan.md`
   (G1 clean one-pack receipt, G2 six-cell smoke + GUI/control black-box, G3
   loader/installer lock, G4 APE size court, G5 download-rehash-execute, G6
-  Defender+360 on exact SHA, G7 identity `0.1.3`, G8 human promote). Research
+  company Authenticode + Defender on exact SHA, G7 identity `0.1.3`, G8 human
+  promote). Research
   Early smoke run `33238478661` at `459d5cb` covered status only. Research
   rehearsal run `33244331387` at `5776086` then passed G2 GUI/control on all
   six native cells plus the same-identity aggregate; it still carries product
@@ -50,7 +51,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   passed six native archive executions. G6 is red: Microsoft Defender engine
   `1.1.26080.3`, signature `1.457.375.0`, detected the exact 8,909,564-byte APE
   as `Program:Win32/Contebrew.A!ml` (threat `251873`). Promotion remains
-  fail-closed while that false-positive submission and the 360 court are open.
+  fail-closed while company signing and the signed-byte Defender rerun are open.
 
 ```mermaid
 flowchart LR
@@ -1292,11 +1293,11 @@ interactive Linux x86 installation.
 - [~] **Antivirus reputation is a release evidence concern, not a reason to
   amputate terminal capabilities.** The exact Candidate APE now has a
   reproducible Defender ML detection (`Program:Win32/Contebrew.A!ml`, threat
-  `251873`); 360 exact-SHA evidence remains outstanding. Candidate artifacts
+  `251873`). Candidate artifacts
   now carry icon plus standard ProductName, FileDescription, OriginalFilename,
   InternalName and Cargo-owned file/product versions. Release completion still
   requires stable Authenticode publisher identity and timestamp, published
-  SHA-256/provenance, and clean Defender/360 snapshots at the exact SHA. A hit
+  SHA-256/provenance, and a clean Defender court at the exact SHA. A hit
   blocks that artifact and enters the vendor false-positive channel; PTY,
   named-pipe, Job and control behavior remains product functionality rather
   than something to hide or remove.
@@ -1306,15 +1307,19 @@ interactive Linux x86 installation.
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [ ] **Future formal publisher identity — `PARTNERNET SOFTWARE PTY LTD`.**
-  Establish company-owned signing as a later release court for `minicon.com`,
+- [~] **Formal publisher identity — `PARTNERNET SOFTWARE PTY LTD`.**
+  Establish company-owned signing as the current G6 court for `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
   Authenticode plus trusted timestamping, macOS Developer ID signing and
   notarization/stapling, CI secret authority, renewal/revocation, and exact-byte
-  post-sign six-grid verification. Linux archives retain checksums/provenance
+  post-sign six-grid verification. The APE experiment proved that Cosmopolitan
+  4.0.2 normally emits only two PE data directories; `authenticode-pad.S`
+  reserves the remaining slots during linking, before Mach-O is laid out, and
+  `prepare-authenticode.py` activates the zero Security Directory slot. Never
+  grow that header after linking. Linux archives retain checksums/provenance
   unless a distribution-specific signature is deliberately added. Until that
-  court exists and passes, receipts must say unsigned; documentation must not
+  court passes, receipts must say unsigned; documentation must not
   imply company signing merely because the company name appears in metadata.
 
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file

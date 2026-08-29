@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind Defender and operator-supplied 360 evidence to one Candidate APE."""
+"""Bind Microsoft Defender evidence to one exact Candidate APE."""
 
 from __future__ import annotations
 
@@ -46,37 +46,11 @@ def candidate_identity(manifest: dict) -> tuple[str, dict, str]:
     return source_sha, candidate_run, expected_sha
 
 
-def make_360(args: argparse.Namespace) -> None:
-    manifest = load(pathlib.Path(args.manifest))
-    screenshot = pathlib.Path(args.screenshot)
-    _, candidate_run, expected_sha = candidate_identity(manifest)
-    result = {
-        "schema": 1,
-        "kind": "minicon-360-court",
-        "verdict": args.verdict,
-        "candidate_run": candidate_run,
-        "minicon_com_sha256": expected_sha,
-        "provider": args.provider,
-        "product_version": args.product_version,
-        "engine_version": args.engine_version,
-        "signature_version": args.signature_version,
-        "scanned_at": args.scanned_at,
-        "screenshot_sha256": digest(screenshot),
-    }
-    for field in ("provider", "product_version", "engine_version", "signature_version", "scanned_at"):
-        require_text(result, field)
-    pathlib.Path(args.output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"PASS 360 {args.verdict} receipt bound to exact Candidate and screenshot")
-
-
 def qualify(args: argparse.Namespace) -> None:
     manifest_path = pathlib.Path(args.manifest)
     defender_path = pathlib.Path(args.defender)
-    court360_path = pathlib.Path(args.court360)
-    screenshot_path = pathlib.Path(args.screenshot)
     manifest = load(manifest_path)
     defender = load(defender_path)
-    court360 = load(court360_path)
 
     source_sha, candidate_run, expected_sha = candidate_identity(manifest)
 
@@ -89,19 +63,6 @@ def qualify(args: argparse.Namespace) -> None:
     for field in ("provider", "product_version", "engine_version", "signature_version", "scanned_at"):
         require_text(defender, field)
 
-    if court360.get("schema") != 1 or court360.get("kind") != "minicon-360-court":
-        raise ValueError("wrong 360 evidence kind")
-    if court360.get("verdict") != "clean":
-        raise ValueError("360 verdict is not clean")
-    if court360.get("minicon_com_sha256") != expected_sha:
-        raise ValueError("360 evidence targets a different APE")
-    if court360.get("candidate_run") != candidate_run:
-        raise ValueError("360 evidence targets a different Candidate run")
-    for field in ("provider", "product_version", "engine_version", "signature_version", "scanned_at"):
-        require_text(court360, field)
-    if court360.get("screenshot_sha256") != digest(screenshot_path):
-        raise ValueError("360 screenshot digest mismatch")
-
     result = {
         "schema": 1,
         "kind": "minicon-reputation-qualification",
@@ -109,13 +70,7 @@ def qualify(args: argparse.Namespace) -> None:
         "candidate_run": candidate_run,
         "minicon_com_sha256": expected_sha,
         "verdict": "clean",
-        "courts": {
-            "defender": {"receipt_sha256": digest(defender_path)},
-            "360": {
-                "receipt_sha256": digest(court360_path),
-                "screenshot_sha256": digest(screenshot_path),
-            },
-        },
+        "courts": {"defender": {"receipt_sha256": digest(defender_path)}},
     }
     pathlib.Path(args.output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -135,9 +90,9 @@ def verify_qualification(args: argparse.Namespace) -> None:
     if qualification.get("minicon_com_sha256") != expected_sha:
         raise ValueError("qualification APE digest mismatch")
     courts = qualification.get("courts")
-    if not isinstance(courts, dict) or set(courts) != {"defender", "360"}:
-        raise ValueError("qualification must contain Defender and 360 courts")
-    wanted = (("defender", "receipt_sha256"), ("360", "receipt_sha256"), ("360", "screenshot_sha256"))
+    if not isinstance(courts, dict) or set(courts) != {"defender"}:
+        raise ValueError("qualification must contain exactly the Defender court")
+    wanted = (("defender", "receipt_sha256"),)
     for court, field in wanted:
         row = courts.get(court)
         if not isinstance(row, dict) or not SHA_RE.fullmatch(str(row.get(field))):
@@ -148,8 +103,6 @@ def verify_qualification(args: argparse.Namespace) -> None:
 def selftest() -> None:
     with tempfile.TemporaryDirectory() as raw:
         root = pathlib.Path(raw)
-        screenshot = root / "360.png"
-        screenshot.write_bytes(b"synthetic screenshot fixture")
         run = {"id": "42", "attempt": "1"}
         sha = "a" * 64
         manifest = {"kind": "minicon-release-candidate", "source_sha": "b" * 40,
@@ -158,34 +111,23 @@ def selftest() -> None:
                   "provider": "fixture", "product_version": "1", "engine_version": "1",
                   "signature_version": "1", "scanned_at": "2026-01-01T00:00:00Z"}
         defender = {"kind": "minicon-defender-court", **common}
-        court360 = {"schema": 1, "kind": "minicon-360-court",
-                    "screenshot_sha256": digest(screenshot), **common}
         paths = {}
-        for name, value in (("manifest", manifest), ("defender", defender), ("court360", court360)):
+        for name, value in (("manifest", manifest), ("defender", defender)):
             paths[name] = root / f"{name}.json"
             paths[name].write_text(json.dumps(value), encoding="utf-8")
         output = root / "qualification.json"
-        args = argparse.Namespace(**paths, screenshot=screenshot, output=output)
+        args = argparse.Namespace(**paths, output=output)
         qualify(args)
         assert load(output)["verdict"] == "clean"
         verify_qualification(argparse.Namespace(manifest=paths["manifest"], qualification=output))
-        court360["minicon_com_sha256"] = "c" * 64
-        paths["court360"].write_text(json.dumps(court360), encoding="utf-8")
+        defender["minicon_com_sha256"] = "c" * 64
+        paths["defender"].write_text(json.dumps(defender), encoding="utf-8")
         try:
             qualify(args)
         except ValueError as exc:
             assert "different APE" in str(exc)
         else:
             raise AssertionError("mismatched SHA unexpectedly qualified")
-        made = root / "made-360.json"
-        make_360(argparse.Namespace(
-            manifest=paths["manifest"], screenshot=screenshot, output=made,
-            verdict="clean", provider="fixture", product_version="1",
-            engine_version="1", signature_version="1",
-            scanned_at="2026-01-01T00:00:00Z",
-        ))
-        assert load(made)["minicon_com_sha256"] == sha
-        assert load(made)["screenshot_sha256"] == digest(screenshot)
         print("PASS reputation evidence exact-SHA court")
 
 
@@ -195,19 +137,7 @@ def main() -> None:
     court = sub.add_parser("qualify")
     court.add_argument("--manifest", required=True)
     court.add_argument("--defender", required=True)
-    court.add_argument("--court360", required=True)
-    court.add_argument("--screenshot", required=True)
     court.add_argument("--output", required=True)
-    make = sub.add_parser("make-360")
-    make.add_argument("--manifest", required=True)
-    make.add_argument("--screenshot", required=True)
-    make.add_argument("--output", required=True)
-    make.add_argument("--verdict", required=True, choices=("clean", "detected"))
-    make.add_argument("--provider", required=True)
-    make.add_argument("--product-version", required=True)
-    make.add_argument("--engine-version", required=True)
-    make.add_argument("--signature-version", required=True)
-    make.add_argument("--scanned-at", required=True)
     verify = sub.add_parser("verify")
     verify.add_argument("--manifest", required=True)
     verify.add_argument("--qualification", required=True)
@@ -215,8 +145,6 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "self-test":
         selftest()
-    elif args.command == "make-360":
-        make_360(args)
     elif args.command == "qualify":
         qualify(args)
     else:

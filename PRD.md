@@ -162,11 +162,13 @@ flowchart LR
   plus `minicon.com`, then rehashed and executed every native archive. Its exact
   APE is blocked at G6: Microsoft Defender reports
   `Program:Win32/Contebrew.A!ml`. Submit that exact SHA through the vendor
-  false-positive channel; 360 and explicit user Promotion remain open. No tag
+  false-positive channel; company signing plus signed-byte Defender rerun and
+  explicit user Promotion remain open. No tag
   or Release exists.
-- [ ] Future formal releases should carry `PARTNERNET SOFTWARE PTY LTD`
-  publisher identity; signing/timestamp/notarization infrastructure is planned,
-  not claimed by the current Candidate.
+- [~] Formal releases should carry `PARTNERNET SOFTWARE PTY LTD` publisher
+  identity. Authenticode-compatible APE header layout is now proven locally;
+  company identity validation, timestamped signing and signed-byte six-grid /
+  Defender evidence remain before this Candidate can claim it.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty

@@ -99,35 +99,19 @@ v0.1.2 three-archive, 4/6-cell Release remains frozen. Gates:
 `ci-control.sh` (HOME + `--control` + `list-tabs` poll). These two lanes are smoke until G2 GUI/control
 and G8 human promote. Do not tag here.
 
-G6 keeps antivirus judgment outside the immutable build receipt. GitHub's
+G6 keeps Defender judgment outside the immutable build receipt. GitHub's
 standard Windows runner image deliberately disables Defender, so it is not a
 scan court. Run `utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT` against
-an active-Defender Windows guest to produce `defender-receipt.json`. After
-scanning that same SHA with 360, take a screenshot that visibly includes the
-file SHA and verdict. Generate the receipt from the Candidate manifest rather
-than copying its identity by hand:
-
-```sh
-python3 research/minicon-com-loader/reputation_court.py make-360 \
-  --manifest candidate-manifest.json --screenshot 360-scan.png \
-  --verdict clean --provider "360 Total Security" \
-  --product-version VERSION --engine-version VERSION \
-  --signature-version VERSION --scanned-at ISO-8601-TIME \
-  --output 360-receipt.json
-```
-
-This binds the screenshot digest, exact Candidate run and `minicon.com` SHA in
-a local `minicon-360-court` receipt. Then run:
+an active-Defender Windows guest to produce `defender-receipt.json`. Then run:
 
 ```sh
 python3 research/minicon-com-loader/reputation_court.py qualify \
   --manifest candidate-manifest.json --defender defender-receipt.json \
-  --court360 360-receipt.json --screenshot 360-scan.png \
   --output reputation-qualification.json
 ```
 
-The qualifier fails closed on a hit, missing engine metadata, a changed
-screenshot, a different Candidate run, or a different executable SHA. Raw scan
+The qualifier fails closed on a hit, missing engine metadata, a different
+Candidate run, or a different executable SHA. Raw scan
 evidence stays outside Git; only a redacted qualification summary may enter the
 delivery record. Base64-encode that summary and dispatch `Reputation
 Qualification` with the exact Candidate run and source SHA. Promotion requires

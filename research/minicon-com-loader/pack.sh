@@ -44,7 +44,28 @@ stage win-x86_64 "$(payload win-x86_64 win-x86_64/x86_64-pc-windows-msvc/release
 
 if [[ -x "$COSMO/bin/cosmocc" ]]; then
   echo "[pack] cosmocc → dist/minicon.com"
-  "$COSMO/bin/cosmocc" -Os -static -o "$DIST/minicon.com" "$HERE/loader.c"
+  mkdir -p "$DIST/.aarch64"
+  "$COSMO/bin/x86_64-linux-cosmo-as" -o "$DIST/authenticode-pad.o" \
+    "$HERE/authenticode-pad.S"
+  "$COSMO/bin/aarch64-linux-cosmo-as" -o "$DIST/.aarch64/authenticode-pad.o" \
+    "$HERE/authenticode-pad.S"
+  set +e
+  cosmo_log=$("$COSMO/bin/cosmocc" -Os -static -o "$DIST/minicon.com" \
+    "$HERE/loader.c" "$DIST/authenticode-pad.o" 2>&1)
+  cosmo_rc=$?
+  set -e
+  if [[ "$cosmo_rc" -ne 0 ]]; then
+    expected="$DIST/minicon.com: PE SizeOfOptionalHeader had incorrect value"
+    if [[ "$cosmo_rc" -ne 1 || "$cosmo_log" != "$expected" ]]; then
+      printf '%s\n' "$cosmo_log" >&2
+      exit "$cosmo_rc"
+    fi
+    echo "[pack] accepted cosmocc 4.0.2 compact-header validator before directory activation"
+  elif [[ -n "$cosmo_log" ]]; then
+    printf '%s\n' "$cosmo_log"
+  fi
+  python3 "$HERE/prepare-authenticode.py" "$DIST/minicon.com" "$DIST/minicon.com.signable"
+  mv "$DIST/minicon.com.signable" "$DIST/minicon.com"
   (
     cd "$DIST"
     zip -q -r minicon.com cells

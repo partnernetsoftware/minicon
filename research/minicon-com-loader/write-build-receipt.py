@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import struct
 import subprocess
 from pathlib import Path
 
@@ -14,6 +15,8 @@ DIST = HERE / "dist"
 CELLS = HERE / "dist" / "cells"
 PAYLOAD = HERE / "payload-build"
 LOADER_SOURCE = HERE / "loader.c"
+AUTHENTICODE_PAD_SOURCE = HERE / "authenticode-pad.S"
+AUTHENTICODE_PREPARE_SOURCE = HERE / "prepare-authenticode.py"
 
 
 def sha256(path: Path) -> str:
@@ -92,6 +95,25 @@ def payload_digests() -> dict[str, str]:
     return out
 
 
+def authenticode_layout(path: Path) -> dict[str, int | bool]:
+    raw = path.read_bytes()
+    pe = struct.unpack_from("<I", raw, 0x3C)[0]
+    optional = pe + 24
+    optional_size = struct.unpack_from("<H", raw, pe + 20)[0]
+    directories = struct.unpack_from("<I", raw, optional + 108)[0]
+    security_offset, security_size = struct.unpack_from("<II", raw, optional + 144)
+    ready = optional_size == 0xF0 and directories == 16
+    if not ready or security_offset or security_size:
+        raise SystemExit("unsigned APE lacks an empty Authenticode Security Directory")
+    return {
+        "ready": ready,
+        "optional_header_bytes": optional_size,
+        "data_directory_count": directories,
+        "security_file_offset": security_offset,
+        "security_bytes": security_size,
+    }
+
+
 def main() -> None:
     com = DIST / "minicon.com"
     if not com.is_file():
@@ -108,6 +130,9 @@ def main() -> None:
         "minicon_com_sha256": com_sha,
         "minicon_com_bytes": com.stat().st_size,
         "loader_source_sha256": sha256(LOADER_SOURCE),
+        "authenticode_pad_source_sha256": sha256(AUTHENTICODE_PAD_SOURCE),
+        "authenticode_prepare_source_sha256": sha256(AUTHENTICODE_PREPARE_SOURCE),
+        "authenticode": authenticode_layout(com),
         "tools": {
             "rustc": cmd("rustc", "--version"),
             "zig": cmd("zig", "version"),

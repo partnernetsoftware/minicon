@@ -5,6 +5,7 @@ $binary = Join-Path $root "minicon.com"
 $manifestPath = Join-Path $root "candidate-manifest.json"
 $receiptPath = Join-Path $root "defender-receipt.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$evidenceScope = if ($manifest.defender_evidence_scope) { "$($manifest.defender_evidence_scope)" } else { "candidate" }
 $asset = @($manifest.assets | Where-Object { $_.name -eq "minicon.com" })
 if ($asset.Count -ne 1) { throw "Candidate manifest must contain exactly one minicon.com" }
 $expected = "$($asset[0].sha256)".ToLowerInvariant()
@@ -53,6 +54,7 @@ $verdict = if ($threats.Count -eq 0 -and $after -eq $expected -and -not $scanErr
 $receipt = [ordered]@{
     schema = 1
     kind = "minicon-defender-court"
+    evidence_scope = $evidenceScope
     source_sha = "$($manifest.source_sha)"
     candidate_run = @{
         id = [long]$manifest.candidate_run.id

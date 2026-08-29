@@ -118,6 +118,9 @@ For an ordinary local UI check on macOS or Linux:
 For the optimized local binary, replace both `debug` occurrences with
 `release`. On Windows, run `target/debug/minicon.exe` or
 `target/release/minicon.exe` after the corresponding command.
+On Apple Silicon, `target/x86_64-apple-darwin/debug/minicon` is the separate
+Rosetta court and may be an older build; it is never the default UI-development
+artifact. Rebuild that target explicitly only when testing the Intel slice.
 
 `target-six/receipt.json` is the index for a six-cell run: its `artifacts`
 entries name the exact binaries and record byte sizes, formats, and SHA-256
