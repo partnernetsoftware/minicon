@@ -211,7 +211,7 @@ mod pty_budget_tests {
 /// pixels, not points, and therefore rendered smaller than intended.
 const DEFAULT_FONT_PX: f64 = 15.0;
 
-/// Composer text geometry, shared by the painter and the IME candidate
+/// Composer text geometry at the default zoom, shared by the painter and the IME candidate
 /// placement so the caret they each compute cannot land in two places.
 const COMPOSER_TEXT_SIZE_PX: u16 = 15;
 const COMPOSER_TEXT_INSET: u32 = 10;
@@ -454,6 +454,7 @@ fn main() {
     if let Some(rows) = initial_rows {
         session.rows = rows.max(2);
     }
+    session.font_size_baseline = session.font_size_logical;
     // IME must stay on: without it CJK cannot be typed at all, which no
     // console host on Windows gets to call acceptable. An earlier fix disabled
     // it to recover keyboard input, but the actual cause was the missing
@@ -670,7 +671,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
 {config_location}
 Keys: font_size, cols, rows (all optional).
 CLI flags override config; config overrides defaults.
-The tab column's z / Z buttons adjust font size at runtime.",
+The tab column's z / 0 / Z buttons shrink, reset, and grow the whole interface.",
         control_examples = USAGE_CONTROL_EXAMPLES,
         shell_examples = USAGE_SHELL_EXAMPLES,
         config_location = USAGE_CONFIG_LOCATION,
@@ -775,8 +776,10 @@ struct ConTerminal {
     child_exit_code_encoded: Arc<AtomicU64>,
     child_exit_code: Option<i32>,
 
-    /// Logical font size in DIPs. Adjusted by the tab column's z / Z buttons.
+    /// Logical font size in DIPs. Adjusted by the tab column's z / 0 / Z buttons.
     font_size_logical: f64,
+    /// Startup/configured font size restored by the `0` control.
+    font_size_baseline: f64,
 
     /// Physical cell metrics, recomputed whenever the font size or scale changes.
     cell_w: u32,
@@ -1406,12 +1409,13 @@ impl ConApp {
     }
 
     fn open_session(&mut self, window: &PixelWindow, child: bool) -> Result<(), PixelWindowError> {
-        let (working_dir, command, font_size_logical, cols, rows) = {
+        let (working_dir, command, font_size_logical, font_size_baseline, cols, rows) = {
             let current = self.active_session()?;
             (
                 current.working_dir.clone(),
                 current.command.clone(),
                 current.font_size_logical,
+                current.font_size_baseline,
                 current.cols,
                 current.rows,
             )
@@ -1429,6 +1433,7 @@ impl ConApp {
         let mut session = ConTerminal::new(working_dir);
         session.command = command;
         session.font_size_logical = font_size_logical;
+        session.font_size_baseline = font_size_baseline;
         session.cols = cols;
         session.rows = rows;
         Self::configure_chrome(
@@ -1556,6 +1561,10 @@ impl ConApp {
                 self.active_session_mut()?.zoom_font(window, false);
                 return Ok(true);
             }
+            ui::TreeHit::ZoomReset => {
+                self.active_session_mut()?.reset_font(window);
+                return Ok(true);
+            }
             ui::TreeHit::ZoomIn => {
                 self.active_session_mut()?.zoom_font(window, true);
                 return Ok(true);
@@ -1634,7 +1643,11 @@ impl ConApp {
         // Measuring the whole buffer sent the IME candidate list off screen as
         // soon as the text outgrew the box, and did it with a hard-coded 8 px
         // advance that no font honours.
-        let cell_width = font::cell_metrics(COMPOSER_TEXT_SIZE_PX).width.max(1);
+        let composer_font_size = scaled_chrome_font(
+            COMPOSER_TEXT_SIZE_PX,
+            self.active_session()?.font_size_logical,
+        );
+        let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
             .composer_input
             .width
@@ -1688,7 +1701,11 @@ impl ConApp {
             metrics.physical_height,
             metrics.scale_factor,
         );
-        let cell_width = font::cell_metrics(COMPOSER_TEXT_SIZE_PX).width.max(1);
+        let composer_font_size = scaled_chrome_font(
+            COMPOSER_TEXT_SIZE_PX,
+            self.active_session()?.font_size_logical,
+        );
+        let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
             .composer_input
             .width
@@ -2740,6 +2757,7 @@ impl ConApp {
         let tree_width = layout.sidebar.width;
         let header_height = layout.tree_header_height;
         let row_height = layout.tree_row_height;
+        let chrome_size = |nominal| scaled_chrome_font(nominal, session.font_size_logical);
         // High-contrast monochrome chrome. Applications still retain their
         // explicit ANSI colors inside the terminal; only the host UI uses
         // black/white/gray so controls remain legible without color cues.
@@ -2791,7 +2809,7 @@ impl ConApp {
             } else {
                 muted
             },
-            12,
+            chrome_size(12),
             tree_width.saturating_sub(28),
         );
         // The selected language is drawn in the accent and the other muted, so
@@ -2812,24 +2830,24 @@ impl ConApp {
                 } else {
                     muted
                 },
-                12,
+                chrome_size(12),
                 entry.width.saturating_sub(4),
             );
         }
-        // `A-` and `A+` rather than `z` and `Z`: `A` is the common glyph for
-        // text size and the signs are unambiguous, where the letter `z` meant
-        // nothing. Both muted and both the same size, because these are
-        // actions -- the accent colour means "current state" for the language
-        // entries beside them, and one visual language must not carry two
-        // meanings in one row.
-        for (entry, label) in [(layout.zoom_out, "A-"), (layout.zoom_in, "A+")] {
+        // Lowercase/zero/uppercase make the three outcomes compact and stable:
+        // shrink, restore the configured launch size, and grow.
+        for (entry, label) in [
+            (layout.zoom_out, "z"),
+            (layout.zoom_reset, "0"),
+            (layout.zoom_in, "Z"),
+        ] {
             paint_chrome_text(
                 &mut surface,
                 entry.x + 3,
                 entry.y + 5,
                 label,
                 muted,
-                12,
+                chrome_size(12),
                 entry.width.saturating_sub(3),
             );
         }
@@ -2870,7 +2888,7 @@ impl ConApp {
                 y + 7,
                 &["@", id.format(node.id.get()), "  ", title],
                 text,
-                14,
+                chrome_size(14),
                 tree_width.saturating_sub(indent + 38),
             );
             let close = layout.tree_close_rect(visible_index, scale);
@@ -2880,7 +2898,7 @@ impl ConApp {
                 close.y + 3,
                 "x",
                 muted,
-                11,
+                chrome_size(11),
                 close.width.saturating_sub(6),
             );
         }
@@ -2919,7 +2937,7 @@ impl ConApp {
             } else {
                 muted
             },
-            11,
+            chrome_size(11),
             ime_x.saturating_sub(header_x.saturating_add(8)),
         );
         paint_chrome_text(
@@ -2932,7 +2950,7 @@ impl ConApp {
             } else {
                 muted
             },
-            11,
+            chrome_size(11),
             ime_width,
         );
         surface.fill_rect(
@@ -2978,7 +2996,8 @@ impl ConApp {
         // clips whatever exceeds its box -- it clips the tail -- so without
         // this the composer keeps showing the text typed first while the
         // characters being typed now fall outside the box entirely.
-        let composer_cell_width = font::cell_metrics(COMPOSER_TEXT_SIZE_PX).width.max(1);
+        let composer_font_size = chrome_size(COMPOSER_TEXT_SIZE_PX);
+        let composer_cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let composer_text_width = layout
             .composer_input
             .width
@@ -3016,7 +3035,7 @@ impl ConApp {
                 &composer::display(&self.composer.text[caret..]),
             ],
             text,
-            COMPOSER_TEXT_SIZE_PX,
+            composer_font_size,
             composer_text_width,
         );
         if show_caret {
@@ -3027,7 +3046,7 @@ impl ConApp {
                 layout.composer_input.x + COMPOSER_TEXT_INSET + offset,
                 layout.composer_input.y + 12,
                 2,
-                font::cell_metrics(COMPOSER_TEXT_SIZE_PX).height.max(1),
+                font::cell_metrics(composer_font_size).height.max(1),
                 accent.to_xrgb(),
             );
         }
@@ -3045,8 +3064,15 @@ impl ConApp {
             } else {
                 accent
             },
+            chrome_size(BUTTON_LABEL_SIZE_PX),
         );
-        paint_button_label(&mut surface, layout.composer_newline, newline_label, accent);
+        paint_button_label(
+            &mut surface,
+            layout.composer_newline,
+            newline_label,
+            accent,
+            chrome_size(BUTTON_LABEL_SIZE_PX),
+        );
         Ok(())
     }
 }
@@ -3093,6 +3119,7 @@ impl ConTerminal {
             child_exit_code_encoded: Arc::new(AtomicU64::new(0)),
             child_exit_code: None,
             font_size_logical: DEFAULT_FONT_PX,
+            font_size_baseline: DEFAULT_FONT_PX,
             cell_w: 8,
             cell_h: 16,
             font_size_px: 10,
@@ -4383,6 +4410,21 @@ impl ConTerminal {
         self.recompute_metrics(self.scale);
         if let Ok(m) = window.metrics() {
             self.pending_geometry = Some((m.physical_width, m.physical_height, m.scale_factor));
+            self.last_geometry_at = Instant::now();
+        }
+        window.request_redraw();
+    }
+
+    fn reset_font(&mut self, window: &PixelWindow) {
+        self.font_size_logical = self.font_size_baseline;
+        self.dirty.mark_full();
+        self.recompute_metrics(self.scale);
+        if let Ok(metrics) = window.metrics() {
+            self.pending_geometry = Some((
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            ));
             self.last_geometry_at = Instant::now();
         }
         window.request_redraw();
@@ -5784,8 +5826,21 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 /// the first characters readable instead of centring the middle of a word.
 const BUTTON_LABEL_SIZE_PX: u16 = 13;
 
-fn paint_button_label(surface: &mut Surface<'_>, button: ui::Rect, label: &str, color: Rgb) {
-    let metrics = font::cell_metrics(BUTTON_LABEL_SIZE_PX);
+fn scaled_chrome_font(nominal: u16, logical_font_size: f64) -> u16 {
+    agenterm_platform::numeric::round_f64(f64::from(nominal) * logical_font_size / DEFAULT_FONT_PX)
+        // Chrome rows remain compact even at the terminal's 36 px extreme;
+        // the shared value still changes every label without clipping tabs.
+        .clamp(7.0, 20.0) as u16
+}
+
+fn paint_button_label(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    label: &str,
+    color: Rgb,
+    font_size_px: u16,
+) {
+    let metrics = font::cell_metrics(font_size_px);
     let label_width = metrics
         .width
         .max(1)
@@ -5796,15 +5851,7 @@ fn paint_button_label(surface: &mut Surface<'_>, button: ui::Rect, label: &str, 
     let y = button
         .y
         .saturating_add(button.height.saturating_sub(metrics.height.max(1)) / 2);
-    paint_chrome_text(
-        surface,
-        x,
-        y,
-        label,
-        color,
-        BUTTON_LABEL_SIZE_PX,
-        button.width,
-    );
+    paint_chrome_text(surface, x, y, label, color, font_size_px, button.width);
 }
 
 fn paint_chrome_text(
@@ -5882,6 +5929,14 @@ fn paint_chrome_text_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chrome_font_tracks_terminal_zoom_and_has_a_readable_ceiling() {
+        assert_eq!(scaled_chrome_font(15, DEFAULT_FONT_PX), 15);
+        assert!(scaled_chrome_font(15, 8.0) < 15);
+        assert!(scaled_chrome_font(15, 24.0) > 15);
+        assert_eq!(scaled_chrome_font(15, 36.0), 20);
+    }
 
     #[test]
     fn ime_status_snapshot_keeps_fixed_types_when_known_or_unknown() {

@@ -77,21 +77,22 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 ## Local chrome
 
 - [x] the local chrome owns a vertically scrollable left tree with row-level
-  close targets and top `A-`/`A+` font controls, plus a distinct bottom composer
+  close targets and top `z`/`0`/`Z` font controls, plus a distinct bottom composer
   input and send action.
 - [x] the tree header names the product, not a category. It reads `MiniCon`,
   which is the trademark and reads the same in every language, rather than a
   translatable noun.
 - [x] the header row carries a language switch left of the size controls,
-  giving `MiniCon 中 En A- A+`. Two entries rather than one toggle: a toggle
+  giving `MiniCon 中 En z 0 Z`. Two entries rather than one toggle: a toggle
   labelled with the language you are leaving is unreadable to exactly the
   person who needs it. Each is written in the language it selects, and the
   active one is drawn in the accent colour, so the control reports state as
   well as offering a change.
-- [x] the size controls are `A-` and `A+`, not `z` and `Z`. `A` is the common
-  glyph for text size and the signs are unambiguous, where the letter `z` meant
-  nothing to anyone who had not read the source.
-- [x] both are muted and the same size, because they are **actions**. The accent
+- [x] the size controls are compact `z`, `0`, and `Z` actions: shrink, restore
+  the configured launch size, and grow. The same zoom source sizes terminal
+  content and every chrome label, including tabs, header tools, composer text,
+  IME status, and Send/Newline buttons; hit-testing uses the matching metrics.
+- [x] all three are muted and use the same size, because they are **actions**. The accent
   colour means "current state" for the language entries beside them, and one
   visual language must not carry two meanings in a single row — the old `Z` was
   accented merely for being the larger one.

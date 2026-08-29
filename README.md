@@ -72,7 +72,8 @@ minicon --help                   # everything else
 | `Ctrl+Shift+I` | focus the input area |
 | `Up` / `Down` | in the input area, recall what you sent before |
 
-`A-` / `A+` in the header change the font size, `中` / `En` the interface
+`z` / `0` / `Z` in the header shrink, reset, and grow terminal and interface
+text together; `中` / `En` switch the interface
 language.
 
 ### Reporting a problem

@@ -46,6 +46,7 @@ pub struct Layout {
     /// single-line input is what makes a long command stop fitting.
     pub composer_newline: Rect,
     pub zoom_out: Rect,
+    pub zoom_reset: Rect,
     pub zoom_in: Rect,
     /// The two language entries, left of the size controls.
     pub language_chinese: Rect,
@@ -125,13 +126,19 @@ impl Layout {
             width: tool_size,
             height: tool_size,
         };
-        let zoom_out = Rect {
+        let zoom_reset = Rect {
             x: zoom_in.x.saturating_sub(tool_size),
             y: tool_y,
             width: tool_size,
             height: tool_size,
         };
-        // Language before size, reading right to left: `En` `中` `z` `Z`. The
+        let zoom_out = Rect {
+            x: zoom_reset.x.saturating_sub(tool_size),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
+        // Language before size, reading right to left: `En` `中` `z` `0` `Z`. The
         // sidebar is at least 180 dip and a tool is 24, so four of them and the
         // product name coexist even at the narrowest layout.
         let language_english = Rect {
@@ -160,6 +167,7 @@ impl Layout {
             composer_send: send,
             composer_newline: newline,
             zoom_out,
+            zoom_reset,
             zoom_in,
             language_chinese,
             language_english,
@@ -211,6 +219,7 @@ pub enum TreeHit {
     Outside,
     Background,
     ZoomOut,
+    ZoomReset,
     ZoomIn,
     Language(UiLanguage),
     Select(usize),
@@ -310,6 +319,9 @@ pub fn tree_hit(
     }
     if layout.zoom_out.contains(x, y) {
         return TreeHit::ZoomOut;
+    }
+    if layout.zoom_reset.contains(x, y) {
+        return TreeHit::ZoomReset;
     }
     if layout.zoom_in.contains(x, y) {
         return TreeHit::ZoomIn;
@@ -442,7 +454,7 @@ mod tests {
     }
 
     /// The two language entries sit left of the size controls and never
-    /// overlap them or each other — four tool rects share one header row, and
+    /// overlap them or each other — five tool rects share one header row, and
     /// an overlap would make one of them unreachable.
     #[test]
     fn the_header_tools_are_ordered_and_disjoint() {
@@ -452,6 +464,7 @@ mod tests {
                 layout.language_chinese,
                 layout.language_english,
                 layout.zoom_out,
+                layout.zoom_reset,
                 layout.zoom_in,
             ];
             for pair in tools.windows(2) {
@@ -461,7 +474,7 @@ mod tests {
                 );
             }
             assert!(
-                tools[3].x + tools[3].width <= layout.sidebar.width,
+                tools[4].x + tools[4].width <= layout.sidebar.width,
                 "the rightmost tool leaves the sidebar at {width}x{scale}"
             );
             assert!(
@@ -544,6 +557,17 @@ mod tests {
                 1.0
             ),
             TreeHit::ZoomOut
+        );
+        assert_eq!(
+            tree_hit(
+                layout,
+                layout.zoom_reset.x + 1,
+                layout.zoom_reset.y + 1,
+                0,
+                4,
+                1.0
+            ),
+            TreeHit::ZoomReset
         );
         assert_eq!(
             tree_hit(
