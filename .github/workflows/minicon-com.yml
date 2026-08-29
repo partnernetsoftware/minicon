@@ -50,13 +50,16 @@ jobs:
       - name: Toolchain
         run: |
           set -euo pipefail
+          ZIG_HOME=""
           ZIG_HOME=$(bash research/minicon-com-loader/install-zig.sh)
           echo "$ZIG_HOME" >> "$GITHUB_PATH"
           export PATH="$ZIG_HOME:$PATH"
           test "$(zig version)" = "$ZIG_VERSION"
           brew list llvm >/dev/null 2>&1 || brew install llvm
-          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
-          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          LLVM_HOME=""
+          LLVM_HOME=$(brew --prefix llvm)
+          echo "$LLVM_HOME/bin" >> "$GITHUB_PATH"
+          export PATH="$LLVM_HOME/bin:$PATH"
           command -v llvm-rc
           cargo install cargo-zigbuild --locked --version "$CARGO_ZIGBUILD_VERSION"
           cargo install cargo-xwin --locked --version "$CARGO_XWIN_VERSION"
@@ -103,6 +106,7 @@ jobs:
           cp research/minicon-com-loader/ci-status.sh artifact/
           cp research/minicon-com-loader/ci-status.ps1 artifact/
           cp research/minicon-com-loader/ci-control.sh artifact/
+          cp research/minicon-com-loader/ci-control.ps1 artifact/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: upload_com
@@ -186,6 +190,8 @@ jobs:
           & bundle/ci-status.ps1 -Binary (Join-Path $PWD "bundle/minicon-ape.exe") `
             -Receipt (Join-Path $PWD "bundle/build-receipt.json") *>&1 |
             Tee-Object -FilePath runtime-body.log
+          & bundle/ci-control.ps1 -Binary (Join-Path $PWD "bundle/minicon-ape.exe") *>&1 |
+            Tee-Object -FilePath runtime-body.log -Append
 
       - name: Receipt
         if: always()
