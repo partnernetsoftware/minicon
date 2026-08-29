@@ -1341,6 +1341,11 @@ interactive Linux x86 installation.
   locked dependency fetch before spawning target-isolated parallel builds. This
   serializes only shared-cache initialization; the independent target compiles
   remain parallel and the next exact-SHA run owns the before/after evidence.
+  Follow-up run `33250526477` proved that a host-only fetch was too narrow:
+  G3 passed on the pack host, but a target-selected Git dependency was first
+  discovered by the parallel Linux/macOS builds and reproduced `EEXIST`.
+  Prefetch must therefore materialize the locked graph for each of the six
+  target triples serially; compilation remains target-isolated and parallel.
 - [ ] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from
   agenterm, and the standalone release contract may name only workflows and

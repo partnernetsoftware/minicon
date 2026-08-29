@@ -11,10 +11,18 @@ rustup target add \
   aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu \
   aarch64-pc-windows-msvc x86_64-pc-windows-msvc
 
-# A cold shared Cargo git cache cannot safely have four processes create the
-# same checkout at once (one runner failed with EEXIST before compilation).
-# Resolve/fetch the locked graph once, then parallelize only target builds.
-cargo fetch --locked
+# A cold shared Cargo Git cache cannot safely have four processes create the
+# same target-specific checkout at once. A host-only fetch is insufficient:
+# Linux/macOS dependency selection can discover another Git checkout only
+# after parallel target builds start. Materialize every locked target graph
+# serially, then parallelize only target-isolated compilation.
+for fetch_target in \
+  aarch64-apple-darwin x86_64-apple-darwin \
+  aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu \
+  aarch64-pc-windows-msvc x86_64-pc-windows-msvc
+do
+  cargo fetch --locked --target "$fetch_target"
+done
 
 build_one() {
   cell="$1"
