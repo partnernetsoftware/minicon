@@ -26,7 +26,10 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   (G1 clean one-pack receipt, G2 six-cell smoke + GUI/control black-box, G3
   loader/installer lock, G4 APE size court, G5 download-rehash-execute, G6
   Defender+360 on exact SHA, G7 identity `0.1.3`, G8 human promote). Research
-  smoke run `33238478661` at `459d5cb` is G2 smoke only. Promotion copies exact
+  Early smoke run `33238478661` at `459d5cb` covered status only. Research
+  rehearsal run `33244331387` at `5776086` then passed G2 GUI/control on all
+  six native cells plus the same-identity aggregate; it still carries product
+  version `0.1.2` and is **not** Candidate evidence. Promotion copies exact
   Candidate bytes and does not rebuild. No GitHub pre-release substitute. No
   tag until every gate is green.
 
