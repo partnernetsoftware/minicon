@@ -102,6 +102,7 @@ flowchart LR
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
+        SI["PARTNERNET SOFTWARE PTY LTD<br/>publisher signing · timestamp · notarization"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
         QG{"total size + startup + memory<br/>six-cell parity pass?"}
@@ -117,6 +118,7 @@ flowchart LR
     R --> V12 --> C13 --> G13
     G13 -->|yes| V13
     G13 -->|no| KEEP
+    SI -. future release reputation court .-> G13
     QE -. later .-> QX
     X -. native baseline .-> QX
     QX --> QG
@@ -149,10 +151,13 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.1.3 remains a gated Candidate plan. Experimental smoke, G3 lifecycle
-  and the 9 MiB size court are green; six-cell GUI/control, exact sealing,
-  reputation and explicit user Promotion remain open. The green research smoke
-  is not a Candidate pack.
+- [~] v0.1.3 remains a gated Candidate plan. G2 six-cell GUI/control rehearsal,
+  G3 lifecycle and the 9 MiB size court are green; exact Candidate sealing,
+  reputation and explicit user Promotion remain open. Rehearsal evidence is
+  not a Candidate pack.
+- [ ] Future formal releases should carry `PARTNERNET SOFTWARE PTY LTD`
+  publisher identity; signing/timestamp/notarization infrastructure is planned,
+  not claimed by the current Candidate.
 - [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
   other's verdict; unavailable runtime evidence is `BLOCKED`.
 - [~] Local courts are automation-capable but not sealed release baselines.

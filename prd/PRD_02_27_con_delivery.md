@@ -1282,6 +1282,17 @@ interactive Linux x86 installation.
   named-pipe, Job and control behavior remains product functionality rather
   than something to hide or remove.
 
+- [ ] **Future formal publisher identity — `PARTNERNET SOFTWARE PTY LTD`.**
+  Establish company-owned signing as a later release court for `minicon.com`,
+  `minicon.exe`, and the other platform deliverables. The implementation must
+  decide certificate procurement and hardware/managed key custody, Windows
+  Authenticode plus trusted timestamping, macOS Developer ID signing and
+  notarization/stapling, CI secret authority, renewal/revocation, and exact-byte
+  post-sign six-grid verification. Linux archives retain checksums/provenance
+  unless a distribution-specific signature is deliberately added. Until that
+  court exists and passes, receipts must say unsigned; documentation must not
+  imply company signing merely because the company name appears in metadata.
+
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
   suffix, and its own header records that it has never run in this repository.
