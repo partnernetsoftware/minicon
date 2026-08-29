@@ -38,7 +38,8 @@ if (-not $appData) { throw "CSIDL_APPDATA resolved empty" }
 $config = Join-Path $appData "minicon.json"
 $configBefore = Get-ConfigState $config
 
-$root = Join-Path $env:RUNNER_TEMP ("minicon-g2-" + [guid]::NewGuid().ToString("N"))
+$tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+$root = Join-Path $tempRoot ("minicon-g2-" + [guid]::NewGuid().ToString("N"))
 $work = Join-Path $root "work"
 $stdout = Join-Path $root "host.stdout.log"
 $stderr = Join-Path $root "host.stderr.log"
@@ -98,9 +99,18 @@ try {
 
     [void](Invoke-Cli @("close-window"))
     if (-not $hostProcess.WaitForExit(5000)) { throw "loader still alive after close-window" }
-    if ($hostProcess.ExitCode -ne 0) { throw "loader rc=$($hostProcess.ExitCode) want 0" }
-
-    $left = @(Get-ExtractDirs $hostProcess.Id)
+    # Complete asynchronous stdout/stderr drain and populate ExitCode on both
+    # Windows PowerShell 5.1 and PowerShell 7 after the timed wait succeeds.
+    $hostProcess.WaitForExit()
+    # Win32 directory enumeration can briefly expose a delete-pending entry
+    # after the loader's POSIX unlink/rmdir has succeeded. Observe convergence,
+    # bounded; a persistent directory remains a hard failure.
+    $cleanupDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        $left = @(Get-ExtractDirs $hostProcess.Id)
+        if ($left.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $cleanupDeadline)
     if ($left.Count -ne 0) {
         throw "leftover extract dirs for loader pid $($hostProcess.Id): $($left.Name -join ', ')"
     }
@@ -110,6 +120,11 @@ try {
     Write-Host "config_baseline=$configBefore"
     Write-Host "config_after=$configAfter"
     if ($configBefore -ne $configAfter) { throw "CSIDL_APPDATA minicon.json changed" }
+
+    if ($null -eq $hostProcess.ExitCode) {
+        throw "loader exit code unavailable after completed wait"
+    }
+    if ($hostProcess.ExitCode -ne 0) { throw "loader rc=$($hostProcess.ExitCode) want 0" }
 
     $finished = $true
     Write-Host "PASS g2-control windows endpoint=unique token=$resultToken"

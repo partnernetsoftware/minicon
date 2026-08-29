@@ -45,7 +45,10 @@ jobs:
             ~/.cargo/git
             ~/.cache/cargo-xwin
             research/minicon-com-loader/payload-build
-          key: minicon-com-${{ env.COSMOCC_VERSION }}-${{ env.ZIG_VERSION }}-${{ hashFiles('.github/workflows/minicon-com.yml', 'research/minicon-com-loader/loader.c', 'research/minicon-com-loader/pack.sh', 'research/minicon-com-loader/rebuild-payloads.sh', 'research/minicon-com-loader/install-cosmocc.sh', 'research/minicon-com-loader/install-zig.sh', 'Cargo.lock', 'rust-toolchain.toml') }}
+          key: minicon-com-payloads-${{ env.ZIG_VERSION }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'src/**', 'crates/**', 'research/minicon-com-loader/rebuild-payloads.sh') }}
+          restore-keys: |
+            minicon-com-payloads-${{ env.ZIG_VERSION }}-
+            minicon-com-${{ env.COSMOCC_VERSION }}-${{ env.ZIG_VERSION }}-
 
       - name: Toolchain
         run: |

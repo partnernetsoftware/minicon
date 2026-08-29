@@ -198,20 +198,25 @@ static void empty_dir(const char *dir) {
 
 static void cleanup_extract(const char *dir, const char *dst, const char *tmpf) {
     int attempt;
-    int attempts = 1;
-#ifdef __COSMOPOLITAN__
+    struct stat st;
+    char mark[1200];
+    int attempts = 50;
     /* Windows may retain an executable image mapping briefly after waitpid.
-     * Keep cleanup owned and bounded instead of leaving it for a future run. */
-    if (IsWindows()) attempts = 50;
-#endif
+     * Keep cleanup owned and bounded instead of leaving it for a future run.
+     * This is the current invocation's freshly-created random directory, so
+     * delete only its three exact known names. Stale reaping retains the
+     * stronger uid/mode/marker/dead-pid court above. */
+    if (!dir || !dir[0]) return;
+    snprintf(mark, sizeof mark, "%s/%s", dir, EXTRACT_MARK);
     for (attempt = 0; attempt < attempts; attempt++) {
+        if (lstat(dir, &st) != 0) return;
+        if (S_ISLNK(st.st_mode)) return;
         if (tmpf && tmpf[0]) unlink(tmpf);
         if (dst && dst[0]) unlink(dst);
-        if (dir && dir[0] && is_private_owned_dir(dir)) {
-            empty_dir(dir);
-            if (is_private_owned_dir(dir)) rmdir(dir);
-        }
-        if (!dir || !dir[0] || !is_private_owned_dir(dir)) return;
+        unlink(mark);
+        rmdir(dir);
+        if (lstat(dir, &st) != 0) return;
+        if (S_ISLNK(st.st_mode)) return;
         if (attempt + 1 < attempts) usleep(100000);
     }
 }
