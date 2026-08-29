@@ -29,6 +29,7 @@ jobs:
     outputs:
       minicon_com_sha256: ${{ steps.pack.outputs.minicon_com_sha256 }}
       source_sha: ${{ steps.pack.outputs.source_sha }}
+      source_tree_digest: ${{ steps.pack.outputs.source_tree_digest }}
       artifact_id: ${{ steps.upload_com.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -77,10 +78,15 @@ jobs:
           rec["builder"] = "macos-15"
           rec["run_id"] = os.environ["GITHUB_RUN_ID"]
           rec["run_attempt"] = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          if rec.get("source_dirty"):
+              raise SystemExit("github-ci pack requires source_dirty=false")
+          if not rec.get("source_tree_digest"):
+              raise SystemExit("missing source_tree_digest")
           Path("research/minicon-com-loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"minicon_com_sha256={rec['minicon_com_sha256']}\n")
               fh.write(f"source_sha={rec['source_sha']}\n")
+              fh.write(f"source_tree_digest={rec['source_tree_digest']}\n")
           PY
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -118,6 +124,7 @@ jobs:
       EXPECTED_RUNNER_ARCH: ${{ matrix.expected_arch }}
       EXPECTED_COM_SHA256: ${{ needs.build.outputs.minicon_com_sha256 }}
       EXPECTED_SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+      EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.build.outputs.source_tree_digest }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -140,6 +147,8 @@ jobs:
           rec = json.load(open("bundle/build-receipt.json", encoding="utf-8"))
           assert rec["minicon_com_sha256"] == os.environ["EXPECTED_COM_SHA256"]
           assert rec["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
+          assert rec.get("source_dirty") is False
+          assert rec["source_tree_digest"] == os.environ["EXPECTED_SOURCE_TREE_DIGEST"]
           PY
 
       - name: version+passthrough+status (unix)
@@ -181,6 +190,8 @@ jobs:
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "source_sha": build["source_sha"],
+              "source_dirty": build.get("source_dirty"),
+              "source_tree_digest": build.get("source_tree_digest"),
               "minicon_com_sha256": build["minicon_com_sha256"],
               "product_version": build.get("product_version"),
           }
@@ -218,6 +229,7 @@ jobs:
         env:
           EXPECTED_COM_SHA256: ${{ needs.build.outputs.minicon_com_sha256 }}
           EXPECTED_SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.build.outputs.source_tree_digest }}
           EXPECTED_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
         run: |
           python3 - <<'PY'
@@ -241,6 +253,10 @@ jobs:
               print("digest mismatch"); sys.exit(1)
           if {r["source_sha"] for r in rows} != {os.environ["EXPECTED_SOURCE_SHA"]}:
               print("source mismatch"); sys.exit(1)
+          if any(r.get("source_dirty") for r in rows):
+              print("source_dirty"); sys.exit(1)
+          if {r.get("source_tree_digest") for r in rows} != {os.environ["EXPECTED_SOURCE_TREE_DIGEST"]}:
+              print("source_tree_digest mismatch"); sys.exit(1)
           if {str(r["run_id"]) for r in rows} != {run_id}:
               print("run_id mismatch"); sys.exit(1)
           if any(int(r.get("run_attempt", -1)) != attempt for r in rows):
@@ -255,6 +271,8 @@ jobs:
               "run_attempt": attempt,
               "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"],
               "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "source_dirty": False,
+              "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
               "artifact_id": os.environ.get("EXPECTED_ARTIFACT_ID") or None,
               "cells": sorted(cells),
               "strategy": "current-attempt-only-full-six",

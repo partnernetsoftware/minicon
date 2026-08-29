@@ -44,7 +44,8 @@ A dirty tree must not be treated as `source_sha == HEAD` alone.
 - **six** native runners download that artifact and run `--version`, unknown
   flag (must be nonzero), and `--status`. No `cargo`, no cosmocc, no checkout.
 - `aggregate` requires exactly six unique cells, the same `minicon_com_sha256`
-  and `source_sha`, one `run_id`, all `job_status=success`.
+  / `source_sha` / `source_tree_digest`, `source_dirty=false`, one `run_id`,
+  all `job_status=success`.
 - cosmocc zip SHA-256 and `bin/cosmocc` digest are pinned; install always
   builds a complete NEXT tree then `rename`s it over DEST (same parent).
   Failure before commit restores PREV; `install-cosmocc-swap-test.sh`

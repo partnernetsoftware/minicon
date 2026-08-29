@@ -122,6 +122,8 @@ receipt = {
     "schema": 2,
     "lane": "local-accelerated",
     "source_sha": build["source_sha"],
+    "source_dirty": build.get("source_dirty"),
+    "source_tree_digest": build.get("source_tree_digest"),
     "minicon_com_sha256": build["minicon_com_sha256"],
     "product_version": build.get("product_version"),
     "pass": int(sys.argv[5]),
