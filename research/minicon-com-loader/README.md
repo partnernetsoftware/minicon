@@ -46,8 +46,10 @@ A dirty tree must not be treated as `source_sha == HEAD` alone.
 - `aggregate` requires exactly six unique cells, the same `minicon_com_sha256`
   and `source_sha`, one `run_id`, all `job_status=success`.
 - cosmocc zip SHA-256 and `bin/cosmocc` digest are pinned; install always
-  restores from the verified zip into a stage dir then replaces the live
-  tree. Zig 0.16.0 is the same (verified tar → fresh PREFIX). `--version`
+  builds a complete NEXT tree then `rename`s it over DEST (same parent).
+  Failure before commit restores PREV; `install-cosmocc-swap-test.sh`
+  injects a mid-swap abort and checks the old bin digest. Zig 0.16.0 is
+  the same idea (verified tar → PREFIX, mv-fail restores). `--version`
   of cosmocc is GCC 14.1.0 and is not the release pin. Cache key hashes
   workflow + loader/pack/install scripts. GUI+control black-box is a later
   candidate gate, not this smoke.
