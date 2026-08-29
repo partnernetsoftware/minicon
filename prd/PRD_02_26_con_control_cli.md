@@ -20,7 +20,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   file with no listener. Closing the GUI ends the endpoint. There is no
   default port, no remote transport, no Fleet, mux, session persistence, or
   Agent permission model. AgenTerm's server identity may outlive one window;
-  MiniCon's must not.
+  MiniCon's must not. A listener inside the GUI is the design, not a missing
+  server.
 - [x] shared verb spellings (`capture-pane`, `screenshot-pane`, `send-text`,
   `send-keys`, `wait-text`) mean the same product action in both CLIs. Where the
   standalone host cannot honor a workbench verb it omits the verb rather than

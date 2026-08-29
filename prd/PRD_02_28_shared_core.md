@@ -98,3 +98,9 @@ layers while the split is in flight. Stage 2 has to have paid off first.
   products need the same *rule*, not because it happens to be generic.
 - Not a reason to make MiniCon's own code more abstract than its use demands.
   The boundary exists to keep a dependency out, not to invite indirection.
+- **No mandatory dependency inversion.** Keep extracting host-neutral rules
+  into `minicon-core` and keep consuming `agenterm-platform` /
+  `agenterm-ui-core` at the git pin in `Cargo.toml`. AgenTerm depending on
+  `minicon-core` is a later optional payoff (Stage 2), not a prerequisite for
+  MiniCon shipping, for continued reuse, or for platform-feature work. Do not
+  split `agenterm-platform` solely to invert the arrow.
