@@ -92,6 +92,53 @@ all of it depends on the machine.
 ./scripts/six-cell-qualify.sh # one Mac: link all six cells, run available tests
 ```
 
+### Which local artifact should I run?
+
+Do not choose a binary by searching `target/` or comparing modification times:
+Cargo dependency executables and an older six-cell snapshot can look newer than
+the product you meant to test. Run the owning command, then use its canonical
+output:
+
+| What you want to test | Build command | Canonical output |
+| --- | --- | --- |
+| Fastest current-host development build | `./scripts/build.sh dev` | `target/debug/minicon` (`.exe` on Windows) |
+| Optimized current-host build | `./scripts/build.sh release` | `target/release/minicon` (`.exe` on Windows) |
+| All six ordinary OS/ISA binaries | `./scripts/six-cell-qualify.sh` | paths listed under `artifacts` in `target-six/receipt.json` |
+| Experimental one-file six-cell launcher | `./research/minicon-com-loader/local-accelerated.sh` | `research/minicon-com-loader/dist/minicon.com`, its `.sha256`, and `build-receipt.json` |
+| A published, user-facing build | no local build | archive and matching `.sha256` from GitHub Releases |
+
+For an ordinary local UI check on macOS or Linux:
+
+```bash
+./scripts/build.sh dev
+./target/debug/minicon --status
+./target/debug/minicon
+```
+
+For the optimized local binary, replace both `debug` occurrences with
+`release`. On Windows, run `target/debug/minicon.exe` or
+`target/release/minicon.exe` after the corresponding command.
+
+`target-six/receipt.json` is the index for a six-cell run: its `artifacts`
+entries name the exact binaries and record byte sizes, formats, and SHA-256
+digests. Treat that receipt—not similarly named files elsewhere under
+`target-six/`—as the answer to “which six binaries belong together?” The
+receipt also records a source-tree fingerprint. If the source has changed
+since the run, rebuild instead of testing a mixed snapshot:
+
+```bash
+python3 scripts/source-fingerprint.py
+jq '{source_tree_sha256, artifacts}' target-six/receipt.json
+```
+
+The `research/minicon-com-loader/dist/cells/` files are payload copies used to
+assemble the adjacent `minicon.com`; they are not an additional release set.
+`minicon.com` itself is currently experimental and is not part of v0.1.2. Its
+receipt and checksum must travel with it when testing it on another machine.
+Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
+folders, logs, and cache snapshots are implementation state, not handoff
+artifacts.
+
 The six-cell gate writes `target-six/receipt.json`. A missing runtime runner is
 reported as `BLOCKED`; a successful cross-link is not mislabeled as a runtime
 test pass. Linux desktop UTM runners own local qualification. The optional
