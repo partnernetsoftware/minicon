@@ -1338,7 +1338,7 @@ interactive Linux x86 installation.
   Preferred custody is Azure Artifact Signing Public Trust with GitHub OIDC.
   The managed signing key is non-exportable: no PFX/private key belongs in Git,
   GitHub secrets, Actions artifacts, logs, `~/Downloads`, or cloud-drive mounts.
-  The GitHub `release-signing` Environment holds only OIDC identifiers named
+  The dedicated GitHub `release-signing` Environment holds only OIDC identifiers named
   `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; non-secret
   resource coordinates use placeholders `ARTIFACT_SIGNING_ENDPOINT`,
   `ARTIFACT_SIGNING_ACCOUNT`, and `ARTIFACT_SIGNING_PROFILE`. Azure grants that

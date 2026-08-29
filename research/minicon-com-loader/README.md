@@ -105,7 +105,7 @@ The v0.1.3 exact-byte chain is `minicon-com.yml` (one unsigned build/pack) →
 qualification → human-only Promotion. `candidate.yml` accepts a successful
 `company-signing.yml` run ID; it no longer accepts unsigned one-pack bytes.
 
-`company-signing.yml` uses the protected GitHub Environment
+`company-signing.yml` uses the dedicated GitHub Environment
 `release-signing`. Put `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
 `AZURE_SUBSCRIPTION_ID` there as Environment secrets. Put
 `ARTIFACT_SIGNING_ENDPOINT`, `ARTIFACT_SIGNING_ACCOUNT`, and
