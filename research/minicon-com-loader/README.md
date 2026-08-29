@@ -18,9 +18,10 @@ On start the trampoline picks `{os}-{isa}`, copies the blob out of ZipOS
 (or `MINICON_COM_CELLS`), and **exec**s it. In-process mmap (rust-ape style)
 is the wrong join for a native GUI terminal.
 
-Payload source: `target-six/builds/current/…/release-fast/minicon` (fallback
-`debug/` if release-fast missing). Those binaries remain the six-cell gate's
-job; this directory only packs and dispatches.
+Payload source: `payload-build/…` then `target-six/builds/current/…`.
+Linux cells use `release/` (LTO); other cells `release-fast/`. Those
+binaries remain the six-cell gate's job; this directory only packs and
+dispatches.
 
 ## Two lanes (one pack, six executes)
 

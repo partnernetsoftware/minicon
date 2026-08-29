@@ -7,7 +7,7 @@ $receiptPath = Join-Path $root "defender-receipt.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $evidenceScope = if ($manifest.defender_evidence_scope) { "$($manifest.defender_evidence_scope)" } else { "candidate" }
 $asset = @($manifest.assets | Where-Object { $_.name -eq "minicon.com" })
-if ($asset.Count -ne 1) { throw "Candidate manifest must contain exactly one minicon.com" }
+if ($asset.Count -ne 1) { throw "scan manifest must contain exactly one minicon.com" }
 $expected = "$($asset[0].sha256)".ToLowerInvariant()
 $before = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($before -ne $expected) { throw "pre-scan digest mismatch" }
@@ -86,4 +86,4 @@ if ($verdict -ne "clean") {
     Write-Host "FAIL Defender verdict=$verdict detection_count=$($threats.Count)"
     exit 3
 }
-Write-Host "PASS Defender exact Candidate SHA $after"
+Write-Host "PASS Defender exact artifact SHA $after"

@@ -1,0 +1,14 @@
+# Linux ELF size: GC unused sections. Zig's lld rejects
+# -z pack-relative-relocs, so RELR is not used on this pack path.
+# panic=unwind is unchanged.
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+  "-C", "link-arg=-Wl,--gc-sections",
+  "-C", "link-arg=-Wl,--as-needed",
+]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = [
+  "-C", "link-arg=-Wl,--gc-sections",
+  "-C", "link-arg=-Wl,--as-needed",
+]

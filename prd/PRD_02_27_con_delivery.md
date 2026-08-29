@@ -208,6 +208,11 @@ correct half/full-width font measurement.
   单宿主六格实测（`strip=true`）：Windows arm64 677,376 / x64 731,136、
   macOS 1,413,408 / 1,455,424、**Linux 4,846,400 / 5,732,544**——
   Linux 是上限的 5 倍以上，且已确认是代码而非符号。
+  2026-08-29：`minicon.com` Linux payloads 改用 `profile.release`（thin LTO）+
+  `--gc-sections`；zigbuild 的 lld 不支持 `pack-relative-relocs`。
+  实测 `lnx-x86_64` 7,704,280 → 5,746,384（release-fast → release），
+  `lnx-aarch64` 6,932,840 → 4,857,552。剩余体积仍是 Wayland+X11 `.text` 与
+  DWARF `.eh_frame`，不是漏 strip。
   一个在三个平台里两个必红的门会挡住即将开始的瘦身工作，却量不出新东西，
   所以撤门、改为在 README 直接写各平台实测字节数。
   上限若要回来，必须先明确它约束哪几个平台。
