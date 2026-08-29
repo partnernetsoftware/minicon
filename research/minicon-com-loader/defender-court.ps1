@@ -12,12 +12,21 @@ $expected = "$($asset[0].sha256)".ToLowerInvariant()
 $before = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($before -ne $expected) { throw "pre-scan digest mismatch" }
 
-$status = Get-MpComputerStatus
+$deadline = (Get-Date).AddSeconds(120)
+do {
+    $status = Get-MpComputerStatus
+    if ($status.AMServiceEnabled -and $status.AntivirusEnabled -and
+        $status.RealTimeProtectionEnabled -and "$($status.AMEngineVersion)" -ne "0.0.0.0") {
+        break
+    }
+    Start-Sleep -Seconds 2
+} while ((Get-Date) -lt $deadline)
 $status | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled,
     AMProductVersion, AMEngineVersion, AntivirusSignatureVersion |
     ConvertTo-Json -Compress | Write-Host
-if (-not $status.AntivirusEnabled -or -not $status.RealTimeProtectionEnabled) {
-    throw "Microsoft Defender is not active"
+if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled -or
+    -not $status.RealTimeProtectionEnabled -or "$($status.AMEngineVersion)" -eq "0.0.0.0") {
+    throw "Microsoft Defender did not become active within 120 seconds"
 }
 $started = Get-Date
 $scanError = ""

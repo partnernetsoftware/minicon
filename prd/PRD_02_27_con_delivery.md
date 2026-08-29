@@ -1322,6 +1322,40 @@ interactive Linux x86 installation.
   court passes, receipts must say unsigned; documentation must not
   imply company signing merely because the company name appears in metadata.
 
+  Reusable signing contract for MiniCon and later AgenTerm:
+
+  ```text
+  unsigned build receipt
+  └── link-time signable layout
+      ├── Windows PE / APE: empty Authenticode Security Directory
+      ├── sign as PARTNERNET SOFTWARE PTY LTD
+      ├── RFC 3161 SHA-256 timestamp
+      ├── signing receipt: before SHA → after SHA + certificate identity
+      ├── six native courts execute only the after-SHA bytes
+      └── Defender scans that same after-SHA byte sequence
+  ```
+
+  Preferred custody is Azure Artifact Signing Public Trust with GitHub OIDC.
+  The managed signing key is non-exportable: no PFX/private key belongs in Git,
+  GitHub secrets, Actions artifacts, logs, `~/Downloads`, or cloud-drive mounts.
+  The GitHub `release-signing` Environment holds only OIDC identifiers named
+  `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`; non-secret
+  resource coordinates use placeholders `ARTIFACT_SIGNING_ENDPOINT`,
+  `ARTIFACT_SIGNING_ACCOUNT`, and `ARTIFACT_SIGNING_PROFILE`. Azure grants that
+  federated identity only the certificate-profile signer role. Back up the
+  company verification packet, Azure resource inventory, RBAC/federation
+  recovery procedure, billing owner, renewal/revocation runbook, and emergency
+  contacts in the company-controlled secrets vault. Do not back up an
+  exportable key because this route has none.
+
+  A traditional CA certificate is a fallback, not an interchangeable detail.
+  If selected later, keep its hardware token or encrypted PFX in two
+  company-controlled offline locations; inject it only through the protected
+  `release-signing` Environment, never a repository-level plaintext variable.
+  Record only certificate subject, issuer, serial/thumbprint, validity and
+  timestamp evidence in receipts. Rotation must produce a new after-SHA and
+  repeat all post-sign courts.
+
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
   suffix, and its own header records that it has never run in this repository.
