@@ -175,7 +175,7 @@ jobs:
           bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
           if [[ "$FAMILY" == linux ]]; then
             sudo apt-get update -qq
-            sudo apt-get install -y xvfb
+            sudo apt-get install -y xvfb libxkbcommon-x11-0
             xvfb-run -a bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
           else
             bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log

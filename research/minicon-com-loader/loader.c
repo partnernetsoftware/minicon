@@ -197,11 +197,22 @@ static void empty_dir(const char *dir) {
 }
 
 static void cleanup_extract(const char *dir, const char *dst, const char *tmpf) {
-    if (tmpf && tmpf[0]) unlink(tmpf);
-    if (dst && dst[0]) unlink(dst);
-    if (dir && dir[0] && is_private_owned_dir(dir)) {
-        empty_dir(dir);
-        if (is_private_owned_dir(dir)) rmdir(dir);
+    int attempt;
+    int attempts = 1;
+#ifdef __COSMOPOLITAN__
+    /* Windows may retain an executable image mapping briefly after waitpid.
+     * Keep cleanup owned and bounded instead of leaving it for a future run. */
+    if (IsWindows()) attempts = 50;
+#endif
+    for (attempt = 0; attempt < attempts; attempt++) {
+        if (tmpf && tmpf[0]) unlink(tmpf);
+        if (dst && dst[0]) unlink(dst);
+        if (dir && dir[0] && is_private_owned_dir(dir)) {
+            empty_dir(dir);
+            if (is_private_owned_dir(dir)) rmdir(dir);
+        }
+        if (!dir || !dir[0] || !is_private_owned_dir(dir)) return;
+        if (attempt + 1 < attempts) usleep(100000);
     }
 }
 
