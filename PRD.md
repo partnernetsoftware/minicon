@@ -176,9 +176,10 @@ flowchart LR
   Azure/company Public Trust is paused because no short-term company payment
   route exists. The user approved a SignPath Foundation OSS application as a
   truthful transition: its publisher will be SignPath Foundation, never
-  misrepresented as the company. Policy/application preparation is active;
-  provider approval, timestamped signed-byte six-grid and final-SHA Defender
-  evidence remain before this Candidate can claim signing.
+  misrepresented as the company. The application was submitted and SignPath
+  acknowledged receipt on 2026-08-30; provider review, timestamped signed-byte
+  six-grid and final-SHA Defender evidence remain before this Candidate can
+  claim signing.
 - [x] Defender diagnostic run on unsigned rehearsal SHA
   `b2551896e7985c80eea4ea0ac785d532e9efb477aafd475955afbe9f735b0c2a`
   was clean with active engine `1.1.26080.3` and signatures `1.457.375.0`.

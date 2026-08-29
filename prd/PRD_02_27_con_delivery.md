@@ -1472,7 +1472,10 @@ interactive Linux x86 installation.
   Foundation as publisher, not PARTNERNET SOFTWARE PTY LTD. The public
   `CODE_SIGNING_POLICY.md` and redacted
   `research/minicon-com-loader/signpath-application.md` own this distinction,
-  team roles, privacy statement and verifiable-build questions. Acceptance,
+  team roles, privacy statement and verifiable-build questions. The application
+  was submitted on 2026-08-30. SignPath acknowledged receipt by email and said
+  review or follow-up questions should arrive within the next few business
+  days; it supplied no application ID. This proves intake only. Acceptance,
   artifact-configuration approval and an actual signature are still pending.
 
   Implementation owner is `.github/workflows/company-signing.yml`. Despite the
