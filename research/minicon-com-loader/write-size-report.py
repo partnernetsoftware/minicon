@@ -11,6 +11,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import struct
 import sys
 from pathlib import Path
 
@@ -37,6 +38,54 @@ def candidate_ok(nbytes: int) -> bool:
     return nbytes <= CANDIDATE_CEILING_BYTES
 
 
+def zip_overlay_breakdown(data: bytes) -> dict:
+    """Honest container split from the Zip overlay, not uncompressed payload sum."""
+    ape = data.find(b"PK\x03\x04")
+    eocd = data.rfind(b"PK\x05\x06")
+    if ape < 0 or eocd < 0 or eocd + 22 > len(data):
+        raise ValueError("minicon.com is not APE+zip")
+    cd_size, cd_off = struct.unpack_from("<II", data, eocd + 12)
+    if data[cd_off : cd_off + 4] == b"PK\x01\x02":
+        cd_abs = cd_off
+    elif data[ape + cd_off : ape + cd_off + 4] == b"PK\x01\x02":
+        cd_abs = ape + cd_off
+    else:
+        raise ValueError("zip central directory not found")
+    pos = cd_abs
+    end = cd_abs + cd_size
+    cells_comp = 0
+    cells_uncomp = 0
+    other_comp = 0
+    n_cells = 0
+    n_other = 0
+    while pos + 46 <= end and data[pos : pos + 4] == b"PK\x01\x02":
+        _hdr = struct.unpack_from("<HHHHHHIIIHHHHHII", data, pos + 4)
+        csz, usz, nlen, elen, clen = _hdr[7], _hdr[8], _hdr[9], _hdr[10], _hdr[11]
+        name = data[pos + 46 : pos + 46 + nlen].decode("utf-8", "replace")
+        pos += 46 + nlen + elen + clen
+        if name.startswith("cells/") and not name.endswith("/"):
+            cells_comp += csz
+            cells_uncomp += usz
+            n_cells += 1
+        elif not name.endswith("/"):
+            other_comp += csz
+            n_other += 1
+    eocd_len = len(data) - eocd
+    local_and_data = cd_abs - ape
+    return {
+        "ape_prefix_bytes": ape,
+        "zip_local_and_filedata_bytes": local_and_data,
+        "zip_central_directory_bytes": cd_size,
+        "zip_eocd_bytes": eocd_len,
+        "cells_entry_count": n_cells,
+        "cells_compressed_bytes": cells_comp,
+        "cells_uncompressed_bytes": cells_uncomp,
+        "other_zip_file_compressed_bytes": other_comp,
+        "other_zip_file_count": n_other,
+        "container_minus_cells_compressed_bytes": len(data) - cells_comp,
+    }
+
+
 def self_test() -> int:
     if not candidate_ok(CANDIDATE_CEILING_BYTES):
         print("FAIL ceiling pass", file=sys.stderr)
@@ -50,9 +99,27 @@ def self_test() -> int:
     if REHEARSAL_GUARD_BYTES != 12582912:
         print("FAIL rehearsal guard integer", file=sys.stderr)
         return 1
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("cells/osx-aarch64/minicon", b"payload" * 50)
+        zf.writestr("cells/lnx-x86_64/minicon", b"other" * 40)
+    blob = b"APEPREFIX" + buf.getvalue()
+    br = zip_overlay_breakdown(blob)
+    if br["ape_prefix_bytes"] != 9:
+        print("FAIL zip ape prefix", br, file=sys.stderr)
+        return 1
+    if br["cells_entry_count"] != 2 or br["cells_uncompressed_bytes"] != 7 * 50 + 5 * 40:
+        print("FAIL zip cells", br, file=sys.stderr)
+        return 1
+    if br["cells_compressed_bytes"] <= 0 or br["cells_compressed_bytes"] >= br["cells_uncompressed_bytes"]:
+        print("FAIL zip compressed vs raw", br, file=sys.stderr)
+        return 1
     print(
         f"PASS size-court ceiling={CANDIDATE_CEILING_BYTES} "
-        f"ceiling+1 reject rehearsal_guard={REHEARSAL_GUARD_BYTES}"
+        f"ceiling+1 reject rehearsal_guard={REHEARSAL_GUARD_BYTES} zip-cd"
     )
     return 0
 
@@ -87,7 +154,7 @@ def report(mode: str) -> int:
         "minicon_com_sha256": hashlib.sha256(raw).hexdigest(),
         "minicon_com_gzip9_bytes": len(gz),
         "payload_bytes_sum": payload_sum,
-        "overlay_saved_bytes": payload_sum - len(raw),
+        "zip_overlay": zip_overlay_breakdown(raw),
         "rehearsal_guard_bytes": REHEARSAL_GUARD_BYTES,
         "candidate_ceiling_bytes": CANDIDATE_CEILING_BYTES,
         "candidate_ceiling_stamped": True,
