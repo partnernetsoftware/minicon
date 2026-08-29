@@ -1375,6 +1375,15 @@ interactive Linux x86 installation.
   This proves the signing precondition but is not a Candidate and cannot be
   promoted because it has no company signature.
 
+  The same 8,909,562-byte unsigned rehearsal APE passed
+  `self-sign-rehearsal.sh`: an ephemeral untrusted certificate populated a
+  1,712-byte Security Directory, produced an 8,911,280-byte signed APE below
+  9 MiB, retained ZIP readability and Darwin `--version`/`--status`, and a
+  one-byte mutation failed signature verification. The private test key was
+  destroyed with its temporary directory. This is mechanism evidence only
+  (`trusted=false`, `timestamped=false`, `mechanism-only-not-g6`); it does not
+  satisfy company identity, Public Trust, Defender, G6 or Candidate sealing.
+
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
   suffix, and its own header records that it has never run in this repository.

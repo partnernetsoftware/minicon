@@ -117,6 +117,20 @@ material in the company-controlled secrets vault as specified by
 credential in Git, an Actions artifact, logs, Downloads, or a cloud-drive
 mount.
 
+Before spending a Public Trust signing operation, maintainers can exercise the
+APE mechanism locally with an explicitly untrusted, one-day certificate:
+
+```sh
+bash research/minicon-com-loader/self-sign-rehearsal.sh path/to/minicon.com
+```
+
+The script requires `openssl` and `osslsigncode`, destroys its ephemeral key,
+and proves empty→populated Security Directory, signature verification against
+the ephemeral CA, tamper rejection, ZIP readability, Darwin execution and the
+final 9 MiB ceiling. Its receipt says `mechanism-only-not-g6`, `trusted=false`
+and `timestamped=false`; it can never satisfy company identity, Defender or
+Candidate qualification.
+
 G6 keeps Defender judgment outside the immutable build receipt. GitHub's
 standard Windows runner image deliberately disables Defender, so it is not a
 scan court. Run `utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT` against
