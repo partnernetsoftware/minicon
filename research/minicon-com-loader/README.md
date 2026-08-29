@@ -92,8 +92,10 @@ Four cases in `reaper-tests.sh`: fake-symlink, foreign-owner, active-pid,
 stale-owned. Never `#ifdef _WIN32` in cosmocc fat.
 
 v0.1.3 Candidate (cdx ruling A): fourth Release asset beside the frozen
-v0.1.2 three packages. Gates: `v0.1.3-candidate-plan.md`. These two lanes
-are smoke until G2 GUI/control and G8 human promote. Do not tag here.
+v0.1.2 three packages. Gates: `v0.1.3-candidate-plan.md`. G3/G4 rehearsal:
+`loader-lifecycle-tests.sh`, `install-cosmocc-swap-test.sh`,
+`write-size-report.py`. These two lanes are smoke until G2 GUI/control
+and G8 human promote. Do not tag here.
 
 ## Non-goals
 

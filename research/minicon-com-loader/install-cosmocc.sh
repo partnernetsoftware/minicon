@@ -13,8 +13,30 @@ URL1="https://github.com/jart/cosmopolitan/releases/download/${VER}/cosmocc-${VE
 URL2="https://cosmo.zip/pub/cosmocc/cosmocc-${VER}.zip"
 mkdir -p "$DEST"
 ZIP="$DEST/$ZIP_NAME"
+LOCK="${DEST}.lock"
+lock_acquired=0
 
 sha_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+
+acquire_lock() {
+  local i
+  for i in $(seq 1 120); do
+    if mkdir "$LOCK" 2>/dev/null; then
+      lock_acquired=1
+      return 0
+    fi
+    sleep 1
+  done
+  echo "[cosmocc] lock timeout $LOCK" >&2
+  exit 1
+}
+
+release_lock() {
+  if [[ "$lock_acquired" -eq 1 ]]; then
+    rmdir "$LOCK" 2>/dev/null || true
+    lock_acquired=0
+  fi
+}
 
 ensure_zip() {
   if [[ ! -s "$ZIP" ]]; then
@@ -35,6 +57,7 @@ PREV=""
 cleanup() {
   if [[ "$committed" -eq 1 ]]; then
     if [[ -n "$PREV" && -d "$PREV" ]]; then rm -rf "$PREV"; fi
+    release_lock
     return
   fi
   if [[ -n "$PREV" && -d "$PREV" ]]; then
@@ -42,9 +65,11 @@ cleanup() {
     mv "$PREV" "$DEST" || echo "[cosmocc] restore previous tree failed" >&2
   fi
   if [[ -n "$NEXT" && -d "$NEXT" ]]; then rm -rf "$NEXT"; fi
+  release_lock
 }
 trap cleanup EXIT
 
+acquire_lock
 ensure_zip
 NEXT=$(mktemp -d "${DEST}.${VER}.next.XXXXXX")
 if [[ -f "$ZIP" ]]; then
@@ -85,6 +110,7 @@ committed=1
 NEXT=""
 rm -rf "$PREV"
 PREV=""
+release_lock
 trap - EXIT
 
 test -x "$DEST/bin/cosmocc"
