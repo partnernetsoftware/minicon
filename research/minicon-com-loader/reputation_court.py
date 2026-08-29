@@ -7,7 +7,11 @@ import argparse
 import hashlib
 import json
 import pathlib
+import re
 import tempfile
+
+
+SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def load(path: pathlib.Path) -> dict:
@@ -28,15 +32,7 @@ def require_text(row: dict, name: str) -> str:
     return value.strip()
 
 
-def qualify(args: argparse.Namespace) -> None:
-    manifest_path = pathlib.Path(args.manifest)
-    defender_path = pathlib.Path(args.defender)
-    court360_path = pathlib.Path(args.court360)
-    screenshot_path = pathlib.Path(args.screenshot)
-    manifest = load(manifest_path)
-    defender = load(defender_path)
-    court360 = load(court360_path)
-
+def candidate_identity(manifest: dict) -> tuple[str, dict, str]:
     if manifest.get("kind") != "minicon-release-candidate":
         raise ValueError("wrong Candidate manifest kind")
     asset = next((row for row in manifest.get("assets", []) if row.get("name") == "minicon.com"), None)
@@ -46,6 +42,20 @@ def qualify(args: argparse.Namespace) -> None:
     candidate_run = manifest.get("candidate_run")
     if not isinstance(candidate_run, dict):
         raise ValueError("Candidate run identity missing")
+    source_sha = require_text(manifest, "source_sha")
+    return source_sha, candidate_run, expected_sha
+
+
+def qualify(args: argparse.Namespace) -> None:
+    manifest_path = pathlib.Path(args.manifest)
+    defender_path = pathlib.Path(args.defender)
+    court360_path = pathlib.Path(args.court360)
+    screenshot_path = pathlib.Path(args.screenshot)
+    manifest = load(manifest_path)
+    defender = load(defender_path)
+    court360 = load(court360_path)
+
+    source_sha, candidate_run, expected_sha = candidate_identity(manifest)
 
     if defender.get("kind") != "minicon-defender-court" or defender.get("verdict") != "clean":
         raise ValueError("Defender verdict is not clean")
@@ -72,7 +82,7 @@ def qualify(args: argparse.Namespace) -> None:
     result = {
         "schema": 1,
         "kind": "minicon-reputation-qualification",
-        "source_sha": manifest.get("source_sha"),
+        "source_sha": source_sha,
         "candidate_run": candidate_run,
         "minicon_com_sha256": expected_sha,
         "verdict": "clean",
@@ -85,6 +95,31 @@ def qualify(args: argparse.Namespace) -> None:
         },
     }
     pathlib.Path(args.output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def verify_qualification(args: argparse.Namespace) -> None:
+    manifest = load(pathlib.Path(args.manifest))
+    qualification = load(pathlib.Path(args.qualification))
+    source_sha, candidate_run, expected_sha = candidate_identity(manifest)
+    if qualification.get("schema") != 1 or qualification.get("kind") != "minicon-reputation-qualification":
+        raise ValueError("wrong reputation qualification kind")
+    if qualification.get("verdict") != "clean":
+        raise ValueError("reputation qualification is not clean")
+    if qualification.get("source_sha") != source_sha:
+        raise ValueError("qualification source SHA mismatch")
+    if qualification.get("candidate_run") != candidate_run:
+        raise ValueError("qualification Candidate run mismatch")
+    if qualification.get("minicon_com_sha256") != expected_sha:
+        raise ValueError("qualification APE digest mismatch")
+    courts = qualification.get("courts")
+    if not isinstance(courts, dict) or set(courts) != {"defender", "360"}:
+        raise ValueError("qualification must contain Defender and 360 courts")
+    wanted = (("defender", "receipt_sha256"), ("360", "receipt_sha256"), ("360", "screenshot_sha256"))
+    for court, field in wanted:
+        row = courts.get(court)
+        if not isinstance(row, dict) or not SHA_RE.fullmatch(str(row.get(field))):
+            raise ValueError(f"invalid {court} {field}")
+    print("PASS reputation qualification bound to exact Candidate")
 
 
 def selftest() -> None:
@@ -110,6 +145,7 @@ def selftest() -> None:
         args = argparse.Namespace(**paths, screenshot=screenshot, output=output)
         qualify(args)
         assert load(output)["verdict"] == "clean"
+        verify_qualification(argparse.Namespace(manifest=paths["manifest"], qualification=output))
         court360["minicon_com_sha256"] = "c" * 64
         paths["court360"].write_text(json.dumps(court360), encoding="utf-8")
         try:
@@ -130,12 +166,17 @@ def main() -> None:
     court.add_argument("--court360", required=True)
     court.add_argument("--screenshot", required=True)
     court.add_argument("--output", required=True)
+    verify = sub.add_parser("verify")
+    verify.add_argument("--manifest", required=True)
+    verify.add_argument("--qualification", required=True)
     sub.add_parser("self-test")
     args = parser.parse_args()
     if args.command == "self-test":
         selftest()
-    else:
+    elif args.command == "qualify":
         qualify(args)
+    else:
+        verify_qualification(args)
 
 
 if __name__ == "__main__":

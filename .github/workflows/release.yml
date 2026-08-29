@@ -11,6 +11,10 @@ on:
         description: Exact Candidate source SHA
         required: true
         type: string
+      reputation_run_id:
+        description: Successful Reputation Qualification workflow run ID
+        required: true
+        type: string
       version:
         description: Exact Candidate version (for example 0.1.3)
         required: true
@@ -45,10 +49,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          REPUTATION_RUN_ID: ${{ inputs.reputation_run_id }}
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$REPUTATION_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
           [[ "$(jq -r .path <<<"$run")" == ".github/workflows/candidate.yml" ]]
@@ -56,6 +62,12 @@ jobs:
           [[ "$(jq -r .status <<<"$run")" == "completed" ]]
           [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
           [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          reputation="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REPUTATION_RUN_ID")"
+          [[ "$(jq -r .path <<<"$reputation")" == ".github/workflows/reputation.yml" ]]
+          [[ "$(jq -r .event <<<"$reputation")" == "workflow_dispatch" ]]
+          [[ "$(jq -r .status <<<"$reputation")" == "completed" ]]
+          [[ "$(jq -r .conclusion <<<"$reputation")" == "success" ]]
+          [[ "$(jq -r .head_sha <<<"$reputation")" == "$SOURCE_SHA" ]]
           echo "attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
 
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -68,11 +80,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          REPUTATION_RUN_ID: ${{ inputs.reputation_run_id }}
         run: |
           set -euo pipefail
           mkdir candidate
           gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
             --name "release-candidate-$CANDIDATE_RUN_ID" --dir candidate
+          gh run download "$REPUTATION_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "reputation-qualification-$REPUTATION_RUN_ID" --dir reputation
 
       - name: Verify identity, receipt hashes and every sealed byte
         id: identity
@@ -96,6 +111,10 @@ jobs:
             "$(jq -r .receipts.aggregate.sha256 "$manifest")" ]]
           python3 research/minicon-com-loader/candidate_bundle.py verify \
             --manifest "$manifest" --payload candidate/payload
+          python3 research/minicon-com-loader/reputation_court.py verify \
+            --manifest "$manifest" \
+            --qualification reputation/reputation-qualification.json
+          cp reputation/reputation-qualification.json candidate/
           cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           [[ "$cargo_version" == "$VERSION" ]]
           if [[ '${{ inputs.dry_run }}' == true ]]; then
@@ -184,7 +203,8 @@ jobs:
           gh release create "$TAG" --draft --target "$SOURCE_SHA" \
             --title "MiniCon $VERSION" --notes-file candidate/release-notes.md \
             candidate/payload/* candidate/candidate-manifest.json \
-            candidate/build-receipt.json candidate/aggregate-receipt.json
+            candidate/build-receipt.json candidate/aggregate-receipt.json \
+            candidate/reputation-qualification.json
           gh release edit "$TAG" --draft=false
 
   post-publish-posix:

@@ -1285,6 +1285,11 @@ interactive Linux x86 installation.
   blocks that artifact and enters the vendor false-positive channel; PTY,
   named-pipe, Job and control behavior remains product functionality rather
   than something to hide or remove.
+  A redacted post-pack qualification receipt is admitted through the manual
+  `Reputation Qualification` workflow and bound to Candidate run, source SHA
+  and `minicon.com` SHA. Promotion must consume that successful run ID; missing
+  or mismatched evidence fails closed. Raw screenshots remain operator-held and
+  gitignored rather than leaking workstation context into repository history.
 
 - [ ] **Future formal publisher identity — `PARTNERNET SOFTWARE PTY LTD`.**
   Establish company-owned signing as a later release court for `minicon.com`,

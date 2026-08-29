@@ -1,0 +1,74 @@
+name: Reputation Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Release Candidate workflow run ID
+        required: true
+        type: string
+      source_sha:
+        description: Exact Candidate source SHA
+        required: true
+        type: string
+      qualification_base64:
+        description: Base64 of locally verified reputation-qualification.json
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: minicon-reputation-${{ inputs.candidate_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Resolve exact successful Candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/candidate.yml" ]]
+          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
+          [[ "$(jq -r .status <<<"$run")" == "completed" ]]
+          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
+          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          mkdir candidate
+          gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "release-candidate-$CANDIDATE_RUN_ID" --dir candidate
+
+      - name: Decode and verify redacted post-pack qualification
+        env:
+          QUALIFICATION_BASE64: ${{ inputs.qualification_base64 }}
+        run: |
+          set -euo pipefail
+          mkdir qualified
+          printf '%s' "$QUALIFICATION_BASE64" | base64 --decode >qualified/reputation-qualification.json
+          python3 research/minicon-com-loader/reputation_court.py verify \
+            --manifest candidate/candidate-manifest.json \
+            --qualification qualified/reputation-qualification.json
+          cp candidate/candidate-manifest.json qualified/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reputation-qualification-${{ github.run_id }}
+          path: qualified/
+          if-no-files-found: error
+          retention-days: 14

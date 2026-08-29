@@ -119,7 +119,10 @@ python3 research/minicon-com-loader/reputation_court.py qualify \
 The qualifier fails closed on a hit, missing engine metadata, a changed
 screenshot, a different Candidate run, or a different executable SHA. Raw scan
 evidence stays outside Git; only a redacted qualification summary may enter the
-delivery record.
+delivery record. Base64-encode that summary and dispatch `Reputation
+Qualification` with the exact Candidate run and source SHA. Promotion requires
+the resulting successful workflow run ID; `.github/workflows/release.yml`
+cannot publish without downloading and revalidating that receipt.
 
 ## Non-goals
 
