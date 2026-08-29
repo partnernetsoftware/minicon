@@ -20,9 +20,13 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   download, hash, unpack and execute the exact packaged PE before publication.
   The repository-pinned Rust 1.97 toolchain is load-bearing evidence: release
   builders must not silently inherit a later rolling `stable` toolchain.
-- [~] **v0.1.3 Candidate: one-file `minicon.com` as fourth Release asset (not tagged).**
-  Ruling A (cdx): v0.1.2 three packages stay frozen; never backfill or mix into
-  `v0.1.2`. Executable gates: `research/minicon-com-loader/v0.1.3-candidate-plan.md`
+  This is only **4/6 cell coverage**: macOS Universal contains arm64+x86_64,
+  while Windows arm64 and Linux arm64 have no v0.1.2 archive. Never backfill
+  that historical Release.
+- [~] **v0.1.3 Candidate: full six-cell archives plus one-file `minicon.com`
+  (not tagged).** Five archives cover Windows/Linux x86_64+arm64 and macOS
+  Universal; `minicon.com` is the sixth executable asset. All six have SHA-256
+  sidecars. Executable gates: `research/minicon-com-loader/v0.1.3-candidate-plan.md`
   (G1 clean one-pack receipt, G2 six-cell smoke + GUI/control black-box, G3
   loader/installer lock, G4 APE size court, G5 download-rehash-execute, G6
   Defender+360 on exact SHA, G7 identity `0.1.3`, G8 human promote). Research
@@ -38,7 +42,7 @@ flowchart LR
     S12["v0.1.2 exact source"] --> B12["3 platform packages"]
     B12 --> W12["native Windows package execution"]
     W12 --> R12["stable v0.1.2 release"]
-    R12 --> X13["v0.1.3 Candidate minicon.com · fourth asset · not tagged"]
+    R12 --> X13["v0.1.3 Candidate<br/>5 archives cover 6 cells + minicon.com"]
     X13 --> L13["Cosmopolitan loader"]
     X13 --> P13["6 Rust payloads"]
     L13 & P13 --> G13{"selector + six runtime cells<br/>size + checksum + reputation pass?"}

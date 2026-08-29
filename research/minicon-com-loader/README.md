@@ -91,8 +91,10 @@ require matching marker, then `open(O_NOFOLLOW|O_DIRECTORY)` / `unlinkat`.
 Four cases in `reaper-tests.sh`: fake-symlink, foreign-owner, active-pid,
 stale-owned. Never `#ifdef _WIN32` in cosmocc fat.
 
-v0.1.3 Candidate (cdx ruling A): fourth Release asset beside the frozen
-v0.1.2 three packages. Gates: `v0.1.3-candidate-plan.md`. G3/G4: `loader-lifecycle-tests.sh`, `install-cosmocc-swap-test.sh`,
+v0.1.3 Candidate: five archives cover all six native cells (macOS Universal
+contains two slices) and `minicon.com` is the sixth executable asset. The
+v0.1.2 three-archive, 4/6-cell Release remains frozen. Gates:
+`v0.1.3-candidate-plan.md`. G3/G4: `loader-lifecycle-tests.sh`, `install-cosmocc-swap-test.sh`,
 `write-size-report.py` (`CANDIDATE_CEILING_BYTES=9437184`). G2 POSIX:
 `ci-control.sh` (HOME + `--control` + `list-tabs` poll). These two lanes are smoke until G2 GUI/control
 and G8 human promote. Do not tag here.

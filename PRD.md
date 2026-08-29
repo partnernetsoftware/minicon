@@ -49,8 +49,10 @@ MiniCon — one-file local terminal
 │   ├── independent evidence lanes
 │   │   ├── GitHub native runners — fast regression and real ISA
 │   │   └── local UTM — controlled-image release and interactive reproduction
-│   ├── [x] v0.1.2 stable — three platform packages + SHA-256 sidecars
-│   ├── [~] v0.1.3 Candidate — minicon.com as fourth exact-byte asset
+│   ├── [x] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
+│   ├── [~] v0.1.3 Candidate — all 6 cells + minicon.com exact bytes
+│   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
+│   │   ├── minicon.com is the sixth downloadable executable asset
 │   │   ├── G1–G8 plan: research/minicon-com-loader/v0.1.3-candidate-plan.md
 │   │   ├── hard ceiling: 9437184 bytes (9 MiB)
 │   │   ├── existing six-cell smoke is evidence, not a Candidate pack
@@ -99,7 +101,7 @@ flowchart LR
     end
     subgraph REL["Release evolution"]
         V12["v0.1.2 stable<br/>three packages"]
-        C13["v0.1.3 Candidate<br/>minicon.com fourth asset · G1–G8"]
+        C13["v0.1.3 Candidate<br/>six-cell archives + minicon.com · G1–G8"]
         G13{"runtime + control + size<br/>checksum + reputation pass?"}
         V13["user: exact version + promote<br/>exact immutable bytes"]
         KEEP["retain stable release<br/>revise failed gate"]

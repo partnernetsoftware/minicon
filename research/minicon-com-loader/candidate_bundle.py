@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seal and verify the four exact MiniCon Candidate assets."""
+"""Seal six-cell MiniCon release coverage plus the exact APE."""
 from __future__ import annotations
 
 import argparse
@@ -24,7 +24,9 @@ def sha256(path: Path) -> str:
 def asset_names(version: str) -> list[str]:
     return [
         f"minicon-{version}-windows-x86_64.zip",
+        f"minicon-{version}-windows-arm64.zip",
         f"minicon-{version}-linux-x86_64.tar.gz",
+        f"minicon-{version}-linux-arm64.tar.gz",
         f"minicon-{version}-macos-universal.tar.gz",
         "minicon.com",
     ]
@@ -150,7 +152,7 @@ def verify_manifest(manifest: dict, payload: Path) -> None:
 
 def verify(args: argparse.Namespace) -> None:
     verify_manifest(read_json(args.manifest), args.payload.resolve())
-    print("PASS exact four assets + sidecars")
+    print("PASS exact six-cell release set + sidecars")
 
 
 def self_test() -> None:

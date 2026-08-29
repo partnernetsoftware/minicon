@@ -68,68 +68,71 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {platform_id: windows-x86_64, runner: ubuntu-24.04, target: x86_64-pc-windows-msvc, binary: minicon.exe}
-          - {platform_id: linux-x86_64, runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: minicon}
-          - {platform_id: macos-universal, runner: macos-15, target: aarch64-apple-darwin, binary: minicon}
+          - {platform_id: windows-x86_64, runner: ubuntu-24.04, cell: win-x86_64, binary: minicon.exe}
+          - {platform_id: windows-arm64, runner: ubuntu-24.04, cell: win-aarch64, binary: minicon.exe}
+          - {platform_id: linux-x86_64, runner: ubuntu-24.04, cell: lnx-x86_64, binary: minicon}
+          - {platform_id: linux-arm64, runner: ubuntu-24.04, cell: lnx-aarch64, binary: minicon}
+          - {platform_id: macos-universal, runner: macos-15, cell: universal, binary: minicon}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
           ref: ${{ inputs.source_sha }}
 
-      - name: Install target and platform tools
+      - name: Download six payloads from the exact one-pack run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$COM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name minicon-native-payloads --dir upstream
+
+      - name: Verify payload identity and stage package binary
         shell: bash
         run: |
           set -euo pipefail
-          rustup target add '${{ matrix.target }}'
+          receipt=upstream/build-receipt.json
+          verify_cell() {
+            cell="$1"; path="$2"
+            expected="$(jq -r --arg cell "$cell" '.payloads[$cell].sha256' "$receipt")"
+            if command -v sha256sum >/dev/null; then
+              actual="$(sha256sum "$path" | cut -d' ' -f1)"
+            else
+              actual="$(shasum -a 256 "$path" | cut -d' ' -f1)"
+            fi
+            [[ "$actual" == "$expected" ]]
+          }
+          mkdir -p package-bin
           case '${{ matrix.platform_id }}' in
-            windows-x86_64)
-              cargo install cargo-xwin --locked --version 0.23.1
-              sudo apt-get update -qq
-              sudo apt-get install -y llvm
-              command -v llvm-rc
-              ;;
-            linux-x86_64)
-              sudo apt-get update -qq
-              sudo apt-get install -y libxkbcommon0 libxkbcommon-x11-0 libwayland-client0
-              ;;
             macos-universal)
-              rustup target add x86_64-apple-darwin
+              arm=upstream/cells/osx-aarch64/minicon
+              intel=upstream/cells/osx-x86_64/minicon
+              verify_cell osx-aarch64 "$arm"
+              verify_cell osx-x86_64 "$intel"
+              lipo -create -output package-bin/minicon "$arm" "$intel"
+              [[ "$(lipo -archs package-bin/minicon)" == *arm64* ]]
+              [[ "$(lipo -archs package-bin/minicon)" == *x86_64* ]]
+              ;;
+            *)
+              cell='${{ matrix.cell }}'
+              source="upstream/cells/$cell/${{ matrix.binary }}"
+              verify_cell "$cell" "$source"
+              cp "$source" package-bin/'${{ matrix.binary }}'
               ;;
           esac
-
-      - name: Build package bytes
-        shell: bash
-        run: |
-          set -euo pipefail
           case '${{ matrix.platform_id }}' in
-            windows-x86_64)
-              cargo xwin build --locked --release --target '${{ matrix.target }}'
-              file 'target/${{ matrix.target }}/release/${{ matrix.binary }}' |
-                grep -F 'PE32+ executable (GUI) x86-64'
-              ;;
-            macos-universal)
-              cargo build --locked --release --target aarch64-apple-darwin
-              cargo build --locked --release --target x86_64-apple-darwin
-              lipo -create -output minicon \
-                target/aarch64-apple-darwin/release/minicon \
-                target/x86_64-apple-darwin/release/minicon
-              mv minicon target/aarch64-apple-darwin/release/minicon
-              ;;
-            *) cargo build --locked --release --target '${{ matrix.target }}' ;;
+            windows-*) ;;
+            *) chmod 0755 package-bin/minicon ;;
           esac
 
-      - name: Verify and archive
+      - name: Archive exact package bytes
         shell: bash
         run: |
           set -euo pipefail
           version='${{ needs.preflight.outputs.version }}'
           platform='${{ matrix.platform_id }}'
-          binary='target/${{ matrix.target }}/release/${{ matrix.binary }}'
-          if [[ "$platform" != windows-* ]]; then
-            [[ "$("$binary" --version)" == "minicon $version" ]]
-            "$binary" --status
-          fi
+          binary='package-bin/${{ matrix.binary }}'
           name="minicon-$version-$platform"
           mkdir -p "dist/$name"
           cp "$binary" "dist/$name/"
@@ -159,26 +162,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  verify-windows-package:
+  verify-packages:
     needs: [preflight, packages]
-    runs-on: windows-2025
-    timeout-minutes: 10
+    name: execute package ${{ matrix.cell }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: win-x86_64, platform_id: windows-x86_64, runner: windows-2025, family: windows}
+          - {cell: win-aarch64, platform_id: windows-arm64, runner: windows-11-arm, family: windows}
+          - {cell: lnx-x86_64, platform_id: linux-x86_64, runner: ubuntu-24.04, family: unix}
+          - {cell: lnx-aarch64, platform_id: linux-arm64, runner: ubuntu-24.04-arm, family: unix}
+          - {cell: osx-x86_64, platform_id: macos-universal, runner: macos-15-intel, family: unix}
+          - {cell: osx-aarch64, platform_id: macos-universal, runner: macos-15, family: unix}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: candidate-package-windows-x86_64
+          name: candidate-package-${{ matrix.platform_id }}
           path: incoming
-      - name: Rehash and execute packaged PE
+      - name: Rehash and execute packaged Windows binary
+        if: matrix.family == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $version = '${{ needs.preflight.outputs.version }}'
-          $archive = Join-Path $PWD "incoming/minicon-$version-windows-x86_64.zip"
+          $platform = '${{ matrix.platform_id }}'
+          $archive = Join-Path $PWD "incoming/minicon-$version-$platform.zip"
           $expected = ((Get-Content -LiteralPath "$archive.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
           $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "archive digest mismatch" }
           Expand-Archive -LiteralPath $archive -DestinationPath unpacked
-          $binary = Join-Path $PWD "unpacked/minicon-$version-windows-x86_64/minicon.exe"
+          $binary = Join-Path $PWD "unpacked/minicon-$version-$platform/minicon.exe"
           $out = Join-Path $env:RUNNER_TEMP "minicon-version.out"
           $err = Join-Path $env:RUNNER_TEMP "minicon-version.err"
           $p = Start-Process -FilePath $binary -ArgumentList '--version' -Wait -PassThru `
@@ -186,8 +202,30 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "packaged PE exit $($p.ExitCode)" }
           if ((Get-Content -LiteralPath $out -Raw).Trim() -ne "minicon $version") { throw "version mismatch" }
 
+      - name: Rehash and execute packaged Unix binary
+        if: matrix.family == 'unix'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ needs.preflight.outputs.version }}'
+          platform='${{ matrix.platform_id }}'
+          archive="incoming/minicon-$version-$platform.tar.gz"
+          expected="$(cut -d' ' -f1 <"$archive.sha256")"
+          if command -v sha256sum >/dev/null; then
+            actual="$(sha256sum "$archive" | cut -d' ' -f1)"
+          else
+            actual="$(shasum -a 256 "$archive" | cut -d' ' -f1)"
+          fi
+          [[ "$actual" == "$expected" ]]
+          mkdir unpacked
+          tar -xzf "$archive" -C unpacked
+          binary="unpacked/minicon-$version-$platform/minicon"
+          chmod +x "$binary"
+          [[ "$("$binary" --version)" == "minicon $version" ]]
+          "$binary" --status
+
   seal:
-    needs: [preflight, packages, verify-windows-package]
+    needs: [preflight, packages, verify-packages]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -216,7 +254,7 @@ jobs:
           cp upstream/com/build-receipt.json upstream/build-receipt.json
           cp upstream/aggregate/aggregate-receipt.json upstream/aggregate-receipt.json
 
-      - name: Seal exact four assets
+      - name: Seal exact six-cell release set
         run: |
           set -euo pipefail
           python3 research/minicon-com-loader/candidate_bundle.py seal \

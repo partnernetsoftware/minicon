@@ -122,6 +122,20 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Stage six native payloads for Release packaging
+        run: |
+          set -euo pipefail
+          mkdir -p native-payloads
+          cp -R research/minicon-com-loader/dist/cells native-payloads/
+          cp research/minicon-com-loader/dist/build-receipt.json native-payloads/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: minicon-native-payloads
+          path: native-payloads/
+          if-no-files-found: error
+          retention-days: 14
+
   test:
     name: ${{ matrix.cell }}
     needs: build

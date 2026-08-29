@@ -13,13 +13,17 @@ runtime, and no Visual C++ redistributable.
 
 ## Downloads
 
-One file per platform, with a SHA-256 beside it.
+Five platform archives cover all six OS/ISA cells, with a SHA-256 beside each.
+The experimental `minicon.com` launcher contains all six payloads in one file.
 
 | Platform | Archive |
 | --- | --- |
 | Windows x86_64 | `minicon-VERSION-windows-x86_64.zip` |
+| Windows ARM64 | `minicon-VERSION-windows-arm64.zip` |
 | Linux x86_64 | `minicon-VERSION-linux-x86_64.tar.gz` |
+| Linux ARM64 | `minicon-VERSION-linux-arm64.tar.gz` |
 | macOS — Apple Silicon and Intel | `minicon-VERSION-macos-universal.tar.gz` |
+| Six-cell APE launcher | `minicon.com` |
 
 The macOS build is a universal binary: the same file runs on both
 architectures.
