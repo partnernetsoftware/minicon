@@ -88,10 +88,21 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   person who needs it. Each is written in the language it selects, and the
   active one is drawn in the accent colour, so the control reports state as
   well as offering a change.
-- [x] the size controls are compact `z`, `0`, and `Z` actions: shrink, restore
+- [~] the size controls are compact `z`, `0`, and `Z` actions: shrink, restore
   the configured launch size, and grow. The same zoom source sizes terminal
   content and every chrome label, including tabs, header tools, composer text,
   IME status, and Send/Newline buttons; hit-testing uses the matching metrics.
+  **Reopened from direct macOS use:** although the zoom path is wired, the
+  default non-content roles remain much too small to read. The next UI increment
+  must increase the nominal tab/header/composer-button type roles, and prove
+  that `z`/`0`/`Z` visibly resize them rather than only terminal content.
+- [ ] larger chrome text must not make the toolbars wasteful. Reduce internal
+  button padding, sibling gaps, and outer header/composer margins to the minimum
+  that preserves disjoint hit targets and glyph bounds. Success is paired PNG +
+  structured geometry on macOS first, then Win/Lnx parity: larger legible text,
+  no clipping/overlap, and no increase in total header/composer height unless
+  the old height cannot contain the larger glyph bounds. Merely enlarging the
+  terminal cell font, or enlarging empty padding with the label, fails.
 - [x] all three are muted and use the same size, because they are **actions**. The accent
   colour means "current state" for the language entries beside them, and one
   visual language must not carry two meanings in a single row — the old `Z` was

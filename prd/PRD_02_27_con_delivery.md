@@ -1303,6 +1303,17 @@ interactive Linux x86 installation.
   pack/test owner per `v0.1.3-candidate-plan.md`, still not a tagger). Enabling
   ordinary CI requires a reviewed rename, a successful
   first run, and PRD backfill from that run.
+
+- [ ] **Warm `minicon.com` pack latency is a measured product constraint.** The
+  v0.1.3 six-payload run `33247549065` measured 5m29s in the single macOS pack
+  job even with a cache hit; the six execute-only cells then completed quickly.
+  The target is approximately one minute for a warm, source-compatible pack.
+  Evidence must split runner setup, checkout/cache restore, tool verification,
+  each target compile, cosmocc packing, and artifact upload. Investigate cache
+  keys/restore truth, repeated dependency compilation, multi-target Cargo graph
+  reuse, and redundant tool extraction before changing product code. The court
+  may not remove a target, move compilation into the six runtime cells, or call
+  queue time a compiler regression merely to satisfy the budget.
 - [ ] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from
   agenterm, and the standalone release contract may name only workflows and

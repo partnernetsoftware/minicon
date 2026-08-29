@@ -161,6 +161,13 @@ flowchart LR
 - [ ] Future formal releases should carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity; signing/timestamp/notarization infrastructure is planned,
   not claimed by the current Candidate.
+- [~] Workspace chrome readability is reopened: tab/header and composer-button
+  text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
+  their nominal text, and reclaim padding/gaps/margins instead of growing empty
+  toolbar space. Owner: `prd/PRD_02_25_con_workspace.md`.
+- [ ] Warm `minicon.com` pack is 5m29s against an approximately one-minute
+  target; profile and remove setup/cache/repeated-build waste without weakening
+  one-pack/six-execute coverage. Owner: `prd/PRD_02_27_con_delivery.md`.
 - [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
   other's verdict; unavailable runtime evidence is `BLOCKED`.
 - [~] Local courts are automation-capable but not sealed release baselines.
