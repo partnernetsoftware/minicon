@@ -111,6 +111,8 @@ jobs:
             "$(jq -r .receipts.aggregate.sha256 "$manifest")" ]]
           [[ "$(sha256sum candidate/g3-receipt.json | cut -d' ' -f1)" == \
             "$(jq -r .receipts.g3.sha256 "$manifest")" ]]
+          [[ "$(sha256sum candidate/signing-receipt.json | cut -d' ' -f1)" == \
+            "$(jq -r .receipts.signing.sha256 "$manifest")" ]]
           python3 research/minicon-com-loader/candidate_bundle.py verify \
             --manifest "$manifest" --payload candidate/payload
           python3 research/minicon-com-loader/reputation_court.py verify \
@@ -206,7 +208,7 @@ jobs:
             --title "MiniCon $VERSION" --notes-file candidate/release-notes.md \
             candidate/payload/* candidate/candidate-manifest.json \
             candidate/build-receipt.json candidate/aggregate-receipt.json \
-            candidate/g3-receipt.json \
+            candidate/g3-receipt.json candidate/signing-receipt.json \
             candidate/reputation-qualification.json
           gh release edit "$TAG" --draft=false
 

@@ -32,7 +32,7 @@ def require_text(row: dict, name: str) -> str:
     return value.strip()
 
 
-def candidate_identity(manifest: dict) -> tuple[str, dict, str]:
+def candidate_identity(manifest: dict) -> tuple[str, dict, str, str]:
     if manifest.get("kind") != "minicon-release-candidate":
         raise ValueError("wrong Candidate manifest kind")
     asset = next((row for row in manifest.get("assets", []) if row.get("name") == "minicon.com"), None)
@@ -43,7 +43,16 @@ def candidate_identity(manifest: dict) -> tuple[str, dict, str]:
     if not isinstance(candidate_run, dict):
         raise ValueError("Candidate run identity missing")
     source_sha = require_text(manifest, "source_sha")
-    return source_sha, candidate_run, expected_sha
+    signing = manifest.get("signing")
+    signing_receipt = manifest.get("receipts", {}).get("signing", {})
+    signing_sha = require_text(signing_receipt, "sha256")
+    if not SHA_RE.fullmatch(signing_sha):
+        raise ValueError("invalid signing receipt digest")
+    if not isinstance(signing, dict) or signing.get("organization") != "PARTNERNET SOFTWARE PTY LTD":
+        raise ValueError("Candidate lacks company signing identity")
+    if signing.get("signed_after_sha256", {}).get("minicon.com") != expected_sha:
+        raise ValueError("Candidate APE is not the company-signed after-SHA")
+    return source_sha, candidate_run, expected_sha, signing_sha
 
 
 def qualify(args: argparse.Namespace) -> None:
@@ -52,7 +61,7 @@ def qualify(args: argparse.Namespace) -> None:
     manifest = load(manifest_path)
     defender = load(defender_path)
 
-    source_sha, candidate_run, expected_sha = candidate_identity(manifest)
+    source_sha, candidate_run, expected_sha, signing_sha = candidate_identity(manifest)
 
     if defender.get("kind") != "minicon-defender-court" or defender.get("verdict") != "clean":
         raise ValueError("Defender verdict is not clean")
@@ -69,6 +78,7 @@ def qualify(args: argparse.Namespace) -> None:
         "source_sha": source_sha,
         "candidate_run": candidate_run,
         "minicon_com_sha256": expected_sha,
+        "signing_receipt_sha256": signing_sha,
         "verdict": "clean",
         "courts": {"defender": {"receipt_sha256": digest(defender_path)}},
     }
@@ -78,7 +88,7 @@ def qualify(args: argparse.Namespace) -> None:
 def verify_qualification(args: argparse.Namespace) -> None:
     manifest = load(pathlib.Path(args.manifest))
     qualification = load(pathlib.Path(args.qualification))
-    source_sha, candidate_run, expected_sha = candidate_identity(manifest)
+    source_sha, candidate_run, expected_sha, signing_sha = candidate_identity(manifest)
     if qualification.get("schema") != 1 or qualification.get("kind") != "minicon-reputation-qualification":
         raise ValueError("wrong reputation qualification kind")
     if qualification.get("verdict") != "clean":
@@ -89,6 +99,8 @@ def verify_qualification(args: argparse.Namespace) -> None:
         raise ValueError("qualification Candidate run mismatch")
     if qualification.get("minicon_com_sha256") != expected_sha:
         raise ValueError("qualification APE digest mismatch")
+    if qualification.get("signing_receipt_sha256") != signing_sha:
+        raise ValueError("qualification signing receipt mismatch")
     courts = qualification.get("courts")
     if not isinstance(courts, dict) or set(courts) != {"defender"}:
         raise ValueError("qualification must contain exactly the Defender court")
@@ -106,7 +118,10 @@ def selftest() -> None:
         run = {"id": "42", "attempt": "1"}
         sha = "a" * 64
         manifest = {"kind": "minicon-release-candidate", "source_sha": "b" * 40,
-                    "candidate_run": run, "assets": [{"name": "minicon.com", "sha256": sha}]}
+                    "candidate_run": run, "assets": [{"name": "minicon.com", "sha256": sha}],
+                    "signing": {"organization": "PARTNERNET SOFTWARE PTY LTD",
+                                "signed_after_sha256": {"minicon.com": sha}},
+                    "receipts": {"signing": {"sha256": "d" * 64}}}
         common = {"verdict": "clean", "candidate_run": run, "minicon_com_sha256": sha,
                   "provider": "fixture", "product_version": "1", "engine_version": "1",
                   "signature_version": "1", "scanned_at": "2026-01-01T00:00:00Z"}

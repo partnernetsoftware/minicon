@@ -107,7 +107,7 @@ flowchart LR
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
-        SI["PARTNERNET SOFTWARE PTY LTD<br/>publisher signing · timestamp · notarization"]
+        SI["PARTNERNET SOFTWARE PTY LTD<br/>current Authenticode court · timestamp"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
         QG{"total size + startup + memory<br/>six-cell parity pass?"}
@@ -123,7 +123,7 @@ flowchart LR
     R --> V12 --> C13 --> G13
     G13 -->|yes| V13
     G13 -->|no| KEEP
-    SI -. future release reputation court .-> G13
+    SI --> G13
     QE -. later .-> QX
     X -. native baseline .-> QX
     QX --> QG
@@ -159,10 +159,13 @@ flowchart LR
 - [~] v0.1.3 remains gated. Exact-SHA run `33250748539` built once, embedded
   green G3 lifecycle evidence, and passed six native GUI/control cells;
   Candidate `33250998985` sealed five platform archives covering all six cells
-  plus `minicon.com`, then rehashed and executed every native archive. Its exact
-  APE is blocked at G6: Microsoft Defender reports
+  plus `minicon.com`, then rehashed and executed every native archive. That was
+  an unsigned rehearsal and is no longer promotable. Its exact APE is red at
+  G6: Microsoft Defender reports
   `Program:Win32/Contebrew.A!ml`. Submit that exact SHA through the vendor
-  false-positive channel; company signing plus signed-byte Defender rerun and
+  false-positive channel. The company-signing before→after SHA workflow and
+  signed-byte six-grid are implemented but not yet dispatched; Azure Public
+  Trust identity/OIDC setup, signed-byte Defender rerun, and
   explicit user Promotion remain open. No tag
   or Release exists.
 - [~] Formal releases should carry `PARTNERNET SOFTWARE PTY LTD` publisher

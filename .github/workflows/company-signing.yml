@@ -1,0 +1,378 @@
+name: Company Signing Court
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-character current main HEAD
+        required: true
+        type: string
+      minicon_com_run_id:
+        description: Successful unsigned one-pack/six-cell run for source_sha
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: minicon-company-signing-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      upstream_attempt: ${{ steps.identity.outputs.upstream_attempt }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - name: Bind exact source and unsigned one-pack run
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$UPSTREAM_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$UPSTREAM_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/minicon-com.yml" ]]
+          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
+          [[ "$(jq -r .status <<<"$run")" == "completed" ]]
+          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
+          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          [[ "$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)" == "0.1.3" ]]
+          echo "upstream_attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
+
+  sign:
+    needs: preflight
+    runs-on: windows-2025
+    timeout-minutes: 20
+    environment: release-signing
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    outputs:
+      signed_com_sha256: ${{ steps.receipt.outputs.signed_com_sha256 }}
+      source_tree_digest: ${{ steps.receipt.outputs.source_tree_digest }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - name: Download exact unsigned artifacts and aggregate receipt
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh run download $env:UPSTREAM_RUN_ID --repo $env:GITHUB_REPOSITORY `
+            --name minicon-com --dir upstream/com
+          gh run download $env:UPSTREAM_RUN_ID --repo $env:GITHUB_REPOSITORY `
+            --name minicon-native-payloads --dir upstream/native
+          gh run download $env:UPSTREAM_RUN_ID --repo $env:GITHUB_REPOSITORY `
+            --name "minicon-com-aggregate-attempt-$env:UPSTREAM_ATTEMPT" --dir upstream/aggregate
+
+      - name: Verify unsigned identity and stage exact signing set
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $build = Get-Content upstream/com/build-receipt.json -Raw | ConvertFrom-Json
+          $aggregate = Get-Content upstream/aggregate/aggregate-receipt.json -Raw | ConvertFrom-Json
+          if ($build.source_sha -ne $env:SOURCE_SHA -or $build.source_dirty -ne $false) { throw 'unsigned build identity mismatch' }
+          if ($build.product_version -ne '0.1.3') { throw 'unsigned build version mismatch' }
+          if ($build.authenticode.ready -ne $true -or $build.authenticode.optional_header_bytes -ne 240 -or
+              $build.authenticode.data_directory_count -ne 16 -or $build.authenticode.security_file_offset -ne 0 -or
+              $build.authenticode.security_bytes -ne 0) { throw 'APE is not in the empty signable Authenticode state' }
+          if ($aggregate.source_sha -ne $env:SOURCE_SHA -or $aggregate.minicon_com_sha256 -ne $build.minicon_com_sha256 -or
+              "$($aggregate.run_id)" -ne $env:UPSTREAM_RUN_ID -or "$($aggregate.run_attempt)" -ne $env:UPSTREAM_ATTEMPT) {
+            throw 'unsigned aggregate identity mismatch'
+          }
+          New-Item -ItemType Directory -Force signed/cells | Out-Null
+          Copy-Item upstream/com/minicon.com signed/minicon.com
+          Copy-Item upstream/com/build-receipt.json signed/build-receipt.json
+          Copy-Item upstream/com/g3 signed/g3 -Recurse
+          Copy-Item upstream/aggregate/aggregate-receipt.json signed/unsigned-aggregate-receipt.json
+          Copy-Item upstream/native/cells/* signed/cells -Recurse
+          Copy-Item research/minicon-com-loader/ci-status.sh signed/
+          Copy-Item research/minicon-com-loader/ci-status.ps1 signed/
+          Copy-Item research/minicon-com-loader/ci-control.sh signed/
+          Copy-Item research/minicon-com-loader/ci-control.ps1 signed/
+          Copy-Item research/minicon-com-loader/signing_receipt.py signed/
+          $paths = [ordered]@{
+            'minicon.com' = 'signed/minicon.com'
+            'win-x86_64' = 'signed/cells/win-x86_64/minicon.exe'
+            'win-aarch64' = 'signed/cells/win-aarch64/minicon.exe'
+          }
+          $before = [ordered]@{}
+          foreach ($entry in $paths.GetEnumerator()) {
+            $before[$entry.Key] = (Get-FileHash -LiteralPath $entry.Value -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          if ($before['minicon.com'] -ne $build.minicon_com_sha256) { throw 'unsigned APE digest mismatch' }
+          if ($before['win-x86_64'] -ne $build.payloads.'win-x86_64'.sha256 -or
+              $before['win-aarch64'] -ne $build.payloads.'win-aarch64'.sha256) { throw 'unsigned Windows payload digest mismatch' }
+          $before | ConvertTo-Json | Set-Content -LiteralPath unsigned-hashes.json -Encoding utf8NoBOM
+
+      - name: Azure OIDC login
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign exact APE and two Windows native payloads
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\signed\minicon.com
+            ${{ github.workspace }}\signed\cells\win-x86_64\minicon.exe
+            ${{ github.workspace }}\signed\cells\win-aarch64\minicon.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Verify publisher, timestamp, and write before-to-after receipt
+        id: receipt
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $before = Get-Content unsigned-hashes.json -Raw | ConvertFrom-Json -AsHashtable
+          $build = Get-Content signed/build-receipt.json -Raw | ConvertFrom-Json
+          $paths = [ordered]@{
+            'minicon.com' = 'minicon.com'
+            'win-x86_64' = 'cells/win-x86_64/minicon.exe'
+            'win-aarch64' = 'cells/win-aarch64/minicon.exe'
+          }
+          $assets = [ordered]@{}
+          foreach ($entry in $paths.GetEnumerator()) {
+            $path = Join-Path (Resolve-Path signed).Path $entry.Value
+            $sig = Get-AuthenticodeSignature -LiteralPath $path
+            if ($sig.Status -ne 'Valid') { throw "$($entry.Key): Authenticode status $($sig.Status)" }
+            if ($null -eq $sig.SignerCertificate -or $null -eq $sig.TimeStamperCertificate) { throw "$($entry.Key): missing signer or timestamp" }
+            if ($sig.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=PARTNERNET SOFTWARE PTY LTD(?:,|$)') {
+              throw "$($entry.Key): unexpected publisher $($sig.SignerCertificate.Subject)"
+            }
+            $after = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($after -eq $before[$entry.Key]) { throw "$($entry.Key): signing did not change bytes" }
+            $assets[$entry.Key] = [ordered]@{
+              path = $entry.Value.Replace('\', '/')
+              before_sha256 = $before[$entry.Key]
+              after_sha256 = $after
+              after_bytes = (Get-Item -LiteralPath $path).Length
+              authenticode_status = "$($sig.Status)"
+              signer_subject = $sig.SignerCertificate.Subject
+              signer_issuer = $sig.SignerCertificate.Issuer
+              signer_thumbprint = $sig.SignerCertificate.Thumbprint
+              signer_not_before = $sig.SignerCertificate.NotBefore.ToUniversalTime().ToString('o')
+              signer_not_after = $sig.SignerCertificate.NotAfter.ToUniversalTime().ToString('o')
+              timestamp_subject = $sig.TimeStamperCertificate.Subject
+              timestamp_issuer = $sig.TimeStamperCertificate.Issuer
+            }
+          }
+          $receipt = [ordered]@{
+            schema = 1
+            kind = 'minicon-company-signing'
+            source_sha = $env:SOURCE_SHA
+            source_tree_digest = $build.source_tree_digest
+            product_version = '0.1.3'
+            organization = 'PARTNERNET SOFTWARE PTY LTD'
+            file_digest = 'SHA256'
+            timestamp_rfc3161 = 'http://timestamp.acs.microsoft.com'
+            timestamp_digest = 'SHA256'
+            upstream = [ordered]@{ run_id = [int64]$env:UPSTREAM_RUN_ID; run_attempt = [int]$env:UPSTREAM_ATTEMPT }
+            signing_run = [ordered]@{ id = [int64]$env:GITHUB_RUN_ID; attempt = [int]$env:GITHUB_RUN_ATTEMPT }
+            assets = $assets
+          }
+          $receipt | ConvertTo-Json -Depth 8 | Set-Content signed/signing-receipt.json -Encoding utf8NoBOM
+          python research/minicon-com-loader/signing_receipt.py --receipt signed/signing-receipt.json --root signed
+          foreach ($entry in $paths.GetEnumerator()) {
+            $path = Join-Path signed $entry.Value
+            $digest = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $([IO.Path]::GetFileName($path))" | Set-Content -LiteralPath "$path.sha256" -Encoding ascii
+          }
+          "signed_com_sha256=$($assets['minicon.com'].after_sha256)" | Out-File $env:GITHUB_OUTPUT -Append
+          "source_tree_digest=$($build.source_tree_digest)" | Out-File $env:GITHUB_OUTPUT -Append
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: upload
+        with:
+          name: company-signed-minicon
+          path: signed/
+          if-no-files-found: error
+          retention-days: 14
+
+  test:
+    name: signed ${{ matrix.cell }}
+    needs: sign
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: lnx-x86_64, runner: ubuntu-24.04, family: linux, expected_os: Linux, expected_arch: X64}
+          - {cell: lnx-aarch64, runner: ubuntu-24.04-arm, family: linux, expected_os: Linux, expected_arch: ARM64}
+          - {cell: win-x86_64, runner: windows-2025, family: windows, expected_os: Windows, expected_arch: X64}
+          - {cell: win-aarch64, runner: windows-11-arm, family: windows, expected_os: Windows, expected_arch: ARM64}
+          - {cell: osx-x86_64, runner: macos-15-intel, family: macos, expected_os: macOS, expected_arch: X64}
+          - {cell: osx-aarch64, runner: macos-15, family: macos, expected_os: macOS, expected_arch: ARM64}
+    runs-on: ${{ matrix.runner }}
+    env:
+      CELL: ${{ matrix.cell }}
+      FAMILY: ${{ matrix.family }}
+      EXPECTED_RUNNER_OS: ${{ matrix.expected_os }}
+      EXPECTED_RUNNER_ARCH: ${{ matrix.expected_arch }}
+      EXPECTED_COM_SHA256: ${{ needs.sign.outputs.signed_com_sha256 }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.sign.outputs.source_tree_digest }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: company-signed-minicon
+          path: bundle
+      - name: Guard signed identity (no compile)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
+          test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+          actual=$(python3 -c 'import hashlib; print(hashlib.sha256(open("bundle/minicon.com","rb").read()).hexdigest())')
+          test "$actual" = "$EXPECTED_COM_SHA256"
+          python3 bundle/signing_receipt.py --receipt bundle/signing-receipt.json --root bundle
+      - name: version+status+GUI/control (unix)
+        if: matrix.family != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x bundle/ci-status.sh bundle/ci-control.sh bundle/minicon.com
+          bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
+          if [[ "$FAMILY" == linux ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y xvfb libxkbcommon-x11-0
+            xvfb-run -a bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+          else
+            bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+          fi
+      - name: version+status+GUI/control (windows)
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item bundle/minicon.com bundle/minicon-ape.exe
+          & bundle/ci-status.ps1 -Binary (Join-Path $PWD 'bundle/minicon-ape.exe') `
+            -Receipt (Join-Path $PWD 'bundle/build-receipt.json') *>&1 | Tee-Object runtime-body.log
+          & bundle/ci-control.ps1 -Binary (Join-Path $PWD 'bundle/minicon-ape.exe') *>&1 | Tee-Object runtime-body.log -Append
+      - name: Runtime receipt
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          log = Path("runtime-body.log")
+          data = {
+              "schema": 1, "kind": "minicon-signed-runtime", "cell": os.environ["CELL"],
+              "job_status": os.environ["JOB_STATUS"], "runner_os": os.environ["RUNNER_OS"],
+              "runner_arch": os.environ["RUNNER_ARCH"], "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
+              "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"], "product_version": "0.1.3",
+          }
+          if log.is_file():
+              raw = log.read_bytes(); data.update(log_sha256=hashlib.sha256(raw).hexdigest(), log_bytes=len(raw))
+          Path("runtime-receipt.json").write_text(json.dumps(data, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: signed-runtime-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
+          path: |
+            runtime-receipt.json
+            runtime-body.log
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: require six signed PASS same after-SHA
+    if: always()
+    needs: [sign, test]
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: signed-runtime-*-attempt-${{ github.run_attempt }}
+          path: receipts
+      - name: Seal signed six-cell aggregate
+        env:
+          EXPECTED_COM_SHA256: ${{ needs.sign.outputs.signed_com_sha256 }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.sign.outputs.source_tree_digest }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.sign.outputs.artifact_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          wanted = {"lnx-x86_64","lnx-aarch64","win-x86_64","win-aarch64","osx-x86_64","osx-aarch64"}
+          run_id, attempt = os.environ["GITHUB_RUN_ID"], int(os.environ["GITHUB_RUN_ATTEMPT"])
+          rows = [json.loads(p.read_text()) for p in Path("receipts").rglob("runtime-receipt.json")]
+          rows = [r for r in rows if str(r.get("run_id")) == run_id and int(r.get("run_attempt", -1)) == attempt]
+          cells = [r.get("cell") for r in rows]
+          if len(rows) != 6 or set(cells) != wanted or len(set(cells)) != 6: raise SystemExit(f"cell set mismatch: {cells}")
+          if any(r.get("job_status") != "success" for r in rows): raise SystemExit("one or more signed runtime courts failed")
+          for field, expected in (("minicon_com_sha256", os.environ["EXPECTED_COM_SHA256"]),
+                                  ("source_sha", os.environ["EXPECTED_SOURCE_SHA"]),
+                                  ("source_tree_digest", os.environ["EXPECTED_SOURCE_TREE_DIGEST"])):
+              if {r.get(field) for r in rows} != {expected}: raise SystemExit(f"{field} mismatch")
+          out = {"schema": 1, "kind": "minicon-signed-six-cell-aggregate", "run_id": int(run_id),
+                 "run_attempt": attempt, "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+                 "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
+                 "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"],
+                 "artifact_id": os.environ["EXPECTED_ARTIFACT_ID"], "cells": sorted(cells),
+                 "strategy": "current-attempt-only-full-six"}
+          Path("signed-aggregate-receipt.json").write_text(json.dumps(out, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-aggregate-attempt-${{ github.run_attempt }}
+          path: signed-aggregate-receipt.json
+          if-no-files-found: error
+          retention-days: 14

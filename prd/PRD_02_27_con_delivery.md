@@ -1356,6 +1356,18 @@ interactive Linux x86 installation.
   timestamp evidence in receipts. Rotation must produce a new after-SHA and
   repeat all post-sign courts.
 
+  Implementation owner is `.github/workflows/company-signing.yml`. It accepts
+  only an exact successful `minicon-com.yml` run at current `main`, signs
+  exactly `minicon.com` plus Windows x86_64/arm64 `minicon.exe`, and emits an
+  immutable before→after `signing-receipt.json`. Its six native jobs compile
+  nothing and execute the signed APE's version/status/GUI/control surface.
+  `.github/workflows/candidate.yml` now accepts only that successful signing
+  run and seals its signed bytes; it rejects the earlier unsigned Candidate.
+  The final signed `minicon.com` must remain under the already stamped
+  9,437,184-byte ceiling. This wiring is implemented but remains unqualified
+  until the Public Trust profile and OIDC federation exist and the first exact
+  run is green.
+
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
   suffix, and its own header records that it has never run in this repository.

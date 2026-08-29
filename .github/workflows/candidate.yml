@@ -7,8 +7,8 @@ on:
         description: Exact 40-character current main HEAD
         required: true
         type: string
-      minicon_com_run_id:
-        description: Successful six-cell minicon.com workflow run for source_sha
+      signing_run_id:
+        description: Successful company-signing six-cell workflow run for source_sha
         required: true
         type: string
 
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      com_attempt: ${{ steps.identity.outputs.com_attempt }}
+      signing_attempt: ${{ steps.identity.outputs.signing_attempt }}
       version: ${{ steps.identity.outputs.version }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -34,29 +34,29 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.source_sha }}
 
-      - name: Bind exact main source and successful six-cell run
+      - name: Bind exact main source and successful signed six-cell run
         id: identity
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          COM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$COM_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SIGNING_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
           [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
           git fetch --no-tags origin main
           [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
-          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$COM_RUN_ID")"
-          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/minicon-com.yml" ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SIGNING_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/company-signing.yml" ]]
           [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
           [[ "$(jq -r .status <<<"$run")" == "completed" ]]
           [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
           [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           [[ "$version" == "0.1.3" ]]
-          echo "com_attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
+          echo "signing_attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
           echo "version=$version" >>"$GITHUB_OUTPUT"
 
   packages:
@@ -79,14 +79,14 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.source_sha }}
 
-      - name: Download six payloads from the exact one-pack run
+      - name: Download six payloads from the exact signed run
         env:
           GH_TOKEN: ${{ github.token }}
-          COM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
         run: |
           set -euo pipefail
-          gh run download "$COM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name minicon-native-payloads --dir upstream
+          gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name company-signed-minicon --dir upstream
 
       - name: Verify payload identity and stage package binary
         shell: bash
@@ -95,7 +95,11 @@ jobs:
           receipt=upstream/build-receipt.json
           verify_cell() {
             cell="$1"; path="$2"
-            expected="$(jq -r --arg cell "$cell" '.payloads[$cell].sha256' "$receipt")"
+            case "$cell" in
+              win-x86_64) expected="$(jq -r '.assets["win-x86_64"].after_sha256' upstream/signing-receipt.json)" ;;
+              win-aarch64) expected="$(jq -r '.assets["win-aarch64"].after_sha256' upstream/signing-receipt.json)" ;;
+              *) expected="$(jq -r --arg cell "$cell" '.payloads[$cell].sha256' "$receipt")" ;;
+            esac
             if command -v sha256sum >/dev/null; then
               actual="$(sha256sum "$path" | cut -d' ' -f1)"
             else
@@ -238,30 +242,34 @@ jobs:
           pattern: candidate-package-*
           path: payload
           merge-multiple: true
-      - name: Download exact six-cell minicon.com bytes and receipts
+      - name: Download exact signed bytes and receipts
         env:
           GH_TOKEN: ${{ github.token }}
-          COM_RUN_ID: ${{ inputs.minicon_com_run_id }}
-          COM_ATTEMPT: ${{ needs.preflight.outputs.com_attempt }}
+          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          SIGNING_ATTEMPT: ${{ needs.preflight.outputs.signing_attempt }}
         run: |
           set -euo pipefail
           mkdir upstream
-          gh run download "$COM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name minicon-com --dir upstream/com
-          gh run download "$COM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name "minicon-com-aggregate-attempt-$COM_ATTEMPT" --dir upstream/aggregate
-          cp upstream/com/minicon.com upstream/com/minicon.com.sha256 payload/
-          cp upstream/com/build-receipt.json upstream/build-receipt.json
-          cp upstream/com/g3/receipt.json upstream/g3-receipt.json
-          cp upstream/aggregate/aggregate-receipt.json upstream/aggregate-receipt.json
+          gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name company-signed-minicon --dir upstream/signed
+          gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "signed-aggregate-attempt-$SIGNING_ATTEMPT" --dir upstream/aggregate
+          cp upstream/signed/minicon.com upstream/signed/minicon.com.sha256 payload/
+          cp upstream/signed/build-receipt.json upstream/build-receipt.json
+          cp upstream/signed/signing-receipt.json upstream/signing-receipt.json
+          cp upstream/signed/g3/receipt.json upstream/g3-receipt.json
+          cp upstream/aggregate/signed-aggregate-receipt.json upstream/aggregate-receipt.json
 
       - name: Seal exact six-cell release set
         run: |
           set -euo pipefail
+          python3 research/minicon-com-loader/signing_receipt.py \
+            --receipt upstream/signing-receipt.json --root upstream/signed
           python3 research/minicon-com-loader/candidate_bundle.py seal \
             --payload payload \
             --build-receipt upstream/build-receipt.json \
             --aggregate-receipt upstream/aggregate-receipt.json \
+            --signing-receipt upstream/signing-receipt.json \
             --g3-receipt upstream/g3-receipt.json \
             --source-sha '${{ inputs.source_sha }}' \
             --version '${{ needs.preflight.outputs.version }}' \
@@ -276,6 +284,7 @@ jobs:
           cp upstream/build-receipt.json sealed/
           cp upstream/aggregate-receipt.json sealed/
           cp upstream/g3-receipt.json sealed/
+          cp upstream/signing-receipt.json sealed/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

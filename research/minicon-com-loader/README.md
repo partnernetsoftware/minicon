@@ -99,6 +99,24 @@ v0.1.2 three-archive, 4/6-cell Release remains frozen. Gates:
 `ci-control.sh` (HOME + `--control` + `list-tabs` poll). These two lanes are smoke until G2 GUI/control
 and G8 human promote. Do not tag here.
 
+The v0.1.3 exact-byte chain is `minicon-com.yml` (one unsigned build/pack) →
+`company-signing.yml` (company Authenticode transform plus signed six-grid) →
+`candidate.yml` (five archives + `minicon.com`, no rebuild) → Defender
+qualification → human-only Promotion. `candidate.yml` accepts a successful
+`company-signing.yml` run ID; it no longer accepts unsigned one-pack bytes.
+
+`company-signing.yml` uses the protected GitHub Environment
+`release-signing`. Put `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+`AZURE_SUBSCRIPTION_ID` there as Environment secrets. Put
+`ARTIFACT_SIGNING_ENDPOINT`, `ARTIFACT_SIGNING_ACCOUNT`, and
+`ARTIFACT_SIGNING_PROFILE` there as Environment variables. These are names,
+not values to copy into this repository. Azure Artifact Signing Public Trust
+owns the non-exportable private key. Back up identity-validation and recovery
+material in the company-controlled secrets vault as specified by
+`prd/PRD_02_27_con_delivery.md`; never put a PFX, token, real resource name, or
+credential in Git, an Actions artifact, logs, Downloads, or a cloud-drive
+mount.
+
 G6 keeps Defender judgment outside the immutable build receipt. GitHub's
 standard Windows runner image deliberately disables Defender, so it is not a
 scan court. Run `utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT` against
