@@ -50,7 +50,8 @@ MiniCon — one-file local terminal
 │   ├── [~] v0.1.3 Candidate — minicon.com as fourth exact-byte asset
 │   │   ├── G1–G8 plan: research/minicon-com-loader/v0.1.3-candidate-plan.md
 │   │   ├── hard ceiling: 9437184 bytes (9 MiB)
-│   │   └── no Candidate/tag/Release before every gate + human promote
+│   │   ├── existing six-cell smoke is evidence, not a Candidate pack
+│   │   └── no tag/Release before every gate + user names exact version and `promote`
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -97,7 +98,7 @@ flowchart LR
         V12["v0.1.2 stable<br/>three packages"]
         C13["v0.1.3 Candidate<br/>minicon.com fourth asset · G1–G8"]
         G13{"runtime + control + size<br/>checksum + reputation pass?"}
-        V13["human promote<br/>exact immutable bytes"]
+        V13["user: exact version + promote<br/>exact immutable bytes"]
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
@@ -150,7 +151,8 @@ flowchart LR
 
 - [~] v0.1.3 remains a gated Candidate plan. Experimental smoke, G3 lifecycle
   and the 9 MiB size court are green; six-cell GUI/control, exact sealing,
-  reputation and human Promotion remain open.
+  reputation and explicit user Promotion remain open. The green research smoke
+  is not a Candidate pack.
 - [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
   other's verdict; unavailable runtime evidence is `BLOCKED`.
 - [~] Local courts are automation-capable but not sealed release baselines.
