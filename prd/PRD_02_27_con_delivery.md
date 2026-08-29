@@ -10,6 +10,40 @@ authoritative for MiniCon delivery.
 
 Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
+## Current release evolution
+
+- [x] **v0.1.2 is the stable release baseline.** Tag `v0.1.2` resolves to
+  source commit `e2ba35d05b1797cf770e954f35f757de327b3152`. The release owns a
+  Windows x86_64 ZIP, Linux x86_64 tarball and macOS Universal tarball, each
+  with a SHA-256 sidecar. Its formal workflow built all three packages, checked
+  their aggregate completeness, and made a separate native Windows job
+  download, hash, unpack and execute the exact packaged PE before publication.
+  The repository-pinned Rust 1.97 toolchain is load-bearing evidence: release
+  builders must not silently inherit a later rolling `stable` toolchain.
+- [~] **v0.1.3 is a research candidate, not yet a release commitment.** The
+  independently owned `research/minicon-com-loader/` work explores one
+  `minicon.com` composed from a Cosmopolitan loader and six OS/ISA-specific
+  Rust payloads. It may replace the packaging shape only after deterministic
+  loader selection and real runtime evidence pass all six cells, artifact and
+  compressed sizes are reported, exact bytes are reproducible and checksummed,
+  and antivirus/reputation observations are recorded without removing product
+  capability merely to evade heuristics. Until that court passes, v0.1.2
+  remains the truthful stable delivery and the research tree must not be folded
+  into release claims or ordinary staging.
+
+```mermaid
+flowchart LR
+    S12["v0.1.2 exact source"] --> B12["3 platform packages"]
+    B12 --> W12["native Windows package execution"]
+    W12 --> R12["stable v0.1.2 release"]
+    R12 --> X13["isolated minicon.com research"]
+    X13 --> L13["Cosmopolitan loader"]
+    X13 --> P13["6 Rust payloads"]
+    L13 & P13 --> G13{"selector + six runtime cells<br/>size + checksum + reputation pass?"}
+    G13 -->|yes| R13["exact-SHA v0.1.3 release"]
+    G13 -->|no| K12["keep v0.1.2 stable<br/>revise or reject experiment"]
+```
+
 ## Package identity
 
 - [x] `minicon` is an independently owned workspace package

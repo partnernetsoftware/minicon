@@ -26,7 +26,12 @@ with iOS/Android PhoneApps. Reproducible UTM runners may later seed dedicated-OS
 experiments, including a HarmonyOS feasibility court, but that horizon cannot
 displace current desktop/mobile evidence or be presented as committed scope.
 
-## Product tree
+## Markdown-tree DAG PRD
+
+This tree is the human entry point into the requirement DAG. Indentation means
+product decomposition; a linked owning PRD or machine contract is a dependency
+edge, not permission to duplicate its detailed requirements here. Read the
+stable capability branches first, then the current delivery evolution branch.
 
 ```text
 MiniCon — one-file local terminal
@@ -64,6 +69,17 @@ MiniCon — one-file local terminal
 │   │   ├── unwind-safe native callback containment
 │   │   ├── platform-qualified size claims and exact-SHA delivery
 │   │   ├── repository-pinned Rust 1.97 toolchain; release builders never inherit rolling `stable`
+│   │   ├── Release evolution
+│   │   │   ├── [x] v0.1.2 stable baseline
+│   │   │   │   ├── exact source tag `v0.1.2`
+│   │   │   │   ├── Windows x86_64 ZIP, Linux x86_64 tarball, macOS Universal tarball
+│   │   │   │   ├── per-artifact SHA-256 sidecars
+│   │   │   │   └── Windows package re-downloaded and executed on a native Windows runner before publication
+│   │   │   └── [~] v0.1.3 research candidate: one-file `minicon.com`
+│   │   │       ├── Cosmopolitan loader + six OS/ISA-specific Rust payloads
+│   │   │       ├── research owner: `research/minicon-com-loader/`; isolated from v0.1.2 release truth
+│   │   │       ├── promotion requires six-cell runtime evidence, deterministic payload selection and bounded size
+│   │   │       └── failure retains v0.1.2 artifacts and narrows or rejects the experiment; no premature version promise
 │   │   ├── Mac-hosted six-cell qualification
 │   │   │   ├── host builds every artifact; remote runners and local guests are runtime test targets only
 │   │   │   │   ├── no compiler or source checkout required in a guest
@@ -189,7 +205,7 @@ MiniCon — one-file local terminal
     └── .github/workflows/ — qualification and release automation
 ```
 
-## Knowledge palace
+## Mermaid flowchart memory palace
 
 The diagram is a reasoning map, not a second requirement catalog. Follow a path
 from user value to its owning capability, implementation boundary, observable
@@ -245,6 +261,14 @@ flowchart LR
         MR["mandatory release<br/>guest shutdown → bounded power fallback<br/>final state = stopped"]
         BA["recoverable test assets<br/>verified ~/googleDrive/ archive<br/>media · recipes · checksums"]
         D["delivery qualification<br/>target + profile + exact SHA"]
+    end
+
+    subgraph REL["Release evolution"]
+        V12["v0.1.2 stable baseline<br/>3 packages · checksums<br/>native Windows package execution"]
+        C13["v0.1.3 research candidate<br/>Cosmopolitan loader<br/>6 Rust payloads"]
+        G13{"Six-cell runtime + selector<br/>size + AV/reputation evidence pass?"}
+        V13["publish v0.1.3<br/>exact SHA · immutable assets"]
+        R13["retain v0.1.2<br/>revise or reject experiment"]
     end
 
     subgraph Z["Portfolio horizon · context, not MiniCon scope"]
@@ -314,6 +338,11 @@ flowchart LR
     LD --> M
     WXU --> M
     M --> D
+    D --> V12
+    V12 --> C13
+    C13 --> G13
+    G13 -->|yes| V13
+    G13 -->|no| R13
     U --> DS
     DS --> MB
     Q -. reusable VM and evidence method .-> OS
