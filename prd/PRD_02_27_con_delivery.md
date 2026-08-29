@@ -20,25 +20,22 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   download, hash, unpack and execute the exact packaged PE before publication.
   The repository-pinned Rust 1.97 toolchain is load-bearing evidence: release
   builders must not silently inherit a later rolling `stable` toolchain.
-- [~] **experimental and six-cell smoke-proven: one-file `minicon.com` (not shipped).** Owner:
-  `research/minicon-com-loader/README.md`. Two execute-only lanes exist: Mac
-  `local-accelerated.sh` (host/Lima/UTM) and `.github/workflows/minicon-com.yml`
-  (one macos-15 pack, six native runners, no matrix compile). Workflow run
-  `33238478661` at source `459d5cb` proved one pack followed by six native
-  `--version`, argv-passthrough and `--status` executions, then one same-identity
-  aggregate. The two preceding red runs exposed and fixed real pipeline gaps:
-  Windows resource embedding needed `llvm-rc`, and the downloaded artifact
-  needed a flat root rather than a repository-path prefix. Candidate publication still needs
-  unique extract paths (done in loader), six-cell GUI+control black-box, and
-  the existing size/checksum/reputation court. v0.1.2 remains the stable
-  delivery; this node must not be marked shipped or mixed into Release assets.
+- [~] **v0.1.3 Candidate: one-file `minicon.com` as fourth Release asset (not tagged).**
+  Ruling A (cdx): v0.1.2 three packages stay frozen; never backfill or mix into
+  `v0.1.2`. Executable gates: `research/minicon-com-loader/v0.1.3-candidate-plan.md`
+  (G1 clean one-pack receipt, G2 six-cell smoke + GUI/control black-box, G3
+  loader/installer lock, G4 APE size court, G5 download-rehash-execute, G6
+  Defender+360 on exact SHA, G7 identity `0.1.3`, G8 human promote). Research
+  smoke run `33238478661` at `459d5cb` is G2 smoke only. Promotion copies exact
+  Candidate bytes and does not rebuild. No GitHub pre-release substitute. No
+  tag until every gate is green.
 
 ```mermaid
 flowchart LR
     S12["v0.1.2 exact source"] --> B12["3 platform packages"]
     B12 --> W12["native Windows package execution"]
     W12 --> R12["stable v0.1.2 release"]
-    R12 --> X13["experimental minicon.com · not shipped"]
+    R12 --> X13["v0.1.3 Candidate minicon.com · fourth asset · not tagged"]
     X13 --> L13["Cosmopolitan loader"]
     X13 --> P13["6 Rust payloads"]
     L13 & P13 --> G13{"selector + six runtime cells<br/>size + checksum + reputation pass?"}
@@ -1265,8 +1262,9 @@ interactive Linux x86 installation.
   Therefore push/PR feedback, its custom-std cells, and any exact-SHA preflight
   dependency on that workflow are unproven and must not be claimed. The active
   workflow files are the manually dispatched release and six-grid-runtime
-  workflows, plus experimental `minicon-com.yml` (research smoke; not a Release
-  owner). Enabling ordinary CI requires a reviewed rename, a successful
+  workflows, plus `minicon-com.yml` (research smoke today; v0.1.3 Candidate
+  pack/test owner per `v0.1.3-candidate-plan.md`, still not a tagger). Enabling
+  ordinary CI requires a reviewed rename, a successful
   first run, and PRD backfill from that run.
 - [ ] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from

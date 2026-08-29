@@ -83,13 +83,12 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── Windows x86_64 ZIP, Linux x86_64 tarball, macOS Universal tarball
 │   │   │   │   ├── per-artifact SHA-256 sidecars
 │   │   │   │   └── Windows package re-downloaded and executed on a native Windows runner before publication
-│   │   │   └── [~] experimental + six-cell smoke-proven: one-file `minicon.com` (not shipped)
-│   │   │       ├── Cosmopolitan loader + six OS/ISA-specific Rust payloads
-│   │   │       ├── research owner: `research/minicon-com-loader/README.md`; isolated from v0.1.2 release truth
-│   │   │       ├── lane A: Mac `local-accelerated.sh` (host/Lima/UTM execute-only)
-│   │   │       ├── lane B: `.github/workflows/minicon-com.yml` — one macos-15 pack, six native runners; run `33238478661` green at `459d5cb`
-│   │   │       ├── promotion requires six-cell runtime evidence, unique extract paths, GUI+control black-box, then candidate gate
-│   │   │       └── failure retains v0.1.2 artifacts; no dispatch/tag/Release until those gates exist
+│   │   │   └── [~] v0.1.3 Candidate: `minicon.com` as fourth Release asset (not tagged)
+│   │   │       ├── ruling A (cdx): freeze v0.1.2 three packages; never mix into v0.1.2
+│   │   │       ├── plan: `research/minicon-com-loader/v0.1.3-candidate-plan.md` (G1–G8)
+│   │   │       ├── smoke-only green: `.github/workflows/minicon-com.yml` run `33238478661` at `459d5cb`
+│   │   │       ├── Promotion copies exact Candidate bytes; no rebuild; no pre-release substitute
+│   │   │       └── no tag/Release until G1–G8 + human promote
 │   │   ├── Mac-hosted six-cell qualification
 │   │   │   ├── host builds every artifact; remote runners and local guests are runtime test targets only
 │   │   │   │   ├── no compiler or source checkout required in a guest
@@ -275,7 +274,7 @@ flowchart LR
 
     subgraph REL["Release evolution"]
         V12["v0.1.2 stable baseline<br/>3 packages · checksums<br/>native Windows package execution"]
-        C13["experimental minicon.com<br/>not shipped · research README<br/>one pack · six execute-only courts"]
+        C13["v0.1.3 Candidate minicon.com<br/>fourth asset · plan G1–G8<br/>one pack · six execute-only courts"]
         G13{"Six-cell runtime + selector<br/>size + AV/reputation evidence pass?"}
         V13["publish v0.1.3<br/>exact SHA · immutable assets"]
         R13["retain v0.1.2<br/>revise or reject experiment"]
