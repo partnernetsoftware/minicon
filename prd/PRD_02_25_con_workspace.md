@@ -103,9 +103,61 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   error and not a blank label found by a user.
 - [x] the language is reported by `ui-snapshot` as a stable tag, so automation
   can read and assert it without matching a display label.
-- [x] the four header tools stay ordered and disjoint across window widths and
+- [x] the five header tools stay ordered and disjoint across window widths and
   DPI scales. An overlap would make one of them unreachable, which is a defect
   no rendering test would notice.
+- [~] **cross-platform sizing follows a logical-unit contract, not shared raw
+  pixels.** Layout, hit targets, and nominal type roles are expressed in DIPs;
+  the host window supplies a possibly fractional display scale, and raster
+  glyphs are produced at `logical size × product zoom × display scale`.
+  macOS points/backing pixels, Windows DIPs/per-monitor DPI, and Linux widget
+  units/surface scale are platform spellings of this same boundary. The Retina
+  defect where terminal glyphs used backing scale but chrome glyphs did not is
+  a regression class, not a platform-specific tuning preference.
+- [x] current chrome and composer painting, caret measurement, IME placement,
+  and pointer-to-text mapping consume the same scaled glyph metrics. A clamp is
+  expressed in logical units and scaled afterward, so a 2× display does not
+  silently halve the perceived maximum.
+- [ ] separate **display scale** from **system accessibility text scale** in
+  the public window metrics, following Chromium's distinct device/UI/text
+  scale model. Until every host adapter can report text scale truthfully,
+  MiniCon product zoom remains the explicit user override; no adapter may
+  invent a constant and call accessibility honored.
+- [ ] qualify the same chrome roles at display scales 1.0, 1.25, 1.5, 2.0 and
+  product zoom minimum/default/maximum on Win/OSX/Lnx. Evidence pairs a PNG
+  with structured geometry and asserts readable glyph bounds, no clipping,
+  matching caret/hit coordinates, and relayout after a cross-monitor scale
+  change. System UI fonts are preferred for future chrome only when all three
+  hosts can preserve these metric and screenshot contracts; terminal content
+  remains monospace.
+
+```mermaid
+flowchart LR
+    L[Logical role sizes<br/>DIP] --> U[Product zoom]
+    A[System text scale<br/>planned host fact] --> U
+    U --> D[Display/window scale]
+    D --> R[Physical glyph metrics]
+    R --> P[Paint]
+    R --> H[Hit + caret + IME]
+    P & H --> E[PNG + structured parity evidence]
+```
+
+Reference models: Chromium keeps display bounds in DIP alongside physical
+pixel size and distinguishes window, raster, UI, and text scales; Apple treats
+backing scale as a conversion between window points and backing pixels;
+Microsoft defines UI layout in density-independent effective pixels and
+requires per-monitor DPI relayout/reraster; GTK similarly separates widget
+units from a possibly fractional surface scale. GNOME additionally recommends
+relative/system text styles rather than hard-coded physical font sizes. These
+are comparison contracts, not dependencies:
+
+- <https://chromium.googlesource.com/chromium/src/+/HEAD/ui/display/display.h>
+- <https://chromium.googlesource.com/chromium/src/+/refs/tags/135.0.7040.0/ui/platform_window/platform_window_delegate.h>
+- <https://developer.apple.com/documentation/appkit/nswindow/backingscalefactor>
+- <https://learn.microsoft.com/windows/apps/design/layout/screen-sizes-and-breakpoints-for-responsive-design>
+- <https://learn.microsoft.com/windows/win32/hidpi/setting-the-default-dpi-awareness-for-a-process>
+- <https://docs.gtk.org/gtk4/coordinates.html>
+- <https://developer.gnome.org/hig/guidelines/typography.html>
 - [x] Linux `minicon` publishes that chrome as a real AT-SPI child tree
   (`Tabs`, `Session`, `Command`, `SEND`, plus Session child `OffscreenField`)
   so `cu tree --window` is not the one-node X11 title frame. winit/softbuffer
