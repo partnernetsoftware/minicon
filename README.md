@@ -1,16 +1,17 @@
 # MiniCon
 
-**A terminal that is one file.** No installer, no runtime, no Visual C++
-redistributable — every library it loads is part of Windows. It opens a real
-PTY, renders a real terminal, and a script can drive and read every part of it.
+**A terminal that is one file.** One executable per platform, with no installer,
+no bundled runtime, and only operating-system libraries. It opens a real PTY,
+renders a real terminal, and a script can drive and read every part of it on
+Windows, Linux, and macOS.
 
 ![MiniCon](docs/assets/minicon-window.png)
 
 | | |
 | --- | --- |
-| Executable | current six-cell `strip=true` measurements: Windows arm64 677,376 bytes / x64 731,136; macOS arm64 1,413,408 / x64 1,455,424; Linux arm64 4,846,400 / x64 5,732,544. They are target-qualified evidence, not a universal product limit; see [Delivery](prd/PRD_02_27_con_delivery.md) for measurement context. |
+| Executable | six-cell `strip=true` measurements are roughly Windows ~660 KB, macOS ~1.4 MB, and Linux ~5 MB. Exact measurements: Windows aarch64 677,376 bytes / x86_64 731,136; macOS aarch64 1,413,408 / x86_64 1,455,424; Linux aarch64 4,846,400 / x86_64 5,732,544. They are target-qualified evidence, not a universal product limit; see [Delivery](prd/PRD_02_27_con_delivery.md) for context. |
 | Dependencies | operating-system libraries only |
-| Supported | Windows Server 2016 / Windows 10 1607 and newer; Linux; macOS |
+| Supported | Windows, Linux, and macOS on x86_64 and aarch64; Windows reaches back to Server 2016 / Windows 10 1607 |
 | Licence | MIT OR Apache-2.0 |
 
 ## Why it exists
@@ -123,10 +124,11 @@ libwayland-client0`.
 Two gates are worth knowing about, because each one exists where a claim
 would otherwise be unchecked:
 
-- **Import table** — the shipped executable must depend on nothing but
-  operating-system modules. The exception list is empty, so a future
-  redistributable dependency turns it red rather than quietly widening what a
-  user has to install.
+- **Platform dependencies** — all six artifacts are checked as target-native
+  executables. On Windows, the shipped PE's import table must contain only
+  operating-system modules; the exception list is empty, so a future VC++ or
+  other redistributable dependency turns the gate red instead of silently
+  widening what a user has to install.
 - **Alignment** — the public CLI must match the machine-readable contract in
   `alignment-contract.json`, which is in turn pinned to the PRDs.
 
@@ -141,12 +143,13 @@ server, workspace persistence, multiplexer, or script runtime.
 
 # MiniCon（中文）
 
-**一个文件就是一个终端。** 免安装、免运行时、免 VC++ 可再发行组件——它载入的每一个
-库都是操作系统自带的。它开真正的 PTY、画真正的终端,而且每一部分都能被脚本驱动和读取。
+**一个文件就是一个终端。** 每个平台一个可执行文件，免安装、免捆绑运行时，只依赖操作
+系统库。它在 Windows、Linux 和 macOS 上开真正的 PTY、画真正的终端，而且每一部分都能
+被脚本驱动和读取。
 
-- 当前六格 `strip=true` 实测：Windows arm64 677,376 bytes / x64 731,136；macOS arm64 1,413,408 / x64 1,455,424；Linux arm64 4,846,400 / x64 5,732,544。它们是按目标验证的证据，不是全产品统一上限；测量语境见[交付](prd/PRD_02_27_con_delivery.md)。
+- 六格 `strip=true` 实测约为：Windows ~660 KB、macOS ~1.4 MB、Linux ~5 MB。精确值：Windows aarch64 677,376 bytes / x86_64 731,136；macOS aarch64 1,413,408 / x86_64 1,455,424；Linux aarch64 4,846,400 / x86_64 5,732,544。它们是按目标验证的证据，不是全产品统一上限；测量语境见[交付](prd/PRD_02_27_con_delivery.md)。
 - 只依赖操作系统库
-- 支持 Windows Server 2016 / Windows 10 1607 及以上、Linux、macOS
+- 支持 Windows、Linux、macOS × x86_64、aarch64 六格；Windows 最低覆盖 Server 2016 / Windows 10 1607
 - MIT 或 Apache-2.0
 
 三件同体量终端通常做不到的事:
