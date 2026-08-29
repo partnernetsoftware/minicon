@@ -1,295 +1,248 @@
-# Builds and publishes the three MiniCon clients.
-#
-# Deliberately one workflow rather than the candidate/promote pair `agenterm`
-# uses. That split exists because agenterm ships several executables, a cdylib
-# and metadata, and needs a reviewable artifact set before anything is tagged.
-# MiniCon ships one file per platform, so the same discipline fits in one
-# place: build, verify the bytes, publish.
-#
-# Run it with `dry_run: true` first. That does everything except create the
-# release, so a build failure is discovered before a tag exists rather than
-# after — a tag that has to be deleted is worse than a run that has to be
-# repeated.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
+      candidate_run_id:
+        description: Successful Release Candidate workflow run ID
+        required: true
+        type: string
+      source_sha:
+        description: Exact Candidate source SHA
+        required: true
+        type: string
+      version:
+        description: Exact Candidate version (for example 0.1.3)
+        required: true
+        type: string
+      confirmation:
+        description: publish-vX.Y.Z (or dry-run-publish-vX.Y.Z for dry run)
+        required: true
+        type: string
       dry_run:
-        description: Build and verify everything, but publish nothing
+        description: Verify only; create no tag, draft, or public Release
         required: false
         type: boolean
         default: true
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
 concurrency:
-  group: minicon-release
+  group: minicon-release-promotion
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: ${{ matrix.platform_id }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform_id: windows-x86_64
-            # Build away from an installed Visual Studio so its rolling LIB
-            # environment cannot contaminate cargo-xwin's reviewed CRT set.
-            # The packaged bytes execute in the verify-windows job below.
-            runner: ubuntu-24.04
-            target: x86_64-pc-windows-msvc
-            binary: minicon.exe
-          - platform_id: linux-x86_64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            binary: minicon
-          # Apple Silicon runner, which can also produce the Intel slice, so
-          # both go into one universal binary below. A product whose promise is
-          # "one file" should not hand macOS users a choice of two.
-          - platform_id: macos-universal
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            binary: minicon
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
     steps:
+      - name: Resolve exact successful Candidate
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/candidate.yml" ]]
+          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
+          [[ "$(jq -r .status <<<"$run")" == "completed" ]]
+          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
+          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          echo "attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
+
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
+          fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.source_sha }}
 
-      - name: Install target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Install pinned Windows cross linker
-        if: matrix.platform_id == 'windows-x86_64'
-        run: cargo install cargo-xwin --locked --version 0.23.1
-
-      - name: Install Windows resource compiler
-        if: matrix.platform_id == 'windows-x86_64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm
-          command -v llvm-rc
-
-      - name: Install the Intel slice target
-        if: matrix.platform_id == 'macos-universal'
-        run: rustup target add x86_64-apple-darwin
-
-      # The set winit and softbuffer need to link and run. Taken from
-      # agenterm's candidate pipeline rather than rediscovered by failing.
-      - name: Install Linux display libraries
-        if: matrix.platform_id == 'linux-x86_64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon0 libxkbcommon-x11-0 libwayland-client0
-
-      - name: Build Windows with the qualified SDK and CRT archives
-        if: matrix.platform_id == 'windows-x86_64'
-        run: cargo xwin build --locked --release --target ${{ matrix.target }}
-
-      - name: Build Unix client
-        if: matrix.platform_id != 'windows-x86_64'
-        run: cargo build --locked --release --target ${{ matrix.target }}
-
-      - name: Build the Intel slice
-        if: matrix.platform_id == 'macos-universal'
-        run: cargo build --locked --release --target x86_64-apple-darwin
-
-      - name: Combine the macOS slices into one binary
-        if: matrix.platform_id == 'macos-universal'
+      - name: Download sealed Candidate bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
           set -euo pipefail
-          lipo -create -output minicon \
-            target/aarch64-apple-darwin/release/minicon \
-            target/x86_64-apple-darwin/release/minicon
-          lipo -info minicon
-          mkdir -p target/${{ matrix.target }}/release
-          mv minicon target/${{ matrix.target }}/release/minicon
+          mkdir candidate
+          gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "release-candidate-$CANDIDATE_RUN_ID" --dir candidate
 
-      # The artifact is verified as an artifact, not as a build that exited
-      # zero: a linker can succeed and still leave something that will not run.
-      - name: Verify the built binary runs and describes itself
-        if: matrix.platform_id != 'windows-x86_64'
-        shell: bash
+      - name: Verify identity, receipt hashes and every sealed byte
+        id: identity
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
-          binary="target/${{ matrix.target }}/release/${{ matrix.binary }}"
-          test -f "$binary"
-          version="$("$binary" --version)"
-          echo "$version"
-          expected="minicon $(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
-          [[ "$version" == "$expected" ]] || {
-            echo "reported '$version', manifest says '$expected'" >&2
-            exit 1
-          }
-          "$binary" --status
-
-      - name: Verify the Windows artifact shape before packaging
-        if: matrix.platform_id == 'windows-x86_64'
-        shell: bash
-        run: |
-          set -euo pipefail
-          binary="target/${{ matrix.target }}/release/${{ matrix.binary }}"
-          test -f "$binary"
-          file "$binary" | grep -F 'PE32+ executable (GUI) x86-64'
-
-      - name: Package
-        id: package
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
-          name="minicon-$version-${{ matrix.platform_id }}"
-          mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/$name/"
-          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          cp scripts/probe-imports.ps1 "dist/$name/" 2>/dev/null || true
-          cd dist
-          case "${{ matrix.platform_id }}" in
-            windows-*)
-              archive="$name.zip"
-              7z a -tzip "$archive" "$name" >/dev/null
-              ;;
-            *)
-              archive="$name.tar.gz"
-              tar -czf "$archive" "$name"
-              ;;
-          esac
-          # Checksums are what let someone verify the download rather than
-          # trust it, so they ship beside every archive.
-          if command -v sha256sum >/dev/null; then
-            sha256sum "$archive" > "$archive.sha256"
+          manifest=candidate/candidate-manifest.json
+          test -f "$manifest"
+          [[ "$(jq -r .source_sha "$manifest")" == "$SOURCE_SHA" ]]
+          [[ "$(jq -r .version "$manifest")" == "$VERSION" ]]
+          [[ "$(jq -r .expected_tag "$manifest")" == "v$VERSION" ]]
+          [[ "$(jq -r .candidate_run.id "$manifest")" == "$CANDIDATE_RUN_ID" ]]
+          [[ "$(jq -r .candidate_run.attempt "$manifest")" == '${{ steps.run.outputs.attempt }}' ]]
+          [[ "$(sha256sum candidate/build-receipt.json | cut -d' ' -f1)" == \
+            "$(jq -r .receipts.build.sha256 "$manifest")" ]]
+          [[ "$(sha256sum candidate/aggregate-receipt.json | cut -d' ' -f1)" == \
+            "$(jq -r .receipts.aggregate.sha256 "$manifest")" ]]
+          python3 research/minicon-com-loader/candidate_bundle.py verify \
+            --manifest "$manifest" --payload candidate/payload
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          [[ "$cargo_version" == "$VERSION" ]]
+          if [[ '${{ inputs.dry_run }}' == true ]]; then
+            [[ "$CONFIRMATION" == "dry-run-publish-v$VERSION" || "$CONFIRMATION" == "publish-v$VERSION" ]]
           else
-            shasum -a 256 "$archive" > "$archive.sha256"
+            [[ "$CONFIRMATION" == "publish-v$VERSION" ]]
           fi
-          cat "$archive.sha256"
-          echo "archive=$archive" >>"$GITHUB_OUTPUT"
-          echo "version=$version" >>"$GITHUB_OUTPUT"
+          chmod +x candidate/payload/minicon.com
+          [[ "$(candidate/payload/minicon.com --version)" == "minicon $VERSION" ]]
+          candidate/payload/minicon.com --status
+          echo "tag=v$VERSION" >>"$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: minicon-${{ matrix.platform_id }}
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.sha256
+          name: verified-promotion-${{ github.run_id }}
+          path: candidate/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 2
 
   verify-windows:
-    name: Verify Windows package
-    needs: build
-    runs-on: windows-2022
+    needs: verify
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-promotion-${{ github.run_id }}
+          path: candidate
+      - name: Execute exact Candidate APE on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item -LiteralPath candidate/payload/minicon.com -Destination candidate/payload/minicon-ape.exe
+          $binary = (Resolve-Path candidate/payload/minicon-ape.exe).Path
+          function Invoke-Captured([string[]]$Arguments) {
+            $stem = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString("N"))
+            $out = "$stem.out"
+            $err = "$stem.err"
+            $p = Start-Process -FilePath $binary -ArgumentList $Arguments -Wait -PassThru `
+              -RedirectStandardOutput $out -RedirectStandardError $err
+            if ($p.ExitCode -ne 0) { throw "minicon.com exit $($p.ExitCode)" }
+            return (Get-Content -LiteralPath $out -Raw)
+          }
+          if ((Invoke-Captured @('--version')).Trim() -ne 'minicon ${{ inputs.version }}') { throw 'version mismatch' }
+          if ((Invoke-Captured @('--status')) -notmatch 'conpty') { throw 'status missing conpty' }
+
+  publish:
+    if: ${{ inputs.dry_run != true }}
+    needs: [verify, verify-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-promotion-${{ github.run_id }}
+          path: candidate
+      - name: Reverify and publish exact bytes without rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 research/minicon-com-loader/candidate_bundle.py verify \
+            --manifest candidate/candidate-manifest.json --payload candidate/payload
+          [[ "$TAG" == "v$VERSION" ]]
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "tag already exists; refusing overwrite" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refusing overwrite" >&2
+            exit 1
+          fi
+          sed "s/VERSION/$VERSION/g" .github/release-notes.md >candidate/release-notes.md
+          gh release create "$TAG" --draft --target "$SOURCE_SHA" \
+            --title "MiniCon $VERSION" --notes-file candidate/release-notes.md \
+            candidate/payload/* candidate/candidate-manifest.json \
+            candidate/build-receipt.json candidate/aggregate-receipt.json
+          gh release edit "$TAG" --draft=false
+
+  post-publish-posix:
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           persist-credentials: false
-
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: minicon-windows-x86_64
-          path: incoming
-
-      - name: Verify checksum and execute exact packaged PE
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = (Select-String -LiteralPath Cargo.toml -Pattern '^version = "([^"]+)"$').Matches[0].Groups[1].Value
-          $archive = Join-Path $PWD "incoming/minicon-$version-windows-x86_64.zip"
-          $sumFile = "$archive.sha256"
-          $expected = ((Get-Content -LiteralPath $sumFile -Raw) -split '\s+')[0].ToLowerInvariant()
-          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "Windows archive checksum mismatch" }
-          Expand-Archive -LiteralPath $archive -DestinationPath unpacked
-          $binary = Join-Path $PWD "unpacked/minicon-$version-windows-x86_64/minicon.exe"
-
-          function Invoke-Captured([string[]] $Arguments) {
-            $stem = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString("N"))
-            $stdout = "$stem.out"
-            $stderr = "$stem.err"
-            $process = Start-Process -FilePath $binary -ArgumentList $Arguments -Wait -PassThru `
-              -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-            $out = if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Raw } else { "" }
-            $err = if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Raw } else { "" }
-            if ($err) { Write-Host $err }
-            if ($process.ExitCode -ne 0) { throw "packaged minicon.exe exited $($process.ExitCode)" }
-            return $out
-          }
-
-          $reported = (Invoke-Captured @("--version")).Trim()
-          if ($reported -ne "minicon $version") { throw "reported '$reported', expected minicon $version" }
-          $status = Invoke-Captured @("--status")
-          if (-not $status.Trim()) { throw "packaged minicon.exe --status returned no output" }
-          Write-Host $status
-
-  publish:
-    name: Publish
-    needs: [build, verify-windows]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          persist-credentials: false
-
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: incoming
-          merge-multiple: true
-
-      - name: Confirm all three clients arrived
-        id: bundle
-        run: |
-          set -euo pipefail
-          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
-          cd incoming
-          ls -la
-          # Named explicitly rather than counted: a missing platform must fail
-          # here, not be discovered by a user who cannot find their download.
-          for platform in windows-x86_64 linux-x86_64 macos-universal; do
-            archive="$(find . -maxdepth 1 -type f -name "minicon-$version-$platform.*" ! -name '*.sha256' -print -quit)"
-            archive="${archive#./}"
-            test -n "$archive"
-            test -f "$archive.sha256"
-            echo "$platform -> $archive"
-          done
-          # Re-verified here, on a different machine than the one that wrote
-          # them: a checksum computed and checked in the same step proves only
-          # that the file did not change between two adjacent lines.
-          for sum in *.sha256; do
-            sha256sum -c "$sum"
-          done
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "tag=v$version" >>"$GITHUB_OUTPUT"
-
-      - name: Dry run summary
-        if: inputs.dry_run
-        run: |
-          echo "Dry run: built and verified ${{ steps.bundle.outputs.tag }} on all three platforms."
-          echo "Nothing was tagged or published. Re-run with dry_run disabled to release."
-
-      - name: Publish the release
-        if: ${{ !inputs.dry_run }}
+          ref: ${{ inputs.source_sha }}
+      - name: Download, rehash and execute promoted bytes
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.bundle.outputs.tag }}
-          VERSION: ${{ steps.bundle.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "$TAG already exists; refusing to overwrite a published release." >&2
-            exit 1
-          fi
-          # Notes live in a reviewable file rather than inside this YAML. An
-          # indented heredoc here does not terminate at an indented delimiter,
-          # and even when it does, YAML's leading spaces turn the whole body
-          # into a Markdown code block — both were true of the first version.
-          sed "s/VERSION/$VERSION/g" .github/release-notes.md > notes.md
-          gh release create "$TAG" \
-            --title "MiniCon $VERSION" \
-            --notes-file notes.md \
-            incoming/*
+          mkdir released released/payload
+          gh release download "$TAG" --dir released --repo "$GITHUB_REPOSITORY"
+          manifest=released/candidate-manifest.json
+          test -f "$manifest"
+          while IFS= read -r name; do cp "released/$name" "released/payload/$name"; done < <(
+            jq -r '.assets[] | .name, .sidecar.name' "$manifest"
+          )
+          python3 research/minicon-com-loader/candidate_bundle.py verify \
+            --manifest "$manifest" --payload released/payload
+          chmod +x released/minicon.com
+          [[ "$(released/minicon.com --version)" == 'minicon ${{ inputs.version }}' ]]
+          released/minicon.com --status
+
+  post-publish-windows:
+    needs: [verify, publish]
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Download, rehash and execute promoted APE
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Path released | Out-Null
+          gh release download $env:TAG --dir released --repo $env:GITHUB_REPOSITORY
+          $manifest = Get-Content -LiteralPath released/candidate-manifest.json -Raw | ConvertFrom-Json
+          $row = $manifest.assets | Where-Object { $_.name -eq 'minicon.com' }
+          $actual = (Get-FileHash -LiteralPath released/minicon.com -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $row.sha256) { throw "promoted minicon.com digest mismatch" }
+          Copy-Item -LiteralPath released/minicon.com -Destination released/minicon-ape.exe
+          $binary = (Resolve-Path released/minicon-ape.exe).Path
+          function Invoke-Captured([string[]]$Arguments) {
+            $stem = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString("N"))
+            $out = "$stem.out"
+            $err = "$stem.err"
+            $p = Start-Process -FilePath $binary -ArgumentList $Arguments -Wait -PassThru `
+              -RedirectStandardOutput $out -RedirectStandardError $err
+            if ($p.ExitCode -ne 0) { throw "promoted minicon.com exit $($p.ExitCode)" }
+            return (Get-Content -LiteralPath $out -Raw)
+          }
+          if ((Invoke-Captured @('--version')).Trim() -ne 'minicon ${{ inputs.version }}') { throw 'version mismatch' }
+          if ((Invoke-Captured @('--status')) -notmatch 'conpty') { throw 'status missing conpty' }

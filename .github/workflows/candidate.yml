@@ -230,14 +230,15 @@ jobs:
             --output candidate-manifest.json
           python3 research/minicon-com-loader/candidate_bundle.py verify \
             --manifest candidate-manifest.json --payload payload
+          mkdir sealed
+          cp -R payload sealed/payload
+          cp candidate-manifest.json sealed/
+          cp upstream/build-receipt.json sealed/
+          cp upstream/aggregate-receipt.json sealed/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-candidate-${{ github.run_id }}
-          path: |
-            payload/
-            upstream/build-receipt.json
-            upstream/aggregate-receipt.json
-            candidate-manifest.json
+          path: sealed/
           if-no-files-found: error
           retention-days: 14
