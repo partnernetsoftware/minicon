@@ -215,6 +215,10 @@ const DEFAULT_FONT_PX: f64 = 15.0;
 /// placement so the caret they each compute cannot land in two places.
 const COMPOSER_TEXT_SIZE_PX: u16 = 15;
 const COMPOSER_TEXT_INSET: u32 = 10;
+const CHROME_HEADER_SIZE_PX: u16 = 14;
+const CHROME_TAB_SIZE_PX: u16 = 16;
+const CHROME_CLOSE_SIZE_PX: u16 = 13;
+const CHROME_STATUS_SIZE_PX: u16 = 14;
 
 #[allow(clippy::manual_clamp)] // f64::clamp retains the large float-format panic path.
 fn clamp_font_size(value: f64) -> f64 {
@@ -2809,7 +2813,7 @@ impl ConApp {
             } else {
                 muted
             },
-            chrome_size(12),
+            chrome_size(CHROME_HEADER_SIZE_PX),
             tree_width.saturating_sub(28),
         );
         // The selected language is drawn in the accent and the other muted, so
@@ -2830,7 +2834,7 @@ impl ConApp {
                 } else {
                     muted
                 },
-                chrome_size(12),
+                chrome_size(CHROME_HEADER_SIZE_PX),
                 entry.width.saturating_sub(4),
             );
         }
@@ -2847,7 +2851,7 @@ impl ConApp {
                 entry.y + 5,
                 label,
                 muted,
-                chrome_size(12),
+                chrome_size(CHROME_HEADER_SIZE_PX),
                 entry.width.saturating_sub(3),
             );
         }
@@ -2888,7 +2892,7 @@ impl ConApp {
                 y + 7,
                 &["@", id.format(node.id.get()), "  ", title],
                 text,
-                chrome_size(14),
+                chrome_size(CHROME_TAB_SIZE_PX),
                 tree_width.saturating_sub(indent + 38),
             );
             let close = layout.tree_close_rect(visible_index, scale);
@@ -2898,7 +2902,7 @@ impl ConApp {
                 close.y + 3,
                 "x",
                 muted,
-                chrome_size(11),
+                chrome_size(CHROME_CLOSE_SIZE_PX),
                 close.width.saturating_sub(6),
             );
         }
@@ -2937,7 +2941,7 @@ impl ConApp {
             } else {
                 muted
             },
-            chrome_size(11),
+            chrome_size(CHROME_STATUS_SIZE_PX),
             ime_x.saturating_sub(header_x.saturating_add(8)),
         );
         paint_chrome_text(
@@ -2950,7 +2954,7 @@ impl ConApp {
             } else {
                 muted
             },
-            chrome_size(11),
+            chrome_size(CHROME_STATUS_SIZE_PX),
             ime_width,
         );
         surface.fill_rect(
@@ -5824,7 +5828,7 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 /// replaced, so any fixed inset that suits one misplaces the other. A label
 /// wider than its box is left-aligned and clipped by the painter, which keeps
 /// the first characters readable instead of centring the middle of a word.
-const BUTTON_LABEL_SIZE_PX: u16 = 13;
+const BUTTON_LABEL_SIZE_PX: u16 = 15;
 
 fn scaled_chrome_font(nominal: u16, logical_font_size: f64) -> u16 {
     agenterm_platform::numeric::round_f64(f64::from(nominal) * logical_font_size / DEFAULT_FONT_PX)
