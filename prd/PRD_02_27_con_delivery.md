@@ -44,6 +44,13 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   a rehearsal because G3 pack-host evidence was not yet embedded; the next
   exact-SHA pack must bind reaper, lifecycle and installer-rollback results in
   the build receipt before it may become Candidate-of-record.
+  Final one-pack run `33250748539` at `18080b8` then embedded green G3 evidence
+  and passed six native GUI/control cells. Candidate-of-record `33250998985`
+  consumed those exact bytes, sealed all five archives plus `minicon.com`, and
+  passed six native archive executions. G6 is red: Microsoft Defender engine
+  `1.1.26080.3`, signature `1.457.375.0`, detected the exact 8,909,564-byte APE
+  as `Program:Win32/Contebrew.A!ml` (threat `251873`). Promotion remains
+  fail-closed while that false-positive submission and the 360 court are open.
 
 ```mermaid
 flowchart LR
@@ -1283,9 +1290,9 @@ interactive Linux x86 installation.
   cfg defect was fixed.
 
 - [~] **Antivirus reputation is a release evidence concern, not a reason to
-  amputate terminal capabilities.** A user-observed 360 detection currently
-  lacks the exact detection name and artifact SHA, so it is tracked as a
-  suspected false positive rather than declared resolved. Candidate artifacts
+  amputate terminal capabilities.** The exact Candidate APE now has a
+  reproducible Defender ML detection (`Program:Win32/Contebrew.A!ml`, threat
+  `251873`); 360 exact-SHA evidence remains outstanding. Candidate artifacts
   now carry icon plus standard ProductName, FileDescription, OriginalFilename,
   InternalName and Cargo-owned file/product versions. Release completion still
   requires stable Authenticode publisher identity and timestamp, published

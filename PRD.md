@@ -156,12 +156,14 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.1.3 remains gated. Exact-SHA run `33249734776` built once and passed
-  six native GUI/control cells; Candidate rehearsal `33250241396` sealed five
-  platform archives covering all six cells plus `minicon.com`, then rehashed
-  and executed every native archive. G3 is now a pack-host receipt gate and
-  needs the final exact-SHA rerun; Defender+360 and explicit user Promotion
-  remain open. Neither rehearsal is a Release or tag.
+- [~] v0.1.3 remains gated. Exact-SHA run `33250748539` built once, embedded
+  green G3 lifecycle evidence, and passed six native GUI/control cells;
+  Candidate `33250998985` sealed five platform archives covering all six cells
+  plus `minicon.com`, then rehashed and executed every native archive. Its exact
+  APE is blocked at G6: Microsoft Defender reports
+  `Program:Win32/Contebrew.A!ml`. Submit that exact SHA through the vendor
+  false-positive channel; 360 and explicit user Promotion remain open. No tag
+  or Release exists.
 - [ ] Future formal releases should carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity; signing/timestamp/notarization infrastructure is planned,
   not claimed by the current Candidate.

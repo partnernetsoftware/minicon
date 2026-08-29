@@ -57,19 +57,24 @@ done
 "$COURT_CLI" pull "$COURT" 'C:\minicon-six\job.log' "$tmp/log" || true
 cat "$tmp/log" 2>/dev/null || true
 rc="$(tr -d '\r\n' <"$tmp/exit")"
-test "$rc" = 0
-"$COURT_CLI" pull "$COURT" 'C:\minicon-six\defender\defender-receipt.json' "$OUTPUT"
+"$COURT_CLI" pull "$COURT" 'C:\minicon-six\defender\defender-receipt.json' "$OUTPUT" || true
+test -s "$OUTPUT" || { echo "Defender court produced no receipt (exit $rc)" >&2; exit 1; }
 python3 - "$CANDIDATE/candidate-manifest.json" "$OUTPUT" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))
 r = json.load(open(sys.argv[2], encoding="utf-8-sig"))
 a = [x for x in m["assets"] if x["name"] == "minicon.com"]
 assert len(a) == 1
-assert r["kind"] == "minicon-defender-court" and r["verdict"] == "clean"
+assert r["kind"] == "minicon-defender-court"
 assert r["source_sha"] == m["source_sha"]
 assert r["candidate_run"] == m["candidate_run"]
 assert r["minicon_com_sha256"] == a[0]["sha256"]
 for key in ("product_version", "engine_version", "signature_version", "scanned_at"):
     assert isinstance(r[key], str) and r[key]
-print("PASS UTM Defender receipt bound to exact Candidate")
+print(f'{r["verdict"].upper()} UTM Defender receipt bound to exact Candidate')
+if r["verdict"] != "clean":
+    for row in r.get("threats", []):
+        print(f'threat_id={row.get("threat_id")} threat_name={row.get("threat_name")}')
+    raise SystemExit(1)
 PY
+test "$rc" = 0
