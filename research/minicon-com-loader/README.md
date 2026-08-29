@@ -97,9 +97,11 @@ v0.1.2 three packages. Gates: `v0.1.3-candidate-plan.md`. G3/G4: `loader-lifecyc
 `ci-control.sh` (HOME + `--control` + `list-tabs` poll). These two lanes are smoke until G2 GUI/control
 and G8 human promote. Do not tag here.
 
-G6 keeps antivirus judgment outside the immutable build receipt. The Candidate
-workflow scans the sealed APE with Microsoft Defender and publishes
-`defender-receipt.json`. After scanning that same SHA with 360, record a local
+G6 keeps antivirus judgment outside the immutable build receipt. GitHub's
+standard Windows runner image deliberately disables Defender, so it is not a
+scan court. Run `utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT` against
+an active-Defender Windows guest to produce `defender-receipt.json`. After
+scanning that same SHA with 360, record a local
 `minicon-360-court` JSON object containing `schema: 1`, `verdict: "clean"`, the
 exact `candidate_run`, `minicon_com_sha256`, non-empty `provider`,
 `product_version`, `engine_version`, `signature_version`, `scanned_at`, and the
