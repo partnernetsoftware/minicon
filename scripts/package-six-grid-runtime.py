@@ -206,6 +206,11 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parent.parent
+    subprocess.run(
+        ["python3", str(repo / "scripts" / "cleanup-build-state.py"), "--apply", "--scope", "cloud"],
+        cwd=repo,
+        check=True,
+    )
     receipt_path = (repo / args.receipt).resolve()
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     if receipt.get("source_dirty") and not args.allow_dirty:

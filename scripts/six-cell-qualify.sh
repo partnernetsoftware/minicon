@@ -17,6 +17,10 @@ mkdir -p "$OUT_DIR/logs"
 cd "$REPO_ROOT" || exit 2
 export AGENTERM_NO_ACTIVATE=1
 
+# Reclaim only expired, unreferenced snapshots. The cleaner protects the
+# current symlink, receipt-owned root, newest snapshots and active markers.
+python3 scripts/cleanup-build-state.py --apply --scope six-cell
+
 record() {
   results_file="${RESULT_SINK:-$RESULTS}"
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" >>"$results_file"
@@ -186,6 +190,10 @@ SOURCE_STATE_START="$(python3 scripts/source-fingerprint.py)"
 BUILD_DIR="${MINICON_SIX_CELL_BUILD_DIR:-$OUT_DIR/builds/current}"
 BUILD_REL="${BUILD_DIR#"$REPO_ROOT"/}"
 mkdir -p "$BUILD_DIR"
+BUILD_ACTIVE_MARKER="$BUILD_DIR/.minicon-build-active"
+printf '%s\n' "$$" >"$BUILD_ACTIVE_MARKER"
+cleanup_build_marker() { rm -f "$BUILD_ACTIVE_MARKER"; }
+trap cleanup_build_marker EXIT HUP INT TERM
 
 LNX_X86_64_LIMA="${MINICON_LNX_X86_64_LIMA:-minicon-lnx-aarch64}"
 LNX_X86_64_KERNEL_LIMA="${MINICON_LNX_X86_64_KERNEL_LIMA:-minicon-lnx-x86_64}"

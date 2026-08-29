@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1016">
   <title>MiniCon™ — A terminal that is one file</title>
-  <meta name="description" content="MiniCon — a real terminal in a single 752 KB file. No installer, no runtime, no background service. Runs on Windows Server 2016 where modern terminals cannot. Open source, scriptable, MIT OR Apache-2.0.">
+  <meta name="description" content="MiniCon — a real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. Runs on Windows Server 2016 where modern terminals cannot. Open source, scriptable, MIT OR Apache-2.0.">
   <link rel="canonical" href="https://minicon.agenterm.work/">
   <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
   <link rel="alternate" hreflang="zh-CN" href="https://minicon.agenterm.work/?lang=zh-CN">
@@ -16,11 +16,11 @@
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:title" content="MiniCon™ — A terminal that is one file">
-  <meta property="og:description" content="A real terminal in a single 752 KB file. No installer, no runtime, no background service. Runs where modern terminals cannot.">
+  <meta property="og:description" content="A real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. Runs where modern terminals cannot.">
   <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MiniCon™ — A terminal that is one file">
-  <meta name="twitter:description" content="A real terminal in a single 752 KB file. No installer, no runtime, no background service. Runs where modern terminals cannot.">
+  <meta name="twitter:description" content="A real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. Runs where modern terminals cannot.">
   <meta name="twitter:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <style>
@@ -246,9 +246,10 @@
         <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
         <p class="hero-emotion" data-i18n="heroEmotion">Copy it. Run it. That is the install.</p>
         <p class="lead" data-i18n="heroLead">
-          MiniCon is a single Windows executable under 1 MiB. No installer, no runtime, no
-          Visual C++ redistributable — every library it loads is part of Windows. It opens a
-          real PTY, renders a real terminal, and a script can drive and read every part of it.
+          MiniCon is a real terminal delivered as one executable per platform. No installer,
+          no bundled runtime, no background service. The Windows build needs no Visual C++
+          redistributable: every library it loads is part of Windows. It opens a real PTY,
+          renders a real terminal, and a script can drive and read every part of it.
         </p>
         <div class="cta-row">
           <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
@@ -257,8 +258,8 @@
         </div>
         <p class="hero-cta-hint" data-i18n="heroCtaHint">MIT OR Apache-2.0 · nothing to uninstall · no background service</p>
         <div class="spec-row" aria-label="Product specs" data-i18n-aria-label="specLabel">
-          <span class="spec-pill" data-i18n-html="specSize"><strong>752 KB</strong> executable</span>
-          <span class="spec-pill" data-i18n-html="specBudget"><strong>1 MiB</strong> enforced ceiling</span>
+          <span class="spec-pill" data-i18n-html="specSize"><strong>Target-qualified</strong> measurements</span>
+          <span class="spec-pill" data-i18n-html="specBudget"><strong>Profile-aware</strong> size reporting</span>
           <span class="spec-pill" data-i18n="specDeps">OS libraries only</span>
           <span class="spec-pill" data-i18n="specOld">Windows Server 2016 and newer</span>
           <span class="spec-pill" data-i18n="specOpen">MIT / Apache-2.0</span>
@@ -275,8 +276,8 @@
             <p data-i18n="inv1Body">The whole product is the executable. Nothing is installed, nothing runs in the background, and deleting the file removes it completely.</p>
           </div>
           <div>
-            <span class="rule" data-i18n="inv2Rule">Small on purpose</span>
-            <p data-i18n="inv2Body">A release gate fails the build above 1 MiB. Size is a budget the tests enforce, not an aspiration in a README.</p>
+            <span class="rule" data-i18n="inv2Rule">Small with evidence</span>
+            <p data-i18n="inv2Body">The Windows import table is checked against OS libraries. Executable size is measured and reported for each target and profile.</p>
           </div>
           <div>
             <span class="rule" data-i18n="inv3Rule">Small ≠ toy</span>
@@ -443,7 +444,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           </div>
           <div class="card">
             <h3><a href="https://github.com/partnernetsoftware/minicon" data-i18n="docsRepoTitle">Source and tests</a></h3>
-            <p data-i18n="docsRepoBody">The behaviour claimed here is pinned by the test suite — including gates for the import table, the size budget, and the CLI's own contract.</p>
+            <p data-i18n="docsRepoBody">The behaviour claimed here is pinned by the test suite — including the import table, target-qualified artifact evidence, and the CLI's own contract.</p>
           </div>
         </div>
       </div>
@@ -469,7 +470,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
       const copy = {
         en: {
           title: "MiniCon™ — A terminal that is one file",
-          description: "MiniCon — a real terminal in a single 752 KB file. No installer, no runtime, no background service. Runs on Windows Server 2016 where modern terminals cannot. Open source, scriptable, MIT OR Apache-2.0.",
+          description: "MiniCon — a real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. Runs on Windows Server 2016 where modern terminals cannot. Open source, scriptable, MIT OR Apache-2.0.",
           skip: "Skip to content",
           navLabel: "Primary navigation",
           languageLabel: "Language",
@@ -478,25 +479,25 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           navScript: "Scripting",
           navInstall: "Get it",
           navDocs: "Docs",
-          heroEyebrow: "one file · no install · under 1 MiB",
+          heroEyebrow: "one executable · no install · no bundled runtime",
           heroTitle: "A terminal that is <em>one file</em>.",
           heroEmotion: "Copy it over. Run it. That's the whole install.",
-          heroLead: "MiniCon is a real terminal in a single 752 KB file. No installer, no runtime, no VC++ redistributable, no background service — everything it loads is already part of Windows. It runs on machines modern terminals gave up on, and a script can drive and read every part of it.",
+          heroLead: "MiniCon is a real terminal delivered as one executable per platform. No installer, no bundled runtime, no background service. The Windows build needs no VC++ redistributable — everything it loads is already part of Windows. It runs on machines modern terminals gave up on, and a script can drive and read every part of it.",
           ctaGet: "Get MiniCon",
           ctaSource: "Source on GitHub",
           ctaOld: "Old Windows support",
           heroCtaHint: "MIT OR Apache-2.0 · delete the file and it's gone · no background service",
           specLabel: "Product specs",
-          specSize: "<strong>752 KB</strong> on disk",
-          specBudget: "<strong>1 MiB</strong> hard ceiling",
+          specSize: "<strong>Target-qualified</strong> measurements",
+          specBudget: "<strong>Profile-aware</strong> size reporting",
           specDeps: "OS libraries only",
           specOld: "Windows Server 2016 and newer",
           specOpen: "MIT / Apache-2.0",
           invariantHeading: "What MiniCon is",
           inv1Rule: "One file is the whole product",
           inv1Body: "The whole product is the executable. Nothing is installed, nothing runs in the background — delete the file and it is completely gone.",
-          inv2Rule: "Small because the tests enforce it",
-          inv2Body: "Two release gates fail the build if you break them: the import table may only reference Windows libraries, and the binary must stay under 1 MiB. Every number on this page is measured, not aspirational.",
+          inv2Rule: "Small with evidence",
+          inv2Body: "The Windows import table is checked against OS libraries. Executable size is measured and reported for each target and profile.",
           inv3Rule: "Small, not stripped-down",
           inv3Body: "Real PTY, real VT parsing, a tab tree, IME, mouse, scrollback. Small is the size — not the feature list.",
           shotTitle: "This is the whole application.",
@@ -548,7 +549,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           docsCliTitle: "Driving MiniCon from a script",
           docsCliBody: "The full control surface: reading state, waiting on conditions, sending input, managing the tab tree, and running one command instead of a shell.",
           docsRepoTitle: "Source and tests",
-          docsRepoBody: "The behaviour claimed here is pinned by the test suite — including gates for the import table, the size budget, and the CLI's own contract.",
+          docsRepoBody: "The behaviour claimed here is pinned by the test suite — including the import table, target-qualified artifact evidence, and the CLI's own contract.",
           footerRepo: "GitHub",
           footerReleases: "Releases",
           footerOld: "Old Windows",
@@ -559,7 +560,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
-          description: "MiniCon —— 一个 752 KB 文件里的真终端。免安装、免运行时、免后台服务。在 Windows Server 2016 这类现代终端跑不动的机器上照常运行。开源、可脚本化，MIT 或 Apache-2.0。",
+          description: "MiniCon —— 每个平台一个可执行文件的真终端。免安装、免捆绑运行时、免后台服务。在 Windows Server 2016 这类现代终端跑不动的机器上照常运行。开源、可脚本化，MIT 或 Apache-2.0。",
           skip: "跳到正文",
           navLabel: "主导航",
           languageLabel: "语言",
@@ -568,25 +569,25 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           navScript: "脚本",
           navInstall: "获取",
           navDocs: "文档",
-          heroEyebrow: "一个文件 · 免安装 · 不到 1 MiB",
+          heroEyebrow: "一个可执行文件 · 免安装 · 无捆绑运行时",
           heroTitle: "一个<em>文件</em>就是一个终端。",
           heroEmotion: "拷过去，跑起来。安装就完事了。",
-          heroLead: "MiniCon 是一个真正的终端，装在一个 752 KB 的文件里。没有安装包、没有运行时、没有 VC++ 运行库、没有后台服务——它加载的每一个库都是 Windows 自带的。现代终端已经放弃的机器上它能跑，而且每一处都能被脚本驱动和读取。",
+          heroLead: "MiniCon 是一个真正的终端，每个平台各有一个可执行文件。没有安装包、没有捆绑运行时、没有后台服务。Windows 版本不需要 VC++ 运行库——它加载的每一个库都是 Windows 自带的。现代终端已经放弃的机器上它能跑，而且每一处都能被脚本驱动和读取。",
           ctaGet: "获取 MiniCon",
           ctaSource: "GitHub 源码",
           ctaOld: "旧版 Windows 支持",
           heroCtaHint: "MIT 或 Apache-2.0 · 删掉文件就彻底卸载 · 无后台服务",
           specLabel: "产品规格",
-          specSize: "<strong>752 KB</strong> 磁盘占用",
-          specBudget: "<strong>1 MiB</strong> 硬性上限",
+          specSize: "<strong>按目标</strong> 实测体积",
+          specBudget: "<strong>按 profile</strong> 报告体积",
           specDeps: "只依赖系统库",
           specOld: "Windows Server 2016 及更高版本",
           specOpen: "MIT / Apache-2.0",
           invariantHeading: "MiniCon 是什么",
           inv1Rule: "一个文件就是全部",
           inv1Body: "整个产品就是那一个可执行文件。什么都不装、后台什么都不跑——删掉文件，就彻底没了。",
-          inv2Rule: "小，是因为测试在把关",
-          inv2Body: "导入表里只允许出现 Windows 自带的库，二进制必须压在 1 MiB 以内——两道发布关卡，任何一道没过构建就失败。这一页的每一个数字都是实测的，不是喊出来的口号。",
+          inv2Rule: "小，也要有证据",
+          inv2Body: "Windows 导入表受系统库检查；可执行文件体积按每个目标和 profile 实测、报告。",
           inv3Rule: "小，不等于缩水",
           inv3Body: "真 PTY、真 VT 解析、标签页树、输入法、鼠标、回滚，一样不少。小的是体积，不是功能。",
           shotTitle: "这就是整个应用。",
@@ -638,7 +639,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           docsCliTitle: "用脚本驱动 MiniCon",
           docsCliBody: "完整的控制接口：读状态、等条件、发输入、管理标签页树，以及用一条命令取代整个 shell。",
           docsRepoTitle: "源码与测试",
-          docsRepoBody: "这里宣称的行为都由测试套件钉死——包括导入表、体积预算和 CLI 自身契约的把关。",
+          docsRepoBody: "这里宣称的行为都由测试套件钉死——包括导入表、按目标验证的产物证据和 CLI 自身契约。",
           footerRepo: "GitHub",
           footerReleases: "版本发布",
           footerOld: "旧版 Windows",
@@ -649,7 +650,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
         },
         "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
-          description: "MiniCon —— 單一執行檔的 Windows 終端機，不到 1 MiB。免安裝、免執行環境、免 VC++ 可轉散發套件。在沒有 ConPTY 的 Windows Server 2016 上照樣跑。",
+          description: "MiniCon —— 每個平台各有一個執行檔的真終端機。免安裝、免捆綁執行環境、免背景服務。在沒有 ConPTY 的 Windows Server 2016 上照樣跑。",
           skip: "跳到內容",
           navLabel: "主導覽",
           languageLabel: "語言",
@@ -661,22 +662,22 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           heroEyebrow: "獨立終端機 · Windows · v0.1.2",
           heroTitle: "一個<em>檔案</em>就是一個終端機。",
           heroEmotion: "複製過去，執行。安裝就這樣結束了。",
-          heroLead: "MiniCon 是單一 Windows 執行檔，不到 1 MiB。沒有安裝程式、沒有執行環境、沒有 Visual C++ 可轉散發套件——它載入的每一個程式庫都是 Windows 自帶的。它開真正的 PTY、畫真正的終端機，而且每一個部分都可以被腳本操控與讀取。",
+          heroLead: "MiniCon 是真正的終端機，每個平台各有一個執行檔。沒有安裝程式、沒有捆綁執行環境、沒有背景服務。Windows 版本不需要 Visual C++ 可轉散發套件——它載入的每一個程式庫都是 Windows 自帶的。它開真正的 PTY、畫真正的終端機，而且每一個部分都可以被腳本操控與讀取。",
           ctaGet: "取得 MiniCon",
           ctaSource: "GitHub 原始碼",
           ctaOld: "舊版 Windows 支援",
           heroCtaHint: "MIT 或 Apache-2.0 · 沒有東西需要解除安裝 · 不留背景服務",
           specLabel: "產品規格",
-          specSize: "<strong>752 KB</strong> 執行檔",
-          specBudget: "<strong>1 MiB</strong> 強制上限",
+          specSize: "<strong>依目標</strong> 實測體積",
+          specBudget: "<strong>依 profile</strong> 報告體積",
           specDeps: "只依賴系統程式庫",
           specOld: "Windows Server 2016 起",
           specOpen: "MIT / Apache-2.0",
           invariantHeading: "MiniCon 是什麼",
           inv1Rule: "就一個檔案",
           inv1Body: "整個產品就是那個執行檔。不安裝任何東西、不留背景程式，刪掉檔案就等於完全移除。",
-          inv2Rule: "小是刻意的",
-          inv2Body: "超過 1 MiB 建置直接失敗。體積是測試強制執行的預算，不是 README 裡的願望。",
+          inv2Rule: "小，也要有證據",
+          inv2Body: "Windows 匯入表受系統程式庫檢查；執行檔體積依每個目標和 profile 實測、報告。",
           inv3Rule: "小，但不是玩具",
           inv3Body: "真 PTY、真 VT 解析、分頁樹、輸入法、滑鼠、回捲，還有一套腳本可驅動的控制介面。",
           shotTitle: "這就是應用程式的全部。",
@@ -728,7 +729,7 @@ cargo build --release   <span class="c"># target/release/minicon.exe</span></pre
           docsCliTitle: "用腳本驅動 MiniCon",
           docsCliBody: "完整控制介面：讀取狀態、等待條件、送出輸入、管理分頁樹，以及用單一指令取代 shell。",
           docsRepoTitle: "原始碼與測試",
-          docsRepoBody: "這裡宣稱的行為都由測試套件釘住——包含匯入表、體積預算與 CLI 自身契約的把關。",
+          docsRepoBody: "這裡宣稱的行為都由測試套件釘住——包含匯入表、依目標驗證的產物證據與 CLI 自身契約。",
           footerRepo: "GitHub",
           footerReleases: "發行版",
           footerOld: "舊版 Windows",

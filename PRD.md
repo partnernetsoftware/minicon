@@ -69,6 +69,13 @@ MiniCon — one-file local terminal
 │   │   ├── unwind-safe native callback containment
 │   │   ├── platform-qualified size claims and exact-SHA delivery
 │   │   ├── repository-pinned Rust 1.97 toolchain; release builders never inherit rolling `stable`
+│   │   ├── bounded build-state lifecycle
+│   │   │   ├── one shared dry-run-first cleaner; build scripts select narrow scopes
+│   │   │   ├── current symlink + receipt build root + newest snapshots + active markers are protected
+│   │   │   ├── ordinary Cargo state expires after 14 days; six-cell snapshots after 7 days
+│   │   │   ├── cloud bodies require a verified immutable-archive receipt before local expiry
+│   │   │   ├── VM images are never part of automatic garbage collection
+│   │   │   └── macOS LaunchAgent runs low-priority maintenance daily at 03:17
 │   │   ├── Release evolution
 │   │   │   ├── [x] v0.1.2 stable baseline
 │   │   │   │   ├── exact source tag `v0.1.2`

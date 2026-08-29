@@ -8,7 +8,7 @@ PTY, renders a real terminal, and a script can drive and read every part of it.
 
 | | |
 | --- | --- |
-| Executable | 664 KB on Windows arm64, 716 KB on x64; larger on Linux and macOS |
+| Executable | current six-cell `strip=true` measurements: Windows arm64 677,376 bytes / x64 731,136; macOS arm64 1,413,408 / x64 1,455,424; Linux arm64 4,846,400 / x64 5,732,544. They are target-qualified evidence, not a universal product limit; see [Delivery](prd/PRD_02_27_con_delivery.md) for measurement context. |
 | Dependencies | operating-system libraries only |
 | Supported | Windows Server 2016 / Windows 10 1607 and newer; Linux; macOS |
 | Licence | MIT OR Apache-2.0 |
@@ -85,8 +85,8 @@ all of it depends on the machine.
 ## Build
 
 ```bash
-cargo build --release       # target/release/minicon
-cargo test                  # unit, GUI black-box, and gates
+./scripts/build.sh release  # target/release/minicon; bounded local cache lifecycle
+./scripts/build.sh test     # unit, GUI black-box, and gates
 ./scripts/six-cell-qualify.sh # one Mac: link all six cells, run available tests
 ```
 
@@ -96,6 +96,12 @@ test pass. On Apple Silicon, `scripts/setup-linux-runners.sh` provisions the
 Debian/glibc Lima courts used for both Linux architectures. A Windows UTM VM
 with Guest Tools can use `scripts/windows-utm-runner.sh` as both Windows runner
 variables; the gate transfers the exact PE/test tree before execution.
+
+`scripts/cleanup-build-state.py` is dry-run by default. Build/package owners
+invoke it with narrow scopes and protect current, receipt-owned and active
+state. On macOS, `scripts/install-macos-daily-cleanup.sh` installs a per-user
+LaunchAgent for 03:17 daily maintenance. VM images and cloud bodies without an
+explicit verified archive receipt are never automatically deleted.
 
 Rust 1.97. The Linux build needs `libxkbcommon0 libxkbcommon-x11-0
 libwayland-client0`.
@@ -134,7 +140,7 @@ server, workspace persistence, multiplexer, or script runtime.
 **一个文件就是一个终端。** 免安装、免运行时、免 VC++ 可再发行组件——它载入的每一个
 库都是操作系统自带的。它开真正的 PTY、画真正的终端,而且每一部分都能被脚本驱动和读取。
 
-- 产物 Windows arm64 664 KB、x64 716 KB;Linux 与 macOS 更大
+- 当前六格 `strip=true` 实测：Windows arm64 677,376 bytes / x64 731,136；macOS arm64 1,413,408 / x64 1,455,424；Linux arm64 4,846,400 / x64 5,732,544。它们是按目标验证的证据，不是全产品统一上限；测量语境见[交付](prd/PRD_02_27_con_delivery.md)。
 - 只依赖操作系统库
 - 支持 Windows Server 2016 / Windows 10 1607 及以上、Linux、macOS
 - MIT 或 Apache-2.0

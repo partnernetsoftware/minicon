@@ -3,14 +3,16 @@
 | Field | Value |
 |---|---|
 | Date | 2026-08-28 |
+| Status | **Completed decision record — local Intel-macOS VM branch rejected for routine qualification** |
 | Purpose | Decide whether Apple Silicon UTM can own the true Intel macOS court, or whether that cell must move to a real Intel Mac runner |
 | Implementation | `research/osx-x86-64-court/` |
 | Read first | `PRD.md`, `prd/PRD_02_27_con_delivery.md` |
 | Source discipline | Apple-origin installer only; OpenCore/QEMU components must retain upstream provenance and hashes |
 
-This experiment belongs to the six-cell delivery outcome, but it does not mark
-`minicon-osx-x86-64` ready by itself. Only the §4 decision tree may change the
-cell from `planned`.
+This document is a completed decision record for the bounded Intel-kernel
+experiment. It does not mark a local `minicon-osx-x86-64` VM ready. Routine
+x86-64 userspace qualification is owned by host Rosetta under the delivery PRD;
+true Intel-kernel evidence moves to a real Intel Mac runner when required.
 
 ## §0 — settled context
 
@@ -142,9 +144,10 @@ decision trace.
 - Whether every future macOS release remains bootable.
 - Product performance qualification; real Intel hardware remains authoritative.
 
-## §8 — conclusion backfill
+## §8 — completed decision
 
-Status: **C1 preflight executed and failed; VM creation remains unauthorized**.
+Status: **completed — the local UTM/OpenCore branch is not a routine release
+court; VM creation and further version hunting remain unauthorized**.
 
 The first preflight passed the host-capability and explicit-unqualified-state
 checks, but found no local Apple Intel installer, pinned OpenCore image, or
@@ -152,12 +155,24 @@ provenance-qualified preinstalled image. It exited 2 through §4 step 1, so C2
 was not attempted. One bounded candidate pair is now identified for a future
 C1 retry: `EFI-MODERN` 0.6.6 plus Apple Catalina recovery fetched through
 OpenCorePkg 1.0.7 `macrecovery.py`. Candidate identification is not media
-identity and does not change the registry from `planned`; local bytes and
-hashes are still absent. The full decision trace and rerun command live in
-`research/osx-x86-64-court/RESULTS.md`.
+identity and did not authorize a local court. Subsequent delivery work
+established that MiniCon's routine need is x86-64 userspace behavior, which
+Rosetta can prove without pretending to provide an Intel kernel. The stopped
+Catalina/OpenCore work remains recoverable research evidence, not a release
+prerequisite or a planned resident VM.
 
-After each later authorized execution, extend this section with the C1→C7
-decision trace, exact checkpoint table, deviations from this specification,
-rerun commands, the honesty statement that criteria were not changed to improve
-the result, and any finding that overturned the expected outcome. A result without
-`research/osx-x86-64-court/RESULTS.md` is not a decision.
+Reopen this experiment only when at least one of these conditions becomes true:
+
+1. a defect requires an Intel kernel, CPUID or untranslated timing, a kernel
+   extension/driver, an old installer, or an Intel-only macOS release;
+2. UTM or its image ecosystem provides a provenance-qualified, reusable and
+   automatable x86-64 macOS baseline with materially lower acquisition and
+   execution cost than the bounded OpenCore/TCG attempt; or
+3. a real Intel Mac runner becomes available and needs qualification against
+   C3–C7.
+
+Any reopened run starts as a new bounded execution, preserves the preregistered
+criteria, records a new decision trace, and must not relabel Rosetta evidence as
+an Intel-kernel result. Until then, `runner-unavailable` is the safe result for
+Intel-kernel-only leaves and routine userspace qualification continues through
+Rosetta.

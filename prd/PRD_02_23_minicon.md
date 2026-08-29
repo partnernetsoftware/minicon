@@ -130,9 +130,9 @@ or reduced permission model.
 
 ## Delivery ownership
 
-Package identity, unwind profiles, platform-qualified artifact measurements, the independent
-`.github/workflows/ci-minicon.yml` feedback owner, and the exact-SHA
-two-workflow Candidate precondition are owned by
+Package identity, unwind profiles, platform-qualified artifact measurements, the parked
+`.github/workflows/ci-minicon.yml.disabled` workflow, and any future exact-SHA
+Candidate precondition after that workflow is enabled and qualified are owned by
 [27](PRD_02_27_con_delivery.md). Historical agenterm delivery requirements are
 context only; this repository's delivery PRD and workflows are authoritative.
 

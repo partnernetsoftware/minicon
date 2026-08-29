@@ -44,6 +44,38 @@ flowchart LR
     G13 -->|no| K12["keep v0.1.2 stable<br/>revise or reject experiment"]
 ```
 
+## Bounded build-state lifecycle
+
+- [x] `scripts/cleanup-build-state.py` is the single deletion authority for
+  regenerable repository-local build state. It defaults to dry-run, accepts
+  explicit scopes, validates that it owns a MiniCon checkout, never follows a
+  deletion target outside that checkout, serializes apply runs with
+  `target-six/.cleanup.lock`, and writes an immutable GC receipt whenever it
+  removes anything.
+- [x] ordinary `target/` expires only after 14 inactive days and with no active
+  build marker. `scripts/build.sh` is the documented release/dev/check/test
+  wrapper: it runs bounded maintenance before Cargo and owns the active marker
+  for the command lifetime. Direct Cargo remains available but does not pretend
+  to own automatic cleanup.
+- [x] six-cell snapshots expire after seven days while retaining at least the
+  newest three. `target-six/builds/current`, the build root named by the latest
+  receipt, and every fresh `.minicon-build-active` marker are protected.
+  `scripts/six-cell-qualify.sh` invokes this scope and pins its selected build
+  root before fan-out, so cleanup cannot race the owning qualification.
+- [x] cloud runtime files are grouped by the complete source-tree identity.
+  They are eligible only after 30 days, while retaining the newest three and
+  the current receipt identity, and only when a matching archive receipt says
+  that immutable remote preservation was verified. An incomplete or
+  unpublished group fails closed and remains local.
+- [x] VM disks, ISO files, preparation receipts, court state, guest keys and
+  runtime evidence are outside automatic deletion. Their acquisition and
+  authority costs are not equivalent to a Cargo cache.
+- [x] `scripts/install-macos-daily-cleanup.sh` installs the per-user
+  `com.partnernetsoftware.minicon.cleanup` LaunchAgent. It runs at 03:17 daily
+  with background/low-I/O scheduling, uses the same shared cleaner, and logs to
+  `~/Library/Logs/minicon-maintenance.log`. Reinstalling updates the job
+  idempotently; no password or system daemon authority is required.
+
 ## Package identity
 
 - [x] `minicon` is an independently owned workspace package
@@ -137,11 +169,24 @@ correct half/full-width font measurement.
   上限若要回来，必须先明确它约束哪几个平台。
   它刻意不是警告阈值：这个数字是产品承诺，构建就应该在它上面失败。
 - [~] **独立 CI 已移植，但停放中。** `ci-agenterm-con.yml` 已从 agenterm 移到本仓
-  `.github/workflows/ci-minicon.yml.disabled`，`.disabled` 后缀期间不触发，一条
-  `git mv` 即可启用。两处适配：`--profile con-release-fast` → `--profile release-fast`、
+  `.github/workflows/ci-minicon.yml.disabled`，`.disabled` 后缀期间不触发。重命名只能让
+  GitHub 发现文件，不能自动把其中未验证的迁移命令变成发布证据；启用还要求 review 和
+  首次成功运行。两处候选适配：`--profile con-release-fast` → `--profile release-fast`、
   去掉 `-p agenterm-con`（本仓单包）。**它从未在本仓跑过**，`build-std` 那几格尤其未验证。
 
-## Unwind profiles and panic containment
+## Historical agenterm delivery contract (migration record only)
+
+The checked items in this section describe the last proven `agenterm-con`
+implementation before extraction. They are retained to explain design choices
+and measured history; they are **not commands, profiles, gates, or CI claims of
+the standalone MiniCon repository**. In particular, `con-dev`,
+`con-release-fast`, `con-release`, the agenterm staging merge, and agenterm's
+custom-std qualification belong to migration history. The current repository
+uses its ordinary Cargo profiles; `[profile.release]` explicitly preserves
+`panic = "unwind"`. Any future standalone custom-std gate must be introduced
+and proven here before becoming a current contract.
+
+### Historical unwind profiles and panic containment
 
 - [x] con owns `con-dev`, `con-release-fast` and `con-release` unwind dependency
   graphs; only the resulting executable is merged into the ordinary staging
@@ -1194,38 +1239,42 @@ interactive Linux x86 installation.
   named-pipe, Job and control behavior remains product functionality rather
   than something to hide or remove.
 
-- [x] `.github/workflows/ci-minicon.yml` is the ordinary feedback owner for
-  this product, independent from `.github/workflows/ci-agenterm.yml`. Both may
-  reuse platform/UI-core mechanisms, but neither product can acquire a green
-  status from the other's tests.
-- [x] Candidate preflight requires a successful run of both workflows at the
-  exact source SHA before integrated qualification and six-platform sealing. The
-  rule itself is owned by
-  this repository's release workflow.
-- [x] Windows x86_64 runs the matching custom-std `con-release-fast` Clippy,
-  unit, public GUI black-box, panic-containment and artifact build path;
-  `{x86_64,aarch64} x {win,lnx,osx}` compile cells prove the product and its
-  selected platform adapters remain portable.
+- [~] **Ordinary CI is parked, not an active owner.** The only repository file
+  is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
+  suffix, and its own header records that it has never run in this repository.
+  Therefore push/PR feedback, its custom-std cells, and any exact-SHA preflight
+  dependency on that workflow are unproven and must not be claimed. The active
+  workflow files are the manually dispatched release and six-grid-runtime
+  workflows. Enabling ordinary CI requires a reviewed rename, a successful
+  first run, and PRD backfill from that run.
+- [ ] Candidate preflight does **not currently** require an active MiniCon CI
+  workflow plus an agenterm workflow. MiniCon cannot inherit green status from
+  agenterm, and the standalone release contract may name only workflows and
+  evidence that exist and have run in this repository.
+- [ ] The parked workflow still contains migrated custom-std `release-fast`
+  commands. Until they execute successfully here, they are migration candidates
+  rather than proof of Windows x86_64 or the six compile cells. Historical
+  `con-release-fast` commands belong only to the migration record above.
 
 ## Machine-readable alignment
 
-- [x] `alignment-contract.json` maps each gated con
+- [x] `alignment-contract.json` maps each gated MiniCon
   capability to its owning PRD, public command set and registered black-box
   evidence. `evidence-registry.json` owns those Cargo test
-  identities independently from workbench qualification.
-- [x] con capabilities must not be registered in
-  [`alignment-contract.json`](../alignment-contract.json). That contract's
-  evidence identifiers must exactly match the evidence emitted by the workbench
-  qualification suites in `scripts/qualification-gates.json` and
-  `scripts/host-native-evidence-gates.json`, and its command catalog comes from
-  `dist/agenterm cli list-commands`. Registering con there would make con's
-  shipped claims depend on workbench evidence and on a CLI con does not own,
-  which contradicts the independence rule above.
+  identities independently from agenterm qualification.
+- [x] The standalone contract is self-owned. The former references to
+  agenterm's `scripts/qualification-gates.json`,
+  `scripts/host-native-evidence-gates.json`, and
+  `dist/agenterm cli list-commands` are migration history: none is a current
+  MiniCon gate or CLI. Current command-catalog evidence comes from
+  `minicon cli list-commands`, and current evidence identifiers must resolve in
+  this repository's own registry and tests.
 - [x] `minicon_alignment` rejects duplicate or orphan capabilities,
   commands and evidence, missing PRD owners or registered test functions, and
   any difference between the contract command set and the running
-  `minicon cli list-commands` catalog. `ci-minicon.yml` runs that gate
-  explicitly under the exact unwind profile before the complete con test suite.
+  `minicon cli list-commands` catalog. `minicon_alignment` owns that check
+  locally. The parked CI file is not execution evidence, so no active workflow
+  currently proves that it runs before the complete test suite.
 
 ## Measured artifact history
 
