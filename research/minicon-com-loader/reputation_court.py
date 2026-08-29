@@ -48,10 +48,14 @@ def candidate_identity(manifest: dict) -> tuple[str, dict, str, str]:
     signing_sha = require_text(signing_receipt, "sha256")
     if not SHA_RE.fullmatch(signing_sha):
         raise ValueError("invalid signing receipt digest")
-    if not isinstance(signing, dict) or signing.get("organization") != "PARTNERNET SOFTWARE PTY LTD":
-        raise ValueError("Candidate lacks company signing identity")
+    allowed_publishers = {
+        "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
+        "signpath-foundation": "SignPath Foundation",
+    }
+    if not isinstance(signing, dict) or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
+        raise ValueError("Candidate lacks a valid trusted signing identity")
     if signing.get("signed_after_sha256", {}).get("minicon.com") != expected_sha:
-        raise ValueError("Candidate APE is not the company-signed after-SHA")
+        raise ValueError("Candidate APE is not the trusted-signed after-SHA")
     return source_sha, candidate_run, expected_sha, signing_sha
 
 
@@ -119,7 +123,8 @@ def selftest() -> None:
         sha = "a" * 64
         manifest = {"kind": "minicon-release-candidate", "source_sha": "b" * 40,
                     "candidate_run": run, "assets": [{"name": "minicon.com", "sha256": sha}],
-                    "signing": {"organization": "PARTNERNET SOFTWARE PTY LTD",
+                    "signing": {"provider": "signpath-foundation",
+                                "publisher_organization": "SignPath Foundation",
                                 "signed_after_sha256": {"minicon.com": sha}},
                     "receipts": {"signing": {"sha256": "d" * 64}}}
         common = {"verdict": "clean", "candidate_run": run, "minicon_com_sha256": sha,

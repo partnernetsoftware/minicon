@@ -62,8 +62,8 @@ def require_identity(build: dict, aggregate: dict, signing: dict, source: str, v
         raise ValueError("source tree digest mismatch")
     if not SHA_RE.fullmatch(str(build.get("loader_source_sha256"))):
         raise ValueError("missing loader source digest")
-    if signing.get("kind") != "minicon-company-signing" or signing.get("product_version") != version:
-        raise ValueError("company signing identity/version mismatch")
+    if signing.get("kind") != "minicon-trusted-signing" or signing.get("product_version") != version:
+        raise ValueError("trusted signing identity/version mismatch")
     signing_run = signing.get("signing_run")
     upstream_run = signing.get("upstream")
     if not isinstance(signing_run, dict) or not isinstance(upstream_run, dict):
@@ -166,7 +166,8 @@ def seal(args: argparse.Namespace) -> None:
             "signing": {"name": signing_path.name, "sha256": sha256(signing_path)},
         },
         "signing": {
-            "organization": signing.get("organization"),
+            "provider": signing.get("signing_provider"),
+            "publisher_organization": signing.get("publisher_organization"),
             "signed_after_sha256": {
                 key: signing["assets"][key]["after_sha256"]
                 for key in ("minicon.com", "win-x86_64", "win-aarch64")
@@ -200,8 +201,12 @@ def verify_manifest(manifest: dict, payload: Path) -> None:
         if sha256(sidecar) != row["sidecar"]["sha256"] or sidecar_digest(sidecar) != row["sha256"]:
             raise ValueError(f"{sidecar.name}: sealed sidecar mismatch")
     signing = manifest.get("signing")
-    if not isinstance(signing, dict) or signing.get("organization") != "PARTNERNET SOFTWARE PTY LTD":
-        raise ValueError("missing company signing identity")
+    allowed_publishers = {
+        "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
+        "signpath-foundation": "SignPath Foundation",
+    }
+    if not isinstance(signing, dict) or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
+        raise ValueError("missing or mismatched trusted signing identity")
     after = signing.get("signed_after_sha256")
     if not isinstance(after, dict) or set(after) != {"minicon.com", "win-x86_64", "win-aarch64"}:
         raise ValueError("missing signed after-SHA set")
@@ -271,8 +276,9 @@ def self_test() -> None:
             }},
         }))
         signing_path.write_text(json.dumps({
-            "kind": "minicon-company-signing", "source_sha": source,
-            "product_version": version, "organization": "PARTNERNET SOFTWARE PTY LTD", "assets": {
+            "kind": "minicon-trusted-signing", "source_sha": source,
+            "product_version": version, "signing_provider": "signpath-foundation",
+            "publisher_organization": "SignPath Foundation", "assets": {
                 "minicon.com": {"before_sha256": unsigned_com_sha, "after_sha256": sha256(com),
                                  "after_bytes": com.stat().st_size},
                 "win-x86_64": {"after_sha256": hashlib.sha256(b"win-x86").hexdigest()},

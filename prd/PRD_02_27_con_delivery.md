@@ -125,10 +125,12 @@ flowchart LR
 - [x] `minicon` is an independently owned workspace package
   (`crates/minicon`) with its own dependency graph, not a bin target of the
   workbench crate.
-- [x] its resolved dependency graph contains no winit, softbuffer, Rhai,
-  HTTP/TLS or script-engine dependency. `serde_json`, `hashbrown`/`RandomState`,
-  ab_glyph and ttf_parser are absent from the Windows production graph and
-  survive only as dev-only oracles where noted.
+- [x] the Windows production graph contains no winit or softbuffer: that cell
+  uses `native-pixel-window` (Win32). Unix cells use `portable-pixel-window`
+  and **do** link winit/softbuffer. No cell links Rhai, HTTP/TLS or a script
+  engine. `serde_json`, `hashbrown`/`RandomState`, ab_glyph and ttf_parser are
+  absent from the Windows production graph and survive only as dev-only
+  oracles where noted. A size or graph claim must name the target.
 - [x] the platform `pty` feature declares its own `Win32_Security` dependency
   rather than relying on con's unrelated `ipc` feature to make `CreateProcessW`,
   pipes and Job APIs visible, so both the minimal capability graph and the full
@@ -211,7 +213,9 @@ correct half/full-width font measurement.
   2026-08-29：`minicon.com` Linux payloads 改用 `profile.release`（thin LTO）+
   `--gc-sections`；zigbuild 的 lld 不支持 `pack-relative-relocs`。
   实测 `lnx-x86_64` 7,704,280 → 5,746,384（release-fast → release），
-  `lnx-aarch64` 6,932,840 → 4,857,552。剩余体积仍是 Wayland+X11 `.text` 与
+  `lnx-aarch64` 6,932,840 → 4,857,552。ELF 段拆分、Zip 占比与剩余杠杆见下方
+  **Linux size attribution** / **Remaining mini levers**。剩余体积是
+  Wayland+X11 `.text`、独立 `x11rb`、`a11y-publish`（tokio/zbus/atspi）与
   DWARF `.eh_frame`，不是漏 strip。
   一个在三个平台里两个必红的门会挡住即将开始的瘦身工作，却量不出新东西，
   所以撤门、改为在 README 直接写各平台实测字节数。
@@ -289,6 +293,96 @@ and proven here before becoming a current contract.
   from the same HEAD after an explicit Windows-target package clean is recorded
   as non-evidence, and future assembly or native FFI work must start from the
   same standard rather than from mechanism preference.
+
+### APE join (cosmocc over six native cells)
+
+- [x] `minicon.com` is a Cosmopolitan fat trampoline plus ZipOS overlay
+  (`/zip/cells/{os}-{isa}/`). It does **not** recompile MiniCon against
+  cosmopolitan libc. GUI/PTY/Win32/Cocoa/Wayland stay in the already-qualified
+  Rust cells. The trampoline selects `{os}-{isa}`, copies the blob out of
+  ZipOS (or `MINICON_COM_CELLS`) into a per-invocation private directory, and
+  `exec`s it. In-process mmap (rust-ape style) is the wrong join for a native
+  GUI terminal.
+- [x] extract dirs are disposable: `mkdtemp` under `/tmp/minicon.com.<pid>.XXXXXX`
+  (Darwin `/tmp` may be `/private/tmp`), mode `0700`, marker file
+  `.minicon-extract`. Reaper uses `lstat` / `O_NOFOLLOW` / uid / mode / marker.
+  SIGKILL vs non-EINTR `waitpid` failure keeps the directory. There is no
+  `MINICON_CONFIG` override. Windows config root remains
+  `SHGetFolderPathW(CSIDL_APPDATA)` ([25](PRD_02_25_con_workspace.md)), not
+  `%APPDATA%` / `%USERPROFILE%`.
+- [x] pack profiles are target-specific: Linux cells `cargo zigbuild --profile
+  release` (thin LTO + `--gc-sections` / `--as-needed`); Darwin and Windows
+  cells `release-fast`. Zig's lld rejects `-z pack-relative-relocs` (RELR);
+  that path is closed. `cosmocc --version` prints a GCC id (14.1.0), not the
+  Cosmopolitan release pin; the pin is the zip SHA-256 plus `bin/cosmocc`
+  digest. Install is NEXT/PREV rename-swap under the same parent.
+- [x] one pack, six native execute-only courts. Guests do not compile. v0.1.2
+  stays three archives; `minicon.com` is not mixed into that Release.
+  Promotion copies exact bytes. No auto-raise of the 9 MiB ceiling.
+
+### Linux size attribution (LTO cells, 2026-08-29)
+
+Payload bytes after Linux `profile.release` (same numbers as the 迁出差异
+entry above). These are **cell** sizes, not a Candidate APE SHA. Later
+Candidate/rehearsal APE totals (for example 8,909,564) name a different
+container and must not be substituted here.
+
+| cell | bytes | profile |
+|---|---:|---|
+| lnx-x86_64 | 5,746,384 | `release` (thin LTO) |
+| lnx-aarch64 | 4,857,552 | `release` (thin LTO) |
+| osx-aarch64 | 1,613,872 | `release-fast` |
+| osx-x86_64 | 1,662,232 | `release-fast` |
+| win-aarch64 | 812,544 | `release-fast` |
+| win-x86_64 | 867,328 | `release-fast` |
+
+`lnx-x86_64` ELF (that 5,746,384-byte file): `.text` 3,489,366;
+`.eh_frame` + `.eh_frame_hdr` + `.gcc_except_table` 1,126,960 (unwind,
+required by `panic = "unwind"`); `.rela.dyn` 475,416. Darwin `__TEXT,__text`
+is 916,500–1,052,784; Windows `.text` is 563,200–595,456. Linux is large
+because it links **winit Wayland and X11 plus independent `x11rb`**, not
+because strip was skipped. Linux also enables `a11y-publish` (`tokio`
+`rt-multi-thread`, `zbus`, `atspi`, `x11rb`) so AT-SPI can address inner
+chrome ([23](PRD_02_23_minicon.md)); that is a product feature, not slack.
+
+Zip overlay of one local LTO rehearsal APE (`7,493,066` raw, under 9 MiB,
+not Candidate-of-record): APE prefix 714,106; two Linux cells compressed
+≈4.46 MiB (about 59% of that container); Darwin ≈1.52 MiB; Windows ≈0.75 MiB.
+gzip-9 of that whole APE was 7,065,640 — deflate is not the remaining lever.
+
+Historical Windows portable→native pixel host: 1,046,528 → 585,216. That
+cut does not exist yet on Darwin: `native-pixel-window` is `windows`-only
+in the pinned `agenterm-platform`; unix stays `portable-pixel-window`.
+macOS already optionally depends on `objc2-app-kit` via the `window`
+feature, so Cocoa bindings can be present **in addition to** winit.
+
+### Remaining mini levers (product decisions, not v0.1.3 by default)
+
+Linker knobs already spent on Linux: LTO, `opt-level=z`, `strip`,
+`--gc-sections`. Do not trade `panic = "unwind"` for `.eh_frame`. Do not
+auto-raise 9 MiB.
+
+- [-] **Linux dual desktop stack is retained (2026-08-30, user).** Keep
+  winit Wayland **and** X11 present, plus the independent `x11rb` side
+  path (clipboard / EWMH / XTest / AT-SPI origin). Xorg-only sessions
+  (XFCE UTM, `xvfb`) and Wayland-default desktops are both in-scope; this
+  is not CentOS-7 residue. Do not compile out either winit backend, do not
+  drop `libxkbcommon-x11-0` from the runtime set, and do not treat a
+  single-backend size cut as open work.
+
+| lever | expected pack effect | cost |
+|---|---|---|
+| ~~Linux single display backend~~ | n/a | **ruled out** — dual stack stays |
+| Feature-gate `a11y-publish` | roughly −0.4–0.8 MiB of APE | AT-SPI chrome tree becomes optional; conflicts with current Linux a11y claim unless restated |
+| Darwin `native-pixel-window` (Cocoa, in `agenterm-platform`) | roughly −0.5–0.8 MiB of APE | platform work, then MiniCon unix split: macOS native / Linux portable |
+| Darwin + Windows also `profile.release` LTO | roughly −0.2–0.4 MiB of APE | low product risk; the only remaining **linker** knob |
+| Drop an ISA cell | one Linux cell ≈ −2.2 MiB compressed | narrows six-cell promise; not a code shrink |
+| Slim the 714 KiB cosmocc fat prefix | small | pin/tooling change; already `-Os -static` |
+| `panic = abort` / drop DWARF unwind | Linux unwind ≈ 1.1 MiB **per cell** | **forbidden**: containment contract |
+| RELR / `-z pack-relative-relocs` | n/a | zig lld rejects it |
+
+qjswasm-as-size-cut remains a later hypothesis
+([28-horizon](PRD_02_28_qjswasm_horizon.md)), not a current lever.
 
 ## Delivery ownership
 
@@ -1312,8 +1406,8 @@ interactive Linux x86 installation.
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [~] **Formal publisher identity — `PARTNERNET SOFTWARE PTY LTD`.**
-  Establish company-owned signing as the current G6 court for `minicon.com`,
+- [~] **Trusted publisher now; company publisher later.**
+  Establish trusted signing as the current G6 court for `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
   Authenticode plus trusted timestamping, macOS Developer ID signing and
@@ -1333,14 +1427,15 @@ interactive Linux x86 installation.
   unsigned build receipt
   └── link-time signable layout
       ├── Windows PE / APE: empty Authenticode Security Directory
-      ├── sign as PARTNERNET SOFTWARE PTY LTD
+      ├── sign as the approved trusted publisher
       ├── RFC 3161 SHA-256 timestamp
       ├── signing receipt: before SHA → after SHA + certificate identity
       ├── six native courts execute only the after-SHA bytes
       └── Defender scans that same after-SHA byte sequence
   ```
 
-  Preferred custody is Azure Artifact Signing Public Trust with GitHub OIDC.
+  The future company-publisher custody route is Azure Artifact Signing Public
+  Trust with GitHub OIDC.
   The managed signing key is non-exportable: no PFX/private key belongs in Git,
   GitHub secrets, Actions artifacts, logs, `~/Downloads`, or cloud-drive mounts.
   The dedicated GitHub `release-signing` Environment holds only OIDC identifiers named
@@ -1361,7 +1456,20 @@ interactive Linux x86 installation.
   timestamp evidence in receipts. Rotation must produce a new after-SHA and
   repeat all post-sign courts.
 
-  Implementation owner is `.github/workflows/company-signing.yml`. It accepts
+  The user paused Azure Artifact Signing because the company has no practical
+  short-term payment route. The company-name certificate remains a future
+  target; no receipt may imply it shipped. On 2026-08-29 the user explicitly
+  approved applying to SignPath Foundation as an OSS transition. A SignPath
+  Foundation certificate is publicly trusted Authenticode but names SignPath
+  Foundation as publisher, not PARTNERNET SOFTWARE PTY LTD. The public
+  `CODE_SIGNING_POLICY.md` and redacted
+  `research/minicon-com-loader/signpath-application.md` own this distinction,
+  team roles, privacy statement and verifiable-build questions. Acceptance,
+  artifact-configuration approval and an actual signature are still pending.
+
+  Implementation owner is `.github/workflows/company-signing.yml`. Despite the
+  historical filename, it is the provider-neutral **Trusted Signing Court**.
+  It accepts
   only an exact successful `minicon-com.yml` run at current `main`, signs
   exactly `minicon.com` plus Windows x86_64/arm64 `minicon.exe`, and emits an
   immutable before→after `signing-receipt.json`. Its six native jobs compile
@@ -1370,8 +1478,21 @@ interactive Linux x86 installation.
   run and seals its signed bytes; it rejects the earlier unsigned Candidate.
   The final signed `minicon.com` must remain under the already stamped
   9,437,184-byte ceiling. This wiring is implemented but remains unqualified
-  until the Public Trust profile and OIDC federation exist and the first exact
-  run is green.
+  until the SignPath project/artifact configuration exists and the first exact
+  run is green. Its adapter submits the exact three-file GitHub artifact ID,
+  pins SignPath's official Action to a full commit SHA, requires exactly the
+  same three output paths, and binds the SignPath request ID/URL into the
+  signing receipt. `SIGNPATH_API_TOKEN` is an Environment secret; organization,
+  project, signing-policy and artifact-configuration slugs are Environment
+  variables. The key never enters GitHub.
+
+  SignPath requires constrained product metadata on every signed PE. The two
+  native Windows payloads already carry Cargo-owned VERSIONINFO. The APE outer
+  PE now links a standard VERSIONINFO resource before the Mach-O/ZIP layout is
+  finalized; `prepare-authenticode.py` activates its Resource Directory and
+  the empty Security Directory without shifting either. Build and signing
+  receipts fail closed unless all three report `ProductName=MiniCon` and
+  `ProductVersion=0.1.3`.
 
   Unsigned rehearsal run `33259779184` at source `033e582` exercised the new
   input side on GitHub: pack 4m38s, G3 green, six GUI/control cells green, SHA
@@ -1388,6 +1509,15 @@ interactive Linux x86 installation.
   destroyed with its temporary directory. This is mechanism evidence only
   (`trusted=false`, `timestamped=false`, `mechanism-only-not-g6`); it does not
   satisfy company identity, Public Trust, Defender, G6 or Candidate sealing.
+
+  The unsigned source `033e582` rehearsal SHA
+  `b2551896e7985c80eea4ea0ac785d532e9efb477aafd475955afbe9f735b0c2a`
+  subsequently passed an active Microsoft Defender diagnostic court with
+  engine `1.1.26080.3` and signature `1.457.375.0`. The VM was released after
+  the court. This exact result does not erase the earlier Contebrew hit and
+  does not prove causation from the header/size changes; it proves only that
+  the named unsigned bytes were clean. G6 must rerun on the eventual trusted
+  signed after-SHA.
 
 - [~] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that

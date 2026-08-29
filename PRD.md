@@ -107,7 +107,8 @@ flowchart LR
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
-        SI["PARTNERNET SOFTWARE PTY LTD<br/>current Authenticode court · timestamp"]
+        SP["SignPath Foundation transition<br/>trusted Authenticode · timestamp"]
+        SI["PARTNERNET SOFTWARE PTY LTD<br/>future company-publisher adapter"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
         QG{"total size + startup + memory<br/>six-cell parity pass?"}
@@ -123,7 +124,8 @@ flowchart LR
     R --> V12 --> C13 --> G13
     G13 -->|yes| V13
     G13 -->|no| KEEP
-    SI --> G13
+    SP --> G13
+    SI -. later .-> SP
     QE -. later .-> QX
     X -. native baseline .-> QX
     QX --> QG
@@ -156,27 +158,39 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.1.3 remains gated. Exact-SHA run `33250748539` built once, embedded
-  green G3 lifecycle evidence, and passed six native GUI/control cells;
-  Candidate `33250998985` sealed five platform archives covering all six cells
-  plus `minicon.com`, then rehashed and executed every native archive. That was
-  an unsigned rehearsal and is no longer promotable. Its exact APE is red at
-  G6: Microsoft Defender reports
-  `Program:Win32/Contebrew.A!ml`. Submit that exact SHA through the vendor
-  false-positive channel. The company-signing before→after SHA workflow and
-  signed-byte six-grid are implemented but not yet dispatched; Azure Public
-  Trust identity/OIDC setup, signed-byte Defender rerun, and
-  explicit user Promotion remain open. No tag
-  or Release exists.
+- [~] v0.1.3 remains gated. Earlier unsigned runs proved one-pack G3, six
+  native GUI/control courts and six-asset Candidate packaging, but none is
+  promotable. The trusted-signing workflow now submits an immutable three-file
+  GitHub artifact to SignPath Foundation, verifies its exact output path set,
+  records request/before→after/certificate identity, and sends only the signed
+  after-SHA through six native courts. Provider approval/configuration, the
+  resulting signed Candidate, final-SHA Defender evidence and explicit user
+  Promotion remain open. No tag or Release exists.
 - [x] Unsigned exact-SHA rehearsal `33259779184` at `033e582` independently
   re-proved the new signing input contract: one pack, G3 green, all six native
   GUI/control cells green, APE Authenticode layout ready, SHA matched, and
   8,909,562 bytes under 9 MiB. It is rehearsal evidence, not a Candidate,
   because no company signature was applied.
-- [~] Formal releases should carry `PARTNERNET SOFTWARE PTY LTD` publisher
-  identity. Authenticode-compatible APE header layout is now proven locally;
-  company identity validation, timestamped signing and signed-byte six-grid /
-  Defender evidence remain before this Candidate can claim it.
+- [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
+  publisher identity. Authenticode-compatible APE header layout is proven;
+  Azure/company Public Trust is paused because no short-term company payment
+  route exists. The user approved a SignPath Foundation OSS application as a
+  truthful transition: its publisher will be SignPath Foundation, never
+  misrepresented as the company. Policy/application preparation is active;
+  provider approval, timestamped signed-byte six-grid and final-SHA Defender
+  evidence remain before this Candidate can claim signing.
+- [x] Defender diagnostic run on unsigned rehearsal SHA
+  `b2551896e7985c80eea4ea0ac785d532e9efb477aafd475955afbe9f735b0c2a`
+  was clean with active engine `1.1.26080.3` and signatures `1.457.375.0`.
+  This supersedes the old unsigned APE only for that exact diagnostic byte
+  sequence; G6 still scans the eventual SignPath after-SHA.
+- [x] The SignPath metadata prerequisite is no longer speculative: the APE
+  outer PE carries a standard VERSIONINFO Resource Directory while preserving
+  the empty Authenticode slot and ZIP overlay. A local six-payload 0.1.3 pack
+  was 7,517,312 bytes; self-sign/Darwin/ZIP/tamper passed, and disposable
+  Windows x86_64 UTM independently reported `ProductName=MiniCon`,
+  `ProductVersion=0.1.3` plus ConPTY status. This dirty-tree rehearsal is not a
+  Candidate or G6 signature.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
@@ -185,6 +199,11 @@ flowchart LR
   `33259779184`, still far above the approximately one-minute target; profile
   and remove setup/cache/repeated-build waste without weakening
   one-pack/six-execute coverage. Owner: `prd/PRD_02_27_con_delivery.md`.
+- [~] Linux LTO already spent the remaining **linker** size knob. Linux
+  dual desktop (winit Wayland+X11 + `x11rb`) is **retained** — not a size
+  cut. Further APE shrink is still a product ruling (optional AT-SPI,
+  Darwin native pixel host, or Darwin/Win LTO), not strip/RELR/
+  `panic=abort`/ceiling raise. Owner: `prd/PRD_02_27_con_delivery.md`.
 - [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
   other's verdict; unavailable runtime evidence is `BLOCKED`.
 - [~] Local courts are automation-capable but not sealed release baselines.

@@ -54,6 +54,14 @@ sha256sum -c minicon-0.1.2-linux-x86_64.tar.gz.sha256
 The macOS build is a universal binary — the same file runs on Apple Silicon and
 Intel.
 
+## Code signing policy
+
+MiniCon's current published baseline is unsigned. The project is applying for
+free open-source signing through SignPath Foundation; a test certificate,
+application or repository statement never counts as a signed release. See the
+[Code signing policy](CODE_SIGNING_POLICY.md) for publisher identity, privacy,
+team roles, exact-build provenance and verification rules.
+
 ## Use
 
 ```
@@ -229,3 +237,9 @@ August 2026.
 出问题时请运行 `minicon --status` 并附上输出:它报告构建版本、这台机器选了哪个 PTY
 后端及原因、系统实际解析到哪个字体与实测字宽,以及失败写在哪个文件。这些都无法通过读
 源码回答,因为它们取决于机器。
+
+## Code signing policy / 代码签名政策
+
+当前公开基线尚未签名。项目正在申请 SignPath Foundation 的开源免费签名；
+测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
+exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。

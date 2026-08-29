@@ -36,6 +36,11 @@ cat >"$tmp/job.ps1" <<EOF
 \$ErrorActionPreference = "Stop"
 \$PSDefaultParameterValues["Out-File:Encoding"] = "utf8"
 Get-Process minicon-ape,minicon-payload,minicon-raw -ErrorAction SilentlyContinue | Stop-Process -Force
+\$vi = (Get-Item -LiteralPath '$guest_exe').VersionInfo
+Write-Host "VERSIONINFO ProductName=\$(\$vi.ProductName) ProductVersion=\$(\$vi.ProductVersion)"
+if (\$vi.ProductName -ne 'MiniCon' -or \$vi.ProductVersion -notmatch '^0\.1\.3(?:\.0)?\$') {
+  throw "VERSIONINFO mismatch"
+}
 \$out = Join-Path \$env:TEMP "minicon-ape-status.out"
 \$err = Join-Path \$env:TEMP "minicon-ape-status.err"
 Remove-Item -LiteralPath \$out, \$err -Force -ErrorAction SilentlyContinue

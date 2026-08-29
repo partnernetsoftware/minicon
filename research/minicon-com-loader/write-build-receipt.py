@@ -17,6 +17,7 @@ PAYLOAD = HERE / "payload-build"
 LOADER_SOURCE = HERE / "loader.c"
 AUTHENTICODE_PAD_SOURCE = HERE / "authenticode-pad.S"
 AUTHENTICODE_PREPARE_SOURCE = HERE / "prepare-authenticode.py"
+VERSION_RESOURCE_SOURCE = HERE / "ape-version.rc"
 
 
 def sha256(path: Path) -> str:
@@ -79,7 +80,7 @@ def product_version() -> str:
     return match.group(1)
 
 
-def payload_digests() -> dict[str, str]:
+def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
     mapping = {
         "osx-aarch64": CELLS / "osx-aarch64" / "minicon",
         "osx-x86_64": CELLS / "osx-x86_64" / "minicon",
@@ -91,7 +92,19 @@ def payload_digests() -> dict[str, str]:
     out = {}
     for cell, path in mapping.items():
         if path.is_file():
-            out[cell] = {"path": path.relative_to(HERE).as_posix(), "sha256": sha256(path), "bytes": path.stat().st_size}
+            markers = sorted(set(
+                match.decode("ascii")
+                for match in re.findall(rb"minicon 0\.[0-9]+\.[0-9]+", path.read_bytes())
+            ))
+            expected_marker = f"minicon {expected_version}"
+            if markers != [expected_marker]:
+                raise SystemExit(f"{cell}: stale or mixed version markers {markers}, expected {expected_marker}")
+            out[cell] = {
+                "path": path.relative_to(HERE).as_posix(),
+                "sha256": sha256(path),
+                "bytes": path.stat().st_size,
+                "product_version": expected_version,
+            }
     return out
 
 
@@ -101,16 +114,36 @@ def authenticode_layout(path: Path) -> dict[str, int | bool]:
     optional = pe + 24
     optional_size = struct.unpack_from("<H", raw, pe + 20)[0]
     directories = struct.unpack_from("<I", raw, optional + 108)[0]
+    resource_rva, resource_size = struct.unpack_from("<II", raw, optional + 128)
     security_offset, security_size = struct.unpack_from("<II", raw, optional + 144)
     ready = optional_size == 0xF0 and directories == 16
-    if not ready or security_offset or security_size:
-        raise SystemExit("unsigned APE lacks an empty Authenticode Security Directory")
+    if not ready or security_offset or security_size or not resource_rva or not resource_size:
+        raise SystemExit("unsigned APE lacks VERSIONINFO or an empty Authenticode Security Directory")
+    table = pe + 24 + optional_size
+    resource_offset = None
+    sections = struct.unpack_from("<H", raw, pe + 6)[0]
+    for index in range(sections):
+        entry = table + index * 40
+        virtual_size, virtual_address, raw_size, raw_offset = struct.unpack_from("<IIII", raw, entry + 8)
+        if virtual_address <= resource_rva < virtual_address + max(virtual_size, raw_size):
+            resource_offset = raw_offset + resource_rva - virtual_address
+            break
+    if resource_offset is None or resource_offset + resource_size > len(raw):
+        raise SystemExit("APE VERSIONINFO Resource Directory is outside PE sections")
+    resource = raw[resource_offset : resource_offset + resource_size]
+    for value in ("ProductName", "MiniCon", "ProductVersion", "0.1.3"):
+        if value.encode("utf-16le") not in resource:
+            raise SystemExit(f"APE VERSIONINFO lacks {value}")
     return {
         "ready": ready,
         "optional_header_bytes": optional_size,
         "data_directory_count": directories,
         "security_file_offset": security_offset,
         "security_bytes": security_size,
+        "resource_rva": resource_rva,
+        "resource_bytes": resource_size,
+        "product_name": "MiniCon",
+        "product_version": "0.1.3",
     }
 
 
@@ -121,9 +154,10 @@ def main() -> None:
     com_sha = sha256(com)
     (DIST / "minicon.com.sha256").write_text(com_sha + "\n")
     ident = source_identity()
+    version = product_version()
     receipt = {
         "schema": 2,
-        "product_version": product_version(),
+        "product_version": version,
         "source_sha": ident["source_sha"],
         "source_dirty": ident["source_dirty"],
         "source_tree_digest": ident["source_tree_digest"],
@@ -132,6 +166,7 @@ def main() -> None:
         "loader_source_sha256": sha256(LOADER_SOURCE),
         "authenticode_pad_source_sha256": sha256(AUTHENTICODE_PAD_SOURCE),
         "authenticode_prepare_source_sha256": sha256(AUTHENTICODE_PREPARE_SOURCE),
+        "version_resource_source_sha256": sha256(VERSION_RESOURCE_SOURCE),
         "authenticode": authenticode_layout(com),
         "tools": {
             "rustc": cmd("rustc", "--version"),
@@ -140,7 +175,7 @@ def main() -> None:
             "cargo_xwin": cmd("cargo", "xwin", "--version"),
             "cosmocc": cmd("cosmocc", "--version"),
         },
-        "payloads": payload_digests(),
+        "payloads": payload_digests(version),
     }
     empty = [k for k, v in receipt["tools"].items() if not v]
     if empty:

@@ -45,13 +45,31 @@ stage win-x86_64 "$(payload win-x86_64 win-x86_64/x86_64-pc-windows-msvc/release
 if [[ -x "$COSMO/bin/cosmocc" ]]; then
   echo "[pack] cosmocc → dist/minicon.com"
   mkdir -p "$DIST/.aarch64"
+  command -v llvm-rc >/dev/null
+  command -v llvm-cvtres >/dev/null
+  version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/Cargo.toml" | head -n1)
+  if [[ "$version" != 0.1.3 ]]; then
+    echo "APE VERSIONINFO is pinned to 0.1.3; Cargo says $version" >&2
+    exit 1
+  fi
+  llvm-rc "/fo$DIST/ape-version.res" -- "$HERE/ape-version.rc"
+  llvm-cvtres /machine:x64 /out:"$DIST/ape-version.obj" "$DIST/ape-version.res"
+  "$COSMO/bin/x86_64-linux-cosmo-objcopy" -O elf64-x86-64 \
+    "$DIST/ape-version.obj" "$DIST/ape-version.raw.o"
+  "$COSMO/bin/x86_64-linux-cosmo-objcopy" \
+    --rename-section '.rsrc$01=.rodata.pytab.0,alloc,load,readonly,data,contents' \
+    --rename-section '.rsrc$02=.rodata.pytab.1,alloc,load,readonly,data,contents' \
+    "$DIST/ape-version.raw.o" "$DIST/ape-version.o"
+  # VERSIONINFO belongs only to the x86_64 PE face. Cosmocc still requires a
+  # same-basename aarch64 concomitant for every explicit x86 input.
+  "$COSMO/bin/aarch64-linux-cosmo-as" -o "$DIST/.aarch64/ape-version.o" /dev/null
   "$COSMO/bin/x86_64-linux-cosmo-as" -o "$DIST/authenticode-pad.o" \
     "$HERE/authenticode-pad.S"
   "$COSMO/bin/aarch64-linux-cosmo-as" -o "$DIST/.aarch64/authenticode-pad.o" \
     "$HERE/authenticode-pad.S"
   set +e
   cosmo_log=$("$COSMO/bin/cosmocc" -Os -static -o "$DIST/minicon.com" \
-    "$HERE/loader.c" "$DIST/authenticode-pad.o" 2>&1)
+    "$HERE/loader.c" "$DIST/authenticode-pad.o" "$DIST/ape-version.o" 2>&1)
   cosmo_rc=$?
   set -e
   if [[ "$cosmo_rc" -ne 0 ]]; then
@@ -66,6 +84,7 @@ if [[ -x "$COSMO/bin/cosmocc" ]]; then
   fi
   python3 "$HERE/prepare-authenticode.py" "$DIST/minicon.com" "$DIST/minicon.com.signable"
   mv "$DIST/minicon.com.signable" "$DIST/minicon.com"
+  chmod 0755 "$DIST/minicon.com"
   (
     cd "$DIST"
     zip -q -r minicon.com cells

@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       signing_run_id:
-        description: Successful company-signing six-cell workflow run for source_sha
+        description: Successful trusted-signing six-cell workflow run for source_sha
         required: true
         type: string
 
@@ -86,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name company-signed-minicon --dir upstream
+            --name trusted-signed-minicon --dir upstream
 
       - name: Verify payload identity and stage package binary
         shell: bash
@@ -251,7 +251,7 @@ jobs:
           set -euo pipefail
           mkdir upstream
           gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name company-signed-minicon --dir upstream/signed
+            --name trusted-signed-minicon --dir upstream/signed
           gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
             --name "signed-aggregate-attempt-$SIGNING_ATTEMPT" --dir upstream/aggregate
           cp upstream/signed/minicon.com upstream/signed/minicon.com.sha256 payload/
