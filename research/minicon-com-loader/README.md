@@ -103,11 +103,21 @@ G6 keeps antivirus judgment outside the immutable build receipt. GitHub's
 standard Windows runner image deliberately disables Defender, so it is not a
 scan court. Run `utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT` against
 an active-Defender Windows guest to produce `defender-receipt.json`. After
-scanning that same SHA with 360, record a local
-`minicon-360-court` JSON object containing `schema: 1`, `verdict: "clean"`, the
-exact `candidate_run`, `minicon_com_sha256`, non-empty `provider`,
-`product_version`, `engine_version`, `signature_version`, `scanned_at`, and the
-SHA-256 of the accompanying screenshot as `screenshot_sha256`. Then run:
+scanning that same SHA with 360, take a screenshot that visibly includes the
+file SHA and verdict. Generate the receipt from the Candidate manifest rather
+than copying its identity by hand:
+
+```sh
+python3 research/minicon-com-loader/reputation_court.py make-360 \
+  --manifest candidate-manifest.json --screenshot 360-scan.png \
+  --verdict clean --provider "360 Total Security" \
+  --product-version VERSION --engine-version VERSION \
+  --signature-version VERSION --scanned-at ISO-8601-TIME \
+  --output 360-receipt.json
+```
+
+This binds the screenshot digest, exact Candidate run and `minicon.com` SHA in
+a local `minicon-360-court` receipt. Then run:
 
 ```sh
 python3 research/minicon-com-loader/reputation_court.py qualify \
@@ -123,6 +133,13 @@ delivery record. Base64-encode that summary and dispatch `Reputation
 Qualification` with the exact Candidate run and source SHA. Promotion requires
 the resulting successful workflow run ID; `.github/workflows/release.yml`
 cannot publish without downloading and revalidating that receipt.
+
+If Defender reports a false positive, submit the **exact sealed** `minicon.com`
+as a Software developer at Microsoft's official sample portal
+<https://www.microsoft.com/wdsi/filesubmission>. Preserve the submission ID
+outside Git and rerun the same exact-SHA court after Microsoft updates its
+classification. Do not disable Defender, add exclusions, rebuild, or remove
+terminal/control behavior to manufacture a green verdict.
 
 ## Non-goals
 

@@ -46,6 +46,29 @@ def candidate_identity(manifest: dict) -> tuple[str, dict, str]:
     return source_sha, candidate_run, expected_sha
 
 
+def make_360(args: argparse.Namespace) -> None:
+    manifest = load(pathlib.Path(args.manifest))
+    screenshot = pathlib.Path(args.screenshot)
+    _, candidate_run, expected_sha = candidate_identity(manifest)
+    result = {
+        "schema": 1,
+        "kind": "minicon-360-court",
+        "verdict": args.verdict,
+        "candidate_run": candidate_run,
+        "minicon_com_sha256": expected_sha,
+        "provider": args.provider,
+        "product_version": args.product_version,
+        "engine_version": args.engine_version,
+        "signature_version": args.signature_version,
+        "scanned_at": args.scanned_at,
+        "screenshot_sha256": digest(screenshot),
+    }
+    for field in ("provider", "product_version", "engine_version", "signature_version", "scanned_at"):
+        require_text(result, field)
+    pathlib.Path(args.output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"PASS 360 {args.verdict} receipt bound to exact Candidate and screenshot")
+
+
 def qualify(args: argparse.Namespace) -> None:
     manifest_path = pathlib.Path(args.manifest)
     defender_path = pathlib.Path(args.defender)
@@ -154,6 +177,15 @@ def selftest() -> None:
             assert "different APE" in str(exc)
         else:
             raise AssertionError("mismatched SHA unexpectedly qualified")
+        made = root / "made-360.json"
+        make_360(argparse.Namespace(
+            manifest=paths["manifest"], screenshot=screenshot, output=made,
+            verdict="clean", provider="fixture", product_version="1",
+            engine_version="1", signature_version="1",
+            scanned_at="2026-01-01T00:00:00Z",
+        ))
+        assert load(made)["minicon_com_sha256"] == sha
+        assert load(made)["screenshot_sha256"] == digest(screenshot)
         print("PASS reputation evidence exact-SHA court")
 
 
@@ -166,6 +198,16 @@ def main() -> None:
     court.add_argument("--court360", required=True)
     court.add_argument("--screenshot", required=True)
     court.add_argument("--output", required=True)
+    make = sub.add_parser("make-360")
+    make.add_argument("--manifest", required=True)
+    make.add_argument("--screenshot", required=True)
+    make.add_argument("--output", required=True)
+    make.add_argument("--verdict", required=True, choices=("clean", "detected"))
+    make.add_argument("--provider", required=True)
+    make.add_argument("--product-version", required=True)
+    make.add_argument("--engine-version", required=True)
+    make.add_argument("--signature-version", required=True)
+    make.add_argument("--scanned-at", required=True)
     verify = sub.add_parser("verify")
     verify.add_argument("--manifest", required=True)
     verify.add_argument("--qualification", required=True)
@@ -173,6 +215,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "self-test":
         selftest()
+    elif args.command == "make-360":
+        make_360(args)
     elif args.command == "qualify":
         qualify(args)
     else:
