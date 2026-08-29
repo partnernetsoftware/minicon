@@ -31,6 +31,17 @@ build_one() {
   esac
 }
 
+# winresource compile() shells llvm-rc (unprefixed on unknown Windows triples).
+if ! command -v llvm-rc >/dev/null; then
+  llvm_bin="$(brew --prefix llvm 2>/dev/null)/bin"
+  if [[ -x "$llvm_bin/llvm-rc" ]]; then
+    export PATH="$llvm_bin:$PATH"
+  else
+    echo "llvm-rc not on PATH (winresource icon embed)" >&2
+    exit 2
+  fi
+fi
+
 # Independent target dirs: 4-way parallel, Windows serial (xwin shim race).
 build_one osx-aarch64 aarch64-apple-darwin native &
 p1=$!

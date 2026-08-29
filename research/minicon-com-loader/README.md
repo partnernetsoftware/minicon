@@ -41,6 +41,7 @@ A dirty tree must not be treated as `source_sha == HEAD` alone.
 
 - `workflow_dispatch` only (no per-push six-runner bill).
 - **one** `macos-15` job: payloads + cosmocc pack; upload `minicon.com` + sha256.
+  Windows cells need `llvm-rc` (Homebrew `llvm`) for `winresource` icon embed.
 - **six** native runners download that artifact and run `--version`, unknown
   flag (must be nonzero), and `--status`. No `cargo`, no cosmocc, no checkout.
 - `aggregate` requires exactly six unique cells, the same `minicon_com_sha256`

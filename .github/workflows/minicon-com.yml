@@ -54,6 +54,10 @@ jobs:
           echo "$ZIG_HOME" >> "$GITHUB_PATH"
           export PATH="$ZIG_HOME:$PATH"
           test "$(zig version)" = "$ZIG_VERSION"
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          command -v llvm-rc
           cargo install cargo-zigbuild --locked --version "$CARGO_ZIGBUILD_VERSION"
           cargo install cargo-xwin --locked --version "$CARGO_XWIN_VERSION"
           COSMOCC_SHA256="$COSMOCC_SHA256" COSMOCC_BIN_SHA256="$COSMOCC_BIN_SHA256" \
