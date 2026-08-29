@@ -27,9 +27,9 @@ log="C:\\minicon-six\\job-$job_id.log"
 "$COURT_CLI" lease "$COURT" --disposable
 "$COURT_CLI" wait-ready "$COURT" 180
 # Drop stale six-cell job.exit (same path, old 1) before this APE job.
-"$COURT_CLI" exec "$COURT" -- cmd.exe /c \
+"$COURT_CLI" exec "$COURT" -- cmd.exe /d /c \
   'del /f /q C:\minicon-six\job.exit C:\minicon-six\job.log C:\minicon-six\job.ready C:\minicon-six\job.pending.ps1 C:\minicon-six\job.running.ps1'
-"$COURT_CLI" exec "$COURT" -- cmd.exe /c 'C:\minicon-six\windows-utm-agent.cmd' || true
+"$COURT_CLI" exec "$COURT" -- cmd.exe /d /c 'start "" /min C:\minicon-six\windows-utm-agent.cmd' || true
 "$COURT_CLI" push "$COURT" "$COM" "$guest_exe"
 
 cat >"$tmp/job.ps1" <<EOF

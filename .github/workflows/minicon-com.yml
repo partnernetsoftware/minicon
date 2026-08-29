@@ -1,0 +1,272 @@
+# One macOS job packs minicon.com; six native runners only execute it.
+# Never cargo/cosmocc/checkout on the test matrix.
+name: minicon.com
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minicon-com
+  cancel-in-progress: false
+
+env:
+  COSMOCC_VERSION: "4.0.2"
+  COSMOCC_SHA256: "85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44"
+  COSMOCC_BIN_SHA256: "eef9db8fabfc0c08f1930cbba87f60f69a1c49f28e4de006a1b0c6863e943e4b"
+  CARGO_ZIGBUILD_VERSION: "0.23.2"
+  CARGO_XWIN_VERSION: "0.23.1"
+  ZIG_VERSION: "0.16.0"
+  ZIG_SHA256: "b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489"
+
+jobs:
+  build:
+    name: pack once (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 60
+    outputs:
+      minicon_com_sha256: ${{ steps.pack.outputs.minicon_com_sha256 }}
+      source_sha: ${{ steps.pack.outputs.source_sha }}
+      artifact_id: ${{ steps.upload_com.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/cosmocc
+            ~/zig-0.16.0
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/cargo-xwin
+            research/minicon-com-loader/payload-build
+          key: minicon-com-${{ env.COSMOCC_VERSION }}-${{ env.ZIG_VERSION }}-${{ hashFiles('.github/workflows/minicon-com.yml', 'research/minicon-com-loader/loader.c', 'research/minicon-com-loader/pack.sh', 'research/minicon-com-loader/rebuild-payloads.sh', 'research/minicon-com-loader/install-cosmocc.sh', 'research/minicon-com-loader/install-zig.sh', 'Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          ZIG_HOME=$(bash research/minicon-com-loader/install-zig.sh)
+          echo "$ZIG_HOME" >> "$GITHUB_PATH"
+          export PATH="$ZIG_HOME:$PATH"
+          test "$(zig version)" = "$ZIG_VERSION"
+          cargo install cargo-zigbuild --locked --version "$CARGO_ZIGBUILD_VERSION"
+          cargo install cargo-xwin --locked --version "$CARGO_XWIN_VERSION"
+          COSMOCC_SHA256="$COSMOCC_SHA256" COSMOCC_BIN_SHA256="$COSMOCC_BIN_SHA256" \
+            COSMOCC_VERSION="$COSMOCC_VERSION" \
+            bash research/minicon-com-loader/install-cosmocc.sh
+          echo "$HOME/cosmocc/bin" >> "$GITHUB_PATH"
+
+      - name: Pack minicon.com
+        id: pack
+        run: |
+          set -euo pipefail
+          export COSMOCC_DIR="${HOME}/cosmocc"
+          export PATH="$COSMOCC_DIR/bin:$PATH"
+          bash research/minicon-com-loader/rebuild-payloads.sh
+          bash research/minicon-com-loader/pack.sh
+          python3 research/minicon-com-loader/write-build-receipt.py
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          rec = json.loads(Path("research/minicon-com-loader/dist/build-receipt.json").read_text())
+          rec["lane"] = "github-ci"
+          rec["builder"] = "macos-15"
+          rec["run_id"] = os.environ["GITHUB_RUN_ID"]
+          rec["run_attempt"] = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          Path("research/minicon-com-loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"minicon_com_sha256={rec['minicon_com_sha256']}\n")
+              fh.write(f"source_sha={rec['source_sha']}\n")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        id: upload_com
+        with:
+          name: minicon-com
+          path: |
+            research/minicon-com-loader/dist/minicon.com
+            research/minicon-com-loader/dist/minicon.com.sha256
+            research/minicon-com-loader/dist/build-receipt.json
+            research/minicon-com-loader/ci-status.sh
+            research/minicon-com-loader/ci-status.ps1
+          if-no-files-found: error
+          retention-days: 14
+
+  test:
+    name: ${{ matrix.cell }}
+    needs: build
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: lnx-x86_64, runner: ubuntu-24.04, family: linux, expected_os: Linux, expected_arch: X64}
+          - {cell: lnx-aarch64, runner: ubuntu-24.04-arm, family: linux, expected_os: Linux, expected_arch: ARM64}
+          - {cell: win-x86_64, runner: windows-2025, family: windows, expected_os: Windows, expected_arch: X64}
+          - {cell: win-aarch64, runner: windows-11-arm, family: windows, expected_os: Windows, expected_arch: ARM64}
+          - {cell: osx-x86_64, runner: macos-15-intel, family: macos, expected_os: macOS, expected_arch: X64}
+          - {cell: osx-aarch64, runner: macos-15, family: macos, expected_os: macOS, expected_arch: ARM64}
+    runs-on: ${{ matrix.runner }}
+    env:
+      CELL: ${{ matrix.cell }}
+      FAMILY: ${{ matrix.family }}
+      EXPECTED_RUNNER_OS: ${{ matrix.expected_os }}
+      EXPECTED_RUNNER_ARCH: ${{ matrix.expected_arch }}
+      EXPECTED_COM_SHA256: ${{ needs.build.outputs.minicon_com_sha256 }}
+      EXPECTED_SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: minicon-com
+          path: bundle
+
+      - name: Guard runner identity (no compile)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
+          test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+          test -f bundle/minicon.com
+          actual=$(python3 -c 'import hashlib; print(hashlib.sha256(open("bundle/minicon.com","rb").read()).hexdigest())')
+          expected=$(tr -d ' \n\r' < bundle/minicon.com.sha256)
+          test "$actual" = "$expected"
+          test "$actual" = "$EXPECTED_COM_SHA256"
+          python3 - <<'PY'
+          import json, os
+          rec = json.load(open("bundle/build-receipt.json", encoding="utf-8"))
+          assert rec["minicon_com_sha256"] == os.environ["EXPECTED_COM_SHA256"]
+          assert rec["source_sha"] == os.environ["EXPECTED_SOURCE_SHA"]
+          PY
+
+      - name: version+passthrough+status (unix)
+        if: matrix.family != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x bundle/ci-status.sh bundle/minicon.com
+          bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
+
+      - name: version+passthrough+status (windows)
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Copy-Item -LiteralPath bundle/minicon.com -Destination bundle/minicon-ape.exe
+          & bundle/ci-status.ps1 -Binary (Join-Path $PWD "bundle/minicon-ape.exe") `
+            -Receipt (Join-Path $PWD "bundle/build-receipt.json") *>&1 |
+            Tee-Object -FilePath runtime-body.log
+
+      - name: Receipt
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          build = json.loads(Path("bundle/build-receipt.json").read_text())
+          log = Path("runtime-body.log")
+          data = {
+              "schema": 2,
+              "lane": "github-ci",
+              "cell": os.environ["CELL"],
+              "job_status": os.environ["JOB_STATUS"],
+              "runner_os": os.environ["RUNNER_OS"],
+              "runner_arch": os.environ["RUNNER_ARCH"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "source_sha": build["source_sha"],
+              "minicon_com_sha256": build["minicon_com_sha256"],
+              "product_version": build.get("product_version"),
+          }
+          if log.is_file():
+              raw = log.read_bytes()
+              data["log_sha256"] = hashlib.sha256(raw).hexdigest()
+              data["log_bytes"] = len(raw)
+          Path("runtime-receipt.json").write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: minicon-com-runtime-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
+          path: |
+            runtime-receipt.json
+            runtime-body.log
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: require six unique PASS same digest
+    if: always()
+    needs: [build, test]
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          # Current attempt only. Re-run failed jobs is not enough; re-run all tests.
+          pattern: minicon-com-runtime-*-attempt-${{ github.run_attempt }}
+          path: receipts
+
+      - name: All six cells succeeded with one identity
+        env:
+          EXPECTED_COM_SHA256: ${{ needs.build.outputs.minicon_com_sha256 }}
+          EXPECTED_SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          want_set = {"lnx-x86_64","lnx-aarch64","win-x86_64","win-aarch64","osx-x86_64","osx-aarch64"}
+          run_id = os.environ["GITHUB_RUN_ID"]
+          attempt = int(os.environ["GITHUB_RUN_ATTEMPT"])
+          rows = []
+          for path in Path("receipts").rglob("runtime-receipt.json"):
+              rec = json.loads(path.read_text())
+              if str(rec.get("run_id")) != run_id:
+                  continue
+              if int(rec.get("run_attempt", -1)) != attempt:
+                  continue
+              rows.append(rec)
+          cells = [r["cell"] for r in rows]
+          if len(cells) != 6 or set(cells) != want_set or len(set(cells)) != 6:
+              print("cell set", cells, "n=", len(rows)); sys.exit(1)
+          if {r["minicon_com_sha256"] for r in rows} != {os.environ["EXPECTED_COM_SHA256"]}:
+              print("digest mismatch"); sys.exit(1)
+          if {r["source_sha"] for r in rows} != {os.environ["EXPECTED_SOURCE_SHA"]}:
+              print("source mismatch"); sys.exit(1)
+          if {str(r["run_id"]) for r in rows} != {run_id}:
+              print("run_id mismatch"); sys.exit(1)
+          if any(int(r.get("run_attempt", -1)) != attempt for r in rows):
+              print("run_attempt mismatch"); sys.exit(1)
+          bad = [r for r in rows if r.get("job_status") != "success"]
+          if bad:
+              print("bad", bad); sys.exit(1)
+          out = {
+              "schema": 2,
+              "lane": "github-ci",
+              "run_id": run_id,
+              "run_attempt": attempt,
+              "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"],
+              "source_sha": os.environ["EXPECTED_SOURCE_SHA"],
+              "artifact_id": os.environ.get("EXPECTED_ARTIFACT_ID") or None,
+              "cells": sorted(cells),
+              "strategy": "current-attempt-only-full-six",
+          }
+          Path("aggregate-receipt.json").write_text(json.dumps(out, indent=2) + "\n")
+          print(json.dumps(out, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: minicon-com-aggregate-attempt-${{ github.run_attempt }}
+          path: aggregate-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14

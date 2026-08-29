@@ -20,23 +20,21 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   download, hash, unpack and execute the exact packaged PE before publication.
   The repository-pinned Rust 1.97 toolchain is load-bearing evidence: release
   builders must not silently inherit a later rolling `stable` toolchain.
-- [~] **v0.1.3 is a research candidate, not yet a release commitment.** The
-  independently owned `research/minicon-com-loader/` work explores one
-  `minicon.com` composed from a Cosmopolitan loader and six OS/ISA-specific
-  Rust payloads. It may replace the packaging shape only after deterministic
-  loader selection and real runtime evidence pass all six cells, artifact and
-  compressed sizes are reported, exact bytes are reproducible and checksummed,
-  and antivirus/reputation observations are recorded without removing product
-  capability merely to evade heuristics. Until that court passes, v0.1.2
-  remains the truthful stable delivery and the research tree must not be folded
-  into release claims or ordinary staging.
+- [ ] **experimental / planned: one-file `minicon.com` (not shipped).** Owner:
+  `research/minicon-com-loader/README.md`. Two execute-only lanes exist: Mac
+  `local-accelerated.sh` (host/Lima/UTM) and `.github/workflows/minicon-com.yml`
+  (one macos-15 pack, six native runners, no matrix compile). Smoke is
+  `--version`, argv passthrough, `--status`. Candidate publication still needs
+  unique extract paths (done in loader), six-cell GUI+control black-box, and
+  the existing size/checksum/reputation court. v0.1.2 remains the stable
+  delivery; this node must not be marked shipped or mixed into Release assets.
 
 ```mermaid
 flowchart LR
     S12["v0.1.2 exact source"] --> B12["3 platform packages"]
     B12 --> W12["native Windows package execution"]
     W12 --> R12["stable v0.1.2 release"]
-    R12 --> X13["isolated minicon.com research"]
+    R12 --> X13["experimental minicon.com · not shipped"]
     X13 --> L13["Cosmopolitan loader"]
     X13 --> P13["6 Rust payloads"]
     L13 & P13 --> G13{"selector + six runtime cells<br/>size + checksum + reputation pass?"}
@@ -1263,7 +1261,8 @@ interactive Linux x86 installation.
   Therefore push/PR feedback, its custom-std cells, and any exact-SHA preflight
   dependency on that workflow are unproven and must not be claimed. The active
   workflow files are the manually dispatched release and six-grid-runtime
-  workflows. Enabling ordinary CI requires a reviewed rename, a successful
+  workflows, plus experimental `minicon-com.yml` (research smoke; not a Release
+  owner). Enabling ordinary CI requires a reviewed rename, a successful
   first run, and PRD backfill from that run.
 - [ ] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from

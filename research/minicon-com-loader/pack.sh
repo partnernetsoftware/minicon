@@ -58,4 +58,5 @@ fi
 
 echo "[pack] staged:"
 find "$CELLS" -type f -exec ls -lh {} \;
+python3 "$HERE/write-build-receipt.py"
 echo "[pack] OK $DIST"
