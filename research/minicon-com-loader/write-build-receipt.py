@@ -13,6 +13,7 @@ ROOT = HERE.parent.parent
 DIST = HERE / "dist"
 CELLS = HERE / "dist" / "cells"
 PAYLOAD = HERE / "payload-build"
+LOADER_SOURCE = HERE / "loader.c"
 
 
 def sha256(path: Path) -> str:
@@ -106,6 +107,7 @@ def main() -> None:
         "source_tree_digest": ident["source_tree_digest"],
         "minicon_com_sha256": com_sha,
         "minicon_com_bytes": com.stat().st_size,
+        "loader_source_sha256": sha256(LOADER_SOURCE),
         "tools": {
             "rustc": cmd("rustc", "--version"),
             "zig": cmd("zig", "version"),

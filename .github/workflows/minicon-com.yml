@@ -81,7 +81,7 @@ jobs:
           bash research/minicon-com-loader/pack.sh
           python3 research/minicon-com-loader/write-build-receipt.py
           python3 - <<'PY'
-          import json, os
+          import hashlib, json, os
           from pathlib import Path
           rec = json.loads(Path("research/minicon-com-loader/dist/build-receipt.json").read_text())
           rec["lane"] = "github-ci"
@@ -92,6 +92,9 @@ jobs:
               raise SystemExit("github-ci pack requires source_dirty=false")
           if not rec.get("source_tree_digest"):
               raise SystemExit("missing source_tree_digest")
+          loader = Path("research/minicon-com-loader/loader.c")
+          if rec.get("loader_source_sha256") != hashlib.sha256(loader.read_bytes()).hexdigest():
+              raise SystemExit("loader_source_sha256 mismatch")
           Path("research/minicon-com-loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"minicon_com_sha256={rec['minicon_com_sha256']}\n")
