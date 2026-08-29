@@ -1327,6 +1327,12 @@ interactive Linux x86 installation.
   dedicated cached install root whose cache key includes both tool versions;
   prior runs cached registries but recompiled the installed tools. This remains
   provisional until a subsequent warm run reports the per-step reduction.
+  Exact-SHA run `33249311149` then exposed a cold-runner dependency-cache race:
+  four target builds concurrently tried to create the same Cargo Git checkout,
+  and one failed with `EEXIST` before compilation. The build owner must run one
+  locked dependency fetch before spawning target-isolated parallel builds. This
+  serializes only shared-cache initialization; the independent target compiles
+  remain parallel and the next exact-SHA run owns the before/after evidence.
 - [ ] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from
   agenterm, and the standalone release contract may name only workflows and
