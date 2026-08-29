@@ -21,6 +21,7 @@ COM = DIST / "minicon.com"
 # Rehearsal-only. Never used as Candidate pass/fail.
 REHEARSAL_GUARD_BYTES = 12 * 1024 * 1024  # 12582912
 # cdx 2026-08-29: 9 MiB hard ceiling (rehearsal raw 8880268 + 556916).
+# Horizon qjswasm/TinyVM (PRD) must not change this constant or mix into Candidate.
 CANDIDATE_CEILING_BYTES = 9 * 1024 * 1024  # 9437184
 
 

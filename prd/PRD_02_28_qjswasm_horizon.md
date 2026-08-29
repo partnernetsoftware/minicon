@@ -26,6 +26,7 @@ Future MiniCon qjswasm experiment
 └── non-goals
     ├── no migration before the agenterm engine is a stable reusable dependency
     ├── no qjswasm work in the v0.1.3 minicon.com Candidate
+    ├── no change to `CANDIDATE_CEILING_BYTES` / 9 MiB size court from this node
     └── no claim that Wasm is smaller until complete-product measurement proves it
 ```
 

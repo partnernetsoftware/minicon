@@ -43,6 +43,23 @@ flowchart LR
     G13 -->|no| K12["keep v0.1.2 stable<br/>revise or reject experiment"]
 ```
 
+- [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
+  Owner: `prd/PRD_02_28_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
+  mature, research may move portable logic out of six native payloads into
+  qjswasm; six native thin shells keep window/PTY/font/input/IPC. Size cut is
+  a hypothesis, not a promise. Kill if engine+glue does not reduce the total
+  package, misses startup/interaction budget, or six-cell behavior diverges.
+  Never mix into the current Candidate, bump, or tag.
+
+```mermaid
+flowchart LR
+    QR["agenterm qjswasm+TinyVM ready"] --> QE["size+startup+parity experiment"]
+    QE --> QC["portable qjswasm core + native six OS shells"]
+    QC --> QV{"total size + startup + six-cell behavior"}
+    QV -->|pass| QN["later architecture · not v0.1.3"]
+    QV -->|kill: no shrink / budget fail / parity fail| QK["keep native six-payload architecture"]
+```
+
 ## Bounded build-state lifecycle
 
 - [x] `scripts/cleanup-build-state.py` is the single deletion authority for
