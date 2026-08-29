@@ -99,7 +99,9 @@ variables; the gate transfers the exact PE/test tree before execution.
 
 `scripts/cleanup-build-state.py` is dry-run by default. Build/package owners
 invoke it with narrow scopes and protect current, receipt-owned and active
-state. On macOS, `scripts/install-macos-daily-cleanup.sh` installs a per-user
+state. Below 64 GiB free space it enters disk-pressure mode, retaining the
+protected roots plus the newest two snapshots while expiring other inactive
+snapshots after one hour. On macOS, `scripts/install-macos-daily-cleanup.sh` installs a per-user
 LaunchAgent for 03:17 daily maintenance. VM images and cloud bodies without an
 explicit verified archive receipt are never automatically deleted.
 

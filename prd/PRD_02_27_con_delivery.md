@@ -62,6 +62,11 @@ flowchart LR
   receipt, and every fresh `.minicon-build-active` marker are protected.
   `scripts/six-cell-qualify.sh` invokes this scope and pins its selected build
   root before fan-out, so cleanup cannot race the owning qualification.
+  When repository-volume free space falls below 64 GiB, the same protection
+  set remains absolute but the cache enters pressure mode: it keeps the newest
+  two snapshots and expires other inactive snapshots after one hour. This
+  converts disk pressure into bounded cache loss, never evidence or active-job
+  loss.
 - [x] cloud runtime files are grouped by the complete source-tree identity.
   They are eligible only after 30 days, while retaining the newest three and
   the current receipt identity, and only when a matching archive receipt says

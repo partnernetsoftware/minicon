@@ -73,6 +73,7 @@ MiniCon — one-file local terminal
 │   │   │   ├── one shared dry-run-first cleaner; build scripts select narrow scopes
 │   │   │   ├── current symlink + receipt build root + newest snapshots + active markers are protected
 │   │   │   ├── ordinary Cargo state expires after 14 days; six-cell snapshots after 7 days
+│   │   │   ├── below 64 GiB free: pressure court keeps protected + newest two, expires inactive snapshots after 1 hour
 │   │   │   ├── cloud bodies require a verified immutable-archive receipt before local expiry
 │   │   │   ├── VM images are never part of automatic garbage collection
 │   │   │   └── macOS LaunchAgent runs low-priority maintenance daily at 03:17

@@ -60,6 +60,8 @@ def main() -> None:
         )
         os.utime(archive, (OLD, OLD))
         env = os.environ | {
+            "MINICON_CLEANUP_FREE_BYTES_OVERRIDE": "0",
+            "MINICON_DISK_PRESSURE_GIB": "64",
             "MINICON_BUILD_CACHE_KEEP": "1",
             "MINICON_BUILD_CACHE_TTL_HOURS": "1",
             "MINICON_CLOUD_CACHE_KEEP": "1",

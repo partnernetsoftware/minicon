@@ -67,6 +67,10 @@ class Cleaner:
         self.reclaimed = 0
         self.actions = 0
         self.records: list[dict[str, object]] = []
+        override = os.environ.get("MINICON_CLEANUP_FREE_BYTES_OVERRIDE")
+        self.free_bytes = int(override) if override is not None else shutil.disk_usage(repo).free
+        threshold = env_int("MINICON_DISK_PRESSURE_GIB", 64) * 1024 * 1024 * 1024
+        self.disk_pressure = threshold > 0 and self.free_bytes < threshold
 
     def remove(self, path: Path, reason: str) -> None:
         try:
@@ -159,8 +163,10 @@ def cleanup_build_snapshots(cleaner: Cleaner) -> None:
     builds = cleaner.repo / "target-six" / "builds"
     if not builds.is_dir():
         return
-    ttl = env_int("MINICON_BUILD_CACHE_TTL_HOURS", 168, 1) * 3600
-    keep = env_int("MINICON_BUILD_CACHE_KEEP", 3, 1)
+    default_ttl = 1 if cleaner.disk_pressure else 168
+    default_keep = 2 if cleaner.disk_pressure else 3
+    ttl = env_int("MINICON_BUILD_CACHE_TTL_HOURS", default_ttl, 1) * 3600
+    keep = env_int("MINICON_BUILD_CACHE_KEEP", default_keep, 1)
     _, receipt_roots = receipt_values(cleaner.repo)
     protected = {root for root in receipt_roots}
     current = builds / "current"
@@ -238,6 +244,10 @@ def main() -> None:
     if not (repo / ".git").exists() or not (repo / "Cargo.toml").is_file():
         raise SystemExit("cleanup owner is not a MiniCon repository root")
     cleaner = Cleaner(repo, args.apply, args.now_epoch)
+    print(
+        f"[cleanup] disk free_bytes={cleaner.free_bytes} "
+        f"pressure={str(cleaner.disk_pressure).lower()}"
+    )
     signal.signal(signal.SIGTERM, lambda _signum, _frame: (_ for _ in ()).throw(SystemExit(143)))
     with cleanup_lock(repo, args.apply, args.now_epoch):
         if args.scope in ("routine", "all"):
