@@ -102,6 +102,7 @@ jobs:
           cp research/minicon-com-loader/dist/build-receipt.json artifact/
           cp research/minicon-com-loader/ci-status.sh artifact/
           cp research/minicon-com-loader/ci-status.ps1 artifact/
+          cp research/minicon-com-loader/ci-control.sh artifact/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: upload_com
@@ -168,6 +169,13 @@ jobs:
           set -euo pipefail
           chmod +x bundle/ci-status.sh bundle/minicon.com
           bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
+          if [[ "$FAMILY" == linux ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y xvfb
+            xvfb-run -a bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+          else
+            bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
+          fi
 
       - name: version+passthrough+status (windows)
         if: matrix.family == 'windows'

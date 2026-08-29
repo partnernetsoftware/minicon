@@ -85,6 +85,7 @@ MiniCon — one-file local terminal
 │   │   │   │   └── Windows package re-downloaded and executed on a native Windows runner before publication
 │   │   │   └── [~] v0.1.3 Candidate: `minicon.com` as fourth Release asset (not tagged)
 │   │   │       ├── ruling A (cdx): freeze v0.1.2 three packages; never mix into v0.1.2
+│   │   │       ├── G4 stamp: `minicon.com` ≤ 9437184 bytes (9 MiB); 12 MiB is rehearsal-only
 │   │   │       ├── plan: `research/minicon-com-loader/v0.1.3-candidate-plan.md` (G1–G8)
 │   │   │       ├── smoke-only green: `.github/workflows/minicon-com.yml` run `33238478661` at `459d5cb`
 │   │   │       ├── Promotion copies exact Candidate bytes; no rebuild; no pre-release substitute
