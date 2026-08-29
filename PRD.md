@@ -90,6 +90,12 @@ MiniCon — one-file local terminal
 │   │   │       ├── smoke-only green: `.github/workflows/minicon-com.yml` run `33238478661` at `459d5cb`
 │   │   │       ├── Promotion copies exact Candidate bytes; no rebuild; no pre-release substitute
 │   │   │       └── no tag/Release until G1–G8 + human promote
+│   │   ├── [ ] qjswasm portable-logic horizon (not current-version scope)
+│   │   │   ├── dependency: agenterm qjswasm + TinyVM becomes a stable reusable engine
+│   │   │   ├── one portable product-logic body + six native OS/ISA shells
+│   │   │   ├── native shells retain window, PTY, font, input, IME, clipboard and IPC authority
+│   │   │   ├── size reduction is a measured hypothesis, never a predeclared outcome
+│   │   │   └── owner: `prd/PRD_02_28_qjswasm_horizon.md`
 │   │   ├── Mac-hosted six-cell qualification
 │   │   │   ├── host builds every artifact; remote runners and local guests are runtime test targets only
 │   │   │   │   ├── no compiler or source checkout required in a guest
@@ -281,6 +287,14 @@ flowchart LR
         R13["retain v0.1.2<br/>revise or reject experiment"]
     end
 
+    subgraph QW["Future portable-logic horizon · not v0.1.3"]
+        QE["agenterm qjswasm + TinyVM<br/>stable reusable engine"]
+        QX["bounded MiniCon experiment<br/>one portable body + six native shells"]
+        QG{"complete bytes + startup + memory<br/>six-cell behavior parity pass?"}
+        QR["later-version migration roadmap"]
+        QK["kill experiment<br/>retain native architecture"]
+    end
+
     subgraph Z["Portfolio horizon · context, not MiniCon scope"]
         DS["Now<br/>six-cell desktop apps<br/>MiniCon · AgenTerm"]
         MB["Next<br/>iOS + Android<br/>PhoneApps"]
@@ -353,6 +367,11 @@ flowchart LR
     C13 --> G13
     G13 -->|yes| V13
     G13 -->|no| R13
+    QE --> QX
+    D -. measured native baseline .-> QX
+    QX --> QG
+    QG -->|yes| QR
+    QG -->|no| QK
     U --> DS
     DS --> MB
     Q -. reusable VM and evidence method .-> OS
