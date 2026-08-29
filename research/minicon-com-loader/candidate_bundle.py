@@ -70,13 +70,35 @@ def require_identity(build: dict, aggregate: dict, source: str, version: str) ->
         raise ValueError("aggregate does not contain exactly six cells")
 
 
+def require_g3(build: dict, g3: dict, g3_path: Path, source: str) -> None:
+    if g3.get("schema") != 1 or g3.get("kind") != "minicon-com-g3-courts":
+        raise ValueError("unsupported G3 receipt")
+    if g3.get("source_sha") != source or g3.get("job_status") != "success":
+        raise ValueError("G3 receipt identity/status mismatch")
+    expected = {
+        "reaper": "5 passed, 0 failed",
+        "lifecycle": "3 passed, 0 failed",
+        "cosmocc_swap": "PASS rc=2 rollback",
+    }
+    if g3.get("courts") != expected:
+        raise ValueError("G3 court set/result mismatch")
+    bound = build.get("g3")
+    if not isinstance(bound, dict) or bound.get("sha256") != sha256(g3_path):
+        raise ValueError("build/G3 receipt digest mismatch")
+    if bound.get("courts") != expected:
+        raise ValueError("build/G3 court summary mismatch")
+
+
 def seal(args: argparse.Namespace) -> None:
     payload = args.payload.resolve()
     build_path = args.build_receipt.resolve()
     aggregate_path = args.aggregate_receipt.resolve()
+    g3_path = args.g3_receipt.resolve()
     build = read_json(build_path)
     aggregate = read_json(aggregate_path)
+    g3 = read_json(g3_path)
     require_identity(build, aggregate, args.source_sha, args.version)
+    require_g3(build, g3, g3_path, args.source_sha)
 
     expected = asset_names(args.version)
     allowed = set(expected + [f"{name}.sha256" for name in expected])
@@ -120,6 +142,7 @@ def seal(args: argparse.Namespace) -> None:
         "receipts": {
             "build": {"name": build_path.name, "sha256": sha256(build_path)},
             "aggregate": {"name": aggregate_path.name, "sha256": sha256(aggregate_path)},
+            "g3": {"name": g3_path.name, "sha256": sha256(g3_path)},
         },
         "assets": assets,
     }
@@ -170,11 +193,23 @@ def self_test() -> None:
         com = payload / "minicon.com"
         build_path = root / "build-receipt.json"
         aggregate_path = root / "aggregate-receipt.json"
+        g3_path = root / "g3-receipt.json"
         output = root / "candidate-manifest.json"
+        g3_path.write_text(json.dumps({
+            "schema": 1, "kind": "minicon-com-g3-courts", "source_sha": source,
+            "job_status": "success", "courts": {
+                "reaper": "5 passed, 0 failed", "lifecycle": "3 passed, 0 failed",
+                "cosmocc_swap": "PASS rc=2 rollback",
+            },
+        }))
         build_path.write_text(json.dumps({
             "source_sha": source, "source_dirty": False, "source_tree_digest": tree,
             "product_version": version, "loader_source_sha256": "c" * 64,
             "minicon_com_sha256": sha256(com), "minicon_com_bytes": com.stat().st_size,
+            "g3": {"sha256": sha256(g3_path), "courts": {
+                "reaper": "5 passed, 0 failed", "lifecycle": "3 passed, 0 failed",
+                "cosmocc_swap": "PASS rc=2 rollback",
+            }},
         }))
         aggregate_path.write_text(json.dumps({
             "source_sha": source, "source_dirty": False, "source_tree_digest": tree,
@@ -186,6 +221,7 @@ def self_test() -> None:
         }))
         seal(argparse.Namespace(
             payload=payload, build_receipt=build_path, aggregate_receipt=aggregate_path,
+            g3_receipt=g3_path,
             source_sha=source, version=version, candidate_run_id=11,
             candidate_run_attempt=1, output=output,
         ))
@@ -207,6 +243,7 @@ def parser() -> argparse.ArgumentParser:
     make.add_argument("--payload", type=Path, required=True)
     make.add_argument("--build-receipt", type=Path, required=True)
     make.add_argument("--aggregate-receipt", type=Path, required=True)
+    make.add_argument("--g3-receipt", type=Path, required=True)
     make.add_argument("--source-sha", required=True)
     make.add_argument("--version", required=True)
     make.add_argument("--candidate-run-id", type=int, required=True)

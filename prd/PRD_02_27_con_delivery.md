@@ -36,6 +36,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   version `0.1.2` and is **not** Candidate evidence. Promotion copies exact
   Candidate bytes and does not rebuild. No GitHub pre-release substitute. No
   tag until every gate is green.
+  Exact-SHA run `33249734776` at `d10c526` subsequently passed the same six
+  native GUI/control cells with product identity `0.1.3`. Candidate rehearsal
+  `33250241396` consumed those exact bytes without compilation, sealed the five
+  platform archives plus `minicon.com`, and passed all six native archive
+  execution cells. Its APE is 8,909,564 bytes under the 9 MiB court. It remains
+  a rehearsal because G3 pack-host evidence was not yet embedded; the next
+  exact-SHA pack must bind reaper, lifecycle and installer-rollback results in
+  the build receipt before it may become Candidate-of-record.
 
 ```mermaid
 flowchart LR

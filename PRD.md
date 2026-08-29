@@ -156,10 +156,12 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.1.3 remains a gated Candidate plan. G2 six-cell GUI/control rehearsal,
-  G3 lifecycle and the 9 MiB size court are green; exact Candidate sealing,
-  reputation and explicit user Promotion remain open. Rehearsal evidence is
-  not a Candidate pack.
+- [~] v0.1.3 remains gated. Exact-SHA run `33249734776` built once and passed
+  six native GUI/control cells; Candidate rehearsal `33250241396` sealed five
+  platform archives covering all six cells plus `minicon.com`, then rehashed
+  and executed every native archive. G3 is now a pack-host receipt gate and
+  needs the final exact-SHA rerun; Defender+360 and explicit user Promotion
+  remain open. Neither rehearsal is a Release or tag.
 - [ ] Future formal releases should carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity; signing/timestamp/notarization infrastructure is planned,
   not claimed by the current Candidate.

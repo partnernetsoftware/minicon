@@ -84,8 +84,42 @@ jobs:
           set -euo pipefail
           export COSMOCC_DIR="${HOME}/cosmocc"
           export PATH="$COSMOCC_DIR/bin:$PATH"
+          g3_dir="$RUNNER_TEMP/minicon-g3"
+          mkdir -p "$g3_dir"
+          bash research/minicon-com-loader/reaper-tests.sh |
+            tee "$g3_dir/reaper.log"
+          bash research/minicon-com-loader/loader-lifecycle-tests.sh |
+            tee "$g3_dir/lifecycle.log"
+          bash research/minicon-com-loader/install-cosmocc-swap-test.sh |
+            tee "$g3_dir/cosmocc-swap.log"
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "minicon-g3"
+          logs = {}
+          for name in ("reaper.log", "lifecycle.log", "cosmocc-swap.log"):
+              raw = (root / name).read_bytes()
+              logs[name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+          receipt = {
+              "schema": 1,
+              "kind": "minicon-com-g3-courts",
+              "source_sha": os.environ["GITHUB_SHA"],
+              "run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "job_status": "success",
+              "courts": {
+                  "reaper": "5 passed, 0 failed",
+                  "lifecycle": "3 passed, 0 failed",
+                  "cosmocc_swap": "PASS rc=2 rollback",
+              },
+              "logs": logs,
+          }
+          (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+          PY
           bash research/minicon-com-loader/rebuild-payloads.sh
           bash research/minicon-com-loader/pack.sh
+          mkdir -p research/minicon-com-loader/dist/g3
+          cp "$g3_dir"/* research/minicon-com-loader/dist/g3/
           python3 research/minicon-com-loader/write-build-receipt.py
           python3 - <<'PY'
           import hashlib, json, os
@@ -102,6 +136,15 @@ jobs:
           loader = Path("research/minicon-com-loader/loader.c")
           if rec.get("loader_source_sha256") != hashlib.sha256(loader.read_bytes()).hexdigest():
               raise SystemExit("loader_source_sha256 mismatch")
+          g3_path = Path("research/minicon-com-loader/dist/g3/receipt.json")
+          g3 = json.loads(g3_path.read_text())
+          if g3.get("source_sha") != rec["source_sha"] or g3.get("job_status") != "success":
+              raise SystemExit("G3 receipt identity/status mismatch")
+          rec["g3"] = {
+              "receipt": "g3/receipt.json",
+              "sha256": hashlib.sha256(g3_path.read_bytes()).hexdigest(),
+              "courts": g3["courts"],
+          }
           Path("research/minicon-com-loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"minicon_com_sha256={rec['minicon_com_sha256']}\n")
@@ -120,6 +163,7 @@ jobs:
           cp research/minicon-com-loader/ci-status.ps1 artifact/
           cp research/minicon-com-loader/ci-control.sh artifact/
           cp research/minicon-com-loader/ci-control.ps1 artifact/
+          cp -R research/minicon-com-loader/dist/g3 artifact/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: upload_com

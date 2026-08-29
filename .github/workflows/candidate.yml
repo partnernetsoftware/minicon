@@ -252,6 +252,7 @@ jobs:
             --name "minicon-com-aggregate-attempt-$COM_ATTEMPT" --dir upstream/aggregate
           cp upstream/com/minicon.com upstream/com/minicon.com.sha256 payload/
           cp upstream/com/build-receipt.json upstream/build-receipt.json
+          cp upstream/com/g3/receipt.json upstream/g3-receipt.json
           cp upstream/aggregate/aggregate-receipt.json upstream/aggregate-receipt.json
 
       - name: Seal exact six-cell release set
@@ -261,6 +262,7 @@ jobs:
             --payload payload \
             --build-receipt upstream/build-receipt.json \
             --aggregate-receipt upstream/aggregate-receipt.json \
+            --g3-receipt upstream/g3-receipt.json \
             --source-sha '${{ inputs.source_sha }}' \
             --version '${{ needs.preflight.outputs.version }}' \
             --candidate-run-id "$GITHUB_RUN_ID" \
@@ -273,6 +275,7 @@ jobs:
           cp candidate-manifest.json sealed/
           cp upstream/build-receipt.json sealed/
           cp upstream/aggregate-receipt.json sealed/
+          cp upstream/g3-receipt.json sealed/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
