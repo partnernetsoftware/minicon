@@ -1,13 +1,15 @@
 #!/bin/bash
 # Build and test MiniCon's six target cells from one Apple Silicon macOS host.
 # Cross cells always link every Cargo target. Runtime stages run only when this
-# machine has a compatible runner; absence is a BLOCKED receipt, never a skip.
+# machine has a compatible required runner; absence is BLOCKED. Lima is an
+# explicit optional accelerator and records NOT_REQUESTED when disabled.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LIMA_COURT="${MINICON_LIMA_COURT_CLI:-$SCRIPT_DIR/lima-court.sh}"
+LIMA_ACCELERATOR="${MINICON_ENABLE_LIMA_ACCELERATOR:-0}"
 OUT_DIR="${MINICON_SIX_CELL_OUT:-$REPO_ROOT/target-six}"
 RESULTS="$OUT_DIR/results.tsv"
 RECEIPT="$OUT_DIR/receipt.json"
@@ -52,6 +54,14 @@ blocked() {
   reason="$3"
   printf '[six-cell] %-14s %-18s BLOCKED (%s)\n' "$cell" "$stage" "$reason"
   record "$cell" "$stage" "BLOCKED" "0" "" "$reason"
+}
+
+not_requested() {
+  cell="$1"
+  stage="$2"
+  reason="$3"
+  printf '[six-cell] %-14s %-18s NOT_REQUESTED (%s)\n' "$cell" "$stage" "$reason"
+  record "$cell" "$stage" "NOT_REQUESTED" "0" "" "$reason"
 }
 
 lima_running() {
@@ -179,6 +189,11 @@ require_tool cargo-xwin
 require_tool cargo-zigbuild
 require_tool python3
 
+case "$LIMA_ACCELERATOR" in
+  0|1) ;;
+  *) printf 'MINICON_ENABLE_LIMA_ACCELERATOR must be 0 or 1\n' >&2; exit 2 ;;
+esac
+
 BUILD_JOBS="${MINICON_BUILD_JOBS:-5}"
 CARGO_JOBS_PER_CELL="${MINICON_CARGO_JOBS_PER_CELL:-2}"
 case "$BUILD_JOBS:$CARGO_JOBS_PER_CELL" in
@@ -192,8 +207,20 @@ BUILD_REL="${BUILD_DIR#"$REPO_ROOT"/}"
 mkdir -p "$BUILD_DIR"
 BUILD_ACTIVE_MARKER="$BUILD_DIR/.minicon-build-active"
 printf '%s\n' "$$" >"$BUILD_ACTIVE_MARKER"
-cleanup_build_marker() { rm -f "$BUILD_ACTIVE_MARKER"; }
-trap cleanup_build_marker EXIT HUP INT TERM
+cleanup_qualification() {
+  rm -f "$BUILD_ACTIVE_MARKER"
+  if [ "$LIMA_ACCELERATOR" = 1 ]; then
+    # Reap resolves the actual active court before stopping it. Releasing all
+    # aliases in a fixed order could finalize one court while stopping a
+    # different instance because two logical courts share the ARM64 guest.
+    "$LIMA_COURT" reap >/dev/null 2>&1 || true
+    lima_stop_if_running "$LNX_X86_64_LIMA"
+    lima_stop_if_running "$LNX_X86_64_KERNEL_LIMA"
+    lima_stop_if_running "$LNX_AARCH64_LIMA"
+  fi
+}
+trap cleanup_qualification EXIT
+trap 'cleanup_qualification; exit 130' HUP INT TERM
 
 LNX_X86_64_LIMA="${MINICON_LNX_X86_64_LIMA:-minicon-lnx-aarch64}"
 LNX_X86_64_KERNEL_LIMA="${MINICON_LNX_X86_64_KERNEL_LIMA:-minicon-lnx-x86_64}"
@@ -201,9 +228,11 @@ LNX_AARCH64_LIMA="${MINICON_LNX_AARCH64_LIMA:-minicon-lnx-aarch64}"
 
 # Runtime guests are mutually scheduled test targets. Keep both Linux guests
 # down while macOS builds and Windows UTM courts own the host's CPU and memory.
-lima_stop_if_running "$LNX_X86_64_LIMA"
-lima_stop_if_running "$LNX_X86_64_KERNEL_LIMA"
-lima_stop_if_running "$LNX_AARCH64_LIMA"
+if [ "$LIMA_ACCELERATOR" = 1 ]; then
+  lima_stop_if_running "$LNX_X86_64_LIMA"
+  lima_stop_if_running "$LNX_X86_64_KERNEL_LIMA"
+  lima_stop_if_running "$LNX_AARCH64_LIMA"
+fi
 
 run_stage common fmt cargo fmt --all -- --check
 
@@ -360,29 +389,34 @@ fi
 
 run_stage common windows-idle stop_windows_runners
 
-"$LIMA_COURT" lease lnx-x86_64-rosetta >/dev/null 2>&1 || true
-if lima_running "$LNX_X86_64_LIMA"; then
-  run_lima_linux_stage lnx-x86_64 runtime-status "$LNX_X86_64_LIMA" \
-    "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" status
-  run_lima_linux_stage lnx-x86_64 test "$LNX_X86_64_LIMA" \
-    "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" test
-  run_lima_linux_stage lnx-x86_64 throughput "$LNX_X86_64_LIMA" \
-    "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" throughput
+if [ "$LIMA_ACCELERATOR" = 1 ]; then
+  "$LIMA_COURT" lease lnx-x86_64-rosetta >/dev/null 2>&1 || true
+  if lima_running "$LNX_X86_64_LIMA"; then
+    run_lima_linux_stage lnx-x86_64 runtime-status "$LNX_X86_64_LIMA" \
+      "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" status
+    run_lima_linux_stage lnx-x86_64 test "$LNX_X86_64_LIMA" \
+      "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" test
+    run_lima_linux_stage lnx-x86_64 throughput "$LNX_X86_64_LIMA" \
+      "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" throughput
+  else
+    blocked lnx-x86_64 runtime-status "Lima instance $LNX_X86_64_LIMA is not running"
+    blocked lnx-x86_64 test "Lima instance $LNX_X86_64_LIMA is not running"
+    blocked lnx-x86_64 throughput "Lima instance $LNX_X86_64_LIMA is not running"
+  fi
+  "$LIMA_COURT" release lnx-x86_64-rosetta >/dev/null 2>&1 || true
+  "$LIMA_COURT" lease lnx-x86_64-kernel >/dev/null 2>&1 || true
+  if lima_running "$LNX_X86_64_KERNEL_LIMA"; then
+    run_lima_linux_stage lnx-x86_64 x86-kernel-logic "$LNX_X86_64_KERNEL_LIMA" \
+      "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" logic
+  else
+    blocked lnx-x86_64 x86-kernel-logic \
+      "Lima instance $LNX_X86_64_KERNEL_LIMA is not running"
+  fi
+  "$LIMA_COURT" release lnx-x86_64-kernel >/dev/null 2>&1 || true
 else
-  blocked lnx-x86_64 runtime-status "Lima instance $LNX_X86_64_LIMA is not running"
-  blocked lnx-x86_64 test "Lima instance $LNX_X86_64_LIMA is not running"
-  blocked lnx-x86_64 throughput "Lima instance $LNX_X86_64_LIMA is not running"
+  not_requested lnx-x86_64 lima-accelerator \
+    "set MINICON_ENABLE_LIMA_ACCELERATOR=1 for the optional fast court"
 fi
-"$LIMA_COURT" release lnx-x86_64-rosetta >/dev/null 2>&1 || true
-"$LIMA_COURT" lease lnx-x86_64-kernel >/dev/null 2>&1 || true
-if lima_running "$LNX_X86_64_KERNEL_LIMA"; then
-  run_lima_linux_stage lnx-x86_64 x86-kernel-logic "$LNX_X86_64_KERNEL_LIMA" \
-    "$BUILD_REL/lnx-x86_64/x86_64-unknown-linux-gnu" logic
-else
-  blocked lnx-x86_64 x86-kernel-logic \
-    "Lima instance $LNX_X86_64_KERNEL_LIMA is not running"
-fi
-"$LIMA_COURT" release lnx-x86_64-kernel >/dev/null 2>&1 || true
 if [ -n "${MINICON_LNX_X86_64_DESKTOP_RUNNER:-}" ] &&
    [ -x "$MINICON_LNX_X86_64_DESKTOP_RUNNER" ]; then
   run_linux_desktop_runner_stage lnx-x86_64 desktop-runtime-status \
@@ -400,20 +434,25 @@ else
     "MINICON_LNX_X86_64_DESKTOP_RUNNER is not configured"
 fi
 
-"$LIMA_COURT" lease lnx-aarch64-fast >/dev/null 2>&1 || true
-if lima_running "$LNX_AARCH64_LIMA"; then
-  run_lima_linux_stage lnx-aarch64 runtime-status "$LNX_AARCH64_LIMA" \
-    "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" status
-  run_lima_linux_stage lnx-aarch64 test "$LNX_AARCH64_LIMA" \
-    "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" test
-  run_lima_linux_stage lnx-aarch64 throughput "$LNX_AARCH64_LIMA" \
-    "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" throughput
+if [ "$LIMA_ACCELERATOR" = 1 ]; then
+  "$LIMA_COURT" lease lnx-aarch64-fast >/dev/null 2>&1 || true
+  if lima_running "$LNX_AARCH64_LIMA"; then
+    run_lima_linux_stage lnx-aarch64 runtime-status "$LNX_AARCH64_LIMA" \
+      "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" status
+    run_lima_linux_stage lnx-aarch64 test "$LNX_AARCH64_LIMA" \
+      "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" test
+    run_lima_linux_stage lnx-aarch64 throughput "$LNX_AARCH64_LIMA" \
+      "$BUILD_REL/lnx-aarch64/aarch64-unknown-linux-gnu" throughput
+  else
+    blocked lnx-aarch64 runtime-status "Lima instance $LNX_AARCH64_LIMA is not running"
+    blocked lnx-aarch64 test "Lima instance $LNX_AARCH64_LIMA is not running"
+    blocked lnx-aarch64 throughput "Lima instance $LNX_AARCH64_LIMA is not running"
+  fi
+  "$LIMA_COURT" release lnx-aarch64-fast >/dev/null 2>&1 || true
 else
-  blocked lnx-aarch64 runtime-status "Lima instance $LNX_AARCH64_LIMA is not running"
-  blocked lnx-aarch64 test "Lima instance $LNX_AARCH64_LIMA is not running"
-  blocked lnx-aarch64 throughput "Lima instance $LNX_AARCH64_LIMA is not running"
+  not_requested lnx-aarch64 lima-accelerator \
+    "set MINICON_ENABLE_LIMA_ACCELERATOR=1 for the optional fast court"
 fi
-"$LIMA_COURT" release lnx-aarch64-fast >/dev/null 2>&1 || true
 if [ -n "${MINICON_LNX_AARCH64_DESKTOP_RUNNER:-}" ] &&
    [ -x "$MINICON_LNX_AARCH64_DESKTOP_RUNNER" ]; then
   run_linux_desktop_runner_stage lnx-aarch64 desktop-runtime-status \
@@ -436,9 +475,11 @@ else
     "MINICON_LNX_AARCH64_DESKTOP_RUNNER is not configured"
 fi
 
-lima_stop_if_running "$LNX_X86_64_LIMA"
-lima_stop_if_running "$LNX_X86_64_KERNEL_LIMA"
-lima_stop_if_running "$LNX_AARCH64_LIMA"
+if [ "$LIMA_ACCELERATOR" = 1 ]; then
+  lima_stop_if_running "$LNX_X86_64_LIMA"
+  lima_stop_if_running "$LNX_X86_64_KERNEL_LIMA"
+  lima_stop_if_running "$LNX_AARCH64_LIMA"
+fi
 
 python3 - "$RESULTS" "$RECEIPT" "$SOURCE_STATE_START" "$BUILD_DIR" <<'PY'
 import csv

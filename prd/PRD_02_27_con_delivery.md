@@ -282,8 +282,9 @@ and proven here before becoming a current contract.
   candidates with public delivery. Private-package access requires a normal
   GitHub Packages grant; credentials are never extracted from Git transport or
   printed. A dirty source tree may produce local diagnostic receipts but must
-  not publish an authoritative cloud bundle. Local UTM and Lima courts remain
-  valuable for interactive debugging, offline work and failure reproduction;
+  not publish an authoritative cloud bundle. Local UTM courts remain valuable
+  for interactive debugging, offline work and failure reproduction; optional
+  Lima acceleration remains useful for quick headless diagnosis;
   they are no longer the only possible release runtime authority and never
   justify keeping six heavyweight guests resident.
 
@@ -335,7 +336,7 @@ and proven here before becoming a current contract.
   twin-court pipeline. GitHub's native runners are the elastic fast-development
   regression lane: they consume no Mac mini RAM while idle, return routine
   real-OS/ISA feedback quickly, and remain especially valuable where the local
-  host lacks real Intel hardware. Local UTM/Lima courts are the controlled-image
+  host lacks real Intel hardware. Local UTM courts are the controlled-image
   release-qualification lane: they own clean boot, first launch, permissions,
   packaging, interactive inspection, offline execution and reusable failure
   scenes. The lanes share test contracts and may consume byte-identical bodies,
@@ -461,7 +462,8 @@ flowchart LR
     MX --> SP[Pending capture owns next frame<br/>Wake yields PTY backlog to redraw]
     SP --> A1
     B --> LP[Local exact-artifact payload<br/>no GHCR or Actions dependency]
-    LP --> D[Local UTM/Lima six-grid<br/>controlled-image release court]
+    LP --> D[Local UTM six-grid<br/>controlled-image release court]
+    LP -. opt-in acceleration .-> LAO[Optional Lima<br/>headless fast feedback]
     D --> WXU[Windows x86 TCG<br/>exact runtime PASS · QGA ready · stopped<br/>real-x86 performance unclaimed]
     WXU --> LG
     D --> LG{Required local cells pass<br/>with sealed baselines?}
@@ -494,8 +496,10 @@ flowchart LR
   macOS arm64 suite plus sustained-throughput gate, and uses Rosetta for the
   same macOS x86_64 runtime evidence when installed. Linux runtime evidence is
   deliberately split from cross-linking: `scripts/linux-runtime-qualify.sh`
-  executes the already-linked GNU artifact in a matching Debian/glibc Lima
-  court, with Xvfb + a session D-Bus for GUI and AT-SPI journeys. The ARM64
+  can execute the already-linked GNU artifact in a matching Debian/glibc Lima
+  court when `MINICON_ENABLE_LIMA_ACCELERATOR=1`, with Xvfb + a session D-Bus
+  for GUI and AT-SPI journeys. This is optional fast feedback; Linux desktop
+  UTM remains the local release court. The historical ARM64
   court passes 124 host units, 38 shared-core units, alignment, the isolated
   control journey, all 22 GUI/PTY black boxes, the Linux AT-SPI journey, and
   the ignored sustained-throughput gate (33,439,744 bytes at 40,257,030 B/s in
@@ -702,14 +706,18 @@ flowchart LR
   in `scripts/utm-courts.json`; stale pre-registry aliases fail before a VM is
   leased.
 
-  Lima fast courts now expose the parallel `scripts/lima-court.sh` service and
+  Optional Lima fast courts expose the parallel `scripts/lima-court.sh` service and
   `scripts/lima-courts.json` image registry. The service owns `image`, `status`,
   `lease`, `exec`, `release`, and `reap`, with the same atomic active-state and
   immutable receipt outcomes. Six-cell Linux stages call this facade rather
-  than `limactl shell` directly. A real ARM64 VZ lease executed Linux/aarch64,
+  than `limactl shell` directly when explicitly enabled. Default six-cell runs
+  record `NOT_REQUESTED` and do not start Lima. A real ARM64 VZ lease previously executed Linux/aarch64,
   exposed and then repaired an initial missing-receipt terminal-state bug, and
-  subsequently proved both abandoned `reap` and ordinary `released` receipts;
-  the instance returned to `Stopped` after each court.
+  subsequently proved both abandoned `reap` and ordinary `released` receipts.
+  The six-cell owner now installs an EXIT/HUP/INT/TERM cleanup boundary that
+  releases every optional court and stops both MiniCon instances. A running
+  instance without an active lease is lifecycle leakage, never useful idle
+  state.
 
 - [ ] A reusable image has two distinct identities. The immutable template
   records upstream media digest, provisioning-recipe digest, UTM configuration,
@@ -723,7 +731,7 @@ flowchart LR
   and overlays never execute from cloud storage.
 
 - [~] The 24 GiB Mac mini is a single-heavy-court scheduler, not a VM farm.
-  Sealed templates and sparse disks may remain cold, but no UTM or Lima guest
+  Sealed templates and sparse disks may remain cold, but no UTM or optional Lima guest
   may reserve RAM merely because it could be useful later. A product runner
   obtains a bounded lease just before runtime evidence, starts at most one
   distinct heavyweight VM, and releases it immediately after results are
@@ -735,8 +743,9 @@ flowchart LR
   If the guest does not cooperate, UTM's virtual power-off event is the allowed
   fallback: it releases memory without killing UTM or deleting any disk. VM
   suspension is a deliberate short debug escape, not the service default,
-  because saved execution state does not prove host RAM was reclaimed. Lima
-  follows the same cold-on-demand/stopped-after-court invariant. Compilation
+  because saved execution state does not prove host RAM was reclaimed. When
+  requested, Lima follows the same cold-on-demand/stopped-after-court
+  invariant; otherwise it is not started. Compilation
   remains on the host; guest startup cost buys clean, reusable runtime evidence.
 
   The service persists one atomic `active.json` under ignored runtime output.
@@ -809,9 +818,11 @@ flowchart LR
   allocation, and an always-on VM
   are explicit non-goals.
 
-  The integrated owner mutually schedules runtime guests: both Lima targets are
-  stopped while macOS builds and Windows UTM courts own host CPU/RAM, then
-  started only for their Linux courts and returned to stopped state afterward.
+  When explicitly enabled, the integrated owner mutually schedules the Lima
+  acceleration guests: both targets are stopped while macOS builds and Windows
+  UTM courts own host CPU/RAM, then started only for their optional Linux
+  courts and returned to stopped state afterward. With the default disabled
+  setting, six-cell qualification neither starts nor depends on Lima.
   The shared Windows VM also discards and cold-starts a new snapshot between
   x86_64-Prism and ARM64-native cells, then shuts down after qualification.
   Simultaneously reserving memory for unrelated guests or inheriting process
@@ -876,8 +887,8 @@ flowchart LR
   authenticated interactive session survives between unattended qualification
   runs; an explicit stop remains available for baseline sealing or maintenance.
 
-- [~] Add a stable glibc Linux desktop UTM release court in addition to the
-  existing headless Lima function courts. The selected primary target is Ubuntu
+- [~] Add a stable glibc Linux desktop UTM release court as the authoritative
+  local Linux lane; headless Lima remains an optional accelerator. The selected primary target is Ubuntu
   24.04 ARM64 Server plus `ubuntu-desktop-minimal`. The canonical ARM64 desktop
   target is a Linux guest with ARM64 ISA on QEMU+HVF, named
   `minicon-lnx-arm-64`; it owns native ARM64 checks across Wayland and an
@@ -894,7 +905,9 @@ flowchart LR
   `minicon-lnx-x86-64`, owns true x86 kernel
   desktop startup, screenshot, input and
   AT-SPI samples; it does not own performance or the full high-frequency GUI
-  suite. Existing Lima courts remain the fast function and kernel-logic owners.
+  suite. Existing Lima courts retain useful fast function and kernel-logic
+  evidence only when requested; they are not mandatory owners or release
+  authority.
 
   The local infrastructure outcome is six independent logical execution cells,
   not six mandatory resident guests. Linux and Windows retain stopped guest

@@ -92,8 +92,10 @@ all of it depends on the machine.
 
 The six-cell gate writes `target-six/receipt.json`. A missing runtime runner is
 reported as `BLOCKED`; a successful cross-link is not mislabeled as a runtime
-test pass. On Apple Silicon, `scripts/setup-linux-runners.sh` provisions the
-Debian/glibc Lima courts used for both Linux architectures. A Windows UTM VM
+test pass. Linux desktop UTM runners own local qualification. The optional
+`MINICON_ENABLE_LIMA_ACCELERATOR=1` path uses Debian/glibc Lima courts for
+faster headless Linux feedback; `scripts/setup-linux-runners.sh` provisions
+them, but ordinary qualification does not require them. A Windows UTM VM
 with Guest Tools can use `scripts/windows-utm-runner.sh` as both Windows runner
 variables; the gate transfers the exact PE/test tree before execution.
 

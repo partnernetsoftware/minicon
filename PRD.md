@@ -109,7 +109,7 @@ MiniCon — one-file local terminal
 │   │   │   │   └── six runtime receipts bind source SHA + source-tree digest + OCI digest + actual runner OS/ISA
 │   │   │   │       └── independent dual-lane contract
 │   │   │   │           ├── GitHub native runners: elastic fast-development regression lane + real-ISA backstop
-│   │   │   │           ├── local UTM/Lima: controlled-image release-qualification lane + interactive reproduction
+│   │   │   │           ├── local UTM: controlled-image release-qualification lane + interactive reproduction
 │   │   │   │           ├── lanes share test contracts and may consume identical bytes, but neither executes through nor depends on the other
 │   │   │   │           └── receipts remain lane-labelled; local release authority becomes final only after all required baselines are sealed
 │   │   │   ├── macOS runtime courts
@@ -122,10 +122,10 @@ MiniCon — one-file local terminal
 │   │   │   │       ├── one-click read-only bootstrap ISO; no credentials
 │   │   │   │       ├── unified receipt leaves; absence is BLOCKED
 │   │   │   │       └── clean-user, first-launch, TCC and packaging evidence
-│   │   │   ├── Debian/glibc Lima runtime courts for Linux cells
+│   │   │   ├── optional Debian/glibc Lima acceleration courts for Linux cells
 │   │   │   │   ├── ARM64 VZ native + x86_64 Rosetta function court
 │   │   │   │   └── x86_64 QEMU kernel/logic court
-│   │   │   │       └── image/lease/exec/release/reap service + receipts
+│   │   │   │       └── opt-in only; image/lease/exec/release/reap + mandatory stop-on-exit
 │   │   │   ├── Linux desktop UTM release courts (both ISAs automation-ready; local baselines unsealed)
 │   │   │   │   ├── Ubuntu 24.04 ARM64 GNOME Minimal primary desktop
 │   │   │   │   ├── `minicon-lnx-arm-64`; ARM64 guest, QEMU/HVF backend metadata
@@ -245,14 +245,14 @@ flowchart LR
         PK["minimal six-grid test bodies<br/>product · owning harness · manifest"]
         AR["GHCR OCI artifact court<br/>independent from source history<br/>immutable @sha256 digest"]
         CR["GitHub native six-grid<br/>fast development regression<br/>real OS/ISA · zero resident RAM"]
-        Q["local UTM/Lima six-grid<br/>release qualification · permissions<br/>controlled images · disposable state"]
+        Q["local UTM six-grid<br/>release qualification · permissions<br/>controlled images · disposable state"]
         DV["development-lane verdict<br/>independent receipt"]
         RQ["release-lane verdict<br/>independent receipt"]
         M["lane-labelled evidence catalog<br/>shared contract · no execution dependency"]
         O["OSX runtime<br/>host fast court · clean VM release court"]
         G["macOS UTM bridge<br/>VirtioFS queue · SHA-256 manifest<br/>one-click bootstrap ISO · no Cargo"]
         GC["clean macOS receipt leaves<br/>status · test · throughput · idle<br/>missing runner = BLOCKED"]
-        L["Debian/glibc Lima<br/>Linux runtime"]
+        L["optional Debian/glibc Lima<br/>fast Linux accelerator · not release authority"]
         LD["Linux desktop UTM court<br/>LTS glibc · GUI · AT-SPI · packaging"]
         S6["six logical local cells<br/>five VM-backed · OSX x86 via host Rosetta<br/>0 sealed release baselines"]
         LQ["Linux ARM64 desktop<br/>minicon-lnx-arm-64<br/>QEMU/HVF in registry"]
@@ -262,7 +262,7 @@ flowchart LR
         V["Windows UTM courts<br/>ARM64 native + Prism x64 · PASS<br/>real x86 TCG · unsealed"]
         WXU["Windows x86 TCG qualification<br/>exact runtime PASS · QGA ready · stopped<br/>throughput measured, real-x86 performance unclaimed"]
         I["Runner image provenance<br/>upstream digest · recipe · sealed baseline"]
-        VC["VM court services<br/>UTM + Lima registries<br/>image · lease · exec · release · reap"]
+        VC["VM court services<br/>UTM registry + optional Lima accelerator<br/>image · lease · exec · release · reap"]
         ST["sealed template<br/>version · digest · no credentials"]
         DI["disposable instance<br/>exact payload · isolated mutation"]
         ML["bounded VM lease<br/>one heavyweight court · memory budget"]
@@ -330,7 +330,7 @@ flowchart LR
     G --> O
     G --> GC
     GC --> M
-    Q --> L
+    BH -. optional exact artifact .-> L
     Q --> LD
     Q --> S6
     S6 --> LQ
@@ -342,7 +342,7 @@ flowchart LR
     Q --> V
     V --> WXU
     O --> M
-    L --> M
+    L -. supplemental receipt .-> M
     LD --> M
     WXU --> M
     M --> D
@@ -404,7 +404,7 @@ flowchart LR
   executables; a 64 MiB cell-body ceiling catches their return.
   Runtime guest leases remain bounded and serial. It runs
   the complete macOS arm64 suite. Rosetta runs the same macOS x86_64
-  suite. A Debian/glibc ARM64 Lima court runs the cross-linked Linux ARM64
+  suite. Historical 2026-08-26 evidence used a Debian/glibc ARM64 Lima court to run the cross-linked Linux ARM64
   artifact through unit, public GUI/PTY, AT-SPI, control, and sustained-output
   tests. The same VZ guest uses Rosetta for Linux plus Debian amd64 multiarch
   libraries to run the complete x86_64 suite; a QEMU guest separately proves
@@ -421,7 +421,9 @@ flowchart LR
   means an immutable upstream digest plus a declarative provisioning recipe
   and disposable local overlay, not an untrusted redistributed guest disk.
   This proves the six artifact cells and the recorded native/translation
-  runtime coverage; it does not yet prove local release qualification. The
+  runtime coverage; it does not yet prove local release qualification. Lima is
+  now opt-in acceleration rather than a required lane; Linux desktop UTM owns
+  local release qualification. The
   logical OSX x86_64 userspace cell is host Rosetta, while any Intel-kernel
   requirement remains explicitly unavailable. Every unfinished VM-backed
   runtime leaf remains `BLOCKED` until its own cold-start and exact-body receipt
