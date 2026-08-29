@@ -5,12 +5,15 @@
 set -euo pipefail
 COM="${1:?path to minicon.com}"
 test -x "$COM" || chmod +x "$COM"
+COM=$(cd "$(dirname "$COM")" && pwd)/$(basename "$COM")
 ROOT=$(mktemp -d /tmp/mg2.XXXXXX)
 HOME_DIR="$ROOT/home"
 WORK="$ROOT/work"
 SOCK="$ROOT/c.sock"
 ENDPOINT="unix:$SOCK"
-TOKEN="G2TOK$$"
+HOST_LOG="$ROOT/host.log"
+TOKEN_PART="G2TOK$$"
+RESULT_TOKEN="G2RESULT${TOKEN_PART}"
 cfg_before=""
 cfg_after=""
 host_pid=""
@@ -41,6 +44,12 @@ cli() {
   "$COM" cli --control "$ENDPOINT" "$@"
 }
 
+process_is_live() {
+  local state
+  state=$(ps -p "$1" -o stat= 2>/dev/null | tr -d ' ' || true)
+  [[ -n "$state" && "$state" != Z* ]]
+}
+
 mkdir -p "$HOME_DIR/.config" "$WORK"
 export HOME="$HOME_DIR"
 unset XDG_CONFIG_HOME || true
@@ -52,7 +61,7 @@ else
 fi
 
 cd "$WORK"
-"$COM" --no-activate --control "$ENDPOINT" >/dev/null 2>&1 &
+"$COM" --no-activate --control "$ENDPOINT" >"$HOST_LOG" 2>&1 &
 host_pid=$!
 echo "loader_pid=$host_pid"
 
@@ -62,13 +71,15 @@ for _ in $(seq 1 150); do
     ready=1
     break
   fi
-  if ! kill -0 "$host_pid" 2>/dev/null; then
+  if ! process_is_live "$host_pid"; then
+    sed -n '1,120p' "$HOST_LOG" >&2 || true
     echo "FAIL host died before list-tabs" >&2
     exit 1
   fi
   sleep 0.2
 done
 if [[ "$ready" -ne 1 ]]; then
+  sed -n '1,120p' "$HOST_LOG" >&2 || true
   echo "FAIL list-tabs never ready" >&2
   exit 1
 fi
@@ -87,40 +98,44 @@ if len(active)!=1 or not active[0].get("id"):
 print(active[0]["id"])
 ')
 
-cli send-text --target "$tab" "echo ${TOKEN}"$'\r'
-cli wait-text --target "$tab" --timeout-ms 15000 "$TOKEN"
+# The echoed command line contains TOKEN_PART but never RESULT_TOKEN. Seeing
+# RESULT_TOKEN therefore proves that the child shell executed the command; a
+# terminal's ordinary input echo cannot satisfy this court.
+cli send-text --target "$tab" "printf 'G2RESULT%s\\n' '${TOKEN_PART}'"$'\r'
+cli wait-text --target "$tab" --timeout-ms 15000 "$RESULT_TOKEN"
 
 snap=$(cli ui-snapshot)
 printf '%s' "$snap" | python3 -c '
 import json,sys
 s=json.loads(sys.stdin.read())
-if "active" not in s:
-    raise SystemExit("ui-snapshot JSON missing active")
-print("ui-snapshot-active="+str(s.get("active")))
-'
+active=s.get("active")
+if active != sys.argv[1]:
+    raise SystemExit(f"ui-snapshot active {active!r} != {sys.argv[1]!r}")
+print("ui-snapshot-active="+str(active))
+' "$tab"
 
 pane=$(cli capture-pane --max-bytes 8000)
-if [[ "$pane" != *"$TOKEN"* ]]; then
-  echo "FAIL capture-pane missing token: $pane" >&2
+if [[ "$pane" != *"$RESULT_TOKEN"* ]]; then
+  echo "FAIL capture-pane missing result token: $pane" >&2
   exit 1
 fi
-echo "capture-pane contains $TOKEN"
+echo "capture-pane contains $RESULT_TOKEN"
 
 cli close-window
 for _ in $(seq 1 50); do
-  if ! kill -0 "$host_pid" 2>/dev/null; then
+  if ! process_is_live "$host_pid"; then
     break
   fi
   sleep 0.1
 done
+if process_is_live "$host_pid"; then
+  echo "FAIL loader still alive after close-window" >&2
+  exit 1
+fi
 set +e
 wait "$host_pid"
 rc=$?
 set -e
-if kill -0 "$host_pid" 2>/dev/null; then
-  echo "FAIL loader still alive after close-window" >&2
-  exit 1
-fi
 if [[ "$rc" -ne 0 ]]; then
   echo "FAIL loader rc=$rc want 0" >&2
   exit 1
@@ -148,4 +163,4 @@ if [[ "$cfg_before" != "$cfg_after" ]]; then
 fi
 
 finished=1
-echo "PASS g2-control HOME=$HOME_DIR endpoint=$ENDPOINT token=$TOKEN"
+echo "PASS g2-control HOME=$HOME_DIR endpoint=$ENDPOINT token=$RESULT_TOKEN"

@@ -44,7 +44,13 @@ def zip_overlay_breakdown(data: bytes) -> dict:
     eocd = data.rfind(b"PK\x05\x06")
     if ape < 0 or eocd < 0 or eocd + 22 > len(data):
         raise ValueError("minicon.com is not APE+zip")
-    cd_size, cd_off = struct.unpack_from("<II", data, eocd + 12)
+    disk, cd_disk, disk_entries, total_entries, cd_size, cd_off, comment_len = (
+        struct.unpack_from("<HHHHIIH", data, eocd + 4)
+    )
+    if disk != 0 or cd_disk != 0 or disk_entries != total_entries:
+        raise ValueError("multi-disk or inconsistent zip directory")
+    if eocd + 22 + comment_len != len(data):
+        raise ValueError("zip EOCD comment/trailing bytes mismatch")
     if data[cd_off : cd_off + 4] == b"PK\x01\x02":
         cd_abs = cd_off
     elif data[ape + cd_off : ape + cd_off + 4] == b"PK\x01\x02":
@@ -58,11 +64,18 @@ def zip_overlay_breakdown(data: bytes) -> dict:
     other_comp = 0
     n_cells = 0
     n_other = 0
-    while pos + 46 <= end and data[pos : pos + 4] == b"PK\x01\x02":
+    parsed_entries = 0
+    while pos < end:
+        if pos + 46 > end or data[pos : pos + 4] != b"PK\x01\x02":
+            raise ValueError("truncated or invalid zip central-directory entry")
         _hdr = struct.unpack_from("<HHHHHHIIIHHHHHII", data, pos + 4)
         csz, usz, nlen, elen, clen = _hdr[7], _hdr[8], _hdr[9], _hdr[10], _hdr[11]
+        next_pos = pos + 46 + nlen + elen + clen
+        if next_pos > end:
+            raise ValueError("zip central-directory entry exceeds directory")
         name = data[pos + 46 : pos + 46 + nlen].decode("utf-8", "replace")
-        pos += 46 + nlen + elen + clen
+        pos = next_pos
+        parsed_entries += 1
         if name.startswith("cells/") and not name.endswith("/"):
             cells_comp += csz
             cells_uncomp += usz
@@ -70,6 +83,8 @@ def zip_overlay_breakdown(data: bytes) -> dict:
         elif not name.endswith("/"):
             other_comp += csz
             n_other += 1
+    if pos != end or parsed_entries != total_entries:
+        raise ValueError("zip central-directory count/size mismatch")
     eocd_len = len(data) - eocd
     local_and_data = cd_abs - ape
     return {
@@ -77,6 +92,7 @@ def zip_overlay_breakdown(data: bytes) -> dict:
         "zip_local_and_filedata_bytes": local_and_data,
         "zip_central_directory_bytes": cd_size,
         "zip_eocd_bytes": eocd_len,
+        "zip_entry_count": parsed_entries,
         "cells_entry_count": n_cells,
         "cells_compressed_bytes": cells_comp,
         "cells_uncompressed_bytes": cells_uncomp,
@@ -117,6 +133,16 @@ def self_test() -> int:
     if br["cells_compressed_bytes"] <= 0 or br["cells_compressed_bytes"] >= br["cells_uncompressed_bytes"]:
         print("FAIL zip compressed vs raw", br, file=sys.stderr)
         return 1
+    corrupt = bytearray(blob)
+    cd_sig = corrupt.rfind(b"PK\x01\x02")
+    corrupt[cd_sig : cd_sig + 4] = b"BAD!"
+    try:
+        zip_overlay_breakdown(bytes(corrupt))
+    except ValueError:
+        pass
+    else:
+        print("FAIL malformed zip central directory accepted", file=sys.stderr)
+        return 1
     print(
         f"PASS size-court ceiling={CANDIDATE_CEILING_BYTES} "
         f"ceiling+1 reject rehearsal_guard={REHEARSAL_GUARD_BYTES} zip-cd"
@@ -147,6 +173,13 @@ def report(mode: str) -> int:
         n = path.stat().st_size
         payload_sum += n
         payloads[cell] = {"bytes": n, "sha256": sha256(path)}
+    overlay = zip_overlay_breakdown(raw)
+    if overlay["cells_entry_count"] != 6:
+        print(
+            f"size court requires exactly 6 cell entries, got {overlay['cells_entry_count']}",
+            file=sys.stderr,
+        )
+        return 2
     body = {
         "schema": 2,
         "kind": mode,
@@ -154,7 +187,7 @@ def report(mode: str) -> int:
         "minicon_com_sha256": hashlib.sha256(raw).hexdigest(),
         "minicon_com_gzip9_bytes": len(gz),
         "payload_bytes_sum": payload_sum,
-        "zip_overlay": zip_overlay_breakdown(raw),
+        "zip_overlay": overlay,
         "rehearsal_guard_bytes": REHEARSAL_GUARD_BYTES,
         "candidate_ceiling_bytes": CANDIDATE_CEILING_BYTES,
         "candidate_ceiling_stamped": True,
