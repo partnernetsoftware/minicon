@@ -20,11 +20,15 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   download, hash, unpack and execute the exact packaged PE before publication.
   The repository-pinned Rust 1.97 toolchain is load-bearing evidence: release
   builders must not silently inherit a later rolling `stable` toolchain.
-- [ ] **experimental / planned: one-file `minicon.com` (not shipped).** Owner:
+- [~] **experimental and six-cell smoke-proven: one-file `minicon.com` (not shipped).** Owner:
   `research/minicon-com-loader/README.md`. Two execute-only lanes exist: Mac
   `local-accelerated.sh` (host/Lima/UTM) and `.github/workflows/minicon-com.yml`
-  (one macos-15 pack, six native runners, no matrix compile). Smoke is
-  `--version`, argv passthrough, `--status`. Candidate publication still needs
+  (one macos-15 pack, six native runners, no matrix compile). Workflow run
+  `33238478661` at source `459d5cb` proved one pack followed by six native
+  `--version`, argv-passthrough and `--status` executions, then one same-identity
+  aggregate. The two preceding red runs exposed and fixed real pipeline gaps:
+  Windows resource embedding needed `llvm-rc`, and the downloaded artifact
+  needed a flat root rather than a repository-path prefix. Candidate publication still needs
   unique extract paths (done in loader), six-cell GUI+control black-box, and
   the existing size/checksum/reputation court. v0.1.2 remains the stable
   delivery; this node must not be marked shipped or mixed into Release assets.

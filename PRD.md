@@ -83,11 +83,11 @@ MiniCon — one-file local terminal
 │   │   │   │   ├── Windows x86_64 ZIP, Linux x86_64 tarball, macOS Universal tarball
 │   │   │   │   ├── per-artifact SHA-256 sidecars
 │   │   │   │   └── Windows package re-downloaded and executed on a native Windows runner before publication
-│   │   │   └── [ ] experimental / planned: one-file `minicon.com` (not shipped)
+│   │   │   └── [~] experimental + six-cell smoke-proven: one-file `minicon.com` (not shipped)
 │   │   │       ├── Cosmopolitan loader + six OS/ISA-specific Rust payloads
 │   │   │       ├── research owner: `research/minicon-com-loader/README.md`; isolated from v0.1.2 release truth
 │   │   │       ├── lane A: Mac `local-accelerated.sh` (host/Lima/UTM execute-only)
-│   │   │       ├── lane B: `.github/workflows/minicon-com.yml` — one macos-15 pack, six native runners `--version`/`--status` only
+│   │   │       ├── lane B: `.github/workflows/minicon-com.yml` — one macos-15 pack, six native runners; run `33238478661` green at `459d5cb`
 │   │   │       ├── promotion requires six-cell runtime evidence, unique extract paths, GUI+control black-box, then candidate gate
 │   │   │       └── failure retains v0.1.2 artifacts; no dispatch/tag/Release until those gates exist
 │   │   ├── Mac-hosted six-cell qualification
