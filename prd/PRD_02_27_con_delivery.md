@@ -1313,7 +1313,7 @@ interactive Linux x86 installation.
   ordinary CI requires a reviewed rename, a successful
   first run, and PRD backfill from that run.
 
-- [ ] **Warm `minicon.com` pack latency is a measured product constraint.** The
+- [~] **Warm `minicon.com` pack latency is a measured product constraint.** The
   v0.1.3 six-payload run `33247549065` measured 5m29s in the single macOS pack
   job even with a cache hit; the six execute-only cells then completed quickly.
   The target is approximately one minute for a warm, source-compatible pack.
@@ -1323,6 +1323,10 @@ interactive Linux x86 installation.
   reuse, and redundant tool extraction before changing product code. The court
   may not remove a target, move compilation into the six runtime cells, or call
   queue time a compiler regression merely to satisfy the budget.
+  The first concrete cut now gives pinned `cargo-zigbuild`/`cargo-xwin` a
+  dedicated cached install root whose cache key includes both tool versions;
+  prior runs cached registries but recompiled the installed tools. This remains
+  provisional until a subsequent warm run reports the per-step reduction.
 - [ ] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from
   agenterm, and the standalone release contract may name only workflows and
