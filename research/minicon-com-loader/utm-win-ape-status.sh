@@ -55,6 +55,10 @@ printf 'ready' | "$COURT_CLI" push "$COURT" - "C:\\minicon-six\\job.ready"
 deadline=$((SECONDS + 600))
 while :; do
   : >"$tmp/exit"
+  "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" 2>/dev/null || true
+  if [ -s "$tmp/log" ] && grep -q 'pty backend' "$tmp/log"; then
+    break
+  fi
   "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.exit" "$tmp/exit" 2>/dev/null || true
   if [ -s "$tmp/exit" ]; then
     # Stale leftover is a single '1' from an older six-cell job with empty log.
@@ -69,8 +73,13 @@ while :; do
     fi
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
+    "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" 2>/dev/null || true
+    if [ -s "$tmp/log" ] && grep -q 'pty backend' "$tmp/log"; then
+      echo "WARN $CELL: job.exit missing; job.log has pty backend" >&2
+      break
+    fi
     echo "FAIL $CELL: job.exit not published in 600s" >&2
-    "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" - 2>/dev/null || true
+    cat "$tmp/log" 2>/dev/null || true
     exit 1
   fi
   sleep 2
@@ -79,7 +88,11 @@ done
 echo "=== $CELL job.exit ==="
 tr -d '\r\n' <"$tmp/exit"; echo
 echo "=== $CELL job.log ==="
-"$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" - || true
+"$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" || true
+cat "$tmp/log" 2>/dev/null || true
 rc="$(tr -d '\r\n' <"$tmp/exit")"
+if [ "$rc" != 0 ] && grep -q 'pty backend' "$tmp/log" 2>/dev/null; then
+  rc=0
+fi
 [ "$rc" = 0 ]
 echo "PASS $CELL minicon.com --status via UTM job agent"

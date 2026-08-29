@@ -93,16 +93,21 @@ jobs:
               fh.write(f"source_tree_digest={rec['source_tree_digest']}\n")
           PY
 
+      - name: Stage flat artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          cp research/minicon-com-loader/dist/minicon.com artifact/
+          cp research/minicon-com-loader/dist/minicon.com.sha256 artifact/
+          cp research/minicon-com-loader/dist/build-receipt.json artifact/
+          cp research/minicon-com-loader/ci-status.sh artifact/
+          cp research/minicon-com-loader/ci-status.ps1 artifact/
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: upload_com
         with:
           name: minicon-com
-          path: |
-            research/minicon-com-loader/dist/minicon.com
-            research/minicon-com-loader/dist/minicon.com.sha256
-            research/minicon-com-loader/dist/build-receipt.json
-            research/minicon-com-loader/ci-status.sh
-            research/minicon-com-loader/ci-status.ps1
+          path: artifact/
           if-no-files-found: error
           retention-days: 14
 
@@ -142,6 +147,7 @@ jobs:
           test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
           test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
           test -f bundle/minicon.com
+          test -f bundle/build-receipt.json
           actual=$(python3 -c 'import hashlib; print(hashlib.sha256(open("bundle/minicon.com","rb").read()).hexdigest())')
           expected=$(tr -d ' \n\r' < bundle/minicon.com.sha256)
           test "$actual" = "$expected"
