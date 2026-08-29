@@ -1,0 +1,243 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact 40-character current main HEAD
+        required: true
+        type: string
+      minicon_com_run_id:
+        description: Successful six-cell minicon.com workflow run for source_sha
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: minicon-candidate-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      com_attempt: ${{ steps.identity.outputs.com_attempt }}
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Bind exact main source and successful six-cell run
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          COM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$COM_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
+          git fetch --no-tags origin main
+          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$COM_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/minicon-com.yml" ]]
+          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
+          [[ "$(jq -r .status <<<"$run")" == "completed" ]]
+          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
+          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          [[ "$version" == "0.1.3" ]]
+          echo "com_attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+  packages:
+    needs: preflight
+    name: package ${{ matrix.platform_id }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform_id: windows-x86_64, runner: ubuntu-24.04, target: x86_64-pc-windows-msvc, binary: minicon.exe}
+          - {platform_id: linux-x86_64, runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: minicon}
+          - {platform_id: macos-universal, runner: macos-15, target: aarch64-apple-darwin, binary: minicon}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Install target and platform tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add '${{ matrix.target }}'
+          case '${{ matrix.platform_id }}' in
+            windows-x86_64)
+              cargo install cargo-xwin --locked --version 0.23.1
+              sudo apt-get update -qq
+              sudo apt-get install -y llvm
+              command -v llvm-rc
+              ;;
+            linux-x86_64)
+              sudo apt-get update -qq
+              sudo apt-get install -y libxkbcommon0 libxkbcommon-x11-0 libwayland-client0
+              ;;
+            macos-universal)
+              rustup target add x86_64-apple-darwin
+              ;;
+          esac
+
+      - name: Build package bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.platform_id }}' in
+            windows-x86_64)
+              cargo xwin build --locked --release --target '${{ matrix.target }}'
+              file 'target/${{ matrix.target }}/release/${{ matrix.binary }}' |
+                grep -F 'PE32+ executable (GUI) x86-64'
+              ;;
+            macos-universal)
+              cargo build --locked --release --target aarch64-apple-darwin
+              cargo build --locked --release --target x86_64-apple-darwin
+              lipo -create -output minicon \
+                target/aarch64-apple-darwin/release/minicon \
+                target/x86_64-apple-darwin/release/minicon
+              mv minicon target/aarch64-apple-darwin/release/minicon
+              ;;
+            *) cargo build --locked --release --target '${{ matrix.target }}' ;;
+          esac
+
+      - name: Verify and archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ needs.preflight.outputs.version }}'
+          platform='${{ matrix.platform_id }}'
+          binary='target/${{ matrix.target }}/release/${{ matrix.binary }}'
+          if [[ "$platform" != windows-* ]]; then
+            [[ "$("$binary" --version)" == "minicon $version" ]]
+            "$binary" --status
+          fi
+          name="minicon-$version-$platform"
+          mkdir -p "dist/$name"
+          cp "$binary" "dist/$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cp scripts/probe-imports.ps1 "dist/$name/" 2>/dev/null || true
+          cd dist
+          if [[ "$platform" == windows-* ]]; then
+            archive="$name.zip"
+            7z a -tzip "$archive" "$name" >/dev/null
+          else
+            archive="$name.tar.gz"
+            tar -czf "$archive" "$name"
+          fi
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$archive" >"$archive.sha256"
+          else
+            shasum -a 256 "$archive" >"$archive.sha256"
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-package-${{ matrix.platform_id }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-windows-package:
+    needs: [preflight, packages]
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: candidate-package-windows-x86_64
+          path: incoming
+      - name: Rehash and execute packaged PE
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = '${{ needs.preflight.outputs.version }}'
+          $archive = Join-Path $PWD "incoming/minicon-$version-windows-x86_64.zip"
+          $expected = ((Get-Content -LiteralPath "$archive.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "archive digest mismatch" }
+          Expand-Archive -LiteralPath $archive -DestinationPath unpacked
+          $binary = Join-Path $PWD "unpacked/minicon-$version-windows-x86_64/minicon.exe"
+          $out = Join-Path $env:RUNNER_TEMP "minicon-version.out"
+          $err = Join-Path $env:RUNNER_TEMP "minicon-version.err"
+          $p = Start-Process -FilePath $binary -ArgumentList '--version' -Wait -PassThru `
+            -RedirectStandardOutput $out -RedirectStandardError $err
+          if ($p.ExitCode -ne 0) { throw "packaged PE exit $($p.ExitCode)" }
+          if ((Get-Content -LiteralPath $out -Raw).Trim() -ne "minicon $version") { throw "version mismatch" }
+
+  seal:
+    needs: [preflight, packages, verify-windows-package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: candidate-package-*
+          path: payload
+          merge-multiple: true
+      - name: Download exact six-cell minicon.com bytes and receipts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          COM_ATTEMPT: ${{ needs.preflight.outputs.com_attempt }}
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          gh run download "$COM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name minicon-com --dir upstream/com
+          gh run download "$COM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "minicon-com-aggregate-attempt-$COM_ATTEMPT" --dir upstream/aggregate
+          cp upstream/com/minicon.com upstream/com/minicon.com.sha256 payload/
+          cp upstream/com/build-receipt.json upstream/build-receipt.json
+          cp upstream/aggregate/aggregate-receipt.json upstream/aggregate-receipt.json
+
+      - name: Seal exact four assets
+        run: |
+          set -euo pipefail
+          python3 research/minicon-com-loader/candidate_bundle.py seal \
+            --payload payload \
+            --build-receipt upstream/build-receipt.json \
+            --aggregate-receipt upstream/aggregate-receipt.json \
+            --source-sha '${{ inputs.source_sha }}' \
+            --version '${{ needs.preflight.outputs.version }}' \
+            --candidate-run-id "$GITHUB_RUN_ID" \
+            --candidate-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output candidate-manifest.json
+          python3 research/minicon-com-loader/candidate_bundle.py verify \
+            --manifest candidate-manifest.json --payload payload
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: |
+            payload/
+            upstream/build-receipt.json
+            upstream/aggregate-receipt.json
+            candidate-manifest.json
+          if-no-files-found: error
+          retention-days: 14
