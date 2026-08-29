@@ -52,6 +52,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   `1.1.26080.3`, signature `1.457.375.0`, detected the exact 8,909,564-byte APE
   as `Program:Win32/Contebrew.A!ml` (threat `251873`). Promotion remains
   fail-closed while company signing and the signed-byte Defender rerun are open.
+  Clean-source unsigned rehearsal `33263135546` at `be2465f` subsequently
+  packed one 7,517,987-byte APE (SHA-256 `ffc5b5aa33e77ce9f927faf76b3ab87579b79103af1bb42e20e172b0fc63158c`)
+  with product/version resource metadata, all six 0.1.3 payload identities,
+  embedded green G3 courts, and a same-identity aggregate. All six native
+  runners passed G2 GUI/control: readiness via `list-tabs`, sent/captured token,
+  structured UI snapshot, clean close, zero loader extraction residue, and
+  unchanged isolated config baseline. It remains an unsigned rehearsal, not
+  the trusted-signing Candidate or G6 verdict.
 
 ```mermaid
 flowchart LR

@@ -43,11 +43,12 @@ jobs:
             ~/zig-0.16.0
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cache/cargo-xwin
+            ~/Library/Caches/cargo-xwin
             ~/minicon-cargo-tools
             research/minicon-com-loader/payload-build
-          key: minicon-com-payloads-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'src/**', 'crates/**', 'research/minicon-com-loader/rebuild-payloads.sh') }}
+          key: minicon-com-payloads-v2-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'src/**', 'crates/**', 'research/minicon-com-loader/rebuild-payloads.sh') }}
           restore-keys: |
+            minicon-com-payloads-v2-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-
             minicon-com-payloads-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-
             minicon-com-payloads-${{ env.ZIG_VERSION }}-
             minicon-com-${{ env.COSMOCC_VERSION }}-${{ env.ZIG_VERSION }}-

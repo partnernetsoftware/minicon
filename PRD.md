@@ -191,14 +191,22 @@ flowchart LR
   Windows x86_64 UTM independently reported `ProductName=MiniCon`,
   `ProductVersion=0.1.3` plus ConPTY status. This dirty-tree rehearsal is not a
   Candidate or G6 signature.
+- [x] Unsigned one-pack rehearsal `33263135546` at `be2465f` bound clean-source
+  G1/G3/G4 evidence and passed G2 GUI/control on all six native runners with
+  one `minicon.com` SHA (`ffc5b5aa…`). The 7,517,987-byte APE identifies every
+  embedded payload as 0.1.3 and remains under 9 MiB. This is rehearsal evidence,
+  not a trusted-signing Candidate or G6 verdict.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
   toolbar space. Owner: `prd/PRD_02_25_con_workspace.md`.
-- [ ] Warm `minicon.com` pack improved from 5m29s to 4m38s in rehearsal
-  `33259779184`, still far above the approximately one-minute target; profile
-  and remove setup/cache/repeated-build waste without weakening
-  one-pack/six-execute coverage. Owner: `prd/PRD_02_27_con_delivery.md`.
+- [~] Run `33263135546` localized the remaining cloud pack latency: macOS cells
+  compiled in about 4s, Windows cells in 2.65s/1.27s, but Linux dual-LTO took
+  about 2m51s and cargo-xwin re-downloaded the MSVC CRT for 1m56s because the
+  workflow cached Linux's `~/.cache/cargo-xwin` path on a macOS builder. Cache
+  the actual `~/Library/Caches/cargo-xwin` path, then remeasure before changing
+  compilation semantics. The approximately one-minute target remains open.
+  Owner: `prd/PRD_02_27_con_delivery.md`.
 - [~] Linux LTO already spent the remaining **linker** size knob. Linux
   dual desktop (winit Wayland+X11 + `x11rb`) is **retained** — not a size
   cut. Further APE shrink is still a product ruling (optional AT-SPI,
