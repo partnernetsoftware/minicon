@@ -63,20 +63,21 @@ if ! command -v llvm-rc >/dev/null; then
   fi
 fi
 
-# Independent target dirs: 4-way parallel, Windows serial (xwin shim race).
+# Native macOS builds may run beside one Zig build. Keep the two Zig links in
+# one lane: cargo-zigbuild has shared process state outside CARGO_TARGET_DIR and
+# concurrent invocations intermittently fail with `File exists`. Windows is
+# likewise serial because the xwin shim has shared state.
 build_one osx-aarch64 aarch64-apple-darwin native &
 p1=$!
 build_one osx-x86_64 x86_64-apple-darwin native &
 p2=$!
 build_one lnx-aarch64 aarch64-unknown-linux-gnu zig &
 p3=$!
-build_one lnx-x86_64 x86_64-unknown-linux-gnu zig &
-p4=$!
 fail=0
 wait $p1 || fail=1
 wait $p2 || fail=1
 wait $p3 || fail=1
-wait $p4 || fail=1
+build_one lnx-x86_64 x86_64-unknown-linux-gnu zig || fail=1
 build_one win-x86_64 x86_64-pc-windows-msvc xwin || fail=1
 build_one win-aarch64 aarch64-pc-windows-msvc xwin || fail=1
 [[ "$fail" -eq 0 ]] || exit 1
