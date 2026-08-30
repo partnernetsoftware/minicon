@@ -281,9 +281,13 @@ the window rather than being hidden to save pixels.
   an edge case that returns early cannot leave a stale mid-character offset for
   the next slice to panic on. The caret can outlive the text it pointed into,
   because the accessibility bus can replace the contents underneath it.
-- [x] the composer stays a single line on purpose. Its content is submitted to a
-  shell, where a newline means "run", so wrapping would misrepresent what Enter
-  does; pasted newlines are folded to spaces.
+- [x] the composer is a bounded multiline editor. The explicit Newline button
+  inserts a stored soft break and immediately paints the following text on a
+  real new row; it never submits by itself. The fixed-height viewport follows
+  the caret row and retains horizontal sliding for long commands. Send remains
+  the only submission action and converts stored breaks to terminal carriage
+  returns in order. Clipboard/accessibility paste still folds external
+  newlines to spaces so only the deliberate product action creates commands.
 - [x] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY. `Ctrl+A/C/V/X` provide select-all, copy,
   bounded single-line paste and cut semantics. Every keyboard, IME, paste and

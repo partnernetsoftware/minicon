@@ -7,7 +7,7 @@
 pub const PASTE_LIMIT_BYTES: usize = 64 * 1024;
 const COMPOSER_LIMIT_BYTES: usize = PASTE_LIMIT_BYTES;
 
-/// Complete state of the external single-line input surface.
+/// Complete state of the external multiline input surface.
 ///
 /// Host adapters may inspect these fields for rendering and routing, while
 /// transitions that must clear several fields stay atomic here.
@@ -179,18 +179,10 @@ impl ComposerState {
 
 /// Where the painted window into the composer begins.
 ///
-/// The composer paints on one visual line on purpose: its content is submitted
-/// to a shell, where a newline means "run", so wrapping would misrepresent what
-/// pressing Enter does. What is *not* on purpose is painting from the head
-/// and clipping the tail, which is what the chrome painter does with any
-/// string too wide for its box. Past that width the composer showed stale
-/// leading text while every new character — and the caret with them — landed
-/// outside the box. That is typing into a surface that cannot show what you
-/// typed.
-///
-/// Every edit happens at the end (there is no caret position to move), so the
-/// end is the only span worth showing. These offsets slide the window to keep
-/// it there.
+/// Each logical row still needs a horizontal window: painting from its head
+/// clips the tail once the text is wider than the box. These offsets slide the
+/// selected row so the caret remains visible without changing the command
+/// sequence that Send will submit.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct VisibleWindow {
     /// Byte offset into the committed text where painting starts.
@@ -206,13 +198,10 @@ pub struct VisibleWindow {
 /// The painter's own width rule, so the measurement here and the advance
 /// there cannot disagree: a double-width character owns two cells.
 fn character_cells(character: char) -> usize {
-    // A newline is stored, measured and painted as one cell. It has no width
-    // of its own -- `unicode_width` answers `None` for it -- so without a
-    // deliberate answer here the caret column and the painted column would
-    // disagree by one for every break in the line, and a click would land on
-    // the wrong character.
+    // Line-oriented callers slice before a newline. A structural soft break
+    // has no horizontal width if a general measurement caller encounters it.
     if character == '\n' {
-        return 1;
+        return 0;
     }
     if unicode_width::UnicodeWidthChar::width(character).unwrap_or(1) > 1 {
         2
@@ -221,30 +210,65 @@ fn character_cells(character: char) -> usize {
     }
 }
 
-/// The visible stand-in for a stored newline.
-///
-/// The break has to be *seen*: an invisible one turns "this will run as two
-/// commands" into a surprise at the moment it is least recoverable.
-pub const NEWLINE_GLYPH: char = '\u{21b5}';
-
-/// Text as painted: stored newlines shown as [`NEWLINE_GLYPH`].
-///
-/// Borrowed unless there is something to replace, so the common line pays
-/// nothing. Byte offsets are never derived from the result -- callers slice
-/// the stored text and convert each piece -- because the glyph is three bytes
-/// where the newline was one.
-#[must_use]
-pub fn display(text: &str) -> std::borrow::Cow<'_, str> {
-    if text.contains('\n') {
-        std::borrow::Cow::Owned(text.replace('\n', &NEWLINE_GLYPH.to_string()))
-    } else {
-        std::borrow::Cow::Borrowed(text)
-    }
-}
-
 /// Total painted width of `text`, in cells.
 pub fn cells(text: &str) -> usize {
     text.chars().map(character_cells).sum()
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct VisibleLineWindow {
+    pub first_line: usize,
+    pub line_count: usize,
+    pub caret_row: usize,
+}
+
+#[must_use]
+pub fn line_count(text: &str) -> usize {
+    text.bytes().filter(|byte| *byte == b'\n').count() + 1
+}
+
+#[must_use]
+pub fn line_index_at(text: &str, caret: usize) -> usize {
+    let caret = clamp_caret(text, caret);
+    text[..caret].bytes().filter(|byte| *byte == b'\n').count()
+}
+
+#[must_use]
+pub fn line_range(text: &str, line: usize) -> std::ops::Range<usize> {
+    let mut start = 0;
+    let mut current = 0;
+    for (index, byte) in text.bytes().enumerate() {
+        if byte != b'\n' {
+            continue;
+        }
+        if current == line {
+            return start..index;
+        }
+        current += 1;
+        start = index + 1;
+    }
+    if current == line {
+        start..text.len()
+    } else {
+        text.len()..text.len()
+    }
+}
+
+/// Chooses whole logical rows around the caret for the fixed-height composer.
+/// The caret row stays visible and gravitates to the bottom so preceding
+/// commands remain readable while more soft lines are appended.
+#[must_use]
+pub fn visible_line_window(text: &str, caret: usize, rows: usize) -> VisibleLineWindow {
+    let rows = rows.max(1);
+    let total = line_count(text);
+    let caret_line = line_index_at(text, caret);
+    let first_line = caret_line.saturating_sub(rows - 1);
+    let line_count = rows.min(total.saturating_sub(first_line));
+    VisibleLineWindow {
+        first_line,
+        line_count,
+        caret_row: caret_line - first_line,
+    }
 }
 
 /// Walks backwards from the end of `text`, returning the byte offset of the
@@ -444,8 +468,8 @@ pub fn paste(state: &mut ComposerState, text: &str) {
 }
 
 /// Replace the buffer with AT-SPI `SetTextContents` / computed `InsertText`
-/// result. Keeps the composer single-line so a bus write cannot inject
-/// newlines into the painted input.
+/// result. Accessibility input remains single-line; deliberate soft breaks
+/// are inserted through the product's explicit Newline action.
 pub fn replace_text(state: &mut ComposerState, text: &str) {
     state.select_all = false;
     state.text = normalize_single_line(text);
@@ -973,14 +997,30 @@ mod tests {
     }
 
     #[test]
-    fn a_newline_is_painted_as_a_visible_glyph_and_measures_one_cell() {
-        assert_eq!(display("a\nb").as_ref(), "a\u{21b5}b");
-        // Borrowed when there is nothing to replace: the common line pays
-        // no allocation for a feature it is not using.
-        assert!(matches!(display("plain"), std::borrow::Cow::Borrowed(_)));
-        // One cell, so the caret column and the painted column agree. Left
-        // to `unicode_width` the newline has no width at all and they drift
-        // by one for every break.
-        assert_eq!(cells("a\nb"), 3);
+    fn soft_lines_keep_the_caret_row_visible() {
+        let text = "first\nsecond\nthird";
+        assert_eq!(line_count(text), 3);
+        assert_eq!(line_range(text, 0), 0..5);
+        assert_eq!(line_range(text, 1), 6..12);
+        assert_eq!(line_range(text, 2), 13..18);
+        assert_eq!(line_index_at(text, 8), 1);
+        assert_eq!(line_count("first\n"), 2);
+        assert_eq!(line_range("first\n", 1), 6..6);
+        assert_eq!(
+            visible_line_window(text, text.len(), 2),
+            VisibleLineWindow {
+                first_line: 1,
+                line_count: 2,
+                caret_row: 1,
+            }
+        );
+        assert_eq!(
+            visible_line_window(text, 8, 2),
+            VisibleLineWindow {
+                first_line: 0,
+                line_count: 2,
+                caret_row: 1,
+            }
+        );
     }
 }

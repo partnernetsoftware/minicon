@@ -1646,8 +1646,8 @@ impl ConApp {
             metrics.physical_height,
             metrics.scale_factor,
         );
-        // The composer paints a sliding window onto its line, so the caret is
-        // at the end of what is *visible*, not at the end of the buffer.
+        // The composer paints a sliding horizontal window on each soft line,
+        // so the caret anchor follows its visible logical row and column.
         // Measuring the whole buffer sent the IME candidate list off screen as
         // soon as the text outgrew the box, and did it with a hard-coded 8 px
         // advance that no font honours.
@@ -1661,19 +1661,27 @@ impl ConApp {
             .composer_input
             .width
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
+        let line_height = font::cell_metrics(composer_font_size).height.max(1);
+        let rows = (layout.composer_input.height.saturating_sub(8) / line_height).max(1) as usize;
+        let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        let caret_line = lines.first_line + lines.caret_row;
+        let range = composer::line_range(&self.composer.text, caret_line);
+        let local_caret = self
+            .composer
+            .caret
+            .saturating_sub(range.start)
+            .min(range.len());
+        let line = &self.composer.text[range];
         let visible = composer::visible_window(
-            &self.composer.text,
+            line,
             &self.composer.preedit,
-            self.composer.caret,
+            local_caret,
             1,
             (text_width / cell_width) as usize,
         );
-        let caret = self
-            .composer
-            .caret
-            .clamp(visible.text, self.composer.text.len());
+        let caret = local_caret.clamp(visible.text, line.len());
         let caret_cells = usize::from(visible.truncated)
-            + composer::cells(&self.composer.text[visible.text..caret])
+            + composer::cells(&line[visible.text..caret])
             + composer::cells(&self.composer.preedit[visible.preedit..]);
         let caret_offset = cell_width
             .saturating_mul(caret_cells as u32)
@@ -1685,7 +1693,13 @@ impl ConApp {
                 .saturating_add(COMPOSER_TEXT_INSET)
                 .saturating_add(caret_offset),
         ) / scale;
-        let y = layout.composer_input.y as f64 / scale + 8.0;
+        let y = f64::from(
+            layout
+                .composer_input
+                .y
+                .saturating_add(4)
+                .saturating_add(line_height.saturating_mul(lines.caret_row as u32)),
+        ) / scale;
         let _ = window.set_ime_cursor_area(agenterm_platform::window_host::LogicalRect::new(
             x, y, 2.0, 20.0,
         ));
@@ -1720,14 +1734,39 @@ impl ConApp {
             .composer_input
             .width
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
+        let line_height = font::cell_metrics(composer_font_size).height.max(1);
+        let rows = (layout.composer_input.height.saturating_sub(8) / line_height).max(1) as usize;
+        let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        let physical_x = agenterm_platform::numeric::round_f64(position.x * scale) as u32;
+        let physical_y = agenterm_platform::numeric::round_f64(position.y * scale) as u32;
+        let clicked_row = physical_y
+            .saturating_sub(layout.composer_input.y.saturating_add(4))
+            .checked_div(line_height)
+            .unwrap_or(0)
+            .min(lines.line_count.saturating_sub(1) as u32) as usize;
+        let line_index = lines.first_line + clicked_row;
+        let range = composer::line_range(&self.composer.text, line_index);
+        let line = &self.composer.text[range.clone()];
+        let local_caret =
+            if line_index == composer::line_index_at(&self.composer.text, self.composer.caret) {
+                self.composer
+                    .caret
+                    .saturating_sub(range.start)
+                    .min(range.len())
+            } else {
+                line.len()
+            };
         let visible = composer::visible_window(
-            &self.composer.text,
-            &self.composer.preedit,
-            self.composer.caret,
+            line,
+            if line_index == composer::line_index_at(&self.composer.text, self.composer.caret) {
+                &self.composer.preedit
+            } else {
+                ""
+            },
+            local_caret,
             1,
             (text_width / cell_width) as usize,
         );
-        let physical_x = agenterm_platform::numeric::round_f64(position.x * scale) as u32;
         let origin = layout
             .composer_input
             .x
@@ -1737,7 +1776,7 @@ impl ConApp {
             .saturating_add(u32::from(visible.truncated).saturating_mul(cell_width));
         let cell = physical_x.saturating_sub(origin) / cell_width;
         self.composer.caret =
-            composer::caret_at_cell(&self.composer.text, visible.text, cell as usize);
+            range.start + composer::caret_at_cell(line, visible.text, cell as usize);
         Ok(())
     }
 
@@ -3014,63 +3053,84 @@ impl ConApp {
             );
         }
         let show_caret = self.composer.focused && !self.composer.select_all;
-        // The painted window follows the caret, and `paint_chrome_text_parts`
-        // clips whatever exceeds its box -- it clips the tail -- so without
-        // this the composer keeps showing the text typed first while the
-        // characters being typed now fall outside the box entirely.
+        // Each stored newline owns a real painted row. The fixed-height input
+        // follows the caret's row, while each row retains the existing
+        // horizontal sliding window for commands wider than the box.
         let composer_font_size = chrome_size(COMPOSER_TEXT_SIZE_PX);
-        let composer_cell_width = font::cell_metrics(composer_font_size).width.max(1);
+        let composer_metrics = font::cell_metrics(composer_font_size);
+        let composer_cell_width = composer_metrics.width.max(1);
+        let composer_line_height = composer_metrics.height.max(1);
         let composer_text_width = layout
             .composer_input
             .width
             .saturating_sub(COMPOSER_TEXT_INSET.saturating_mul(2));
         let composer_cells = (composer_text_width / composer_cell_width) as usize;
-        let window = composer::visible_window(
-            &self.composer.text,
-            &self.composer.preedit,
-            self.composer.caret,
-            usize::from(show_caret),
-            composer_cells,
-        );
-        let caret = self
-            .composer
-            .caret
-            .clamp(window.text, self.composer.text.len());
-        // Drawn as a rule rather than as a `|` character: a character would
-        // occupy a cell and push everything after the caret sideways, which
-        // makes the column a click lands on disagree with the column the text
-        // is painted at.
-        let caret_cells = usize::from(window.truncated)
-            + composer::cells(&self.composer.text[window.text..caret])
-            + composer::cells(&self.composer.preedit[window.preedit..]);
-        paint_chrome_text_parts(
-            &mut surface,
-            layout.composer_input.x + COMPOSER_TEXT_INSET,
-            layout.composer_input.y + 12,
-            &[
-                if window.truncated { "…" } else { "" },
-                // Sliced on the stored text, converted for painting: the glyph
-                // is wider in bytes than the newline it stands for, so an
-                // offset taken from the converted string would not index back.
-                &composer::display(&self.composer.text[window.text..caret]),
-                &self.composer.preedit[window.preedit..],
-                &composer::display(&self.composer.text[caret..]),
-            ],
-            text,
-            composer_font_size,
-            composer_text_width,
-        );
-        if show_caret {
-            let offset = composer_cell_width
-                .saturating_mul(caret_cells as u32)
-                .min(composer_text_width.saturating_sub(1));
-            surface.fill_rect(
-                layout.composer_input.x + COMPOSER_TEXT_INSET + offset,
-                layout.composer_input.y + 12,
-                2,
-                font::cell_metrics(composer_font_size).height.max(1),
-                accent.to_xrgb(),
+        let rows =
+            (layout.composer_input.height.saturating_sub(8) / composer_line_height).max(1) as usize;
+        let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
+        let caret_line = composer::line_index_at(&self.composer.text, self.composer.caret);
+        for row in 0..lines.line_count {
+            let line_index = lines.first_line + row;
+            let range = composer::line_range(&self.composer.text, line_index);
+            let line = &self.composer.text[range.clone()];
+            let is_caret_line = line_index == caret_line;
+            let local_caret = if is_caret_line {
+                self.composer
+                    .caret
+                    .saturating_sub(range.start)
+                    .min(line.len())
+            } else {
+                line.len()
+            };
+            let preedit = if is_caret_line {
+                self.composer.preedit.as_str()
+            } else {
+                ""
+            };
+            let window = composer::visible_window(
+                line,
+                preedit,
+                local_caret,
+                usize::from(show_caret && is_caret_line),
+                composer_cells,
             );
+            let caret = local_caret.clamp(window.text, line.len());
+            let caret_cells = usize::from(window.truncated)
+                + composer::cells(&line[window.text..caret])
+                + composer::cells(&preedit[window.preedit..]);
+            let y = layout
+                .composer_input
+                .y
+                .saturating_add(4)
+                .saturating_add(composer_line_height.saturating_mul(row as u32));
+            paint_chrome_text_parts(
+                &mut surface,
+                layout.composer_input.x + COMPOSER_TEXT_INSET,
+                y,
+                &[
+                    if window.truncated { "…" } else { "" },
+                    &line[window.text..caret],
+                    &preedit[window.preedit..],
+                    &line[caret..],
+                ],
+                text,
+                composer_font_size,
+                composer_text_width,
+            );
+            // Drawn as a rule rather than a character so hit-testing and text
+            // columns remain identical.
+            if show_caret && is_caret_line {
+                let offset = composer_cell_width
+                    .saturating_mul(caret_cells as u32)
+                    .min(composer_text_width.saturating_sub(1));
+                surface.fill_rect(
+                    layout.composer_input.x + COMPOSER_TEXT_INSET + offset,
+                    y,
+                    2,
+                    composer_line_height,
+                    accent.to_xrgb(),
+                );
+            }
         }
         let send_label = self.ui_language.strings().send;
         let newline_label = self.ui_language.strings().newline;
