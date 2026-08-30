@@ -1,0 +1,14 @@
+[package]
+name = "minicon-lab-hello-window"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

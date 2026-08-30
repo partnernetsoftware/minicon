@@ -5,7 +5,7 @@
 | Date | 2026-08-30 |
 | Status | **specified; exact v0.1.3 report not yet submitted** |
 | Purpose | Decide whether 360 QVM reputation, Authenticode trust, or MiniCon's custom Windows startup is the actionable false-positive owner |
-| Implementation | `research/qvm-false-positive/` (planned) |
+| Implementation | `lab/hello-window/` (Q0 small baseline); `research/qvm-false-positive/` (later controlled variants) |
 | Read first | `PRD.md`, `prd/PRD_02_27_con_delivery.md`, `CODE_SIGNING_POLICY.md` |
 | Source discipline | Only public exact Release bytes and reproducible one-variable variants; no evasion, packing, junk bytes, exclusions, or disabled protection |
 
@@ -88,6 +88,11 @@ or count VirusTotal vendors as a substitute for the named 360 regression.
    dependency costs before adoption.
 5. If none separates, rule **unlocalized QVM heuristic**: preserve behavior,
    continue official vendor review, and do not mutate bytes blindly.
+
+Before Q1, `lab/hello-window/` supplies a smaller diagnostic root. If that
+ordinary GUI is clean, later feature bisection may grow from it toward MiniCon;
+if it is flagged, split toolchain/PE/reputation below that baseline before
+testing MiniCon subsystems. It informs where to start but does not replace C1.
 
 Kill criterion: any variant loses product parity, introduces a redistributable,
 or requires evasive mutation. Time-box ends when Q1 returns a vendor decision;

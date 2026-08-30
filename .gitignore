@@ -6,3 +6,5 @@ __pycache__/
 *.log
 *.tmp
 /research/minicon-com-loader/payload-build/
+/lab/**/target/
+/lab/**/dist/
