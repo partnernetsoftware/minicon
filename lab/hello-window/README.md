@@ -8,6 +8,11 @@ Excluded from this binary: MiniCon code, custom `/ENTRY`, PTY, child processes,
 IPC, control protocol, configuration, filesystem access, network access,
 threads, embedded font, image codec and signing.
 
+Like MiniCon, the baseline does **not** depend on the separately installed
+Visual C++ Redistributable. Its conventional Rust/MSVC startup and CRT are
+linked statically; `build.sh` rejects any `VCRUNTIME*.dll`, `MSVCP*.dll` or
+`MSVCR*.dll` import.
+
 Build from repository root:
 
 ```sh

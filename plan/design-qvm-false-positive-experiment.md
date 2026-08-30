@@ -56,6 +56,10 @@ behavior or to promise that one antivirus verdict proves universal safety.
 | Q2 trusted signature | Same qualified payload and behavior, provider signs through existing exact-byte workflow | Tests whether Public Trust publisher identity closes the verdict |
 | Q3 conventional startup | Unsigned same-source x86_64 build using standard MSVC/Rust startup; product features retained | Tests the strongest structural hypothesis if Q1 does not close it |
 
+The smaller `lab/hello-window` diagnostic baseline uses conventional startup
+but statically links the CRT. It must not import the Visual C++ Redistributable;
+otherwise a clean-machine launch failure would contaminate the antivirus test.
+
 Q3 must publish its PE structural diff: entry RVA, imports, sections,
 characteristics, resources, size and entropy. If conventional startup cannot be
 built while preserving the no-redistributable and unwind contracts, record
