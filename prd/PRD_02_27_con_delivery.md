@@ -48,48 +48,21 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   includes the APE, validates its signing receipt and applies the 9 MiB court.
   No workflow-code fork is permitted. SignPath review is independent of v0.1.3.
 
-  Historical APE research remains useful v0.1.4 evidence. Research
-  Early smoke run `33238478661` at `459d5cb` covered status only. Research
-  rehearsal run `33244331387` at `5776086` then passed G2 GUI/control on all
-  six native cells plus the same-identity aggregate; it still carries product
-  version `0.1.2` and is **not** Candidate evidence. Promotion copies exact
-  Candidate bytes and does not rebuild. No GitHub pre-release substitute. No
-  tag until every gate is green.
-  Exact-SHA run `33249734776` at `d10c526` subsequently passed the same six
-  native GUI/control cells with product identity `0.1.3`. Candidate rehearsal
-  `33250241396` consumed those exact bytes without compilation, sealed the five
-  platform archives plus `minicon.com`, and passed all six native archive
-  execution cells. Its APE is 8,909,564 bytes under the 9 MiB court. It remains
-  a rehearsal because G3 pack-host evidence was not yet embedded; the next
-  exact-SHA pack must bind reaper, lifecycle and installer-rollback results in
-  the build receipt before it may become Candidate-of-record.
-  Final one-pack run `33250748539` at `18080b8` then embedded green G3 evidence
-  and passed six native GUI/control cells. Historical Candidate `33250998985`
-  consumed those exact bytes, sealed all five archives plus `minicon.com`, and
-  passed six native archive executions. G6 is red: Microsoft Defender engine
-  `1.1.26080.3`, signature `1.457.375.0`, detected the exact 8,909,564-byte APE
-  as `Program:Win32/Contebrew.A!ml` (threat `251873`). It is not promotable and
-  remains only v0.1.4 APE research evidence.
-  Clean-source unsigned rehearsal `33263135546` at `be2465f` subsequently
-  packed one 7,517,987-byte APE (SHA-256 `ffc5b5aa33e77ce9f927faf76b3ab87579b79103af1bb42e20e172b0fc63158c`)
-  with product/version resource metadata, all six 0.1.3 payload identities,
-  embedded green G3 courts, and a same-identity aggregate. All six native
-  runners passed G2 GUI/control: readiness via `list-tabs`, sent/captured token,
-  structured UI snapshot, clean close, zero loader extraction residue, and
-  unchanged isolated config baseline. It remains an unsigned rehearsal, not
-  the new five-archive v0.1.3 Candidate.
+  Superseded signed-APE rehearsals, rejected Candidates and the final exact run
+  ledger are preserved in `archive/v0.1.3-release-history.md`; they are not
+  repeated in this living contract.
 
 ```mermaid
 flowchart LR
     S12["v0.1.2 exact source"] --> B12["3 platform packages"]
     B12 --> W12["native Windows package execution"]
     W12 --> R12["stable v0.1.2 release"]
-    R12 --> X13["v0.1.3 Candidate<br/>5 unsigned archives cover 6 cells"]
+    R12 --> X13["v0.1.3 released<br/>5 unsigned archives cover 6 cells"]
     X13 --> P13["6 Rust native payloads"]
-    P13 --> G13{"six runtime cells<br/>checksum + Windows Defender pass?"}
-    G13 -->|yes| R13["exact-SHA v0.1.3 release"]
-    G13 -->|no| K12["keep v0.1.2 stable<br/>revise or reject experiment"]
+    P13 --> G13["six runtime cells<br/>checksum + Windows Defender passed"]
+    G13 --> R13["exact-SHA public v0.1.3 release"]
     R13 --> X14["v0.1.4 policy switch<br/>minicon.com + signing required"]
+    X14 -->|qualification fails| K12["keep v0.1.3 stable<br/>revise v0.1.4 Candidate"]
 ```
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
@@ -98,7 +71,7 @@ flowchart LR
   qjswasm; six native thin shells keep window/PTY/font/input/IPC. Size cut is
   a hypothesis, not a promise. Kill if engine+glue does not reduce the total
   package, misses startup/interaction budget, or six-cell behavior diverges.
-  Never mix into the current Candidate, bump, or tag.
+  Never mix it into a release Candidate, version bump, or tag.
 
 ```mermaid
 flowchart LR
@@ -1416,19 +1389,27 @@ interactive Linux x86 installation.
   cfg defect was fixed.
 
 - [~] **Antivirus reputation is a release evidence concern, not a reason to
-  amputate terminal capabilities.** For v0.1.3 the policy-selected court scans
-  both exact Windows executables extracted from the sealed archives. For a
-  later signed-APE release it scans `minicon.com`. The historical APE had a
+  amputate terminal capabilities.** v0.1.3's policy-selected court scanned both
+  exact Windows executables extracted from the sealed archives. A later
+  signed-APE release must scan `minicon.com`. The historical APE had a
   reproducible Defender ML detection (`Program:Win32/Contebrew.A!ml`, threat
-  `251873`). Candidate artifacts
-  now carry icon plus standard ProductName, FileDescription, OriginalFilename,
-  InternalName and Cargo-owned file/product versions. Release completion still
-  required stable Authenticode publisher identity and timestamp under the old
-  plan. Current v0.1.3 requires published SHA-256/provenance and a clean
-  Defender court at both exact native Windows SHAs. A hit
-  blocks that artifact and enters the vendor false-positive channel; PTY,
-  named-pipe, Job and control behavior remains product functionality rather
-  than something to hide or remove.
+  `251873`). Candidate artifacts now carry icon plus standard ProductName,
+  FileDescription, OriginalFilename, InternalName and Cargo-owned file/product
+  versions. The superseded signed-v0.1.3 plan required Authenticode; the actual
+  unsigned v0.1.3 Release instead bound published SHA-256/provenance and a clean
+  Defender court at both exact native Windows SHAs.
+
+  After publication, 360 QVM independently classified the exact unsigned
+  x86_64 PE as `HEUR/QVM202.0.B951.Malware.Gen`. This does not invalidate the
+  Defender receipt, nor does that receipt settle a different engine. 360 does
+  not publish the feature behind `B951`; the strongest known structural
+  hypothesis is MiniCon's deliberate custom PE entry, while absent publisher
+  reputation is an independent hypothesis. Neither is established causation.
+  `plan/design-qvm-false-positive-experiment.md` fixes the order: reproduce the
+  exact SHA → official 360 review of unchanged bytes → trusted-signature
+  control → conventional-startup control. A hit enters the vendor
+  false-positive channel; PTY, named-pipe, Job and control behavior remains
+  product functionality rather than something to hide or remove.
   A redacted post-pack qualification receipt is admitted through the manual
   `Reputation Qualification` workflow and bound to Candidate run, source SHA
   and the policy-selected asset SHA set. Promotion consumes that successful run ID; missing
@@ -1560,8 +1541,8 @@ interactive Linux x86 installation.
   Therefore push/PR feedback, its custom-std cells, and any exact-SHA preflight
   dependency on that workflow are unproven and must not be claimed. The active
   workflow files are the manually dispatched release and six-grid-runtime
-  workflows, plus `minicon-com.yml` (research smoke today; v0.1.3 Candidate
-  pack/test owner per `v0.1.3-candidate-plan.md`, still not a tagger). Enabling
+  workflows, plus `minicon-com.yml` (one-build/six-execute upstream and current
+  v0.1.4 APE research owner; never a tagger). Enabling
   ordinary CI requires a reviewed rename, a successful
   first run, and PRD backfill from that run.
 

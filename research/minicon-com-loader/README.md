@@ -92,19 +92,24 @@ require matching marker, then `open(O_NOFOLLOW|O_DIRECTORY)` / `unlinkat`.
 Four cases in `reaper-tests.sh`: fake-symlink, foreign-owner, active-pid,
 stale-owned. Never `#ifdef _WIN32` in cosmocc fat.
 
-v0.1.3 Candidate: five archives cover all six native cells (macOS Universal
-contains two slices) and `minicon.com` is the sixth executable asset. The
-v0.1.2 three-archive, 4/6-cell Release remains frozen. Gates:
-`v0.1.3-candidate-plan.md`. G3/G4: `loader-lifecycle-tests.sh`, `install-cosmocc-swap-test.sh`,
-`write-size-report.py` (`CANDIDATE_CEILING_BYTES=9437184`). G2 POSIX:
-`ci-control.sh` (HOME + `--control` + `list-tabs` poll). These two lanes are smoke until G2 GUI/control
-and G8 human promote. Do not tag here.
+v0.1.3 is released as five unsigned native archives covering all six cells;
+`minicon.com` is intentionally absent. Its completed gate ledger is
+`v0.1.3-candidate-plan.md`, and superseded APE experiments are indexed by
+`prd/archive/v0.1.3-release-history.md`.
 
-The v0.1.3 exact-byte chain is `minicon-com.yml` (one unsigned build/pack) →
-`company-signing.yml` (trusted Authenticode transform plus signed six-grid) →
-`candidate.yml` (five archives + `minicon.com`, no rebuild) → Defender
-qualification → human-only Promotion. `candidate.yml` accepts a successful
-`company-signing.yml` run ID; it no longer accepts unsigned one-pack bytes.
+This directory now owns v0.1.4 APE research. G3/G4 remain
+`loader-lifecycle-tests.sh`, `install-cosmocc-swap-test.sh`, and
+`write-size-report.py` (`CANDIDATE_CEILING_BYTES=9437184`). G2 uses
+`ci-control.sh` (`HOME` + unique `--control` + `list-tabs` polling).
+
+The delivery chain is policy-selected, not hard-coded by version:
+`minicon-com.yml` builds once; `signing.mode=off` sends its native payloads
+directly to `candidate.yml`, while `signing.mode=required` requires a successful
+`company-signing.yml` upstream and seals its trusted transformed bytes.
+Candidate packages without rebuilding, Reputation qualifies the policy-selected
+executables, and human-only Promotion publishes the sealed bytes. v0.1.4 must
+set `assets.minicon_com=true` and `signing.mode=required`; missing provider
+configuration fails closed.
 
 `company-signing.yml` uses the dedicated GitHub Environment
 `release-signing`. The transitional SignPath Foundation adapter reads only

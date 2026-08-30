@@ -103,9 +103,9 @@ flowchart LR
     end
     subgraph REL["Release evolution"]
         V12["v0.1.2 stable<br/>three packages"]
-        C13["v0.1.3 Candidate<br/>5 native archives · 6 cells · unsigned"]
-        G13{"runtime + control<br/>checksum + Defender pass?"}
-        V13["user: exact version + promote<br/>exact immutable bytes"]
+        C13["v0.1.3 released<br/>5 native archives · 6 cells · unsigned"]
+        G13["qualified exact bytes<br/>runtime · control · Defender"]
+        V13["public immutable Release<br/>no rebuild"]
         C14["v0.1.4 policy switch<br/>minicon.com + signing required"]
         KEEP["retain stable release<br/>revise failed gate"]
     end
@@ -124,9 +124,9 @@ flowchart LR
     T & W & C --> X
     X --> GH & VM
     GH & VM --> R
-    R --> V12 --> C13 --> G13
-    G13 -->|yes| V13 --> C14
-    G13 -->|no| KEEP
+    R --> V12 --> C13
+    C13 --> G13 --> V13 --> C14
+    C14 -->|gate fails| KEEP
     SP --> C14
     SI -. later .-> SP
     QE -. later .-> QX
@@ -164,49 +164,26 @@ flowchart LR
 - [x] v0.1.3 is the unsigned native-six-cell release: five archives cover
   Windows/Linux x86_64+arm64 and both macOS slices through one Universal
   archive. `release-policy.json` is the machine-readable switch: signing is
-  `off`, `minicon.com` is absent, and Defender must scan the exact two Windows
-  executables sealed inside the Candidate. Exact-source build `33286599671`,
-  Candidate `33286811086`, and reputation qualification `33287684429` are
-  green for source `39774ed`; Promotion run `33289364944` published those exact
-  bytes and re-downloaded/ran the public Linux and Windows packages. Tag
-  `v0.1.3` points to the Candidate source; the Release is public and immutable.
+  `off` and `minicon.com` is absent. Exact Candidate, Defender, Promotion and
+  public re-download evidence is archived in
+  `prd/archive/v0.1.3-release-history.md`.
 - [ ] v0.1.4 owns `minicon.com` and trusted signing. The same Candidate,
   reputation and Release workflows consume the policy; changing the version,
   enabling `assets.minicon_com` and setting `signing.mode=required` selects the
   signing court without another workflow rewrite. SignPath review may continue
   independently.
-- [x] Unsigned exact-SHA rehearsal `33259779184` at `033e582` independently
-  re-proved the new signing input contract: one pack, G3 green, all six native
-  GUI/control cells green, APE Authenticode layout ready, SHA matched, and
-  8,909,562 bytes under 9 MiB. It is rehearsal evidence, not a Candidate,
-  because it belonged to the superseded signed-APE v0.1.3 plan. It remains
-  useful v0.1.4 mechanism evidence.
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
-  publisher identity. Authenticode-compatible APE header layout is proven;
-  Azure/company Public Trust is paused because no short-term company payment
-  route exists. The user approved a SignPath Foundation OSS application as a
-  truthful transition: its publisher will be SignPath Foundation, never
-  misrepresented as the company. The application was submitted and SignPath
-  acknowledged receipt on 2026-08-30; provider review, timestamped signed-byte
-  six-grid and final-SHA Defender evidence remain before v0.1.4 can claim signing.
-- [x] Defender diagnostic run on unsigned rehearsal SHA
-  `b2551896e7985c80eea4ea0ac785d532e9efb477aafd475955afbe9f735b0c2a`
-  was clean with active engine `1.1.26080.3` and signatures `1.457.375.0`.
-  This applies only to that exact diagnostic byte sequence and is retained for
-  the v0.1.4 APE court.
-- [x] The SignPath metadata prerequisite is no longer speculative: the APE
-  outer PE carries a standard VERSIONINFO Resource Directory while preserving
-  the empty Authenticode slot and ZIP overlay. A local six-payload 0.1.3 pack
-  was 7,517,312 bytes; self-sign/Darwin/ZIP/tamper passed, and disposable
-  Windows x86_64 UTM independently reported `ProductName=MiniCon`,
-  `ProductVersion=0.1.3` plus ConPTY status. This dirty-tree rehearsal is not a
-  Candidate or G6 signature.
-- [x] Unsigned one-pack rehearsal `33263135546` at `be2465f` bound clean-source
-  G1/G3/G4 evidence and passed G2 GUI/control on all six native runners with
-  one `minicon.com` SHA (`ffc5b5aa…`). The 7,517,987-byte APE identifies every
-  embedded payload as 0.1.3 and remains under 9 MiB. This is rehearsal evidence,
-  not a v0.1.3 Candidate; its payloads may be rebuilt once for the new exact
-  native archive Candidate.
+  publisher identity. SignPath Foundation is the truthful transition path;
+  provider approval, timestamped exact signed bytes, six-grid execution and
+  final-byte Defender evidence remain v0.1.4 gates. Historical APE rehearsals
+  and the rejected signed-v0.1.3 plan are archived in
+  `prd/archive/v0.1.3-release-history.md`.
+- [~] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as
+  `HEUR/QVM202.0.B951.Malware.Gen` although its exact Candidate passed active
+  Defender. The suffix is proprietary, so do not guess or mutate bytes.
+  Decision order is exact-file 360 review → trusted-signature control →
+  conventional-startup control; owner:
+  `plan/design-qvm-false-positive-experiment.md`.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
