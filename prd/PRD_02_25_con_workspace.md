@@ -88,8 +88,10 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   owns input, Send and Newline.
 - [x] the tree header does not repeat the `MiniCon` product label already owned
   by the native window title. It spends that scarce row on actions and groups
-  them as `new/help | languages | zoom`, with 24-DIP hit targets, inset visual
-  plates and muted idle borders rather than an edge-to-edge high-contrast grid.
+  them as `new/help | languages | zoom`, with 24-DIP hit targets and no
+  permanent button borders. High-contrast, minimal marks float on the shared
+  toolbar; selected state uses a quiet fill and short underline instead of
+  turning every action into a boxed field.
 - [x] the help icon opens a lightweight in-app panel describing the tab tree,
   multiline composer, PTY terminal and current keyboard shortcuts. Clicking
   outside or pressing Escape dismisses it; help is available with zero tabs.
@@ -114,10 +116,10 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   no clipping/overlap, and no increase in total header/composer height unless
   the old height cannot contain the larger glyph bounds. Merely enlarging the
   terminal cell font, or enlarging empty padding with the label, fails.
-- [x] all three are muted and use the same size, because they are **actions**. The accent
-  colour means "current state" for the language entries beside them, and one
-  visual language must not carry two meanings in a single row — the old `Z` was
-  accented merely for being the larger one.
+- [x] the zoom family uses the same bright monochrome weight because all three
+  are **actions**: minus, focus/reset, plus. Language selection is reported by
+  a subtle background and underline, not by lowering every inactive icon's
+  contrast; the old `Z` is not accented merely for being the larger one.
 - [x] **only chrome is translated.** Everything a child process prints is
   passed through untouched, and that line does not move: a terminal that
   rewrote program output would be lying about what ran. Chrome strings live in
@@ -302,6 +304,11 @@ the window rather than being hidden to save pixels.
   soft newline as Newline, while `Ctrl+O` is the Send shortcut. Enter no longer
   executes a command merely because the composer is focused; the button and
   shortcut converge on the same transactional submission path.
+- [x] the two composer actions teach those bindings where they are used. The
+  English buttons paint `Send` above `(ctrl-o)` and `New Line` above `(Enter)`;
+  translated primary labels retain the same shortcut lines. Each two-line block
+  is centred as a unit, each line is centred independently, and the smaller hint
+  type fits the existing stacked controls without stealing draft width.
 - [x] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY. `Ctrl+A/C/V/X` provide select-all, copy,
   bounded single-line paste and cut semantics. Every keyboard, IME, paste and

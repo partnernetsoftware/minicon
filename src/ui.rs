@@ -310,8 +310,10 @@ impl UiLanguage {
         match self {
             Self::English => ChromeStrings {
                 paste_failed: "PASTE FAILED",
-                send: "SEND",
-                newline: "NEWLINE",
+                send: "Send",
+                send_hint: "(ctrl-o)",
+                newline: "New Line",
+                newline_hint: "(Enter)",
                 send_to: "SEND TO @",
                 empty_title: "READY FOR A NEW TERMINAL",
                 new_terminal: "NEW TERMINAL",
@@ -320,7 +322,9 @@ impl UiLanguage {
             Self::Chinese => ChromeStrings {
                 paste_failed: "貼上失敗",
                 send: "送出",
+                send_hint: "(ctrl-o)",
                 newline: "換行",
+                newline_hint: "(Enter)",
                 send_to: "送往 @",
                 empty_title: "準備開啟新終端",
                 new_terminal: "新建終端",
@@ -364,7 +368,9 @@ impl UiLanguage {
 pub struct ChromeStrings {
     pub paste_failed: &'static str,
     pub send: &'static str,
+    pub send_hint: &'static str,
     pub newline: &'static str,
+    pub newline_hint: &'static str,
     pub send_to: &'static str,
     pub empty_title: &'static str,
     pub new_terminal: &'static str,
@@ -633,10 +639,17 @@ mod tests {
             let strings = language.strings();
             assert!(!strings.paste_failed.is_empty());
             assert!(!strings.send.is_empty());
+            assert!(!strings.send_hint.is_empty());
+            assert!(!strings.newline.is_empty());
+            assert!(!strings.newline_hint.is_empty());
             assert!(!strings.send_to.is_empty());
         }
         assert_eq!(UiLanguage::Chinese.entry_label(), "中");
         assert_eq!(UiLanguage::English.entry_label(), "En");
+        assert_eq!(UiLanguage::English.strings().send, "Send");
+        assert_eq!(UiLanguage::English.strings().send_hint, "(ctrl-o)");
+        assert_eq!(UiLanguage::English.strings().newline, "New Line");
+        assert_eq!(UiLanguage::English.strings().newline_hint, "(Enter)");
         assert_ne!(
             UiLanguage::English.strings().send,
             UiLanguage::Chinese.strings().send,

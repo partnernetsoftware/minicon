@@ -2947,7 +2947,7 @@ impl ConApp {
             &mut surface,
             layout.new_root,
             HeaderIcon::NewRoot,
-            muted,
+            accent,
             false,
             header_icon_size,
             scale,
@@ -2956,7 +2956,7 @@ impl ConApp {
             &mut surface,
             layout.help,
             HeaderIcon::Help,
-            if self.help_open { accent } else { muted },
+            accent,
             self.help_open,
             header_icon_size,
             scale,
@@ -2965,11 +2965,7 @@ impl ConApp {
             &mut surface,
             layout.language_chinese,
             HeaderIcon::Language(ui::UiLanguage::Chinese),
-            if self.ui_language == ui::UiLanguage::Chinese {
-                accent
-            } else {
-                muted
-            },
+            accent,
             self.ui_language == ui::UiLanguage::Chinese,
             header_icon_size,
             scale,
@@ -2978,11 +2974,7 @@ impl ConApp {
             &mut surface,
             layout.language_english,
             HeaderIcon::Language(ui::UiLanguage::English),
-            if self.ui_language == ui::UiLanguage::English {
-                accent
-            } else {
-                muted
-            },
+            accent,
             self.ui_language == ui::UiLanguage::English,
             header_icon_size,
             scale,
@@ -2996,7 +2988,7 @@ impl ConApp {
                 &mut surface,
                 entry,
                 icon,
-                muted,
+                accent,
                 false,
                 header_icon_size,
                 scale,
@@ -3222,28 +3214,31 @@ impl ConApp {
                 );
             }
         }
-        let send_label = self.ui_language.strings().send;
-        let newline_label = self.ui_language.strings().newline;
-        // Centred per button rather than at a fixed inset: the pair is half as
-        // tall as the single control it replaced, and the two labels differ in
-        // width, so one hard-coded offset cannot suit both.
-        paint_button_label(
+        let strings = self.ui_language.strings();
+        // Centre each two-line block as a unit, then centre each line on its
+        // own. The smaller shortcut line fits the stacked controls without
+        // growing the composer band or taking width from the draft.
+        paint_two_line_button_label(
             &mut surface,
             layout.composer_send,
-            send_label,
+            strings.send,
+            strings.send_hint,
             if self.composer.submit_error.is_some() {
                 error_accent
             } else {
                 accent
             },
             chrome_size(BUTTON_LABEL_SIZE_PX),
+            chrome_size(BUTTON_HINT_SIZE_PX),
         );
-        paint_button_label(
+        paint_two_line_button_label(
             &mut surface,
             layout.composer_newline,
-            newline_label,
+            strings.newline,
+            strings.newline_hint,
             accent,
             chrome_size(BUTTON_LABEL_SIZE_PX),
+            chrome_size(BUTTON_HINT_SIZE_PX),
         );
         if self.help_open {
             paint_help_panel(
@@ -3303,15 +3298,7 @@ impl ConApp {
             (layout.zoom_reset, HeaderIcon::ZoomReset, false),
             (layout.zoom_in, HeaderIcon::ZoomIn, false),
         ] {
-            paint_header_icon_button(
-                &mut surface,
-                button,
-                icon,
-                if selected { text } else { muted },
-                selected,
-                icon_size,
-                scale,
-            );
+            paint_header_icon_button(&mut surface, button, icon, text, selected, icon_size, scale);
         }
 
         let strings = self.ui_language.strings();
@@ -6200,6 +6187,7 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 /// wider than its box is left-aligned and clipped by the painter, which keeps
 /// the first characters readable instead of centring the middle of a word.
 const BUTTON_LABEL_SIZE_PX: u16 = 15;
+const BUTTON_HINT_SIZE_PX: u16 = 11;
 
 fn scaled_chrome_font(nominal: u16, logical_font_size: f64, display_scale: f64) -> u16 {
     let display_scale = display_scale.clamp(1.0, 4.0);
@@ -6231,6 +6219,52 @@ fn paint_button_label(
         .y
         .saturating_add(button.height.saturating_sub(metrics.height.max(1)) / 2);
     paint_chrome_text(surface, x, y, label, color, font_size_px, button.width);
+}
+
+fn paint_two_line_button_label(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    label: &str,
+    hint: &str,
+    color: Rgb,
+    label_font_size_px: u16,
+    hint_font_size_px: u16,
+) {
+    let label_height = font::cell_metrics(label_font_size_px).height.max(1);
+    let hint_height = font::cell_metrics(hint_font_size_px).height.max(1);
+    let gap = u32::from(hint_font_size_px >= 14).saturating_add(1);
+    let block_height = label_height.saturating_add(gap).saturating_add(hint_height);
+    let block_y = button
+        .y
+        .saturating_add(button.height.saturating_sub(block_height) / 2);
+
+    let paint_line = |surface: &mut Surface<'_>, text: &str, y: u32, font_size_px: u16| {
+        let metrics = font::cell_metrics(font_size_px);
+        let text_width = metrics
+            .width
+            .max(1)
+            .saturating_mul(u32::try_from(composer::cells(text)).unwrap_or(u32::MAX));
+        let x = button
+            .x
+            .saturating_add(button.width.saturating_sub(text_width) / 2);
+        paint_chrome_text(
+            surface,
+            x,
+            y,
+            text,
+            color,
+            font_size_px,
+            button.x.saturating_add(button.width).saturating_sub(x),
+        );
+    };
+
+    paint_line(surface, label, block_y, label_font_size_px);
+    paint_line(
+        surface,
+        hint,
+        block_y.saturating_add(label_height).saturating_add(gap),
+        hint_font_size_px,
+    );
 }
 
 fn paint_help_panel(
@@ -6316,10 +6350,12 @@ fn stroke_rect(surface: &mut Surface<'_>, rect: ui::Rect, stroke: u32, color: Rg
     );
 }
 
-/// Paints the header as one aligned icon family instead of six unrelated text
-/// fragments. Language glyphs remain self-identifying inside the same square
-/// button chrome; zoom and new-root use geometry that does not depend on a
-/// particular font containing symbol codepoints.
+/// Paints the header as one aligned, borderless icon family.
+///
+/// The full 24-DIP rectangles remain the hit targets, but no permanent box is
+/// drawn around them. Selection uses a quiet background and short underline;
+/// the icon itself stays high-contrast. Geometry avoids depending on a symbol
+/// font while keeping the zoom family to the simplest possible marks.
 fn paint_header_icon_button(
     surface: &mut Surface<'_>,
     button: ui::Rect,
@@ -6331,39 +6367,28 @@ fn paint_header_icon_button(
 ) {
     let stroke =
         agenterm_platform::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
-    let inset = stroke.saturating_mul(2);
-    // Keep the 24-DIP hit target, but pull the visible plate inward by 2 DIP.
-    // Six edge-to-edge outlined squares read as a debug grid and overpower the
-    // product name; the dark breathing channel groups the controls without
-    // making them harder to click.
-    let plate_inset = agenterm_platform::numeric::round_f64(2.0 * scale.max(1.0)) as u32;
-    let plate = ui::Rect {
-        x: button.x.saturating_add(plate_inset),
-        y: button.y.saturating_add(plate_inset),
-        width: button.width.saturating_sub(plate_inset.saturating_mul(2)),
-        height: button.height.saturating_sub(plate_inset.saturating_mul(2)),
-    };
-    surface.fill_rect(
-        plate.x,
-        plate.y,
-        plate.width,
-        plate.height,
-        if selected {
-            Rgb(0x28, 0x28, 0x28).to_xrgb()
-        } else {
-            Rgb(0x10, 0x10, 0x10).to_xrgb()
-        },
-    );
-    stroke_rect(
-        surface,
-        plate,
-        stroke,
-        if selected {
-            Rgb(0x70, 0x70, 0x70)
-        } else {
-            Rgb(0x38, 0x38, 0x38)
-        },
-    );
+    let inset = stroke.saturating_mul(3);
+    if selected {
+        surface.fill_rect(
+            button.x,
+            button.y,
+            button.width,
+            button.height,
+            Rgb(0x24, 0x24, 0x24).to_xrgb(),
+        );
+        let indicator_width = button.width / 2;
+        surface.fill_rect(
+            button
+                .x
+                .saturating_add(button.width.saturating_sub(indicator_width) / 2),
+            button
+                .y
+                .saturating_add(button.height.saturating_sub(stroke)),
+            indicator_width,
+            stroke,
+            color.to_xrgb(),
+        );
+    }
 
     match icon {
         HeaderIcon::Language(language) => {
@@ -6377,7 +6402,23 @@ fn paint_header_icon_button(
                 width: button.width.saturating_sub(inset.saturating_mul(2)),
                 height: button.height.saturating_sub(inset.saturating_mul(2)),
             };
-            stroke_rect(surface, window, stroke, color);
+            // An open terminal tray avoids reading as another button border.
+            surface.fill_rect(
+                window.x,
+                window.y.saturating_add(stroke.saturating_mul(2)),
+                stroke,
+                window.height.saturating_sub(stroke.saturating_mul(2)),
+                color.to_xrgb(),
+            );
+            surface.fill_rect(
+                window.x,
+                window
+                    .y
+                    .saturating_add(window.height.saturating_sub(stroke)),
+                window.width,
+                stroke,
+                color.to_xrgb(),
+            );
             let plus_x = button.x.saturating_add(
                 button
                     .width
@@ -6404,103 +6445,58 @@ fn paint_header_icon_button(
             );
         }
         HeaderIcon::ZoomOut | HeaderIcon::ZoomIn => {
-            let lens_size = button.width.min(button.height).saturating_sub(inset * 3);
-            let lens = ui::Rect {
-                x: button.x.saturating_add(inset),
-                y: button.y.saturating_add(inset),
-                width: lens_size,
-                height: lens_size,
-            };
-            stroke_rect(surface, lens, stroke, color);
-            let center_x = lens.x.saturating_add(lens.width / 2);
-            let center_y = lens.y.saturating_add(lens.height / 2);
+            let arm = button.width.min(button.height).saturating_sub(inset * 2);
+            let center_x = button.x.saturating_add(button.width / 2);
+            let center_y = button.y.saturating_add(button.height / 2);
             surface.fill_rect(
-                lens.x.saturating_add(stroke.saturating_mul(2)),
+                center_x.saturating_sub(arm / 2),
                 center_y,
-                lens.width.saturating_sub(stroke.saturating_mul(4)),
+                arm,
                 stroke,
                 color.to_xrgb(),
             );
             if icon == HeaderIcon::ZoomIn {
                 surface.fill_rect(
                     center_x,
-                    lens.y.saturating_add(stroke.saturating_mul(2)),
+                    center_y.saturating_sub(arm / 2),
                     stroke,
-                    lens.height.saturating_sub(stroke.saturating_mul(4)),
-                    color.to_xrgb(),
-                );
-            }
-            for step in 0..3 {
-                surface.fill_rect(
-                    lens.x
-                        .saturating_add(lens.width)
-                        .saturating_add(step * stroke),
-                    lens.y
-                        .saturating_add(lens.height)
-                        .saturating_add(step * stroke),
-                    stroke,
-                    stroke,
+                    arm,
                     color.to_xrgb(),
                 );
             }
         }
         HeaderIcon::ZoomReset => {
-            let inner = ui::Rect {
-                x: button.x.saturating_add(inset),
-                y: button.y.saturating_add(inset),
-                width: button.width.saturating_sub(inset.saturating_mul(2)),
-                height: button.height.saturating_sub(inset.saturating_mul(2)),
-            };
-            let arm = inner.width.min(inner.height) / 3;
-            for (x, y, horizontal_right, vertical_down) in [
-                (inner.x, inner.y, true, true),
-                (
-                    inner.x.saturating_add(inner.width.saturating_sub(stroke)),
-                    inner.y,
-                    false,
-                    true,
-                ),
-                (
-                    inner.x,
-                    inner.y.saturating_add(inner.height.saturating_sub(stroke)),
-                    true,
-                    false,
-                ),
-                (
-                    inner.x.saturating_add(inner.width.saturating_sub(stroke)),
-                    inner.y.saturating_add(inner.height.saturating_sub(stroke)),
-                    false,
-                    false,
-                ),
-            ] {
-                surface.fill_rect(
-                    if horizontal_right {
-                        x
-                    } else {
-                        x.saturating_sub(arm)
-                    },
-                    y,
-                    arm.saturating_add(stroke),
-                    stroke,
-                    color.to_xrgb(),
-                );
-                surface.fill_rect(
-                    x,
-                    if vertical_down {
-                        y
-                    } else {
-                        y.saturating_sub(arm)
-                    },
-                    stroke,
-                    arm.saturating_add(stroke),
-                    color.to_xrgb(),
-                );
-            }
+            // A focus mark: central point plus four short cardinal ticks.
+            let center_x = button.x.saturating_add(button.width / 2);
+            let center_y = button.y.saturating_add(button.height / 2);
+            let arm = stroke.saturating_mul(2);
+            surface.fill_rect(center_x, center_y, stroke, stroke, color.to_xrgb());
             surface.fill_rect(
-                inner.x.saturating_add(inner.width / 2),
-                inner.y.saturating_add(inner.height / 2),
+                center_x.saturating_sub(arm.saturating_mul(2)),
+                center_y,
+                arm,
                 stroke,
+                color.to_xrgb(),
+            );
+            surface.fill_rect(
+                center_x.saturating_add(arm),
+                center_y,
+                arm,
                 stroke,
+                color.to_xrgb(),
+            );
+            surface.fill_rect(
+                center_x,
+                center_y.saturating_sub(arm.saturating_mul(2)),
+                stroke,
+                arm,
+                color.to_xrgb(),
+            );
+            surface.fill_rect(
+                center_x,
+                center_y.saturating_add(arm),
+                stroke,
+                arm,
                 color.to_xrgb(),
             );
         }
