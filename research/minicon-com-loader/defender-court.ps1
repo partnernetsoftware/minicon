@@ -1,24 +1,27 @@
 $ErrorActionPreference = "Stop"
 
 $root = "C:\minicon-six\defender"
-$binary = Join-Path $root "minicon.com"
 $manifestPath = Join-Path $root "candidate-manifest.json"
 $receiptPath = Join-Path $root "defender-receipt.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $evidenceScope = if ($manifest.defender_evidence_scope) { "$($manifest.defender_evidence_scope)" } else { "candidate" }
-$asset = @($manifest.assets | Where-Object { $_.name -eq "minicon.com" })
-if ($asset.Count -ne 1) { throw "scan manifest must contain exactly one minicon.com" }
-$expected = "$($asset[0].sha256)".ToLowerInvariant()
-$before = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($before -ne $expected) { throw "pre-scan digest mismatch" }
+$scanAssets = @($manifest.defender_scan_assets)
+if ($scanAssets.Count -lt 1) { throw "scan manifest has no Defender assets" }
+$before = [ordered]@{}
+foreach ($asset in $scanAssets) {
+    $path = Join-Path $root "files\$($asset.file)"
+    $expected = "$($asset.sha256)".ToLowerInvariant()
+    if (-not (Test-Path -LiteralPath $path)) { throw "$($asset.key): scan file missing" }
+    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { throw "$($asset.key): pre-scan digest mismatch" }
+    $before[$asset.key] = [ordered]@{ path = $path; sha256 = $expected }
+}
 
 $deadline = (Get-Date).AddSeconds(120)
 do {
     $status = Get-MpComputerStatus
     if ($status.AMServiceEnabled -and $status.AntivirusEnabled -and
-        $status.RealTimeProtectionEnabled -and "$($status.AMEngineVersion)" -ne "0.0.0.0") {
-        break
-    }
+        $status.RealTimeProtectionEnabled -and "$($status.AMEngineVersion)" -ne "0.0.0.0") { break }
     Start-Sleep -Seconds 2
 } while ((Get-Date) -lt $deadline)
 $status | Select-Object AMServiceEnabled, AntivirusEnabled, RealTimeProtectionEnabled,
@@ -30,14 +33,11 @@ if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled -or
 }
 $started = Get-Date
 $scanError = ""
-try {
-    Start-MpScan -ScanType CustomScan -ScanPath $binary
-} catch {
-    $scanError = $_.Exception.Message
-}
+try { Start-MpScan -ScanType CustomScan -ScanPath (Join-Path $root "files") }
+catch { $scanError = $_.Exception.Message }
 $detections = @(Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object {
     $_.InitialDetectionTime -ge $started -or
-    (@($_.Resources) | Where-Object { $_ -like "*$binary*" }).Count -gt 0
+    (@($_.Resources) | Where-Object { $_ -like "*$root\files*" }).Count -gt 0
 })
 $threats = @($detections | ForEach-Object {
     $detection = $_
@@ -50,27 +50,25 @@ $threats = @($detections | ForEach-Object {
         detected_at = "$($detection.InitialDetectionTime.ToUniversalTime().ToString('o'))"
     }
 })
-$after = ""
-if (Test-Path -LiteralPath $binary) {
-    try {
-        $after = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
-    } catch {
-        if (-not $scanError) { $scanError = $_.Exception.Message }
+$assets = [ordered]@{}
+foreach ($entry in $before.GetEnumerator()) {
+    $after = ""
+    if (Test-Path -LiteralPath $entry.Value.path) {
+        try { $after = (Get-FileHash -LiteralPath $entry.Value.path -Algorithm SHA256).Hash.ToLowerInvariant() }
+        catch { if (-not $scanError) { $scanError = $_.Exception.Message } }
     }
+    $assets[$entry.Key] = [ordered]@{ sha256 = $entry.Value.sha256; post_scan_sha256 = $after }
 }
-$verdict = if ($threats.Count -eq 0 -and $after -eq $expected -and -not $scanError) { "clean" } else { "detected" }
+$unchanged = @($assets.GetEnumerator() | Where-Object { $_.Value.sha256 -ne $_.Value.post_scan_sha256 }).Count -eq 0
+$verdict = if ($threats.Count -eq 0 -and $unchanged -and -not $scanError) { "clean" } else { "detected" }
 
 $receipt = [ordered]@{
-    schema = 1
+    schema = 2
     kind = "minicon-defender-court"
     evidence_scope = $evidenceScope
     source_sha = "$($manifest.source_sha)"
-    candidate_run = @{
-        id = [long]$manifest.candidate_run.id
-        attempt = [int]$manifest.candidate_run.attempt
-    }
-    minicon_com_sha256 = $expected
-    post_scan_sha256 = $after
+    candidate_run = @{ id = [long]$manifest.candidate_run.id; attempt = [int]$manifest.candidate_run.attempt }
+    assets = $assets
     verdict = $verdict
     provider = "Microsoft Defender"
     product_version = "$($status.AMProductVersion)"
@@ -81,9 +79,9 @@ $receipt = [ordered]@{
     scan_error = $scanError
     threats = $threats
 }
-$receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $receiptPath -Encoding utf8
+$receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $receiptPath -Encoding utf8
 if ($verdict -ne "clean") {
     Write-Host "FAIL Defender verdict=$verdict detection_count=$($threats.Count)"
     exit 3
 }
-Write-Host "PASS Defender exact artifact SHA $after"
+Write-Host "PASS Defender exact asset set count=$($assets.Count)"

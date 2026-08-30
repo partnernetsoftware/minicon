@@ -108,7 +108,7 @@ def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
     return out
 
 
-def authenticode_layout(path: Path) -> dict[str, int | bool]:
+def authenticode_layout(path: Path, expected_version: str) -> dict[str, int | bool | str]:
     raw = path.read_bytes()
     pe = struct.unpack_from("<I", raw, 0x3C)[0]
     optional = pe + 24
@@ -131,7 +131,7 @@ def authenticode_layout(path: Path) -> dict[str, int | bool]:
     if resource_offset is None or resource_offset + resource_size > len(raw):
         raise SystemExit("APE VERSIONINFO Resource Directory is outside PE sections")
     resource = raw[resource_offset : resource_offset + resource_size]
-    for value in ("ProductName", "MiniCon", "ProductVersion", "0.1.3"):
+    for value in ("ProductName", "MiniCon", "ProductVersion", expected_version):
         if value.encode("utf-16le") not in resource:
             raise SystemExit(f"APE VERSIONINFO lacks {value}")
     return {
@@ -143,7 +143,7 @@ def authenticode_layout(path: Path) -> dict[str, int | bool]:
         "resource_rva": resource_rva,
         "resource_bytes": resource_size,
         "product_name": "MiniCon",
-        "product_version": "0.1.3",
+        "product_version": expected_version,
     }
 
 
@@ -167,7 +167,7 @@ def main() -> None:
         "authenticode_pad_source_sha256": sha256(AUTHENTICODE_PAD_SOURCE),
         "authenticode_prepare_source_sha256": sha256(AUTHENTICODE_PREPARE_SOURCE),
         "version_resource_source_sha256": sha256(VERSION_RESOURCE_SOURCE),
-        "authenticode": authenticode_layout(com),
+        "authenticode": authenticode_layout(com, version),
         "tools": {
             "rustc": cmd("rustc", "--version"),
             "zig": cmd("zig", "version"),

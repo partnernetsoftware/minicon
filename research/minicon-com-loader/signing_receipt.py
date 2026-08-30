@@ -59,8 +59,9 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         raise ValueError("unsupported signing receipt")
     if not SOURCE_RE.fullmatch(str(receipt.get("source_sha"))):
         raise ValueError("invalid source SHA")
-    if receipt.get("product_version") != "0.1.3":
-        raise ValueError("signing receipt is not v0.1.3")
+    product_version = require_nonempty(receipt, "product_version")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", product_version):
+        raise ValueError("invalid signing receipt product version")
     if not SHA256_RE.fullmatch(str(receipt.get("source_tree_digest"))):
         raise ValueError("invalid source tree digest")
     provider = receipt.get("signing_provider")
@@ -111,7 +112,7 @@ def verify_receipt(receipt: dict, root: Path) -> None:
             raise ValueError(f"{key}: publisher identity mismatch")
         if row.get("file_product_name") != "MiniCon":
             raise ValueError(f"{key}: ProductName mismatch")
-        if not re.fullmatch(r"0\.1\.3(?:\.0)?", str(row.get("file_product_version", ""))):
+        if not re.fullmatch(re.escape(product_version) + r"(?:\.0)?", str(row.get("file_product_version", ""))):
             raise ValueError(f"{key}: ProductVersion mismatch")
         for field in (
             "signer_issuer", "signer_thumbprint", "signer_not_before",

@@ -7,8 +7,8 @@ on:
         description: Exact 40-character current main HEAD
         required: true
         type: string
-      signing_run_id:
-        description: Successful trusted-signing six-cell workflow run for source_sha
+      upstream_run_id:
+        description: Successful six-cell run selected by release-policy.json
         required: true
         type: string
 
@@ -25,7 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      signing_attempt: ${{ steps.identity.outputs.signing_attempt }}
+      upstream_attempt: ${{ steps.identity.outputs.upstream_attempt }}
+      upstream_artifact: ${{ steps.identity.outputs.upstream_artifact }}
+      payload_artifact: ${{ steps.identity.outputs.payload_artifact }}
+      aggregate_artifact: ${{ steps.identity.outputs.aggregate_artifact }}
+      signing_mode: ${{ steps.identity.outputs.signing_mode }}
+      include_com: ${{ steps.identity.outputs.include_com }}
       version: ${{ steps.identity.outputs.version }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
@@ -34,30 +39,54 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.source_sha }}
 
-      - name: Bind exact main source and successful signed six-cell run
+      - name: Bind exact main source, policy and successful six-cell run
         id: identity
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$SIGNING_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$UPSTREAM_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
           [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
           git fetch --no-tags origin main
           [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
-          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SIGNING_RUN_ID")"
-          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/company-signing.yml" ]]
+          version="$(jq -r .version release-policy.json)"
+          signing_mode="$(jq -r .signing.mode release-policy.json)"
+          include_com="$(jq -r .assets.minicon_com release-policy.json)"
+          [[ "$(jq -r .schema release-policy.json)" == 1 ]]
+          [[ "$signing_mode" == off || "$signing_mode" == required ]]
+          if [[ "$signing_mode" == required ]]; then
+            [[ "$include_com" == true ]]
+            expected_workflow=.github/workflows/company-signing.yml
+            upstream_artifact=trusted-signed-minicon
+            payload_artifact=trusted-signed-minicon
+            aggregate_artifact=signed-aggregate-attempt
+          else
+            expected_workflow=.github/workflows/minicon-com.yml
+            upstream_artifact=minicon-com
+            payload_artifact=minicon-native-payloads
+            aggregate_artifact=minicon-com-aggregate-attempt
+          fi
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$UPSTREAM_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == "$expected_workflow" ]]
           [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
           [[ "$(jq -r .status <<<"$run")" == "completed" ]]
           [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
           [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
-          version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
-          [[ "$version" == "0.1.3" ]]
-          echo "signing_attempt=$(jq -r .run_attempt <<<"$run")" >>"$GITHUB_OUTPUT"
-          echo "version=$version" >>"$GITHUB_OUTPUT"
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          [[ "$version" == "$cargo_version" ]]
+          {
+            echo "upstream_attempt=$(jq -r .run_attempt <<<"$run")"
+            echo "upstream_artifact=$upstream_artifact"
+            echo "payload_artifact=$payload_artifact"
+            echo "aggregate_artifact=$aggregate_artifact"
+            echo "signing_mode=$signing_mode"
+            echo "include_com=$include_com"
+            echo "version=$version"
+          } >>"$GITHUB_OUTPUT"
 
   packages:
     needs: preflight
@@ -79,14 +108,15 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.source_sha }}
 
-      - name: Download six payloads from the exact signed run
+      - name: Download six payloads from the policy-selected exact run
         env:
           GH_TOKEN: ${{ github.token }}
-          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
+          UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
+          PAYLOAD_ARTIFACT: ${{ needs.preflight.outputs.payload_artifact }}
         run: |
           set -euo pipefail
-          gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name trusted-signed-minicon --dir upstream
+          gh run download "$UPSTREAM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$PAYLOAD_ARTIFACT" --dir upstream
 
       - name: Verify payload identity and stage package binary
         shell: bash
@@ -96,8 +126,13 @@ jobs:
           verify_cell() {
             cell="$1"; path="$2"
             case "$cell" in
-              win-x86_64) expected="$(jq -r '.assets["win-x86_64"].after_sha256' upstream/signing-receipt.json)" ;;
-              win-aarch64) expected="$(jq -r '.assets["win-aarch64"].after_sha256' upstream/signing-receipt.json)" ;;
+              win-x86_64|win-aarch64)
+                if [[ -f upstream/signing-receipt.json ]]; then
+                  expected="$(jq -r --arg cell "$cell" '.assets[$cell].after_sha256' upstream/signing-receipt.json)"
+                else
+                  expected="$(jq -r --arg cell "$cell" '.payloads[$cell].sha256' "$receipt")"
+                fi
+                ;;
               *) expected="$(jq -r --arg cell "$cell" '.payloads[$cell].sha256' "$receipt")" ;;
             esac
             if command -v sha256sum >/dev/null; then
@@ -242,49 +277,64 @@ jobs:
           pattern: candidate-package-*
           path: payload
           merge-multiple: true
-      - name: Download exact signed bytes and receipts
+      - name: Download policy-selected exact bytes and receipts
         env:
           GH_TOKEN: ${{ github.token }}
-          SIGNING_RUN_ID: ${{ inputs.signing_run_id }}
-          SIGNING_ATTEMPT: ${{ needs.preflight.outputs.signing_attempt }}
+          UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
+          UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
+          UPSTREAM_ARTIFACT: ${{ needs.preflight.outputs.upstream_artifact }}
+          AGGREGATE_ARTIFACT: ${{ needs.preflight.outputs.aggregate_artifact }}
+          INCLUDE_COM: ${{ needs.preflight.outputs.include_com }}
         run: |
           set -euo pipefail
           mkdir upstream
-          gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name trusted-signed-minicon --dir upstream/signed
-          gh run download "$SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name "signed-aggregate-attempt-$SIGNING_ATTEMPT" --dir upstream/aggregate
-          cp upstream/signed/minicon.com upstream/signed/minicon.com.sha256 payload/
-          cp upstream/signed/build-receipt.json upstream/build-receipt.json
-          cp upstream/signed/signing-receipt.json upstream/signing-receipt.json
-          cp upstream/signed/g3/receipt.json upstream/g3-receipt.json
-          cp upstream/aggregate/signed-aggregate-receipt.json upstream/aggregate-receipt.json
+          gh run download "$UPSTREAM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$UPSTREAM_ARTIFACT" --dir upstream/source
+          gh run download "$UPSTREAM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "$AGGREGATE_ARTIFACT-$UPSTREAM_ATTEMPT" --dir upstream/aggregate
+          if [[ "$INCLUDE_COM" == true ]]; then
+            cp upstream/source/minicon.com upstream/source/minicon.com.sha256 payload/
+          fi
+          cp upstream/source/build-receipt.json upstream/build-receipt.json
+          cp upstream/source/g3/receipt.json upstream/g3-receipt.json
+          if [[ -f upstream/source/signing-receipt.json ]]; then
+            cp upstream/source/signing-receipt.json upstream/signing-receipt.json
+          fi
+          aggregate="$(find upstream/aggregate -maxdepth 1 -name '*aggregate-receipt.json' -print -quit)"
+          test -n "$aggregate"
+          cp "$aggregate" upstream/aggregate-receipt.json
 
       - name: Seal exact six-cell release set
         run: |
           set -euo pipefail
-          python3 research/minicon-com-loader/signing_receipt.py \
-            --receipt upstream/signing-receipt.json --root upstream/signed
+          signing_args=()
+          if [[ '${{ needs.preflight.outputs.signing_mode }}' == required ]]; then
+            python3 research/minicon-com-loader/signing_receipt.py \
+              --receipt upstream/signing-receipt.json --root upstream/source
+            signing_args=(--signing-receipt upstream/signing-receipt.json)
+          fi
           python3 research/minicon-com-loader/candidate_bundle.py seal \
             --payload payload \
             --build-receipt upstream/build-receipt.json \
             --aggregate-receipt upstream/aggregate-receipt.json \
-            --signing-receipt upstream/signing-receipt.json \
+            "${signing_args[@]}" \
             --g3-receipt upstream/g3-receipt.json \
+            --policy release-policy.json \
             --source-sha '${{ inputs.source_sha }}' \
             --version '${{ needs.preflight.outputs.version }}' \
             --candidate-run-id "$GITHUB_RUN_ID" \
             --candidate-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --output candidate-manifest.json
           python3 research/minicon-com-loader/candidate_bundle.py verify \
-            --manifest candidate-manifest.json --payload payload
+            --manifest candidate-manifest.json --payload payload --policy release-policy.json
           mkdir sealed
           cp -R payload sealed/payload
           cp candidate-manifest.json sealed/
           cp upstream/build-receipt.json sealed/
           cp upstream/aggregate-receipt.json sealed/
           cp upstream/g3-receipt.json sealed/
-          cp upstream/signing-receipt.json sealed/
+          cp release-policy.json sealed/
+          if [[ -f upstream/signing-receipt.json ]]; then cp upstream/signing-receipt.json sealed/; fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

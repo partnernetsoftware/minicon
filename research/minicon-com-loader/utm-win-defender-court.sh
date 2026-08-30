@@ -1,37 +1,48 @@
 #!/bin/bash
-# Scan a sealed Candidate APE in the interactive Windows x86_64 UTM court.
+# Scan the release-policy-selected assets from one sealed Candidate.
 set -euo pipefail
 
-if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-  echo "usage: utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT [DIAGNOSTIC_FILE]" >&2
+if [ "$#" -ne 2 ]; then
+  echo "usage: utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT" >&2
   exit 2
 fi
-
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CANDIDATE="$1"
 OUTPUT="$2"
-SCAN_FILE="${3:-$CANDIDATE/payload/minicon.com}"
 tmp="$(mktemp -d)"
-cleanup() {
-  rm -rf -- "$tmp"
-}
+cleanup() { rm -rf -- "$tmp"; }
 trap cleanup EXIT
 
-test -f "$CANDIDATE/candidate-manifest.json"
-test -f "$CANDIDATE/payload/minicon.com"
-test -f "$SCAN_FILE"
-python3 "$HERE/candidate_bundle.py" verify \
-  --manifest "$CANDIDATE/candidate-manifest.json" --payload "$CANDIDATE/payload"
-cp "$CANDIDATE/candidate-manifest.json" "$tmp/scan-manifest.json"
-python3 - "$tmp/scan-manifest.json" "$SCAN_FILE" "${3:+diagnostic-probe}" <<'PY'
-import hashlib, json, pathlib, sys
-p = pathlib.Path(sys.argv[1])
-m = json.loads(p.read_text())
-sha = hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest()
-row = next(x for x in m["assets"] if x["name"] == "minicon.com")
-row["sha256"] = sha
-m["defender_evidence_scope"] = sys.argv[3] or "candidate"
-p.write_text(json.dumps(m, indent=2) + "\n")
+manifest="$CANDIDATE/candidate-manifest.json"
+policy="$CANDIDATE/release-policy.json"
+python3 "$HERE/candidate_bundle.py" verify --manifest "$manifest" \
+  --payload "$CANDIDATE/payload" --policy "$policy"
+mkdir -p "$tmp/files"
+python3 - "$manifest" "$CANDIDATE/payload" "$tmp" <<'PY'
+import hashlib, json, pathlib, sys, zipfile
+manifest_path, payload, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
+m = json.loads(manifest_path.read_text())
+version = m["version"]
+wanted = m["release_policy"]["reputation"]["assets"]
+rows = {row["name"]: row for row in m["assets"]}
+reputation = m["reputation_assets"]
+spec = []
+for key in wanted:
+    if key == "minicon.com":
+        name, leaf = key, "minicon.com"
+        data = (payload / name).read_bytes()
+    else:
+        platform = {"windows-x86_64": "windows-x86_64", "windows-arm64": "windows-arm64"}[key]
+        name, leaf = f"minicon-{version}-{platform}.zip", f"{key}.exe"
+        with zipfile.ZipFile(payload / name) as archive:
+            data = archive.read(f"minicon-{version}-{platform}/minicon.exe")
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != reputation[key]["sha256"]:
+        raise SystemExit(f"{key}: reputation digest mismatch")
+    (out / "files" / leaf).write_bytes(data)
+    spec.append({"key": key, "file": leaf, "sha256": digest})
+m["defender_evidence_scope"] = "candidate"
+m["defender_scan_assets"] = spec
+(out / "scan-manifest.json").write_text(json.dumps(m, indent=2) + "\n")
 PY
-
-"$HERE/utm-win-defender-scan.sh" "$tmp/scan-manifest.json" "$SCAN_FILE" "$OUTPUT"
+"$HERE/utm-win-defender-scan.sh" "$tmp/scan-manifest.json" "$tmp/files" "$OUTPUT"

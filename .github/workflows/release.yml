@@ -43,6 +43,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
+      include_com: ${{ steps.identity.outputs.include_com }}
     steps:
       - name: Resolve exact successful Candidate
         id: run
@@ -111,10 +112,16 @@ jobs:
             "$(jq -r .receipts.aggregate.sha256 "$manifest")" ]]
           [[ "$(sha256sum candidate/g3-receipt.json | cut -d' ' -f1)" == \
             "$(jq -r .receipts.g3.sha256 "$manifest")" ]]
-          [[ "$(sha256sum candidate/signing-receipt.json | cut -d' ' -f1)" == \
-            "$(jq -r .receipts.signing.sha256 "$manifest")" ]]
           python3 research/minicon-com-loader/candidate_bundle.py verify \
-            --manifest "$manifest" --payload candidate/payload
+            --manifest "$manifest" --payload candidate/payload --policy candidate/release-policy.json
+          signing_mode="$(jq -r .signing.mode "$manifest")"
+          if [[ "$signing_mode" == required ]]; then
+            [[ "$(sha256sum candidate/signing-receipt.json | cut -d' ' -f1)" == \
+              "$(jq -r .receipts.signing.sha256 "$manifest")" ]]
+          else
+            [[ "$signing_mode" == off ]]
+            test ! -e candidate/signing-receipt.json
+          fi
           python3 research/minicon-com-loader/reputation_court.py verify \
             --manifest "$manifest" \
             --qualification reputation/reputation-qualification.json
@@ -126,10 +133,14 @@ jobs:
           else
             [[ "$CONFIRMATION" == "publish-v$VERSION" ]]
           fi
-          chmod +x candidate/payload/minicon.com
-          [[ "$(candidate/payload/minicon.com --version)" == "minicon $VERSION" ]]
-          candidate/payload/minicon.com --status
+          include_com="$(jq -r .release_policy.assets.minicon_com "$manifest")"
+          if [[ "$include_com" == true ]]; then
+            chmod +x candidate/payload/minicon.com
+            [[ "$(candidate/payload/minicon.com --version)" == "minicon $VERSION" ]]
+            candidate/payload/minicon.com --status
+          fi
           echo "tag=v$VERSION" >>"$GITHUB_OUTPUT"
+          echo "include_com=$include_com" >>"$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -148,6 +159,7 @@ jobs:
           name: verified-promotion-${{ github.run_id }}
           path: candidate
       - name: Execute exact Candidate APE on Windows
+        if: needs.verify.outputs.include_com == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -193,7 +205,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 research/minicon-com-loader/candidate_bundle.py verify \
-            --manifest candidate/candidate-manifest.json --payload candidate/payload
+            --manifest candidate/candidate-manifest.json --payload candidate/payload \
+            --policy candidate/release-policy.json
           [[ "$TAG" == "v$VERSION" ]]
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "tag already exists; refusing overwrite" >&2
@@ -203,13 +216,23 @@ jobs:
             echo "Release already exists; refusing overwrite" >&2
             exit 1
           fi
-          sed "s/VERSION/$VERSION/g" .github/release-notes.md >candidate/release-notes.md
+          python3 - "$VERSION" candidate/candidate-manifest.json <<'PY'
+          import json, pathlib, sys
+          version, manifest_path = sys.argv[1], pathlib.Path(sys.argv[2])
+          manifest = json.loads(manifest_path.read_text())
+          text = pathlib.Path(".github/release-notes.md").read_text().replace("VERSION", version)
+          if not manifest["release_policy"]["assets"]["minicon_com"]:
+              start, end = "<!-- OPTIONAL_APE_START -->", "<!-- OPTIONAL_APE_END -->"
+              before, rest = text.split(start, 1)
+              _, after = rest.split(end, 1)
+              text = before.rstrip() + "\n" + after.lstrip("\n")
+          else:
+              text = text.replace("<!-- OPTIONAL_APE_START -->\n", "").replace("<!-- OPTIONAL_APE_END -->\n", "")
+          pathlib.Path("candidate/release-notes.md").write_text(text)
+          PY
           gh release create "$TAG" --draft --target "$SOURCE_SHA" \
             --title "MiniCon $VERSION" --notes-file candidate/release-notes.md \
-            candidate/payload/* candidate/candidate-manifest.json \
-            candidate/build-receipt.json candidate/aggregate-receipt.json \
-            candidate/g3-receipt.json candidate/signing-receipt.json \
-            candidate/reputation-qualification.json
+            candidate/payload/* candidate/*.json
           gh release edit "$TAG" --draft=false
 
   post-publish-posix:
@@ -235,17 +258,27 @@ jobs:
             jq -r '.assets[] | .name, .sidecar.name' "$manifest"
           )
           python3 research/minicon-com-loader/candidate_bundle.py verify \
-            --manifest "$manifest" --payload released/payload
-          chmod +x released/minicon.com
-          [[ "$(released/minicon.com --version)" == 'minicon ${{ inputs.version }}' ]]
-          released/minicon.com --status
+            --manifest "$manifest" --payload released/payload \
+            --policy released/release-policy.json
+          archive="released/minicon-${{ inputs.version }}-linux-x86_64.tar.gz"
+          mkdir released/native
+          tar -xzf "$archive" -C released/native
+          binary="released/native/minicon-${{ inputs.version }}-linux-x86_64/minicon"
+          chmod +x "$binary"
+          [[ "$("$binary" --version)" == 'minicon ${{ inputs.version }}' ]]
+          "$binary" --status
+          if [[ -f released/minicon.com ]]; then
+            chmod +x released/minicon.com
+            [[ "$(released/minicon.com --version)" == 'minicon ${{ inputs.version }}' ]]
+            released/minicon.com --status
+          fi
 
   post-publish-windows:
     needs: [verify, publish]
     runs-on: windows-2025
     timeout-minutes: 10
     steps:
-      - name: Download, rehash and execute promoted APE
+      - name: Download, rehash and execute promoted Windows bytes
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -255,11 +288,13 @@ jobs:
           New-Item -ItemType Directory -Path released | Out-Null
           gh release download $env:TAG --dir released --repo $env:GITHUB_REPOSITORY
           $manifest = Get-Content -LiteralPath released/candidate-manifest.json -Raw | ConvertFrom-Json
-          $row = $manifest.assets | Where-Object { $_.name -eq 'minicon.com' }
-          $actual = (Get-FileHash -LiteralPath released/minicon.com -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $row.sha256) { throw "promoted minicon.com digest mismatch" }
-          Copy-Item -LiteralPath released/minicon.com -Destination released/minicon-ape.exe
-          $binary = (Resolve-Path released/minicon-ape.exe).Path
+          $archiveName = 'minicon-${{ inputs.version }}-windows-x86_64.zip'
+          $row = $manifest.assets | Where-Object { $_.name -eq $archiveName }
+          $archive = Join-Path released $archiveName
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $row.sha256) { throw "promoted Windows archive digest mismatch" }
+          Expand-Archive -LiteralPath $archive -DestinationPath released/native
+          $binary = (Resolve-Path 'released/native/minicon-${{ inputs.version }}-windows-x86_64/minicon.exe').Path
           function Invoke-Captured([string[]]$Arguments) {
             $stem = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString("N"))
             $out = "$stem.out"
@@ -271,3 +306,10 @@ jobs:
           }
           if ((Invoke-Captured @('--version')).Trim() -ne 'minicon ${{ inputs.version }}') { throw 'version mismatch' }
           if ((Invoke-Captured @('--status')) -notmatch 'conpty') { throw 'status missing conpty' }
+          $com = Join-Path released 'minicon.com'
+          if (Test-Path -LiteralPath $com) {
+            Copy-Item -LiteralPath $com -Destination released/minicon-ape.exe
+            $binary = (Resolve-Path released/minicon-ape.exe).Path
+            if ((Invoke-Captured @('--version')).Trim() -ne 'minicon ${{ inputs.version }}') { throw 'APE version mismatch' }
+            if ((Invoke-Captured @('--status')) -notmatch 'conpty') { throw 'APE status missing conpty' }
+          }

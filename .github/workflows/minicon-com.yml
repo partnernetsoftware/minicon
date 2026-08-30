@@ -362,6 +362,7 @@ jobs:
               print("bad", bad); sys.exit(1)
           out = {
               "schema": 2,
+              "kind": "minicon-six-cell-aggregate",
               "lane": "github-ci",
               "run_id": run_id,
               "run_attempt": attempt,

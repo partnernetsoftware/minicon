@@ -50,13 +50,15 @@ MiniCon — one-file local terminal
 │   │   ├── GitHub native runners — fast regression and real ISA
 │   │   └── local UTM — controlled-image release and interactive reproduction
 │   ├── [x] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
-│   ├── [~] v0.1.3 Candidate — all 6 cells + minicon.com exact bytes
+│   ├── [~] v0.1.3 Candidate — 5 native archives cover all 6 cells
 │   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
-│   │   ├── minicon.com is the sixth downloadable executable asset
-│   │   ├── G1–G8 plan: research/minicon-com-loader/v0.1.3-candidate-plan.md
-│   │   ├── hard ceiling: 9437184 bytes (9 MiB)
-│   │   ├── existing six-cell smoke is evidence, not a Candidate pack
+│   │   ├── unsigned by explicit release-policy.json configuration
+│   │   ├── exact Candidate bytes + Defender on both Windows executables
 │   │   └── no tag/Release before every gate + user names exact version and `promote`
+│   ├── [ ] v0.1.4 — minicon.com + trusted signing
+│   │   ├── same workflows; switch policy signing.mode to required
+│   │   ├── minicon.com hard ceiling: 9437184 bytes (9 MiB)
+│   │   └── SignPath transition or later company publisher
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -101,9 +103,10 @@ flowchart LR
     end
     subgraph REL["Release evolution"]
         V12["v0.1.2 stable<br/>three packages"]
-        C13["v0.1.3 Candidate<br/>six-cell archives + minicon.com · G1–G8"]
-        G13{"runtime + control + size<br/>checksum + reputation pass?"}
+        C13["v0.1.3 Candidate<br/>5 native archives · 6 cells · unsigned"]
+        G13{"runtime + control<br/>checksum + Defender pass?"}
         V13["user: exact version + promote<br/>exact immutable bytes"]
+        C14["v0.1.4 policy switch<br/>minicon.com + signing required"]
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
@@ -122,9 +125,9 @@ flowchart LR
     X --> GH & VM
     GH & VM --> R
     R --> V12 --> C13 --> G13
-    G13 -->|yes| V13
+    G13 -->|yes| V13 --> C14
     G13 -->|no| KEEP
-    SP --> G13
+    SP --> C14
     SI -. later .-> SP
     QE -. later .-> QX
     X -. native baseline .-> QX
@@ -158,19 +161,23 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.1.3 remains gated. Earlier unsigned runs proved one-pack G3, six
-  native GUI/control courts and six-asset Candidate packaging, but none is
-  promotable. The trusted-signing workflow now submits an immutable three-file
-  GitHub artifact to SignPath Foundation, verifies its exact output path set,
-  records request/before→after/certificate identity, and sends only the signed
-  after-SHA through six native courts. Provider approval/configuration, the
-  resulting signed Candidate, final-SHA Defender evidence and explicit user
-  Promotion remain open. No tag or Release exists.
+- [~] v0.1.3 is now the unsigned native-six-cell release: five archives cover
+  Windows/Linux x86_64+arm64 and both macOS slices through one Universal
+  archive. `release-policy.json` is the machine-readable switch: signing is
+  `off`, `minicon.com` is absent, and Defender must scan the exact two Windows
+  executables sealed inside the Candidate. Candidate evidence and explicit
+  `v0.1.3 promote` remain open; no tag or Release exists.
+- [ ] v0.1.4 owns `minicon.com` and trusted signing. The same Candidate,
+  reputation and Release workflows consume the policy; changing the version,
+  enabling `assets.minicon_com` and setting `signing.mode=required` selects the
+  signing court without another workflow rewrite. SignPath review may continue
+  independently.
 - [x] Unsigned exact-SHA rehearsal `33259779184` at `033e582` independently
   re-proved the new signing input contract: one pack, G3 green, all six native
   GUI/control cells green, APE Authenticode layout ready, SHA matched, and
   8,909,562 bytes under 9 MiB. It is rehearsal evidence, not a Candidate,
-  because no company signature was applied.
+  because it belonged to the superseded signed-APE v0.1.3 plan. It remains
+  useful v0.1.4 mechanism evidence.
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity. Authenticode-compatible APE header layout is proven;
   Azure/company Public Trust is paused because no short-term company payment
@@ -178,13 +185,12 @@ flowchart LR
   truthful transition: its publisher will be SignPath Foundation, never
   misrepresented as the company. The application was submitted and SignPath
   acknowledged receipt on 2026-08-30; provider review, timestamped signed-byte
-  six-grid and final-SHA Defender evidence remain before this Candidate can
-  claim signing.
+  six-grid and final-SHA Defender evidence remain before v0.1.4 can claim signing.
 - [x] Defender diagnostic run on unsigned rehearsal SHA
   `b2551896e7985c80eea4ea0ac785d532e9efb477aafd475955afbe9f735b0c2a`
   was clean with active engine `1.1.26080.3` and signatures `1.457.375.0`.
-  This supersedes the old unsigned APE only for that exact diagnostic byte
-  sequence; G6 still scans the eventual SignPath after-SHA.
+  This applies only to that exact diagnostic byte sequence and is retained for
+  the v0.1.4 APE court.
 - [x] The SignPath metadata prerequisite is no longer speculative: the APE
   outer PE carries a standard VERSIONINFO Resource Directory while preserving
   the empty Authenticode slot and ZIP overlay. A local six-payload 0.1.3 pack
@@ -196,7 +202,8 @@ flowchart LR
   G1/G3/G4 evidence and passed G2 GUI/control on all six native runners with
   one `minicon.com` SHA (`ffc5b5aa…`). The 7,517,987-byte APE identifies every
   embedded payload as 0.1.3 and remains under 9 MiB. This is rehearsal evidence,
-  not a trusted-signing Candidate or G6 verdict.
+  not a v0.1.3 Candidate; its payloads may be rebuilt once for the new exact
+  native archive Candidate.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty

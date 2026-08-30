@@ -23,15 +23,17 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def asset_names(version: str) -> list[str]:
-    return [
+def asset_names(version: str, include_com: bool) -> list[str]:
+    names = [
         f"minicon-{version}-windows-x86_64.zip",
         f"minicon-{version}-windows-arm64.zip",
         f"minicon-{version}-linux-x86_64.tar.gz",
         f"minicon-{version}-linux-arm64.tar.gz",
         f"minicon-{version}-macos-universal.tar.gz",
-        "minicon.com",
     ]
+    if include_com:
+        names.append("minicon.com")
+    return names
 
 
 def read_json(path: Path) -> dict:
@@ -48,11 +50,34 @@ def sidecar_digest(path: Path) -> str:
     return words[0].lower()
 
 
-def require_identity(build: dict, aggregate: dict, signing: dict, source: str, version: str) -> None:
+def require_policy(policy: dict, version: str) -> tuple[bool, str]:
+    if policy.get("schema") != 1 or policy.get("version") != version:
+        raise ValueError("release policy schema/version mismatch")
+    assets = policy.get("assets")
+    signing = policy.get("signing")
+    reputation = policy.get("reputation")
+    if not isinstance(assets, dict) or assets.get("native_archives") is not True:
+        raise ValueError("release policy must include native archives")
+    include_com = assets.get("minicon_com")
+    mode = signing.get("mode") if isinstance(signing, dict) else None
+    if not isinstance(include_com, bool) or mode not in {"off", "required"}:
+        raise ValueError("invalid release asset/signing policy")
+    if mode == "required" and not include_com:
+        raise ValueError("required signing without minicon.com is not a supported release shape")
+    expected_reputation = ["minicon.com"] if include_com else ["windows-x86_64", "windows-arm64"]
+    if not isinstance(reputation, dict) or reputation.get("mode") != "defender" or reputation.get("assets") != expected_reputation:
+        raise ValueError("release reputation policy does not match its asset shape")
+    return include_com, mode
+
+
+def require_identity(build: dict, aggregate: dict, signing: dict | None, source: str,
+                     version: str, signing_mode: str) -> None:
     if not SOURCE_RE.fullmatch(source):
         raise ValueError("source SHA must be 40 lowercase hex characters")
-    if build.get("source_sha") != source or aggregate.get("source_sha") != source or signing.get("source_sha") != source:
+    if build.get("source_sha") != source or aggregate.get("source_sha") != source:
         raise ValueError("receipt source SHA mismatch")
+    if signing_mode == "required" and (not isinstance(signing, dict) or signing.get("source_sha") != source):
+        raise ValueError("signing receipt source SHA mismatch")
     if build.get("source_dirty") is not False:
         raise ValueError("dirty source receipt")
     if build.get("product_version") != version:
@@ -62,25 +87,33 @@ def require_identity(build: dict, aggregate: dict, signing: dict, source: str, v
         raise ValueError("source tree digest mismatch")
     if not SHA_RE.fullmatch(str(build.get("loader_source_sha256"))):
         raise ValueError("missing loader source digest")
-    if signing.get("kind") != "minicon-trusted-signing" or signing.get("product_version") != version:
-        raise ValueError("trusted signing identity/version mismatch")
-    signing_run = signing.get("signing_run")
-    upstream_run = signing.get("upstream")
-    if not isinstance(signing_run, dict) or not isinstance(upstream_run, dict):
-        raise ValueError("signing/upstream run identity missing")
-    if int(signing_run.get("id", -1)) != int(aggregate.get("run_id", -2)) or \
-            int(signing_run.get("attempt", -1)) != int(aggregate.get("run_attempt", -2)):
-        raise ValueError("signed aggregate/signing run identity mismatch")
-    com_signing = signing.get("assets", {}).get("minicon.com", {})
-    if com_signing.get("before_sha256") != build.get("minicon_com_sha256"):
-        raise ValueError("signing receipt does not consume the unsigned build APE")
-    if aggregate.get("minicon_com_sha256") != com_signing.get("after_sha256"):
-        raise ValueError("signed aggregate/after-SHA mismatch")
+    if signing_mode == "required":
+        if not isinstance(signing, dict) or signing.get("kind") != "minicon-trusted-signing" or signing.get("product_version") != version:
+            raise ValueError("trusted signing identity/version mismatch")
+        signing_run = signing.get("signing_run")
+        upstream_run = signing.get("upstream")
+        if not isinstance(signing_run, dict) or not isinstance(upstream_run, dict):
+            raise ValueError("signing/upstream run identity missing")
+        if int(signing_run.get("id", -1)) != int(aggregate.get("run_id", -2)) or \
+                int(signing_run.get("attempt", -1)) != int(aggregate.get("run_attempt", -2)):
+            raise ValueError("signed aggregate/signing run identity mismatch")
+        com_signing = signing.get("assets", {}).get("minicon.com", {})
+        if com_signing.get("before_sha256") != build.get("minicon_com_sha256"):
+            raise ValueError("signing receipt does not consume the unsigned build APE")
+        if aggregate.get("minicon_com_sha256") != com_signing.get("after_sha256"):
+            raise ValueError("signed aggregate/after-SHA mismatch")
+        expected_kind = "minicon-signed-six-cell-aggregate"
+    else:
+        if signing is not None:
+            raise ValueError("signing receipt supplied while signing policy is off")
+        if aggregate.get("minicon_com_sha256") != build.get("minicon_com_sha256"):
+            raise ValueError("unsigned aggregate/build APE mismatch")
+        expected_kind = "minicon-six-cell-aggregate"
     cells = aggregate.get("cells")
     wanted = sorted(
         ["lnx-aarch64", "lnx-x86_64", "osx-aarch64", "osx-x86_64", "win-aarch64", "win-x86_64"]
     )
-    if cells != wanted or aggregate.get("kind") != "minicon-signed-six-cell-aggregate":
+    if cells != wanted or aggregate.get("kind") != expected_kind:
         raise ValueError("aggregate does not contain exactly six cells")
 
 
@@ -107,16 +140,19 @@ def seal(args: argparse.Namespace) -> None:
     payload = args.payload.resolve()
     build_path = args.build_receipt.resolve()
     aggregate_path = args.aggregate_receipt.resolve()
-    signing_path = args.signing_receipt.resolve()
+    signing_path = args.signing_receipt.resolve() if args.signing_receipt else None
+    policy_path = args.policy.resolve()
     g3_path = args.g3_receipt.resolve()
     build = read_json(build_path)
     aggregate = read_json(aggregate_path)
-    signing = read_json(signing_path)
+    policy = read_json(policy_path)
+    include_com, signing_mode = require_policy(policy, args.version)
+    signing = read_json(signing_path) if signing_path else None
     g3 = read_json(g3_path)
-    require_identity(build, aggregate, signing, args.source_sha, args.version)
+    require_identity(build, aggregate, signing, args.source_sha, args.version, signing_mode)
     require_g3(build, g3, g3_path, args.source_sha)
 
-    expected = asset_names(args.version)
+    expected = asset_names(args.version, include_com)
     allowed = set(expected + [f"{name}.sha256" for name in expected])
     actual = {path.name for path in payload.iterdir() if path.is_file()}
     if actual != allowed:
@@ -138,12 +174,13 @@ def seal(args: argparse.Namespace) -> None:
             }
         )
 
-    com = next(item for item in assets if item["name"] == "minicon.com")
-    if com["bytes"] > CANDIDATE_CEILING_BYTES:
-        raise ValueError("signed minicon.com exceeds the stamped 9 MiB Candidate ceiling")
-    signed_com = signing["assets"]["minicon.com"]
-    if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
-        raise ValueError("minicon.com asset does not match signed after-SHA receipt")
+    if include_com:
+        com = next(item for item in assets if item["name"] == "minicon.com")
+        if com["bytes"] > CANDIDATE_CEILING_BYTES:
+            raise ValueError("signed minicon.com exceeds the stamped 9 MiB Candidate ceiling")
+        signed_com = signing["assets"]["minicon.com"]
+        if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
+            raise ValueError("minicon.com asset does not match signed after-SHA receipt")
 
     manifest = {
         "schema": 1,
@@ -152,42 +189,71 @@ def seal(args: argparse.Namespace) -> None:
         "expected_tag": f"v{args.version}",
         "source_sha": args.source_sha,
         "source_tree_digest": build["source_tree_digest"],
+        "release_policy": {"sha256": sha256(policy_path), **policy},
         "candidate_run": {"id": args.candidate_run_id, "attempt": args.candidate_run_attempt},
-        "signing_run": {
+        "upstream_run": {
             "id": int(aggregate["run_id"]),
             "attempt": int(aggregate["run_attempt"]),
             "artifact_id": aggregate.get("artifact_id"),
         },
-        "unsigned_one_pack_run": signing.get("upstream"),
         "receipts": {
             "build": {"name": build_path.name, "sha256": sha256(build_path)},
             "aggregate": {"name": aggregate_path.name, "sha256": sha256(aggregate_path)},
             "g3": {"name": g3_path.name, "sha256": sha256(g3_path)},
-            "signing": {"name": signing_path.name, "sha256": sha256(signing_path)},
         },
-        "signing": {
+        "signing": {"mode": signing_mode},
+        "assets": assets,
+    }
+    reputation_assets = {}
+    for key in policy["reputation"]["assets"]:
+        if key == "minicon.com":
+            row = next(item for item in assets if item["name"] == "minicon.com")
+            reputation_assets[key] = {"container": "minicon.com", "sha256": row["sha256"]}
+            continue
+        platform = {"windows-x86_64": "windows-x86_64", "windows-arm64": "windows-arm64"}[key]
+        archive_name = f"minicon-{args.version}-{platform}.zip"
+        member = f"minicon-{args.version}-{platform}/minicon.exe"
+        with zipfile.ZipFile(payload / archive_name) as zipped:
+            binary = zipped.read(member)
+        reputation_assets[key] = {
+            "container": archive_name, "member": member,
+            "sha256": hashlib.sha256(binary).hexdigest(), "bytes": len(binary),
+        }
+    manifest["reputation_assets"] = reputation_assets
+    if signing_mode == "required":
+        manifest["unsigned_one_pack_run"] = signing.get("upstream")
+        manifest["receipts"]["signing"] = {"name": signing_path.name, "sha256": sha256(signing_path)}
+        manifest["signing"].update({
             "provider": signing.get("signing_provider"),
             "publisher_organization": signing.get("publisher_organization"),
             "signed_after_sha256": {
                 key: signing["assets"][key]["after_sha256"]
                 for key in ("minicon.com", "win-x86_64", "win-aarch64")
             },
-        },
-        "assets": assets,
-    }
+        })
     args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    verify_manifest(manifest, payload)
+    verify_manifest(manifest, payload, policy_path)
     print(json.dumps({"manifest": args.output.name, "assets": len(assets), "source_sha": args.source_sha}, indent=2))
 
 
-def verify_manifest(manifest: dict, payload: Path) -> None:
+def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = None) -> None:
     if manifest.get("schema") != 1 or manifest.get("kind") != "minicon-release-candidate":
         raise ValueError("unsupported Candidate manifest")
     version = manifest.get("version")
     if manifest.get("expected_tag") != f"v{version}" or not SOURCE_RE.fullmatch(str(manifest.get("source_sha"))):
         raise ValueError("invalid Candidate identity")
+    policy = manifest.get("release_policy")
+    if not isinstance(policy, dict):
+        raise ValueError("Candidate lacks release policy")
+    policy_digest = policy.pop("sha256", None)
+    include_com, signing_mode = require_policy(policy, version)
+    policy["sha256"] = policy_digest
+    if not SHA_RE.fullmatch(str(policy_digest)):
+        raise ValueError("invalid release policy digest")
+    if policy_path is not None and sha256(policy_path) != policy_digest:
+        raise ValueError("release policy file does not match Candidate manifest")
     rows = manifest.get("assets")
-    if not isinstance(rows, list) or [row.get("name") for row in rows] != asset_names(version):
+    if not isinstance(rows, list) or [row.get("name") for row in rows] != asset_names(version, include_com):
         raise ValueError("Candidate asset order/set mismatch")
     allowed = {row["name"] for row in rows} | {row["sidecar"]["name"] for row in rows}
     actual = {path.name for path in payload.iterdir() if path.is_file()}
@@ -200,12 +266,29 @@ def verify_manifest(manifest: dict, payload: Path) -> None:
             raise ValueError(f"{path.name}: sealed bytes mismatch")
         if sha256(sidecar) != row["sidecar"]["sha256"] or sidecar_digest(sidecar) != row["sha256"]:
             raise ValueError(f"{sidecar.name}: sealed sidecar mismatch")
+    reputation_assets = manifest.get("reputation_assets")
+    wanted_reputation = policy["reputation"]["assets"]
+    if not isinstance(reputation_assets, dict) or list(reputation_assets) != wanted_reputation:
+        raise ValueError("Candidate reputation asset set/order mismatch")
+    for key, row in reputation_assets.items():
+        if key == "minicon.com":
+            raw = (payload / "minicon.com").read_bytes()
+        else:
+            container, member = row.get("container"), row.get("member")
+            with zipfile.ZipFile(payload / str(container)) as zipped:
+                raw = zipped.read(str(member))
+        if hashlib.sha256(raw).hexdigest() != row.get("sha256") or len(raw) != row.get("bytes", len(raw)):
+            raise ValueError(f"{key}: reputation bytes mismatch")
     signing = manifest.get("signing")
+    if signing_mode == "off":
+        if signing != {"mode": "off"} or "signing" in manifest.get("receipts", {}):
+            raise ValueError("unsigned Candidate carries signing identity")
+        return
     allowed_publishers = {
         "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
         "signpath-foundation": "SignPath Foundation",
     }
-    if not isinstance(signing, dict) or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
+    if not isinstance(signing, dict) or signing.get("mode") != "required" or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
         raise ValueError("missing or mismatched trusted signing identity")
     after = signing.get("signed_after_sha256")
     if not isinstance(after, dict) or set(after) != {"minicon.com", "win-x86_64", "win-aarch64"}:
@@ -227,7 +310,7 @@ def verify_manifest(manifest: dict, payload: Path) -> None:
 
 
 def verify(args: argparse.Namespace) -> None:
-    verify_manifest(read_json(args.manifest), args.payload.resolve())
+    verify_manifest(read_json(args.manifest), args.payload.resolve(), args.policy.resolve() if args.policy else None)
     print("PASS exact six-cell release set + sidecars")
 
 
@@ -241,7 +324,13 @@ def self_test() -> None:
             f"minicon-{version}-windows-x86_64.zip": b"win-x86",
             f"minicon-{version}-windows-arm64.zip": b"win-arm",
         }
-        for index, name in enumerate(asset_names(version)):
+        policy_path = root / "release-policy.json"
+        policy = {"schema": 1, "version": version,
+                  "assets": {"native_archives": True, "minicon_com": True},
+                  "signing": {"mode": "required"},
+                  "reputation": {"mode": "defender", "assets": ["minicon.com"]}}
+        policy_path.write_text(json.dumps(policy))
+        for index, name in enumerate(asset_names(version, True)):
             path = payload / name
             if name in signed_windows:
                 platform = name.removeprefix(f"minicon-{version}-").removesuffix(".zip")
@@ -298,7 +387,7 @@ def self_test() -> None:
         }))
         seal(argparse.Namespace(
             payload=payload, build_receipt=build_path, aggregate_receipt=aggregate_path,
-            signing_receipt=signing_path,
+            signing_receipt=signing_path, policy=policy_path,
             g3_receipt=g3_path,
             source_sha=source, version=version, candidate_run_id=11,
             candidate_run_attempt=1, output=output,
@@ -327,8 +416,37 @@ def self_test() -> None:
         except ValueError as exc:
             assert "embedded PE is not the signed after-SHA" in str(exc)
             print("PASS signed Windows archive substitution court")
-            return
-        raise SystemExit("signed Windows archive substitution court did not fail")
+        else:
+            raise SystemExit("signed Windows archive substitution court did not fail")
+
+        unsigned = root / "unsigned"
+        unsigned.mkdir()
+        unsigned_policy_path = root / "unsigned-policy.json"
+        unsigned_policy = {"schema": 1, "version": version,
+                           "assets": {"native_archives": True, "minicon_com": False},
+                           "signing": {"mode": "off"},
+                           "reputation": {"mode": "defender", "assets": ["windows-x86_64", "windows-arm64"]}}
+        unsigned_policy_path.write_text(json.dumps(unsigned_policy))
+        for name in asset_names(version, False):
+            source_path = payload / name
+            target = unsigned / name
+            target.write_bytes(source_path.read_bytes())
+            (unsigned / f"{name}.sha256").write_text(f"{sha256(target)}  {name}\n")
+        unsigned_aggregate = dict(read_json(aggregate_path))
+        unsigned_aggregate["kind"] = "minicon-six-cell-aggregate"
+        unsigned_aggregate["minicon_com_sha256"] = unsigned_com_sha
+        aggregate_path.write_text(json.dumps(unsigned_aggregate))
+        seal(argparse.Namespace(
+            payload=unsigned, build_receipt=build_path, aggregate_receipt=aggregate_path,
+            signing_receipt=None, policy=unsigned_policy_path, g3_receipt=g3_path,
+            source_sha=source, version=version, candidate_run_id=12,
+            candidate_run_attempt=1, output=output,
+        ))
+        unsigned_manifest = read_json(output)
+        assert unsigned_manifest["signing"] == {"mode": "off"}
+        assert len(unsigned_manifest["assets"]) == 5
+        verify_manifest(unsigned_manifest, unsigned, unsigned_policy_path)
+        print("PASS unsigned five-archive Candidate policy court")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -339,7 +457,8 @@ def parser() -> argparse.ArgumentParser:
     make.add_argument("--payload", type=Path, required=True)
     make.add_argument("--build-receipt", type=Path, required=True)
     make.add_argument("--aggregate-receipt", type=Path, required=True)
-    make.add_argument("--signing-receipt", type=Path, required=True)
+    make.add_argument("--signing-receipt", type=Path)
+    make.add_argument("--policy", type=Path, required=True)
     make.add_argument("--g3-receipt", type=Path, required=True)
     make.add_argument("--source-sha", required=True)
     make.add_argument("--version", required=True)
@@ -349,6 +468,7 @@ def parser() -> argparse.ArgumentParser:
     check = sub.add_parser("verify")
     check.add_argument("--manifest", type=Path, required=True)
     check.add_argument("--payload", type=Path, required=True)
+    check.add_argument("--policy", type=Path)
     return top
 
 

@@ -48,11 +48,11 @@ if [[ -x "$COSMO/bin/cosmocc" ]]; then
   command -v llvm-rc >/dev/null
   command -v llvm-cvtres >/dev/null
   version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$ROOT/Cargo.toml" | head -n1)
-  if [[ "$version" != 0.1.3 ]]; then
-    echo "APE VERSIONINFO is pinned to 0.1.3; Cargo says $version" >&2
-    exit 1
-  fi
-  llvm-rc "/fo$DIST/ape-version.res" -- "$HERE/ape-version.rc"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  version_commas=${version//./,}
+  sed -e "s/0,1,3,0/$version_commas,0/g" -e "s/0\.1\.3/$version/g" \
+    "$HERE/ape-version.rc" >"$DIST/ape-version.rc"
+  llvm-rc "/fo$DIST/ape-version.res" -- "$DIST/ape-version.rc"
   llvm-cvtres /machine:x64 /out:"$DIST/ape-version.obj" "$DIST/ape-version.res"
   "$COSMO/bin/x86_64-linux-cosmo-objcopy" -O elf64-x86-64 \
     "$DIST/ape-version.obj" "$DIST/ape-version.raw.o"

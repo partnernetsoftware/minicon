@@ -23,14 +23,20 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   This is only **4/6 cell coverage**: macOS Universal contains arm64+x86_64,
   while Windows arm64 and Linux arm64 have no v0.1.2 archive. Never backfill
   that historical Release.
-- [~] **v0.1.3 Candidate: full six-cell archives plus one-file `minicon.com`
-  (not tagged).** Five archives cover Windows/Linux x86_64+arm64 and macOS
-  Universal; `minicon.com` is the sixth executable asset. All six have SHA-256
-  sidecars. Executable gates: `research/minicon-com-loader/v0.1.3-candidate-plan.md`
-  (G1 clean one-pack receipt, G2 six-cell smoke + GUI/control black-box, G3
-  loader/installer lock, G4 APE size court, G5 download-rehash-execute, G6
-  company Authenticode + Defender on exact SHA, G7 identity `0.1.3`, G8 human
-  promote). Research
+- [~] **v0.1.3 Candidate: five unsigned native archives cover all six cells
+  (not tagged).** Windows/Linux each publish x86_64+arm64; macOS Universal
+  contains both slices. Every archive has a SHA-256 sidecar. The machine policy
+  `release-policy.json` says `signing.mode=off` and `minicon_com=false`.
+  Candidate consumes one clean six-payload run, executes all six native cells,
+  seals exact bytes, and requires active Defender over both embedded Windows
+  executables before human `v0.1.3 promote`.
+- [ ] **v0.1.4 adds `minicon.com` and trusted signing through the same
+  workflows.** Bump the product/policy version, set `minicon_com=true` and
+  `signing.mode=required`; Candidate then selects the trusted-signing upstream,
+  includes the APE, validates its signing receipt and applies the 9 MiB court.
+  No workflow-code fork is permitted. SignPath review is independent of v0.1.3.
+
+  Historical APE research remains useful v0.1.4 evidence. Research
   Early smoke run `33238478661` at `459d5cb` covered status only. Research
   rehearsal run `33244331387` at `5776086` then passed G2 GUI/control on all
   six native cells plus the same-identity aggregate; it still carries product
@@ -46,12 +52,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   exact-SHA pack must bind reaper, lifecycle and installer-rollback results in
   the build receipt before it may become Candidate-of-record.
   Final one-pack run `33250748539` at `18080b8` then embedded green G3 evidence
-  and passed six native GUI/control cells. Candidate-of-record `33250998985`
+  and passed six native GUI/control cells. Historical Candidate `33250998985`
   consumed those exact bytes, sealed all five archives plus `minicon.com`, and
   passed six native archive executions. G6 is red: Microsoft Defender engine
   `1.1.26080.3`, signature `1.457.375.0`, detected the exact 8,909,564-byte APE
-  as `Program:Win32/Contebrew.A!ml` (threat `251873`). Promotion remains
-  fail-closed while company signing and the signed-byte Defender rerun are open.
+  as `Program:Win32/Contebrew.A!ml` (threat `251873`). It is not promotable and
+  remains only v0.1.4 APE research evidence.
   Clean-source unsigned rehearsal `33263135546` at `be2465f` subsequently
   packed one 7,517,987-byte APE (SHA-256 `ffc5b5aa33e77ce9f927faf76b3ab87579b79103af1bb42e20e172b0fc63158c`)
   with product/version resource metadata, all six 0.1.3 payload identities,
@@ -59,19 +65,19 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   runners passed G2 GUI/control: readiness via `list-tabs`, sent/captured token,
   structured UI snapshot, clean close, zero loader extraction residue, and
   unchanged isolated config baseline. It remains an unsigned rehearsal, not
-  the trusted-signing Candidate or G6 verdict.
+  the new five-archive v0.1.3 Candidate.
 
 ```mermaid
 flowchart LR
     S12["v0.1.2 exact source"] --> B12["3 platform packages"]
     B12 --> W12["native Windows package execution"]
     W12 --> R12["stable v0.1.2 release"]
-    R12 --> X13["v0.1.3 Candidate<br/>5 archives cover 6 cells + minicon.com"]
-    X13 --> L13["Cosmopolitan loader"]
-    X13 --> P13["6 Rust payloads"]
-    L13 & P13 --> G13{"selector + six runtime cells<br/>size + checksum + reputation pass?"}
+    R12 --> X13["v0.1.3 Candidate<br/>5 unsigned archives cover 6 cells"]
+    X13 --> P13["6 Rust native payloads"]
+    P13 --> G13{"six runtime cells<br/>checksum + Windows Defender pass?"}
     G13 -->|yes| R13["exact-SHA v0.1.3 release"]
     G13 -->|no| K12["keep v0.1.2 stable<br/>revise or reject experiment"]
+    R13 --> X14["v0.1.4 policy switch<br/>minicon.com + signing required"]
 ```
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
@@ -1398,24 +1404,27 @@ interactive Linux x86 installation.
   cfg defect was fixed.
 
 - [~] **Antivirus reputation is a release evidence concern, not a reason to
-  amputate terminal capabilities.** The exact Candidate APE now has a
+  amputate terminal capabilities.** For v0.1.3 the policy-selected court scans
+  both exact Windows executables extracted from the sealed archives. For a
+  later signed-APE release it scans `minicon.com`. The historical APE had a
   reproducible Defender ML detection (`Program:Win32/Contebrew.A!ml`, threat
   `251873`). Candidate artifacts
   now carry icon plus standard ProductName, FileDescription, OriginalFilename,
   InternalName and Cargo-owned file/product versions. Release completion still
-  requires stable Authenticode publisher identity and timestamp, published
-  SHA-256/provenance, and a clean Defender court at the exact SHA. A hit
+  required stable Authenticode publisher identity and timestamp under the old
+  plan. Current v0.1.3 requires published SHA-256/provenance and a clean
+  Defender court at both exact native Windows SHAs. A hit
   blocks that artifact and enters the vendor false-positive channel; PTY,
   named-pipe, Job and control behavior remains product functionality rather
   than something to hide or remove.
   A redacted post-pack qualification receipt is admitted through the manual
   `Reputation Qualification` workflow and bound to Candidate run, source SHA
-  and `minicon.com` SHA. Promotion must consume that successful run ID; missing
+  and the policy-selected asset SHA set. Promotion consumes that successful run ID; missing
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [~] **Trusted publisher now; company publisher later.**
-  Establish trusted signing as the current G6 court for `minicon.com`,
+- [ ] **Trusted publisher in v0.1.4; company publisher later.**
+  Establish trusted signing as the v0.1.4 court for `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
   Authenticode plus trusted timestamping, macOS Developer ID signing and
@@ -1485,8 +1494,10 @@ interactive Linux x86 installation.
   exactly `minicon.com` plus Windows x86_64/arm64 `minicon.exe`, and emits an
   immutable before→after `signing-receipt.json`. Its six native jobs compile
   nothing and execute the signed APE's version/status/GUI/control surface.
-  `.github/workflows/candidate.yml` now accepts only that successful signing
-  run and seals its signed bytes; it rejects the earlier unsigned Candidate.
+  `.github/workflows/candidate.yml` selects either the unsigned one-pack run or
+  that successful signing run from `release-policy.json`; it never infers the
+  mode from missing credentials. v0.1.3 selects unsigned native payloads, while
+  v0.1.4 selects and seals signed bytes.
   The final signed `minicon.com` must remain under the already stamped
   9,437,184-byte ceiling. This wiring is implemented but remains unqualified
   until the SignPath project/artifact configuration exists and the first exact
@@ -1503,7 +1514,8 @@ interactive Linux x86 installation.
   finalized; `prepare-authenticode.py` activates its Resource Directory and
   the empty Security Directory without shifting either. Build and signing
   receipts fail closed unless all three report `ProductName=MiniCon` and
-  `ProductVersion=0.1.3`.
+  the Cargo/policy product version. Version resources are rendered from that
+  version during packing, so a version bump does not require workflow edits.
 
   Unsigned rehearsal run `33259779184` at source `033e582` exercised the new
   input side on GitHub: pack 4m38s, G3 green, six GUI/control cells green, SHA

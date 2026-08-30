@@ -56,9 +56,12 @@ Intel.
 
 ## Code signing policy
 
-MiniCon's current published baseline is unsigned. The project is applying for
-free open-source signing through SignPath Foundation; a test certificate,
-application or repository statement never counts as a signed release. See the
+MiniCon's v0.1.3 release line is deliberately unsigned; checksums and exact
+build/runtime receipts remain mandatory. `minicon.com` and trusted signing are
+planned for v0.1.4. The committed `release-policy.json` selects whether the
+same Candidate/Release workflows require signing; missing credentials never
+silently turn it off. A test certificate, application or repository statement
+never counts as a signed release. See the
 [Code signing policy](CODE_SIGNING_POLICY.md) for publisher identity, privacy,
 team roles, exact-build provenance and verification rules.
 
@@ -144,7 +147,7 @@ jq '{source_tree_sha256, artifacts}' target-six/receipt.json
 
 The `research/minicon-com-loader/dist/cells/` files are payload copies used to
 assemble the adjacent `minicon.com`; they are not an additional release set.
-`minicon.com` itself is currently experimental and is not part of v0.1.2. Its
+`minicon.com` itself is experimental and is not part of v0.1.2 or v0.1.3. Its
 receipt and checksum must travel with it when testing it on another machine.
 Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
 folders, logs, and cache snapshots are implementation state, not handoff
@@ -240,6 +243,7 @@ August 2026.
 
 ## Code signing policy / 代码签名政策
 
-当前公开基线尚未签名。项目正在申请 SignPath Foundation 的开源免费签名；
+v0.1.3 明确采用未签名的六格原生包；`minicon.com` 与可信签名计划进入 v0.1.4。
+同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
 测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。

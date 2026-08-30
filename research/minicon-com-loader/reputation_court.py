@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bind Microsoft Defender evidence to one exact Candidate APE."""
+"""Bind Microsoft Defender evidence to the policy-selected Candidate assets."""
 
 from __future__ import annotations
 
@@ -32,31 +32,43 @@ def require_text(row: dict, name: str) -> str:
     return value.strip()
 
 
-def candidate_identity(manifest: dict) -> tuple[str, dict, str, str]:
+def candidate_identity(manifest: dict) -> tuple[str, dict, dict[str, str], str | None]:
     if manifest.get("kind") != "minicon-release-candidate":
         raise ValueError("wrong Candidate manifest kind")
-    asset = next((row for row in manifest.get("assets", []) if row.get("name") == "minicon.com"), None)
-    if not asset:
-        raise ValueError("Candidate manifest lacks minicon.com")
-    expected_sha = require_text(asset, "sha256")
+    policy = manifest.get("release_policy")
+    reputation = policy.get("reputation") if isinstance(policy, dict) else None
+    wanted = reputation.get("assets") if isinstance(reputation, dict) else None
+    if not isinstance(reputation, dict) or reputation.get("mode") != "defender" or not isinstance(wanted, list) or not wanted:
+        raise ValueError("Candidate lacks Defender reputation policy")
+    rows = manifest.get("reputation_assets")
+    if not isinstance(rows, dict):
+        raise ValueError("Candidate lacks reputation byte identities")
+    expected = {}
+    for key in wanted:
+        row = rows.get(key)
+        if not isinstance(row, dict):
+            raise ValueError(f"Candidate lacks reputation asset {key}")
+        expected[key] = require_text(row, "sha256")
     candidate_run = manifest.get("candidate_run")
     if not isinstance(candidate_run, dict):
         raise ValueError("Candidate run identity missing")
     source_sha = require_text(manifest, "source_sha")
     signing = manifest.get("signing")
-    signing_receipt = manifest.get("receipts", {}).get("signing", {})
-    signing_sha = require_text(signing_receipt, "sha256")
-    if not SHA_RE.fullmatch(signing_sha):
-        raise ValueError("invalid signing receipt digest")
-    allowed_publishers = {
-        "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
-        "signpath-foundation": "SignPath Foundation",
-    }
-    if not isinstance(signing, dict) or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
-        raise ValueError("Candidate lacks a valid trusted signing identity")
-    if signing.get("signed_after_sha256", {}).get("minicon.com") != expected_sha:
-        raise ValueError("Candidate APE is not the trusted-signed after-SHA")
-    return source_sha, candidate_run, expected_sha, signing_sha
+    signing_sha = None
+    if isinstance(signing, dict) and signing.get("mode") == "required":
+        signing_receipt = manifest.get("receipts", {}).get("signing", {})
+        signing_sha = require_text(signing_receipt, "sha256")
+        if not SHA_RE.fullmatch(signing_sha):
+            raise ValueError("invalid signing receipt digest")
+        allowed_publishers = {
+            "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
+            "signpath-foundation": "SignPath Foundation",
+        }
+        if allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
+            raise ValueError("Candidate lacks a valid trusted signing identity")
+    elif signing != {"mode": "off"}:
+        raise ValueError("invalid Candidate signing mode")
+    return source_sha, candidate_run, expected, signing_sha
 
 
 def qualify(args: argparse.Namespace) -> None:
@@ -65,12 +77,17 @@ def qualify(args: argparse.Namespace) -> None:
     manifest = load(manifest_path)
     defender = load(defender_path)
 
-    source_sha, candidate_run, expected_sha, signing_sha = candidate_identity(manifest)
+    source_sha, candidate_run, expected, signing_sha = candidate_identity(manifest)
 
     if defender.get("kind") != "minicon-defender-court" or defender.get("verdict") != "clean":
         raise ValueError("Defender verdict is not clean")
-    if defender.get("minicon_com_sha256") != expected_sha:
-        raise ValueError("Defender evidence targets a different APE")
+    evidence = defender.get("assets")
+    if not isinstance(evidence, dict) or set(evidence) != set(expected):
+        raise ValueError("Defender evidence asset set mismatch")
+    for key, expected_sha in expected.items():
+        row = evidence[key]
+        if not isinstance(row, dict) or row.get("sha256") != expected_sha or row.get("post_scan_sha256") != expected_sha:
+            raise ValueError(f"Defender evidence targets different bytes for {key}")
     if defender.get("candidate_run") != candidate_run:
         raise ValueError("Defender evidence targets a different Candidate run")
     for field in ("provider", "product_version", "engine_version", "signature_version", "scanned_at"):
@@ -81,18 +98,19 @@ def qualify(args: argparse.Namespace) -> None:
         "kind": "minicon-reputation-qualification",
         "source_sha": source_sha,
         "candidate_run": candidate_run,
-        "minicon_com_sha256": expected_sha,
-        "signing_receipt_sha256": signing_sha,
+        "asset_sha256s": expected,
         "verdict": "clean",
         "courts": {"defender": {"receipt_sha256": digest(defender_path)}},
     }
+    if signing_sha:
+        result["signing_receipt_sha256"] = signing_sha
     pathlib.Path(args.output).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def verify_qualification(args: argparse.Namespace) -> None:
     manifest = load(pathlib.Path(args.manifest))
     qualification = load(pathlib.Path(args.qualification))
-    source_sha, candidate_run, expected_sha, signing_sha = candidate_identity(manifest)
+    source_sha, candidate_run, expected, signing_sha = candidate_identity(manifest)
     if qualification.get("schema") != 1 or qualification.get("kind") != "minicon-reputation-qualification":
         raise ValueError("wrong reputation qualification kind")
     if qualification.get("verdict") != "clean":
@@ -101,8 +119,8 @@ def verify_qualification(args: argparse.Namespace) -> None:
         raise ValueError("qualification source SHA mismatch")
     if qualification.get("candidate_run") != candidate_run:
         raise ValueError("qualification Candidate run mismatch")
-    if qualification.get("minicon_com_sha256") != expected_sha:
-        raise ValueError("qualification APE digest mismatch")
+    if qualification.get("asset_sha256s") != expected:
+        raise ValueError("qualification asset digest mismatch")
     if qualification.get("signing_receipt_sha256") != signing_sha:
         raise ValueError("qualification signing receipt mismatch")
     courts = qualification.get("courts")
@@ -121,13 +139,16 @@ def selftest() -> None:
         root = pathlib.Path(raw)
         run = {"id": "42", "attempt": "1"}
         sha = "a" * 64
-        manifest = {"kind": "minicon-release-candidate", "source_sha": "b" * 40,
+        manifest = {"kind": "minicon-release-candidate", "version": "0.1.4", "source_sha": "b" * 40,
                     "candidate_run": run, "assets": [{"name": "minicon.com", "sha256": sha}],
-                    "signing": {"provider": "signpath-foundation",
+                    "reputation_assets": {"minicon.com": {"sha256": sha}},
+                    "release_policy": {"reputation": {"mode": "defender", "assets": ["minicon.com"]}},
+                    "signing": {"mode": "required", "provider": "signpath-foundation",
                                 "publisher_organization": "SignPath Foundation",
                                 "signed_after_sha256": {"minicon.com": sha}},
                     "receipts": {"signing": {"sha256": "d" * 64}}}
-        common = {"verdict": "clean", "candidate_run": run, "minicon_com_sha256": sha,
+        common = {"verdict": "clean", "candidate_run": run,
+                  "assets": {"minicon.com": {"sha256": sha, "post_scan_sha256": sha}},
                   "provider": "fixture", "product_version": "1", "engine_version": "1",
                   "signature_version": "1", "scanned_at": "2026-01-01T00:00:00Z"}
         defender = {"kind": "minicon-defender-court", **common}
@@ -140,15 +161,45 @@ def selftest() -> None:
         qualify(args)
         assert load(output)["verdict"] == "clean"
         verify_qualification(argparse.Namespace(manifest=paths["manifest"], qualification=output))
-        defender["minicon_com_sha256"] = "c" * 64
+        defender["assets"]["minicon.com"]["sha256"] = "c" * 64
         paths["defender"].write_text(json.dumps(defender), encoding="utf-8")
         try:
             qualify(args)
         except ValueError as exc:
-            assert "different APE" in str(exc)
+            assert "different bytes" in str(exc)
         else:
             raise AssertionError("mismatched SHA unexpectedly qualified")
         print("PASS reputation evidence exact-SHA court")
+
+        x86, arm = "e" * 64, "f" * 64
+        unsigned_manifest = {
+            "kind": "minicon-release-candidate", "version": "0.1.3", "source_sha": "b" * 40,
+            "candidate_run": run,
+            "assets": [
+                {"name": "minicon-0.1.3-windows-x86_64.zip", "sha256": x86},
+                {"name": "minicon-0.1.3-windows-arm64.zip", "sha256": arm},
+            ],
+            "reputation_assets": {
+                "windows-x86_64": {"sha256": x86}, "windows-arm64": {"sha256": arm},
+            },
+            "release_policy": {"reputation": {"mode": "defender", "assets": ["windows-x86_64", "windows-arm64"]}},
+            "signing": {"mode": "off"},
+        }
+        unsigned_defender = {
+            "kind": "minicon-defender-court", "verdict": "clean", "candidate_run": run,
+            "assets": {
+                "windows-x86_64": {"sha256": x86, "post_scan_sha256": x86},
+                "windows-arm64": {"sha256": arm, "post_scan_sha256": arm},
+            },
+            "provider": "fixture", "product_version": "1", "engine_version": "1",
+            "signature_version": "1", "scanned_at": "2026-01-01T00:00:00Z",
+        }
+        paths["manifest"].write_text(json.dumps(unsigned_manifest))
+        paths["defender"].write_text(json.dumps(unsigned_defender))
+        qualify(args)
+        verify_qualification(argparse.Namespace(manifest=paths["manifest"], qualification=output))
+        assert "signing_receipt_sha256" not in load(output)
+        print("PASS unsigned native Windows Defender policy court")
 
 
 def main() -> None:

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "version": "0.1.3",
+  "assets": {
+    "native_archives": true,
+    "minicon_com": false
+  },
+  "signing": {
+    "mode": "off"
+  },
+  "reputation": {
+    "mode": "defender",
+    "assets": [
+      "windows-x86_64",
+      "windows-arm64"
+    ]
+  }
+}

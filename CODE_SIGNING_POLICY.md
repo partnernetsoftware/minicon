@@ -6,6 +6,13 @@ have a valid Authenticode signature and its release receipt says so; repository
 metadata, this policy, a signing request, or a test certificate is not a
 signature.
 
+The committed `release-policy.json` decides whether a version requires signing.
+MiniCon v0.1.3 deliberately publishes only unsigned native archives; its
+checksums, six-cell runtime courts and Defender evidence remain mandatory.
+`minicon.com` and trusted signing begin with the v0.1.4 plan. When policy says
+`signing.mode=required`, missing provider configuration blocks the release; it
+never falls back to unsigned output.
+
 When the application is accepted, Windows release artifacts covered by the
 approved SignPath artifact configuration use:
 
@@ -43,9 +50,11 @@ member before merge.
 - The release workflow binds one clean source SHA to one build/pack run.
 - Signing transforms only the exact unsigned artifact produced by that run and
   records the before and after SHA-256 values.
-- Six native Windows/Linux/macOS x86_64/aarch64 courts execute the signed
-  `minicon.com` after-SHA. Windows package courts also verify the signed native
-  x86_64 and arm64 `minicon.exe` bytes inside their archives.
+- Six native Windows/Linux/macOS x86_64/aarch64 courts execute the exact
+  policy-selected bytes. In signing-required mode they execute the signed
+  `minicon.com` after-SHA and verify signed native Windows executables. In
+  signing-off mode the APE is absent and both unsigned Windows executables are
+  bound to the Candidate and Defender receipt without claiming a publisher.
 - Promotion downloads and publishes the sealed Candidate bytes without
   rebuilding or re-signing them.
 - A test/self-signed certificate is mechanism evidence only and can never
