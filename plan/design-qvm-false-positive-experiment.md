@@ -101,8 +101,12 @@ next preregistered split held code/toolchain/startup fixed and added only the
 normal icon plus complete product/version resources. It produced the same
 named verdict, ruling resource completeness out as a sufficient remedy on this
 court. Continue to signing/reputation/toolchain rather than bisecting MiniCon
-features. A remembered clean historical `agenterm-con.exe` has no same-time
-control and is not causal evidence. This diagnostic does not replace C1.
+features. The next split is a pure-C `/MT` Win32 GUI built from the same
+cargo-xwin MSVC environment: clean C with flagged Rust makes Rust-linked PE
+shape necessary on this court; the same C verdict rules Rust out and advances
+unsigned-new-file reputation/shared toolchain structure. A remembered clean
+historical `agenterm-con.exe` has no same-time control and is not causal
+evidence. This diagnostic does not replace C1.
 
 Kill criterion: any variant loses product parity, introduces a redistributable,
 or requires evasive mutation. Time-box ends when Q1 returns a vendor decision;

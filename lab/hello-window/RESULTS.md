@@ -26,6 +26,13 @@ Resource Directory did not change the named detection. The remembered clean
 result for an older `agenterm-con.exe` is historical context only: without its
 exact bytes and same-time scanner control, it cannot establish causality.
 
+Pure-C comparison: 91,648 bytes, SHA-256
+`6c2955b858ff28c1128a10101210fed711b25dbe80010f79c553be806f8e20cd`.
+Two consecutive `/Brepro` builds were byte-identical. It uses the same Windows
+SDK/MSVC libraries and static CRT, but contains no Rust code and no PE
+resources. Its only DLL imports are Windows components `USER32.dll` and
+`KERNEL32.dll`; local 360 verdict and visible GUI launch are pending.
+
 Decision trace: the conventional tiny GUI reproduced the same named heuristic,
 so PTY, IPC, subprocesses, MiniCon's custom entry point and terminal behavior
 are not necessary conditions. The next controlled sample adds only ordinary PE
