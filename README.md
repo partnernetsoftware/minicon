@@ -176,10 +176,8 @@ LaunchAgent for 03:17 daily maintenance. VM images and cloud bodies without an
 explicit verified archive receipt are never automatically deleted.
 
 Rust 1.97. The Linux build needs the runtime packages `libxkbcommon0
-libxkbcommon-x11-0 libwayland-client0`; no `-dev` package is required. On an
-X11 session MiniCon probes the versioned `libxkbcommon-x11.so.0` ABI before
-opening the window and prints the exact Debian/Ubuntu install command if it is
-absent.
+libwayland-client0`; no `-dev` package is required. On an X11 session MiniCon
+bundles `libxkbcommon-x11.so.0` when the host omits `libxkbcommon-x11-0`.
 
 ## Repository
 

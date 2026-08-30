@@ -1,27 +1,27 @@
-//! Product-owned Linux GUI dependency preflight.
+//! Linux X11 keyboard bridge: bundle `libxkbcommon-x11` when the host omits it.
 //!
-//! Winit loads XKB dynamically, so the ELF import table cannot reveal this
-//! runtime edge. Detect it before the event loop enters third-party code: a
-//! missing desktop package must be an actionable MiniCon error, not a panic
-//! containing the build machine's Cargo registry path.
+//! Winit loads this library through `xkbcommon-dl` at runtime, so the ELF import
+//! table never lists it. When the system package is absent we stage our own copy
+//! and re-exec once with `LD_LIBRARY_PATH` primed, because the dynamic loader
+//! only honors that variable at process start.
 
-use std::ffi::{CStr, CString, OsStr, c_char, c_int, c_void};
+use std::ffi::{CString, OsStr, c_char, c_int, c_void};
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 
 const XKB_X11_SONAME: &str = "libxkbcommon-x11.so.0";
-const XKB_X11_SYMBOLS: [&str; 4] = [
-    "xkb_x11_setup_xkb_extension",
-    "xkb_x11_get_core_keyboard_device_id",
-    "xkb_x11_keymap_new_from_device",
-    "xkb_x11_state_new_from_device",
-];
+const BUNDLED_XKB_X11: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/",
+    env!("MINICON_BUNDLED_XKB_X11_PATH")
+));
+const STAGED_ENV: &str = "MINICON_XKB_X11_STAGED";
 const RTLD_NOW: c_int = 2;
 
 #[link(name = "dl")]
 unsafe extern "C" {
     fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     fn dlclose(handle: *mut c_void) -> c_int;
-    fn dlerror() -> *const c_char;
 }
 
 struct DynamicLibrary(*mut c_void);
@@ -44,7 +44,9 @@ pub(crate) fn preflight() -> Result<(), String> {
         display.as_deref(),
         wayland.as_deref(),
         backend.as_deref(),
-        probe_xkb_x11,
+        system_has_xkb_x11,
+        stage_bundled_xkb_x11,
+        reexec_with_library_path,
     )
 }
 
@@ -52,18 +54,21 @@ fn preflight_with(
     display: Option<&OsStr>,
     wayland: Option<&OsStr>,
     backend: Option<&OsStr>,
-    probe: impl FnOnce() -> Result<(), String>,
+    probe: impl FnOnce() -> bool,
+    stage: impl FnOnce() -> Result<PathBuf, String>,
+    reexec: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<(), String> {
     if !requires_x11(display, wayland, backend) {
         return Ok(());
     }
-    probe().map_err(|detail| {
-        format!(
-            "Linux X11 runtime dependency unavailable: {XKB_X11_SONAME} ({detail}). \
-             Debian/Ubuntu: sudo apt-get install libxkbcommon-x11-0. \
-             The -dev package is not required."
-        )
-    })
+    if probe() {
+        return Ok(());
+    }
+    if std::env::var_os(STAGED_ENV).is_some_and(|value| !value.is_empty()) {
+        return Err(bundled_library_unavailable());
+    }
+    let library_dir = stage()?;
+    reexec(&library_dir)
 }
 
 fn requires_x11(display: Option<&OsStr>, wayland: Option<&OsStr>, backend: Option<&OsStr>) -> bool {
@@ -77,70 +82,145 @@ fn requires_x11(display: Option<&OsStr>, wayland: Option<&OsStr>, backend: Optio
         && !wayland.is_some_and(|value| !value.is_empty())
 }
 
-fn probe_xkb_x11() -> Result<(), String> {
+fn system_has_xkb_x11() -> bool {
     let soname = CString::new(XKB_X11_SONAME).expect("static SONAME contains no NUL");
-    // SAFETY: this loads the fixed versioned system SONAME that winit will use
-    // next. The returned handle is immediately placed under one RAII owner.
+    // SAFETY: this probes the same versioned SONAME winit will dlopen next.
     let handle = unsafe { dlopen(soname.as_ptr(), RTLD_NOW) };
     if handle.is_null() {
-        return Err(loader_error());
+        return false;
     }
-    let library = DynamicLibrary(handle);
-    for name in XKB_X11_SYMBOLS {
-        let symbol = CString::new(name).expect("static symbol contains no NUL");
-        // Clear any prior loader error before resolving this symbol.
-        // SAFETY: `library` is live and the C string is NUL terminated. The
-        // result is only checked for presence, never called or dereferenced.
-        unsafe {
-            let _ = dlerror();
-            let address = dlsym(library.0, symbol.as_ptr());
-            let error = dlerror();
-            if address.is_null() || !error.is_null() {
-                return Err(if error.is_null() {
-                    format!("required symbol {name} is absent")
-                } else {
-                    CStr::from_ptr(error).to_string_lossy().into_owned()
-                });
-            }
-        }
-    }
-    Ok(())
+    let _library = DynamicLibrary(handle);
+    true
 }
 
-fn loader_error() -> String {
-    // SAFETY: `dlerror` returns either null or a thread-local NUL-terminated
-    // diagnostic valid until the next loader call on this thread. Copy now.
-    unsafe {
-        let error = dlerror();
-        if error.is_null() {
-            "dynamic loader returned no detail".to_owned()
-        } else {
-            CStr::from_ptr(error).to_string_lossy().into_owned()
+fn stage_bundled_xkb_x11() -> Result<PathBuf, String> {
+    let destination = bundled_library_path()?;
+    if !library_matches(&destination) {
+        write_bundled_library(&destination)?;
+    }
+    destination
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "bundled library path has no parent directory".to_owned())
+}
+
+fn bundled_library_path() -> Result<PathBuf, String> {
+    let root = cache_root()?;
+    std::fs::create_dir_all(&root).map_err(|error| {
+        format!(
+            "could not create bundled XKB cache at {}: {error}",
+            root.display()
+        )
+    })?;
+    Ok(root.join(XKB_X11_SONAME))
+}
+
+fn cache_root() -> Result<PathBuf, String> {
+    if let Some(runtime) = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+    {
+        return Ok(runtime.join("minicon").join("xkb-x11"));
+    }
+    if let Some(home) = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+    {
+        return Ok(home.join(".cache").join("minicon").join("xkb-x11"));
+    }
+    let fallback = std::env::temp_dir()
+        .join(format!("minicon-xkb-x11-{}", std::process::id()));
+    Ok(fallback)
+}
+
+fn library_matches(path: &Path) -> bool {
+    std::fs::read(path)
+        .ok()
+        .is_some_and(|bytes| bytes == BUNDLED_XKB_X11)
+}
+
+fn write_bundled_library(path: &Path) -> Result<(), String> {
+    let mut file = std::fs::File::create(path).map_err(|error| {
+        format!(
+            "could not write bundled {XKB_X11_SONAME} to {}: {error}",
+            path.display()
+        )
+    })?;
+    file.write_all(BUNDLED_XKB_X11).map_err(|error| {
+        format!(
+            "could not write bundled {XKB_X11_SONAME} to {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut permissions = std::fs::metadata(path)
+        .map_err(|error| format!("could not stat {}: {error}", path.display()))?
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).map_err(|error| {
+        format!(
+            "could not chmod bundled {XKB_X11_SONAME} at {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn reexec_with_library_path(directory: &Path) -> Result<(), String> {
+    let directory = directory
+        .canonicalize()
+        .map_err(|error| format!("could not resolve bundled library directory: {error}"))?;
+    let mut library_path = directory.to_string_lossy().into_owned();
+    if let Ok(existing) = std::env::var("LD_LIBRARY_PATH") {
+        if !existing.is_empty() {
+            library_path.push(':');
+            library_path.push_str(&existing);
         }
     }
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("could not resolve current executable: {error}"))?;
+    let status = std::process::Command::new(executable)
+        .args(std::env::args().skip(1))
+        .env(STAGED_ENV, "1")
+        .env("LD_LIBRARY_PATH", library_path)
+        .status()
+        .map_err(|error| format!("could not restart MiniCon with bundled XKB support: {error}"))?;
+    std::process::exit(status.code().unwrap_or(1));
 }
+
+fn bundled_library_unavailable() -> String {
+    format!(
+        "Linux X11 runtime dependency unavailable: {XKB_X11_SONAME}. \
+         MiniCon staged its bundled copy but the dynamic loader still could not use it."
+    )
+}
+
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::PermissionsExt as _;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
 
-    #[test]
-    fn x11_without_runtime_reports_the_versioned_soname_and_install_command() {
-        let error = preflight_with(Some(OsStr::new(":99")), None, None, || {
-            Err("not found".to_owned())
-        })
-        .unwrap_err();
-        assert!(error.contains("libxkbcommon-x11.so.0"));
-        assert!(error.contains("apt-get install libxkbcommon-x11-0"));
-        assert!(error.contains("-dev package is not required"));
+    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("test lock")
     }
 
     #[test]
-    fn wayland_only_does_not_require_the_x11_bridge() {
+    fn bundled_bytes_are_non_empty() {
+        assert!(!BUNDLED_XKB_X11.is_empty());
+    }
+
+    #[test]
+    fn wayland_only_does_not_stage_the_x11_bridge() {
         assert_eq!(
-            preflight_with(None, Some(OsStr::new("wayland-0")), None, || Err(
-                "must not probe".to_owned()
-            ),),
+            preflight_with(None, Some(OsStr::new("wayland-0")), None, || {
+                panic!("must not probe")
+            }, || Err("must not stage".to_owned()), |_| Ok(()),),
             Ok(())
         );
     }
@@ -157,5 +237,37 @@ mod tests {
             None,
             Some(OsStr::new("wayland"))
         ));
+    }
+
+    #[test]
+    fn staging_writes_the_bundled_library_bytes() {
+        let _guard = lock();
+        let scratch = std::env::temp_dir().join(format!(
+            "minicon-xkb-stage-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&scratch).expect("scratch dir");
+        let previous_cache = std::env::var_os("XDG_CACHE_HOME");
+        unsafe {
+            std::env::set_var("XDG_CACHE_HOME", &scratch);
+        }
+        let library_dir = stage_bundled_xkb_x11().expect("staging succeeds");
+        let library = library_dir.join(XKB_X11_SONAME);
+        if let Some(value) = previous_cache {
+            unsafe {
+                std::env::set_var("XDG_CACHE_HOME", value);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("XDG_CACHE_HOME");
+            }
+        }
+        assert!(library.is_file());
+        assert_eq!(std::fs::read(&library).expect("read staged library"), BUNDLED_XKB_X11);
+        let _ = std::fs::remove_dir_all(scratch);
     }
 }
