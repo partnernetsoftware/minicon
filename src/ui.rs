@@ -48,8 +48,10 @@ pub struct Layout {
     pub zoom_out: Rect,
     pub zoom_reset: Rect,
     pub zoom_in: Rect,
-    /// Opens a new root terminal; first tool after the MiniCon wordmark.
+    /// Opens a new root terminal; first tool in the header strip.
     pub new_root: Rect,
+    /// Opens the shortcut and feature guide.
+    pub help: Rect,
     /// The two language entries, left of the size controls.
     pub language_chinese: Rect,
     pub language_english: Rect,
@@ -120,43 +122,48 @@ impl Layout {
         };
         let tool_size = dip(24.0, scale).min(sidebar_width / 2);
         let tool_y = dip(4.0, scale);
-        let zoom_in = Rect {
-            x: sidebar_width
-                .saturating_sub(dip(8.0, scale))
-                .saturating_sub(tool_size),
+        let group_gap = dip(4.0, scale);
+        let new_root = Rect {
+            x: dip(4.0, scale),
             y: tool_y,
             width: tool_size,
             height: tool_size,
         };
-        let zoom_reset = Rect {
-            x: zoom_in.x.saturating_sub(tool_size),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        let zoom_out = Rect {
-            x: zoom_reset.x.saturating_sub(tool_size),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        // Language before size, reading right to left: `En` `中` `z` `0` `Z`. The
-        // sidebar is at least 180 dip and a tool is 24, so four of them and the
-        // product name coexist even at the narrowest layout.
-        let language_english = Rect {
-            x: zoom_out.x.saturating_sub(tool_size),
+        let help = Rect {
+            x: new_root.x.saturating_add(tool_size),
             y: tool_y,
             width: tool_size,
             height: tool_size,
         };
         let language_chinese = Rect {
-            x: language_english.x.saturating_sub(tool_size),
+            x: help.x.saturating_add(tool_size).saturating_add(group_gap),
             y: tool_y,
             width: tool_size,
             height: tool_size,
         };
-        let new_root = Rect {
-            x: language_chinese.x.saturating_sub(tool_size),
+        let language_english = Rect {
+            x: language_chinese.x.saturating_add(tool_size),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
+        let zoom_out = Rect {
+            x: language_english
+                .x
+                .saturating_add(tool_size)
+                .saturating_add(group_gap),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
+        let zoom_reset = Rect {
+            x: zoom_out.x.saturating_add(tool_size),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
+        let zoom_in = Rect {
+            x: zoom_reset.x.saturating_add(tool_size),
             y: tool_y,
             width: tool_size,
             height: tool_size,
@@ -178,6 +185,7 @@ impl Layout {
             zoom_reset,
             zoom_in,
             new_root,
+            help,
             language_chinese,
             language_english,
         }
@@ -189,6 +197,23 @@ impl Layout {
             .saturating_sub(self.tree_header_height)
             .checked_div(self.tree_row_height)
             .unwrap_or(0) as usize
+    }
+
+    /// Primary action on the zero-tab greeting page. The button is centred in
+    /// the terminal side of the window and keeps the sidebar header available.
+    pub fn empty_new_terminal(self, width: u32, height: u32, scale: f64) -> Rect {
+        let button_width = dip(184.0, scale).min(width.saturating_sub(self.sidebar.width));
+        let button_height = dip(42.0, scale).min(height);
+        let content_width = width.saturating_sub(self.sidebar.width);
+        Rect {
+            x: self
+                .sidebar
+                .width
+                .saturating_add(content_width.saturating_sub(button_width) / 2),
+            y: height.saturating_div(2).saturating_add(dip(24.0, scale)),
+            width: button_width,
+            height: button_height,
+        }
     }
 
     pub fn sidebar_resize_grip(self, scale: f64) -> Rect {
@@ -228,6 +253,7 @@ pub enum TreeHit {
     Outside,
     Background,
     NewRoot,
+    Help,
     ZoomOut,
     ZoomReset,
     ZoomIn,
@@ -287,13 +313,45 @@ impl UiLanguage {
                 send: "SEND",
                 newline: "NEWLINE",
                 send_to: "SEND TO @",
+                empty_title: "READY FOR A NEW TERMINAL",
+                new_terminal: "NEW TERMINAL",
+                new_terminal_hint: "Ctrl+Shift+T",
             },
             Self::Chinese => ChromeStrings {
                 paste_failed: "貼上失敗",
                 send: "送出",
                 newline: "換行",
                 send_to: "送往 @",
+                empty_title: "準備開啟新終端",
+                new_terminal: "新建終端",
+                new_terminal_hint: "Ctrl+Shift+T",
             },
+        }
+    }
+
+    #[must_use]
+    pub const fn help_lines(self) -> [&'static str; 8] {
+        match self {
+            Self::English => [
+                "KEYBOARD + FEATURES",
+                "Ctrl+Shift+T   New terminal",
+                "Ctrl+Shift+W   Close tab",
+                "Ctrl+Shift+I   Focus input",
+                "Ctrl+O         Send input",
+                "Enter          Soft newline",
+                "Ctrl+[ / ]     Previous / next tab",
+                "Tab tree · multiline composer · PTY",
+            ],
+            Self::Chinese => [
+                "快捷鍵與功能",
+                "Ctrl+Shift+T   新建終端",
+                "Ctrl+Shift+W   關閉標籤",
+                "Ctrl+Shift+I   聚焦輸入區",
+                "Ctrl+O         送出輸入",
+                "Enter          軟換行",
+                "Ctrl+[ / ]     上一個 / 下一個標籤",
+                "標籤樹 · 多行輸入 · PTY 終端",
+            ],
         }
     }
 }
@@ -308,6 +366,9 @@ pub struct ChromeStrings {
     pub send: &'static str,
     pub newline: &'static str,
     pub send_to: &'static str,
+    pub empty_title: &'static str,
+    pub new_terminal: &'static str,
+    pub new_terminal_hint: &'static str,
 }
 
 pub fn tree_hit(
@@ -323,6 +384,9 @@ pub fn tree_hit(
     }
     if layout.new_root.contains(x, y) {
         return TreeHit::NewRoot;
+    }
+    if layout.help.contains(x, y) {
+        return TreeHit::Help;
     }
     if layout.language_chinese.contains(x, y) {
         return TreeHit::Language(UiLanguage::Chinese);
@@ -466,8 +530,8 @@ mod tests {
         assert!(layout.composer_input.x + layout.composer_input.width < layout.composer_send.x);
     }
 
-    /// New-root, two language entries and three size controls never overlap —
-    /// six tool rects share one header row, and
+    /// New-root, help, two language entries and three size controls never overlap —
+    /// seven tool rects share one header row, and
     /// an overlap would make one of them unreachable.
     #[test]
     fn the_header_tools_are_ordered_and_disjoint() {
@@ -475,6 +539,7 @@ mod tests {
             let layout = Layout::new(width, 600, scale);
             let tools = [
                 layout.new_root,
+                layout.help,
                 layout.language_chinese,
                 layout.language_english,
                 layout.zoom_out,
@@ -488,7 +553,7 @@ mod tests {
                 );
             }
             assert!(
-                tools[5].x + tools[5].width <= layout.sidebar.width,
+                tools[6].x + tools[6].width <= layout.sidebar.width,
                 "the rightmost tool leaves the sidebar at {width}x{scale}"
             );
             assert!(
@@ -511,6 +576,22 @@ mod tests {
                 1.0,
             ),
             TreeHit::NewRoot
+        );
+    }
+
+    #[test]
+    fn help_header_button_has_its_own_hit_target() {
+        let layout = Layout::new(1200, 800, 1.0);
+        assert_eq!(
+            tree_hit(
+                layout,
+                layout.help.x + layout.help.width / 2,
+                layout.help.y + layout.help.height / 2,
+                0,
+                1,
+                1.0,
+            ),
+            TreeHit::Help
         );
     }
 
@@ -576,7 +657,7 @@ mod tests {
     #[test]
     fn tree_hit_distinguishes_rows_close_buttons_and_background() {
         let layout = Layout::new(1000, 500, 1.0);
-        assert_eq!(tree_hit(layout, 10, 10, 0, 4, 1.0), TreeHit::Background);
+        assert_eq!(tree_hit(layout, 220, 10, 0, 4, 1.0), TreeHit::Background);
         assert_eq!(
             tree_hit(
                 layout,

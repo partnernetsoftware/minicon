@@ -81,11 +81,14 @@ minicon --help                   # everything else
 | `Ctrl+Shift+W` | close the active terminal; children are promoted |
 | `Ctrl+Shift+[` / `]` | switch tabs |
 | `Ctrl+Shift+I` | focus the input area |
+| `Enter` | in the input area, insert a soft newline without sending |
+| `Ctrl+O` | send the complete input-area draft |
 | `Up` / `Down` | in the input area, recall what you sent before |
 
-`z` / `0` / `Z` in the header shrink, reset, and grow terminal and interface
-text together; `中` / `En` switch the interface
-language.
+The header's `?` opens the in-app shortcut and feature guide. Its size controls
+shrink, reset, and grow terminal and interface text together; `中` / `En`
+switch the interface language. Closing the final tab leaves a greeting page so
+you can start another terminal; it does not quit the window.
 
 ### Reporting a problem
 

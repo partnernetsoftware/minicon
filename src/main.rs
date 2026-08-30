@@ -659,8 +659,9 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+W       Close active terminal (children are promoted)
   Ctrl+Shift+[ / ]   Switch terminal tabs
   Ctrl+Shift+I       Focus the external input area
-  Click a tab to select it. Click the bottom input area; Enter sends its
-  text to the active terminal.
+  Enter              Insert a soft newline in the input area
+  Ctrl+O             Send the complete input-area draft
+  Click a tab to select it. Closing the final tab leaves the greeting page.
 
   -e, --command  Run PROGRAM instead of the default shell. Everything after
                  -e is passed through verbatim, so it must come last:
@@ -675,7 +676,8 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
 {config_location}
 Keys: font_size, cols, rows (all optional).
 CLI flags override config; config overrides defaults.
-The tab column's magnifier buttons shrink, reset, and grow the whole interface.",
+The header's ? opens its shortcut guide; adjacent size buttons shrink, reset,
+and grow the whole interface.",
         control_examples = USAGE_CONTROL_EXAMPLES,
         shell_examples = USAGE_SHELL_EXAMPLES,
         config_location = USAGE_CONFIG_LOCATION,
@@ -873,10 +875,15 @@ impl Drop for ConTerminal {
 struct ConApp {
     workspace: workspace::Workspace,
     sessions: SessionStore<ConTerminal>,
+    /// Settings inherited when an empty workspace creates its next terminal.
+    /// Closing the final tab updates this before the terminal is dropped, so
+    /// the greeting page is a lifecycle boundary rather than a settings reset.
+    session_seed: SessionSeed,
     composer: composer::ComposerState,
     /// The language MiniCon labels its own chrome in. Child output is never
     /// touched by this.
     ui_language: ui::UiLanguage,
+    help_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
     sidebar_resizing: bool,
@@ -904,6 +911,39 @@ struct ConApp {
     a11y_inbox: Arc<a11y::ActionInbox>,
     a11y_dirty: bool,
     current_window_title: String,
+}
+
+#[derive(Clone)]
+struct SessionSeed {
+    working_dir: Option<String>,
+    command: Option<Vec<String>>,
+    font_size_logical: f64,
+    font_size_baseline: f64,
+    cols: u16,
+    rows: u16,
+}
+
+impl SessionSeed {
+    fn from_session(session: &ConTerminal) -> Self {
+        Self {
+            working_dir: session.working_dir.clone(),
+            command: session.command.clone(),
+            font_size_logical: session.font_size_logical,
+            font_size_baseline: session.font_size_baseline,
+            cols: session.cols,
+            rows: session.rows,
+        }
+    }
+
+    fn create_session(&self) -> ConTerminal {
+        let mut session = ConTerminal::new(self.working_dir.clone());
+        session.command = self.command.clone();
+        session.font_size_logical = self.font_size_logical;
+        session.font_size_baseline = self.font_size_baseline;
+        session.cols = self.cols;
+        session.rows = self.rows;
+        session
+    }
 }
 
 impl Drop for ConApp {
@@ -954,6 +994,29 @@ struct PendingClipboardPaste {
     target: workspace::TabId,
     read: agenterm_platform::clipboard::ClipboardTextRead,
     review: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ComposerCommitAction {
+    SoftNewline,
+    Send,
+}
+
+fn composer_commit_action(key: &NormalizedKeyEvent) -> Option<ComposerCommitAction> {
+    if key.state != KeyPressState::Pressed || key.modifiers.alt || key.modifiers.meta {
+        return None;
+    }
+    if !key.modifiers.control && matches!(key.logical, LogicalKey::Named(NamedKey::Enter)) {
+        return Some(ComposerCommitAction::SoftNewline);
+    }
+    if key.modifiers.control
+        && !key.modifiers.shift
+        && let LogicalKey::Character(text) = &key.logical
+        && text.eq_ignore_ascii_case("o")
+    {
+        return Some(ComposerCommitAction::Send);
+    }
+    None
 }
 
 /// Why a paste could not enter review. `Unsupported` has a defined fallback —
@@ -1041,17 +1104,19 @@ impl ConApp {
             .add_root("terminal".to_owned())
             .expect("an empty workspace accepts its initial tab");
         let mut sessions = SessionStore::default();
+        let initial_session = ConTerminal::new(working_dir);
+        let session_seed = SessionSeed::from_session(&initial_session);
         assert!(
-            sessions
-                .insert(initial, ConTerminal::new(working_dir))
-                .is_ok(),
+            sessions.insert(initial, initial_session).is_ok(),
             "an empty session store accepts its initial tab"
         );
         Self {
             workspace,
             sessions,
+            session_seed,
             composer: composer::ComposerState::default(),
             ui_language: ui::UiLanguage::default(),
+            help_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_resizing: false,
@@ -1167,10 +1232,18 @@ impl ConApp {
                 id.get()
             ),
         );
-        self.sessions.remove(&id);
+        if let Some(session) = self.sessions.remove(&id) {
+            self.session_seed = SessionSeed::from_session(&session);
+            drop(session);
+        }
         self.workspace.close(id);
         if self.workspace.active().is_none() {
-            self.exit = true;
+            self.tree_scroll_offset = 0;
+            self.composer = composer::ComposerState::default();
+            self.current_window_title = String::from("MiniCon");
+            window.set_title(&self.current_window_title);
+            self.mark_chrome_full();
+            window.request_redraw();
             return Ok(());
         }
         self.mark_chrome_full();
@@ -1413,17 +1486,12 @@ impl ConApp {
     }
 
     fn open_session(&mut self, window: &PixelWindow, child: bool) -> Result<(), PixelWindowError> {
-        let (working_dir, command, font_size_logical, font_size_baseline, cols, rows) = {
-            let current = self.active_session()?;
-            (
-                current.working_dir.clone(),
-                current.command.clone(),
-                current.font_size_logical,
-                current.font_size_baseline,
-                current.cols,
-                current.rows,
-            )
-        };
+        let seed = self
+            .workspace
+            .active()
+            .and_then(|id| self.sessions.get(&id))
+            .map(SessionSeed::from_session)
+            .unwrap_or_else(|| self.session_seed.clone());
         self.cancel_pointer_gestures_for_activation(window);
         let parent = self.workspace.active();
         let id = match (child, parent) {
@@ -1434,12 +1502,7 @@ impl ConApp {
             PixelWindowError::failed("con_tab_create", "active parent is unavailable")
         })?;
 
-        let mut session = ConTerminal::new(working_dir);
-        session.command = command;
-        session.font_size_logical = font_size_logical;
-        session.font_size_baseline = font_size_baseline;
-        session.cols = cols;
-        session.rows = rows;
+        let mut session = seed.create_session();
         Self::configure_chrome(
             &mut session,
             window.metrics()?.scale_factor,
@@ -1456,6 +1519,7 @@ impl ConApp {
                 "stable tab id is already in use",
             ));
         }
+        self.session_seed = seed;
         self.mark_chrome_full();
         self.reveal_active_tree_row(window)?;
         self.refresh_title(window)
@@ -1515,10 +1579,15 @@ impl ConApp {
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("w") {
-            self.close_active_session(window)?;
+            if self.workspace.active().is_some() {
+                self.close_active_session(window)?;
+            }
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("i") {
+            if self.workspace.active().is_none() {
+                return Ok(true);
+            }
             self.composer.focused = true;
             self.update_composer_ime_anchor(window)?;
             self.mark_composer_dirty();
@@ -1562,19 +1631,32 @@ impl ConApp {
             ui::TreeHit::Outside => return Ok(false),
             ui::TreeHit::Background => return Ok(true),
             ui::TreeHit::NewRoot => {
+                self.help_open = false;
                 self.open_session(window, false)?;
                 return Ok(true);
             }
+            ui::TreeHit::Help => {
+                self.help_open = !self.help_open;
+                self.mark_chrome_full();
+                window.request_redraw();
+                return Ok(true);
+            }
             ui::TreeHit::ZoomOut => {
-                self.active_session_mut()?.zoom_font(window, false);
+                if let Ok(session) = self.active_session_mut() {
+                    session.zoom_font(window, false);
+                }
                 return Ok(true);
             }
             ui::TreeHit::ZoomReset => {
-                self.active_session_mut()?.reset_font(window);
+                if let Ok(session) = self.active_session_mut() {
+                    session.reset_font(window);
+                }
                 return Ok(true);
             }
             ui::TreeHit::ZoomIn => {
-                self.active_session_mut()?.zoom_font(window, true);
+                if let Ok(session) = self.active_session_mut() {
+                    session.zoom_font(window, true);
+                }
                 return Ok(true);
             }
             ui::TreeHit::Language(language) => {
@@ -1784,8 +1866,19 @@ impl ConApp {
         if key.state != KeyPressState::Pressed {
             return true;
         }
-        if !matches!(key.logical, LogicalKey::Named(NamedKey::Enter)) {
-            self.composer.submit_error = None;
+        self.composer.submit_error = None;
+        match composer_commit_action(key) {
+            Some(ComposerCommitAction::SoftNewline) => {
+                composer::insert(&mut self.composer, "\n");
+                let _ = self.update_composer_ime_anchor(window);
+                return true;
+            }
+            Some(ComposerCommitAction::Send) => {
+                self.submit_composer();
+                let _ = self.update_composer_ime_anchor(window);
+                return true;
+            }
+            None => {}
         }
         if key.modifiers.control
             && !key.modifiers.alt
@@ -1813,9 +1906,6 @@ impl ConApp {
             return true;
         }
         match &key.logical {
-            LogicalKey::Named(NamedKey::Enter) => {
-                self.submit_composer();
-            }
             LogicalKey::Named(NamedKey::Backspace) => {
                 composer::backspace(&mut self.composer);
             }
@@ -2217,6 +2307,8 @@ impl ConApp {
                         );
                         json::object(vec![
                             ("active", tab_id_json(self.workspace.active())),
+                            ("workspace_empty", self.workspace.active().is_none().into()),
+                            ("help_open", self.help_open.into()),
                             (
                                 "control_pointer_owner",
                                 tab_id_json(self.control_pointer_owner),
@@ -2740,13 +2832,14 @@ impl ConApp {
                 self.sidebar_width_logical =
                     ui::sidebar_width_from_pointer(position.x, metrics.logical_size.width);
                 let sidebar_width = self.sidebar_width_logical;
-                let session = self.active_session_mut()?;
-                Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
-                session.queue_resize(
-                    metrics.physical_width,
-                    metrics.physical_height,
-                    metrics.scale_factor,
-                );
+                if let Ok(session) = self.active_session_mut() {
+                    Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+                    session.queue_resize(
+                        metrics.physical_width,
+                        metrics.physical_height,
+                        metrics.scale_factor,
+                    );
+                }
                 let _ = window.set_pointer_cursor(PixelPointerCursor::ResizeHorizontal);
                 window.request_redraw();
                 Ok(true)
@@ -2842,25 +2935,6 @@ impl ConApp {
             tree_rule.to_xrgb(),
         );
 
-        paint_chrome_text(
-            &mut surface,
-            14,
-            9,
-            if self.terminal_clipboard_error.is_some() {
-                self.ui_language.strings().paste_failed
-            } else {
-                // The product name, not a translated noun: it is the trademark
-                // and reads the same in every language.
-                "MiniCon"
-            },
-            if self.terminal_clipboard_error.is_some() {
-                error_accent
-            } else {
-                muted
-            },
-            chrome_size(CHROME_HEADER_SIZE_PX),
-            layout.new_root.x.saturating_sub(18),
-        );
         let header_icon_size = chrome_size(CHROME_HEADER_SIZE_PX);
         paint_header_icon_button(
             &mut surface,
@@ -2868,6 +2942,15 @@ impl ConApp {
             HeaderIcon::NewRoot,
             muted,
             false,
+            header_icon_size,
+            scale,
+        );
+        paint_header_icon_button(
+            &mut surface,
+            layout.help,
+            HeaderIcon::Help,
+            if self.help_open { accent } else { muted },
+            self.help_open,
             header_icon_size,
             scale,
         );
@@ -3155,7 +3238,142 @@ impl ConApp {
             accent,
             chrome_size(BUTTON_LABEL_SIZE_PX),
         );
+        if self.help_open {
+            paint_help_panel(
+                &mut surface,
+                layout,
+                width,
+                height,
+                scale,
+                self.ui_language.help_lines(),
+                chrome_size(CHROME_STATUS_SIZE_PX),
+            );
+        }
         Ok(())
+    }
+
+    fn paint_empty_workspace(&self, pixels: &mut [u32], width: u32, height: u32, scale: f64) {
+        let mut surface = Surface::with_clip(
+            pixels,
+            width,
+            height,
+            PixelRect::from_xywh(0, 0, width, height),
+        );
+        let layout = self.layout(width, height, scale);
+        let tree_bg = Rgb(0x08, 0x08, 0x08);
+        let canvas = Rgb(0x00, 0x00, 0x00);
+        let rule = Rgb(0x48, 0x48, 0x48);
+        let muted = Rgb(0xA8, 0xA8, 0xA8);
+        let text = Rgb(0xF5, 0xF5, 0xF5);
+        surface.fill_rect(0, 0, width, height, canvas.to_xrgb());
+        surface.fill_rect(0, 0, layout.sidebar.width, height, tree_bg.to_xrgb());
+        surface.fill_rect(
+            layout.sidebar.width.saturating_sub(1),
+            0,
+            1,
+            height,
+            rule.to_xrgb(),
+        );
+
+        let chrome_size = |nominal| {
+            scaled_chrome_font(nominal, self.session_seed.font_size_logical, scale.max(1.0))
+        };
+        let icon_size = chrome_size(CHROME_HEADER_SIZE_PX);
+        for (button, icon, selected) in [
+            (layout.new_root, HeaderIcon::NewRoot, false),
+            (layout.help, HeaderIcon::Help, self.help_open),
+            (
+                layout.language_chinese,
+                HeaderIcon::Language(ui::UiLanguage::Chinese),
+                self.ui_language == ui::UiLanguage::Chinese,
+            ),
+            (
+                layout.language_english,
+                HeaderIcon::Language(ui::UiLanguage::English),
+                self.ui_language == ui::UiLanguage::English,
+            ),
+            (layout.zoom_out, HeaderIcon::ZoomOut, false),
+            (layout.zoom_reset, HeaderIcon::ZoomReset, false),
+            (layout.zoom_in, HeaderIcon::ZoomIn, false),
+        ] {
+            paint_header_icon_button(
+                &mut surface,
+                button,
+                icon,
+                if selected { text } else { muted },
+                selected,
+                icon_size,
+                scale,
+            );
+        }
+
+        let strings = self.ui_language.strings();
+        let button = layout.empty_new_terminal(width, height, scale);
+        let title_size = chrome_size(18);
+        let title_metrics = font::cell_metrics(title_size);
+        let title_width = title_metrics.width.max(1).saturating_mul(
+            u32::try_from(composer::cells(strings.empty_title)).unwrap_or(u32::MAX),
+        );
+        let content_width = width.saturating_sub(layout.sidebar.width);
+        let title_x = layout
+            .sidebar
+            .width
+            .saturating_add(content_width.saturating_sub(title_width) / 2);
+        let title_y = button
+            .y
+            .saturating_sub(title_metrics.height.saturating_add(28));
+        paint_chrome_text(
+            &mut surface,
+            title_x,
+            title_y,
+            strings.empty_title,
+            muted,
+            title_size,
+            content_width,
+        );
+        surface.fill_rect(
+            button.x,
+            button.y,
+            button.width,
+            button.height,
+            Rgb(0x28, 0x28, 0x28).to_xrgb(),
+        );
+        stroke_rect(&mut surface, button, scale.max(1.0) as u32, rule);
+        paint_button_label(
+            &mut surface,
+            button,
+            strings.new_terminal,
+            text,
+            chrome_size(BUTTON_LABEL_SIZE_PX),
+        );
+        let hint_size = chrome_size(13);
+        let hint_metrics = font::cell_metrics(hint_size);
+        let hint_width = hint_metrics.width.max(1).saturating_mul(
+            u32::try_from(composer::cells(strings.new_terminal_hint)).unwrap_or(u32::MAX),
+        );
+        paint_chrome_text(
+            &mut surface,
+            layout
+                .sidebar
+                .width
+                .saturating_add(content_width.saturating_sub(hint_width) / 2),
+            button.y.saturating_add(button.height).saturating_add(14),
+            strings.new_terminal_hint,
+            muted,
+            hint_size,
+            content_width,
+        );
+        if self.help_open {
+            paint_help_panel(
+                &mut surface,
+                layout,
+                width,
+                height,
+                scale,
+                self.ui_language.help_lines(),
+                chrome_size(CHROME_STATUS_SIZE_PX),
+            );
+        }
     }
 }
 
@@ -5100,7 +5318,6 @@ impl ConTerminal {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
-
         // A session with an exited child remains drawable and selectable. The
         // outer ConApp may still host live siblings; closing the entire GUI
         // here made an ordinary child failure indistinguishable from a host
@@ -5213,6 +5430,21 @@ impl PixelWindowApplication for ConApp {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
+        if self.help_open
+            && matches!(
+                &event,
+                PixelWindowEvent::Keyboard(NormalizedKeyEvent {
+                    state: KeyPressState::Pressed,
+                    logical: LogicalKey::Named(NamedKey::Escape),
+                    ..
+                })
+            )
+        {
+            self.help_open = false;
+            self.mark_chrome_full();
+            window.request_redraw();
+            return Ok(PixelWindowDirective::Continue);
+        }
         if matches!(event, PixelWindowEvent::Wake) {
             self.drain_a11y_actions(window)?;
             self.drain_terminal_clipboard_paste(window);
@@ -5286,11 +5518,9 @@ impl PixelWindowApplication for ConApp {
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
             self.mark_chrome_full();
             let sidebar_width = self.sidebar_width_logical;
-            Self::configure_chrome(
-                self.active_session_mut()?,
-                metrics.scale_factor,
-                sidebar_width,
-            );
+            if let Ok(session) = self.active_session_mut() {
+                Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+            }
         }
         if let PixelWindowEvent::Keyboard(key) = &event
             && self.handle_workspace_shortcut(window, key)?
@@ -5343,7 +5573,46 @@ impl PixelWindowApplication for ConApp {
             ..
         } = &event
         {
+            if self.help_open {
+                let metrics = window.metrics()?;
+                let scale = metrics.scale_factor.max(1.0);
+                let layout = self.layout(
+                    metrics.physical_width,
+                    metrics.physical_height,
+                    metrics.scale_factor,
+                );
+                let x = (position.x * scale).max(0.0) as u32;
+                let y = (position.y * scale).max(0.0) as u32;
+                if layout.help.contains(x, y) {
+                    let _ = self.handle_tree_pointer(window, position)?;
+                } else {
+                    self.help_open = false;
+                    self.mark_chrome_full();
+                    window.request_redraw();
+                }
+                return Ok(PixelWindowDirective::Continue);
+            }
             if self.handle_tree_pointer(window, position)? {
+                return Ok(PixelWindowDirective::Continue);
+            }
+            if self.workspace.active().is_none() {
+                let metrics = window.metrics()?;
+                let scale = metrics.scale_factor.max(1.0);
+                let layout = self.layout(
+                    metrics.physical_width,
+                    metrics.physical_height,
+                    metrics.scale_factor,
+                );
+                let x = (position.x * scale).max(0.0) as u32;
+                let y = (position.y * scale).max(0.0) as u32;
+                if layout
+                    .empty_new_terminal(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    self.open_session(window, false)?;
+                    window.focus();
+                    window.request_redraw();
+                }
                 return Ok(PixelWindowDirective::Continue);
             }
             match self.composer_hit(window, position)? {
@@ -5401,6 +5670,9 @@ impl PixelWindowApplication for ConApp {
                 _ => {}
             }
         }
+        if self.workspace.active().is_none() {
+            return Ok(PixelWindowDirective::Continue);
+        }
         let active = self.workspace.active().ok_or_else(|| {
             PixelWindowError::failed("con_session_missing", "no active terminal session")
         })?;
@@ -5423,10 +5695,8 @@ impl PixelWindowApplication for ConApp {
         window: &PixelWindow,
         frame: &mut XrgbPixelFrame<'_>,
     ) -> Result<PixelWindowDirective, PixelWindowError> {
-        // Closing the last tab sets `exit` from control drain/event paths.
-        // Portable (macOS/Linux) hosts may still deliver a pending redraw after
-        // that; do not touch active session or report con_session_missing —
-        // match Windows close-window: clean Exit directive.
+        // Explicit window close is the only product path that sets `exit`.
+        // Closing the final tab is a valid zero-session greeting state.
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
@@ -5444,6 +5714,18 @@ impl PixelWindowApplication for ConApp {
             frame_info.retention,
             PixelBackingRetention::RetainedAcrossFrames
         );
+        if self.workspace.active().is_none() {
+            let scale = window.metrics()?.scale_factor.max(1.0);
+            self.note_frame_dimensions(width, height, scale);
+            self.paint_empty_workspace(frame.pixels_mut(), width, height, scale);
+            frame
+                .commit(PixelFrameWrite::Full)
+                .map_err(|error| PixelWindowError::failed("con_frame_commit", error.to_string()))?;
+            self.chrome_dirty = DirtyRegion::default();
+            self.retained.invalidate();
+            self.perf_stats.record_host_direct_frame();
+            return Ok(PixelWindowDirective::Continue);
+        }
         macro_rules! render_try {
             ($expression:expr) => {{
                 match $expression {
@@ -5715,9 +5997,9 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Exit);
         }
         let control_deadline = self.drain_control(window, now);
-        // A control request can close the final tab while draining. Re-check
-        // before asking for an active session so explicit close is a normal
-        // host exit rather than a synthetic `con_session_missing` failure.
+        // A control request can explicitly close the window while draining.
+        // Re-check before touching session state so close stays a normal host
+        // exit rather than a synthetic `con_session_missing` failure.
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
@@ -5726,6 +6008,10 @@ impl PixelWindowApplication for ConApp {
         }
         if self.a11y_dirty {
             self.publish_a11y(window);
+        }
+        if self.workspace.active().is_none() {
+            return Ok(control_deadline
+                .map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil));
         }
         let directive = self.active_session_mut()?.about_to_wait(window, now)?;
         Ok(match (directive, control_deadline) {
@@ -5940,9 +6226,63 @@ fn paint_button_label(
     paint_chrome_text(surface, x, y, label, color, font_size_px, button.width);
 }
 
+fn paint_help_panel(
+    surface: &mut Surface<'_>,
+    layout: ui::Layout,
+    width: u32,
+    height: u32,
+    scale: f64,
+    lines: [&str; 8],
+    font_size_px: u16,
+) {
+    let dip =
+        |value: f64| agenterm_platform::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
+    let available_width = width.saturating_sub(layout.sidebar.width);
+    let panel_width = dip(430.0).min(available_width.saturating_sub(dip(32.0)));
+    let panel_height = dip(286.0).min(height.saturating_sub(dip(32.0)));
+    let panel = ui::Rect {
+        x: layout
+            .sidebar
+            .width
+            .saturating_add(available_width.saturating_sub(panel_width) / 2),
+        y: height.saturating_sub(panel_height) / 2,
+        width: panel_width,
+        height: panel_height,
+    };
+    surface.fill_rect(
+        panel.x,
+        panel.y,
+        panel.width,
+        panel.height,
+        Rgb(0x14, 0x14, 0x14).to_xrgb(),
+    );
+    stroke_rect(surface, panel, dip(1.0).max(1), Rgb(0x60, 0x60, 0x60));
+    let metrics = font::cell_metrics(font_size_px);
+    let line_height = metrics.height.max(1).saturating_add(dip(9.0));
+    let x = panel.x.saturating_add(dip(24.0));
+    let mut y = panel.y.saturating_add(dip(22.0));
+    for (index, line) in lines.into_iter().enumerate() {
+        paint_chrome_text(
+            surface,
+            x,
+            y,
+            line,
+            if index == 0 {
+                Rgb(0xF5, 0xF5, 0xF5)
+            } else {
+                Rgb(0xC8, 0xC8, 0xC8)
+            },
+            font_size_px,
+            panel.width.saturating_sub(dip(48.0)),
+        );
+        y = y.saturating_add(line_height);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum HeaderIcon {
     NewRoot,
+    Help,
     Language(ui::UiLanguage),
     ZoomOut,
     ZoomReset,
@@ -5985,25 +6325,36 @@ fn paint_header_icon_button(
     let stroke =
         agenterm_platform::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
     let inset = stroke.saturating_mul(2);
+    // Keep the 24-DIP hit target, but pull the visible plate inward by 2 DIP.
+    // Six edge-to-edge outlined squares read as a debug grid and overpower the
+    // product name; the dark breathing channel groups the controls without
+    // making them harder to click.
+    let plate_inset = agenterm_platform::numeric::round_f64(2.0 * scale.max(1.0)) as u32;
+    let plate = ui::Rect {
+        x: button.x.saturating_add(plate_inset),
+        y: button.y.saturating_add(plate_inset),
+        width: button.width.saturating_sub(plate_inset.saturating_mul(2)),
+        height: button.height.saturating_sub(plate_inset.saturating_mul(2)),
+    };
     surface.fill_rect(
-        button.x,
-        button.y,
-        button.width,
-        button.height,
+        plate.x,
+        plate.y,
+        plate.width,
+        plate.height,
         if selected {
-            Rgb(0x32, 0x32, 0x32).to_xrgb()
+            Rgb(0x28, 0x28, 0x28).to_xrgb()
         } else {
-            Rgb(0x12, 0x12, 0x12).to_xrgb()
+            Rgb(0x10, 0x10, 0x10).to_xrgb()
         },
     );
     stroke_rect(
         surface,
-        button,
+        plate,
         stroke,
         if selected {
-            Rgb(0xF5, 0xF5, 0xF5)
-        } else {
             Rgb(0x70, 0x70, 0x70)
+        } else {
+            Rgb(0x38, 0x38, 0x38)
         },
     );
 
@@ -6011,6 +6362,7 @@ fn paint_header_icon_button(
         HeaderIcon::Language(language) => {
             paint_button_label(surface, button, language.entry_label(), color, font_size_px)
         }
+        HeaderIcon::Help => paint_button_label(surface, button, "?", color, font_size_px),
         HeaderIcon::NewRoot => {
             let window = ui::Rect {
                 x: button.x.saturating_add(inset),
@@ -6223,6 +6575,22 @@ fn paint_chrome_text_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn composer_enter_is_soft_newline_and_ctrl_o_is_the_only_send_chord() {
+        let enter = injected_key_event(InjectedKey::Named(NamedKey::Enter), false, false, false);
+        let ctrl_o = injected_key_event(InjectedKey::Char('o'), true, false, false);
+        let plain_o = injected_key_event(InjectedKey::Char('o'), false, false, false);
+        assert_eq!(
+            composer_commit_action(&enter),
+            Some(ComposerCommitAction::SoftNewline)
+        );
+        assert_eq!(
+            composer_commit_action(&ctrl_o),
+            Some(ComposerCommitAction::Send)
+        );
+        assert_eq!(composer_commit_action(&plain_o), None);
+    }
 
     #[test]
     fn chrome_font_tracks_terminal_zoom_and_display_scale() {

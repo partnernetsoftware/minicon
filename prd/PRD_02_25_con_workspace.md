@@ -73,18 +73,28 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   generic `slice::sort_unstable` with a shared no-allocation iterative heapsort
   that stays deterministic O(n log n) and preserves second-input duplicate
   diagnostics.
+- [x] closing the final tab leaves the native window and control endpoint alive
+  with a valid zero-tab workspace. The terminal/composer disappear in favor of
+  a translated greeting, primary New Terminal action and `Ctrl+Shift+T` hint;
+  `list-tabs` reports an empty array and `ui-snapshot.active` is null. Creating
+  the next tab inherits the last session's working directory, command and font
+  geometry. Only explicit window close / quit exits the application.
 
 ## Local chrome
 
 - [x] the local chrome owns a vertically scrollable left tree with row-level
-  close targets and one aligned top icon strip: new root terminal, Chinese,
-  English, zoom out, reset and zoom in. A distinct bottom composer owns input,
-  Send and Newline.
-- [x] the tree header names the product, not a category. It reads `MiniCon`,
-  which is the trademark and reads the same in every language, rather than a
-  translatable noun.
-- [x] the header row carries a visible new-root action after `MiniCon`, then a
-  language switch left of the size controls. Two entries rather than one toggle: a toggle
+  close targets and one aligned top icon strip: new root terminal, help,
+  Chinese, English, zoom out, reset and zoom in. A distinct bottom composer
+  owns input, Send and Newline.
+- [x] the tree header does not repeat the `MiniCon` product label already owned
+  by the native window title. It spends that scarce row on actions and groups
+  them as `new/help | languages | zoom`, with 24-DIP hit targets, inset visual
+  plates and muted idle borders rather than an edge-to-edge high-contrast grid.
+- [x] the help icon opens a lightweight in-app panel describing the tab tree,
+  multiline composer, PTY terminal and current keyboard shortcuts. Clicking
+  outside or pressing Escape dismisses it; help is available with zero tabs.
+- [x] the header row carries a visible new-root action, then a language switch
+  left of the size controls. Two entries rather than one toggle: a toggle
   labelled with the language you are leaving is unreadable to exactly the
   person who needs it. Each is written in the language it selects, and the
   active one is drawn in the accent colour, so the control reports state as
@@ -115,7 +125,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   error and not a blank label found by a user.
 - [x] the language is reported by `ui-snapshot` as a stable tag, so automation
   can read and assert it without matching a display label.
-- [x] the six header tools stay ordered and disjoint across window widths and
+- [x] the seven header tools stay ordered and disjoint across window widths and
   DPI scales. An overlap would make one of them unreachable, which is a defect
   no rendering test would notice.
 - [~] **cross-platform sizing follows a logical-unit contract, not shared raw
@@ -288,6 +298,10 @@ the window rather than being hidden to save pixels.
   the only submission action and converts stored breaks to terminal carriage
   returns in order. Clipboard/accessibility paste still folds external
   newlines to spaces so only the deliberate product action creates commands.
+- [x] keyboard submission is deliberate: bare Enter inserts the same visible
+  soft newline as Newline, while `Ctrl+O` is the Send shortcut. Enter no longer
+  executes a command merely because the composer is focused; the button and
+  shortcut converge on the same transactional submission path.
 - [x] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY. `Ctrl+A/C/V/X` provide select-all, copy,
   bounded single-line paste and cut semantics. Every keyboard, IME, paste and
@@ -297,8 +311,8 @@ the window rather than being hidden to save pixels.
 - [x] composer focus isolation is owned by a Windows black-box journey: it
   obtains the current input bounds from `ui-snapshot`, performs a native client
   click, routes Space and `Ctrl+A/C/X/V` through `send-ui-keys`, proves the
-  terminal is unchanged before Enter, then proves the composed command reaches
-  the PTY.
+  terminal is unchanged before Send, then proves the composed command reaches
+  the PTY through `Ctrl+O` or the Send button.
 - [x] `send-ui-ime` follows the current focus owner through the same product
   `ImeEvent` path as the native host. Its bounded public journey proves terminal
   preedit visibility, CJK commit delivery to the PTY, composer-only
@@ -307,8 +321,9 @@ the window rather than being hidden to save pixels.
   native Microsoft Pinyin journey below owns the Windows message/input-method
   boundary and does not substitute synthetic `ImeEvent` delivery for it.
 - [x] composer submission is transactional: it clears text and snaps the live
-  viewport only after the active PTY accepts the complete text plus Enter. An
-  exited child or write failure restores the exact bounded text without the
+  viewport only after the active PTY accepts the complete text plus its
+  terminal carriage return. An exited child or write failure restores the
+  exact bounded text without the
   transport `\r`, keeps focus for retry, exposes the typed error in
   `ui-snapshot`, and paints the input/send affordance with a high-contrast error
   accent. The public multi-tab journey proves `RETRY` survives submission to a
