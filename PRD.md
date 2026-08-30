@@ -60,6 +60,9 @@ MiniCon — one-file local terminal
 │   │   ├── SignPath not configured; signing.mode remained off
 │   │   ├── minicon.com remained excluded by policy
 │   │   └── prd/archive/v0.1.4-release-history.md
+│   ├── [ ] v0.1.5 — unsigned minicon.com + native six-cell set
+│   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
+│   │   └── plan/plan-v0.1.5.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -107,11 +110,13 @@ flowchart LR
         C13["v0.1.3 released<br/>5 native archives · 6 cells · unsigned"]
         G13["qualified exact bytes<br/>runtime · control · Defender"]
         V13["public immutable Release<br/>no rebuild"]
-        C14["v0.1.4 Candidate<br/>unsigned native six-cell"]
+        C14["v0.1.4 released<br/>unsigned native six-cell · X11 fix"]
+        C15["v0.1.5 planned<br/>native six-cell + unsigned minicon.com"]
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
         SP["SignPath Foundation transition<br/>trusted Authenticode · timestamp"]
+        SR["later signed release<br/>new policy · new final-byte courts"]
         SI["PARTNERNET SOFTWARE PTY LTD<br/>future company-publisher adapter"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
@@ -126,9 +131,10 @@ flowchart LR
     X --> GH & VM
     GH & VM --> R
     R --> V12 --> C13
-    C13 --> G13 --> V13 --> C14
-    C14 -->|gate fails| KEEP
-    SP --> C14
+    C13 --> G13 --> V13 --> C14 --> C15
+    C15 -->|gate fails| KEEP
+    C15 -. later baseline .-> SR
+    SP --> SR
     SI -. later .-> SP
     QE -. later .-> QX
     X -. native baseline .-> QX
@@ -174,6 +180,10 @@ flowchart LR
   `signing.mode=off` and `assets.minicon_com=false`; absence did not silently
   select signing. Exact runs, SHA and asset sizes are archived in
   `prd/archive/v0.1.4-release-history.md`.
+- [ ] v0.1.5 adds raw unsigned `minicon.com` beside the five native archives;
+  it does not retrofit v0.1.4. One exact build, six APE GUI/control courts,
+  native parity, a three-object Defender court and no-rebuild Promotion are
+  specified in `plan/plan-v0.1.5.md`. SignPath remains outside this Candidate.
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity. SignPath Foundation is the truthful transition path;
   provider approval, timestamped exact signed bytes, six-grid execution and
