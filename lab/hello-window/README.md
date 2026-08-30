@@ -32,6 +32,23 @@ lab/hello-window/dist/helloworld-pure-c-x86-64.exe
 lab/hello-window/dist/helloworld-pure-c-x86-64.exe.sha256
 ```
 
+For the MiniCon profile split, generated files are:
+
+```text
+lab/hello-window/dist/minicon-debug-stripped-x86-64.exe
+lab/hello-window/dist/minicon-debug-unstripped-x86-64.exe
+lab/hello-window/dist/minicon-release-fast-stripped-x86-64.exe
+lab/hello-window/dist/minicon-release-fast-unstripped-x86-64.exe
+```
+
+Rebuild that court from repository root with
+`./lab/hello-window/build-profile-split.sh`.
+
+On Windows/MSVC, toggling Rust's `strip` setting did not change either file's
+length: both debug variants are 2,346,496 bytes and both release-fast variants
+are 893,952 bytes. Therefore `strip` does not explain the size collapse. Scan
+`debug-stripped` and `release-fast-unstripped` as the two useful controls.
+
 Both Rust variants reproduced `HEUR/QVM202.0.B951.Malware.Gen` on the same
 Windows court, ruling resources insufficient. Next, copy the pure-C EXE to
 that machine without changing scanner state. Scan it twice, then launch it and

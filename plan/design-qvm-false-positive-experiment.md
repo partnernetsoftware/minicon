@@ -108,6 +108,16 @@ unsigned-new-file reputation/shared toolchain structure. A remembered clean
 historical `agenterm-con.exe` has no same-time control and is not causal
 evidence. This diagnostic does not replace C1.
 
+The pure-C control was clean, as was a roughly 2 MiB debug MiniCon, while an
+892,416-byte release-fast MiniCon reproduced the named verdict. Packaging and
+the APE loader are ruled out as necessary triggers. A current-source 2x2
+profile court now crosses debug/release-fast with strip/no-strip. MSVC emitted
+equal-size pairs (2,346,496 and 893,952 bytes respectively), proving strip did
+not cause the size reduction. Scan debug+strip and release-fast+no-strip next;
+if their verdict follows optimization rather than strip, split release profile
+knobs (`opt-level`, debug assertions/overflow checks, codegen units) one at a
+time without random byte mutation.
+
 Kill criterion: any variant loses product parity, introduces a redistributable,
 or requires evasive mutation. Time-box ends when Q1 returns a vendor decision;
 Q2 waits for trusted signing, and Q3 begins only if Q1 does not clean Q0.

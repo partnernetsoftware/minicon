@@ -33,6 +33,27 @@ SDK/MSVC libraries and static CRT, but contains no Rust code and no PE
 resources. Its only DLL imports are Windows components `USER32.dll` and
 `KERNEL32.dll`; local 360 verdict and visible GUI launch are pending.
 
+Pure-C court result: **clean** (user-reported). A previously built debug
+MiniCon of roughly 2 MiB was also clean, while the 892,416-byte release-fast
+MiniCon at SHA-256
+`2f273ee37d615045d9d1fef57cff5977ecf9781f607dfe92558f93109ab8a608`
+reproduced `HEUR/QVM202.0.B951.Malware.Gen` (user-reported). ZIP/archive and
+`minicon.com` are therefore not necessary triggers.
+
+Current-source profile controls:
+
+| Variant | Bytes | SHA-256 | Verdict |
+|---|---:|---|---|
+| debug + strip | 2,346,496 | `0412912bce59149aff2f3f37004b625f3799f8419d962e4367d8fd6263863525` | pending |
+| debug + no strip | 2,346,496 | `392153b3ce82ef15e03129c4658ea62b23115366a1613f3c1e675dd6a4fd402f` | pending |
+| release-fast + strip | 893,952 | `9ea3538c06bebceac8a0b594aa4ca9a1b27da9eb55ec3365db0c7b421c03efa3` | pending |
+| release-fast + no strip | 893,952 | `b9b2868f711de0ebbbc787f39df34b46072c45402c8e0e9aaa7037959b3e2ea6` | pending |
+
+The equal sizes rule out `strip` as the mechanism that reduced the Windows PE
+from debug to release-fast. The decisive scans are debug+strip and
+release-fast+no-strip; the same named split would move ownership to release
+optimization/link layout rather than symbol stripping.
+
 Decision trace: the conventional tiny GUI reproduced the same named heuristic,
 so PTY, IPC, subprocesses, MiniCon's custom entry point and terminal behavior
 are not necessary conditions. The next controlled sample adds only ordinary PE
