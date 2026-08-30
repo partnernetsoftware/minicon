@@ -55,10 +55,11 @@ MiniCon — one-file local terminal
 │   │   ├── unsigned by explicit release-policy.json configuration
 │   │   ├── exact Candidate bytes + Defender on both Windows executables
 │   │   └── exact Candidate promoted without rebuild after gates + human authority
-│   ├── [~] v0.1.4 — unsigned native six-cell release
-│   │   ├── SignPath not configured; signing.mode remains off
-│   │   ├── minicon.com remains excluded by policy
-│   │   └── trusted signing stays a later explicit policy switch
+│   ├── [x] v0.1.4 released — unsigned native six-cell + Linux X11 runtime fix
+│   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
+│   │   ├── SignPath not configured; signing.mode remained off
+│   │   ├── minicon.com remained excluded by policy
+│   │   └── prd/archive/v0.1.4-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -167,10 +168,12 @@ flowchart LR
   `off` and `minicon.com` is absent. Exact Candidate, Defender, Promotion and
   public re-download evidence is archived in
   `prd/archive/v0.1.3-release-history.md`.
-- [~] v0.1.4 ships the unsigned native six-cell set. SignPath approval and its
-  release Environment variables are not yet available, so policy remains
-  `signing.mode=off` and `assets.minicon_com=false`; absence never silently
-  selects signing. The same workflows retain the later explicit policy switch.
+- [x] v0.1.4 shipped the unsigned native six-cell set with the Linux X11
+  runtime-only dependency correction. SignPath approval and its release
+  Environment variables were not available, so policy truthfully remained
+  `signing.mode=off` and `assets.minicon_com=false`; absence did not silently
+  select signing. Exact runs, SHA and asset sizes are archived in
+  `prd/archive/v0.1.4-release-history.md`.
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity. SignPath Foundation is the truthful transition path;
   provider approval, timestamped exact signed bytes, six-grid execution and

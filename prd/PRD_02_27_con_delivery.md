@@ -42,12 +42,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   source `39774ed`, and passed public-download hash plus native Linux/Windows
   execution. The Release is neither draft nor pre-release; `minicon.com` and
   signing remain excluded by policy.
-- [~] **v0.1.4 ships unsigned native six-cell archives through the same
-  workflows.** SignPath approval and release Environment variables are not yet
-  available, so the committed policy intentionally remains `signing.mode=off`
-  and `minicon_com=false`. Candidate selects the unsigned six-payload upstream;
-  no missing credential may silently choose a mode. The trusted-signing/APE
-  branch remains available only through a later explicit policy change.
+- [x] **v0.1.4 shipped unsigned native six-cell archives through the same
+  workflows.** It also proves Linux x86_64 and arm64 start in a minimal X11
+  court with `libxkbcommon-x11-0` and without the `-dev` package. SignPath
+  approval and release Environment variables were unavailable, so the
+  committed policy remained `signing.mode=off` and `minicon_com=false`.
+  Candidate selected the unsigned six-payload upstream; no missing credential
+  silently chose a mode. Exact evidence is in
+  `archive/v0.1.4-release-history.md`.
 
   Superseded signed-APE rehearsals, rejected Candidates and the final exact run
   ledger are preserved in `archive/v0.1.3-release-history.md`; they are not
@@ -62,8 +64,9 @@ flowchart LR
     X13 --> P13["6 Rust native payloads"]
     P13 --> G13["six runtime cells<br/>checksum + Windows Defender passed"]
     G13 --> R13["exact-SHA public v0.1.3 release"]
-    R13 --> X14["v0.1.4 policy<br/>unsigned native six-cell"]
-    X14 -->|qualification fails| K12["keep v0.1.3 stable<br/>revise v0.1.4 Candidate"]
+    R13 --> X14["v0.1.4 released<br/>unsigned native six-cell"]
+    X14 --> L14["minimal X11 runtime court<br/>both Linux ISAs"]
+    L14 --> R14["exact Candidate + Defender<br/>no-rebuild Promotion"]
 ```
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
