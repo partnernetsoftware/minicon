@@ -8,7 +8,7 @@ pub const SIDEBAR_WIDTH_DIP: f64 = 224.0;
 pub const TREE_HEADER_HEIGHT_DIP: f64 = 32.0;
 pub const TREE_ROW_HEIGHT_DIP: f64 = 30.0;
 pub const COMPOSER_HEIGHT_DIP: f64 = 96.0;
-pub const SIDEBAR_MIN_WIDTH_DIP: f64 = 180.0;
+pub const SIDEBAR_MIN_WIDTH_DIP: f64 = 224.0;
 pub const SIDEBAR_MAX_WIDTH_DIP: f64 = 480.0;
 pub const TERMINAL_MIN_WIDTH_DIP: f64 = 320.0;
 pub const SIDEBAR_RESIZE_GRIP_DIP: f64 = 6.0;
@@ -48,6 +48,8 @@ pub struct Layout {
     pub zoom_out: Rect,
     pub zoom_reset: Rect,
     pub zoom_in: Rect,
+    /// Opens a new root terminal; first tool after the MiniCon wordmark.
+    pub new_root: Rect,
     /// The two language entries, left of the size controls.
     pub language_chinese: Rect,
     pub language_english: Rect,
@@ -153,6 +155,12 @@ impl Layout {
             width: tool_size,
             height: tool_size,
         };
+        let new_root = Rect {
+            x: language_chinese.x.saturating_sub(tool_size),
+            y: tool_y,
+            width: tool_size,
+            height: tool_size,
+        };
         Self {
             sidebar: Rect {
                 x: 0,
@@ -169,6 +177,7 @@ impl Layout {
             zoom_out,
             zoom_reset,
             zoom_in,
+            new_root,
             language_chinese,
             language_english,
         }
@@ -218,6 +227,7 @@ impl Layout {
 pub enum TreeHit {
     Outside,
     Background,
+    NewRoot,
     ZoomOut,
     ZoomReset,
     ZoomIn,
@@ -310,6 +320,9 @@ pub fn tree_hit(
 ) -> TreeHit {
     if !layout.sidebar.contains(x, y) {
         return TreeHit::Outside;
+    }
+    if layout.new_root.contains(x, y) {
+        return TreeHit::NewRoot;
     }
     if layout.language_chinese.contains(x, y) {
         return TreeHit::Language(UiLanguage::Chinese);
@@ -453,14 +466,15 @@ mod tests {
         assert!(layout.composer_input.x + layout.composer_input.width < layout.composer_send.x);
     }
 
-    /// The two language entries sit left of the size controls and never
-    /// overlap them or each other — five tool rects share one header row, and
+    /// New-root, two language entries and three size controls never overlap —
+    /// six tool rects share one header row, and
     /// an overlap would make one of them unreachable.
     #[test]
     fn the_header_tools_are_ordered_and_disjoint() {
         for (width, scale) in [(1000, 1.0), (760, 1.0), (1600, 1.5), (2400, 2.0)] {
             let layout = Layout::new(width, 600, scale);
             let tools = [
+                layout.new_root,
                 layout.language_chinese,
                 layout.language_english,
                 layout.zoom_out,
@@ -474,7 +488,7 @@ mod tests {
                 );
             }
             assert!(
-                tools[4].x + tools[4].width <= layout.sidebar.width,
+                tools[5].x + tools[5].width <= layout.sidebar.width,
                 "the rightmost tool leaves the sidebar at {width}x{scale}"
             );
             assert!(
@@ -482,6 +496,22 @@ mod tests {
                 "tools spill into the tab rows at {width}x{scale}"
             );
         }
+    }
+
+    #[test]
+    fn new_root_header_button_has_its_own_hit_target() {
+        let layout = Layout::new(1000, 500, 1.0);
+        assert_eq!(
+            tree_hit(
+                layout,
+                layout.new_root.x + layout.new_root.width / 2,
+                layout.new_root.y + layout.new_root.height / 2,
+                0,
+                1,
+                1.0,
+            ),
+            TreeHit::NewRoot
+        );
     }
 
     #[test]
@@ -649,10 +679,16 @@ mod tests {
 
     #[test]
     fn sidebar_drag_is_bounded_and_preserves_terminal_floor() {
-        assert_eq!(sidebar_width_from_pointer(90.0, 1000.0), 180.0);
+        assert_eq!(
+            sidebar_width_from_pointer(90.0, 1000.0),
+            SIDEBAR_MIN_WIDTH_DIP
+        );
         assert_eq!(sidebar_width_from_pointer(330.0, 1000.0), 330.0);
         assert_eq!(sidebar_width_from_pointer(900.0, 1000.0), 480.0);
-        assert_eq!(sidebar_width_from_pointer(300.0, 450.0), 180.0);
+        assert_eq!(
+            sidebar_width_from_pointer(300.0, 450.0),
+            SIDEBAR_MIN_WIDTH_DIP
+        );
     }
 
     #[test]
@@ -686,7 +722,13 @@ mod tests {
         let close = layout.tree_close_rect(usize::MAX, f64::INFINITY);
         assert_eq!(close.y, u32::MAX);
 
-        assert_eq!(sidebar_width_from_pointer(f64::NAN, 1000.0), 180.0);
-        assert_eq!(sidebar_width_from_pointer(300.0, f64::NAN), 180.0);
+        assert_eq!(
+            sidebar_width_from_pointer(f64::NAN, 1000.0),
+            SIDEBAR_MIN_WIDTH_DIP
+        );
+        assert_eq!(
+            sidebar_width_from_pointer(300.0, f64::NAN),
+            SIDEBAR_MIN_WIDTH_DIP
+        );
     }
 }

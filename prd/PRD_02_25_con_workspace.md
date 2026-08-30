@@ -77,18 +77,19 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 ## Local chrome
 
 - [x] the local chrome owns a vertically scrollable left tree with row-level
-  close targets and top `z`/`0`/`Z` font controls, plus a distinct bottom composer
-  input and send action.
+  close targets and one aligned top icon strip: new root terminal, Chinese,
+  English, zoom out, reset and zoom in. A distinct bottom composer owns input,
+  Send and Newline.
 - [x] the tree header names the product, not a category. It reads `MiniCon`,
   which is the trademark and reads the same in every language, rather than a
   translatable noun.
-- [x] the header row carries a language switch left of the size controls,
-  giving `MiniCon 中 En z 0 Z`. Two entries rather than one toggle: a toggle
+- [x] the header row carries a visible new-root action after `MiniCon`, then a
+  language switch left of the size controls. Two entries rather than one toggle: a toggle
   labelled with the language you are leaving is unreadable to exactly the
   person who needs it. Each is written in the language it selects, and the
   active one is drawn in the accent colour, so the control reports state as
   well as offering a change.
-- [~] the size controls are compact `z`, `0`, and `Z` actions: shrink, restore
+- [~] the size controls are compact icon actions: shrink, restore
   the configured launch size, and grow. The same zoom source sizes terminal
   content and every chrome label, including tabs, header tools, composer text,
   IME status, and Send/Newline buttons; hit-testing uses the matching metrics.
@@ -114,7 +115,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   error and not a blank label found by a user.
 - [x] the language is reported by `ui-snapshot` as a stable tag, so automation
   can read and assert it without matching a display label.
-- [x] the five header tools stay ordered and disjoint across window widths and
+- [x] the six header tools stay ordered and disjoint across window widths and
   DPI scales. An overlap would make one of them unreachable, which is a defect
   no rendering test would notice.
 - [~] **cross-platform sizing follows a logical-unit contract, not shared raw

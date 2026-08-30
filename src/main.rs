@@ -675,7 +675,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
 {config_location}
 Keys: font_size, cols, rows (all optional).
 CLI flags override config; config overrides defaults.
-The tab column's z / 0 / Z buttons shrink, reset, and grow the whole interface.",
+The tab column's magnifier buttons shrink, reset, and grow the whole interface.",
         control_examples = USAGE_CONTROL_EXAMPLES,
         shell_examples = USAGE_SHELL_EXAMPLES,
         config_location = USAGE_CONFIG_LOCATION,
@@ -780,7 +780,7 @@ struct ConTerminal {
     child_exit_code_encoded: Arc<AtomicU64>,
     child_exit_code: Option<i32>,
 
-    /// Logical font size in DIPs. Adjusted by the tab column's z / 0 / Z buttons.
+    /// Logical font size in DIPs. Adjusted by the tab column's zoom buttons.
     font_size_logical: f64,
     /// Startup/configured font size restored by the `0` control.
     font_size_baseline: f64,
@@ -1561,6 +1561,10 @@ impl ConApp {
         ) {
             ui::TreeHit::Outside => return Ok(false),
             ui::TreeHit::Background => return Ok(true),
+            ui::TreeHit::NewRoot => {
+                self.open_session(window, false)?;
+                return Ok(true);
+            }
             ui::TreeHit::ZoomOut => {
                 self.active_session_mut()?.zoom_font(window, false);
                 return Ok(true);
@@ -2816,45 +2820,57 @@ impl ConApp {
                 muted
             },
             chrome_size(CHROME_HEADER_SIZE_PX),
-            tree_width.saturating_sub(28),
+            layout.new_root.x.saturating_sub(18),
         );
-        // The selected language is drawn in the accent and the other muted, so
-        // the switch also reports the current state instead of only offering
-        // one. Two entries rather than one toggle: a toggle labelled with the
-        // language you are leaving is unreadable to whoever needs it.
-        for (entry, language) in [
-            (layout.language_chinese, ui::UiLanguage::Chinese),
-            (layout.language_english, ui::UiLanguage::English),
+        let header_icon_size = chrome_size(CHROME_HEADER_SIZE_PX);
+        paint_header_icon_button(
+            &mut surface,
+            layout.new_root,
+            HeaderIcon::NewRoot,
+            muted,
+            false,
+            header_icon_size,
+            scale,
+        );
+        paint_header_icon_button(
+            &mut surface,
+            layout.language_chinese,
+            HeaderIcon::Language(ui::UiLanguage::Chinese),
+            if self.ui_language == ui::UiLanguage::Chinese {
+                accent
+            } else {
+                muted
+            },
+            self.ui_language == ui::UiLanguage::Chinese,
+            header_icon_size,
+            scale,
+        );
+        paint_header_icon_button(
+            &mut surface,
+            layout.language_english,
+            HeaderIcon::Language(ui::UiLanguage::English),
+            if self.ui_language == ui::UiLanguage::English {
+                accent
+            } else {
+                muted
+            },
+            self.ui_language == ui::UiLanguage::English,
+            header_icon_size,
+            scale,
+        );
+        for (entry, icon) in [
+            (layout.zoom_out, HeaderIcon::ZoomOut),
+            (layout.zoom_reset, HeaderIcon::ZoomReset),
+            (layout.zoom_in, HeaderIcon::ZoomIn),
         ] {
-            paint_chrome_text(
+            paint_header_icon_button(
                 &mut surface,
-                entry.x + 4,
-                entry.y + 5,
-                language.entry_label(),
-                if self.ui_language == language {
-                    accent
-                } else {
-                    muted
-                },
-                chrome_size(CHROME_HEADER_SIZE_PX),
-                entry.width.saturating_sub(4),
-            );
-        }
-        // Lowercase/zero/uppercase make the three outcomes compact and stable:
-        // shrink, restore the configured launch size, and grow.
-        for (entry, label) in [
-            (layout.zoom_out, "z"),
-            (layout.zoom_reset, "0"),
-            (layout.zoom_in, "Z"),
-        ] {
-            paint_chrome_text(
-                &mut surface,
-                entry.x + 3,
-                entry.y + 5,
-                label,
+                entry,
+                icon,
                 muted,
-                chrome_size(CHROME_HEADER_SIZE_PX),
-                entry.width.saturating_sub(3),
+                false,
+                header_icon_size,
+                scale,
             );
         }
 
@@ -5862,6 +5878,214 @@ fn paint_button_label(
         .y
         .saturating_add(button.height.saturating_sub(metrics.height.max(1)) / 2);
     paint_chrome_text(surface, x, y, label, color, font_size_px, button.width);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HeaderIcon {
+    NewRoot,
+    Language(ui::UiLanguage),
+    ZoomOut,
+    ZoomReset,
+    ZoomIn,
+}
+
+fn stroke_rect(surface: &mut Surface<'_>, rect: ui::Rect, stroke: u32, color: Rgb) {
+    let stroke = stroke.max(1).min(rect.width).min(rect.height);
+    surface.fill_rect(rect.x, rect.y, rect.width, stroke, color.to_xrgb());
+    surface.fill_rect(
+        rect.x,
+        rect.y.saturating_add(rect.height.saturating_sub(stroke)),
+        rect.width,
+        stroke,
+        color.to_xrgb(),
+    );
+    surface.fill_rect(rect.x, rect.y, stroke, rect.height, color.to_xrgb());
+    surface.fill_rect(
+        rect.x.saturating_add(rect.width.saturating_sub(stroke)),
+        rect.y,
+        stroke,
+        rect.height,
+        color.to_xrgb(),
+    );
+}
+
+/// Paints the header as one aligned icon family instead of six unrelated text
+/// fragments. Language glyphs remain self-identifying inside the same square
+/// button chrome; zoom and new-root use geometry that does not depend on a
+/// particular font containing symbol codepoints.
+fn paint_header_icon_button(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    icon: HeaderIcon,
+    color: Rgb,
+    selected: bool,
+    font_size_px: u16,
+    scale: f64,
+) {
+    let stroke =
+        agenterm_platform::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
+    let inset = stroke.saturating_mul(2);
+    surface.fill_rect(
+        button.x,
+        button.y,
+        button.width,
+        button.height,
+        if selected {
+            Rgb(0x32, 0x32, 0x32).to_xrgb()
+        } else {
+            Rgb(0x12, 0x12, 0x12).to_xrgb()
+        },
+    );
+    stroke_rect(
+        surface,
+        button,
+        stroke,
+        if selected {
+            Rgb(0xF5, 0xF5, 0xF5)
+        } else {
+            Rgb(0x70, 0x70, 0x70)
+        },
+    );
+
+    match icon {
+        HeaderIcon::Language(language) => {
+            paint_button_label(surface, button, language.entry_label(), color, font_size_px)
+        }
+        HeaderIcon::NewRoot => {
+            let window = ui::Rect {
+                x: button.x.saturating_add(inset),
+                y: button.y.saturating_add(inset),
+                width: button.width.saturating_sub(inset.saturating_mul(2)),
+                height: button.height.saturating_sub(inset.saturating_mul(2)),
+            };
+            stroke_rect(surface, window, stroke, color);
+            let plus_x = button.x.saturating_add(
+                button
+                    .width
+                    .saturating_sub(inset + stroke.saturating_mul(2)),
+            );
+            let plus_y = button.y.saturating_add(
+                button
+                    .height
+                    .saturating_sub(inset + stroke.saturating_mul(2)),
+            );
+            surface.fill_rect(
+                plus_x.saturating_sub(stroke.saturating_mul(2)),
+                plus_y,
+                stroke.saturating_mul(5),
+                stroke,
+                color.to_xrgb(),
+            );
+            surface.fill_rect(
+                plus_x,
+                plus_y.saturating_sub(stroke.saturating_mul(2)),
+                stroke,
+                stroke.saturating_mul(5),
+                color.to_xrgb(),
+            );
+        }
+        HeaderIcon::ZoomOut | HeaderIcon::ZoomIn => {
+            let lens_size = button.width.min(button.height).saturating_sub(inset * 3);
+            let lens = ui::Rect {
+                x: button.x.saturating_add(inset),
+                y: button.y.saturating_add(inset),
+                width: lens_size,
+                height: lens_size,
+            };
+            stroke_rect(surface, lens, stroke, color);
+            let center_x = lens.x.saturating_add(lens.width / 2);
+            let center_y = lens.y.saturating_add(lens.height / 2);
+            surface.fill_rect(
+                lens.x.saturating_add(stroke.saturating_mul(2)),
+                center_y,
+                lens.width.saturating_sub(stroke.saturating_mul(4)),
+                stroke,
+                color.to_xrgb(),
+            );
+            if icon == HeaderIcon::ZoomIn {
+                surface.fill_rect(
+                    center_x,
+                    lens.y.saturating_add(stroke.saturating_mul(2)),
+                    stroke,
+                    lens.height.saturating_sub(stroke.saturating_mul(4)),
+                    color.to_xrgb(),
+                );
+            }
+            for step in 0..3 {
+                surface.fill_rect(
+                    lens.x
+                        .saturating_add(lens.width)
+                        .saturating_add(step * stroke),
+                    lens.y
+                        .saturating_add(lens.height)
+                        .saturating_add(step * stroke),
+                    stroke,
+                    stroke,
+                    color.to_xrgb(),
+                );
+            }
+        }
+        HeaderIcon::ZoomReset => {
+            let inner = ui::Rect {
+                x: button.x.saturating_add(inset),
+                y: button.y.saturating_add(inset),
+                width: button.width.saturating_sub(inset.saturating_mul(2)),
+                height: button.height.saturating_sub(inset.saturating_mul(2)),
+            };
+            let arm = inner.width.min(inner.height) / 3;
+            for (x, y, horizontal_right, vertical_down) in [
+                (inner.x, inner.y, true, true),
+                (
+                    inner.x.saturating_add(inner.width.saturating_sub(stroke)),
+                    inner.y,
+                    false,
+                    true,
+                ),
+                (
+                    inner.x,
+                    inner.y.saturating_add(inner.height.saturating_sub(stroke)),
+                    true,
+                    false,
+                ),
+                (
+                    inner.x.saturating_add(inner.width.saturating_sub(stroke)),
+                    inner.y.saturating_add(inner.height.saturating_sub(stroke)),
+                    false,
+                    false,
+                ),
+            ] {
+                surface.fill_rect(
+                    if horizontal_right {
+                        x
+                    } else {
+                        x.saturating_sub(arm)
+                    },
+                    y,
+                    arm.saturating_add(stroke),
+                    stroke,
+                    color.to_xrgb(),
+                );
+                surface.fill_rect(
+                    x,
+                    if vertical_down {
+                        y
+                    } else {
+                        y.saturating_sub(arm)
+                    },
+                    stroke,
+                    arm.saturating_add(stroke),
+                    color.to_xrgb(),
+                );
+            }
+            surface.fill_rect(
+                inner.x.saturating_add(inner.width / 2),
+                inner.y.saturating_add(inner.height / 2),
+                stroke,
+                stroke,
+                color.to_xrgb(),
+            );
+        }
+    }
 }
 
 fn paint_chrome_text(
