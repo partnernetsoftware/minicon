@@ -23,8 +23,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   This is only **4/6 cell coverage**: macOS Universal contains arm64+x86_64,
   while Windows arm64 and Linux arm64 have no v0.1.2 archive. Never backfill
   that historical Release.
-- [~] **v0.1.3 Candidate: five unsigned native archives cover all six cells
-  (not tagged).** Windows/Linux each publish x86_64+arm64; macOS Universal
+- [x] **v0.1.3 released: five unsigned native archives cover all six cells.**
+  Windows/Linux each publish x86_64+arm64; macOS Universal
   contains both slices. Every archive has a SHA-256 sidecar. The machine policy
   `release-policy.json` says `signing.mode=off` and `minicon_com=false`.
   Candidate consumes one clean six-payload run, executes all six native cells,
@@ -37,8 +37,11 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   `1.457.375.0` scanned both sealed Windows executables clean; their bytes were
   unchanged after scanning. The archives are 401,853-byte Windows x86_64,
   386,448-byte Windows arm64, 2,258,012-byte Linux x86_64, 2,232,167-byte
-  Linux arm64, and 1,538,254-byte macOS Universal. This is Candidate evidence,
-  not publication authority: G8 remains open and no tag or Release exists.
+  Linux arm64, and 1,538,254-byte macOS Universal. Promotion run `33289364944`
+  consumed that exact Candidate without rebuilding, published tag `v0.1.3` at
+  source `39774ed`, and passed public-download hash plus native Linux/Windows
+  execution. The Release is neither draft nor pre-release; `minicon.com` and
+  signing remain excluded by policy.
 - [ ] **v0.1.4 adds `minicon.com` and trusted signing through the same
   workflows.** Bump the product/policy version, set `minicon_com=true` and
   `signing.mode=required`; Candidate then selects the trusted-signing upstream,

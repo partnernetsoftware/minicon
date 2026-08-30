@@ -50,11 +50,11 @@ MiniCon — one-file local terminal
 │   │   ├── GitHub native runners — fast regression and real ISA
 │   │   └── local UTM — controlled-image release and interactive reproduction
 │   ├── [x] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
-│   ├── [~] v0.1.3 Candidate — 5 native archives cover all 6 cells
+│   ├── [x] v0.1.3 released — 5 native archives cover all 6 cells
 │   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
 │   │   ├── unsigned by explicit release-policy.json configuration
 │   │   ├── exact Candidate bytes + Defender on both Windows executables
-│   │   └── no tag/Release before every gate + user names exact version and `promote`
+│   │   └── exact Candidate promoted without rebuild after gates + human authority
 │   ├── [ ] v0.1.4 — minicon.com + trusted signing
 │   │   ├── same workflows; switch policy signing.mode to required
 │   │   ├── minicon.com hard ceiling: 9437184 bytes (9 MiB)
@@ -161,14 +161,15 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.1.3 is now the unsigned native-six-cell release: five archives cover
+- [x] v0.1.3 is the unsigned native-six-cell release: five archives cover
   Windows/Linux x86_64+arm64 and both macOS slices through one Universal
   archive. `release-policy.json` is the machine-readable switch: signing is
   `off`, `minicon.com` is absent, and Defender must scan the exact two Windows
   executables sealed inside the Candidate. Exact-source build `33286599671`,
   Candidate `33286811086`, and reputation qualification `33287684429` are
-  green for source `39774ed`; G1–G7 are closed. Only the explicit human
-  `v0.1.3 promote` authority remains; no tag or Release exists.
+  green for source `39774ed`; Promotion run `33289364944` published those exact
+  bytes and re-downloaded/ran the public Linux and Windows packages. Tag
+  `v0.1.3` points to the Candidate source; the Release is public and immutable.
 - [ ] v0.1.4 owns `minicon.com` and trusted signing. The same Candidate,
   reputation and Release workflows consume the policy; changing the version,
   enabling `assets.minicon_com` and setting `signing.mode=required` selects the
