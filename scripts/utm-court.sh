@@ -38,6 +38,22 @@ EOF
 die() { printf 'utm-court: %s\n' "$*" >&2; exit 2; }
 blocked() { printf 'utm-court: BLOCKED: %s\n' "$*" >&2; exit 3; }
 
+# utmctl can wait forever when Apple's VM lifecycle request loses its reply.
+# Bound the client call itself; the caller still owns state polling/fallback.
+utmctl_bounded() {
+  timeout_seconds="$1"
+  shift
+  python3 - "$timeout_seconds" "$UTMCTL" "$@" <<'PY'
+import subprocess, sys
+
+try:
+    completed = subprocess.run(sys.argv[2:], timeout=int(sys.argv[1]))
+except subprocess.TimeoutExpired:
+    raise SystemExit(124)
+raise SystemExit(completed.returncode)
+PY
+}
+
 [ -r "$REGISTRY" ] || die "registry missing: $REGISTRY"
 [ -x "$UTMCTL" ] || die "utmctl missing: $UTMCTL"
 
@@ -73,7 +89,9 @@ stop_and_release() {
   state="$($UTMCTL status "$VM" 2>/dev/null || true)"
   case "$state" in
     stopped) return 0 ;;
-    started|suspended) "$UTMCTL" stop "$VM" --request ;;
+    started|suspended)
+      utmctl_bounded "${UTM_COURT_COMMAND_TIMEOUT:-15}" stop "$VM" --request || true
+      ;;
     *) blocked "$COURT_ID cannot release from state '${state:-unavailable}'" ;;
   esac
   for _ in $(seq 1 "${UTM_COURT_STOP_TIMEOUT:-30}"); do
@@ -81,7 +99,8 @@ stop_and_release() {
     sleep 1
   done
   # A virtual power event is the bounded fallback; it does not kill UTM or delete disks.
-  "$UTMCTL" stop "$VM" --force
+  utmctl_bounded "${UTM_COURT_COMMAND_TIMEOUT:-15}" stop "$VM" --force ||
+    blocked "$COURT_ID force-stop command timed out or failed"
   [ "$($UTMCTL status "$VM" 2>/dev/null || true)" = stopped ] ||
     blocked "$COURT_ID did not release host memory"
 }
