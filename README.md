@@ -1,7 +1,8 @@
 # MiniCon
 
-**A terminal that is one file.** One executable per platform, with no installer,
-no bundled runtime, and only operating-system libraries. It opens a real PTY,
+**A terminal that is one file.** Choose a native executable for your platform,
+or the experimental six-cell `minicon.com`; there is no installer or bundled
+language runtime. It opens a real PTY,
 renders a real terminal, and a script can drive and read every part of it on
 Windows, Linux, and macOS.
 
@@ -49,18 +50,20 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.4-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.5-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a universal binary — the same file runs on Apple Silicon and
-Intel.
+Intel. v0.1.5 also publishes raw `minicon.com` as an experimental, unsigned
+one-file launcher containing all six OS/ISA payloads. The five native archives
+remain the conventional fallback; every distributable has its own checksum.
 
 ## Code signing policy
 
-MiniCon v0.1.4 publishes the native six-cell set unsigned because SignPath
-approval and release configuration are not yet available; checksums and exact
-build/runtime receipts remain mandatory. `minicon.com` stays out of this
-release. The committed `release-policy.json` selects whether the same
+MiniCon v0.1.5 publishes the native six-cell set and experimental `minicon.com`
+unsigned because SignPath approval and release configuration are not yet
+available; checksums and exact build/runtime receipts remain mandatory. The
+committed `release-policy.json` selects whether the same
 Candidate/Release workflows require signing; missing credentials never
 silently turn it off. A test certificate, application or repository statement
 never counts as a signed release. See the
@@ -152,8 +155,9 @@ jq '{source_tree_sha256, artifacts}' target-six/receipt.json
 
 The `research/minicon-com-loader/dist/cells/` files are payload copies used to
 assemble the adjacent `minicon.com`; they are not an additional release set.
-`minicon.com` itself is experimental and is not part of releases through v0.1.4. Its
-receipt and checksum must travel with it when testing it on another machine.
+`minicon.com` itself remains experimental, but v0.1.5 publishes its exact raw
+bytes and checksum beside the native archives. Its receipt and checksum must
+travel with it when testing it on another machine.
 Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
 folders, logs, and cache snapshots are implementation state, not handoff
 artifacts.
@@ -175,9 +179,10 @@ snapshots after one hour. On macOS, `scripts/install-macos-daily-cleanup.sh` ins
 LaunchAgent for 03:17 daily maintenance. VM images and cloud bodies without an
 explicit verified archive receipt are never automatically deleted.
 
-Rust 1.97. The Linux build needs the runtime packages `libxkbcommon0
-libwayland-client0`; no `-dev` package is required. On an X11 session MiniCon
-bundles `libxkbcommon-x11.so.0` when the host omits `libxkbcommon-x11-0`.
+Rust 1.97. The Linux build needs the ordinary desktop runtime libraries
+`libxkbcommon.so.0` and `libwayland-client.so.0`; no `-dev` package is required.
+The release archive bundles `libxkbcommon-x11.so.0`, so a slim X11 desktop does
+not need a separate `libxkbcommon-x11-0` installation.
 
 ## Repository
 
@@ -249,8 +254,8 @@ August 2026.
 
 ## Code signing policy / 代码签名政策
 
-v0.1.4 在 SignPath 审批和发布配置尚未到位时继续发布未签名的六格原生包；
-`minicon.com` 不进入本版。
+v0.1.5 在 SignPath 审批和发布配置尚未到位时发布未签名的六格原生包，以及实验性的
+未签名 `minicon.com`；五个原生归档仍是常规回退选择。
 同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
 测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。

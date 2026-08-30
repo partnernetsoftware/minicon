@@ -13,8 +13,9 @@ fn main() {
         let arch = std::env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo must provide arch");
         let vendor = format!("vendor/linux/{arch}/libxkbcommon-x11.so.0");
         println!("cargo:rerun-if-changed={vendor}");
-        let bytes = std::fs::read(&vendor)
-            .unwrap_or_else(|error| panic!("missing bundled Linux XKB library at {vendor}: {error}"));
+        let bytes = std::fs::read(&vendor).unwrap_or_else(|error| {
+            panic!("missing bundled Linux XKB library at {vendor}: {error}")
+        });
         assert!(
             !bytes.is_empty(),
             "bundled Linux XKB library at {vendor} is empty"

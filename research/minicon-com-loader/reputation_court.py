@@ -139,16 +139,27 @@ def selftest() -> None:
         root = pathlib.Path(raw)
         run = {"id": "42", "attempt": "1"}
         sha = "a" * 64
+        x86, arm = "e" * 64, "f" * 64
         manifest = {"kind": "minicon-release-candidate", "version": "0.1.4", "source_sha": "b" * 40,
                     "candidate_run": run, "assets": [{"name": "minicon.com", "sha256": sha}],
-                    "reputation_assets": {"minicon.com": {"sha256": sha}},
-                    "release_policy": {"reputation": {"mode": "defender", "assets": ["minicon.com"]}},
+                    "reputation_assets": {
+                        "minicon.com": {"sha256": sha},
+                        "windows-x86_64": {"sha256": x86},
+                        "windows-arm64": {"sha256": arm},
+                    },
+                    "release_policy": {"reputation": {"mode": "defender", "assets": [
+                        "minicon.com", "windows-x86_64", "windows-arm64"]}},
                     "signing": {"mode": "required", "provider": "signpath-foundation",
                                 "publisher_organization": "SignPath Foundation",
-                                "signed_after_sha256": {"minicon.com": sha}},
+                                "signed_after_sha256": {
+                                    "minicon.com": sha, "win-x86_64": x86, "win-aarch64": arm}},
                     "receipts": {"signing": {"sha256": "d" * 64}}}
         common = {"verdict": "clean", "candidate_run": run,
-                  "assets": {"minicon.com": {"sha256": sha, "post_scan_sha256": sha}},
+                  "assets": {
+                      "minicon.com": {"sha256": sha, "post_scan_sha256": sha},
+                      "windows-x86_64": {"sha256": x86, "post_scan_sha256": x86},
+                      "windows-arm64": {"sha256": arm, "post_scan_sha256": arm},
+                  },
                   "provider": "fixture", "product_version": "1", "engine_version": "1",
                   "signature_version": "1", "scanned_at": "2026-01-01T00:00:00Z"}
         defender = {"kind": "minicon-defender-court", **common}
@@ -171,7 +182,6 @@ def selftest() -> None:
             raise AssertionError("mismatched SHA unexpectedly qualified")
         print("PASS reputation evidence exact-SHA court")
 
-        x86, arm = "e" * 64, "f" * 64
         unsigned_manifest = {
             "kind": "minicon-release-candidate", "version": "0.1.3", "source_sha": "b" * 40,
             "candidate_run": run,

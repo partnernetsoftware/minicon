@@ -11,6 +11,7 @@
   "reputation": {
     "mode": "defender",
     "assets": [
+      "minicon.com",
       "windows-x86_64",
       "windows-arm64"
     ]

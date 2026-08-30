@@ -30,16 +30,16 @@ Five platform archives cover all six OS/ISA cells, with a SHA-256 beside each.
 | Linux ARM64 | `minicon-VERSION-linux-arm64.tar.gz` |
 | macOS — Apple Silicon and Intel | `minicon-VERSION-macos-universal.tar.gz` |
 <!-- OPTIONAL_APE_START -->
-| Signed six-cell APE launcher | `minicon.com` |
+| Experimental unsigned six-cell APE launcher | `minicon.com` |
 <!-- OPTIONAL_APE_END -->
 
 The macOS build is a universal binary: the same file runs on both
 architectures.
 
-Linux archives use the distribution runtime libraries
-`libxkbcommon0`, `libxkbcommon-x11-0`, and `libwayland-client0`; development
-packages are not required. On Debian/Ubuntu, install a missing X11 bridge with
-`sudo apt-get install libxkbcommon-x11-0`.
+Linux archives use the distribution runtime libraries `libxkbcommon0` and
+`libwayland-client0`; development packages are not required. They bundle the
+runtime-only X11 bridge `libxkbcommon-x11.so.0`, so slim X11 systems do not need
+the `libxkbcommon-x11-0` package merely to start MiniCon.
 
 Verify a download before running it:
 

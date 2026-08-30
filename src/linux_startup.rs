@@ -128,8 +128,7 @@ fn cache_root() -> Result<PathBuf, String> {
     {
         return Ok(home.join(".cache").join("minicon").join("xkb-x11"));
     }
-    let fallback = std::env::temp_dir()
-        .join(format!("minicon-xkb-x11-{}", std::process::id()));
+    let fallback = std::env::temp_dir().join(format!("minicon-xkb-x11-{}", std::process::id()));
     Ok(fallback)
 }
 
@@ -218,9 +217,14 @@ mod tests {
     #[test]
     fn wayland_only_does_not_stage_the_x11_bridge() {
         assert_eq!(
-            preflight_with(None, Some(OsStr::new("wayland-0")), None, || {
-                panic!("must not probe")
-            }, || Err("must not stage".to_owned()), |_| Ok(()),),
+            preflight_with(
+                None,
+                Some(OsStr::new("wayland-0")),
+                None,
+                || { panic!("must not probe") },
+                || Err("must not stage".to_owned()),
+                |_| Ok(()),
+            ),
             Ok(())
         );
     }
@@ -267,7 +271,10 @@ mod tests {
             }
         }
         assert!(library.is_file());
-        assert_eq!(std::fs::read(&library).expect("read staged library"), BUNDLED_XKB_X11);
+        assert_eq!(
+            std::fs::read(&library).expect("read staged library"),
+            BUNDLED_XKB_X11
+        );
         let _ = std::fs::remove_dir_all(scratch);
     }
 }

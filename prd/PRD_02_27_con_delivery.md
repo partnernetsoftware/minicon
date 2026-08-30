@@ -50,6 +50,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Candidate selected the unsigned six-payload upstream; no missing credential
   silently chose a mode. Exact evidence is in
   `archive/v0.1.4-release-history.md`.
+- [~] **v0.1.5 Candidate preparation adds raw unsigned `minicon.com` beside
+  the five native archives.** One exact build supplies both representations;
+  six execute-only APE GUI/control courts, native parity, a three-object
+  Defender court (`minicon.com` plus both native Windows PEs), and no-rebuild
+  Promotion govern the release. SignPath remains outside this Candidate.
+  The executable plan and current gate state live in `../plan/plan-v0.1.5.md`.
 
   Superseded signed-APE rehearsals, rejected Candidates and the final exact run
   ledger are preserved in `archive/v0.1.3-release-history.md`; they are not
@@ -67,6 +73,9 @@ flowchart LR
     R13 --> X14["v0.1.4 released<br/>unsigned native six-cell"]
     X14 --> L14["minimal X11 runtime court<br/>both Linux ISAs"]
     L14 --> R14["exact Candidate + Defender<br/>no-rebuild Promotion"]
+    R14 --> X15["v0.1.5 Candidate<br/>native six-cell + unsigned minicon.com"]
+    X15 --> G15["six APE courts + native parity<br/>three-object Defender"]
+    G15 --> R15["exact no-rebuild Promotion"]
 ```
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**

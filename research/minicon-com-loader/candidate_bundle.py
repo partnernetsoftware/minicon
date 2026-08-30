@@ -64,7 +64,9 @@ def require_policy(policy: dict, version: str) -> tuple[bool, str]:
         raise ValueError("invalid release asset/signing policy")
     if mode == "required" and not include_com:
         raise ValueError("required signing without minicon.com is not a supported release shape")
-    expected_reputation = ["minicon.com"] if include_com else ["windows-x86_64", "windows-arm64"]
+    expected_reputation = ["windows-x86_64", "windows-arm64"]
+    if include_com:
+        expected_reputation.insert(0, "minicon.com")
     if not isinstance(reputation, dict) or reputation.get("mode") != "defender" or reputation.get("assets") != expected_reputation:
         raise ValueError("release reputation policy does not match its asset shape")
     return include_com, mode
@@ -177,10 +179,13 @@ def seal(args: argparse.Namespace) -> None:
     if include_com:
         com = next(item for item in assets if item["name"] == "minicon.com")
         if com["bytes"] > CANDIDATE_CEILING_BYTES:
-            raise ValueError("signed minicon.com exceeds the stamped 9 MiB Candidate ceiling")
-        signed_com = signing["assets"]["minicon.com"]
-        if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
-            raise ValueError("minicon.com asset does not match signed after-SHA receipt")
+            raise ValueError("minicon.com exceeds the stamped 9 MiB Candidate ceiling")
+        if signing_mode == "required":
+            signed_com = signing["assets"]["minicon.com"]
+            if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
+                raise ValueError("minicon.com asset does not match signed after-SHA receipt")
+        elif com["sha256"] != build.get("minicon_com_sha256") or com["bytes"] != build.get("minicon_com_bytes"):
+            raise ValueError("unsigned minicon.com asset does not match the one-build receipt")
 
     manifest = {
         "schema": 1,
@@ -328,7 +333,8 @@ def self_test() -> None:
         policy = {"schema": 1, "version": version,
                   "assets": {"native_archives": True, "minicon_com": True},
                   "signing": {"mode": "required"},
-                  "reputation": {"mode": "defender", "assets": ["minicon.com"]}}
+                  "reputation": {"mode": "defender", "assets": [
+                      "minicon.com", "windows-x86_64", "windows-arm64"]}}
         policy_path.write_text(json.dumps(policy))
         for index, name in enumerate(asset_names(version, True)):
             path = payload / name
@@ -414,7 +420,10 @@ def self_test() -> None:
         try:
             verify_manifest(manifest, payload)
         except ValueError as exc:
-            assert "embedded PE is not the signed after-SHA" in str(exc)
+            assert str(exc) in {
+                "windows-x86_64: reputation bytes mismatch",
+                f"{win.name}: embedded PE is not the signed after-SHA",
+            }
             print("PASS signed Windows archive substitution court")
         else:
             raise SystemExit("signed Windows archive substitution court did not fail")
@@ -423,14 +432,15 @@ def self_test() -> None:
         unsigned.mkdir()
         unsigned_policy_path = root / "unsigned-policy.json"
         unsigned_policy = {"schema": 1, "version": version,
-                           "assets": {"native_archives": True, "minicon_com": False},
+                           "assets": {"native_archives": True, "minicon_com": True},
                            "signing": {"mode": "off"},
-                           "reputation": {"mode": "defender", "assets": ["windows-x86_64", "windows-arm64"]}}
+                           "reputation": {"mode": "defender", "assets": [
+                               "minicon.com", "windows-x86_64", "windows-arm64"]}}
         unsigned_policy_path.write_text(json.dumps(unsigned_policy))
-        for name in asset_names(version, False):
+        for name in asset_names(version, True):
             source_path = payload / name
             target = unsigned / name
-            target.write_bytes(source_path.read_bytes())
+            target.write_bytes(b"unsigned-com" if name == "minicon.com" else source_path.read_bytes())
             (unsigned / f"{name}.sha256").write_text(f"{sha256(target)}  {name}\n")
         unsigned_aggregate = dict(read_json(aggregate_path))
         unsigned_aggregate["kind"] = "minicon-six-cell-aggregate"
@@ -444,9 +454,9 @@ def self_test() -> None:
         ))
         unsigned_manifest = read_json(output)
         assert unsigned_manifest["signing"] == {"mode": "off"}
-        assert len(unsigned_manifest["assets"]) == 5
+        assert len(unsigned_manifest["assets"]) == 6
         verify_manifest(unsigned_manifest, unsigned, unsigned_policy_path)
-        print("PASS unsigned five-archive Candidate policy court")
+        print("PASS unsigned APE plus five-archive Candidate policy court")
 
 
 def parser() -> argparse.ArgumentParser:

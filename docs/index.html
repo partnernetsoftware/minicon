@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1016">
   <title>MiniCon™ — A terminal that is one file</title>
-  <meta name="description" content="MiniCon — one real-terminal executable per platform for Windows, Linux, and macOS on x86_64 and aarch64. OS libraries only; no installer, bundled runtime, or background service.">
+  <meta name="description" content="MiniCon — native executables plus an experimental one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.">
   <link rel="canonical" href="https://minicon.agenterm.work/">
   <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
   <link rel="alternate" hreflang="zh-CN" href="https://minicon.agenterm.work/?lang=zh-CN">
@@ -16,11 +16,11 @@
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:title" content="MiniCon™ — A terminal that is one file">
-  <meta property="og:description" content="One real-terminal executable per platform across Windows, Linux, and macOS on x86_64 and aarch64. OS libraries only; no installer or bundled runtime.">
+  <meta property="og:description" content="Native executables plus an experimental one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
   <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MiniCon™ — A terminal that is one file">
-  <meta name="twitter:description" content="One real-terminal executable per platform across Windows, Linux, and macOS on x86_64 and aarch64. OS libraries only; no installer or bundled runtime.">
+  <meta name="twitter:description" content="Native executables plus an experimental one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
   <meta name="twitter:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <style>
@@ -246,7 +246,7 @@
         <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · no bundled runtime</p>
         <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
         <p class="hero-emotion" data-i18n="heroEmotion">Copy it over. Run it on a normal desktop.</p>
-        <p class="lead" data-i18n="heroLead">One real-terminal executable per platform for Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled runtime, only operating-system libraries — and a script can drive every part of it.</p>
+        <p class="lead" data-i18n="heroLead">Native executables plus an experimental one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.</p>
         <div class="cta-row">
           <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon" data-i18n="ctaSource">Source on GitHub</a>
@@ -406,7 +406,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
     <section id="install">
       <div class="wrap">
         <h2 data-i18n="installTitle">Getting it</h2>
-        <p class="section-lead" data-i18n="installLead">Download the executable and run it—there is no separate installer or bundled language runtime. Linux needs the normal desktop runtime libraries; Debian and Ubuntu users can install the X11 piece with <code>sudo apt-get install libxkbcommon-x11-0</code> (no <code>-dev</code> package).</p>
+        <p class="section-lead" data-i18n="installLead">Download a native archive or the experimental unsigned <code>minicon.com</code> and run it—there is no separate installer or bundled language runtime. Linux archives include the runtime-only X11 bridge; no <code>-dev</code> package is required.</p>
         <div class="cta-row">
           <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
@@ -461,7 +461,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
       const copy = {
                 en: {
           title: "MiniCon™ — A terminal that is one file",
-          description: "MiniCon — one real-terminal executable per platform for Windows, Linux, and macOS on x86_64 and aarch64. OS libraries only; no installer, bundled runtime, or background service.",
+          description: "MiniCon — native executables plus an experimental one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.",
           skip: "Skip to content",
           navLabel: "Primary navigation",
           languageLabel: "Language",
@@ -474,7 +474,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           heroEyebrow: "one file · no install · no bundled runtime",
           heroTitle: "A terminal that is <em>one file</em>.",
           heroEmotion: "Copy it over. Run it on a normal desktop.",
-          heroLead: "One real-terminal executable per platform for Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled runtime, only operating-system libraries — and a script can drive every part of it.",
+          heroLead: "Native executables plus an experimental one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.",
           ctaGet: "Get MiniCon",
           ctaSource: "Source on GitHub",
           ctaOld: "Old Windows support",
@@ -530,7 +530,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "Block until the condition holds or the timeout expires, and say which.",
           scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
           installTitle: "Getting it",
-          installLead: "Download the executable and run it—there is no separate installer or bundled language runtime. Linux needs the normal desktop runtime libraries; on Debian and Ubuntu: sudo apt-get install libxkbcommon-x11-0 (no -dev package).",
+          installLead: "Download a native archive or the experimental unsigned minicon.com and run it—there is no separate installer or bundled language runtime. Linux archives include the runtime-only X11 bridge; no -dev package is required.",
           installRelease: "Latest release",
           installBuild: "Build from source",
           familyTitle: "MiniCon is the terminal. AgenTerm is the Agent-era workbench.",
@@ -558,7 +558,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
-          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格真终端，每个平台一个可执行文件。只依赖系统库，免安装、免捆绑运行时、免后台服务。",
+          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供实验性单文件六格启动器。免安装、免捆绑语言运行时、免后台服务。",
           skip: "跳到正文",
           navLabel: "主导航",
           languageLabel: "语言",
@@ -571,7 +571,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           heroEyebrow: "一个文件 · 免安装 · 免捆绑运行时",
           heroTitle: "一个<em>文件</em>就是一个终端。",
           heroEmotion: "拷过去，在具备系统桌面库的电脑上直接运行。",
-          heroLead: "Windows、Linux、macOS × x86_64、aarch64 六格，每个平台一个真终端可执行文件。没有安装包和捆绑运行时，只依赖操作系统库；每一处都能被脚本驱动。",
+          heroLead: "Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供实验性单文件六格启动器。没有安装包和捆绑语言运行时；每一处都能被脚本驱动。",
           ctaGet: "获取 MiniCon",
           ctaSource: "GitHub 源码",
           ctaOld: "旧版 Windows 支持",
@@ -627,7 +627,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
           scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
           installTitle: "获取",
-          installLead: "下载可执行文件直接运行，不另带安装程序或语言运行时。Linux 仍需系统桌面运行库；Debian / Ubuntu 可执行 sudo apt-get install libxkbcommon-x11-0，不需要 -dev 包。",
+          installLead: "下载原生归档或实验性的未签名 minicon.com 直接运行，不另带安装程序或语言运行时。Linux 归档已包含仅运行时的 X11 bridge，不需要 -dev 包。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
           familyTitle: "MiniCon 是终端。AgenTerm 是 Agent 时代的工作台。",
@@ -655,7 +655,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
         },
 "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
-          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格真終端機，每個平台各有一個執行檔。只依賴系統程式庫，免安裝、免捆綁執行環境、免背景服務。",
+          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生執行檔，另提供實驗性單檔六格啟動器。免安裝、免捆綁語言執行環境、免背景服務。",
           skip: "跳到內容",
           navLabel: "主導覽",
           languageLabel: "語言",
@@ -665,10 +665,10 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navFamily: "AgenTerm",
           navInstall: "取得",
           navDocs: "文件",
-          heroEyebrow: "一個檔案 · 六格平台 · v0.1.2",
+          heroEyebrow: "一個檔案 · 六格平台 · 免安裝",
           heroTitle: "一個<em>檔案</em>就是一個終端機。",
           heroEmotion: "複製過去，執行。安裝就這樣結束了。",
-          heroLead: "MiniCon 為 Windows、Linux、macOS × x86_64、aarch64 六格提供真正的終端機，每個平台各有一個執行檔。沒有安裝程式或捆綁執行環境，只依賴作業系統程式庫；每個部分都可以被腳本操控與讀取。",
+          heroLead: "MiniCon 為 Windows、Linux、macOS × x86_64、aarch64 六格提供原生執行檔，另有實驗性單檔六格啟動器。沒有安裝程式或捆綁語言執行環境；每個部分都可由腳本操控與讀取。",
           ctaGet: "取得 MiniCon",
           ctaSource: "GitHub 原始碼",
           ctaOld: "舊版 Windows 支援",
@@ -724,7 +724,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
           scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
           installTitle: "取得方式",
-          installLead: "下載執行檔即可執行，不另帶安裝程式或語言執行環境。Linux 仍需系統桌面執行庫；Debian / Ubuntu 可執行 sudo apt-get install libxkbcommon-x11-0，不需要 -dev 套件。",
+          installLead: "下載原生封裝或實驗性的未簽名 minicon.com 即可執行，不另帶安裝程式或語言執行環境。Linux 封裝已包含僅執行期的 X11 bridge，不需要 -dev 套件。",
           installRelease: "最新發行版",
           installBuild: "自行建置",
           familyTitle: "MiniCon 是終端機。AgenTerm 是 Agent 時代的工作臺。",
