@@ -24,6 +24,8 @@ use minicon_core::{composer, json};
 mod control;
 mod control_pending;
 mod font;
+#[cfg(target_os = "linux")]
+mod linux_startup;
 mod palette;
 mod perf;
 mod raster_surface;
@@ -418,6 +420,11 @@ fn main() {
             std::process::exit(2);
         }
     };
+    #[cfg(target_os = "linux")]
+    if let Err(message) = linux_startup::preflight() {
+        let _ = agenterm_platform::parent_console::write_stderr(&format!("minicon: {message}\n"));
+        std::process::exit(1);
+    }
     let ConArgs {
         mut no_activate,
         working_dir,

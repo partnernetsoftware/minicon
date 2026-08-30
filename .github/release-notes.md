@@ -1,5 +1,6 @@
-MiniCon is a standalone terminal in a single executable: no installer, no
-runtime, and no Visual C++ redistributable.
+MiniCon is a standalone terminal in a single executable: no installer or
+bundled language runtime, and no Visual C++ redistributable. It uses the
+operating system's desktop libraries listed below.
 
 ## Highlights
 
@@ -28,6 +29,11 @@ Five platform archives cover all six OS/ISA cells, with a SHA-256 beside each.
 
 The macOS build is a universal binary: the same file runs on both
 architectures.
+
+Linux archives use the distribution runtime libraries
+`libxkbcommon0`, `libxkbcommon-x11-0`, and `libwayland-client0`; development
+packages are not required. On Debian/Ubuntu, install a missing X11 bridge with
+`sudo apt-get install libxkbcommon-x11-0`.
 
 Verify a download before running it:
 

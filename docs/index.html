@@ -243,9 +243,9 @@
   <main id="main">
     <section class="hero">
       <div class="wrap">
-        <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · no runtime</p>
+        <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · no bundled runtime</p>
         <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
-        <p class="hero-emotion" data-i18n="heroEmotion">Copy it over. Run it. Nothing to install.</p>
+        <p class="hero-emotion" data-i18n="heroEmotion">Copy it over. Run it on a normal desktop.</p>
         <p class="lead" data-i18n="heroLead">One real-terminal executable per platform for Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled runtime, only operating-system libraries — and a script can drive every part of it.</p>
         <div class="cta-row">
           <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
@@ -406,7 +406,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
     <section id="install">
       <div class="wrap">
         <h2 data-i18n="installTitle">Getting it</h2>
-        <p class="section-lead" data-i18n="installLead">Download the executable and run it. There's no installer because there's nothing to install.</p>
+        <p class="section-lead" data-i18n="installLead">Download the executable and run it—there is no separate installer or bundled language runtime. Linux needs the normal desktop runtime libraries; Debian and Ubuntu users can install the X11 piece with <code>sudo apt-get install libxkbcommon-x11-0</code> (no <code>-dev</code> package).</p>
         <div class="cta-row">
           <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
@@ -471,9 +471,9 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navFamily: "AgenTerm",
           navInstall: "Get it",
           navDocs: "Docs",
-          heroEyebrow: "one file · no install · no runtime",
+          heroEyebrow: "one file · no install · no bundled runtime",
           heroTitle: "A terminal that is <em>one file</em>.",
-          heroEmotion: "Copy it over. Run it. Nothing to install.",
+          heroEmotion: "Copy it over. Run it on a normal desktop.",
           heroLead: "One real-terminal executable per platform for Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled runtime, only operating-system libraries — and a script can drive every part of it.",
           ctaGet: "Get MiniCon",
           ctaSource: "Source on GitHub",
@@ -530,7 +530,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "Block until the condition holds or the timeout expires, and say which.",
           scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
           installTitle: "Getting it",
-          installLead: "Download the executable and run it. There's no installer because there's nothing to install.",
+          installLead: "Download the executable and run it—there is no separate installer or bundled language runtime. Linux needs the normal desktop runtime libraries; on Debian and Ubuntu: sudo apt-get install libxkbcommon-x11-0 (no -dev package).",
           installRelease: "Latest release",
           installBuild: "Build from source",
           familyTitle: "MiniCon is the terminal. AgenTerm is the Agent-era workbench.",
@@ -568,9 +568,9 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navFamily: "AgenTerm",
           navInstall: "获取",
           navDocs: "文档",
-          heroEyebrow: "一个文件 · 免安装 · 免运行时",
+          heroEyebrow: "一个文件 · 免安装 · 免捆绑运行时",
           heroTitle: "一个<em>文件</em>就是一个终端。",
-          heroEmotion: "拷过去，跑起来。压根不用装。",
+          heroEmotion: "拷过去，在具备系统桌面库的电脑上直接运行。",
           heroLead: "Windows、Linux、macOS × x86_64、aarch64 六格，每个平台一个真终端可执行文件。没有安装包和捆绑运行时，只依赖操作系统库；每一处都能被脚本驱动。",
           ctaGet: "获取 MiniCon",
           ctaSource: "GitHub 源码",
@@ -627,7 +627,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
           scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
           installTitle: "获取",
-          installLead: "下载可执行文件，直接跑。没有安装程序，因为没什么要装。",
+          installLead: "下载可执行文件直接运行，不另带安装程序或语言运行时。Linux 仍需系统桌面运行库；Debian / Ubuntu 可执行 sudo apt-get install libxkbcommon-x11-0，不需要 -dev 包。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
           familyTitle: "MiniCon 是终端。AgenTerm 是 Agent 时代的工作台。",
@@ -724,7 +724,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
           scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
           installTitle: "取得方式",
-          installLead: "下載執行檔，然後執行。沒有安裝程式，因為沒有東西需要安裝。",
+          installLead: "下載執行檔即可執行，不另帶安裝程式或語言執行環境。Linux 仍需系統桌面執行庫；Debian / Ubuntu 可執行 sudo apt-get install libxkbcommon-x11-0，不需要 -dev 套件。",
           installRelease: "最新發行版",
           installBuild: "自行建置",
           familyTitle: "MiniCon 是終端機。AgenTerm 是 Agent 時代的工作臺。",

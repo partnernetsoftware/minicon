@@ -165,6 +165,11 @@ jobs:
             *) chmod 0755 package-bin/minicon ;;
           esac
 
+      - name: Qualify Linux X11 runtime-only package boundary
+        if: startsWith(matrix.platform_id, 'linux-')
+        shell: bash
+        run: scripts/linux-x11-package-smoke.sh package-bin/minicon
+
       - name: Archive exact package bytes
         shell: bash
         run: |

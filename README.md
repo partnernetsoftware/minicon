@@ -44,11 +44,12 @@ automation can wait on a condition instead of guessing with a timer. See
 
 Download the executable for your platform from
 [Releases](https://github.com/partnernetsoftware/minicon/releases), and run it.
-There is no installer because there is nothing to install. Each archive ships a
-SHA-256 beside it:
+There is no separate installer or bundled language runtime. Linux uses the
+normal desktop runtime libraries documented under [Build](#build); development
+packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.2-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.3-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a universal binary — the same file runs on Apple Silicon and
@@ -173,8 +174,11 @@ snapshots after one hour. On macOS, `scripts/install-macos-daily-cleanup.sh` ins
 LaunchAgent for 03:17 daily maintenance. VM images and cloud bodies without an
 explicit verified archive receipt are never automatically deleted.
 
-Rust 1.97. The Linux build needs `libxkbcommon0 libxkbcommon-x11-0
-libwayland-client0`.
+Rust 1.97. The Linux build needs the runtime packages `libxkbcommon0
+libxkbcommon-x11-0 libwayland-client0`; no `-dev` package is required. On an
+X11 session MiniCon probes the versioned `libxkbcommon-x11.so.0` ABI before
+opening the window and prints the exact Debian/Ubuntu install command if it is
+absent.
 
 ## Repository
 

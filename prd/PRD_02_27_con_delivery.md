@@ -368,6 +368,30 @@ auto-raise 9 MiB.
   is not CentOS-7 residue. Do not compile out either winit backend, do not
   drop `libxkbcommon-x11-0` from the runtime set, and do not treat a
   single-backend size cut as open work.
+- [x] **Linux X11 runtime boundary is versioned and product-owned.** The exact
+  v0.1.3 x86_64 Release ELF (`d5b15772…`) contains `xkbcommon-dl 0.4.2`, which
+  already tries `libxkbcommon-x11.so.0` before the unversioned development
+  name; its hard-coded panic nevertheless named only `.so`, leaked the CI Cargo
+  path, and made a missing runtime package look like a `-dev` requirement.
+  Current main probes only the versioned SONAME and the four XKB-X11 symbols
+  before entering winit on an X11-selected session. Absence exits 1 with
+  `apt-get install libxkbcommon-x11-0`; Wayland-only startup does not acquire a
+  false X11 requirement. The native import table remains insufficient evidence
+  because this edge is `dlopen`-owned.
+- [x] **Runtime-only court, not build-host luck.** A Debian x86_64 court with
+  `libxkbcommon-x11-0` 1.7.0-2, no `libxkbcommon-x11-dev`, and no unversioned
+  `.so` launched the already-linked ELF under Xvfb/DBus. Public control focused
+  the composer, proved Enter retained a soft newline without PTY delivery,
+  proved `Ctrl+O` delivered `XKB_RUNTIME_ONLY_OK`, closed the final tab into
+  `workspace_empty`, then closed the window cleanly. Removing only the runtime
+  package produced the actionable MiniCon error with no panic/build-host path;
+  the same court restored the package afterward.
+- [x] Candidate packaging runs `scripts/linux-x11-package-smoke.sh` for both
+  Linux ISA cells. An empty Ubuntu container owns the missing-library/error
+  half; a second container installs runtime packages only, asserts the `-dev`
+  package and unversioned `.so` are absent, then executes the same
+  composer/lifecycle journey. A README dependency sentence or `ldd` alone
+  cannot satisfy this gate.
 
 | lever | expected pack effect | cost |
 |---|---|---|
