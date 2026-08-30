@@ -77,11 +77,13 @@ printf '%s\n' \
   '/court/minicon cli --control "$endpoint" send-ui-keys Ctrl+Shift+I >/dev/null' \
   '/court/minicon cli --control "$endpoint" send-ui-ime commit "printf XKB_RUNTIME_ONLY_OK" >/dev/null' \
   '/court/minicon cli --control "$endpoint" send-ui-keys Enter >/dev/null' \
-  '/court/minicon cli --control "$endpoint" ui-snapshot | grep -F '"'"'"composer_text": "printf XKB_RUNTIME_ONLY_OK\\n"'"'"' >/dev/null' \
+  '/court/minicon cli --control "$endpoint" ui-snapshot >/tmp/composer.json' \
+  'grep -F '"'"'"composer_text": "printf XKB_RUNTIME_ONLY_OK\n"'"'"' /tmp/composer.json >/dev/null' \
   '/court/minicon cli --control "$endpoint" send-ui-keys Ctrl+O >/dev/null' \
   '/court/minicon cli --control "$endpoint" wait-text --target @1 --timeout-ms 3000 XKB_RUNTIME_ONLY_OK >/dev/null' \
   '/court/minicon cli --control "$endpoint" close-tab --target @1 >/dev/null' \
-  '/court/minicon cli --control "$endpoint" ui-snapshot | grep -F '"'"'"workspace_empty": true'"'"' >/dev/null' \
+  '/court/minicon cli --control "$endpoint" ui-snapshot >/tmp/empty.json' \
+  'grep -F '"'"'"workspace_empty": true'"'"' /tmp/empty.json >/dev/null' \
   '/court/minicon cli --control "$endpoint" close-window >/dev/null' \
   'wait "$pid"' \
   '! grep -E "panicked at|Linux X11 runtime dependency unavailable|(/Users|/home)/[^/]+/[.]cargo" /tmp/minicon.err >/dev/null' >"$runtime_script"
