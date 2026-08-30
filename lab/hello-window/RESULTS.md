@@ -44,15 +44,18 @@ Current-source profile controls:
 
 | Variant | Bytes | SHA-256 | Verdict |
 |---|---:|---|---|
-| debug + strip | 2,346,496 | `0412912bce59149aff2f3f37004b625f3799f8419d962e4367d8fd6263863525` | pending |
+| debug + strip | 2,346,496 | `0412912bce59149aff2f3f37004b625f3799f8419d962e4367d8fd6263863525` | clean (user-reported) |
 | debug + no strip | 2,346,496 | `392153b3ce82ef15e03129c4658ea62b23115366a1613f3c1e675dd6a4fd402f` | pending |
 | release-fast + strip | 893,952 | `9ea3538c06bebceac8a0b594aa4ca9a1b27da9eb55ec3365db0c7b421c03efa3` | pending |
-| release-fast + no strip | 893,952 | `b9b2868f711de0ebbbc787f39df34b46072c45402c8e0e9aaa7037959b3e2ea6` | pending |
+| release-fast + no strip | 893,952 | `b9b2868f711de0ebbbc787f39df34b46072c45402c8e0e9aaa7037959b3e2ea6` | `HEUR/QVM202.0.B951.Malware.Gen` (user-reported) |
+| debug + `opt-level=z` | 1,111,552 | `fad11e90bab429a9fa43324d396e8a57ec3d72517b87f4f5f42c3027b4364098` | pending |
+| release-fast + `opt-level=0` | 1,949,184 | `11897db91310c555625ac1c7f88331ce129929e82cb9cbb865c180d4039cf407` | pending |
 
-The equal sizes rule out `strip` as the mechanism that reduced the Windows PE
-from debug to release-fast. The decisive scans are debug+strip and
-release-fast+no-strip; the same named split would move ownership to release
-optimization/link layout rather than symbol stripping.
+The equal sizes and clean/flagged cross rule `strip` out: the verdict follows
+the debug versus release-fast profile. The next pair changes only whole-graph
+`opt-level` (`debug:z` versus `release-fast:0`) to separate size optimization
+from the profiles' remaining debug-assertion, overflow-check and codegen-unit
+differences.
 
 Decision trace: the conventional tiny GUI reproduced the same named heuristic,
 so PTY, IPC, subprocesses, MiniCon's custom entry point and terminal behavior

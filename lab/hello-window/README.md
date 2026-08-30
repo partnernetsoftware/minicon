@@ -39,6 +39,8 @@ lab/hello-window/dist/minicon-debug-stripped-x86-64.exe
 lab/hello-window/dist/minicon-debug-unstripped-x86-64.exe
 lab/hello-window/dist/minicon-release-fast-stripped-x86-64.exe
 lab/hello-window/dist/minicon-release-fast-unstripped-x86-64.exe
+lab/hello-window/dist/minicon-debug-opt-z-x86-64.exe
+lab/hello-window/dist/minicon-release-fast-opt-0-x86-64.exe
 ```
 
 Rebuild that court from repository root with
@@ -48,6 +50,9 @@ On Windows/MSVC, toggling Rust's `strip` setting did not change either file's
 length: both debug variants are 2,346,496 bytes and both release-fast variants
 are 893,952 bytes. Therefore `strip` does not explain the size collapse. Scan
 `debug-stripped` and `release-fast-unstripped` as the two useful controls.
+Those controls resolved clean/flagged respectively, ruling strip out. The next
+pair crosses only the whole dependency graph's optimization level: debug with
+`opt-level=z`, and release-fast with `opt-level=0`.
 
 Both Rust variants reproduced `HEUR/QVM202.0.B951.Malware.Gen` on the same
 Windows court, ruling resources insufficient. Next, copy the pure-C EXE to

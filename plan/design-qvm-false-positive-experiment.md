@@ -118,6 +118,13 @@ if their verdict follows optimization rather than strip, split release profile
 knobs (`opt-level`, debug assertions/overflow checks, codegen units) one at a
 time without random byte mutation.
 
+That court resolved debug+strip clean and release-fast+no-strip flagged, so
+strip is rejected and release optimization/layout owns the next branch. Cross
+whole-graph `opt-level` next: debug with `z`, release-fast with `0`, holding
+each profile's other settings fixed. If the verdict follows `z`, optimize level
+is necessary; if it remains attached to release-fast, split debug assertions,
+overflow checks and codegen units in that order.
+
 Kill criterion: any variant loses product parity, introduces a redistributable,
 or requires evasive mutation. Time-box ends when Q1 returns a vendor decision;
 Q2 waits for trusted signing, and Q3 begins only if Q1 does not clean Q0.
