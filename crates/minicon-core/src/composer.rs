@@ -169,7 +169,10 @@ impl ComposerState {
         if submission.ends_with('\r') {
             submission.pop();
         }
-        self.text = submission;
+        // `take_submission` converts visual soft newlines to terminal Enter
+        // bytes. A failed delivery returns ownership to the editor, so restore
+        // its UI representation rather than exposing carriage returns.
+        self.text = submission.replace('\r', "\n");
         self.preedit.clear();
         self.select_all = false;
         self.focused = true;
@@ -972,6 +975,9 @@ mod tests {
         assert_eq!(composer.text, "retry");
         assert_eq!(composer.submit_error.as_deref(), Some("PTY is closed"));
         assert!(composer.focused);
+
+        composer.restore_failed_submission("one\rtwo\r".to_owned(), "PTY is closed".to_owned());
+        assert_eq!(composer.text, "one\ntwo");
 
         composer.preedit = "文".to_owned();
         composer.select_all = true;

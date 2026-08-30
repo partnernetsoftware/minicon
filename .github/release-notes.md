@@ -4,8 +4,14 @@ operating system's desktop libraries listed below.
 
 ## Highlights
 
-- Separates Send and Newline so external input can be composed and submitted
-  deliberately.
+- Adds aligned New Terminal, language, zoom and Help controls; Enter inserts a
+  soft newline and Ctrl+O sends the complete composer draft.
+- Keeps the window open on a greeting page after the final tab closes.
+- Makes the Linux X11 runtime boundary explicit: runtime-only
+  `libxkbcommon-x11.so.0` starts normally without a `-dev` package, while a
+  missing package produces an actionable error instead of a Rust panic.
+- Uses the QVM-qualified Windows release profile selected by the controlled
+  false-positive experiment; no packer or evasive byte mutation is used.
 - Prioritizes screenshot completion while terminals produce sustained output.
 - Makes Windows control requests replay-safe across named-pipe disconnects
   without repeating mutations.

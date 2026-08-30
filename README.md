@@ -49,7 +49,7 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.3-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.4-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a universal binary — the same file runs on Apple Silicon and
@@ -57,10 +57,11 @@ Intel.
 
 ## Code signing policy
 
-MiniCon's v0.1.3 release line is deliberately unsigned; checksums and exact
-build/runtime receipts remain mandatory. `minicon.com` and trusted signing are
-planned for v0.1.4. The committed `release-policy.json` selects whether the
-same Candidate/Release workflows require signing; missing credentials never
+MiniCon v0.1.4 publishes the native six-cell set unsigned because SignPath
+approval and release configuration are not yet available; checksums and exact
+build/runtime receipts remain mandatory. `minicon.com` stays out of this
+release. The committed `release-policy.json` selects whether the same
+Candidate/Release workflows require signing; missing credentials never
 silently turn it off. A test certificate, application or repository statement
 never counts as a signed release. See the
 [Code signing policy](CODE_SIGNING_POLICY.md) for publisher identity, privacy,
@@ -151,7 +152,7 @@ jq '{source_tree_sha256, artifacts}' target-six/receipt.json
 
 The `research/minicon-com-loader/dist/cells/` files are payload copies used to
 assemble the adjacent `minicon.com`; they are not an additional release set.
-`minicon.com` itself is experimental and is not part of v0.1.2 or v0.1.3. Its
+`minicon.com` itself is experimental and is not part of releases through v0.1.4. Its
 receipt and checksum must travel with it when testing it on another machine.
 Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
 folders, logs, and cache snapshots are implementation state, not handoff
@@ -250,7 +251,8 @@ August 2026.
 
 ## Code signing policy / 代码签名政策
 
-v0.1.3 明确采用未签名的六格原生包；`minicon.com` 与可信签名计划进入 v0.1.4。
+v0.1.4 在 SignPath 审批和发布配置尚未到位时继续发布未签名的六格原生包；
+`minicon.com` 不进入本版。
 同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
 测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。

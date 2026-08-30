@@ -55,10 +55,10 @@ MiniCon — one-file local terminal
 │   │   ├── unsigned by explicit release-policy.json configuration
 │   │   ├── exact Candidate bytes + Defender on both Windows executables
 │   │   └── exact Candidate promoted without rebuild after gates + human authority
-│   ├── [ ] v0.1.4 — minicon.com + trusted signing
-│   │   ├── same workflows; switch policy signing.mode to required
-│   │   ├── minicon.com hard ceiling: 9437184 bytes (9 MiB)
-│   │   └── SignPath transition or later company publisher
+│   ├── [~] v0.1.4 — unsigned native six-cell release
+│   │   ├── SignPath not configured; signing.mode remains off
+│   │   ├── minicon.com remains excluded by policy
+│   │   └── trusted signing stays a later explicit policy switch
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -106,7 +106,7 @@ flowchart LR
         C13["v0.1.3 released<br/>5 native archives · 6 cells · unsigned"]
         G13["qualified exact bytes<br/>runtime · control · Defender"]
         V13["public immutable Release<br/>no rebuild"]
-        C14["v0.1.4 policy switch<br/>minicon.com + signing required"]
+        C14["v0.1.4 Candidate<br/>unsigned native six-cell"]
         KEEP["retain stable release<br/>revise failed gate"]
     end
     subgraph F["Future, dependency-gated"]
@@ -167,15 +167,14 @@ flowchart LR
   `off` and `minicon.com` is absent. Exact Candidate, Defender, Promotion and
   public re-download evidence is archived in
   `prd/archive/v0.1.3-release-history.md`.
-- [ ] v0.1.4 owns `minicon.com` and trusted signing. The same Candidate,
-  reputation and Release workflows consume the policy; changing the version,
-  enabling `assets.minicon_com` and setting `signing.mode=required` selects the
-  signing court without another workflow rewrite. SignPath review may continue
-  independently.
+- [~] v0.1.4 ships the unsigned native six-cell set. SignPath approval and its
+  release Environment variables are not yet available, so policy remains
+  `signing.mode=off` and `assets.minicon_com=false`; absence never silently
+  selects signing. The same workflows retain the later explicit policy switch.
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity. SignPath Foundation is the truthful transition path;
   provider approval, timestamped exact signed bytes, six-grid execution and
-  final-byte Defender evidence remain v0.1.4 gates. Historical APE rehearsals
+  final-byte Defender evidence remain later-release gates. Historical APE rehearsals
   and the rejected signed-v0.1.3 plan are archived in
   `prd/archive/v0.1.3-release-history.md`.
 - [x] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as

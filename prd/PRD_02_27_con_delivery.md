@@ -42,11 +42,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   source `39774ed`, and passed public-download hash plus native Linux/Windows
   execution. The Release is neither draft nor pre-release; `minicon.com` and
   signing remain excluded by policy.
-- [ ] **v0.1.4 adds `minicon.com` and trusted signing through the same
-  workflows.** Bump the product/policy version, set `minicon_com=true` and
-  `signing.mode=required`; Candidate then selects the trusted-signing upstream,
-  includes the APE, validates its signing receipt and applies the 9 MiB court.
-  No workflow-code fork is permitted. SignPath review is independent of v0.1.3.
+- [~] **v0.1.4 ships unsigned native six-cell archives through the same
+  workflows.** SignPath approval and release Environment variables are not yet
+  available, so the committed policy intentionally remains `signing.mode=off`
+  and `minicon_com=false`. Candidate selects the unsigned six-payload upstream;
+  no missing credential may silently choose a mode. The trusted-signing/APE
+  branch remains available only through a later explicit policy change.
 
   Superseded signed-APE rehearsals, rejected Candidates and the final exact run
   ledger are preserved in `archive/v0.1.3-release-history.md`; they are not
@@ -61,7 +62,7 @@ flowchart LR
     X13 --> P13["6 Rust native payloads"]
     P13 --> G13["six runtime cells<br/>checksum + Windows Defender passed"]
     G13 --> R13["exact-SHA public v0.1.3 release"]
-    R13 --> X14["v0.1.4 policy switch<br/>minicon.com + signing required"]
+    R13 --> X14["v0.1.4 policy<br/>unsigned native six-cell"]
     X14 -->|qualification fails| K12["keep v0.1.3 stable<br/>revise v0.1.4 Candidate"]
 ```
 
@@ -1440,8 +1441,8 @@ interactive Linux x86 installation.
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [ ] **Trusted publisher in v0.1.4; company publisher later.**
-  Establish trusted signing as the v0.1.4 court for `minicon.com`,
+- [ ] **Trusted publisher after v0.1.4; company publisher later.**
+  Establish trusted signing as a later court for `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
   Authenticode plus trusted timestamping, macOS Developer ID signing and
@@ -1513,8 +1514,8 @@ interactive Linux x86 installation.
   nothing and execute the signed APE's version/status/GUI/control surface.
   `.github/workflows/candidate.yml` selects either the unsigned one-pack run or
   that successful signing run from `release-policy.json`; it never infers the
-  mode from missing credentials. v0.1.3 selects unsigned native payloads, while
-  v0.1.4 selects and seals signed bytes.
+  mode from missing credentials. v0.1.3 and v0.1.4 select unsigned native
+  payloads; a later explicit policy change selects and seals signed bytes.
   The final signed `minicon.com` must remain under the already stamped
   9,437,184-byte ceiling. This wiring is implemented but remains unqualified
   until the SignPath project/artifact configuration exists and the first exact

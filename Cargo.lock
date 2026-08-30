@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "agenterm-platform",
  "agenterm-ui-core",
@@ -993,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "minicon-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "itoa",
  "serde_json",

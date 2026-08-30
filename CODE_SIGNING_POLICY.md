@@ -7,9 +7,10 @@ metadata, this policy, a signing request, or a test certificate is not a
 signature.
 
 The committed `release-policy.json` decides whether a version requires signing.
-MiniCon v0.1.3 deliberately publishes only unsigned native archives; its
+MiniCon v0.1.4 deliberately publishes only unsigned native archives because
+SignPath approval and release configuration are not yet available; its
 checksums, six-cell runtime courts and Defender evidence remain mandatory.
-`minicon.com` and trusted signing begin with the v0.1.4 plan. When policy says
+`minicon.com` and trusted signing remain a later policy switch. When policy says
 `signing.mode=required`, missing provider configuration blocks the release; it
 never falls back to unsigned output.
 

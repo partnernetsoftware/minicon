@@ -648,9 +648,18 @@ fn gui_control_surface_isolated_multitab_black_box() {
         &endpoint,
         &["send-ui-keys", "R", "E", "T", "R", "Y", "Enter"],
     );
+    let soft_newline = cli_json(exe, &endpoint, &["ui-snapshot"]);
+    assert_eq!(soft_newline["composer_focused"], true);
+    assert_eq!(soft_newline["composer_text"], "RETRY\n");
+    assert_eq!(
+        soft_newline["composer_submit_error"],
+        serde_json::Value::Null
+    );
+
+    cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+O"]);
     let failed_composer = cli_json(exe, &endpoint, &["ui-snapshot"]);
     assert_eq!(failed_composer["composer_focused"], true);
-    assert_eq!(failed_composer["composer_text"], "RETRY");
+    assert_eq!(failed_composer["composer_text"], "RETRY\n");
     assert!(
         failed_composer["composer_submit_error"]
             .as_str()
@@ -1191,6 +1200,16 @@ fn gui_control_surface_isolated_multitab_black_box() {
         cancel_error.contains(&format!("terminal {child_id} closed")),
         "pending wait did not receive a typed close error: {cancel_error}"
     );
+    let empty = cli_json(exe, &endpoint, &["ui-snapshot"]);
+    assert_eq!(empty["workspace_empty"], true);
+    assert!(
+        gui.child
+            .try_wait()
+            .expect("poll greeting window")
+            .is_none(),
+        "closing the final tab must retain the greeting window"
+    );
+    cli_json(exe, &endpoint, &["close-window"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
         if let Some(status) = gui.child.try_wait().expect("poll explicitly closed GUI") {
@@ -1198,7 +1217,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
         }
         assert!(
             Instant::now() < deadline,
-            "closing the final retained tab did not exit the GUI"
+            "explicit close-window did not exit the greeting GUI"
         );
         thread::sleep(Duration::from_millis(20));
     };
