@@ -50,16 +50,17 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Candidate selected the unsigned six-payload upstream; no missing credential
   silently chose a mode. Exact evidence is in
   `archive/v0.1.4-release-history.md`.
-- [~] **v0.1.5 Candidate preparation adds raw unsigned `minicon.com` beside
-  the five native archives.** One exact build supplies both representations;
+- [x] **v0.1.5 released raw unsigned `minicon.com` beside the five native
+  archives.** One exact build supplied both representations;
   six execute-only APE GUI/control courts, native parity, a three-object
   Defender court (`minicon.com` plus both native Windows PEs), and no-rebuild
-  Promotion govern the release. SignPath remains outside this Candidate.
-  The executable plan and current gate state live in `../plan/plan-v0.1.5.md`.
+  Promotion governed the release. SignPath remained outside this release.
   Candidate run `33303093810` correctly rejected the first Linux bundle: the
   X11 bridge still needed absent `libxcb-xkb.so.1`. The repaired boundary embeds
   and stages both SONAMEs and requires the minimal-image court to prove that
   neither host package is installed.
+  Exact source, runs, sizes and hashes are in
+  `archive/v0.1.5-release-history.md`.
 
   Superseded signed-APE rehearsals, rejected Candidates and the final exact run
   ledger are preserved in `archive/v0.1.3-release-history.md`; they are not
@@ -1508,10 +1509,18 @@ interactive Linux x86 installation.
   timestamp evidence in receipts. Rotation must produce a new after-SHA and
   repeat all post-sign courts.
 
-  The user paused Azure Artifact Signing because the company has no practical
-  short-term payment route. The company-name certificate remains a future
-  target; no receipt may imply it shipped. On 2026-08-29 the user explicitly
-  approved applying to SignPath Foundation as an OSS transition. A SignPath
+  On 2026-08-30 the company Artifact Signing account was created in East US on
+  the Basic tier. Current terms were accepted, the human verifier received the
+  account-scoped `Artifact Signing Identity Verifier` role, and a Public
+  Organization identity-validation request was submitted. Microsoft review is
+  still in progress: no Public Trust certificate profile exists yet, no
+  production byte has been company-signed, and no receipt may imply otherwise.
+  The redacted operational sequence and failure lessons live in
+  `prd/archive/azure-work-tenant-signing-enroll.md`; company details and Azure
+  identifiers stay outside the repository.
+
+  On 2026-08-29 the user explicitly approved applying to SignPath Foundation
+  as an OSS transition. A SignPath
   Foundation certificate is publicly trusted Authenticode but names SignPath
   Foundation as publisher, not PARTNERNET SOFTWARE PTY LTD. The public
   `CODE_SIGNING_POLICY.md` and redacted

@@ -60,9 +60,15 @@ MiniCon — one-file local terminal
 │   │   ├── SignPath not configured; signing.mode remained off
 │   │   ├── minicon.com remained excluded by policy
 │   │   └── prd/archive/v0.1.4-release-history.md
-│   ├── [ ] v0.1.5 — unsigned minicon.com + native six-cell set
+│   ├── [x] v0.1.5 released — unsigned minicon.com + native six-cell set
 │   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
-│   │   └── plan/plan-v0.1.5.md
+│   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
+│   │   └── prd/archive/v0.1.5-release-history.md
+│   ├── [~] company Artifact Signing enrollment
+│   │   ├── account + least-scope verifier RBAC complete
+│   │   ├── Public Organization validation pending Microsoft review
+│   │   ├── no certificate profile and no signed release yet
+│   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -111,13 +117,15 @@ flowchart LR
         G13["qualified exact bytes<br/>runtime · control · Defender"]
         V13["public immutable Release<br/>no rebuild"]
         C14["v0.1.4 released<br/>unsigned native six-cell · X11 fix"]
-        C15["v0.1.5 planned<br/>native six-cell + unsigned minicon.com"]
-        KEEP["retain stable release<br/>revise failed gate"]
+        C15["v0.1.5 released<br/>native six-cell + unsigned minicon.com"]
+        KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
         SP["SignPath Foundation transition<br/>trusted Authenticode · timestamp"]
         SR["later signed release<br/>new policy · new final-byte courts"]
-        SI["PARTNERNET SOFTWARE PTY LTD<br/>future company-publisher adapter"]
+        SI["company Artifact Signing<br/>account + verifier RBAC ready"]
+        SV["Public Organization validation<br/>Microsoft review in progress"]
+        SC["Public Trust profile<br/>not created"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
         QG{"total size + startup + memory<br/>six-cell parity pass?"}
@@ -132,10 +140,12 @@ flowchart LR
     GH & VM --> R
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15
-    C15 -->|gate fails| KEEP
+    C15 -. rejected precursor .-> KEEP
     C15 -. later baseline .-> SR
     SP --> SR
-    SI -. later .-> SP
+    SI --> SV -->|approved| SC --> SR
+    SV -->|rejected / more evidence| SI
+    SP -. independent transition .-> SR
     QE -. later .-> QX
     X -. native baseline .-> QX
     QX --> QG
@@ -180,14 +190,18 @@ flowchart LR
   `signing.mode=off` and `assets.minicon_com=false`; absence did not silently
   select signing. Exact runs, SHA and asset sizes are archived in
   `prd/archive/v0.1.4-release-history.md`.
-- [ ] v0.1.5 adds raw unsigned `minicon.com` beside the five native archives;
-  it does not retrofit v0.1.4. One exact build, six APE GUI/control courts,
-  native parity, a three-object Defender court and no-rebuild Promotion are
-  specified in `plan/plan-v0.1.5.md`. SignPath remains outside this Candidate.
+- [x] v0.1.5 ships raw unsigned `minicon.com` beside the five native archives.
+  One exact build, six APE GUI/control courts, native parity, a three-object
+  Defender court and no-rebuild Promotion passed. SignPath remained outside
+  this release. Exact runs, assets and the rejected Linux Candidate are in
+  `prd/archive/v0.1.5-release-history.md`.
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
-  publisher identity. SignPath Foundation is the truthful transition path;
-  provider approval, timestamped exact signed bytes, six-grid execution and
-  final-byte Defender evidence remain later-release gates. Historical APE rehearsals
+  publisher identity. The shared company Azure Artifact Signing account and
+  least-scope verifier role now exist; Public Organization validation is under
+  Microsoft review. There is no certificate profile or signed release yet.
+  SignPath Foundation remains an independent transition path; provider approval,
+  timestamped exact signed bytes, six-grid execution and final-byte Defender
+  evidence remain later-release gates. Historical APE rehearsals
   and the rejected signed-v0.1.3 plan are archived in
   `prd/archive/v0.1.3-release-history.md`.
 - [x] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as

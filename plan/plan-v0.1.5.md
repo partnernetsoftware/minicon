@@ -221,15 +221,15 @@ parallel only when it owns disjoint files and uses separate artifact paths.
 
 ## 6. Completion checklist
 
-- [ ] G0: v0.1.5 policy/version committed on a clean exact SHA
-- [ ] G1: one build emits the six payloads and unsigned APE
-- [ ] G2: lifecycle/tool installer regressions green
-- [ ] G3: six APE GUI/control execution receipts green
-- [ ] G4: native six-cell and both Linux runtime-only X11 courts green
-- [ ] G5: Candidate seals six distributables + six sidecars under 9 MiB APE cap
-- [ ] G6: exact three-object Defender qualification green
-- [ ] G7: explicit human `publish-v0.1.5` authority received and promoted
-- [ ] G8: public re-download/hash/execute audit green; PRD ledger archived
+- [x] G0: v0.1.5 policy/version committed on a clean exact SHA
+- [x] G1: one build emits the six payloads and unsigned APE
+- [x] G2: lifecycle/tool installer regressions green
+- [x] G3: six APE GUI/control execution receipts green
+- [x] G4: native six-cell and both Linux runtime-only X11 courts green
+- [x] G5: Candidate seals six distributables + six sidecars under 9 MiB APE cap
+- [x] G6: exact three-object Defender qualification green
+- [x] G7: explicit human `publish-v0.1.5` authority received and promoted
+- [x] G8: public re-download/hash/execute audit green; PRD ledger archived
 
-Until every selected box through G6 is green, the only truthful status is
-**planned/not released**, and v0.1.4 remains the recommended stable release.
+Released from exact source `1a0e3dc4e4628dc76e9f1c55432043e209e39445`.
+Evidence ledger: `prd/archive/v0.1.5-release-history.md`.
