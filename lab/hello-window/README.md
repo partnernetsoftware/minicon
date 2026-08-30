@@ -1,8 +1,9 @@
-# Hello-window QVM baseline
+# Hello-window QVM resource split
 
-Purpose: produce the smallest useful conventional Rust/Win32 GUI control for
-the 360 QVM false-positive tree. It opens one ordinary window containing
-`Hello, world!` and does nothing else.
+Purpose: compare two conventional Rust/Win32 GUI executables with identical
+application code. Both open one ordinary window containing `Hello, world!`.
+The second differs only by linking the MiniCon icon and complete Windows
+product/version metadata through the normal resource compiler.
 
 Excluded from this binary: MiniCon code, custom `/ENTRY`, PTY, child processes,
 IPC, control protocol, configuration, filesystem access, network access,
@@ -24,20 +25,21 @@ Generated, gitignored files:
 ```text
 lab/hello-window/dist/helloworld-x86-64.exe
 lab/hello-window/dist/helloworld-x86-64.exe.sha256
+lab/hello-window/dist/helloworld-resourced-x86-64.exe
+lab/hello-window/dist/helloworld-resourced-x86-64.exe.sha256
 ```
 
-Copy the EXE to the same Windows machine that flagged public v0.1.3. Before
-opening it, update 360 definitions and record its product/engine/database
-version. Scan the file twice, then launch it and confirm the visible text.
+The no-resource baseline reproduced `HEUR/QVM202.0.B951.Malware.Gen` on the
+same Windows court. Next, copy the resourced EXE to that machine without
+changing scanner state. Scan it twice, then launch it and confirm the text.
 
 Interpretation:
 
 | Result | What it establishes | What it does not establish |
 |---|---|---|
-| clean | A conventional unsigned Rust/Win32 GUI alone does not reproduce the named verdict in that scanner state | Which MiniCon subsystem triggers it |
-| same QVM verdict | The trigger is already present in this very small toolchain/PE/reputation baseline | That Rust or any particular API is malicious |
-| different verdict | Scanner sees a different feature combination | A causal byte or API without another controlled split |
+| resourced clean, baseline flagged | Ordinary PE resources are an actionable classifier input for this court | That an icon alone, rather than complete metadata or reputation, is causal everywhere |
+| both flagged | Resources are insufficient; continue with signing/reputation/toolchain splits | That Rust or any particular API is malicious |
+| both clean on retest | Scanner state changed; the comparison is invalid | A product fix |
 
-Record the exact EXE SHA, result, full detection name, scanner identity and
-time in `RESULTS.md` after the test. Do not submit or mutate the sample between
-the two local scans.
+Record exact hashes, results, full detection name, scanner identity and time in
+`RESULTS.md`. Do not submit either sample or update definitions between scans.

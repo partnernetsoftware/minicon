@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Date | 2026-08-30 |
-| Status | **specified; exact v0.1.3 report not yet submitted** |
+| Status | **small no-resource baseline flagged; resource-only split pending** |
 | Purpose | Decide whether 360 QVM reputation, Authenticode trust, or MiniCon's custom Windows startup is the actionable false-positive owner |
 | Implementation | `lab/hello-window/` (Q0 small baseline); `research/qvm-false-positive/` (later controlled variants) |
 | Read first | `PRD.md`, `prd/PRD_02_27_con_delivery.md`, `CODE_SIGNING_POLICY.md` |
@@ -93,10 +93,15 @@ or count VirusTotal vendors as a substitute for the named 360 regression.
 5. If none separates, rule **unlocalized QVM heuristic**: preserve behavior,
    continue official vendor review, and do not mutate bytes blindly.
 
-Before Q1, `lab/hello-window/` supplies a smaller diagnostic root. If that
-ordinary GUI is clean, later feature bisection may grow from it toward MiniCon;
-if it is flagged, split toolchain/PE/reputation below that baseline before
-testing MiniCon subsystems. It informs where to start but does not replace C1.
+Before Q1, `lab/hello-window/` supplies a smaller diagnostic root. Its
+196,608-byte conventional, static-CRT, unsigned GUI was reported with the same
+`HEUR/QVM202.0.B951.Malware.Gen` verdict. Therefore PTY, IPC, subprocesses,
+MiniCon's custom entry and terminal behavior are not necessary triggers. The
+next preregistered split holds code/toolchain/startup fixed and adds only the
+normal icon plus complete product/version resources. A clean resourced sample
+would make resource completeness an actionable court-specific input; if both
+remain flagged, continue to signing/reputation/toolchain rather than bisecting
+MiniCon features. This diagnostic does not replace C1.
 
 Kill criterion: any variant loses product parity, introduces a redistributable,
 or requires evasive mutation. Time-box ends when Q1 returns a vendor decision;

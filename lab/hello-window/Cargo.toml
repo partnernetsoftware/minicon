@@ -3,8 +3,16 @@ name = "minicon-lab-hello-window"
 version = "0.0.0"
 edition = "2024"
 publish = false
+build = "build.rs"
 
 [workspace]
+
+[features]
+default = []
+resourced = []
+
+[build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = "z"

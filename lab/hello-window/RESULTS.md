@@ -1,20 +1,29 @@
 # Hello-window results
 
-Status: **awaiting test on the Windows/360 reproduction machine**.
+Status: **the no-resource baseline reproduced the report; resource-only split pending**.
 
 | Field | Value |
 |---|---|
-| EXE SHA-256 | `d705d8c08b783800211ab3c7fdd4dc07f0376def98d09ba3ca419e52082582d8` |
+| Tested EXE SHA-256 | `d705d8c08b783800211ab3c7fdd4dc07f0376def98d09ba3ca419e52082582d8` |
 | EXE bytes | 196,608 |
 | 360 product version | pending |
 | 360 engine/database | pending |
 | Scan time | pending |
-| First local scan | pending |
+| First local scan | `HEUR/QVM202.0.B951.Malware.Gen` (user-reported) |
 | Second local scan | pending |
 | Visible GUI launch | pending |
 
-Decision trace: pending. Follow `README.md`; do not infer a MiniCon culprit
-until this baseline produces a repeatable verdict.
+The build now passes `/Brepro`; two consecutive builds produced the same bytes.
+Current reproducible baseline: 196,608 bytes, SHA-256
+`2b06bb99445392677f7bba0e5432a268b8eee69b4fd0f824f9492b5f2d13a6a2`.
+Resource-only comparison: 205,312 bytes, SHA-256
+`0875acf3e4a8c4d84ac4b3341ca52e4050473feecd6cd38502d69c45a91c5d9d`.
+Its local 360 verdict is pending.
+
+Decision trace: the conventional tiny GUI reproduced the same named heuristic,
+so PTY, IPC, subprocesses, MiniCon's custom entry point and terminal behavior
+are not necessary conditions. The next controlled sample adds only ordinary PE
+resources. Scanner version/time and a repeated baseline scan remain pending.
 
 Build-side structural receipt: PE32+ x86_64, Windows GUI subsystem,
 conventional Rust/MSVC entry RVA `0x1b9f4`, no Authenticode Security Directory,
