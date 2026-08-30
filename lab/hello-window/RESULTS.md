@@ -1,6 +1,6 @@
 # Hello-window results
 
-Status: **the no-resource baseline reproduced the report; resource-only split pending**.
+Status: **both the no-resource baseline and resource-only comparison reproduce the report**.
 
 | Field | Value |
 |---|---|
@@ -18,7 +18,13 @@ Current reproducible baseline: 196,608 bytes, SHA-256
 `2b06bb99445392677f7bba0e5432a268b8eee69b4fd0f824f9492b5f2d13a6a2`.
 Resource-only comparison: 205,312 bytes, SHA-256
 `0875acf3e4a8c4d84ac4b3341ca52e4050473feecd6cd38502d69c45a91c5d9d`.
-Its local 360 verdict is pending.
+Its local 360 verdict is `HEUR/QVM202.0.B951.Malware.Gen` (user-reported).
+
+Resource verdict: **rejected as a sufficient remedy**. Adding the compact icon,
+ProductName, FileDescription, OriginalFilename, InternalName and ordinary PE
+Resource Directory did not change the named detection. The remembered clean
+result for an older `agenterm-con.exe` is historical context only: without its
+exact bytes and same-time scanner control, it cannot establish causality.
 
 Decision trace: the conventional tiny GUI reproduced the same named heuristic,
 so PTY, IPC, subprocesses, MiniCon's custom entry point and terminal behavior
