@@ -181,8 +181,9 @@ explicit verified archive receipt are never automatically deleted.
 
 Rust 1.97. The Linux build needs the ordinary desktop runtime libraries
 `libxkbcommon.so.0` and `libwayland-client.so.0`; no `-dev` package is required.
-The release archive bundles `libxkbcommon-x11.so.0`, so a slim X11 desktop does
-not need a separate `libxkbcommon-x11-0` installation.
+The release binary embeds `libxkbcommon-x11.so.0` and its small XCB-XKB runtime
+dependency, so a slim X11 desktop does not need separate
+`libxkbcommon-x11-0` or `libxcb-xkb1` installations.
 
 ## Repository
 

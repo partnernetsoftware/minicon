@@ -56,6 +56,10 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Defender court (`minicon.com` plus both native Windows PEs), and no-rebuild
   Promotion govern the release. SignPath remains outside this Candidate.
   The executable plan and current gate state live in `../plan/plan-v0.1.5.md`.
+  Candidate run `33303093810` correctly rejected the first Linux bundle: the
+  X11 bridge still needed absent `libxcb-xkb.so.1`. The repaired boundary embeds
+  and stages both SONAMEs and requires the minimal-image court to prove that
+  neither host package is installed.
 
   Superseded signed-APE rehearsals, rejected Candidates and the final exact run
   ledger are preserved in `archive/v0.1.3-release-history.md`; they are not

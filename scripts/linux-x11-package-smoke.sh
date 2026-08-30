@@ -45,11 +45,13 @@ printf '%s\n' \
   'export DEBIAN_FRONTEND=noninteractive' \
   'apt-get update -qq' \
   'apt-get install -y -qq dbus-x11 fonts-dejavu-core libwayland-client0 libx11-6 libxcursor1 libxi6 libxinerama1 libxkbcommon0 libxrandr2 xvfb >/dev/null' \
-  '! dpkg-query -W libxkbcommon-x11-0 >/dev/null 2>&1' \
-  '! dpkg-query -W libxkbcommon-x11-dev >/dev/null 2>&1' \
+  'if dpkg-query -W libxkbcommon-x11-0 >/dev/null 2>&1; then echo "court image unexpectedly contains libxkbcommon-x11-0" >&2; exit 1; fi' \
+  'if dpkg-query -W libxkbcommon-x11-dev >/dev/null 2>&1; then echo "court image unexpectedly contains libxkbcommon-x11-dev" >&2; exit 1; fi' \
   'ldconfig -p >/tmp/ldconfig.txt' \
-  '! grep -F "libxkbcommon-x11.so.0" /tmp/ldconfig.txt >/dev/null' \
-  'test -z "$(find /usr/lib /lib \( -type f -o -type l \) -name "libxkbcommon-x11.so" -print -quit 2>/dev/null)"' \
+  'if grep -F "libxkbcommon-x11.so.0" /tmp/ldconfig.txt >/dev/null; then echo "court image unexpectedly exposes libxkbcommon-x11.so.0" >&2; exit 1; fi' \
+  'if grep -F "libxcb-xkb.so.1" /tmp/ldconfig.txt >/dev/null; then echo "court image unexpectedly exposes libxcb-xkb.so.1" >&2; exit 1; fi' \
+  'unversioned=$(find /usr/lib /lib \( -type f -o -type l \) -name "libxkbcommon-x11.so" -print -quit 2>/dev/null)' \
+  'if [ -n "$unversioned" ]; then echo "court image unexpectedly exposes $unversioned" >&2; exit 1; fi' \
   'court_dir=$(mktemp -d /tmp/minicon-x11-court.XXXXXX)' \
   'chmod 700 "$court_dir"' \
   'endpoint="unix:$court_dir/control.sock"' \
@@ -61,7 +63,7 @@ printf '%s\n' \
   '  kill -0 "$pid" 2>/dev/null || break' \
   '  sleep 0.1' \
   'done' \
-  '[ "$ready" -eq 1 ] || { cat /tmp/minicon.err >&2; exit 1; }' \
+  'if [ "$ready" -ne 1 ]; then child_rc=0; wait "$pid" || child_rc=$?; echo "MiniCon did not reach control readiness (exit=$child_rc)" >&2; cat /tmp/minicon.out >&2; cat /tmp/minicon.err >&2; find /root/.cache/minicon -maxdepth 3 -ls 2>/dev/null >&2 || true; exit 1; fi' \
   'grep -F '"'"'"active": "@1"'"'"' /tmp/snapshot.json >/dev/null' \
   '/court/minicon cli --control "$endpoint" send-ui-keys Ctrl+Shift+I >/dev/null' \
   '/court/minicon cli --control "$endpoint" send-ui-ime commit "printf XKB_BUNDLED_OK" >/dev/null' \
@@ -75,7 +77,7 @@ printf '%s\n' \
   'grep -F '"'"'"workspace_empty": true'"'"' /tmp/empty.json >/dev/null' \
   '/court/minicon cli --control "$endpoint" close-window >/dev/null' \
   'wait "$pid"' \
-  '! grep -E "panicked at|Linux X11 runtime dependency unavailable|(/Users|/home)/[^/]+/[.]cargo" /tmp/minicon.err >/dev/null' >"$runtime_script"
+  'if grep -E "panicked at|Linux X11 runtime dependenc|(/Users|/home)/[^/]+/[.]cargo" /tmp/minicon.err >/dev/null; then echo "runtime stderr violated the clean-package court:" >&2; cat /tmp/minicon.err >&2; exit 1; fi' >"$runtime_script"
 
 docker run --rm \
   --volume "$PRODUCT_DIR:/court:ro" \

@@ -38,8 +38,9 @@ architectures.
 
 Linux archives use the distribution runtime libraries `libxkbcommon0` and
 `libwayland-client0`; development packages are not required. They bundle the
-runtime-only X11 bridge `libxkbcommon-x11.so.0`, so slim X11 systems do not need
-the `libxkbcommon-x11-0` package merely to start MiniCon.
+runtime-only X11 bridge `libxkbcommon-x11.so.0` and its XCB-XKB dependency, so
+slim X11 systems do not need the `libxkbcommon-x11-0` or `libxcb-xkb1` package
+merely to start MiniCon.
 
 Verify a download before running it:
 

@@ -10,7 +10,11 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-const FORBIDDEN_LOAD_TIME_SONAMES: &[&str] = &["libxkbcommon-x11.so.0", "libxkbcommon-x11.so"];
+const FORBIDDEN_LOAD_TIME_SONAMES: &[&str] = &[
+    "libxkbcommon-x11.so.0",
+    "libxkbcommon-x11.so",
+    "libxcb-xkb.so.1",
+];
 
 fn shipped_binary() -> PathBuf {
     if let Some(path) = std::env::var_os("MINICON_TEST_BINARY") {

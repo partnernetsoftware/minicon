@@ -406,7 +406,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
     <section id="install">
       <div class="wrap">
         <h2 data-i18n="installTitle">Getting it</h2>
-        <p class="section-lead" data-i18n="installLead">Download a native archive or the experimental unsigned <code>minicon.com</code> and run it—there is no separate installer or bundled language runtime. Linux archives include the runtime-only X11 bridge; no <code>-dev</code> package is required.</p>
+        <p class="section-lead" data-i18n="installLead">Download a native archive or the experimental unsigned <code>minicon.com</code> and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no <code>-dev</code> package is required.</p>
         <div class="cta-row">
           <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
@@ -530,7 +530,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "Block until the condition holds or the timeout expires, and say which.",
           scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
           installTitle: "Getting it",
-          installLead: "Download a native archive or the experimental unsigned minicon.com and run it—there is no separate installer or bundled language runtime. Linux archives include the runtime-only X11 bridge; no -dev package is required.",
+          installLead: "Download a native archive or the experimental unsigned minicon.com and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no -dev package is required.",
           installRelease: "Latest release",
           installBuild: "Build from source",
           familyTitle: "MiniCon is the terminal. AgenTerm is the Agent-era workbench.",
@@ -627,7 +627,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
           scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
           installTitle: "获取",
-          installLead: "下载原生归档或实验性的未签名 minicon.com 直接运行，不另带安装程序或语言运行时。Linux 归档已包含仅运行时的 X11 bridge，不需要 -dev 包。",
+          installLead: "下载原生归档或实验性的未签名 minicon.com 直接运行，不另带安装程序或语言运行时。Linux 可执行文件已内嵌仅运行时的 X11 bridge 及 XCB-XKB 依赖，不需要 -dev 包。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
           familyTitle: "MiniCon 是终端。AgenTerm 是 Agent 时代的工作台。",
@@ -724,7 +724,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
           scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
           installTitle: "取得方式",
-          installLead: "下載原生封裝或實驗性的未簽名 minicon.com 即可執行，不另帶安裝程式或語言執行環境。Linux 封裝已包含僅執行期的 X11 bridge，不需要 -dev 套件。",
+          installLead: "下載原生封裝或實驗性的未簽名 minicon.com 即可執行，不另帶安裝程式或語言執行環境。Linux 執行檔已內嵌僅執行期的 X11 bridge 與 XCB-XKB 相依項，不需要 -dev 套件。",
           installRelease: "最新發行版",
           installBuild: "自行建置",
           familyTitle: "MiniCon 是終端機。AgenTerm 是 Agent 時代的工作臺。",

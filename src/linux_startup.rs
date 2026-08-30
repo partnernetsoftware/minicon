@@ -1,4 +1,5 @@
-//! Linux X11 keyboard bridge: bundle `libxkbcommon-x11` when the host omits it.
+//! Linux X11 keyboard bridge: bundle `libxkbcommon-x11` and its XCB-XKB
+//! dependency when the host omits them.
 //!
 //! Winit loads this library through `xkbcommon-dl` at runtime, so the ELF import
 //! table never lists it. When the system package is absent we stage our own copy
@@ -10,10 +11,16 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 const XKB_X11_SONAME: &str = "libxkbcommon-x11.so.0";
+const XCB_XKB_SONAME: &str = "libxcb-xkb.so.1";
 const BUNDLED_XKB_X11: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/",
     env!("MINICON_BUNDLED_XKB_X11_PATH")
+));
+const BUNDLED_XCB_XKB: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/",
+    env!("MINICON_BUNDLED_XCB_XKB_PATH")
 ));
 const STAGED_ENV: &str = "MINICON_XKB_X11_STAGED";
 const RTLD_NOW: c_int = 2;
@@ -94,17 +101,6 @@ fn system_has_xkb_x11() -> bool {
 }
 
 fn stage_bundled_xkb_x11() -> Result<PathBuf, String> {
-    let destination = bundled_library_path()?;
-    if !library_matches(&destination) {
-        write_bundled_library(&destination)?;
-    }
-    destination
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| "bundled library path has no parent directory".to_owned())
-}
-
-fn bundled_library_path() -> Result<PathBuf, String> {
     let root = cache_root()?;
     std::fs::create_dir_all(&root).map_err(|error| {
         format!(
@@ -112,7 +108,16 @@ fn bundled_library_path() -> Result<PathBuf, String> {
             root.display()
         )
     })?;
-    Ok(root.join(XKB_X11_SONAME))
+    for (soname, bytes) in [
+        (XKB_X11_SONAME, BUNDLED_XKB_X11),
+        (XCB_XKB_SONAME, BUNDLED_XCB_XKB),
+    ] {
+        let destination = root.join(soname);
+        if !library_matches(&destination, bytes) {
+            write_bundled_library(&destination, soname, bytes)?;
+        }
+    }
+    Ok(root)
 }
 
 fn cache_root() -> Result<PathBuf, String> {
@@ -132,22 +137,22 @@ fn cache_root() -> Result<PathBuf, String> {
     Ok(fallback)
 }
 
-fn library_matches(path: &Path) -> bool {
+fn library_matches(path: &Path, expected: &[u8]) -> bool {
     std::fs::read(path)
         .ok()
-        .is_some_and(|bytes| bytes == BUNDLED_XKB_X11)
+        .is_some_and(|bytes| bytes == expected)
 }
 
-fn write_bundled_library(path: &Path) -> Result<(), String> {
+fn write_bundled_library(path: &Path, soname: &str, bytes: &[u8]) -> Result<(), String> {
     let mut file = std::fs::File::create(path).map_err(|error| {
         format!(
-            "could not write bundled {XKB_X11_SONAME} to {}: {error}",
+            "could not write bundled {soname} to {}: {error}",
             path.display()
         )
     })?;
-    file.write_all(BUNDLED_XKB_X11).map_err(|error| {
+    file.write_all(bytes).map_err(|error| {
         format!(
-            "could not write bundled {XKB_X11_SONAME} to {}: {error}",
+            "could not write bundled {soname} to {}: {error}",
             path.display()
         )
     })?;
@@ -157,7 +162,7 @@ fn write_bundled_library(path: &Path) -> Result<(), String> {
     permissions.set_mode(0o755);
     std::fs::set_permissions(path, permissions).map_err(|error| {
         format!(
-            "could not chmod bundled {XKB_X11_SONAME} at {}: {error}",
+            "could not chmod bundled {soname} at {}: {error}",
             path.display()
         )
     })
@@ -187,8 +192,8 @@ fn reexec_with_library_path(directory: &Path) -> Result<(), String> {
 
 fn bundled_library_unavailable() -> String {
     format!(
-        "Linux X11 runtime dependency unavailable: {XKB_X11_SONAME}. \
-         MiniCon staged its bundled copy but the dynamic loader still could not use it."
+        "Linux X11 runtime dependencies unavailable: {XKB_X11_SONAME} / {XCB_XKB_SONAME}. \
+         MiniCon staged its bundled copies but the dynamic loader still could not use them."
     )
 }
 
@@ -212,6 +217,7 @@ mod tests {
     #[test]
     fn bundled_bytes_are_non_empty() {
         assert!(!BUNDLED_XKB_X11.is_empty());
+        assert!(!BUNDLED_XCB_XKB.is_empty());
     }
 
     #[test]
@@ -261,6 +267,7 @@ mod tests {
         }
         let library_dir = stage_bundled_xkb_x11().expect("staging succeeds");
         let library = library_dir.join(XKB_X11_SONAME);
+        let transitive = library_dir.join(XCB_XKB_SONAME);
         if let Some(value) = previous_cache {
             unsafe {
                 std::env::set_var("XDG_CACHE_HOME", value);
@@ -274,6 +281,10 @@ mod tests {
         assert_eq!(
             std::fs::read(&library).expect("read staged library"),
             BUNDLED_XKB_X11
+        );
+        assert_eq!(
+            std::fs::read(&transitive).expect("read staged transitive library"),
+            BUNDLED_XCB_XKB
         );
         let _ = std::fs::remove_dir_all(scratch);
     }
