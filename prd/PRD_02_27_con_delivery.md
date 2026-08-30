@@ -387,12 +387,13 @@ auto-raise 9 MiB.
   `workspace_empty`, then closed the window cleanly. Removing only the runtime
   package produced the actionable MiniCon error with no panic/build-host path;
   the same court restored the package afterward.
-- [x] Candidate packaging runs `scripts/linux-x11-package-smoke.sh` for both
-  Linux ISA cells. An empty Ubuntu container owns the missing-library/error
-  half; a second container installs runtime packages only, asserts the `-dev`
-  package and unversioned `.so` are absent, then executes the same
-  composer/lifecycle journey. A README dependency sentence or `ldd` alone
-  cannot satisfy this gate.
+- [x] Candidate native package execution runs
+  `scripts/linux-x11-package-smoke.sh` on each Linux artifact's matching ISA
+  runner. An empty Ubuntu container owns the missing-library/error half; a
+  second container installs runtime packages only, asserts the `-dev` package
+  and unversioned `.so` are absent, then executes the same composer/lifecycle
+  journey. The packaging jobs do not execute a foreign-ISA ELF. A README
+  dependency sentence or `ldd` alone cannot satisfy this gate.
 
 | lever | expected pack effect | cost |
 |---|---|---|

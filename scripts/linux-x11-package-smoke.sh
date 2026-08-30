@@ -56,7 +56,7 @@ printf '%s\n' \
   'export DEBIAN_FRONTEND=noninteractive' \
   'apt-get update -qq' \
   'apt-get install -y -qq dbus-x11 fonts-dejavu-core libwayland-client0 libx11-6 libxcursor1 libxi6 libxinerama1 libxkbcommon0 libxkbcommon-x11-0 libxrandr2 xvfb >/dev/null' \
-  '! dpkg-query -W -f="${Status}" libxkbcommon-x11-dev 2>/dev/null | grep -F "install ok installed"' \
+  '! dpkg-query -W libxkbcommon-x11-dev >/dev/null 2>&1' \
   'ldconfig -p | grep -F "libxkbcommon-x11.so.0" >/dev/null' \
   '! find /usr/lib /lib \( -type f -o -type l \) -name "libxkbcommon-x11.so" -print -quit 2>/dev/null | grep . >/dev/null' \
   'court_dir=$(mktemp -d /tmp/minicon-x11-court.XXXXXX)' \
