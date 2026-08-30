@@ -165,8 +165,10 @@ flowchart LR
   Windows/Linux x86_64+arm64 and both macOS slices through one Universal
   archive. `release-policy.json` is the machine-readable switch: signing is
   `off`, `minicon.com` is absent, and Defender must scan the exact two Windows
-  executables sealed inside the Candidate. Candidate evidence and explicit
-  `v0.1.3 promote` remain open; no tag or Release exists.
+  executables sealed inside the Candidate. Exact-source build `33286599671`,
+  Candidate `33286811086`, and reputation qualification `33287684429` are
+  green for source `39774ed`; G1–G7 are closed. Only the explicit human
+  `v0.1.3 promote` authority remains; no tag or Release exists.
 - [ ] v0.1.4 owns `minicon.com` and trusted signing. The same Candidate,
   reputation and Release workflows consume the policy; changing the version,
   enabling `assets.minicon_com` and setting `signing.mode=required` selects the

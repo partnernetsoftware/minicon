@@ -30,6 +30,15 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Candidate consumes one clean six-payload run, executes all six native cells,
   seals exact bytes, and requires active Defender over both embedded Windows
   executables before human `v0.1.3 promote`.
+
+  G1–G7 are green at exact source `39774ed`: one-build/six-execute run
+  `33286599671`, five-archive Candidate `33286811086`, and bound reputation
+  qualification `33287684429`. Defender engine `1.1.26080.3` with signatures
+  `1.457.375.0` scanned both sealed Windows executables clean; their bytes were
+  unchanged after scanning. The archives are 401,853-byte Windows x86_64,
+  386,448-byte Windows arm64, 2,258,012-byte Linux x86_64, 2,232,167-byte
+  Linux arm64, and 1,538,254-byte macOS Universal. This is Candidate evidence,
+  not publication authority: G8 remains open and no tag or Release exists.
 - [ ] **v0.1.4 adds `minicon.com` and trusted signing through the same
   workflows.** Bump the product/policy version, set `minicon_com=true` and
   `signing.mode=required`; Candidate then selects the trusted-signing upstream,
