@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "assets": {
     "native_archives": true,
-    "minicon_com": false
+    "minicon_com": true
   },
   "signing": {
     "mode": "off"
