@@ -32,6 +32,23 @@ function Get-ExtractDirs([int]$LoaderPid) {
     }
 }
 
+function Remove-TestRoot([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            return
+        } catch {
+            if ([DateTime]::UtcNow -ge $deadline) { throw }
+            # The PTY child can retain its working-directory handle briefly
+            # after the GUI/loader has exited. Retry boundedly; never convert a
+            # persistent handle leak into a green court.
+            Start-Sleep -Milliseconds 100
+        }
+    } while ($true)
+}
+
 if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "missing binary" }
 $appData = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
 if (-not $appData) { throw "CSIDL_APPDATA resolved empty" }
@@ -133,5 +150,5 @@ try {
         try { [void](Invoke-Cli @("close-window")) } catch {}
         if (-not $hostProcess.WaitForExit(2000)) { Stop-Process -Id $hostProcess.Id -Force }
     }
-    if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+    Remove-TestRoot $root
 }
