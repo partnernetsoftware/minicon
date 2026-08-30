@@ -66,7 +66,8 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.5-release-history.md
 │   ├── [~] company Artifact Signing enrollment
 │   │   ├── account + least-scope verifier RBAC complete
-│   │   ├── Public Organization validation pending Microsoft review
+│   │   ├── representative Verify ID completed; portal acknowledgement pending
+│   │   ├── Public Organization review: documented 1–20 business days
 │   │   ├── no certificate profile and no signed release yet
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
@@ -124,7 +125,7 @@ flowchart LR
         SP["SignPath Foundation transition<br/>trusted Authenticode · timestamp"]
         SR["later signed release<br/>new policy · new final-byte courts"]
         SI["company Artifact Signing<br/>account + verifier RBAC ready"]
-        SV["Public Organization validation<br/>Microsoft review in progress"]
+        SV["Public Organization validation<br/>Verify ID done · acknowledgement pending"]
         SC["Public Trust profile<br/>not created"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
@@ -198,7 +199,10 @@ flowchart LR
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity. The shared company Azure Artifact Signing account and
   least-scope verifier role now exist; Public Organization validation is under
-  Microsoft review. There is no certificate profile or signed release yet.
+  Microsoft review. The representative completed the required Verified ID
+  step, but the portal had not yet acknowledged it when last checked. Microsoft
+  documents 1–20 business days for the full review. There is no certificate
+  profile or signed release yet.
   SignPath Foundation remains an independent transition path; provider approval,
   timestamped exact signed bytes, six-grid execution and final-byte Defender
   evidence remain later-release gates. Historical APE rehearsals

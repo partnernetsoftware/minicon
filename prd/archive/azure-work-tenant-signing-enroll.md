@@ -96,6 +96,14 @@ work Entra identity + Azure subscription
 - Submission success is only `In progress`; it is not certificate approval.
   Do not create or claim a usable Public Trust profile until Microsoft marks the
   organization validation successful.
+- Public Organization validation can move from `In progress` to
+  `Action required` so the named representative can complete Microsoft Verified
+  ID. After that human flow reports success, Azure can still show
+  `Action required` / `Please complete your verification here` until the result
+  propagates. Do not repeat identity capture immediately; refresh later and
+  require the request to return to `In progress` before treating the personal
+  step as acknowledged. Microsoft documents an overall organization-validation
+  window of 1–20 business days, possibly longer when it requests documents.
 - After approval, record only stable non-secret coordinates through protected
   deployment configuration. Keep all managed key material inside Azure.
 
