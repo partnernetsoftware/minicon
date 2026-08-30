@@ -26,12 +26,12 @@ else
   echo "cosmocc=MISSING ($COSMO/bin/cosmocc) — pack.sh will host-cc only"
 fi
 
-echo "-- release-fast payloads --"
+echo "-- delivery payloads --"
 need osx-aarch64/aarch64-apple-darwin/release-fast/minicon
 need osx-x86_64/x86_64-apple-darwin/release-fast/minicon
 need lnx-aarch64/aarch64-unknown-linux-gnu/release/minicon
 need lnx-x86_64/x86_64-unknown-linux-gnu/release/minicon
-need win-aarch64/aarch64-pc-windows-msvc/release-fast/minicon.exe
-need win-x86_64/x86_64-pc-windows-msvc/release-fast/minicon.exe
+need win-aarch64/aarch64-pc-windows-msvc/windows-release/minicon.exe
+need win-x86_64/x86_64-pc-windows-msvc/windows-release/minicon.exe
 
 exit "$fail"

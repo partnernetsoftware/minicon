@@ -13,6 +13,13 @@ fn main() {
     // remove this target policy from macOS/Linux cross-builds. Cargo's target
     // environment is the only authority here.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        if std::env::var("PROFILE").as_deref() == Ok("windows-release")
+            && std::env::var("MINICON_RELEASE_PATHS_REDACTED").as_deref() != Ok("1")
+        {
+            panic!(
+                "windows-release requires MINICON_RELEASE_PATHS_REDACTED=1 and a home-path remap"
+            );
+        }
         override_msvcrt_defaultlib();
         // The MSVC runtime is three separable pieces: the C startup files, the
         // VC runtime, and the Universal CRT. They normally have to share a

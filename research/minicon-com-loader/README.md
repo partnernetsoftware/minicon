@@ -19,7 +19,8 @@ On start the trampoline picks `{os}-{isa}`, copies the blob out of ZipOS
 is the wrong join for a native GUI terminal.
 
 Payload source: `payload-build/…` then `target-six/builds/current/…`.
-Linux cells use `release/` (LTO); other cells `release-fast/`. Those
+Linux cells use `release/` (LTO), Darwin uses `release-fast/`, and Windows uses
+the QVM-qualified `windows-release/` profile with remapped builder paths. Those
 binaries remain the six-cell gate's job; this directory only packs and
 dispatches.
 

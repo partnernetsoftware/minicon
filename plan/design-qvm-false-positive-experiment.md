@@ -119,11 +119,14 @@ knobs (`opt-level`, debug assertions/overflow checks, codegen units) one at a
 time without random byte mutation.
 
 That court resolved debug+strip clean and release-fast+no-strip flagged, so
-strip is rejected and release optimization/layout owns the next branch. Cross
-whole-graph `opt-level` next: debug with `z`, release-fast with `0`, holding
-each profile's other settings fixed. If the verdict follows `z`, optimize level
-is necessary; if it remains attached to release-fast, split debug assertions,
-overflow checks and codegen units in that order.
+strip is rejected. Two subsequent whole-graph variants were both clean; the
+accepted delivery shape keeps the dev graph's assertions, overflow checks,
+unwind and broad codegen while applying `opt-level="z"`. It measured about
+1.1 MiB and was acceptable to the operator's same 360 court. Cargo profile
+`windows-release` freezes that shape, and release builders remap the home path
+before admitting debug locations. This is a reproducible reputation boundary,
+not random byte mutation and not evidence that 360 disclosed its proprietary
+feature.
 
 Kill criterion: any variant loses product parity, introduces a redistributable,
 or requires evasive mutation. Time-box ends when Q1 returns a vendor decision;
@@ -166,6 +169,11 @@ the §4 decision trace.
 
 ## §8 — conclusion backfill
 
-Not run. Fill only after Q1 returns: criterion table, exact scanner identity,
-variant hashes, deviations, decision-tree path, reproducible commands and an
-explicit statement that no metric or sample was changed to improve the result.
+The local same-engine court completed through the profile branch: pure-C and
+roughly 2 MiB debug controls were clean; 892–894 KiB release-fast variants were
+flagged regardless of strip; two dev-shaped optimization variants were clean.
+The selected `windows-release` profile preserves full product behavior and the
+static-runtime/import-table contract while remaining about 1.1 MiB. Exact
+Candidate hashes and current Defender results still belong to each release's
+sealed reputation receipt; this result is not a promise about future 360 model
+updates or another vendor.

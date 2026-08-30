@@ -104,6 +104,22 @@ lto = false
 codegen-units = 16
 incremental = true
 
+# Windows delivery profile selected by the 360 QVM decisive court. The compact
+# release-fast combination was flagged, while this dev-shaped whole graph with
+# size optimization was clean at 1.1 MiB. Keep the explicit shape frozen: it is
+# a reputation boundary, not a general replacement for other platforms.
+[profile.windows-release]
+inherits = "dev"
+opt-level = "z"
+debug = 2
+debug-assertions = true
+overflow-checks = true
+lto = false
+codegen-units = 256
+panic = "unwind"
+incremental = true
+strip = false
+
 # agenterm-con was built against agenterm's vendored forks, not the crates.io
 # releases, and the extraction dropped them. vt100 is not optional: the product
 # needs `take_damage` / `ScreenDamage` / `RowRange` / cursor shape+blink /

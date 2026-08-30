@@ -178,12 +178,14 @@ flowchart LR
   final-byte Defender evidence remain v0.1.4 gates. Historical APE rehearsals
   and the rejected signed-v0.1.3 plan are archived in
   `prd/archive/v0.1.3-release-history.md`.
-- [~] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as
+- [x] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as
   `HEUR/QVM202.0.B951.Malware.Gen` although its exact Candidate passed active
   Defender. The suffix is proprietary, so do not guess or mutate bytes.
-  Decision order is exact-file 360 review → trusted-signature control →
-  conventional-startup control; owner:
-  `plan/design-qvm-false-positive-experiment.md`.
+  The decisive profile court rejected strip as causal: compact release-fast
+  remained flagged without strip, while the accepted dev-shaped `opt-level=z`
+  graph was clean at about 1.1 MiB. Windows delivery now freezes that shape as
+  `windows-release`; exact Candidate reputation evidence remains mandatory.
+  Owner: `plan/design-qvm-false-positive-experiment.md`.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Rebuild six minicon bins from this tree (Cargo.toml version).
 # Linux uses profile release (LTO) because ELF .text+DWARF dominate size;
-# Darwin/Windows stay release-fast.
+# Darwin stays release-fast. Windows delivery uses the QVM-qualified
+# windows-release shape and remaps the builder home before debug locations are
+# admitted to a distributable PE.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="${PAYLOAD_BUILD:-$ROOT/research/minicon-com-loader/payload-build}"
@@ -42,7 +44,10 @@ build_one() {
       CARGO_TARGET_DIR="$dir" cargo zigbuild --locked --profile release --bin minicon --target "$target"
       ;;
     xwin)
-      CARGO_TARGET_DIR="$dir" cargo xwin build --locked --profile release-fast --bin minicon --target "$target"
+      MINICON_RELEASE_PATHS_REDACTED=1 \
+        RUSTFLAGS="--remap-path-prefix=$HOME=~" \
+        CARGO_TARGET_DIR="$dir" cargo xwin build --locked \
+        --profile windows-release --bin minicon --target "$target"
       ;;
   esac
 }

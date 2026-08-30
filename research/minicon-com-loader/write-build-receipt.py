@@ -163,6 +163,11 @@ def main() -> None:
         "source_tree_digest": ident["source_tree_digest"],
         "minicon_com_sha256": com_sha,
         "minicon_com_bytes": com.stat().st_size,
+        "delivery_profiles": {
+            "windows": "windows-release",
+            "linux": "release",
+            "macos": "release-fast",
+        },
         "loader_source_sha256": sha256(LOADER_SOURCE),
         "authenticode_pad_source_sha256": sha256(AUTHENTICODE_PAD_SOURCE),
         "authenticode_prepare_source_sha256": sha256(AUTHENTICODE_PREPARE_SOURCE),

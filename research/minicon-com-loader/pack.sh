@@ -39,8 +39,8 @@ stage osx-aarch64 "$(payload osx-aarch64 osx-aarch64/aarch64-apple-darwin/releas
 stage osx-x86_64 "$(payload osx-x86_64 osx-x86_64/x86_64-apple-darwin/release-fast/minicon)" minicon
 stage lnx-aarch64 "$(payload lnx-aarch64 lnx-aarch64/aarch64-unknown-linux-gnu/release/minicon)" minicon
 stage lnx-x86_64 "$(payload lnx-x86_64 lnx-x86_64/x86_64-unknown-linux-gnu/release/minicon)" minicon
-stage win-aarch64 "$(payload win-aarch64 win-aarch64/aarch64-pc-windows-msvc/release-fast/minicon.exe)" minicon.exe
-stage win-x86_64 "$(payload win-x86_64 win-x86_64/x86_64-pc-windows-msvc/release-fast/minicon.exe)" minicon.exe
+stage win-aarch64 "$(payload win-aarch64 win-aarch64/aarch64-pc-windows-msvc/windows-release/minicon.exe)" minicon.exe
+stage win-x86_64 "$(payload win-x86_64 win-x86_64/x86_64-pc-windows-msvc/windows-release/minicon.exe)" minicon.exe
 
 if [[ -x "$COSMO/bin/cosmocc" ]]; then
   echo "[pack] cosmocc → dist/minicon.com"
