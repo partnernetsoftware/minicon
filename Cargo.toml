@@ -41,6 +41,10 @@ name = "minicon_load_portability"
 path = "tests/minicon_load_portability.rs"
 
 [[test]]
+name = "minicon_load_portability_linux"
+path = "tests/minicon_load_portability_linux.rs"
+
+[[test]]
 name = "minicon_console_agent"
 path = "tests/minicon_console_agent.rs"
 

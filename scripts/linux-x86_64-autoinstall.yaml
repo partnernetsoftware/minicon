@@ -18,9 +18,8 @@ autoinstall:
   packages:
     - xubuntu-desktop-minimal
     - qemu-guest-agent
-    # winit/xkbcommon-dl needs the X11 bridge at runtime; a healthy XFCE login
-    # alone does not prove the shipped MiniCon ELF can start.
-    - libxkbcommon-x11-0
+    # MiniCon bundles libxkbcommon-x11 when the host omits libxkbcommon-x11-0.
+    - libxkbcommon0
     - at-spi2-core
     - dbus-x11
     - fonts-noto-cjk
