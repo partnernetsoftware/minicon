@@ -1,10 +1,11 @@
 # Enroll a company Azure tenant for Artifact Signing (redacted)
 
 Status: company Artifact Signing account created; Public organization identity
-validation submitted and pending Microsoft review on 2026-08-30. No
-credentials, tenant/subscription/object IDs, mailboxes, addresses, validation
-IDs, or payment details are recorded here. Publisher identity and SignPath
-remain as in `CODE_SIGNING_POLICY.md`.
+validation submitted 2026-08-30 and **In progress** as of 2026-09-01, with the
+representative's Verified ID acknowledged. No credentials,
+tenant/subscription/object IDs, mailboxes, addresses, validation IDs, or
+payment details are recorded here. Publisher identity and SignPath remain as in
+`CODE_SIGNING_POLICY.md`.
 
 Goal: a **work** Microsoft Entra tenant plus an Azure subscription, then
 **Azure Artifact Signing** (portal still often labelled Trusted Signing) for
@@ -112,6 +113,48 @@ second publisher identity per repository.
 
 SignPath Foundation remains the OSS publisher path. Company-owned publisher
 must never be labelled as SignPath.
+
+## Observation log
+
+Only the status field and dates are recorded. The validation ID, subscription,
+tenant, mailbox and requester identity are deliberately absent, per the rule at
+the top of this file.
+
+| Date | Status in portal | Reading |
+|------|------------------|---------|
+| 2026-08-30 | submitted | Submission success only; not approval. |
+| 2026-08-30 | not recorded | Same day, commit `eac8925` recorded that the named representative had completed Microsoft Verified ID and the portal had not yet acknowledged it. The portal status at that moment was not written down, so it is left blank here rather than reconstructed. |
+| 2026-09-01 | **`In progress`** (`正在进行`), expiry empty | The request is back at In progress, which by the rule above is what makes the personal step count as acknowledged. **Not** certificate approval. |
+
+### When to check next
+
+Microsoft documents 1–20 business days for organization validation. Submission
+was Sunday 2026-08-30, so business-day counting starts Monday 2026-08-31.
+
+| Milestone | Date | Action |
+|-----------|------|--------|
+| +5 business days | **2026-09-04 (Fri)** | Routine re-check. Still In progress is normal; do nothing else. |
+| +10 business days | **2026-09-11 (Fri)** | Re-check. Still In progress is within the documented window but worth noting in the log. |
+| +20 business days | **2026-09-25 (Fri)** | Documented ceiling. If still In progress, open a Microsoft support request rather than resubmitting — resubmission restarts the queue. |
+
+Do not poll daily: this file already records that repeating identity capture
+immediately is counter-productive, and the portal lags behind the human flow.
+
+The only state that unblocks signing is the request reporting success **and**
+the Public Trust certificate profile becoming creatable. Status text alone is
+not the gate; the operational test is whether the certificate-profile blade
+will create one.
+
+### How the status was read (2026-09-01)
+
+Read out of the page's accessibility tree, not a screenshot and not
+coordinates: `mcu unlock <window>` to bring up Brave's renderer accessibility,
+then `mcu tree` and read the `Identity validations` table row.
+
+Worth recording for the MCU/cu boundary: `agenterm-cu unlock` reported the poke
+delivered but the tree never grew (`poked=true, grew=false`, 55 chrome-only
+nodes), while `mcu unlock` did bring the renderer tree up on the same window.
+On Brave Origin, cu's unlock is currently weaker than MCU's.
 
 ## MCU control (related, not signing)
 

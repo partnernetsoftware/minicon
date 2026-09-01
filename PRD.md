@@ -66,8 +66,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.5-release-history.md
 │   ├── [~] company Artifact Signing enrollment
 │   │   ├── account + least-scope verifier RBAC complete
-│   │   ├── representative Verify ID completed; portal acknowledgement pending
-│   │   ├── Public Organization review: documented 1–20 business days
+│   │   ├── representative Verify ID acknowledged; request back to In progress
+│   │   ├── Public Organization review: In progress, observed 2026-09-01
+│   │   ├── review window 1–20 business days; next check 2026-09-04
+│   │   ├── chase if still In progress after 2026-09-25 (20 business days)
 │   │   ├── no certificate profile and no signed release yet
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
@@ -125,7 +127,7 @@ flowchart LR
         SP["SignPath Foundation transition<br/>trusted Authenticode · timestamp"]
         SR["later signed release<br/>new policy · new final-byte courts"]
         SI["company Artifact Signing<br/>account + verifier RBAC ready"]
-        SV["Public Organization validation<br/>Verify ID done · acknowledgement pending"]
+        SV["Public Organization validation<br/>In progress 2026-09-01 · Verify ID acknowledged<br/>next check 09-04 · ceiling 09-25"]
         SC["Public Trust profile<br/>not created"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
@@ -199,9 +201,14 @@ flowchart LR
 - [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
   publisher identity. The shared company Azure Artifact Signing account and
   least-scope verifier role now exist; Public Organization validation is under
-  Microsoft review. The representative completed the required Verified ID
-  step, but the portal had not yet acknowledged it when last checked. Microsoft
-  documents 1–20 business days for the full review. There is no certificate
+  Microsoft review. Read from the portal on 2026-09-01: the single Public /
+  Organization request shows status **In progress**, no expiry date. By this
+  repository's own rule that a request must return to In progress before the
+  personal step counts as acknowledged, the representative's Verified ID is now
+  acknowledged — an advance on the previous "portal acknowledgement pending"
+  state, and **not** certificate approval. Two of a documented 1–20 business
+  days have elapsed. Next routine check 2026-09-04; chase Microsoft if the
+  request is still In progress after 2026-09-25. There is no certificate
   profile or signed release yet.
   SignPath Foundation remains an independent transition path; provider approval,
   timestamped exact signed bytes, six-grid execution and final-byte Defender
