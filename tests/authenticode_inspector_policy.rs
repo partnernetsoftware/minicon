@@ -25,6 +25,9 @@ fn windows_inspector_covers_trust_timestamp_and_product_identity() {
 fn portable_inspector_does_not_claim_windows_authority() {
     let words = README.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(PORTABLE.contains("osslsigncode verify"));
+    assert!(PORTABLE.contains("osslsigncode extract-signature"));
+    assert!(PORTABLE.contains("no extractable embedded Authenticode signature"));
+    assert!(PORTABLE.contains("embedded signature exists, but portable verification failed"));
     assert!(PORTABLE.contains("Windows Get-AuthenticodeSignature is authoritative"));
     assert!(words.contains("no public release has been signed yet"));
 }

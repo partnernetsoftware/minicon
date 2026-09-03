@@ -93,8 +93,9 @@ trust check:
 The command emits JSON and returns `0` only for a valid company signature with
 a timestamp. Exit `2` means unsigned. On macOS/Linux, install `osslsigncode`
 and run `scripts/inspect-authenticode.sh ./minicon.com` for a portable
-certificate/timestamp report; a local CA-chain failure there is diagnostic,
-while Windows remains the final trust verdict.
+certificate/timestamp report. Exit `2` means no extractable signature; exit `3`
+means a signature exists but portable verification failed, including a possible
+local CA-chain gap. Windows remains the final trust verdict.
 
 ## Use
 
@@ -300,5 +301,6 @@ exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.m
 它输出包含 VERSIONINFO 的 JSON；只有公司发布者签名、时间戳和指定产品信息都有效时
 才返回 `0`，返回 `2` 表示未签名，返回 `6` 表示产品名或版本不符。
 macOS/Linux 可安装 `osslsigncode` 后运行
-`scripts/inspect-authenticode.sh ./minicon.com` 查看证书与时间戳；最终信任结论仍以
-Windows 为准。
+`scripts/inspect-authenticode.sh ./minicon.com` 查看证书与时间戳。返回 `2` 表示无法
+提取嵌入签名；返回 `3` 表示签名存在但便携式验证失败（可能只是本机 CA 链不全）。
+最终信任结论仍以 Windows 为准。

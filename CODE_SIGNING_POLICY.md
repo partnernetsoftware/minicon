@@ -121,8 +121,10 @@ timestamp and any requested product identity; `2` means unsigned, `3`
 invalid/incomplete, `4` a foreign publisher, `5` no timestamp, `6` a requested
 product/version mismatch, and `69` that the Windows Authenticode cmdlet is unavailable. The
 portable `scripts/inspect-authenticode.sh` prints hash, size and
-`osslsigncode` evidence on macOS/Linux, but does not replace the Windows trust
-verdict.
+`osslsigncode` evidence on macOS/Linux. It returns `2` when no embedded
+signature can be extracted and `3` when a signature exists but portable trust
+verification fails (including an unavailable local CA chain); neither replaces
+the Windows trust verdict.
 
 Every release publishes SHA-256 sidecars and exact-source receipts. A signing
 or antivirus failure blocks that artifact; capabilities are not hidden or
