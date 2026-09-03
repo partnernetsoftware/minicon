@@ -1,5 +1,6 @@
 const POWERSHELL: &str = include_str!("../scripts/inspect-authenticode.ps1");
 const PORTABLE: &str = include_str!("../scripts/inspect-authenticode.sh");
+const TRUST_BUNDLE: &str = include_str!("../scripts/fetch-microsoft-trust-bundle.sh");
 const README: &str = include_str!("../README.md");
 const POLICY: &str = include_str!("../CODE_SIGNING_POLICY.md");
 
@@ -43,6 +44,13 @@ fn portable_inspector_does_not_claim_windows_authority() {
     assert!(PORTABLE.contains("no extractable embedded Authenticode signature"));
     assert!(PORTABLE.contains("embedded signature exists, but portable verification failed"));
     assert!(PORTABLE.contains("Windows Get-AuthenticodeSignature is authoritative"));
+    assert!(
+        TRUST_BUNDLE.contains("5367f20c7ade0e2bca790915056d086b720c33c1fa2a2661acf787e3292e1270")
+    );
+    assert!(
+        TRUST_BUNDLE.contains("36e731cfa9bfd69dafb643809f6dec500902f7197daeaad86ea0159a2268a2b8")
+    );
+    assert!(TRUST_BUNDLE.contains("mv -- \"$staged\" \"$output\""));
     assert!(words.contains("no public release has been signed yet"));
 }
 
