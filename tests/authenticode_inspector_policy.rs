@@ -45,6 +45,7 @@ fn portable_inspector_does_not_claim_windows_authority() {
 fn public_policy_exposes_readiness_and_irreversible_revocation_boundaries() {
     for contract in [
         "check-product-signing-readiness.sh",
+        "--qualification",
         "Deleting a certificate profile does not revoke signatures",
         "Certificate revocation is a separate, irreversible owner action",
         "company-dev-hub/tree/main/skills/sign-windows-artifacts",

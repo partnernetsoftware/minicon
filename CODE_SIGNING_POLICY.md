@@ -22,6 +22,9 @@ Before dispatch, operators use the company signing skill's read-only
 published version reuse, policy/version drift, missing workflows, and inspector
 drift before provider time or signing quota is spent. `READY` is only source
 eligibility; it is not signature or release evidence.
+The explicit `--qualification` option permits a published version solely for
+the Trusted Signing Court's `release_eligible=false` mechanism diagnosis; omit
+it for Candidate or release-eligible signing.
 
 Signed Windows release artifacts (`minicon.com` and both native
 `minicon.exe`) carry the publisher identity `PARTNERNET SOFTWARE PTY LTD`
