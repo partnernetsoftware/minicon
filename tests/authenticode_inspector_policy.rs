@@ -47,6 +47,7 @@ fn public_policy_exposes_readiness_and_irreversible_revocation_boundaries() {
         "check-product-signing-readiness.sh",
         "Deleting a certificate profile does not revoke signatures",
         "Certificate revocation is a separate, irreversible owner action",
+        "company-dev-hub/tree/main/skills/sign-windows-artifacts",
     ] {
         assert!(
             POLICY.contains(contract),

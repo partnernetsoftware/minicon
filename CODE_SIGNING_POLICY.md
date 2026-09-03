@@ -146,3 +146,7 @@ issued. Certificate revocation is a separate, irreversible owner action that
 can invalidate affected files from the selected revocation time; it is not an
 automated workflow fallback. Any incident and resulting owner decision are
 recorded in release history.
+
+Reusable setup, readiness, inspection, receipt, operations, and incident
+procedures live in the company
+[Windows signing skill](https://github.com/partnernetsoftware/company-dev-hub/tree/main/skills/sign-windows-artifacts).
