@@ -1,29 +1,34 @@
 # Code signing policy
 
-MiniCon is applying to the SignPath Foundation open-source program. The
-application is pending. A release is signed only when its downloadable bytes
-have a valid Authenticode signature and its release receipt says so; repository
-metadata, this policy, a signing request, or a test certificate is not a
+MiniCon's accepted Windows signing provider is a publicly trusted Authenticode
+certificate issued to PARTNERNET SOFTWARE PTY LTD through Azure Artifact
+Signing (Public Trust). No public MiniCon release has used it yet. The SignPath Foundation open-source application was
+declined, so no SignPath signature will ever appear on a MiniCon release. A
+release is signed only when its downloadable bytes have a valid Authenticode
+signature and its release receipt says so; repository metadata, this policy,
+an identity validation, a certificate profile, or a test certificate is not a
 signature.
 
 The committed `release-policy.json` decides whether a version requires signing.
-MiniCon v0.1.4 deliberately publishes only unsigned native archives because
-SignPath approval and release configuration are not yet available; its
+MiniCon v0.1.4 and v0.1.5 deliberately published unsigned artifacts; their
 checksums, six-cell runtime courts and Defender evidence remain mandatory.
-`minicon.com` and trusted signing remain a later policy switch. When policy says
+Company signing of `minicon.com` and the native Windows executables is a later
+explicit policy switch for a new version. When policy says
 `signing.mode=required`, missing provider configuration blocks the release; it
 never falls back to unsigned output.
 
-When the application is accepted, Windows release artifacts covered by the
-approved SignPath artifact configuration use:
-
-> Free code signing provided by [SignPath.io](https://about.signpath.io/),
-> certificate by [SignPath Foundation](https://signpath.org/).
-
-The certificate publisher is SignPath Foundation. It is not a certificate
-issued to PARTNERNET SOFTWARE PTY LTD. Company-owned publisher signing remains
-a separate future delivery path and will never be represented by a SignPath
-Foundation signature.
+Signed Windows release artifacts (`minicon.com` and both native
+`minicon.exe`) carry the publisher identity `PARTNERNET SOFTWARE PTY LTD`
+(Sydney, New South Wales, AU) on a short-lived certificate chained to the
+Microsoft ID Verified Code Signing PCA, with an RFC 3161 SHA-256 timestamp
+from `timestamp.acs.microsoft.com` so signatures stay valid after the
+certificate expires. The private key is non-exportable and lives only inside
+the Azure Artifact Signing service; no PFX, token or key file exists anywhere.
+Signing is performed by a GitHub Actions job: `azure/login` exchanges GitHub's
+OpenID Connect token for a short-lived Azure CLI session, and the signing
+action consumes that session as a federated identity whose only permission is
+the Artifact Signing Certificate Profile Signer role on one certificate
+profile.
 
 ## Team roles
 
@@ -32,15 +37,17 @@ Foundation signature.
   contribution history are visible through the
   [organization](https://github.com/orgs/partnernetsoftware/people) and
   [repository contributors](https://github.com/partnernetsoftware/minicon/graphs/contributors).
-- Signing-request approvers: the
+- Signing authority: the
   [PartnerNet Software organization owners](https://github.com/orgs/partnernetsoftware/people?query=role%3Aowner).
-  SignPath requires a manual approval for every release signing request.
+  Only the `release-signing` GitHub Environment can obtain the OIDC token that
+  the signing identity accepts; only a manually dispatched Trusted Signing
+  Court run against current `main` uses that Environment.
 - Public Release authority is separate: no tag or Release is created until a
   human names the exact version and explicitly says `promote` after all
   Candidate courts pass.
 
-All team members participating in repository or SignPath authority must use
-multi-factor authentication. External contributions require review by a team
+All team members participating in repository or Azure signing authority must
+use multi-factor authentication. External contributions require review by a team
 member before merge.
 
 ## Build and signing boundary
@@ -61,9 +68,10 @@ member before merge.
 - A test/self-signed certificate is mechanism evidence only and can never
   satisfy release qualification.
 
-The requested SignPath configuration must restrict product name and product
-version metadata to MiniCon and the one release version. It may sign only
-artifacts produced from this repository by the approved GitHub workflow.
+The signing job fails closed unless every input PE reports
+`ProductName=MiniCon` and the one release version, and it signs only the three
+artifacts produced from this repository by the approved GitHub workflow run it
+was given.
 
 ## Privacy and system changes
 
@@ -89,5 +97,6 @@ or antivirus failure blocks that artifact; capabilities are not hidden or
 removed to manufacture a green result. Reports concerning signed artifacts can
 be filed through the repository's
 [issue tracker](https://github.com/partnernetsoftware/minicon/issues). The
-maintainers will assist SignPath Foundation with investigation and request
-revocation if signing authority or signed bytes are compromised.
+maintainers will revoke the certificate profile through Azure Artifact Signing
+and disable the federated signing identity if signing authority or signed
+bytes are compromised, and will record the incident in the release history.

@@ -372,8 +372,8 @@ def self_test() -> None:
         }))
         signing_path.write_text(json.dumps({
             "kind": "minicon-trusted-signing", "source_sha": source,
-            "product_version": version, "signing_provider": "signpath-foundation",
-            "publisher_organization": "SignPath Foundation", "assets": {
+            "product_version": version, "signing_provider": "azure-artifact-signing",
+            "publisher_organization": "PARTNERNET SOFTWARE PTY LTD", "assets": {
                 "minicon.com": {"before_sha256": unsigned_com_sha, "after_sha256": sha256(com),
                                  "after_bytes": com.stat().st_size},
                 "win-x86_64": {"after_sha256": hashlib.sha256(b"win-x86").hexdigest()},

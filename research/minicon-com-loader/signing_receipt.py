@@ -90,6 +90,17 @@ def verify_receipt(receipt: dict, root: Path) -> None:
             raise ValueError("missing SignPath request identity")
         require_nonempty(request, "id")
         require_nonempty(request, "web_url")
+    elif provider == "azure-artifact-signing":
+        resource = receipt.get("provider_resource")
+        if not isinstance(resource, dict):
+            raise ValueError("missing Azure Artifact Signing resource coordinates")
+        endpoint = require_nonempty(resource, "endpoint")
+        if not endpoint.startswith("https://") or not endpoint.rstrip("/").endswith(".codesigning.azure.net"):
+            raise ValueError("Azure Artifact Signing endpoint is not a codesigning.azure.net URL")
+        require_nonempty(resource, "account")
+        require_nonempty(resource, "certificate_profile")
+        if receipt.get("timestamp_rfc3161") != "http://timestamp.acs.microsoft.com":
+            raise ValueError("Azure Artifact Signing must timestamp with timestamp.acs.microsoft.com")
 
     assets = receipt.get("assets")
     if not isinstance(assets, dict) or set(assets) != set(SIGNED_ASSETS):
@@ -167,6 +178,31 @@ def self_test() -> None:
             "assets": assets,
         }
         verify_receipt(receipt, root)
+        azure = dict(receipt)
+        azure.pop("provider_request")
+        azure.update({
+            "signing_provider": "azure-artifact-signing",
+            "publisher_organization": "PARTNERNET SOFTWARE PTY LTD",
+            "timestamp_rfc3161": "http://timestamp.acs.microsoft.com",
+            "provider_resource": {
+                "endpoint": "https://eus.codesigning.azure.net/",
+                "account": "fixture-account",
+                "certificate_profile": "fixture-profile",
+            },
+        })
+        company_subject = "CN=PARTNERNET SOFTWARE PTY LTD, O=PARTNERNET SOFTWARE PTY LTD, L=SYDNEY, S=New South Wales, C=AU"
+        for row in assets.values():
+            row["signer_subject"] = company_subject
+        verify_receipt(azure, root)
+        azure["provider_resource"] = {"endpoint": "https://example.invalid/", "account": "x", "certificate_profile": "y"}
+        try:
+            verify_receipt(azure, root)
+        except ValueError as exc:
+            assert "codesigning.azure.net" in str(exc)
+        else:
+            raise AssertionError("foreign signing endpoint unexpectedly passed")
+        for row in assets.values():
+            row["signer_subject"] = "CN=SignPath Foundation, C=AT"
         assets["minicon.com"]["signer_subject"] = "CN=MiniCon, O=OTHER FOUNDATION"
         try:
             verify_receipt(receipt, root)

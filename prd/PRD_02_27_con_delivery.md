@@ -326,7 +326,7 @@ and proven here before becoming a current contract.
   SIGKILL vs non-EINTR `waitpid` failure keeps the directory. There is no
   `MINICON_CONFIG` override. Windows config root remains
   `SHGetFolderPathW(CSIDL_APPDATA)` ([25](PRD_02_25_con_workspace.md)), not
-  `%APPDATA%` / `%USERPROFILE%`.
+  `~/AppData/Roaming` / the user-profile root.
 - [x] pack profiles are target-specific: Linux cells `cargo zigbuild --profile
   release` (thin LTO + `--gc-sections` / `--as-needed`); Darwin and Windows
   cells `release-fast`. Zig's lld rejects `-z pack-relative-relocs` (RELR);
@@ -1459,8 +1459,8 @@ interactive Linux x86 installation.
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [ ] **Trusted publisher after v0.1.4; company publisher later.**
-  Establish trusted signing as a later court for `minicon.com`,
+- [~] **Company Artifact Signing wired; first exact signed court pending.**
+  The later trusted-signing court covers `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
   Authenticode plus trusted timestamping, macOS Developer ID signing and
@@ -1512,9 +1512,39 @@ interactive Linux x86 installation.
   On 2026-08-30 the company Artifact Signing account was created in East US on
   the Basic tier. Current terms were accepted, the human verifier received the
   account-scoped `Artifact Signing Identity Verifier` role, and a Public
-  Organization identity-validation request was submitted. Microsoft review is
-  still in progress: no Public Trust certificate profile exists yet, no
-  production byte has been company-signed, and no receipt may imply otherwise.
+  Organization identity-validation request was submitted. On 2026-09-03 that
+  request reached **Completed**: the vetting email had been sitting unread in
+  the company mailbox (sender `<MICROSOFT_VETTING_SENDER>`, subject "Action needed:
+  Verify your email account with Microsoft"), the link was confirmed, and the
+  backend record showed every vetting sub-service (DNE, TSS, VC_Ind, BV, DV,
+  EV) as Pass. The same day the MiniCon Public Trust certificate profile
+  was created (Active; CN/O `PARTNERNET SOFTWARE PTY LTD`,
+  L/S/C Sydney / New South Wales / AU, street and postal code excluded), an
+  Entra app registration with a GitHub federated credential bound to
+  `repo:partnernetsoftware/minicon:environment:release-signing` was created,
+  and that service principal received only `Artifact Signing Certificate
+  Profile Signer` at the profile scope. The `release-signing` Environment now
+  holds the three OIDC identifiers as secrets and the endpoint/account/profile
+  coordinates as variables. No production byte has been company-signed yet,
+  and no receipt may imply otherwise until the first exact signed run is green.
+
+  Same-day mechanism rehearsal with the real Public Trust profile (outside
+  the repository, output discarded): the 7,660,467-byte unsigned dev-pack
+  `minicon.com` (SHA-256 `1ca1fbc3…93d4ac`) was signed from this Mac with
+  `jsign --storetype TRUSTEDSIGNING --alias <ACCOUNT>/<PROFILE>`
+  using a short-lived `az` access token under a temporary personal signer role
+  that was removed afterwards. Result: 7,673,056 bytes (SHA-256
+  `6006eb03…10a02e`), signer `CN=PARTNERNET SOFTWARE PTY LTD,
+  O=PARTNERNET SOFTWARE PTY LTD, L=SYDNEY, ST=New South Wales, C=AU` issued by
+  `Microsoft ID Verified CS EOC CA 04`, RFC 3161 timestamp from
+  `timestamp.acs.microsoft.com` at 2026-09-03T03:36:11Z, `osslsigncode verify`
+  ok against the Microsoft Identity Verification Root CA 2020, ZipOS still
+  lists all 16 cells, Darwin `--version`/`--status` still run, a one-byte
+  mutation fails verification, and the file stays under the 9,437,184-byte
+  ceiling. osslsigncode could not complete the timestamp-server chain from its
+  own bundle; Windows `Get-AuthenticodeSignature` in the workflow is the
+  authoritative check. This is publisher-identity mechanism evidence only: it
+  is not a Candidate, carries no build receipt, and cannot be promoted.
   The redacted operational sequence and failure lessons live in
   `prd/archive/azure-work-tenant-signing-enroll.md`; company details and Azure
   identifiers stay outside the repository.
@@ -1526,10 +1556,12 @@ interactive Linux x86 installation.
   `CODE_SIGNING_POLICY.md` and redacted
   `research/minicon-com-loader/signpath-application.md` own this distinction,
   team roles, privacy statement and verifiable-build questions. The application
-  was submitted on 2026-08-30. SignPath acknowledged receipt by email and said
-  review or follow-up questions should arrive within the next few business
-  days; it supplied no application ID. This proves intake only. Acceptance,
-  artifact-configuration approval and an actual signature are still pending.
+  was submitted on 2026-08-30. SignPath acknowledged receipt by email, then
+  declined the application in early September 2026 on the grounds that the
+  project is not yet well known enough. The SignPath adapter, its Environment
+  secret/variables and the `signpath-foundation` receipt provider therefore
+  carry no live configuration; the receipt validators keep the identity table
+  entry only so historical fixtures stay checkable.
 
   Implementation owner is `.github/workflows/company-signing.yml`. Despite the
   historical filename, it is the provider-neutral **Trusted Signing Court**.
@@ -1544,15 +1576,21 @@ interactive Linux x86 installation.
   payloads; a later explicit policy change selects and seals signed bytes.
   The final signed `minicon.com` must remain under the already stamped
   9,437,184-byte ceiling. This wiring is implemented but remains unqualified
-  until the SignPath project/artifact configuration exists and the first exact
-  run is green. Its adapter submits the exact three-file GitHub artifact ID,
-  pins SignPath's official Action to a full commit SHA, requires exactly the
-  same three output paths, and binds the SignPath request ID/URL into the
-  signing receipt. `SIGNPATH_API_TOKEN` is an Environment secret; organization,
-  project, signing-policy and artifact-configuration slugs are Environment
-  variables. The key never enters GitHub.
+  until the first exact run is green. Its adapter is `azure/login` (GitHub
+  OIDC, `id-token: write` on the sign job only) followed by
+  `Azure/artifact-signing-action`, both pinned to full commit SHAs. It signs
+  exactly the three catalogued files (`signing-catalog.txt` is written next to
+  them before the immutable unsigned-input upload), uses SHA-256 file and
+  timestamp digests against `http://timestamp.acs.microsoft.com`, requires
+  exactly the same three output paths, verifies `O=PARTNERNET SOFTWARE PTY LTD`
+  on every signer certificate, and binds the endpoint/account/profile
+  coordinates into the signing receipt as `provider_resource`. `azure/login`
+  exchanges the OIDC token into a short-lived Azure CLI session; the signing
+  action enables only `AzureCliCredential` and excludes every other credential
+  probe. The key is non-exportable and never enters GitHub.
 
-  SignPath requires constrained product metadata on every signed PE. The two
+  Publicly trusted signing requires constrained product metadata on every
+  signed PE. The two
   native Windows payloads already carry Cargo-owned VERSIONINFO. The APE outer
   PE now links a standard VERSIONINFO resource before the Mach-O/ZIP layout is
   finalized; `prepare-authenticode.py` activates its Resource Directory and

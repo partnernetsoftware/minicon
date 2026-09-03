@@ -1,8 +1,9 @@
 # Enroll a company Azure tenant for Artifact Signing (redacted)
 
 Status: company Artifact Signing account created; Public organization identity
-validation submitted 2026-08-30 and **In progress** as of 2026-09-01, with the
-representative's Verified ID acknowledged. No credentials,
+validation **Completed** and the MiniCon Public Trust profile became Active on
+2026-09-03. GitHub OIDC/profile-scoped signer configuration exists; the first
+exact signed court is still pending. No credentials,
 tenant/subscription/object IDs, mailboxes, addresses, validation IDs, or
 payment details are recorded here. Publisher identity and SignPath remain as in
 `CODE_SIGNING_POLICY.md`.
@@ -78,10 +79,12 @@ work Entra identity + Azure subscription
     ├── account-scope RBAC
     │   └── Artifact Signing Identity Verifier → human verifier
     ├── Public → Organization identity validation
-    │   └── pending Microsoft review
-    ├── after approval: Public Trust certificate profile
-    ├── signer workload identity gets only profile-signer RBAC
-    └── exact unsigned SHA → signed SHA → timestamp → six execute-only courts
+    │   ├── vetting email to the primary mailbox → click within 7 days
+    │   └── Completed when every vetting sub-service is Pass
+    ├── [x] Public Trust certificate profile (one per publisher identity)
+    ├── [x] signer workload identity (GitHub OIDC) gets only profile-signer RBAC
+    ├── [x] company-signing.yml adapter + release-signing Environment
+    └── [ ] exact unsigned SHA → signed SHA → timestamp → six execute-only courts
 ```
 
 - The Chinese portal warning translated the role name, but role search returned
@@ -111,8 +114,8 @@ work Entra identity + Azure subscription
 The same company account is intended for MiniCon and AgenTerm. Do not create a
 second publisher identity per repository.
 
-SignPath Foundation remains the OSS publisher path. Company-owned publisher
-must never be labelled as SignPath.
+SignPath Foundation declined the OSS application in early September 2026
+(project not well known enough). The company publisher path is the only one.
 
 ## Observation log
 
@@ -125,8 +128,13 @@ the top of this file.
 | 2026-08-30 | submitted | Submission success only; not approval. |
 | 2026-08-30 | not recorded | Same day, commit `eac8925` recorded that the named representative had completed Microsoft Verified ID and the portal had not yet acknowledged it. The portal status at that moment was not written down, so it is left blank here rather than reconstructed. |
 | 2026-09-01 | **`In progress`** (`正在进行`), expiry empty | The request is back at In progress, which by the rule above is what makes the personal step count as acknowledged. **Not** certificate approval. |
+| 2026-09-02 | `In progress`, banner `请完成电子邮件验证` | The vetting email ("Action needed: Verify your email account with Microsoft", sender `<MICROSOFT_VETTING_SENDER>`) had reached the primary mailbox and sat unread among CI notifications. Unrelated "Microsoft account team" one-time-code mails in the same inbox are **not** this email. |
+| 2026-09-03 | `In progress` → **`Completed`** | Link clicked; the portal banner persisted for a while because the backend `EV` sub-service had not yet flipped (portal reads the vetting gateway with `X-Cache: CONFIG_NOCACHE`, so it is never browser cache). Refreshed later: Completed. Profile created the same day. |
 
-### When to check next
+### Validation waiting schedule (historical; closed)
+
+The request completed on 2026-09-03. No further routine vetting check is
+required; the remaining gate is an exact signed court through GitHub OIDC.
 
 Microsoft documents 1–20 business days for organization validation. Submission
 was Sunday 2026-08-30, so business-day counting starts Monday 2026-08-31.
@@ -139,6 +147,9 @@ was Sunday 2026-08-30, so business-day counting starts Monday 2026-08-31.
 
 Do not poll daily: this file already records that repeating identity capture
 immediately is counter-productive, and the portal lags behind the human flow.
+The email link is the one step that does expire (7 days, not resendable), so
+search the primary mailbox by subject on day 1 rather than waiting for the
+portal to say more.
 
 The only state that unblocks signing is the request reporting success **and**
 the Public Trust certificate profile becoming creatable. Status text alone is
@@ -155,6 +166,66 @@ Worth recording for the MCU/cu boundary: `agenterm-cu unlock` reported the poke
 delivered but the tree never grew (`poked=true, grew=false`, 55 chrome-only
 nodes), while `mcu unlock` did bring the renderer tree up on the same window.
 On Brave Origin, cu's unlock is currently weaker than MCU's.
+
+### How the status was read (2026-09-03)
+
+The portal blade's banner is derived from one JSON record. To see the real
+state without guessing: DevTools → Network → Fetch/XHR, filter `vet`, open
+`GetVettingRequestsBySubscription` → Preview, right-click `vettingRequests` →
+Copy value, then `pbpaste`. `vettingResult[]` lists sub-services `DNE`, `TSS`,
+`VC_Ind` (Verified ID), `BV` (business), `DV` (domain), `EV` (email) with
+`serviceStatus`; the banner text maps to whichever is not `Pass`.
+
+## From Completed to a wired signing profile (2026-09-03, redacted)
+
+Everything below ran from the Mac with `az` (Homebrew `azure-cli` +
+`trustedsigning` extension, preview) and `gh`; no portal clicking was needed.
+Replace the placeholders; never write the real values into a repository.
+
+```text
+az login --tenant <TENANT_ID>                     # browser flow, see note
+└── az trustedsigning certificate-profile create
+    -g <RG> --account-name <ACCOUNT> -n <PROFILE>
+    --profile-type PublicTrust
+    --identity-validation-id <VALIDATION_ID>
+    --include-street-address false --include-postal-code false
+    └── az ad app create --display-name <APP> --sign-in-audience AzureADMyOrg
+        ├── az ad sp create --id <APP_ID>
+        ├── az ad app federated-credential create --id <APP_ID> --parameters
+        │   {issuer: https://token.actions.githubusercontent.com,
+        │    subject: repo:<ORG>/<REPO>:environment:release-signing,
+        │    audiences: [api://AzureADTokenExchange]}
+        └── az role assignment create --assignee-object-id <SP_OBJECT_ID>
+            --assignee-principal-type ServicePrincipal
+            --role "Artifact Signing Certificate Profile Signer"
+            --scope <PROFILE_RESOURCE_ID>          # profile scope, nothing wider
+            └── gh secret set AZURE_CLIENT_ID|AZURE_TENANT_ID|AZURE_SUBSCRIPTION_ID
+                gh variable set ARTIFACT_SIGNING_ENDPOINT|ACCOUNT|PROFILE
+                --repo <ORG>/<REPO> --env release-signing
+```
+
+- `az login --use-device-code` fails in this tenant with error `530035`
+  ("登录已成功，但没有访问此资源的权限"): a Microsoft-managed Conditional
+  Access policy blocks the device-code flow. Use the browser flow; when the
+  terminal cannot be copied from, point `BROWSER=` at a script that runs
+  `open -a "Brave Origin" "$1"` so the page lands in the company profile.
+- The profile subject is fixed by the validation: CN and O are the validated
+  legal name; L/S/C follow the validated address. Street and postal code are
+  the only optional subject parts. The workflow verifies `O=` only.
+- Role propagation takes minutes; a `role assignment create` right after
+  `sp create` can need a short wait.
+- Local mechanism rehearsal that worked: `jsign --storetype TRUSTEDSIGNING
+  --keystore <ENDPOINT_HOST> --storepass "$(az account get-access-token
+  --resource https://codesigning.azure.net --query accessToken -o tsv)"
+  --alias <ACCOUNT>/<PROFILE> --alg SHA-256 --tsaurl
+  http://timestamp.acs.microsoft.com --tsmode RFC3161 file.com`. It needs the
+  human to hold the profile-signer role temporarily; remove that assignment
+  afterwards so only the GitHub identity can sign. `osslsigncode verify
+  -CAfile <Microsoft Identity Verification Root CA 2020 PEM>` reports the
+  signer chain ok but cannot complete the timestamp chain from its bundle;
+  Windows `Get-AuthenticodeSignature` is authoritative.
+- The signed APE kept ZipOS readable and still executed on Darwin; the
+  Security Directory grew the file by about 12 KiB.
 
 ## MCU control (related, not signing)
 

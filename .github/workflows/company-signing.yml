@@ -71,6 +71,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      id-token: write
     outputs:
       signed_com_sha256: ${{ steps.receipt.outputs.signed_com_sha256 }}
       source_tree_digest: ${{ steps.receipt.outputs.source_tree_digest }}
@@ -148,36 +149,58 @@ jobs:
           Copy-Item signed/minicon.com signing-input/minicon.com
           Copy-Item signed/cells/win-x86_64/minicon.exe signing-input/cells/win-x86_64/minicon.exe
           Copy-Item signed/cells/win-aarch64/minicon.exe signing-input/cells/win-aarch64/minicon.exe
+          @('minicon.com', 'cells\win-x86_64\minicon.exe', 'cells\win-aarch64\minicon.exe') |
+            Set-Content -LiteralPath signing-input/signing-catalog.txt -Encoding ascii
 
       - name: Upload immutable three-file signing input
         id: upload_unsigned
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: signpath-unsigned-input
+          name: trusted-signing-unsigned-input
           path: signing-input/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Submit exact artifact to SignPath Foundation
-        id: signpath
-        uses: SignPath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+      - name: Azure login (GitHub OIDC federated identity, signer role only)
+        uses: azure/login@0949e32778441b2c442592b7a0e6313466dc8f29 # v3.0.2
         with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload_unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          wait-for-completion-timeout-in-seconds: 3600
-          output-artifact-directory: signpath-output
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign exact three files with Azure Artifact Signing (Public Trust)
+        uses: Azure/artifact-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-catalog: signing-input/signing-catalog.txt
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: MiniCon
+          description-url: https://github.com/partnernetsoftware/minicon
+          # azure/login exchanges the GitHub OIDC token; the signing action then
+          # consumes that short-lived Azure CLI session. Do not probe a second
+          # workload-identity path that this runner has not configured.
+          exclude-workload-identity-credential: true
+          exclude-environment-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+          correlation-id: minicon-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Require exactly the three signed paths
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $root = (Resolve-Path signpath-output).Path
-          $actual = @(Get-ChildItem -LiteralPath $root -File -Recurse | ForEach-Object {
+          $root = (Resolve-Path signing-input).Path
+          $actual = @(Get-ChildItem -LiteralPath $root -File -Recurse | Where-Object { $_.Name -ne 'signing-catalog.txt' } | ForEach-Object {
             $_.FullName.Substring($root.Length + 1).Replace('\', '/')
           } | Sort-Object)
           $expected = @(
@@ -186,11 +209,11 @@ jobs:
             'minicon.com'
           )
           if (($actual -join "`n") -ne ($expected -join "`n")) {
-            throw "SignPath output path set mismatch: $($actual -join ', ')"
+            throw "signing output path set mismatch: $($actual -join ', ')"
           }
-          Copy-Item signpath-output/minicon.com signed/minicon.com -Force
-          Copy-Item signpath-output/cells/win-x86_64/minicon.exe signed/cells/win-x86_64/minicon.exe -Force
-          Copy-Item signpath-output/cells/win-aarch64/minicon.exe signed/cells/win-aarch64/minicon.exe -Force
+          Copy-Item signing-input/minicon.com signed/minicon.com -Force
+          Copy-Item signing-input/cells/win-x86_64/minicon.exe signed/cells/win-x86_64/minicon.exe -Force
+          Copy-Item signing-input/cells/win-aarch64/minicon.exe signed/cells/win-aarch64/minicon.exe -Force
 
       - name: Verify publisher, timestamp, and write before-to-after receipt
         id: receipt
@@ -199,8 +222,9 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
           UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
-          SIGNPATH_REQUEST_ID: ${{ steps.signpath.outputs.signing-request-id }}
-          SIGNPATH_REQUEST_URL: ${{ steps.signpath.outputs.signing-request-web-url }}
+          ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
           EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -217,7 +241,7 @@ jobs:
             $sig = Get-AuthenticodeSignature -LiteralPath $path
             if ($sig.Status -ne 'Valid') { throw "$($entry.Key): Authenticode status $($sig.Status)" }
             if ($null -eq $sig.SignerCertificate -or $null -eq $sig.TimeStamperCertificate) { throw "$($entry.Key): missing signer or timestamp" }
-            if ($sig.SignerCertificate.Subject -notmatch '(?:^|,\s*)(?:CN|O)=SignPath Foundation(?:,|$)') {
+            if ($sig.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=PARTNERNET SOFTWARE PTY LTD(?:,|$)') {
               throw "$($entry.Key): unexpected publisher $($sig.SignerCertificate.Subject)"
             }
             $version = (Get-Item -LiteralPath $path).VersionInfo
@@ -250,14 +274,18 @@ jobs:
             source_sha = $env:SOURCE_SHA
             source_tree_digest = $build.source_tree_digest
             product_version = $env:EXPECTED_VERSION
-            signing_provider = 'signpath-foundation'
-            publisher_organization = 'SignPath Foundation'
+            signing_provider = 'azure-artifact-signing'
+            publisher_organization = 'PARTNERNET SOFTWARE PTY LTD'
             file_digest = 'SHA256'
-            timestamp_rfc3161 = 'provider-managed'
+            timestamp_rfc3161 = 'http://timestamp.acs.microsoft.com'
             timestamp_digest = 'SHA256'
             upstream = [ordered]@{ run_id = [int64]$env:UPSTREAM_RUN_ID; run_attempt = [int]$env:UPSTREAM_ATTEMPT }
             signing_run = [ordered]@{ id = [int64]$env:GITHUB_RUN_ID; attempt = [int]$env:GITHUB_RUN_ATTEMPT }
-            provider_request = [ordered]@{ id = $env:SIGNPATH_REQUEST_ID; web_url = $env:SIGNPATH_REQUEST_URL }
+            provider_resource = [ordered]@{
+              endpoint = $env:ARTIFACT_SIGNING_ENDPOINT
+              account = $env:ARTIFACT_SIGNING_ACCOUNT
+              certificate_profile = $env:ARTIFACT_SIGNING_PROFILE
+            }
             assets = $assets
           }
           $receipt | ConvertTo-Json -Depth 8 | Set-Content signed/signing-receipt.json -Encoding utf8NoBOM

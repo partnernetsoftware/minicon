@@ -64,13 +64,14 @@ MiniCon — one-file local terminal
 │   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
 │   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
 │   │   └── prd/archive/v0.1.5-release-history.md
-│   ├── [~] company Artifact Signing enrollment
-│   │   ├── account + least-scope verifier RBAC complete
-│   │   ├── representative Verify ID acknowledged; request back to In progress
-│   │   ├── Public Organization review: In progress, observed 2026-09-01
-│   │   ├── review window 1–20 business days; next check 2026-09-04
-│   │   ├── chase if still In progress after 2026-09-25 (20 business days)
-│   │   ├── no certificate profile and no signed release yet
+│   ├── [~] company Artifact Signing — wired, first signed run pending
+│   │   ├── SignPath Foundation declined the OSS application; path closed
+│   │   ├── Public Organization identity validation Completed 2026-09-03
+│   │   ├── MiniCon Public Trust profile Active (CN/O = PARTNERNET SOFTWARE PTY LTD)
+│   │   ├── GitHub OIDC identity holds only Certificate Profile Signer at profile scope
+│   │   ├── company-signing.yml: azure/login + Azure/artifact-signing-action, SHA-pinned
+│   │   ├── release-signing Environment: 3 OIDC ids as secrets, endpoint/account/profile as vars
+│   │   ├── no production byte signed yet; signing.mode stays off until a version selects required
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
@@ -124,11 +125,11 @@ flowchart LR
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
-        SP["SignPath Foundation transition<br/>trusted Authenticode · timestamp"]
-        SR["later signed release<br/>new policy · new final-byte courts"]
-        SI["company Artifact Signing<br/>account + verifier RBAC ready"]
-        SV["Public Organization validation<br/>In progress 2026-09-01 · Verify ID acknowledged<br/>next check 09-04 · ceiling 09-25"]
-        SC["Public Trust profile<br/>not created"]
+        SP["SignPath Foundation<br/>declined 2026-09 · path closed"]
+        SR["later signed release<br/>signing.mode=required · new final-byte courts"]
+        SI["company Artifact Signing<br/>account · OIDC signer identity"]
+        SV["Public Organization validation<br/>Completed 2026-09-03"]
+        SC["MiniCon Public Trust profile<br/>Active · company-signing.yml wired"]
         QE["agenterm qjswasm + TinyVM ready"]
         QX["portable-logic experiment<br/>one body + six native shells"]
         QG{"total size + startup + memory<br/>six-cell parity pass?"}
@@ -145,9 +146,9 @@ flowchart LR
     C13 --> G13 --> V13 --> C14 --> C15
     C15 -. rejected precursor .-> KEEP
     C15 -. later baseline .-> SR
-    SP --> SR
-    SI --> SV -->|approved| SC --> SR
-    SV -->|rejected / more evidence| SI
+    SP -. declined .-> SI
+    SI --> SV -->|Completed| SC
+    SC -->|first exact signed run| SR
     SP -. independent transition .-> SR
     QE -. later .-> QX
     X -. native baseline .-> QX
@@ -198,23 +199,23 @@ flowchart LR
   Defender court and no-rebuild Promotion passed. SignPath remained outside
   this release. Exact runs, assets and the rejected Linux Candidate are in
   `prd/archive/v0.1.5-release-history.md`.
-- [~] Formal releases should eventually carry `PARTNERNET SOFTWARE PTY LTD`
-  publisher identity. The shared company Azure Artifact Signing account and
-  least-scope verifier role now exist; Public Organization validation is under
-  Microsoft review. Read from the portal on 2026-09-01: the single Public /
-  Organization request shows status **In progress**, no expiry date. By this
-  repository's own rule that a request must return to In progress before the
-  personal step counts as acknowledged, the representative's Verified ID is now
-  acknowledged — an advance on the previous "portal acknowledgement pending"
-  state, and **not** certificate approval. Two of a documented 1–20 business
-  days have elapsed. Next routine check 2026-09-04; chase Microsoft if the
-  request is still In progress after 2026-09-25. There is no certificate
-  profile or signed release yet.
-  SignPath Foundation remains an independent transition path; provider approval,
-  timestamped exact signed bytes, six-grid execution and final-byte Defender
-  evidence remain later-release gates. Historical APE rehearsals
-  and the rejected signed-v0.1.3 plan are archived in
-  `prd/archive/v0.1.3-release-history.md`.
+- [~] Formal releases should carry `PARTNERNET SOFTWARE PTY LTD` publisher
+  identity. On 2026-09-03 the Public Organization identity validation reached
+  **Completed** (the vetting email link was found in the company mailbox and
+  confirmed; every vetting sub-service reports Pass). The Public Trust
+  certificate profile for MiniCon is Active with CN/O
+  `PARTNERNET SOFTWARE PTY LTD`. A GitHub OIDC federated identity scoped to the
+  `release-signing` Environment holds only the Artifact Signing Certificate
+  Profile Signer role at that one profile. `company-signing.yml` now signs
+  through `azure/login` + `Azure/artifact-signing-action` and records
+  `signing_provider=azure-artifact-signing` with the endpoint/account/profile
+  coordinates in the receipt. SignPath Foundation declined the open-source
+  application, so that adapter and its variables are gone. No production byte
+  has been company-signed yet: the first exact signed run, six-grid execution
+  of the after-SHA bytes and the final-byte Defender court remain the gates a
+  later version must pass after `release-policy.json` selects
+  `signing.mode=required`. Historical APE rehearsals and the rejected
+  signed-v0.1.3 plan are archived in `prd/archive/v0.1.3-release-history.md`.
 - [x] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as
   `HEUR/QVM202.0.B951.Malware.Gen` although its exact Candidate passed active
   Defender. The suffix is proprietary, so do not guess or mutate bytes.

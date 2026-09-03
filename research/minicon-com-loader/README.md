@@ -113,15 +113,21 @@ set `assets.minicon_com=true` and `signing.mode=required`; missing provider
 configuration fails closed.
 
 `company-signing.yml` uses the dedicated GitHub Environment
-`release-signing`. The transitional SignPath Foundation adapter reads only
-`SIGNPATH_API_TOKEN` from Environment secrets and the organization, project,
-policy and artifact-configuration slugs from Environment variables. These are
-configuration names, not values to copy into this repository. The signing key
-remains provider-managed and never enters GitHub. Back up account recovery and
-role assignments in the company-controlled secrets vault as specified by
+`release-signing`. The adapter is Azure Artifact Signing Public Trust over
+GitHub OIDC: `azure/login` exchanges the job's OIDC token for a federated
+identity that holds only the Artifact Signing Certificate Profile Signer role
+at one certificate-profile scope, then `Azure/artifact-signing-action` signs
+exactly the three catalogued files with SHA-256 and an RFC 3161 timestamp from
+`timestamp.acs.microsoft.com`. The Environment holds `AZURE_CLIENT_ID`,
+`AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` as secrets and
+`ARTIFACT_SIGNING_ENDPOINT`, `ARTIFACT_SIGNING_ACCOUNT` and
+`ARTIFACT_SIGNING_PROFILE` as variables. The signing key is non-exportable and
+never enters GitHub. Back up account recovery and role assignments in the
+company-controlled secrets vault as specified by
 `prd/PRD_02_27_con_delivery.md`; never put a token, real resource name, or
 credential in Git, an Actions artifact, logs, Downloads, or a cloud-drive
-mount. Azure/company Public Trust remains a paused future adapter.
+mount. SignPath Foundation declined the open-source application, so no
+SignPath adapter remains.
 
 Before spending a Public Trust signing operation, maintainers can exercise the
 APE mechanism locally with an explicitly untrusted, one-day certificate:

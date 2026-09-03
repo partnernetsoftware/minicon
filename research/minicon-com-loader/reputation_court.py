@@ -149,8 +149,8 @@ def selftest() -> None:
                     },
                     "release_policy": {"reputation": {"mode": "defender", "assets": [
                         "minicon.com", "windows-x86_64", "windows-arm64"]}},
-                    "signing": {"mode": "required", "provider": "signpath-foundation",
-                                "publisher_organization": "SignPath Foundation",
+                    "signing": {"mode": "required", "provider": "azure-artifact-signing",
+                                "publisher_organization": "PARTNERNET SOFTWARE PTY LTD",
                                 "signed_after_sha256": {
                                     "minicon.com": sha, "win-x86_64": x86, "win-aarch64": arm}},
                     "receipts": {"signing": {"sha256": "d" * 64}}}
