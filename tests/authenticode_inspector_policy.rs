@@ -1,6 +1,7 @@
 const POWERSHELL: &str = include_str!("../scripts/inspect-authenticode.ps1");
 const PORTABLE: &str = include_str!("../scripts/inspect-authenticode.sh");
 const README: &str = include_str!("../README.md");
+const POLICY: &str = include_str!("../CODE_SIGNING_POLICY.md");
 
 #[test]
 fn windows_inspector_covers_trust_timestamp_and_product_identity() {
@@ -38,4 +39,18 @@ fn portable_inspector_does_not_claim_windows_authority() {
     assert!(PORTABLE.contains("embedded signature exists, but portable verification failed"));
     assert!(PORTABLE.contains("Windows Get-AuthenticodeSignature is authoritative"));
     assert!(words.contains("no public release has been signed yet"));
+}
+
+#[test]
+fn public_policy_exposes_readiness_and_irreversible_revocation_boundaries() {
+    for contract in [
+        "check-product-signing-readiness.sh",
+        "Deleting a certificate profile does not revoke signatures",
+        "Certificate revocation is a separate, irreversible owner action",
+    ] {
+        assert!(
+            POLICY.contains(contract),
+            "missing signing operations contract: {contract}"
+        );
+    }
 }

@@ -17,6 +17,12 @@ explicit policy switch for a new version. When policy says
 `signing.mode=required`, missing provider configuration blocks the release; it
 never falls back to unsigned output.
 
+Before dispatch, operators use the company signing skill's read-only
+`check-product-signing-readiness.sh` court. It rejects dirty/stale source,
+published version reuse, policy/version drift, missing workflows, and inspector
+drift before provider time or signing quota is spent. `READY` is only source
+eligibility; it is not signature or release evidence.
+
 Signed Windows release artifacts (`minicon.com` and both native
 `minicon.exe`) carry the publisher identity `PARTNERNET SOFTWARE PTY LTD`
 (Sydney, New South Wales, AU) on a short-lived certificate chained to the
@@ -133,6 +139,10 @@ or antivirus failure blocks that artifact; capabilities are not hidden or
 removed to manufacture a green result. Reports concerning signed artifacts can
 be filed through the repository's
 [issue tracker](https://github.com/partnernetsoftware/minicon/issues). The
-maintainers will revoke the certificate profile through Azure Artifact Signing
-and disable the federated signing identity if signing authority or signed
-bytes are compromised, and will record the incident in the release history.
+maintainers first disable the affected federated signing identity, stop new
+signing, and preserve exact hashes, receipts, and private provider transaction
+records. Deleting a certificate profile does not revoke signatures already
+issued. Certificate revocation is a separate, irreversible owner action that
+can invalidate affected files from the selected revocation time; it is not an
+automated workflow fallback. Any incident and resulting owner decision are
+recorded in release history.
