@@ -118,6 +118,7 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
           UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
+          EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
           $build = Get-Content upstream/com/build-receipt.json -Raw | ConvertFrom-Json
