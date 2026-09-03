@@ -60,10 +60,7 @@ def candidate_identity(manifest: dict) -> tuple[str, dict, dict[str, str], str |
         signing_sha = require_text(signing_receipt, "sha256")
         if not SHA_RE.fullmatch(signing_sha):
             raise ValueError("invalid signing receipt digest")
-        allowed_publishers = {
-            "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
-            "signpath-foundation": "SignPath Foundation",
-        }
+        allowed_publishers = {"azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD"}
         if allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
             raise ValueError("Candidate lacks a valid trusted signing identity")
     elif signing != {"mode": "off"}:

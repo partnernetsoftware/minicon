@@ -291,10 +291,7 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
         if signing != {"mode": "off"} or "signing" in manifest.get("receipts", {}):
             raise ValueError("unsigned Candidate carries signing identity")
         return
-    allowed_publishers = {
-        "azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD",
-        "signpath-foundation": "SignPath Foundation",
-    }
+    allowed_publishers = {"azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD"}
     if not isinstance(signing, dict) or signing.get("mode") != "required" or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
         raise ValueError("missing or mismatched trusted signing identity")
     after = signing.get("signed_after_sha256")

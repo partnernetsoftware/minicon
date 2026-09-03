@@ -17,10 +17,8 @@ SIGNED_ASSETS = {
     "win-x86_64": "cells/win-x86_64/minicon.exe",
     "win-aarch64": "cells/win-aarch64/minicon.exe",
 }
-PROVIDER_IDENTITIES = {
-    "azure-artifact-signing": ("PARTNERNET SOFTWARE PTY LTD", {"O"}),
-    "signpath-foundation": ("SignPath Foundation", {"CN", "O"}),
-}
+EXPECTED_PROVIDER = "azure-artifact-signing"
+EXPECTED_PUBLISHER = "PARTNERNET SOFTWARE PTY LTD"
 
 
 def sha256(path: Path) -> str:
@@ -65,11 +63,9 @@ def verify_receipt(receipt: dict, root: Path) -> None:
     if not SHA256_RE.fullmatch(str(receipt.get("source_tree_digest"))):
         raise ValueError("invalid source tree digest")
     provider = receipt.get("signing_provider")
-    identity = PROVIDER_IDENTITIES.get(provider)
-    if identity is None:
+    if provider != EXPECTED_PROVIDER:
         raise ValueError("unexpected signing provider")
-    expected_publisher, subject_attributes = identity
-    if receipt.get("publisher_organization") != expected_publisher:
+    if receipt.get("publisher_organization") != EXPECTED_PUBLISHER:
         raise ValueError("unexpected signing provider/publisher pair")
     if receipt.get("file_digest") != "SHA256" or receipt.get("timestamp_digest") != "SHA256":
         raise ValueError("signing digest policy mismatch")
@@ -86,17 +82,10 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         raise ValueError("missing signing run attempt")
     if not isinstance(receipt.get("release_eligible"), bool):
         raise ValueError("missing release eligibility verdict")
-    if provider == "signpath-foundation":
-        request = receipt.get("provider_request")
-        if not isinstance(request, dict):
-            raise ValueError("missing SignPath request identity")
-        require_nonempty(request, "id")
-        require_nonempty(request, "web_url")
-    elif provider == "azure-artifact-signing":
-        if "provider_resource" in receipt:
-            raise ValueError("Azure resource coordinates are forbidden in public receipts")
-        if receipt.get("timestamp_rfc3161") != "http://timestamp.acs.microsoft.com":
-            raise ValueError("Azure Artifact Signing must timestamp with timestamp.acs.microsoft.com")
+    if "provider_resource" in receipt:
+        raise ValueError("Azure resource coordinates are forbidden in public receipts")
+    if receipt.get("timestamp_rfc3161") != "http://timestamp.acs.microsoft.com":
+        raise ValueError("Azure Artifact Signing must timestamp with timestamp.acs.microsoft.com")
 
     assets = receipt.get("assets")
     if not isinstance(assets, dict) or set(assets) != set(SIGNED_ASSETS):
@@ -115,7 +104,7 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         if row.get("authenticode_status") != "Valid":
             raise ValueError(f"{key}: Authenticode status is not Valid")
         subject = require_nonempty(row, "signer_subject")
-        if not subject_has_publisher(subject, expected_publisher, subject_attributes):
+        if not subject_has_publisher(subject, EXPECTED_PUBLISHER, {"O"}):
             raise ValueError(f"{key}: publisher identity mismatch")
         if row.get("file_product_name") != "MiniCon":
             raise ValueError(f"{key}: ProductName mismatch")
@@ -147,7 +136,7 @@ def self_test() -> None:
                 "after_sha256": sha256(path),
                 "after_bytes": path.stat().st_size,
                 "authenticode_status": "Valid",
-                "signer_subject": "CN=SignPath Foundation, C=AT",
+                "signer_subject": "CN=PARTNERNET SOFTWARE PTY LTD, O=PARTNERNET SOFTWARE PTY LTD, C=AU",
                 "signer_issuer": "CN=Fixture CA",
                 "signer_thumbprint": "A" * 40,
                 "signer_not_before": "2026-01-01T00:00:00Z",
@@ -163,39 +152,34 @@ def self_test() -> None:
             "source_sha": "a" * 40,
             "source_tree_digest": "b" * 64,
             "product_version": "0.1.3",
-            "signing_provider": "signpath-foundation",
-            "publisher_organization": "SignPath Foundation",
+            "signing_provider": "azure-artifact-signing",
+            "publisher_organization": "PARTNERNET SOFTWARE PTY LTD",
             "file_digest": "SHA256",
-            "timestamp_rfc3161": "http://timestamp.invalid",
+            "timestamp_rfc3161": "http://timestamp.acs.microsoft.com",
             "timestamp_digest": "SHA256",
             "upstream": {"run_id": 7, "run_attempt": 1},
             "signing_run": {"id": 8, "attempt": 1},
             "release_eligible": True,
-            "provider_request": {"id": "fixture-request", "web_url": "https://example.invalid/request"},
             "assets": assets,
         }
         verify_receipt(receipt, root)
-        azure = dict(receipt)
-        azure.pop("provider_request")
-        azure.update({
-            "signing_provider": "azure-artifact-signing",
-            "publisher_organization": "PARTNERNET SOFTWARE PTY LTD",
-            "timestamp_rfc3161": "http://timestamp.acs.microsoft.com",
-        })
-        company_subject = "CN=PARTNERNET SOFTWARE PTY LTD, O=PARTNERNET SOFTWARE PTY LTD, L=SYDNEY, S=New South Wales, C=AU"
-        for row in assets.values():
-            row["signer_subject"] = company_subject
-        verify_receipt(azure, root)
-        azure["provider_resource"] = {"endpoint": "https://example.invalid/"}
+        rejected_provider = dict(receipt)
+        rejected_provider["signing_provider"] = "signpath-foundation"
+        rejected_provider["publisher_organization"] = "SignPath Foundation"
         try:
-            verify_receipt(azure, root)
+            verify_receipt(rejected_provider, root)
+        except ValueError as exc:
+            assert "unexpected signing provider" in str(exc)
+        else:
+            raise AssertionError("retired SignPath provider unexpectedly passed")
+        receipt["provider_resource"] = {"endpoint": "https://example.invalid/"}
+        try:
+            verify_receipt(receipt, root)
         except ValueError as exc:
             assert "forbidden" in str(exc)
         else:
             raise AssertionError("protected provider coordinates unexpectedly passed")
-        azure.pop("provider_resource")
-        for row in assets.values():
-            row["signer_subject"] = "CN=SignPath Foundation, C=AT"
+        receipt.pop("provider_resource")
         assets["minicon.com"]["signer_subject"] = "CN=MiniCon, O=OTHER FOUNDATION"
         try:
             verify_receipt(receipt, root)

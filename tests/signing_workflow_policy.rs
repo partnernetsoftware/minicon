@@ -1,5 +1,11 @@
 const SIGNING_WORKFLOW: &str = include_str!("../.github/workflows/company-signing.yml");
 const CANDIDATE_WORKFLOW: &str = include_str!("../.github/workflows/candidate.yml");
+const SIGNING_RECEIPT: &str =
+    include_str!("../research/minicon-com-loader/signing_receipt.py");
+const CANDIDATE_BUNDLE: &str =
+    include_str!("../research/minicon-com-loader/candidate_bundle.py");
+const REPUTATION_COURT: &str =
+    include_str!("../research/minicon-com-loader/reputation_court.py");
 
 #[test]
 fn signing_input_court_receives_every_identity_value_it_reads() {
@@ -76,4 +82,12 @@ fn windows_signing_job_normalizes_cross_platform_shell_helpers() {
     assert!(stage_step.contains("Get-ChildItem -LiteralPath signed -Filter '*.sh' -File"));
     assert!(stage_step.contains(".Replace(\"`r`n\", \"`n\")"));
     assert!(stage_step.contains("[Text.UTF8Encoding]::new($false)"));
+}
+
+#[test]
+fn retired_signpath_provider_cannot_authorize_live_bytes() {
+    assert!(SIGNING_RECEIPT.contains("EXPECTED_PROVIDER = \"azure-artifact-signing\""));
+    assert!(SIGNING_RECEIPT.contains("retired SignPath provider unexpectedly passed"));
+    assert!(!CANDIDATE_BUNDLE.contains("signpath-foundation"));
+    assert!(!REPUTATION_COURT.contains("signpath-foundation"));
 }

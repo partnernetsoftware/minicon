@@ -1563,8 +1563,9 @@ interactive Linux x86 installation.
   declined the application in early September 2026 on the grounds that the
   project is not yet well known enough. The SignPath adapter, its Environment
   secret/variables and the `signpath-foundation` receipt provider therefore
-  carry no live configuration; the receipt validators keep the identity table
-  entry only so historical fixtures stay checkable.
+  carry no live configuration. Historical application evidence remains in the
+  archive, but every active signing-receipt, Candidate and reputation validator
+  now rejects that retired provider; old fixtures cannot authorize new bytes.
 
   Implementation owner is `.github/workflows/company-signing.yml`. Despite the
   historical filename, it is the provider-neutral **Trusted Signing Court**.
