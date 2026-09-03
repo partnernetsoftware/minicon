@@ -1459,7 +1459,7 @@ interactive Linux x86 installation.
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [~] **Company Artifact Signing wired; first exact signed court pending.**
+- [x] **Company Artifact Signing live qualification green; no signed Release yet.**
   The later trusted-signing court covers `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
@@ -1470,9 +1470,10 @@ interactive Linux x86 installation.
   reserves the remaining slots during linking, before Mach-O is laid out, and
   `prepare-authenticode.py` activates the zero Security Directory slot. Never
   grow that header after linking. Linux archives retain checksums/provenance
-  unless a distribution-specific signature is deliberately added. Until that
-  court passes, receipts must say unsigned; documentation must not
-  imply company signing merely because the company name appears in metadata.
+  unless a distribution-specific signature is deliberately added.
+  Qualification receipts are explicitly non-promotable; documentation must
+  not imply that a public Release is signed merely because the company name
+  appears in metadata or a qualification artifact.
 
   Reusable signing contract for MiniCon and later AgenTerm:
 
@@ -1520,13 +1521,14 @@ interactive Linux x86 installation.
   EV) as Pass. The same day the MiniCon Public Trust certificate profile
   was created (Active; CN/O `PARTNERNET SOFTWARE PTY LTD`,
   L/S/C Sydney / New South Wales / AU, street and postal code excluded), an
-  Entra app registration with a GitHub federated credential bound to
-  `repo:partnernetsoftware/minicon:environment:release-signing` was created,
+  Entra app registration with a GitHub federated credential bound to GitHub's
+  immutable `repo:<ORG>@<OWNER_ID>/<REPO>@<REPO_ID>:environment:release-signing`
+  subject was created,
   and that service principal received only `Artifact Signing Certificate
   Profile Signer` at the profile scope. The `release-signing` Environment now
   holds the three OIDC identifiers as secrets and the endpoint/account/profile
-  coordinates as variables. No production byte has been company-signed yet,
-  and no receipt may imply otherwise until the first exact signed run is green.
+  coordinates as variables. No production Release byte has been company-signed
+  yet; qualification evidence must continue to say it is non-promotable.
 
   Same-day mechanism rehearsal with the real Public Trust profile (outside
   the repository, output discarded): the 7,660,467-byte unsigned dev-pack
@@ -1575,8 +1577,8 @@ interactive Linux x86 installation.
   mode from missing credentials. v0.1.3 and v0.1.4 select unsigned native
   payloads; a later explicit policy change selects and seals signed bytes.
   The final signed `minicon.com` must remain under the already stamped
-  9,437,184-byte ceiling. This wiring is implemented but remains unqualified
-  until the first exact run is green. Its adapter is `azure/login` (GitHub
+  9,437,184-byte ceiling. This wiring is implemented and live-qualified. Its
+  adapter is `azure/login` (GitHub
   OIDC, `id-token: write` on the sign job only) followed by
   `Azure/artifact-signing-action`, both pinned to full commit SHAs. It signs
   exactly the three catalogued files (`signing-catalog.txt` is written next to
@@ -1599,6 +1601,26 @@ interactive Linux x86 installation.
   `qualification_only=false` while checked-in policy is `required` can become
   Candidate input. This separates provider qualification from release
   authority without creating an unsigned fallback.
+
+  Live qualification `33737286265` at source `e37e686` consumed unsigned
+  one-pack run `33736787946`. Azure Public Trust signing produced three
+  Windows-authoritative `Valid` results: `minicon.com` 7,774,168 bytes,
+  x86_64 `minicon.exe` 1,187,232 bytes, and ARM64 `minicon.exe` 1,128,864
+  bytes. Publisher, RFC 3161 timestamp, VERSIONINFO and before→after SHA were
+  verified; the same signed APE after-SHA then passed GUI/control execution on
+  OSX/Linux/Windows × x86_64/aarch64. Both signing and aggregate receipts set
+  `release_eligible=false`, and the public receipt audit found no protected
+  provider/OIDC coordinates. This proves the provider mechanism, not Release
+  authority; `release-policy.json` remains `signing.mode=off`.
+
+  Two reusable failures preceded the green court. First, GitHub's immutable
+  OIDC subject includes numeric owner and repository IDs; Azure must store the
+  exact token subject and issuer without a trailing slash, rather than the
+  legacy name-only subject or another ID namespace. Second, a Windows checkout
+  copied CRLF `.sh` helpers into the cross-platform signed artifact, producing
+  interpreter failures on Unix even though all signatures were valid. The
+  signing workflow now republishes those helpers as UTF-8 without BOM and LF,
+  and a static policy test holds that boundary.
 
   Publicly trusted signing requires constrained product metadata on every
   signed PE. The two

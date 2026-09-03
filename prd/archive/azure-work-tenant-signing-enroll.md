@@ -2,8 +2,8 @@
 
 Status: company Artifact Signing account created; Public organization identity
 validation **Completed** and the MiniCon Public Trust profile became Active on
-2026-09-03. GitHub OIDC/profile-scoped signer configuration exists; the first
-exact signed court is still pending. No credentials,
+2026-09-03. GitHub OIDC/profile-scoped signer configuration exists; live
+non-promotable signing qualification passed in all six native cells. No credentials,
 tenant/subscription/object IDs, mailboxes, addresses, validation IDs, or
 payment details are recorded here. Publisher identity and SignPath remain as in
 `CODE_SIGNING_POLICY.md`.
@@ -84,7 +84,7 @@ work Entra identity + Azure subscription
     ├── [x] Public Trust certificate profile (one per publisher identity)
     ├── [x] signer workload identity (GitHub OIDC) gets only profile-signer RBAC
     ├── [x] company-signing.yml adapter + release-signing Environment
-    └── [ ] exact unsigned SHA → signed SHA → timestamp → six execute-only courts
+    └── [x] exact unsigned SHA → signed SHA → timestamp → six execute-only courts
 ```
 
 - The Chinese portal warning translated the role name, but role search returned
@@ -134,7 +134,8 @@ the top of this file.
 ### Validation waiting schedule (historical; closed)
 
 The request completed on 2026-09-03. No further routine vetting check is
-required; the remaining gate is an exact signed court through GitHub OIDC.
+required; the exact non-promotable signed court later passed through GitHub
+OIDC. A signed public Release remains a separate policy and Promotion choice.
 
 Microsoft documents 1–20 business days for organization validation. Submission
 was Sunday 2026-08-30, so business-day counting starts Monday 2026-08-31.
@@ -193,7 +194,7 @@ az login --tenant <TENANT_ID>                     # browser flow, see note
         ├── az ad sp create --id <APP_ID>
         ├── az ad app federated-credential create --id <APP_ID> --parameters
         │   {issuer: https://token.actions.githubusercontent.com,
-        │    subject: repo:<ORG>/<REPO>:environment:release-signing,
+        │    subject: repo:<ORG>@<OWNER_ID>/<REPO>@<REPO_ID>:environment:release-signing,
         │    audiences: [api://AzureADTokenExchange]}
         └── az role assignment create --assignee-object-id <SP_OBJECT_ID>
             --assignee-principal-type ServicePrincipal
@@ -214,6 +215,11 @@ az login --tenant <TENANT_ID>                     # browser flow, see note
   the only optional subject parts. The workflow verifies `O=` only.
 - Role propagation takes minutes; a `role assignment create` right after
   `sp create` can need a short wait.
+- New GitHub repositories use the immutable OIDC subject shown above. Derive
+  both numeric IDs from the GitHub organization/repository REST resources and
+  compare the resulting subject as an opaque exact string. The legacy
+  name-only subject, a GraphQL node id, or an issuer with a trailing slash
+  causes Azure `AADSTS700213` before signing begins.
 - Local mechanism rehearsal that worked: `jsign --storetype TRUSTEDSIGNING
   --keystore <ENDPOINT_HOST> --storepass "$(az account get-access-token
   --resource https://codesigning.azure.net --query accessToken -o tsv)"
@@ -226,6 +232,25 @@ az login --tenant <TENANT_ID>                     # browser flow, see note
   Windows `Get-AuthenticodeSignature` is authoritative.
 - The signed APE kept ZipOS readable and still executed on Darwin; the
   Security Directory grew the file by about 12 KiB.
+
+## Live GitHub qualification (2026-09-03)
+
+The final non-promotable court was run `33737286265`, sourced from exact
+one-pack run `33736787946` at source `e37e686`. It proved three
+Windows-authoritative `Valid` Authenticode signatures, company publisher,
+RFC 3161 timestamp, unchanged VERSIONINFO, before→after SHA binding, and the
+same signed `minicon.com` after-SHA executing on all six native OS/ISA cells.
+Its signing and aggregate receipts both record `release_eligible=false`; the
+public-receipt audit rejected protected provider/OIDC coordinate keys and
+passed this receipt. `release-policy.json` remained `signing.mode=off`.
+
+The preceding run supplied two durable failure lessons. Azure OIDC trust must
+use GitHub's exact immutable subject, not a hand-shortened legacy subject. A
+Windows checkout may also materialize tracked `.sh` files with CRLF; copying
+those files into a cross-platform signed artifact produced `/bin/bash^M` or
+“required file not found” on macOS/Linux after signing itself succeeded. The
+workflow now normalizes shipped shell helpers to UTF-8 without BOM and LF, and
+a policy test prevents that boundary from disappearing.
 
 ## MCU control (related, not signing)
 

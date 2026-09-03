@@ -73,6 +73,9 @@ member before merge.
   rejects it even if a later caller supplies that run id. This is the supported
   way to prove OIDC/provider wiring before switching a new version to
   `signing.mode=required`.
+- Live qualification `33737286265` proved that path for all three signing
+  inputs and all six execute-only cells. It did not sign a public Release and
+  did not change the checked-in policy from `off`.
 
 The signing job fails closed unless every input PE reports
 `ProductName=MiniCon` and the one release version, and it signs only the three

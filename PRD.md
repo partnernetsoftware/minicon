@@ -64,13 +64,14 @@ MiniCon — one-file local terminal
 │   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
 │   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
 │   │   └── prd/archive/v0.1.5-release-history.md
-│   ├── [~] company Artifact Signing — wired, first signed run pending
+│   ├── [x] company Artifact Signing — live non-promotable qualification green
 │   │   ├── SignPath Foundation declined the OSS application; path closed
 │   │   ├── Public Organization identity validation Completed 2026-09-03
 │   │   ├── MiniCon Public Trust profile Active (CN/O = PARTNERNET SOFTWARE PTY LTD)
 │   │   ├── GitHub OIDC identity holds only Certificate Profile Signer at profile scope
 │   │   ├── company-signing.yml: azure/login + Azure/artifact-signing-action, SHA-pinned
 │   │   ├── release-signing Environment: 3 OIDC ids as secrets, endpoint/account/profile as vars
+│   │   ├── run 33737286265: 3 Valid signatures + same after-SHA executed in all 6 cells
 │   │   ├── no production byte signed yet; signing.mode stays off until a version selects required
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
@@ -199,8 +200,8 @@ flowchart LR
   Defender court and no-rebuild Promotion passed. SignPath remained outside
   this release. Exact runs, assets and the rejected Linux Candidate are in
   `prd/archive/v0.1.5-release-history.md`.
-- [~] Formal releases should carry `PARTNERNET SOFTWARE PTY LTD` publisher
-  identity. On 2026-09-03 the Public Organization identity validation reached
+- [x] The company-signing mechanism carries `PARTNERNET SOFTWARE PTY LTD`
+  publisher identity. On 2026-09-03 the Public Organization identity validation reached
   **Completed** (the vetting email link was found in the company mailbox and
   confirmed; every vetting sub-service reports Pass). The Public Trust
   certificate profile for MiniCon is Active with CN/O
@@ -208,13 +209,15 @@ flowchart LR
   `release-signing` Environment holds only the Artifact Signing Certificate
   Profile Signer role at that one profile. `company-signing.yml` now signs
   through `azure/login` + `Azure/artifact-signing-action` and records
-  `signing_provider=azure-artifact-signing` with the endpoint/account/profile
-  coordinates in the receipt. SignPath Foundation declined the open-source
+  `signing_provider=azure-artifact-signing`; endpoint/account/profile and OIDC
+  coordinates are forbidden in the public receipt. SignPath Foundation declined the open-source
   application, so that adapter and its variables are gone. No production byte
-  has been company-signed yet: the first exact signed run, six-grid execution
-  of the after-SHA bytes and the final-byte Defender court remain the gates a
-  later version must pass after `release-policy.json` selects
-  `signing.mode=required`. Historical APE rehearsals and the rejected
+  has been company-signed yet. Non-promotable qualification run `33737286265`
+  signed `minicon.com` and both Windows native executables, validated company
+  publisher plus timestamp, and executed the same signed APE after-SHA in all
+  six native cells. Its receipts say `release_eligible=false`. A later version
+  must deliberately select `signing.mode=required` and pass the Candidate's
+  final-byte Defender court before Promotion. Historical APE rehearsals and the rejected
   signed-v0.1.3 plan are archived in `prd/archive/v0.1.3-release-history.md`.
 - [x] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as
   `HEUR/QVM202.0.B951.Malware.Gen` although its exact Candidate passed active

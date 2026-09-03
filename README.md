@@ -65,7 +65,9 @@ unsigned; checksums and exact build/runtime receipts remain mandatory. SignPath
 Foundation declined the open-source application, so the company publisher path
 is now the only signing route: an Azure Artifact Signing Public Trust
 certificate profile for PARTNERNET SOFTWARE PTY LTD exists and the release
-signing workflow is wired to it, but no public release has been signed yet. The
+signing workflow is wired to it. A non-promotable live qualification has signed
+all three Windows-facing files and executed the signed `minicon.com` in all six
+native cells; no public release has been signed yet. The
 committed `release-policy.json` selects whether the same
 Candidate/Release workflows require signing; missing credentials never
 silently turn it off. A test certificate, application or repository statement
@@ -281,7 +283,8 @@ August 2026.
 v0.1.5 发布的是未签名的六格原生包和实验性的未签名 `minicon.com`；五个原生归档仍是
 常规回退选择。SignPath Foundation 已拒绝开源申请，公司发布者路线成为唯一签名路径：
 PARTNERNET SOFTWARE PTY LTD 的 Azure Artifact Signing Public Trust 证书配置文件已建立，
-发布签名工作流已接入，但尚未有任何公开版本完成签名。
+发布签名工作流已接入；一次不可晋升的真实资格验证已经让三个目标文件通过公司签名，
+并让签后的同一个 `minicon.com` 跑过六格，但尚未有任何公开版本完成签名。
 同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
 测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。
