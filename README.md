@@ -86,7 +86,8 @@ Inspect a downloaded Windows/APE file on Windows with the authoritative OS
 trust check:
 
 ```powershell
-.\scripts\inspect-authenticode.ps1 .\minicon.com
+.\scripts\inspect-authenticode.ps1 .\minicon.com `
+  -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
 ```
 
 The command emits JSON and returns `0` only for a valid company signature with
@@ -292,10 +293,12 @@ exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.m
 在 Windows 上用系统权威信任检查查看下载文件：
 
 ```powershell
-.\scripts\inspect-authenticode.ps1 .\minicon.com
+.\scripts\inspect-authenticode.ps1 .\minicon.com `
+  -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
 ```
 
-它输出 JSON；只有公司发布者签名有效且包含时间戳时才返回 `0`，返回 `2` 表示未签名。
+它输出包含 VERSIONINFO 的 JSON；只有公司发布者签名、时间戳和指定产品信息都有效时
+才返回 `0`，返回 `2` 表示未签名，返回 `6` 表示产品名或版本不符。
 macOS/Linux 可安装 `osslsigncode` 后运行
 `scripts/inspect-authenticode.sh ./minicon.com` 查看证书与时间戳；最终信任结论仍以
 Windows 为准。

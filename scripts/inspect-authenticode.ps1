@@ -3,7 +3,11 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$Path,
 
-    [string]$ExpectedOrganization = 'PARTNERNET SOFTWARE PTY LTD'
+    [string]$ExpectedOrganization = 'PARTNERNET SOFTWARE PTY LTD',
+
+    [string]$ExpectedProductName = '',
+
+    [string]$ExpectedProductVersion = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,11 +22,16 @@ $resolved = (Resolve-Path -LiteralPath $Path).Path
 $signature = Get-AuthenticodeSignature -LiteralPath $resolved
 $signer = $signature.SignerCertificate
 $timestamp = $signature.TimeStamperCertificate
+$versionInfo = (Get-Item -LiteralPath $resolved).VersionInfo
 $result = [ordered]@{
     schema_version = 1
     path = $resolved
     status = [string]$signature.Status
     status_message = $signature.StatusMessage
+    product_name = $versionInfo.ProductName
+    product_version = $versionInfo.ProductVersion
+    file_description = $versionInfo.FileDescription
+    original_filename = $versionInfo.OriginalFilename
     signer = if ($null -eq $signer) { $null } else { [ordered]@{
         subject = $signer.Subject
         issuer = $signer.Issuer
@@ -50,5 +59,9 @@ if ($signer.Subject -notmatch $publisherPattern) {
 }
 if ($null -eq $timestamp) {
     exit 5
+}
+if (($ExpectedProductName -ne '' -and $versionInfo.ProductName -ne $ExpectedProductName) -or
+    ($ExpectedProductVersion -ne '' -and $versionInfo.ProductVersion -notmatch ('^' + [regex]::Escape($ExpectedProductVersion) + '(?:\.0)?$'))) {
+    exit 6
 }
 exit 0

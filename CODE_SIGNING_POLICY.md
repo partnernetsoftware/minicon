@@ -111,13 +111,15 @@ Maintainers and users can inspect a downloaded file without reading workflow
 logs:
 
 ```powershell
-.\scripts\inspect-authenticode.ps1 .\minicon.com
+.\scripts\inspect-authenticode.ps1 .\minicon.com `
+  -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
 ```
 
-This Windows court emits structured signer/timestamp JSON. Exit `0` means a
-valid signature from the expected company organization with a timestamp; `2`
-means unsigned, `3` invalid/incomplete, `4` a foreign publisher, `5` no
-timestamp, and `69` that the Windows Authenticode cmdlet is unavailable. The
+This Windows court emits structured signer/timestamp/VERSIONINFO JSON. Exit
+`0` means a valid signature from the expected company organization with a
+timestamp and any requested product identity; `2` means unsigned, `3`
+invalid/incomplete, `4` a foreign publisher, `5` no timestamp, `6` a requested
+product/version mismatch, and `69` that the Windows Authenticode cmdlet is unavailable. The
 portable `scripts/inspect-authenticode.sh` prints hash, size and
 `osslsigncode` evidence on macOS/Linux, but does not replace the Windows trust
 verdict.
