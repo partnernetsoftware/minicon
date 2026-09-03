@@ -49,6 +49,14 @@ fn qualification_receipt_is_explicitly_non_promotable() {
 }
 
 #[test]
+fn candidate_rejects_an_already_published_version_before_packaging() {
+    assert!(CANDIDATE_WORKFLOW.contains("git/ref/tags/v$version"));
+    assert!(CANDIDATE_WORKFLOW.contains(
+        "already exists; bump and commit the next version before Candidate"
+    ));
+}
+
+#[test]
 fn public_receipt_does_not_receive_protected_provider_coordinates() {
     let receipt_step = SIGNING_WORKFLOW
         .split("- name: Verify publisher, timestamp, and write before-to-after receipt")

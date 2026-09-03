@@ -54,6 +54,10 @@ jobs:
           git fetch --no-tags origin main
           [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
           version="$(jq -r .version release-policy.json)"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" >/dev/null 2>&1; then
+            echo "v$version already exists; bump and commit the next version before Candidate" >&2
+            exit 1
+          fi
           signing_mode="$(jq -r .signing.mode release-policy.json)"
           include_com="$(jq -r .assets.minicon_com release-policy.json)"
           [[ "$(jq -r .schema release-policy.json)" == 1 ]]
