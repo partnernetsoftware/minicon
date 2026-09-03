@@ -8,6 +8,7 @@ import json
 import re
 import tempfile
 from pathlib import Path
+from typing import Any
 
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -19,6 +20,14 @@ SIGNED_ASSETS = {
 }
 EXPECTED_PROVIDER = "azure-artifact-signing"
 EXPECTED_PUBLISHER = "PARTNERNET SOFTWARE PTY LTD"
+FORBIDDEN_KEYS = {
+    "provider_resource", "endpoint", "account", "account_name",
+    "signing_account", "certificate_profile", "profile_name",
+    "resource_group", "validation_id", "application_id", "object_id",
+    "federated_credential", "azure_client_id", "client_id",
+    "azure_tenant_id", "tenant_id", "azure_subscription_id",
+    "subscription_id", "client_secret", "access_token",
+}
 
 
 def sha256(path: Path) -> str:
@@ -52,7 +61,20 @@ def subject_has_publisher(subject: str, publisher: str, attributes: set[str]) ->
     )
 
 
+def reject_protected_keys(value: Any, path: str = "$") -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized = str(key).strip().casefold().replace("-", "_")
+            if normalized in FORBIDDEN_KEYS:
+                raise ValueError(f"protected configuration key at {path}.{key}")
+            reject_protected_keys(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            reject_protected_keys(child, f"{path}[{index}]")
+
+
 def verify_receipt(receipt: dict, root: Path) -> None:
+    reject_protected_keys(receipt)
     if receipt.get("schema") != 2 or receipt.get("kind") != "minicon-trusted-signing":
         raise ValueError("unsupported signing receipt")
     if not SOURCE_RE.fullmatch(str(receipt.get("source_sha"))):
@@ -71,19 +93,17 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         raise ValueError("signing digest policy mismatch")
     require_nonempty(receipt, "timestamp_rfc3161")
     upstream = receipt.get("upstream")
-    if not isinstance(upstream, dict) or not isinstance(upstream.get("run_id"), int):
+    if not isinstance(upstream, dict) or type(upstream.get("run_id")) is not int or upstream["run_id"] <= 0:
         raise ValueError("missing upstream one-pack run identity")
-    if not isinstance(upstream.get("run_attempt"), int):
+    if type(upstream.get("run_attempt")) is not int or upstream["run_attempt"] <= 0:
         raise ValueError("missing upstream one-pack attempt")
     signing_run = receipt.get("signing_run")
-    if not isinstance(signing_run, dict) or not isinstance(signing_run.get("id"), int):
+    if not isinstance(signing_run, dict) or type(signing_run.get("id")) is not int or signing_run["id"] <= 0:
         raise ValueError("missing signing run identity")
-    if not isinstance(signing_run.get("attempt"), int):
+    if type(signing_run.get("attempt")) is not int or signing_run["attempt"] <= 0:
         raise ValueError("missing signing run attempt")
     if not isinstance(receipt.get("release_eligible"), bool):
         raise ValueError("missing release eligibility verdict")
-    if "provider_resource" in receipt:
-        raise ValueError("Azure resource coordinates are forbidden in public receipts")
     if receipt.get("timestamp_rfc3161") != "http://timestamp.acs.microsoft.com":
         raise ValueError("Azure Artifact Signing must timestamp with timestamp.acs.microsoft.com")
 
@@ -99,7 +119,10 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         if not SHA256_RE.fullmatch(before) or not SHA256_RE.fullmatch(after) or before == after:
             raise ValueError(f"{key}: invalid before/after digest")
         path = root / relative
-        if not path.is_file() or path.stat().st_size != row.get("after_bytes") or sha256(path) != after:
+        after_bytes = row.get("after_bytes")
+        if type(after_bytes) is not int or after_bytes <= 0:
+            raise ValueError(f"{key}: invalid signed byte count")
+        if not path.is_file() or path.stat().st_size != after_bytes or sha256(path) != after:
             raise ValueError(f"{key}: signed bytes do not match receipt")
         if row.get("authenticode_status") != "Valid":
             raise ValueError(f"{key}: Authenticode status is not Valid")
@@ -176,7 +199,7 @@ def self_test() -> None:
         try:
             verify_receipt(receipt, root)
         except ValueError as exc:
-            assert "forbidden" in str(exc)
+            assert "protected configuration key" in str(exc)
         else:
             raise AssertionError("protected provider coordinates unexpectedly passed")
         receipt.pop("provider_resource")
