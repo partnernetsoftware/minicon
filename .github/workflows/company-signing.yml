@@ -149,6 +149,14 @@ jobs:
           Copy-Item research/minicon-com-loader/ci-control.sh signed/
           Copy-Item research/minicon-com-loader/ci-control.ps1 signed/
           Copy-Item research/minicon-com-loader/signing_receipt.py signed/
+          # actions/checkout on a Windows runner may materialize tracked shell
+          # scripts with CRLF. These files execute later on Linux/macOS, so
+          # publish deterministic LF bytes instead of a host-checkout accident.
+          $utf8NoBom = [Text.UTF8Encoding]::new($false)
+          foreach ($script in Get-ChildItem -LiteralPath signed -Filter '*.sh' -File) {
+            $text = [IO.File]::ReadAllText($script.FullName).Replace("`r`n", "`n")
+            [IO.File]::WriteAllText($script.FullName, $text, $utf8NoBom)
+          }
           $paths = [ordered]@{
             'minicon.com' = 'signed/minicon.com'
             'win-x86_64' = 'signed/cells/win-x86_64/minicon.exe'

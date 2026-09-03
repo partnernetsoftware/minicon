@@ -63,3 +63,17 @@ fn public_receipt_does_not_receive_protected_provider_coordinates() {
         );
     }
 }
+
+#[test]
+fn windows_signing_job_normalizes_cross_platform_shell_helpers() {
+    let stage_step = SIGNING_WORKFLOW
+        .split("- name: Verify unsigned identity and stage exact signing set")
+        .nth(1)
+        .expect("missing unsigned identity court")
+        .split("- name: Upload immutable three-file signing input")
+        .next()
+        .expect("missing end of unsigned identity court");
+    assert!(stage_step.contains("Get-ChildItem -LiteralPath signed -Filter '*.sh' -File"));
+    assert!(stage_step.contains(".Replace(\"`r`n\", \"`n\")"));
+    assert!(stage_step.contains("[Text.UTF8Encoding]::new($false)"));
+}
