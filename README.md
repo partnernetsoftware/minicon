@@ -85,6 +85,11 @@ public evidence receipt.
 Inspect a downloaded Windows/APE file on Windows with the authoritative OS
 trust check:
 
+For a quick visual check, right-click the file and open **Properties → Digital
+Signatures → Details → View Certificate**. If the **Digital Signatures** tab is
+absent, the file has no embedded Authenticode signature. Use the command below
+for the machine-readable release verdict:
+
 ```powershell
 .\scripts\inspect-authenticode.ps1 .\minicon.com `
   -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
@@ -292,6 +297,10 @@ PARTNERNET SOFTWARE PTY LTD 的 Azure Artifact Signing Public Trust 证书配置
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。
 
 在 Windows 上用系统权威信任检查查看下载文件：
+
+快速目测可右键文件，打开**属性 → 数字签名 → 详细信息 → 查看证书**；若完全没有
+“数字签名”标签页，说明文件没有嵌入 Authenticode 签名。发布验收仍应使用下面的
+机器可读命令：
 
 ```powershell
 .\scripts\inspect-authenticode.ps1 .\minicon.com `
