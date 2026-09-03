@@ -57,6 +57,22 @@ fn candidate_rejects_an_already_published_version_before_packaging() {
 }
 
 #[test]
+fn release_eligible_signing_rejects_an_already_published_version_before_provider_use() {
+    let preflight = SIGNING_WORKFLOW
+        .split("- name: Bind exact source and unsigned one-pack run")
+        .nth(1)
+        .expect("missing signing preflight")
+        .split("\n  sign:")
+        .next()
+        .expect("missing end of signing preflight");
+    assert!(preflight.contains("if [[ \"$QUALIFICATION_ONLY\" == true ]]"));
+    assert!(preflight.contains("git ls-remote --exit-code --tags origin \"refs/tags/v$version\""));
+    assert!(preflight.contains(
+        "release-eligible signing requires an unpublished version"
+    ));
+}
+
+#[test]
 fn public_receipt_does_not_receive_protected_provider_coordinates() {
     let receipt_step = SIGNING_WORKFLOW
         .split("- name: Verify publisher, timestamp, and write before-to-after receipt")

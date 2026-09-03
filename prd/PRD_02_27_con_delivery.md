@@ -1611,10 +1611,13 @@ interactive Linux x86 installation.
   bundle verifier reject that run. Only a court dispatched with
   `qualification_only=false` while checked-in policy is `required` can become
   Candidate input. This separates provider qualification from release
-  authority without creating an unsigned fallback. Candidate preflight also
-  rejects an already existing `v<version>` tag before packaging or signing, so
-  post-release source cannot manufacture different bytes under an old public
-  version identity; the next version must be bumped and committed first.
+  authority without creating an unsigned fallback. Both the signing preflight
+  (before entering the paid provider job) and Candidate preflight reject an
+  already existing `v<version>` tag for release-eligible work, so post-release
+  source cannot manufacture different bytes or spend a signing operation under
+  an old public version identity; the next version must be bumped and committed
+  first. Non-promotable qualification remains available for historical-version
+  mechanism diagnosis.
 
   Live qualification `33737286265` at source `e37e686` consumed unsigned
   one-pack run `33736787946`. Azure Public Trust signing produced three

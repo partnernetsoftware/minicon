@@ -70,6 +70,10 @@ jobs:
             release_eligible=false
           else
             [[ "$signing_mode" == required ]]
+            if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+              echo "v$version already exists; release-eligible signing requires an unpublished version" >&2
+              exit 1
+            fi
             release_eligible=true
           fi
           {
