@@ -14,11 +14,17 @@ fn windows_inspector_covers_trust_timestamp_and_product_identity() {
         "product_version",
         "file_description",
         "original_filename",
+        "schema_version = 2",
+        "file_name",
+        "sha256",
+        "size_bytes",
+        "timestamp_certificate",
         "exit 6",
         "exit 69",
     ] {
         assert!(POWERSHELL.contains(contract), "missing inspector contract: {contract}");
     }
+    assert!(!POWERSHELL.contains("path = $resolved"));
 }
 
 #[test]

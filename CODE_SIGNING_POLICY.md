@@ -115,7 +115,9 @@ logs:
   -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
 ```
 
-This Windows court emits structured signer/timestamp/VERSIONINFO JSON. Exit
+This Windows court emits structured basename/SHA-256/size,
+signer/timestamp-certificate and VERSIONINFO JSON without the expanded local
+path. Exit
 `0` means a valid signature from the expected company organization with a
 timestamp and any requested product identity; `2` means unsigned, `3`
 invalid/incomplete, `4` a foreign publisher, `5` no timestamp, `6` a requested
