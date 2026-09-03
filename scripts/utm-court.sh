@@ -54,6 +54,25 @@ raise SystemExit(completed.returncode)
 PY
 }
 
+# UTM 4.7 can print an Apple-event/file error while returning zero. File
+# transfer callers must not treat that transport bug as successful evidence.
+qga_file_transfer() {
+  diagnostic="$(mktemp "${TMPDIR:-/tmp}/utm-court-transfer.XXXXXX")"
+  if "$@" 2>"$diagnostic"; then
+    transfer_rc=0
+  else
+    transfer_rc=$?
+  fi
+  if [ -s "$diagnostic" ]; then
+    cat "$diagnostic" >&2
+    if grep -Eiq 'error|failed|timed out|cannot find|not found' "$diagnostic"; then
+      transfer_rc=1
+    fi
+  fi
+  rm -f "$diagnostic"
+  return "$transfer_rc"
+}
+
 [ -r "$REGISTRY" ] || die "registry missing: $REGISTRY"
 [ -x "$UTMCTL" ] || die "utmctl missing: $UTMCTL"
 
@@ -81,7 +100,6 @@ resolve() {
   ADAPTER="$(printf '%s' "$COURT_JSON" | field adapter)"
   IDLE="$(printf '%s' "$COURT_JSON" | field idle)"
   TEMPLATE_STATE="$(printf '%s' "$COURT_JSON" | field template_state)"
-  MEMORY_MIB="$(printf '%s' "$COURT_JSON" | field memory_mib)"
   [ -n "$VM" ] || blocked "$COURT_ID has no configured VM"
 }
 
@@ -411,7 +429,7 @@ PY
     resolve "$1"
     [ "$2" = - ] || [ -f "$2" ] || die "host file missing: $2"
     if [ "$ADAPTER" = qemu-guest-agent ]; then
-      if [ "$2" = - ]; then "$UTMCTL" file push "$VM" "$3"; else "$UTMCTL" file push "$VM" "$3" <"$2"; fi
+      if [ "$2" = - ]; then qga_file_transfer "$UTMCTL" file push "$VM" "$3"; else qga_file_transfer "$UTMCTL" file push "$VM" "$3" <"$2"; fi
       exit $?
     fi
     operation_id="push-$$-$RANDOM"; operation_dir="$BRIDGE/operations/$operation_id"
@@ -424,9 +442,10 @@ PY
     [ "$#" -eq 3 ] || die "pull requires COURT GUEST_PATH HOST_FILE"
     resolve "$1"
     if [ "$ADAPTER" = qemu-guest-agent ]; then
-      if [ "$3" = - ]; then "$UTMCTL" file pull "$VM" "$2"; exit $?; fi
+      if [ "$3" = - ]; then qga_file_transfer "$UTMCTL" file pull "$VM" "$2"; exit $?; fi
       tmp="$3.tmp.$$"; trap 'rm -f "$tmp"' EXIT
-      "$UTMCTL" file pull "$VM" "$2" >"$tmp"; mv -f "$tmp" "$3"; exit 0
+      qga_file_transfer "$UTMCTL" file pull "$VM" "$2" >"$tmp" || exit $?
+      mv -f "$tmp" "$3"; exit 0
     fi
     operation_id="pull-$$-$RANDOM"; operation_dir="$BRIDGE/operations/$operation_id"
     mkdir -p "$operation_dir" "$BRIDGE/operation-results"

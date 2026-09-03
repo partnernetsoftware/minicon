@@ -48,6 +48,16 @@ case "$command" in
     printf 'stopped\n' >"$state_dir/$vm"
     ;;
   exec) ;;
+  file)
+    action="$1"; path="$3"
+    case "$path" in
+      *missing-parent*|*missing-file*)
+        printf "failed to open file '%s': not found\n" "$path" >&2
+        exit 0
+        ;;
+    esac
+    case "$action" in push) cat >/dev/null ;; pull) printf fixture ;; *) exit 2 ;; esac
+    ;;
   clone) ;;
   *) exit 2 ;;
 esac
@@ -74,6 +84,17 @@ court lease two --disposable >"$scratch/second.json"
 court release two >/dev/null
 [ "$(cat "$scratch/state/vm-two")" = stopped ]
 [ ! -e "$scratch/service/active.json" ]
+
+printf fixture >"$scratch/input"
+if court push two "$scratch/input" 'C:\missing-parent\file'; then
+  echo "utm-court-selftest: zero-exit failed push was accepted" >&2
+  exit 1
+fi
+if court pull two 'C:\missing-file' "$scratch/output"; then
+  echo "utm-court-selftest: zero-exit failed pull was accepted" >&2
+  exit 1
+fi
+[ ! -e "$scratch/output" ]
 
 # A lost Apple-event reply must not hold the lifecycle service forever. The
 # bounded request falls through to the existing state poll and force-stop.

@@ -835,6 +835,15 @@ flowchart LR
   digest; external prerequisites should use guest-side upstream download or a
   chunked verified transport.
 
+  A later signing-inspector court exposed a smaller false-success class: UTM's
+  file command printed an Apple-event/failed-open diagnostic for a nonexistent
+  guest parent directory while returning zero, after which the desktop job
+  failed only when it tried to execute the missing script. The facade now
+  treats transfer diagnostics containing error/failure/timeout/not-found as a
+  failed `push` or `pull` even when `utmctl` returns zero, and it never publishes
+  a failed pull's temporary host file. The lifecycle self-test covers both
+  directions with a deliberately zero-exit faulty adapter.
+
   The exact x86_64 runtime court is now qualified. Its tested implementation
   fingerprint before this evidence write-back,
   `7470ddfb354561285b4736a24ed6d0a1a325662ce2e2d6f80473bc4b4d4c9f16`
@@ -1625,6 +1634,14 @@ interactive Linux x86 installation.
   extractable signature (`2`) from an embedded signature whose portable trust
   verification failed (`3`). The latter may be a local CA-chain gap or a real
   integrity failure, so only Windows supplies the authoritative trust verdict.
+  The schema-v2 PowerShell inspector then ran against the exact signed
+  `minicon.com` on the native ARM64 Windows UTM court: Windows returned
+  `Valid`, SHA-256 and 7,774,168-byte identity matched, ProductName/Version were
+  `MiniCon`/`0.1.5`, company publisher and Microsoft timestamp certificates
+  were present, and the JSON contained no expanded host account path. The VM
+  returned to `stopped`. A preceding x86_64 attempt produced no signing claim
+  because its desktop job agent did not consume the job; that court was also
+  released rather than being counted as evidence.
 
   Two reusable failures preceded the green court. First, GitHub's immutable
   OIDC subject includes numeric owner and repository IDs; Azure must store the
