@@ -64,17 +64,8 @@ MiniCon — one-file local terminal
 │   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
 │   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
 │   │   └── prd/archive/v0.1.5-release-history.md
-│   ├── [x] company Artifact Signing — live non-promotable qualification green
-│   │   ├── SignPath Foundation declined the OSS application; path closed
-│   │   ├── Public Organization identity validation Completed 2026-09-03
-│   │   ├── MiniCon Public Trust profile Active (CN/O = PARTNERNET SOFTWARE PTY LTD)
-│   │   ├── GitHub OIDC identity holds only Certificate Profile Signer at profile scope
-│   │   ├── company-signing.yml: azure/login + Azure/artifact-signing-action, SHA-pinned
-│   │   ├── release-signing Environment: 3 OIDC ids as secrets, endpoint/account/profile as vars
-│   │   ├── run 33737286265: 3 Valid signatures + same after-SHA executed in all 6 cells
-│   │   ├── shared skill self-test: readiness/drift/receipt courts need no Azure login or transaction
-│   │   ├── portable v3 inspector: pinned Microsoft root+timestamp bundle; no trust-store mutation
-│   │   ├── no production byte signed yet; signing.mode stays off until a version selects required
+│   ├── [x] company Artifact Signing mechanism qualified, not yet used by a public release
+│   │   ├── policy-selected OIDC signing + Windows/portable inspection + six-cell after-SHA evidence
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
@@ -185,50 +176,18 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.3 is the unsigned native-six-cell release: five archives cover
-  Windows/Linux x86_64+arm64 and both macOS slices through one Universal
-  archive. `release-policy.json` is the machine-readable switch: signing is
-  `off` and `minicon.com` is absent. Exact Candidate, Defender, Promotion and
-  public re-download evidence is archived in
-  `prd/archive/v0.1.3-release-history.md`.
-- [x] v0.1.4 shipped the unsigned native six-cell set with the Linux X11
-  runtime-only dependency correction. SignPath approval and its release
-  Environment variables were not available, so policy truthfully remained
-  `signing.mode=off` and `assets.minicon_com=false`; absence did not silently
-  select signing. Exact runs, SHA and asset sizes are archived in
-  `prd/archive/v0.1.4-release-history.md`.
-- [x] v0.1.5 ships raw unsigned `minicon.com` beside the five native archives.
-  One exact build, six APE GUI/control courts, native parity, a three-object
-  Defender court and no-rebuild Promotion passed. SignPath remained outside
-  this release. Exact runs, assets and the rejected Linux Candidate are in
-  `prd/archive/v0.1.5-release-history.md`.
-- [x] The company-signing mechanism carries `PARTNERNET SOFTWARE PTY LTD`
-  publisher identity. On 2026-09-03 the Public Organization identity validation reached
-  **Completed** (the vetting email link was found in the company mailbox and
-  confirmed; every vetting sub-service reports Pass). The Public Trust
-  certificate profile for MiniCon is Active with CN/O
-  `PARTNERNET SOFTWARE PTY LTD`. A GitHub OIDC federated identity scoped to the
-  `release-signing` Environment holds only the Artifact Signing Certificate
-  Profile Signer role at that one profile. `company-signing.yml` now signs
-  through `azure/login` + `Azure/artifact-signing-action` and records
-  `signing_provider=azure-artifact-signing`; endpoint/account/profile and OIDC
-  coordinates are forbidden in the public receipt. SignPath Foundation declined the open-source
-  application, so that adapter and its variables are gone. No production byte
-  has been company-signed yet. Non-promotable qualification run `33737286265`
-  signed `minicon.com` and both Windows native executables, validated company
-  publisher plus timestamp, and executed the same signed APE after-SHA in all
-  six native cells. Its receipts say `release_eligible=false`. A later version
-  must deliberately select `signing.mode=required` and pass the Candidate's
-  final-byte Defender court before Promotion. Historical APE rehearsals and the rejected
-  signed-v0.1.3 plan are archived in `prd/archive/v0.1.3-release-history.md`.
-- [x] 360 QVM flags the public unsigned Windows x86_64 v0.1.3 PE as
-  `HEUR/QVM202.0.B951.Malware.Gen` although its exact Candidate passed active
-  Defender. The suffix is proprietary, so do not guess or mutate bytes.
-  The decisive profile court rejected strip as causal: compact release-fast
-  remained flagged without strip, while the accepted dev-shaped `opt-level=z`
-  graph was clean at about 1.1 MiB. Windows delivery now freezes that shape as
-  `windows-release`; exact Candidate reputation evidence remains mandatory.
-  Owner: `plan/design-qvm-false-positive-experiment.md`.
+- [x] v0.1.5 is the latest public baseline: five native archives cover six
+  OS/ISA cells and raw unsigned `minicon.com` is an experimental sixth asset.
+  Exact history lives in `prd/archive/v0.1.5-release-history.md`; the completed
+  execution plan lives in `plan/archive/plan-v0.1.5.md`.
+- [x] Company Artifact Signing is qualified through a non-promotable exact-byte
+  court, with Windows and portable inspection tools. No public release is
+  signed yet; a later version must explicitly change `release-policy.json` to
+  `required` and qualify the final signed bytes. Enrollment and operating
+  history live in `prd/archive/azure-work-tenant-signing-enroll.md`.
+- [x] The QVM false-positive experiment selected the current Windows release
+  profile; do not reintroduce compacting changes without reputation evidence.
+  Decision record: `plan/archive/design-qvm-false-positive-experiment.md`.
 - [~] Workspace chrome readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
@@ -251,8 +210,8 @@ flowchart LR
   Lima is optional acceleration; Rosetta is a provisional OSX x86_64 userspace
   court; real native runners retain claims translation cannot make.
 - [ ] Ordinary push/PR CI remains parked.
-- [ ] qjswasm portable logic waits for a stable agenterm engine and a decisive
-  complete-product experiment; it is not part of v0.1.3.
+- [ ] qjswasm portable logic waits for a stable AgenTerm engine and a decisive
+  complete-product experiment; it is not current-version scope.
 
 Details and historical run records stay in the owning modules.
 

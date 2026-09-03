@@ -1,6 +1,6 @@
 # MiniCon v0.1.5 delivery plan
 
-Status: **planned — no version bump, Candidate, tag or Release yet**  
+Status: **archived — v0.1.5 shipped; this is historical execution evidence**
 Outcome: publish the existing native six-cell set plus one **unsigned**
 `minicon.com`, all produced from one exact source identity and promoted without
 rebuilding. v0.1.4 remains immutable.

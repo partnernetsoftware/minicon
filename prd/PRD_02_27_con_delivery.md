@@ -1457,7 +1457,7 @@ interactive Linux x86 installation.
   not publish the feature behind `B951`; the strongest known structural
   hypothesis is MiniCon's deliberate custom PE entry, while absent publisher
   reputation is an independent hypothesis. Neither is established causation.
-  `plan/design-qvm-false-positive-experiment.md` fixes the order: reproduce the
+  `plan/archive/design-qvm-false-positive-experiment.md` fixes the order: reproduce the
   exact SHA → official 360 review of unchanged bytes → trusted-signature
   control → conventional-startup control. A hit enters the vendor
   false-positive channel; PTY, named-pipe, Job and control behavior remains
