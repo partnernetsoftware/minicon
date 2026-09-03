@@ -73,6 +73,19 @@ never counts as a signed release. See the
 [Code signing policy](CODE_SIGNING_POLICY.md) for publisher identity, privacy,
 team roles, exact-build provenance and verification rules.
 
+Inspect a downloaded Windows/APE file on Windows with the authoritative OS
+trust check:
+
+```powershell
+.\scripts\inspect-authenticode.ps1 .\minicon.com
+```
+
+The command emits JSON and returns `0` only for a valid company signature with
+a timestamp. Exit `2` means unsigned. On macOS/Linux, install `osslsigncode`
+and run `scripts/inspect-authenticode.sh ./minicon.com` for a portable
+certificate/timestamp report; a local CA-chain failure there is diagnostic,
+while Windows remains the final trust verdict.
+
 ## Use
 
 ```
@@ -265,3 +278,14 @@ PARTNERNET SOFTWARE PTY LTD 的 Azure Artifact Signing Public Trust 证书配置
 同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
 测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。
+
+在 Windows 上用系统权威信任检查查看下载文件：
+
+```powershell
+.\scripts\inspect-authenticode.ps1 .\minicon.com
+```
+
+它输出 JSON；只有公司发布者签名有效且包含时间戳时才返回 `0`，返回 `2` 表示未签名。
+macOS/Linux 可安装 `osslsigncode` 后运行
+`scripts/inspect-authenticode.sh ./minicon.com` 查看证书与时间戳；最终信任结论仍以
+Windows 为准。
