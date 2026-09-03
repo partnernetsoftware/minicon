@@ -73,6 +73,13 @@ never counts as a signed release. See the
 [Code signing policy](CODE_SIGNING_POLICY.md) for publisher identity, privacy,
 team roles, exact-build provenance and verification rules.
 
+Maintainers may run the Trusted Signing Court with `qualification_only=true`
+while policy remains `off`. That court signs and executes exact bytes to prove
+OIDC/provider integration, but its receipt is explicitly ineligible for a
+Candidate or Release. Azure account, profile, tenant and subscription
+coordinates remain protected Environment configuration and never enter its
+public evidence receipt.
+
 Inspect a downloaded Windows/APE file on Windows with the authoritative OS
 trust check:
 

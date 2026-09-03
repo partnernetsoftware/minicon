@@ -11,6 +11,11 @@ on:
         description: Successful unsigned one-pack/six-cell run for source_sha
         required: true
         type: string
+      qualification_only:
+        description: Sign and execute exact bytes for provider qualification; never Candidate-eligible
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   actions: read
@@ -27,6 +32,7 @@ jobs:
     outputs:
       upstream_attempt: ${{ steps.identity.outputs.upstream_attempt }}
       version: ${{ steps.identity.outputs.version }}
+      release_eligible: ${{ steps.identity.outputs.release_eligible }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -39,6 +45,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
+          QUALIFICATION_ONLY: ${{ inputs.qualification_only }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -57,10 +64,18 @@ jobs:
           [[ "$(jq -r .schema release-policy.json)" == 1 ]]
           [[ "$(jq -r .version release-policy.json)" == "$version" ]]
           [[ "$(jq -r .assets.minicon_com release-policy.json)" == true ]]
-          [[ "$(jq -r .signing.mode release-policy.json)" == required ]]
+          signing_mode="$(jq -r .signing.mode release-policy.json)"
+          [[ "$signing_mode" == off || "$signing_mode" == required ]]
+          if [[ "$QUALIFICATION_ONLY" == true ]]; then
+            release_eligible=false
+          else
+            [[ "$signing_mode" == required ]]
+            release_eligible=true
+          fi
           {
             echo "upstream_attempt=$(jq -r .run_attempt <<<"$run")"
             echo "version=$version"
+            echo "release_eligible=$release_eligible"
           } >>"$GITHUB_OUTPUT"
 
   sign:
@@ -222,10 +237,8 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           UPSTREAM_RUN_ID: ${{ inputs.minicon_com_run_id }}
           UPSTREAM_ATTEMPT: ${{ needs.preflight.outputs.upstream_attempt }}
-          ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
-          ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
-          ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
           EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
+          RELEASE_ELIGIBLE: ${{ needs.preflight.outputs.release_eligible }}
         run: |
           $ErrorActionPreference = 'Stop'
           $before = Get-Content unsigned-hashes.json -Raw | ConvertFrom-Json -AsHashtable
@@ -281,11 +294,7 @@ jobs:
             timestamp_digest = 'SHA256'
             upstream = [ordered]@{ run_id = [int64]$env:UPSTREAM_RUN_ID; run_attempt = [int]$env:UPSTREAM_ATTEMPT }
             signing_run = [ordered]@{ id = [int64]$env:GITHUB_RUN_ID; attempt = [int]$env:GITHUB_RUN_ATTEMPT }
-            provider_resource = [ordered]@{
-              endpoint = $env:ARTIFACT_SIGNING_ENDPOINT
-              account = $env:ARTIFACT_SIGNING_ACCOUNT
-              certificate_profile = $env:ARTIFACT_SIGNING_PROFILE
-            }
+            release_eligible = [bool]::Parse($env:RELEASE_ELIGIBLE)
             assets = $assets
           }
           $receipt | ConvertTo-Json -Depth 8 | Set-Content signed/signing-receipt.json -Encoding utf8NoBOM
@@ -403,7 +412,7 @@ jobs:
   aggregate:
     name: require six signed PASS same after-SHA
     if: always()
-    needs: [sign, test]
+    needs: [preflight, sign, test]
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
@@ -417,6 +426,7 @@ jobs:
           EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
           EXPECTED_SOURCE_TREE_DIGEST: ${{ needs.sign.outputs.source_tree_digest }}
           EXPECTED_ARTIFACT_ID: ${{ needs.sign.outputs.artifact_id }}
+          RELEASE_ELIGIBLE: ${{ needs.preflight.outputs.release_eligible }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -437,6 +447,7 @@ jobs:
                  "source_tree_digest": os.environ["EXPECTED_SOURCE_TREE_DIGEST"],
                  "minicon_com_sha256": os.environ["EXPECTED_COM_SHA256"],
                  "artifact_id": os.environ["EXPECTED_ARTIFACT_ID"], "cells": sorted(cells),
+                 "release_eligible": os.environ["RELEASE_ELIGIBLE"] == "true",
                  "strategy": "current-attempt-only-full-six"}
           Path("signed-aggregate-receipt.json").write_text(json.dumps(out, indent=2) + "\n")
           PY

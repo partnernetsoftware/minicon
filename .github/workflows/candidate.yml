@@ -76,6 +76,12 @@ jobs:
           [[ "$(jq -r .status <<<"$run")" == "completed" ]]
           [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
           [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          if [[ "$signing_mode" == required ]]; then
+            rm -rf signed-preflight
+            gh run download "$UPSTREAM_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name trusted-signed-minicon --dir signed-preflight
+            jq -e '.release_eligible == true' signed-preflight/signing-receipt.json >/dev/null
+          fi
           cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           [[ "$version" == "$cargo_version" ]]
           {

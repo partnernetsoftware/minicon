@@ -92,6 +92,8 @@ def require_identity(build: dict, aggregate: dict, signing: dict | None, source:
     if signing_mode == "required":
         if not isinstance(signing, dict) or signing.get("kind") != "minicon-trusted-signing" or signing.get("product_version") != version:
             raise ValueError("trusted signing identity/version mismatch")
+        if signing.get("release_eligible") is not True:
+            raise ValueError("qualification-only signing receipt cannot enter a Candidate")
         signing_run = signing.get("signing_run")
         upstream_run = signing.get("upstream")
         if not isinstance(signing_run, dict) or not isinstance(upstream_run, dict):
@@ -381,6 +383,7 @@ def self_test() -> None:
             },
             "upstream": {"run_id": 6, "run_attempt": 1},
             "signing_run": {"id": 7, "attempt": 1},
+            "release_eligible": True,
         }))
         aggregate_path.write_text(json.dumps({
             "kind": "minicon-signed-six-cell-aggregate", "source_sha": source,
@@ -398,6 +401,24 @@ def self_test() -> None:
             source_sha=source, version=version, candidate_run_id=11,
             candidate_run_attempt=1, output=output,
         ))
+        signing_fixture = read_json(signing_path)
+        signing_fixture["release_eligible"] = False
+        signing_path.write_text(json.dumps(signing_fixture))
+        try:
+            seal(argparse.Namespace(
+                payload=payload, build_receipt=build_path,
+                aggregate_receipt=aggregate_path,
+                signing_receipt=signing_path, policy=policy_path,
+                g3_receipt=g3_path, source_sha=source, version=version,
+                candidate_run_id=11, candidate_run_attempt=1, output=output,
+            ))
+        except ValueError as exc:
+            assert "qualification-only" in str(exc)
+            print("PASS qualification-only signing cannot enter Candidate")
+        else:
+            raise SystemExit("qualification-only signing receipt entered Candidate")
+        signing_fixture["release_eligible"] = True
+        signing_path.write_text(json.dumps(signing_fixture))
         manifest = read_json(output)
         original_com = (payload / "minicon.com").read_bytes()
         (payload / "minicon.com").write_bytes(b"tampered")

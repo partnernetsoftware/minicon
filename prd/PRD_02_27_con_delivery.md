@@ -1582,12 +1582,23 @@ interactive Linux x86 installation.
   exactly the three catalogued files (`signing-catalog.txt` is written next to
   them before the immutable unsigned-input upload), uses SHA-256 file and
   timestamp digests against `http://timestamp.acs.microsoft.com`, requires
-  exactly the same three output paths, verifies `O=PARTNERNET SOFTWARE PTY LTD`
-  on every signer certificate, and binds the endpoint/account/profile
-  coordinates into the signing receipt as `provider_resource`. `azure/login`
+  exactly the same three output paths and verifies
+  `O=PARTNERNET SOFTWARE PTY LTD` on every signer certificate. Protected Azure
+  endpoint/account/profile and OIDC coordinates never enter the signing
+  receipt; it binds only provider class, public certificate facts, timestamp
+  policy, run identity and exact hashes. `azure/login`
   exchanges the OIDC token into a short-lived Azure CLI session; the signing
   action enables only `AzureCliCredential` and excludes every other credential
   probe. The key is non-exportable and never enters GitHub.
+
+  Provider activation does not require changing release policy first. A manual
+  Trusted Signing Court with `qualification_only=true` may sign and execute the
+  exact current-main one-pack bytes while `signing.mode=off`. Its receipt and
+  signed aggregate carry `release_eligible=false`; Candidate preflight and the
+  bundle verifier reject that run. Only a court dispatched with
+  `qualification_only=false` while checked-in policy is `required` can become
+  Candidate input. This separates provider qualification from release
+  authority without creating an unsigned fallback.
 
   Publicly trusted signing requires constrained product metadata on every
   signed PE. The two

@@ -67,11 +67,23 @@ member before merge.
   rebuilding or re-signing them.
 - A test/self-signed certificate is mechanism evidence only and can never
   satisfy release qualification.
+- A Trusted Signing Court run with `qualification_only=true` exercises the real
+  company certificate and all six runtime cells without changing release
+  policy. Its receipt records `release_eligible=false`; Candidate validation
+  rejects it even if a later caller supplies that run id. This is the supported
+  way to prove OIDC/provider wiring before switching a new version to
+  `signing.mode=required`.
 
 The signing job fails closed unless every input PE reports
 `ProductName=MiniCon` and the one release version, and it signs only the three
 artifacts produced from this repository by the approved GitHub workflow run it
 was given.
+
+Azure endpoint, signing-account, certificate-profile, tenant, subscription and
+client identifiers are workflow configuration, not public provenance. They
+must not be copied into receipts, artifacts, logs or screenshots. Public
+evidence names the provider, publisher certificate facts, timestamp policy,
+run identity and exact before/after hashes instead.
 
 ## Privacy and system changes
 

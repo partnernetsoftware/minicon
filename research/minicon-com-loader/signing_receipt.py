@@ -84,6 +84,8 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         raise ValueError("missing signing run identity")
     if not isinstance(signing_run.get("attempt"), int):
         raise ValueError("missing signing run attempt")
+    if not isinstance(receipt.get("release_eligible"), bool):
+        raise ValueError("missing release eligibility verdict")
     if provider == "signpath-foundation":
         request = receipt.get("provider_request")
         if not isinstance(request, dict):
@@ -91,14 +93,8 @@ def verify_receipt(receipt: dict, root: Path) -> None:
         require_nonempty(request, "id")
         require_nonempty(request, "web_url")
     elif provider == "azure-artifact-signing":
-        resource = receipt.get("provider_resource")
-        if not isinstance(resource, dict):
-            raise ValueError("missing Azure Artifact Signing resource coordinates")
-        endpoint = require_nonempty(resource, "endpoint")
-        if not endpoint.startswith("https://") or not endpoint.rstrip("/").endswith(".codesigning.azure.net"):
-            raise ValueError("Azure Artifact Signing endpoint is not a codesigning.azure.net URL")
-        require_nonempty(resource, "account")
-        require_nonempty(resource, "certificate_profile")
+        if "provider_resource" in receipt:
+            raise ValueError("Azure resource coordinates are forbidden in public receipts")
         if receipt.get("timestamp_rfc3161") != "http://timestamp.acs.microsoft.com":
             raise ValueError("Azure Artifact Signing must timestamp with timestamp.acs.microsoft.com")
 
@@ -174,6 +170,7 @@ def self_test() -> None:
             "timestamp_digest": "SHA256",
             "upstream": {"run_id": 7, "run_attempt": 1},
             "signing_run": {"id": 8, "attempt": 1},
+            "release_eligible": True,
             "provider_request": {"id": "fixture-request", "web_url": "https://example.invalid/request"},
             "assets": assets,
         }
@@ -184,23 +181,19 @@ def self_test() -> None:
             "signing_provider": "azure-artifact-signing",
             "publisher_organization": "PARTNERNET SOFTWARE PTY LTD",
             "timestamp_rfc3161": "http://timestamp.acs.microsoft.com",
-            "provider_resource": {
-                "endpoint": "https://eus.codesigning.azure.net/",
-                "account": "fixture-account",
-                "certificate_profile": "fixture-profile",
-            },
         })
         company_subject = "CN=PARTNERNET SOFTWARE PTY LTD, O=PARTNERNET SOFTWARE PTY LTD, L=SYDNEY, S=New South Wales, C=AU"
         for row in assets.values():
             row["signer_subject"] = company_subject
         verify_receipt(azure, root)
-        azure["provider_resource"] = {"endpoint": "https://example.invalid/", "account": "x", "certificate_profile": "y"}
+        azure["provider_resource"] = {"endpoint": "https://example.invalid/"}
         try:
             verify_receipt(azure, root)
         except ValueError as exc:
-            assert "codesigning.azure.net" in str(exc)
+            assert "forbidden" in str(exc)
         else:
-            raise AssertionError("foreign signing endpoint unexpectedly passed")
+            raise AssertionError("protected provider coordinates unexpectedly passed")
+        azure.pop("provider_resource")
         for row in assets.values():
             row["signer_subject"] = "CN=SignPath Foundation, C=AT"
         assets["minicon.com"]["signer_subject"] = "CN=MiniCon, O=OTHER FOUNDATION"
