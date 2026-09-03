@@ -1555,7 +1555,12 @@ interactive Linux x86 installation.
   mutation fails verification, and the file stays under the 9,437,184-byte
   ceiling. osslsigncode could not complete the timestamp-server chain from its
   own bundle; Windows `Get-AuthenticodeSignature` in the workflow is the
-  authoritative check. This is publisher-identity mechanism evidence only: it
+  authoritative check. The later canonical portable-inspector v3 closes that
+  diagnostic gap without changing system trust: a company helper downloads
+  the Microsoft signing root and timestamp CA only from the official PKI
+  repository, pins both SHA-256 digests, builds one PEM bundle atomically, and
+  the exact signed qualification `minicon.com` then verifies with exit `0`.
+  Windows remains authoritative. This is publisher-identity mechanism evidence only: it
   is not a Candidate, carries no build receipt, and cannot be promoted.
   The redacted operational sequence and failure lessons live in
   `prd/archive/azure-work-tenant-signing-enroll.md`; company details and Azure

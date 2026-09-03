@@ -73,6 +73,7 @@ MiniCon — one-file local terminal
 │   │   ├── release-signing Environment: 3 OIDC ids as secrets, endpoint/account/profile as vars
 │   │   ├── run 33737286265: 3 Valid signatures + same after-SHA executed in all 6 cells
 │   │   ├── shared skill self-test: readiness/drift/receipt courts need no Azure login or transaction
+│   │   ├── portable v3 inspector: pinned Microsoft root+timestamp bundle; no trust-store mutation
 │   │   ├── no production byte signed yet; signing.mode stays off until a version selects required
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
 │   └── prd/PRD_02_27_con_delivery.md
