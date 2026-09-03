@@ -1484,6 +1484,7 @@ interactive Linux x86 installation.
       ├── sign as the approved trusted publisher
       ├── RFC 3161 SHA-256 timestamp
       ├── signing receipt: before SHA → after SHA + certificate identity
+      ├── public inspector: basename + SHA + size + signer/timestamp certificate
       ├── six native courts execute only the after-SHA bytes
       └── Defender scans that same after-SHA byte sequence
   ```
@@ -1612,6 +1613,14 @@ interactive Linux x86 installation.
   `release_eligible=false`, and the public receipt audit found no protected
   provider/OIDC coordinates. This proves the provider mechanism, not Release
   authority; `release-policy.json` remains `signing.mode=off`.
+
+  The public inspection tools now preserve this evidence boundary outside CI.
+  Windows emits schema-v2 JSON with only basename, SHA-256, byte count,
+  VERSIONINFO, publisher and timestamp-certificate facts; it never emits the
+  expanded local account path. The macOS/Linux diagnostic distinguishes no
+  extractable signature (`2`) from an embedded signature whose portable trust
+  verification failed (`3`). The latter may be a local CA-chain gap or a real
+  integrity failure, so only Windows supplies the authoritative trust verdict.
 
   Two reusable failures preceded the green court. First, GitHub's immutable
   OIDC subject includes numeric owner and repository IDs; Azure must store the
