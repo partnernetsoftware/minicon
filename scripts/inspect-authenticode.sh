@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# Canonical contract: pns-authenticode-inspector/v2
 set -uo pipefail
 
 if [[ $# -eq 0 ]]; then
-  echo "usage: scripts/inspect-authenticode.sh FILE [FILE ...]" >&2
+  echo "usage: inspect-authenticode.sh FILE [FILE ...]" >&2
   exit 64
 fi
 if ! command -v osslsigncode >/dev/null 2>&1; then

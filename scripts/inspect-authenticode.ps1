@@ -1,4 +1,5 @@
 [CmdletBinding()]
+# Canonical contract: pns-authenticode-inspector/v2
 param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$Path,
@@ -17,7 +18,6 @@ if ($null -eq (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContin
     )
     exit 69
 }
-
 $resolved = (Resolve-Path -LiteralPath $Path).Path
 $signature = Get-AuthenticodeSignature -LiteralPath $resolved
 $signer = $signature.SignerCertificate
@@ -25,6 +25,7 @@ $timestamp = $signature.TimeStamperCertificate
 $item = Get-Item -LiteralPath $resolved
 $versionInfo = $item.VersionInfo
 $sha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash.ToLowerInvariant()
+
 $result = [ordered]@{
     schema_version = 2
     file_name = $item.Name
@@ -49,12 +50,16 @@ $result = [ordered]@{
         thumbprint = $timestamp.Thumbprint
     } }
 }
+
 $result | ConvertTo-Json -Depth 5
 
 if ($signature.Status -eq [System.Management.Automation.SignatureStatus]::NotSigned) {
     exit 2
 }
-if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or $null -eq $signer) {
+if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+    exit 3
+}
+if ($null -eq $signer) {
     exit 3
 }
 $publisherPattern = '(?:^|,\s*)O=' + [regex]::Escape($ExpectedOrganization) + '(?:,|$)'

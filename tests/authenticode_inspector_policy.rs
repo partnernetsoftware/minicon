@@ -5,6 +5,7 @@ const README: &str = include_str!("../README.md");
 #[test]
 fn windows_inspector_covers_trust_timestamp_and_product_identity() {
     for contract in [
+        "pns-authenticode-inspector/v2",
         "Get-AuthenticodeSignature",
         "PARTNERNET SOFTWARE PTY LTD",
         "TimeStamperCertificate",
@@ -30,6 +31,7 @@ fn windows_inspector_covers_trust_timestamp_and_product_identity() {
 #[test]
 fn portable_inspector_does_not_claim_windows_authority() {
     let words = README.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(PORTABLE.contains("pns-authenticode-inspector/v2"));
     assert!(PORTABLE.contains("osslsigncode verify"));
     assert!(PORTABLE.contains("osslsigncode extract-signature"));
     assert!(PORTABLE.contains("no extractable embedded Authenticode signature"));
