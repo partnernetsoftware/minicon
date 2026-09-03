@@ -100,7 +100,10 @@ a timestamp. Exit `2` means unsigned. On macOS/Linux, install `osslsigncode`
 and run `scripts/inspect-authenticode.sh ./minicon.com` for a portable
 certificate/timestamp report. Exit `2` means no extractable signature; exit `3`
 means a signature exists but portable verification failed, including a possible
-local CA-chain gap. Windows remains the final trust verdict.
+local CA-chain gap. An independently verified PEM bundle containing Microsoft
+Artifact Signing's root plus timestamp CA may be supplied as
+`--ca-file ./trust.pem`; this does not modify system trust.
+Windows remains the final trust verdict.
 
 ## Use
 
@@ -312,4 +315,6 @@ exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.m
 macOS/Linux 可安装 `osslsigncode` 后运行
 `scripts/inspect-authenticode.sh ./minicon.com` 查看证书与时间戳。返回 `2` 表示无法
 提取嵌入签名；返回 `3` 表示签名存在但便携式验证失败（可能只是本机 CA 链不全）。
+若已从 Microsoft 官方 PKI 仓独立取得并核对由签名根证书和时间戳 CA 组成的 PEM
+bundle，可增加 `--ca-file ./trust.pem`；该选项不会修改系统信任库。
 最终信任结论仍以 Windows 为准。

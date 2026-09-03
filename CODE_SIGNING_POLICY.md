@@ -136,6 +136,10 @@ portable `scripts/inspect-authenticode.sh` prints hash, size and
 signature can be extracted and `3` when a signature exists but portable trust
 verification fails (including an unavailable local CA chain); neither replaces
 the Windows trust verdict.
+An independently verified PEM bundle containing Microsoft's Artifact Signing
+root plus timestamp CA may be supplied as `--ca-file ./trust.pem` when the
+portable host's CA bundle lacks them; the option does not modify system trust
+and never supersedes the Windows verdict.
 
 Every release publishes SHA-256 sidecars and exact-source receipts. A signing
 or antivirus failure blocks that artifact; capabilities are not hidden or

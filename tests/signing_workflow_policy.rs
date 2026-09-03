@@ -1,11 +1,8 @@
 const SIGNING_WORKFLOW: &str = include_str!("../.github/workflows/company-signing.yml");
 const CANDIDATE_WORKFLOW: &str = include_str!("../.github/workflows/candidate.yml");
-const SIGNING_RECEIPT: &str =
-    include_str!("../research/minicon-com-loader/signing_receipt.py");
-const CANDIDATE_BUNDLE: &str =
-    include_str!("../research/minicon-com-loader/candidate_bundle.py");
-const REPUTATION_COURT: &str =
-    include_str!("../research/minicon-com-loader/reputation_court.py");
+const SIGNING_RECEIPT: &str = include_str!("../research/minicon-com-loader/signing_receipt.py");
+const CANDIDATE_BUNDLE: &str = include_str!("../research/minicon-com-loader/candidate_bundle.py");
+const REPUTATION_COURT: &str = include_str!("../research/minicon-com-loader/reputation_court.py");
 
 #[test]
 fn signing_input_court_receives_every_identity_value_it_reads() {
@@ -51,9 +48,8 @@ fn qualification_receipt_is_explicitly_non_promotable() {
 #[test]
 fn candidate_rejects_an_already_published_version_before_packaging() {
     assert!(CANDIDATE_WORKFLOW.contains("git/ref/tags/v$version"));
-    assert!(CANDIDATE_WORKFLOW.contains(
-        "already exists; bump and commit the next version before Candidate"
-    ));
+    assert!(CANDIDATE_WORKFLOW
+        .contains("already exists; bump and commit the next version before Candidate"));
 }
 
 #[test]
@@ -67,9 +63,7 @@ fn release_eligible_signing_rejects_an_already_published_version_before_provider
         .expect("missing end of signing preflight");
     assert!(preflight.contains("if [[ \"$QUALIFICATION_ONLY\" == true ]]"));
     assert!(preflight.contains("git ls-remote --exit-code --tags origin \"refs/tags/v$version\""));
-    assert!(preflight.contains(
-        "release-eligible signing requires an unpublished version"
-    ));
+    assert!(preflight.contains("release-eligible signing requires an unpublished version"));
 }
 
 #[test]
