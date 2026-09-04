@@ -25,6 +25,7 @@ Commands:
   reap                                release an abandoned active lease
   start COURT [--disposable]          start/resume a court
   wait-ready COURT [SECONDS]          wait for its automation adapter
+  interactive-ready COURT [SECONDS]   recover and prove the Windows desktop job agent
   exec COURT -- COMMAND [ARGS...]     execute through QEMU Guest Agent
   push COURT HOST_FILE|- GUEST_PATH   upload an exact file (or stdin)
   pull COURT GUEST_PATH HOST_FILE|-   download atomically (or to stdout)
@@ -98,6 +99,8 @@ resolve() {
   VM="$(printf '%s' "$COURT_JSON" | field vm)"
   [ -z "${UTM_COURT_VM:-}" ] || VM="$UTM_COURT_VM"
   ADAPTER="$(printf '%s' "$COURT_JSON" | field adapter)"
+  COURT_OS="$(printf '%s' "$COURT_JSON" | field os)"
+  INTERACTIVE_USER="$(printf '%s' "$COURT_JSON" | field interactive_user)"
   IDLE="$(printf '%s' "$COURT_JSON" | field idle)"
   TEMPLATE_STATE="$(printf '%s' "$COURT_JSON" | field template_state)"
   [ -n "$VM" ] || blocked "$COURT_ID has no configured VM"
@@ -406,6 +409,68 @@ PY
       exit 0
     fi
     blocked "$COURT_ID has unknown adapter '$ADAPTER'"
+    ;;
+  interactive-ready)
+    [ "$#" -ge 1 ] && [ "$#" -le 2 ] || die "interactive-ready requires COURT [SECONDS]"
+    resolve "$1"; timeout="${2:-60}"
+    case "$timeout" in *[!0-9]*|'') die "SECONDS must be an integer" ;; esac
+    [ "$COURT_OS" = win ] || blocked "$COURT_ID is not a Windows court"
+    [ "$ADAPTER" = qemu-guest-agent ] || blocked "$COURT_ID has no QGA desktop bridge"
+    [ -n "$INTERACTIVE_USER" ] || blocked "$COURT_ID has no interactive_user"
+    agent_ps1="$SCRIPT_DIR/windows-utm-agent.ps1"
+    [ -f "$agent_ps1" ] || blocked "Windows desktop agent source is missing"
+
+    agent_tag="$$-$RANDOM"
+    guest_ps1="C:\minicon-six\windows-utm-agent.court-$agent_tag.ps1"
+    guest_cmd="C:\minicon-six\windows-utm-agent.court-$agent_tag.cmd"
+    qga_file_transfer "$UTMCTL" file push "$VM" "$guest_ps1" <"$agent_ps1"
+    # Do not overwrite the Startup launcher while an existing task still has
+    # it open. Each recovery gets a unique, disposable launcher whose script
+    # identity is the exact host file just pushed.
+    printf '@start "UTM Court Agent" /min powershell.exe -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%s"\r\n' "$guest_ps1" |
+      qga_file_transfer "$UTMCTL" file push "$VM" "$guest_cmd"
+    # A disposable VM resumes an already logged-in snapshot, so the Startup
+    # folder does not run again. QGA itself is session 0 and cannot own GUI
+    # evidence. Re-arm the same agent through an interactive-token task, then
+    # prove it with a nonce job instead of trusting schtasks' success text.
+    "$UTMCTL" exec "$VM" --cmd schtasks.exe /create /tn UtmCourtInteractiveAgent \
+      /tr "$guest_cmd" /sc ONLOGON \
+      /ru "$INTERACTIVE_USER" /it /f >/dev/null 2>&1 || true
+    "$UTMCTL" exec "$VM" --cmd schtasks.exe /run /tn UtmCourtInteractiveAgent \
+      >/dev/null 2>&1 || true
+    "$UTMCTL" exec "$VM" --cmd cmd.exe /d /c \
+      'del /f /q C:\minicon-six\job.exit C:\minicon-six\job.log C:\minicon-six\job.ready C:\minicon-six\job.pending.ps1 C:\minicon-six\job.running.ps1 2>nul' \
+      >/dev/null 2>&1 || true
+
+    nonce="court-$COURT_ID-$$-$RANDOM"
+    printf 'Write-Output "%s"\nexit 0\n' "$nonce" |
+      qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.pending.ps1'
+    printf ready |
+      qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.ready'
+    probe_dir="$(mktemp -d)"
+    trap 'rm -rf "$probe_dir"' EXIT
+    for _ in $(seq 1 "$timeout"); do
+      : >"$probe_dir/exit"
+      qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.exit' \
+        >"$probe_dir/exit" 2>/dev/null || true
+      if [ "$(tr -d '\r\n' <"$probe_dir/exit")" = 0 ]; then
+        qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.log' \
+          >"$probe_dir/log" 2>/dev/null || true
+        if grep -Fq "$nonce" "$probe_dir/log"; then
+          python3 - "$COURT_JSON" "$nonce" <<'PY'
+import json, sys
+court = json.loads(sys.argv[1])
+print(json.dumps({
+    "adapter": "interactive-job-agent", "cell": court["cell"],
+    "court": court["id"], "nonce": sys.argv[2], "status": "ready",
+}, separators=(",", ":"), sort_keys=True))
+PY
+          exit 0
+        fi
+      fi
+      sleep 1
+    done
+    blocked "$COURT_ID interactive job agent did not claim its nonce within ${timeout}s"
     ;;
   exec)
     [ "$#" -ge 3 ] && [ "$2" = -- ] || die "exec requires COURT -- COMMAND [ARGS...]"

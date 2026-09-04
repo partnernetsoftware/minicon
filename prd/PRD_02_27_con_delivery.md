@@ -780,6 +780,8 @@ flowchart LR
   discover and inspect courts, validate registration, start or resume them,
   wait for automation readiness, execute commands, transfer exact files, apply
   idle policy, and clone a stopped baseline without learning UTM command syntax.
+  Windows adds `interactive-ready`: it re-establishes the logged-in desktop job
+  agent and proves a nonce round trip before product bytes may run.
   `resources`, `lease`, and `release` make host memory part of that interface:
   a lease first stops every distinct peer UTM VM, admits the requested court,
   and release requires a final `stopped` state instead of treating suspension
@@ -1422,9 +1424,14 @@ interactive Linux x86 installation.
   push/pull round trip after cold boot, because networking and the desktop can
   precede that service. `utmctl` can emit an OSStatus transfer error while
   returning zero, so process exit status alone is explicitly insufficient.
-  The logged-in test account starts `windows-utm-agent.cmd` from Startup; its
-  PowerShell worker uses a named mutex for idempotence and never kills unrelated
-  PowerShell processes. The job invokes the target qualifier in-process rather
+  Startup remains the cold-login bootstrap, but it is not sufficient for a
+  disposable snapshot resumed after login: Startup does not run again, while a
+  QGA-spawned process belongs to session 0 and cannot own GUI evidence.
+  `interactive-ready` therefore publishes the exact worker under a unique path,
+  creates/runs an interactive-token Scheduled Task for the registry's generic
+  test user, and accepts readiness only after that worker claims and completes
+  a fresh nonce job. Its named mutex makes repeated recovery idempotent without
+  killing unrelated PowerShell processes. The product job invokes the target qualifier in-process rather
   than adding a third nested PowerShell host, and success is explicit rather
   than inherited from ambient `$LASTEXITCODE`. Both an ordinary cold stop/start and the default hidden
   disposable cold start have completed a Windows status court without manual
