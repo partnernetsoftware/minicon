@@ -1448,7 +1448,15 @@ interactive Linux x86 installation.
   emulated x86_64 image instead reproduces a zero-exit QGA command accompanied
   by `OSStatus -2700`; the court now stops at that transport failure instead of
   claiming scheduler submission or waiting 180 seconds for an impossible
-  nonce. A current-source AgenTerm `agenterm-cu page targets --pid` probe
+  nonce. A later single-active probe addressed the canonical VM identity
+  directly and kept the VM started throughout, yet produced no `job.exit`,
+  `job.log` or worker log. This rules out duplicate display names as the nonce
+  root cause and narrows the gap to the `/it` Scheduled Task: logged-on session
+  availability, task state/Last Run Result, or immediate worker exit. The next
+  diagnostic must redirect `query user` and `schtasks /query /fo LIST /v` to
+  guest files and pull them through QGA; session-0 execution must not substitute
+  for an interactive GUI court. A current-source AgenTerm
+  `agenterm-cu page targets --pid` probe
   then resolved an owned Edge CDP endpoint and listed its page on both ISAs.
   This
   distinguishes court readiness from product success instead of calling a
