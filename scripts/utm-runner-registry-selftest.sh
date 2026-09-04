@@ -5,12 +5,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 python3 - "$SCRIPT_DIR/utm-courts.json" \
-  "$SCRIPT_DIR/linux-utm-runner.sh" "$SCRIPT_DIR/windows-utm-runner.sh" <<'PY'
+  "$SCRIPT_DIR/linux-utm-runner.sh" "$SCRIPT_DIR/windows-utm-runner.sh" \
+  "$SCRIPT_DIR/utm-court.sh" "$SCRIPT_DIR/windows-utm-agent.ps1" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-registry_path, linux_path, windows_path = map(Path, sys.argv[1:])
+registry_path, linux_path, windows_path, court_cli_path, agent_path = map(Path, sys.argv[1:])
 registry = json.loads(registry_path.read_text(encoding="utf-8"))
 ids = {court["id"] for court in registry["courts"]}
 cells = {court["cell"] for court in registry["courts"]}
@@ -29,7 +30,14 @@ for court in registry["courts"]:
     if court["os"] == "win":
         assert court.get("interactive_user") == "minicon", f'{court["id"]} missing interactive user'
 windows_source = windows_path.read_text(encoding="utf-8")
-assert 'court interactive-ready "$COURT"' in windows_source, "Windows runner does not prove interactive agent readiness"
+assert 'court interactive-ready "$COURT" 180' in windows_source, "Windows runner lacks the emulated-court readiness budget"
+court_cli_source = court_cli_path.read_text(encoding="utf-8")
+assert "schtasks.exe /create" in court_cli_source, "court does not register the interactive worker"
+assert "schtasks.exe /run" in court_cli_source, "court does not start the interactive worker"
+assert "setup_done" in court_cli_source, "court trusts asynchronous task submission without a completion receipt"
+agent_source = agent_path.read_text(encoding="utf-8")
+assert "$sessionId -eq 0" in agent_source, "desktop worker does not reject QGA session 0"
+assert 'Local\\MiniConUtmAgent' in agent_source, "desktop worker lost its single-owner mutex"
 
 # OSX x86_64 is deliberately a host-Rosetta logical court on Apple Silicon,
 # not a planned UTM asset. Keep the UTM inventory truthful and five-VM-only.

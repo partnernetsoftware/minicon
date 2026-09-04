@@ -412,7 +412,7 @@ PY
     ;;
   interactive-ready)
     [ "$#" -ge 1 ] && [ "$#" -le 2 ] || die "interactive-ready requires COURT [SECONDS]"
-    resolve "$1"; timeout="${2:-60}"
+    resolve "$1"; timeout="${2:-180}"
     case "$timeout" in *[!0-9]*|'') die "SECONDS must be an integer" ;; esac
     [ "$COURT_OS" = win ] || blocked "$COURT_ID is not a Windows court"
     [ "$ADAPTER" = qemu-guest-agent ] || blocked "$COURT_ID has no QGA desktop bridge"
@@ -421,27 +421,43 @@ PY
     [ -f "$agent_ps1" ] || blocked "Windows desktop agent source is missing"
 
     agent_tag="$$-$RANDOM"
+    task_name="UtmCourtInteractiveAgent-$agent_tag"
     guest_ps1="C:\minicon-six\windows-utm-agent.court-$agent_tag.ps1"
-    guest_cmd="C:\minicon-six\windows-utm-agent.court-$agent_tag.cmd"
     qga_file_transfer "$UTMCTL" file push "$VM" "$guest_ps1" <"$agent_ps1"
-    # Do not overwrite the Startup launcher while an existing task still has
-    # it open. Each recovery gets a unique, disposable launcher whose script
-    # identity is the exact host file just pushed.
-    printf '@start "UTM Court Agent" /min powershell.exe -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%s"\r\n' "$guest_ps1" |
-      qga_file_transfer "$UTMCTL" file push "$VM" "$guest_cmd"
+    task_command="powershell.exe -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $guest_ps1"
     # A disposable VM resumes an already logged-in snapshot, so the Startup
     # folder does not run again. QGA itself is session 0 and cannot own GUI
     # evidence. Re-arm the same agent through an interactive-token task, then
     # prove it with a nonce job instead of trusting schtasks' success text.
-    "$UTMCTL" exec "$VM" --cmd schtasks.exe /create /tn UtmCourtInteractiveAgent \
-      /tr "$guest_cmd" /sc ONLOGON \
-      /ru "$INTERACTIVE_USER" /it /f >/dev/null 2>&1 || true
-    "$UTMCTL" exec "$VM" --cmd schtasks.exe /run /tn UtmCourtInteractiveAgent \
-      >/dev/null 2>&1 || true
-    "$UTMCTL" exec "$VM" --cmd cmd.exe /d /c \
-      'del /f /q C:\minicon-six\job.exit C:\minicon-six\job.log C:\minicon-six\job.ready C:\minicon-six\job.pending.ps1 C:\minicon-six\job.running.ps1 2>nul' \
-      >/dev/null 2>&1 || true
-
+    setup_ps1="C:\minicon-six\utm-court-task-setup-$agent_tag.ps1"
+    setup_done="C:\minicon-six\utm-court-task-setup-$agent_tag.done"
+    printf '%s\r\n' \
+      "& schtasks.exe /create /tn '$task_name' /tr '$task_command' /sc ONLOGON /ru '$INTERACTIVE_USER' /it /f | Out-Null" \
+      'if ($LASTEXITCODE -ne 0) { exit 2 }' \
+      "& schtasks.exe /run /tn '$task_name' | Out-Null" \
+      'if ($LASTEXITCODE -ne 0) { exit 3 }' \
+      "[IO.File]::WriteAllText('$setup_done.tmp', 'ready')" \
+      "Move-Item -LiteralPath '$setup_done.tmp' -Destination '$setup_done' -Force" |
+      qga_file_transfer "$UTMCTL" file push "$VM" "$setup_ps1"
+    "$UTMCTL" exec "$VM" --cmd powershell.exe -NoLogo -NoProfile -NonInteractive \
+      -ExecutionPolicy Bypass -File "$setup_ps1" >/dev/null 2>&1 || true
+    setup_dir="$(mktemp -d)"
+    trap 'rm -rf "$setup_dir"' EXIT
+    setup_ready=0
+    for _ in $(seq 1 60); do
+      : >"$setup_dir/done"
+      qga_file_transfer "$UTMCTL" file pull "$VM" "$setup_done" \
+        >"$setup_dir/done" 2>/dev/null || true
+      if [ "$(tr -d '\r\n' <"$setup_dir/done")" = ready ]; then
+        setup_ready=1
+        break
+      fi
+      sleep 1
+    done
+    [ "$setup_ready" = 1 ] || blocked "$COURT_ID could not register and run its interactive task"
+    rm -f "$setup_dir/done"
+    rmdir "$setup_dir"
+    trap - EXIT
     nonce="court-$COURT_ID-$$-$RANDOM"
     printf 'Write-Output "%s"\nexit 0\n' "$nonce" |
       qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.pending.ps1'

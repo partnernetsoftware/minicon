@@ -77,7 +77,7 @@ fi
 # Product-neutral court automation owns Guest Agent readiness. MiniCon begins
 # only after that shared adapter reports a typed ready state.
 court wait-ready "$COURT" 120 >/dev/null
-court interactive-ready "$COURT" 60 >/dev/null
+court interactive-ready "$COURT" 180 >/dev/null
 
 HOST_TARGET="$REPO_ROOT/$TARGET_DIR"
 if [ "$MODE" = throughput ]; then

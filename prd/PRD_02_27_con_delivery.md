@@ -1430,8 +1430,17 @@ interactive Linux x86 installation.
   `interactive-ready` therefore publishes the exact worker under a unique path,
   creates/runs an interactive-token Scheduled Task for the registry's generic
   test user, and accepts readiness only after that worker claims and completes
-  a fresh nonce job. Its named mutex makes repeated recovery idempotent without
-  killing unrelated PowerShell processes. The product job invokes the target qualifier in-process rather
+  a fresh nonce job. Each recovery task has a unique scheduler identity, while
+  the worker's named mutex makes an already healthy interactive instance win
+  without killing any process. The worker rejects session 0, preventing a
+  QGA-started process from racing the interactive worker for the shared job
+  files. Task creation and start are asynchronous across QGA, so the guest
+  publishes a setup-complete marker before the host sends the nonce; the
+  emulated x86 court gets a 180-second readiness budget. A disposable cold
+  start then passed both the nonce and a delayed liveness job, and a current-source
+  AgenTerm journey reached product UIA assertions through the same worker. This
+  distinguishes court readiness from product success instead of calling a
+  submitted scheduler command "ready". The product job invokes the target qualifier in-process rather
   than adding a third nested PowerShell host, and success is explicit rather
   than inherited from ambient `$LASTEXITCODE`. Both an ordinary cold stop/start and the default hidden
   disposable cold start have completed a Windows status court without manual

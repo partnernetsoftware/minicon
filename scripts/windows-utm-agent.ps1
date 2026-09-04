@@ -8,6 +8,15 @@ $result = Join-Path $root "job.exit"
 $logTemp = Join-Path $root "job.log.tmp"
 $resultTemp = Join-Path $root "job.exit.tmp"
 
+# UI Automation and GUI processes belong to an interactive desktop. A worker
+# started through QGA is in session 0 and can race the logged-in worker for the
+# same job files while being unable to provide valid desktop evidence.
+$sessionId = (Get-Process -Id $PID).SessionId
+if ($sessionId -eq 0) {
+    Write-Error "windows-utm-agent requires an interactive session"
+    exit 3
+}
+
 # Startup can be invoked more than once (login, manual recovery, provisioning).
 # A named mutex makes that idempotent without killing unrelated PowerShell
 # processes in the interactive test account.
