@@ -1458,6 +1458,15 @@ interactive Linux x86 installation.
   disposable cold start have completed a Windows status court without manual
   guest action.
 
+  The local UTM court service is intentionally **single-active** to cap host
+  memory: leasing any ready court reclaims a running peer VM, even when the two
+  courts name different operating systems. Agents must therefore serialize
+  local UTM execution and wait for `release` plus `state=stopped` before leasing
+  the next cell. A 2026-09-04 Linux/Windows parallel probe demonstrated the
+  failure mode by stopping each other's VM; neither interrupted run is product
+  evidence. Remote GitHub runners and target-isolated local cross-builds remain
+  independently parallelizable.
+
 - [x] **Cross-build target policy uses Cargo target identity, never build-script
   host cfg.** Build scripts and build dependencies compile for the build host;
   guarding Windows resource or linker policy with `#[cfg(windows)]` or a
