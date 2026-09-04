@@ -1432,8 +1432,11 @@ interactive Linux x86 installation.
   Scheduled Task for the registry's generic test user, and accepts readiness
   only after that worker claims and completes a fresh nonce job. Do not wrap
   scheduler registration in session-0 PowerShell or a batch file: that extra
-  guest shell was observably transport-dependent on the emulated x86_64 court,
-  while direct executable invocation works on both Windows ISAs. Each recovery
+  guest shell was observably transport-dependent on the emulated x86_64 court.
+  QGA command submission itself is bounded and requires both a zero status and
+  empty diagnostics: UTM can print an Apple-event/RPC failure while returning
+  zero, and accepting that used to waste the full nonce window while blaming
+  the interactive worker for a command that never reached Windows. Each recovery
   task has a unique scheduler identity and is deleted after the bounded probe,
   while
   the worker's named mutex makes an already healthy interactive instance win
@@ -1441,8 +1444,11 @@ interactive Linux x86 installation.
   QGA-started process from racing the interactive worker for the shared job
   files. Scheduler command success is only submission evidence; the fresh nonce
   is the readiness authority and the emulated x86 court gets a 180-second
-  readiness budget. Both Windows ARM64 and emulated x86_64 have completed that
-  nonce court. A current-source AgenTerm `agenterm-cu page targets --pid` probe
+  readiness budget. Windows ARM64 has completed that nonce court. The current
+  emulated x86_64 image instead reproduces a zero-exit QGA command accompanied
+  by `OSStatus -2700`; the court now stops at that transport failure instead of
+  claiming scheduler submission or waiting 180 seconds for an impossible
+  nonce. A current-source AgenTerm `agenterm-cu page targets --pid` probe
   then resolved an owned Edge CDP endpoint and listed its page on both ISAs.
   This
   distinguishes court readiness from product success instead of calling a

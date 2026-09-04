@@ -74,6 +74,26 @@ qga_file_transfer() {
   return "$transfer_rc"
 }
 
+# A successful QGA process launch is silent: guest stdout is not transported.
+# UTM can nevertheless print an Apple-event/RPC failure and return zero. Keep
+# command submission under the same no-false-success rule as file transfer,
+# and bound the client itself so recovery cannot hang before its nonce poll.
+qga_command() {
+  diagnostic="$(mktemp "${TMPDIR:-/tmp}/utm-court-command.XXXXXX")"
+  if utmctl_bounded "${UTM_COURT_COMMAND_TIMEOUT:-15}" exec "$VM" --cmd "$@" \
+      >"$diagnostic" 2>&1; then
+    command_rc=0
+  else
+    command_rc=$?
+  fi
+  if [ -s "$diagnostic" ]; then
+    cat "$diagnostic" >&2
+    command_rc=1
+  fi
+  rm -f "$diagnostic"
+  return "$command_rc"
+}
+
 [ -r "$REGISTRY" ] || die "registry missing: $REGISTRY"
 [ -x "$UTMCTL" ] || die "utmctl missing: $UTMCTL"
 
@@ -395,10 +415,8 @@ PY
     case "$timeout" in *[!0-9]*|'') die "SECONDS must be an integer" ;; esac
     if [ "$ADAPTER" = qemu-guest-agent ]; then
       for _ in $(seq 1 "$timeout"); do
-        output="$($UTMCTL exec "$VM" --cmd /usr/bin/true 2>&1 || true)"
-        [ -z "$output" ] && { normalized_status; exit 0; }
-        output="$($UTMCTL exec "$VM" --cmd cmd.exe /d /c exit 0 2>&1 || true)"
-        [ -z "$output" ] && { normalized_status; exit 0; }
+        qga_command /usr/bin/true 2>/dev/null && { normalized_status; exit 0; }
+        qga_command cmd.exe /d /c exit 0 2>/dev/null && { normalized_status; exit 0; }
         sleep 1
       done
       blocked "$COURT_ID Guest Agent did not become ready within ${timeout}s"
@@ -430,15 +448,13 @@ PY
     # evidence. Invoke schtasks directly through QGA: nesting this registration
     # inside session-0 PowerShell/cmd proved guest-agent-version dependent on the
     # x86_64 court. The nonce below remains the authoritative desktop proof.
-    if ! "$UTMCTL" exec "$VM" --cmd schtasks.exe /create /tn "$task_name" \
-      /tr "$task_command" /sc ONLOGON /ru "$INTERACTIVE_USER" /it /f \
-      >/dev/null 2>&1; then
+    if ! qga_command schtasks.exe /create /tn "$task_name" /tr "$task_command" \
+      /sc ONLOGON /ru "$INTERACTIVE_USER" /it /f; then
+      qga_command schtasks.exe /delete /tn "$task_name" /f || true
       blocked "$COURT_ID could not register its interactive task"
     fi
-    if ! "$UTMCTL" exec "$VM" --cmd schtasks.exe /run /tn "$task_name" \
-      >/dev/null 2>&1; then
-      "$UTMCTL" exec "$VM" --cmd schtasks.exe /delete /tn "$task_name" /f \
-        >/dev/null 2>&1 || true
+    if ! qga_command schtasks.exe /run /tn "$task_name"; then
+      qga_command schtasks.exe /delete /tn "$task_name" /f || true
       blocked "$COURT_ID could not run its interactive task"
     fi
     nonce="court-$COURT_ID-$$-$RANDOM"
@@ -456,8 +472,7 @@ PY
         qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.log' \
           >"$probe_dir/log" 2>/dev/null || true
         if grep -Fq "$nonce" "$probe_dir/log"; then
-          "$UTMCTL" exec "$VM" --cmd schtasks.exe /delete /tn "$task_name" /f \
-            >/dev/null 2>&1 || true
+          qga_command schtasks.exe /delete /tn "$task_name" /f || true
           python3 - "$COURT_JSON" "$nonce" <<'PY'
 import json, sys
 court = json.loads(sys.argv[1])
@@ -471,8 +486,7 @@ PY
       fi
       sleep 1
     done
-    "$UTMCTL" exec "$VM" --cmd schtasks.exe /delete /tn "$task_name" /f \
-      >/dev/null 2>&1 || true
+    qga_command schtasks.exe /delete /tn "$task_name" /f || true
     blocked "$COURT_ID interactive job agent did not claim its nonce within ${timeout}s"
     ;;
   exec)

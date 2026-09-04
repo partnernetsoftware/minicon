@@ -34,8 +34,9 @@ assert 'court interactive-ready "$COURT" 180' in windows_source, "Windows runner
 court_cli_source = court_cli_path.read_text(encoding="utf-8")
 assert "schtasks.exe /create" in court_cli_source, "court does not register the interactive worker"
 assert "schtasks.exe /run" in court_cli_source, "court does not start the interactive worker"
-assert 'exec "$VM" --cmd schtasks.exe /create' in court_cli_source, "court recovery wraps task registration in a guest shell"
-assert 'exec "$VM" --cmd schtasks.exe /run' in court_cli_source, "court recovery wraps task launch in a guest shell"
+assert 'qga_command schtasks.exe /create' in court_cli_source, "court recovery wraps task registration in a guest shell"
+assert 'qga_command schtasks.exe /run' in court_cli_source, "court recovery wraps task launch in a guest shell"
+assert 'utmctl_bounded "${UTM_COURT_COMMAND_TIMEOUT:-15}" exec "$VM" --cmd "$@"' in court_cli_source, "QGA command submission is not bounded"
 assert "schtasks.exe /delete" in court_cli_source, "court leaks its unique recovery tasks"
 assert "setup_done" not in court_cli_source, "court still carries the fragile session-0 setup receipt"
 agent_source = agent_path.read_text(encoding="utf-8")

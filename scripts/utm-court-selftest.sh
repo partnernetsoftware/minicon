@@ -47,7 +47,12 @@ case "$command" in
     fi
     printf 'stopped\n' >"$state_dir/$vm"
     ;;
-  exec) ;;
+  exec)
+    if [ -f "$state_dir/exec-diagnostic" ]; then
+      printf 'Error from event: RPC failed\n' >&2
+      exit 0
+    fi
+    ;;
   file)
     action="$1"; path="$3"
     case "$path" in
@@ -95,6 +100,14 @@ if court pull two 'C:\missing-file' "$scratch/output"; then
   exit 1
 fi
 [ ! -e "$scratch/output" ]
+
+# A zero process status plus an RPC diagnostic is not QGA readiness.
+touch "$scratch/state/exec-diagnostic"
+if court wait-ready two 1; then
+  echo "utm-court-selftest: zero-exit failed exec was accepted" >&2
+  exit 1
+fi
+rm "$scratch/state/exec-diagnostic"
 
 # A lost Apple-event reply must not hold the lifecycle service forever. The
 # bounded request falls through to the existing state poll and force-stop.
