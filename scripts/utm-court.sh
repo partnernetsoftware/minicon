@@ -427,37 +427,20 @@ PY
     task_command="powershell.exe -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $guest_ps1"
     # A disposable VM resumes an already logged-in snapshot, so the Startup
     # folder does not run again. QGA itself is session 0 and cannot own GUI
-    # evidence. Re-arm the same agent through an interactive-token task, then
-    # prove it with a nonce job instead of trusting schtasks' success text.
-    setup_ps1="C:\minicon-six\utm-court-task-setup-$agent_tag.ps1"
-    setup_done="C:\minicon-six\utm-court-task-setup-$agent_tag.done"
-    printf '%s\r\n' \
-      "& schtasks.exe /create /tn '$task_name' /tr '$task_command' /sc ONLOGON /ru '$INTERACTIVE_USER' /it /f | Out-Null" \
-      'if ($LASTEXITCODE -ne 0) { exit 2 }' \
-      "& schtasks.exe /run /tn '$task_name' | Out-Null" \
-      'if ($LASTEXITCODE -ne 0) { exit 3 }' \
-      "[IO.File]::WriteAllText('$setup_done.tmp', 'ready')" \
-      "Move-Item -LiteralPath '$setup_done.tmp' -Destination '$setup_done' -Force" |
-      qga_file_transfer "$UTMCTL" file push "$VM" "$setup_ps1"
-    "$UTMCTL" exec "$VM" --cmd powershell.exe -NoLogo -NoProfile -NonInteractive \
-      -ExecutionPolicy Bypass -File "$setup_ps1" >/dev/null 2>&1 || true
-    setup_dir="$(mktemp -d)"
-    trap 'rm -rf "$setup_dir"' EXIT
-    setup_ready=0
-    for _ in $(seq 1 60); do
-      : >"$setup_dir/done"
-      qga_file_transfer "$UTMCTL" file pull "$VM" "$setup_done" \
-        >"$setup_dir/done" 2>/dev/null || true
-      if [ "$(tr -d '\r\n' <"$setup_dir/done")" = ready ]; then
-        setup_ready=1
-        break
-      fi
-      sleep 1
-    done
-    [ "$setup_ready" = 1 ] || blocked "$COURT_ID could not register and run its interactive task"
-    rm -f "$setup_dir/done"
-    rmdir "$setup_dir"
-    trap - EXIT
+    # evidence. Invoke schtasks directly through QGA: nesting this registration
+    # inside session-0 PowerShell/cmd proved guest-agent-version dependent on the
+    # x86_64 court. The nonce below remains the authoritative desktop proof.
+    if ! "$UTMCTL" exec "$VM" --cmd schtasks.exe /create /tn "$task_name" \
+      /tr "$task_command" /sc ONLOGON /ru "$INTERACTIVE_USER" /it /f \
+      >/dev/null 2>&1; then
+      blocked "$COURT_ID could not register its interactive task"
+    fi
+    if ! "$UTMCTL" exec "$VM" --cmd schtasks.exe /run /tn "$task_name" \
+      >/dev/null 2>&1; then
+      "$UTMCTL" exec "$VM" --cmd schtasks.exe /delete /tn "$task_name" /f \
+        >/dev/null 2>&1 || true
+      blocked "$COURT_ID could not run its interactive task"
+    fi
     nonce="court-$COURT_ID-$$-$RANDOM"
     printf 'Write-Output "%s"\nexit 0\n' "$nonce" |
       qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.pending.ps1'
@@ -473,6 +456,8 @@ PY
         qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.log' \
           >"$probe_dir/log" 2>/dev/null || true
         if grep -Fq "$nonce" "$probe_dir/log"; then
+          "$UTMCTL" exec "$VM" --cmd schtasks.exe /delete /tn "$task_name" /f \
+            >/dev/null 2>&1 || true
           python3 - "$COURT_JSON" "$nonce" <<'PY'
 import json, sys
 court = json.loads(sys.argv[1])
@@ -486,6 +471,8 @@ PY
       fi
       sleep 1
     done
+    "$UTMCTL" exec "$VM" --cmd schtasks.exe /delete /tn "$task_name" /f \
+      >/dev/null 2>&1 || true
     blocked "$COURT_ID interactive job agent did not claim its nonce within ${timeout}s"
     ;;
   exec)

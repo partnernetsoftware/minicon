@@ -1428,17 +1428,23 @@ interactive Linux x86 installation.
   disposable snapshot resumed after login: Startup does not run again, while a
   QGA-spawned process belongs to session 0 and cannot own GUI evidence.
   `interactive-ready` therefore publishes the exact worker under a unique path,
-  creates/runs an interactive-token Scheduled Task for the registry's generic
-  test user, and accepts readiness only after that worker claims and completes
-  a fresh nonce job. Each recovery task has a unique scheduler identity, while
+  asks QGA to invoke `schtasks.exe` directly to create/run an interactive-token
+  Scheduled Task for the registry's generic test user, and accepts readiness
+  only after that worker claims and completes a fresh nonce job. Do not wrap
+  scheduler registration in session-0 PowerShell or a batch file: that extra
+  guest shell was observably transport-dependent on the emulated x86_64 court,
+  while direct executable invocation works on both Windows ISAs. Each recovery
+  task has a unique scheduler identity and is deleted after the bounded probe,
+  while
   the worker's named mutex makes an already healthy interactive instance win
   without killing any process. The worker rejects session 0, preventing a
   QGA-started process from racing the interactive worker for the shared job
-  files. Task creation and start are asynchronous across QGA, so the guest
-  publishes a setup-complete marker before the host sends the nonce; the
-  emulated x86 court gets a 180-second readiness budget. A disposable cold
-  start then passed both the nonce and a delayed liveness job, and a current-source
-  AgenTerm journey reached product UIA assertions through the same worker. This
+  files. Scheduler command success is only submission evidence; the fresh nonce
+  is the readiness authority and the emulated x86 court gets a 180-second
+  readiness budget. Both Windows ARM64 and emulated x86_64 have completed that
+  nonce court. A current-source AgenTerm `agenterm-cu page targets --pid` probe
+  then resolved an owned Edge CDP endpoint and listed its page on both ISAs.
+  This
   distinguishes court readiness from product success instead of calling a
   submitted scheduler command "ready". The product job invokes the target qualifier in-process rather
   than adding a third nested PowerShell host, and success is explicit rather
