@@ -913,8 +913,9 @@ flowchart LR
   pre-registry aliases fail before a VM is leased. The five-row VM inventory
   lives in `utm-court` `courts/registry.json`.
 
-  Optional Lima fast courts expose the parallel `scripts/lima-court.sh` service and
-  `scripts/lima-courts.json` image registry. The service owns `image`, `status`,
+  Optional Lima fast courts expose `lima-court` in `partnernetsoftware/utm-court`
+  (`courts/lima.json`). MiniCon's `scripts/lima-court.sh` is a trampoline.
+  The service owns `image`, `status`,
   `lease`, `exec`, `release`, and `reap`, with the same atomic active-state and
   immutable receipt outcomes. Six-cell Linux stages call this facade rather
   than `limactl shell` directly when explicitly enabled. Default six-cell runs
@@ -1053,8 +1054,8 @@ flowchart LR
   4 virtual CPUs, 6 GiB RAM, and a 64 GiB sparse disk ceiling. The installed
   clean user and login-session agent now answer the host runner without a guest
   compiler or network listener. `scripts/macos-utm-runner.sh`
-  prepares and starts the host bridge from `utm-court` `guest/` adapters, while
-  that repo's `guest/macos-utm-agent.sh` runs
+  calls `utm-court prepare-macos` then leases the host bridge; `utm-court`
+  `guest/macos-utm-agent.sh` runs
   as a low-priority LaunchAgent in the interactive Guest login session.
   `utm-court` `guest/setup-macos-agent.sh` installs that agent without a compiler,
   source checkout, SSH credential, or always-on network service. The bridge
@@ -1071,7 +1072,7 @@ flowchart LR
   system `yes`, `head`, and `printf`, so a clean macOS court does not summon the
   Xcode command-line-tools installer merely to obtain Python.
 
-  `scripts/macos-utm-runner.sh ... prepare` also emits a tiny read-only
+  `utm-court prepare-macos` also emits a tiny read-only
   `target-six/macos-utm-bootstrap.iso`. Its single `.command` file mounts the
   already-configured VirtioFS share and invokes the same setup owner. This
   removes keyboard-layout-dependent command entry from clean-Guest

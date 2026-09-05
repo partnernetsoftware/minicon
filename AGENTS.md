@@ -42,9 +42,10 @@ Preserve these invariants:
 - Native callbacks never unwind across FFI; bounded failures remain local.
 - One platform's evidence never becomes a six-cell claim.
 
-Local UTM courts are not MiniCon product code. Lifecycle, guest adapters and
-image recipes live in sibling `utm-court` (`partnernetsoftware/utm-court`).
-MiniCon calls that CLI from `scripts/*-utm-runner.sh`. Missing court is a
+Local UTM and optional Lima courts are not MiniCon product code. Lifecycle,
+guest adapters and image recipes live in sibling `utm-court`
+(`partnernetsoftware/utm-court`). MiniCon calls those CLIs from
+`scripts/*-utm-runner.sh` and `scripts/lima-court.sh`. Missing court is a
 locator failure or `BLOCKED`, never a skipped PASS. Sequencing:
 `plan/plan-utm-court-extract.md`.
 

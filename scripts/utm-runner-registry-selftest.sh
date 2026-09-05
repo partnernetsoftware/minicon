@@ -28,6 +28,8 @@ assert "windows-root" in windows_source
 assert "lib/utm-court.sh" in linux_source
 assert "lib/utm-court.sh" in windows_source
 assert "lib/utm-court.sh" in macos_source
+assert "prepare-macos" in macos_source
+assert "hdiutil" not in macos_source, "macOS runner still builds bootstrap media"
 PY
 
 "$SCRIPT_DIR/lib/utm-court-locator-selftest.sh"

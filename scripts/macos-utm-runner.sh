@@ -22,7 +22,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/utm-court.sh
 . "$SCRIPT_DIR/lib/utm-court.sh"
 COURT_CLI="$(minicon_utm_court_cli)" || exit 2
-COURT_HOME="$(minicon_utm_court_home)" || exit 2
 VM="${MINICON_MACOS_UTM_VM:-minicon-osx-arm-64}"
 BRIDGE="${MINICON_MACOS_UTM_BRIDGE:-$REPO_ROOT/target-six/macos-utm-bridge}"
 BOOTSTRAP_ISO="${MINICON_MACOS_UTM_BOOTSTRAP_ISO:-$REPO_ROOT/target-six/macos-utm-bootstrap.iso}"
@@ -33,31 +32,9 @@ court() {
 }
 
 if [ "$MODE" = prepare ]; then
-  mkdir -p "$BRIDGE/bootstrap" "$BRIDGE/boot-requests" "$BRIDGE/boot-acks" \
-    "$BRIDGE/jobs" "$BRIDGE/payloads" "$BRIDGE/results"
-  guest="$COURT_HOME/guest"
-  install -m 700 "$guest/macos-utm-agent.sh" \
-    "$BRIDGE/bootstrap/macos-utm-agent.sh"
-  install -m 700 "$guest/macos-utm-agent.sh" \
-    "$BRIDGE/bootstrap/macos-utm-agent-v2.sh"
-  install -m 700 "$guest/setup-macos-agent.sh" \
-    "$BRIDGE/bootstrap/setup-macos-utm-runner.sh"
-  install -m 700 "$guest/setup-macos-agent.sh" \
-    "$BRIDGE/bootstrap/setup-macos-utm-runner-v2.sh"
-  install -m 700 "$guest/setup-macos-agent.sh" \
-    "$BRIDGE/bootstrap/setup-macos-agent.sh"
-  install -m 700 "$guest/bootstrap-macos.command" \
-    "$BRIDGE/bootstrap/bootstrap-macos-utm.command"
-  iso_root="$(mktemp -d)"
-  trap 'rm -rf "$iso_root"' EXIT
-  install -m 755 "$guest/bootstrap-macos.command" \
-    "$iso_root/Install MiniCon UTM Agent.command"
-  rm -f "$BOOTSTRAP_ISO"
-  hdiutil makehybrid -quiet -iso -joliet \
-    -default-volume-name MINICON_UTM_BOOTSTRAP \
-    -o "$BOOTSTRAP_ISO" "$iso_root"
-  printf 'bridge=%s\nbootstrap_iso=%s\n' "$BRIDGE" "$BOOTSTRAP_ISO"
-  exit 0
+  UTM_COURT_MACOS_BRIDGE="$BRIDGE" UTM_COURT_MACOS_BOOTSTRAP_ISO="$BOOTSTRAP_ISO" \
+    "$COURT_CLI" prepare-macos
+  exit $?
 fi
 
 if [ "$MODE" = stop ]; then

@@ -19,6 +19,13 @@ found="$(MINICON_UTM_COURT_CLI="$scratch/court" minicon_utm_court_cli)"
 [ "$found" = "$scratch/court" ]
 
 "$SCRIPT_DIR/../utm-court.sh" help | grep -q 'windows-root'
+"$SCRIPT_DIR/../utm-court.sh" help | grep -q 'prepare-macos'
 "$SCRIPT_DIR/../utm-court.sh" windows-root | grep -q '\\'
+
+# shellcheck source=lima-court.sh
+. "$SCRIPT_DIR/lima-court.sh"
+lima_cli="$(minicon_lima_court_cli)"
+grep -q 'Container-like lifecycle facade for Lima' "$lima_cli"
+"$SCRIPT_DIR/../lima-court.sh" help >/dev/null
 
 echo "utm-court-locator-selftest: PASS"

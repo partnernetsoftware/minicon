@@ -1,8 +1,0 @@
-{
-  "schema": 1,
-  "courts": [
-    {"id":"lnx-aarch64-fast", "cell":"lnx-aarch64", "instance":"minicon-lnx-aarch64", "image":"minicon/lima-glibc-aarch64:local", "isa":"aarch64", "memory_mib":8192},
-    {"id":"lnx-x86_64-rosetta", "cell":"lnx-x86_64", "instance":"minicon-lnx-aarch64", "image":"minicon/lima-glibc-aarch64:local", "isa":"x86_64", "translation":"rosetta", "memory_mib":8192},
-    {"id":"lnx-x86_64-kernel", "cell":"lnx-x86_64-kernel", "instance":"minicon-lnx-x86_64", "image":"minicon/lima-glibc-x86_64:local", "isa":"x86_64", "memory_mib":8192}
-  ]
-}
