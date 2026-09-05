@@ -97,6 +97,9 @@ court release two >/dev/null
 [ ! -e "$scratch/service/active.json" ]
 
 printf fixture >"$scratch/input"
+court push two "$scratch/input" 'C:\roundtrip\file'
+court pull two 'C:\roundtrip\file' "$scratch/roundtrip-output"
+cmp "$scratch/input" "$scratch/roundtrip-output"
 if court push two "$scratch/input" 'C:\missing-parent\file'; then
   echo "utm-court-selftest: zero-exit failed push was accepted" >&2
   exit 1

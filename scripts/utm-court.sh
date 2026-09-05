@@ -41,10 +41,10 @@ blocked() { printf 'utm-court: BLOCKED: %s\n' "$*" >&2; exit 3; }
 
 # utmctl can wait forever when Apple's VM lifecycle request loses its reply.
 # Bound the client call itself; the caller still owns state polling/fallback.
-utmctl_bounded() {
+command_bounded() {
   timeout_seconds="$1"
   shift
-  python3 - "$timeout_seconds" "$UTMCTL" "$@" <<'PY'
+  python3 - "$timeout_seconds" "$@" <<'PY'
 import subprocess, sys
 
 try:
@@ -55,11 +55,17 @@ raise SystemExit(completed.returncode)
 PY
 }
 
+utmctl_bounded() {
+  timeout_seconds="$1"
+  shift
+  command_bounded "$timeout_seconds" "$UTMCTL" "$@"
+}
+
 # UTM 4.7 can print an Apple-event/file error while returning zero. File
 # transfer callers must not treat that transport bug as successful evidence.
 qga_file_transfer() {
   diagnostic="$(mktemp "${TMPDIR:-/tmp}/utm-court-transfer.XXXXXX")"
-  if utmctl_bounded "${UTM_COURT_TRANSFER_TIMEOUT:-30}" "$@" 2>"$diagnostic"; then
+  if command_bounded "${UTM_COURT_TRANSFER_TIMEOUT:-30}" "$@" 2>"$diagnostic"; then
     transfer_rc=0
   else
     transfer_rc=$?
