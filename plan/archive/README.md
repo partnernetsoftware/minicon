@@ -4,8 +4,8 @@ These files preserve completed release plans and bounded experiments. They are
 evidence history, not current task entrypoints. Current truth starts at
 `PRD.md`, then the owning `prd/PRD_*.md` module.
 
+- `plan-v0.1.6.md` — shipped v0.1.6 Candidate and Promotion plan.
 - `plan-v0.1.5.md` — shipped v0.1.5 Candidate and Promotion plan.
-  Current in-flight plan is `plan/plan-v0.1.6.md`, not this archive.
 - `design-osx-x86-64-court-experiment.md` — completed decision: routine Intel
   macOS qualification uses real Intel runners; Rosetta is userspace evidence,
   not an Intel-kernel claim.

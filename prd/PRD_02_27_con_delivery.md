@@ -81,11 +81,12 @@ flowchart LR
     R14 --> X15["v0.1.5 Candidate<br/>native six-cell + unsigned minicon.com"]
     X15 --> G15["six APE courts + native parity<br/>three-object Defender"]
     G15 --> R15["exact no-rebuild Promotion"]
-    R15 --> X16["v0.1.6 Candidate<br/>multiline paste + unsigned six-cell"]
+    R15 --> X16["v0.1.6 released<br/>multiline paste + unsigned six-cell"]
 ```
 
-- [~] **v0.1.6 Candidate is open.** Identities are `0.1.6`; public v0.1.5
-  remains the rollback Release. Sequencing: `plan/plan-v0.1.6.md`.
+- [x] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
+  plus `minicon.com`, multiline paste fix. Ledger:
+  `archive/v0.1.6-release-history.md`.
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_28_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is

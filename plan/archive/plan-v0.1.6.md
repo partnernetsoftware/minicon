@@ -1,6 +1,6 @@
 # MiniCon v0.1.6 delivery plan
 
-Status: **active — G0 in this increment; Candidate/Promotion still open**
+Status: **archived — v0.1.6 shipped; this is historical execution evidence**
 Outcome: publish the same unsigned native six-cell set plus `minicon.com`
 from one exact source that includes the multiline paste fix. v0.1.5 remains
 immutable.
@@ -79,4 +79,6 @@ unsigned native archives plus experimental `minicon.com`.
 - [x] G6 Defender court: clean on minicon.com + both Windows PEs
   (engine `1.1.26080.3`, signatures `1.459.55.0`); qualification dispatched
   as `reputation.yml` run `33968769535`.
-- [ ] G7 Promotion after human `publish-v0.1.6`.
+- [x] G7 Promotion: run `33976278521`, tag `v0.1.6` at `a000565`,
+  public Release neither draft nor pre-release.
+  Ledger: `prd/archive/v0.1.6-release-history.md`.

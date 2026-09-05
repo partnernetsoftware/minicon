@@ -64,9 +64,10 @@ MiniCon — one-file local terminal
 │   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
 │   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
 │   │   └── prd/archive/v0.1.5-release-history.md
-│   ├── [~] v0.1.6 Candidate — multiline paste + same unsigned six-cell set
+│   ├── [x] v0.1.6 released — multiline paste + unsigned six-cell + minicon.com
 │   │   ├── composer paste keeps LF; terminal review paints CRLF; PTY still CR
-│   │   └── plan/plan-v0.1.6.md
+│   │   ├── exact Candidate promoted without rebuild after gates + human authority
+│   │   └── prd/archive/v0.1.6-release-history.md
 │   ├── [x] company Artifact Signing mechanism qualified, not yet used by a public release
 │   │   ├── policy-selected OIDC signing + Windows/portable inspection + six-cell after-SHA evidence
 │   │   └── prd/archive/azure-work-tenant-signing-enroll.md
@@ -119,7 +120,7 @@ flowchart LR
         V13["public immutable Release<br/>no rebuild"]
         C14["v0.1.4 released<br/>unsigned native six-cell · X11 fix"]
         C15["v0.1.5 released<br/>native six-cell + unsigned minicon.com"]
-        C16["v0.1.6 Candidate<br/>multiline paste + unsigned six-cell"]
+        C16["v0.1.6 released<br/>multiline paste + unsigned six-cell"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -180,13 +181,11 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.5 is the latest public baseline: five native archives cover six
-  OS/ISA cells and raw unsigned `minicon.com` is an experimental sixth asset.
-  Exact history lives in `prd/archive/v0.1.5-release-history.md`; the completed
-  execution plan lives in `plan/archive/plan-v0.1.5.md`.
-- [~] v0.1.6 is the next Candidate: multiline composer and paste-review
-  rendering, same unsigned six-cell + `minicon.com` policy. Owner:
-  `plan/plan-v0.1.6.md`.
+- [x] v0.1.6 is the latest public baseline: five native archives cover six
+  OS/ISA cells, unsigned `minicon.com`, and multiline paste rendering.
+  Exact history lives in `prd/archive/v0.1.6-release-history.md`; the completed
+  execution plan lives in `plan/archive/plan-v0.1.6.md`. v0.1.5 remains
+  immutable.
 - [x] Company Artifact Signing is qualified through a non-promotable exact-byte
   court, with Windows and portable inspection tools. No public release is
   signed yet; a later version must explicitly change `release-policy.json` to

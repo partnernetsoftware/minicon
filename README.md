@@ -50,17 +50,17 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.5-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.6-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a universal binary — the same file runs on Apple Silicon and
-Intel. v0.1.5 also publishes raw `minicon.com` as an experimental, unsigned
+Intel. v0.1.6 also publishes raw `minicon.com` as an experimental, unsigned
 one-file launcher containing all six OS/ISA payloads. The five native archives
 remain the conventional fallback; every distributable has its own checksum.
 
 ## Code signing policy
 
-MiniCon v0.1.5 published the native six-cell set and experimental `minicon.com`
+MiniCon v0.1.6 published the native six-cell set and experimental `minicon.com`
 unsigned; checksums and exact build/runtime receipts remain mandatory. SignPath
 Foundation declined the open-source application, so the company publisher path
 is now the only signing route: an Azure Artifact Signing Public Trust
@@ -192,7 +192,7 @@ jq '{source_tree_sha256, artifacts}' target-six/receipt.json
 
 The `research/minicon-com-loader/dist/cells/` files are payload copies used to
 assemble the adjacent `minicon.com`; they are not an additional release set.
-`minicon.com` itself remains experimental, but v0.1.5 publishes its exact raw
+`minicon.com` itself remains experimental, but v0.1.6 publishes its exact raw
 bytes and checksum beside the native archives. Its receipt and checksum must
 travel with it when testing it on another machine.
 Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
@@ -293,7 +293,7 @@ August 2026.
 
 ## Code signing policy / 代码签名政策
 
-v0.1.5 发布的是未签名的六格原生包和实验性的未签名 `minicon.com`；五个原生归档仍是
+v0.1.6 发布的是未签名的六格原生包和实验性的未签名 `minicon.com`；五个原生归档仍是
 常规回退选择。SignPath Foundation 已拒绝开源申请，公司发布者路线成为唯一签名路径：
 PARTNERNET SOFTWARE PTY LTD 的 Azure Artifact Signing Public Trust 证书配置文件已建立，
 发布签名工作流已接入；一次不可晋升的真实资格验证已经让三个目标文件通过公司签名，
