@@ -1,6 +1,6 @@
 # Extract local UTM court from MiniCon
 
-Status: **active — phases 1–3 landed except live-VM mutex retirement and Lima instance provisioner**
+Status: **active — phases 1–3 landed; live Windows guests are reused**
 Outcome: MiniCon calls a sibling `utm-court` CLI at test time and no longer
 owns hypervisor lifecycle, image recipes, or guest adapters.
 
@@ -111,7 +111,9 @@ Evidence: `utm-court-locator-selftest.sh` plus existing runner selftests.
   `C:\minicon-six`). MiniCon Windows runner and research helpers consume it.
 - Windows agent acquires `Local\UtmCourtAgentV2` and still holds
   `Local\MiniConUtmAgentV2` so an already-running login worker wins.
-  Dropping the legacy name waits for guest reprovision.
+  Existing guests are reused. The next `interactive-ready` pushes the new
+  agent into the same `C:\minicon-six` root; no OS reinstall. The legacy
+  mutex name stays as a compatibility alias, not a reprovision gate.
 - `utm-court prepare-macos` owns the VirtioFS bridge and bootstrap ISO.
 - Optional Lima facade is `utm-court` `bin/lima-court`. MiniCon keeps a
   trampoline plus `setup-linux-runners.sh` (MiniCon-named instances).
@@ -122,6 +124,6 @@ Evidence: `utm-court-locator-selftest.sh` plus existing runner selftests.
 - Publishing court images or credentials.
 - Treating five UTM VMs or a GitHub PASS as six sealed local courts.
 - Extracting Lima in phase 1 (later moved into the same operator repo).
-- Dropping `Local\MiniConUtmAgentV2` before the live Windows guests are
-  reprovisioned.
+- Reinstalling Windows guests to rename a mutex. Dual-acquire is the reuse
+  contract; the old name is an alias, not a disk identity.
 - Submodule or vendored copy of `utm-court` inside MiniCon.
