@@ -10,8 +10,9 @@ set -euo pipefail
 CELL="$1"; TARGET_DIR="$2"; MODE="$3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${MINICON_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-COURT_CLI="${MINICON_UTM_COURT_CLI:-$SCRIPT_DIR/utm-court.sh}"
-UTMCTL="${MINICON_UTMCTL:-/Applications/UTM.app/Contents/MacOS/utmctl}"
+# shellcheck source=lib/utm-court.sh
+. "$SCRIPT_DIR/lib/utm-court.sh"
+COURT_CLI="$(minicon_utm_court_cli)" || exit 2
 
 case "$CELL" in
   lnx-aarch64)
@@ -25,8 +26,7 @@ case "$CELL" in
   *) echo "unsupported Linux cell: $CELL" >&2; exit 2 ;;
 esac
 case "$MODE" in status|test|throughput|stop) ;; *) exit 2 ;; esac
-[ -x "$COURT_CLI" ] || { echo "UTM court CLI not found" >&2; exit 2; }
-court() { UTM_COURT_VM="$VM" UTMCTL="$UTMCTL" "$COURT_CLI" "$@"; }
+court() { UTM_COURT_VM="$VM" "$COURT_CLI" "$@"; }
 
 if [ "$MODE" = stop ]; then
   court release "$COURT" >/dev/null

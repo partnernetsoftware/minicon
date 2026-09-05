@@ -13,14 +13,15 @@ case "$CELL" in
 esac
 COURT_CLI="$ROOT/scripts/utm-court.sh"
 [ -x "$COM" ] || { echo "missing $COM" >&2; exit 2; }
-[ -x "$COURT_CLI" ] || { echo "missing utm-court.sh" >&2; exit 2; }
+[ -x "$COURT_CLI" ] || { echo "missing utm-court trampoline" >&2; exit 2; }
+WINROOT="${UTM_COURT_WINDOWS_ROOT:-$("$COURT_CLI" windows-root)}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 job_id="ape_${CELL//-/_}_$$"
-guest_exe="C:\\minicon-six\\$CELL\\minicon-ape.exe"
-result="C:\\minicon-six\\job-$job_id.exit"
-log="C:\\minicon-six\\job-$job_id.log"
+guest_exe="$WINROOT\\$CELL\\minicon-ape.exe"
+result="$WINROOT\\job-$job_id.exit"
+log="$WINROOT\\job-$job_id.log"
 
 # Same path as scripts/windows-utm-runner.sh: disposable clone has the
 # login-started job agent. A reused VM often has QGA up and the agent down.
@@ -28,8 +29,8 @@ log="C:\\minicon-six\\job-$job_id.log"
 "$COURT_CLI" wait-ready "$COURT" 180
 # Drop stale six-cell job.exit (same path, old 1) before this APE job.
 "$COURT_CLI" exec "$COURT" -- cmd.exe /d /c \
-  'del /f /q C:\minicon-six\job.exit C:\minicon-six\job.log C:\minicon-six\job.ready C:\minicon-six\job.pending.ps1 C:\minicon-six\job.running.ps1'
-"$COURT_CLI" exec "$COURT" -- cmd.exe /d /c 'start "" /min C:\minicon-six\windows-utm-agent.cmd' || true
+  "del /f /q ${WINROOT}\\job.exit ${WINROOT}\\job.log ${WINROOT}\\job.ready ${WINROOT}\\job.pending.ps1 ${WINROOT}\\job.running.ps1"
+"$COURT_CLI" exec "$COURT" -- cmd.exe /d /c "start \"\" /min ${WINROOT}\\windows-utm-agent.cmd" || true
 "$COURT_CLI" push "$COURT" "$COM" "$guest_exe"
 
 cat >"$tmp/job.ps1" <<EOF
@@ -52,33 +53,33 @@ if (\$p.ExitCode -ne 0) { throw "minicon.com --status exit \$(\$p.ExitCode)" }
 if (\$text -notmatch 'pty backend') { throw "no pty backend in --status output" }
 EOF
 
-"$COURT_CLI" push "$COURT" "$tmp/job.ps1" "C:\\minicon-six\\job.pending.ps1"
-printf 'ready' | "$COURT_CLI" push "$COURT" - "C:\\minicon-six\\job.ready"
+"$COURT_CLI" push "$COURT" "$tmp/job.ps1" "$WINROOT\\job.pending.ps1"
+printf 'ready' | "$COURT_CLI" push "$COURT" - "$WINROOT\\job.ready"
 
 # Agent writes job.exit after the pending script; runner also has unique files
 # if the script writes them. Poll both.
 deadline=$((SECONDS + 600))
 while :; do
   : >"$tmp/exit"
-  "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" 2>/dev/null || true
+  "$COURT_CLI" pull "$COURT" "$WINROOT\\job.log" "$tmp/log" 2>/dev/null || true
   if [ -s "$tmp/log" ] && grep -q 'pty backend' "$tmp/log"; then
     break
   fi
-  "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.exit" "$tmp/exit" 2>/dev/null || true
+  "$COURT_CLI" pull "$COURT" "$WINROOT\\job.exit" "$tmp/exit" 2>/dev/null || true
   if [ -s "$tmp/exit" ]; then
     # Stale leftover is a single '1' from an older six-cell job with empty log.
     if [ "$(tr -d '\r\n' <"$tmp/exit")" != "1" ] || \
-       "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" 2>/dev/null && \
+       "$COURT_CLI" pull "$COURT" "$WINROOT\\job.log" "$tmp/log" 2>/dev/null && \
        [ -s "$tmp/log" ]; then
       break
     fi
     # If pending is gone and log exists (even empty after our job), accept.
-    if ! "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.pending.ps1" "$tmp/pending" 2>/dev/null; then
+    if ! "$COURT_CLI" pull "$COURT" "$WINROOT\\job.pending.ps1" "$tmp/pending" 2>/dev/null; then
       break
     fi
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
-    "$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" 2>/dev/null || true
+    "$COURT_CLI" pull "$COURT" "$WINROOT\\job.log" "$tmp/log" 2>/dev/null || true
     if [ -s "$tmp/log" ] && grep -q 'pty backend' "$tmp/log"; then
       echo "WARN $CELL: job.exit missing; job.log has pty backend" >&2
       break
@@ -93,7 +94,7 @@ done
 echo "=== $CELL job.exit ==="
 tr -d '\r\n' <"$tmp/exit"; echo
 echo "=== $CELL job.log ==="
-"$COURT_CLI" pull "$COURT" "C:\\minicon-six\\job.log" "$tmp/log" || true
+"$COURT_CLI" pull "$COURT" "$WINROOT\\job.log" "$tmp/log" || true
 cat "$tmp/log" 2>/dev/null || true
 rc="$(tr -d '\r\n' <"$tmp/exit")"
 if [ "$rc" != 0 ] && grep -q 'pty backend' "$tmp/log" 2>/dev/null; then

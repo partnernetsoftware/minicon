@@ -1,56 +1,34 @@
 #!/bin/bash
-# Keep product runner court IDs aligned with the shared UTM registry.
+# Keep MiniCon product runners aligned with court IDs. Court internals live
+# in partnernetsoftware/utm-court.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 - "$SCRIPT_DIR/utm-courts.json" \
-  "$SCRIPT_DIR/linux-utm-runner.sh" "$SCRIPT_DIR/windows-utm-runner.sh" \
-  "$SCRIPT_DIR/utm-court.sh" "$SCRIPT_DIR/windows-utm-agent.ps1" <<'PY'
-import json
+python3 - "$SCRIPT_DIR/linux-utm-runner.sh" "$SCRIPT_DIR/windows-utm-runner.sh" \
+  "$SCRIPT_DIR/macos-utm-runner.sh" <<'PY'
 import sys
 from pathlib import Path
 
-registry_path, linux_path, windows_path, court_cli_path, agent_path = map(Path, sys.argv[1:])
-registry = json.loads(registry_path.read_text(encoding="utf-8"))
-ids = {court["id"] for court in registry["courts"]}
-cells = {court["cell"] for court in registry["courts"]}
-expected = {
-    "lnx-aarch64-desktop": linux_path,
-    "lnx-x86_64-desktop": linux_path,
-    "win-aarch64-desktop": windows_path,
-    "win-x86_64-desktop": windows_path,
-}
-for court_id, owner in expected.items():
-    assert court_id in ids, f"registry missing {court_id}"
-    source = owner.read_text(encoding="utf-8")
-    assert f"COURT={court_id}" in source, f"{owner.name} missing {court_id}"
-
-for court in registry["courts"]:
-    if court["os"] == "win":
-        assert court.get("interactive_user") == "minicon", f'{court["id"]} missing interactive user'
+linux_path, windows_path, macos_path = map(Path, sys.argv[1:])
+linux_source = linux_path.read_text(encoding="utf-8")
 windows_source = windows_path.read_text(encoding="utf-8")
-assert 'court interactive-ready "$COURT" 180' in windows_source, "Windows runner lacks the emulated-court readiness budget"
-court_cli_source = court_cli_path.read_text(encoding="utf-8")
-assert "schtasks.exe /create" in court_cli_source, "court does not register the interactive worker"
-assert "schtasks.exe /run" in court_cli_source, "court does not start the interactive worker"
-assert 'qga_command schtasks.exe /create' in court_cli_source, "court recovery wraps task registration in a guest shell"
-assert 'qga_command schtasks.exe /run' in court_cli_source, "court recovery wraps task launch in a guest shell"
-assert 'utmctl_bounded "${UTM_COURT_COMMAND_TIMEOUT:-15}" exec "$VM" --cmd "$@"' in court_cli_source, "QGA command submission is not bounded"
-assert "schtasks.exe /delete" in court_cli_source, "court leaks its unique recovery tasks"
-assert "setup_done" not in court_cli_source, "court still carries the fragile session-0 setup receipt"
-assert "agent-v2" in court_cli_source and "ping.request" in court_cli_source and "ping.response" in court_cli_source, "court readiness still launches a nested job instead of pinging the interactive worker"
-assert 'python3 -c' in court_cli_source, "bounded command wrapper may consume file-push stdin"
-agent_source = agent_path.read_text(encoding="utf-8")
-assert "$sessionId -eq 0" in agent_source, "desktop worker does not reject QGA session 0"
-assert 'Local\\MiniConUtmAgentV2' in agent_source, "desktop worker lost its versioned single-owner mutex"
-assert "ping.request" in agent_source and "ping.response.tmp" in agent_source, "desktop worker lost its atomic liveness echo"
-assert "agent-v2" in windows_source, "Windows jobs can race the retired v1 worker"
-
-# OSX x86_64 is deliberately a host-Rosetta logical court on Apple Silicon,
-# not a planned UTM asset. Keep the UTM inventory truthful and five-VM-only.
-assert len(registry["courts"]) == 5, "UTM registry must contain exactly five VM courts"
-assert "osx-x86_64" not in cells, "OSX x86_64 belongs to the host Rosetta court"
+macos_source = macos_path.read_text(encoding="utf-8")
+for court_id in ("lnx-aarch64-desktop", "lnx-x86_64-desktop"):
+    assert f"COURT={court_id}" in linux_source, f"{linux_path.name} missing {court_id}"
+for court_id in ("win-aarch64-desktop", "win-x86_64-desktop"):
+    assert f"COURT={court_id}" in windows_source, f"{windows_path.name} missing {court_id}"
+assert "court lease osx-aarch64" in macos_source or "osx-aarch64" in macos_source
+assert 'court interactive-ready "$COURT" 180' in windows_source
+assert "agent-v2" in windows_source
+assert "utmctl" not in linux_source, "Linux runner still talks to utmctl"
+assert "utmctl" not in windows_source, "Windows runner still talks to utmctl"
+assert r"C:\\minicon-six" not in windows_source, "Windows runner hardcodes the guest root"
+assert "windows-root" in windows_source
+assert "lib/utm-court.sh" in linux_source
+assert "lib/utm-court.sh" in windows_source
+assert "lib/utm-court.sh" in macos_source
 PY
 
+"$SCRIPT_DIR/lib/utm-court-locator-selftest.sh"
 echo "utm-runner-registry-selftest: PASS"

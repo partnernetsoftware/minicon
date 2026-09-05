@@ -543,8 +543,10 @@ qjswasm-as-size-cut remains a later hypothesis
   therefore has no routine physical UTM VM. No local cell currently owns a
   sealed release baseline. A five-row UTM registry or a six-cell GitHub PASS
   must never be summarized as six deployed local UTM guests or six sealed
-  courts. `scripts/utm-runner-registry-selftest.sh` rejects reintroducing an
+  courts. `utm-court` `tests/registry-selftest.sh` rejects reintroducing an
   OSX x86_64 planned-VM row: that logical cell belongs to host Rosetta.
+  MiniCon `scripts/utm-runner-registry-selftest.sh` only checks product runner
+  court IDs.
 
   Measured 2026-08-28, packaging reports both uncompressed payload bytes and
   compressed archive bytes per cell. The exact six-cell body totals about 151
@@ -772,11 +774,15 @@ flowchart LR
 #### Agent-facing VM court lifecycle
 
 - [~] UTM automation is a reusable test-infrastructure capability, not a set of
-  MiniCon-specific VM shell fragments. `scripts/utm-courts.json` is the first
-  machine-readable registry for the five VM-backed logical `{os, isa}` courts,
-  their UTM VM identity, automation adapter, idle policy, and template state.
+  MiniCon-specific VM shell fragments. Phase 1 moved the facade into private
+  `partnernetsoftware/utm-court` (`~/repos/utm-court`). MiniCon locates it
+  through `scripts/lib/utm-court.sh` and a trampoline `scripts/utm-court.sh`;
+  it does not ship `utmctl` wrappers, image recipes, or guest adapters.
+  `courts/registry.json` in that repo is the machine-readable registry for the
+  five VM-backed logical `{os, isa}` courts, their UTM VM identity, automation
+  adapter, idle policy, and template state.
   The sixth local cell, OSX x86_64, is host Rosetta and deliberately absent.
-  `scripts/utm-court.sh` is the initial uniform facade: agents can
+  `utm-court` is the uniform facade: agents can
   discover and inspect courts, validate registration, start or resume them,
   wait for automation readiness, execute commands, transfer exact files, apply
   idle policy, and clone a stopped baseline without learning UTM command syntax.
@@ -903,9 +909,9 @@ flowchart LR
   eight owning harness prefixes, and similarly named throughput/unowned
   executables cannot leak through the main-crate `minicon-<hash>` selector.
   `scripts/utm-runner-registry-selftest.sh` independently requires both Linux
-  and Windows runners to name the four canonical `*-desktop` court IDs present
-  in `scripts/utm-courts.json`; stale pre-registry aliases fail before a VM is
-  leased.
+  and Windows runners to name the four canonical `*-desktop` court IDs; stale
+  pre-registry aliases fail before a VM is leased. The five-row VM inventory
+  lives in `utm-court` `courts/registry.json`.
 
   Optional Lima fast courts expose the parallel `scripts/lima-court.sh` service and
   `scripts/lima-courts.json` image registry. The service owns `image`, `status`,
@@ -956,7 +962,7 @@ flowchart LR
   transition for an abandoned lease. A filesystem lifecycle lock serializes
   competing admission and release operations. These records are local runtime
   evidence, never source-controlled image metadata. The product-neutral
-  `scripts/utm-court-selftest.sh` fake backend proves same-VM lease reuse,
+  `utm-court` `tests/utm-court-selftest.sh` fake backend proves same-VM lease reuse,
   cross-VM recovery, ordinary release, abandoned-lease reap, final stopped
   states, bounded hanging QGA command/file operations, and the corresponding
   receipt outcomes without starting a VM.
@@ -1047,9 +1053,10 @@ flowchart LR
   4 virtual CPUs, 6 GiB RAM, and a 64 GiB sparse disk ceiling. The installed
   clean user and login-session agent now answer the host runner without a guest
   compiler or network listener. `scripts/macos-utm-runner.sh`
-  prepares and starts the host bridge, while `scripts/macos-utm-agent.sh` runs
+  prepares and starts the host bridge from `utm-court` `guest/` adapters, while
+  that repo's `guest/macos-utm-agent.sh` runs
   as a low-priority LaunchAgent in the interactive Guest login session.
-  `scripts/setup-macos-utm-runner.sh` installs that agent without a compiler,
+  `utm-court` `guest/setup-macos-agent.sh` installs that agent without a compiler,
   source checkout, SSH credential, or always-on network service. The bridge
   uses UTM's `share` VirtioFS device, copies each payload into Guest-local cache,
   validates every file through `MANIFEST.sha256`, and publishes a unique log
@@ -1148,7 +1155,7 @@ flowchart LR
   OpenCore/TCG experiment. Until that trigger exists, speculative VM setup is a
   non-goal and must not block the accepted userspace qualification path.
 
-  Its preparation owner is `scripts/prepare-linux-x86_64-utm.sh`: it accepts
+  Its preparation owner is `utm-court` `image/prepare-linux-x86_64.sh`: it accepts
   only the pinned official Ubuntu 24.04.4 Server AMD64 release ISO with
   SHA-256 `e907d92eeec9df64163a7e454cbc8d7755e8ddc7ed42f99dbc80c40f1a138433`
   and emits an identity-free recipe receipt. The declared UTM baseline is QEMU
@@ -1193,14 +1200,14 @@ flowchart LR
   disposable-clone rerun, AT-SPI/IME evidence, and a packaging-owned runtime
   dependency declaration/check; performance remains an explicit non-goal.
 
-  `scripts/prepare-linux-desktop-utm.sh` verifies the pinned Canonical Noble
+  `utm-court` `image/prepare-linux-desktop.sh` verifies the pinned Canonical Noble
   ARM64 cloud-image digest before copying it into the ignored local court and
   emits a `cidata` NoCloud seed from
-  `scripts/linux-desktop-cloud-init.yaml`. The seed installs the minimal GNOME,
+  `image/linux-desktop-cloud-init.yaml`. The seed installs the minimal GNOME,
   AT-SPI, CJK font, X11 and guest-integration prerequisites without placing a
   plaintext password, SSH key or host identity in the repository. Its password
   hash is caller-supplied or collected twice through the hidden interactive
-  prompt exposed by `scripts/prepare-linux-desktop-utm.command`; the plaintext
+  prompt exposed by `image/prepare-linux-desktop.command`; the plaintext
   exists only in that process long enough to derive the SHA-512 crypt hash. The
   hash remains inside the ignored local seed and is called out in the
   preparation receipt so that seed is never uploaded as a reusable public
@@ -1399,11 +1406,12 @@ interactive Linux x86 installation.
   persistent Cargo target directories may retain older hashes, which must not
   silently become current-source evidence.
 
-- [x] `scripts/windows-utm-runner.sh` owns the local UTM bridge. It
-  selects a VM per Windows cell, replaces only that cell's dedicated guest
-  staging directory, pushes the exact linked product plus only the hashed test
-  PE files required by the selected status/test/throughput/diagnostic mode
-  through UTM's QEMU guest agent, and invokes the target-side PowerShell owner.
+- [x] `scripts/windows-utm-runner.sh` is MiniCon's Windows calling scene. It
+  selects a court ID per Windows cell, asks `utm-court` for the guest work
+  root, replaces only that cell's dedicated guest staging directory, pushes
+  the exact linked product plus only the hashed test PE files required by the
+  selected status/test/throughput/diagnostic mode through the court CLI, and
+  invokes the target-side PowerShell owner. It does not call `utmctl`.
   The host emits a source-fingerprint-bearing manifest that names exactly one
   hashed executable for every target-side harness. The guest may retain older
   files in its fixed staging directory—UTM's guest-agent file API does not

@@ -17,8 +17,10 @@ MODE="$3"
 CONSOLE_AGENT_FILTER="${MINICON_WINDOWS_CONSOLE_AGENT_FILTER:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-UTMCTL="${MINICON_UTMCTL:-/Applications/UTM.app/Contents/MacOS/utmctl}"
-COURT_CLI="${MINICON_UTM_COURT_CLI:-$SCRIPT_DIR/utm-court.sh}"
+# shellcheck source=lib/utm-court.sh
+. "$SCRIPT_DIR/lib/utm-court.sh"
+COURT_CLI="$(minicon_utm_court_cli)" || exit 2
+WINDOWS_ROOT="${UTM_COURT_WINDOWS_ROOT:-$("$COURT_CLI" windows-root)}"
 
 case "$CELL" in
   win-aarch64)
@@ -46,19 +48,11 @@ if [ -n "$CONSOLE_AGENT_FILTER" ] &&
   exit 2
 fi
 
-[ -x "$UTMCTL" ] || {
-  echo "utmctl not found: $UTMCTL" >&2
-  exit 2
-}
-[ -x "$COURT_CLI" ] || {
-  echo "UTM court CLI not found: $COURT_CLI" >&2
-  exit 2
-}
 case "$CELL" in
   win-aarch64) COURT=win-aarch64-desktop ;;
   win-x86_64) COURT=win-x86_64-desktop ;;
 esac
-court() { UTM_COURT_VM="$VM" UTMCTL="$UTMCTL" "$COURT_CLI" "$@"; }
+court() { UTM_COURT_VM="$VM" "$COURT_CLI" "$@"; }
 
 if [ "$MODE" = stop ]; then
   court release "$COURT" >/dev/null
@@ -96,7 +90,7 @@ build_identity="$(printf '%s\n' "$TARGET_DIR" | sed -n 's#.*target-six/builds/\(
   echo "Windows target directory lacks a source-fingerprint identity: $TARGET_DIR" >&2
   exit 2
 }
-GUEST_ROOT="C:\\minicon-six\\$CELL"
+GUEST_ROOT="$WINDOWS_ROOT\\$CELL"
 court push "$COURT" "$SCRIPT_DIR/windows-runtime-qualify.ps1" \
   "$GUEST_ROOT\\windows-runtime-qualify.ps1"
 
@@ -160,12 +154,12 @@ PY
 court push "$COURT" "$runner_tmp/test-manifest.json" \
   "$GUEST_ROOT\\target\\test-manifest.json"
 
-JOB="C:\\minicon-six\\agent-v2\\job.pending.ps1"
-READY="C:\\minicon-six\\agent-v2\\job.ready"
+JOB="$WINDOWS_ROOT\\agent-v2\\job.pending.ps1"
+READY="$WINDOWS_ROOT\\agent-v2\\job.ready"
 job_id="${CELL//-/_}_${MODE}_$$_${RANDOM}"
-RESULT="C:\\minicon-six\\job-$job_id.exit"
+RESULT="$WINDOWS_ROOT\\job-$job_id.exit"
 RESULT_TMP="$RESULT.tmp"
-LOG="C:\\minicon-six\\job-$job_id.log"
+LOG="$WINDOWS_ROOT\\job-$job_id.log"
 
 printf '%s\n' \
   '$ErrorActionPreference = "Stop"' \

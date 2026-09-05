@@ -87,7 +87,8 @@ fi
 lima_cell lnx-aarch64 minicon-lnx-aarch64
 lima_cell lnx-x86_64 minicon-lnx-x86_64
 
-if [[ -x /Applications/UTM.app/Contents/MacOS/utmctl && -x "$HERE/utm-win-ape-status.sh" ]]; then
+if [[ -x "$HERE/utm-win-ape-status.sh" ]] &&
+   "$ROOT/scripts/utm-court.sh" help >/dev/null 2>&1; then
   for cell in win-aarch64 win-x86_64; do
     if "$HERE/utm-win-ape-status.sh" "$COM" "$cell" >"$LOGDIR/$cell.log" 2>&1; then
       record "$cell" PASS "UTM job agent" "utm:$cell"
@@ -96,8 +97,8 @@ if [[ -x /Applications/UTM.app/Contents/MacOS/utmctl && -x "$HERE/utm-win-ape-st
     fi
   done
 else
-  record win-aarch64 BLOCKED "utmctl missing" "none"
-  record win-x86_64 BLOCKED "utmctl missing" "none"
+  record win-aarch64 BLOCKED "utm-court missing" "none"
+  record win-x86_64 BLOCKED "utm-court missing" "none"
 fi
 
 python3 - "$HERE/dist/build-receipt.json" "$HERE/dist/local-receipt.json" "$LOGDIR" "$RESULTS" "$PASS" "$FAIL" "$BLOCK" <<'PY'

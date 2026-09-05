@@ -48,7 +48,7 @@ MiniCon — one-file local terminal
 │   ├── build once; runtime courts execute exact artifacts without compiling
 │   ├── independent evidence lanes
 │   │   ├── GitHub native runners — fast regression and real ISA
-│   │   └── local UTM — controlled-image release and interactive reproduction
+│   │   └── local UTM — partnernetsoftware/utm-court; MiniCon calls it at test time
 │   ├── [x] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
 │   ├── [x] v0.1.3 released — 5 native archives cover all 6 cells
 │   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
@@ -106,7 +106,7 @@ flowchart LR
     subgraph E["Exact-artifact evidence"]
         X["Build owner<br/>six artifacts · source identity"]
         GH["GitHub native six-grid<br/>fast regression · real ISA"]
-        VM["Local UTM courts<br/>controlled images · permissions"]
+        VM["utm-court CLI<br/>controlled images · permissions"]
         R["Lane-labelled receipts<br/>same contracts · independent verdicts"]
     end
     subgraph REL["Release evolution"]
@@ -205,7 +205,10 @@ flowchart LR
   Darwin native pixel host, or Darwin/Win LTO), not strip/RELR/
   `panic=abort`/ceiling raise. Owner: `prd/PRD_02_27_con_delivery.md`.
 - [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
-  other's verdict; unavailable runtime evidence is `BLOCKED`.
+  other's verdict; unavailable runtime evidence is `BLOCKED`. Local UTM
+  lifecycle is `partnernetsoftware/utm-court`; MiniCon keeps product runners
+  only. Owner: `prd/PRD_02_27_con_delivery.md`,
+  `plan/plan-utm-court-extract.md`.
 - [~] Local courts are automation-capable but not sealed release baselines.
   Lima is optional acceleration; Rosetta is a provisional OSX x86_64 userspace
   court; real native runners retain claims translation cannot make.

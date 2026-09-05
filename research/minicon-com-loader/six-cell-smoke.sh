@@ -91,13 +91,13 @@ lima_status lnx-x86_64 minicon-lnx-x86_64
 
 # 5–6. Windows UTM — APE as-is; court must already exist
 if [[ -x "$HERE/../../scripts/windows-utm-runner.sh" ]] &&
-   [[ -x /Applications/UTM.app/Contents/MacOS/utmctl ]]; then
+   "$HERE/../../scripts/utm-court.sh" help >/dev/null 2>&1; then
   for cell in win-aarch64 win-x86_64; do
     record "$cell" BLOCKED "APE-on-UTM not wired (runner expects cargo target dir, not minicon.com)"
   done
 else
-  record win-aarch64 BLOCKED "utmctl/windows-utm-runner missing"
-  record win-x86_64 BLOCKED "utmctl/windows-utm-runner missing"
+  record win-aarch64 BLOCKED "utm-court/windows-utm-runner missing"
+  record win-x86_64 BLOCKED "utm-court/windows-utm-runner missing"
 fi
 
 echo

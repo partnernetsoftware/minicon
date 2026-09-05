@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-source_file="$repo_root/scripts/utm-image-sources.json"
+source_file="${UTM_COURT_IMAGE_SOURCES:-$repo_root/../utm-court/courts/image-sources.json}"
 
 fail=0
 check() {

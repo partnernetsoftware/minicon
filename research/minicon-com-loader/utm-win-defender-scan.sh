@@ -13,6 +13,7 @@ MANIFEST=$1
 FILES=$2
 OUTPUT=$3
 COURT=win-x86_64-desktop
+WINROOT="${UTM_COURT_WINDOWS_ROOT:-$("$COURT_CLI" windows-root)}"
 tmp=$(mktemp -d)
 leased=0
 cleanup() {
@@ -41,31 +42,31 @@ PY
 leased=1
 "$COURT_CLI" wait-ready "$COURT" 180 >/dev/null
 "$COURT_CLI" exec "$COURT" -- cmd.exe /d /c \
-  'del /f /q C:\minicon-six\job.exit C:\minicon-six\job.log C:\minicon-six\job.ready C:\minicon-six\job.pending.ps1 C:\minicon-six\job.running.ps1'
+  "del /f /q ${WINROOT}\\job.exit ${WINROOT}\\job.log ${WINROOT}\\job.ready ${WINROOT}\\job.pending.ps1 ${WINROOT}\\job.running.ps1"
 "$COURT_CLI" exec "$COURT" -- cmd.exe /d /c \
-  'if exist C:\minicon-six\defender rmdir /s /q C:\minicon-six\defender & mkdir C:\minicon-six\defender & mkdir C:\minicon-six\defender\files'
-"$COURT_CLI" exec "$COURT" -- cmd.exe /d /c 'start "" /min C:\minicon-six\windows-utm-agent.cmd' || true
+  "if exist ${WINROOT}\\defender rmdir /s /q ${WINROOT}\\defender & mkdir ${WINROOT}\\defender & mkdir ${WINROOT}\\defender\\files"
+"$COURT_CLI" exec "$COURT" -- cmd.exe /d /c "start \"\" /min ${WINROOT}\\windows-utm-agent.cmd" || true
 for file in "$FILES"/*; do
   leaf=$(basename "$file")
-  remote=$(printf 'C:\\minicon-six\\defender\\files\\%s' "$leaf")
+  remote=$(printf '%s\\defender\\files\\%s' "$WINROOT" "$leaf")
   "$COURT_CLI" push "$COURT" "$file" "$remote"
 done
-"$COURT_CLI" push "$COURT" "$MANIFEST" 'C:\minicon-six\defender\candidate-manifest.json'
-"$COURT_CLI" push "$COURT" "$HERE/defender-court.ps1" 'C:\minicon-six\job.pending.ps1'
-printf ready | "$COURT_CLI" push "$COURT" - 'C:\minicon-six\job.ready'
+"$COURT_CLI" push "$COURT" "$MANIFEST" "$WINROOT\\defender\\candidate-manifest.json"
+"$COURT_CLI" push "$COURT" "$HERE/defender-court.ps1" "$WINROOT\\job.pending.ps1"
+printf ready | "$COURT_CLI" push "$COURT" - "$WINROOT\\job.ready"
 
 deadline=$((SECONDS + 600))
 while :; do
   : >"$tmp/exit"
-  "$COURT_CLI" pull "$COURT" 'C:\minicon-six\job.exit' "$tmp/exit" 2>/dev/null || true
+  "$COURT_CLI" pull "$COURT" "$WINROOT\\job.exit" "$tmp/exit" 2>/dev/null || true
   [ -s "$tmp/exit" ] && break
   [ "$SECONDS" -lt "$deadline" ] || { echo "Defender court exceeded 10-minute deadline" >&2; exit 1; }
   sleep 2
 done
-"$COURT_CLI" pull "$COURT" 'C:\minicon-six\job.log' "$tmp/log" || true
+"$COURT_CLI" pull "$COURT" "$WINROOT\\job.log" "$tmp/log" || true
 cat "$tmp/log" 2>/dev/null || true
 rc=$(tr -d '\r\n' <"$tmp/exit")
-"$COURT_CLI" pull "$COURT" 'C:\minicon-six\defender\defender-receipt.json' "$OUTPUT" || true
+"$COURT_CLI" pull "$COURT" "$WINROOT\\defender\\defender-receipt.json" "$OUTPUT" || true
 test -s "$OUTPUT" || { echo "Defender court produced no receipt (exit $rc)" >&2; exit 1; }
 python3 - "$MANIFEST" "$OUTPUT" <<'PY'
 import json, sys

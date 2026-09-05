@@ -201,12 +201,13 @@ artifacts.
 
 The six-cell gate writes `target-six/receipt.json`. A missing runtime runner is
 reported as `BLOCKED`; a successful cross-link is not mislabeled as a runtime
-test pass. Linux desktop UTM runners own local qualification. The optional
+test pass. Local UTM qualification needs sibling `utm-court` and the
+`MINICON_*_RUNNER` environment variables; MiniCon only packs exact artifacts
+and calls that CLI. The optional
 `MINICON_ENABLE_LIMA_ACCELERATOR=1` path uses Debian/glibc Lima courts for
 faster headless Linux feedback; `scripts/setup-linux-runners.sh` provisions
-them, but ordinary qualification does not require them. A Windows UTM VM
-with Guest Tools can use `scripts/windows-utm-runner.sh` as both Windows runner
-variables; the gate transfers the exact PE/test tree before execution.
+them, but ordinary qualification does not require them. The gate transfers the
+exact PE/test tree before a configured Windows runner executes.
 
 `scripts/cleanup-build-state.py` is dry-run by default. Build/package owners
 invoke it with narrow scopes and protect current, receipt-owned and active
