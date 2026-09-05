@@ -10,8 +10,9 @@ an identity validation, a certificate profile, or a test certificate is not a
 signature.
 
 The committed `release-policy.json` decides whether a version requires signing.
-MiniCon v0.1.4 and v0.1.5 deliberately published unsigned artifacts; their
-checksums, six-cell runtime courts and Defender evidence remain mandatory.
+MiniCon v0.1.4 and v0.1.5 deliberately published unsigned artifacts. v0.1.6 uses
+the same `signing.mode=off` policy. Checksums, six-cell runtime courts and
+Defender evidence remain mandatory.
 Company signing of `minicon.com` and the native Windows executables is a later
 explicit policy switch for a new version. When policy says
 `signing.mode=required`, missing provider configuration blocks the release; it
