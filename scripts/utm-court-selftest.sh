@@ -48,6 +48,9 @@ case "$command" in
     printf 'stopped\n' >"$state_dir/$vm"
     ;;
   exec)
+    if [ -f "$state_dir/hang-exec" ]; then
+      sleep 10
+    fi
     if [ -f "$state_dir/exec-diagnostic" ]; then
       printf 'Error from event: RPC failed\n' >&2
       exit 0
@@ -55,6 +58,9 @@ case "$command" in
     ;;
   file)
     action="$1"; path="$3"
+    if [ -f "$state_dir/hang-file" ]; then
+      sleep 10
+    fi
     case "$path" in
       *missing-parent*|*missing-file*)
         printf "failed to open file '%s': not found\n" "$path" >&2
@@ -108,6 +114,27 @@ if court wait-ready two 1; then
   exit 1
 fi
 rm "$scratch/state/exec-diagnostic"
+
+# SECONDS is a wall budget, not a retry count multiplied by each blocking QGA
+# call. Both process probes and file transport must stop inside their caller's
+# bounded window.
+touch "$scratch/state/hang-exec"
+started_at=$SECONDS
+if UTM_COURT_COMMAND_TIMEOUT=10 court wait-ready two 2; then
+  echo "utm-court-selftest: hanging QGA probe was accepted" >&2
+  exit 1
+fi
+[ "$((SECONDS - started_at))" -lt 5 ]
+rm "$scratch/state/hang-exec"
+
+touch "$scratch/state/hang-file"
+started_at=$SECONDS
+if UTM_COURT_TRANSFER_TIMEOUT=1 court push two "$scratch/input" 'C:\bounded\file'; then
+  echo "utm-court-selftest: hanging QGA transfer was accepted" >&2
+  exit 1
+fi
+[ "$((SECONDS - started_at))" -lt 5 ]
+rm "$scratch/state/hang-file"
 
 # A lost Apple-event reply must not hold the lifecycle service forever. The
 # bounded request falls through to the existing state poll and force-stop.

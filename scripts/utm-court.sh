@@ -59,7 +59,7 @@ PY
 # transfer callers must not treat that transport bug as successful evidence.
 qga_file_transfer() {
   diagnostic="$(mktemp "${TMPDIR:-/tmp}/utm-court-transfer.XXXXXX")"
-  if "$@" 2>"$diagnostic"; then
+  if utmctl_bounded "${UTM_COURT_TRANSFER_TIMEOUT:-30}" "$@" 2>"$diagnostic"; then
     transfer_rc=0
   else
     transfer_rc=$?
@@ -414,10 +414,18 @@ PY
     resolve "$1"; timeout="${2:-120}"
     case "$timeout" in *[!0-9]*|'') die "SECONDS must be an integer" ;; esac
     if [ "$ADAPTER" = qemu-guest-agent ]; then
-      for _ in $(seq 1 "$timeout"); do
-        qga_command /usr/bin/true 2>/dev/null && { normalized_status; exit 0; }
-        qga_command cmd.exe /d /c exit 0 2>/dev/null && { normalized_status; exit 0; }
-        sleep 1
+      deadline=$((SECONDS + timeout))
+      while [ "$SECONDS" -lt "$deadline" ]; do
+        remaining=$((deadline - SECONDS))
+        probe_timeout="${UTM_COURT_COMMAND_TIMEOUT:-15}"
+        [ "$probe_timeout" -le "$remaining" ] || probe_timeout="$remaining"
+        UTM_COURT_COMMAND_TIMEOUT="$probe_timeout" qga_command /usr/bin/true 2>/dev/null && { normalized_status; exit 0; }
+        remaining=$((deadline - SECONDS))
+        [ "$remaining" -gt 0 ] || break
+        probe_timeout="${UTM_COURT_COMMAND_TIMEOUT:-15}"
+        [ "$probe_timeout" -le "$remaining" ] || probe_timeout="$remaining"
+        UTM_COURT_COMMAND_TIMEOUT="$probe_timeout" qga_command cmd.exe /d /c exit 0 2>/dev/null && { normalized_status; exit 0; }
+        [ "$SECONDS" -ge "$deadline" ] || sleep 1
       done
       blocked "$COURT_ID Guest Agent did not become ready within ${timeout}s"
     fi
@@ -464,12 +472,20 @@ PY
       qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.ready'
     probe_dir="$(mktemp -d)"
     trap 'rm -rf "$probe_dir"' EXIT
-    for _ in $(seq 1 "$timeout"); do
+    deadline=$((SECONDS + timeout))
+    while [ "$SECONDS" -lt "$deadline" ]; do
       : >"$probe_dir/exit"
-      qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.exit' \
+      remaining=$((deadline - SECONDS))
+      transfer_timeout="${UTM_COURT_TRANSFER_TIMEOUT:-30}"
+      [ "$transfer_timeout" -le "$remaining" ] || transfer_timeout="$remaining"
+      UTM_COURT_TRANSFER_TIMEOUT="$transfer_timeout" qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.exit' \
         >"$probe_dir/exit" 2>/dev/null || true
       if [ "$(tr -d '\r\n' <"$probe_dir/exit")" = 0 ]; then
-        qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.log' \
+        remaining=$((deadline - SECONDS))
+        [ "$remaining" -gt 0 ] || break
+        transfer_timeout="${UTM_COURT_TRANSFER_TIMEOUT:-30}"
+        [ "$transfer_timeout" -le "$remaining" ] || transfer_timeout="$remaining"
+        UTM_COURT_TRANSFER_TIMEOUT="$transfer_timeout" qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.log' \
           >"$probe_dir/log" 2>/dev/null || true
         if grep -Fq "$nonce" "$probe_dir/log"; then
           qga_command schtasks.exe /delete /tn "$task_name" /f || true
@@ -484,7 +500,7 @@ PY
           exit 0
         fi
       fi
-      sleep 1
+      [ "$SECONDS" -ge "$deadline" ] || sleep 1
     done
     qga_command schtasks.exe /delete /tn "$task_name" /f || true
     blocked "$COURT_ID interactive job agent did not claim its nonce within ${timeout}s"

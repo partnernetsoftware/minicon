@@ -782,6 +782,10 @@ flowchart LR
   idle policy, and clone a stopped baseline without learning UTM command syntax.
   Windows adds `interactive-ready`: it re-establishes the logged-in desktop job
   agent and proves a nonce round trip before product bytes may run.
+  Readiness budgets are wall-clock deadlines, not retry counts: every QGA
+  command and file transfer is individually bounded by the remaining time, so
+  an unresponsive Apple-event/RPC call cannot multiply `SECONDS` by its own
+  timeout. Expiry is typed `BLOCKED`; it never becomes product evidence.
   `resources`, `lease`, and `release` make host memory part of that interface:
   a lease first stops every distinct peer UTM VM, admits the requested court,
   and release requires a final `stopped` state instead of treating suspension
@@ -954,7 +958,8 @@ flowchart LR
   evidence, never source-controlled image metadata. The product-neutral
   `scripts/utm-court-selftest.sh` fake backend proves same-VM lease reuse,
   cross-VM recovery, ordinary release, abandoned-lease reap, final stopped
-  states, and the three corresponding receipt outcomes without starting a VM.
+  states, bounded hanging QGA command/file operations, and the corresponding
+  receipt outcomes without starting a VM.
   Peer reclaim is restricted to `automation_state=ready`: a planned/provisioning
   VM may contain an interactive installer at an EULA or partitioning boundary
   and is never a disposable runtime peer. The fake backend keeps such a running
