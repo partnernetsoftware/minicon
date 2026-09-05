@@ -298,11 +298,8 @@ the window rather than being hidden to save pixels.
   real new row; it never submits by itself. The fixed-height viewport follows
   the caret row and retains horizontal sliding for long commands. Send remains
   the only submission action and converts stored breaks to terminal carriage
-  returns in order. Clipboard paste stores the same visible soft breaks as
-  Newline after folding CRLF/CR to LF and dropping unsafe controls; Send is
-  still the only submission, so a multiline paste does not execute until the
-  human confirms. Accessibility `SetTextContents` remains single-line so a
-  computed replacement cannot inject breaks the user did not see.
+  returns in order. Clipboard/accessibility paste still folds external
+  newlines to spaces so only the deliberate product action creates commands.
 - [x] keyboard submission is deliberate: bare Enter inserts the same visible
   soft newline as Newline, while `Ctrl+O` is the Send shortcut. Enter no longer
   executes a command merely because the composer is focused; the button and
@@ -314,7 +311,7 @@ the window rather than being hidden to save pixels.
   type fits the existing stacked controls without stealing draft width.
 - [x] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY. `Ctrl+A/C/V/X` provide select-all, copy,
-  bounded multiline paste and cut semantics. Every keyboard, IME, paste and
+  bounded single-line paste and cut semantics. Every keyboard, IME, paste and
   accessibility insertion shares a 64 KiB total-buffer ceiling and truncates
   only at UTF-8 boundaries. Its explicit send action is the only path that
   writes composed text to the active terminal.
@@ -380,11 +377,6 @@ the window rather than being hidden to save pixels.
   while typed failure remains visible in chrome and `ui-snapshot`. The Windows
   public journey drives `send-ui-keys Ctrl+Shift+V` against the real clipboard
   and proves PTY delivery plus final idle state.
-- [x] Human terminal paste review shows visual line breaks. The native Win32
-  editor paints a row only on CRLF, so review text is presented as CRLF after
-  dropping unsafe controls; confirmation still normalizes to CR for PTY
-  delivery. Pre-normalizing the review buffer to CR collapsed every paste
-  onto one painted line.
 
 ## Configuration
 
