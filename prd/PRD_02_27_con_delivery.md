@@ -1463,6 +1463,23 @@ interactive Linux x86 installation.
   for an interactive GUI court. A current-source AgenTerm
   `agenterm-cu page targets --pid` probe
   then resolved an owned Edge CDP endpoint and listed its page on both ISAs.
+  A later enlarged PTY rerun exposed a court-wrapper defect rather than a
+  Windows product defect: `command_bounded` supplied its Python source through
+  stdin, so every bounded `utmctl file push` received EOF and silently created
+  a zero-byte guest file. The earlier roundtrip selftest also returned a fixed
+  word independent of the upload, allowing the same bug to look green. The
+  wrapper now uses `python3 -c` so caller stdin reaches the child, and the fake
+  transport persists and returns a unique payload. A real ARM guest non-empty
+  roundtrip and nonce both pass.
+  The interactive protocol is now isolated under `agent-v2/` with a versioned
+  mutex, so a pre-upgrade worker cannot race new jobs. Readiness no longer asks
+  the worker to launch a second PowerShell for a tiny script: it atomically
+  echoes an opaque `ping.request` to `ping.response`. On emulated x86_64 the
+  Scheduled Task entered the logged-in session immediately, while the first
+  PowerShell host needed about one minute to reach the loop; after that cold
+  cost, the v2 nonce returned immediately. This separates scheduler submission,
+  first-host startup and steady-state liveness without raising the 180-second
+  wall budget.
   This
   distinguishes court readiness from product success instead of calling a
   submitted scheduler command "ready". The product job invokes the target qualifier in-process rather

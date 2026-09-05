@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Continue"
-$root = "C:\minicon-six"
+$root = "C:\minicon-six\agent-v2"
 $pending = Join-Path $root "job.pending.ps1"
 $ready = Join-Path $root "job.ready"
 $running = Join-Path $root "job.running.ps1"
@@ -7,6 +7,10 @@ $log = Join-Path $root "job.log"
 $result = Join-Path $root "job.exit"
 $logTemp = Join-Path $root "job.log.tmp"
 $resultTemp = Join-Path $root "job.exit.tmp"
+$ping = Join-Path $root "ping.request"
+$pingRunning = Join-Path $root "ping.running"
+$pong = Join-Path $root "ping.response"
+$pongTemp = Join-Path $root "ping.response.tmp"
 
 # UI Automation and GUI processes belong to an interactive desktop. A worker
 # started through QGA is in session 0 and can race the logged-in worker for the
@@ -21,7 +25,7 @@ if ($sessionId -eq 0) {
 # A named mutex makes that idempotent without killing unrelated PowerShell
 # processes in the interactive test account.
 $createdNew = $false
-$mutex = [Threading.Mutex]::new($true, "Local\MiniConUtmAgent", [ref]$createdNew)
+$mutex = [Threading.Mutex]::new($true, "Local\MiniConUtmAgentV2", [ref]$createdNew)
 if (-not $createdNew) {
     exit 0
 }
@@ -32,6 +36,20 @@ foreach ($cell in @("win-aarch64", "win-x86_64")) {
 }
 
 while ($true) {
+    # Readiness is this worker's interactive-session liveness, not the startup
+    # cost of a second PowerShell process. Claim one opaque nonce and publish
+    # the same bytes atomically; the host matches them exactly.
+    if (Test-Path -LiteralPath $ping) {
+        Remove-Item -LiteralPath $pingRunning, $pongTemp -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $ping -Destination $pingRunning -Force
+        try {
+            $nonce = [IO.File]::ReadAllText($pingRunning)
+            [IO.File]::WriteAllText($pongTemp, $nonce)
+            Move-Item -LiteralPath $pongTemp -Destination $pong -Force
+        } finally {
+            Remove-Item -LiteralPath $pingRunning, $pongTemp -Force -ErrorAction SilentlyContinue
+        }
+    }
     if ((Test-Path -LiteralPath $ready) -and
         (Test-Path -LiteralPath $pending)) {
         Remove-Item -LiteralPath $ready, $running, $log, $result, $logTemp, $resultTemp -Force -ErrorAction SilentlyContinue

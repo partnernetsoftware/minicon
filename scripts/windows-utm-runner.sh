@@ -160,8 +160,8 @@ PY
 court push "$COURT" "$runner_tmp/test-manifest.json" \
   "$GUEST_ROOT\\target\\test-manifest.json"
 
-JOB="C:\\minicon-six\\job.pending.ps1"
-READY="C:\\minicon-six\\job.ready"
+JOB="C:\\minicon-six\\agent-v2\\job.pending.ps1"
+READY="C:\\minicon-six\\agent-v2\\job.ready"
 job_id="${CELL//-/_}_${MODE}_$$_${RANDOM}"
 RESULT="C:\\minicon-six\\job-$job_id.exit"
 RESULT_TMP="$RESULT.tmp"

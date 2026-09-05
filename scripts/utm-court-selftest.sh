@@ -67,7 +67,11 @@ case "$command" in
         exit 0
         ;;
     esac
-    case "$action" in push) cat >/dev/null ;; pull) printf fixture ;; *) exit 2 ;; esac
+    case "$action" in
+      push) cat >"$state_dir/file-payload" ;;
+      pull) cat "$state_dir/file-payload" ;;
+      *) exit 2 ;;
+    esac
     ;;
   clone) ;;
   *) exit 2 ;;
@@ -96,7 +100,7 @@ court release two >/dev/null
 [ "$(cat "$scratch/state/vm-two")" = stopped ]
 [ ! -e "$scratch/service/active.json" ]
 
-printf fixture >"$scratch/input"
+printf 'roundtrip-payload-%s' "$RANDOM" >"$scratch/input"
 court push two "$scratch/input" 'C:\roundtrip\file'
 court pull two 'C:\roundtrip\file' "$scratch/roundtrip-output"
 cmp "$scratch/input" "$scratch/roundtrip-output"

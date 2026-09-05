@@ -39,9 +39,13 @@ assert 'qga_command schtasks.exe /run' in court_cli_source, "court recovery wrap
 assert 'utmctl_bounded "${UTM_COURT_COMMAND_TIMEOUT:-15}" exec "$VM" --cmd "$@"' in court_cli_source, "QGA command submission is not bounded"
 assert "schtasks.exe /delete" in court_cli_source, "court leaks its unique recovery tasks"
 assert "setup_done" not in court_cli_source, "court still carries the fragile session-0 setup receipt"
+assert "agent-v2" in court_cli_source and "ping.request" in court_cli_source and "ping.response" in court_cli_source, "court readiness still launches a nested job instead of pinging the interactive worker"
+assert 'python3 -c' in court_cli_source, "bounded command wrapper may consume file-push stdin"
 agent_source = agent_path.read_text(encoding="utf-8")
 assert "$sessionId -eq 0" in agent_source, "desktop worker does not reject QGA session 0"
-assert 'Local\\MiniConUtmAgent' in agent_source, "desktop worker lost its single-owner mutex"
+assert 'Local\\MiniConUtmAgentV2' in agent_source, "desktop worker lost its versioned single-owner mutex"
+assert "ping.request" in agent_source and "ping.response.tmp" in agent_source, "desktop worker lost its atomic liveness echo"
+assert "agent-v2" in windows_source, "Windows jobs can race the retired v1 worker"
 
 # OSX x86_64 is deliberately a host-Rosetta logical court on Apple Silicon,
 # not a planned UTM asset. Keep the UTM inventory truthful and five-VM-only.

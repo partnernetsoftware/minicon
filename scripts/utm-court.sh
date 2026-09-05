@@ -44,15 +44,16 @@ blocked() { printf 'utm-court: BLOCKED: %s\n' "$*" >&2; exit 3; }
 command_bounded() {
   timeout_seconds="$1"
   shift
-  python3 - "$timeout_seconds" "$@" <<'PY'
+  # `-c` is deliberate: a here-document would occupy this wrapper's stdin
+  # and make every `utmctl file push` publish an empty guest file.
+  python3 -c '
 import subprocess, sys
-
 try:
     completed = subprocess.run(sys.argv[2:], timeout=int(sys.argv[1]))
 except subprocess.TimeoutExpired:
     raise SystemExit(124)
 raise SystemExit(completed.returncode)
-PY
+' "$timeout_seconds" "$@"
 }
 
 utmctl_bounded() {
@@ -471,29 +472,35 @@ PY
       qga_command schtasks.exe /delete /tn "$task_name" /f || true
       blocked "$COURT_ID could not run its interactive task"
     fi
+    agent_root='C:\minicon-six\agent-v2'
     nonce="court-$COURT_ID-$$-$RANDOM"
-    printf 'Write-Output "%s"\nexit 0\n' "$nonce" |
-      qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.pending.ps1'
-    printf ready |
-      qga_file_transfer "$UTMCTL" file push "$VM" 'C:\minicon-six\job.ready'
     probe_dir="$(mktemp -d)"
     trap 'rm -rf "$probe_dir"' EXIT
+    printf '%s' "$nonce" >"$probe_dir/nonce"
     deadline=$((SECONDS + timeout))
+    published=false
     while [ "$SECONDS" -lt "$deadline" ]; do
-      : >"$probe_dir/exit"
       remaining=$((deadline - SECONDS))
       transfer_timeout="${UTM_COURT_TRANSFER_TIMEOUT:-30}"
       [ "$transfer_timeout" -le "$remaining" ] || transfer_timeout="$remaining"
-      UTM_COURT_TRANSFER_TIMEOUT="$transfer_timeout" qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.exit' \
-        >"$probe_dir/exit" 2>/dev/null || true
-      if [ "$(tr -d '\r\n' <"$probe_dir/exit")" = 0 ]; then
-        remaining=$((deadline - SECONDS))
-        [ "$remaining" -gt 0 ] || break
-        transfer_timeout="${UTM_COURT_TRANSFER_TIMEOUT:-30}"
-        [ "$transfer_timeout" -le "$remaining" ] || transfer_timeout="$remaining"
-        UTM_COURT_TRANSFER_TIMEOUT="$transfer_timeout" qga_file_transfer "$UTMCTL" file pull "$VM" 'C:\minicon-six\job.log' \
-          >"$probe_dir/log" 2>/dev/null || true
-        if grep -Fq "$nonce" "$probe_dir/log"; then
+      if UTM_COURT_TRANSFER_TIMEOUT="$transfer_timeout" qga_file_transfer "$UTMCTL" file push "$VM" "$agent_root\ping.request" <"$probe_dir/nonce" 2>/dev/null; then
+        published=true
+        break
+      fi
+      [ "$SECONDS" -ge "$deadline" ] || sleep 1
+    done
+    if [ "$published" != true ]; then
+      qga_command schtasks.exe /delete /tn "$task_name" /f || true
+      blocked "$COURT_ID interactive agent did not publish its protocol root within ${timeout}s"
+    fi
+    while [ "$SECONDS" -lt "$deadline" ]; do
+      : >"$probe_dir/pong"
+      remaining=$((deadline - SECONDS))
+      transfer_timeout="${UTM_COURT_TRANSFER_TIMEOUT:-30}"
+      [ "$transfer_timeout" -le "$remaining" ] || transfer_timeout="$remaining"
+      UTM_COURT_TRANSFER_TIMEOUT="$transfer_timeout" qga_file_transfer "$UTMCTL" file pull "$VM" "$agent_root\ping.response" \
+        >"$probe_dir/pong" 2>/dev/null || true
+      if [ "$(cat "$probe_dir/pong")" = "$nonce" ]; then
           qga_command schtasks.exe /delete /tn "$task_name" /f || true
           python3 - "$COURT_JSON" "$nonce" <<'PY'
 import json, sys
@@ -504,7 +511,6 @@ print(json.dumps({
 }, separators=(",", ":"), sort_keys=True))
 PY
           exit 0
-        fi
       fi
       [ "$SECONDS" -ge "$deadline" ] || sleep 1
     done
