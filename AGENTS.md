@@ -45,9 +45,10 @@ Preserve these invariants:
 Local UTM and optional Lima courts are not MiniCon product code. Lifecycle,
 guest adapters and image recipes live in sibling `utm-court`
 (`partnernetsoftware/utm-court`). MiniCon calls those CLIs from
-`scripts/*-utm-runner.sh` and `scripts/lima-court.sh`. Missing court is a
-locator failure or `BLOCKED`, never a skipped PASS. Sequencing:
-`plan/plan-utm-court-extract.md`.
+`scripts/*-utm-runner.sh` and `scripts/lima-court.sh`. AgenTerm has its own
+caller and must not be routed through MiniCon scripts. Missing court is a
+locator failure or `BLOCKED`, never a skipped PASS. Caller map:
+`~/repos/utm-court/CALLERS.md`. Sequencing: `plan/plan-utm-court-extract.md`.
 
 ## Development and delivery
 

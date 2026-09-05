@@ -464,7 +464,7 @@ pub fn cut(state: &mut ComposerState) -> Option<String> {
 }
 
 pub fn paste(state: &mut ComposerState, text: &str) {
-    let normalized = normalize_single_line(text);
+    let normalized = normalize_composer_paste(text);
     if !normalized.is_empty() {
         insert(state, &normalized);
     }
@@ -531,6 +531,84 @@ fn normalize_single_line(text: &str) -> String {
         normalized.push(character);
     }
     normalized
+}
+
+/// Clipboard paste for the composer: CRLF/CR become the same stored LF the
+/// Newline action inserts, tabs stay, and every other control is dropped.
+///
+/// Folding breaks to spaces made a multiline paste paint as one command. Send
+/// is still the only submission, so keeping the breaks does not execute them.
+fn normalize_composer_paste(text: &str) -> String {
+    normalize_paste_chars(text, NewlineForm::Lf, PASTE_LIMIT_BYTES)
+}
+
+/// Human-facing terminal paste review. Win32 multiline EDIT paints a new row
+/// only on CRLF; LF or CR alone collapses onto one line. Delivery still goes
+/// through PTY normalization, which accepts CRLF.
+pub fn paste_review_display_text(text: &str) -> String {
+    normalize_paste_chars(text, NewlineForm::CrLf, usize::MAX)
+}
+
+#[derive(Clone, Copy)]
+enum NewlineForm {
+    Lf,
+    CrLf,
+}
+
+fn normalize_paste_chars(text: &str, newline: NewlineForm, limit: usize) -> String {
+    let mut normalized = String::with_capacity(text.len().min(limit));
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\r' => {
+                if characters.peek() == Some(&'\n') {
+                    characters.next();
+                }
+                if !push_newline(&mut normalized, newline, limit) {
+                    break;
+                }
+            }
+            '\n' => {
+                if !push_newline(&mut normalized, newline, limit) {
+                    break;
+                }
+            }
+            '\t' => {
+                if !push_bounded(&mut normalized, '\t', limit) {
+                    break;
+                }
+            }
+            value if value.is_control() => {}
+            value => {
+                if !push_bounded(&mut normalized, value, limit) {
+                    break;
+                }
+            }
+        }
+    }
+    normalized
+}
+
+fn push_newline(normalized: &mut String, newline: NewlineForm, limit: usize) -> bool {
+    match newline {
+        NewlineForm::Lf => push_bounded(normalized, '\n', limit),
+        NewlineForm::CrLf => {
+            if normalized.len().saturating_add(2) > limit {
+                return false;
+            }
+            normalized.push('\r');
+            normalized.push('\n');
+            true
+        }
+    }
+}
+
+fn push_bounded(normalized: &mut String, character: char, limit: usize) -> bool {
+    if normalized.len().saturating_add(character.len_utf8()) > limit {
+        return false;
+    }
+    normalized.push(character);
+    true
 }
 
 #[cfg(test)]
@@ -935,12 +1013,22 @@ mod tests {
     }
 
     #[test]
-    fn paste_is_single_line_bounded_and_filters_controls() {
+    fn paste_keeps_soft_newlines_and_filters_controls() {
         let mut composer = state("replace");
         select_all(&mut composer);
-        paste(&mut composer, "a\r\nb\t\u{1b}c");
-        assert_eq!(composer.text, "a b c");
+        paste(&mut composer, "a\r\nb\t\u{1b}c\nd");
+        assert_eq!(composer.text, "a\nb\tc\nd");
+        assert_eq!(line_count(&composer.text), 3);
         assert!(!composer.select_all);
+    }
+
+    #[test]
+    fn paste_review_display_uses_crlf_so_native_editors_paint_rows() {
+        assert_eq!(
+            paste_review_display_text("a\nb\r\nc\rd\t\u{1b}e"),
+            "a\r\nb\r\nc\r\nd\te"
+        );
+        assert_eq!(paste_review_display_text("\u{1b}"), "");
     }
 
     #[test]

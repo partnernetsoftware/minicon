@@ -13,12 +13,14 @@ minicon_utm_court_cli() {
     grep -q 'Uniform, product-neutral lifecycle' "$1" 2>/dev/null
   }
 
-  if [ -n "${MINICON_UTM_COURT_CLI:-}" ] && ! _minicon_utm_court_is_trampoline "$MINICON_UTM_COURT_CLI"; then
-    if _minicon_utm_court_is_real "$MINICON_UTM_COURT_CLI" || [ -x "$MINICON_UTM_COURT_CLI" ]; then
-      printf '%s\n' "$MINICON_UTM_COURT_CLI"
-      return 0
+  for _override in "${UTM_COURT_CLI:-}" "${MINICON_UTM_COURT_CLI:-}"; do
+    if [ -n "$_override" ] && ! _minicon_utm_court_is_trampoline "$_override"; then
+      if _minicon_utm_court_is_real "$_override" || [ -x "$_override" ]; then
+        printf '%s\n' "$_override"
+        return 0
+      fi
     fi
-  fi
+  done
   if _minicon_utm_court_is_real "${UTM_COURT_HOME:-}/bin/utm-court"; then
     printf '%s\n' "$UTM_COURT_HOME/bin/utm-court"
     return 0

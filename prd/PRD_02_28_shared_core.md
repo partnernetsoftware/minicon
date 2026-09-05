@@ -41,9 +41,9 @@ not a thing to duplicate; it is a thing to draw the line against.
 
 ## Stage 1 — shipped
 
-- [x] `crates/minicon-core` contains `composer` and `json`: single-line editing
-  with a caret and wide-character measurement, and a bounded JSON codec. Both
-  are ordinary data and arithmetic.
+- [x] `crates/minicon-core` contains `composer` and `json`: multiline composer
+  editing with a caret and wide-character measurement, and a bounded JSON codec.
+  Both are ordinary data and arithmetic.
 - [x] the crate has **no platform, OS, window or terminal-backend dependency,
   and no `cfg` on architecture or operating system anywhere**. That is what
   makes it consumable without dragging a platform layer along.

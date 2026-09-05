@@ -17,6 +17,8 @@ printf '#!/bin/bash\nexit 0\n' >"$scratch/court"
 chmod +x "$scratch/court"
 found="$(MINICON_UTM_COURT_CLI="$scratch/court" minicon_utm_court_cli)"
 [ "$found" = "$scratch/court" ]
+found="$(UTM_COURT_CLI="$scratch/court" MINICON_UTM_COURT_CLI= minicon_utm_court_cli)"
+[ "$found" = "$scratch/court" ]
 
 "$SCRIPT_DIR/../utm-court.sh" help | grep -q 'windows-root'
 "$SCRIPT_DIR/../utm-court.sh" help | grep -q 'prepare-macos'
