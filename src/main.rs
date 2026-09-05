@@ -2147,16 +2147,18 @@ impl ConApp {
         let result = result
             .map_err(|error| format!("clipboard read failed: {error}"))
             .and_then(|text| {
-                let text = terminal_input::normalize_terminal_paste(&text);
-                if text.is_empty() {
-                    return Err("clipboard text contains no pasteable characters".to_owned());
-                }
                 if pending.review {
-                    // Hands the text to the human and returns immediately. The
-                    // event loop keeps running while the review is open, so the
-                    // terminal keeps drawing and the control endpoint keeps
-                    // answering; completion arrives through `try_poll`.
-                    match self.open_terminal_paste_review(window, pending.target, &text) {
+                    // Hands CRLF text to the human and returns immediately.
+                    // PTY normalization uses CR, and a Win32 multiline EDIT
+                    // paints a new row only on CRLF — feeding it CR collapsed
+                    // every paste onto one line. The event loop keeps running
+                    // while the review is open; completion arrives through
+                    // `try_poll`.
+                    let display = composer::paste_review_display_text(&text);
+                    if display.is_empty() {
+                        return Err("clipboard text contains no pasteable characters".to_owned());
+                    }
+                    match self.open_terminal_paste_review(window, pending.target, &display) {
                         // A host with no native review has always delivered
                         // this paste directly. Refusing it here would turn a
                         // Windows freeze fix into a Linux/macOS regression, so
@@ -2167,6 +2169,10 @@ impl ConApp {
                         Err(PasteReviewRefusal::Failed(error)) => return Err(error),
                         Ok(()) => return Ok(()),
                     }
+                }
+                let text = terminal_input::normalize_terminal_paste(&text);
+                if text.is_empty() {
+                    return Err("clipboard text contains no pasteable characters".to_owned());
                 }
                 self.deliver_terminal_paste(pending.target, &text)
             });
@@ -6943,6 +6949,25 @@ mod tests {
             terminal_input::key_event_to_bytes(&up, mode),
             Some(b"\x1bOA".to_vec()),
             "DECCKM must switch cursor keys to SS3"
+        );
+    }
+
+    #[test]
+    fn paste_review_keeps_visual_line_breaks_until_pty_delivery() {
+        let clipboard = "first\nsecond\r\nthird";
+        assert_eq!(
+            composer::paste_review_display_text(clipboard),
+            "first\r\nsecond\r\nthird"
+        );
+        assert_eq!(
+            terminal_input::normalize_terminal_paste(clipboard),
+            "first\rsecond\rthird"
+        );
+        assert_eq!(
+            terminal_input::normalize_terminal_paste(&composer::paste_review_display_text(
+                clipboard
+            )),
+            "first\rsecond\rthird"
         );
     }
 
