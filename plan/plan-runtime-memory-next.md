@@ -274,3 +274,22 @@ The screenshot repair is committed. Startup attribution continues, and the
 Windows owner is rerunning an independently identified release artifact after
 isolating a hanging harness's process/log-handle wait. Native macOS probes do
 not occupy the Windows UTM lease; neither track waits for another authorization.
+
+
+### Writing Tools startup attribution and pending compatibility choice
+
+The combined-stage follow-up now has a sampled call chain and a causal
+negative control: `finishLaunching` customizes the main menu, probes
+`NSTextView._supportsWritingTools`, and dlopens WritingToolsUI. Public menu
+and custom-view opt-outs leave a 22.578 MiB external increment intact.
+A research-only private return-NO control removes that load. On the actual
+frozen MiniCon, both public GUI/RSS tests pass in both arms, with idle
+78.141→60.500 MiB (one pair). This private method is not a supported contract;
+it is not enabled in production. The user has been asked to choose whether a
+guarded temporary private adaptation is acceptable. The outstanding choice
+does not pause Windows allocation or sharedApplication initialization work.
+
+Evidence owner: `plan/research-external-residency-next.md`. A local upstream
+reproduction draft is `research/frame-lifetime/WRITING_TOOLS_REPRO.md`; it has
+not been sent or published. The earlier global-class-list hypothesis is not
+claimed as the measured mechanism. Even the private treatment misses 10 MiB.

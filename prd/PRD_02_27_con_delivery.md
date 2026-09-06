@@ -410,6 +410,16 @@ six-cell claim.
   optimization. Controls, native-stage comparisons and observer limitations:
   `plan/research-rss-ledger.md`. All resident components remain in the product
   RSS criterion; OS initialization and display residency remain open owners.
+- [~] **AppKit Writing Tools startup load is causally identified, not yet a
+  supported product repair.** Native `finishLaunching` probes Writing Tools
+  support while customizing the main menu, then loads WritingToolsUI. Public
+  context-menu and text-view opt-outs leave the 22.578 MiB external increment.
+  An isolated private-method negative control removes it. Actual frozen
+  MiniCon with the same observer in both arms measures idle 78.141 versus
+  60.500 MiB; both public GUI/RSS tests pass. This one-pair private experiment
+  is not enabled in production and still exceeds 10 MiB. The compatibility
+  choice is pending while independent initialization/allocation work continues.
+  Owner and exact receipts: `plan/research-external-residency-next.md`.
 - [~] osx, lnx and win name host RSS through the same black-box court. Native
   osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
   exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode
@@ -422,16 +432,17 @@ six-cell claim.
   10 MiB intent, an order of magnitude below macOS, consistent with GDI not
   `Box::leak`ing whole TTC files. lnx-aarch64 UTM remains `BLOCKED` (QGA
   `file push` EXIT 124 / transfer timeout); that is not a MiniCon RSS PASS.
-  A separate **win-aarch64 release** court now names source `3419d46`, shared
+  A separate **win-aarch64 release** court now names source `e6cd7b0`, shared
   pin `745f52b2`, and PE SHA-256
   `d2d08ce7600dfcc73b6b1002f73aef38bc9c4c28545198d403bafb96b4f47ecd`:
-  idle **21.45 MiB** (22,495,232 B), load 22.13 MiB, extra-tab delta 1.67 MiB,
-  four-cycle growth 9.86 MiB. Test body and job wrapper both return success
+  idle **21.46 MiB** (22,507,520 B), load 22.02 MiB, extra-tab delta 1.54 MiB,
+  four-cycle growth 9.13 MiB. Test body and job wrapper both return success
   after keeping the harness process handle and reading its actual exit code;
   null exit codes fail explicitly. Earlier coerced-null wrapper results are
   not wrapper-success evidence. A hung job's 33,620 K working set is not this
   idle measurement. Exact final log:
-  `target/windows-memory/rss-exitcode-handle.host.log`; durable owner:
+  `target/windows-memory/rss-exitmeta.host.log` includes explicit
+  `HasExited=True` and `ExitCode_raw=0`; durable owner:
   `plan/research-windows-memory.md`. This release remains above 10 MiB, and
   neither this Windows cell nor macOS fills any unavailable Linux cell.
 
