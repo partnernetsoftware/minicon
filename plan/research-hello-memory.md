@@ -203,3 +203,103 @@ code or Cargo dependency was changed by this research track.
 
 Probe source and compact numeric results are retained in `research/hello-memory/`;
 generated binaries and detailed native dumps remain in `target/hello-memory-track/`.
+
+## Follow-up: separate class, instance and component initialization
+
+After integration `80d3964`, research-only probes narrowed the first 18 MiB
+increase. Each value below is a three-process median on the same macOS host.
+The staged process pauses on stdin while the parent samples RSS two seconds
+later; it creates no windows. The comparison either retains initialization
+objects in an outer autorelease pool or drains a nested pool after each stage.
+
+| Completed stage | Retain pool, MiB | Drain each stage, MiB |
+|---|---:|---:|
+| Foundation autorelease pool | 8.188 | 8.188 |
+| `NSApplication.sharedApplication` | 26.609 | 26.578 |
+| Accessory activation policy | 26.688 | 26.609 |
+| `finishLaunching` | 27.266 | 27.234 |
+| Dispatch events | 31.234 | 31.219 |
+| Drain outer pool | 31.234 | 31.219 |
+
+Explicit pool draining does not recover the large increment. Accessory policy
+is also not the principal trigger. First-run shared-application diagnostics
+show about 1.15 MiB of live malloc allocations and 6.08 MiB footprint; neither
+supports calling the roughly 18 MiB RSS increment a heap leak.
+
+Fresh-process class/locale probes further separate Objective-C `+initialize`
+from application instance creation. Sending the inherited public
+`instancesRespondToSelector:` message to `NSApplication` triggers class
+initialization without requesting a shared application instance.
+
+| Probe | RSS MiB |
+|---|---:|
+| Cocoa linked | 8.172 |
+| Fixed `en_US_POSIX` locale | 8.797 |
+| Current locale | 10.031 |
+| `NSApplication` class initialization only | 11.000 |
+| Shared application plus accessory policy | 26.688 |
+
+An instrumented `malloc_history -allBySize` run identifies locale prewarming
+under `+[NSApplication initialize]`, including an ICU file mapping, and system
+appearance registration under `-[NSApplication init]`, including CoreUI asset
+mappings. These are triggers, not RSS-sized allocations: in particular, the
+35,454,976-byte ICU `mmap` is virtual mapping length and must not be reported
+as a 34 MiB resident leak. Locale-only measurements rule out charging the
+whole application increment to locale prewarming.
+
+Independent component probes start with the same application class
+initialization, then call one public API, without creating an application
+instance or window:
+
+| Component after class initialization | RSS MiB |
+|---|---:|
+| Class initialization baseline | 11.031 |
+| Named Dark Aqua appearance | 13.375 |
+| Screen enumeration | 16.422 |
+| Workspace singleton | 10.984 |
+| General pasteboard | 10.984 |
+| System font, 12 pt | 14.047 |
+| Full shared application plus accessory policy | 26.625 |
+
+Screen discovery is a reproducible roughly 5.4 MiB isolated increment;
+appearance roughly 2.3 MiB and font setup roughly 3.0 MiB. These may overlap
+and must not be summed into an exact account of the application instance.
+The existing user's appearance is not changed; the appearance probe requests
+a named object only. No production shortcut, private API, lifecycle override,
+menu removal or text-input change is accepted from these measurements.
+
+Reproduce from the repository root:
+
+```sh
+python3 research/hello-memory/run-init-stages.py
+python3 research/hello-memory/run-locale.py
+INIT_COMPONENTS=1 python3 research/hello-memory/run-locale.py
+```
+
+Compact samples: `research/hello-memory/init-results.json`,
+`locale-results.json`, `component-results.json`. Detailed local diagnostics:
+`target/hello-memory-init/`, including `app-init-stacks.txt`; component logs:
+`target/hello-memory-components.log`. The product binary and pin are unchanged.
+
+### Menu construction is more specific than installing an empty menu
+
+A further three-run comparison keeps the standard Hello window and varies
+only menu setup (modern-design probe, no compatibility plist):
+
+| Menu setup | RSS MiB |
+|---|---:|
+| No menu | 49.828 |
+| Install empty `NSMenu` | 49.797 |
+| Empty menu plus `NSMenuItem` class initialization | 49.750 |
+| Menu with ordinary Quit text item and Cmd+Q equivalent | 72.609 |
+| Menu with separator item | 76.344 |
+
+The large trigger is item construction, not merely setting the main menu or
+initializing the menu-item class. A separator adds more in this isolated
+probe than an ordinary text item. This motivates a MiniCon comparison that
+removes only separator items while retaining all commands and shortcuts;
+it does not justify removing the native menu or claiming the 3.7 MiB
+standalone difference is an additive product saving.
+
+Reproduce: `INIT_MENUS=1 python3 research/hello-memory/run-locale.py`.
+Compact samples: `research/hello-memory/menu-stage-results.json`.

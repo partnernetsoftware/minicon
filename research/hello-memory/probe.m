@@ -6,6 +6,18 @@ int main(int argc, const char **argv) {
  if(!strcmp(mode,"linked")){puts("READY");fflush(stdout);sleep(120);return 0;}
  @autoreleasepool {
   if(!strcmp(mode,"foundation")){(void)[NSDate date]; puts("READY");fflush(stdout);sleep(120);return 0;}
+  if(!strcmp(mode,"locale-current")) { (void)NSLocale.currentLocale; puts("READY");fflush(stdout);sleep(120);return 0; }
+  if(!strcmp(mode,"locale-fixed")) { (void)[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]; puts("READY");fflush(stdout);sleep(120);return 0; }
+  if(!strcmp(mode,"app-class")) { (void)[NSApplication instancesRespondToSelector:@selector(run)]; puts("READY");fflush(stdout);sleep(120);return 0; }
+  if(!strncmp(mode,"component-",10)) {
+   (void)[NSApplication instancesRespondToSelector:@selector(run)];
+   if(!strcmp(mode,"component-appearance")) (void)[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+   if(!strcmp(mode,"component-screen")) (void)NSScreen.screens;
+   if(!strcmp(mode,"component-workspace")) (void)NSWorkspace.sharedWorkspace;
+   if(!strcmp(mode,"component-pasteboard")) (void)NSPasteboard.generalPasteboard;
+   if(!strcmp(mode,"component-font")) (void)[NSFont systemFontOfSize:12];
+   puts("READY");fflush(stdout);sleep(120);return 0;
+  }
   NSApplication *app=NSApplication.sharedApplication;
   [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
   if(!strcmp(mode,"app-init")){puts("READY");fflush(stdout);sleep(120);return 0;}
@@ -35,7 +47,13 @@ int main(int argc, const char **argv) {
    }
    if(!strstr(mode,"hidden")) [window orderFront:nil];
   }
-  if(strstr(mode,"menu")) { NSMenu *menu=[[NSMenu alloc] initWithTitle:@"Memory research"]; [menu addItem:[NSMenuItem separatorItem]]; [app setMainMenu:menu]; }
+  if(strstr(mode,"menu")) {
+   NSMenu *menu=[[NSMenu alloc] initWithTitle:@"Memory research"];
+   if(strstr(mode,"menu-text")) [menu addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"];
+   else if(strstr(mode,"menu-class")) (void)[NSMenuItem instancesRespondToSelector:@selector(title)];
+   else if(!strstr(mode,"menu-empty")) [menu addItem:[NSMenuItem separatorItem]];
+   [app setMainMenu:menu];
+  }
   if(strcmp(mode,"app-loop") && !strstr(mode,"nofinish")) [app finishLaunching];
   puts("READY");fflush(stdout);
   for(int i=0;i<1200;i++){

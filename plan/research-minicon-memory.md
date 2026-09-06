@@ -148,3 +148,36 @@ The reproducible probe is retained as `research/minicon-memory/probe.py`
 (defaults to `target/release/minicon`; set `TRACK_BINARY` for an exact comparison).
 The rejected lazy-input-context prototype is preserved as a research-only patch.
 It is not included in production dependencies.
+
+## Follow-up: default-menu separators do not explain remaining RSS
+
+The native Hello menu-stage probe found a separator-only menu at 76.34 MiB,
+versus an ordinary Quit item at 72.61 MiB. A product experiment therefore
+removed only the two separator items from registry winit 0.30.13's default
+menu, retaining About, Services, Hide, Hide Others, Show All, Quit and their
+selectors/modifiers. It used an ignored local copy and a command-line Cargo
+patch; no production dependency or source override remains.
+
+Three alternating fresh-process release runs, the same `--no-activate`
+80×24 `/bin/cat` startup and a sample three seconds after public `ui-snapshot`:
+
+| Artifact | Three RSS samples, MiB | Median MiB |
+|---|---|---:|
+| Integrated `80d3964` baseline | 79.656, 78.750, 78.750 | 78.750 |
+| Default menu without separator items | 78.656, 78.750, 78.891 | 78.750 |
+
+There is **no reproducible product saving**. The isolated native menu
+comparison cannot be added to the actual terminal's savings; initialization
+costs overlap. The experiment is rejected, so no native menu behavior change
+or new winit fork is introduced. No keyboard/IME qualification is claimed for
+the rejected artifact. The baseline source, Cargo lock and release artifact
+are restored; the product target remains 10 MiB RSS.
+
+Retained reproduction inputs: `research/minicon-memory/no-separators.patch`
+(applies to winit 0.30.13), `menu-comparison.py`, and `menu-results.json` with
+both artifact SHA-256 values. To repeat, freeze the integrated release as
+`target/minicon-menu-probe/baseline`, build an isolated patched winit artifact
+as `target/minicon-menu-probe/no-separators`, then run
+`python3 research/minicon-memory/menu-comparison.py`. Detailed logs remain in
+`target/minicon-menu-probe/`. Never leave the experimental Cargo patch or
+artifact in the production build after measurement.

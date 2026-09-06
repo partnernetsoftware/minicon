@@ -1,0 +1,77 @@
+[
+  {
+    "mode": "hello",
+    "repeat": 0,
+    "rss_bytes": 52625408
+  },
+  {
+    "mode": "hello-menu-empty",
+    "repeat": 0,
+    "rss_bytes": 52215808
+  },
+  {
+    "mode": "hello-menu-class",
+    "repeat": 0,
+    "rss_bytes": 52346880
+  },
+  {
+    "mode": "hello-menu-text",
+    "repeat": 0,
+    "rss_bytes": 76365824
+  },
+  {
+    "mode": "hello-menu",
+    "repeat": 0,
+    "rss_bytes": 80216064
+  },
+  {
+    "mode": "hello",
+    "repeat": 1,
+    "rss_bytes": 52248576
+  },
+  {
+    "mode": "hello-menu-empty",
+    "repeat": 1,
+    "rss_bytes": 52297728
+  },
+  {
+    "mode": "hello-menu-class",
+    "repeat": 1,
+    "rss_bytes": 52166656
+  },
+  {
+    "mode": "hello-menu-text",
+    "repeat": 1,
+    "rss_bytes": 75939840
+  },
+  {
+    "mode": "hello-menu",
+    "repeat": 1,
+    "rss_bytes": 80052224
+  },
+  {
+    "mode": "hello",
+    "repeat": 2,
+    "rss_bytes": 52166656
+  },
+  {
+    "mode": "hello-menu-empty",
+    "repeat": 2,
+    "rss_bytes": 52051968
+  },
+  {
+    "mode": "hello-menu-class",
+    "repeat": 2,
+    "rss_bytes": 52133888
+  },
+  {
+    "mode": "hello-menu-text",
+    "repeat": 2,
+    "rss_bytes": 76136448
+  },
+  {
+    "mode": "hello-menu",
+    "repeat": 2,
+    "rss_bytes": 79937536
+  }
+]

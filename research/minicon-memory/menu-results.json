@@ -1,0 +1,38 @@
+[
+  {
+    "variant": "baseline",
+    "repeat": 0,
+    "rss_bytes": 83525632,
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527"
+  },
+  {
+    "variant": "no-separators",
+    "repeat": 0,
+    "rss_bytes": 82477056,
+    "sha256": "72a884dc2f814d6488ca38acab36d94ea5b772cdfb2452ab119f33b181c375e4"
+  },
+  {
+    "variant": "baseline",
+    "repeat": 1,
+    "rss_bytes": 82575360,
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527"
+  },
+  {
+    "variant": "no-separators",
+    "repeat": 1,
+    "rss_bytes": 82575360,
+    "sha256": "72a884dc2f814d6488ca38acab36d94ea5b772cdfb2452ab119f33b181c375e4"
+  },
+  {
+    "variant": "baseline",
+    "repeat": 2,
+    "rss_bytes": 82575360,
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527"
+  },
+  {
+    "variant": "no-separators",
+    "repeat": 2,
+    "rss_bytes": 82722816,
+    "sha256": "72a884dc2f814d6488ca38acab36d94ea5b772cdfb2452ab119f33b181c375e4"
+  }
+]

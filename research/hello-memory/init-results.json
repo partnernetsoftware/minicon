@@ -1,0 +1,218 @@
+[
+  {
+    "variant": "retain",
+    "repeat": 0,
+    "stage": "foundation-pool",
+    "rss_bytes": 8585216
+  },
+  {
+    "variant": "retain",
+    "repeat": 0,
+    "stage": "shared-application",
+    "rss_bytes": 27951104
+  },
+  {
+    "variant": "retain",
+    "repeat": 0,
+    "stage": "accessory-policy",
+    "rss_bytes": 27983872
+  },
+  {
+    "variant": "retain",
+    "repeat": 0,
+    "stage": "finish-launching",
+    "rss_bytes": 28639232
+  },
+  {
+    "variant": "retain",
+    "repeat": 0,
+    "stage": "dispatch-events",
+    "rss_bytes": 32751616
+  },
+  {
+    "variant": "retain",
+    "repeat": 0,
+    "stage": "outer-pool-drained",
+    "rss_bytes": 32751616
+  },
+  {
+    "variant": "drain",
+    "repeat": 0,
+    "stage": "foundation-pool",
+    "rss_bytes": 8585216
+  },
+  {
+    "variant": "drain",
+    "repeat": 0,
+    "stage": "shared-application",
+    "rss_bytes": 27869184
+  },
+  {
+    "variant": "drain",
+    "repeat": 0,
+    "stage": "accessory-policy",
+    "rss_bytes": 27901952
+  },
+  {
+    "variant": "drain",
+    "repeat": 0,
+    "stage": "finish-launching",
+    "rss_bytes": 28557312
+  },
+  {
+    "variant": "drain",
+    "repeat": 0,
+    "stage": "dispatch-events",
+    "rss_bytes": 32735232
+  },
+  {
+    "variant": "drain",
+    "repeat": 0,
+    "stage": "outer-pool-drained",
+    "rss_bytes": 32735232
+  },
+  {
+    "variant": "retain",
+    "repeat": 1,
+    "stage": "foundation-pool",
+    "rss_bytes": 8585216
+  },
+  {
+    "variant": "retain",
+    "repeat": 1,
+    "stage": "shared-application",
+    "rss_bytes": 27901952
+  },
+  {
+    "variant": "retain",
+    "repeat": 1,
+    "stage": "accessory-policy",
+    "rss_bytes": 27983872
+  },
+  {
+    "variant": "retain",
+    "repeat": 1,
+    "stage": "finish-launching",
+    "rss_bytes": 28590080
+  },
+  {
+    "variant": "retain",
+    "repeat": 1,
+    "stage": "dispatch-events",
+    "rss_bytes": 32849920
+  },
+  {
+    "variant": "retain",
+    "repeat": 1,
+    "stage": "outer-pool-drained",
+    "rss_bytes": 32849920
+  },
+  {
+    "variant": "drain",
+    "repeat": 1,
+    "stage": "foundation-pool",
+    "rss_bytes": 8585216
+  },
+  {
+    "variant": "drain",
+    "repeat": 1,
+    "stage": "shared-application",
+    "rss_bytes": 27836416
+  },
+  {
+    "variant": "drain",
+    "repeat": 1,
+    "stage": "accessory-policy",
+    "rss_bytes": 27901952
+  },
+  {
+    "variant": "drain",
+    "repeat": 1,
+    "stage": "finish-launching",
+    "rss_bytes": 28508160
+  },
+  {
+    "variant": "drain",
+    "repeat": 1,
+    "stage": "dispatch-events",
+    "rss_bytes": 32702464
+  },
+  {
+    "variant": "drain",
+    "repeat": 1,
+    "stage": "outer-pool-drained",
+    "rss_bytes": 32702464
+  },
+  {
+    "variant": "retain",
+    "repeat": 2,
+    "stage": "foundation-pool",
+    "rss_bytes": 8585216
+  },
+  {
+    "variant": "retain",
+    "repeat": 2,
+    "stage": "shared-application",
+    "rss_bytes": 27901952
+  },
+  {
+    "variant": "retain",
+    "repeat": 2,
+    "stage": "accessory-policy",
+    "rss_bytes": 27951104
+  },
+  {
+    "variant": "retain",
+    "repeat": 2,
+    "stage": "finish-launching",
+    "rss_bytes": 28557312
+  },
+  {
+    "variant": "retain",
+    "repeat": 2,
+    "stage": "dispatch-events",
+    "rss_bytes": 32718848
+  },
+  {
+    "variant": "retain",
+    "repeat": 2,
+    "stage": "outer-pool-drained",
+    "rss_bytes": 32718848
+  },
+  {
+    "variant": "drain",
+    "repeat": 2,
+    "stage": "foundation-pool",
+    "rss_bytes": 8585216
+  },
+  {
+    "variant": "drain",
+    "repeat": 2,
+    "stage": "shared-application",
+    "rss_bytes": 28000256
+  },
+  {
+    "variant": "drain",
+    "repeat": 2,
+    "stage": "accessory-policy",
+    "rss_bytes": 28049408
+  },
+  {
+    "variant": "drain",
+    "repeat": 2,
+    "stage": "finish-launching",
+    "rss_bytes": 28655616
+  },
+  {
+    "variant": "drain",
+    "repeat": 2,
+    "stage": "dispatch-events",
+    "rss_bytes": 32800768
+  },
+  {
+    "variant": "drain",
+    "repeat": 2,
+    "stage": "outer-pool-drained",
+    "rss_bytes": 32800768
+  }
+]

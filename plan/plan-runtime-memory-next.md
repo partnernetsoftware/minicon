@@ -106,6 +106,16 @@ Do not add these without new evidence:
 - Explicit CATransaction flush gave a 78.03 MiB single startup sample, within
   baseline variation. No repeatable gain established, so it was removed.
 
+- Default-menu separator removal: the isolated Hello result did not transfer
+  to MiniCon. Three alternating product samples had identical 78.75 MiB
+  medians with and without separators. Prototype rejected and registry winit
+  restored; commands/shortcuts were not removed from production.
+- Autorelease-pool draining around native initialization changes only about
+  0.03 MiB. Application class initialization is around 11 MiB; the shared
+  instance reaches about 26.6 MiB. Component probes identify screen discovery,
+  appearance and font setup as measurable triggers, with overlap still
+  unresolved. Details and compact numeric receipts are in the two reports.
+
 ## Two research owners
 
 - [Native GUI baseline](research-hello-memory.md): staged libc/Cocoa/AppKit,

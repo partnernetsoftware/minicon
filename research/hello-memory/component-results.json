@@ -1,0 +1,107 @@
+[
+  {
+    "mode": "app-class",
+    "repeat": 0,
+    "rss_bytes": 11567104
+  },
+  {
+    "mode": "component-appearance",
+    "repeat": 0,
+    "rss_bytes": 14073856
+  },
+  {
+    "mode": "component-screen",
+    "repeat": 0,
+    "rss_bytes": 17170432
+  },
+  {
+    "mode": "component-workspace",
+    "repeat": 0,
+    "rss_bytes": 11517952
+  },
+  {
+    "mode": "component-pasteboard",
+    "repeat": 0,
+    "rss_bytes": 11517952
+  },
+  {
+    "mode": "component-font",
+    "repeat": 0,
+    "rss_bytes": 14729216
+  },
+  {
+    "mode": "app-init",
+    "repeat": 0,
+    "rss_bytes": 27918336
+  },
+  {
+    "mode": "app-class",
+    "repeat": 1,
+    "rss_bytes": 11567104
+  },
+  {
+    "mode": "component-appearance",
+    "repeat": 1,
+    "rss_bytes": 14024704
+  },
+  {
+    "mode": "component-screen",
+    "repeat": 1,
+    "rss_bytes": 17219584
+  },
+  {
+    "mode": "component-workspace",
+    "repeat": 1,
+    "rss_bytes": 11517952
+  },
+  {
+    "mode": "component-pasteboard",
+    "repeat": 1,
+    "rss_bytes": 11517952
+  },
+  {
+    "mode": "component-font",
+    "repeat": 1,
+    "rss_bytes": 14729216
+  },
+  {
+    "mode": "app-init",
+    "repeat": 1,
+    "rss_bytes": 27901952
+  },
+  {
+    "mode": "app-class",
+    "repeat": 2,
+    "rss_bytes": 11517952
+  },
+  {
+    "mode": "component-appearance",
+    "repeat": 2,
+    "rss_bytes": 14024704
+  },
+  {
+    "mode": "component-screen",
+    "repeat": 2,
+    "rss_bytes": 17285120
+  },
+  {
+    "mode": "component-workspace",
+    "repeat": 2,
+    "rss_bytes": 11534336
+  },
+  {
+    "mode": "component-pasteboard",
+    "repeat": 2,
+    "rss_bytes": 11501568
+  },
+  {
+    "mode": "component-font",
+    "repeat": 2,
+    "rss_bytes": 14729216
+  },
+  {
+    "mode": "app-init",
+    "repeat": 2,
+    "rss_bytes": 28000256
+  }
+]
