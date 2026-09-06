@@ -445,6 +445,18 @@ six-cell claim.
   `HasExited=True` and `ExitCode_raw=0`; durable owner:
   `plan/research-windows-memory.md`. This release remains above 10 MiB, and
   neither this Windows cell nor macOS fills any unavailable Linux cell.
+  A separate same-PE idle page census closes exactly: 5490 × 4096 B =
+  22,515,712 B WS, comprising 18,186,240 B with the QueryWorkingSet `Shared`
+  bit and 4,300,800 B without it. Microsoft's `Shared` bit denotes **sharable**
+  pages; it does not prove every such page is currently used by another
+  process. The snapshot does not yet attribute the 17.35 MiB sharable bucket
+  to individual DLLs, or the 4.10 MiB nonsharable bucket to DIB/PTY/heap owners.
+  DLL virtual mappings alone are not resident-byte evidence. All pages remain
+  in the product WS budget. Raw receipt:
+  `target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log.hostout`.
+  Next: correlate these resident page addresses with module/mapping ranges,
+  retaining unknowns and observation drift. Interpretation:
+  [PSAPI_WORKING_SET_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
 
 
 ## Artifact budget
