@@ -24,6 +24,7 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
 - `init-hooks/init_trace.rs` + `run-init-hooks.sh` / `sample-init-hooks.ps1`
   — research PE (copy of pin 745f52b under `target/windows-memory/`,
   not production pin / not `target/font-platform-fix`). In-process
-  CreateWindow stages, foreground HWND/focus, optional activate after
-  first present. IME on. No screenshot. Chinese IME compose is BLOCKED
-  unless a zh layout is present; do not substitute control PTY writes.
+  CreateWindow stages, foreground HWND/focus. Skip-Focus delay is not
+  idle savings (accepted). Next: removable post-activate loads
+  (`SHGetFolderPathW`, font `select_primary`, Gdiplus import). IME on.
+  Chinese IME compose is BLOCKED unless a zh layout is present.

@@ -331,7 +331,88 @@ proves that path sets `fg_ours=1` under `--no-activate`.
    A platform-wide Focus no-op is too wide for startup-only
    `--no-activate`.
 
-Do not patch production pin `745f52b2` or `target/font-platform-fix`.
+Product no-activate fix is **in tree** at `56207cb` (`src/main.rs` only).
+Do not re-patch it here. Do not use research skip-Focus as a substitute.
+Exact PE verify (no steal-foreground + explicit activate English;
+Chinese still BLOCKED without a zh layout) waits on that commit’s
+canonical binary, not the research PE.
+
+**Stop the delay-until-focus idle direction.** TIF+CoreMessaging+CoreUI
+after real activate are IME-on cost, not a cut.
+
+## Post-activate ~21 MiB: call candidates (not another field court)
+
+Activated idle is ~22.1 MiB research / **21.46 MiB** public release.
+Named and **not** the next cut: IME stack (TIF 1,069,056 + CoreMessaging
+950,272 + CoreUI 626,688 + MSCTF 839,680), DIB/unnamed-mapped that
+already tracked 960×600 in size-compare, PTY ring 1 MiB (non-goal).
+Do not re-court those.
+
+Concrete MiniCon/platform **calls** that still run on a normal
+foreground start, with a one-shot intervention each:
+
+### 1. `load_config` → `SHGetFolderPathW` (shell32 / windows.storage)
+
+- `src/main.rs` `load_config()` / `config_path()` always calls
+  `agenterm_platform::runtime::user_config_directory()`.
+- Windows leaf:
+  `crates/agenterm-platform/.../windows/runtime.rs`
+  `user_config_directory` → `SHGetFolderPathW(CSIDL_APPDATA)`.
+- Idle modules: `windows.storage.dll` **741,376**, `shell32.dll`
+  **532,480**, plus `shcore`/`shlwapi`/`kernel.appcore`.
+- **Intervention (research copy of platform runtime, not pin):** skip
+  `load_config` or replace `SHGetFolderPathW` with
+  `GetEnvironmentVariableW("APPDATA")`. Same activated one-tab, IME on.
+- **Pass:** `windows.storage` and/or `shell32` resident drop, first-frame
+  still paints, `minicon.json` still found when `%APPDATA%\minicon.json`
+  exists.
+- **Fail:** those DLLs still present at the same WS (CreateWindow/IME
+  already pulled them). Then this call is not an owner.
+
+### 2. `font::cell_metrics` → `select_primary` `CreateFontW` walk
+
+- `ConTerminal::recompute_metrics` in `opened` calls
+  `font::cell_metrics` before first paint.
+- Leaf: `windows/font.rs` `select_primary` walks `RASTER_FAMILIES`
+  (NSimSun … **Segoe UI Emoji**, 12 names). `CreateFontW` never fails;
+  mapper may fault font files into WS even if `PixelFace` is dropped.
+- **Intervention:** research-only count `PixelFace::create` until
+  `select_primary` returns; second build with Emoji/unused tail omitted
+  (keep a CJK-capable face — do not drop 中文 raster).
+- **Pass:** create-count > 1 and WS falls while `中` still glyphs and
+  GDI object count stays flat.
+- **Fail:** create-count = 1 (early NSimSun/Consolas win) or CJK paint
+  breaks. Then this is not an idle cut.
+
+### 3. Static `gdiplus.dll` import from screenshot encode
+
+- `Cargo.toml` enables `screenshot` on every GUI binary.
+- Leaf: `windows/ui_screenshot.rs` `use Gdiplus::{GdiplusStartup, …}`.
+  `GdiplusStartup` runs only on `screenshot-pane`, but the **import
+  table** still loads `gdiplus.dll` before `main`
+  (`tests/minicon_load_portability.rs` lists it as OS-provided).
+- Idle resident is only **143,360** (shared0=24,576) — small, but a
+  real unnecessary load.
+- **Intervention:** resolve Gdiplus via `GetProcAddress` on the encode
+  path (same pattern as ConPTY), or drop `screenshot` from the idle
+  GUI feature set.
+- **Pass:** PE no longer lists `gdiplus.dll`; idle WS drops ~that
+  resident; `screenshot-pane` still writes a PNG when invoked.
+- **Fail:** WS unchanged (pages were never private). Still a load-time
+  hygiene win, not a 21 MiB owner.
+
+### Explicit non-candidates (do not run)
+
+- Delay TIF / skip `NativeCommand::Focus` / `MINICON_INIT_SKIP_FOCUS`.
+- PTY `PTY_QUEUE_BYTES` product cut.
+- Repeat size-compare, wrapper, 8-page remainder, hwnd-poll.
+- `accessibility_publish::start` on Windows without `a11y-tree` (no-op).
+- Clipboard (`set_text`/`get_text` only on copy/paste).
+- Disable IME / `ImmAssociateContextEx`.
+
+Next research PE (after this list, not skip-Focus): implement candidate 1
+on the existing `target/windows-memory/research-src` copy, one activated
+control vs one `SHGetFolderPathW`-free build, same IME=true first frame.
 
 Probe self-cost: warmup_a 10,813,440 → warmup_b 10,866,688 (**+53,248**);
 entry equals warmup_b.
@@ -352,12 +433,9 @@ No `WM_PAINT` during `CreateWindowExW` (`paint_during_create=0`);
 window is created hidden. Nested **WM_NCCREATE** is recorded — do
 not call the whole +954,368 “just CreateWindow”. **MSCTF** appears
 inside CreateWindowExW. **TIF / CoreMessaging / CoreUIComponents**
-appear at **first present**, not at `ImmAssociateContextEx`
-(+20 KiB only). Delayable while keeping IME=true: association
-itself is cheap; TIF load is coupled to first visible present/show,
-not to `apply_ime_allowed`. That is a candidate delay point to
-test (associate on first real IME, keep first present), not a
-production patch yet.
+load on `SetForegroundWindow` → `WM_IME_SETCONTEXT`, not on
+`ImmAssociateContextEx` (+20 KiB only). That delay path is
+**closed as an idle cut** (activate returns the ~4.2 MiB).
 
 ## Accepted idle arithmetic (not a six-cell claim)
 
