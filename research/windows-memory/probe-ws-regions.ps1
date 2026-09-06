@@ -1,6 +1,7 @@
-# Same-snapshot QueryWorkingSet VirtualPage -> VirtualQueryEx / module range.
-# Shared = sharable (PSAPI_WORKING_SET_BLOCK), not "already shared".
-# ShareCount = process count (max 7). Protection 5/7 family = copy-on-write.
+# Same-snapshot QueryWorkingSet VirtualPage -> module range / VirtualQueryEx.
+# Classification walk is internally closed. A separate GetProcessMemoryInfo WS
+# is not that product; record PMC WS + UTC before QWS, after QWS, after classify.
+# Shared = sharable. ShareCount = process count (max 7). Keep unknown + COW.
 # https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block
 # Usage: powershell -File probe-ws-regions.ps1 -TargetPid 1234
 param(
@@ -12,6 +13,7 @@ $ErrorActionPreference = "Stop"
 Add-Type @"
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -56,6 +58,32 @@ public static class WsResident {
         public IntPtr EntryPoint;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_MEMORY_COUNTERS {
+        public uint cb;
+        public uint PageFaultCount;
+        public UIntPtr PeakWorkingSetSize;
+        public UIntPtr WorkingSetSize;
+        public UIntPtr QuotaPeakPagedPoolUsage;
+        public UIntPtr QuotaPagedPoolUsage;
+        public UIntPtr QuotaPeakNonPagedPoolUsage;
+        public UIntPtr QuotaNonPagedPoolUsage;
+        public UIntPtr PagefileUsage;
+        public UIntPtr PeakPagefileUsage;
+    }
+
+    class UnnamedMap {
+        public ulong Alloc;
+        public ulong Resident;
+        public uint Protect;
+        public uint VqType;
+        public int LastError;
+        public string Why;
+        public ulong ShareGe2;
+        public ulong ShareEq1;
+        public ulong NotSharable;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -64,6 +92,10 @@ public static class WsResident {
     public static extern UIntPtr VirtualQueryEx(IntPtr process, UIntPtr address, out MEMORY_BASIC_INFORMATION info, UIntPtr length);
     [DllImport("kernel32.dll")]
     public static extern void GetSystemInfo(out SYSTEM_INFO info);
+    [DllImport("kernel32.dll")]
+    public static extern void SetLastError(uint error);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool K32GetProcessMemoryInfo(IntPtr process, out PROCESS_MEMORY_COUNTERS counters, uint size);
     [DllImport("psapi.dll", SetLastError = true)]
     public static extern bool QueryWorkingSet(IntPtr process, IntPtr buffer, uint size);
     [DllImport("psapi.dll", SetLastError = true)]
@@ -92,13 +124,24 @@ public static class WsResident {
         return low == 5UL || low == 7UL;
     }
 
+    static string UtcNow() {
+        return DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+    }
+
+    static ulong PmcWs(IntPtr h) {
+        PROCESS_MEMORY_COUNTERS pmc = new PROCESS_MEMORY_COUNTERS();
+        pmc.cb = (uint)Marshal.SizeOf(typeof(PROCESS_MEMORY_COUNTERS));
+        if (!K32GetProcessMemoryInfo(h, out pmc, pmc.cb)) return 0;
+        return pmc.WorkingSetSize.ToUInt64();
+    }
+
     struct ModRange {
         public ulong Start;
         public ulong End;
         public string Leaf;
     }
 
-    public static List<string> Dump(int pid, long wsBefore) {
+    public static List<string> Dump(int pid) {
         var lines = new List<string>();
         IntPtr h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
         if (h == IntPtr.Zero) throw new InvalidOperationException("OpenProcess failed");
@@ -106,7 +149,9 @@ public static class WsResident {
             SYSTEM_INFO sys;
             GetSystemInfo(out sys);
             ulong page = sys.dwPageSize == 0 ? 4096UL : sys.dwPageSize;
-            int guess = Math.Max(1024, (int)(wsBefore / (long)page) + 1024);
+            string t0 = UtcNow();
+            ulong pmc0 = PmcWs(h);
+            int guess = Math.Max(1024, (int)(pmc0 / page) + 1024);
             uint bytes = (uint)(8 + guess * 8);
             IntPtr buf = Marshal.AllocHGlobal((int)bytes);
             try {
@@ -117,8 +162,11 @@ public static class WsResident {
                     buf = Marshal.AllocHGlobal((int)bytes);
                     if (!QueryWorkingSet(h, buf, bytes)) throw new InvalidOperationException("QueryWorkingSet failed");
                 }
+                string t1 = UtcNow();
+                ulong pmc1 = PmcWs(h);
                 long n = Marshal.ReadInt64(buf);
                 int count = n > int.MaxValue ? 0 : (int)n;
+                ulong walk = (ulong)count * page;
 
                 var mods = new List<ModRange>();
                 uint needed;
@@ -139,10 +187,11 @@ public static class WsResident {
 
                 ulong sharable = 0, notSharable = 0, shareGe2 = 0, shareEq1 = 0, shareEq0 = 0;
                 ulong cow = 0, cowPrivate = 0, unknown = 0;
-                ulong resImage = 0, resMapped = 0, resPrivType = 0, resOther = 0;
+                ulong resImage = 0, resMapped = 0, resPrivType = 0, resOther = 0, vqFail = 0;
                 var byMod = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var byMapped = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var nameByAlloc = new Dictionary<ulong, string>();
+                var unnamed = new Dictionary<ulong, UnnamedMap>();
                 uint mbiSize = (uint)Marshal.SizeOf(typeof(MEMORY_BASIC_INFORMATION));
                 var sb = new StringBuilder(512);
 
@@ -178,35 +227,53 @@ public static class WsResident {
                     MEMORY_BASIC_INFORMATION mbi;
                     if (VirtualQueryEx(h, (UIntPtr)va, out mbi, (UIntPtr)mbiSize) == UIntPtr.Zero) {
                         unknown += page;
+                        vqFail += page;
                         resOther += page;
                         continue;
                     }
                     string kind = TypeName(mbi.Type);
+                    ulong alloc = mbi.AllocationBase.ToUInt64();
                     if (kind == "image") {
                         resImage += page;
-                        ulong alloc = mbi.AllocationBase.ToUInt64();
                         string path;
                         if (!nameByAlloc.TryGetValue(alloc, out path)) {
+                            SetLastError(0);
                             sb.Clear();
                             uint got = GetMappedFileNameW(h, (UIntPtr)va, sb, 512);
-                            path = got > 0 ? Leaf(sb.ToString()) : "unknown-image";
+                            int err = Marshal.GetLastWin32Error();
+                            if (got > 0) path = Leaf(sb.ToString());
+                            else path = "unknown-image";
                             nameByAlloc[alloc] = path;
+                            if (path.StartsWith("unknown")) {
+                                unknown += page;
+                                RememberUnnamed(unnamed, alloc, mbi, page, sharedBit, shareCount, err, err != 0 ? "getmapped_win32_" + err : "getmapped_empty");
+                            }
+                        } else if (path.StartsWith("unknown")) {
+                            unknown += page;
+                            RememberUnnamed(unnamed, alloc, mbi, page, sharedBit, shareCount, 0, path);
                         }
-                        if (path == "unknown-image") unknown += page;
                         ulong cur;
                         byMod.TryGetValue(path, out cur);
                         byMod[path] = cur + page;
                     } else if (kind == "mapped") {
                         resMapped += page;
-                        ulong alloc = mbi.AllocationBase.ToUInt64();
                         string path;
                         if (!nameByAlloc.TryGetValue(alloc, out path)) {
+                            SetLastError(0);
                             sb.Clear();
                             uint got = GetMappedFileNameW(h, (UIntPtr)va, sb, 512);
-                            path = got > 0 ? Leaf(sb.ToString()) : "unknown-mapped";
+                            int err = Marshal.GetLastWin32Error();
+                            if (got > 0) path = Leaf(sb.ToString());
+                            else path = "unknown-mapped";
                             nameByAlloc[alloc] = path;
+                            if (path.StartsWith("unknown")) {
+                                unknown += page;
+                                RememberUnnamed(unnamed, alloc, mbi, page, sharedBit, shareCount, err, err != 0 ? "getmapped_win32_" + err : "getmapped_empty");
+                            }
+                        } else if (path.StartsWith("unknown")) {
+                            unknown += page;
+                            RememberUnnamed(unnamed, alloc, mbi, page, sharedBit, shareCount, 0, path);
                         }
-                        if (path.StartsWith("unknown")) unknown += page;
                         ulong cur;
                         byMapped.TryGetValue(path, out cur);
                         byMapped[path] = cur + page;
@@ -216,13 +283,20 @@ public static class WsResident {
                     } else {
                         unknown += page;
                         resOther += page;
+                        RememberUnnamed(unnamed, alloc, mbi, page, sharedBit, shareCount, 0, "type_" + kind);
                     }
                 }
 
-                lines.Add("fields Shared=sharable_not_already_shared ShareCount=process_count_max7 Protection5or7=COW VirtualPage=page_va https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block");
+                string t2 = UtcNow();
+                ulong pmc2 = PmcWs(h);
+                lines.Add("fields Shared=sharable ShareCount=process_count_max7 Protection5or7=COW VirtualPage=page_va walk_internally_closed pmc_ws_not_that_product https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block");
+                lines.Add(string.Format("t_before_qws={0} pmc_ws_before_qws={1}", t0, pmc0));
+                lines.Add(string.Format("t_after_qws={0} pmc_ws_after_qws={1}", t1, pmc1));
+                lines.Add(string.Format("t_after_classify={0} pmc_ws_after_classify={1}", t2, pmc2));
                 lines.Add(string.Format(
-                    "pid={0} ws_before={1} page={2} ws_pages={3} walk_bytes={4} sharable={5} not_sharable={6} sharecount_ge2={7} sharecount_eq1={8} sharecount_eq0={9} cow={10} cow_private={11} unknown={12} resident_image={13} resident_mapped={14} resident_private_type={15} resident_other={16}",
-                    pid, wsBefore, page, count, (ulong)count * page, sharable, notSharable, shareGe2, shareEq1, shareEq0, cow, cowPrivate, unknown, resImage, resMapped, resPrivType, resOther));
+                    "pid={0} page={1} ws_pages={2} walk_bytes={3} pmc_minus_walk_before={4} pmc_minus_walk_after_qws={5} pmc_minus_walk_after_classify={6} sharable={7} not_sharable={8} sharecount_ge2={9} sharecount_eq1={10} sharecount_eq0={11} cow={12} cow_private={13} unknown={14} vq_fail={15} resident_image={16} resident_mapped={17} resident_private_type={18} resident_other={19}",
+                    pid, page, count, walk, (long)pmc0 - (long)walk, (long)pmc1 - (long)walk, (long)pmc2 - (long)walk,
+                    sharable, notSharable, shareGe2, shareEq1, shareEq0, cow, cowPrivate, unknown, vqFail, resImage, resMapped, resPrivType, resOther));
                 var items = new List<KeyValuePair<string, ulong>>(byMod);
                 items.Sort((a, b) => b.Value.CompareTo(a.Value));
                 int shown = 0;
@@ -237,6 +311,13 @@ public static class WsResident {
                     if (shown++ >= 15) break;
                     lines.Add(string.Format("mapped {0} {1}", item.Value, item.Key));
                 }
+                var unnamedList = new List<UnnamedMap>(unnamed.Values);
+                unnamedList.Sort((a, b) => b.Resident.CompareTo(a.Resident));
+                foreach (var u in unnamedList) {
+                    lines.Add(string.Format(
+                        "unnamed_mapped alloc=0x{0:x} resident={1} protect=0x{2:x} type=0x{3:x} last_error={4} why={5} sharecount_ge2={6} sharecount_eq1={7} not_sharable={8}",
+                        u.Alloc, u.Resident, u.Protect, u.VqType, u.LastError, u.Why, u.ShareGe2, u.ShareEq1, u.NotSharable));
+                }
             } finally {
                 Marshal.FreeHGlobal(buf);
             }
@@ -245,20 +326,27 @@ public static class WsResident {
         }
         return lines;
     }
+
+    static void RememberUnnamed(Dictionary<ulong, UnnamedMap> unnamed, ulong alloc, MEMORY_BASIC_INFORMATION mbi, ulong page, bool sharedBit, ulong shareCount, int err, string why) {
+        UnnamedMap u;
+        if (!unnamed.TryGetValue(alloc, out u)) {
+            u = new UnnamedMap {
+                Alloc = alloc,
+                Protect = mbi.Protect,
+                VqType = mbi.Type,
+                LastError = err,
+                Why = why
+            };
+            unnamed[alloc] = u;
+        }
+        u.Resident += page;
+        if (!sharedBit) u.NotSharable += page;
+        else if (shareCount >= 2) u.ShareGe2 += page;
+        else if (shareCount == 1) u.ShareEq1 += page;
+        if (u.LastError == 0 && err != 0) u.LastError = err;
+        if (u.Why == null || u.Why.Length == 0) u.Why = why;
+    }
 }
 "@
 
-$p = Get-Process -Id $TargetPid
-$wsBefore = $p.WorkingSet64
-$lines = [WsResident]::Dump($TargetPid, $wsBefore)
-$p.Refresh()
-$wsAfter = $p.WorkingSet64
-$walk = $null
-foreach ($line in $lines) {
-    if ($line -match 'walk_bytes=(\d+)') { $walk = [int64]$Matches[1] }
-    $_ = $line
-    Write-Output $line
-}
-$driftBefore = $wsBefore - $walk
-$driftAfter = $wsAfter - $walk
-Write-Output ("ws_after={0} drift_before={1} drift_after={2}" -f $wsAfter, $driftBefore, $driftAfter)
+[WsResident]::Dump($TargetPid) | ForEach-Object { $_ }

@@ -29,7 +29,7 @@ function Invoke-Cli([string[]]$Arguments) {
 }
 
 try {
-    Set-Content -LiteralPath $Log -Value ("start pipe=" + $pipe) -Encoding utf8
+    Set-Content -LiteralPath $Log -Value ("start pipe=" + $pipe + " ime_allowed=true chinese_input_preserved no_ime_opt_out") -Encoding utf8
     $gui = Start-Process -FilePath $Exe -ArgumentList @(
         '--no-activate', '--cols', '80', '--rows', '24',
         '--control', $pipe, '-e', 'cmd.exe', '/Q', '/K'

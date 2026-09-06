@@ -13,5 +13,6 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
 - `sample-close-owners.ps1` / `run-close-owners.sh` — four-cycle close sample
   (not an RSS wrapper court; does not cut PTY capacity)
 - `probe-ws-regions.ps1` / `sample-idle-regions.ps1` / `run-idle-regions.sh` —
-  same QueryWorkingSet snapshot: VirtualPage → module range /
-  VirtualQueryEx. `Shared` = sharable; `ShareCount` = process count.
+  QWS walk internally closed; PMC WS + UTC before/after QWS/classify;
+  unnamed mapped listed by allocation-base with last_error/why.
+  IME stays on (Chinese input preserved).

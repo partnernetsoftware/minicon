@@ -92,31 +92,51 @@ https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working
 | `Protection` 5 / 7 family | copy-on-write |
 | `VirtualPage` | page VA used for module-range / `VirtualQueryEx` |
 
-Verified earlier walk: 5490 × 4096 = 22,487,040 and
-18,186,240 + 4,300,800 = 22,487,040 (Get-Process WS 22,515,712 is
-**not** that product; that gap is snapshot drift).
+Walk is **internally closed**. A separately-read WS is **not** that
+product. Corrected (cdx-wjhk; they own the main-PRD arithmetic fix):
 
-Latest same-snapshot log:
-`target/windows-memory/idle-regions-9ed910ea3219a07e57595c2b86b6cf4e6d2e97da-20260906T105829Z.log`
+- 18,186,240 + 4,300,800 = **22,487,040** = 5490 × 4096
+- old WS 22,515,712 − walk = **28,672 (7 pages)**
+- image 16,343,040 + mapped 2,908,160 + private_type 3,235,840 =
+  **22,487,040**; WS 22,519,808 − walk = **32,768 (8 pages)**
 
-| same-walk counter | bytes | do not call it |
-|---|---:|---|
-| ws_before = ws_after | 22,503,424 | — |
-| walk 5486 × 4096 | **22,470,656** | — |
-| drift | 32,768 (8 pages) | ignore as RSS split |
-| `Shared=1` sharable | 18,182,144 | **not** “Win32/GDI/IME” |
-| `ShareCount>=2` | 17,399,808 | actually shared |
-| `ShareCount==1` | 782,336 | sharable, this process only |
-| `Shared=0` not sharable | 4,288,512 | **not** “DIB+pipe” |
-| COW (prot 5/7) | 4,096 | kept |
-| `cow_private` | 0 | kept |
-| unknown (unnamed mapped) | **2,732,032** | kept, not named |
-| `EnumProcessModules` image | 16,343,040 | sum of module rows |
-| mapped (incl. unknown) | 2,904,064 | — |
-| `MEM_PRIVATE` type | 3,223,552 | not DIB+pipe until proven |
+Latest log with `K32GetProcessMemoryInfo` at three instants
+(IME **on**, Chinese input preserved, **no IME opt-out**):
+`target/windows-memory/idle-regions-5b71f8aacb33e7d0e15f63dc54e73814c8f487f9-20260906T110320Z.log`
 
-sharable + not_sharable = walk. Module rows from **this** snapshot’s
-`VirtualPage` in `EnumProcessModulesEx` ranges (not VA commit):
+| instant | UTC | PMC WS |
+|---|---|---:|
+| before QWS | 2026-09-06T11:04:10.816Z | 22,495,232 |
+| after QWS | 2026-09-06T11:04:10.818Z | 22,495,232 |
+| after classify | 2026-09-06T11:04:10.829Z | 22,495,232 |
+
+| walk (internally closed) | bytes |
+|---|---:|
+| 5484 × 4096 | **22,462,464** |
+| image + mapped + private_type | 16,343,040 + 2,908,160 + 3,211,264 = **22,462,464** |
+| PMC WS − walk (all three times) | **32,768 (8 pages)** — not a walk hole |
+| sharable / `ShareCount>=2` / `==1` | 18,186,240 / 17,403,904 / 782,336 |
+| not sharable | 4,276,224 |
+| COW / cow_private / vq_fail | 4,096 / 0 / 0 |
+| unknown | 2,736,128 |
+
+Unnamed `MEM_MAPPED` by **allocation-base** (all `GetMappedFileNameW`
+**ERROR_FILE_INVALID 1006**; kept unknown; ShareCount retained):
+
+| alloc | resident | protect | ShareCount>=2 |
+|---|---:|---|---:|
+| `0x1ace0000000` | 2,306,048 | 0x4 R/W | 2,154,496 |
+| `0x1acdbd10000` | 110,592 | 0x2 R | 110,592 |
+| `0x1acdb760000` | 102,400 | 0x2 R | 102,400 |
+| `0x1acdb810000` | 45,056 | 0x2 R | 45,056 |
+| `0x1acdb800000` | 45,056 | 0x2 R | 45,056 |
+| (11 smaller 1006 mappings) | rest of 2,736,128 | 0x2/0x4 | — |
+
+IME DLLs below are the **IME-on / 中文输入维持** baseline, not a
+disable experiment.
+
+Module rows from **this** snapshot’s `VirtualPage` in
+`EnumProcessModulesEx` ranges (not VA commit):
 
 | resident | module |
 |---:|---|
@@ -132,10 +152,10 @@ sharable + not_sharable = walk. Module rows from **this** snapshot’s
 | 532,480 | `shell32.dll` |
 | 487,424 | `user32.dll` |
 | 327,680 | `gdi32full.dll` |
-| 2,732,032 | **unknown-mapped** |
+| 2,736,128 | **unknown-mapped** (1006, see alloc-base table) |
 
-Do not re-open wrapper. Next: identify unknown-mapped; IME four are
-named modules, not the whole sharable bucket.
+Do not re-open wrapper. Do not disable IME. Next: what backing
+those 1006 section maps are (still unknown).
 
 ## Accepted idle arithmetic (not a six-cell claim)
 

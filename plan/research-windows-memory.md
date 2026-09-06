@@ -79,13 +79,19 @@ dlopen ~22.6 MiB is **not** this GDI remainder.
 `ShareCount` is the process count (max 7). Official:
 https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block
 
-Same QueryWorkingSet snapshot (`…T105829Z`): walk 5486×4096 =
-22,470,656; Get-Process WS 22,503,424; drift 32,768. Sharable
-18,182,144 (**not** all Win32/GDI/IME); `ShareCount>=2` 17,399,808;
-not-sharable 4,288,512 (**not** all DIB+pipe); unknown-mapped
-2,732,032 kept; COW 4,096 kept. Modules from this snapshot’s
-`VirtualPage` in module ranges (`ntdll` 3.56 MiB, then IME DLLs,
-this PE 0.57 MiB). No wrapper re-run.
+Classification **walk is internally closed**. It is **not** exact
+equality with a separately-read WS.
+
+Corrected arithmetic (cdx-wjhk; main PRD fix is theirs):
+
+- 18,186,240 + 4,300,800 = **22,487,040** = 5490 × 4096
+- old Get-Process WS 22,515,712 − walk = **28,672 (7 pages)**
+- image 16,343,040 + mapped 2,908,160 + private_type 3,235,840 =
+  **22,487,040**; WS 22,519,808 − walk = **32,768 (8 pages)**
+
+`Shared` = sharable; `ShareCount` = process count. IME rows are
+IME-on / Chinese-capable idle only — **do not disable IME**.
+No wrapper re-run.
 
 ## Top 5 live owners and verifiable interventions
 
