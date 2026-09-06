@@ -19,3 +19,5 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
   calls. IME stays on.
 - `sample-size-compare.ps1` / `run-size-compare.sh` — two client sizes,
   new process each, then same-process shrink. No screenshot.
+- `sample-init-phases.ps1` / `run-init-phases.sh` — spawn/hwnd/control/
+  first_frame; per-module shared0. IME on. TIF total ≠ all privatized_image.

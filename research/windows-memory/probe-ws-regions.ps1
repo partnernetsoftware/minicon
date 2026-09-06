@@ -204,6 +204,8 @@ public static class WsResident {
                 ulong privatizedImage = 0, privatizedMapped = 0;
                 ulong imgS0 = 0, imgS1 = 0, mapS0 = 0, mapS1 = 0, privS0 = 0, privS1 = 0, othS0 = 0, othS1 = 0;
                 var byMod = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
+                var byModS0 = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
+                var byModS1 = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var byMapped = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var nameByAlloc = new Dictionary<ulong, string>();
                 var unnamed = new Dictionary<ulong, UnnamedMap>();
@@ -235,6 +237,13 @@ public static class WsResident {
                         ulong cur;
                         byMod.TryGetValue(owner, out cur);
                         byMod[owner] = cur + page;
+                        if (sharedBit) {
+                            byModS1.TryGetValue(owner, out cur);
+                            byModS1[owner] = cur + page;
+                        } else {
+                            byModS0.TryGetValue(owner, out cur);
+                            byModS0[owner] = cur + page;
+                        }
                         resImage += page;
                         if (!sharedBit) { privatizedImage += page; imgS0 += page; } else imgS1 += page;
                         continue;
@@ -273,6 +282,13 @@ public static class WsResident {
                         ulong cur;
                         byMod.TryGetValue(path, out cur);
                         byMod[path] = cur + page;
+                        if (sharedBit) {
+                            byModS1.TryGetValue(path, out cur);
+                            byModS1[path] = cur + page;
+                        } else {
+                            byModS0.TryGetValue(path, out cur);
+                            byModS0[path] = cur + page;
+                        }
                     } else if (kind == "mapped") {
                         resMapped += page;
                         if (!sharedBit) { privatizedMapped += page; mapS0 += page; } else mapS1 += page;
@@ -330,7 +346,10 @@ public static class WsResident {
                 int moduleShownCap = 64;
                 foreach (var item in items) {
                     if (shown++ >= moduleShownCap) break;
-                    lines.Add(string.Format("module {0} {1}", item.Value, item.Key));
+                    ulong s0 = 0, s1 = 0;
+                    byModS0.TryGetValue(item.Key, out s0);
+                    byModS1.TryGetValue(item.Key, out s1);
+                    lines.Add(string.Format("module {0} {1} shared0={2} shared1={3}", item.Value, item.Key, s0, s1));
                 }
                 if (items.Count > moduleShownCap) lines.Add("module_list_truncated shown=" + moduleShownCap + " total=" + items.Count);
                 var mapped = new List<KeyValuePair<string, ulong>>(byMapped);

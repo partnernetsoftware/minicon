@@ -96,12 +96,14 @@ re-run. 32 KiB unexplained remainder: no extra court.
 type×Shared cross rides the next size-compare sample; no extra
 counting court.
 
-Size compare (480×300 vs 960×600, dpi 96, no screenshot): largest
-R/W unnamed mapped **614,400 vs 2,379,776** (tracks pixel area;
-not named DIB). `private_type` does not. `privatized_image`
-1,069,056 unchanged. Same-process shrink returns most of the
-mapped bytes (2,379,776 → 675,840). Next is IME/USER init-phase
-for the size-invariant 1.02 MiB, not more QWS fields.
+Size compare accepted: largest R/W unnamed mapped tracks area
+(614,400 vs 2,379,776); shrink returns most; not DIB / not a 2 MiB
+leak. `privatized_image=1,069,056` **is not all TIF** (TIF
+shared0=24,576; 1.02 MiB is Shared=0 summed over 33 modules).
+
+Init-phase (IME on): first sample already has hwnd + IME DLLs;
+spawn→first_frame only **+57 KiB**. No post-hwnd delayable IME
+load while keeping Chinese input. No wrapper/8-page/count re-run.
 
 ## Top 5 live owners and verifiable interventions
 

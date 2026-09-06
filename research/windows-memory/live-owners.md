@@ -214,9 +214,35 @@ No MiniCon production patch this round. If a later pin looks at
 GDI `StretchDIBits` backing in
 `native_pixel_window.rs` (no `CreateDIBSection` in that file),
 scope is that adapter’s resize/present, not the PTY ring and not
-IME-off. IME/USER (`privatized_image` / `MSCTF` /
-`CoreMessaging`) stay init-phase candidates because they did not
-move with client pixels.
+IME-off.
+
+**`privatized_image=1,069,056` matching TIF total resident is not
+evidence that this 1.02 MiB is all IME.** Per-module `Shared=0` at
+init: TIF `shared0=24,576` of `1,069,056` total; the 1.02 MiB is
+the **sum of Shared=0 across all 33 modules** (shell32 106,496,
+ntdll 98,304, KERNELBASE 73,728, …).
+
+## Init-phase causal (IME on, no screenshot)
+
+`target/windows-memory/init-phases-25635c4f39397fa5151d4ef1376c1ba348924bbd-20260906T112057Z.log`
+
+One process. First QWS already has `hwnd` and all 33 modules
+(TIF/MSCTF/CoreMessaging/imm32 present). Spawn→first_frame PMC WS
+22,458,368 → 22,515,712 (**+57,344**). TIF shared0 stays 24,576.
+
+| phase | Get-Process WS | walk | TIF tot / shared0 |
+|---|---:|---:|---|
+| spawn (hwnd already) | 22,458,368 | 22,446,080 | 1,069,056 / 24,576 |
+| hwnd | 22,478,848 | 22,446,080 | same |
+| control | 22,511,616 | (same stack) | same |
+| first_frame | 22,515,712 | 22,478,848 | same |
+
+No delayable IME load after first observable window: the IME
+image set is already resident. Keeping Chinese input (`IME=true`)
+does not leave a post-hwnd deferral in this timeline. Splitting
+`CreateWindow` vs IME DLL map needs in-process timing, not another
+QWS field court. `cross type=private shared1=4096` is the page that
+broke `MEM_PRIVATE + privatized_image = not_sharable`.
 
 ## Accepted idle arithmetic (not a six-cell claim)
 
