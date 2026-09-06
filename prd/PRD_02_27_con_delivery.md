@@ -445,40 +445,32 @@ six-cell claim.
   `HasExited=True` and `ExitCode_raw=0`; durable owner:
   `plan/research-windows-memory.md`. This release remains above 10 MiB, and
   neither this Windows cell nor macOS fills any unavailable Linux cell.
-  Separate same-PE idle page snapshots contain 5490 × 4096 B = **22,487,040 B**,
-  split into 18,186,240 B with the QueryWorkingSet `Shared` bit and 4,300,800 B
-  without it. The earlier text incorrectly equated this sum to 22,515,712 B:
-  that separately read WS is **28,672 B / 7 pages higher**. The later snapshot
-  also totals 22,487,040 B, while its separate WS read is 22,519,808 B,
-  **32,768 B / 8 pages higher**. These are retained residuals; sampling drift
-  is not established without bracketing WS/time observations.
-  The later QWSEx/VirtualQueryEx classification partitions all snapshot pages:
-  MEM_IMAGE 16,343,040 B, MEM_MAPPED 2,908,160 B, MEM_PRIVATE 3,235,840 B,
-  zero invalid/other pages. Mapping type and shareability are different axes:
-  image/mapped regions can include private copy-on-write pages. Microsoft's
-  `Shared` bit means **sharable**, not necessarily shared by multiple processes.
-  Resident mapping labels include ntdll 3,735,552 B, unnamed mappings
-  2,736,128 B, TextInputFramework 1,069,056 B, KernelBase 1,052,672 B,
-  CoreMessaging 950,272 B and msctf 839,680 B. These are snapshot page counts,
-  not DLL virtual sizes, exclusive subsystem costs or proven savings.
-  All resident pages remain in the product WS budget. Raw receipts:
-  `target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log.hostout`
-  and `target/windows-memory/idle-regions-60d9a783551f4721ff8adfc2c510ca450fd6b59d-20260906T105426Z.log.hostout`.
-  A follow-up brackets the walk with WS_before = WS_after = 22,503,424 B,
-  but enumerates 5486 pages = 22,470,656 B: **32 KiB remains unexplained**,
-  not proven temporal drift. Snapshot sharable 18,182,144 B comprises
-  ShareCount≥2 17,399,808 B plus ShareCount=1 782,336 B; nonsharable is
-  4,288,512 B. Unknown mapped residency remains 2,732,032 B. Receipt:
-  `target/windows-memory/idle-regions-9ed910ea3219a07e57595c2b86b6cf4e6d2e97da-20260906T105829Z.log.hostout`.
-  The diagnostic's current `cow_private=0` is not proof of no private image
-  copies: its counter only visits MEM_PRIVATE, whereas modified COW image or
-  mapped pages retain their mapping type. Use mapping type plus the resident
-  Shared bit for that cross-classification, as documented by
+  Latest same-PE attribution reads K32GetProcessMemoryInfo WS at
+  11:04:10.816Z, .818Z and .829Z, before/after the page query and after
+  classification: all three are **22,495,232 B**. The page walk is
+  5484 × 4096 B = **22,462,464 B**, partitioned as MEM_IMAGE 16,343,040 B,
+  MEM_MAPPED 2,908,160 B and MEM_PRIVATE 3,211,264 B. Its sharing-axis split
+  is sharable 18,186,240 B plus nonsharable 4,276,224 B. Those partitions
+  close internally; **32,768 B / 8 pages remain unexplained against PMC**.
+  Earlier erroneous claims of exact WS closure are withdrawn; historical
+  7/8-page residuals and receipts remain in `plan/research-windows-memory.md`.
+  All resident pages remain in the product WS budget.
+  The unnamed mapped bucket is 2,736,128 B. Its largest allocation base has
+  2,306,048 B resident (2.20 MiB), of which 2,154,496 B has ShareCount≥2.
+  GetMappedFileNameW returns ERROR_FILE_INVALID (1006) for these unnamed
+  mappings; that failure does not establish their owner. The largest block
+  is not yet a proven framebuffer. Exact receipt:
+  `target/windows-memory/idle-regions-5b71f8aacb33e7d0e15f63dc54e73814c8f487f9-20260906T110320Z.log.hostout`.
+  Mapping type and shareability are separate axes. `Shared` means sharable;
+  ShareCount reports sharing, capped at 7. COW protection flags alone do not
+  count already-private image/mapped pages, whose mapping type is retained.
+  References: [PSAPI_WORKING_SET_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block),
   [VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex).
-  Next: separate unnamed allocation bases and identify initialization triggers
-  while preserving Chinese input; do not rerun full courts just for this
-  small unresolved accounting difference. Interpretation:
-  [PSAPI_WORKING_SET_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
+  Next: two fresh-process window-size controls with measured physical client
+  area and completed first frame, comparing per-allocation-base residency.
+  Keep IME enabled; do not use screenshots as the measurement barrier or
+  rerun full courts merely to pursue the small accounting residual.
+
 
 
 
