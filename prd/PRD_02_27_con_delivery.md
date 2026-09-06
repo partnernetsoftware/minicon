@@ -488,11 +488,25 @@ six-cell claim.
   entry or identify which earlier call loaded those modules, and does not
   prove that supported deferral is impossible. Receipt:
   `target/windows-memory/init-phases-25635c4f39397fa5151d4ef1376c1ba348924bbd-20260906T112057Z.log.hostout`.
-  Next: research-only in-process markers around class registration, window
-  creation, IME association and application callbacks, recording synchronous
-  paint reentry. Preserve Chinese input and separate observer overhead;
-  do not rerun full courts merely to pursue the small accounting residual.
-  The 10 MiB RSS target remains unmet.
+  Research-only in-process hooks (PE SHA-256
+  `4e7c330176c9c5a764e4a860724468aac2fe5bc1c10acafa853a0673fad056e0`,
+  pin `745f52b` source copy plus tracing, IME enabled) narrow the interval:
+  host-run entry WS is 10,866,688 B; CreateWindowExW spans
+  10,928,128 → 11,882,496 B, with synchronous NCCREATE but no observed
+  WM_PAINT during creation. MSCTF appears there, TIF does not. IME
+  association adds 20,480 B without TIF. ApplicationOpened ends at
+  12,877,824 B without TIF; the first instrumented post-StretchDIBits
+  sample is 22,151,168 B with TIF/CoreMessaging/CoreUI present.
+  The **9,273,344 B** interval includes unmeasured show/focus/render work;
+  one other StretchDIBits path is uninstrumented. It does not yet attribute
+  that growth or module loading to StretchDIBits itself. Host-run entry
+  is not process entry. Research receipt:
+  `target/windows-memory/init-hooks-93a3dad769f8d41c48ec27e05ffbe9df76c4a468-20260906T113432Z.log`.
+  Next: bracket show/focus and both presentation paths, including reentrant
+  callbacks, then test the earliest loading trigger. Preserve a visible
+  working window and Chinese input: merely delaying the first frame does
+  not lower normal idle RSS. Production pin is unchanged; the 10 MiB RSS
+  target remains unmet.
 
 
 
