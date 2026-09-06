@@ -524,8 +524,19 @@ six-cell claim.
   A separate correctness fix makes the application startup focus request
   honor `--no-activate` / `AGENTERM_NO_ACTIVATE`; normal startup and later
   explicit user focus requests remain. This is not a foreground RSS saving.
-  The production platform pin is unchanged; the 10 MiB RSS target remains
-  unmet. Continue with avoidable initialization in the activated process.
+  Windows behavior validation of that fix passes for production-source PE
+  `083bcc802099be5d385460c151f043cef21af49ef6a8a7b1faf182269bfb3897`
+  (746,496 B, source `20e501b` containing `56207cb`, pin `745f52b2`, no
+  research skip variables). After first present, the window does not own
+  foreground; explicit activation succeeds, and real SendInput produces
+  `abc` in the terminal, read back through capture-pane. WS goes from
+  17,723,392 to 22,515,712 B on activation, confirming no foreground idle
+  saving. Chinese composition remains BLOCKED by the absent guest layout.
+  Receipt: `target/windows-memory/no-activate-behavior-20e501b8c90c5545b0aa0d5d036f27dce9def4cb-20260906T120633Z.log`.
+  The separately built `461b6cad…` PE has build evidence only; this runtime
+  receipt applies to `083bcc80…`. The production platform pin is unchanged;
+  the 10 MiB RSS target remains unmet. Continue with avoidable initialization
+  in the activated process.
 
 
 
