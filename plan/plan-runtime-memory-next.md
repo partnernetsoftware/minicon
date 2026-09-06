@@ -33,7 +33,10 @@ this macOS host already used a native pixel adapter was incorrect.
 
 - Shared owned anonymous frame mappings:
   `8d8de88c9ab62709327a6358609e9a09e8c363fd`,
-  [draft PR #117](https://github.com/partnernetsoftware/agenterm/pull/117).
+  [historical PR #117](https://github.com/partnernetsoftware/agenterm/pull/117).
+  It was closed after the same patch landed on shared main as `a68b50d1`;
+  it is not an open draft or an unmerged repair. The pinned backend matches
+  that integrated backend.
   Based on shared main with the previous font fix integrated as `d384d2b5`;
   PR #116 was closed after that integration. The experimental intermediate
   frame commit `d1d29578` is superseded by the new pin.
@@ -160,3 +163,92 @@ explicit Darwin allocator-relief experiment: a one-shot idle call reports
 zero bytes released in three runs, with no matching downward RSS step.
 The temporary hook is rejected; production source, pin and release SHA are
 restored. Unused-page trimming through this API is not an accepted reduction.
+
+
+## Active implementation owners
+
+- RSS accounting: `hello_memory` owns `research/rss-ledger/` and
+  `plan/research-rss-ledger.md`. Deliver kernel resident/internal/external/
+  reusable/compressed measurements with a plain/loaded/active instrumentation
+  control. RSS stays the product criterion; clean/external pages are not
+  subtracted to declare success.
+- Real MiniCon frame ownership: `minicon_memory` owns
+  `research/frame-lifetime/` and `plan/research-frame-lifetime.md`. Trace
+  allocation, provider/layer ownership, final release and page residency in
+  an isolated real-product build, then test a concrete causal intervention.
+- Windows: `grkwjcgm-minicon` owns `research/windows-memory/` and
+  `plan/research-windows-memory.md`. Verify the existing exact-artifact court
+  and identify GDI/native-host allocations independently of macOS numbers.
+- Integration: the primary agent owns production patches, dependency changes,
+  the owning Runtime host memory PRD and final black-box validation. macOS GUI
+  measurement windows are serialized across researchers. A useful prototype
+  must become a reviewed mechanism and pass product validation; a failed
+  experiment alone does not close the memory work.
+
+
+## Screenshot allocation intervention (integrated)
+
+```text
+Outcome: screenshot must not leave two full frames in malloc free caches
+├─ Shared snapshot owner: bounded immutable anonymous mapping; Drop unmaps
+├─ Portable PNG: convert/encode one clipped RGBA row; propagate final I/O errors
+├─ MiniCon: queue owned snapshot, release it before completion; preserve atomic publish
+└─ Evidence: paired baseline/fixed screenshot journey + same public GUI/RSS court
+```
+
+Dependency: the existing lazy font and mapped display-frame fixes. Safe failure:
+invalid input, storage failure, full queue and encoding failure complete locally;
+atomic publication must not expose an incomplete PNG. Non-goals: PTY sizing,
+input/menu removal, metric substitution, or a claim that this fixes startup RSS.
+The [frame lifetime report](research-frame-lifetime.md) owns the measured
+pre-fix screenshot growth; [RSS ledger](research-rss-ledger.md) owns the separate
+resident accounting. Large free malloc blocks are an actionable post-screenshot
+increment even though they do not explain the initial roughly 79 MiB.
+
+
+```mermaid
+flowchart LR
+    T[Real-product screenshot allocation trace] --> S[Mapped snapshot and row encoder]
+    S --> F[Tail I/O failure and ownership tests]
+    F --> C[Shared feature checks across six targets]
+    C --> P[Published shared revision and exact MiniCon pin]
+    P --> G[Final artifact public GUI and RSS courts]
+    G --> R[Record screenshot reduction and remaining startup RSS]
+    L[Kernel RSS ledger closure] --> N[Next native initialization attribution]
+    R --> N
+    W[Independent Windows release court] --> N
+```
+
+The prototype intervention is now reproduced twice: screenshot RSS increments
+17.891/26.516 MiB on baseline versus 0.469/0.297 MiB on the fixed prototype.
+Neither fixed process retains a `MALLOC_LARGE` region. PNG decoding, geometry,
+CJK rendering and lifecycle remain valid. Final published-revision gates are
+tracked below; prototype receipts are not substituted for them.
+
+
+### Final screenshot repair integration
+
+Shared main revision `745f52b2e169d5b41b51377a82cf8a93a9b00c8b` owns the
+snapshot mapping and row encoder. MiniCon pins that published revision,
+without a local path override. macOS aarch64 release SHA-256:
+`8ce6e879898843f21a2d0a228a14e767e67025bd961a7448bbb909fe62a07480`.
+
+Final gates: 132 MiniCon unit tests, both public control tests, sustained
+output and Clippy pass. The public RSS court measures idle 86.39 MiB,
+after-load 84.52 MiB, and four-cycle growth 10.14 MiB. Sustained output is
+19.52 MB/s with zero host frame copies and zero present failures. Idle vmmap
+has no `MALLOC_LARGE` or whole Color Emoji allocation; footprint 18.1 MiB
+remains explanatory only. The existing 384 MiB ceiling remains unchanged;
+**10 MiB idle host RSS remains unmet**. Shared screenshot/font feature checks
+pass for all six target triples; this is compilation evidence, not six runtime
+courts. Four injected PNG I/O edge cases and owned snapshot transfer pass.
+Exact gate commands and compact receipt: `research/screenshot-memory/final-gates.json`.
+Raw logs and vmmap/heap: `target/screenshot-memory/`.
+
+
+A final pinned-artifact replay also completes resize/restore, screenshot,
+last-tab greeting and close normally: pre-screenshot 72.375 MiB, after 72.250
+MiB, with no `MALLOC_LARGE` and a system-decoded 1920×1200 PNG. This same-process
+absence validates the allocation repair; it is not an idle saving against the
+86.39 MiB early public-court sample. Receipt:
+`research/screenshot-memory/final-journey.json`.

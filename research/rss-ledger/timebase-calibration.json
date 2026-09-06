@@ -1,0 +1,42 @@
+[
+  {
+    "posix_minus_python_ns": 81953726376,
+    "measurement_bracket_ns": 1333
+  },
+  {
+    "posix_minus_python_ns": 81953725522,
+    "measurement_bracket_ns": 375
+  },
+  {
+    "posix_minus_python_ns": 81953725417,
+    "measurement_bracket_ns": 166
+  },
+  {
+    "posix_minus_python_ns": 81953725855,
+    "measurement_bracket_ns": 125
+  },
+  {
+    "posix_minus_python_ns": 81953725480,
+    "measurement_bracket_ns": 125
+  },
+  {
+    "posix_minus_python_ns": 81953725105,
+    "measurement_bracket_ns": 125
+  },
+  {
+    "posix_minus_python_ns": 81953725730,
+    "measurement_bracket_ns": 125
+  },
+  {
+    "posix_minus_python_ns": 81953725438,
+    "measurement_bracket_ns": 125
+  },
+  {
+    "posix_minus_python_ns": 81953726084,
+    "measurement_bracket_ns": 83
+  },
+  {
+    "posix_minus_python_ns": 81953725730,
+    "measurement_bracket_ns": 125
+  }
+]

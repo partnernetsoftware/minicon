@@ -1,0 +1,233 @@
+{
+  "source": "ad991b09cf6b2a0afb6993f89bd25ab9b160482c",
+  "platform": "8d8de88c9ab62709327a6358609e9a09e8c363fd",
+  "target": "macOS 26.5.1 aarch64 release",
+  "runs": {
+    "trace": {
+      "sha256": "cde0785d818a813c8d20dcd1e30a0b95d33496aaa0e894c6e1b6f2c643e50c43",
+      "pid": 48940,
+      "exit_code": 0,
+      "records": [
+        {
+          "phase": "idle-0",
+          "elapsed_s": 2.08822845807299,
+          "rss_kib": 80624
+        },
+        {
+          "phase": "idle-1",
+          "elapsed_s": 3.0997614169027656,
+          "rss_kib": 89616
+        },
+        {
+          "phase": "idle-2",
+          "elapsed_s": 4.1132650000508875,
+          "rss_kib": 80624
+        },
+        {
+          "phase": "idle-3",
+          "elapsed_s": 5.127263667061925,
+          "rss_kib": 80864
+        },
+        {
+          "phase": "idle-4",
+          "elapsed_s": 6.138293124968186,
+          "rss_kib": 80864
+        },
+        {
+          "phase": "idle-5",
+          "elapsed_s": 7.150725417071953,
+          "rss_kib": 80768
+        },
+        {
+          "phase": "text",
+          "elapsed_s": 11.300069167045876,
+          "rss_kib": 80848
+        },
+        {
+          "phase": "resized",
+          "elapsed_s": 14.92668820801191,
+          "rss_kib": 81792
+        },
+        {
+          "phase": "restored",
+          "elapsed_s": 18.524687041994184,
+          "rss_kib": 81824
+        },
+        {
+          "phase": "screenshot",
+          "elapsed_s": 21.1900134999305,
+          "rss_kib": 108928
+        },
+        {
+          "phase": "greeting",
+          "elapsed_s": 23.204004457918927,
+          "rss_kib": 99936
+        }
+      ]
+    },
+    "control": {
+      "sha256": "cde0785d818a813c8d20dcd1e30a0b95d33496aaa0e894c6e1b6f2c643e50c43",
+      "pid": 50529,
+      "exit_code": 0,
+      "records": [
+        {
+          "phase": "idle-0",
+          "elapsed_s": 1.156755540985614,
+          "rss_kib": 80720
+        },
+        {
+          "phase": "idle-1",
+          "elapsed_s": 2.1693978330586106,
+          "rss_kib": 80928
+        },
+        {
+          "phase": "idle-2",
+          "elapsed_s": 3.1777322080451995,
+          "rss_kib": 80928
+        },
+        {
+          "phase": "idle-3",
+          "elapsed_s": 4.1811738749966025,
+          "rss_kib": 80928
+        },
+        {
+          "phase": "idle-4",
+          "elapsed_s": 5.192631999962032,
+          "rss_kib": 81168
+        },
+        {
+          "phase": "idle-5",
+          "elapsed_s": 6.206925374921411,
+          "rss_kib": 75936
+        },
+        {
+          "phase": "text",
+          "elapsed_s": 10.10037974989973,
+          "rss_kib": 76064
+        },
+        {
+          "phase": "resized",
+          "elapsed_s": 13.876792500028387,
+          "rss_kib": 77040
+        },
+        {
+          "phase": "restored",
+          "elapsed_s": 17.753757416037843,
+          "rss_kib": 77136
+        },
+        {
+          "phase": "screenshot",
+          "elapsed_s": 20.5623312080279,
+          "rss_kib": 104320
+        },
+        {
+          "phase": "greeting",
+          "elapsed_s": 24.32905766600743,
+          "rss_kib": 86256
+        }
+      ]
+    }
+  },
+  "ownership": {
+    "allocated_frames": 46,
+    "released_frames": 45,
+    "maximum_live_frames": 2,
+    "last_frame_id_held_until_process_exit": [
+      46
+    ],
+    "median_released_lifetime_us": 535199,
+    "first_steady_frame": {
+      "id": 4,
+      "bytes": 9216000,
+      "released": true,
+      "lifetime_us": 536019,
+      "sample_count": 5,
+      "sample_resident_min": 9224192,
+      "sample_resident_max": 9224192,
+      "sample_paged_out_max": 0,
+      "events": [
+        {
+          "t_us": 427674,
+          "event": "allocate",
+          "resident": 0,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 0,
+          "live": 2
+        },
+        {
+          "t_us": 430154,
+          "event": "present_begin",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 2
+        },
+        {
+          "t_us": 430393,
+          "event": "freeze",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 2
+        },
+        {
+          "t_us": 430597,
+          "event": "image_created",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 2
+        },
+        {
+          "t_us": 430805,
+          "event": "layer_set_contents",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 2
+        },
+        {
+          "t_us": 431302,
+          "event": "transaction_commit",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 1
+        },
+        {
+          "t_us": 431506,
+          "event": "locals_dropped",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 1
+        },
+        {
+          "t_us": 963693,
+          "event": "release",
+          "resident": 9224192,
+          "paged_out": 0,
+          "copied": 0,
+          "modified": 9224192,
+          "live": 1
+        }
+      ]
+    }
+  },
+  "screenshot_control": {
+    "before_live_heap_bytes": 17955280,
+    "after_live_heap_bytes": 17957600,
+    "empty_large_regions": 2,
+    "each_region_kib": 9008,
+    "after_screenshot_resident_dirty_kib": 18016,
+    "later_greeting_resident_dirty_kib": 10448,
+    "later_greeting_swapped_kib": 7568
+  }
+}

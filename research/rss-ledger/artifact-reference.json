@@ -1,0 +1,5 @@
+{
+  "ledger_dylib_sha256": "1511694930cdee2685f72f36b5b7c40fa572f095c6bb22ef9cf7a86d1b98ba4d",
+  "ledger_source_sha256": "5907a19342beb5c90a9a48599b2585eb82ac9622bb9b1b97ad383738db2334c3",
+  "flags": "clang -O2 -Wall -Wextra -Werror -dynamiclib"
+}

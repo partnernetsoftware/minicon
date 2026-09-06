@@ -384,6 +384,32 @@ six-cell claim.
   Follow-up custom-input/pixel and shared-host checkerboards, including
   application-policy controls, narrow the remaining host attribution in
   `plan/research-pixel-host.md`; these are research probes, not product gates.
+- [x] **Screenshot allocator-cache growth repaired**, shared main revision
+  `745f52b2e169d5b41b51377a82cf8a93a9b00c8b`, now pinned by MiniCon.
+  Real-product frame/provider tracing found bounded display-frame ownership,
+  while screenshot preparation and Unix PNG conversion created two full-frame
+  malloc buffers. After free, the original same-window receipt retained two
+  9008 KiB regions, despite only 2320 B live-heap growth. A mapped immutable
+  worker snapshot plus one-row RGBA encoding eliminates those large temporary
+  malloc blocks. Two alternating baseline/fixed release prototype journeys
+  measured screenshot RSS increments 17.891/26.516 MiB versus 0.469/0.297 MiB;
+  fixed processes had no `MALLOC_LARGE` after screenshot or final-tab close.
+  Four PNGs decoded at 1920×1200. Exact prototype hashes and full caveats:
+  `plan/research-frame-lifetime.md`. Final pinned release
+  `8ce6e879898843f21a2d0a228a14e767e67025bd961a7448bbb909fe62a07480`
+  passes 132 unit tests, public GUI/RSS courts, sustained output and Clippy.
+  Named final RSS court idle is 86.39 MiB, load 84.52 MiB; the final screenshot
+  journey has no large malloc regions and decodes 1920×1200. Commands and
+  exact receipts: `research/screenshot-memory/`. This is not a startup or
+  10 MiB PASS.
+- [x] **Remaining RSS accounting is measured, not discounted.** A frozen
+  macOS release receipt closes 79.265625 MiB resident = 18.046875 internal +
+  60.718750 external + 0.5 reusable. External is a kernel pager classification,
+  not proof that every page is a normal file or can be freed. Another run's
+  roughly 79→68 MiB decline coincides with compression, not an accepted source
+  optimization. Controls, native-stage comparisons and observer limitations:
+  `plan/research-rss-ledger.md`. All resident components remain in the product
+  RSS criterion; OS initialization and display residency remain open owners.
 - [~] osx, lnx and win name host RSS through the same black-box court. Native
   osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
   exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode

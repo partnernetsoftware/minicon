@@ -5816,7 +5816,6 @@ impl PixelWindowApplication for ConApp {
                 reply,
                 restore_active,
             } = screenshot;
-            let pixels = frame.pixels_mut().to_vec();
             let response_path = path.to_string_lossy().into_owned();
             let shared_reply = Arc::new(std::sync::Mutex::new(Some(reply)));
             let done = Arc::new(AtomicBool::new(false));
@@ -5828,7 +5827,7 @@ impl PixelWindowApplication for ConApp {
             let waker = window.waker();
             agent_interface::submit_png_atomic(
                 path,
-                pixels,
+                frame.pixels_mut(),
                 width,
                 height,
                 Box::new(move |write_result| {

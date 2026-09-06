@@ -27,8 +27,9 @@ use std::sync::{OnceLock, mpsc};
 use std::time::Instant;
 
 use agenterm_platform::{
+    contract::ui_screenshot::UiScreenshotError,
     filesystem_publish::{write_file_atomic, write_path_atomic},
-    screenshot::{XrgbFrame, write_xrgb_png},
+    screenshot::{OwnedXrgbPixels, XrgbFrame, write_xrgb_png},
 };
 
 // ---------------------------------------------------------------------------
@@ -190,18 +191,21 @@ pub fn write_png_atomic(
     write_path_atomic(path, |temporary| {
         write_xrgb_png(XrgbFrame::new(temporary, width, height, pixels))
             .map(|_| ())
-            .map_err(|error| {
-                let kind = match error.code() {
-                    "screenshot_invalid_dimensions"
-                    | "screenshot_buffer_too_small"
-                    | "screenshot_invalid_clip"
-                    | "screenshot_too_large" => std::io::ErrorKind::InvalidInput,
-                    _ => std::io::ErrorKind::Other,
-                };
-                std::io::Error::new(kind, error)
-            })
+            .map_err(screenshot_io_error)
     })
     .map_err(std::io::Error::from)
+}
+
+fn screenshot_io_error(error: UiScreenshotError) -> std::io::Error {
+    let kind = match error.code() {
+        "screenshot_invalid_dimensions"
+        | "screenshot_buffer_too_small"
+        | "screenshot_buffer_size_mismatch"
+        | "screenshot_invalid_clip"
+        | "screenshot_too_large" => std::io::ErrorKind::InvalidInput,
+        _ => std::io::ErrorKind::Other,
+    };
+    std::io::Error::new(kind, error)
 }
 
 type PngCompletion = Box<dyn FnOnce(std::io::Result<u64>) + Send + 'static>;
@@ -212,7 +216,7 @@ fn complete_png(completion: PngCompletion, result: std::io::Result<u64>) {
 
 struct PngJob {
     path: PathBuf,
-    pixels: Vec<u32>,
+    pixels: OwnedXrgbPixels,
     width: u32,
     height: u32,
     completion: PngCompletion,
@@ -237,10 +241,11 @@ fn png_worker() -> std::io::Result<&'static mpsc::SyncSender<PngJob>> {
                     } = job;
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let started = Instant::now();
-                        write_png_atomic(&path, &pixels, width, height)
+                        write_png_atomic(&path, pixels.pixels(), width, height)
                             .map(|()| started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64)
                     }))
                     .unwrap_or_else(|_| Err(std::io::Error::other("PNG worker panicked")));
+                    drop(pixels);
                     complete_png(completion, result);
                 }
             }),
@@ -259,11 +264,18 @@ pub fn initialize_png_worker() -> std::io::Result<()> {
 
 pub fn submit_png_atomic(
     path: PathBuf,
-    pixels: Vec<u32>,
+    pixels: &[u32],
     width: u32,
     height: u32,
     completion: PngCompletion,
 ) {
+    let pixels = match OwnedXrgbPixels::copy_from(width, height, pixels) {
+        Ok(pixels) => pixels,
+        Err(error) => {
+            complete_png(completion, Err(screenshot_io_error(error)));
+            return;
+        }
+    };
     let job = PngJob {
         path,
         pixels,
@@ -390,6 +402,34 @@ mod tests {
             write_png_atomic(&path, &[0], 2, 1).unwrap_err().kind(),
             std::io::ErrorKind::InvalidInput
         );
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejected_snapshot_completes_without_creating_a_file() {
+        let dir = scratch("rejected-snapshot");
+        let path = dir.join("shot.png");
+        let (send, receive) = mpsc::channel();
+        submit_png_atomic(
+            path.clone(),
+            &[0],
+            2,
+            2,
+            Box::new(move |result| {
+                send.send(result.unwrap_err().kind()).unwrap();
+            }),
+        );
+        assert_eq!(
+            receive
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap(),
+            std::io::ErrorKind::InvalidInput
+        );
+        assert!(matches!(
+            receive.try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
         assert!(!path.exists());
         let _ = std::fs::remove_dir_all(dir);
     }

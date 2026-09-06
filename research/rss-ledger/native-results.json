@@ -1,0 +1,398 @@
+[
+  {
+    "variant": "native",
+    "mode": "plain",
+    "repeat": 0,
+    "sha256": "6f955871bb4614fbb11982f5b982a12c8d3cadc51e45826c449eac2035563ae0",
+    "rss_median": 74547200,
+    "series": [
+      {
+        "ps_monotonic_ns": 1224529317221833,
+        "ps_rss": 74547200
+      },
+      {
+        "ps_monotonic_ns": 1224530328131416,
+        "ps_rss": 74547200
+      },
+      {
+        "ps_monotonic_ns": 1224531339769708,
+        "ps_rss": 74547200
+      },
+      {
+        "ps_monotonic_ns": 1224532350988958,
+        "ps_rss": 74498048
+      },
+      {
+        "ps_monotonic_ns": 1224533358264416,
+        "ps_rss": 74498048
+      }
+    ]
+  },
+  {
+    "variant": "native",
+    "mode": "active",
+    "repeat": 0,
+    "sha256": "6f955871bb4614fbb11982f5b982a12c8d3cadc51e45826c449eac2035563ae0",
+    "rss_median": 73744384,
+    "series": [
+      {
+        "ps_monotonic_ns": 1224536482810166,
+        "ps_rss": 73744384,
+        "ledger": {
+          "pid": 42158,
+          "index": 3,
+          "monotonic_ns": 1224618357461000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 73744384,
+          "resident_peak": 82624512,
+          "internal": 13844480,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 0,
+          "compressed_peak": 0,
+          "compressed_lifetime": 0,
+          "phys_footprint": 14549832,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 212992,
+          "purgeable_nonvolatile_compressed": 0,
+          "graphics_footprint": 16384,
+          "graphics_footprint_compressed": 0,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 0
+        },
+        "sample_age_ms": -81874.650834
+      },
+      {
+        "ps_monotonic_ns": 1224537495229333,
+        "ps_rss": 73744384,
+        "ledger": {
+          "pid": 42158,
+          "index": 4,
+          "monotonic_ns": 1224619359900000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 73744384,
+          "resident_peak": 82624512,
+          "internal": 13844480,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 0,
+          "compressed_peak": 0,
+          "compressed_lifetime": 0,
+          "phys_footprint": 14549832,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 212992,
+          "purgeable_nonvolatile_compressed": 0,
+          "graphics_footprint": 16384,
+          "graphics_footprint_compressed": 0,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 0
+        },
+        "sample_age_ms": -81864.670667
+      },
+      {
+        "ps_monotonic_ns": 1224538510712916,
+        "ps_rss": 73744384,
+        "ledger": {
+          "pid": 42158,
+          "index": 5,
+          "monotonic_ns": 1224620368888000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 73744384,
+          "resident_peak": 82624512,
+          "internal": 13844480,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 0,
+          "compressed_peak": 0,
+          "compressed_lifetime": 0,
+          "phys_footprint": 14549832,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 212992,
+          "purgeable_nonvolatile_compressed": 0,
+          "graphics_footprint": 16384,
+          "graphics_footprint_compressed": 0,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 0
+        },
+        "sample_age_ms": -81858.175084
+      },
+      {
+        "ps_monotonic_ns": 1224539532574166,
+        "ps_rss": 73695232,
+        "ledger": {
+          "pid": 42158,
+          "index": 6,
+          "monotonic_ns": 1224621377742000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 73695232,
+          "resident_peak": 82624512,
+          "internal": 13795328,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 0,
+          "compressed_peak": 0,
+          "compressed_lifetime": 0,
+          "phys_footprint": 14500680,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 212992,
+          "purgeable_nonvolatile_compressed": 0,
+          "graphics_footprint": 16384,
+          "graphics_footprint_compressed": 0,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 0
+        },
+        "sample_age_ms": -81845.167834
+      },
+      {
+        "ps_monotonic_ns": 1224540556436083,
+        "ps_rss": 73695232,
+        "ledger": {
+          "pid": 42158,
+          "index": 7,
+          "monotonic_ns": 1224622384480000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 73695232,
+          "resident_peak": 82624512,
+          "internal": 13795328,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 0,
+          "compressed_peak": 0,
+          "compressed_lifetime": 0,
+          "phys_footprint": 14500680,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 212992,
+          "purgeable_nonvolatile_compressed": 0,
+          "graphics_footprint": 16384,
+          "graphics_footprint_compressed": 0,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 0
+        },
+        "sample_age_ms": -81828.043917
+      }
+    ]
+  },
+  {
+    "variant": "native",
+    "mode": "plain",
+    "repeat": 1,
+    "sha256": "6f955871bb4614fbb11982f5b982a12c8d3cadc51e45826c449eac2035563ae0",
+    "rss_median": 74498048,
+    "series": [
+      {
+        "ps_monotonic_ns": 1224543644937083,
+        "ps_rss": 74514432
+      },
+      {
+        "ps_monotonic_ns": 1224544651384833,
+        "ps_rss": 74514432
+      },
+      {
+        "ps_monotonic_ns": 1224545661063625,
+        "ps_rss": 74465280
+      },
+      {
+        "ps_monotonic_ns": 1224546669279333,
+        "ps_rss": 74498048
+      },
+      {
+        "ps_monotonic_ns": 1224547675908750,
+        "ps_rss": 74498048
+      }
+    ]
+  },
+  {
+    "variant": "native",
+    "mode": "active",
+    "repeat": 1,
+    "sha256": "6f955871bb4614fbb11982f5b982a12c8d3cadc51e45826c449eac2035563ae0",
+    "rss_median": 64913408,
+    "series": [
+      {
+        "ps_monotonic_ns": 1224550784524083,
+        "ps_rss": 64913408,
+        "ledger": {
+          "pid": 43012,
+          "index": 3,
+          "monotonic_ns": 1224632653633000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 64913408,
+          "resident_peak": 82722816,
+          "internal": 5013504,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 8945664,
+          "compressed_peak": 8962048,
+          "compressed_lifetime": 9027584,
+          "phys_footprint": 14664520,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 81920,
+          "purgeable_nonvolatile_compressed": 131072,
+          "graphics_footprint": 0,
+          "graphics_footprint_compressed": 16384,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 4
+        },
+        "sample_age_ms": -81869.108917
+      },
+      {
+        "ps_monotonic_ns": 1224551797590166,
+        "ps_rss": 64847872,
+        "ledger": {
+          "pid": 43012,
+          "index": 4,
+          "monotonic_ns": 1224633660516000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 64847872,
+          "resident_peak": 82722816,
+          "internal": 4947968,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 9011200,
+          "compressed_peak": 9011200,
+          "compressed_lifetime": 9093120,
+          "phys_footprint": 14664520,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 81920,
+          "purgeable_nonvolatile_compressed": 131072,
+          "graphics_footprint": 0,
+          "graphics_footprint_compressed": 16384,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 4
+        },
+        "sample_age_ms": -81862.925834
+      },
+      {
+        "ps_monotonic_ns": 1224552807542791,
+        "ps_rss": 64749568,
+        "ledger": {
+          "pid": 43012,
+          "index": 5,
+          "monotonic_ns": 1224634670156000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 64454656,
+          "resident_peak": 82722816,
+          "internal": 4554752,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 9404416,
+          "compressed_peak": 9404416,
+          "compressed_lifetime": 9486336,
+          "phys_footprint": 14664520,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 81920,
+          "purgeable_nonvolatile_compressed": 131072,
+          "graphics_footprint": 0,
+          "graphics_footprint_compressed": 16384,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 4
+        },
+        "sample_age_ms": -81862.613209
+      },
+      {
+        "ps_monotonic_ns": 1224553813944541,
+        "ps_rss": 65011712,
+        "ledger": {
+          "pid": 43012,
+          "index": 6,
+          "monotonic_ns": 1224635670938000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 65011712,
+          "resident_peak": 82722816,
+          "internal": 5111808,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 8814592,
+          "compressed_peak": 9404416,
+          "compressed_lifetime": 9486336,
+          "phys_footprint": 14631752,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 81920,
+          "purgeable_nonvolatile_compressed": 131072,
+          "graphics_footprint": 0,
+          "graphics_footprint_compressed": 16384,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 39
+        },
+        "sample_age_ms": -81856.993459
+      },
+      {
+        "ps_monotonic_ns": 1224554825085708,
+        "ps_rss": 65011712,
+        "ledger": {
+          "pid": 43012,
+          "index": 7,
+          "monotonic_ns": 1224636674094000,
+          "result": 0,
+          "count": 93,
+          "page_size": 16384,
+          "resident": 65011712,
+          "resident_peak": 82722816,
+          "internal": 5111808,
+          "external": 59899904,
+          "reusable": 0,
+          "compressed": 8814592,
+          "compressed_peak": 9404416,
+          "compressed_lifetime": 9486336,
+          "phys_footprint": 14631752,
+          "device": 0,
+          "purgeable_volatile_pmap": 0,
+          "purgeable_volatile_resident": 0,
+          "purgeable_nonvolatile": 81920,
+          "purgeable_nonvolatile_compressed": 131072,
+          "graphics_footprint": 0,
+          "graphics_footprint_compressed": 16384,
+          "graphics_nofootprint": 0,
+          "graphics_nofootprint_compressed": 0,
+          "decompressions": 39
+        },
+        "sample_age_ms": -81849.008292
+      }
+    ]
+  }
+]

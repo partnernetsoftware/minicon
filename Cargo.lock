@@ -27,7 +27,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agenterm-platform"
 version = "0.1.16"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=8d8de88c9ab62709327a6358609e9a09e8c363fd#8d8de88c9ab62709327a6358609e9a09e8c363fd"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=745f52b2e169d5b41b51377a82cf8a93a9b00c8b#745f52b2e169d5b41b51377a82cf8a93a9b00c8b"
 dependencies = [
  "ab_glyph",
  "atspi",
@@ -36,7 +36,7 @@ dependencies = [
  "memmap2",
  "objc2-app-kit",
  "objc2-foundation 0.2.2",
- "png",
+ "png 0.18.1",
  "softbuffer",
  "tokio",
  "windows-sys 0.61.2",
@@ -48,7 +48,7 @@ dependencies = [
 [[package]]
 name = "agenterm-ui-core"
 version = "0.1.16"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=8d8de88c9ab62709327a6358609e9a09e8c363fd#8d8de88c9ab62709327a6358609e9a09e8c363fd"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=745f52b2e169d5b41b51377a82cf8a93a9b00c8b#745f52b2e169d5b41b51377a82cf8a93a9b00c8b"
 dependencies = [
  "vt100",
 ]
@@ -986,7 +986,7 @@ dependencies = [
  "itoa",
  "minicon-core",
  "object",
- "png",
+ "png 0.17.16",
  "serde_json",
  "unicode-width",
  "vt100",
@@ -1464,6 +1464,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags 2.13.1",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1793,7 +1806,7 @@ dependencies = [
 [[package]]
 name = "softbuffer"
 version = "0.4.8"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=8d8de88c9ab62709327a6358609e9a09e8c363fd#8d8de88c9ab62709327a6358609e9a09e8c363fd"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=745f52b2e169d5b41b51377a82cf8a93a9b00c8b#745f52b2e169d5b41b51377a82cf8a93a9b00c8b"
 dependencies = [
  "as-raw-xcb-connection",
  "bytemuck",
@@ -2112,7 +2125,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=8d8de88c9ab62709327a6358609e9a09e8c363fd#8d8de88c9ab62709327a6358609e9a09e8c363fd"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=745f52b2e169d5b41b51377a82cf8a93a9b00c8b#745f52b2e169d5b41b51377a82cf8a93a9b00c8b"
 dependencies = [
  "itoa",
  "unicode-width",

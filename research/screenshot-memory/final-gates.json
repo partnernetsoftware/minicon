@@ -1,0 +1,69 @@
+{
+  "sha256": "8ce6e879898843f21a2d0a228a14e767e67025bd961a7448bbb909fe62a07480",
+  "jobs": [
+    {
+      "name": "unit",
+      "cmd": [
+        "cargo",
+        "test",
+        "--locked",
+        "--bin",
+        "minicon"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "control",
+      "cmd": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "minicon_control",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "throughput",
+      "cmd": [
+        "cargo",
+        "test",
+        "--locked",
+        "--test",
+        "minicon_throughput",
+        "--",
+        "--ignored",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "clippy",
+      "cmd": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--bin",
+        "minicon",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "shared_revision": "745f52b2e169d5b41b51377a82cf8a93a9b00c8b",
+  "target": "aarch64-apple-darwin",
+  "profile": "release",
+  "idle_bytes": 90587136,
+  "after_load_bytes": 88621056,
+  "four_cycle_growth_bytes": 10633216,
+  "throughput_bytes_per_second": 19515379,
+  "host_copy_frames": 0,
+  "present_failure": 0,
+  "idle_target_met": false
+}

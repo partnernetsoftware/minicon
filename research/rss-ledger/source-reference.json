@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/apple-oss-distributions/xnu",
+  "commit": "f6217f891ac0bb64f3d375211650a4c1ff8ca1ea",
+  "files": [
+    "osfmk/kern/task.c",
+    "osfmk/arm/pmap/pmap.c",
+    "osfmk/vm/vm_fault.c",
+    "osfmk/vm/vm_object.c",
+    "osfmk/vm/vm_object_xnu.h"
+  ],
+  "local_sdk": "26.5"
+}

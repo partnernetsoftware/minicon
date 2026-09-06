@@ -1,0 +1,69 @@
+{
+  "sha256": "8ce6e879898843f21a2d0a228a14e767e67025bd961a7448bbb909fe62a07480",
+  "pid": 33159,
+  "exit_code": 0,
+  "records": [
+    {
+      "phase": "idle-0",
+      "elapsed_s": 1.2973463751841336,
+      "rss_kib": 72880
+    },
+    {
+      "phase": "idle-1",
+      "elapsed_s": 2.3151887920685112,
+      "rss_kib": 72880
+    },
+    {
+      "phase": "idle-2",
+      "elapsed_s": 3.3236211251933128,
+      "rss_kib": 72880
+    },
+    {
+      "phase": "idle-3",
+      "elapsed_s": 4.3325828751549125,
+      "rss_kib": 72880
+    },
+    {
+      "phase": "idle-4",
+      "elapsed_s": 5.345691667171195,
+      "rss_kib": 72848
+    },
+    {
+      "phase": "idle-5",
+      "elapsed_s": 6.357727459166199,
+      "rss_kib": 72848
+    },
+    {
+      "phase": "text",
+      "elapsed_s": 10.272793667158112,
+      "rss_kib": 72976
+    },
+    {
+      "phase": "resized",
+      "elapsed_s": 14.16449470911175,
+      "rss_kib": 74112
+    },
+    {
+      "phase": "restored",
+      "elapsed_s": 18.0374785840977,
+      "rss_kib": 74112
+    },
+    {
+      "phase": "screenshot",
+      "elapsed_s": 21.539887209190056,
+      "rss_kib": 73984
+    },
+    {
+      "phase": "greeting",
+      "elapsed_s": 25.81785120908171,
+      "rss_kib": 71808
+    }
+  ],
+  "png_decode": {
+    "width": 1920,
+    "height": 1200,
+    "codec": "system sips PNG-to-TIFF",
+    "exit_code": 0
+  },
+  "screenshot_malloc_large_regions": 0
+}

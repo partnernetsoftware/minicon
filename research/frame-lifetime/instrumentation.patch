@@ -1,0 +1,122 @@
+--- a/src/backends/cg.rs
++++ b/src/backends/cg.rs
+@@ -1,5 +1,6 @@
+ //! Softbuffer implementation using CoreGraphics.
+ use crate::backend_interface::*;
++mod frame_trace;
+ use crate::error::InitError;
+ use crate::{Rect, SoftBufferError};
+ use objc2::rc::Retained;
+@@ -273,7 +274,16 @@
+ // presented image exact ownership and returns its pages on release, instead
+ // of leaving recently freed full frames in malloc's large-allocation cache.
+ #[derive(Debug)]
+-struct MappedPixels(memmap2::MmapMut);
++struct MappedPixels(Option<memmap2::MmapMut>);
++impl Drop for MappedPixels {
++    fn drop(&mut self) {
++        if let Some(mapping) = &self.0 { frame_trace::releasing(mapping.as_ptr() as usize); }
++    }
++}
++struct ProviderMapping(memmap2::Mmap);
++impl Drop for ProviderMapping {
++    fn drop(&mut self) { frame_trace::releasing(self.0.as_ptr() as usize); }
++}
+ 
+ impl MappedPixels {
+     fn new(width: usize, height: usize) -> Result<Self, SoftBufferError> {
+@@ -285,7 +295,10 @@
+                 SoftBufferError::PlatformError(Some("pixel mapping size overflow".into()), None)
+             })?;
+         memmap2::MmapMut::map_anon(bytes)
+-            .map(Self)
++            .map(|mapping| {
++                frame_trace::allocated(mapping.as_ptr() as usize, mapping.len());
++                Self(Some(mapping))
++            })
+             .map_err(|error| {
+                 SoftBufferError::PlatformError(
+                     Some(format!("allocate pixel mapping: {error}")),
+@@ -294,7 +307,7 @@
+             })
+     }
+ 
+-    fn into_data_provider(self) -> Result<CFRetained<CGDataProvider>, SoftBufferError> {
++    fn into_data_provider(mut self) -> Result<CFRetained<CGDataProvider>, SoftBufferError> {
+         unsafe extern "C-unwind" fn release(
+             info: *mut c_void,
+             _data: NonNull<c_void>,
+@@ -302,15 +315,19 @@
+         ) {
+             // SAFETY: `info` was transferred from Box<Mmap> exactly once below;
+             // CoreGraphics releases it only after its final reader is done.
+-            drop(unsafe { Box::from_raw(info.cast::<memmap2::Mmap>()) });
+-        }
+-
+-        let mapping = self.0.make_read_only().map_err(|error| {
++            drop(unsafe { Box::from_raw(info.cast::<ProviderMapping>()) });
++        }
++
++        let mapping = self.0.take().expect("mapping");
++        let mapped_address = mapping.as_ptr() as usize;
++        let mapping = mapping.make_read_only().map_err(|error| {
++            frame_trace::releasing(mapped_address);
+             SoftBufferError::PlatformError(Some(format!("freeze pixel mapping: {error}")), None)
+         })?;
+         let len = mapping.len();
+         let data_ptr = mapping.as_ptr().cast();
+-        let owner = Box::into_raw(Box::new(mapping));
++        frame_trace::event("freeze", mapping.as_ptr() as usize);
++        let owner = Box::into_raw(Box::new(ProviderMapping(mapping)));
+         // SAFETY: The immutable anonymous mapping owns initialized bytes; its
+         // boxed owner stays alive until the data provider invokes `release`.
+         let data_provider =
+@@ -334,7 +351,7 @@
+         // SAFETY: anonymous maps are page aligned and zero initialized, and
+         // `new` checks byte length is a multiple of u32 and at most isize::MAX.
+         unsafe {
+-            std::slice::from_raw_parts(self.0.as_ptr().cast(), self.0.len() / size_of::<u32>())
++            std::slice::from_raw_parts(self.0.as_ref().expect("mapping").as_ptr().cast(), self.0.as_ref().expect("mapping").len() / size_of::<u32>())
+         }
+     }
+ }
+@@ -344,8 +361,8 @@
+         // SAFETY: as above, with exclusive ownership until present consumes it.
+         unsafe {
+             std::slice::from_raw_parts_mut(
+-                self.0.as_mut_ptr().cast(),
+-                self.0.len() / size_of::<u32>(),
++                self.0.as_mut().expect("mapping").as_mut_ptr().cast(),
++                self.0.as_ref().expect("mapping").len() / size_of::<u32>(),
+             )
+         }
+     }
+@@ -381,6 +398,8 @@
+     }
+ 
+     fn present(self) -> Result<(), SoftBufferError> {
++        let traced_address = self.buffer.0.as_ref().expect("mapping").as_ptr() as usize;
++        frame_trace::event("present_begin", traced_address);
+         let data_provider = self.buffer.into_data_provider()?;
+ 
+         // `CGBitmapInfo` consists of a combination of `CGImageAlphaInfo`, `CGImageComponentInfo`
+@@ -414,13 +433,19 @@
+         // The CALayer has a default action associated with a change in the layer contents, causing
+         // a quarter second fade transition to happen every time a new buffer is applied. This can
+         // be avoided by wrapping the operation in a transaction and disabling all actions.
++        frame_trace::event("image_created", traced_address);
+         CATransaction::begin();
+         CATransaction::setDisableActions(true);
+ 
+         // SAFETY: The contents is `CGImage`, which is a valid class for `contents`.
+         unsafe { self.imp.layer.setContents(Some(image.as_ref())) };
+ 
++        frame_trace::event("layer_set_contents", traced_address);
+         CATransaction::commit();
++        frame_trace::event("transaction_commit", traced_address);
++        drop(image);
++        drop(data_provider);
++        frame_trace::event("locals_dropped", traced_address);
+         Ok(())
+     }
+ 

@@ -1,0 +1,349 @@
+[
+  {
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527",
+    "pid": 98802,
+    "exit_code": 0,
+    "records": [
+      {
+        "phase": "idle-0",
+        "elapsed_s": 2.384743625065312,
+        "rss_kib": 71840
+      },
+      {
+        "phase": "idle-1",
+        "elapsed_s": 3.399710667086765,
+        "rss_kib": 71200
+      },
+      {
+        "phase": "idle-2",
+        "elapsed_s": 4.413642999948934,
+        "rss_kib": 71312
+      },
+      {
+        "phase": "idle-3",
+        "elapsed_s": 5.4271518748719245,
+        "rss_kib": 71264
+      },
+      {
+        "phase": "idle-4",
+        "elapsed_s": 6.437004457926378,
+        "rss_kib": 71280
+      },
+      {
+        "phase": "idle-5",
+        "elapsed_s": 7.4456837920006365,
+        "rss_kib": 70464
+      },
+      {
+        "phase": "text",
+        "elapsed_s": 12.255856666946784,
+        "rss_kib": 66512
+      },
+      {
+        "phase": "resized",
+        "elapsed_s": 16.01331758289598,
+        "rss_kib": 69616
+      },
+      {
+        "phase": "restored",
+        "elapsed_s": 19.752272249897942,
+        "rss_kib": 69616
+      },
+      {
+        "phase": "screenshot",
+        "elapsed_s": 22.45239341701381,
+        "rss_kib": 87936
+      },
+      {
+        "phase": "greeting",
+        "elapsed_s": 26.154259874951094,
+        "rss_kib": 70320
+      }
+    ],
+    "variant": "baseline",
+    "cycle": 0,
+    "png": {
+      "size": [
+        1920,
+        1200
+      ],
+      "decoded": true
+    },
+    "diagnostics": {
+      "restored": {
+        "large_region_lines": [],
+        "heap_live_bytes": 17963040
+      },
+      "screenshot": {
+        "large_region_lines": [
+          "MALLOC_LARGE (empty)        551000000-5518cc000    [ 9008K  9008K  9008K     0K] rw-/rwx SM=PRV  ",
+          "MALLOC_LARGE (empty)              9008K    9008K    9008K       0K       0K       0K       0K        1         see MALLOC ZONE table below"
+        ],
+        "heap_live_bytes": 17948736
+      },
+      "greeting": {
+        "large_region_lines": [],
+        "heap_live_bytes": 16533680
+      }
+    }
+  },
+  {
+    "sha256": "a41d51c1891a15dc3085b299311423a2da9b33bb2c5c80ab9000aa8e2585993a",
+    "pid": 1454,
+    "exit_code": 0,
+    "records": [
+      {
+        "phase": "idle-0",
+        "elapsed_s": 1.6047332079615444,
+        "rss_kib": 79696
+      },
+      {
+        "phase": "idle-1",
+        "elapsed_s": 2.6102131251245737,
+        "rss_kib": 88848
+      },
+      {
+        "phase": "idle-2",
+        "elapsed_s": 3.622377041960135,
+        "rss_kib": 79856
+      },
+      {
+        "phase": "idle-3",
+        "elapsed_s": 4.635702500119805,
+        "rss_kib": 71456
+      },
+      {
+        "phase": "idle-4",
+        "elapsed_s": 5.647009625099599,
+        "rss_kib": 71552
+      },
+      {
+        "phase": "idle-5",
+        "elapsed_s": 6.656872750027105,
+        "rss_kib": 71488
+      },
+      {
+        "phase": "text",
+        "elapsed_s": 10.385403375141323,
+        "rss_kib": 71728
+      },
+      {
+        "phase": "resized",
+        "elapsed_s": 14.180855083046481,
+        "rss_kib": 72896
+      },
+      {
+        "phase": "restored",
+        "elapsed_s": 18.050520417047665,
+        "rss_kib": 72832
+      },
+      {
+        "phase": "screenshot",
+        "elapsed_s": 20.889897417044267,
+        "rss_kib": 73312
+      },
+      {
+        "phase": "greeting",
+        "elapsed_s": 24.614151917165145,
+        "rss_kib": 73696
+      }
+    ],
+    "variant": "fixed",
+    "cycle": 0,
+    "png": {
+      "size": [
+        1920,
+        1200
+      ],
+      "decoded": true
+    },
+    "diagnostics": {
+      "restored": {
+        "large_region_lines": [],
+        "heap_live_bytes": 17959856
+      },
+      "screenshot": {
+        "large_region_lines": [],
+        "heap_live_bytes": 17943248
+      },
+      "greeting": {
+        "large_region_lines": [],
+        "heap_live_bytes": 16522352
+      }
+    }
+  },
+  {
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527",
+    "pid": 3669,
+    "exit_code": 0,
+    "records": [
+      {
+        "phase": "idle-0",
+        "elapsed_s": 1.139940874883905,
+        "rss_kib": 80560
+      },
+      {
+        "phase": "idle-1",
+        "elapsed_s": 2.151327791856602,
+        "rss_kib": 80560
+      },
+      {
+        "phase": "idle-2",
+        "elapsed_s": 3.162337124813348,
+        "rss_kib": 80560
+      },
+      {
+        "phase": "idle-3",
+        "elapsed_s": 4.169176416937262,
+        "rss_kib": 80560
+      },
+      {
+        "phase": "idle-4",
+        "elapsed_s": 5.176534499973059,
+        "rss_kib": 80560
+      },
+      {
+        "phase": "idle-5",
+        "elapsed_s": 6.18581504188478,
+        "rss_kib": 80464
+      },
+      {
+        "phase": "text",
+        "elapsed_s": 9.911375291878358,
+        "rss_kib": 80528
+      },
+      {
+        "phase": "resized",
+        "elapsed_s": 13.681281708879396,
+        "rss_kib": 75424
+      },
+      {
+        "phase": "restored",
+        "elapsed_s": 17.383866041898727,
+        "rss_kib": 75664
+      },
+      {
+        "phase": "screenshot",
+        "elapsed_s": 20.08139937487431,
+        "rss_kib": 102816
+      },
+      {
+        "phase": "greeting",
+        "elapsed_s": 23.780925708822906,
+        "rss_kib": 74752
+      }
+    ],
+    "variant": "baseline",
+    "cycle": 1,
+    "png": {
+      "size": [
+        1920,
+        1200
+      ],
+      "decoded": true
+    },
+    "diagnostics": {
+      "restored": {
+        "large_region_lines": [],
+        "heap_live_bytes": 17955536
+      },
+      "screenshot": {
+        "large_region_lines": [
+          "MALLOC_LARGE (empty)        64a800000-64b0cc000    [ 9008K  9008K  9008K     0K] rw-/rwx SM=PRV  ",
+          "MALLOC_LARGE (empty)        64b400000-64bccc000    [ 9008K     0K     0K     0K] rw-/rwx SM=PRV  ",
+          "MALLOC_LARGE (empty)              17.6M    9008K    9008K       0K       0K       0K       0K        2         see MALLOC ZONE table below"
+        ],
+        "heap_live_bytes": 17941872
+      },
+      "greeting": {
+        "large_region_lines": [],
+        "heap_live_bytes": 16520976
+      }
+    }
+  },
+  {
+    "sha256": "a41d51c1891a15dc3085b299311423a2da9b33bb2c5c80ab9000aa8e2585993a",
+    "pid": 5594,
+    "exit_code": 0,
+    "records": [
+      {
+        "phase": "idle-0",
+        "elapsed_s": 1.1447026669047773,
+        "rss_kib": 80384
+      },
+      {
+        "phase": "idle-1",
+        "elapsed_s": 2.1506817499175668,
+        "rss_kib": 80624
+      },
+      {
+        "phase": "idle-2",
+        "elapsed_s": 3.15795591683127,
+        "rss_kib": 80624
+      },
+      {
+        "phase": "idle-3",
+        "elapsed_s": 4.16863524983637,
+        "rss_kib": 80624
+      },
+      {
+        "phase": "idle-4",
+        "elapsed_s": 5.177748458925635,
+        "rss_kib": 80624
+      },
+      {
+        "phase": "idle-5",
+        "elapsed_s": 6.189677541842684,
+        "rss_kib": 80480
+      },
+      {
+        "phase": "text",
+        "elapsed_s": 9.886812874814495,
+        "rss_kib": 74432
+      },
+      {
+        "phase": "resized",
+        "elapsed_s": 13.656603874871507,
+        "rss_kib": 74144
+      },
+      {
+        "phase": "restored",
+        "elapsed_s": 17.355215874966234,
+        "rss_kib": 74448
+      },
+      {
+        "phase": "screenshot",
+        "elapsed_s": 20.128113250015303,
+        "rss_kib": 74752
+      },
+      {
+        "phase": "greeting",
+        "elapsed_s": 23.910701541928574,
+        "rss_kib": 74784
+      }
+    ],
+    "variant": "fixed",
+    "cycle": 1,
+    "png": {
+      "size": [
+        1920,
+        1200
+      ],
+      "decoded": true
+    },
+    "diagnostics": {
+      "restored": {
+        "large_region_lines": [],
+        "heap_live_bytes": 17953312
+      },
+      "screenshot": {
+        "large_region_lines": [],
+        "heap_live_bytes": 17942784
+      },
+      "greeting": {
+        "large_region_lines": [],
+        "heap_live_bytes": 16191936
+      }
+    }
+  }
+]

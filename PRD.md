@@ -201,7 +201,8 @@ flowchart LR
 - [x] Native window title is `<title> — MiniCon <version>` (empty workspace:
   `MiniCon <version>`). Owner: `prd/PRD_02_25_con_workspace.md`.
 - [~] Host process RSS intent is 10 MiB idle. Font leakage, duplicate Retina
-  canvas and old-frame retention are repaired. Named macOS aarch64 release
+  canvas, old-frame retention and post-screenshot malloc caches are repaired.
+  Named macOS aarch64 release
   idle observations are now about 78–87 MiB; the 10 MiB gap remains open.
   Native Hello/input/menu and terminal-increment investigations are recorded
   under `prd/PRD_02_27_con_delivery.md`.
