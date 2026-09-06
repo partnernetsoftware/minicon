@@ -1,0 +1,66 @@
+{
+  "identity": {
+    "artifact_sha256": "f137e15296dde9f7242041d9422fac05a45aa4687d9775e56c0bc7acaf9ca699",
+    "observer_sha256": "8da95c5e08c2806868dcc3f08e506962d07a4aa5b2aede1bbd9c4ecc6e950233",
+    "calibration_exit": 0,
+    "native_exit_after_reap": -15
+  },
+  "calls": [
+    "DLOPEN seq=0 thread=83180154 caller=0x19db63f1c flags=0 path=/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation success=1 before=5898240 after=5898240 kr=0,0 overlap=0,0",
+    "DLOPEN seq=1 thread=83180154 caller=0x189be2590 flags=0 path=/usr/lib/swift/libswiftCore.dylib success=1 before=5947392 after=5947392 kr=0,0 overlap=0,0",
+    "DLOPEN seq=2 thread=83180154 caller=0x190da68b0 flags=5 path=/System/Library/Frameworks/ColorSync.framework/ColorSync success=1 before=6635520 after=6635520 kr=0,0 overlap=0,0",
+    "DLOPEN seq=3 thread=83180154 caller=0x18efcbe9c flags=2 path=/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation success=1 before=9388032 after=9388032 kr=0,0 overlap=0,0",
+    "DLOPEN seq=4 thread=83180154 caller=0x190881f2c flags=5 path=/System/Library/PrivateFrameworks/TCC.framework/TCC success=1 before=9895936 after=9895936 kr=0,0 overlap=0,0",
+    "DLOPEN seq=5 thread=83180154 caller=0x18a5a80dc flags=5 path=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/AE.framework/Versions/A/AE success=1 before=10403840 after=10403840 kr=0,0 overlap=0,0",
+    "DLOPEN seq=6 thread=83180154 caller=0x18a0926bc flags=5 path=/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/LaunchServices success=1 before=12222464 after=12222464 kr=0,0 overlap=0,0",
+    "DLOPEN seq=7 thread=83180154 caller=0x18a092ba8 flags=5 path=/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics success=1 before=12222464 after=12222464 kr=0,0 overlap=0,0",
+    "DLOPEN seq=8 thread=83180154 caller=0x18b8e2674 flags=256 path=/System/Library/PrivateFrameworks/ViewBridge.framework/Versions/A/ViewBridge success=1 before=15515648 after=21184512 kr=0,0 overlap=0,0",
+    "DLOPEN seq=9 thread=83180295 caller=0x28e9e78c0 flags=16 path=/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation success=1 before=21954560 after=21954560 kr=0,0 overlap=0,0",
+    "DLOPEN seq=10 thread=83180154 caller=0x189bb5734 flags=262 path=/usr/lib/libobjc-trampolines.dylib success=1 before=22118400 after=22151168 kr=0,0 overlap=0,0",
+    "DLOPEN seq=11 thread=83180154 caller=0x18a0adf64 flags=277 path=/System/Library/Frameworks/AppKit.framework/AppKit success=1 before=23412736 after=23412736 kr=0,0 overlap=0,0",
+    "DLOPEN seq=12 thread=83180154 caller=0x193ccc0d0 flags=5 path=/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vImage.framework/Versions/A/Libraries/libCGInterfaces.dylib success=1 before=24559616 after=24559616 kr=0,0 overlap=0,0",
+    "DLOPEN seq=13 thread=83180154 caller=0x1940477ac flags=0 path=/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vImage.framework/Versions/A/Libraries/libCGInterfaces.dylib success=1 before=24559616 after=24559616 kr=0,0 overlap=0,0",
+    "DLOPEN seq=14 thread=83180154 caller=0x18fbe2f4c flags=258 path=/System/Library/Frameworks/AppKit.framework/AppKit success=1 before=24838144 after=24838144 kr=0,0 overlap=0,0",
+    "DLOPEN seq=15 thread=83180154 caller=0x18a0adf64 flags=277 path=/System/Library/Extensions/AGXMetalG16X.bundle/Contents/MacOS/AGXMetalG16X success=0 before=26066944 after=26066944 kr=0,0 overlap=0,0",
+    "DLOPEN seq=16 thread=83180154 caller=0x18a0fa720 flags=265 path=/System/Library/Extensions/AGXMetalG16X.bundle/Contents/MacOS/AGXMetalG16X success=1 before=26066944 after=26329088 kr=0,0 overlap=0,0",
+    "DLOPEN seq=17 thread=83180325 caller=0x190a65208 flags=1 path=/System/Library/PrivateFrameworks/login.framework/login success=1 before=27082752 after=27082752 kr=0,0 overlap=0,0",
+    "DLOPEN seq=18 thread=83180154 caller=0x18e4f56a8 flags=2 path=/System/Library/PrivateFrameworks/ViewBridge.framework/ViewBridge success=1 before=27377664 after=27377664 kr=0,0 overlap=0,0",
+    "DLOPEN seq=19 thread=83180154 caller=0x190735924 flags=1 path=/usr/lib/libMobileGestaltExtensions.dylib success=0 before=53493760 after=53493760 kr=0,0 overlap=0,0",
+    "DLOPEN seq=20 thread=83180154 caller=0x196f63d84 flags=256 path=/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit success=1 before=53657600 after=53657600 kr=0,0 overlap=0,0",
+    "DLOPEN seq=21 thread=83180154 caller=0x18a0c027c flags=5 path=/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/LaunchServices success=1 before=53739520 after=53739520 kr=0,0 overlap=0,0",
+    "DLOPEN seq=22 thread=83180154 caller=0x19466672c flags=0 path=/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices success=1 before=54722560 after=54722560 kr=0,0 overlap=0,0",
+    "DLOPEN seq=23 thread=83180154 caller=0x18b8e2674 flags=256 path=/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight success=1 before=59588608 after=59588608 kr=0,0 overlap=0,0"
+  ],
+  "ledger": {
+    "observer-first": {
+      "kr": 0,
+      "rss": 8617984,
+      "internal": 1540096,
+      "external": 7077888,
+      "reusable": 0,
+      "compressed": 0
+    },
+    "observer-warm": {
+      "kr": 0,
+      "rss": 8617984,
+      "internal": 1540096,
+      "external": 7077888,
+      "reusable": 0,
+      "compressed": 0
+    },
+    "shared-application": {
+      "kr": 0,
+      "rss": 27951104,
+      "internal": 5914624,
+      "external": 22036480,
+      "reusable": 0,
+      "compressed": 0
+    }
+  },
+  "mapped": {
+    "ViewBridge": true,
+    "AppIntents": true,
+    "UIIntelligenceSupport": true,
+    "WritingToolsUI": true
+  }
+}

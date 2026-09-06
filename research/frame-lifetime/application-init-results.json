@@ -1,0 +1,110 @@
+{
+  "identity": {
+    "sha256": "fa149edf388d8dd65dca94045d4ff0cc45c307d1dedd78b85f874fe43d5f6e6b",
+    "pid": 34935,
+    "native_exit": 0,
+    "sample_exit": 0
+  },
+  "stages": {
+    "observer-first": [
+      {
+        "phase": "before",
+        "kr": 0,
+        "rss": 8536064,
+        "internal": 1458176,
+        "external": 7077888,
+        "reusable": 0,
+        "compressed": 0
+      },
+      {
+        "phase": "after",
+        "kr": 0,
+        "rss": 8552448,
+        "internal": 1474560,
+        "external": 7077888,
+        "reusable": 0,
+        "compressed": 0
+      }
+    ],
+    "observer-warm": [
+      {
+        "phase": "before",
+        "kr": 0,
+        "rss": 8552448,
+        "internal": 1474560,
+        "external": 7077888,
+        "reusable": 0,
+        "compressed": 0
+      },
+      {
+        "phase": "after",
+        "kr": 0,
+        "rss": 8585216,
+        "internal": 1507328,
+        "external": 7077888,
+        "reusable": 0,
+        "compressed": 0
+      }
+    ],
+    "shared-application": [
+      {
+        "phase": "before",
+        "kr": 0,
+        "rss": 27623424,
+        "internal": 5816320,
+        "external": 21807104,
+        "reusable": 0,
+        "compressed": 0
+      },
+      {
+        "phase": "after",
+        "kr": 0,
+        "rss": 27967488,
+        "internal": 5931008,
+        "external": 22036480,
+        "reusable": 0,
+        "compressed": 0
+      }
+    ],
+    "regular-policy": [
+      {
+        "phase": "before",
+        "kr": 0,
+        "rss": 28033024,
+        "internal": 5947392,
+        "external": 22085632,
+        "reusable": 0,
+        "compressed": 0
+      },
+      {
+        "phase": "after",
+        "kr": 0,
+        "rss": 28065792,
+        "internal": 5963776,
+        "external": 22102016,
+        "reusable": 0,
+        "compressed": 0
+      }
+    ],
+    "finish-launching": [
+      {
+        "phase": "before",
+        "kr": 0,
+        "rss": 72646656,
+        "internal": 18989056,
+        "external": 53657600,
+        "reusable": 0,
+        "compressed": 0
+      },
+      {
+        "phase": "after",
+        "kr": 0,
+        "rss": 72646656,
+        "internal": 18989056,
+        "external": 53657600,
+        "reusable": 0,
+        "compressed": 0
+      }
+    ]
+  }
+}

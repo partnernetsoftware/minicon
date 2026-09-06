@@ -342,3 +342,19 @@ in `research/frame-lifetime/external-results.json`. Reproduce only in a
 coordinated research window with
 `python3 research/frame-lifetime/writing-tools-product.py`; all four GUI
 processes exited through the existing public tests and were reaped.
+
+
+## Continuing sharedApplication attribution
+
+Separate sampled and bounded loader runs investigate the earlier roughly
+14.25 MiB external increment. A main-thread `_currentAppIsViewService` soft
+load resolves to ViewBridge.framework; its observed public-dlopen span sees
+5.406 MiB external growth. Concurrent UIIntelligence registration soft-loads
+AppIntents-related clients, and the public-dlopen observer demonstrably misses
+that loading path. The 5.406 MiB span therefore is not an exclusive framework
+allocation total, and no supported suppression or product saving is established.
+
+Owners and reproducible limitations:
+`research/frame-lifetime/application-init-notes.md` and
+`research/frame-lifetime/application-init-dlopen-status.md`. This investigation
+is independent of the user's pending Writing Tools compatibility choice.
