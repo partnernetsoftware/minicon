@@ -74,11 +74,15 @@ Main PRD Windows receipt is cdx-wjhk’s at `e6cd7b0`. Still above
 10 MiB. No production pin/source patch yet. macOS WritingToolsUI
 dlopen ~22.6 MiB is **not** this GDI remainder.
 
-Idle QueryWorkingSet (same PE, not wrapper): WS 22,515,712 =
-resident **shared 18,186,240** + **private 4,300,800**. The 21 MiB
-is mostly shared Win32/GDI/IME pages (`shell32` / `windows.storage` /
-`GdiPlus` / `TextInputFramework` in the VA map). Private resident
-~4.1 MiB covers DIB+pipe. Next: resident-by-module, not wrapper.
+`PrivateMemorySize64` is **commit**. Do not write
+`21.45 WS = 6.25 private + 15 non-private`. Same-walk
+QueryWorkingSetEx (idle, not wrapper): WS 22,519,808;
+resident **image 16,343,040** + **mapped 2,908,160** +
+**private_type 3,235,840**. Top resident leaves: `ntdll`
+3.56 MiB, unnamed mapped 2.61 MiB, then IME/UI
+(`TextInputFramework`/`msctf`/`CoreMessaging`/`CoreUIComponents`).
+Load +11 MiB is private **commit** only, not a named parser/heap
+stack. Do not re-open close or wrapper courts.
 
 ## Top 5 live owners and verifiable interventions
 
@@ -100,12 +104,12 @@ After-close split (sampled, not inferred from +10 MiB RSS):
 | live PTY | `minicon-reader`/`waiter`/`agenterm-conpty-output` return to 1; reaper 1; overflow 0 |
 | tab/vt100 | `list-tabs` returns to 1 |
 | GDI | **11** at idle, two-tab, and after close |
-| heap vs WS | idle private **6.25 MiB**, WS **21.45**; load +**11 MiB private**; cycle after settled load **~0** |
+| commit vs resident | `PrivateMemorySize64` is commit; do not subtract from WS |
 | residue | +6 handles, +3 USER — not 10 MiB |
 
-RSS-court four-cycle +9 MiB is **WS catching up to already-filled
-parser/heap**, not leftover tab owners. Do not cut PTY capacity.
-macOS `finishLaunching` +22.59 MiB is not this remainder.
+Load +11 MiB is **private commit**, not a named malloc stack.
+Do not cut PTY capacity. Do not re-open close/wrapper. macOS
+WritingToolsUI is not this remainder.
 
 Logs: `research/windows-memory/live-owners.md`.
 Driver: `research/windows-memory/run-close-owners.sh`.

@@ -24,11 +24,13 @@ alone. Split after `close-tab`:
    client DIB. Extra-tab close must **not** free them; they are idle
    owners. `GetGuiResources` should be flat across cycles if GDI is
    not the +10 MiB.
-4. **Already-free, heap-retained** — `PrivateMemorySize64` /
-   working set climb **while** (1)–(3) are flat. That is allocator
-   residency, not a live tab owner. Do not name it “tab leak”.
-   macOS `finishLaunching` +22.59 MiB is a **different** call chain
-   and is not this Windows remainder.
+4. **Commit vs resident** — `PrivateMemorySize64` / `PrivateUsage`
+   is **commit**, not RSS. **Do not** write
+   `WS = PrivateMemorySize64 + (WS − private)`. Subtract only
+   counters from the same resident-page walk
+   (`QueryWorkingSet` / `QueryWorkingSetEx` + `VirtualQueryEx`).
+   A load-time private-commit climb is **not** a named malloc
+   stack (parser/heap) until that walk says so.
 
 Probe: `probe-gdi-objects.ps1` (WS, private, handles, GDI/USER,
 named PTY thread counts). Driver:
@@ -50,9 +52,11 @@ PTY thread names from `GetThreadDescription`.
 | after 4 closes | 1 | 22,581,248 | 6,594,560 | 213 | 11 | 17 | 13 | 1 | 1 | 1 |
 
 After close: reader/waiter/conpty-output return to **1**. Tab count **1**.
-GDI **flat 11**. WS +88 KiB, private +40 KiB. Handles +6, USER +3.
-**No leftover PTY threads or vt100 tab owners.** Extra-tab private
-+1.53 MiB returns on close (pipe+session). Product ring not cut.
+GDI **flat 11**. WS +88 KiB. `PrivateMemorySize64` +40 KiB is
+**commit**, not a WS term. Handles +6, USER +3.
+**No leftover live PTY threads or vt100 tab owners** (this round’s
+large close residue is excluded). Extra-tab **commit** +1.53 MiB
+returns on close. Product ring not cut. Do not re-open this court.
 
 ### With 2000-line load, then four extra-tab cycles
 
@@ -65,40 +69,61 @@ GDI **flat 11**. WS +88 KiB, private +40 KiB. Handles +6, USER +3.
 | two-tab | 2 | ~34.7 MiB | ~19.6 MiB | ~222 | 11 | 2/2 |
 | after 4 closes | 1 | 34,398,208 | 18,079,744 | 213 | 11 | 1/1 |
 
-Load itself is **+11.0 MiB private** (vt100 fill / heap), GDI still 11,
-PTY threads still 1. Four-cycle after that load: WS **+45 KiB**,
-private **flat**. Live PTY/tab/GDI do not explain RSS-court +9 MiB.
-
-RSS-court after_load was only +0.56 MiB because that harness finishes
-in ~1.4 s and samples WS before the load’s pages show. The later
-“cycle growth” is that **already-allocated parser/heap committing
-into WS**, not a closed-tab owner. Idle 21.45 MiB = private **6.25 MiB**
-+ **~15 MiB non-private WS** (PE/GDI mappings). Not macOS
-`finishLaunching`.
+Load itself is **+11.0 MiB `PrivateMemorySize64` commit**. That is
+load-related **commit**, **not** a malloc-stack naming of parser/heap.
+GDI still 11, PTY threads still 1. Four-cycle after that load: WS
+**+45 KiB**, commit flat. Live PTY/tab/GDI do not explain RSS-court
++9 MiB. RSS-court after_load +0.56 MiB is a **timing** note only
+(1.4 s sample), not parser/heap evidence.
 
 Closed-tab leftover that is real and small: +6 handles, +3 USER.
-Not a 10 MiB repair. No production patch from this sample.
+Not a 10 MiB repair. No production patch. Do not re-open close or
+wrapper courts.
 
-## Idle WS split (VirtualQuery commit vs QueryWorkingSet resident)
+## Idle resident pages (QueryWorkingSetEx — same walk as WS)
 
-`target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log`
+`target/windows-memory/idle-regions-60d9a783551f4721ff8adfc2c510ca450fd6b59d-20260906T105426Z.log`
 
-| counter | bytes | note |
-|---|---:|---|
-| WorkingSet | 22,515,712 | public RSS |
-| PrivateMemorySize64 | 6,545,408 | private commit, not RSS |
-| QueryWorkingSet shared | **18,186,240** | **resident shared/image ~17.35 MiB** |
-| QueryWorkingSet private | **4,300,800** | resident private ~4.10 MiB |
-| VirtualQuery commit_image | 100,720,640 | VA only, **not RSS** |
+`PrivateMemorySize64` 6,541,312 is **commit**. It is **not** used
+below. Subtract only QueryWorkingSetEx + VirtualQueryEx on the
+working-set pages:
 
-5490 pages × 4096 ≈ WS. Idle 21.5 MiB is **mostly shared Win32/GDI/IME
-image pages**, not MiniCon heap and not macOS WritingToolsUI.
+| same-walk counter | bytes |
+|---|---:|
+| WorkingSet | 22,519,808 |
+| resident_shared | 18,186,240 |
+| resident_private (QWS Shared=0) | 4,300,800 |
+| resident_image | **16,343,040** |
+| resident_mapped | **2,908,160** |
+| resident_private_type | **3,235,840** |
 
-Largest **committed** mapped names (VA, not resident): `windows.storage.dll`,
-`shell32.dll`, `KernelBase.dll`, `combase.dll`, `CoreUIComponents.dll`,
-`GdiPlus.dll`, `TextInputFramework.dll`, `msctf.dll`, `user32.dll`,
-`gdi32full.dll`. Next cut is resident-by-module (`QueryWorkingSetEx`),
-not a PTY-ring cut and not a wrapper re-run.
+shared+private = 22,487,040 (5490 × 4096). image+mapped+private_type
+matches that walk. Idle RSS is **mostly resident image**, then mapped,
+then private.
+
+Top **resident** files (not VA commit):
+
+| resident | leaf |
+|---:|---|
+| 3,735,552 | `ntdll.dll` |
+| 2,736,128 | unnamed mapped (not a PE path) |
+| 1,069,056 | `TextInputFramework.dll` |
+| 1,052,672 | `KernelBase.dll` |
+| 950,272 | `CoreMessaging.dll` |
+| 839,680 | `msctf.dll` |
+| 741,376 | `windows.storage.dll` |
+| 704,512 | `combase.dll` |
+| 626,688 | `CoreUIComponents.dll` |
+| 593,920 | `minicon-release-rss.exe` |
+| 532,480 | `shell32.dll` |
+| 487,424 | `user32.dll` |
+| 327,680 | `gdi32full.dll` |
+
+`shell32` / `GdiPlus` **VA commit** is not their RSS. IME/UI
+(`TextInputFramework` + `msctf` + `CoreMessaging` + `CoreUIComponents`)
+is ~3.5 MiB **resident**. Not macOS WritingToolsUI. Next: name the
+2.61 MiB unnamed mapped (font/`section`?) and whether IME opt-out
+moves those four DLLs. No wrapper/close re-run.
 
 ## Accepted idle arithmetic (not a six-cell claim)
 
@@ -110,13 +135,9 @@ Named pieces that exist in the idle process:
   non-BMP lookup; glyph outline `Vec` is per-call, not retained
 - one vt100 parser (4000-line cap, idle almost empty) + one ConPTY
 
-Those named pieces are **~3.3 MiB** at scale 1. Remainder of 21.46 MiB is
-**~18 MiB unnamed** until guest object counts land. Extra-tab 1.54 MiB
-matches one more pipe plus a small parser/ConPTY, not a second DIB.
-
-Four-cycle **+9.13 MiB** is not the DIB and not TLS fonts (they survive
-close). `close_active_session` drops the session and calls
-`shutdown_session_detached` (bounded reaper; Full → extra thread).
+Those named pieces are **~3.3 MiB** of **possible private** (DIB+pipe),
+inside resident_private_type ~3.2 MiB — not proven by a stack.
+Extra-tab RSS ~1.5 MiB is still a live-session cost, not a close leak.
 
 ## Top 5 and how to falsify each
 

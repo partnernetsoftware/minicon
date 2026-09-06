@@ -13,4 +13,5 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
 - `sample-close-owners.ps1` / `run-close-owners.sh` — four-cycle close sample
   (not an RSS wrapper court; does not cut PTY capacity)
 - `probe-ws-regions.ps1` / `sample-idle-regions.ps1` / `run-idle-regions.sh` —
-  idle VirtualQueryEx image/mapped/private split (not WritingTools)
+  QueryWorkingSetEx resident image/mapped/private (not VA commit, not
+  PrivateMemorySize64-from-WS)
