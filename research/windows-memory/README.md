@@ -12,3 +12,5 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
 - `probe-gdi-objects.ps1` — WS, private bytes, GDI/USER, named PTY threads
 - `sample-close-owners.ps1` / `run-close-owners.sh` — four-cycle close sample
   (not an RSS wrapper court; does not cut PTY capacity)
+- `probe-ws-regions.ps1` / `sample-idle-regions.ps1` / `run-idle-regions.sh` —
+  idle VirtualQueryEx image/mapped/private split (not WritingTools)

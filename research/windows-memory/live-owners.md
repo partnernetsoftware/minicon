@@ -79,6 +79,27 @@ into WS**, not a closed-tab owner. Idle 21.45 MiB = private **6.25 MiB**
 Closed-tab leftover that is real and small: +6 handles, +3 USER.
 Not a 10 MiB repair. No production patch from this sample.
 
+## Idle WS split (VirtualQuery commit vs QueryWorkingSet resident)
+
+`target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log`
+
+| counter | bytes | note |
+|---|---:|---|
+| WorkingSet | 22,515,712 | public RSS |
+| PrivateMemorySize64 | 6,545,408 | private commit, not RSS |
+| QueryWorkingSet shared | **18,186,240** | **resident shared/image ~17.35 MiB** |
+| QueryWorkingSet private | **4,300,800** | resident private ~4.10 MiB |
+| VirtualQuery commit_image | 100,720,640 | VA only, **not RSS** |
+
+5490 pages × 4096 ≈ WS. Idle 21.5 MiB is **mostly shared Win32/GDI/IME
+image pages**, not MiniCon heap and not macOS WritingToolsUI.
+
+Largest **committed** mapped names (VA, not resident): `windows.storage.dll`,
+`shell32.dll`, `KernelBase.dll`, `combase.dll`, `CoreUIComponents.dll`,
+`GdiPlus.dll`, `TextInputFramework.dll`, `msctf.dll`, `user32.dll`,
+`gdi32full.dll`. Next cut is resident-by-module (`QueryWorkingSetEx`),
+not a PTY-ring cut and not a wrapper re-run.
+
 ## Accepted idle arithmetic (not a six-cell claim)
 
 Named pieces that exist in the idle process:

@@ -41,68 +41,44 @@ macOS 183 MiB Color Emoji heap leak.
 Hang evidence (keep): `research/windows-memory/hang-last-step.md`.
 33,620 K tasklist WS is hang-time only, not a public idle court.
 
-## Wrapper script (accepted shape)
+## Wrapper (accepted — latest; do not pause or re-run)
 
-cdx-wjhk 2026-09-06 read-only confirmed
-`research/windows-memory/run-release-rss.sh`: Handle + WaitForExit +
-Refresh, null **throws** wrapper failure, raw ExitCode recorded
-(`ExitCode_raw=NULL` text, never coerced to 0). That shape is accepted.
-No further wrapper courts.
+cdx-wjhk 2026-09-06 **this letter overrides late old null mail**.
+Those null re-blocks were against the **pre-fix** snapshot. After
+Handle + WaitForExit + Refresh and null→throw:
 
-## Contaminated EXIT0 retest — body only, not wrapper
+- `target/windows-memory/rss-exitcode-handle.host.log` is a **real
+  EXIT 0** (idle **22,495,232 B** / 21.45 MiB). Recorded in main PRD
+  at `e6cd7b0`.
+- Later `.exitmeta` confirmed `ExitCode_raw=0` (`Handle=2452`):
+  `target/windows-memory/rss-win-aarch64-release-e6cd7b0fbab8c3f22de8b5aef54e306d71958bf6-20260906T102522Z.log`
+  (idle 22,507,520 B / 21.46 MiB).
 
-Do **not** keep or cite this row as wrapper confirmation. It is the old
-“Confirmed wrapper EXIT0 retest” / “Confirmed body-only retest” table.
+Wrapper is **accepted**. Do not pause. Do not re-court.
 
-| field | value |
+Still **not** wrapper evidence (coerce-era snapshot only):
+`target/windows-memory/rss-retest-now.host.log` /
+`…-20260906T101827Z.log`. First Start-Process
+`…-20260906T101551Z.log` EXIT 1 was null-throw, not RSS FAIL.
+Hang 33,620 K is not a public idle row.
+
+| field | accepted Handle EXIT0 (`rss-exitcode-handle.host.log`) |
 |---|---|
-| when | 2026-09-06T10:18:27Z, source `3419d46` |
-| idle | 21.45 MiB (22,491,136 B) — **body only** |
-| after 2000-line load | 22.07 MiB (23,138,304 B) |
-| extra-tab delta | 1.73 MiB (1,814,528 B) |
-| four-cycle growth | 9.93 MiB (10,416,128 B) |
-| `WIN_RELEASE_RSS_EXIT` | 0 **polluted**: null→0 coerce era, no `.exitmeta` |
-| log | `target/windows-memory/rss-retest-now.host.log` |
-| same bytes | `target/windows-memory/rss-win-aarch64-release-3419d468c561225e54fa607af85c0479d239c7f6-20260906T101827Z.log` |
+| source / pin / PE | `3419d46` / `745f52b2` / `d2d08ce7…` |
+| idle | **21.45 MiB (22,495,232 B)** |
+| after 2000-line load | 22.13 MiB (23,203,840 B) |
+| extra-tab delta | 1.67 MiB (1,748,992 B) |
+| four-cycle growth | 9.86 MiB (10,342,400 B) |
 
-Same pollution class (EXIT=0, no `.exitmeta`, do not cite as wrapper):
+Main PRD Windows receipt is cdx-wjhk’s at `e6cd7b0`. Still above
+10 MiB. No production pin/source patch yet. macOS WritingToolsUI
+dlopen ~22.6 MiB is **not** this GDI remainder.
 
-- `target/windows-memory/rss-waitprocess.host.log` (idle 22,519,808 B)
-- `target/windows-memory/rss-exitcode-handle.host.log` (idle **22,495,232 B**
-  = 21.45 MiB; body used in earlier notes; Handle opened but no
-  `.exitmeta`)
-
-First Start-Process run
-`…-20260906T101551Z.log` / `rss-retest-3419d46.host.log` is EXIT 1 with
-body 22,495,232 B: wrapper failure on null, **not** RSS FAIL, **not**
-coerced. Hang 33,620 K is not any of these rows.
-
-## Accepted complete court (body + wrapper)
-
-cdx-wjhk accepted latest body **and** wrapper closure. Exact log (has
-`.exitmeta` `ExitCode_raw=0`):
-
-`target/windows-memory/rss-win-aarch64-release-e6cd7b0fbab8c3f22de8b5aef54e306d71958bf6-20260906T102522Z.log`
-
-Host alias: `target/windows-memory/rss-exitmeta.host.log`.
-Sidecar: same path + `.exitmeta`.
-
-| field | value |
-|---|---|
-| source | `e6cd7b0fbab8c3f22de8b5aef54e306d71958bf6` |
-| pin | `745f52b2e169d5b41b51377a82cf8a93a9b00c8b` |
-| PE SHA-256 | `d2d08ce7600dfcc73b6b1002f73aef38bc9c4c28545198d403bafb96b4f47ecd` |
-| idle | **21.46 MiB (22,507,520 B)** |
-| after 2000-line load | 22.02 MiB (23,085,056 B) |
-| extra-tab delta | 1.54 MiB (1,609,728 B) |
-| four-cycle growth | 9.13 MiB (9,576,448 B) |
-| cargo test | `ok` in 1.40 s |
-| exitmeta | `HasExited=True`, `ExitCode_raw=0`, `Handle=2452`, pid 10004 |
-| `WIN_RELEASE_RSS_EXIT` | 0 |
-
-Same PE’s body spread is 21.45–21.46 MiB. Public 21.45 MiB (22,495,232 B)
-is the earlier body receipt, not this complete log. Main PRD upsert is
-cdx-wjhk’s. Still above 10 MiB. No production pin/source patch yet.
+Idle QueryWorkingSet (same PE, not wrapper): WS 22,515,712 =
+resident **shared 18,186,240** + **private 4,300,800**. The 21 MiB
+is mostly shared Win32/GDI/IME pages (`shell32` / `windows.storage` /
+`GdiPlus` / `TextInputFramework` in the VA map). Private resident
+~4.1 MiB covers DIB+pipe. Next: resident-by-module, not wrapper.
 
 ## Top 5 live owners and verifiable interventions
 
