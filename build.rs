@@ -9,6 +9,15 @@ fn main() {
         icon_bytes <= ICON_BUDGET,
         "minicon icon is {icon_bytes} bytes; compact resource budget is {ICON_BUDGET}"
     );
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        // Keep the standard window controls without macOS 26's more expensive
+        // design initialization. Apple ignores this temporary compatibility
+        // key for SDK 27+ builds; it is a measured reduction, not the RSS goal.
+        // Embed the plist so the native executable remains a single file.
+        const PLIST: &str = "assets/macos-info.plist";
+        println!("cargo:rerun-if-changed={PLIST}");
+        println!("cargo:rustc-link-arg-bin=minicon=-Wl,-sectcreate,__TEXT,__info_plist,{PLIST}");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         let arch = std::env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo must provide arch");
         for (environment, soname) in [

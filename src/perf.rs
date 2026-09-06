@@ -73,12 +73,6 @@ impl PerfStats {
         self.host_direct_frames = self.host_direct_frames.saturating_add(1);
     }
 
-    pub(super) fn record_host_copy_frame(&mut self, width: u32, height: u32) {
-        self.host_copy_frames = self.host_copy_frames.saturating_add(1);
-        let pixels = u64::from(width).saturating_mul(u64::from(height));
-        self.host_copy_pixels = self.host_copy_pixels.saturating_add(pixels);
-    }
-
     /// Samples the platform's cumulative ledger without adding a second
     /// synchronization primitive. `PixelWindow::present_stats` is a GUI-thread
     /// value copy; native adapters own any internal synchronization.
@@ -220,20 +214,6 @@ mod perf_stats_tests {
         assert_eq!(stats.host_direct_frames, 0);
         assert_eq!(stats.host_copy_frames, 0);
         assert_eq!(stats.host_copy_pixels, 0);
-    }
-
-    #[test]
-    pub(super) fn host_copy_stats_count_actual_pixels_and_saturate() {
-        let mut stats = PerfStats::default();
-        stats.record_host_direct_frame();
-        stats.record_host_copy_frame(10, 20);
-        assert_eq!(stats.host_direct_frames, 1);
-        assert_eq!(stats.host_copy_frames, 1);
-        assert_eq!(stats.host_copy_pixels, 200);
-
-        stats.host_copy_pixels = u64::MAX - 1;
-        stats.record_host_copy_frame(u32::MAX, u32::MAX);
-        assert_eq!(stats.host_copy_pixels, u64::MAX);
     }
 
     #[test]

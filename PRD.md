@@ -200,10 +200,11 @@ flowchart LR
   Decision record: `plan/archive/design-qvm-false-positive-experiment.md`.
 - [x] Native window title is `<title> — MiniCon <version>` (empty workspace:
   `MiniCon <version>`). Owner: `prd/PRD_02_25_con_workspace.md`.
-- [~] Host process RSS intent is 10 MiB idle. Shared Unix whole-font leak is
-  repaired; macOS aarch64 debug idle is now 94.53–103.31 MiB, with no whole
-  emoji file in dirty heap. The 10 MiB gap remains open.
-  Owner: `prd/PRD_02_27_con_delivery.md`.
+- [~] Host process RSS intent is 10 MiB idle. Font leakage, duplicate Retina
+  canvas and old-frame retention are repaired. Named macOS aarch64 release
+  idle observations are now about 78–87 MiB; the 10 MiB gap remains open.
+  Native Hello/input/menu and terminal-increment investigations are recorded
+  under `prd/PRD_02_27_con_delivery.md`.
 - [~] Host-UI readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty

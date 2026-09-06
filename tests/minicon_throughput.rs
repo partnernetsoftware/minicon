@@ -348,13 +348,10 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
         .as_u64()
         .expect("PTY budget yield receipt must remain numeric");
     assert_eq!(perf["present_failure"], 0);
-    // Windows native retained path should avoid host-copy frames; portable
-    // macOS/Linux may copy. Only require the counter to be numeric/non-negative.
-    assert!(
-        perf["host_copy_frames"]
-            .as_u64()
-            .is_some_and(|frames| if cfg!(windows) { frames == 0 } else { true }),
-        "host_copy_frames receipt invalid: {perf}"
+    // Both retained and transient hosts now raster directly into host frames.
+    assert_eq!(
+        perf["host_copy_frames"], 0,
+        "duplicate product canvas returned: {perf}"
     );
 
     eprintln!(

@@ -54,8 +54,8 @@ use agenterm_platform::window_host::{
     PointerButtonState, WheelDelta, XrgbPixelFrame, run_pixel_window,
 };
 use agenterm_ui_core::{
-    DirtyRegion, DirtyRows, PixelRect, RetainedXrgbFrame, ScrollbarHit, ScrollbarThumbDrag,
-    scrollback_for_thumb_top, scrollbar_hit_test,
+    DirtyRegion, DirtyRows, PixelRect, ScrollbarHit, ScrollbarThumbDrag, scrollback_for_thumb_top,
+    scrollbar_hit_test,
 };
 
 use control_pending::{PendingControl, WaitKind, WaitProbe};
@@ -908,7 +908,6 @@ struct ConApp {
     control_pointer_owner: Option<workspace::TabId>,
     perf_stats: PerfStats,
     host_ui_dirty: DirtyRegion,
-    retained: RetainedXrgbFrame,
     frame_width: u32,
     frame_height: u32,
     frame_scale: f64,
@@ -1141,7 +1140,6 @@ impl ConApp {
             control_pointer_owner: None,
             perf_stats: PerfStats::default(),
             host_ui_dirty: DirtyRegion::full(),
-            retained: RetainedXrgbFrame::new(),
             frame_width: 0,
             frame_height: 0,
             frame_scale: 1.0,
@@ -5730,51 +5728,26 @@ impl PixelWindowApplication for ConApp {
                 .commit(PixelFrameWrite::Full)
                 .map_err(|error| PixelWindowError::failed("con_frame_commit", error.to_string()))?;
             self.host_ui_dirty = DirtyRegion::default();
-            self.retained.invalidate();
             self.perf_stats.record_host_direct_frame();
             return Ok(PixelWindowDirective::Continue);
         }
-        macro_rules! render_try {
-            ($expression:expr) => {{
-                match $expression {
-                    Ok(value) => value,
-                    Err(error) => {
-                        if !host_retains_pixels {
-                            self.retained.invalidate();
-                        }
-                        return Err(error);
-                    }
-                }
-            }};
-        }
         let scale = self.active_session()?.scale.max(1.0);
         self.note_frame_dimensions(width, height, scale);
-        render_try!(self.active_session_mut()).note_frame_dimensions(width, height);
-        let retained_requires_full = if host_retains_pixels {
-            !frame_info.content_valid
-        } else {
-            match self.retained.prepare(width, height) {
-                Ok(requires_full) => requires_full,
-                Err(error) => {
-                    self.retained.invalidate();
-                    return Err(PixelWindowError::failed(
-                        "con_retained_frame",
-                        error.to_string(),
-                    ));
-                }
-            }
-        };
-        if retained_requires_full {
+        self.active_session_mut()?
+            .note_frame_dimensions(width, height);
+        // A transient host gives us a fresh frame. Raster directly into it
+        // instead of retaining and copying a second full-window canvas. Native
+        // retained backing can still use bounded partial updates when valid.
+        if !host_retains_pixels || !frame_info.content_valid {
             self.host_ui_dirty.mark_full();
             self.active_session_mut()?.dirty.mark_full();
-            window.request_redraw();
         }
 
         // Drain before consuming the candidate. PTY output can alter arbitrary
         // cells, cursor state, modes, scrollback, and selection, so it always
         // upgrades the candidate to full before raster starts.
         let (drain, wake_pending) = {
-            let session = render_try!(self.active_session_mut());
+            let session = self.active_session_mut()?;
             let drain = session.drain_pty();
             let wake_pending = session.pty_wake_pending.load(Ordering::Acquire);
             (drain, wake_pending)
@@ -5789,8 +5762,8 @@ impl PixelWindowApplication for ConApp {
             .saturating_add(u64::from(drain.backlog));
         if drain.backlog || wake_pending {
             // Output arrived while this render was being prepared, or the
-            // bounded drain still has a tail. The current retained frame is
-            // made safe with a full raster; the reader/waker will schedule the
+            // bounded drain still has a tail. The current frame is made safe
+            // with a full raster; the reader/waker will schedule the
             // next bounded drain without forcing an unconditional Wake full.
             self.active_session_mut()?.dirty.mark_full();
         }
@@ -5810,7 +5783,7 @@ impl PixelWindowApplication for ConApp {
         if host_retains_pixels && !frame_info.content_valid {
             candidate = DirtyRegion::full_frame(width, height);
         }
-        if candidate.is_full() {
+        if host_retains_pixels && candidate.is_full() {
             // A late resize, PTY drain, or invalidation must widen the native
             // update region before a partial GDI present can be accepted.
             window.request_redraw();
@@ -5819,67 +5792,20 @@ impl PixelWindowApplication for ConApp {
         let active_id = match self.workspace.active() {
             Some(id) => id,
             None => {
-                if !host_retains_pixels {
-                    self.retained.invalidate();
-                }
                 return Err(PixelWindowError::failed(
                     "con_session_missing",
                     "no active terminal session",
                 ));
             }
         };
-        let directive = if host_retains_pixels {
-            let render_result = {
-                let session = match self.sessions.get_mut(&active_id) {
-                    Some(session) => session,
-                    None => {
-                        return Err(PixelWindowError::failed(
-                            "con_session_missing",
-                            "active terminal session missing",
-                        ));
-                    }
-                };
-                session.render(window, frame.pixels_mut(), width, height, candidate)
-            };
-            let directive = render_result?;
+        let directive = {
+            let session = self.sessions.get_mut(&active_id).ok_or_else(|| {
+                PixelWindowError::failed("con_session_missing", "active terminal session missing")
+            })?;
+            let directive = session.render(window, frame.pixels_mut(), width, height, candidate)?;
             if !candidate.is_empty() {
                 self.paint_host_ui(frame.pixels_mut(), width, height, candidate)?;
             }
-            directive
-        } else {
-            let mut retained = std::mem::take(&mut self.retained);
-            let render_result = {
-                let session = match self.sessions.get_mut(&active_id) {
-                    Some(session) => session,
-                    None => {
-                        self.retained = retained;
-                        self.retained.invalidate();
-                        return Err(PixelWindowError::failed(
-                            "con_session_missing",
-                            "active terminal session missing",
-                        ));
-                    }
-                };
-                session.render(window, retained.pixels_mut(), width, height, candidate)
-            };
-            let directive = match render_result {
-                Ok(directive) => directive,
-                Err(error) => {
-                    self.retained = retained;
-                    self.retained.invalidate();
-                    return Err(error);
-                }
-            };
-            if !candidate.is_empty()
-                && let Err(error) =
-                    self.paint_host_ui(retained.pixels_mut(), width, height, candidate)
-            {
-                self.retained = retained;
-                self.retained.invalidate();
-                return Err(error);
-            }
-            self.retained = retained;
-            self.retained.mark_valid();
             directive
         };
         let mut discard_capture_frame = false;
@@ -5890,11 +5816,7 @@ impl PixelWindowApplication for ConApp {
                 reply,
                 restore_active,
             } = screenshot;
-            let pixels = if host_retains_pixels {
-                frame.pixels_mut().to_vec()
-            } else {
-                self.retained.pixels().to_vec()
-            };
+            let pixels = frame.pixels_mut().to_vec();
             let response_path = path.to_string_lossy().into_owned();
             let shared_reply = Arc::new(std::sync::Mutex::new(Some(reply)));
             let done = Arc::new(AtomicBool::new(false));
@@ -5936,21 +5858,19 @@ impl PixelWindowApplication for ConApp {
             {
                 self.workspace.set_active(restore_active);
                 self.mark_host_ui_full();
-                render_try!(self.active_session_mut()).dirty.mark_full();
-                render_try!(self.refresh_title(window));
+                self.active_session_mut()?.dirty.mark_full();
+                self.refresh_title(window)?;
                 window.request_redraw();
                 discard_capture_frame = true;
             }
         }
         if discard_capture_frame {
             if let Err(error) = frame.commit(PixelFrameWrite::Discard) {
-                self.retained.invalidate();
                 return Err(PixelWindowError::failed(
                     "con_capture_frame_discard",
                     error.to_string(),
                 ));
             }
-            self.retained.invalidate();
             self.perf_stats.discarded_capture_frames =
                 self.perf_stats.discarded_capture_frames.saturating_add(1);
             self.perf_stats.record_frame(render_started.elapsed());
@@ -5965,31 +5885,10 @@ impl PixelWindowApplication for ConApp {
             width,
             height,
         );
-        if host_retains_pixels {
-            if let Err(error) = frame.commit(write) {
-                return Err(PixelWindowError::failed(
-                    "con_frame_commit",
-                    error.to_string(),
-                ));
-            }
-            self.perf_stats.record_host_direct_frame();
-        } else {
-            if let Err(error) = self.retained.copy_to(frame.pixels_mut(), width, height) {
-                self.retained.invalidate();
-                return Err(PixelWindowError::failed(
-                    "con_retained_copy",
-                    error.to_string(),
-                ));
-            }
-            if let Err(error) = frame.commit(PixelFrameWrite::Full) {
-                self.retained.invalidate();
-                return Err(PixelWindowError::failed(
-                    "con_frame_commit",
-                    error.to_string(),
-                ));
-            }
-            self.perf_stats.record_host_copy_frame(width, height);
-        }
+        frame
+            .commit(write)
+            .map_err(|error| PixelWindowError::failed("con_frame_commit", error.to_string()))?;
+        self.perf_stats.record_host_direct_frame();
         self.perf_stats.record_frame(render_started.elapsed());
         self.perf_stats
             .record_raster_candidate(candidate, width, height);

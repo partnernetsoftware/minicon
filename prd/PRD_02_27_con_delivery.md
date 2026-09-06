@@ -318,8 +318,11 @@ six-cell claim.
   candidate and `Box::leak`s the whole file for process lifetime, and it loads
   every fallback at first glyph — including the 183 MiB color-emoji collection
   — before any emoji is drawn. Extra tabs adding ~1 MiB matches this: the leak
-  is process-global, not per session. Debug `gimli`/`RawVec` is a further
-  ~19 MiB on the debug binary only. AppKit/Metal mapped files are large in
+  is process-global, not per session. The earlier ~19 MiB `gimli`/`RawVec`
+  attribution from inferred `heap -s` type names is not established: generic
+  allocator symbols can be coalesced, and release also had two ~9 MiB frame
+  allocations. Full allocation stacks and controlled removal own attribution.
+  AppKit/Metal mapped files are large in
   virtual size and mostly not dirty. Owner of the leak is the shared Unix
   font raster, not MiniCon tab state. One macOS heap is not a Linux or Windows
   claim (Windows GDI does not load whole TTC files this way).
@@ -343,6 +346,41 @@ six-cell claim.
   The **384 MiB regression ceiling is unchanged; 10 MiB remains unmet**.
   These measurements supersede the macOS baseline above, not Windows/Linux
   measurements or runtime qualification of any other cell.
+- [x] **macOS frame duplication and allocator retention reduced**. Shared pin
+  `8d8de88c9ab62709327a6358609e9a09e8c363fd` owns anonymous mapped softbuffer
+  frames, released by the final CoreGraphics provider callback. MiniCon
+  rasterizes directly into transient frames, removing a second 8.79 MiB
+  Retina canvas. Three alternating release comparisons isolated the mapped
+  frame change at 101.17 → 92.47 MiB median idle RSS; independent product
+  canvas removal measured 92.92 → 84.17 MiB. Host-copy count is now zero.
+  The one-file Mach-O embeds `assets/macos-info.plist`: macOS 26 design
+  compatibility preserves standard controls and measured 84.05 → 78.67 MiB
+  median settled idle RSS. This key is temporary and ignored by SDK 27+
+  builds; it does not resolve the long-term target.
+  Final native osx-aarch64 release court at the new pin passed at **86.89 MiB**
+  early idle / **85.08 MiB** after load, maximum tab delta **1.41 MiB**, four
+  cycles **2.33 MiB** growth; earlier integrated court idle was **77.75 MiB**.
+  Short startup samples vary by about one frame's size; retain both results
+  rather than selecting the favorable one or assigning an unproven cause. Final idle vmmap:
+  no `MALLOC_LARGE`, physical footprint 18.1 MiB (not the product metric).
+  GUI control black boxes, 131 MiniCon unit tests, mapped-frame lifetime
+  tests, Clippy and 32 MiB output qualification passed; final throughput
+  21.18 MB/s, zero host copies/present failures.
+  Exact artifacts, commands, caveats and experiments:
+  `plan/plan-runtime-memory-next.md`. The **10 MiB RSS target stays open**,
+  with the 384 MiB regression ceiling unchanged.
+- [x] **Two independent baseline/increment investigations** explain the
+  next owners. Native Cocoa-linked process 8.14 MiB, NSApplication init
+  26.72 MiB, standard Hello window 49.53 MiB; editable control 83.22 MiB,
+  Hello plus main menu 76.45 MiB, editable control plus menu 87.33 MiB
+  (three-run medians, same macOS host). Control construction itself causes
+  the editable increment, not proof of a single IME call's cost. Native
+  Hello already has roughly 11 MiB ColorSync tables; do not charge all of
+  these to the terminal. MiniCon ASCII plus CJK adds about 0.3 MiB, an extra
+  tab about 1.3 MiB. This narrows the remaining work to OS UI initialization
+  and presentation while preserving input/menu behavior; it is not an
+  irreducible lower-bound claim or an excuse to change the budget.
+  Owners: `plan/research-hello-memory.md`, `plan/research-minicon-memory.md`.
 - [~] osx, lnx and win name host RSS through the same black-box court. Native
   osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
   exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode

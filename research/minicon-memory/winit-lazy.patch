@@ -1,0 +1,83 @@
+--- a/src/platform_impl/macos/view.rs
++++ b/src/platform_impl/macos/view.rs
+@@ -8,7 +8,7 @@
+ use objc2::{declare_class, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+ use objc2_app_kit::{
+     NSApplication, NSCursor, NSEvent, NSEventPhase, NSResponder, NSTextInputClient,
+-    NSTrackingRectTag, NSView, NSViewFrameDidChangeNotification,
++    NSTextInputContext, NSTrackingRectTag, NSView, NSViewFrameDidChangeNotification,
+ };
+ use objc2_foundation::{
+     MainThreadMarker, NSArray, NSAttributedString, NSAttributedStringKey, NSCopying,
+@@ -121,6 +121,9 @@
+     tracking_rect: Cell<Option<NSTrackingRectTag>>,
+     ime_state: Cell<ImeState>,
+     input_source: RefCell<String>,
++    /// Whether winit has requested the native input context for actual input.
++    /// Caret updates alone must not create it.
++    input_context_observed: Cell<bool>,
+
+     /// True iff the application wants IME events.
+     ///
+@@ -339,7 +342,7 @@
+             trace_scope!("unmarkText");
+             *self.ivars().marked_text.borrow_mut() = NSMutableAttributedString::new();
+
+-            let input_context = self.inputContext().expect("input context");
++            let input_context = self.input_context_for_input();
+             input_context.discardMarkedText();
+
+             self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
+@@ -801,6 +804,7 @@
+             tracking_rect: Default::default(),
+             ime_state: Default::default(),
+             input_source: Default::default(),
++            input_context_observed: Default::default(),
+             ime_allowed: Default::default(),
+             forward_key_to_app: Default::default(),
+             marked_text: Default::default(),
+@@ -821,7 +825,8 @@
+             )
+         }
+
+-        *this.ivars().input_source.borrow_mut() = this.current_input_source();
++        // The first keyDown queries the source before interpreting that same key.
++        // Avoid creating the native input context merely by creating a view.
+
+         this
+     }
+@@ -847,9 +852,19 @@
+         !matches!(self.ivars().ime_state.get(), ImeState::Disabled)
+     }
+
++    fn input_context_for_input(&self) -> Retained<NSTextInputContext> {
++        let context = self.inputContext().expect("input context");
++        if !self.ivars().input_context_observed.replace(true) {
++            // Geometry has been cached even before input. Invalidate any native
++            // coordinates before this first event is interpreted, so the first
++            // candidate panel asks firstRectForCharacterRange for the live caret.
++            context.invalidateCharacterCoordinates();
++        }
++        context
++    }
++
+     fn current_input_source(&self) -> String {
+-        self.inputContext()
+-            .expect("input context")
++        self.input_context_for_input()
+             .selectedKeyboardInputSource()
+             .map(|input_source| input_source.to_string())
+             .unwrap_or_default()
+@@ -898,8 +913,10 @@
+     pub(super) fn set_ime_cursor_area(&self, position: NSPoint, size: NSSize) {
+         self.ivars().ime_position.set(position);
+         self.ivars().ime_size.set(size);
+-        let input_context = self.inputContext().expect("input context");
+-        input_context.invalidateCharacterCoordinates();
++        if self.ivars().input_context_observed.get() {
++            let input_context = self.input_context_for_input();
++            input_context.invalidateCharacterCoordinates();
++        }
+     }
+
+     /// Reset modifiers and emit a synthetic ModifiersChanged event if deemed necessary.

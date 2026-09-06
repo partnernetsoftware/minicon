@@ -1,0 +1,38 @@
+[
+  {
+    "mode": "titleonly",
+    "rss_bytes": [
+      48431104,
+      48513024,
+      48398336
+    ],
+    "median_mib": 46.1875
+  },
+  {
+    "mode": "titleclose",
+    "rss_bytes": [
+      51724288,
+      51937280,
+      51740672
+    ],
+    "median_mib": 49.34375
+  },
+  {
+    "mode": "borderresize",
+    "rss_bytes": [
+      38912000,
+      38797312,
+      38846464
+    ],
+    "median_mib": 37.046875
+  },
+  {
+    "mode": "borderless-hello",
+    "rss_bytes": [
+      40435712,
+      40402944,
+      40419328
+    ],
+    "median_mib": 38.546875
+  }
+]

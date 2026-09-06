@@ -1,0 +1,110 @@
+[
+  {
+    "mode": "libc",
+    "rss_bytes": [
+      1441792,
+      1441792,
+      1441792
+    ],
+    "median_mib": 1.375
+  },
+  {
+    "mode": "linked",
+    "rss_bytes": [
+      8536064,
+      8536064,
+      8536064
+    ],
+    "median_mib": 8.140625
+  },
+  {
+    "mode": "foundation",
+    "rss_bytes": [
+      8536064,
+      8536064,
+      8536064
+    ],
+    "median_mib": 8.140625
+  },
+  {
+    "mode": "app-init",
+    "rss_bytes": [
+      28016640,
+      28000256,
+      28016640
+    ],
+    "median_mib": 26.71875
+  },
+  {
+    "mode": "app-loop",
+    "rss_bytes": [
+      32489472,
+      32522240,
+      32604160
+    ],
+    "median_mib": 31.015625
+  },
+  {
+    "mode": "app-finish",
+    "rss_bytes": [
+      32849920,
+      32866304,
+      32882688
+    ],
+    "median_mib": 31.34375
+  },
+  {
+    "mode": "hidden",
+    "rss_bytes": [
+      51412992,
+      51625984,
+      51445760
+    ],
+    "median_mib": 49.0625
+  },
+  {
+    "mode": "borderless",
+    "rss_bytes": [
+      38797312,
+      38813696,
+      38797312
+    ],
+    "median_mib": 37.0
+  },
+  {
+    "mode": "blank",
+    "rss_bytes": [
+      51527680,
+      51593216,
+      51855360
+    ],
+    "median_mib": 49.203125
+  },
+  {
+    "mode": "hello",
+    "rss_bytes": [
+      51937280,
+      51871744,
+      51937280
+    ],
+    "median_mib": 49.53125
+  },
+  {
+    "mode": "hello-noshadow",
+    "rss_bytes": [
+      51838976,
+      51838976,
+      52019200
+    ],
+    "median_mib": 49.4375
+  },
+  {
+    "mode": "hello-nofinish",
+    "rss_bytes": [
+      51822592,
+      51773440,
+      51724288
+    ],
+    "median_mib": 49.375
+  }
+]

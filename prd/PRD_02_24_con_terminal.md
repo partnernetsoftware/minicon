@@ -166,9 +166,12 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   backing and requires each frame to commit `None`, `Full`, or a bounded partial
   rectangle. Windows rasterizes directly into the retained native XRGB buffer,
   forces full raster after allocation/resize/DPI invalidation, and has removed
-  the former product-to-host full-frame copy; Unix/macOS retain the
-  product-owned bounded frame and full-copy it into explicitly transient
-  softbuffer frames.
+  the former product-to-host full-frame copy. Unix/macOS now also rasterize
+  directly into host frames: transient backing forces a complete raster,
+  removing the duplicate product-owned full-window canvas and its copy.
+  `minicon_throughput::sustained_long_output_keeps_control_and_sibling_responsive`
+  requires `host_copy_frames=0` and verifies output/sibling responsiveness;
+  macOS release validation and memory evidence: `plan/plan-runtime-memory-next.md`.
 - [x] Windows maps typed physical damage to `InvalidateRect` and uses
   `PAINTSTRUCT.rcPaint` for top-down `StretchDIBits` partial present. Every
   successful `BeginPaint` is paired with exactly one `EndPaint`, short scanline

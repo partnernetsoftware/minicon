@@ -1,0 +1,38 @@
+[
+  {
+    "mode": "hello",
+    "rss_bytes": [
+      52051968,
+      51986432,
+      51920896
+    ],
+    "median_mib": 49.578125
+  },
+  {
+    "mode": "hello-editable",
+    "rss_bytes": [
+      87359488,
+      87441408,
+      87523328
+    ],
+    "median_mib": 83.390625
+  },
+  {
+    "mode": "hello-menu",
+    "rss_bytes": [
+      80166912,
+      80166912,
+      79921152
+    ],
+    "median_mib": 76.453125
+  },
+  {
+    "mode": "hello-editable-menu",
+    "rss_bytes": [
+      91652096,
+      91570176,
+      91471872
+    ],
+    "median_mib": 87.328125
+  }
+]
