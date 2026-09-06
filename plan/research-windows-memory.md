@@ -101,9 +101,14 @@ Size compare accepted: largest R/W unnamed mapped tracks area
 leak. `privatized_image=1,069,056` **is not all TIF** (TIF
 shared0=24,576; 1.02 MiB is Shared=0 summed over 33 modules).
 
-Init-phase (IME on): first sample already has hwnd + IME DLLs;
-spawn→first_frame only **+57 KiB**. No post-hwnd delayable IME
-load while keeping Chinese input. No wrapper/8-page/count re-run.
+Init-phase external polling cannot prove IME undelayable.
+Research PE (not production pin)
+`4e7c330176c9c5a764e4a860724468aac2fe5bc1c10acafa853a0673fad056e0`
+(752,128 B): TIF still 0 after CreateWindow/apply_ime/opened;
+MSCTF appears inside CreateWindowExW (nested WM_NCCREATE, no
+WM_PAINT); TIF+CoreMessaging+CoreUI load at first
+StretchDIBits (+9.27 MiB). Probe warmup +53 KiB then ~0.
+IME=true. No wrapper/8-page re-run.
 
 ## Top 5 live owners and verifiable interventions
 

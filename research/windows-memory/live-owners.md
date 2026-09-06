@@ -237,12 +237,42 @@ One process. First QWS already has `hwnd` and all 33 modules
 | control | 22,511,616 | (same stack) | same |
 | first_frame | 22,515,712 | 22,478,848 | same |
 
-No delayable IME load after first observable window: the IME
-image set is already resident. Keeping Chinese input (`IME=true`)
-does not leave a post-hwnd deferral in this timeline. Splitting
-`CreateWindow` vs IME DLL map needs in-process timing, not another
-QWS field court. `cross type=private shared1=4096` is the page that
-broke `MEM_PRIVATE + privatized_image = not_sharable`.
+External hwnd polling cannot prove IME is undelayable. In-process
+hooks (research PE, not production pin):
+
+## CreateWindow-stage hooks (research PE)
+
+Identity: `target/windows-memory/research-pe/aarch64-pc-windows-msvc/release/minicon.exe`
+SHA-256 `4e7c330176c9c5a764e4a860724468aac2fe5bc1c10acafa853a0673fad056e0`
+(752,128 B). Source copy `target/windows-memory/research-src/agenterm`
+= pin `745f52b` + `init_trace` hooks. IME=true. No screenshot.
+Log: `target/windows-memory/init-hooks-93a3dad769f8d41c48ec27e05ffbe9df76c4a468-20260906T113432Z.log`
+
+Probe self-cost: warmup_a 10,813,440 → warmup_b 10,866,688 (**+53,248**);
+entry equals warmup_b.
+
+| stage | WS | Δ from previous | tif | msctf | coremsg | coreui | imm32 |
+|---|---:|---:|---|---|---|---|---|
+| entry | 10,866,688 | — | 0 | 0 | 0 | 0 | 1 |
+| after LoadCursorW | 10,895,360 | +24,576 | 0 | 0 | 0 | 0 | 1 |
+| after RegisterClassW | 10,924,032 | +20,480 | 0 | 0 | 0 | 0 | 1 |
+| before CreateWindowExW | 10,928,128 | — | 0 | 0 | 0 | 0 | 1 |
+| reenter WM_NCCREATE (depth=1) | 11,264,000 | +335,872 inside create | 0 | 0 | 0 | 0 | 1 |
+| after CreateWindowExW | 11,882,496 | **+954,368** vs before create | 0 | **1** | 0 | 0 | 1 |
+| after apply_ime_allowed | 11,907,072 | +20,480 | 0 | 1 | 0 | 0 | 1 |
+| after ApplicationOpened | 12,877,824 | +966,656 | 0 | 1 | 0 | 0 | 1 |
+| first_present StretchDIBits | 22,151,168 | **+9,273,344** | **1** | 1 | **1** | **1** | 1 |
+
+No `WM_PAINT` during `CreateWindowExW` (`paint_during_create=0`);
+window is created hidden. Nested **WM_NCCREATE** is recorded — do
+not call the whole +954,368 “just CreateWindow”. **MSCTF** appears
+inside CreateWindowExW. **TIF / CoreMessaging / CoreUIComponents**
+appear at **first present**, not at `ImmAssociateContextEx`
+(+20 KiB only). Delayable while keeping IME=true: association
+itself is cheap; TIF load is coupled to first visible present/show,
+not to `apply_ime_allowed`. That is a candidate delay point to
+test (associate on first real IME, keep first present), not a
+production patch yet.
 
 ## Accepted idle arithmetic (not a six-cell claim)
 
