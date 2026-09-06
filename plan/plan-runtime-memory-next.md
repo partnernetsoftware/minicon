@@ -132,3 +132,15 @@ it does not make the 10 MiB target optional. Further progress must reduce native
 UI initialization while preserving text input, first CJK keystrokes, menu
 shortcuts and standard window controls, or replace that foundation with a
 measured equivalent. No tested narrow change currently reaches 10 MiB.
+
+
+## Closer native/shared/product capability comparison
+
+[Pixel/input host comparison](research-pixel-host.md) now replaces the editable
+text-field baseline for the next attribution step. Shared-host checkerboards
+without terminal state reach about 79–80 MiB, versus MiniCon about 79 MiB;
+a native pixel/input/default-menu probe is about 71 MiB with Regular policy.
+These measurements direct the next investigation to shared-host initialization
+and presentation. They do not prove an 8–9 MiB winit allocation or qualify a
+native replacement. Periodic redraw alone did not cause an additional frame's
+stable RSS. No product source, dependency or memory criterion changed.

@@ -181,3 +181,7 @@ as `target/minicon-menu-probe/no-separators`, then run
 `python3 research/minicon-memory/menu-comparison.py`. Detailed logs remain in
 `target/minicon-menu-probe/`. Never leave the experimental Cargo patch or
 artifact in the production build after measurement.
+
+A closer native custom-input/pixel, shared-host checkerboard and MiniCon
+comparison follows in [the pixel-host report](research-pixel-host.md), including
+application-policy controls and repeated RSS time series.

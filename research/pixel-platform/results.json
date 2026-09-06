@@ -1,0 +1,158 @@
+[
+  {
+    "variant": "native",
+    "repeat": 0,
+    "rss_bytes": 73203712,
+    "rss_series_bytes": [
+      73203712,
+      73203712,
+      73220096,
+      73154560,
+      73154560
+    ],
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "variant": "shared",
+    "repeat": 0,
+    "rss_bytes": 84115456,
+    "rss_series_bytes": [
+      84115456,
+      84115456,
+      84115456,
+      83968000,
+      83968000
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  },
+  {
+    "variant": "shared-tick",
+    "repeat": 0,
+    "rss_bytes": 83345408,
+    "rss_series_bytes": [
+      83345408,
+      83345408,
+      83345408,
+      83247104,
+      83247104
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  },
+  {
+    "variant": "minicon",
+    "repeat": 0,
+    "rss_bytes": 82755584,
+    "rss_series_bytes": [
+      82755584,
+      82755584,
+      82771968,
+      82673664,
+      82673664
+    ],
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527"
+  },
+  {
+    "variant": "native",
+    "repeat": 1,
+    "rss_bytes": 73383936,
+    "rss_series_bytes": [
+      73383936,
+      73400320,
+      73416704,
+      73318400,
+      73318400
+    ],
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "variant": "shared",
+    "repeat": 1,
+    "rss_bytes": 84262912,
+    "rss_series_bytes": [
+      84262912,
+      84262912,
+      84279296,
+      84180992,
+      84180992
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  },
+  {
+    "variant": "shared-tick",
+    "repeat": 1,
+    "rss_bytes": 83345408,
+    "rss_series_bytes": [
+      83345408,
+      83345408,
+      83345408,
+      83247104,
+      83247104
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  },
+  {
+    "variant": "minicon",
+    "repeat": 1,
+    "rss_bytes": 82542592,
+    "rss_series_bytes": [
+      82542592,
+      82542592,
+      82558976,
+      82460672,
+      82460672
+    ],
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527"
+  },
+  {
+    "variant": "native",
+    "repeat": 2,
+    "rss_bytes": 73252864,
+    "rss_series_bytes": [
+      73252864,
+      73252864,
+      73220096,
+      73203712,
+      73203712
+    ],
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "variant": "shared",
+    "repeat": 2,
+    "rss_bytes": 84082688,
+    "rss_series_bytes": [
+      84082688,
+      84082688,
+      84082688,
+      83935232,
+      83935232
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  },
+  {
+    "variant": "shared-tick",
+    "repeat": 2,
+    "rss_bytes": 83492864,
+    "rss_series_bytes": [
+      83492864,
+      83492864,
+      83492864,
+      83394560,
+      83394560
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  },
+  {
+    "variant": "minicon",
+    "repeat": 2,
+    "rss_bytes": 82952192,
+    "rss_series_bytes": [
+      82952192,
+      82952192,
+      82968576,
+      82870272,
+      82870272
+    ],
+    "sha256": "7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527"
+  }
+]

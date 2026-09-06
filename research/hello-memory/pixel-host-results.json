@@ -1,0 +1,254 @@
+[
+  {
+    "repeat": 0,
+    "mode": "view",
+    "design": "modern",
+    "rss_bytes": 52150272,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 0,
+    "mode": "view",
+    "design": "compat",
+    "rss_bytes": 44744704,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 0,
+    "mode": "input",
+    "design": "modern",
+    "rss_bytes": 52183040,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 0,
+    "mode": "input",
+    "design": "compat",
+    "rss_bytes": 44793856,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels",
+    "design": "modern",
+    "rss_bytes": 52150272,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels",
+    "design": "compat",
+    "rss_bytes": 45088768,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels-input",
+    "design": "modern",
+    "rss_bytes": 52150272,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels-input",
+    "design": "compat",
+    "rss_bytes": 44777472,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels-menu",
+    "design": "modern",
+    "rss_bytes": 80330752,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels-menu",
+    "design": "compat",
+    "rss_bytes": 73170944,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels-input-menu",
+    "design": "modern",
+    "rss_bytes": 80347136,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 0,
+    "mode": "pixels-input-menu",
+    "design": "compat",
+    "rss_bytes": 73203712,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 1,
+    "mode": "view",
+    "design": "modern",
+    "rss_bytes": 52084736,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 1,
+    "mode": "view",
+    "design": "compat",
+    "rss_bytes": 44711936,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 1,
+    "mode": "input",
+    "design": "modern",
+    "rss_bytes": 52133888,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 1,
+    "mode": "input",
+    "design": "compat",
+    "rss_bytes": 44711936,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels",
+    "design": "modern",
+    "rss_bytes": 52133888,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels",
+    "design": "compat",
+    "rss_bytes": 44679168,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels-input",
+    "design": "modern",
+    "rss_bytes": 52068352,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels-input",
+    "design": "compat",
+    "rss_bytes": 44777472,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels-menu",
+    "design": "modern",
+    "rss_bytes": 80379904,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels-menu",
+    "design": "compat",
+    "rss_bytes": 73105408,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels-input-menu",
+    "design": "modern",
+    "rss_bytes": 80248832,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 1,
+    "mode": "pixels-input-menu",
+    "design": "compat",
+    "rss_bytes": 73367552,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 2,
+    "mode": "view",
+    "design": "modern",
+    "rss_bytes": 52101120,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 2,
+    "mode": "view",
+    "design": "compat",
+    "rss_bytes": 44679168,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 2,
+    "mode": "input",
+    "design": "modern",
+    "rss_bytes": 52019200,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 2,
+    "mode": "input",
+    "design": "compat",
+    "rss_bytes": 44875776,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels",
+    "design": "modern",
+    "rss_bytes": 52264960,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels",
+    "design": "compat",
+    "rss_bytes": 44695552,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels-input",
+    "design": "modern",
+    "rss_bytes": 52133888,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels-input",
+    "design": "compat",
+    "rss_bytes": 44711936,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels-menu",
+    "design": "modern",
+    "rss_bytes": 80265216,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels-menu",
+    "design": "compat",
+    "rss_bytes": 73023488,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels-input-menu",
+    "design": "modern",
+    "rss_bytes": 80232448,
+    "sha256": "f96ba5551203419fa68aea2ad977b3ecd0f4fd164c7019fda361632d6a5440e5"
+  },
+  {
+    "repeat": 2,
+    "mode": "pixels-input-menu",
+    "design": "compat",
+    "rss_bytes": 73121792,
+    "sha256": "a3c579489131710146a26a3fdccc2f7d0de895d513f68e9fed52c76ca119def6"
+  }
+]

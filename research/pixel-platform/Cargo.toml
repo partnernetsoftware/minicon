@@ -1,0 +1,20 @@
+[package]
+name = "pixel-platform-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "8d8de88c9ab62709327a6358609e9a09e8c363fd", default-features = false, features = ["clipboard", "entropy", "filesystem-publish", "filesystem-read", "font", "ime", "ipc", "parent-console", "pty", "runtime", "screenshot", "window", "portable-pixel-window"] }
+
+[patch.crates-io]
+softbuffer = { git = "https://github.com/partnernetsoftware/agenterm", rev = "8d8de88c9ab62709327a6358609e9a09e8c363fd" }
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = true

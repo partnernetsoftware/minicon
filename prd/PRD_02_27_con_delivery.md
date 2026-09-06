@@ -381,6 +381,9 @@ six-cell claim.
   and presentation while preserving input/menu behavior; it is not an
   irreducible lower-bound claim or an excuse to change the budget.
   Owners: `plan/research-hello-memory.md`, `plan/research-minicon-memory.md`.
+  Follow-up custom-input/pixel and shared-host checkerboards, including
+  application-policy controls, narrow the remaining host attribution in
+  `plan/research-pixel-host.md`; these are research probes, not product gates.
 - [~] osx, lnx and win name host RSS through the same black-box court. Native
   osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
   exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode

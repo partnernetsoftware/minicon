@@ -303,3 +303,7 @@ standalone difference is an additive product saving.
 
 Reproduce: `INIT_MENUS=1 python3 research/hello-memory/run-locale.py`.
 Compact samples: `research/hello-memory/menu-stage-results.json`.
+
+A closer native custom-input/pixel, shared-host checkerboard and MiniCon
+comparison follows in [the pixel-host report](research-pixel-host.md), including
+application-policy controls and repeated RSS time series.
