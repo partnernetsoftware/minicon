@@ -422,6 +422,19 @@ six-cell claim.
   10 MiB intent, an order of magnitude below macOS, consistent with GDI not
   `Box::leak`ing whole TTC files. lnx-aarch64 UTM remains `BLOCKED` (QGA
   `file push` EXIT 124 / transfer timeout); that is not a MiniCon RSS PASS.
+  A separate **win-aarch64 release** court now names source `3419d46`, shared
+  pin `745f52b2`, and PE SHA-256
+  `d2d08ce7600dfcc73b6b1002f73aef38bc9c4c28545198d403bafb96b4f47ecd`:
+  idle **21.45 MiB** (22,495,232 B), load 22.13 MiB, extra-tab delta 1.67 MiB,
+  four-cycle growth 9.86 MiB. Test body and job wrapper both return success
+  after keeping the harness process handle and reading its actual exit code;
+  null exit codes fail explicitly. Earlier coerced-null wrapper results are
+  not wrapper-success evidence. A hung job's 33,620 K working set is not this
+  idle measurement. Exact final log:
+  `target/windows-memory/rss-exitcode-handle.host.log`; durable owner:
+  `plan/research-windows-memory.md`. This release remains above 10 MiB, and
+  neither this Windows cell nor macOS fills any unavailable Linux cell.
+
 
 ## Artifact budget
 

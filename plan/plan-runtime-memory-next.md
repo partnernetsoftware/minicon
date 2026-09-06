@@ -252,3 +252,25 @@ MiB, with no `MALLOC_LARGE` and a system-decoded 1920×1200 PNG. This same-proce
 absence validates the allocation repair; it is not an idle saving against the
 86.39 MiB early public-court sample. Receipt:
 `research/screenshot-memory/final-journey.json`.
+
+
+### Continuing startup attribution after the screenshot repair
+
+The next active leaf queries process-local page dispositions and compares
+external page counts against TASK_VM_INFO. The census remains explicitly
+unclosed: after excluding reusable pages, the final MiniCon probe is short
+24 host pages (0.375 MiB), with no ledger drift. Region/segment labels are
+therefore candidates, not a complete framework allocation budget.
+
+A same-native-process staged run measures external residency 6.75 MiB after
+observer warmup, 21.00 after sharedApplication, 56.922 after the combined
+window/input/pixel/launch/event stage, and 57.094 after installing the complete
+menu. Repeated observer warmup adds no external pages in that run. This directs
+the next experiment to splitting that combined window stage, including first
+responder, input context and first pixel presentation separately. It does not
+revive menu-separator removal or accept a production input regression.
+
+The screenshot repair is committed. Startup attribution continues, and the
+Windows owner is rerunning an independently identified release artifact after
+isolating a hanging harness's process/log-handle wait. Native macOS probes do
+not occupy the Windows UTM lease; neither track waits for another authorization.
