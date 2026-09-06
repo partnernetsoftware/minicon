@@ -479,11 +479,20 @@ six-cell claim.
   residency does not assign all those private pages to that module.
   Evidence and controls: `research/windows-memory/live-owners.md`,
   `target/windows-memory/size-compare-91752f59296e6e2e4b2d718c2a97df69f83746bc-20260906T111300Z.log.hostout`.
-  Next: attribute size-independent residency to initialization steps and
-  evaluate delayed initialization while preserving Chinese input. Module
-  private-page counts can accompany that experiment; do not rerun full
-  courts merely to pursue the small accounting residual. The 10 MiB RSS
-  target remains unmet.
+  Per-module counts now resolve that ambiguity: TextInputFramework has
+  **24,576 B** of private resident pages; the 1,069,056 B aggregate spans
+  all 33 modules. External initialization sampling starts after an HWND
+  already exists, with TIF/MSCTF/CoreMessaging/imm32 already present. From
+  that first observation to first-frame confirmation, WS rises only
+  **57,344 B** (22,458,368 → 22,515,712 B). This does not measure process
+  entry or identify which earlier call loaded those modules, and does not
+  prove that supported deferral is impossible. Receipt:
+  `target/windows-memory/init-phases-25635c4f39397fa5151d4ef1376c1ba348924bbd-20260906T112057Z.log.hostout`.
+  Next: research-only in-process markers around class registration, window
+  creation, IME association and application callbacks, recording synchronous
+  paint reentry. Preserve Chinese input and separate observer overhead;
+  do not rerun full courts merely to pursue the small accounting residual.
+  The 10 MiB RSS target remains unmet.
 
 
 
