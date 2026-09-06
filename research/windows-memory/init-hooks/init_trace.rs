@@ -62,6 +62,7 @@ static GET_TID: OnceLock<Option<GetCurrentThreadIdFn>> = OnceLock::new();
 static ATTACH: OnceLock<Option<AttachThreadInputFn>> = OnceLock::new();
 static FIRST_PRESENT: AtomicBool = AtomicBool::new(false);
 static LAST_TIF: AtomicU32 = AtomicU32::new(0);
+static FONT_CREATES: AtomicU32 = AtomicU32::new(0);
 static HWND_STORE: AtomicIsize = AtomicIsize::new(0);
 static ACTIVATE_DONE: AtomicBool = AtomicBool::new(false);
 
@@ -209,11 +210,13 @@ pub fn sample(label: &str) {
     let coremsg = module_loaded("CoreMessaging.dll");
     let coreui = module_loaded("CoreUIComponents.dll");
     let imm32 = module_loaded("imm32.dll");
+    let shell32 = module_loaded("shell32.dll");
+    let winstorage = module_loaded("windows.storage.dll");
     let prev_tif = LAST_TIF.swap(u32::from(tif), Ordering::AcqRel);
     let edge = if prev_tif == 0 && tif == 1 { 1 } else { 0 };
     let (hwnd, fg, focus, fg_ours, focus_ours) = focus_fields();
     let line = format!(
-        "seq={seq} t_ms={ms:.3} label={label} ws={ws} create_depth={depth} paint_during_create={paints} tif={tif} tif_edge={edge} msctf={msctf} coremsg={coremsg} coreui={coreui} imm32={imm32} hwnd=0x{hwnd:x} fg=0x{fg:x} focus=0x{focus:x} fg_ours={fg_ours} focus_ours={focus_ours}\n"
+        "seq={seq} t_ms={ms:.3} label={label} ws={ws} create_depth={depth} paint_during_create={paints} tif={tif} tif_edge={edge} msctf={msctf} coremsg={coremsg} coreui={coreui} imm32={imm32} shell32={shell32} winstorage={winstorage} hwnd=0x{hwnd:x} fg=0x{fg:x} focus=0x{focus:x} fg_ours={fg_ours} focus_ours={focus_ours}\n"
     );
     if let Ok(mut file) = trace.file.lock() {
         let _ = file.write_all(line.as_bytes());
@@ -232,6 +235,18 @@ pub fn sample_stretch(which: &str, side: &str) {
 
 pub fn skip_focus() -> bool {
     std::env::var_os("MINICON_INIT_SKIP_FOCUS").is_some()
+}
+
+pub fn skip_user_config_directory() -> bool {
+    std::env::var_os("MINICON_SKIP_USER_CONFIG_DIRECTORY").is_some()
+}
+
+pub fn note_font_create() {
+    FONT_CREATES.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn font_creates() -> u32 {
+    FONT_CREATES.load(Ordering::Relaxed)
 }
 
 fn activate_after_present() -> bool {
@@ -322,6 +337,10 @@ pub fn maybe_activate_after_present(hwnd: HWND) {
     sample(&format!(
         "after_activate_after_present_fg_ok={fg_ok}_fg_err={fg_err}_attached={attached}"
     ));
+    if std::env::var_os("MINICON_INIT_SKIP_ENGLISH").is_some() {
+        sample("after_activate_steady_rss_tif");
+        return;
+    }
     let fg_ours = focus_fields().3;
     let sent = send_english_abc();
     sample(&format!(

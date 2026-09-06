@@ -373,14 +373,30 @@ foreground start, with a one-shot intervention each:
   `user_config_directory` → `SHGetFolderPathW(CSIDL_APPDATA)`.
 - Idle modules: `windows.storage.dll` **741,376**, `shell32.dll`
   **532,480**, plus `shcore`/`shlwapi`/`kernel.appcore`.
-- **Intervention (research copy of platform runtime, not pin):** skip
-  `load_config` or replace `SHGetFolderPathW` with
-  `GetEnvironmentVariableW("APPDATA")`. Same activated one-tab, IME on.
-- **Pass:** `windows.storage` and/or `shell32` resident drop, first-frame
-  still paints, `minicon.json` still found when `%APPDATA%\minicon.json`
-  exists.
-- **Fail:** those DLLs still present at the same WS (CreateWindow/IME
-  already pulled them). Then this call is not an owner.
+Ran (activated first-frame, `fg_ours=1`, no `--no-activate`, not
+APPDATA stand-in). Log:
+`target/windows-memory/load-config-f3d73129c28eff43d083369680c7a62ef59284f6-20260906T121642Z.log`
+
+Production PE import table (`083bcc80` and `461b6cad`): `shell32.dll`
+exports **both** `CommandLineToArgvW` and `SHGetFolderPathW`. Skipping
+`load_config` cannot drop the static `shell32` import.
+
+| point | keep SHGetFolderPathW | skip call |
+|---|---:|---:|
+| before `user_config_directory` | 9,527,296 winstorage=0 | 9,523,200 winstorage=0 |
+| after / skip | 10,768,384 winstorage=**1** | 9,523,200 winstorage=**0** |
+| `after_activate_steady` | 22,155,264 winstorage=1 | 21,037,056 winstorage=0 |
+| guest WS settle | 22,556,672 | 21,417,984 |
+
+Activated Δ ≈ **1.09 MiB** (guest 1,138,688). `windows.storage` is
+caused by the **call**, not by CreateWindow. `shell32=1` in both
+(`CommandLineToArgvW` already ran).
+
+**Not a production patch:** `%APPDATA%` is not roaming-folder
+redirection and fails if the variable is missing. PRD requires
+`SHGetFolderPathW(CSIDL_APPDATA)`. Skipping the call drops
+`minicon.json`. Keep the API; do not treat this 1 MiB as idle
+savings while config semantics stay.
 
 ### 2. `font::cell_metrics` → `select_primary` `CreateFontW` walk
 
@@ -392,10 +408,9 @@ foreground start, with a one-shot intervention each:
 - **Intervention:** research-only count `PixelFace::create` until
   `select_primary` returns; second build with Emoji/unused tail omitted
   (keep a CJK-capable face — do not drop 中文 raster).
-- **Pass:** create-count > 1 and WS falls while `中` still glyphs and
-  GDI object count stays flat.
-- **Fail:** create-count = 1 (early NSimSun/Consolas win) or CJK paint
-  breaks. Then this is not an idle cut.
+Same log: first `select_primary_win_index=0_creates=1` (NSimSun wins
+immediately). Later chrome sizes add more creates, still index 0.
+**Fail** for omitting the Emoji tail on this court. Not an idle cut.
 
 ### 3. Static `gdiplus.dll` import from screenshot encode
 
@@ -423,9 +438,9 @@ foreground start, with a one-shot intervention each:
 - Clipboard (`set_text`/`get_text` only on copy/paste).
 - Disable IME / `ImmAssociateContextEx`.
 
-Next research PE (after this list, not skip-Focus): implement candidate 1
-on the existing `target/windows-memory/research-src` copy, one activated
-control vs one `SHGetFolderPathW`-free build, same IME=true first frame.
+Candidate 1/2 closed as above. Gdiplus idle resident 143,360 is
+hygiene, not 21 MiB. Next: unnamed remainder / other MiniCon-owned
+loads that keep config+IME+PTY.
 
 Probe self-cost: warmup_a 10,813,440 → warmup_b 10,866,688 (**+53,248**);
 entry equals warmup_b.

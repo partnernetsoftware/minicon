@@ -115,10 +115,10 @@ Exact PE `083bcc80…` (746,496 B) on win-aarch64: `--no-activate`
 fg_ours=0 after first frame; explicit activate then English SendInput
 shows `abc` in `capture-pane`; Chinese IME still BLOCKED (0x409).
 
-Next: name **removable init/loads inside the post-activate ~21 MiB**.
-Call candidates and interventions:
-`research/windows-memory/live-owners.md` (section after activate).
-Do not re-run wrapper / 8-page / size-compare / hwnd-poll / skip-Focus.
+Post-activate ~21 MiB: `SHGetFolderPathW` loads `windows.storage`
+(~1.09 MiB activated). Not a product cut (roaming config / not APPDATA).
+`select_primary` wins NSimSun at create-count=1; Emoji tail is not the
+idle fat. Do not re-run wrapper / 8-page / size-compare / skip-Focus.
 
 ## Top 5 live owners and verifiable interventions
 
