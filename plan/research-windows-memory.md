@@ -89,8 +89,14 @@ Do not open a full court for it.
 after COW). Do not read `cow_private=0` as no COW.
 
 IME-on / 中文输入维持 only — **do not disable IME**. No wrapper
-re-run. Keep unknown alloc-base list and count_meta
-(truncation / enum_err).
+re-run. 32 KiB unexplained remainder: no extra court.
+
+Size compare (480×300 vs 960×600, dpi 96, no screenshot): largest
+R/W unnamed mapped **614,400 vs 2,379,776** (tracks pixel area;
+not named DIB). `private_type` does not. `privatized_image`
+1,069,056 unchanged. Same-process shrink returns most of the
+mapped bytes (2,379,776 → 675,840). Next is IME/USER init-phase
+for the size-invariant 1.02 MiB, not more QWS fields.
 
 ## Top 5 live owners and verifiable interventions
 

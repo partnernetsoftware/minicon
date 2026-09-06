@@ -174,8 +174,41 @@ Module rows from **this** snapshot’s `VirtualPage` in
 | 327,680 | `gdi32full.dll` |
 | 2,736,128 | **unknown-mapped** (1006, see alloc-base table) |
 
-Do not re-open wrapper. Do not disable IME. Next: what backing
-those 1006 section maps are (still unknown).
+Do not re-open wrapper. Do not disable IME. 32 KiB PMC−walk stays
+**unexplained remainder** (no extra court).
+
+## Size causal compare (frozen PE, new process ×2, then same-process shrink)
+
+`target/windows-memory/size-compare-91752f59296e6e2e4b2d718c2a97df69f83746bc-20260906T111300Z.log`
+
+IME on. No screenshot. First frame = `perf-stats`
+present_success/host_direct/frames ≥ 1. DPI 96. Logical inner size
+via `resize-window`.
+
+| sample | client | pixel area | 4×area | largest R/W unnamed mapped | ShareCount≥2 | private_type | privatized_image |
+|---|---|---:|---:|---:|---:|---:|---:|
+| new 480×300 | 480×300 | 144,000 | 576,000 | **614,400** | 598,016 | 3,121,152 | 1,069,056 |
+| new 960×600 | 960×600 | 576,000 | 2,304,000 | **2,379,776** | 2,347,008 | 3,612,672 | 1,069,056 |
+| same proc before | 960×600 | 576,000 | 2,304,000 | 2,379,776 | 2,347,008 | 3,600,384 | 1,069,056 |
+| same proc after | 480×300 | 144,000 | 576,000 | 675,840 | 598,016 | 3,403,776 | 1,069,056 |
+
+Largest R/W `MEM_MAPPED` **does** follow pixel area (ratio 3.87 vs 4).
+Do **not** name it DIB: it is still 1006-unnamed and `ShareCount>=2`.
+`private_type` does **not** scale with 4× pixels (+0.49 MiB only).
+`privatized_image` 1,069,056 is **identical** at both sizes (IME-on
+`TextInputFramework` resident matches that number).
+
+Same-process 960→480: mapped 2,379,776 → 675,840 (most of the
+size-correlated bytes return). Leftover vs fresh-small: mapped
++61,440, private_type +282,624. Not a 2 MiB leak.
+
+No MiniCon production patch this round. If a later pin looks at
+GDI `StretchDIBits` backing in
+`native_pixel_window.rs` (no `CreateDIBSection` in that file),
+scope is that adapter’s resize/present, not the PTY ring and not
+IME-off. IME/USER (`privatized_image` / `MSCTF` /
+`CoreMessaging`) stay init-phase candidates because they did not
+move with client pixels.
 
 ## Accepted idle arithmetic (not a six-cell claim)
 
