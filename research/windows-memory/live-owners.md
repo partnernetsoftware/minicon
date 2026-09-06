@@ -135,6 +135,12 @@ Latest log (IME **on**, Chinese preserved, **no IME opt-out**):
 | `privatized_mapped` | 0 |
 | unknown / vq_fail | 2,744,320 / 0 |
 
+**Retract** `MEM_PRIVATE + privatized_image = not_sharable`.
+3,239,936 + 1,069,056 = **4,308,992**, which is **4,096 (1 page)**
+above `not_sharable` 4,304,896. `MEM_PRIVATE` is **not** all
+`Shared=0`. Walk and each partition still sum. type×Shared cross
+table is on the size-compare probe; no extra counting court.
+
 `count_meta`: qws_retry=0 enum_ok=1 enum_needed=33 enum_slots=512
 enum_truncated=0 getmod_fail=0 module_keys=33 mapped_keys=8.
 **33 modules were collected in full**; the log only **displayed** 25

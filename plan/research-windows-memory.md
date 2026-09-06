@@ -91,6 +91,11 @@ after COW). Do not read `cow_private=0` as no COW.
 IME-on / 中文输入维持 only — **do not disable IME**. No wrapper
 re-run. 32 KiB unexplained remainder: no extra court.
 
+**Retract** `MEM_PRIVATE + privatized_image = not_sharable`
+(off by 4096). Do not assume `MEM_PRIVATE` is all `Shared=0`.
+type×Shared cross rides the next size-compare sample; no extra
+counting court.
+
 Size compare (480×300 vs 960×600, dpi 96, no screenshot): largest
 R/W unnamed mapped **614,400 vs 2,379,776** (tracks pixel area;
 not named DIB). `private_type` does not. `privatized_image`

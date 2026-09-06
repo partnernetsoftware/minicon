@@ -202,6 +202,7 @@ public static class WsResident {
                 ulong cowProtect = 0, unknown = 0;
                 ulong resImage = 0, resMapped = 0, resPrivType = 0, resOther = 0, vqFail = 0;
                 ulong privatizedImage = 0, privatizedMapped = 0;
+                ulong imgS0 = 0, imgS1 = 0, mapS0 = 0, mapS1 = 0, privS0 = 0, privS1 = 0, othS0 = 0, othS1 = 0;
                 var byMod = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var byMapped = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var nameByAlloc = new Dictionary<ulong, string>();
@@ -235,7 +236,7 @@ public static class WsResident {
                         byMod.TryGetValue(owner, out cur);
                         byMod[owner] = cur + page;
                         resImage += page;
-                        if (!sharedBit) privatizedImage += page;
+                        if (!sharedBit) { privatizedImage += page; imgS0 += page; } else imgS1 += page;
                         continue;
                     }
 
@@ -244,13 +245,14 @@ public static class WsResident {
                         unknown += page;
                         vqFail += page;
                         resOther += page;
+                        if (sharedBit) othS1 += page; else othS0 += page;
                         continue;
                     }
                     string kind = TypeName(mbi.Type);
                     ulong alloc = mbi.AllocationBase.ToUInt64();
                     if (kind == "image") {
                         resImage += page;
-                        if (!sharedBit) privatizedImage += page;
+                        if (!sharedBit) { privatizedImage += page; imgS0 += page; } else imgS1 += page;
                         string path;
                         if (!nameByAlloc.TryGetValue(alloc, out path)) {
                             SetLastError(0);
@@ -273,7 +275,7 @@ public static class WsResident {
                         byMod[path] = cur + page;
                     } else if (kind == "mapped") {
                         resMapped += page;
-                        if (!sharedBit) privatizedMapped += page;
+                        if (!sharedBit) { privatizedMapped += page; mapS0 += page; } else mapS1 += page;
                         string path;
                         if (!nameByAlloc.TryGetValue(alloc, out path)) {
                             SetLastError(0);
@@ -296,9 +298,11 @@ public static class WsResident {
                         byMapped[path] = cur + page;
                     } else if (kind == "private") {
                         resPrivType += page;
+                        if (sharedBit) privS1 += page; else privS0 += page;
                     } else {
                         unknown += page;
                         resOther += page;
+                        if (sharedBit) othS1 += page; else othS0 += page;
                         RememberUnnamed(unnamed, alloc, mbi, page, sharedBit, shareCount, 0, "type_" + kind);
                     }
                 }
@@ -316,6 +320,10 @@ public static class WsResident {
                     "pid={0} page={1} ws_pages={2} walk_bytes={3} unexplained_remainder_before={4} unexplained_remainder_after_qws={5} unexplained_remainder_after_classify={6} sharable={7} not_sharable={8} sharecount_ge2={9} sharecount_eq1={10} sharecount_eq0={11} cow_protect={12} privatized_image={13} privatized_mapped={14} unknown={15} vq_fail={16} resident_image={17} resident_mapped={18} resident_private_type={19} resident_other={20}",
                     pid, page, count, walk, (long)pmc0 - (long)walk, (long)pmc1 - (long)walk, (long)pmc2 - (long)walk,
                     sharable, notSharable, shareGe2, shareEq1, shareEq0, cowProtect, privatizedImage, privatizedMapped, unknown, vqFail, resImage, resMapped, resPrivType, resOther));
+                lines.Add(string.Format("cross type=image shared0={0} shared1={1}", imgS0, imgS1));
+                lines.Add(string.Format("cross type=mapped shared0={0} shared1={1}", mapS0, mapS1));
+                lines.Add(string.Format("cross type=private shared0={0} shared1={1}", privS0, privS1));
+                lines.Add(string.Format("cross type=other shared0={0} shared1={1}", othS0, othS1));
                 var items = new List<KeyValuePair<string, ulong>>(byMod);
                 items.Sort((a, b) => b.Value.CompareTo(a.Value));
                 int shown = 0;
