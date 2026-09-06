@@ -37,12 +37,28 @@ That is **debug**, not exact release, and not this HEAD. It only proves the
 Windows court can run the RSS black box and that GDI does not reproduce the
 macOS 183 MiB Color Emoji heap leak.
 
-## Wrapper closure (stop repeating)
+## Wrapper PASS paused (null is not Wait-Process)
 
-exitmeta round on source `e6cd7b0` / pin `745f52b2` / PE `d2d08ce7…`:
-`ExitCode_raw=0`, `HasExited=True`, `Handle=2452`, harness pid 10004.
-`WIN_RELEASE_RSS_EXIT=0` now has a raw code, not a null→0 coerce.
-Idle **21.46 MiB**. No further wrapper courts.
+cdx-wjhk 2026-09-06 re-block: a reader still seeing
+`if ($null -eq $code) { $code = 0 }` at line 126 is looking at a stale
+buffer. **Wait-Process / WaitForExit is not “ExitCode=null solved.”**
+Null after Handle + WaitForExit + Refresh is **wrapper failure**; raw
+ExitCode must be recorded; never coerce null to 0.
+
+Current `research/windows-memory/run-release-rss.sh` at HEAD `a8679ae`
+has **no** `$code = 0` fallback anywhere in this clone:
+
+| file line | what it does |
+|---|---|
+| 116 | `$null` → `ExitCode_raw=NULL` text; does not write job.exit 0 |
+| 123 | `$null = $p.Handle` (open handle before wait) |
+| 126 | `Save-PidState timeout $p` inside the WaitForExit timeout throw |
+| 135 | `if ($null -eq $p.ExitCode) { throw "wrapper failure: …" }` |
+| 140 | catch sets `$exitCode = 1` |
+
+**Pause wrapper PASS.** Do not start another wrapper RSS court.
+Body `MINICON_HOST_RSS_RECEIPT` idle **21.45–21.48 MiB** may still be
+recorded independently of wrapper status.
 
 ## Code reading (pin `745f52b2`, GDI host)
 
@@ -93,12 +109,28 @@ Job wrapper EXIT 1 on the first Start-Process run was `$p.ExitCode` null
 `.exitmeta` records a non-null raw ExitCode. Body `MINICON_HOST_RSS_RECEIPT`
 stays independently valid.
 
-GDI live-allocation reading (no patch yet): one `Vec<u32>` frame
-(`native_pixel_window.rs`, ~2–5 MiB at 960×600×DPI); `PixelFace` is
-`CreateFontW` + optional cmap ≤4 MiB/face, not a leaked TTC; 12-family list
-includes Segoe UI Emoji but via GDI mapper. Four-cycle growth ~10 MiB on
-Windows is a tab/session lifetime candidate, separate from macOS screenshot
-Vecs. No source patch until that growth is named on-guest.
+Named live allocations from pin `745f52b2` + MiniCon `src/main.rs`
+(code reading, **not** a guest GDI-object dump yet; no production patch):
+
+| owner | lifetime | size bound | four-cycle? |
+|---|---|---|---|
+| `HostState.pixels` one `Vec<u32>` DIB, StretchDIBits | process window | 960×600×4 ≈ 2.25 MiB; 150% DPI ≈ 5 MiB | no (one buffer, resize in place) |
+| `PixelFace` `CreateFontW` + DC; cmap `GetFontData` ≤4 MiB/face | `thread_local` `RASTER_FACES` | ≤4 MiB/face, Drop deletes HFONT/DC | **no** — not per-tab; survives close |
+| Segoe UI Emoji via GDI mapper (`seguiemj.ttf`), not `Box::leak` TTC | same TLS | mapper, not 183 MiB Color Emoji | no |
+| per-tab `BoundedOutputPipe` | session | `READ_BUF*128` = **1 MiB** | should drop on `sessions.remove` |
+| per-tab `vt100::Parser` scrollback 4000 | session | empty ~small; filled lines dominate | should drop; **if not, cycle growth** |
+| ConPTY / `PtyMaster`+`PtyChild` | session; `shutdown_pty` detaches off GUI thread | unnamed guest WS | candidate if detach leaks |
+
+Idle **21 MiB** is mostly process + one DIB + TLS faces + one session
+(~1 MiB pipe). Extra-tab **~1.5–1.8 MiB** matches one more pipe+parser,
+not a second DIB or a new font set.
+
+Four-cycle **~9–10.5 MiB** is **not** explained by TLS fonts or the
+single DIB. `close_active_session` does `sessions.remove` + `drop(session)`
++ `shutdown_pty`. Remaining suspects: ConPTY/GDI objects not released on
+session close, working-set not returned after free, or parser/pipe not
+actually dropped. Next measurement is on-guest object/handle counts
+around those owners — still no production patch.
 
 Confirmed body-only retest (harness-PID wait, no `-Wait`), same source/pin/PE:
 
@@ -109,14 +141,16 @@ Confirmed body-only retest (harness-PID wait, no `-Wait`), same source/pin/PE:
 | extra-tab delta | 1.73 MiB |
 | four-cycle growth | 9.93 MiB |
 | cargo test | `ok` in 1.41 s |
-| `WIN_RELEASE_RSS_EXIT` | 0 |
+| `WIN_RELEASE_RSS_EXIT` | recorded 0 — **wrapper PASS paused**; not re-claimed |
 | log | `target/windows-memory/rss-retest-now.host.log` |
 
-33,620 K hang WS is not this row. Still above 10 MiB. No production pin/source patch yet.
+33,620 K hang WS is not this row. Body idle **21.45–21.48 MiB** is
+recordable. Wrapper status is paused. Still above 10 MiB. No production
+pin/source patch yet.
 
-Next: name the **21 MiB idle** and **~10 MiB four-cycle growth** on-guest
-(GDI objects / DIB / cmap / per-tab PTY+vt100). No production patch until
-that list exists. No more RSS-wrapper retests.
+Next: on-guest object/handle counts for the named owners above
+(DIB / TLS faces / per-tab PTY+vt100 / ConPTY detach). No production
+patch until that list is measured. No more RSS-wrapper retests.
 
 Logs and artifacts: `research/windows-memory/`, `target/windows-memory/`.
 Source or shared-pin edits wait on an explicit patch list.
