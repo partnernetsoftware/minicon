@@ -118,7 +118,10 @@ shows `abc` in `capture-pane`; Chinese IME still BLOCKED (0x409).
 Post-activate ~21 MiB: `SHGetFolderPathW` loads `windows.storage`
 (~1.09 MiB activated). Not a product cut (roaming config / not APPDATA).
 `select_primary` wins NSimSun at create-count=1; Emoji tail is not the
-idle fat. Do not re-run wrapper / 8-page / size-compare / skip-Focus.
+idle fat. Gdiplus delay-load (research copy) drops the IAT entry;
+activated keep WS 22,376,448 vs 22,556,672 (Δ 180,224) at `fg_ours=1`.
+Handoff `research/windows-memory/delay-gdiplus-handoff.md`; do not bump
+pin `745f52b2`. Do not re-run wrapper / 8-page / size-compare / skip-Focus.
 
 ## Top 5 live owners and verifiable interventions
 
