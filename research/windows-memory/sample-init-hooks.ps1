@@ -12,37 +12,32 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PSDefaultParameterValues["Out-File:Encoding"] = "utf8"
-$env:AGENTERM_NO_ACTIVATE = "1"
 $exitCode = 1
 $gui = $null
-$pipe = 'pipe:\\.\pipe\minicon-inithooks-' + [guid]::NewGuid().ToString('N')
 
 function Write-Log([string]$line) {
     Add-Content -LiteralPath $Log -Value $line -Encoding utf8
 }
 
-function Invoke-Cli([string[]]$Arguments) {
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $out = & $Exe @('cli', '--control', $pipe) @Arguments 2>&1 | ForEach-Object { $_.ToString() } | Out-String
-        return @{ Code = $LASTEXITCODE; Text = $out.Trim() }
-    } finally {
-        $ErrorActionPreference = $prev
-    }
-}
-
-function Run-One([string]$Tag, [bool]$SkipFocus) {
+function Run-One {
+    param(
+        [string]$Tag,
+        [bool]$SkipFocus,
+        [bool]$NoActivate,
+        [bool]$ActivateAfterPresent
+    )
     $localPipe = 'pipe:\\.\pipe\minicon-inithooks-' + [guid]::NewGuid().ToString('N')
     $localTrace = "$Trace.$Tag"
     if (Test-Path -LiteralPath $localTrace) { Remove-Item -LiteralPath $localTrace -Force }
     if ($SkipFocus) { $env:MINICON_INIT_SKIP_FOCUS = '1' } else { Remove-Item Env:MINICON_INIT_SKIP_FOCUS -ErrorAction SilentlyContinue }
+    if ($ActivateAfterPresent) { $env:MINICON_INIT_ACTIVATE_AFTER_PRESENT = '1' } else { Remove-Item Env:MINICON_INIT_ACTIVATE_AFTER_PRESENT -ErrorAction SilentlyContinue }
+    if ($NoActivate) { $env:AGENTERM_NO_ACTIVATE = '1' } else { Remove-Item Env:AGENTERM_NO_ACTIVATE -ErrorAction SilentlyContinue }
     $env:MINICON_INIT_TRACE = $localTrace
-    Write-Log "run tag=$Tag skip_focus=$SkipFocus ime_allowed=true visible_show=true no_screenshot"
-    $proc = Start-Process -FilePath $Exe -ArgumentList @(
-        '--no-activate', '--cols', '80', '--rows', '24',
-        '--control', $localPipe, '-e', 'cmd.exe', '/Q', '/K'
-    ) -PassThru -WindowStyle Normal
+    Write-Log ("run tag={0} skip_focus={1} no_activate={2} activate_after_present={3} ime_allowed=true visible_show=true no_screenshot no_pty_control_write" -f $Tag, $SkipFocus, $NoActivate, $ActivateAfterPresent)
+    $argList = New-Object System.Collections.Generic.List[string]
+    if ($NoActivate) { $argList.Add('--no-activate') }
+    $argList.AddRange([string[]]@('--cols', '80', '--rows', '24', '--control', $localPipe, '-e', 'cmd.exe', '/Q', '/K'))
+    $proc = Start-Process -FilePath $Exe -ArgumentList $argList.ToArray() -PassThru -WindowStyle Normal
     $null = $proc.Handle
     $deadline = [datetime]::UtcNow.AddMilliseconds(15000)
     $ready = $false
@@ -74,7 +69,7 @@ function Run-One([string]$Tag, [bool]$SkipFocus) {
         Start-Sleep -Milliseconds 40
     }
     if (-not $framed) { throw "first frame not observed $Tag" }
-    Start-Sleep -Milliseconds 200
+    if ($ActivateAfterPresent) { Start-Sleep -Milliseconds 800 } else { Start-Sleep -Milliseconds 250 }
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $null = & $Exe @('cli', '--control', $localPipe, 'close-window') 2>&1
@@ -90,15 +85,23 @@ function Run-One([string]$Tag, [bool]$SkipFocus) {
         Get-Content -LiteralPath $localTrace | ForEach-Object { Write-Log $_ }
         $edge = Get-Content -LiteralPath $localTrace | Where-Object { $_ -match 'tif_edge=1' }
         Write-Log ("tif_edge_lines tag={0} {1}" -f $Tag, (($edge | Measure-Object).Count))
+        $blocked = Get-Content -LiteralPath $localTrace | Where-Object { $_ -match 'chinese_ime_BLOCKED' }
+        Write-Log ("chinese_ime_blocked_lines tag={0} {1}" -f $Tag, (($blocked | Measure-Object).Count))
+        $keys = Get-Content -LiteralPath $localTrace | Where-Object { $_ -match 'label=WM_KEYDOWN' }
+        Write-Log ("wm_keydown_lines tag={0} {1}" -f $Tag, (($keys | Measure-Object).Count))
     } else {
         Write-Log "missing trace $localTrace"
     }
 }
 
 try {
-    Set-Content -LiteralPath $Log -Value "start init-hooks ime_allowed=true visible_window=true no_screenshot no_delay_first_frame_as_idle" -Encoding utf8
-    Run-One 'baseline_focus' $false
-    Run-One 'skip_focus' $true
+    Set-Content -LiteralPath $Log -Value "start init-hooks ime_allowed=true visible_window=true no_screenshot no_delay_first_frame_as_idle no_pty_control_write_as_ime" -Encoding utf8
+    # (1) current baseline: no-activate flag + opened() still Focus
+    Run-One -Tag 'noact_opened_focus' -SkipFocus $false -NoActivate $true -ActivateAfterPresent $false
+    # (2) skip opened Focus, then in-process real activate after first present + English SendInput
+    Run-One -Tag 'noact_skip_then_activate' -SkipFocus $true -NoActivate $true -ActivateAfterPresent $true
+    # (3) normal start control: no --no-activate, no AGENTERM_NO_ACTIVATE
+    Run-One -Tag 'normal_activate' -SkipFocus $false -NoActivate $false -ActivateAfterPresent $false
     $exitCode = 0
 } catch {
     $_ | Out-String | Add-Content -LiteralPath $Log -Encoding utf8

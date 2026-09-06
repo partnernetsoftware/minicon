@@ -102,12 +102,16 @@ leak. `privatized_image=1,069,056` **is not all TIF** (TIF
 shared0=24,576; 1.02 MiB is Shared=0 summed over 33 modules).
 
 Init-phase external polling cannot prove IME undelayable.
-Research PE `f71f095ffcf7991be100f6b9338808577a6fc9d5142537959caa76b8b48021d9`
-(752,128 B). `run_pixel_window_entry` ≠ process entry. TIF 0→1 at
+Research PE `c941be928c4ac38050aa6a4d345387962ee12cbd2185a2f9cd902a1c5d73580d`
+(755,712 B; prior hook PE `f71f095f…` 752,128 B).
+`run_pixel_window_entry` ≠ process entry. TIF 0→1 at
 **WM_IME_SETCONTEXT during SetForegroundWindow**, not StretchDIBits
-or ShowWindow. Skip-focus (window still shown, IME=true, first
-present kept): TIF stays 0, first_present WS 17.6 vs 22.1 MiB.
-Not idle-by-delaying-first-frame. No production pin.
+or ShowWindow. The earlier skip-focus 17.6 vs 22.1 MiB first-present
+Δ is a **non-activated start** (`--no-activate` + skipped Focus), not
+foreground idle. After first present, real activate recovers ~4.2 MiB
+(TIF/CoreMessaging/CoreUI). Do not treat no-activate / skip-Focus as
+ordinary idle savings. Chinese system IME compose/commit is **BLOCKED**
+(guest has only langid 0x409). No production pin.
 
 ## Top 5 live owners and verifiable interventions
 

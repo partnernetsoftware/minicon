@@ -265,7 +265,73 @@ first frame**):
 
 Skip-focus keeps the window shown and `apply_ime_allowed(true)`.
 TIF/CoreMessaging/CoreUI stay 0. That is a defer-until-real-focus
-candidate, not idle-by-skipping-present. No production pin patch.
+candidate, not idle-by-skipping-present. **That 4.29 MiB Δ is a
+non-activated start comparison** (both groups used `--no-activate`
+and `AGENTERM_NO_ACTIVATE=1`; skip also omitted `NativeCommand::Focus`).
+It is not public foreground idle. IME=true is not Chinese input.
+
+## Activate-after-present + normal-start control (research PE)
+
+Identity: `target/windows-memory/research-pe/aarch64-pc-windows-msvc/release/minicon.exe`
+SHA-256 `c941be928c4ac38050aa6a4d345387962ee12cbd2185a2f9cd902a1c5d73580d`
+(755,712 B). Same pin copy `745f52b` + hooks. IME=true. First frame
+kept. No screenshot. No control write to PTY.
+Log: `target/windows-memory/init-hooks-7a1453b9362739bb7f2255d6eb7685dad4ce9f1d-20260906T115253Z.log`
+
+Foreground HWND/focus recorded on every sample (`hwnd`/`fg`/`focus`/
+`fg_ours`/`focus_ours`).
+
+| variant | flags | first_present WS | tif | fg_ours | notes |
+|---|---|---:|---|---|---|
+| noact_opened_focus | `--no-activate` + opened `Focus` | 22,151,168 | 1 | **1** | opened Focus **takes foreground** despite no-activate |
+| noact_skip_then_activate | `--no-activate`, skip Focus, then in-process `SetForegroundWindow` after first present | 17,694,720 | **0** | 0 | then real activate |
+| normal_activate | no `--no-activate`, no `AGENTERM_NO_ACTIVATE` | 19,668,992 | 1 | **0** | `focus_ours=1`, `GetForegroundWindow=0`, coremsg/coreui stay 0 |
+
+Skip group after first present (`before_activate_after_present`
+17,698,816, tif=0, fg_ours=0):
+
+- TIF 0→1 again at `WM_IME_SETCONTEXT` during activate (WS 22,020,096,
+  coremsg=1, coreui=1, fg_ours=1)
+- `after_activate_after_present` fg_ok=1 attached=1 WS **22,138,880**
+  tif=1 — recovers the ~4.2 MiB (22,138,880 − 17,694,720 = 4,444,160)
+- English `SendInput` VK_A/B/C, `pty_control_write=0`, then **3**
+  `WM_KEYDOWN` + **3** `WM_CHAR` on our HWND (WS after first keydown
+  22,577,152; later present ~22,917,120). That is keyboard delivery,
+  not a PTY control write.
+- **Chinese IME compose/commit: BLOCKED.** Probe:
+  `n_layouts=1 current_langid=0x409 has_zh=0` →
+  `chinese_ime_BLOCKED_no_zh_keyboard_layout`. No
+  `WM_IME_COMPOSITION` / `WM_IME_CHAR`. Do not claim input
+  qualification.
+
+`normal_activate` is the requested no-flag control. It still did not
+win the foreground HWND in this UTM job (`fg_ours=0` for the whole
+run). TIF loaded; CoreMessaging/CoreUI did not. Do not publish
+19.67 MiB as public idle.
+
+Do **not** treat skip-Focus / no-activate as ordinary idle savings:
+real activate after the first frame brings TIF+CoreMessaging+CoreUI
+back. Do not delay first frame.
+
+### Read-only: should `opened` Focus respect no-activate?
+
+Yes. `PixelWindowOptions.no_activate` only picks `SW_SHOWNOACTIVATE`.
+`ConTerminal::opened` always calls `window.focus()` →
+`NativeCommand::Focus` → `SetForegroundWindow`+`SetFocus`. This run
+proves that path sets `fg_ours=1` under `--no-activate`.
+
+**Minimal patch scope (not shipped this round, not an idle cut):**
+
+1. `src/main.rs` only. Store `no_activate` on `ConApp` (parsed flag
+   plus `AGENTERM_NO_ACTIVATE`, already merged in `main`).
+2. Remove `window.focus()` from `ConTerminal::opened`. Call it from
+   `ConApp::opened` gated on `!self.no_activate`.
+3. Leave `NativeCommand::Focus` unchanged. Tab switch, a11y
+   `NODE_FRAME`, and empty-greeting new-terminal still need Focus.
+   A platform-wide Focus no-op is too wide for startup-only
+   `--no-activate`.
+
+Do not patch production pin `745f52b2` or `target/font-platform-fix`.
 
 Probe self-cost: warmup_a 10,813,440 → warmup_b 10,866,688 (**+53,248**);
 entry equals warmup_b.

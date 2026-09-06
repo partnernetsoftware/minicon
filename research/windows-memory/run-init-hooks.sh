@@ -73,14 +73,13 @@ ts "job_id=$job_id" | tee -a "$LOG"
 
 printf '%s\n' \
   '$ErrorActionPreference = "Stop"' \
-  "\$env:AGENTERM_NO_ACTIVATE = '1'" \
   "\$env:MINICON_INIT_TRACE = '$GUEST_TRACE'" \
   "& '$GUEST_SAMPLE' -Exe '$GUEST_EXE' -Trace '$GUEST_TRACE' -Log '$GUEST_LOG' -Result '$RESULT'" \
   'exit $LASTEXITCODE' | court push "$COURT" - "$JOB"
 printf 'ready' | court push "$COURT" - "$READY"
-ts "job submitted; poll exit (host bound 150s)" | tee -a "$LOG"
+ts "job submitted; poll exit (host bound 240s)" | tee -a "$LOG"
 
-deadline="$((SECONDS + 150))"
+deadline="$((SECONDS + 240))"
 while :; do
   : >"$runner_tmp/exit"
   court pull "$COURT" "$RESULT" "$runner_tmp/exit" 2>/dev/null || true
