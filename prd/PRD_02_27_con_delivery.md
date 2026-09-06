@@ -445,18 +445,29 @@ six-cell claim.
   `HasExited=True` and `ExitCode_raw=0`; durable owner:
   `plan/research-windows-memory.md`. This release remains above 10 MiB, and
   neither this Windows cell nor macOS fills any unavailable Linux cell.
-  A separate same-PE idle page census closes exactly: 5490 × 4096 B =
-  22,515,712 B WS, comprising 18,186,240 B with the QueryWorkingSet `Shared`
-  bit and 4,300,800 B without it. Microsoft's `Shared` bit denotes **sharable**
-  pages; it does not prove every such page is currently used by another
-  process. The snapshot does not yet attribute the 17.35 MiB sharable bucket
-  to individual DLLs, or the 4.10 MiB nonsharable bucket to DIB/PTY/heap owners.
-  DLL virtual mappings alone are not resident-byte evidence. All pages remain
-  in the product WS budget. Raw receipt:
-  `target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log.hostout`.
-  Next: correlate these resident page addresses with module/mapping ranges,
-  retaining unknowns and observation drift. Interpretation:
+  Separate same-PE idle page snapshots contain 5490 × 4096 B = **22,487,040 B**,
+  split into 18,186,240 B with the QueryWorkingSet `Shared` bit and 4,300,800 B
+  without it. The earlier text incorrectly equated this sum to 22,515,712 B:
+  that separately read WS is **28,672 B / 7 pages higher**. The later snapshot
+  also totals 22,487,040 B, while its separate WS read is 22,519,808 B,
+  **32,768 B / 8 pages higher**. These are retained residuals; sampling drift
+  is not established without bracketing WS/time observations.
+  The later QWSEx/VirtualQueryEx classification partitions all snapshot pages:
+  MEM_IMAGE 16,343,040 B, MEM_MAPPED 2,908,160 B, MEM_PRIVATE 3,235,840 B,
+  zero invalid/other pages. Mapping type and shareability are different axes:
+  image/mapped regions can include private copy-on-write pages. Microsoft's
+  `Shared` bit means **sharable**, not necessarily shared by multiple processes.
+  Resident mapping labels include ntdll 3,735,552 B, unnamed mappings
+  2,736,128 B, TextInputFramework 1,069,056 B, KernelBase 1,052,672 B,
+  CoreMessaging 950,272 B and msctf 839,680 B. These are snapshot page counts,
+  not DLL virtual sizes, exclusive subsystem costs or proven savings.
+  All resident pages remain in the product WS budget. Raw receipts:
+  `target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log.hostout`
+  and `target/windows-memory/idle-regions-60d9a783551f4721ff8adfc2c510ca450fd6b59d-20260906T105426Z.log.hostout`.
+  Next: bracket snapshot timing/WS, separate unnamed allocation bases, and
+  identify initialization triggers while preserving Chinese input. Interpretation:
   [PSAPI_WORKING_SET_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
+
 
 
 ## Artifact budget
