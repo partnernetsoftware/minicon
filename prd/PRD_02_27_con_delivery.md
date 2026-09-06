@@ -466,10 +466,24 @@ six-cell claim.
   count already-private image/mapped pages, whose mapping type is retained.
   References: [PSAPI_WORKING_SET_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block),
   [VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex).
-  Next: two fresh-process window-size controls with measured physical client
-  area and completed first frame, comparing per-allocation-base residency.
-  Keep IME enabled; do not use screenshots as the measurement barrier or
-  rerun full courts merely to pursue the small accounting residual.
+  Frozen-PE size controls now establish a size-dependent mapped allocation:
+  with IME enabled, DPI 96, no screenshots and successful first presents,
+  fresh 480×300 and 960×600 clients have largest unnamed R/W mapped resident
+  blocks of **614,400 B** and **2,379,776 B** (3.87× for 4× pixel area).
+  Shrinking one process from 960×600 to 480×300 reduces that block to
+  **675,840 B**, releasing 1,703,936 B; the excess over fresh-small is only
+  61,440 B. This is evidence of size dependence and substantial reclamation,
+  not a proven DIB owner or a 2 MiB leak. MEM_PRIVATE residency increases
+  only 491,520 B between the fresh sizes; aggregate privatized image pages
+  remain 1,069,056 B. Their numerical equality to TextInputFramework's total
+  residency does not assign all those private pages to that module.
+  Evidence and controls: `research/windows-memory/live-owners.md`,
+  `target/windows-memory/size-compare-91752f59296e6e2e4b2d718c2a97df69f83746bc-20260906T111300Z.log.hostout`.
+  Next: attribute size-independent residency to initialization steps and
+  evaluate delayed initialization while preserving Chinese input. Module
+  private-page counts can accompany that experiment; do not rerun full
+  courts merely to pursue the small accounting residual. The 10 MiB RSS
+  target remains unmet.
 
 
 
