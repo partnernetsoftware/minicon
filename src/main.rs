@@ -1967,8 +1967,10 @@ impl ConApp {
                 .active_session_mut()
                 .map_err(|error| error.to_string())?;
             session.ensure_pty_input_open()?;
+            let bytes =
+                composer_submission_bytes(&input, session.parser.screen().bracketed_paste());
             session
-                .write_pty(input.as_bytes())
+                .write_pty(&bytes)
                 .map_err(|error| format!("terminal input failed: {error}"))?;
             // Submission crosses the PTY boundary and can change arbitrary
             // terminal cells; commit view state only after delivery succeeds.
@@ -5380,6 +5382,19 @@ impl ConTerminal {
     }
 }
 
+// The composer owns submission; the child owns its negotiated paste mode.
+// Keep the final Enter outside the paste so a TUI does not absorb it as text.
+fn composer_submission_bytes(submission: &str, bracketed: bool) -> Vec<u8> {
+    if !bracketed {
+        return submission.as_bytes().to_vec();
+    }
+    let draft = submission.strip_suffix('\r').unwrap_or(submission);
+    let normalized = terminal_input::normalize_terminal_paste(draft);
+    let mut bytes = terminal_input::terminal_paste_bytes(&normalized, true);
+    bytes.push(b'\r');
+    bytes
+}
+
 impl PixelWindowApplication for ConApp {
     fn opened(&mut self, window: &PixelWindow) -> Result<PixelWindowDirective, PixelWindowError> {
         let metrics = window.metrics()?;
@@ -6881,6 +6896,29 @@ mod tests {
             )),
             "first\rsecond\rthird"
         );
+    }
+
+    #[test]
+    fn composer_send_places_one_submit_enter_outside_negotiated_paste() {
+        let mut parser = parser();
+        for draft in ["hello", "first\nsecond", "中文\n", "one\n\ntwo"] {
+            let mut composer = composer::ComposerState::default();
+            composer::insert(&mut composer, draft);
+            let submission = composer.take_submission().unwrap();
+            assert_eq!(
+                composer_submission_bytes(&submission, false),
+                submission.as_bytes()
+            );
+            parser.process(b"\x1b[?2004h");
+            let bytes = composer_submission_bytes(&submission, parser.screen().bracketed_paste());
+            let expected = format!("\x1b[200~{}\x1b[201~\r", draft.replace('\n', "\r"));
+            assert_eq!(bytes, expected.as_bytes());
+            parser.process(b"\x1b[?2004l");
+            assert_eq!(
+                composer_submission_bytes(&submission, parser.screen().bracketed_paste()),
+                submission.as_bytes()
+            );
+        }
     }
 
     #[test]

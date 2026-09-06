@@ -1482,3 +1482,51 @@ fn host_process_rss_stays_within_named_budget() {
         thread::sleep(Duration::from_millis(20));
     }
 }
+
+// A raw PTY peer distinguishes pasted draft bytes from the final Enter.
+// It does not echo input, so only bytes actually received can satisfy the check.
+#[cfg(unix)]
+#[test]
+fn composer_send_delivers_paste_then_submit_to_raw_application() {
+    let binary = minicon_binary();
+    let endpoint = control_endpoint(&unique_suffix());
+    let script = r"stty raw -echo; printf '\033[?2004hCOMPOSER_READY\r\n'; for n in 18 25; do dd bs=1 count=$n 2>/dev/null | od -An -tx1 | tr -d ' \n'; printf '\r\n'; done; sleep 10";
+    let child = Command::new(&binary)
+        .args([
+            "--no-activate",
+            "--control",
+            &endpoint,
+            "-e",
+            "/bin/sh",
+            "-c",
+            script,
+        ])
+        .spawn()
+        .expect("raw PTY GUI");
+    let _gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(unique_suffix()),
+    };
+    wait_until_ready(&binary, &endpoint, Duration::from_secs(15));
+    cli_json(
+        &binary,
+        &endpoint,
+        &["wait-text", "--timeout-ms", "10000", "COMPOSER_READY"],
+    );
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+Shift+I"]);
+    for draft in ["hello", "first\nsecond"] {
+        cli_json(&binary, &endpoint, &["send-ui-ime", "commit", draft]);
+        cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+O"]);
+        let expected = format!("\x1b[200~{}\x1b[201~\r", draft.replace('\n', "\r"));
+        let hex: String = expected.bytes().map(|b| format!("{b:02x}")).collect();
+        cli_json(
+            &binary,
+            &endpoint,
+            &["wait-text", "--timeout-ms", "10000", &hex],
+        );
+        assert_eq!(
+            cli_json(&binary, &endpoint, &["ui-snapshot"])["composer_text"],
+            ""
+        );
+    }
+}

@@ -305,7 +305,17 @@ the window rather than being hidden to save pixels.
   real new row; it never submits by itself. The fixed-height viewport follows
   the caret row and retains horizontal sliding for long commands. Send remains
   the only submission action and converts stored breaks to terminal carriage
-  returns in order. Clipboard paste stores the same visible soft breaks as
+  returns in order. When the child enables bracketed paste (DECSET 2004),
+  Send frames the draft as paste and puts the final submission Enter after
+  the paste-end marker. This prevents rapid draft text and its final Enter
+  from being interpreted together as unframed pasted text. Without that
+  negotiated mode, legacy text-plus-CR delivery remains. The button and
+  Ctrl+O use this same path; embedded breaks remain inside the paste.
+  The raw-PTY black-box `composer_send_delivers_paste_then_submit_to_raw_application`
+  verifies single- and multiline drafts with exactly one final Enter outside
+  the paste markers, without a second user action. This protocol check is
+  not a claim of validation against every interactive harness version.
+  Clipboard paste stores the same visible soft breaks as
   Newline after folding CRLF/CR to LF and dropping unsafe controls; Send is
   still the only submission, so a multiline paste does not execute until the
   human confirms. Accessibility `SetTextContents` remains single-line so a
