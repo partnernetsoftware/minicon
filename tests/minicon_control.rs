@@ -1288,14 +1288,12 @@ fn host_rss_bytes(child: &Child) -> u64 {
             pagefile_usage: 0,
             peak_pagefile_usage: 0,
         };
-        let ok = unsafe {
-            K32GetProcessMemoryInfo(
-                child.as_raw_handle(),
-                &mut counters,
-                counters.cb,
-            )
-        };
-        assert!(ok != 0, "K32GetProcessMemoryInfo must report the MiniCon host");
+        let ok =
+            unsafe { K32GetProcessMemoryInfo(child.as_raw_handle(), &mut counters, counters.cb) };
+        assert!(
+            ok != 0,
+            "K32GetProcessMemoryInfo must report the MiniCon host"
+        );
         return counters.working_set_size as u64;
     }
     #[cfg(not(windows))]
@@ -1364,10 +1362,7 @@ fn host_process_rss_stays_within_named_budget() {
         "minicon host RSS idle one-tab: {} ({idle} bytes)",
         format_mib(idle)
     );
-    assert!(
-        idle > 0,
-        "host RSS must be observable: {idle}"
-    );
+    assert!(idle > 0, "host RSS must be observable: {idle}");
     assert!(
         idle <= IDLE_ONE_TAB_HOST_RSS_BYTES,
         "idle one-tab MiniCon host RSS {} exceeds named debug ceiling {}",

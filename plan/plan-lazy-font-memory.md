@@ -72,3 +72,14 @@ leaked it and was not changed here.
 Product status belongs to `prd/PRD_02_27_con_delivery.md`: 10 MiB remains
 unmet, 384 MiB is unchanged, Linux UTM remains BLOCKED, and Windows's previous
 22.47 MiB observation is not a retest of this revision.
+
+Font-only cross-target compile checks also PASS for
+`aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` and
+`x86_64-apple-darwin` (native aarch64 macOS checked above). These are compile
+checks, not Linux runtime evidence.
+
+Repository-wide `cargo fmt --all -- --check` reports an existing formatting
+difference in `tests/signing_workflow_policy.rs`; that unrelated file was left
+untouched. The touched RSS test was formatted and the shared raster is clean.
+
+Shared review: [AgenTerm draft PR #116](https://github.com/partnernetsoftware/agenterm/pull/116).
