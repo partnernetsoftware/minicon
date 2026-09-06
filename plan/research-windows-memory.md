@@ -74,15 +74,18 @@ Main PRD Windows receipt is cdx-wjhk’s at `e6cd7b0`. Still above
 10 MiB. No production pin/source patch yet. macOS WritingToolsUI
 dlopen ~22.6 MiB is **not** this GDI remainder.
 
-`PrivateMemorySize64` is **commit**. Do not write
-`21.45 WS = 6.25 private + 15 non-private`. Same-walk
-QueryWorkingSetEx (idle, not wrapper): WS 22,519,808;
-resident **image 16,343,040** + **mapped 2,908,160** +
-**private_type 3,235,840**. Top resident leaves: `ntdll`
-3.56 MiB, unnamed mapped 2.61 MiB, then IME/UI
-(`TextInputFramework`/`msctf`/`CoreMessaging`/`CoreUIComponents`).
-Load +11 MiB is private **commit** only, not a named parser/heap
-stack. Do not re-open close or wrapper courts.
+`PrivateMemorySize64` is **commit**. Do not subtract it from WS.
+`PSAPI_WORKING_SET_BLOCK.Shared` is **sharable**, not already-shared;
+`ShareCount` is the process count (max 7). Official:
+https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block
+
+Same QueryWorkingSet snapshot (`…T105829Z`): walk 5486×4096 =
+22,470,656; Get-Process WS 22,503,424; drift 32,768. Sharable
+18,182,144 (**not** all Win32/GDI/IME); `ShareCount>=2` 17,399,808;
+not-sharable 4,288,512 (**not** all DIB+pipe); unknown-mapped
+2,732,032 kept; COW 4,096 kept. Modules from this snapshot’s
+`VirtualPage` in module ranges (`ntdll` 3.56 MiB, then IME DLLs,
+this PE 0.57 MiB). No wrapper re-run.
 
 ## Top 5 live owners and verifiable interventions
 

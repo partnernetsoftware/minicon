@@ -80,37 +80,51 @@ Closed-tab leftover that is real and small: +6 handles, +3 USER.
 Not a 10 MiB repair. No production patch. Do not re-open close or
 wrapper courts.
 
-## Idle resident pages (QueryWorkingSetEx — same walk as WS)
+## Idle resident pages (same QueryWorkingSet snapshot)
 
-`target/windows-memory/idle-regions-60d9a783551f4721ff8adfc2c510ca450fd6b59d-20260906T105426Z.log`
+Official:
+https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block
 
-`PrivateMemorySize64` 6,541,312 is **commit**. It is **not** used
-below. Subtract only QueryWorkingSetEx + VirtualQueryEx on the
-working-set pages:
+| field | meaning |
+|---|---|
+| `Shared` | page is **sharable**, not “already shared by other processes” |
+| `ShareCount` | how many processes share it (max 7) |
+| `Protection` 5 / 7 family | copy-on-write |
+| `VirtualPage` | page VA used for module-range / `VirtualQueryEx` |
 
-| same-walk counter | bytes |
-|---|---:|
-| WorkingSet | 22,519,808 |
-| resident_shared | 18,186,240 |
-| resident_private (QWS Shared=0) | 4,300,800 |
-| resident_image | **16,343,040** |
-| resident_mapped | **2,908,160** |
-| resident_private_type | **3,235,840** |
+Verified earlier walk: 5490 × 4096 = 22,487,040 and
+18,186,240 + 4,300,800 = 22,487,040 (Get-Process WS 22,515,712 is
+**not** that product; that gap is snapshot drift).
 
-shared+private = 22,487,040 (5490 × 4096). image+mapped+private_type
-matches that walk. Idle RSS is **mostly resident image**, then mapped,
-then private.
+Latest same-snapshot log:
+`target/windows-memory/idle-regions-9ed910ea3219a07e57595c2b86b6cf4e6d2e97da-20260906T105829Z.log`
 
-Top **resident** files (not VA commit):
+| same-walk counter | bytes | do not call it |
+|---|---:|---|
+| ws_before = ws_after | 22,503,424 | — |
+| walk 5486 × 4096 | **22,470,656** | — |
+| drift | 32,768 (8 pages) | ignore as RSS split |
+| `Shared=1` sharable | 18,182,144 | **not** “Win32/GDI/IME” |
+| `ShareCount>=2` | 17,399,808 | actually shared |
+| `ShareCount==1` | 782,336 | sharable, this process only |
+| `Shared=0` not sharable | 4,288,512 | **not** “DIB+pipe” |
+| COW (prot 5/7) | 4,096 | kept |
+| `cow_private` | 0 | kept |
+| unknown (unnamed mapped) | **2,732,032** | kept, not named |
+| `EnumProcessModules` image | 16,343,040 | sum of module rows |
+| mapped (incl. unknown) | 2,904,064 | — |
+| `MEM_PRIVATE` type | 3,223,552 | not DIB+pipe until proven |
 
-| resident | leaf |
+sharable + not_sharable = walk. Module rows from **this** snapshot’s
+`VirtualPage` in `EnumProcessModulesEx` ranges (not VA commit):
+
+| resident | module |
 |---:|---|
 | 3,735,552 | `ntdll.dll` |
-| 2,736,128 | unnamed mapped (not a PE path) |
 | 1,069,056 | `TextInputFramework.dll` |
-| 1,052,672 | `KernelBase.dll` |
+| 1,052,672 | `KERNELBASE.dll` |
 | 950,272 | `CoreMessaging.dll` |
-| 839,680 | `msctf.dll` |
+| 839,680 | `MSCTF.dll` |
 | 741,376 | `windows.storage.dll` |
 | 704,512 | `combase.dll` |
 | 626,688 | `CoreUIComponents.dll` |
@@ -118,12 +132,10 @@ Top **resident** files (not VA commit):
 | 532,480 | `shell32.dll` |
 | 487,424 | `user32.dll` |
 | 327,680 | `gdi32full.dll` |
+| 2,732,032 | **unknown-mapped** |
 
-`shell32` / `GdiPlus` **VA commit** is not their RSS. IME/UI
-(`TextInputFramework` + `msctf` + `CoreMessaging` + `CoreUIComponents`)
-is ~3.5 MiB **resident**. Not macOS WritingToolsUI. Next: name the
-2.61 MiB unnamed mapped (font/`section`?) and whether IME opt-out
-moves those four DLLs. No wrapper/close re-run.
+Do not re-open wrapper. Next: identify unknown-mapped; IME four are
+named modules, not the whole sharable bucket.
 
 ## Accepted idle arithmetic (not a six-cell claim)
 
@@ -135,9 +147,10 @@ Named pieces that exist in the idle process:
   non-BMP lookup; glyph outline `Vec` is per-call, not retained
 - one vt100 parser (4000-line cap, idle almost empty) + one ConPTY
 
-Those named pieces are **~3.3 MiB** of **possible private** (DIB+pipe),
-inside resident_private_type ~3.2 MiB — not proven by a stack.
-Extra-tab RSS ~1.5 MiB is still a live-session cost, not a close leak.
+DIB 2.25 MiB and pipe 1 MiB are **code-size candidates** inside
+`MEM_PRIVATE` type (~3.2 MiB). They are **not** the 4.29 MiB
+not-sharable bucket. Extra-tab RSS ~1.5 MiB is a live-session cost,
+not a close leak.
 
 ## Top 5 and how to falsify each
 
