@@ -15,6 +15,7 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
 - `probe-ws-regions.ps1` / `sample-idle-regions.ps1` / `run-idle-regions.sh` —
   walk internally closed; PMC−walk is unexplained remainder, not
   proven drift. `cow_protect` vs `privatized_image/mapped` (`Shared=0`).
-  Keep unknown alloc-base, count_meta truncation/enum_err. IME stays on.
+  Keep unknown alloc-base and truncation. LastError only on failed
+  calls. IME stays on.
 - `sample-size-compare.ps1` / `run-size-compare.sh` — two client sizes,
   new process each, then same-process shrink. No screenshot.

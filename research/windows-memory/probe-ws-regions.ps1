@@ -178,7 +178,7 @@ public static class WsResident {
                 var slots = new IntPtr[512];
                 SetLastError(0);
                 bool enumOk = EnumProcessModulesEx(h, slots, (uint)(IntPtr.Size * slots.Length), out needed, LIST_MODULES_ALL);
-                int enumErr = Marshal.GetLastWin32Error();
+                int enumErr = enumOk ? -1 : Marshal.GetLastWin32Error();
                 int nmodAvail = enumOk ? (int)(needed / (uint)IntPtr.Size) : 0;
                 int nmod = nmodAvail > slots.Length ? slots.Length : nmodAvail;
                 int enumTruncated = nmodAvail > slots.Length ? 1 : 0;
@@ -311,7 +311,7 @@ public static class WsResident {
                 lines.Add(string.Format("t_after_classify={0} pmc_ws_after_classify={1}", t2, pmc2));
                 lines.Add(string.Format(
                     "count_meta qws_retry={0} enum_ok={1} enum_err={2} enum_needed={3} enum_slots={4} enum_truncated={5} getmod_fail={6} module_keys={7} mapped_keys={8}",
-                    qwsRetry, enumOk ? 1 : 0, enumErr, nmodAvail, slots.Length, enumTruncated, getModFail, byMod.Count, byMapped.Count));
+                    qwsRetry, enumOk ? 1 : 0, enumOk ? "n/a" : enumErr.ToString(), nmodAvail, slots.Length, enumTruncated, getModFail, byMod.Count, byMapped.Count));
                 lines.Add(string.Format(
                     "pid={0} page={1} ws_pages={2} walk_bytes={3} unexplained_remainder_before={4} unexplained_remainder_after_qws={5} unexplained_remainder_after_classify={6} sharable={7} not_sharable={8} sharecount_ge2={9} sharecount_eq1={10} sharecount_eq0={11} cow_protect={12} privatized_image={13} privatized_mapped={14} unknown={15} vq_fail={16} resident_image={17} resident_mapped={18} resident_private_type={19} resident_other={20}",
                     pid, page, count, walk, (long)pmc0 - (long)walk, (long)pmc1 - (long)walk, (long)pmc2 - (long)walk,

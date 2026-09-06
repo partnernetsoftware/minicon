@@ -135,10 +135,12 @@ Latest log (IME **on**, Chinese preserved, **no IME opt-out**):
 | `privatized_mapped` | 0 |
 | unknown / vq_fail | 2,744,320 / 0 |
 
-`count_meta`: qws_retry=0 enum_ok=1 enum_err=299
-(`ERROR_PARTIAL_COPY`) enum_needed=33 enum_slots=512
+`count_meta`: qws_retry=0 enum_ok=1 enum_needed=33 enum_slots=512
 enum_truncated=0 getmod_fail=0 module_keys=33 mapped_keys=8.
-Log printed 25/33 modules (`module_list_truncated`).
+**33 modules were collected in full**; the log only **displayed** 25
+(`module_list_truncated`). `enum_err=299` after enum_ok=1 is
+**not** a failure (`LastError` after success is non-authoritative).
+Do not re-run for that.
 
 Unnamed `MEM_MAPPED` by **allocation-base** (all `GetMappedFileNameW`
 **ERROR_FILE_INVALID 1006**; kept unknown; ShareCount retained):
