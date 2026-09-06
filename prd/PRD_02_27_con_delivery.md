@@ -502,11 +502,20 @@ six-cell claim.
   that growth or module loading to StretchDIBits itself. Host-run entry
   is not process entry. Research receipt:
   `target/windows-memory/init-hooks-93a3dad769f8d41c48ec27e05ffbe9df76c4a468-20260906T113432Z.log`.
-  Next: bracket show/focus and both presentation paths, including reentrant
-  callbacks, then test the earliest loading trigger. Preserve a visible
-  working window and Chinese input: merely delaying the first frame does
-  not lower normal idle RSS. Production pin is unchanged; the 10 MiB RSS
-  target remains unmet.
+  A subsequent research PE (`f71f095ffcf7991be100f6b9338808577a6fc9d5142537959caa76b8b48021d9`)
+  records the earliest TIF presence transition at WM_IME_SETCONTEXT during
+  SetForegroundWindow; TIF is already loaded before show and pixel copy.
+  Skipping the explicit Focus command retains a presented window with TIF
+  absent and first-recorded-present WS 17,637,376 B versus 22,142,976 B
+  (difference **4,505,600 B / 4.296875 MiB**). Both variants, however, run
+  with `--no-activate` and `AGENTERM_NO_ACTIVATE=1`. This establishes a
+  nonactivated-startup opportunity, not a normal foreground idle saving;
+  IME enabled alone does not qualify actual Chinese input. Receipt:
+  `target/windows-memory/init-hooks-b7651f9da8d3dfd97311700a6168e59e64556c30-20260906T114058Z.log`.
+  Next: measure after actual activation and keyboard/IME composition and
+  commit, compare normal startup without no-activate, and check whether
+  explicit application focus incorrectly overrides no-activate intent.
+  Production pin is unchanged; the 10 MiB RSS target remains unmet.
 
 
 
