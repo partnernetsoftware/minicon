@@ -54,7 +54,7 @@ static void releasePixels(void *info, const void *data, size_t bytes) {
     (void)info;
     munmap((void *)data, bytes);
 }
-static BOOL presentPixels(NSView *view) {
+static BOOL presentPixels(NSView *view, const char *mode) {
     view.wantsLayer = YES;
     CALayer *layer = [CALayer layer];
     [view.layer addSublayer:layer];
@@ -79,7 +79,11 @@ static BOOL presentPixels(NSView *view) {
     if (!color) { CGDataProviderRelease(provider); return NO; }
     CGImageRef image = CGImageCreate(width, height, 8, 32, width * 4, color,
         kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst, provider, NULL, false, kCGRenderingIntentDefault);
+    if (strstr(mode, "null-action")) layer.actions = @{ @"contents": NSNull.null };
+    BOOL transaction = strstr(mode, "no-actions") != NULL;
+    if (transaction) { [CATransaction begin]; [CATransaction setDisableActions:YES]; }
     if (image) layer.contents = (__bridge id)image;
+    if (transaction) [CATransaction commit];
     fprintf(stderr, "PIXELS width=%zu height=%zu bytes=%zu image=%d\n", width, height, bytes, image != NULL);
     BOOL success = image != NULL;
     if (image) CGImageRelease(image);
@@ -124,7 +128,7 @@ int main(int argc, const char **argv) {
         if (strstr(mode, "input")) context = view.inputContext != nil;
         [window orderFront:nil];
         [app finishLaunching];
-        if (strstr(mode, "pixels") && !presentPixels(view)) return 2;
+        if (strstr(mode, "pixels") && !presentPixels(view, mode)) return 2;
         fprintf(stderr, "INPUT responder=%d context=%d mode=%s\n", responder, context, mode);
         fprintf(stderr, "WINDOW %ld\n", (long)window.windowNumber);
         puts("READY"); fflush(stdout);

@@ -144,3 +144,12 @@ These measurements direct the next investigation to shared-host initialization
 and presentation. They do not prove an 8–9 MiB winit allocation or qualify a
 native replacement. Periodic redraw alone did not cause an additional frame's
 stable RSS. No product source, dependency or memory criterion changed.
+
+
+Follow-up [mapping and allocation-stack evidence](research-pixel-host.md)
+locates 8992 KiB of one shared/native checkerboard difference in frame
+residency, while MiniCon's frame in the same comparison is already only
+16 KiB resident. Both instrumented probes allocate the same 33 ColorSync TRC
+tables. Native action-suppression variants do not reproduce the resident
+frame difference; no production transaction change is accepted. Similar RSS
+totals are not proof of the same allocation owners.

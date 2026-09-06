@@ -1,0 +1,118 @@
+{
+  "native": {
+    "colorsync_groups": [
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      }
+    ],
+    "colorsync_calls": 33,
+    "colorsync_bytes": 11894784,
+    "pixel_sized_mmap_groups": [
+      {
+        "calls": 1,
+        "total_bytes": 9224192,
+        "tail": "1 call for 9224192 bytes: (dyld) start | (compat-regular) main | (libsystem_kernel.dylib) mmap "
+      }
+    ],
+    "sha256": "6f955871bb4614fbb11982f5b982a12c8d3cadc51e45826c449eac2035563ae0"
+  },
+  "shared": {
+    "colorsync_groups": [
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      },
+      {
+        "calls": 3,
+        "total_bytes": 1081344
+      }
+    ],
+    "colorsync_calls": 33,
+    "colorsync_bytes": 11894784,
+    "pixel_sized_mmap_groups": [
+      {
+        "calls": 1,
+        "total_bytes": 9224192,
+        "tail": "(pixel-platform-probe) ??? | (pixel-platform-probe) ??? | (libsystem_kernel.dylib) mmap "
+      }
+    ],
+    "sha256": "6be3f9484353d83393508b577f1011a7ca650bde816042d781a140ab6d0ea23c"
+  }
+}

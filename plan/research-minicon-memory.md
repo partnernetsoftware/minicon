@@ -87,9 +87,10 @@ excluded from the table because instrumentation adds memory. Full
 | QuartzCore image gamma matching | 1.036 |
 
 The last two paths total **3.109 MiB**, and concern the image presentation path.
-Independent basic-GUI research also found eleven large TRC allocations in
-native Hello (`target/hello-memory-track/hello-stacks.txt`), matching this
-process's eleven large tables. Its 11,894,784-byte total counts the large
+Independent basic-GUI research also found eleven large TRC allocation-stack
+groups in native Hello (`target/hello-memory-track/hello-stacks.txt`), each
+containing three allocations, matching this process's eleven groups. Its
+11,894,784-byte total counts the large
 allocations; the 11,953,920-byte total above also includes small companion
 allocations. These tables therefore belong substantially to the native GUI
 baseline, not an incremental MiniCon-only burden. Most of these tables are

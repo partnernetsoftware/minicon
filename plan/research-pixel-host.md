@@ -147,3 +147,68 @@ and native dumps stay in `target/hello-pixel-host/` and
 `target/pixel-platform-comparison/`. Compilation, Python/JSON parsing and the
 actual automated runs validate these research tools; no new product test PASS
 or cross-platform claim is made. **The 10 MiB RSS target remains unmet.**
+
+
+## Follow-up: the checkerboard gap includes frame residency, not a second heap
+
+Reviewing the same-window, uninstrumented diagnostics from the alternating
+comparison identifies a specific difference that aggregate RSS concealed:
+
+| Captured process | Live malloc bytes | 9008 KiB frame map resident / dirty |
+|---|---:|---:|
+| Native accessory checkerboard | 15,602,784 | 16 / 16 KiB |
+| Shared static checkerboard | 15,984,224 | 9008 / 9008 KiB |
+| MiniCon | 17,805,488 | 16 / 16 KiB |
+
+The shared/native live-heap difference is only 381,440 bytes (0.364 MiB),
+whereas that captured frame's resident-page difference is 8992 KiB (8.781 MiB).
+This locates most of that particular checkerboard comparison in the frame
+mapping's residency, not another large malloc allocation. It does not establish
+why the mapping remains resident, whether residency is stable, or a product
+saving: MiniCon's captured frame already had only 16 KiB resident. Similar
+aggregate RSS values do not imply identical underlying allocations.
+
+Separate `MallocStackLogging=1` runs captured full allocation stacks for the
+native **Regular** probe and shared probe. Both show 33 ColorSync TRC-table
+allocations, grouped into eleven stack entries totaling 11,894,784 bytes
+(11.344 MiB). The eleven entries are aggregate stack groups, not eleven
+individual 1 MiB allocations; each group contains three allocations. Both
+also show one pixel-sized mmap of 9,224,192 bytes (9008 KiB, page-rounded).
+Thus this evidence does not support an extra set of large ColorSync tables
+in the shared checkerboard. Logging changes allocation behavior, so these
+instrumented runs are attribution evidence, not fresh RSS budget receipts.
+Compact normalized stacks and artifact hashes:
+`research/pixel-platform/stack-summary.json`. Raw dumps:
+`target/pixel-platform-stacks/`.
+
+The shared checkerboard window was independently captured through macOS and
+visually inspected; its pixels fill the content area beneath standard window
+controls. `window-id.m` filters by exact process, normal window layer and
+expected dimensions, avoiding the small helper window also owned by winit.
+The selected image is `target/pixel-platform-stacks/shared-visual.png`.
+
+### Presentation-action experiment
+
+The native probe normally assigns layer contents directly; shared softbuffer
+uses an explicit CATransaction with actions disabled. A three-round native
+Regular-policy experiment tests default actions, the same disabled-action
+transaction, and a null action only for layer contents:
+
+| Native contents action | Three RSS samples, MiB | Median MiB | Frame resident, each run |
+|---|---|---:|---:|
+| Default | 71.063, 70.094, 70.422 | 70.422 | 16 KiB |
+| CATransaction actions disabled | 70.109, 70.219, 70.234 | 70.219 | 16 KiB |
+| Null contents action | 70.047, 70.109, 70.078 | 70.078 | 16 KiB |
+
+Neither action-suppression variant reproduces the 9008 KiB resident frame,
+nor establishes a large RSS saving. These sub-MiB startup differences are
+not accepted as a product optimization. Production transaction semantics,
+menu behavior, Cargo pin and binary remain unchanged. The next frame inquiry
+must examine actual presentation/ownership timing with mapping receipts;
+MiniCon's own heap/residency still needs separate accounting. The 10 MiB RSS
+target remains open.
+
+Reproduce allocation tracing with `python3 research/pixel-platform/stacks.py`
+after building the prior native Regular and shared probes. Reproduce the
+native action comparison with `python3 research/hello-memory/run-presentation.py`.
+Compact samples are in `research/hello-memory/presentation-results.json`.

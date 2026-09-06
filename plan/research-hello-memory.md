@@ -80,10 +80,11 @@ construction enters the current OS UI stack, while titlebar material setup
 also reaches image lookup, CoreUI assets and LaunchServices type databases.
 These are call-path attributions; mapped-file sizes are not RSS savings.
 
-Native Hello also requests eleven 1,081,344-byte ColorSync TRC heap tables
-(11,894,784 bytes; about 11.34 MiB) in instrumented runs, including Core
+Native Hello has eleven ColorSync TRC allocation-stack groups of 1,081,344
+bytes each, totaling 33 individual allocations (11,894,784 bytes; about
+11.34 MiB) in instrumented runs, including Core
 Animation glyph rendering, backdrop layers and window gamut setup. Borderless
-Hello requests six such tables (6,488,064 bytes). This independently matches
+Hello has six such stack groups, 18 allocations (6,488,064 bytes). This independently matches
 the kind of ColorSync allocations seen in MiniCon: they belong substantially
 to the native GUI baseline, not uniquely to terminal functionality. These
 are requested allocation bytes under instrumentation, not an assertion that

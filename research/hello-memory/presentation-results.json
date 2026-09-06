@@ -1,0 +1,83 @@
+[
+  {
+    "repeat": 0,
+    "action": "default",
+    "rss_bytes": 74514432,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 0,
+    "action": "no-actions",
+    "rss_bytes": 73515008,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 0,
+    "action": "null-action",
+    "rss_bytes": 73449472,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 1,
+    "action": "default",
+    "rss_bytes": 73498624,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 1,
+    "action": "no-actions",
+    "rss_bytes": 73629696,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 1,
+    "action": "null-action",
+    "rss_bytes": 73515008,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 2,
+    "action": "default",
+    "rss_bytes": 73842688,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 2,
+    "action": "no-actions",
+    "rss_bytes": 73646080,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  },
+  {
+    "repeat": 2,
+    "action": "null-action",
+    "rss_bytes": 73482240,
+    "frame_mapping": [
+      "VM_ALLOCATE                 <address>    [ 9008K    16K    16K     0K] r--/rwx SM=COW"
+    ],
+    "sha256": "409bb3f3a86c684213ac4b80c0a1650cbdb11da2a088cfd8a95b2f7b70fcbb47"
+  }
+]
