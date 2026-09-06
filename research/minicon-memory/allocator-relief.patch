@@ -1,0 +1,34 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -5902,8 +5902,10 @@
+     ) -> Result<PixelWindowDirective, PixelWindowError> {
+         if self.exit {
+             return Ok(PixelWindowDirective::Exit);
+         }
++        #[cfg(target_os = "macos")]
++        research_allocator_relief(now);
+         let control_deadline = self.drain_control(window, now);
+         // A control request can explicitly close the window while draining.
+         // Re-check before touching session state so close stays a normal host
+         // exit rather than a synthetic `con_session_missing` failure.
+@@ -7778,4 +7780,20 @@
+             assert_eq!(decode_child_exit_code(encode_child_exit_code(code)), code);
+         }
+     }
+ }
++
++// Temporary research hook; never retained in production.
++#[cfg(target_os = "macos")]
++fn research_allocator_relief(now: Instant) {
++    static START: std::sync::OnceLock<Option<Instant>> = std::sync::OnceLock::new();
++    static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++    let Some(start) = *START.get_or_init(|| std::env::var_os("MINICON_RESEARCH_TRIM").map(|_| now)) else { return; };
++    if now.duration_since(start) < std::time::Duration::from_secs(3) { return; }
++    if DONE.swap(true, std::sync::atomic::Ordering::Relaxed) { return; }
++    unsafe extern "C" { fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize; }
++    let before = Instant::now();
++    // Public Darwin allocator API: null examines all zones; zero requests
++    // best-effort maximal relief, with no user allocation pointers supplied.
++    let released = unsafe { malloc_zone_pressure_relief(std::ptr::null_mut(), 0) };
++    eprintln!("RESEARCH_TRIM released={} elapsed_us={}", released, before.elapsed().as_micros());
++}

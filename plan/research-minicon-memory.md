@@ -186,3 +186,52 @@ artifact in the production build after measurement.
 A closer native custom-input/pixel, shared-host checkerboard and MiniCon
 comparison follows in [the pixel-host report](research-pixel-host.md), including
 application-policy controls and repeated RSS time series.
+
+
+## Follow-up: explicit allocator pressure relief returns no pages
+
+On this macOS host, the public `malloc_zone_pressure_relief(NULL, 0)` call
+requests best-effort maximal relief across allocator zones. It does not alter
+live allocation sizes or the PTY ring. The local SDK declaration matches
+[Apple's published allocator header](https://github.com/apple-oss-distributions/libmalloc/blob/main/include/malloc/malloc.h).
+Zero returned bytes is a valid outcome, not a guarantee that all process RSS
+is needed by live objects.
+
+A temporary macOS-only research hook in `ConApp::about_to_wait` calls it once,
+three seconds after the first idle callback, only when a research environment
+variable is set. The same frozen release artifact is used with the hook
+selected and unselected, three alternating pairs. Seven RSS samples are taken
+one second apart after public CLI readiness, then 128 short lines are sent to
+`/bin/cat`; two seconds later RSS and a public snapshot response are recorded.
+
+| Pair | Control settled RSS, MiB | Relief settled RSS, MiB | Control / relief after input, MiB | Allocator-reported release |
+|---|---:|---:|---|---:|
+| 1 | 78.969 | 78.578 | 79.641 / 79.234 | 0 bytes |
+| 2 | 79.297 | 79.094 | 79.906 / 79.734 | 0 bytes |
+| 3 | 79.445 | 79.297 | 80.078 / 79.969 | 0 bytes |
+
+Settled RSS is the median of samples 4–7 within each process. All three calls
+report zero released bytes and elapsed time below one microsecond at the
+probe's integer-microsecond resolution. One selected run briefly reached 86.859 MiB at sample 4 before returning
+to 78.625 MiB at sample 5; that transient remains in the retained series.
+The series shows no downward step corresponding to the relief call; small differences between fresh processes
+are not accepted as a reclaim optimization. Subsequent input and snapshots
+succeed, but this short probe is not throughput or GUI qualification.
+
+The hook is rejected and completely removed from production source. The
+canonical release rebuild restores SHA-256
+`7d08627d494af396885843ec016d554c4b8d9b520c80bcf0757e7fa54e89c527`.
+No dependency change, allocator substitution, periodic trim or new memory
+metric is introduced. This rules out this explicit reclaim call as a useful
+intervention on the observed idle heap; it does not establish a minimum RSS.
+The 10 MiB target remains open.
+
+Reproduction inputs: `research/minicon-memory/allocator-relief.patch`,
+`allocator-relief.py`, `allocator-relief-results.json`. Apply the research-only
+patch to the matching source, build a release artifact and freeze it as
+`target/minicon-allocator-probe/probe`, then run
+`python3 research/minicon-memory/allocator-relief.py`. Restore product source
+and rebuild the canonical artifact afterward. Logs, API return values and
+exact experimental artifact hash remain in the compact results and ignored
+`target/minicon-allocator-probe/`. No product test PASS is inferred from these
+research-only measurements.

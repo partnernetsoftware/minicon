@@ -153,3 +153,10 @@ residency, while MiniCon's frame in the same comparison is already only
 tables. Native action-suppression variants do not reproduce the resident
 frame difference; no production transaction change is accepted. Similar RSS
 totals are not proof of the same allocation owners.
+
+
+The [MiniCon increment report](research-minicon-memory.md) now records an
+explicit Darwin allocator-relief experiment: a one-shot idle call reports
+zero bytes released in three runs, with no matching downward RSS step.
+The temporary hook is rejected; production source, pin and release SHA are
+restored. Unused-page trimming through this API is not an accepted reduction.
