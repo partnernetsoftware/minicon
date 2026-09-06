@@ -464,8 +464,20 @@ six-cell claim.
   All resident pages remain in the product WS budget. Raw receipts:
   `target/windows-memory/idle-regions-31bdd9ee77d792c776a6f3fc5104be853d72fce5-20260906T105130Z.log.hostout`
   and `target/windows-memory/idle-regions-60d9a783551f4721ff8adfc2c510ca450fd6b59d-20260906T105426Z.log.hostout`.
-  Next: bracket snapshot timing/WS, separate unnamed allocation bases, and
-  identify initialization triggers while preserving Chinese input. Interpretation:
+  A follow-up brackets the walk with WS_before = WS_after = 22,503,424 B,
+  but enumerates 5486 pages = 22,470,656 B: **32 KiB remains unexplained**,
+  not proven temporal drift. Snapshot sharable 18,182,144 B comprises
+  ShareCount≥2 17,399,808 B plus ShareCount=1 782,336 B; nonsharable is
+  4,288,512 B. Unknown mapped residency remains 2,732,032 B. Receipt:
+  `target/windows-memory/idle-regions-9ed910ea3219a07e57595c2b86b6cf4e6d2e97da-20260906T105829Z.log.hostout`.
+  The diagnostic's current `cow_private=0` is not proof of no private image
+  copies: its counter only visits MEM_PRIVATE, whereas modified COW image or
+  mapped pages retain their mapping type. Use mapping type plus the resident
+  Shared bit for that cross-classification, as documented by
+  [VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex).
+  Next: separate unnamed allocation bases and identify initialization triggers
+  while preserving Chinese input; do not rerun full courts just for this
+  small unresolved accounting difference. Interpretation:
   [PSAPI_WORKING_SET_BLOCK](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
 
 
