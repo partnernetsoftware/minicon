@@ -1223,3 +1223,267 @@ fn gui_control_surface_isolated_multitab_black_box() {
     };
     assert!(status.success(), "explicit close failed with {status:?}");
 }
+
+/// Regression ceiling for one idle tab: MiniCon **host** RSS / working set.
+/// Child shells are outside this budget. This is a fail-closed climb tripwire
+/// established before the Unix whole-font leak repair. Product intent is
+/// 10 MiB idle; see `prd/PRD_02_27_con_delivery.md`. Do not treat this
+/// constant as the product size.
+const IDLE_ONE_TAB_HOST_RSS_BYTES: u64 = 384 * 1024 * 1024;
+/// Extra host RSS allowed for a second live tab. Not the child's own RSS.
+const EXTRA_TAB_HOST_RSS_DELTA_BYTES: u64 = 16 * 1024 * 1024;
+/// Host RSS may not climb by this much across four extra-tab open/close
+/// cycles. Allocators and GPU mappings need not return every page; a
+/// 100 MiB climb is a leak, a 20 MiB wobble on macOS is not.
+const TAB_CYCLE_HOST_RSS_GROWTH_BYTES: u64 = 32 * 1024 * 1024;
+
+#[cfg(windows)]
+#[repr(C)]
+struct ProcessMemoryCounters {
+    cb: u32,
+    page_fault_count: u32,
+    peak_working_set_size: usize,
+    working_set_size: usize,
+    quota_peak_paged_pool_usage: usize,
+    quota_paged_pool_usage: usize,
+    quota_peak_non_paged_pool_usage: usize,
+    quota_non_paged_pool_usage: usize,
+    pagefile_usage: usize,
+    peak_pagefile_usage: usize,
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn K32GetProcessMemoryInfo(
+        process: *mut std::ffi::c_void,
+        counters: *mut ProcessMemoryCounters,
+        size: u32,
+    ) -> i32;
+}
+
+fn host_rss_bytes_stable(child: &Child) -> u64 {
+    let mut samples = [host_rss_bytes(child), 0, 0];
+    for sample in samples.iter_mut().skip(1) {
+        thread::sleep(Duration::from_millis(40));
+        *sample = host_rss_bytes(child);
+    }
+    samples.sort_unstable();
+    samples[1]
+}
+
+fn host_rss_bytes(child: &Child) -> u64 {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        let mut counters = ProcessMemoryCounters {
+            cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
+            page_fault_count: 0,
+            peak_working_set_size: 0,
+            working_set_size: 0,
+            quota_peak_paged_pool_usage: 0,
+            quota_paged_pool_usage: 0,
+            quota_peak_non_paged_pool_usage: 0,
+            quota_non_paged_pool_usage: 0,
+            pagefile_usage: 0,
+            peak_pagefile_usage: 0,
+        };
+        let ok = unsafe {
+            K32GetProcessMemoryInfo(
+                child.as_raw_handle(),
+                &mut counters,
+                counters.cb,
+            )
+        };
+        assert!(ok != 0, "K32GetProcessMemoryInfo must report the MiniCon host");
+        return counters.working_set_size as u64;
+    }
+    #[cfg(not(windows))]
+    {
+        let output = Command::new("ps")
+            .args(["-o", "rss=", "-p", &child.id().to_string()])
+            .output()
+            .expect("ps must report MiniCon host RSS");
+        assert!(
+            output.status.success(),
+            "ps failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let kb: u64 = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| {
+                panic!(
+                    "ps RSS was not an integer: {:?}",
+                    String::from_utf8_lossy(&output.stdout)
+                )
+            });
+        kb.saturating_mul(1024)
+    }
+}
+
+fn format_mib(bytes: u64) -> String {
+    format!("{:.2} MiB", bytes as f64 / (1024.0 * 1024.0))
+}
+
+/// MiniCon stays small by keeping the **host** process bounded. Child shells
+/// spend whatever they spend. This court launches the real GUI, reads host
+/// RSS/working-set, and fails closed when the named debug ceiling is crossed.
+#[test]
+fn host_process_rss_stays_within_named_budget() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let screenshot = if cfg!(windows) {
+        std::env::temp_dir().join(format!("minicon-rss-{suffix}.png"))
+    } else {
+        agenterm_platform::ipc::native_runtime_directory().join(format!("rss-{suffix}.png"))
+    };
+    let mut host = Command::new(exe);
+    host.arg("--no-activate")
+        .arg("--cols")
+        .arg("80")
+        .arg("--rows")
+        .arg("24")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui { child, screenshot };
+
+    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
+    let root = tab_id(&listed["tabs"][0]["id"]).to_owned();
+    assert_eq!(listed["tabs"].as_array().map(Vec::len), Some(1));
+
+    let idle = host_rss_bytes_stable(&gui.child);
+    eprintln!(
+        "minicon host RSS idle one-tab: {} ({idle} bytes)",
+        format_mib(idle)
+    );
+    assert!(
+        idle > 0,
+        "host RSS must be observable: {idle}"
+    );
+    assert!(
+        idle <= IDLE_ONE_TAB_HOST_RSS_BYTES,
+        "idle one-tab MiniCon host RSS {} exceeds named debug ceiling {}",
+        format_mib(idle),
+        format_mib(IDLE_ONE_TAB_HOST_RSS_BYTES)
+    );
+
+    // Optional native heap evidence belongs to this exact idle GUI, after the
+    // RSS sample and before PTY load. Tools are diagnostics, not product APIs.
+    #[cfg(target_os = "macos")]
+    if let Some(directory) = std::env::var_os("MINICON_RSS_DIAGNOSTICS_DIR") {
+        let directory = PathBuf::from(directory);
+        fs::create_dir_all(&directory).expect("create RSS diagnostics directory");
+        for (tool, flag, file) in [
+            ("/usr/bin/vmmap", "-w", "idle-vmmap.txt"),
+            ("/usr/bin/heap", "-s", "idle-heap.txt"),
+        ] {
+            let output = Command::new(tool)
+                .args([flag, &gui.child.id().to_string()])
+                .output()
+                .expect("start native memory diagnostic");
+            assert!(output.status.success(), "{tool}: {}", error_text(&output));
+            fs::write(directory.join(file), output.stdout).expect("save memory diagnostic");
+        }
+    }
+
+    cli_json(
+        exe,
+        &endpoint,
+        &["send-text", "--target", &root, shell_load_done_command()],
+    );
+    cli_json(
+        exe,
+        &endpoint,
+        &[
+            "wait-text",
+            "--target",
+            &root,
+            "--timeout-ms",
+            "10000",
+            "LOAD_DONE",
+        ],
+    );
+    let after_load = host_rss_bytes_stable(&gui.child);
+    eprintln!(
+        "minicon host RSS after 2000-line load: {} ({after_load} bytes)",
+        format_mib(after_load)
+    );
+    assert!(
+        after_load <= IDLE_ONE_TAB_HOST_RSS_BYTES,
+        "2000-line PTY load grew MiniCon host RSS to {} above the idle ceiling {}",
+        format_mib(after_load),
+        format_mib(IDLE_ONE_TAB_HOST_RSS_BYTES)
+    );
+
+    let mut after_close = after_load;
+    let mut first_extra_delta = 0;
+    for cycle in 1..=4 {
+        let created = cli_json(exe, &endpoint, &["new-tab"]);
+        let extra = tab_id(&created["id"]).to_owned();
+        let two_tabs = host_rss_bytes_stable(&gui.child);
+        let delta = two_tabs.saturating_sub(after_close);
+        if cycle == 1 {
+            first_extra_delta = delta;
+        }
+        eprintln!(
+            "minicon host RSS two-tab cycle {cycle}: {} (delta {})",
+            format_mib(two_tabs),
+            format_mib(delta)
+        );
+        assert!(
+            delta <= EXTRA_TAB_HOST_RSS_DELTA_BYTES,
+            "second tab added {} to MiniCon host RSS; named extra-tab delta is {}",
+            format_mib(delta),
+            format_mib(EXTRA_TAB_HOST_RSS_DELTA_BYTES)
+        );
+        cli_json(exe, &endpoint, &["close-tab", "--target", &extra]);
+        after_close = host_rss_bytes_stable(&gui.child);
+    }
+    let cycle_growth = after_close.saturating_sub(after_load);
+    eprintln!(
+        "minicon host RSS after four extra-tab cycles: {} (growth {})",
+        format_mib(after_close),
+        format_mib(cycle_growth)
+    );
+    assert!(
+        cycle_growth <= TAB_CYCLE_HOST_RSS_GROWTH_BYTES,
+        "four extra-tab cycles grew MiniCon host RSS by {}; named leak bound is {}",
+        format_mib(cycle_growth),
+        format_mib(TAB_CYCLE_HOST_RSS_GROWTH_BYTES)
+    );
+    eprintln!(
+        "MINICON_HOST_RSS_RECEIPT {}",
+        serde_json::json!({
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+            "idle_bytes": idle,
+            "after_load_bytes": after_load,
+            "extra_tab_delta_bytes": first_extra_delta,
+            "cycle_growth_bytes": cycle_growth,
+            "idle_ceiling_bytes": IDLE_ONE_TAB_HOST_RSS_BYTES,
+            "extra_tab_ceiling_bytes": EXTRA_TAB_HOST_RSS_DELTA_BYTES,
+            "cycle_growth_ceiling_bytes": TAB_CYCLE_HOST_RSS_GROWTH_BYTES,
+        })
+    );
+
+    cli_json(exe, &endpoint, &["close-window"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if gui.child.try_wait().expect("poll closed RSS GUI").is_some() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "close-window did not exit the RSS court GUI"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}

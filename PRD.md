@@ -31,6 +31,7 @@ linked module for behavior, evidence, delivery mechanics and history.
 MiniCon — one-file local terminal
 ├── Charter and authority
 │   ├── local terminal host; one executable; operating-system libraries only
+│   ├── host process RSS is scarce; idle one-tab intent is 10 MiB; child shells excluded
 │   ├── [-] no server, persistence, Fleet, mux, MCP, scripts or Agent policy
 │   └── prd/PRD_02_23_minicon.md
 ├── User capabilities
@@ -165,6 +166,8 @@ flowchart LR
   same presented frame.
 - PTY traffic, parsing, control, waits, queues, dimensions, screenshots,
   allocations and shutdown are bounded and fail locally.
+- MiniCon host process RSS is scarce and named by profile and target. Idle
+  one-tab intent is 10 MiB. Child shells are outside that budget.
 - Native callbacks never unwind across FFI.
 - A public claim names its target/profile and exact evidence; one platform's
   measurement never silently becomes universal.
@@ -177,6 +180,7 @@ flowchart LR
 | Organize and type without output corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | multitab, composer, IME and interaction journeys | cancel unfinished interaction; never target a stale tab |
 | Automate what the GUI really shows | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes | bounded typed error; cancel waits with their owner |
 | Ship portable exact artifacts | [Delivery](prd/PRD_02_27_con_delivery.md) | six-cell runtime and release receipts | block the artifact or claim; never weaken it silently |
+| Stay small in RAM | [Delivery](prd/PRD_02_27_con_delivery.md) | idle host RSS court; named regression ceiling | fail the claim; do not kill user sessions |
 | Reuse host-neutral rules | [Shared core](prd/PRD_02_28_shared_core.md) | dependency and source-boundary tests | keep code product-local until proven neutral |
 
 ## Current frontier
@@ -194,7 +198,13 @@ flowchart LR
 - [x] The QVM false-positive experiment selected the current Windows release
   profile; do not reintroduce compacting changes without reputation evidence.
   Decision record: `plan/archive/design-qvm-false-positive-experiment.md`.
-- [~] Workspace chrome readability is reopened: tab/header and composer-button
+- [x] Native window title is `<title> — MiniCon <version>` (empty workspace:
+  `MiniCon <version>`). Owner: `prd/PRD_02_25_con_workspace.md`.
+- [~] Host process RSS intent is 10 MiB idle. Shared Unix whole-font leak is
+  repaired; macOS aarch64 debug idle is now 94.53–103.31 MiB, with no whole
+  emoji file in dirty heap. The 10 MiB gap remains open.
+  Owner: `prd/PRD_02_27_con_delivery.md`.
+- [~] Host-UI readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
   toolbar space. Owner: `prd/PRD_02_25_con_workspace.md`.

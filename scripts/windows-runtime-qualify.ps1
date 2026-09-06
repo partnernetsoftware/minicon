@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$TargetDir,
     [Parameter(Mandatory = $true)]
-    [ValidateSet("status", "logic", "test", "throughput", "console-agent")]
+    [ValidateSet("status", "logic", "test", "rss", "throughput", "console-agent")]
     [string]$Mode
 )
 
@@ -115,5 +115,18 @@ switch ($Mode) {
     "console-agent" {
         Invoke-Status
         Invoke-Test "minicon_console_agent"
+    }
+    "rss" {
+        $testBinary = Find-TestBinary "minicon_control"
+        Write-Host "[windows-runtime] RUN $([IO.Path]::GetFileName($testBinary)) host_process_rss_stays_within_named_budget"
+        $testExit = Invoke-NativeWait $testBinary @(
+            "host_process_rss_stays_within_named_budget",
+            "--exact",
+            "--test-threads=1",
+            "--nocapture"
+        )
+        if ($testExit -ne 0) {
+            throw "host RSS court failed with exit code $testExit"
+        }
     }
 }

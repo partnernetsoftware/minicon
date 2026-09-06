@@ -59,4 +59,13 @@ if grep -Eq 'minicon_(throughput|unowned)-' "$scratch/test.list"; then
   exit 1
 fi
 
+PAYLOAD_LIST="$scratch/rss.list" MINICON_REPO_ROOT="$scratch/repo" \
+  MINICON_UTM_COURT_CLI="$scratch/court" \
+  "$SCRIPT_DIR/linux-utm-runner.sh" lnx-x86_64 "$target_rel" rss
+grep -qx "./target/debug/deps/minicon_control-abcdef" "$scratch/rss.list"
+if grep -Eq 'minicon_(blackbox|throughput|unowned|alignment)-' "$scratch/rss.list"; then
+  echo "rss payload contains an executable not owned by rss mode" >&2
+  exit 1
+fi
+
 echo "linux-utm-runner-selftest: PASS"

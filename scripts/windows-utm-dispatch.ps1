@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$GuestRoot,
     [Parameter(Mandatory = $true)]
-    [ValidateSet("status", "test", "throughput")]
+    [ValidateSet("status", "test", "rss", "throughput")]
     [string]$Mode,
     [switch]$Child
 )

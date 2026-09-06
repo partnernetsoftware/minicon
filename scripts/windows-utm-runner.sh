@@ -7,7 +7,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
-  echo "usage: scripts/windows-utm-runner.sh CELL TARGET_DIR status|test|throughput|console-agent|stop" >&2
+  echo "usage: scripts/windows-utm-runner.sh CELL TARGET_DIR status|test|rss|throughput|console-agent|stop" >&2
   exit 2
 fi
 
@@ -36,7 +36,7 @@ case "$CELL" in
 esac
 
 case "$MODE" in
-  status|test|throughput|console-agent|stop) ;;
+  status|test|rss|throughput|console-agent|stop) ;;
   *)
     echo "unsupported Windows runner mode: $MODE" >&2
     exit 2
@@ -121,6 +121,7 @@ prefixes = {
         "minicon_control",
         "minicon_blackbox",
     ),
+    "rss": ("minicon_control",),
     "throughput": ("minicon_throughput",),
 }[mode]
 tests = {}

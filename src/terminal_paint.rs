@@ -2,7 +2,7 @@
 //!
 //! This layer translates a `vt100` screen into raster operations. It owns
 //! terminal attributes, grid semantics, and cursor overlays, but not frame
-//! allocation, native presentation, IME composition, or surrounding chrome.
+//! allocation, native presentation, IME composition, or surrounding host UI.
 
 use agenterm_ui_core::terminal_selection::{TerminalPoint, normalize_endpoints};
 

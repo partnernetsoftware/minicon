@@ -2,7 +2,7 @@
 
 Parent: [MiniCon product requirements](../PRD.md)
 
-This module owns the standalone host's tab tree, local chrome, external composer
+This module owns the standalone host's tab tree, host UI, external composer
 input, scrollbar and divider interaction, selection and clipboard behavior, and
 focus ownership. Shared physical VT selection mechanism may remain upstream;
 this module owns MiniCon's interaction meaning and evidence.
@@ -20,12 +20,15 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   user nothing they did not already know from opening it, so the short program
   name is used instead: `cmd`. A title the child genuinely sets — `title
   deploy`, or any shell's prompt escape — is information and wins.
-- [x] the window title is `<title> — MiniCon`. Context first, product last: a
-  title is read left to right and the part that changes belongs in front.
+- [x] the window title is `<title> — MiniCon <version>`. Context first,
+  product last: a title is read left to right and the part that changes belongs
+  in front. The package version from `CARGO_PKG_VERSION` sits with the product
+  name so a taskbar or window list answers which MiniCon is running. With zero
+  tabs the native title is `MiniCon <version>` alone.
 - [x] it carries no tab id. That is a machine identifier and it is already in
   the tab column and in `list-tabs`; a taskbar entry is read by a person.
 - [x] it carries no font name either. The resolved face was in the window
-  title as a development diagnostic, in the one piece of chrome a user always
+  title as a development diagnostic, in the native window title a user always
   sees; `--status` reports it now, which is where someone diagnosing a font
   actually looks.
 - [x] one function builds it. The OSC path and the activation path formatted it
@@ -49,14 +52,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Root and child creation append their known depth in O(1); close and direct
   child promotion rebuild through the shared UI-core typed algorithm, which
   remains the sole authority for missing parents, duplicate ids, cycles and
-  complete topology resolution. Chrome paint borrows the immutable depth slice
+  complete topology resolution. Host UI paint borrows the immutable depth slice
   instead of sorting, allocating and resolving every parent chain per frame.
 - [x] geometry, iterative typed tree-depth resolution, tree viewport bounds and
   hit results are pure deterministic contracts covered independently of
   Win32/PTY state. An out-of-range hit or scroll safely becomes background or a
   bounded no-op, and a hit beyond the last row clamps rather than selecting or
   closing an unrelated terminal.
-- [x] chrome geometry treats NaN pointer/sidebar values as the minimum safe
+- [x] host UI geometry treats NaN pointer/sidebar values as the minimum safe
   bound and saturates extreme DPI padding and row-coordinate arithmetic.
   Untrusted/extreme dimensions cannot wrap a close target onto another row,
   overflow layout construction, or collapse the sidebar through an unordered
@@ -80,9 +83,13 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   the next tab inherits the last session's working directory, command and font
   geometry. Only explicit window close / quit exits the application.
 
-## Local chrome
+## Host UI
 
-- [x] the local chrome owns a vertically scrollable left tree with row-level
+Host UI is MiniCon-drawn controls around the terminal grid: the tab tree, the
+header tools, and the composer. It is not the browser, and it is not layout.
+`Layout` is only the geometry of those regions.
+
+- [x] the host UI owns a vertically scrollable left tree with row-level
   close targets and one aligned top icon strip: new root terminal, help,
   Chinese, English, zoom out, reset and zoom in. A distinct bottom composer
   owns input, Send and Newline.
@@ -103,13 +110,13 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   well as offering a change.
 - [~] the size controls are compact icon actions: shrink, restore
   the configured launch size, and grow. The same zoom source sizes terminal
-  content and every chrome label, including tabs, header tools, composer text,
+  content and every host UI label, including tabs, header tools, composer text,
   IME status, and Send/Newline buttons; hit-testing uses the matching metrics.
   **Reopened from direct macOS use:** although the zoom path is wired, the
   default non-content roles remain much too small to read. The next UI increment
   must increase the nominal tab/header/composer-button type roles, and prove
   that `z`/`0`/`Z` visibly resize them rather than only terminal content.
-- [ ] larger chrome text must not make the toolbars wasteful. Reduce internal
+- [ ] larger host UI text must not make the toolbars wasteful. Reduce internal
   button padding, sibling gaps, and outer header/composer margins to the minimum
   that preserves disjoint hit targets and glyph bounds. Success is paired PNG +
   structured geometry on macOS first, then Win/Lnx parity: larger legible text,
@@ -120,9 +127,9 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   are **actions**: minus, focus/reset, plus. Language selection is reported by
   a subtle background and underline, not by lowering every inactive icon's
   contrast; the old `Z` is not accented merely for being the larger one.
-- [x] **only chrome is translated.** Everything a child process prints is
+- [x] **only host UI is translated.** Everything a child process prints is
   passed through untouched, and that line does not move: a terminal that
-  rewrote program output would be lying about what ran. Chrome strings live in
+  rewrote program output would be lying about what ran. Host UI strings live in
   a struct rather than a keyed lookup, so a missing translation is a compile
   error and not a blank label found by a user.
 - [x] the language is reported by `ui-snapshot` as a stable tag, so automation
@@ -136,9 +143,9 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   glyphs are produced at `logical size × product zoom × display scale`.
   macOS points/backing pixels, Windows DIPs/per-monitor DPI, and Linux widget
   units/surface scale are platform spellings of this same boundary. The Retina
-  defect where terminal glyphs used backing scale but chrome glyphs did not is
+  defect where terminal glyphs used backing scale but host UI glyphs did not is
   a regression class, not a platform-specific tuning preference.
-- [x] current chrome and composer painting, caret measurement, IME placement,
+- [x] current host UI and composer painting, caret measurement, IME placement,
   and pointer-to-text mapping consume the same scaled glyph metrics. A clamp is
   expressed in logical units and scaled afterward, so a 2× display does not
   silently halve the perceived maximum.
@@ -147,11 +154,11 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   scale model. Until every host adapter can report text scale truthfully,
   MiniCon product zoom remains the explicit user override; no adapter may
   invent a constant and call accessibility honored.
-- [ ] qualify the same chrome roles at display scales 1.0, 1.25, 1.5, 2.0 and
+- [ ] qualify the same host UI roles at display scales 1.0, 1.25, 1.5, 2.0 and
   product zoom minimum/default/maximum on Win/OSX/Lnx. Evidence pairs a PNG
   with structured geometry and asserts readable glyph bounds, no clipping,
   matching caret/hit coordinates, and relayout after a cross-monitor scale
-  change. System UI fonts are preferred for future chrome only when all three
+  change. System UI fonts are preferred for future host UI only when all three
   hosts can preserve these metric and screenshot contracts; terminal content
   remains monospace.
 
@@ -182,7 +189,7 @@ are comparison contracts, not dependencies:
 - <https://learn.microsoft.com/windows/win32/hidpi/setting-the-default-dpi-awareness-for-a-process>
 - <https://docs.gtk.org/gtk4/coordinates.html>
 - <https://developer.gnome.org/hig/guidelines/typography.html>
-- [x] Linux `minicon` publishes that chrome as a real AT-SPI child tree
+- [x] Linux `minicon` publishes that host UI as a real AT-SPI child tree
   (`Tabs`, `Session`, `Command`, `SEND`, plus Session child `OffscreenField`)
   so `cu tree --window` is not the one-node X11 title frame. winit/softbuffer
   has no atk-bridge; the process registers itself. Inner
@@ -226,10 +233,10 @@ are comparison contracts, not dependencies:
   claiming an edit the composer never received.
 - [x] the default 15 logical-pixel terminal font corresponds to roughly 11.25 pt
   at 96 DPI and is no smaller than the tree labels.
-- [x] the host chrome defaults to high-contrast black/white/gray and the
+- [x] the host UI defaults to high-contrast black/white/gray and the
   terminal default foreground is near-white on black; explicit ANSI application
   colors remain intact.
-- [x] chrome repaint allocates no joined strings for tree labels, composer
+- [x] host UI repaint allocates no joined strings for tree labels, composer
   destination, committed input, IME preedit and cursor. One product-local text
   raster pass consumes borrowed segments and stack-formatted tab digits under a
   shared clip limit, with a CJK/non-cell-aligned pixel oracle proving exact
@@ -356,7 +363,7 @@ the window rather than being hidden to save pixels.
 - [x] the tab-tree divider exposes a horizontal-resize cursor on hover and a
   bounded capture-safe drag that retains the terminal's minimum usable width.
 - [x] divider drag stays visually responsive without synchronously resizing the
-  PTY for every pointer event: chrome follows the pointer immediately while the
+  PTY for every pointer event: host UI follows the pointer immediately while the
   latest PTY/VT grid geometry is applied through the shared trailing-edge resize
   path.
 
@@ -377,7 +384,7 @@ the window rather than being hidden to save pixels.
   worker owns the native read and wakes the event loop on every completion;
   frontend delivery requires the original stable tab to remain active and the
   composer to remain unfocused. Tab/window close safely drops pending ownership,
-  while typed failure remains visible in chrome and `ui-snapshot`. The Windows
+  while typed failure remains visible in host UI and `ui-snapshot`. The Windows
   public journey drives `send-ui-keys Ctrl+Shift+V` against the real clipboard
   and proves PTY delivery plus final idle state.
 - [x] Human terminal paste review shows visual line breaks. The native Win32
@@ -428,5 +435,5 @@ the window rather than being hidden to save pixels.
   input header renders its bounded label (`off`, input-method name plus
   native/latin and full-width mode, or unknown), while `ui-snapshot` publishes
   fixed typed `known/name/available/open/native_mode/full_shape/label` fields.
-  Status changes invalidate only composer chrome rather than polling IMM32 on
+  Status changes invalidate only the composer strip rather than polling IMM32 on
   every render.

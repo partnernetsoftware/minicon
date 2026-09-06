@@ -5,7 +5,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
-  echo "usage: scripts/macos-runtime-qualify.sh TARGET_DIR status|test|throughput" >&2
+  echo "usage: scripts/macos-runtime-qualify.sh TARGET_DIR status|test|rss|throughput" >&2
   exit 2
 fi
 
@@ -76,6 +76,11 @@ case "$MODE" in
     run_test minicon_console_agent
     run_test minicon_control
     run_test minicon_blackbox
+    ;;
+  rss)
+    test_binary="$(find_test_binary minicon_control)"
+    echo "[macos-runtime] RUN ${test_binary##*/} host_process_rss_stays_within_named_budget"
+    "$test_binary" --test-threads=1 --nocapture --exact host_process_rss_stays_within_named_budget
     ;;
   throughput)
     test_binary="$(find_test_binary minicon_throughput)"

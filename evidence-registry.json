@@ -93,6 +93,15 @@
       "source": "tests/minicon_blackbox.rs"
     },
     {
+      "id": "minicon_control::host_process_rss_stays_within_named_budget",
+      "kind": "public-black-box",
+      "emitter": "cargo-test-harness",
+      "platform": "windows-x86_64",
+      "test_target": "minicon_control",
+      "test_name": "host_process_rss_stays_within_named_budget",
+      "source": "tests/minicon_control.rs"
+    },
+    {
       "id": "minicon_control::gui_control_surface_isolated_multitab_black_box",
       "kind": "public-black-box",
       "emitter": "cargo-test-harness",

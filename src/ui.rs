@@ -1,4 +1,4 @@
-//! Pure geometry and hit-testing for the lightweight console chrome.
+//! Pure geometry and hit-testing for the lightweight console host UI.
 //!
 //! This module deliberately contains no window-host, PTY, or product authority
 //! state. Proven rules can therefore move into a shared frontend contract
@@ -272,7 +272,7 @@ pub enum ComposerHit {
 
 /// The language MiniCon labels itself in.
 ///
-/// Only the chrome is translated — the tab column, the send strip and the
+/// Only the host UI is translated — the tab column, the send strip and the
 /// paste failure. Everything a child process prints belongs to that process
 /// and is passed through untouched, which is the line this must not cross: a
 /// terminal that rewrote program output would be lying about what ran.
@@ -306,9 +306,9 @@ impl UiLanguage {
     }
 
     #[must_use]
-    pub const fn strings(self) -> ChromeStrings {
+    pub const fn strings(self) -> HostUiStrings {
         match self {
-            Self::English => ChromeStrings {
+            Self::English => HostUiStrings {
                 paste_failed: "PASTE FAILED",
                 send: "Send",
                 send_hint: "(ctrl-o)",
@@ -319,7 +319,7 @@ impl UiLanguage {
                 new_terminal: "NEW TERMINAL",
                 new_terminal_hint: "Ctrl+Shift+T",
             },
-            Self::Chinese => ChromeStrings {
+            Self::Chinese => HostUiStrings {
                 paste_failed: "貼上失敗",
                 send: "送出",
                 send_hint: "(ctrl-o)",
@@ -360,12 +360,12 @@ impl UiLanguage {
     }
 }
 
-/// The chrome MiniCon writes itself.
+/// Strings MiniCon writes on its own host UI.
 ///
 /// A struct rather than a lookup by key: a missing translation is then a
 /// compile error instead of a blank label discovered by a user.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ChromeStrings {
+pub struct HostUiStrings {
     pub paste_failed: &'static str,
     pub send: &'static str,
     pub send_hint: &'static str,
@@ -629,7 +629,7 @@ mod tests {
     }
 
     /// Every entry is labelled in the language it selects, and every language
-    /// has a complete set of chrome strings. A struct rather than a map is
+    /// has a complete set of host UI strings. A struct rather than a map is
     /// what makes the second half a compile error instead of a blank label.
     #[test]
     fn each_language_labels_itself_and_translates_every_string() {

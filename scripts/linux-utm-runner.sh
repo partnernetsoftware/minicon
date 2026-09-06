@@ -4,7 +4,7 @@
 set -euo pipefail
 
 [ "$#" -eq 3 ] || {
-  echo "usage: scripts/linux-utm-runner.sh CELL TARGET_DIR status|test|throughput|stop" >&2
+  echo "usage: scripts/linux-utm-runner.sh CELL TARGET_DIR status|test|rss|throughput|stop" >&2
   exit 2
 }
 CELL="$1"; TARGET_DIR="$2"; MODE="$3"
@@ -25,7 +25,7 @@ case "$CELL" in
     ;;
   *) echo "unsupported Linux cell: $CELL" >&2; exit 2 ;;
 esac
-case "$MODE" in status|test|throughput|stop) ;; *) exit 2 ;; esac
+case "$MODE" in status|test|rss|throughput|stop) ;; *) exit 2 ;; esac
 court() { UTM_COURT_VM="$VM" "$COURT_CLI" "$@"; }
 
 if [ "$MODE" = stop ]; then
@@ -72,6 +72,7 @@ case "$MODE" in
       copy_test_prefix "$prefix"
     done
     ;;
+  rss) copy_test_prefix minicon_control ;;
   throughput) copy_test_prefix minicon_throughput ;;
 esac
 cp "$SCRIPT_DIR/linux-runtime-qualify.sh" "$scratch/payload/"

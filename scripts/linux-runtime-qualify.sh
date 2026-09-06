@@ -6,7 +6,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
-  echo "usage: scripts/linux-runtime-qualify.sh TARGET_DIR status|logic|test|throughput" >&2
+  echo "usage: scripts/linux-runtime-qualify.sh TARGET_DIR status|logic|test|rss|throughput" >&2
   exit 2
 fi
 
@@ -36,7 +36,7 @@ require_tool timeout
 export MINICON_TEST_BINARY="$PRODUCT"
 
 case "$MODE" in
-  test|throughput)
+  test|rss|throughput)
     require_tool xvfb-run
     require_tool dbus-run-session
     ;;
@@ -74,6 +74,13 @@ run_gui_test() {
     dbus-run-session -- "$test_binary" --test-threads=1 --nocapture
 }
 
+run_gui_test_exact() {
+  test_binary="$(find_test_binary "$1")"
+  echo "[linux-runtime] RUN-X11 ${test_binary##*/} $2"
+  timeout 180s xvfb-run -a -s "-screen 0 1280x900x24" \
+    dbus-run-session -- "$test_binary" --test-threads=1 --nocapture --exact "$2"
+}
+
 case "$MODE" in
   status)
     file "$PRODUCT"
@@ -88,6 +95,9 @@ case "$MODE" in
     run_gui_test minicon_control
     run_gui_test minicon_blackbox
     run_gui_test minicon_accessibility_linux
+    ;;
+  rss)
+    run_gui_test_exact minicon_control host_process_rss_stays_within_named_budget
     ;;
   logic)
     file "$PRODUCT"

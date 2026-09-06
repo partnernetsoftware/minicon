@@ -1,7 +1,7 @@
-//! Accessibility snapshot for the standalone console chrome.
+//! Accessibility snapshot for the standalone console host UI.
 //!
 //! The host is a custom-raster (winit/softbuffer) toolkit, so GTK atk-bridge
-//! never sees it. This module names the painted chrome as a small widget tree
+//! never sees it. This module names the painted host UI as a small widget tree
 //! and lets the Linux AT-SPI publisher register those children.
 
 use std::collections::VecDeque;

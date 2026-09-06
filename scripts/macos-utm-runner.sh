@@ -4,7 +4,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
-  echo "usage: scripts/macos-utm-runner.sh osx-aarch64 TARGET_DIR prepare|status|test|throughput|stop" >&2
+  echo "usage: scripts/macos-utm-runner.sh osx-aarch64 TARGET_DIR prepare|status|test|rss|throughput|stop" >&2
   exit 2
 fi
 
@@ -15,7 +15,7 @@ MODE="$3"
   echo "unsupported macOS UTM cell: $CELL" >&2
   exit 2
 }
-case "$MODE" in prepare|status|test|throughput|stop) ;; *) exit 2 ;; esac
+case "$MODE" in prepare|status|test|rss|throughput|stop) ;; *) exit 2 ;; esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -78,6 +78,8 @@ if [ "$MODE" = test ]; then
     "$REPO_ROOT/evidence-registry.json" "$payload_tmp/source/"
   cp -R "$REPO_ROOT/prd" "$REPO_ROOT/tests" "$payload_tmp/source/"
   prefixes="minicon minicon_core minicon_alignment minicon_load_portability minicon_console_agent minicon_control minicon_blackbox"
+elif [ "$MODE" = rss ]; then
+  prefixes="minicon_control"
 else
   prefixes="minicon_throughput"
 fi

@@ -217,10 +217,10 @@ const DEFAULT_FONT_PX: f64 = 15.0;
 /// placement so the caret they each compute cannot land in two places.
 const COMPOSER_TEXT_SIZE_PX: u16 = 15;
 const COMPOSER_TEXT_INSET: u32 = 10;
-const CHROME_HEADER_SIZE_PX: u16 = 14;
-const CHROME_TAB_SIZE_PX: u16 = 16;
-const CHROME_CLOSE_SIZE_PX: u16 = 13;
-const CHROME_STATUS_SIZE_PX: u16 = 14;
+const HOST_UI_HEADER_SIZE_PX: u16 = 14;
+const HOST_UI_TAB_SIZE_PX: u16 = 16;
+const HOST_UI_CLOSE_SIZE_PX: u16 = 13;
+const HOST_UI_STATUS_SIZE_PX: u16 = 14;
 
 #[allow(clippy::manual_clamp)] // f64::clamp retains the large float-format panic path.
 fn clamp_font_size(value: f64) -> f64 {
@@ -887,7 +887,7 @@ struct ConApp {
     /// the greeting page is a lifecycle boundary rather than a settings reset.
     session_seed: SessionSeed,
     composer: composer::ComposerState,
-    /// The language MiniCon labels its own chrome in. Child output is never
+    /// The language MiniCon labels its own host UI in. Child output is never
     /// touched by this.
     ui_language: ui::UiLanguage,
     help_open: bool,
@@ -907,7 +907,7 @@ struct ConApp {
     ime_status_label: String,
     control_pointer_owner: Option<workspace::TabId>,
     perf_stats: PerfStats,
-    chrome_dirty: DirtyRegion,
+    host_ui_dirty: DirtyRegion,
     retained: RetainedXrgbFrame,
     frame_width: u32,
     frame_height: u32,
@@ -1140,7 +1140,7 @@ impl ConApp {
             ime_status_label: "IME: ?".to_owned(),
             control_pointer_owner: None,
             perf_stats: PerfStats::default(),
-            chrome_dirty: DirtyRegion::full(),
+            host_ui_dirty: DirtyRegion::full(),
             retained: RetainedXrgbFrame::new(),
             frame_width: 0,
             frame_height: 0,
@@ -1148,7 +1148,7 @@ impl ConApp {
             a11y: None,
             a11y_inbox: Arc::new(a11y::ActionInbox::default()),
             a11y_dirty: false,
-            current_window_title: String::from("minicon"),
+            current_window_title: product_window_title(),
         }
     }
 
@@ -1247,17 +1247,17 @@ impl ConApp {
         if self.workspace.active().is_none() {
             self.tree_scroll_offset = 0;
             self.composer = composer::ComposerState::default();
-            self.current_window_title = String::from("MiniCon");
+            self.current_window_title = product_window_title();
             window.set_title(&self.current_window_title);
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             window.request_redraw();
             return Ok(());
         }
-        self.mark_chrome_full();
+        self.mark_host_ui_full();
         let metrics = window.metrics()?;
         let sidebar_width = self.sidebar_width_logical;
         let session = self.active_session_mut()?;
-        Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
         session.apply_resize(
             metrics.physical_width,
             metrics.physical_height,
@@ -1269,7 +1269,7 @@ impl ConApp {
         Ok(())
     }
 
-    fn configure_chrome(session: &mut ConTerminal, scale: f64, sidebar_width_logical: f64) {
+    fn configure_host_ui(session: &mut ConTerminal, scale: f64, sidebar_width_logical: f64) {
         let scale = scale.max(1.0);
         session.set_content_insets(
             agenterm_platform::numeric::round_f64(sidebar_width_logical * scale) as u32,
@@ -1389,27 +1389,27 @@ impl ConApp {
         Ok(())
     }
 
-    fn mark_chrome_full(&mut self) {
-        self.chrome_dirty.mark_full();
+    fn mark_host_ui_full(&mut self) {
+        self.host_ui_dirty.mark_full();
         self.mark_a11y_dirty();
     }
 
-    fn mark_chrome_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
+    fn mark_host_ui_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
         if self.frame_width == 0 || self.frame_height == 0 {
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             return;
         }
-        self.chrome_dirty
+        self.host_ui_dirty
             .mark_rect(PixelRect::from_xywh(x, y, width, height));
     }
 
     fn mark_tree_dirty(&mut self) {
         if self.frame_width == 0 || self.frame_height == 0 {
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             return;
         }
         let layout = self.layout(self.frame_width, self.frame_height, self.frame_scale);
-        self.mark_chrome_rect(
+        self.mark_host_ui_rect(
             layout.sidebar.x,
             layout.sidebar.y,
             layout.sidebar.width,
@@ -1420,7 +1420,7 @@ impl ConApp {
     fn mark_composer_dirty(&mut self) {
         self.mark_a11y_dirty();
         if self.frame_width == 0 || self.frame_height == 0 {
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             return;
         }
         let layout = self.layout(self.frame_width, self.frame_height, self.frame_scale);
@@ -1429,8 +1429,8 @@ impl ConApp {
         // and its color tracks `composer_focused`, so marking only the controls
         // left the label showing the previous focus state until some unrelated
         // damage happened to cover it. The band is the provable bound: every
-        // pixel `paint_chrome` derives from composer state lives inside it.
-        self.mark_chrome_rect(
+        // pixel `paint_host_ui` derives from composer state lives inside it.
+        self.mark_host_ui_rect(
             layout.composer.x,
             layout.composer.y,
             self.frame_width.saturating_sub(layout.composer.x),
@@ -1440,7 +1440,7 @@ impl ConApp {
 
     fn note_frame_dimensions(&mut self, width: u32, height: u32, scale: f64) {
         if self.frame_width != width || self.frame_height != height || self.frame_scale != scale {
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
         }
         self.frame_width = width;
         self.frame_height = height;
@@ -1448,7 +1448,7 @@ impl ConApp {
     }
 
     fn take_dirty_candidate(&mut self, width: u32, height: u32) -> DirtyRegion {
-        let mut candidate = std::mem::take(&mut self.chrome_dirty);
+        let mut candidate = std::mem::take(&mut self.host_ui_dirty);
         if let Ok(session) = self.active_session_mut() {
             candidate = candidate.union(session.take_dirty());
         }
@@ -1456,7 +1456,7 @@ impl ConApp {
     }
 
     fn request_dirty_redraw(&self, window: &PixelWindow) {
-        let candidate = self.chrome_dirty.union(
+        let candidate = self.host_ui_dirty.union(
             self.workspace
                 .active()
                 .and_then(|id| self.sessions.get(&id).map(|session| session.dirty))
@@ -1510,7 +1510,7 @@ impl ConApp {
         })?;
 
         let mut session = seed.create_session();
-        Self::configure_chrome(
+        Self::configure_host_ui(
             &mut session,
             window.metrics()?.scale_factor,
             self.sidebar_width_logical,
@@ -1527,7 +1527,7 @@ impl ConApp {
             ));
         }
         self.session_seed = seed;
-        self.mark_chrome_full();
+        self.mark_host_ui_full();
         self.reveal_active_tree_row(window)?;
         self.refresh_title(window)
     }
@@ -1548,13 +1548,13 @@ impl ConApp {
             ));
         };
         let next = (index as isize + direction).rem_euclid(ids.len() as isize) as usize;
-        self.mark_chrome_full();
+        self.mark_host_ui_full();
         self.activate_session(window, ids[next]);
         self.reveal_active_tree_row(window)?;
         let metrics = window.metrics()?;
         let sidebar_width = self.sidebar_width_logical;
         let session = self.active_session_mut()?;
-        Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
         session.apply_resize(
             metrics.physical_width,
             metrics.physical_height,
@@ -1644,7 +1644,7 @@ impl ConApp {
             }
             ui::TreeHit::Help => {
                 self.help_open = !self.help_open;
-                self.mark_chrome_full();
+                self.mark_host_ui_full();
                 window.request_redraw();
                 return Ok(true);
             }
@@ -1671,14 +1671,14 @@ impl ConApp {
                 // entry from costing a frame.
                 if self.ui_language != language {
                     self.ui_language = language;
-                    self.mark_chrome_full();
+                    self.mark_host_ui_full();
                     self.request_dirty_redraw(window);
                 }
                 return Ok(true);
             }
             ui::TreeHit::Close(index) => {
                 self.activate_session(window, ids[index]);
-                self.mark_chrome_full();
+                self.mark_host_ui_full();
                 self.close_active_session(window)?;
                 self.tree_scroll_offset = ui::clamp_tree_scroll(
                     self.tree_scroll_offset,
@@ -1690,12 +1690,12 @@ impl ConApp {
             ui::TreeHit::Select(index) => {
                 self.activate_session(window, ids[index]);
                 self.reveal_active_tree_row(window)?;
-                self.mark_chrome_full();
+                self.mark_host_ui_full();
             }
         }
         let sidebar_width = self.sidebar_width_logical;
         let session = self.active_session_mut()?;
-        Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
         session.apply_resize(
             metrics.physical_width,
             metrics.physical_height,
@@ -1740,7 +1740,7 @@ impl ConApp {
         // Measuring the whole buffer sent the IME candidate list off screen as
         // soon as the text outgrew the box, and did it with a hard-coded 8 px
         // advance that no font honours.
-        let composer_font_size = scaled_chrome_font(
+        let composer_font_size = scaled_host_ui_font(
             COMPOSER_TEXT_SIZE_PX,
             self.active_session()?.font_size_logical,
             scale,
@@ -1813,7 +1813,7 @@ impl ConApp {
             metrics.physical_height,
             metrics.scale_factor,
         );
-        let composer_font_size = scaled_chrome_font(
+        let composer_font_size = scaled_host_ui_font(
             COMPOSER_TEXT_SIZE_PX,
             self.active_session()?.font_size_logical,
             scale,
@@ -2177,7 +2177,7 @@ impl ConApp {
                 self.deliver_terminal_paste(pending.target, &text)
             });
         self.terminal_clipboard_error = result.err();
-        self.mark_chrome_full();
+        self.mark_host_ui_full();
         window.request_redraw();
     }
 
@@ -2232,13 +2232,13 @@ impl ConApp {
             .take()
             .expect("a ready review remains owned until completion");
         // A cancelled review is the human declining, not a failure: it clears
-        // the pending state and leaves no error in chrome.
+        // the pending state and leaves no error in host UI.
         let result = edited.map_or(Ok(()), |edited| {
             let text = terminal_input::normalize_terminal_paste(&edited);
             self.deliver_terminal_paste(pending.target, &text)
         });
         self.terminal_clipboard_error = result.err();
-        self.mark_chrome_full();
+        self.mark_host_ui_full();
         window.request_redraw();
     }
 
@@ -2449,7 +2449,7 @@ impl ConApp {
                 ]))
             })(),
             CliCommand::SelectTab { target } => self.control_target(Some(target)).map(|id| {
-                self.mark_chrome_full();
+                self.mark_host_ui_full();
                 self.activate_session(window, id);
                 window.request_redraw();
                 single_field_json("active", tab_id_json(Some(id)))
@@ -2846,7 +2846,7 @@ impl ConApp {
                     ui::sidebar_width_from_pointer(position.x, metrics.logical_size.width);
                 let sidebar_width = self.sidebar_width_logical;
                 if let Ok(session) = self.active_session_mut() {
-                    Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+                    Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
                     session.queue_resize(
                         metrics.physical_width,
                         metrics.physical_height,
@@ -2897,7 +2897,7 @@ impl ConApp {
         }
     }
 
-    fn paint_chrome(
+    fn paint_host_ui(
         &self,
         pixels: &mut [u32],
         width: u32,
@@ -2912,8 +2912,8 @@ impl ConApp {
         let tree_width = layout.sidebar.width;
         let header_height = layout.tree_header_height;
         let row_height = layout.tree_row_height;
-        let chrome_size = |nominal| scaled_chrome_font(nominal, session.font_size_logical, scale);
-        // High-contrast monochrome chrome. Applications still retain their
+        let host_ui_size = |nominal| scaled_host_ui_font(nominal, session.font_size_logical, scale);
+        // High-contrast monochrome host UI. Applications still retain their
         // explicit ANSI colors inside the terminal; only the host UI uses
         // black/white/gray so controls remain legible without color cues.
         let tree_bg = Rgb(0x08, 0x08, 0x08);
@@ -2948,7 +2948,7 @@ impl ConApp {
             tree_rule.to_xrgb(),
         );
 
-        let header_icon_size = chrome_size(CHROME_HEADER_SIZE_PX);
+        let header_icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         paint_header_icon_button(
             &mut surface,
             layout.new_root,
@@ -3031,23 +3031,23 @@ impl ConApp {
                 .filter(|title| !title.is_empty())
                 .unwrap_or(node.title.as_str());
             let mut id = itoa::Buffer::new();
-            paint_chrome_text_parts(
+            paint_host_ui_text_parts(
                 &mut surface,
                 indent,
                 y + 7,
                 &["@", id.format(node.id.get()), "  ", title],
                 text,
-                chrome_size(CHROME_TAB_SIZE_PX),
+                host_ui_size(HOST_UI_TAB_SIZE_PX),
                 tree_width.saturating_sub(indent + 38),
             );
             let close = layout.tree_close_rect(visible_index, scale);
-            paint_chrome_text(
+            paint_host_ui_text(
                 &mut surface,
                 close.x + 6,
                 close.y + 3,
                 "x",
                 muted,
-                chrome_size(CHROME_CLOSE_SIZE_PX),
+                host_ui_size(HOST_UI_CLOSE_SIZE_PX),
                 close.width.saturating_sub(6),
             );
         }
@@ -3061,7 +3061,7 @@ impl ConApp {
             .x
             .saturating_sub(ime_width.saturating_add(8));
         let mut active_id_text = itoa::Buffer::new();
-        paint_chrome_text_parts(
+        paint_host_ui_text_parts(
             &mut surface,
             header_x,
             input_y + 7,
@@ -3086,10 +3086,10 @@ impl ConApp {
             } else {
                 muted
             },
-            chrome_size(CHROME_STATUS_SIZE_PX),
+            host_ui_size(HOST_UI_STATUS_SIZE_PX),
             ime_x.saturating_sub(header_x.saturating_add(8)),
         );
-        paint_chrome_text(
+        paint_host_ui_text(
             &mut surface,
             ime_x,
             input_y + 7,
@@ -3099,7 +3099,7 @@ impl ConApp {
             } else {
                 muted
             },
-            chrome_size(CHROME_STATUS_SIZE_PX),
+            host_ui_size(HOST_UI_STATUS_SIZE_PX),
             ime_width,
         );
         surface.fill_rect(
@@ -3144,7 +3144,7 @@ impl ConApp {
         // Each stored newline owns a real painted row. The fixed-height input
         // follows the caret's row, while each row retains the existing
         // horizontal sliding window for commands wider than the box.
-        let composer_font_size = chrome_size(COMPOSER_TEXT_SIZE_PX);
+        let composer_font_size = host_ui_size(COMPOSER_TEXT_SIZE_PX);
         let composer_metrics = font::cell_metrics(composer_font_size);
         let composer_cell_width = composer_metrics.width.max(1);
         let composer_line_height = composer_metrics.height.max(1);
@@ -3191,7 +3191,7 @@ impl ConApp {
                 .y
                 .saturating_add(4)
                 .saturating_add(composer_line_height.saturating_mul(row as u32));
-            paint_chrome_text_parts(
+            paint_host_ui_text_parts(
                 &mut surface,
                 layout.composer_input.x + COMPOSER_TEXT_INSET,
                 y,
@@ -3234,8 +3234,8 @@ impl ConApp {
             } else {
                 accent
             },
-            chrome_size(BUTTON_LABEL_SIZE_PX),
-            chrome_size(BUTTON_HINT_SIZE_PX),
+            host_ui_size(BUTTON_LABEL_SIZE_PX),
+            host_ui_size(BUTTON_HINT_SIZE_PX),
         );
         paint_two_line_button_label(
             &mut surface,
@@ -3243,8 +3243,8 @@ impl ConApp {
             strings.newline,
             strings.newline_hint,
             accent,
-            chrome_size(BUTTON_LABEL_SIZE_PX),
-            chrome_size(BUTTON_HINT_SIZE_PX),
+            host_ui_size(BUTTON_LABEL_SIZE_PX),
+            host_ui_size(BUTTON_HINT_SIZE_PX),
         );
         if self.help_open {
             paint_help_panel(
@@ -3254,7 +3254,7 @@ impl ConApp {
                 height,
                 scale,
                 self.ui_language.help_lines(),
-                chrome_size(CHROME_STATUS_SIZE_PX),
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
             );
         }
         Ok(())
@@ -3283,10 +3283,10 @@ impl ConApp {
             rule.to_xrgb(),
         );
 
-        let chrome_size = |nominal| {
-            scaled_chrome_font(nominal, self.session_seed.font_size_logical, scale.max(1.0))
+        let host_ui_size = |nominal| {
+            scaled_host_ui_font(nominal, self.session_seed.font_size_logical, scale.max(1.0))
         };
-        let icon_size = chrome_size(CHROME_HEADER_SIZE_PX);
+        let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         for (button, icon, selected) in [
             (layout.new_root, HeaderIcon::NewRoot, false),
             (layout.help, HeaderIcon::Help, self.help_open),
@@ -3309,7 +3309,7 @@ impl ConApp {
 
         let strings = self.ui_language.strings();
         let button = layout.empty_new_terminal(width, height, scale);
-        let title_size = chrome_size(18);
+        let title_size = host_ui_size(18);
         let title_metrics = font::cell_metrics(title_size);
         let title_width = title_metrics.width.max(1).saturating_mul(
             u32::try_from(composer::cells(strings.empty_title)).unwrap_or(u32::MAX),
@@ -3322,7 +3322,7 @@ impl ConApp {
         let title_y = button
             .y
             .saturating_sub(title_metrics.height.saturating_add(28));
-        paint_chrome_text(
+        paint_host_ui_text(
             &mut surface,
             title_x,
             title_y,
@@ -3344,14 +3344,14 @@ impl ConApp {
             button,
             strings.new_terminal,
             text,
-            chrome_size(BUTTON_LABEL_SIZE_PX),
+            host_ui_size(BUTTON_LABEL_SIZE_PX),
         );
-        let hint_size = chrome_size(13);
+        let hint_size = host_ui_size(13);
         let hint_metrics = font::cell_metrics(hint_size);
         let hint_width = hint_metrics.width.max(1).saturating_mul(
             u32::try_from(composer::cells(strings.new_terminal_hint)).unwrap_or(u32::MAX),
         );
-        paint_chrome_text(
+        paint_host_ui_text(
             &mut surface,
             layout
                 .sidebar
@@ -3371,10 +3371,17 @@ impl ConApp {
                 height,
                 scale,
                 self.ui_language.help_lines(),
-                chrome_size(CHROME_STATUS_SIZE_PX),
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
             );
         }
     }
+}
+
+/// Native title product half: `MiniCon` plus the package version this binary
+/// was built with. The empty-tab greeting window uses this alone; a live tab
+/// prefixes its context. One helper so those two paths cannot drift.
+fn product_window_title() -> String {
+    format!("MiniCon {}", env!("CARGO_PKG_VERSION"))
 }
 
 impl ConTerminal {
@@ -3386,8 +3393,9 @@ impl ConTerminal {
         // Product last, context first: a title is read left to right and the
         // part that changes belongs in front. No tab id — that is a machine
         // identifier, and it is already in the tab column and in `list-tabs`;
-        // a taskbar entry is read by a person.
-        format!("{} — MiniCon", self.current_title)
+        // a taskbar entry is read by a person. Version sits with the product
+        // name so a taskbar entry answers "which MiniCon" without `--status`.
+        format!("{} — {}", self.current_title, product_window_title())
     }
 
     fn shutdown_pty(&mut self) {
@@ -5031,7 +5039,7 @@ impl ConTerminal {
         self.recompute_metrics(scale);
         self.scale = scale;
         // Not the font. That was a development diagnostic living in the one
-        // piece of chrome a user always sees; `--status` reports the resolved
+        // piece of host UI a user always sees; `--status` reports the resolved
         // face now, which is where someone diagnosing a font actually looks.
         window.set_title(&self.window_title());
         // Request keyboard focus so winit delivers KeyboardInput events on Windows.
@@ -5377,7 +5385,7 @@ impl PixelWindowApplication for ConApp {
     fn opened(&mut self, window: &PixelWindow) -> Result<PixelWindowDirective, PixelWindowError> {
         let metrics = window.metrics()?;
         let sidebar_width = self.sidebar_width_logical;
-        Self::configure_chrome(
+        Self::configure_host_ui(
             self.active_session_mut()?,
             metrics.scale_factor,
             sidebar_width,
@@ -5441,7 +5449,7 @@ impl PixelWindowApplication for ConApp {
             )
         {
             self.help_open = false;
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             window.request_redraw();
             return Ok(PixelWindowDirective::Continue);
         }
@@ -5512,14 +5520,14 @@ impl PixelWindowApplication for ConApp {
             self.request_dirty_redraw(window);
         }
         if self.handle_sidebar_resize(window, &event)? {
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             return Ok(PixelWindowDirective::Continue);
         }
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             let sidebar_width = self.sidebar_width_logical;
             if let Ok(session) = self.active_session_mut() {
-                Self::configure_chrome(session, metrics.scale_factor, sidebar_width);
+                Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
             }
         }
         if let PixelWindowEvent::Keyboard(key) = &event
@@ -5587,7 +5595,7 @@ impl PixelWindowApplication for ConApp {
                     let _ = self.handle_tree_pointer(window, position)?;
                 } else {
                     self.help_open = false;
-                    self.mark_chrome_full();
+                    self.mark_host_ui_full();
                     window.request_redraw();
                 }
                 return Ok(PixelWindowDirective::Continue);
@@ -5684,7 +5692,7 @@ impl PixelWindowApplication for ConApp {
         if requested && let Err(error) = self.request_terminal_clipboard_paste(window, active, true)
         {
             self.terminal_clipboard_error = Some(error);
-            self.mark_chrome_full();
+            self.mark_host_ui_full();
             window.request_redraw();
         }
         Ok(directive)
@@ -5721,7 +5729,7 @@ impl PixelWindowApplication for ConApp {
             frame
                 .commit(PixelFrameWrite::Full)
                 .map_err(|error| PixelWindowError::failed("con_frame_commit", error.to_string()))?;
-            self.chrome_dirty = DirtyRegion::default();
+            self.host_ui_dirty = DirtyRegion::default();
             self.retained.invalidate();
             self.perf_stats.record_host_direct_frame();
             return Ok(PixelWindowDirective::Continue);
@@ -5757,7 +5765,7 @@ impl PixelWindowApplication for ConApp {
             }
         };
         if retained_requires_full {
-            self.chrome_dirty.mark_full();
+            self.host_ui_dirty.mark_full();
             self.active_session_mut()?.dirty.mark_full();
             window.request_redraw();
         }
@@ -5835,7 +5843,7 @@ impl PixelWindowApplication for ConApp {
             };
             let directive = render_result?;
             if !candidate.is_empty() {
-                self.paint_chrome(frame.pixels_mut(), width, height, candidate)?;
+                self.paint_host_ui(frame.pixels_mut(), width, height, candidate)?;
             }
             directive
         } else {
@@ -5864,7 +5872,7 @@ impl PixelWindowApplication for ConApp {
             };
             if !candidate.is_empty()
                 && let Err(error) =
-                    self.paint_chrome(retained.pixels_mut(), width, height, candidate)
+                    self.paint_host_ui(retained.pixels_mut(), width, height, candidate)
             {
                 self.retained = retained;
                 self.retained.invalidate();
@@ -5927,7 +5935,7 @@ impl PixelWindowApplication for ConApp {
                 && self.sessions.contains_key(&restore_active)
             {
                 self.workspace.set_active(restore_active);
-                self.mark_chrome_full();
+                self.mark_host_ui_full();
                 render_try!(self.active_session_mut()).dirty.mark_full();
                 render_try!(self.refresh_title(window));
                 window.request_redraw();
@@ -6185,7 +6193,7 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
         .unwrap_or_else(PixelRect::empty)
 }
 
-/// Paints one chrome button's label centred in its box.
+/// Paints one host UI button's label centred in its box.
 ///
 /// Centring is computed rather than tuned: the composer's two buttons differ
 /// in label width and each is half the height of the single control they
@@ -6195,13 +6203,13 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 const BUTTON_LABEL_SIZE_PX: u16 = 15;
 const BUTTON_HINT_SIZE_PX: u16 = 11;
 
-fn scaled_chrome_font(nominal: u16, logical_font_size: f64, display_scale: f64) -> u16 {
+fn scaled_host_ui_font(nominal: u16, logical_font_size: f64, display_scale: f64) -> u16 {
     let display_scale = display_scale.clamp(1.0, 4.0);
     agenterm_platform::numeric::round_f64(
         f64::from(nominal) * logical_font_size / DEFAULT_FONT_PX * display_scale,
     )
     // Layout dimensions are already expressed as DIPs multiplied by the
-    // display scale. Apply the same rule to glyphs: omitting it made chrome
+    // display scale. Apply the same rule to glyphs: omitting it made host UI
     // text half-sized beside terminal text on a Retina display.
     .clamp(7.0 * display_scale, 20.0 * display_scale) as u16
 }
@@ -6224,7 +6232,7 @@ fn paint_button_label(
     let y = button
         .y
         .saturating_add(button.height.saturating_sub(metrics.height.max(1)) / 2);
-    paint_chrome_text(surface, x, y, label, color, font_size_px, button.width);
+    paint_host_ui_text(surface, x, y, label, color, font_size_px, button.width);
 }
 
 fn paint_two_line_button_label(
@@ -6253,7 +6261,7 @@ fn paint_two_line_button_label(
         let x = button
             .x
             .saturating_add(button.width.saturating_sub(text_width) / 2);
-        paint_chrome_text(
+        paint_host_ui_text(
             surface,
             x,
             y,
@@ -6309,7 +6317,7 @@ fn paint_help_panel(
     let x = panel.x.saturating_add(dip(24.0));
     let mut y = panel.y.saturating_add(dip(22.0));
     for (index, line) in lines.into_iter().enumerate() {
-        paint_chrome_text(
+        paint_host_ui_text(
             surface,
             x,
             y,
@@ -6509,7 +6517,7 @@ fn paint_header_icon_button(
     }
 }
 
-fn paint_chrome_text(
+fn paint_host_ui_text(
     surface: &mut Surface<'_>,
     x: u32,
     y: u32,
@@ -6518,10 +6526,10 @@ fn paint_chrome_text(
     font_size_px: u16,
     max_width: u32,
 ) {
-    paint_chrome_text_parts(surface, x, y, &[text], color, font_size_px, max_width);
+    paint_host_ui_text_parts(surface, x, y, &[text], color, font_size_px, max_width);
 }
 
-fn paint_chrome_text_parts(
+fn paint_host_ui_text_parts(
     surface: &mut Surface<'_>,
     x: u32,
     y: u32,
@@ -6602,13 +6610,13 @@ mod tests {
     }
 
     #[test]
-    fn chrome_font_tracks_terminal_zoom_and_display_scale() {
-        assert_eq!(scaled_chrome_font(15, DEFAULT_FONT_PX, 1.0), 15);
-        assert_eq!(scaled_chrome_font(15, DEFAULT_FONT_PX, 2.0), 30);
-        assert!(scaled_chrome_font(15, 8.0, 1.0) < 15);
-        assert!(scaled_chrome_font(15, 24.0, 1.0) > 15);
-        assert_eq!(scaled_chrome_font(15, 36.0, 1.0), 20);
-        assert_eq!(scaled_chrome_font(15, 36.0, 2.0), 40);
+    fn host_ui_font_tracks_terminal_zoom_and_display_scale() {
+        assert_eq!(scaled_host_ui_font(15, DEFAULT_FONT_PX, 1.0), 15);
+        assert_eq!(scaled_host_ui_font(15, DEFAULT_FONT_PX, 2.0), 30);
+        assert!(scaled_host_ui_font(15, 8.0, 1.0) < 15);
+        assert!(scaled_host_ui_font(15, 24.0, 1.0) > 15);
+        assert_eq!(scaled_host_ui_font(15, 36.0, 1.0), 20);
+        assert_eq!(scaled_host_ui_font(15, 36.0, 2.0), 40);
     }
 
     #[test]
@@ -6673,12 +6681,12 @@ mod tests {
     use agenterm_platform::input::ModifierState;
 
     #[test]
-    fn chrome_text_parts_match_joined_text_with_clipping() {
+    fn host_ui_text_parts_match_joined_text_with_clipping() {
         let width = 160;
         let height = 32;
         let mut joined_pixels = vec![0; width * height];
         let mut parts_pixels = vec![0; width * height];
-        paint_chrome_text(
+        paint_host_ui_text(
             &mut Surface::new(&mut joined_pixels, width as u32, height as u32),
             3,
             2,
@@ -6687,7 +6695,7 @@ mod tests {
             14,
             73,
         );
-        paint_chrome_text_parts(
+        paint_host_ui_text_parts(
             &mut Surface::new(&mut parts_pixels, width as u32, height as u32),
             3,
             2,
@@ -6699,7 +6707,7 @@ mod tests {
         assert_eq!(parts_pixels, joined_pixels);
     }
 
-    /// A double-width character must consume two cells in chrome text exactly
+    /// A double-width character must consume two cells in host UI text exactly
     /// as it does in the terminal grid. Asserted by composition rather than by
     /// glyph appearance: painting "中A" in one call must equal painting "中"
     /// then "A" two cells along. Under the one-cell-per-character advance this
@@ -6707,7 +6715,7 @@ mod tests {
     /// right half of the wide glyph -- which is what made CJK typed into the
     /// composer render as overlapping garbage.
     #[test]
-    fn wide_chrome_characters_occupy_two_cells() {
+    fn wide_host_ui_characters_occupy_two_cells() {
         let width = 160u32;
         let height = 32u32;
         let size = 15u16;
@@ -6715,7 +6723,7 @@ mod tests {
         let color = Rgb(240, 240, 240);
 
         let mut together = vec![0u32; (width * height) as usize];
-        paint_chrome_text(
+        paint_host_ui_text(
             &mut Surface::new(&mut together, width, height),
             3,
             2,
@@ -6728,8 +6736,8 @@ mod tests {
         let mut apart = vec![0u32; (width * height) as usize];
         {
             let mut surface = Surface::new(&mut apart, width, height);
-            paint_chrome_text(&mut surface, 3, 2, "中", color, size, width);
-            paint_chrome_text(&mut surface, 3 + 2 * cell_w, 2, "A", color, size, width);
+            paint_host_ui_text(&mut surface, 3, 2, "中", color, size, width);
+            paint_host_ui_text(&mut surface, 3 + 2 * cell_w, 2, "A", color, size, width);
         }
 
         assert_eq!(
@@ -7786,10 +7794,16 @@ mod tests {
     #[test]
     fn every_path_builds_the_same_window_title() {
         let mut terminal = ConTerminal::new(None);
+        let product = product_window_title();
+        assert_eq!(product, format!("MiniCon {}", env!("CARGO_PKG_VERSION")));
         terminal.current_title = "deploy".to_owned();
-        assert_eq!(terminal.window_title(), "deploy — MiniCon");
+        assert_eq!(terminal.window_title(), format!("deploy — {product}"));
         terminal.current_title = "cmd".to_owned();
-        assert_eq!(terminal.window_title(), "cmd — MiniCon");
+        assert_eq!(terminal.window_title(), format!("cmd — {product}"));
+        assert!(
+            terminal.window_title().contains(env!("CARGO_PKG_VERSION")),
+            "a taskbar title names the MiniCon version this binary was built with"
+        );
         assert!(
             !terminal.window_title().contains("新宋体") && !terminal.window_title().contains('@'),
             "a taskbar title carries neither a font diagnostic nor a machine id"

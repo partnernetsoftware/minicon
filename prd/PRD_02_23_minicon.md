@@ -17,9 +17,9 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 | # | 子模块 | 一句话 |
 |---|--------|--------|
 | 24 | [Terminal and rendering](PRD_02_24_con_terminal.md) | PTY、VT、行级 damage、present、字形、ISA、渲染性能 |
-| 25 | [Workspace and input](PRD_02_25_con_workspace.md) | Tab 树、chrome、composer、滚动条、选择、剪贴板、焦点 |
+| 25 | [Workspace and input](PRD_02_25_con_workspace.md) | Tab 树、宿主界面、composer、滚动条、选择、剪贴板、焦点 |
 | 26 | [Control protocol and public CLI](PRD_02_26_con_control_cli.md) | `minicon cli`、`ATC1` 帧、JSON 契约、快照/截图证据 |
-| 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、unwind profile、APE join、按平台/目标陈述体积与剩余 mini 杠杆、独立 CI、加载期可移植性 |
+| 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、unwind profile、APE join、按平台/目标陈述体积与宿主 RSS、独立 CI、加载期可移植性 |
 | 28 | [Shared core and reuse boundary](PRD_02_28_shared_core.md) | `minicon-core`、跨产品复用的可测边界、与 agenterm 的依赖方向分期 |
 
 ## Product outcome
@@ -51,7 +51,7 @@ failure, resize storms, process exit, and interaction races.
   scrollbar, font zoom, IME, keyboard, mouse, wheel, resize, and DPI behavior.
 - A persistent external input area whose editing keys remain local while it is
   focused and whose explicit send action writes to the active terminal.
-- On Linux, a real AT-SPI child tree for that chrome (not only the X11
+- On Linux, a real AT-SPI child tree for that host UI (not only the X11
   window-title frame) so `agenterm-cu` can address inner controls by name.
 - `minicon cli` for tab listing/lifecycle, content capture, screenshots,
   text/paste/key/mouse/wheel input, deterministic waits, resize, performance
@@ -89,6 +89,9 @@ failure, resize storms, process exit, and interaction races.
   pixels outside its local feedback region.
 - PTY output, control frames, waits, queues, dimensions, screenshots, and
   allocations are bounded and fail without blocking the GUI indefinitely.
+- MiniCon host process RSS is scarce. Idle one-tab intent is 10 MiB; child
+  shells are outside that budget. Numeric ceilings and the idle-GUI court live
+  in [27](PRD_02_27_con_delivery.md).
 - Product code consumes platform/UI-core contracts; raw OS APIs and ISA kernels
   remain in their owning shared mechanism layers.
 

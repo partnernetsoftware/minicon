@@ -16,7 +16,7 @@
 //! one convenient import at a time, and a boundary nothing checks is a
 //! comment.
 //!
-//! Deliberately *not* here yet: the tab tree, the chrome geometry and the
+//! Deliberately *not* here yet: the tab tree, the host UI geometry and the
 //! palette. Each is pure in substance but currently reaches into
 //! `agenterm-ui-core` for one helper, and a dependency on that crate would
 //! reintroduce the coupling this crate exists to avoid — worse, it would make

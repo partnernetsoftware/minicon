@@ -111,7 +111,7 @@ fn real_atspi_tree_edits_command_and_activates_send() {
         output.status.success().then_some(())
     });
 
-    let tree = wait_for(&mut running, "published AT-SPI chrome", |_| {
+    let tree = wait_for(&mut running, "published AT-SPI host UI", |_| {
         let tree = tree_for_window(None).ok()?;
         ["Tabs", "Session", "Command", "SEND", "OffscreenField"]
             .iter()

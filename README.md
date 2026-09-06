@@ -227,7 +227,7 @@ dependency, so a slim X11 desktop does not need separate
 
 | | |
 | --- | --- |
-| `src/` | the binary: terminal, chrome, control protocol |
+| `src/` | the binary: terminal, host UI, control protocol |
 | `crates/minicon-core/` | host-neutral logic — no platform, OS, or `cfg` on architecture |
 | [`PRD.md`](PRD.md) | product tree, decision map, and links to owning module PRDs |
 | `docs/` | the website at `minicon.agenterm.work` |

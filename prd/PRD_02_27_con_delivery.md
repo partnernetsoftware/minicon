@@ -3,8 +3,9 @@
 Parent: [MiniCon product requirements](../PRD.md)
 
 This module owns the standalone host's package identity, unwind profiles,
-artifact budget, dependency-graph bans, independent CI ownership, and its
-measured artifact-size history. Historical cross-product release context stays
+artifact budget, runtime host-memory budget, dependency-graph bans, independent
+CI ownership, and its measured artifact-size history. Historical cross-product
+release context stays
 with AgenTerm; this repository's workflows and machine-readable contracts are
 authoritative for MiniCon delivery.
 
@@ -284,6 +285,77 @@ and proven here before becoming a current contract.
   remains CI/native-toolchain evidence because the development workstation lacks
   ARM64 `vcruntime.lib`.
 
+## Runtime host memory
+
+Disk size is the artifact budget below. RAM is a scarce product resource, not
+slack. The number is the **MiniCon host process** RSS (working set). Child
+shells are the user's programs and sit outside it. One cell's number is not a
+six-cell claim.
+
+- [x] a public GUI black-box court measures MiniCon host RSS after one idle
+  tab is ready, after a 2000-line PTY load, after a second tab, and after
+  four extra-tab open/close cycles. It fails if idle RSS exceeds 384 MiB, a
+  second tab adds more than 16 MiB, or four cycles grow the host by more than
+  32 MiB. Evidence:
+  `minicon_control::host_process_rss_stays_within_named_budget`. Observed
+  2026-09-06 on macOS aarch64 `cargo test` (debug GUI): idle ~300 MiB, 2000-line
+  load ~333 MiB, extra tab ~1 MiB, four-cycle growth ~1.4 MiB. Release GUI on
+  the same host was also ~315 MiB idle. Those idle figures are named host
+  observations, not a universal product size.
+- [ ] intended idle one-tab host RSS is **10 MiB** on each named cell. A
+  terminal client that needs hundreds of megabytes, or even tens of megabytes,
+  has lost the plot. Shrinking to 10 MiB is current-version work. Do not raise
+  the 384 MiB regression ceiling to hide the gap, and do not treat 64 MiB as a
+  compromise budget.
+- [x] **macOS idle ~300 MiB is not the window stack and not per-tab PTY state.**
+  2026-09-06 `vmmap` + `heap -s` on an idle debug GUI (80×24): physical
+  footprint ~243–252 MiB; `MALLOC_LARGE` dirty ~214 MiB. `heap` attributes
+  that dirty heap to three `std::fs::read` allocations inside MiniCon's linked
+  font path. On disk: `Apple Color Emoji.ttc` is 183 MiB, `Hiragino Sans GB.ttc`
+  is 22 MiB, `SFNSMono.ttf` is 219 KiB. `PingFang.ttc` is listed as a fallback
+  but is absent at the recorded path on this host. The Unix portable raster
+  (`agenterm-platform` `adapters/unix/font_raster.rs`) `fs::read`s each
+  candidate and `Box::leak`s the whole file for process lifetime, and it loads
+  every fallback at first glyph — including the 183 MiB color-emoji collection
+  — before any emoji is drawn. Extra tabs adding ~1 MiB matches this: the leak
+  is process-global, not per session. Debug `gimli`/`RawVec` is a further
+  ~19 MiB on the debug binary only. AppKit/Metal mapped files are large in
+  virtual size and mostly not dirty. Owner of the leak is the shared Unix
+  font raster, not MiniCon tab state. One macOS heap is not a Linux or Windows
+  claim (Windows GDI does not load whole TTC files this way).
+- [x] **Unix whole-font leak repaired**, shared revision
+  `bb309e79bc351b314cec65ec24ba1bab0e74c1f4` (branch
+  `fix/lazy-font-mapping`). The raster owns read-only file mappings, borrows
+  font views for each lookup, and opens fallback candidates only after a glyph
+  miss. Failed opens are cached; ASCII leaves all fallbacks unopened, and CJK
+  produces visible pixels without opening emoji. Shared font-only tests: 39
+  PASS; isolated Clippy PASS. MiniCon pins the full shared SHA.
+  On 2026-09-06, osx-aarch64 debug, the same named host RSS court passed at
+  **94.53 MiB** idle / **109.67 MiB** after load. A second run with
+  `MINICON_RSS_DIAGNOSTICS_DIR=target/font-memory-evidence` captured vmmap and
+  heap from that court's exact idle GUI: **103.31 MiB** idle RSS,
+  **28.9 MiB** physical footprint, **9024 KiB** `MALLOC_LARGE` dirty,
+  largest heap allocation **9008 KiB**. No `Apple Color Emoji.ttc` mapping;
+  Hiragino TTC mapping: 22.4 MiB virtual, 224 KiB resident, zero dirty.
+  The second run loaded to 109.92 MiB, added at most 1.34 MiB for a tab, and
+  grew 11.11 MiB over four cycles. GUI multitab black box also PASS.
+  Evidence and artifact identity: `plan/plan-lazy-font-memory.md`.
+  The **384 MiB regression ceiling is unchanged; 10 MiB remains unmet**.
+  These measurements supersede the macOS baseline above, not Windows/Linux
+  measurements or runtime qualification of any other cell.
+- [~] osx, lnx and win name host RSS through the same black-box court. Native
+  osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
+  exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode
+  on the existing `*-utm-runner.sh` / `*-runtime-qualify` pair). One platform's
+  idle figure still cannot become a six-cell claim.
+  Named so far: osx-aarch64 debug host idle 94.53–103.31 MiB after repair
+  (previously ~309 MiB; evidence above);
+  win-aarch64 UTM debug GUI idle **22.47 MiB** (`idle_bytes=23564288`,
+  2026-09-06, `target-six/logs/rss-win-aarch64-utm.log`) — still above the
+  10 MiB intent, an order of magnitude below macOS, consistent with GDI not
+  `Box::leak`ing whole TTC files. lnx-aarch64 UTM remains `BLOCKED` (QGA
+  `file push` EXIT 124 / transfer timeout); that is not a MiniCon RSS PASS.
+
 ## Artifact budget
 
 - [x] **`minicon.com` Candidate hard ceiling is `9,437,184` bytes (9 MiB).**
@@ -365,7 +437,7 @@ is 916,500–1,052,784; Windows `.text` is 563,200–595,456. Linux is large
 because it links **winit Wayland and X11 plus independent `x11rb`**, not
 because strip was skipped. Linux also enables `a11y-publish` (`tokio`
 `rt-multi-thread`, `zbus`, `atspi`, `x11rb`) so AT-SPI can address inner
-chrome ([23](PRD_02_23_minicon.md)); that is a product feature, not slack.
+host UI ([23](PRD_02_23_minicon.md)); that is a product feature, not slack.
 
 Zip overlay of one local LTO rehearsal APE (`7,493,066` raw, under 9 MiB,
 not Candidate-of-record): APE prefix 714,106; two Linux cells compressed
@@ -420,7 +492,7 @@ auto-raise 9 MiB.
 | lever | expected pack effect | cost |
 |---|---|---|
 | ~~Linux single display backend~~ | n/a | **ruled out** — dual stack stays |
-| Feature-gate `a11y-publish` | roughly −0.4–0.8 MiB of APE | AT-SPI chrome tree becomes optional; conflicts with current Linux a11y claim unless restated |
+| Feature-gate `a11y-publish` | roughly −0.4–0.8 MiB of APE | AT-SPI host UI tree becomes optional; conflicts with current Linux a11y claim unless restated |
 | Darwin `native-pixel-window` (Cocoa, in `agenterm-platform`) | roughly −0.5–0.8 MiB of APE | platform work, then MiniCon unix split: macOS native / Linux portable |
 | Darwin + Windows also `profile.release` LTO | roughly −0.2–0.4 MiB of APE | low product risk; the only remaining **linker** knob |
 | Drop an ISA cell | one Linux cell ≈ −2.2 MiB compressed | narrows six-cell promise; not a code shrink |
@@ -1899,7 +1971,7 @@ only what each step changed.
 | borrowed static JSON keys | 536,064 → 534,528 | `.text` 346.5 → 345.5 KiB |
 | typed numeric response values | 534,528 → 532,480 | |
 | typed stable tab IDs | 532,480 → 531,456 | |
-| allocation-free chrome repaint | 531,456 | size-neutral; three per-repaint heap constructions removed |
+| allocation-free host UI repaint | 531,456 | size-neutral; three per-repaint heap constructions removed |
 | workspace-owned depth cache | → 531,968 | +512 accepted to remove topology work from repaint |
 | split blend/pack ISA selectors | 531,968 | net text reduction below one alignment step |
 | saturated PTY-timeout diagnostic | 533,504 → 531,968 | the `u128` formatter retained by `Duration::as_millis()` disappears (1,043 bytes); timeout behavior unchanged |

@@ -18,7 +18,9 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 - [x] PTY delivery uses a platform-owned fixed 1 MiB byte ring per session
   instead of allocating a `Vec` for every native read. Each read commits
   atomically or waits for capacity; close wakes blocked producers while
-  preserving committed tail bytes for draining.
+  preserving committed tail bytes for draining. Host-process RSS is a
+  separate named budget in [27](PRD_02_27_con_delivery.md); this ring is one
+  of the per-tab stores that budget is watching.
 - [x] parsing remains bounded to 128 KiB per GUI turn. Reader wakes are
   coalesced, inactive tabs are drained without forcing unrelated active-tab
   paints, and remaining backlog yields to input before self-scheduling another
@@ -99,7 +101,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 - [x] the difference is sealed below the session contract: both backends use the
   same pipes, the same output pump, the same command line and the same
   environment block, and differ only in who creates the child. Nothing above
-  the adapter can tell which backend it got, and no terminal, chrome or control
+  the adapter can tell which backend it got, and no terminal, host UI or control
   code branches on it.
 - [x] the agent survives the interrupts it raises. `WriteConsoleInput` does not
   generate a console control event — the console synthesizes one only for real
@@ -214,7 +216,7 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   localized name, so a requested family and its own report of itself do not
   compare equal; measurement is the only test that works.
 - [x] selection is memoized per size. `primary_metrics` is on the paint path —
-  every chrome string asks for the metrics of its own size — and measuring per
+  every host UI string asks for the metrics of its own size — and measuring per
   call turned one repaint into dozens of `CreateFontW` calls, which showed up as
   intermittent failures under rapid font-size change. A test pins the cost,
   since the absence of one is what let it through.

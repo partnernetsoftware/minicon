@@ -118,6 +118,16 @@
       "commands": ["close-window"]
     },
     {
+      "id": "con.delivery.host-rss",
+      "kind": "behavior",
+      "status": "shipped",
+      "evidence_mode": "black-box",
+      "prd": "prd/PRD_02_27_con_delivery.md",
+      "prd_anchor": "- [x] a public GUI black-box court measures MiniCon host RSS after one idle",
+      "evidence": ["minicon_control::host_process_rss_stays_within_named_budget"],
+      "commands": []
+    },
+    {
       "id": "con.delivery.alignment",
       "kind": "architecture",
       "status": "shipped",
