@@ -47,6 +47,7 @@ thread_local! {
 static TRACE: OnceLock<Option<TraceState>> = OnceLock::new();
 static K32: OnceLock<Option<K32Fn>> = OnceLock::new();
 static FIRST_PRESENT: AtomicBool = AtomicBool::new(false);
+static LAST_TIF: AtomicU32 = AtomicU32::new(0);
 
 fn k32() -> Option<K32Fn> {
     *K32.get_or_init(|| {
@@ -149,8 +150,10 @@ pub fn sample(label: &str) {
     let coremsg = module_loaded("CoreMessaging.dll");
     let coreui = module_loaded("CoreUIComponents.dll");
     let imm32 = module_loaded("imm32.dll");
+    let prev_tif = LAST_TIF.swap(u32::from(tif), Ordering::AcqRel);
+    let edge = if prev_tif == 0 && tif == 1 { 1 } else { 0 };
     let line = format!(
-        "seq={seq} t_ms={ms:.3} label={label} ws={ws} create_depth={depth} paint_during_create={paints} tif={tif} msctf={msctf} coremsg={coremsg} coreui={coreui} imm32={imm32}\n"
+        "seq={seq} t_ms={ms:.3} label={label} ws={ws} create_depth={depth} paint_during_create={paints} tif={tif} tif_edge={edge} msctf={msctf} coremsg={coremsg} coreui={coreui} imm32={imm32}\n"
     );
     if let Ok(mut file) = trace.file.lock() {
         let _ = file.write_all(line.as_bytes());
@@ -158,11 +161,17 @@ pub fn sample(label: &str) {
     }
 }
 
-pub fn sample_first_present() {
-    if FIRST_PRESENT.swap(true, Ordering::AcqRel) {
-        return;
+pub fn sample_stretch(which: &str, side: &str) {
+    sample(&format!("StretchDIBits_{which}_{side}"));
+    if side == "after" && create_depth() == 0 {
+        if !FIRST_PRESENT.swap(true, Ordering::AcqRel) {
+            sample("first_recorded_present");
+        }
     }
-    sample("first_present_StretchDIBits");
+}
+
+pub fn skip_focus() -> bool {
+    std::env::var_os("MINICON_INIT_SKIP_FOCUS").is_some()
 }
 
 pub fn warmup() {

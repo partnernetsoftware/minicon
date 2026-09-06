@@ -243,10 +243,29 @@ hooks (research PE, not production pin):
 ## CreateWindow-stage hooks (research PE)
 
 Identity: `target/windows-memory/research-pe/aarch64-pc-windows-msvc/release/minicon.exe`
-SHA-256 `4e7c330176c9c5a764e4a860724468aac2fe5bc1c10acafa853a0673fad056e0`
+SHA-256 `f71f095ffcf7991be100f6b9338808577a6fc9d5142537959caa76b8b48021d9`
 (752,128 B). Source copy `target/windows-memory/research-src/agenterm`
 = pin `745f52b` + `init_trace` hooks. IME=true. No screenshot.
-Log: `target/windows-memory/init-hooks-93a3dad769f8d41c48ec27e05ffbe9df76c4a468-20260906T113432Z.log`
+`run_pixel_window_entry` is **not** process entry.
+Log: `target/windows-memory/init-hooks-b7651f9da8d3dfd97311700a6168e59e64556c30-20260906T114058Z.log`
+
+Earliest TIF 0→1 (baseline, window.focus() after opened):
+**`WM_IME_SETCONTEXT` reentered from `SetForegroundWindow`**
+(seq=15, t=33.3 ms, WS 12,877,824 → 17,428,480). Not StretchDIBits
+(TIF already 1 at StretchDIBits_paint_before). Not ShowWindow (TIF
+already 1 at before_ShowWindow). `paint_during_create=0`.
+
+Supported comparison (visible ShowWindow, IME=true, **do not delay
+first frame**):
+
+| variant | TIF at first present | first_recorded_present WS |
+|---|---|---:|
+| baseline Focus | 1 at WM_IME_SETCONTEXT during SetForegroundWindow | 22,142,976 |
+| skip Focus | **0** through Show + BeginPaint + render + StretchDIBits | 17,637,376 |
+
+Skip-focus keeps the window shown and `apply_ime_allowed(true)`.
+TIF/CoreMessaging/CoreUI stay 0. That is a defer-until-real-focus
+candidate, not idle-by-skipping-present. No production pin patch.
 
 Probe self-cost: warmup_a 10,813,440 → warmup_b 10,866,688 (**+53,248**);
 entry equals warmup_b.

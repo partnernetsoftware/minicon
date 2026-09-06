@@ -78,9 +78,9 @@ printf '%s\n' \
   "& '$GUEST_SAMPLE' -Exe '$GUEST_EXE' -Trace '$GUEST_TRACE' -Log '$GUEST_LOG' -Result '$RESULT'" \
   'exit $LASTEXITCODE' | court push "$COURT" - "$JOB"
 printf 'ready' | court push "$COURT" - "$READY"
-ts "job submitted; poll exit (host bound 90s)" | tee -a "$LOG"
+ts "job submitted; poll exit (host bound 150s)" | tee -a "$LOG"
 
-deadline="$((SECONDS + 90))"
+deadline="$((SECONDS + 150))"
 while :; do
   : >"$runner_tmp/exit"
   court pull "$COURT" "$RESULT" "$runner_tmp/exit" 2>/dev/null || true

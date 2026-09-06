@@ -102,13 +102,12 @@ leak. `privatized_image=1,069,056` **is not all TIF** (TIF
 shared0=24,576; 1.02 MiB is Shared=0 summed over 33 modules).
 
 Init-phase external polling cannot prove IME undelayable.
-Research PE (not production pin)
-`4e7c330176c9c5a764e4a860724468aac2fe5bc1c10acafa853a0673fad056e0`
-(752,128 B): TIF still 0 after CreateWindow/apply_ime/opened;
-MSCTF appears inside CreateWindowExW (nested WM_NCCREATE, no
-WM_PAINT); TIF+CoreMessaging+CoreUI load at first
-StretchDIBits (+9.27 MiB). Probe warmup +53 KiB then ~0.
-IME=true. No wrapper/8-page re-run.
+Research PE `f71f095ffcf7991be100f6b9338808577a6fc9d5142537959caa76b8b48021d9`
+(752,128 B). `run_pixel_window_entry` ≠ process entry. TIF 0→1 at
+**WM_IME_SETCONTEXT during SetForegroundWindow**, not StretchDIBits
+or ShowWindow. Skip-focus (window still shown, IME=true, first
+present kept): TIF stays 0, first_present WS 17.6 vs 22.1 MiB.
+Not idle-by-delaying-first-frame. No production pin.
 
 ## Top 5 live owners and verifiable interventions
 
