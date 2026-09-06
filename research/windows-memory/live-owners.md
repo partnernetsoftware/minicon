@@ -3,6 +3,82 @@
 Pin `745f52b2`, PE `d2d08ce7…`, accepted complete court idle
 **22,507,520 B**. Child shells excluded. No production patch in this file.
 
+Do **not** attribute four-cycle +9–10 MiB to “tabs” from RSS
+alone. Split after `close-tab`:
+
+1. **Still-live PTY threads/handles** — per tab: detached
+   `minicon-reader` + `minicon-waiter`; process-wide
+   `agenterm-pty-reaper` (overflow thread only if the 64-slot queue
+   is Full). `Drop` calls `pty_output.close()` then
+   `shutdown_session_detached`. Reader should EOF/unblock; waiter
+   should see process exit. Leftover named threads or extra handles
+   after `list-tabs` is back to 1 are closed-tab residue and **may
+   be repaired** if the sample proves they survive. Product PTY ring
+   capacity is **not** a cut target.
+2. **tab / vt100 owners** — `SessionStore<ConTerminal>` + workspace
+   node + `vt100::Parser` (SCROLLBACK 4000). `list-tabs` length is
+   the observable owner count. A node with `child_alive=false` that
+   still sits after explicit `close-tab` is leftover product state.
+   Parser bytes are not the 1 MiB pipe.
+3. **GDI objects** — process `thread_local` `RASTER_FACES`, one
+   client DIB. Extra-tab close must **not** free them; they are idle
+   owners. `GetGuiResources` should be flat across cycles if GDI is
+   not the +10 MiB.
+4. **Already-free, heap-retained** — `PrivateMemorySize64` /
+   working set climb **while** (1)–(3) are flat. That is allocator
+   residency, not a live tab owner. Do not name it “tab leak”.
+   macOS `finishLaunching` +22.59 MiB is a **different** call chain
+   and is not this Windows remainder.
+
+Probe: `probe-gdi-objects.ps1` (WS, private, handles, GDI/USER,
+named PTY thread counts). Driver:
+`sample-close-owners.ps1` / `run-close-owners.sh`.
+
+## Guest samples 2026-09-06 (win-aarch64, same PE)
+
+Not an RSS wrapper court. `list-tabs` is the tab-owner count.
+PTY thread names from `GetThreadDescription`.
+
+### No 2000-line load
+
+`target/windows-memory/close-owners-db2c43b77ab4c1b9d58924f0fd88d85115009ebc-20260906T103924Z.log`
+
+| phase | tabs | WS | private | handles | GDI | USER | threads | reader | waiter | conpty-out |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| idle | 1 | 22,491,136 | 6,553,600 | 207 | 11 | 14 | 13 | 1 | 1 | 1 |
+| two-tab | 2 | ~22.9 MiB | ~8.1 MiB | ~220 | 11 | 16–18 | 16 | 2 | 2 | 2 |
+| after 4 closes | 1 | 22,581,248 | 6,594,560 | 213 | 11 | 17 | 13 | 1 | 1 | 1 |
+
+After close: reader/waiter/conpty-output return to **1**. Tab count **1**.
+GDI **flat 11**. WS +88 KiB, private +40 KiB. Handles +6, USER +3.
+**No leftover PTY threads or vt100 tab owners.** Extra-tab private
++1.53 MiB returns on close (pipe+session). Product ring not cut.
+
+### With 2000-line load, then four extra-tab cycles
+
+`target/windows-memory/close-owners-db2c43b77ab4c1b9d58924f0fd88d85115009ebc-20260906T104114Z.log`
+
+| phase | tabs | WS | private | handles | GDI | reader/waiter |
+|---|---:|---:|---:|---:|---:|---|
+| idle | 1 | 22,548,480 | 6,574,080 | 207 | 11 | 1/1 |
+| after_load | 1 | **34,353,152** | **18,083,840** | 209 | 11 | 1/1 |
+| two-tab | 2 | ~34.7 MiB | ~19.6 MiB | ~222 | 11 | 2/2 |
+| after 4 closes | 1 | 34,398,208 | 18,079,744 | 213 | 11 | 1/1 |
+
+Load itself is **+11.0 MiB private** (vt100 fill / heap), GDI still 11,
+PTY threads still 1. Four-cycle after that load: WS **+45 KiB**,
+private **flat**. Live PTY/tab/GDI do not explain RSS-court +9 MiB.
+
+RSS-court after_load was only +0.56 MiB because that harness finishes
+in ~1.4 s and samples WS before the load’s pages show. The later
+“cycle growth” is that **already-allocated parser/heap committing
+into WS**, not a closed-tab owner. Idle 21.45 MiB = private **6.25 MiB**
++ **~15 MiB non-private WS** (PE/GDI mappings). Not macOS
+`finishLaunching`.
+
+Closed-tab leftover that is real and small: +6 handles, +3 USER.
+Not a 10 MiB repair. No production patch from this sample.
+
 ## Accepted idle arithmetic (not a six-cell claim)
 
 Named pieces that exist in the idle process:

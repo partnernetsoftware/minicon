@@ -117,7 +117,23 @@ No production patch until an intervention moves RSS on this court.
 | 4 | per-tab `BoundedOutputPipe` | **1 MiB** (`8192*128`) | should drop on `sessions.remove` | extra-tab delta 1.54 MiB already ≈ pipe + leftover; research `PTY_QUEUE_BYTES` cut |
 | 5 | vt100 `SCROLLBACK=4000` + ConPTY `shutdown_session_detached` | idle small; load only +0.56 MiB | **yes — primary cycle suspect** | handle/GDI counts after 4 cycles; reaper-queue Full spawns extra threads |
 
-Next: guest object/handle sample around owners 1, 3, 5. Research-only.
+After-close split (sampled, not inferred from +10 MiB RSS):
+
+| class | after explicit close-tab |
+|---|---|
+| live PTY | `minicon-reader`/`waiter`/`agenterm-conpty-output` return to 1; reaper 1; overflow 0 |
+| tab/vt100 | `list-tabs` returns to 1 |
+| GDI | **11** at idle, two-tab, and after close |
+| heap vs WS | idle private **6.25 MiB**, WS **21.45**; load +**11 MiB private**; cycle after settled load **~0** |
+| residue | +6 handles, +3 USER — not 10 MiB |
+
+RSS-court four-cycle +9 MiB is **WS catching up to already-filled
+parser/heap**, not leftover tab owners. Do not cut PTY capacity.
+macOS `finishLaunching` +22.59 MiB is not this remainder.
+
+Logs: `research/windows-memory/live-owners.md`.
+Driver: `research/windows-memory/run-close-owners.sh`.
+
 Do not edit `src/`, Cargo, or the public memory PRD from this branch.
 
 Logs and artifacts: `research/windows-memory/`, `target/windows-memory/`.

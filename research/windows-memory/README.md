@@ -8,5 +8,7 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
   changing `scripts/windows-utm-runner.sh` (that runner's `rss` mode is debug).
   Null `ExitCode` throws wrapper failure; raw code is recorded. Wrapper shape
   is accepted; do not re-court it.
-- `live-owners.md` — top-5 GDI/native idle owners and falsifiable probes
-- `probe-gdi-objects.ps1` — guest WS/GDI/USER/handle sample for one PID
+- `live-owners.md` — split live PTY / tab+vt100 / GDI vs heap residency
+- `probe-gdi-objects.ps1` — WS, private bytes, GDI/USER, named PTY threads
+- `sample-close-owners.ps1` / `run-close-owners.sh` — four-cycle close sample
+  (not an RSS wrapper court; does not cut PTY capacity)
