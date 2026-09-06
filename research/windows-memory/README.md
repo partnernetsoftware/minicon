@@ -21,6 +21,9 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
   new process each, then same-process shrink. No screenshot.
 - `sample-init-phases.ps1` / `run-init-phases.sh` — spawn/hwnd/control/
   first_frame; per-module shared0. IME on. TIF total ≠ all privatized_image.
+- `run-no-activate-behavior.sh` / `sample-no-activate-behavior.ps1` —
+  exact production PE (`56207cb`): `--no-activate` must not steal
+  foreground; then English SendInput. No research skip env.
 - `init-hooks/init_trace.rs` + `run-init-hooks.sh` / `sample-init-hooks.ps1`
   — research PE (copy of pin 745f52b under `target/windows-memory/`,
   not production pin / not `target/font-platform-fix`). In-process

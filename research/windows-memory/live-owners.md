@@ -333,9 +333,22 @@ proves that path sets `fg_ours=1` under `--no-activate`.
 
 Product no-activate fix is **in tree** at `56207cb` (`src/main.rs` only).
 Do not re-patch it here. Do not use research skip-Focus as a substitute.
-Exact PE verify (no steal-foreground + explicit activate English;
-Chinese still BLOCKED without a zh layout) waits on that commit’s
-canonical binary, not the research PE.
+
+Exact production PE verify (HEAD `20e501b` contains `56207cb`, pin
+`745f52b2`, no research skip env):
+`target/windows-memory/exact-pe/.../minicon.exe`
+SHA-256 `083bcc802099be5d385460c151f043cef21af49ef6a8a7b1faf182269bfb3897`
+(746,496 B).
+Log: `target/windows-memory/no-activate-behavior-20e501b8c90c5545b0aa0d5d036f27dce9def4cb-20260906T120633Z.log`
+
+- `--no-activate` after first frame: hwnd `0x2009e`, fg `0x100d2`,
+  **fg_ours=0**. PASS: did not steal foreground. WS 17,723,392.
+- Explicit `SetForegroundWindow` (AttachThreadInput): fg_ok=1
+  fg_ours=1 WS 22,515,712. Not an idle cut (already closed).
+- English `SendInput` VK_A/B/C, `pty_control_write=0`.
+  `capture-pane` shows `C:\Windows\System32>abc`. PASS.
+- Chinese IME: `n_layouts=1 current_langid=0x409 has_zh=0` →
+  **BLOCKED**. No input qualification.
 
 **Stop the delay-until-focus idle direction.** TIF+CoreMessaging+CoreUI
 after real activate are IME-on cost, not a cut.

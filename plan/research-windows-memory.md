@@ -111,6 +111,9 @@ start**, not foreground idle. **Stop that delay-optimization direction.**
 Chinese IME compose/commit stays **BLOCKED** (langid 0x409). Do not use
 `MINICON_INIT_SKIP_FOCUS` as a stand-in for the product no-activate fix
 (`56207cb`, `src/main.rs` only; pin unchanged).
+Exact PE `083bcc80…` (746,496 B) on win-aarch64: `--no-activate`
+fg_ours=0 after first frame; explicit activate then English SendInput
+shows `abc` in `capture-pane`; Chinese IME still BLOCKED (0x409).
 
 Next: name **removable init/loads inside the post-activate ~21 MiB**.
 Call candidates and interventions:
