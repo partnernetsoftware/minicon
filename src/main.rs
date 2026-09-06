@@ -442,6 +442,7 @@ fn main() {
     let config = load_config();
 
     let mut app = ConApp::new(working_dir.clone(), control_endpoint);
+    app.no_activate = no_activate;
     let session = app.active_session_mut().expect("initial terminal session");
     session.command = command;
     session.snapshot_path = snapshot_path;
@@ -880,6 +881,7 @@ impl Drop for ConTerminal {
 /// its own PTY, reader/waiter threads, parser, viewport and input state, so a
 /// dead child or malformed output cannot corrupt another session's state.
 struct ConApp {
+    no_activate: bool,
     workspace: workspace::Workspace,
     sessions: SessionStore<ConTerminal>,
     /// Settings inherited when an empty workspace creates its next terminal.
@@ -1117,6 +1119,7 @@ impl ConApp {
             "an empty session store accepts its initial tab"
         );
         Self {
+            no_activate: false,
             workspace,
             sessions,
             session_seed,
@@ -5040,8 +5043,6 @@ impl ConTerminal {
         // piece of host UI a user always sees; `--status` reports the resolved
         // face now, which is where someone diagnosing a font actually looks.
         window.set_title(&self.window_title());
-        // Request keyboard focus so winit delivers KeyboardInput events on Windows.
-        window.focus();
         let (cols, rows) = Self::compute_grid(
             metrics
                 .physical_width
@@ -5389,6 +5390,11 @@ impl PixelWindowApplication for ConApp {
             sidebar_width,
         );
         let directive = self.active_session_mut()?.opened(window)?;
+        // Background startup must not override the host no-activate option.
+        // Later user actions retain their explicit focus requests.
+        if !self.no_activate {
+            window.focus();
+        }
         let _ = self.refresh_ime_status();
         if let Some(endpoint) = self.control_endpoint.clone() {
             let waker = window.waker();

@@ -512,10 +512,20 @@ six-cell claim.
   nonactivated-startup opportunity, not a normal foreground idle saving;
   IME enabled alone does not qualify actual Chinese input. Receipt:
   `target/windows-memory/init-hooks-b7651f9da8d3dfd97311700a6168e59e64556c30-20260906T114058Z.log`.
-  Next: measure after actual activation and keyboard/IME composition and
-  commit, compare normal startup without no-activate, and check whether
-  explicit application focus incorrectly overrides no-activate intent.
-  Production pin is unchanged; the 10 MiB RSS target remains unmet.
+  Activation follow-up rejects this as a foreground idle optimization:
+  the research skip-focus process rises from 17,694,720 to 22,138,880 B
+  on successful activation, restoring **4,444,160 B** with TIF/CoreMessaging/
+  CoreUI. Physical-key injection delivers three WM_KEYDOWN and WM_CHAR
+  events; Chinese composition remains **BLOCKED** because the guest has
+  only keyboard layout 0x409. The normal-start control did not establish
+  foreground ownership and is not a foreground idle receipt. Research PE:
+  `c941be928c4ac38050aa6a4d345387962ee12cbd2185a2f9cd902a1c5d73580d`;
+  log `target/windows-memory/init-hooks-7a1453b9362739bb7f2255d6eb7685dad4ce9f1d-20260906T115253Z.log`.
+  A separate correctness fix makes the application startup focus request
+  honor `--no-activate` / `AGENTERM_NO_ACTIVATE`; normal startup and later
+  explicit user focus requests remain. This is not a foreground RSS saving.
+  The production platform pin is unchanged; the 10 MiB RSS target remains
+  unmet. Continue with avoidable initialization in the activated process.
 
 
 
