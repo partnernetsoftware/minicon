@@ -153,14 +153,19 @@ public static class WsResident {
             ulong pmc0 = PmcWs(h);
             int guess = Math.Max(1024, (int)(pmc0 / page) + 1024);
             uint bytes = (uint)(8 + guess * 8);
+            int qwsRetry = 0;
             IntPtr buf = Marshal.AllocHGlobal((int)bytes);
             try {
                 if (!QueryWorkingSet(h, buf, bytes)) {
+                    qwsRetry = 1;
                     Marshal.FreeHGlobal(buf);
                     guess *= 4;
                     bytes = (uint)(8 + guess * 8);
                     buf = Marshal.AllocHGlobal((int)bytes);
-                    if (!QueryWorkingSet(h, buf, bytes)) throw new InvalidOperationException("QueryWorkingSet failed");
+                    if (!QueryWorkingSet(h, buf, bytes)) {
+                        lines.Add("count_fail qws last_error=" + Marshal.GetLastWin32Error());
+                        throw new InvalidOperationException("QueryWorkingSet failed");
+                    }
                 }
                 string t1 = UtcNow();
                 ulong pmc1 = PmcWs(h);
@@ -169,15 +174,23 @@ public static class WsResident {
                 ulong walk = (ulong)count * page;
 
                 var mods = new List<ModRange>();
-                uint needed;
+                uint needed = 0;
                 var slots = new IntPtr[512];
-                if (EnumProcessModulesEx(h, slots, (uint)(IntPtr.Size * slots.Length), out needed, LIST_MODULES_ALL)) {
-                    int nmod = (int)(needed / (uint)IntPtr.Size);
-                    if (nmod > slots.Length) nmod = slots.Length;
+                SetLastError(0);
+                bool enumOk = EnumProcessModulesEx(h, slots, (uint)(IntPtr.Size * slots.Length), out needed, LIST_MODULES_ALL);
+                int enumErr = Marshal.GetLastWin32Error();
+                int nmodAvail = enumOk ? (int)(needed / (uint)IntPtr.Size) : 0;
+                int nmod = nmodAvail > slots.Length ? slots.Length : nmodAvail;
+                int enumTruncated = nmodAvail > slots.Length ? 1 : 0;
+                int getModFail = 0;
+                if (enumOk) {
                     var name = new StringBuilder(512);
                     for (int m = 0; m < nmod; m++) {
                         MODULEINFO mi;
-                        if (!GetModuleInformation(h, slots[m], out mi, (uint)Marshal.SizeOf(typeof(MODULEINFO)))) continue;
+                        if (!GetModuleInformation(h, slots[m], out mi, (uint)Marshal.SizeOf(typeof(MODULEINFO)))) {
+                            getModFail++;
+                            continue;
+                        }
                         name.Clear();
                         GetModuleFileNameExW(h, slots[m], name, 512);
                         ulong start = (ulong)mi.lpBaseOfDll.ToInt64();
@@ -186,8 +199,9 @@ public static class WsResident {
                 }
 
                 ulong sharable = 0, notSharable = 0, shareGe2 = 0, shareEq1 = 0, shareEq0 = 0;
-                ulong cow = 0, cowPrivate = 0, unknown = 0;
+                ulong cowProtect = 0, unknown = 0;
                 ulong resImage = 0, resMapped = 0, resPrivType = 0, resOther = 0, vqFail = 0;
+                ulong privatizedImage = 0, privatizedMapped = 0;
                 var byMod = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var byMapped = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
                 var nameByAlloc = new Dictionary<ulong, string>();
@@ -210,7 +224,7 @@ public static class WsResident {
                         notSharable += page;
                     }
                     bool cowPage = IsCow(protection);
-                    if (cowPage) cow += page;
+                    if (cowPage) cowProtect += page;
 
                     string owner = null;
                     for (int m = 0; m < mods.Count; m++) {
@@ -221,6 +235,7 @@ public static class WsResident {
                         byMod.TryGetValue(owner, out cur);
                         byMod[owner] = cur + page;
                         resImage += page;
+                        if (!sharedBit) privatizedImage += page;
                         continue;
                     }
 
@@ -235,6 +250,7 @@ public static class WsResident {
                     ulong alloc = mbi.AllocationBase.ToUInt64();
                     if (kind == "image") {
                         resImage += page;
+                        if (!sharedBit) privatizedImage += page;
                         string path;
                         if (!nameByAlloc.TryGetValue(alloc, out path)) {
                             SetLastError(0);
@@ -257,6 +273,7 @@ public static class WsResident {
                         byMod[path] = cur + page;
                     } else if (kind == "mapped") {
                         resMapped += page;
+                        if (!sharedBit) privatizedMapped += page;
                         string path;
                         if (!nameByAlloc.TryGetValue(alloc, out path)) {
                             SetLastError(0);
@@ -279,7 +296,6 @@ public static class WsResident {
                         byMapped[path] = cur + page;
                     } else if (kind == "private") {
                         resPrivType += page;
-                        if (cowPage) cowPrivate += page;
                     } else {
                         unknown += page;
                         resOther += page;
@@ -289,28 +305,35 @@ public static class WsResident {
 
                 string t2 = UtcNow();
                 ulong pmc2 = PmcWs(h);
-                lines.Add("fields Shared=sharable ShareCount=process_count_max7 Protection5or7=COW VirtualPage=page_va walk_internally_closed pmc_ws_not_that_product https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block");
+                lines.Add("fields Shared=sharable ShareCount=process_count_max7 cow_protect=QWS_Protection5or7 privatized=IMAGE_or_MAPPED_and_Shared0 cow_private_removed_not_privatization https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex");
                 lines.Add(string.Format("t_before_qws={0} pmc_ws_before_qws={1}", t0, pmc0));
                 lines.Add(string.Format("t_after_qws={0} pmc_ws_after_qws={1}", t1, pmc1));
                 lines.Add(string.Format("t_after_classify={0} pmc_ws_after_classify={1}", t2, pmc2));
                 lines.Add(string.Format(
-                    "pid={0} page={1} ws_pages={2} walk_bytes={3} pmc_minus_walk_before={4} pmc_minus_walk_after_qws={5} pmc_minus_walk_after_classify={6} sharable={7} not_sharable={8} sharecount_ge2={9} sharecount_eq1={10} sharecount_eq0={11} cow={12} cow_private={13} unknown={14} vq_fail={15} resident_image={16} resident_mapped={17} resident_private_type={18} resident_other={19}",
+                    "count_meta qws_retry={0} enum_ok={1} enum_err={2} enum_needed={3} enum_slots={4} enum_truncated={5} getmod_fail={6} module_keys={7} mapped_keys={8}",
+                    qwsRetry, enumOk ? 1 : 0, enumErr, nmodAvail, slots.Length, enumTruncated, getModFail, byMod.Count, byMapped.Count));
+                lines.Add(string.Format(
+                    "pid={0} page={1} ws_pages={2} walk_bytes={3} unexplained_remainder_before={4} unexplained_remainder_after_qws={5} unexplained_remainder_after_classify={6} sharable={7} not_sharable={8} sharecount_ge2={9} sharecount_eq1={10} sharecount_eq0={11} cow_protect={12} privatized_image={13} privatized_mapped={14} unknown={15} vq_fail={16} resident_image={17} resident_mapped={18} resident_private_type={19} resident_other={20}",
                     pid, page, count, walk, (long)pmc0 - (long)walk, (long)pmc1 - (long)walk, (long)pmc2 - (long)walk,
-                    sharable, notSharable, shareGe2, shareEq1, shareEq0, cow, cowPrivate, unknown, vqFail, resImage, resMapped, resPrivType, resOther));
+                    sharable, notSharable, shareGe2, shareEq1, shareEq0, cowProtect, privatizedImage, privatizedMapped, unknown, vqFail, resImage, resMapped, resPrivType, resOther));
                 var items = new List<KeyValuePair<string, ulong>>(byMod);
                 items.Sort((a, b) => b.Value.CompareTo(a.Value));
                 int shown = 0;
+                int moduleShownCap = 64;
                 foreach (var item in items) {
-                    if (shown++ >= 25) break;
+                    if (shown++ >= moduleShownCap) break;
                     lines.Add(string.Format("module {0} {1}", item.Value, item.Key));
                 }
+                if (items.Count > moduleShownCap) lines.Add("module_list_truncated shown=" + moduleShownCap + " total=" + items.Count);
                 var mapped = new List<KeyValuePair<string, ulong>>(byMapped);
                 mapped.Sort((a, b) => b.Value.CompareTo(a.Value));
                 shown = 0;
+                int mappedShownCap = 15;
                 foreach (var item in mapped) {
-                    if (shown++ >= 15) break;
+                    if (shown++ >= mappedShownCap) break;
                     lines.Add(string.Format("mapped {0} {1}", item.Value, item.Key));
                 }
+                if (mapped.Count > mappedShownCap) lines.Add("mapped_list_truncated shown=" + mappedShownCap + " total=" + mapped.Count);
                 var unnamedList = new List<UnnamedMap>(unnamed.Values);
                 unnamedList.Sort((a, b) => b.Resident.CompareTo(a.Resident));
                 foreach (var u in unnamedList) {

@@ -79,19 +79,18 @@ dlopen ~22.6 MiB is **not** this GDI remainder.
 `ShareCount` is the process count (max 7). Official:
 https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block
 
-Classification **walk is internally closed**. It is **not** exact
-equality with a separately-read WS.
+Classification **walk is internally closed**. PMC WS − walk
+(**32,768**) is an **unexplained remainder**, not proven drift.
+Do not open a full court for it.
 
-Corrected arithmetic (cdx-wjhk; main PRD fix is theirs):
+5486 × 4096 = 22,470,656 (cdx-verified ShareCount/class totals).
+`cow_protect` = QWS Protection 5/7. Privatized resident =
+`MEM_IMAGE`/`MEM_MAPPED` ∧ `Shared=0` (Type stays IMAGE/MAPPED
+after COW). Do not read `cow_private=0` as no COW.
 
-- 18,186,240 + 4,300,800 = **22,487,040** = 5490 × 4096
-- old Get-Process WS 22,515,712 − walk = **28,672 (7 pages)**
-- image 16,343,040 + mapped 2,908,160 + private_type 3,235,840 =
-  **22,487,040**; WS 22,519,808 − walk = **32,768 (8 pages)**
-
-`Shared` = sharable; `ShareCount` = process count. IME rows are
-IME-on / Chinese-capable idle only — **do not disable IME**.
-No wrapper re-run.
+IME-on / 中文输入维持 only — **do not disable IME**. No wrapper
+re-run. Keep unknown alloc-base list and count_meta
+(truncation / enum_err).
 
 ## Top 5 live owners and verifiable interventions
 

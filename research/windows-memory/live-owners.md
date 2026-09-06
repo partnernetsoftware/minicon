@@ -100,25 +100,45 @@ product. Corrected (cdx-wjhk; they own the main-PRD arithmetic fix):
 - image 16,343,040 + mapped 2,908,160 + private_type 3,235,840 =
   **22,487,040**; WS 22,519,808 − walk = **32,768 (8 pages)**
 
-Latest log with `K32GetProcessMemoryInfo` at three instants
-(IME **on**, Chinese input preserved, **no IME opt-out**):
-`target/windows-memory/idle-regions-5b71f8aacb33e7d0e15f63dc54e73814c8f487f9-20260906T110320Z.log`
+cdx-wjhk: 5486 × 4096 = **22,470,656**; classification and
+ShareCount totals of that round are correct. PMC WS − walk =
+**32,768** is an **unexplained remainder**, not proven drift.
+Do not open a full court for those 8 pages.
+
+`cow_private` was only incremented on the `MEM_PRIVATE` branch
+after a module-range `continue`, so it **did not** count
+image/mapped privatized pages. `cow_private=0` does **not** mean
+no COW. `cow_protect` is QWS Protection 5/7 family (COW
+**protection**). Privatized resident is `MEM_IMAGE`/`MEM_MAPPED`
+**and** `Shared=0`. After COW, `VirtualQueryEx` Type stays IMAGE
+or MAPPED:
+https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex
+
+Latest log (IME **on**, Chinese preserved, **no IME opt-out**):
+`target/windows-memory/idle-regions-edcedfabedcaeec3773142d260010bc3c4b687a6-20260906T110648Z.log`
 
 | instant | UTC | PMC WS |
 |---|---|---:|
-| before QWS | 2026-09-06T11:04:10.816Z | 22,495,232 |
-| after QWS | 2026-09-06T11:04:10.818Z | 22,495,232 |
-| after classify | 2026-09-06T11:04:10.829Z | 22,495,232 |
+| before QWS | 2026-09-06T11:07:38.411Z | 22,532,096 |
+| after QWS | 2026-09-06T11:07:38.411Z | 22,532,096 |
+| after classify | 2026-09-06T11:07:38.427Z | 22,532,096 |
 
 | walk (internally closed) | bytes |
 |---|---:|
-| 5484 × 4096 | **22,462,464** |
-| image + mapped + private_type | 16,343,040 + 2,908,160 + 3,211,264 = **22,462,464** |
-| PMC WS − walk (all three times) | **32,768 (8 pages)** — not a walk hole |
-| sharable / `ShareCount>=2` / `==1` | 18,186,240 / 17,403,904 / 782,336 |
-| not sharable | 4,276,224 |
-| COW / cow_private / vq_fail | 4,096 / 0 / 0 |
-| unknown | 2,736,128 |
+| 5493 × 4096 | **22,499,328** |
+| image+mapped+private_type | 16,343,040+2,916,352+3,239,936 = **22,499,328** |
+| PMC − walk (all three) | **32,768 unexplained remainder** |
+| sharable / `ShareCount>=2` / `==1` | 18,194,432 / 17,412,096 / 782,336 |
+| not sharable | 4,304,896 |
+| `cow_protect` (prot 5/7) | 4,096 |
+| `privatized_image` (`IMAGE`∧`Shared=0`) | **1,069,056** |
+| `privatized_mapped` | 0 |
+| unknown / vq_fail | 2,744,320 / 0 |
+
+`count_meta`: qws_retry=0 enum_ok=1 enum_err=299
+(`ERROR_PARTIAL_COPY`) enum_needed=33 enum_slots=512
+enum_truncated=0 getmod_fail=0 module_keys=33 mapped_keys=8.
+Log printed 25/33 modules (`module_list_truncated`).
 
 Unnamed `MEM_MAPPED` by **allocation-base** (all `GetMappedFileNameW`
 **ERROR_FILE_INVALID 1006**; kept unknown; ShareCount retained):

@@ -13,6 +13,6 @@ Owned by the Windows RSS branch. Do not mix macOS Hello/pixel-host files here.
 - `sample-close-owners.ps1` / `run-close-owners.sh` — four-cycle close sample
   (not an RSS wrapper court; does not cut PTY capacity)
 - `probe-ws-regions.ps1` / `sample-idle-regions.ps1` / `run-idle-regions.sh` —
-  QWS walk internally closed; PMC WS + UTC before/after QWS/classify;
-  unnamed mapped listed by allocation-base with last_error/why.
-  IME stays on (Chinese input preserved).
+  walk internally closed; PMC−walk is unexplained remainder, not
+  proven drift. `cow_protect` vs `privatized_image/mapped` (`Shared=0`).
+  Keep unknown alloc-base, count_meta truncation/enum_err. IME stays on.
