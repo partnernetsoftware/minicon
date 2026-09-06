@@ -424,10 +424,19 @@ immediately). Later chrome sizes add more creates, still index 0.
 - **Intervention:** resolve Gdiplus via `GetProcAddress` on the encode
   path (same pattern as ConPTY), or drop `screenshot` from the idle
   GUI feature set.
-- **Pass:** PE no longer lists `gdiplus.dll`; idle WS drops ~that
-  resident; `screenshot-pane` still writes a PNG when invoked.
-- **Fail:** WS unchanged (pages were never private). Still a load-time
-  hygiene win, not a 21 MiB owner.
+Research copy delay-loads Gdiplus (`LoadLibraryW` + `GetProcAddress` on
+encode). Production pin `745f52b2` still has `gdiplus.dll` in the IAT
+(`083bcc80`). Research PE `f6e662ac…` (758,784 B): **no** static
+`gdiplus.dll`. Activated keep-config (`fg_ours=1`, IME on, first frame):
+guest WS **22,376,448** vs prior keep **22,556,672** (Δ **180,224**);
+`gdiplus=0` for the whole idle trace. Log:
+`target/windows-memory/load-config-d8e9439253ab848a4c207f859e5dfa859e05396d-20260906T130355Z.log`.
+
+That is IAT hygiene, **not** a 21 MiB-scale idle owner. Pin handoff:
+copy `ui_screenshot.rs` delay-load from
+`target/windows-memory/research-src/agenterm/.../ui_screenshot.rs`;
+invert `gdiplus_is_still_a_static_import_on_pin_745f52b2` when it
+lands. Do not bump the pin from this branch.
 
 ### Explicit non-candidates (do not run)
 

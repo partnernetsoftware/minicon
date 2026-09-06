@@ -212,11 +212,12 @@ pub fn sample(label: &str) {
     let imm32 = module_loaded("imm32.dll");
     let shell32 = module_loaded("shell32.dll");
     let winstorage = module_loaded("windows.storage.dll");
+    let gdiplus = module_loaded("gdiplus.dll");
     let prev_tif = LAST_TIF.swap(u32::from(tif), Ordering::AcqRel);
     let edge = if prev_tif == 0 && tif == 1 { 1 } else { 0 };
     let (hwnd, fg, focus, fg_ours, focus_ours) = focus_fields();
     let line = format!(
-        "seq={seq} t_ms={ms:.3} label={label} ws={ws} create_depth={depth} paint_during_create={paints} tif={tif} tif_edge={edge} msctf={msctf} coremsg={coremsg} coreui={coreui} imm32={imm32} shell32={shell32} winstorage={winstorage} hwnd=0x{hwnd:x} fg=0x{fg:x} focus=0x{focus:x} fg_ours={fg_ours} focus_ours={focus_ours}\n"
+        "seq={seq} t_ms={ms:.3} label={label} ws={ws} create_depth={depth} paint_during_create={paints} tif={tif} tif_edge={edge} msctf={msctf} coremsg={coremsg} coreui={coreui} imm32={imm32} shell32={shell32} winstorage={winstorage} gdiplus={gdiplus} hwnd=0x{hwnd:x} fg=0x{fg:x} focus=0x{focus:x} fg_ours={fg_ours} focus_ours={focus_ours}\n"
     );
     if let Ok(mut file) = trace.file.lock() {
         let _ = file.write_all(line.as_bytes());

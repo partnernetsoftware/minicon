@@ -71,6 +71,10 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     // 2016 does not need a redistributable for it.
     "bcrypt.dll",
     "gdi32.dll",
+    // Production pin 745f52b2 still imports this at load time. The Windows
+    // RSS research copy delay-loads it via LoadLibraryW on screenshot encode
+    // (same pattern as ConPTY). When that pin lands, drop this row if the
+    // IAT no longer names gdiplus.dll.
     "gdiplus.dll",
     "imm32.dll",
     "kernel32.dll",
@@ -194,4 +198,14 @@ fn every_module_the_loader_needs_is_an_os_component_or_a_recorded_exception() {
              longer imported; delete the entry"
         );
     }
+}
+
+#[test]
+fn gdiplus_is_still_a_static_import_on_pin_745f52b2() {
+    let (_, modules) = imports();
+    assert!(
+        modules.contains("gdiplus.dll"),
+        "pin 745f52b2 still statically imports gdiplus.dll; invert this \
+         test when the delay-load (LoadLibraryW on screenshot encode) lands"
+    );
 }
