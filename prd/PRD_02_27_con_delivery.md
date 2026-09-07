@@ -307,6 +307,14 @@ six-cell claim.
   has lost the plot. Shrinking to 10 MiB is current-version work. Do not raise
   the 384 MiB regression ceiling to hide the gap, and do not treat 64 MiB as a
   compromise budget.
+- [x] `lab/tinygui` is the Darwin empty-window floor, not a MiniCon cut.
+  2026-09-07 osx-aarch64, 960×600, no timer: ObjC AppKit **77.2–77.3 MiB**
+  RSS, Rust AppKit **71.2–76.0 MiB** RSS (footprint **16 MiB**), empty
+  winit+softbuffer **115.4 MiB** RSS. All three **0.0% CPU** and sleep in
+  `mach_msg2_trap`. Same-host settled MiniCon release was **70.9 MiB** RSS
+  at **5.2% CPU**. The 10 MiB **RSS** intent sits below this AppKit RSS
+  floor; CPU idle is available from the host. Evidence: `lab/tinygui/RESULTS.md`.
+  Linux/Windows tinygui courts are not this receipt.
 - [x] **macOS idle ~300 MiB is not the window stack and not per-tab PTY state.**
   2026-09-06 `vmmap` + `heap -s` on an idle debug GUI (80×24): physical
   footprint ~243–252 MiB; `MALLOC_LARGE` dirty ~214 MiB. `heap` attributes

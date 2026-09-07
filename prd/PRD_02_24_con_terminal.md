@@ -25,6 +25,16 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   coalesced, inactive tabs are drained without forcing unrelated active-tab
   paints, and remaining backlog yields to input before self-scheduling another
   turn.
+- [x] pointer motion and the cursor-blink timer do not schedule a native
+  present unless local pixels would change. Unchanged hover (including over an
+  existing selection) and same-cell application motion leave damage empty;
+  application mouse writes wait for the child's `Wake` echo. A blinking caret
+  that is hidden or scrolled out of the live viewport does not arm the 530 ms
+  present timer. Unix transient backing still full-rasters each present, so the
+  cut is fewer presents, not a retained canvas. Evidence:
+  `idle_pointer_motion_does_not_dirty_an_unchanged_selection`,
+  `selection_drag_dirties_only_when_the_focus_cell_changes`,
+  `hidden_or_scrolled_cursor_does_not_arm_the_blink_timer`.
 - [x] the Windows production graph no longer contains `rmux-pty`. The direct
   adapter owns synchronous ConPTY endpoints, a cancellable overlapped writer, a
   drain-safe output pump, build-gated passthrough fallback, PowerShell DSR

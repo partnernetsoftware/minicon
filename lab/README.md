@@ -8,3 +8,6 @@ Current labs:
 
 - `hello-window/` — minimal conventional Rust/Win32 GUI baseline for the 360
   QVM false-positive decision tree.
+- `tinygui/` — MiniCon-shaped empty pixel window (same pin and pixel-window
+  features). Cross-linked six cells, executed on host/Rosetta/UTM. Receipts
+  in `tinygui/RESULTS.md`. One cell is not six-cell.

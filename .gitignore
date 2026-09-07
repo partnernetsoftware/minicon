@@ -8,3 +8,5 @@ __pycache__/
 /research/minicon-com-loader/payload-build/
 /lab/**/target/
 /lab/**/dist/
+.DS_Store
+target-six

@@ -3608,6 +3608,14 @@ impl ConTerminal {
         });
     }
 
+    /// True while a blinking caret would actually be painted on the live
+    /// viewport. Hidden and scrolled-away carets must not arm the 530ms
+    /// present timer.
+    fn cursor_blink_is_live(&self) -> bool {
+        self.parser.screen().cursor_blinking()
+            && cursor_visible(self.parser.screen(), self.scroll_offset, true)
+    }
+
     fn mark_ime_bounds(&mut self) {
         let cursor = self.parser.screen().cursor_position();
         let x = self
@@ -4957,40 +4965,52 @@ impl ConTerminal {
         position: LogicalPoint,
         modifiers: &agenterm_platform::input::ModifierState,
     ) -> std::io::Result<MouseOutcome> {
+        let (outcome, needs_redraw) = self.pointer_moved_outcome(position, modifiers)?;
+        if needs_redraw {
+            self.request_dirty_redraw(window);
+        }
+        Ok(outcome)
+    }
+
+    /// Updates selection / application mouse state for one move.
+    ///
+    /// A native present is requested only when local pixels actually change.
+    /// Unix transient backing full-rasters every present, so an unchanged
+    /// hover (including over an existing selection, or same-cell 1003 motion)
+    /// must not schedule a frame. Application reports that write the PTY are
+    /// painted when the child echoes, through `Wake`.
+    fn pointer_moved_outcome(
+        &mut self,
+        position: LogicalPoint,
+        modifiers: &agenterm_platform::input::ModifierState,
+    ) -> std::io::Result<(MouseOutcome, bool)> {
         let old_selection = self.selection;
         let pt = self.hit_test(&position);
-        let route = if self.mouse_dragging {
+        let (route, wrote) = if self.mouse_dragging {
             let button = self.active_button.unwrap_or(0);
             let report = self.report_mouse_checked(button, pt, true, true, modifiers)?;
-            let wrote = report.wrote;
-            self.mark_selection_change(old_selection, self.selection);
-            self.request_dirty_redraw(window);
-            return Ok(MouseOutcome {
-                route: "application",
-                changed: wrote,
-            });
+            ("application", report.wrote)
         } else if self.selecting {
             if let Some((anchor, _)) = self.selection {
                 self.selection = Some((anchor, pt));
             }
-            "selection"
+            ("selection", false)
         } else if self.mouse_mode().0 == terminal_input::ApplicationMouseMode::AnyMotion {
-            // 1003: report motion with no button held (button 3 = none).
             let report = self.report_mouse_checked(3, pt, true, true, modifiers)?;
-            let wrote = report.wrote;
-            self.mark_selection_change(old_selection, self.selection);
-            self.request_dirty_redraw(window);
-            return Ok(MouseOutcome {
-                route: "application",
-                changed: wrote,
-            });
+            ("application", report.wrote)
         } else {
-            "noop"
+            ("noop", false)
         };
-        let changed = old_selection != self.selection;
-        self.mark_selection_change(old_selection, self.selection);
-        self.request_dirty_redraw(window);
-        Ok(MouseOutcome { route, changed })
+        let selection_changed = old_selection != self.selection;
+        if selection_changed {
+            self.mark_selection_change(old_selection, self.selection);
+        }
+        let changed = if route == "application" {
+            wrote
+        } else {
+            selection_changed
+        };
+        Ok((MouseOutcome { route, changed }, selection_changed))
     }
 
     fn handle_pointer_moved(
@@ -5118,14 +5138,28 @@ impl ConTerminal {
                 Ok(PixelWindowDirective::Continue)
             }
             PixelWindowEvent::Keyboard(key) => {
-                self.dirty.mark_full();
+                let blink_was_visible = self.blink_visible;
+                let old_selection = self.selection;
+                let old_scroll = self.scroll_offset;
+                let old_preedit_len = self.ime_preedit.len();
                 self.forward_key(&key);
-                // Also redraw immediately, not just on the PTY's later
-                // `Wake`: purely local effects of a keystroke (blink reset,
-                // a host shortcut like copy/paste, IME state) have nothing
-                // to do with PTY round-trip time and should not wait on it
-                // either.
-                window.request_redraw();
+                // PTY echo is painted by `Wake`. A local present is only for
+                // host-owned pixels that must not wait on the child: restoring
+                // a blinked-off caret, selection/scroll changes, or IME.
+                let local_visual = !blink_was_visible
+                    || old_selection != self.selection
+                    || old_scroll != self.scroll_offset
+                    || old_preedit_len != self.ime_preedit.len();
+                if local_visual {
+                    if old_selection != self.selection {
+                        self.mark_selection_change(old_selection, self.selection);
+                    }
+                    if old_scroll != self.scroll_offset {
+                        self.dirty.mark_full();
+                    }
+                    self.mark_cursor_change();
+                    self.request_dirty_redraw(window);
+                }
                 Ok(PixelWindowDirective::Continue)
             }
             PixelWindowEvent::Ime(ime) => {
@@ -5360,10 +5394,12 @@ impl ConTerminal {
             }
         }
 
-        // A steady cursor needs no timer at all — only pay the periodic
-        // wake-up cost while the application actually asked for a blink.
-        if self.parser.screen().cursor_blinking() {
-            if now.duration_since(self.last_blink_at) >= BLINK_INTERVAL {
+        // A steady cursor needs no timer at all. A blinking cursor that is
+        // hidden or scrolled out of the live viewport also needs none: the
+        // overlay would not paint, and unix transient backing full-rasters
+        // every present.
+        if self.cursor_blink_is_live() {
+            if now.saturating_duration_since(self.last_blink_at) >= BLINK_INTERVAL {
                 self.mark_cursor_change();
                 self.blink_visible = !self.blink_visible;
                 self.last_blink_at = now;
@@ -7559,7 +7595,7 @@ mod tests {
         app.last_blink_at = start - BLINK_INTERVAL - Duration::from_millis(1);
         let due = app.last_blink_at;
         let now = Instant::now();
-        assert!(now.duration_since(due) >= BLINK_INTERVAL);
+        assert!(now.saturating_duration_since(due) >= BLINK_INTERVAL);
 
         // A keystroke must force the cursor back to visible immediately,
         // regardless of blink phase — this is what stops "did that key even
@@ -7575,6 +7611,76 @@ mod tests {
         };
         app.forward_key(&key);
         assert!(app.blink_visible);
+    }
+
+    fn prepared_pointer_terminal() -> ConTerminal {
+        let mut app = ConTerminal::new(None);
+        app.frame_width = 800;
+        app.frame_height = 400;
+        app.cell_w = 8;
+        app.cell_h = 16;
+        app.cols = 80;
+        app.rows = 24;
+        app.scale = 1.0;
+        app.dirty = DirtyRegion::empty();
+        app
+    }
+
+    #[test]
+    fn idle_pointer_motion_does_not_dirty_an_unchanged_selection() {
+        let mut app = prepared_pointer_terminal();
+        app.selection = Some((
+            TerminalPoint { row: 0, col: 0 },
+            TerminalPoint { row: 0, col: 8 },
+        ));
+        let position = app.terminal_point_to_logical(TerminalPoint { row: 2, col: 4 });
+        let (outcome, needs_redraw) = app
+            .pointer_moved_outcome(position, &ModifierState::default())
+            .expect("hover over a live terminal");
+        assert_eq!(outcome.route, "noop");
+        assert!(!outcome.changed);
+        assert!(!needs_redraw);
+        assert!(app.dirty.is_empty());
+    }
+
+    #[test]
+    fn selection_drag_dirties_only_when_the_focus_cell_changes() {
+        let mut app = prepared_pointer_terminal();
+        let anchor = TerminalPoint { row: 0, col: 0 };
+        app.selecting = true;
+        app.selection = Some((anchor, TerminalPoint { row: 0, col: 2 }));
+        let same = app.terminal_point_to_logical(TerminalPoint { row: 0, col: 2 });
+        let (outcome, needs_redraw) = app
+            .pointer_moved_outcome(same, &ModifierState::default())
+            .expect("same-cell drag");
+        assert_eq!(outcome.route, "selection");
+        assert!(!outcome.changed);
+        assert!(!needs_redraw);
+        assert!(app.dirty.is_empty());
+
+        let next = app.terminal_point_to_logical(TerminalPoint { row: 0, col: 5 });
+        let (outcome, needs_redraw) = app
+            .pointer_moved_outcome(next, &ModifierState::default())
+            .expect("cell-changing drag");
+        assert_eq!(outcome.route, "selection");
+        assert!(outcome.changed);
+        assert!(needs_redraw);
+        assert!(!app.dirty.is_empty());
+    }
+
+    #[test]
+    fn hidden_or_scrolled_cursor_does_not_arm_the_blink_timer() {
+        let mut app = ConTerminal::new(None);
+        assert!(app.cursor_blink_is_live());
+        app.scroll_offset = 3;
+        assert!(!app.cursor_blink_is_live());
+        app.scroll_offset = 0;
+        app.parser.process(b"\x1b[?25l");
+        assert!(!app.cursor_blink_is_live());
+        app.parser.process(b"\x1b[?25h");
+        assert!(app.cursor_blink_is_live());
+        app.parser.process(b"\x1b[2 q");
+        assert!(!app.cursor_blink_is_live());
     }
 
     #[test]

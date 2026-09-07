@@ -1,0 +1,50 @@
+[package]
+name = "minicon-lab-tinygui"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "tinygui"
+path = "src/main.rs"
+
+# Same pin and pixel-window features as MiniCon. No PTY, font, IME, clipboard.
+[dependencies]
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "745f52b2e169d5b41b51377a82cf8a93a9b00c8b", default-features = false, features = ["window", "input", "ime"] }
+
+[target.'cfg(unix)'.dependencies]
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "745f52b2e169d5b41b51377a82cf8a93a9b00c8b", default-features = false, features = ["window", "input", "ime", "portable-pixel-window"] }
+
+[target.'cfg(windows)'.dependencies]
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "745f52b2e169d5b41b51377a82cf8a93a9b00c8b", default-features = false, features = ["window", "input", "ime", "native-pixel-window"] }
+
+[patch.crates-io]
+softbuffer = { git = "https://github.com/partnernetsoftware/agenterm", rev = "745f52b2e169d5b41b51377a82cf8a93a9b00c8b" }
+
+# Match MiniCon delivery profiles so a cell compares host tax, not profile tax.
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = true
+
+[profile.release-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+[profile.windows-release]
+inherits = "dev"
+opt-level = "z"
+debug = 2
+debug-assertions = true
+overflow-checks = true
+lto = false
+codegen-units = 256
+panic = "unwind"
+incremental = true
+strip = false

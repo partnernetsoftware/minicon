@@ -59,6 +59,17 @@ extracts_for() {
   printf '%s' "$out"
 }
 
+# Payload argv is the extract path, not $CELLS. Killing the loader leaves
+# those children reparented to launchd; pkill -f $CELLS does not see them.
+reap_extracts() {
+  local dir
+  for dir in "$@"; do
+    [[ -n "$dir" ]] || continue
+    pkill -KILL -f "$dir" 2>/dev/null || true
+    rm -rf $dir
+  done
+}
+
 # T-sigkill: waitpid succeeds (signaled), loader cleans, exit 128+KILL
 MINICON_COM_CELLS="$CELLS" "$PROBE" >/dev/null 2>&1 &
 lp=$!
@@ -104,9 +115,7 @@ else
   bad "waitpid-fail-keeps rc=$wrc kept=$kept"
 fi
 if [[ -n "$kept" ]]; then
-  # stop any payload still using the extract, then drop leftover
-  pkill -KILL -f "$kept" 2>/dev/null || true
-  rm -rf $kept
+  reap_extracts $kept
 fi
 
 # Two loaders at once: two private extract dirs
@@ -130,8 +139,8 @@ fi
 kill -KILL "$a" "$b" 2>/dev/null || true
 wait "$a" 2>/dev/null || true
 wait "$b" 2>/dev/null || true
+reap_extracts $da $db
 pkill -KILL -f "$CELLS" 2>/dev/null || true
-rm -rf $da $db 2>/dev/null || true
 
 echo "lifecycle-tests $pass passed, $fail failed"
 exit "$fail"
