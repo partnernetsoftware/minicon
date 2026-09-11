@@ -119,6 +119,13 @@ failure, resize storms, process exit, and interaction races.
   scheduling in [24](PRD_02_24_con_terminal.md), and endpoint queues, pending-wait
   cancellation and screenshot ownership in
   [26](PRD_02_26_con_control_cli.md).
+- A tab that cannot open ends no other tab. A black-box journey deletes the
+  shell after the first tab is running, opens another through the user gesture,
+  and proves the host still answers control, reports a `host_notice` naming the
+  failure, and leaves the first tab alive.
+- The code-signing inspector and the signing workflow have policy suites that
+  read the shipped scripts and workflow and refuse a contract the bytes do not
+  meet; they are registered so cargo builds and runs them.
 - Public black-box tests launch the real executable with isolated endpoints,
   use `minicon cli`, wait on state rather than fixed sleeps, and clean all
   owned processes and files.
