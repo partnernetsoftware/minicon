@@ -48,7 +48,7 @@
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_25_con_workspace.md",
       "prd_anchor": "- [x] composer focus isolation is owned by a Windows black-box journey: it",
-      "evidence": ["minicon_blackbox::native_composer_focus_keeps_editing_keys_local_until_enter"],
+      "evidence": ["minicon_blackbox::native_composer_focus_keeps_editing_keys_local_until_ctrl_o"],
       "commands": ["send-ui-keys"]
     },
     {

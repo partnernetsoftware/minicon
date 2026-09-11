@@ -66,12 +66,12 @@
       "source": "tests/minicon_blackbox.rs"
     },
     {
-      "id": "minicon_blackbox::native_composer_focus_keeps_editing_keys_local_until_enter",
+      "id": "minicon_blackbox::native_composer_focus_keeps_editing_keys_local_until_ctrl_o",
       "kind": "public-black-box",
       "emitter": "cargo-test-harness",
       "platform": "windows-x86_64",
       "test_target": "minicon_blackbox",
-      "test_name": "native_composer_focus_keeps_editing_keys_local_until_enter",
+      "test_name": "native_composer_focus_keeps_editing_keys_local_until_ctrl_o",
       "source": "tests/minicon_blackbox.rs"
     },
     {
