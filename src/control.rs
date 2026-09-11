@@ -2170,6 +2170,25 @@ mod tests {
     }
 
     #[test]
+    fn a_flag_without_its_value_is_rejected() {
+        // Required getter: the flag is present but nothing follows.
+        let args = vec!["--row".to_owned()];
+        let mut cursor = Cursor::new(&args);
+        assert_eq!(
+            cursor.required_u16("--row"),
+            Err("--row requires a value".to_owned())
+        );
+
+        // Optional getter: same rule once the flag matched.
+        let args = vec!["--max-bytes".to_owned()];
+        let mut cursor = Cursor::new(&args);
+        assert_eq!(
+            cursor.optional_usize("--max-bytes"),
+            Err("--max-bytes requires a value".to_owned())
+        );
+    }
+
+    #[test]
     fn ime_cli_rejects_empty_commit_bad_cursor_and_oversized_text() {
         let parse = |tail: &[&str]| {
             let mut args = vec!["cli", "--control", "pipe:test", "send-ui-ime"];
