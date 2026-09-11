@@ -2471,6 +2471,31 @@ mod tests {
         assert_eq!(target_cursor.optional_target(), Ok(Some(TabId::new(1))));
     }
 
+    /// `--notches` is the one numeric CLI argument that may be negative (scroll
+    /// up), so it parses as a signed 16-bit value rather than through the
+    /// unsigned digit parser. Pin both extremes, a negative, and the overflow
+    /// and junk the unsigned parser would otherwise accept or reject
+    /// differently — a sign silently dropped here would invert a scroll.
+    #[test]
+    fn signed_notches_accept_both_extremes_and_reject_overflow() {
+        let parse = |value: &str| {
+            let args = vec!["--notches".to_owned(), value.to_owned()];
+            let mut cursor = Cursor::new(&args);
+            cursor.required_i16("--notches")
+        };
+        assert_eq!(parse("-1"), Ok(-1), "a scroll up must keep its sign");
+        assert_eq!(parse("+3"), Ok(3));
+        assert_eq!(parse("32767"), Ok(i16::MAX));
+        assert_eq!(parse("-32768"), Ok(i16::MIN));
+        for bad in ["32768", "-32769", "0x1", "1.0", "", " 1", "1 "] {
+            assert_eq!(
+                parse(bad),
+                Err("--notches must be a signed 16-bit integer".to_owned()),
+                "{bad:?} must be refused"
+            );
+        }
+    }
+
     #[test]
     fn a_flag_without_its_value_is_rejected() {
         // Required getter: the flag is present but nothing follows.
