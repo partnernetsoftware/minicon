@@ -3147,11 +3147,15 @@ impl ConApp {
             .x
             .saturating_sub(ime_width.saturating_add(8));
         let mut active_id_text = itoa::Buffer::new();
-        // A recoverable refusal (a tab that could not open) outranks the
-        // routing label: it is temporary and actionable, and it shares the one
-        // status line the strip has. Without this the containment fix kept the
-        // host alive but told a human nothing.
-        if let Some(notice) = self.host_notice.as_deref() {
+        // One status line carries the most important recoverable refusal. A
+        // host notice (a tab that could not open) outranks a clipboard refusal;
+        // both are temporary and actionable, and neither should stay invisible
+        // just because it only reached `ui-snapshot`.
+        let strip_notice = self
+            .host_notice
+            .as_deref()
+            .or(self.terminal_clipboard_error.as_deref());
+        if let Some(notice) = strip_notice {
             paint_host_ui_text(
                 &mut surface,
                 header_x,
