@@ -266,6 +266,38 @@ fn gui_control_surface_isolated_multitab_black_box() {
         &["send-ui-ime", "preedit", "nihao", "--cursor", "5"],
     );
     let terminal_preedit = cli_json(exe, &endpoint, &["ui-snapshot"]);
+    // The published `ui-snapshot` shape is a public contract (PRD 02.26 lists
+    // it), so pin the top-level keys: a rename that orphans the documentation
+    // fails here instead of shipping a field nobody can find.
+    {
+        let object = terminal_preedit.as_object().expect("ui-snapshot object");
+        for key in [
+            "active",
+            "workspace_empty",
+            "help_open",
+            "host_notice",
+            "control_pointer_owner",
+            "terminal_clipboard_paste",
+            "ui_language",
+            "composer_focused",
+            "composer_text",
+            "composer_preedit",
+            "composer_submit_error",
+            "composer_input",
+            "terminal_ime_preedit",
+            "ime_status",
+            "pending_control_waits",
+            "pending_control_screenshots",
+            "a11y_pending_actions",
+            "a11y_pending_bytes",
+            "a11y_dropped_actions",
+        ] {
+            assert!(
+                object.contains_key(key),
+                "ui-snapshot lost the documented key {key:?}"
+            );
+        }
+    }
     assert_eq!(terminal_preedit["terminal_ime_preedit"], "nihao");
     assert_eq!(terminal_preedit["composer_preedit"], "");
     let ime_status = &terminal_preedit["ime_status"];
