@@ -393,4 +393,132 @@ mod tests {
         assert!(next.is_some_and(|deadline| deadline > now));
         assert_eq!(pending.wait_count(), 1);
     }
+
+    /// A wait whose deadline has passed is answered with a timeout that names
+    /// the thing it was waiting for; each kind carries its own message so a
+    /// user can tell a text wait from a tab-exit wait. The expired wait is
+    /// dropped and no longer sets the next deadline.
+    #[test]
+    fn poll_times_out_an_expired_wait_with_a_kind_specific_message() {
+        let mut pending = PendingControl::default();
+        let (text_sender, text_receiver) = reply();
+        let (exit_sender, exit_receiver) = reply();
+        let mut text_sender = Some(text_sender);
+        let mut exit_sender = Some(exit_sender);
+        pending
+            .enqueue_wait(
+                TabId::new(3),
+                WaitKind::Text("READY".to_owned()),
+                50,
+                &mut text_sender,
+                "capacity",
+            )
+            .expect("enqueue text wait");
+        pending
+            .enqueue_wait(
+                TabId::new(4),
+                WaitKind::TabExit,
+                50,
+                &mut exit_sender,
+                "capacity",
+            )
+            .expect("enqueue tab-exit wait");
+
+        // A `now` past both deadlines, with a probe that keeps saying pending.
+        let future = Instant::now() + Duration::from_secs(60);
+        let next = pending.poll_waits(future, |_, _| WaitProbe::Pending);
+        assert!(next.is_none(), "no wait remains to set a deadline");
+        assert_eq!(pending.wait_count(), 0);
+        assert_eq!(
+            text_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("text reply"),
+            Err("wait-text timed out waiting for \"READY\"".to_owned())
+        );
+        assert_eq!(
+            exit_receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("exit reply"),
+            Err("wait-tab-exit timed out waiting for @4".to_owned())
+        );
+    }
+
+    /// A probe that finds the tab gone answers the wait immediately instead of
+    /// leaving it to time out.
+    #[test]
+    fn poll_answers_a_missing_tab_without_waiting_for_the_deadline() {
+        let mut pending = PendingControl::default();
+        let (sender, receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_wait(
+                TabId::new(9),
+                WaitKind::TabExit,
+                60_000,
+                &mut sender,
+                "capacity",
+            )
+            .expect("enqueue");
+        let next = pending.poll_waits(Instant::now(), |_, _| {
+            WaitProbe::Missing("@9 is gone".to_owned())
+        });
+        assert!(next.is_none());
+        assert_eq!(pending.wait_count(), 0);
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("reply"),
+            Err("@9 is gone".to_owned())
+        );
+    }
+
+    /// `prepare_screenshot` captures the previously active tab only when it
+    /// differs from the capture target, so a capture of the active tab does not
+    /// need a restore it would have to undo.
+    #[test]
+    fn prepare_screenshot_restores_only_a_different_active_tab() {
+        let mut pending = PendingControl::default();
+        let (sender, _receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(2), PathBuf::from("shot.png"), &mut sender)
+            .expect("enqueue");
+
+        // Capturing the active tab: nothing to restore.
+        assert_eq!(
+            pending.prepare_screenshot(Some(TabId::new(2))),
+            Some(TabId::new(2))
+        );
+        assert_eq!(
+            pending.take_screenshot().expect("work").restore_active,
+            None
+        );
+
+        // Capturing a non-active tab: the active one is remembered.
+        let (sender, _receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(5), PathBuf::from("shot2.png"), &mut sender)
+            .expect("enqueue second");
+        assert_eq!(
+            pending.prepare_screenshot(Some(TabId::new(1))),
+            Some(TabId::new(5))
+        );
+        assert_eq!(
+            pending.take_screenshot().expect("work").restore_active,
+            Some(TabId::new(1))
+        );
+
+        // No active tab: nothing to restore either.
+        let (sender, _receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(6), PathBuf::from("shot3.png"), &mut sender)
+            .expect("enqueue third");
+        assert_eq!(pending.prepare_screenshot(None), Some(TabId::new(6)));
+        assert_eq!(
+            pending.take_screenshot().expect("work").restore_active,
+            None
+        );
+    }
 }
