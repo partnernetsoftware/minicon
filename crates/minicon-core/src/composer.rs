@@ -1090,6 +1090,36 @@ mod tests {
         assert!(!sent.contains('\n'));
     }
 
+    /// A soft newline inserted where the caret sits splits the line there, and
+    /// an inserted block that itself carries a break lands at the caret with the
+    /// break preserved. The caret must end after the inserted text, on the
+    /// character boundary the next keystroke expects.
+    #[test]
+    fn a_soft_newline_inserts_at_the_caret_not_only_at_the_end() {
+        let mut composer = state("abcd");
+        move_caret(&mut composer, Move::LineStart);
+        move_caret(&mut composer, Move::Right);
+        move_caret(&mut composer, Move::Right);
+        assert_eq!(composer.caret, 2);
+
+        insert(&mut composer, "\n");
+        assert_eq!(composer.text, "ab\ncd");
+        assert_eq!(composer.caret, 3, "the caret sits right after the break");
+        assert_eq!(line_count(&composer.text), 2);
+
+        // A block carrying a break keeps it, and the caret lands after it.
+        insert(&mut composer, "XY\nZ");
+        assert_eq!(composer.text, "ab\nXY\nZcd");
+        assert_eq!(composer.caret, 7);
+        assert!(composer.text.is_char_boundary(composer.caret));
+
+        // Submitting turns every stored break into a carriage return, wherever
+        // it came from.
+        let sent = composer.take_submission().expect("submission");
+        assert_eq!(sent, "ab\rXY\rZcd\r");
+        assert!(!sent.contains('\n'));
+    }
+
     #[test]
     fn soft_lines_keep_the_caret_row_visible() {
         let text = "first\nsecond\nthird";
