@@ -413,9 +413,9 @@ fn install_panic_diagnostics() {
         let thread_name = thread.name().unwrap_or("unnamed");
         let detail = format!("thread={thread_name} at={location} panic={payload}");
         agenterm_platform::diagnostics::record("panic", "unhandled_panic", &detail);
-        let _ = agenterm_platform::parent_console::write_stderr(&format!(
-            "minicon: unhandled panic: {detail}\n"
-        ));
+        // No `parent_console` write here: attaching the parent console from a
+        // crash path is the one moment a windowed host must not touch the
+        // console that launched it. The log line above is the durable record.
         default_hook(info);
     }));
 }
@@ -5514,9 +5514,16 @@ impl PixelWindowApplication for ConApp {
             }
             Ok(_) => {}
             Err(error) => {
-                let _ = agenterm_platform::parent_console::write_stderr(&format!(
-                    "minicon a11y: {error}\n"
-                ));
+                // Runtime diagnostics go to the log, never to a console this GUI
+                // process is not attached to: writing one through
+                // `parent_console` attaches the parent console for the duration,
+                // and a windowed host should not couple its lifecycle to the
+                // console that happens to have launched it.
+                agenterm_platform::diagnostics::record(
+                    "a11y",
+                    "publish_setup_failed",
+                    &error.to_string(),
+                );
             }
         }
         Ok(directive)
