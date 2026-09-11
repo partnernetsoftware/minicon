@@ -1014,6 +1014,10 @@ struct DrainOutcome {
     changed: bool,
     redraw: bool,
     backlog: bool,
+    /// The child's exit was observed by this drain. The tab row dims when the
+    /// shell is gone, and that row is host UI, not terminal cells, so a
+    /// terminal-focused redraw would leave a live-looking tab behind.
+    child_exited: bool,
     bytes: usize,
 }
 
@@ -3110,19 +3114,27 @@ impl ConApp {
                 surface.fill_rect(branch_x, y, 1, row_height / 2 + 1, branch.to_xrgb());
                 surface.fill_rect(branch_x, y + row_height / 2, 8, 1, branch.to_xrgb());
             }
-            let title = self
-                .sessions
-                .get(&node.id)
+            let session = self.sessions.get(&node.id);
+            let title = session
                 .map(|terminal| terminal.current_title.as_str())
                 .filter(|title| !title.is_empty())
                 .unwrap_or(node.title.as_str());
+            // A child that exited leaves its tab in place (remain-on-exit), so
+            // the row is the only thing that can say the shell is gone. Dim the
+            // label: it reads as inert next to a live tab without moving or
+            // recolouring the row a user is aiming at.
+            let label_color = if session.is_some_and(|terminal| terminal.child_gone) {
+                muted
+            } else {
+                text
+            };
             let mut id = itoa::Buffer::new();
             paint_host_ui_text_parts(
                 &mut surface,
                 indent,
                 y + 7,
                 &["@", id.format(node.id.get()), "  ", title],
-                text,
+                label_color,
                 host_ui_size(HOST_UI_TAB_SIZE_PX),
                 tree_width.saturating_sub(indent + 38),
             );
@@ -3972,6 +3984,7 @@ impl ConTerminal {
             self.child_exit_code =
                 decode_child_exit_code(self.child_exit_code_encoded.load(Ordering::Acquire));
             outcome.redraw = true;
+            outcome.child_exited = true;
         }
 
         let output = Arc::clone(&self.pty_output);
@@ -5649,6 +5662,7 @@ impl PixelWindowApplication for ConApp {
             let session_budget = pty_drain_budget_per_session(self.workspace.nodes().len());
             let mut active_redraw = false;
             let mut backlog = false;
+            let mut child_exited = false;
             for (id, session) in self.sessions.entries_mut() {
                 let outcome = session.drain_pty_with_budget(session_budget);
                 self.perf_stats.pty_drained_bytes = self
@@ -5661,6 +5675,12 @@ impl PixelWindowApplication for ConApp {
                     .saturating_add(u64::from(outcome.backlog));
                 active_redraw |= active == Some(*id) && outcome.redraw;
                 backlog |= outcome.backlog;
+                child_exited |= outcome.child_exited;
+            }
+            if child_exited {
+                // A tab row changed appearance (the shell exited), and that is
+                // host UI the terminal redraw does not cover.
+                self.mark_tree_dirty();
             }
             if active_redraw {
                 if self.active_session()?.dirty.is_empty() {
@@ -5924,6 +5944,12 @@ impl PixelWindowApplication for ConApp {
             let wake_pending = session.pty_wake_pending.load(Ordering::Acquire);
             (drain, wake_pending)
         };
+        if drain.child_exited {
+            // The active tab's row dims when its shell exits; keep the tree
+            // damage with the drain that observed it.
+            self.mark_tree_dirty();
+            self.host_ui_dirty.mark_full();
+        }
         self.perf_stats.pty_drained_bytes = self
             .perf_stats
             .pty_drained_bytes
