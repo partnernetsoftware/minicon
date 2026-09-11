@@ -421,6 +421,35 @@ mod tests {
         assert!(!backlog);
         assert_eq!(second.len(), ACTION_QUEUE_CAPACITY - ACTION_DRAIN_BUDGET);
         assert_eq!(inbox.stats().pending, 0);
+
+        // The inbox is empty again: the next push is the one that must wake the
+        // GUI, and only that one. A wake on a non-empty queue would coalesce
+        // nothing and, post-drain, a missing wake would strand the request.
+        let first_after_drain = inbox.push(Request {
+            node: 7,
+            action: PublishedAction::Focus,
+        });
+        assert_eq!(
+            first_after_drain,
+            ActionPush {
+                accepted: true,
+                should_wake: true,
+            }
+        );
+        assert!(
+            !inbox
+                .push(Request {
+                    node: 8,
+                    action: PublishedAction::Focus,
+                })
+                .should_wake
+        );
+
+        // A zero-limit drain is a no-op, not a wake with nothing behind it.
+        let (nothing, backlog) = inbox.pop_batch(0);
+        assert!(nothing.is_empty());
+        assert!(backlog, "the queue is still non-empty");
+        assert_eq!(inbox.stats().pending, 2);
     }
 
     #[test]
