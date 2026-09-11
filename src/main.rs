@@ -8042,4 +8042,31 @@ mod tests {
             assert_eq!(decode_child_exit_code(encode_child_exit_code(code)), code);
         }
     }
+
+    /// A new tab inherits the active terminal's launch configuration through
+    /// `SessionSeed`, which copies the fields by hand in two places. Pin the
+    /// round trip so adding a field to `ConTerminal` and forgetting it here
+    /// fails this test instead of silently giving new tabs a different config.
+    #[test]
+    fn session_seed_round_trips_every_inherited_field() {
+        let mut source = ConTerminal::new(Some("C:\\work".to_owned()));
+        source.command = Some(vec!["cmd.exe".to_owned(), "/K".to_owned()]);
+        source.font_size_logical = 21.5;
+        source.font_size_baseline = 18.0;
+        source.cols = 101;
+        source.rows = 37;
+
+        let seeded = SessionSeed::from_session(&source).create_session();
+        assert_eq!(seeded.working_dir, source.working_dir);
+        assert_eq!(seeded.command, source.command);
+        assert_eq!(seeded.font_size_logical, source.font_size_logical);
+        assert_eq!(seeded.font_size_baseline, source.font_size_baseline);
+        assert_eq!(seeded.cols, source.cols);
+        assert_eq!(seeded.rows, source.rows);
+
+        // A fresh session starts with no PTY until `opened` spawns one; the
+        // seed must not carry a live handle across tabs.
+        assert!(seeded.master.is_none());
+        assert!(seeded.child.is_none());
+    }
 }
