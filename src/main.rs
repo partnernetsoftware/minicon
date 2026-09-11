@@ -2130,6 +2130,32 @@ impl ConApp {
         })
     }
 
+    /// Runs `action` against one terminal's retained session, then settles a
+    /// clipboard-paste request it raised: require an open PTY, and if the key
+    /// asked for a terminal paste, start it. Both `send-keys` and
+    /// `send-ui-keys` reach a session this way, so the guard and the
+    /// paste-request handoff are written once.
+    fn forward_keys_to_terminal(
+        &mut self,
+        window: &PixelWindow,
+        id: workspace::TabId,
+        action: impl FnOnce(&mut ConTerminal) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let requested = {
+            let session = self
+                .sessions
+                .get_mut(&id)
+                .ok_or_else(|| format!("terminal @{} is unavailable", id.get()))?;
+            session.ensure_pty_input_open()?;
+            action(session)?;
+            session.take_clipboard_paste_request()
+        };
+        if requested {
+            self.request_terminal_clipboard_paste(window, id, false)?;
+        }
+        Ok(())
+    }
+
     /// Drops a pending terminal clipboard read and/or paste review, recording
     /// why. `target` selects one tab; `None` cancels every tab. Both pending
     /// kinds share this one path so a new one cannot be forgotten in either
@@ -2606,23 +2632,15 @@ impl ConApp {
             }
             CliCommand::SendKeys { target, keys } => (|| {
                 let id = self.control_target(target)?;
-                let requested = {
-                    let session = self
-                        .sessions
-                        .get_mut(&id)
-                        .ok_or_else(|| format!("terminal @{} is unavailable", id.get()))?;
-                    session.ensure_pty_input_open()?;
+                self.forward_keys_to_terminal(window, id, |session| {
                     for key in &keys {
                         let (key, ctrl, alt, shift) = parse_control_key(key)?;
                         session
                             .inject_key(key, ctrl, alt, shift)
                             .map_err(|error| format!("terminal input failed: {error}"))?;
                     }
-                    session.take_clipboard_paste_request()
-                };
-                if requested {
-                    self.request_terminal_clipboard_paste(window, id, false)?;
-                }
+                    Ok(())
+                })?;
                 Ok(single_field_json("sent_keys", keys.len().into()))
             })(),
             CliCommand::SendUiKeys { keys } => (|| {
@@ -2643,20 +2661,11 @@ impl ConApp {
                             .workspace
                             .active()
                             .ok_or_else(|| "no active terminal session".to_owned())?;
-                        let requested = {
-                            let session = self
-                                .sessions
-                                .get_mut(&id)
-                                .ok_or_else(|| format!("terminal @{} is unavailable", id.get()))?;
-                            session.ensure_pty_input_open()?;
+                        self.forward_keys_to_terminal(window, id, |session| {
                             session
                                 .forward_key_checked(&event)
-                                .map_err(|error| format!("terminal input failed: {error}"))?;
-                            session.take_clipboard_paste_request()
-                        };
-                        if requested {
-                            self.request_terminal_clipboard_paste(window, id, false)?;
-                        }
+                                .map_err(|error| format!("terminal input failed: {error}"))
+                        })?;
                     }
                 }
                 self.request_dirty_redraw(window);
