@@ -477,3 +477,86 @@ fn walk_markdown(dir: &Path) -> Vec<PathBuf> {
     }
     found
 }
+
+/// The docs site has no bundler to notice a broken link. Require every local
+/// `href`/`src` in the HTML pages to resolve to a file, every same-page
+/// `#anchor` to have a matching `id`, and every `*.html` link to name a page
+/// that exists — an `https://` link and a `mailto:`/`data:` URI are not local
+/// claims and are skipped.
+#[test]
+fn documentation_links_resolve() {
+    let root = repo_root();
+    let docs = root.join("docs");
+    let pages: Vec<PathBuf> = fs::read_dir(&docs)
+        .expect("read docs")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "html"))
+        .collect();
+    assert!(!pages.is_empty(), "no docs pages found");
+
+    let mut broken = BTreeSet::new();
+    for page in &pages {
+        let html = fs::read_to_string(page).expect("read page");
+        // Same-page anchors that the markup actually defines.
+        let mut ids = BTreeSet::new();
+        for token in html.match_indices("id=\"") {
+            let rest = &html[token.0 + 4..];
+            if let Some(end) = rest.find('"') {
+                ids.insert(rest[..end].to_owned());
+            }
+        }
+        let page_name = page.file_name().unwrap().to_string_lossy().into_owned();
+
+        for (index, _) in html
+            .match_indices("href=\"")
+            .chain(html.match_indices("src=\""))
+        {
+            let attr_start = html[index..]
+                .find('"')
+                .map(|i| index + i + 1)
+                .unwrap_or(index);
+            let rest = &html[attr_start..];
+            let Some(end) = rest.find('"') else { continue };
+            let target = &rest[..end];
+            if target.starts_with("http://")
+                || target.starts_with("https://")
+                || target.starts_with("mailto:")
+                || target.starts_with("data:")
+            {
+                continue;
+            }
+            if let Some(anchor) = target.strip_prefix('#') {
+                if !ids.contains(anchor) {
+                    broken.insert(format!("{page_name}: #{anchor} has no id"));
+                }
+                continue;
+            }
+            // A local path, possibly with a fragment.
+            let (path_part, fragment) = match target.split_once('#') {
+                Some((path, fragment)) => (path, Some(fragment)),
+                None => (target, None),
+            };
+            if path_part.is_empty() {
+                continue;
+            }
+            let candidate = docs.join(path_part);
+            if !candidate.exists() {
+                broken.insert(format!("{page_name}: {target} does not exist"));
+                continue;
+            }
+            // A cross-page anchor must land on an id in the target page.
+            if let Some(fragment) = fragment {
+                let target_html = fs::read_to_string(&candidate).unwrap_or_default();
+                if !target_html.contains(&format!("id=\"{fragment}\"")) {
+                    broken.insert(format!("{page_name}: {target} has no matching id"));
+                }
+            }
+        }
+    }
+    assert!(
+        broken.is_empty(),
+        "documentation links do not resolve:\n{}",
+        broken.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}
