@@ -1592,8 +1592,11 @@ impl ConApp {
     fn open_session_contained(&mut self, window: &PixelWindow, child: bool) {
         if let Err(error) = self.open_session(window, child) {
             self.note_host_notice(format!("could not open a terminal: {error}"), window);
-        } else {
-            self.host_notice = None;
+        } else if self.host_notice.take().is_some() {
+            // A successful open retracts the previous refusal; the strip must
+            // repaint, or the stale notice stays on screen.
+            self.mark_host_ui_full();
+            window.request_redraw();
         }
     }
 
@@ -3137,34 +3140,50 @@ impl ConApp {
             .x
             .saturating_sub(ime_width.saturating_add(8));
         let mut active_id_text = itoa::Buffer::new();
-        paint_host_ui_text_parts(
-            &mut surface,
-            header_x,
-            input_y + 7,
-            // Names the tab, not just its number. The tab column and the
-            // window title both call it by name now, and the input area saying
-            // where text is going is the whole reason this band is worth its
-            // permanent share of the window — "@1" is only an answer if you
-            // already know what @1 is.
-            &[
-                self.ui_language.strings().send_to,
-                active_id_text.format(active_id),
-                " ",
-                self.workspace
-                    .active()
-                    .and_then(|id| self.sessions.get(&id))
-                    .map_or("", |session| session.current_title.as_str()),
-            ],
-            if self.composer.submit_error.is_some() {
-                error_accent
-            } else if self.composer.focused {
-                accent
-            } else {
-                muted
-            },
-            host_ui_size(HOST_UI_STATUS_SIZE_PX),
-            ime_x.saturating_sub(header_x.saturating_add(8)),
-        );
+        // A recoverable refusal (a tab that could not open) outranks the
+        // routing label: it is temporary and actionable, and it shares the one
+        // status line the strip has. Without this the containment fix kept the
+        // host alive but told a human nothing.
+        if let Some(notice) = self.host_notice.as_deref() {
+            paint_host_ui_text(
+                &mut surface,
+                header_x,
+                input_y + 7,
+                notice,
+                error_accent,
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                ime_x.saturating_sub(header_x.saturating_add(8)),
+            );
+        } else {
+            paint_host_ui_text_parts(
+                &mut surface,
+                header_x,
+                input_y + 7,
+                // Names the tab, not just its number. The tab column and the
+                // window title both call it by name now, and the input area saying
+                // where text is going is the whole reason this band is worth its
+                // permanent share of the window — "@1" is only an answer if you
+                // already know what @1 is.
+                &[
+                    self.ui_language.strings().send_to,
+                    active_id_text.format(active_id),
+                    " ",
+                    self.workspace
+                        .active()
+                        .and_then(|id| self.sessions.get(&id))
+                        .map_or("", |session| session.current_title.as_str()),
+                ],
+                if self.composer.submit_error.is_some() {
+                    error_accent
+                } else if self.composer.focused {
+                    accent
+                } else {
+                    muted
+                },
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                ime_x.saturating_sub(header_x.saturating_add(8)),
+            );
+        }
         paint_host_ui_text(
             &mut surface,
             ime_x,
