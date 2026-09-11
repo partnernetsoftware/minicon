@@ -529,4 +529,91 @@ mod tests {
         assert!(on_disk_len > 0, "a valid frame writes a non-empty PNG");
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    fn sample_snapshot(title: &str) -> ScreenSnapshot {
+        ScreenSnapshot {
+            cols: 80,
+            rows: 24,
+            title: title.to_owned(),
+            rows_text: vec!["line".to_owned()],
+            cursor: CursorSnapshot {
+                row: 0,
+                col: 0,
+                shape: "block",
+                blinking: false,
+                visible_now: true,
+            },
+            scroll_offset: 0,
+            max_scrollback: 0,
+            selection: None,
+            ime_preedit: String::new(),
+            child_alive: true,
+            child_exit_code: None,
+            font_size_px: 15,
+        }
+    }
+
+    /// A poller reads this file many times a second while the GUI rewrites it;
+    /// the atomic write exists so it never sees a torn frame. Hammer the writer
+    /// and require every read to be complete, valid JSON.
+    #[test]
+    fn concurrent_snapshot_writes_are_never_observed_torn() {
+        let dir = scratch("snapshot-atomic");
+        let path = dir.join("snapshot.json");
+        write_snapshot_atomic(&path, &sample_snapshot("first")).unwrap();
+
+        let reader_path = path.clone();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reader_stop = stop.clone();
+        let reader = std::thread::spawn(move || {
+            let mut reads = 0_u64;
+            while !reader_stop.load(std::sync::atomic::Ordering::Acquire) {
+                if let Ok(bytes) = std::fs::read(&reader_path) {
+                    // Either it is a complete snapshot, or the file is mid-rename
+                    // and simply absent; a byte-level partial must never parse
+                    // *and* must never be silently accepted as valid-looking.
+                    let parsed = serde_json::from_slice::<serde_json::Value>(&bytes);
+                    assert!(
+                        parsed.as_ref().is_ok_and(|v| v["rows"].is_number()),
+                        "a reader observed a torn frame: {parsed:?}"
+                    );
+                    reads += 1;
+                }
+            }
+            reads
+        });
+
+        for index in 0..400 {
+            write_snapshot_atomic(&path, &sample_snapshot(&format!("title-{index}"))).unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Release);
+        let reads = reader.join().expect("reader thread");
+        assert!(reads > 0, "the reader never saw the file");
+
+        // The final write is complete and readable.
+        let bytes = std::fs::read(&path).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["title"], "title-399");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A write to a path whose parent is a file (not a directory) fails without
+    /// leaving anything behind; the caller in `main` treats this as best-effort.
+    #[test]
+    fn a_failed_snapshot_write_leaves_no_partial_file() {
+        let dir = scratch("snapshot-fail");
+        let blocker = dir.join("blocker");
+        std::fs::write(&blocker, b"not a directory").unwrap();
+        let path = blocker.join("snapshot.json");
+
+        let result = write_snapshot_atomic(&path, &sample_snapshot("nope"));
+        assert!(result.is_err(), "writing under a file must fail");
+        assert!(!path.exists(), "no partial file may appear");
+        assert_eq!(
+            std::fs::read(&blocker).unwrap(),
+            b"not a directory",
+            "the blocking file must be untouched"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
