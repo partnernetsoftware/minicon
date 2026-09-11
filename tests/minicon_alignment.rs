@@ -266,3 +266,71 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         );
     }
 }
+
+/// The landing page ships three hand-maintained locale tables. A key added to
+/// one and not the others renders as English (or blank) for the other two, and
+/// no build step catches it — the page has no bundler. Read the source tables
+/// and require identical key sets, and require every `data-i18n`/`data-i18n-*`
+/// hook in the markup to name a key that all three define.
+#[test]
+fn landing_page_locales_define_the_same_keys() {
+    let html =
+        fs::read_to_string(repo_root().join("docs/index.html")).expect("read the landing page");
+
+    /// Top-level keys of one `name: { ... }` locale table, up to the next
+    /// locale marker.
+    fn keys_between(html: &str, from: &str, to: Option<&str>) -> BTreeSet<String> {
+        let start = html.find(from).expect("locale marker present") + from.len();
+        let end = to.map_or(html.len(), |to| {
+            html[start..].find(to).map_or(html.len(), |i| start + i)
+        });
+        let mut keys = BTreeSet::new();
+        for line in html[start..end].lines() {
+            let trimmed = line.trim_start();
+            if let Some((key, _)) = trimmed.split_once(':') {
+                let key = key.trim();
+                if !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                    keys.insert(key.to_owned());
+                }
+            }
+        }
+        keys
+    }
+
+    let en = keys_between(&html, "en: {", Some("\"zh-CN\": {"));
+    let zh_cn = keys_between(&html, "\"zh-CN\": {", Some("\"zh-Hant\": {"));
+    let zh_hant = keys_between(&html, "\"zh-Hant\": {", None);
+    assert!(!en.is_empty(), "the English locale table was not found");
+
+    for (name, keys) in [("zh-CN", &zh_cn), ("zh-Hant", &zh_hant)] {
+        let missing: Vec<_> = en.difference(keys).collect();
+        let extra: Vec<_> = keys.difference(&en).collect();
+        assert!(
+            missing.is_empty(),
+            "{name} is missing English keys: {missing:?}"
+        );
+        assert!(
+            extra.is_empty(),
+            "{name} has keys English does not: {extra:?}"
+        );
+    }
+
+    // Every `data-i18n` and `data-i18n-*` hook must resolve in all locales.
+    for (attr, value) in html.match_indices("data-i18n").filter_map(|(i, _)| {
+        let rest = &html[i..];
+        let eq = rest.find('=')?;
+        let after = rest[eq + 1..].trim_start();
+        let quote = after.chars().next()?;
+        if quote != '"' {
+            return None;
+        }
+        let end = after[1..].find('"')? + 1;
+        Some(("data-i18n", after[1..end].to_owned()))
+    }) {
+        let _ = attr;
+        assert!(
+            en.contains(&value),
+            "markup references {value:?} but no locale defines it"
+        );
+    }
+}
