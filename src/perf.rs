@@ -345,4 +345,65 @@ mod perf_stats_tests {
             PixelFrameWrite::Full
         );
     }
+
+    /// `sync_present_stats` advances `last_ns`/`max_ns` only when the platform
+    /// sequence moves forward. A repeated or stale sample (two reads in one
+    /// frame, or a value copied before a reset) must not regress `max_ns`.
+    #[test]
+    pub(super) fn stale_present_samples_do_not_regress_the_maximum() {
+        let sample = |sequence: u64, last_ns: u64| PixelPresentStats {
+            sequence,
+            last_ns,
+            ..PixelPresentStats::default()
+        };
+
+        let mut stats = PerfStats::default();
+        stats.sync_present_stats(sample(5, 900));
+        assert_eq!(stats.present_max_ns, 900);
+
+        // Same sequence again with a smaller last: the guard rejects it.
+        stats.sync_present_stats(sample(5, 10));
+        assert_eq!(stats.present_last_ns, 900, "an equal sequence is stale");
+        assert_eq!(stats.present_max_ns, 900);
+
+        // An older sequence (a value captured before a reset) is also stale.
+        stats.sync_present_stats(sample(4, 1));
+        assert_eq!(stats.present_last_ns, 900);
+        assert_eq!(stats.present_max_ns, 900);
+
+        // A newer sample advances both.
+        stats.sync_present_stats(sample(6, 1200));
+        assert_eq!(stats.present_last_ns, 1200);
+        assert_eq!(stats.present_max_ns, 1200);
+    }
+
+    /// A platform whose cumulative counters went backwards (process restart,
+    /// ledger reset) must produce a zero delta, not a wrapped `u64::MAX`.
+    #[test]
+    pub(super) fn a_regressed_present_ledger_saturates_the_delta_to_zero() {
+        let baseline = PixelPresentStats {
+            sequence: 10,
+            count: 10,
+            success_count: 10,
+            total_ns: 1_000,
+            full_pixels: 500,
+            ..PixelPresentStats::default()
+        };
+        let after_restart = PixelPresentStats {
+            sequence: 1,
+            count: 1,
+            success_count: 1,
+            total_ns: 5,
+            full_pixels: 2,
+            ..PixelPresentStats::default()
+        };
+
+        let mut stats = PerfStats::default();
+        stats.reset(baseline);
+        stats.sync_present_stats(after_restart);
+        let delta = stats.present_delta();
+        assert_eq!(delta.count, 0, "a regressed count must not wrap");
+        assert_eq!(delta.total_ns, 0);
+        assert_eq!(delta.full_pixels, 0);
+    }
 }
