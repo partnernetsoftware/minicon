@@ -70,6 +70,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   press/release/move/click, `send-wheel`, bounded `wait-text`, bounded
   `wait-tab-exit`, logical-client `resize-window`, and GUI-lifetime
   `close-window`.
+- [x] the two public observation surfaces agree where they overlap. The
+  per-render `--emit-snapshot` file (terminal state) and the on-demand
+  `list-tabs`/`ui-snapshot` replies describe the same session, so the active
+  tab's title and its child's alive state and exit code must match across
+  them; a black-box journey settles the title and checks both sides while
+  the child is live and after it exits.
 - [x] `perf-stats` and `reset-perf-stats` expose frame latency plus PTY
   drain/yield counters through the same public CLI for repeatable interactive
   profiling. The counter semantics belong to

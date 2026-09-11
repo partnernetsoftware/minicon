@@ -94,6 +94,7 @@
       "prd_anchor": "- [x] the fixed GUI-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,",
       "evidence": [
         "minicon_blackbox::controlled_screenshot_produces_a_valid_nonempty_png",
+        "minicon_blackbox::the_two_snapshots_agree_on_title_and_child_life",
         "minicon_control::gui_control_surface_isolated_multitab_black_box"
       ],
       "commands": ["perf-stats", "reset-perf-stats", "screenshot-pane"]
