@@ -2092,6 +2092,85 @@ mod tests {
         assert!(error.contains("unknown minicon cli command"));
     }
 
+    /// Every fixed-shape subcommand must reject a trailing argument rather
+    /// than silently ignore it, so a typo like `close-tab --target @2 extra`
+    /// fails loudly. The two variadic key commands are the exception: they
+    /// consume the whole remainder as keys by design.
+    #[test]
+    fn fixed_shape_commands_reject_a_trailing_argument() {
+        // The minimal valid invocation of each fixed-shape subcommand.
+        let fixed: &[&[&str]] = &[
+            &["list-tabs"],
+            &["ui-snapshot"],
+            &["perf-stats"],
+            &["reset-perf-stats"],
+            &["cancel-pointer"],
+            &["close-window"],
+            &["resize-window", "--width", "80", "--height", "24"],
+            &["new-tab"],
+            &["select-tab", "--target", "@1"],
+            &["close-tab", "--target", "@1"],
+            &["capture-pane"],
+            &["screenshot-pane", "--output", "shot.png"],
+            &["send-text", "hello"],
+            &["send-paste", "hello"],
+            &["send-ui-ime", "enabled"],
+            &[
+                "send-mouse",
+                "--action",
+                "move",
+                "--button",
+                "none",
+                "--column",
+                "1",
+                "--row",
+                "1",
+            ],
+            &[
+                "send-wheel",
+                "--column",
+                "1",
+                "--row",
+                "1",
+                "--notches",
+                "1",
+            ],
+            &["wait-text", "READY"],
+            &["wait-tab-exit", "--target", "@1"],
+        ];
+        for command in fixed {
+            let mut argv = vec!["cli", "--control", "local-control"];
+            argv.extend_from_slice(command);
+            // The bare invocation must parse, so the failure below is about
+            // the trailing argument and not a malformed base command.
+            parse_cli(&args(&argv))
+                .unwrap_or_else(|error| panic!("{command:?} is not a valid base: {error}"));
+            argv.push("--junk");
+            let error = parse_cli(&args(&argv))
+                .expect_err(&format!("{command:?} accepted a trailing argument"));
+            assert!(
+                error.contains("unexpected argument"),
+                "{command:?} must report an unexpected argument, got: {error}"
+            );
+        }
+
+        // The variadic commands consume the remainder, so a trailing token is
+        // an extra KEY, not an error.
+        for command in [["send-keys", "a"], ["send-ui-keys", "a"]] {
+            let argv = vec![
+                "cli",
+                "--control",
+                "local-control",
+                command[0],
+                command[1],
+                "--junk",
+            ];
+            parse_cli(&args(&argv)).unwrap_or_else(|error| {
+                panic!("{} must accept variadic keys, got: {error}", command[0])
+            });
+        }
+    }
+
     #[test]
     fn lifecycle_and_wheel_commands_keep_stable_tab_ids() {
         assert_eq!(
