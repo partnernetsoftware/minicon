@@ -17,7 +17,8 @@
       "prd_anchor": "- [x] each tree tab owns an independent PTY, parser, viewport and failure state",
       "evidence": [
         "minicon_blackbox::cjk_output_from_a_real_child_process_appears_as_actual_characters",
-        "minicon_blackbox::snapshot_reports_exit_code_and_retains_tab_until_explicit_close"
+        "minicon_blackbox::snapshot_reports_exit_code_and_retains_tab_until_explicit_close",
+        "minicon_control::a_new_tab_that_cannot_start_is_a_notice_not_an_exit"
       ],
       "commands": ["capture-pane", "send-keys", "send-paste", "send-text", "wait-tab-exit", "wait-text"]
     },

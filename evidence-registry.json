@@ -109,6 +109,15 @@
       "test_target": "minicon_control",
       "test_name": "gui_control_surface_isolated_multitab_black_box",
       "source": "tests/minicon_control.rs"
+    },
+    {
+      "id": "minicon_control::a_new_tab_that_cannot_start_is_a_notice_not_an_exit",
+      "kind": "public-black-box",
+      "emitter": "cargo-test-harness",
+      "platform": "windows-x86_64",
+      "test_target": "minicon_control",
+      "test_name": "a_new_tab_that_cannot_start_is_a_notice_not_an_exit",
+      "source": "tests/minicon_control.rs"
     }
   ]
 }
