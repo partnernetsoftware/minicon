@@ -1771,6 +1771,79 @@ fn controlled_screenshot_produces_a_valid_nonempty_png() {
     let _ = session.child.kill();
 }
 
+/// An exited shell leaves its tab in place, so the row is the only thing that
+/// can say it is gone. Prove the tab column actually repaints: screenshot the
+/// window, exit the shell, screenshot again, and assert the left tab strip
+/// changed while the window kept its size. A terminal-focused redraw never
+/// touches that column, so without the tree damage this comparison would show
+/// no difference.
+#[test]
+fn an_exited_shell_repaints_its_tab_row() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("tab-exit-repaint");
+    let before_path = dir.join("before.png");
+    let after_path = dir.join("after.png");
+    let script = write_journey(
+        &dir,
+        &format!(
+            r#"[
+                {{"text": "echo TAB_READY\r"}},
+                {{"wait_text": "TAB_READY", "timeout_ms": 15000}},
+                {{"wait_ms": 300}},
+                {{"screenshot": {}}},
+                {{"text": "exit\r"}},
+                {{"wait_ms": 800}},
+                {{"screenshot": {}}}
+            ]"#,
+            serde_json::to_string(before_path.to_str().unwrap()).unwrap(),
+            serde_json::to_string(after_path.to_str().unwrap()).unwrap(),
+        ),
+    );
+    let args = interactive_shell_args(&script);
+    let mut session = ConSession::spawn(&dir, &args);
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !(before_path.exists() && after_path.exists()) {
+        assert!(
+            Instant::now() < deadline,
+            "exit screenshots were not written"
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
+
+    fn decode(path: &Path) -> (usize, usize, Vec<u8>) {
+        let decoder = png::Decoder::new(std::fs::File::open(path).expect("open screenshot"));
+        let mut reader = decoder.read_info().expect("read screenshot info");
+        let mut bytes = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut bytes).expect("decode screenshot");
+        bytes.truncate(info.buffer_size());
+        (info.width as usize, info.height as usize, bytes)
+    }
+    let (bw, bh, before) = decode(&before_path);
+    let (aw, ah, after) = decode(&after_path);
+    assert_eq!(
+        (aw, ah),
+        (bw, bh),
+        "the window changed size during the exit"
+    );
+
+    // Sample the left tab column across the first few rows. Count how many
+    // sampled pixels differ; a dimmed label is a real change, not render noise.
+    let changed = (0..bh.min(120))
+        .step_by(2)
+        .flat_map(|y| (0..bw.min(180)).step_by(2).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            let at = (y * bw + x) * 4;
+            before[at..at + 3] != after[at..at + 3]
+        })
+        .count();
+    assert!(
+        changed > 0,
+        "the tab column did not repaint when the shell exited (0 of the sampled pixels changed)"
+    );
+    let _ = session.child.kill();
+}
+
 #[test]
 fn controlled_resize_changes_the_native_render_surface() {
     let _guard = gui_test_guard();
