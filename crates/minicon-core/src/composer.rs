@@ -1117,4 +1117,27 @@ mod tests {
             }
         );
     }
+
+    /// An empty composer sends nothing: `take_submission` must answer `None`
+    /// rather than a bare carriage return, or an accidental Enter on a blank
+    /// box would push an empty line to the shell.
+    #[test]
+    fn an_empty_composer_does_not_submit_a_bare_enter() {
+        let mut composer = ComposerState::default();
+        assert_eq!(composer.take_submission(), None);
+
+        // A buffer holding only a soft newline is not empty, so it does submit
+        // as the carriage return it represents.
+        let mut composer = state("\n");
+        assert_eq!(composer.take_submission().as_deref(), Some("\r\r"));
+
+        // Submit clears the recall and draft too, so the next Up starts fresh.
+        let mut composer = state("echo one");
+        composer.remember("echo one");
+        composer.recall_previous();
+        composer.draft = "half typed".to_owned();
+        let _ = composer.take_submission();
+        assert_eq!(composer.recall, None);
+        assert_eq!(composer.draft, "");
+    }
 }
