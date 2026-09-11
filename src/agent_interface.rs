@@ -208,6 +208,11 @@ fn screenshot_io_error(error: UiScreenshotError) -> std::io::Error {
     std::io::Error::new(kind, error)
 }
 
+/// Reports the outcome of an asynchronous PNG write. `Ok(n)` is the **encode
+/// duration in nanoseconds** — the value the control receipt calls `encode_ns`
+/// — not a byte count; the size on disk is the encoder's own business. The
+/// file is fully written (temp file renamed) before the completion runs, so a
+/// caller never observes a partial image.
 type PngCompletion = Box<dyn FnOnce(std::io::Result<u64>) + Send + 'static>;
 
 fn complete_png(completion: PngCompletion, result: std::io::Result<u64>) {
@@ -446,5 +451,51 @@ mod tests {
             Ok(1),
         );
         assert!(called.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    /// Dimensions whose pixel count overflows `usize` must be refused before
+    /// any arithmetic wraps or any file is created.
+    #[test]
+    fn write_png_rejects_dimensions_that_overflow_the_pixel_count() {
+        let dir = scratch("overflow-png-test");
+        let path = dir.join("shot.png");
+        // On a 64-bit host `u32::MAX * 2` far exceeds `usize` only when
+        // multiplied; the guard is the checked multiply, not the add.
+        let error = write_png_atomic(&path, &[], u32::MAX, u32::MAX).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!path.exists(), "a rejected frame must not create a file");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The async path must complete with a positive encode duration (the
+    /// `u64` is nanoseconds, the field the control receipt calls `encode_ns`),
+    /// and the file must already be readable when the completion runs. A
+    /// completion that fires before the rename would be a false success, and
+    /// a zero duration would mean the timer never measured the encode.
+    #[test]
+    fn submitted_png_completes_with_a_positive_encode_time_after_the_file_exists() {
+        let dir = scratch("async-png-test");
+        let path = dir.join("shot.png");
+        let pixels = [0x0011_2233u32; 8 * 8];
+        let (send, receive) = mpsc::channel();
+        let done_path = path.clone();
+        submit_png_atomic(
+            path,
+            &pixels,
+            8,
+            8,
+            Box::new(move |result| {
+                // The file must be readable by the time the completion runs.
+                let on_disk = std::fs::read(&done_path).expect("file exists when completion runs");
+                send.send((result, on_disk.len())).unwrap();
+            }),
+        );
+        let (result, on_disk_len) = receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the async encode must complete");
+        let encode_ns = result.expect("a valid frame encodes");
+        assert!(encode_ns > 0, "a real encode takes a measurable time");
+        assert!(on_disk_len > 0, "a valid frame writes a non-empty PNG");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
