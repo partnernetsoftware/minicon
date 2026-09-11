@@ -334,3 +334,60 @@ fn landing_page_locales_define_the_same_keys() {
         );
     }
 }
+
+/// Documentation and tests name repository files by relative path. A moved or
+/// renamed script leaves a dead path in prose, and nobody notices until a user
+/// follows it. Require every `scripts/`, `tools/`, `examples/`, `packaging/`
+/// or `research/` path that appears in the docs, tests or source to exist —
+/// except `dist/`, which is a build output and is not in a source checkout.
+#[test]
+fn referenced_repository_paths_exist() {
+    let root = repo_root();
+    let mut sources = Vec::new();
+    for dir in ["docs", "tests"] {
+        for entry in fs::read_dir(root.join(dir)).expect("read directory") {
+            let path = entry.expect("directory entry").path();
+            if path.extension().is_some_and(|e| e == "html" || e == "rs") {
+                sources.push(path);
+            }
+        }
+    }
+    sources.push(root.join("README.md"));
+    if let Ok(entries) = fs::read_dir(root.join("src")) {
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|e| e == "rs") {
+                sources.push(entry.path());
+            }
+        }
+    }
+
+    let prefixes = ["scripts/", "tools/", "examples/", "packaging/", "research/"];
+    let suffixes = [
+        ".ps1", ".sh", ".py", ".md", ".js", ".qjs", ".cmd", ".bat", ".c", ".rs",
+    ];
+    let mut missing = BTreeSet::new();
+    for source in sources {
+        let text = fs::read_to_string(&source).expect("read source");
+        for token in text.split(|c: char| c.is_whitespace() || "\"'`()<>".contains(c)) {
+            let token = token.trim_end_matches(|c: char| ",;:.".contains(c));
+            if !prefixes.iter().any(|prefix| token.starts_with(prefix)) {
+                continue;
+            }
+            if !suffixes.iter().any(|suffix| token.ends_with(suffix)) {
+                continue;
+            }
+            // A generated output under a `dist/` tree is not in a source clone.
+            if token.contains("/dist/") || token.contains("dist/") {
+                continue;
+            }
+            if !root.join(token).exists() {
+                missing.insert(format!("{}: {}", source.display(), token));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "documentation or tests name paths that do not exist:\n{}",
+        missing.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}

@@ -154,7 +154,7 @@ api-ms-win-crt-string-l1-1-0.dll</code></pre>
         <code>scripts/probe-imports.ps1</code> answers the whole question at once. Run it
         <strong>on the machine that fails</strong>:
       </p>
-      <pre><code>powershell -ExecutionPolicy Bypass -File probe-imports.ps1 -Path .\minicon.exe</code></pre>
+      <pre><code>powershell -ExecutionPolicy Bypass -File scripts/probe-imports.ps1 -Path .\minicon.exe</code></pre>
       <p>
         It parses the executable's import table itself — the target needs no Visual Studio —
         resolves every named import against the running system, and prints the complete missing
