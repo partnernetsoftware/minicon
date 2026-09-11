@@ -83,11 +83,17 @@ impl PendingControl {
             ));
         }
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        // The caller owns the one reply slot; a second take means a request was
+        // dispatched twice. Fail typed instead of unwrapping into a windowed
+        // process, where a panic is a silent exit with no console.
+        let Some(reply) = reply.take() else {
+            return Err("control request already answered".to_owned());
+        };
         self.waits.push(PendingWait {
             target,
             kind,
             deadline,
-            reply: reply.take().expect("control reply available"),
+            reply,
         });
         Ok(())
     }
@@ -139,10 +145,14 @@ impl PendingControl {
         if self.screenshot.is_some() || self.inflight_screenshot.is_some() {
             return Err("a screenshot is already pending".to_owned());
         }
+        // Same one-reply-slot rule as `enqueue_wait`: never unwrap here.
+        let Some(reply) = reply.take() else {
+            return Err("control request already answered".to_owned());
+        };
         self.screenshot = Some(ScreenshotWork {
             target,
             path,
-            reply: reply.take().expect("control reply available"),
+            reply,
             restore_active: None,
         });
         Ok(())
