@@ -82,6 +82,8 @@ minicon cli --control pipe:\\.\pipe\my-session list-tabs</code></pre>
           <tr><td><code>capture-pane</code></td><td>the pane as text</td></tr>
           <tr><td><code>screenshot-pane</code></td><td>the pane as a PNG</td></tr>
           <tr><td><code>perf-stats</code></td><td>frame and throughput counters</td></tr>
+          <tr><td><code>reset-perf-stats</code></td><td>zero the counters so a measurement starts from a known point</td></tr>
+          <tr><td><code>list-commands</code></td><td>the commands this build accepts</td></tr>
         </tbody>
       </table>
       <p>
@@ -109,6 +111,7 @@ minicon cli --control ENDPOINT wait-tab-exit --target @2 --timeout-ms 60000</cod
           <tr><td><code>send-ui-ime</code></td><td>drive an IME preedit and commit</td></tr>
           <tr><td><code>send-mouse</code></td><td>pointer events in terminal cells</td></tr>
           <tr><td><code>send-wheel</code></td><td>scroll; positive notches scroll up</td></tr>
+          <tr><td><code>cancel-pointer</code></td><td>release a control-owned pointer after a press without a matching release</td></tr>
         </tbody>
       </table>
       <p>
