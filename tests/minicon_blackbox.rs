@@ -721,7 +721,26 @@ impl ConSession {
         extra_args: &[S],
         activate: bool,
     ) -> Self {
-        let snapshot_path = dir.join("snapshot.json");
+        Self::spawn_full(dir, extra_args, activate, dir.join("snapshot.json"))
+    }
+
+    /// Like [`Self::spawn`], but `--emit-snapshot` points at `snapshot_path`.
+    /// A test uses this to name a path the host can never write, proving the
+    /// session survives a failed snapshot write.
+    fn spawn_with_snapshot_path<S: AsRef<std::ffi::OsStr>>(
+        dir: &Path,
+        extra_args: &[S],
+        snapshot_path: PathBuf,
+    ) -> Self {
+        Self::spawn_full(dir, extra_args, false, snapshot_path)
+    }
+
+    fn spawn_full<S: AsRef<std::ffi::OsStr>>(
+        dir: &Path,
+        extra_args: &[S],
+        activate: bool,
+        snapshot_path: PathBuf,
+    ) -> Self {
         let mut child_args: Vec<std::ffi::OsString> = extra_args
             .iter()
             .map(|argument| argument.as_ref().to_owned())
@@ -1046,6 +1065,73 @@ fn nonexistent_program_via_dash_e_exits_cleanly_instead_of_hanging() {
         status.code(),
         Some(1),
         "a child spawn failure must map to the ordinary runtime-error exit code"
+    );
+}
+
+/// `--emit-snapshot` is documented as best-effort: a full disk or a harness
+/// that removed the target directory mid-run must not crash the session it is
+/// observing. Point the flag at a path whose parent is a regular file, so every
+/// write fails, and prove the running session still answers the control CLI and
+/// keeps its child alive. This is the ConApp-level half the unit test on
+/// `write_snapshot_atomic` cannot reach.
+#[test]
+fn an_unwritable_snapshot_path_does_not_disturb_the_running_session() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("unwritable-snapshot");
+    // A file, not a directory, so `blocker/snapshot.json` can never be created.
+    let blocker = dir.join("blocker");
+    std::fs::write(&blocker, b"not a directory").expect("write blocker file");
+    let snapshot_path = blocker.join("snapshot.json");
+
+    let script = write_journey(
+        &dir,
+        r#"[
+            {"text": "echo SNAPSHOT_SURVIVOR\r"},
+            {"wait_ms": 500}
+        ]"#,
+    );
+    let args = interactive_shell_args(&script);
+    let session = ConSession::spawn_with_snapshot_path(&dir, &args, snapshot_path.clone());
+
+    // The control surface still answers, so the render loop did not abort on
+    // the failed snapshot write.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut saw_marker = false;
+    while Instant::now() < deadline {
+        if let Ok(output) = invoke_control_output(&session.endpoint, &["capture-pane".to_owned()]) {
+            if output.contains("SNAPSHOT_SURVIVOR") {
+                saw_marker = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        saw_marker,
+        "the session stopped answering control after an unwritable snapshot path"
+    );
+
+    // The blocker file is untouched, and no snapshot file appeared.
+    assert_eq!(
+        std::fs::read(&blocker).unwrap(),
+        b"not a directory",
+        "the blocker must not be overwritten by a failed write"
+    );
+    assert!(!snapshot_path.exists(), "no snapshot file may appear");
+
+    // `list-tabs` proves the host is still driving its tabs, not just the IPC,
+    // and the child is still alive after every snapshot write failed.
+    let tabs = session.control_json(&["list-tabs"]);
+    let tabs = tabs["tabs"]
+        .as_array()
+        .unwrap_or_else(|| panic!("list-tabs did not report a tabs array: {tabs}"));
+    assert!(
+        !tabs.is_empty(),
+        "the session lost its tab after a failed snapshot write"
+    );
+    assert_eq!(
+        tabs[0]["child_alive"], true,
+        "the observed child died with a failed snapshot write: {tabs:?}"
     );
 }
 
