@@ -493,4 +493,64 @@ mod tests {
                 .accepted
         );
     }
+
+    /// A drained batch subtracts exactly the bytes it carried, including the
+    /// zero-byte Click/Focus actions mixed among text and keys, and draining the
+    /// last request returns the byte budget to zero. A leak here would leave the
+    /// queue looking full and silently drop every later push.
+    #[test]
+    fn draining_a_mixed_batch_returns_the_byte_budget_to_zero() {
+        let inbox = ActionInbox::default();
+        let set_text = |bytes: usize| PublishedAction::SetText("t".repeat(bytes));
+        let key = |event: &str| {
+            PublishedAction::Key(agenterm_platform::accessibility_publish::PublishedKey {
+                keysym: 0,
+                event_string: event.to_owned(),
+                is_text: true,
+                modifiers: 0,
+                pressed: true,
+            })
+        };
+        let pushes = [
+            set_text(10),
+            PublishedAction::Click,
+            key("Ctrl+C"),
+            PublishedAction::Focus,
+            set_text(5),
+        ];
+        for action in pushes.clone() {
+            assert!(
+                inbox
+                    .push(Request {
+                        node: NODE_COMMAND,
+                        action
+                    })
+                    .accepted
+            );
+        }
+        let expected_bytes = 10 + 0 + "Ctrl+C".len() + 0 + 5;
+        assert_eq!(inbox.stats().pending_bytes, expected_bytes);
+
+        let (batch, backlog) = inbox.pop_batch(usize::MAX);
+        assert!(!backlog);
+        assert_eq!(batch.len(), pushes.len());
+        assert_eq!(
+            inbox.stats().pending_bytes,
+            0,
+            "a fully drained queue must return its byte budget to zero"
+        );
+        assert_eq!(inbox.stats().pending, 0);
+
+        // The budget is usable again: a full-size paste is accepted after the
+        // drain, which it would not be if `pending_bytes` had leaked.
+        assert!(
+            inbox
+                .push(Request {
+                    node: NODE_COMMAND,
+                    action: set_text(crate::composer::PASTE_LIMIT_BYTES),
+                })
+                .accepted,
+            "the byte budget must be available again after a full drain"
+        );
+    }
 }
