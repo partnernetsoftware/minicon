@@ -2169,6 +2169,26 @@ fn status_reports_the_machine_without_opening_a_window() {
     assert!(stdout.contains("pty backend"), "{stdout}");
     assert!(stdout.contains("font"), "{stdout}");
     assert!(stdout.contains("diagnostics"), "{stdout}");
+
+    // The README says `--status` names where MiniCon writes when something
+    // fails, so the path must be the real diagnostics sink and absolute — not
+    // a placeholder a reader could not open.
+    let reported = stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("diagnostics"))
+        .map(str::trim)
+        .expect("a diagnostics line");
+    let expected =
+        agenterm_platform::diagnostics::log_path().expect("this host has a diagnostics path");
+    assert_eq!(
+        reported,
+        expected.display().to_string(),
+        "--status must name the real diagnostics log"
+    );
+    assert!(
+        std::path::Path::new(reported).is_absolute(),
+        "the diagnostics path must be absolute, got {reported}"
+    );
 }
 
 /// The whole point is that it reports the *running* machine, so the forced
