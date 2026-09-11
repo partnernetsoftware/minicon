@@ -2062,6 +2062,71 @@ mod tests {
         values.iter().map(|value| (*value).to_owned()).collect()
     }
 
+    fn queue_with(commands: Vec<CliCommand>) -> (RequestQueue, Arc<AtomicBool>) {
+        let alive = Arc::new(AtomicBool::new(true));
+        let queue = RequestQueue::new(Arc::clone(&alive));
+        for command in commands {
+            let (reply, _receiver) = reply_channel();
+            queue
+                .push(IncomingRequest { command, reply })
+                .expect("push within capacity");
+        }
+        (queue, alive)
+    }
+
+    fn resize() -> CliCommand {
+        CliCommand::ResizeWindow {
+            width: 800,
+            height: 600,
+        }
+    }
+
+    /// `pop_batch` clamps to the limit and reports whether work remains, so the
+    /// caller can re-arm its wake without spinning on an empty queue.
+    #[test]
+    fn pop_batch_clamps_to_the_limit_and_reports_the_remainder() {
+        let (queue, _alive) = queue_with(vec![CliCommand::ListTabs, CliCommand::PerfStats]);
+        assert_eq!(queue.pop_batch(0).0.len(), 0, "a zero limit drains nothing");
+        let (batch, more) = queue.pop_batch(1);
+        assert_eq!(batch.len(), 1);
+        assert!(more, "one request remains after draining one of two");
+        let (batch, more) = queue.pop_batch(99);
+        assert_eq!(batch.len(), 1, "the limit past the length drains the rest");
+        assert!(!more, "an empty queue reports no more work");
+    }
+
+    /// A run of resize requests is geometry intent, not independent GUI work,
+    /// so one turn absorbs the whole run — but only that run: a non-resize
+    /// command stops the absorption and keeps its place in order.
+    #[test]
+    fn pop_batch_absorbs_a_resize_run_but_never_crosses_another_command() {
+        let (queue, _alive) = queue_with(vec![
+            resize(),
+            resize(),
+            resize(),
+            CliCommand::ListTabs,
+            resize(),
+        ]);
+        let (batch, more) = queue.pop_batch(1);
+        assert_eq!(
+            batch.len(),
+            3,
+            "the three leading resizes are absorbed as one geometry intent"
+        );
+        assert!(more, "the list-tabs and trailing resize remain queued");
+
+        // The next turn must stop at the non-resize command, leaving the
+        // trailing resize for a later turn rather than crossing list-tabs.
+        let (batch, more) = queue.pop_batch(1);
+        assert_eq!(batch.len(), 1);
+        assert!(matches!(batch[0].command, CliCommand::ListTabs));
+        assert!(more, "the trailing resize is still queued");
+        let (batch, more) = queue.pop_batch(1);
+        assert_eq!(batch.len(), 1);
+        assert!(matches!(batch[0].command, CliCommand::ResizeWindow { .. }));
+        assert!(!more);
+    }
+
     #[test]
     fn byte_search_matches_slice_oracle_and_utf8_boundaries() {
         assert!(contains_utf8("", ""));
