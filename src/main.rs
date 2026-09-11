@@ -1327,6 +1327,27 @@ impl ConApp {
         );
     }
 
+    /// Applies the sidebar inset and the settled geometry to the active
+    /// terminal in one place. Both follow the same window metrics and must move
+    /// together: an inset from the old scale with a grid from the new one is
+    /// what leaves the terminal content misaligned after a resize. A drag that
+    /// wants a debounced PTY resize uses `queue_resize` and so keeps its own
+    /// path.
+    fn apply_active_geometry(
+        &mut self,
+        metrics: agenterm_platform::window_host::PixelWindowMetrics,
+    ) -> Result<(), PixelWindowError> {
+        let sidebar_width = self.sidebar_width_logical;
+        let session = self.active_session_mut()?;
+        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+        session.apply_resize(
+            metrics.physical_width,
+            metrics.physical_height,
+            metrics.scale_factor,
+        );
+        Ok(())
+    }
+
     fn layout(&self, width: u32, height: u32, scale: f64) -> ui::Layout {
         ui::Layout::with_sidebar_width(width, height, scale, self.sidebar_width_logical)
     }
@@ -1620,14 +1641,7 @@ impl ConApp {
         self.activate_session(window, ids[next]);
         self.reveal_active_tree_row(window)?;
         let metrics = window.metrics()?;
-        let sidebar_width = self.sidebar_width_logical;
-        let session = self.active_session_mut()?;
-        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
-        session.apply_resize(
-            metrics.physical_width,
-            metrics.physical_height,
-            metrics.scale_factor,
-        );
+        self.apply_active_geometry(metrics)?;
         self.refresh_title(window)?;
         window.focus();
         window.request_redraw();
@@ -1761,14 +1775,7 @@ impl ConApp {
                 self.mark_host_ui_full();
             }
         }
-        let sidebar_width = self.sidebar_width_logical;
-        let session = self.active_session_mut()?;
-        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
-        session.apply_resize(
-            metrics.physical_width,
-            metrics.physical_height,
-            metrics.scale_factor,
-        );
+        self.apply_active_geometry(metrics)?;
         self.composer.focused = false;
         self.refresh_title(window)?;
         window.focus();
