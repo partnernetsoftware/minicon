@@ -580,3 +580,45 @@ fn documentation_links_resolve() {
         broken.into_iter().collect::<Vec<_>>().join("\n")
     );
 }
+
+/// Only the landing page carries locale tables and the binding script; the
+/// reference pages are English by design. A `data-i18n` hook pasted into a
+/// page without that machinery would render untranslated and never be caught,
+/// so require each page to be wholly one or the other: no hooks at all, or the
+/// full machinery that applies them.
+#[test]
+fn every_docs_page_is_wholly_localized_or_wholly_english() {
+    let docs = repo_root().join("docs");
+    let mut pages: Vec<PathBuf> = fs::read_dir(&docs)
+        .expect("read docs")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "html"))
+        .collect();
+    pages.sort();
+    assert!(!pages.is_empty(), "no docs pages found");
+
+    for page in pages {
+        let name = page.file_name().unwrap().to_string_lossy().into_owned();
+        let html = fs::read_to_string(&page).expect("read page");
+        let hooks = html.matches("data-i18n").count();
+        let has_tables = html.contains("data-locale=") || html.contains("\"zh-CN\":");
+        let has_binding = html.contains("document.querySelectorAll(`[${attribute}]`)")
+            || html.contains("data-i18n-html");
+        if hooks == 0 {
+            assert!(
+                !has_tables,
+                "{name} has locale tables but no data-i18n hooks to apply them"
+            );
+            continue;
+        }
+        assert!(
+            has_tables,
+            "{name} has {hooks} data-i18n hooks but no locale tables to resolve them"
+        );
+        assert!(
+            has_binding,
+            "{name} has {hooks} data-i18n hooks but no script that applies them"
+        );
+    }
+}
