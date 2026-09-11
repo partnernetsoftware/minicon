@@ -295,11 +295,11 @@ fn parse_args(args: &[String]) -> Result<ConArgs, String> {
         match arg.as_str() {
             "--no-activate" => parsed.no_activate = true,
             "--working-dir" => {
-                parsed.working_dir = Some(rest.next().cloned().ok_or_else(|| {
-                    "error: --working-dir requires a path
-"
-                    .to_owned()
-                })?);
+                parsed.working_dir = Some(
+                    rest.next()
+                        .cloned()
+                        .ok_or_else(|| "error: --working-dir requires a path\n".to_owned())?,
+                );
             }
             other if other.starts_with("--working-dir=") => {
                 parsed.working_dir = Some(other["--working-dir=".len()..].to_owned());
@@ -330,9 +330,7 @@ fn parse_args(args: &[String]) -> Result<ConArgs, String> {
             "-e" | "--command" => {
                 let argv: Vec<String> = rest.cloned().collect();
                 if argv.is_empty() {
-                    return Err("error: -e requires a program to run
-"
-                    .to_owned());
+                    return Err("error: -e requires a program to run\n".to_owned());
                 }
                 parsed.command = Some(argv);
                 return Ok(parsed);
@@ -357,22 +355,15 @@ fn next_value<'a, T: std::str::FromStr>(
     rest: &mut impl Iterator<Item = &'a String>,
     flag: &str,
 ) -> Result<Option<T>, String> {
-    let raw = rest.next().ok_or_else(|| {
-        format!(
-            "error: {flag} requires a value
-"
-        )
-    })?;
+    let raw = rest
+        .next()
+        .ok_or_else(|| format!("error: {flag} requires a value\n"))?;
     parse_value(raw, flag).map(Some)
 }
 
 fn parse_value<T: std::str::FromStr>(raw: &str, flag: &str) -> Result<T, String> {
-    raw.parse().map_err(|_| {
-        format!(
-            "error: {flag} expects a number, got '{raw}'
-"
-        )
-    })
+    raw.parse()
+        .map_err(|_| format!("error: {flag} expects a number, got '{raw}'\n"))
 }
 
 fn next_decimal<'a>(
@@ -7518,6 +7509,54 @@ mod tests {
         let error = parse_args(&argv(&["--nope"])).expect_err("should reject");
         assert!(error.contains("--nope"), "{error}");
         assert!(error.contains("Usage:"), "{error}");
+    }
+
+    #[test]
+    fn every_valued_flag_reports_a_missing_value() {
+        // Each flag that takes a value must name itself when nothing follows,
+        // rather than silently defaulting or panicking on an empty iterator.
+        for (flag, needle) in [
+            ("--font-size", "--font-size"),
+            ("--cols", "--cols"),
+            ("--rows", "--rows"),
+            ("--control", "--control"),
+            ("--emit-snapshot", "--emit-snapshot"),
+        ] {
+            let error = parse_args(&argv(&[flag])).expect_err(flag);
+            assert!(
+                error.contains(needle),
+                "{flag} must name itself in: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn inline_value_forms_match_their_separate_forms() {
+        // `--working-dir=` and `--font-size=` are the two flags with an inline
+        // spelling; the value must land in the same field as the split form.
+        let inline = parse_args(&argv(&["--working-dir=C:/work dir", "--font-size=18.5"]))
+            .expect("inline forms parse");
+        assert_eq!(inline.working_dir.as_deref(), Some("C:/work dir"));
+        assert_eq!(inline.font_size, Some(18.5));
+
+        let split = parse_args(&argv(&[
+            "--working-dir",
+            "C:/work dir",
+            "--font-size",
+            "18.5",
+        ]))
+        .expect("split forms parse");
+        assert_eq!(inline.working_dir, split.working_dir);
+        assert_eq!(inline.font_size, split.font_size);
+    }
+
+    #[test]
+    fn inline_numeric_flags_reject_garbage() {
+        // The inline spelling must validate like the split one; `.ok()` once
+        // let `--font-size=big` through as an ignored value.
+        let error = parse_args(&argv(&["--font-size=big"])).expect_err("should reject");
+        assert!(error.contains("--font-size"), "{error}");
+        assert!(error.contains("big"), "{error}");
     }
 
     /// Renders one screen and returns (pixel buffer, cell_w, cell_h) for exact
