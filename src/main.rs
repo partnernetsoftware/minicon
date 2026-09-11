@@ -1303,8 +1303,7 @@ impl ConApp {
             self.composer = composer::ComposerState::default();
             self.current_window_title = product_window_title();
             window.set_title(&self.current_window_title);
-            self.mark_host_ui_full();
-            window.request_redraw();
+            self.mark_host_ui_full_and_repaint(window);
             return Ok(());
         }
         self.mark_host_ui_full();
@@ -1469,6 +1468,15 @@ impl ConApp {
         self.mark_a11y_dirty();
     }
 
+    /// Invalidates all host UI and asks the window to repaint. The two always
+    /// travel together — marking without repainting leaves a stale frame until
+    /// unrelated damage arrives, and repainting without marking can present an
+    /// unchanged one — so the pair gets one spelling.
+    fn mark_host_ui_full_and_repaint(&mut self, window: &PixelWindow) {
+        self.mark_host_ui_full();
+        window.request_redraw();
+    }
+
     fn mark_host_ui_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
         if self.frame_width == 0 || self.frame_height == 0 {
             self.mark_host_ui_full();
@@ -1608,8 +1616,7 @@ impl ConApp {
     /// would otherwise turn into an exit for every tab.
     fn note_host_notice(&mut self, message: String, window: &PixelWindow) {
         self.host_notice = Some(message);
-        self.mark_host_ui_full();
-        window.request_redraw();
+        self.mark_host_ui_full_and_repaint(window);
     }
 
     /// Opens a tab the way a user gesture or a control request does: a shell
@@ -1621,8 +1628,7 @@ impl ConApp {
         } else if self.host_notice.take().is_some() {
             // A successful open retracts the previous refusal; the strip must
             // repaint, or the stale notice stays on screen.
-            self.mark_host_ui_full();
-            window.request_redraw();
+            self.mark_host_ui_full_and_repaint(window);
         }
     }
 
@@ -1731,8 +1737,7 @@ impl ConApp {
             }
             ui::TreeHit::Help => {
                 self.help_open = !self.help_open;
-                self.mark_host_ui_full();
-                window.request_redraw();
+                self.mark_host_ui_full_and_repaint(window);
                 return Ok(true);
             }
             ui::TreeHit::ZoomOut => {
@@ -2309,8 +2314,7 @@ impl ConApp {
                 self.deliver_terminal_paste(pending.target, &text)
             });
         self.terminal_clipboard_error = result.err();
-        self.mark_host_ui_full();
-        window.request_redraw();
+        self.mark_host_ui_full_and_repaint(window);
     }
 
     /// Opens the editable confirmation without blocking the event loop.
@@ -2370,8 +2374,7 @@ impl ConApp {
             self.deliver_terminal_paste(pending.target, &text)
         });
         self.terminal_clipboard_error = result.err();
-        self.mark_host_ui_full();
-        window.request_redraw();
+        self.mark_host_ui_full_and_repaint(window);
     }
 
     fn reap_finished_control_screenshot(&mut self) {
@@ -5653,8 +5656,7 @@ impl PixelWindowApplication for ConApp {
             )
         {
             self.help_open = false;
-            self.mark_host_ui_full();
-            window.request_redraw();
+            self.mark_host_ui_full_and_repaint(window);
             return Ok(PixelWindowDirective::Continue);
         }
         if matches!(event, PixelWindowEvent::Wake) {
@@ -5806,8 +5808,7 @@ impl PixelWindowApplication for ConApp {
                     let _ = self.handle_tree_pointer(window, position)?;
                 } else {
                     self.help_open = false;
-                    self.mark_host_ui_full();
-                    window.request_redraw();
+                    self.mark_host_ui_full_and_repaint(window);
                 }
                 return Ok(PixelWindowDirective::Continue);
             }
@@ -5903,8 +5904,7 @@ impl PixelWindowApplication for ConApp {
         if requested && let Err(error) = self.request_terminal_clipboard_paste(window, active, true)
         {
             self.terminal_clipboard_error = Some(error);
-            self.mark_host_ui_full();
-            window.request_redraw();
+            self.mark_host_ui_full_and_repaint(window);
         }
         Ok(directive)
     }
