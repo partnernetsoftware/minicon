@@ -330,7 +330,9 @@ fn landing_page_locales_define_the_same_keys() {
         if after.chars().next() != Some('"') {
             continue;
         }
-        let Some(end) = after[1..].find('"') else { continue };
+        let Some(end) = after[1..].find('"') else {
+            continue;
+        };
         let value = &after[1..end + 1];
         assert!(
             en.contains(value),
