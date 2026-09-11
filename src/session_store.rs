@@ -89,4 +89,46 @@ mod tests {
         assert_eq!(store.insert(id, "duplicate"), Err("duplicate"));
         assert_eq!(store.get(&id), Some(&"original"));
     }
+
+    /// A stale id must be a no-op, and removing an id frees it to be inserted
+    /// again — closing a tab and opening a new one reuses the slot rather than
+    /// leaking it or colliding with the old value.
+    #[test]
+    fn unknown_ids_and_reinsertion_after_removal() {
+        let id = TabId::new(1);
+        let unknown = TabId::new(9);
+        let mut store = SessionStore::default();
+        store.insert(id, "live").unwrap();
+
+        assert!(store.get(&unknown).is_none());
+        assert!(store.get_mut(&unknown).is_none());
+        assert!(store.remove(&unknown).is_none());
+        assert_eq!(
+            store.get(&id),
+            Some(&"live"),
+            "an unknown-id operation must not disturb a live entry"
+        );
+
+        // Removal frees the id; the same id is insertable again.
+        assert_eq!(store.remove(&id), Some("live"));
+        store
+            .insert(id, "reopened")
+            .expect("a closed id can be reused");
+        assert_eq!(store.get(&id), Some(&"reopened"));
+    }
+
+    /// `entries_mut` is the drain loop's view of every session; it must expose
+    /// exactly the stored pairs, order included.
+    #[test]
+    fn entries_mut_exposes_every_stored_pair_in_order() {
+        let mut store = SessionStore::default();
+        store.insert(TabId::new(1), "a").unwrap();
+        store.insert(TabId::new(2), "b").unwrap();
+        let entries = store.entries_mut();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0], (TabId::new(1), "a"));
+        assert_eq!(entries[1], (TabId::new(2), "b"));
+        entries[0].1 = "a2";
+        assert_eq!(store.get(&TabId::new(1)), Some(&"a2"));
+    }
 }
