@@ -1320,6 +1320,43 @@ mod native_endpoint_tests {
         assert!(parse_native_endpoint("tcp:127.0.0.1:42").is_err());
     }
 
+    /// The error text promises `pipe:<name>` and `unix:<absolute-path>`, so the
+    /// empty and relative edges of both forms must be typed refusals, not a
+    /// listener on the wrong address.
+    #[test]
+    fn malformed_control_endpoints_are_refused_with_one_message() {
+        for bad in [
+            "",
+            "pipe:",
+            "tcp:1.2.3.4:9",
+            "agenterm-test",
+            "unix:relative.sock",
+        ] {
+            let error = parse_native_endpoint(bad).expect_err(bad);
+            assert_eq!(
+                error, "minicon control requires pipe:<name> or unix:<absolute-path>",
+                "{bad:?} must report the single documented requirement"
+            );
+        }
+        // A `unix:` socket is a Unix-host form: accepted there, refused on
+        // Windows where only named pipes exist. The point is that the same
+        // message covers both, so a Windows user gets the documented
+        // requirement rather than a platform-specific leak.
+        if cfg!(unix) {
+            assert_eq!(
+                parse_native_endpoint("unix:/tmp/minicon-court.sock"),
+                Ok(IpcEndpoint::UnixSocket(
+                    "/tmp/minicon-court.sock".to_owned()
+                ))
+            );
+        } else {
+            assert_eq!(
+                parse_native_endpoint("unix:/tmp/minicon-court.sock"),
+                Err("minicon control requires pipe:<name> or unix:<absolute-path>".to_owned())
+            );
+        }
+    }
+
     #[test]
     fn request_id_round_trip_preserves_a_mutation_for_safe_reply_replay() {
         let id = RequestId(0x1234_5678_9abc_def0_1357_2468_ace0_bdf1);
