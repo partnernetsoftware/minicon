@@ -362,6 +362,37 @@ mod tests {
         assert_eq!(value["selection"][1]["col"], 4);
         assert_eq!(value["child_alive"], true);
         assert!(value["child_exit_code"].is_null());
+
+        // The per-render snapshot is a public contract (scripts, tests, other
+        // agents poll it), so pin the exact top-level and cursor keys: a
+        // rename would break every reader without failing any value check.
+        let object = value.as_object().expect("snapshot object");
+        let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "child_alive",
+                "child_exit_code",
+                "cols",
+                "cursor",
+                "font_size_px",
+                "ime_preedit",
+                "max_scrollback",
+                "rows",
+                "rows_text",
+                "scroll_offset",
+                "selection",
+                "title",
+            ]
+        );
+        let cursor = value["cursor"].as_object().expect("cursor object");
+        let mut cursor_keys: Vec<&str> = cursor.keys().map(String::as_str).collect();
+        cursor_keys.sort_unstable();
+        assert_eq!(
+            cursor_keys,
+            ["blinking", "col", "row", "shape", "visible_now"]
+        );
     }
 
     #[test]
