@@ -77,6 +77,15 @@ failure, resize storms, process exit, and interaction races.
 - Closing a parent promotes direct children; it does not terminate them.
 - One tab's PTY, parser, screenshot, malformed escape sequence, control request,
   panic, or resource exhaustion cannot corrupt another tab or abort the host.
+  A tab that cannot open (for example a shell that no longer resolves) is
+  rolled back and reported as a host notice; it ends no other tab.
+- A spawned shell and its descendants are reclaimed when the host exits, via a
+  kill-on-close job. Because a process cannot leave a job it is already in, a
+  session the user wants to outlive the terminal opts in at spawn
+  (`AGENTERM_PTY_BREAKAWAY=1`); the job then allows the breakaway and the child
+  is created detached, so an agent session started inside the terminal survives
+  a terminal crash. The default stays attached: a terminal reclaiming its shell
+  is the expected behaviour.
 - Native callbacks never unwind across FFI. Official artifacts use the `con-*`
   unwind profiles and contain callback panics as typed failures.
 - Input focus has one owner. Composer editing never leaks Space, selection,

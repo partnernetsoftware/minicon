@@ -1530,3 +1530,112 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
         );
     }
 }
+/// A shell that will not start must not end the host. The initial tab runs a
+/// copy of a real shell that is deleted once it is running (Windows marks a
+/// running image delete-pending), so the *second* spawn of the same program
+/// cannot find it — the exact per-tab failure that used to return `Err`, which
+/// the host turns into an exit for every tab. After the failure the host must
+/// still answer control, report the reason as `host_notice` in `ui-snapshot`,
+/// and keep the first tab alive.
+#[test]
+fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let screenshot = std::env::temp_dir().join(format!("minicon-{suffix}.png"));
+
+    // A disposable copy of a real shell, deleted after it starts so the next
+    // spawn fails while the running one is unaffected.
+    let dir = std::env::temp_dir().join(format!("minicon-oneshot-{suffix}"));
+    fs::create_dir_all(&dir).expect("scratch dir");
+    let (real_shell, shell_args): (&str, Vec<&str>) = if cfg!(windows) {
+        ("cmd.exe", vec!["/Q", "/K"])
+    } else {
+        ("/bin/sh", Vec::new())
+    };
+    let real_path = resolve_on_path(real_shell).expect("a real shell on PATH");
+    let stub = dir.join(format!("oneshot{}", std::env::consts::EXE_SUFFIX));
+    fs::copy(&real_path, &stub).expect("copy the shell to a disposable name");
+
+    let mut host = Command::new(exe);
+    host.arg("--no-activate").arg("--control").arg(&endpoint).arg("-e");
+    host.arg(&stub);
+    for arg in &shell_args {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui { child, screenshot };
+
+    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
+    let first = tab_id(&listed["tabs"][0]["id"]).to_owned();
+
+    // Remove the program the running tab uses. Windows may keep the live image
+    // mapped, so the delete can fail; either way the *next* spawn must not be
+    // able to start it. If the delete is refused, rename the directory holding
+    // it out of the way after the first tab has already opened.
+    let _ = fs::remove_file(&stub);
+    if stub.exists() {
+        let moved = dir.with_file_name(format!("minicon-oneshot-gone-{suffix}"));
+        let _ = fs::rename(&dir, &moved);
+    }
+    // The user gesture (Ctrl+Shift+T) must fail as a *notice*, not by ending
+    // the host: the control `new-tab` reply is a separate path that reports to
+    // its caller.
+    cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+Shift+T"]);
+
+    let snapshot = cli_json(exe, &endpoint, &["ui-snapshot"]);
+    let notice = &snapshot["host_notice"];
+    assert!(
+        !notice.is_null(),
+        "a new tab that cannot start must surface a host_notice; snapshot: {snapshot}"
+    );
+    assert!(
+        notice
+            .as_str()
+            .is_some_and(|n| n.contains("could not open a terminal")),
+        "the notice must name the failed open; got {notice}"
+    );
+
+    // The original tab is still alive, so the failure stayed contained.
+    let listed = cli_json(exe, &endpoint, &["list-tabs"]);
+    let tabs = listed["tabs"].as_array().expect("tabs array");
+    assert!(
+        tabs.iter()
+            .any(|t| tab_id(&t["id"]) == first && t["child_alive"] == true),
+        "the first tab must survive a failed second tab; snapshot: {listed}"
+    );
+
+    let _ = &mut gui;
+}
+
+/// Finds a bare program on `PATH` (Windows also tries `PATHEXT`), so the test
+/// can point `-e` at a real image it is able to copy and then remove.
+fn resolve_on_path(program: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let extensions: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(str::to_owned)
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    for dir in std::env::split_paths(&path) {
+        for extension in &extensions {
+            // A program that already names its extension is looked up as-is.
+            let candidate = if Path::new(program).extension().is_some() {
+                dir.join(program)
+            } else {
+                dir.join(format!("{program}{extension}"))
+            };
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+      
+        }
+    }
+    None
+}
