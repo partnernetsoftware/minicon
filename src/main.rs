@@ -1103,14 +1103,18 @@ fn wheel_outcome_json(outcome: WheelOutcome) -> json::JsonValue {
     ])
 }
 
+/// A child exit code as JSON: the number, or null while the child is live.
+/// One projection, so `tab-exit` and the tab list cannot disagree on whether
+/// "still running" is null or absent.
+fn exit_code_json(exit_code: Option<i32>) -> json::JsonValue {
+    exit_code.map_or(json::JsonValue::Null, |code| i64::from(code).into())
+}
+
 fn tab_exit_json(id: workspace::TabId, exit_code: Option<i32>) -> json::JsonValue {
     json::object(vec![
         ("id", json::JsonValue::TabId(id.get())),
         ("child_alive", false.into()),
-        (
-            "child_exit_code",
-            exit_code.map_or(json::JsonValue::Null, |code| i64::from(code).into()),
-        ),
+        ("child_exit_code", exit_code_json(exit_code)),
     ])
 }
 
@@ -2366,9 +2370,7 @@ impl ConApp {
                             ),
                             (
                                 "child_exit_code",
-                                session
-                                    .and_then(|session| session.child_exit_code)
-                                    .map_or(json::JsonValue::Null, |code| i64::from(code).into()),
+                                exit_code_json(session.and_then(|session| session.child_exit_code)),
                             ),
                         ])
                     })

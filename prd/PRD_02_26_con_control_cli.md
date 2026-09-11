@@ -77,10 +77,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 - [x] `ui-snapshot` publishes structured UI state — including composer bounds,
   text/focus/submission error, active-terminal IME preedit, typed native IME
   status/name/mode, scrollback extent, pending-wait counts, terminal
-  clipboard-paste state/target/error, and the nullable window-scoped control
-  pointer owner — so black-box journeys assert state instead of guessing timing
-  or inferring cleanup only from a later failure. Unknown native state keeps the
-  same field types and uses `known=false` plus `IME: ?`.
+  clipboard-paste state/target/error, the nullable window-scoped control
+  pointer owner, and a nullable `host_notice` naming a recoverable host-level
+  refusal (a tab that could not open) — so black-box journeys assert state
+  instead of guessing timing or inferring cleanup only from a later failure.
+  Unknown native state keeps the same field types and uses `known=false` plus
+  `IME: ?`.
 - [x] `send-ui-ime enabled|disabled|preedit|commit` injects one bounded
   platform-neutral IME event through the current UI focus owner. Preedit text is
   capped at 64 KiB, its optional character cursor is range-checked, and terminal
