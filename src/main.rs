@@ -1254,6 +1254,13 @@ impl ConApp {
             .and_then(|id| self.sessions.get(&id))
     }
 
+    /// The session for a specific tab, or `None` when the tab's session has not
+    /// been installed yet. A projection over every tab (the tree rows, the
+    /// `list-tabs` reply) reads it by id without naming the map itself.
+    fn session_for(&self, id: workspace::TabId) -> Option<&ConTerminal> {
+        self.sessions.get(&id)
+    }
+
     fn cancel_pointer_gesture_for_tab(&mut self, window: &PixelWindow, id: workspace::TabId) {
         if self.control_pointer_owner == Some(id) {
             self.control_pointer_owner = None;
@@ -2421,7 +2428,7 @@ impl ConApp {
                     .nodes()
                     .iter()
                     .map(|node| {
-                        let session = self.sessions.get(&node.id);
+                        let session = self.session_for(node.id);
                         json::object(vec![
                             ("id", tab_id_json(Some(node.id))),
                             ("parent", tab_id_json(node.parent)),
@@ -3143,7 +3150,13 @@ impl ConApp {
                 surface.fill_rect(branch_x, y, 1, row_height / 2 + 1, branch.to_xrgb());
                 surface.fill_rect(branch_x, y + row_height / 2, 8, 1, branch.to_xrgb());
             }
-            let session = self.sessions.get(&node.id);
+            let session = self.session_for(node.id);
+            // `ListTabs` reports `current_title` directly; this row is the third
+            // surface that shows a title, so it filters empty and falls back to
+            // the node's own label. `current_title` is never empty once a
+            // session exists (`session_label` always yields a non-empty name),
+            // so the two agree today — the fallback only guards the tree against
+            // a future session that reports one.
             let title = session
                 .map(|terminal| terminal.current_title.as_str())
                 .filter(|title| !title.is_empty())
