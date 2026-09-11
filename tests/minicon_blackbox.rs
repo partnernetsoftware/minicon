@@ -938,6 +938,27 @@ fn version_and_help_are_synchronous_and_never_open_a_window() {
         help_text.contains("--emit-snapshot"),
         "help must document --emit-snapshot"
     );
+
+    // `--help` and `list-commands` are two spellings of the same contract, so
+    // every command the build accepts must appear in the help text. The
+    // catalog is the source of truth; a new command added to one and not the
+    // other fails here (and the same guard covers docs/control-cli.html in the
+    // alignment gate).
+    let catalog = Command::new(binary())
+        .args(["cli", "list-commands"])
+        .output()
+        .expect("run cli list-commands");
+    assert!(catalog.status.success());
+    for command in String::from_utf8_lossy(&catalog.stdout).lines() {
+        let command = command.trim();
+        if command.is_empty() {
+            continue;
+        }
+        assert!(
+            help_text.contains(command),
+            "--help does not mention the public command {command:?}"
+        );
+    }
 }
 
 #[test]
