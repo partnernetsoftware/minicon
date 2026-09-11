@@ -2092,6 +2092,63 @@ mod tests {
         assert!(error.contains("unknown minicon cli command"));
     }
 
+    /// `usage()` hand-maintains the command list, so a new subcommand can ship
+    /// with `--help` still omitting it. Require the list in `usage()` to equal
+    /// the top-level dispatch arms exactly: a command that parses but is not
+    /// documented, or one documented but not parsed, both fail here.
+    #[test]
+    fn usage_lists_exactly_the_dispatchable_commands() {
+        let source = include_str!("control.rs");
+        // The top-level `match verb` arms: quoted verbs at one indent under
+        // `let command = match verb {`, up to the catch-all `_ =>`.
+        let body = source
+            .split_once("let command = match verb {")
+            .expect("the verb dispatch exists")
+            .1;
+        let body = body.split("\n        _ => {").next().unwrap_or(body);
+        let mut parsed: Vec<String> = Vec::new();
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix('"') {
+                if let Some(verb) = rest.split('"').next() {
+                    if trimmed.ends_with("=> {") && !verb.contains(char::is_whitespace) {
+                        parsed.push(verb.to_owned());
+                    }
+                }
+            }
+        }
+
+        // The `<a|b|c>` alternation inside `usage()`.
+        let usage = usage();
+        let alternation = usage
+            .split_once('<')
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .expect("usage() names an alternation")
+            .0;
+        let documented: Vec<String> = alternation.split('|').map(str::to_owned).collect();
+
+        assert!(
+            !parsed.is_empty() && parsed.len() > 15,
+            "the dispatch scan found too few verbs: {parsed:?}"
+        );
+        let missing_from_usage: Vec<_> = parsed
+            .iter()
+            .filter(|verb| !documented.contains(verb))
+            .collect();
+        let extra_in_usage: Vec<_> = documented
+            .iter()
+            .filter(|verb| !parsed.contains(verb))
+            .collect();
+        assert!(
+            missing_from_usage.is_empty(),
+            "these commands parse but are not in usage(): {missing_from_usage:?}"
+        );
+        assert!(
+            extra_in_usage.is_empty(),
+            "usage() names commands that do not parse: {extra_in_usage:?}"
+        );
+    }
+
     /// Every fixed-shape subcommand must reject a trailing argument rather
     /// than silently ignore it, so a typo like `close-tab --target @2 extra`
     /// fails loudly. The two variadic key commands are the exception: they
