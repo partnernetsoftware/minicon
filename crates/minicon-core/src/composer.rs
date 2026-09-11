@@ -906,6 +906,37 @@ mod tests {
         assert!(!empty.recall_next());
     }
 
+    /// An edit made on a recalled line is not kept when you step back to the
+    /// draft: recall is a preview of history, and returning past the newest
+    /// entry restores exactly what you were typing before, not what you typed
+    /// on top of a history entry.
+    #[test]
+    fn editing_a_recalled_line_is_discarded_when_the_draft_returns() {
+        let mut composer = state("my draft");
+        composer.remember("git status");
+
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "git status");
+        // Amend the recalled line in place.
+        insert(&mut composer, " --short");
+        assert_eq!(composer.text, "git status --short");
+
+        assert!(composer.recall_next());
+        assert_eq!(
+            composer.text, "my draft",
+            "the draft, not the edited history entry, comes back"
+        );
+        assert_eq!(composer.caret, composer.text.len());
+        assert_eq!(composer.recall, None);
+
+        // Recalling again captures the restored draft fresh, so a second trip
+        // forward still returns the same original draft.
+        assert!(composer.recall_previous());
+        assert_eq!(composer.text, "git status");
+        assert!(composer.recall_next());
+        assert_eq!(composer.text, "my draft");
+    }
+
     #[test]
     fn repeating_a_command_does_not_repeat_it_in_history() {
         let mut composer = state("");
