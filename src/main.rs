@@ -942,6 +942,12 @@ struct ConApp {
     pending_clipboard_paste: Option<PendingClipboardPaste>,
     pending_paste_review: Option<PendingPasteReview>,
     terminal_clipboard_error: Option<String>,
+    /// A recoverable host-level notice (a tab that failed to open, an action
+    /// that was refused). Kept separate from `terminal_clipboard_error` so a
+    /// new-tab failure does not read as a clipboard problem, and surfaced in
+    /// `ui-snapshot` like it. A per-tab failure must never end the process:
+    /// the tab is rolled back and the host says why.
+    host_notice: Option<String>,
     ime_status: Option<agenterm_platform::ime::ImeStatus>,
     ime_status_label: String,
     control_pointer_owner: Option<workspace::TabId>,
@@ -1175,6 +1181,7 @@ impl ConApp {
             pending_clipboard_paste: None,
             pending_paste_review: None,
             terminal_clipboard_error: None,
+            host_notice: None,
             ime_status: None,
             ime_status_label: "IME: ?".to_owned(),
             control_pointer_owner: None,
@@ -1570,6 +1577,26 @@ impl ConApp {
         self.refresh_title(window)
     }
 
+    /// Sets a recoverable host notice and repaints the strip that shows it.
+    /// A per-tab failure uses this instead of returning `Err`, which the host
+    /// would otherwise turn into an exit for every tab.
+    fn note_host_notice(&mut self, message: String, window: &PixelWindow) {
+        self.host_notice = Some(message);
+        self.mark_host_ui_full();
+        window.request_redraw();
+    }
+
+    /// Opens a tab the way a user gesture or a control request does: a shell
+    /// that will not start is a notice, never a reason to end the process.
+    /// The tab is already rolled back inside `open_session` on failure.
+    fn open_session_contained(&mut self, window: &PixelWindow, child: bool) {
+        if let Err(error) = self.open_session(window, child) {
+            self.note_host_notice(format!("could not open a terminal: {error}"), window);
+        } else {
+            self.host_notice = None;
+        }
+    }
+
     fn select_relative(
         &mut self,
         window: &PixelWindow,
@@ -1616,11 +1643,11 @@ impl ConApp {
             return Ok(false);
         };
         if text.eq_ignore_ascii_case("t") {
-            self.open_session(window, false)?;
+            self.open_session_contained(window, false);
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("n") {
-            self.open_session(window, true)?;
+            self.open_session_contained(window, true);
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("w") {
@@ -1677,7 +1704,7 @@ impl ConApp {
             ui::TreeHit::Background => return Ok(true),
             ui::TreeHit::NewRoot => {
                 self.help_open = false;
-                self.open_session(window, false)?;
+                self.open_session_contained(window, false);
                 return Ok(true);
             }
             ui::TreeHit::Help => {
@@ -2362,6 +2389,12 @@ impl ConApp {
                             ("active", tab_id_json(self.workspace.active())),
                             ("workspace_empty", self.workspace.active().is_none().into()),
                             ("help_open", self.help_open.into()),
+                            (
+                                "host_notice",
+                                self.host_notice
+                                    .as_deref()
+                                    .map_or(json::JsonValue::Null, Into::into),
+                            ),
                             (
                                 "control_pointer_owner",
                                 tab_id_json(self.control_pointer_owner),
@@ -5716,7 +5749,7 @@ impl PixelWindowApplication for ConApp {
                     .empty_new_terminal(metrics.physical_width, metrics.physical_height, scale)
                     .contains(x, y)
                 {
-                    self.open_session(window, false)?;
+                    self.open_session_contained(window, false);
                     window.focus();
                     window.request_redraw();
                 }
