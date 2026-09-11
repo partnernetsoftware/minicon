@@ -2111,6 +2111,25 @@ impl ConApp {
             .ok_or_else(|| "terminal disappeared".to_owned())
     }
 
+    /// Sends input to a control-addressed terminal and replies with `label`
+    /// set to the byte count the action reports. The guard and the error
+    /// wording live here so a new send command cannot forget to require an
+    /// open PTY or report a dead child as a typed failure instead of a
+    /// silent success.
+    fn send_to_control_terminal(
+        &mut self,
+        target: Option<workspace::TabId>,
+        label: &'static str,
+        action: impl FnOnce(&mut ConTerminal) -> std::io::Result<usize>,
+    ) -> Result<json::JsonValue, String> {
+        self.control_session_mut(target).and_then(|session| {
+            session.ensure_pty_input_open()?;
+            let sent =
+                action(session).map_err(|error| format!("terminal input failed: {error}"))?;
+            Ok(single_field_json(label, sent.into()))
+        })
+    }
+
     /// Drops a pending terminal clipboard read and/or paste review, recording
     /// why. `target` selects one tab; `None` cancels every tab. Both pending
     /// kinds share this one path so a new one cannot be forgotten in either
@@ -2575,22 +2594,14 @@ impl ConApp {
                 })
             }
             CliCommand::SendText { target, text } => {
-                self.control_session_mut(target).and_then(|session| {
-                    session.ensure_pty_input_open()?;
+                self.send_to_control_terminal(target, "sent_bytes", |session| {
                     session.scroll_to_bottom();
-                    session
-                        .write_pty(text.as_bytes())
-                        .map_err(|error| format!("terminal input failed: {error}"))?;
-                    Ok(single_field_json("sent_bytes", text.len().into()))
+                    session.write_pty(text.as_bytes()).map(|()| text.len())
                 })
             }
             CliCommand::SendPaste { target, text } => {
-                self.control_session_mut(target).and_then(|session| {
-                    session.ensure_pty_input_open()?;
-                    session
-                        .paste_text(&text)
-                        .map_err(|error| format!("terminal input failed: {error}"))?;
-                    Ok(single_field_json("sent_bytes", text.len().into()))
+                self.send_to_control_terminal(target, "sent_bytes", |session| {
+                    session.paste_text(&text).map(|()| text.len())
                 })
             }
             CliCommand::SendKeys { target, keys } => (|| {
