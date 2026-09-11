@@ -1244,6 +1244,16 @@ impl ConApp {
         })
     }
 
+    /// The active session, or `None` when there is no active tab or its session
+    /// has not been installed yet. Read-only projections (titles, IME preedit,
+    /// dirty regions, seed capture) use this so the "no active session" shape
+    /// lives in one place instead of being re-derived at each call site.
+    fn active_session_opt(&self) -> Option<&ConTerminal> {
+        self.workspace
+            .active()
+            .and_then(|id| self.sessions.get(&id))
+    }
+
     fn cancel_pointer_gesture_for_tab(&mut self, window: &PixelWindow, id: workspace::TabId) {
         if self.control_pointer_owner == Some(id) {
             self.control_pointer_owner = None;
@@ -1536,9 +1546,8 @@ impl ConApp {
 
     fn request_dirty_redraw(&self, window: &PixelWindow) {
         let candidate = self.host_ui_dirty.union(
-            self.workspace
-                .active()
-                .and_then(|id| self.sessions.get(&id).map(|session| session.dirty))
+            self.active_session_opt()
+                .map(|session| session.dirty)
                 .unwrap_or_else(DirtyRegion::full),
         );
         request_candidate_redraw(window, candidate, self.frame_width, self.frame_height);
@@ -1573,9 +1582,7 @@ impl ConApp {
 
     fn open_session(&mut self, window: &PixelWindow, child: bool) -> Result<(), PixelWindowError> {
         let seed = self
-            .workspace
-            .active()
-            .and_then(|id| self.sessions.get(&id))
+            .active_session_opt()
             .map(SessionSeed::from_session)
             .unwrap_or_else(|| self.session_seed.clone());
         self.cancel_pointer_gestures_for_activation(window);
@@ -2512,9 +2519,7 @@ impl ConApp {
                             ("composer_preedit", self.composer.preedit.as_str().into()),
                             (
                                 "terminal_ime_preedit",
-                                self.workspace
-                                    .active()
-                                    .and_then(|id| self.sessions.get(&id))
+                                self.active_session_opt()
                                     .map_or("", |session| session.ime_preedit.as_str())
                                     .into(),
                             ),
@@ -3215,9 +3220,7 @@ impl ConApp {
                     self.ui_language.strings().send_to,
                     active_id_text.format(active_id),
                     " ",
-                    self.workspace
-                        .active()
-                        .and_then(|id| self.sessions.get(&id))
+                    self.active_session_opt()
                         .map_or("", |session| session.current_title.as_str()),
                 ],
                 if self.composer.submit_error.is_some() {
