@@ -1584,8 +1584,33 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     }
     // The user gesture (Ctrl+Shift+T) must fail as a *notice*, not by ending
     // the host: the control `new-tab` reply is a separate path that reports to
-    // its caller.
+    // its caller. Capture the window before and after so the notice is proven
+    // painted, not merely present in `ui-snapshot`.
+    let before_shot = std::env::temp_dir().join(format!("minicon-notice-before-{suffix}.png"));
+    cli_json(
+        exe,
+        &endpoint,
+        &[
+            "screenshot-pane",
+            "--target",
+            &first,
+            "--output",
+            &before_shot.to_string_lossy(),
+        ],
+    );
     cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+Shift+T"]);
+    let after_shot = std::env::temp_dir().join(format!("minicon-notice-after-{suffix}.png"));
+    cli_json(
+        exe,
+        &endpoint,
+        &[
+            "screenshot-pane",
+            "--target",
+            &first,
+            "--output",
+            &after_shot.to_string_lossy(),
+        ],
+    );
 
     let snapshot = cli_json(exe, &endpoint, &["ui-snapshot"]);
     let notice = &snapshot["host_notice"];
@@ -1608,6 +1633,44 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
             .any(|t| tab_id(&t["id"]) == first && t["child_alive"] == true),
         "the first tab must survive a failed second tab; snapshot: {listed}"
     );
+
+    // The status strip is host UI; the notice must actually reach it. Compare
+    // the strip band (near the composer top, right of the tab column) between
+    // the two shots. The window keeps its size, so any difference is content.
+    fn decode(path: &Path) -> (usize, usize, usize, Vec<u8>) {
+        let decoder = png::Decoder::new(fs::File::open(path).expect("open screenshot"));
+        let mut reader = decoder.read_info().expect("read screenshot info");
+        let mut bytes = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut bytes).expect("decode screenshot");
+        bytes.truncate(info.buffer_size());
+        let channels = match info.color_type {
+            png::ColorType::Rgb => 3,
+            png::ColorType::Rgba => 4,
+            other => panic!("unexpected screenshot color type {other:?}"),
+        };
+        (info.width as usize, info.height as usize, channels, bytes)
+    }
+    let (bw, bh, before_channels, before) = decode(&before_shot);
+    let (aw, ah, after_channels, after) = decode(&after_shot);
+    assert_eq!((aw, ah), (bw, bh), "the window changed size while noticing");
+    assert_eq!(before_channels, after_channels, "color type changed");
+    let band_changed = (0..bh)
+        // The strip sits just above the composer input row, which the earlier
+        // `ui-snapshot` geometry puts near the bottom band of the window.
+        .filter(|y| *y * 10 >= bh * 8 && *y * 10 <= bh * 9)
+        .flat_map(|y| (bw / 3..bw * 5 / 6).map(move |x| (x, y)))
+        .step_by(3)
+        .filter(|(x, y)| {
+            let at = (y * bw + x) * before_channels;
+            before[at..at + 3] != after[at..at + 3]
+        })
+        .count();
+    assert!(
+        band_changed > 0,
+        "the status strip did not repaint when the notice appeared"
+    );
+    let _ = fs::remove_file(&before_shot);
+    let _ = fs::remove_file(&after_shot);
 
     let _ = &mut gui;
 }

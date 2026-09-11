@@ -1130,6 +1130,16 @@ fn terminal_clipboard_target_is_current(
     active == Some(target) && !composer_focused
 }
 
+/// The single message the status strip shows, or `None` for the routing label.
+/// A host notice (a tab that could not open) outranks a clipboard refusal; both
+/// are recoverable and actionable, and the strip has one line.
+fn status_strip_notice<'a>(
+    host_notice: Option<&'a str>,
+    clipboard_error: Option<&'a str>,
+) -> Option<&'a str> {
+    host_notice.or(clipboard_error)
+}
+
 fn ime_status_json(status: Option<&agenterm_platform::ime::ImeStatus>) -> json::JsonValue {
     let (known, name, available, open, native_mode, full_shape, label) = status.map_or_else(
         || (false, "", false, false, false, false, "IME: ?".to_owned()),
@@ -3163,10 +3173,10 @@ impl ConApp {
         // host notice (a tab that could not open) outranks a clipboard refusal;
         // both are temporary and actionable, and neither should stay invisible
         // just because it only reached `ui-snapshot`.
-        let strip_notice = self
-            .host_notice
-            .as_deref()
-            .or(self.terminal_clipboard_error.as_deref());
+        let strip_notice = status_strip_notice(
+            self.host_notice.as_deref(),
+            self.terminal_clipboard_error.as_deref(),
+        );
         if let Some(notice) = strip_notice {
             paint_host_ui_text(
                 &mut surface,
@@ -6773,6 +6783,17 @@ mod tests {
             Some(target),
             true
         ));
+    }
+
+    /// The status strip has one line, so the priority is a real decision:
+    /// a tab that could not open outranks a clipboard refusal, and with
+    /// neither the strip falls back to the routing label.
+    #[test]
+    fn status_strip_prefers_the_host_notice() {
+        assert_eq!(status_strip_notice(None, None), None);
+        assert_eq!(status_strip_notice(None, Some("clip")), Some("clip"));
+        assert_eq!(status_strip_notice(Some("tab"), None), Some("tab"));
+        assert_eq!(status_strip_notice(Some("tab"), Some("clip")), Some("tab"));
     }
     use agenterm_platform::input::ModifierState;
 
