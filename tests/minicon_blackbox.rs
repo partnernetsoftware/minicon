@@ -959,6 +959,13 @@ fn version_and_help_are_synchronous_and_never_open_a_window() {
             "--help does not mention the public command {command:?}"
         );
     }
+
+    // The help names the config file the loader actually reads, so the name in
+    // the text and the name in `config_path` cannot drift apart.
+    assert!(
+        help_text.contains("minicon.json"),
+        "--help must name the config file"
+    );
 }
 
 #[test]
