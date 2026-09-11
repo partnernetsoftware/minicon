@@ -2194,6 +2194,51 @@ mod tests {
         );
     }
 
+    /// `CLI_COMMAND_CATALOG` is the `list-commands` output and the source of
+    /// truth the `--help` guard checks against, but nothing proved the catalog
+    /// itself equals what the build dispatches. Require it to be exactly the
+    /// dispatchable commands plus `list-commands` (handled before dispatch),
+    /// sorted, so a phantom entry or a missing command fails here.
+    #[test]
+    fn command_catalog_is_exactly_the_dispatchable_commands_sorted() {
+        let source = include_str!("control.rs");
+        let body = source
+            .split_once("let command = match verb {")
+            .expect("the verb dispatch exists")
+            .1;
+        let body = body.split("\n        _ => {").next().unwrap_or(body);
+        let mut dispatched: Vec<String> = Vec::new();
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix('"') {
+                if let Some(verb) = rest.split('"').next() {
+                    if trimmed.ends_with("=> {") && !verb.contains(char::is_whitespace) {
+                        dispatched.push(verb.to_owned());
+                    }
+                }
+            }
+        }
+        dispatched.push("list-commands".to_owned());
+        dispatched.sort();
+
+        let mut catalog: Vec<String> = CLI_COMMAND_CATALOG
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let sorted = catalog.clone();
+        catalog.sort();
+        assert_eq!(
+            catalog, sorted,
+            "the catalog must be sorted so `diff`-based use stays stable"
+        );
+        assert_eq!(
+            catalog, dispatched,
+            "the catalog must name exactly the dispatchable commands plus list-commands"
+        );
+    }
+
     /// Every fixed-shape subcommand must reject a trailing argument rather
     /// than silently ignore it, so a typo like `close-tab --target @2 extra`
     /// fails loudly. The two variadic key commands are the exception: they
