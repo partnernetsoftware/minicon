@@ -122,7 +122,14 @@ failure, resize storms, process exit, and interaction races.
 - A tab that cannot open ends no other tab. A black-box journey deletes the
   shell after the first tab is running, opens another through the user gesture,
   and proves the host still answers control, reports a `host_notice` naming the
-  failure, and leaves the first tab alive.
+  failure, paints that notice on the status strip (window screenshots before
+  and after), and leaves the first tab alive.
+- An exited shell is visible. A child exit keeps its tab (remain-on-exit) and
+  dims that tab's label; a pixel journey screenshots the window before and
+  after the shell exits and asserts the tab column repainted.
+- Recoverable refusals share one status line: a host notice outranks a terminal
+  clipboard refusal, and both appear where the routing label would, so neither
+  is visible only to a control client.
 - The code-signing inspector and the signing workflow have policy suites that
   read the shipped scripts and workflow and refuse a contract the bytes do not
   meet; they are registered so cargo builds and runs them.
