@@ -677,15 +677,25 @@ impl<'a> Cursor<'a> {
             .ok_or_else(|| format!("{flag} requires @TAB_ID"))
     }
 
-    fn optional_usize(&mut self, flag: &str) -> Result<Option<usize>, String> {
+    /// Consumes `flag` if it is the next argument, for the optional getters
+    /// that share this peek-and-advance step.
+    fn take_if_flag(&mut self, flag: &str) -> bool {
         if self
             .args
             .get(self.position)
-            .is_none_or(|value| value != flag)
+            .is_some_and(|value| value == flag)
         {
+            self.position += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn optional_usize(&mut self, flag: &str) -> Result<Option<usize>, String> {
+        if !self.take_if_flag(flag) {
             return Ok(None);
         }
-        self.position += 1;
         let value = self
             .next()
             .ok_or_else(|| format!("{flag} requires a value"))?;
@@ -700,14 +710,9 @@ impl<'a> Cursor<'a> {
     }
 
     fn optional_u64(&mut self, flag: &str) -> Result<Option<u64>, String> {
-        if self
-            .args
-            .get(self.position)
-            .is_none_or(|value| value != flag)
-        {
+        if !self.take_if_flag(flag) {
             return Ok(None);
         }
-        self.position += 1;
         let value = self
             .next()
             .ok_or_else(|| format!("{flag} requires a value"))?;
@@ -717,13 +722,17 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn required_u16(&mut self, flag: &str) -> Result<u16, String> {
+    fn required_unsigned<T>(&mut self, flag: &str, describe: &str) -> Result<T, String>
+    where
+        T: TryFrom<u64>,
+    {
         let value = self.required_value(flag)?;
-        let value = match parse_u64_decimal(value) {
-            Some(value) => value,
-            None => return Err(format!("{flag} must be an unsigned 16-bit integer")),
-        };
-        u16::try_from(value).map_err(|_| format!("{flag} must be an unsigned 16-bit integer"))
+        let value = parse_u64_decimal(value).ok_or_else(|| format!("{flag} must be {describe}"))?;
+        T::try_from(value).map_err(|_| format!("{flag} must be {describe}"))
+    }
+
+    fn required_u16(&mut self, flag: &str) -> Result<u16, String> {
+        self.required_unsigned(flag, "an unsigned 16-bit integer")
     }
 
     fn required_i16(&mut self, flag: &str) -> Result<i16, String> {
@@ -733,16 +742,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn optional_flag(&mut self, flag: &str) -> bool {
-        if self
-            .args
-            .get(self.position)
-            .is_some_and(|value| value == flag)
-        {
-            self.position += 1;
-            true
-        } else {
-            false
-        }
+        self.take_if_flag(flag)
     }
 
     fn finish(&self) -> Result<(), String> {
