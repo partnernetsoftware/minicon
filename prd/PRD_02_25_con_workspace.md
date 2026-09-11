@@ -93,6 +93,11 @@ header tools, and the composer. It is not the browser, and it is not layout.
   close targets and one aligned top icon strip: new root terminal, help,
   Chinese, English, zoom out, reset and zoom in. A distinct bottom composer
   owns input, Send and Newline.
+- [x] a tab whose shell has exited stays in the tree (remain-on-exit) and is
+  visibly inert: its label dims, and the change repaints the tab column
+  immediately rather than waiting for unrelated host-UI damage. A pixel
+  journey screenshots the window before and after the shell exits and asserts
+  the tab column changed while the window kept its size.
 - [x] the tree header does not repeat the `MiniCon` product label already owned
   by the native window title. It spends that scarce row on actions and groups
   them as `new/help | languages | zoom`, with 24-DIP hit targets and no

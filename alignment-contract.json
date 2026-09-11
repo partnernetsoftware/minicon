@@ -43,6 +43,16 @@
       "commands": ["close-tab", "list-tabs", "new-tab", "select-tab"]
     },
     {
+      "id": "con.workspace.exited-tab",
+      "kind": "visual",
+      "status": "shipped",
+      "evidence_mode": "black-box",
+      "prd": "prd/PRD_02_25_con_workspace.md",
+      "prd_anchor": "- [x] a tab whose shell has exited stays in the tree (remain-on-exit) and is",
+      "evidence": ["minicon_blackbox::an_exited_shell_repaints_its_tab_row"],
+      "commands": []
+    },
+    {
       "id": "con.workspace.composer",
       "kind": "behavior",
       "status": "shipped",

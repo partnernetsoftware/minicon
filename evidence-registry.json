@@ -102,6 +102,15 @@
       "source": "tests/minicon_control.rs"
     },
     {
+      "id": "minicon_blackbox::an_exited_shell_repaints_its_tab_row",
+      "kind": "public-black-box",
+      "emitter": "cargo-test-harness",
+      "platform": "windows-x86_64",
+      "test_target": "minicon_blackbox",
+      "test_name": "an_exited_shell_repaints_its_tab_row",
+      "source": "tests/minicon_blackbox.rs"
+    },
+    {
       "id": "minicon_blackbox::the_two_snapshots_agree_on_title_and_child_life",
       "kind": "public-black-box",
       "emitter": "cargo-test-harness",
