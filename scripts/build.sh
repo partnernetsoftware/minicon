@@ -9,7 +9,23 @@ cd "$repo_root"
 mode=${1:-release}
 shift || true
 
-python3 scripts/cleanup-build-state.py --apply --scope routine
+# The cleanup helper is Python, and the interpreter's name differs by host:
+# Linux/macOS ship `python3`, a Windows Git-for-Windows shell usually has only
+# `python` (or the `py` launcher). Pick whichever exists and say so plainly when
+# none does, instead of dying mid-build with "python3: command not found".
+python_bin=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    python_bin="$candidate"
+    break
+  fi
+done
+if [ -z "$python_bin" ]; then
+  echo "scripts/build.sh: no python interpreter found (tried python3, python, py)" >&2
+  exit 127
+fi
+
+"$python_bin" scripts/cleanup-build-state.py --apply --scope routine
 mkdir -p target
 marker=target/.minicon-build-active
 printf '%s\n' "$$" >"$marker"

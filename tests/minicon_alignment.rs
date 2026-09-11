@@ -391,3 +391,51 @@ fn referenced_repository_paths_exist() {
         missing.into_iter().collect::<Vec<_>>().join("\n")
     );
 }
+
+/// `scripts/build.sh` is the documented build entry, and the README names its
+/// modes (`release`, `dev`, `check`, `test`). Pin that contract: the wrapper
+/// exists and is executable, and an unknown mode is refused with the usage
+/// rather than silently defaulting to a full release build. The interpreter it
+/// needs is the reason this test runs the script at all — a host without
+/// `python3` (a Windows Git shell has only `python`) must not be a broken
+/// documented path.
+#[test]
+fn build_script_accepts_the_documented_modes() {
+    let script = repo_root().join("scripts/build.sh");
+    assert!(script.is_file(), "scripts/build.sh must exist");
+    let Ok(bash) = which_bash() else {
+        eprintln!("skipping: no bash on PATH");
+        return;
+    };
+
+    // An unknown mode is a usage error (exit 2), not a build.
+    let output = Command::new(&bash)
+        .arg(&script)
+        .arg("definitely-not-a-mode")
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/build.sh");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "an unknown mode must be a usage error: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("usage: scripts/build.sh"),
+        "the refusal must print the usage"
+    );
+}
+
+/// A `bash` on PATH, or `None` so a platform without one skips rather than
+/// fails a gate that does not apply to it.
+fn which_bash() -> Result<PathBuf, ()> {
+    let path = std::env::var_os("PATH").ok_or(())?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(if cfg!(windows) { "bash.exe" } else { "bash" });
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    Err(())
+}
