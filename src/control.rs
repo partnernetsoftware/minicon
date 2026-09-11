@@ -1210,14 +1210,23 @@ fn run_cli_exchange(
     stream
         .set_io_timeout(GUI_RESPONSE_TIMEOUT)
         .map_err(|error| (false, error.to_string()))?;
-    write_frame(&mut stream, payload, REQUEST_MAX_BYTES).map_err(|error| {
-        let lost_request = error.is_lost_connection();
-        (lost_request, format!("write control request: {error}"))
-    })?;
-    read_frame(&mut stream, RESPONSE_MAX_BYTES).map_err(|error| {
-        let lost_reply = error.is_lost_reply();
-        (lost_reply, format!("read control response: {error}"))
-    })
+    write_frame(&mut stream, payload, REQUEST_MAX_BYTES)
+        .map_err(|error| lost_write("write control request", error))?;
+    read_frame(&mut stream, RESPONSE_MAX_BYTES)
+        .map_err(|error| lost_read("read control response", error))
+}
+
+// A frame error names its stage and whether the client may safely retry. The
+// write stage asks `is_lost_connection` (the request may not have run); the
+// read stage asks `is_lost_reply` (it may have run and only the reply was
+// lost). Keeping the two predicates distinct is the point: a future change to
+// one must be a deliberate choice for that stage.
+fn lost_write(stage: &str, error: FrameError) -> (bool, String) {
+    (error.is_lost_connection(), format!("{stage}: {error}"))
+}
+
+fn lost_read(stage: &str, error: FrameError) -> (bool, String) {
+    (error.is_lost_reply(), format!("{stage}: {error}"))
 }
 
 fn serve_one(
@@ -1422,6 +1431,42 @@ mod native_endpoint_tests {
         assert!(FrameError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)).is_lost_connection());
         assert!(!FrameError::Io(io::Error::from(io::ErrorKind::TimedOut)).is_lost_connection());
         assert!(!FrameError::Protocol("bad frame".to_owned()).is_lost_connection());
+    }
+
+    /// The retry loop keys off the `(retryable, message)` pair these helpers
+    /// build. A disconnect retries at both stages; any other error does not,
+    /// and the message still names the stage that failed.
+    #[test]
+    fn connection_stage_helpers_agree_on_retryability_and_name_their_stage() {
+        let disconnect = || FrameError::Io(io::Error::from(io::ErrorKind::UnexpectedEof));
+        let other = || FrameError::Io(io::Error::from(io::ErrorKind::TimedOut));
+
+        assert_eq!(
+            lost_write("write control request", disconnect()).0,
+            true,
+            "a request write that lost its connection may not have run"
+        );
+        assert_eq!(
+            lost_read("read control response", disconnect()).0,
+            true,
+            "a lost reply may have run and must retry with the same id"
+        );
+        assert_eq!(lost_write("write control request", other()).0, false);
+        assert_eq!(lost_read("read control response", other()).0, false);
+
+        let (_, message) = lost_read("read control response", other());
+        assert!(
+            message.starts_with("read control response: "),
+            "the failure must name its stage: {message}"
+        );
+        let (_, protocol_message) = lost_write(
+            "write control request",
+            FrameError::Protocol("bad frame".to_owned()),
+        );
+        assert!(
+            protocol_message.starts_with("write control request: "),
+            "a protocol failure must name its stage too: {protocol_message}"
+        );
     }
 }
 
