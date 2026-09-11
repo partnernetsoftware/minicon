@@ -169,4 +169,34 @@ mod tests {
         assert_eq!(workspace.nodes().len(), node_count);
         assert_eq!(workspace.active(), active);
     }
+
+    /// A stale id (a click on a tab that has since closed, a control command
+    /// racing teardown) must be a no-op, not a panic or a silent retarget.
+    #[test]
+    fn operations_on_an_unknown_id_are_no_ops() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        let active_before = workspace.active();
+        let unknown = TabId::new(9_999);
+
+        assert!(
+            !workspace.set_active(unknown),
+            "set_active must refuse an unknown id"
+        );
+        assert_eq!(workspace.active(), active_before);
+
+        assert!(
+            workspace.add_child(unknown, "child".into()).is_none(),
+            "a child needs a real parent"
+        );
+        assert_eq!(workspace.nodes().len(), 1);
+
+        assert!(
+            workspace.close(unknown).is_none(),
+            "closing an unknown id is a no-op"
+        );
+        assert_eq!(workspace.nodes().len(), 1);
+        assert_eq!(workspace.active(), Some(root));
+        assert!(workspace.node(unknown).is_none());
+    }
 }
