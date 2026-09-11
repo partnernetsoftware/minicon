@@ -2239,6 +2239,45 @@ mod tests {
         );
     }
 
+    /// The mouse vocabulary is a closed set the CLI and the help both name.
+    /// Pin every accepted spelling to its value and require everything else —
+    /// empty, wrong case, a prefix — to be refused with the documented list, so
+    /// a silently accepted alias cannot drift the help and the parser apart.
+    #[test]
+    fn mouse_action_and_button_vocabularies_are_exact() {
+        for (text, expected) in [
+            ("press", MouseAction::Press),
+            ("release", MouseAction::Release),
+            ("move", MouseAction::Move),
+            ("click", MouseAction::Click),
+        ] {
+            assert_eq!(parse_mouse_action(text), Ok(expected), "{text:?}");
+        }
+        for bad in ["", "Press", "pressed", "scroll", " ", "click "] {
+            let error = parse_mouse_action(bad).expect_err(bad);
+            assert!(
+                error.contains("use press, release, move, or click"),
+                "{bad:?} must report the closed set, got: {error}"
+            );
+        }
+
+        for (text, expected) in [
+            ("none", MouseButton::None),
+            ("left", MouseButton::Left),
+            ("middle", MouseButton::Middle),
+            ("right", MouseButton::Right),
+        ] {
+            assert_eq!(parse_mouse_button(text), Ok(expected), "{text:?}");
+        }
+        for bad in ["", "Left", "centre", "button1", " "] {
+            let error = parse_mouse_button(bad).expect_err(bad);
+            assert!(
+                error.contains("use none, left, middle, or right"),
+                "{bad:?} must report the closed set, got: {error}"
+            );
+        }
+    }
+
     /// Every fixed-shape subcommand must reject a trailing argument rather
     /// than silently ignore it, so a typo like `close-tab --target @2 extra`
     /// fails loudly. The two variadic key commands are the exception: they
