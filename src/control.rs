@@ -4,7 +4,7 @@
 //! scripting language, mux protocol, workspace store, or background service.
 
 use std::collections::VecDeque;
-use std::io::{self, Read as _, Write as _};
+use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1422,7 +1422,7 @@ impl std::fmt::Display for FrameError {
 }
 
 fn write_frame(
-    stream: &mut NativeStream,
+    stream: &mut impl std::io::Write,
     payload: &[u8],
     max_bytes: usize,
 ) -> Result<(), FrameError> {
@@ -1441,7 +1441,7 @@ fn write_frame(
     stream.flush().map_err(FrameError::Io)
 }
 
-fn read_frame(stream: &mut NativeStream, max_bytes: usize) -> Result<Vec<u8>, FrameError> {
+fn read_frame(stream: &mut impl std::io::Read, max_bytes: usize) -> Result<Vec<u8>, FrameError> {
     let mut header = [0u8; 8];
     stream.read_exact(&mut header).map_err(FrameError::Io)?;
     if [header[0], header[1], header[2], header[3]] != WIRE_MAGIC {
@@ -2303,5 +2303,46 @@ mod tests {
         assert!(decode_request(&[10, 0, 3, 0, 0, 0, 0, 0]).is_err());
         assert!(decode_request(&[14, 0, 0, 1, 0]).is_err());
         assert!(decode_response(&[9]).is_err());
+    }
+
+    /// The frame layer — magic, length prefix, empty and oversized payloads —
+    /// is separate from the payload codec above and was untested. Drive it
+    /// over an in-memory stream so a bad frame is rejected before a length is
+    /// trusted and a huge allocation is attempted.
+    #[test]
+    fn frame_layer_rejects_bad_magic_empty_and_oversized_payloads() {
+        use std::io::Cursor;
+
+        // Round trip: a valid frame decodes to exactly its payload.
+        let mut wire = Vec::new();
+        write_frame(&mut wire, b"payload", 64).expect("a valid frame writes");
+        let decoded = read_frame(&mut Cursor::new(&wire), 64).expect("a valid frame reads");
+        assert_eq!(decoded, b"payload");
+
+        // Empty payload: refused on both sides.
+        assert!(write_frame(&mut Vec::new(), b"", 64).is_err());
+        let mut empty_header = Vec::new();
+        empty_header.extend_from_slice(&WIRE_MAGIC);
+        empty_header.extend_from_slice(&0u32.to_le_bytes());
+        assert!(read_frame(&mut Cursor::new(&empty_header), 64).is_err());
+
+        // Oversized payload: refused before the reader allocates. The header
+        // claims 65 bytes and the buffer really carries them, so removing the
+        // cap would let the read succeed instead of refusing — the guard is
+        // what is being tested, not an incidental short-read error.
+        assert!(write_frame(&mut Vec::new(), &[0u8; 65], 64).is_err());
+        let mut big = Vec::new();
+        big.extend_from_slice(&WIRE_MAGIC);
+        big.extend_from_slice(&65u32.to_le_bytes());
+        big.extend_from_slice(&[0u8; 65]);
+        assert!(
+            read_frame(&mut Cursor::new(&big), 64).is_err(),
+            "a frame longer than the cap must be refused even when the bytes are present"
+        );
+
+        // Bad magic: the frame is not even a payload length to trust.
+        let mut bad_magic = vec![b'X', b'X', b'X', b'X'];
+        bad_magic.extend_from_slice(&8u32.to_le_bytes());
+        assert!(read_frame(&mut Cursor::new(&bad_magic), 64).is_err());
     }
 }
