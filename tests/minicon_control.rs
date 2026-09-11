@@ -148,18 +148,92 @@ fn cli_text(exe: &Path, endpoint: &str, arguments: &[&str]) -> String {
     output_text(&output)
 }
 
-fn wait_until_ready(exe: &Path, endpoint: &str, timeout: Duration) -> Value {
+/// The two readiness failures must be distinguishable. A host that exits
+/// (here because `-e` names no program) is a crash-class result and must say
+/// so; a live-but-slow host must not be reported as a death. This drives the
+/// first branch without waiting out the timeout.
+#[test]
+fn a_host_that_exits_before_ready_is_reported_as_a_death() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let child = Command::new(exe)
+        .arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e")
+        .arg("minicon-no-such-program-for-this-test")
+        .spawn()
+        .expect("spawn minicon with a bad program");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(format!("minicon-{suffix}.png")),
+    };
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wait_until_ready_for(
+            exe,
+            &endpoint,
+            Duration::from_secs(15),
+            Some(&mut gui.child),
+        )
+    }));
+    let message = panic_message(&result);
+    assert!(
+        message.contains("exited") && message.contains("before its control endpoint was ready"),
+        "a dead host must be named as a death, not a slow start; got: {message}"
+    );
+}
+
+fn panic_message(result: &Result<Value, Box<dyn std::any::Any + Send>>) -> String {
+    match result {
+        Ok(_) => panic!("the bad-program host was expected to end before control came up"),
+        Err(payload) => payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+            .unwrap_or_default(),
+    }
+}
+
+/// Polls until the control endpoint answers `list-tabs`, or fails with a
+/// diagnosis. Passing the host process makes the two failure modes distinct:
+/// a host that has *exited* is reported immediately with its status (a crash
+/// or a bad `-e`, not a slow start), while a live-but-silent host reports how
+/// many attempts were made and the last CLI error. Without this, "control
+/// endpoint did not become ready" reads the same whether the product died or
+/// the machine was simply busy.
+fn wait_until_ready_for(
+    exe: &Path,
+    endpoint: &str,
+    timeout: Duration,
+    host: Option<&mut Child>,
+) -> Value {
     let deadline = Instant::now() + timeout;
+    let mut attempts = 0_u32;
+    let mut last_error;
+    let mut host = host;
     loop {
         let output = invoke(exe, endpoint, &["list-tabs"]);
         if output.status.success() {
             return serde_json::from_str(&output_text(&output))
                 .expect("list-tabs output must be JSON");
         }
+        attempts += 1;
+        last_error = error_text(&output);
+        if let Some(host) = host.as_deref_mut()
+            && let Some(status) = host.try_wait().expect("poll minicon exit")
+        {
+            panic!(
+                "minicon exited ({status}) before its control endpoint was ready; \
+                 the host died rather than being slow.\nlast CLI error: {last_error}"
+            );
+        }
         assert!(
             Instant::now() < deadline,
-            "control endpoint did not become ready: {}",
-            error_text(&output)
+            "control endpoint did not become ready after {attempts} attempts over {timeout:?}; \
+             the host is still running, so this is a slow start, not a crash.\nlast CLI error: {last_error}"
         );
         thread::sleep(Duration::from_millis(25));
     }
@@ -224,7 +298,12 @@ fn gui_control_surface_isolated_multitab_black_box() {
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
-    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
     let root = tab_id(&listed["tabs"][0]["id"]).to_owned();
     assert_eq!(listed["tabs"][0]["active"], true);
     cli_json(exe, &endpoint, &["reset-perf-stats"]);
@@ -1385,7 +1464,12 @@ fn host_process_rss_stays_within_named_budget() {
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
-    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
     let root = tab_id(&listed["tabs"][0]["id"]).to_owned();
     assert_eq!(listed["tabs"].as_array().map(Vec::len), Some(1));
 
@@ -1535,11 +1619,16 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
         ])
         .spawn()
         .expect("raw PTY GUI");
-    let _gui = OwnedGui {
+    let mut gui = OwnedGui {
         child,
         screenshot: std::env::temp_dir().join(unique_suffix()),
     };
-    wait_until_ready(&binary, &endpoint, Duration::from_secs(15));
+    wait_until_ready_for(
+        &binary,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
     cli_json(
         &binary,
         &endpoint,
@@ -1602,7 +1691,12 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
-    let listed = wait_until_ready(exe, &endpoint, Duration::from_secs(15));
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
     let first = tab_id(&listed["tabs"][0]["id"]).to_owned();
 
     // Remove the program the running tab uses. Windows may keep the live image
