@@ -14,7 +14,11 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
 - [x] each tree tab owns an independent PTY, parser, viewport and failure state
   in a single GUI process. It is explicitly not a mux, persistent workspace,
-  Fleet authority or script runtime.
+  Fleet authority or script runtime. A tab that cannot open is rolled back and
+  reported as a host notice on the status strip (proven by the same journey
+  that keeps the other tab alive, which screenshots the strip before and
+  after), so a recoverable refusal reaches a person, not only a control
+  client.
 - [x] PTY delivery uses a platform-owned fixed 1 MiB byte ring per session
   instead of allocating a `Vec` for every native read. Each read commits
   atomically or waits for capacity; close wakes blocked producers while
