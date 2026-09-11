@@ -2177,6 +2177,41 @@ fn status_reports_the_machine_without_opening_a_window() {
     assert!(stdout.contains("font"), "{stdout}");
     assert!(stdout.contains("diagnostics"), "{stdout}");
 
+    // `docs/old-windows.html` reproduces this output, so the shape is a
+    // documented contract: two-space indent, the label, then the value column
+    // at a fixed offset, in this order. A reformat that breaks the example
+    // fails here rather than shipping documentation that no longer matches.
+    let labels: Vec<&str> = ["pty backend", "font", "diagnostics"].to_vec();
+    let mut seen = Vec::new();
+    let mut value_column = None;
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("  ") {
+            for label in &labels {
+                if let Some(value) = rest.strip_prefix(label) {
+                    let gap = value.len() - value.trim_start().len();
+                    let offset = 2 + label.len() + gap;
+                    match value_column {
+                        Some(column) => assert_eq!(
+                            column, offset,
+                            "every labelled value must share one column: {line:?}"
+                        ),
+                        None => value_column = Some(offset),
+                    }
+                    seen.push(*label);
+                }
+            }
+        }
+    }
+    assert_eq!(
+        seen, labels,
+        "--status must print its labelled lines in the documented order"
+    );
+    assert_eq!(
+        value_column,
+        Some(17),
+        "the documented example aligns values in column 17"
+    );
+
     // The README says `--status` names where MiniCon writes when something
     // fails, so the path must be the real diagnostics sink and absolute — not
     // a placeholder a reader could not open.
