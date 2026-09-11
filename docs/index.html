@@ -773,21 +773,21 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
         openGraphDescription.content = values.description;
         twitterTitle.content = values.title;
         twitterDescription.content = openGraphDescription.content;
-        document.querySelectorAll("[data-i18n]").forEach((element) => {
-          const value = values[element.dataset.i18n];
-          if (value !== undefined) { element.textContent = value; }
-        });
-        document.querySelectorAll("[data-i18n-html]").forEach((element) => {
-          const value = values[element.dataset.i18nHtml];
-          if (value !== undefined) { element.innerHTML = value; }
-        });
-        document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
-          const value = values[element.dataset.i18nAlt];
-          if (value !== undefined) { element.alt = value; }
-        });
-        document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
-          const value = values[element.dataset.i18nAriaLabel];
-          if (value !== undefined) { element.setAttribute("aria-label", value); }
+        // One table drives every localized attribute kind. Adding a kind is a
+        // row here, so it cannot be defined in the markup and left unbound.
+        const bindings = [
+          { attribute: "data-i18n", apply: (element, value) => { element.textContent = value; } },
+          { attribute: "data-i18n-html", apply: (element, value) => { element.innerHTML = value; } },
+          { attribute: "data-i18n-alt", apply: (element, value) => { element.alt = value; } },
+          { attribute: "data-i18n-aria-label", apply: (element, value) => { element.setAttribute("aria-label", value); } },
+        ];
+        const keyOf = (attribute) => attribute.slice("data-".length).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        bindings.forEach(({ attribute, apply }) => {
+          const key = keyOf(attribute);
+          document.querySelectorAll(`[${attribute}]`).forEach((element) => {
+            const value = values[element.dataset[key]];
+            if (value !== undefined) { apply(element, value); }
+          });
         });
         choices.forEach((button) => {
           button.setAttribute("aria-pressed", String(button.dataset.localeChoice === selected));

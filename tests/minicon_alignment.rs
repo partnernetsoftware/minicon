@@ -316,23 +316,41 @@ fn landing_page_locales_define_the_same_keys() {
     }
 
     // Every `data-i18n` and `data-i18n-*` hook must resolve in all locales.
-    for (attr, value) in html.match_indices("data-i18n").filter_map(|(i, _)| {
+    let mut kinds = BTreeSet::new();
+    for (i, _) in html.match_indices("data-i18n") {
+        // The attribute name runs until `=` or whitespace.
+        let name: String = html[i..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect();
+        kinds.insert(name);
         let rest = &html[i..];
-        let eq = rest.find('=')?;
+        let Some(eq) = rest.find('=') else { continue };
         let after = rest[eq + 1..].trim_start();
-        let quote = after.chars().next()?;
-        if quote != '"' {
-            return None;
+        if after.chars().next() != Some('"') {
+            continue;
         }
-        let end = after[1..].find('"')? + 1;
-        Some(("data-i18n", after[1..end].to_owned()))
-    }) {
-        let _ = attr;
+        let Some(end) = after[1..].find('"') else { continue };
+        let value = &after[1..end + 1];
         assert!(
-            en.contains(&value),
+            en.contains(value),
             "markup references {value:?} but no locale defines it"
         );
     }
+
+    // A hook kind that markup uses must be bound in the script: the page
+    // applies each kind from a `bindings` table, and a kind present only in
+    // the markup would be silently left untranslated.
+    for kind in &kinds {
+        assert!(
+            html.contains(&format!("\"{kind}\"")),
+            "markup uses {kind} but the script's bindings table does not name it"
+        );
+    }
+    assert!(
+        kinds.contains("data-i18n"),
+        "the plain data-i18n kind must remain the base case: {kinds:?}"
+    );
 }
 
 /// Documentation and tests name repository files by relative path. A moved or
