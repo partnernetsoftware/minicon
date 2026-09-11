@@ -3742,6 +3742,15 @@ impl ConTerminal {
         }
     }
 
+    /// Replaces the terminal IME preedit, marking the old and new bounds. The
+    /// pair of marks is the point: a preedit change repaints the cells it left
+    /// and the cells it now occupies, and every caller must do both.
+    fn set_ime_preedit(&mut self, text: String) {
+        self.mark_ime_bounds();
+        self.ime_preedit = text;
+        self.mark_ime_bounds();
+    }
+
     fn mark_selection(&mut self, selection: Option<(TerminalPoint, TerminalPoint)>) {
         let Some((start, end)) = selection.map(|(a, b)| normalize_endpoints(a, b)) else {
             return;
@@ -4059,15 +4068,11 @@ impl ConTerminal {
 
         match classify_event(event, true) {
             ImeAction::UpdatePreedit { text, .. } => {
-                self.mark_ime_bounds();
-                self.ime_preedit = text;
-                self.mark_ime_bounds();
+                self.set_ime_preedit(text);
                 self.update_ime_anchor(window);
             }
             ImeAction::ClearPreedit => {
-                self.mark_ime_bounds();
-                self.ime_preedit.clear();
-                self.mark_ime_bounds();
+                self.set_ime_preedit(String::new());
             }
             ImeAction::CommitText(text) => {
                 self.ensure_pty_input_open()?;
