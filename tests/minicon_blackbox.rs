@@ -1363,7 +1363,7 @@ fn controlled_terminal_click_keeps_native_pixels_stable_outside_local_feedback()
 
 #[cfg(windows)]
 #[test]
-fn native_composer_focus_keeps_editing_keys_local_until_enter() {
+fn native_composer_focus_keeps_editing_keys_local_until_ctrl_o() {
     let _guard = gui_test_guard();
     let dir = scratch_dir("composer-focus-routing");
     let before_submit = dir.join("before-submit.txt");
@@ -1380,7 +1380,7 @@ fn native_composer_focus_keeps_editing_keys_local_until_enter() {
                 {{"ui_keys":["Ctrl+A","Ctrl+C","Ctrl+X","Ctrl+V","Space","F","I","N","A","L"]}},
                 {{"ui_snapshot":{}}},
                 {{"capture_text":{}}},
-                {{"ui_keys":["Enter"]}},
+                {{"ui_keys":["Ctrl+O"]}},
                 {{"wait_text":"COMPOSER_OK FINAL"}}
             ]"#,
             serde_json::to_string(ui_state.to_str().unwrap()).unwrap(),
@@ -1404,7 +1404,7 @@ fn native_composer_focus_keeps_editing_keys_local_until_enter() {
         .expect("terminal capture must be written before submit");
     assert!(
         !terminal_before.contains("COMPOSER_OK") && !terminal_before.contains("STALE"),
-        "focused composer keys leaked into the PTY before Enter: {terminal_before:?}"
+        "focused composer keys leaked into the PTY before Ctrl+O: {terminal_before:?}"
     );
     let _ = session.child.kill();
 }
