@@ -701,6 +701,9 @@ fn invoke_mouse(
 struct ConSession {
     child: Child,
     snapshot_path: PathBuf,
+    /// The control endpoint this session was launched with, so a test can ask
+    /// the live host what it thinks after reading the `--emit-snapshot` file.
+    endpoint: String,
     driver: Option<std::thread::JoinHandle<()>>,
     driver_error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
@@ -740,9 +743,7 @@ impl ConSession {
             command.arg("--no-activate");
         }
         command.arg("--emit-snapshot").arg(&snapshot_path);
-        if journey.is_some() {
-            command.arg("--control").arg(&endpoint);
-        }
+        command.arg("--control").arg(&endpoint);
         let child = command
             .args(&child_args)
             .stdout(Stdio::piped())
@@ -765,9 +766,19 @@ impl ConSession {
         Self {
             child,
             snapshot_path,
+            endpoint,
             driver,
             driver_error,
         }
+    }
+
+    /// Asks the live host for one control command's JSON, for cross-checks
+    /// against the `--emit-snapshot` file.
+    fn control_json(&self, args: &[&str]) -> serde_json::Value {
+        let argv: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let text = invoke_control_output(&self.endpoint, &argv)
+            .unwrap_or_else(|error| panic!("control {args:?}: {error}"));
+        serde_json::from_str(&text).expect("control output must be JSON")
     }
 
     /// Polls the snapshot file until `predicate` accepts its parsed content
@@ -2164,4 +2175,70 @@ fn status_follows_the_backend_the_machine_will_actually_use() {
         forced_text,
         "status must reflect the machine, not a constant"
     );
+}
+
+/// The two public snapshots describe the same session from different angles:
+/// `--emit-snapshot` is the per-tab terminal state, `ui-snapshot` is the host
+/// UI. Where they overlap — the active tab's title and whether its child is
+/// alive — they must agree. This cross-checks them around a child exit, so a
+/// change to one projection that forgets the other fails here.
+#[test]
+fn the_two_snapshots_agree_on_title_and_child_life() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("snapshot-agree");
+    let script = write_journey(&dir, &format!(r#"[{{"wait_ms":{}}}]"#, 50));
+    let args = interactive_shell_args(&script);
+    let mut session = ConSession::spawn(&dir, &args);
+
+    fn active(snapshot: &serde_json::Value) -> &serde_json::Value {
+        let tabs = snapshot["tabs"].as_array().expect("list-tabs tabs");
+        tabs.iter()
+            .find(|tab| tab["active"] == true)
+            .expect("an active tab")
+    }
+
+    // While the child is live, both agree it is alive. The title settles
+    // asynchronously (the shell sets it after start and again on output), so
+    // wait for the file to catch up with the live title rather than sampling
+    // two clocks against each other.
+    let live = session.wait_for(Duration::from_secs(15), |snapshot| {
+        snapshot["child_alive"] == true && snapshot["rows_text"].is_array()
+    });
+    let ui = session.control_json(&["list-tabs"]);
+    assert_eq!(
+        ui["tabs"].as_array().map(Vec::len),
+        Some(1),
+        "the cross-check assumes a single tab: {ui}"
+    );
+    assert_eq!(
+        active(&ui)["child_alive"],
+        live["child_alive"],
+        "the snapshots disagree that the child is alive: file={live}, ui={ui}"
+    );
+    let live_title = active(&ui)["title"].clone();
+    let settled = session.wait_for(Duration::from_secs(15), |snapshot| {
+        snapshot["title"] == live_title
+    });
+    assert_eq!(
+        settled["title"], live_title,
+        "the two snapshots never agreed on the active tab title: file={settled}, ui={ui}"
+    );
+
+    // End the shell and check both flip together.
+    session.control_json(&["send-text", "exit\r"]);
+    let dead = session.wait_for(Duration::from_secs(15), |snapshot| {
+        snapshot["child_alive"] == false && snapshot["child_exit_code"].is_number()
+    });
+    let ui = session.control_json(&["list-tabs"]);
+    assert_eq!(
+        active(&ui)["child_alive"],
+        dead["child_alive"],
+        "the snapshots disagree that the child has exited: file={dead}, ui={ui}"
+    );
+    assert_eq!(
+        active(&ui)["child_exit_code"],
+        dead["child_exit_code"],
+        "the snapshots disagree on the exit code: file={dead}, ui={ui}"
+    );
+    let _ = session.child.kill();
 }
