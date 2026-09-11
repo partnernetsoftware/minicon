@@ -390,7 +390,44 @@ fn parse_decimal(raw: &str, flag: &str) -> Result<f64, String> {
         .ok_or_else(|| format!("error: {flag} expects a finite number, got '{raw}'\n"))
 }
 
+/// Record a panic to the diagnostics log (and the parent console when one is
+/// attached) before the default handler unwinds or aborts the process.
+///
+/// The release profile unwinds, but the message only reaches a console — which
+/// a windowed launch does not have. This keeps the default behavior (the panic
+/// still unwinds afterwards) and only adds a durable record. Everything it
+/// touches is best-effort: a panic hook that can itself fail is worse than none.
+fn install_panic_diagnostics() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map_or_else(|| "unknown".to_owned(), |location| location.to_string());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|text| (*text).to_owned())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_owned());
+        let thread = std::thread::current();
+        let thread_name = thread.name().unwrap_or("unnamed");
+        let detail = format!("thread={thread_name} at={location} panic={payload}");
+        agenterm_platform::diagnostics::record("panic", "unhandled_panic", &detail);
+        let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            "minicon: unhandled panic: {detail}\n"
+        ));
+        default_hook(info);
+    }));
+}
+
 fn main() {
+    // A GUI host has nowhere to report a panic: launched from a shell icon it
+    // owns no console, its window may already be gone, and the release binary
+    // is stripped — so the user can only report "it vanished". Install a hook
+    // that records the panic (location, message, and the thread name) before
+    // the default handler runs, so the next "闪退" leaves a line that names
+    // itself. The hook must never panic; `record` is written for a failure path.
+    install_panic_diagnostics();
     let args = match agenterm_platform::runtime::application_arguments() {
         Ok(args) => args,
         Err(error) => {
