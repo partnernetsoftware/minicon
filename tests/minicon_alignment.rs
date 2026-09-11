@@ -338,8 +338,11 @@ fn landing_page_locales_define_the_same_keys() {
 /// Documentation and tests name repository files by relative path. A moved or
 /// renamed script leaves a dead path in prose, and nobody notices until a user
 /// follows it. Require every `scripts/`, `tools/`, `examples/`, `packaging/`
-/// or `research/` path that appears in the docs, tests or source to exist —
-/// except `dist/`, which is a build output and is not in a source checkout.
+/// or `research/` path that appears in the docs, tests, source or research
+/// notes to exist — except `dist/`, a build output absent from a source
+/// checkout. Two shapes are not claims about this repo and are skipped: a
+/// token inside a URL (an upstream project's path) and a token with `...`
+/// (a deliberately elided path).
 #[test]
 fn referenced_repository_paths_exist() {
     let root = repo_root();
@@ -360,6 +363,11 @@ fn referenced_repository_paths_exist() {
             }
         }
     }
+    // Research notes reference real scripts and fixtures; a moved file there is
+    // as dead as one in the README.
+    for entry in walk_markdown(&root.join("research")) {
+        sources.push(entry);
+    }
 
     let prefixes = ["scripts/", "tools/", "examples/", "packaging/", "research/"];
     let suffixes = [
@@ -368,20 +376,32 @@ fn referenced_repository_paths_exist() {
     let mut missing = BTreeSet::new();
     for source in sources {
         let text = fs::read_to_string(&source).expect("read source");
-        for token in text.split(|c: char| c.is_whitespace() || "\"'`()<>".contains(c)) {
-            let token = token.trim_end_matches(|c: char| ",;:.".contains(c));
-            if !prefixes.iter().any(|prefix| token.starts_with(prefix)) {
+        for line in text.lines() {
+            // A URL embeds another project's path; it is not a claim about
+            // this clone.
+            if line.contains("http://") || line.contains("https://") {
                 continue;
             }
-            if !suffixes.iter().any(|suffix| token.ends_with(suffix)) {
-                continue;
-            }
-            // A generated output under a `dist/` tree is not in a source clone.
-            if token.contains("/dist/") || token.contains("dist/") {
-                continue;
-            }
-            if !root.join(token).exists() {
-                missing.insert(format!("{}: {}", source.display(), token));
+            for token in line.split(|c: char| c.is_whitespace() || "\"'`()<>".contains(c)) {
+                let token = token.trim_end_matches(|c: char| ",;:.".contains(c));
+                if !prefixes.iter().any(|prefix| token.starts_with(prefix)) {
+                    continue;
+                }
+                if !suffixes.iter().any(|suffix| token.ends_with(suffix)) {
+                    continue;
+                }
+                // A generated output under a `dist/` tree is not in a clone.
+                if token.contains("/dist/") || token.contains("dist/") {
+                    continue;
+                }
+                // `crates/agenterm-platform/.../windows/runtime.rs` elides the
+                // middle on purpose; only a path that names one file is a claim.
+                if token.contains("...") {
+                    continue;
+                }
+                if !root.join(token).exists() {
+                    missing.insert(format!("{}: {}", source.display(), token));
+                }
             }
         }
     }
@@ -438,4 +458,22 @@ fn which_bash() -> Result<PathBuf, ()> {
         }
     }
     Err(())
+}
+
+/// Every `.md` under `dir`, recursively. Missing directories yield nothing, so
+/// the gate does not fail on a tree that is not checked out.
+fn walk_markdown(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(walk_markdown(&path));
+        } else if path.extension().is_some_and(|e| e == "md") {
+            found.push(path);
+        }
+    }
+    found
 }
