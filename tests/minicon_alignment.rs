@@ -254,4 +254,15 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         public_commands, contracted_commands,
         "machine contract and running minicon CLI catalog diverged"
     );
+
+    // The control-CLI reference is prose, so nothing else keeps it honest.
+    // Every command the build accepts must be described there.
+    let reference = fs::read_to_string(repo_root().join("docs/control-cli.html"))
+        .expect("read the control CLI reference");
+    for command in &public_commands {
+        assert!(
+            reference.contains(command),
+            "docs/control-cli.html does not mention the public command {command}"
+        );
+    }
 }
