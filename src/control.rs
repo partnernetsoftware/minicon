@@ -2539,6 +2539,112 @@ mod tests {
         );
     }
 
+    /// The `--cursor` position is a count of characters, not bytes, and it
+    /// defaults to the end of the text. Pin the accepted spellings and the
+    /// exact upper bound so a byte/char mix-up (which would reject a valid CJK
+    /// cursor) and an off-by-one (which would accept a cursor past the end)
+    /// both fail here.
+    #[test]
+    fn ime_preedit_cursor_is_a_character_count_with_an_inclusive_end() {
+        let parse = |tail: &[&str]| {
+            let mut args = vec!["cli", "--control", "pipe:test", "send-ui-ime"];
+            args.extend_from_slice(tail);
+            parse_cli(&args.into_iter().map(str::to_owned).collect::<Vec<_>>())
+        };
+        let preedit = |text: &str, cursor: Option<usize>| CliCommand::SendUiIme {
+            event: ImeEvent::Preedit {
+                text: text.to_owned(),
+                cursor: Some((
+                    cursor.unwrap_or(text.chars().count()),
+                    cursor.unwrap_or(text.chars().count()),
+                )),
+            },
+        };
+
+        // No `--cursor` means the caret sits after the whole text.
+        assert_eq!(
+            parse(&["preedit", "hello"]).map(|r| r.command),
+            Ok(preedit("hello", None)),
+        );
+        // Two characters, two bytes each: a char cursor of 2 is valid, and the
+        // bound is inclusive (start == end == char count).
+        assert_eq!(
+            parse(&["preedit", "\u{4f60}\u{597d}", "--cursor", "2"]).map(|r| r.command),
+            Ok(preedit("\u{4f60}\u{597d}", Some(2))),
+        );
+        assert_eq!(
+            parse(&["preedit", "hi", "--cursor", "0"]).map(|r| r.command),
+            Ok(preedit("hi", Some(0))),
+        );
+        // One past the end is refused.
+        assert_eq!(
+            parse(&["preedit", "hi", "--cursor", "3"]),
+            Err("IME preedit cursor is outside its text".to_owned())
+        );
+        // The discriminating case for char-vs-byte: two CJK characters are six
+        // bytes, so a cursor of 3 is past the char count (2) but inside the
+        // byte count (6). It must be refused — a byte-based bound would accept
+        // it, and that is exactly the bug this pins.
+        assert_eq!(
+            parse(&["preedit", "\u{4f60}\u{597d}", "--cursor", "3"]),
+            Err("IME preedit cursor is outside its text".to_owned()),
+            "the cursor bound counts characters, not bytes"
+        );
+        // The cursor flag is an unsigned integer: a sign, junk, and a missing
+        // value are all the cursor's own error, not a text error.
+        for bad in ["-1", "abc", ""] {
+            assert_eq!(
+                parse(&["preedit", "hi", "--cursor", bad]),
+                Err("--cursor must be an unsigned integer".to_owned()),
+                "cursor {bad:?} must be refused as a number"
+            );
+        }
+        assert_eq!(
+            parse(&["preedit", "hi", "--cursor"]),
+            Err("--cursor requires a value".to_owned())
+        );
+    }
+
+    /// `enabled` and `disabled` are the whole event, so a trailing token after
+    /// them is a mistake, not a value; and a non-empty commit is accepted as-is.
+    #[test]
+    fn ime_enabled_disabled_and_commit_parse_exactly() {
+        let parse = |tail: &[&str]| {
+            let mut args = vec!["cli", "--control", "pipe:test", "send-ui-ime"];
+            args.extend_from_slice(tail);
+            parse_cli(&args.into_iter().map(str::to_owned).collect::<Vec<_>>())
+        };
+        assert_eq!(
+            parse(&["enabled"]).map(|r| r.command),
+            Ok(CliCommand::SendUiIme {
+                event: ImeEvent::Enabled
+            })
+        );
+        assert_eq!(
+            parse(&["disabled"]).map(|r| r.command),
+            Ok(CliCommand::SendUiIme {
+                event: ImeEvent::Disabled
+            })
+        );
+        assert_eq!(
+            parse(&["commit", "\u{597d}"]).map(|r| r.command),
+            Ok(CliCommand::SendUiIme {
+                event: ImeEvent::Commit("\u{597d}".to_owned())
+            })
+        );
+        assert_eq!(
+            parse(&["enabled", "extra"]),
+            Err("unexpected argument \"extra\"".to_owned())
+        );
+        assert_eq!(
+            parse(&["bogus"]),
+            Err(
+                "invalid IME action \"bogus\"; use enabled, preedit, commit, or disabled"
+                    .to_owned()
+            )
+        );
+    }
+
     #[test]
     fn every_control_command_survives_wire_round_trip() {
         let commands = [
