@@ -1448,26 +1448,21 @@ impl ConApp {
             .mark_rect(PixelRect::from_xywh(x, y, width, height));
     }
 
+    /// Marks one host-UI region dirty. Sugar over [`Self::mark_host_ui_rect`],
+    /// which already falls back to the whole host UI before the first frame has
+    /// dimensions; the point is that a caller passes a layout rectangle instead
+    /// of four coordinates, so the rectangle and the marked area cannot drift.
+    fn mark_host_ui_region(&mut self, region: ui::Rect) {
+        self.mark_host_ui_rect(region.x, region.y, region.width, region.height);
+    }
+
     fn mark_tree_dirty(&mut self) {
-        if self.frame_width == 0 || self.frame_height == 0 {
-            self.mark_host_ui_full();
-            return;
-        }
         let layout = self.layout(self.frame_width, self.frame_height, self.frame_scale);
-        self.mark_host_ui_rect(
-            layout.sidebar.x,
-            layout.sidebar.y,
-            layout.sidebar.width,
-            layout.sidebar.height,
-        );
+        self.mark_host_ui_region(layout.sidebar);
     }
 
     fn mark_composer_dirty(&mut self) {
         self.mark_a11y_dirty();
-        if self.frame_width == 0 || self.frame_height == 0 {
-            self.mark_host_ui_full();
-            return;
-        }
         let layout = self.layout(self.frame_width, self.frame_height, self.frame_scale);
         // The whole composer band, not just the control row. The "SEND TO @N"
         // label is painted at `composer.y + 7` -- above `composer_input.y` --
@@ -1475,12 +1470,13 @@ impl ConApp {
         // left the label showing the previous focus state until some unrelated
         // damage happened to cover it. The band is the provable bound: every
         // pixel `paint_host_ui` derives from composer state lives inside it.
-        self.mark_host_ui_rect(
-            layout.composer.x,
-            layout.composer.y,
-            self.frame_width.saturating_sub(layout.composer.x),
-            self.frame_height.saturating_sub(layout.composer.y),
-        );
+        let band = ui::Rect {
+            x: layout.composer.x,
+            y: layout.composer.y,
+            width: self.frame_width.saturating_sub(layout.composer.x),
+            height: self.frame_height.saturating_sub(layout.composer.y),
+        };
+        self.mark_host_ui_region(band);
     }
 
     fn note_frame_dimensions(&mut self, width: u32, height: u32, scale: f64) {
@@ -2087,12 +2083,17 @@ impl ConApp {
             .ok_or_else(|| "terminal disappeared".to_owned())
     }
 
-    fn cancel_control_for_tab(&mut self, id: workspace::TabId, reason: &str) {
-        self.pending_control.cancel_for_tab(id, reason);
+    /// Drops a pending terminal clipboard read and/or paste review, recording
+    /// why. `target` selects one tab; `None` cancels every tab. Both pending
+    /// kinds share this one path so a new one cannot be forgotten in either
+    /// cancellation site.
+    fn cancel_terminal_paste(&mut self, target: Option<workspace::TabId>, reason: &str) {
+        let matches =
+            |pending_target: workspace::TabId| target.is_none_or(|target| target == pending_target);
         if self
             .pending_clipboard_paste
             .as_ref()
-            .is_some_and(|pending| pending.target == id)
+            .is_some_and(|pending| matches(pending.target))
         {
             self.pending_clipboard_paste = None;
             self.terminal_clipboard_error = Some(reason.to_owned());
@@ -2102,11 +2103,16 @@ impl ConApp {
         if self
             .pending_paste_review
             .as_ref()
-            .is_some_and(|pending| pending.target == id)
+            .is_some_and(|pending| matches(pending.target))
         {
             self.pending_paste_review = None;
             self.terminal_clipboard_error = Some(reason.to_owned());
         }
+    }
+
+    fn cancel_control_for_tab(&mut self, id: workspace::TabId, reason: &str) {
+        self.pending_control.cancel_for_tab(id, reason);
+        self.cancel_terminal_paste(Some(id), reason);
     }
 
     fn cancel_all_control_requests(&mut self, reason: &str) {
@@ -2115,12 +2121,7 @@ impl ConApp {
             let _ = request.reply.send(Err(reason.to_owned()));
         }
         self.pending_control.cancel_all(reason);
-        if self.pending_clipboard_paste.take().is_some() {
-            self.terminal_clipboard_error = Some(reason.to_owned());
-        }
-        if self.pending_paste_review.take().is_some() {
-            self.terminal_clipboard_error = Some(reason.to_owned());
-        }
+        self.cancel_terminal_paste(None, reason);
     }
 
     fn request_terminal_clipboard_paste(

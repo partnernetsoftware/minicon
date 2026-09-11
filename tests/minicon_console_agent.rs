@@ -363,8 +363,8 @@ fn minicon_process_ids() -> std::collections::BTreeSet<u32> {
 fn the_agent_argument_is_the_one_both_sides_agree_on() {
     let path: &Path = &binary();
     assert!(path.is_file());
-    let agent_argument = agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT
-        .expect("this platform has a console agent");
+    let agent_argument =
+        agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT.expect("this platform has a console agent");
     let output = Command::new(path)
         .arg(agent_argument)
         .arg("not-a-handle")

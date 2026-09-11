@@ -48,6 +48,17 @@ path = "tests/minicon_load_portability_linux.rs"
 name = "minicon_console_agent"
 path = "tests/minicon_console_agent.rs"
 
+# These two policy suites test the code-signing inspector and the signing
+# workflow by reading the scripts and workflow sources. They were present but
+# not listed here, and `autotests` is off, so cargo never built or ran them.
+[[test]]
+name = "authenticode_inspector_policy"
+path = "tests/authenticode_inspector_policy.rs"
+
+[[test]]
+name = "signing_workflow_policy"
+path = "tests/signing_workflow_policy.rs"
+
 [dependencies]
 agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "bd39a0519740d8f777a3e100d46a0830b0229d67", default-features = false, features = ["clipboard", "entropy", "filesystem-publish", "filesystem-read", "font", "ime", "input", "ipc", "parent-console", "pty", "runtime", "screenshot", "window"] }
 agenterm-ui-core = { git = "https://github.com/partnernetsoftware/agenterm", rev = "bd39a0519740d8f777a3e100d46a0830b0229d67", features = ["terminal-selection"] }

@@ -1559,7 +1559,10 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     fs::copy(&real_path, &stub).expect("copy the shell to a disposable name");
 
     let mut host = Command::new(exe);
-    host.arg("--no-activate").arg("--control").arg(&endpoint).arg("-e");
+    host.arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
     host.arg(&stub);
     for arg in &shell_args {
         host.arg(arg);
@@ -1634,7 +1637,6 @@ fn resolve_on_path(program: &str) -> Option<PathBuf> {
             if candidate.is_file() {
                 return Some(candidate);
             }
-      
         }
     }
     None
