@@ -131,4 +131,36 @@ mod tests {
         entries[0].1 = "a2";
         assert_eq!(store.get(&TabId::new(1)), Some(&"a2"));
     }
+
+    /// `remove` uses `swap_remove`, so dropping a middle entry moves the last
+    /// one into its slot. Storage order is explicitly not a contract, but the
+    /// removal must still leave every survivor reachable and `entries_mut`
+    /// complete — otherwise the drain loop, which reads `entries_mut`, would
+    /// silently skip a session.
+    #[test]
+    fn swap_removal_keeps_every_survivor_reachable() {
+        let mut store = SessionStore::default();
+        for id in 1..=4 {
+            store.insert(TabId::new(id), format!("s{id}")).unwrap();
+        }
+        assert_eq!(store.remove(&TabId::new(2)).as_deref(), Some("s2"));
+
+        // The survivors are all present and no slot is duplicated or lost.
+        let mut seen: Vec<TabId> = store.entries_mut().iter().map(|(id, _)| *id).collect();
+        seen.sort_by_key(|id| id.get());
+        assert_eq!(
+            seen,
+            vec![TabId::new(1), TabId::new(3), TabId::new(4)],
+            "removal must not lose, duplicate, or keep the removed id"
+        );
+        for id in [1, 3, 4] {
+            let expected = format!("s{id}");
+            assert_eq!(
+                store.get(&TabId::new(id)).map(String::as_str),
+                Some(expected.as_str()),
+                "@{id} must survive the swap removal"
+            );
+        }
+        assert!(store.get(&TabId::new(2)).is_none());
+    }
 }
