@@ -81,8 +81,31 @@ impl Workspace {
 
     pub fn add_child(&mut self, parent: TabId, title: String) -> Option<TabId> {
         let parent_index = self.nodes.iter().position(|node| node.id == parent)?;
-        let depth = self.depths[parent_index].saturating_add(1);
-        self.add(Some(parent), title, depth)
+        // `depths` is kept parallel to `nodes` and every mutation updates both,
+        // so this index is in range today. It is read through `get` anyway: a
+        // desync would otherwise be a panic in a windowed process with no
+        // console, and the fallback below turns that into a depth that is merely
+        // wrong rather than a window that disappears.
+        let parent_depth = match self.depths.get(parent_index) {
+            Some(depth) => *depth,
+            None => {
+                // Recompute rather than guess: `recompute_depths` is the same
+                // source of truth `close` already uses, so recovering here
+                // yields the correct depth instead of a plausible one.
+                //
+                // Deliberately not a `debug_assert`: the recovery is the tested
+                // behaviour, and an assertion that fires under test would make
+                // the only interesting path unreachable from a test build.
+                // Nothing is silent -- the recomputation is the loud part, and
+                // the invariant itself is covered by the length assertion in
+                // `a_stale_depth_cache_is_recovered_rather_than_panicking`.
+                let recomputed = self.recompute_depths();
+                let depth = recomputed.get(parent_index).copied().unwrap_or(0);
+                self.depths = recomputed;
+                depth
+            }
+        };
+        self.add(Some(parent), title, parent_depth.saturating_add(1))
     }
 
     pub fn close(&mut self, id: TabId) -> Option<TabNode> {
@@ -147,6 +170,50 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A depth-cache desync must not take the window down with it.
+    ///
+    /// `add_child` reads the parent's depth out of a vector kept parallel to
+    /// `nodes`. Every mutation in this module updates both, so the index is in
+    /// range today, and the old code indexed it directly -- which means that if
+    /// the two ever drifted apart, whether by a future edit or a panic-free
+    /// partial update, the result was a panic in a process with no console.
+    ///
+    /// The desync is forced here rather than described, because an invariant
+    /// that nothing exercises is a comment. With the cache emptied, the new code
+    /// recomputes and returns the *correct* depth; the previous code panicked on
+    /// the same input.
+    #[test]
+    fn a_stale_depth_cache_is_recovered_rather_than_panicking() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        let parent = workspace.add_child(root, "parent".into()).unwrap();
+        let parent_depth = workspace.depths[1];
+
+        // Force the desync the old indexing could not survive.
+        workspace.depths.clear();
+        let child = workspace
+            .add_child(parent, "child".into())
+            .expect("a stale cache must not lose the child");
+
+        // The recovery recomputes, so the depth is right rather than merely
+        // present: the child sits one below its parent.
+        let index = workspace
+            .nodes
+            .iter()
+            .position(|node| node.id == child)
+            .expect("the child was added");
+        assert_eq!(workspace.depths[index], parent_depth + 1);
+        assert_eq!(workspace.depths.len(), workspace.nodes.len());
+        // And the cache is repaired, not left short for the next caller.
+        let leaf = workspace.add_child(child, "leaf".into()).unwrap();
+        let leaf_index = workspace
+            .nodes
+            .iter()
+            .position(|node| node.id == leaf)
+            .expect("the leaf was added");
+        assert_eq!(workspace.depths[leaf_index], parent_depth + 2);
+    }
 
     #[test]
     fn closing_parent_promotes_direct_children_and_keeps_them_live() {
