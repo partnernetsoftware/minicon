@@ -521,4 +521,61 @@ mod tests {
             None
         );
     }
+
+    /// The two screenshot projections the render loop and the UI snapshot read
+    /// must track the real state through a full lifecycle: empty, queued, taken
+    /// for capture, in flight, finished. `has_pending_screenshot` is true only
+    /// while work is *queued*; `screenshot_count` also counts the in-flight one,
+    /// so the two differ by exactly the in-flight stage.
+    #[test]
+    fn screenshot_projections_track_the_whole_lifecycle() {
+        let mut pending = PendingControl::default();
+        assert_eq!(pending.screenshot_count(), 0);
+        assert!(!pending.has_pending_screenshot());
+
+        // Queued: both projections see it.
+        let (sender, _receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("queued.png"), &mut sender)
+            .expect("enqueue");
+        assert_eq!(pending.screenshot_count(), 1);
+        assert!(pending.has_pending_screenshot(), "queued work is pending");
+        // A second enqueue is refused because one is already live.
+        let (other, _other_receiver) = reply();
+        let mut other = Some(other);
+        assert!(
+            pending
+                .enqueue_screenshot(TabId::new(2), PathBuf::from("second.png"), &mut other)
+                .is_err()
+        );
+
+        // Taken for capture: no longer queued, so no longer `pending`, but the
+        // work still exists until it is started or dropped.
+        let work = pending.take_screenshot().expect("work");
+        assert!(!pending.has_pending_screenshot(), "taken is not queued");
+        assert_eq!(pending.screenshot_count(), 0, "a taken job is not held yet");
+
+        // In flight: counted again, but not as pending (it is being encoded).
+        let done = Arc::new(AtomicBool::new(false));
+        let shared_reply = Arc::new(Mutex::new(Some(work.reply)));
+        pending.start_screenshot(TabId::new(1), Arc::clone(&shared_reply), Arc::clone(&done));
+        assert_eq!(pending.screenshot_count(), 1);
+        assert!(
+            !pending.has_pending_screenshot(),
+            "in-flight work is not queued work"
+        );
+
+        // A still-running job survives a reap; a finished one is dropped.
+        pending.reap_finished_screenshot();
+        assert_eq!(
+            pending.screenshot_count(),
+            1,
+            "a live job must not be reaped"
+        );
+        done.store(true, Ordering::Release);
+        pending.reap_finished_screenshot();
+        assert_eq!(pending.screenshot_count(), 0, "a finished job is reaped");
+        assert!(!pending.has_pending_screenshot());
+    }
 }
