@@ -642,3 +642,57 @@ fn every_docs_page_is_wholly_localized_or_wholly_english() {
         );
     }
 }
+
+/// The header row does not wrap, so a narrow window clips it. That limit is
+/// stated in the README and the workspace PRD and pinned by a test in `ui.rs`.
+/// Read the test's own `Layout::new` widths and require both documents to quote
+/// the same numbers, so the prose cannot drift from the behaviour it describes.
+/// Quoting a different number is a documentation bug even when the sentence
+/// still reads well.
+#[test]
+fn the_narrow_window_limit_is_quoted_consistently() {
+    let root = repo_root();
+    let ui = fs::read_to_string(root.join("src/ui.rs")).expect("read ui.rs");
+
+    // The owning test names the clipped width and the width that fits.
+    let test_start = ui
+        .find("fn a_narrow_frame_overflows_the_header_row_and_widening_it_does_not()")
+        .expect("the header-overflow test exists");
+    let test = &ui[test_start..];
+    let test = &test[..test.find("\n    }").expect("the test body ends")];
+
+    let widths: Vec<u32> = std::iter::once(test)
+        .flat_map(|text| {
+            // Every `Layout::new(<width>, …)` in the test, in order.
+            text.match_indices("Layout::new(")
+                .filter_map(|(index, _)| {
+                    let rest = &text[index + "Layout::new(".len()..];
+                    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+                    digits.parse().ok()
+                })
+                .collect::<Vec<u32>>()
+        })
+        .collect();
+    assert!(
+        widths.len() >= 2,
+        "the owning test must name a clipped width and a fitting one, found {widths:?}"
+    );
+    let (clipped, fits) = (widths[0], widths[1]);
+    assert!(
+        clipped < fits,
+        "the clipped width must be below the fitting one: {widths:?}"
+    );
+
+    // Both documents must quote both numbers. They are written prose, so the
+    // check is that the numbers appear, not how the sentence is built.
+    for document in ["README.md", "prd/PRD_02_25_con_workspace.md"] {
+        let text = fs::read_to_string(root.join(document)).expect("read document");
+        for number in [clipped, fits] {
+            assert!(
+                text.contains(&number.to_string()),
+                "{document} no longer quotes the measured width {number}; \
+                 the layout test owns {clipped} (clipped) and {fits} (fits)"
+            );
+        }
+    }
+}
