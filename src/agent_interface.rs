@@ -395,6 +395,56 @@ mod tests {
         );
     }
 
+    /// `screenshot_io_error` translates the mechanism's string error code into
+    /// an `io::ErrorKind`. The five geometry codes are the ones a caller can act
+    /// on (bad dimensions or buffer), so they map to `InvalidInput`; any other
+    /// code is `Other`. The codes are literals produced by `agenterm-cu`, so a
+    /// renamed code here would silently downgrade a geometry error to `Other`.
+    /// Pin the five and the fallback.
+    #[test]
+    fn screenshot_error_codes_map_geometry_to_invalid_input() {
+        let failed = |code: &'static str| UiScreenshotError::Failed {
+            code: std::borrow::Cow::Borrowed(code),
+            message: format!("message for {code}"),
+        };
+        for code in [
+            "screenshot_invalid_dimensions",
+            "screenshot_buffer_too_small",
+            "screenshot_buffer_size_mismatch",
+            "screenshot_invalid_clip",
+            "screenshot_too_large",
+        ] {
+            assert_eq!(
+                screenshot_io_error(failed(code)).kind(),
+                std::io::ErrorKind::InvalidInput,
+                "{code} must be an invalid-input error"
+            );
+        }
+        // A code this module does not special-case, and the unsupported shape,
+        // both fall through to `Other` rather than masquerading as bad input.
+        for error in [
+            failed("screenshot_unsupported"),
+            failed("screenshot_permission_denied"),
+            UiScreenshotError::Unsupported {
+                reason: std::borrow::Cow::Borrowed("no compositor"),
+            },
+        ] {
+            assert_eq!(
+                screenshot_io_error(error).kind(),
+                std::io::ErrorKind::Other,
+                "only the five geometry codes are invalid input"
+            );
+        }
+        // The message survives the mapping, so a caller sees the mechanism text.
+        let error = screenshot_io_error(failed("screenshot_invalid_clip"));
+        assert!(
+            error
+                .to_string()
+                .contains("message for screenshot_invalid_clip"),
+            "the mechanism message must survive: {error}"
+        );
+    }
+
     #[test]
     fn write_png_atomic_produces_a_readable_png() {
         let dir = scratch("png-test");
