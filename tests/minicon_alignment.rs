@@ -417,6 +417,23 @@ fn referenced_repository_paths_exist() {
         ".ps1", ".sh", ".py", ".md", ".js", ".qjs", ".cmd", ".bat", ".c", ".rs",
     ];
     let mut missing = BTreeSet::new();
+    // The tracked names are the ones a Linux checkout sees; a path that only
+    // resolves case-insensitively is a claim this host cannot verify.
+    let tracked: Vec<String> = String::from_utf8(
+        Command::new("git")
+            .args(["-C"])
+            .arg(&root)
+            .args(["ls-files"])
+            .output()
+            .expect("run git ls-files")
+            .stdout,
+    )
+    .expect("git output is UTF-8")
+    .lines()
+    .map(str::to_owned)
+    .collect();
+    assert!(!tracked.is_empty(), "git ls-files returned nothing");
+    let mut mismatched = BTreeSet::new();
     for source in sources {
         let text = fs::read_to_string(&source).expect("read source");
         for line in text.lines() {
@@ -427,6 +444,9 @@ fn referenced_repository_paths_exist() {
             }
             for token in line.split(|c: char| c.is_whitespace() || "\"'`()<>".contains(c)) {
                 let token = token.trim_end_matches(|c: char| ",;:.".contains(c));
+                // `./scripts/build.sh` is the same claim as `scripts/build.sh`,
+                // and the prefix test below would otherwise skip it.
+                let token = token.strip_prefix("./").unwrap_or(token);
                 // A markdown link is a claim about a repository file whether or
                 // not it sits under one of the scanned directories: `PRD.md` and
                 // `plan/*.md` are as breakable as `scripts/*.sh`. A `~`-relative
@@ -462,6 +482,23 @@ fn referenced_repository_paths_exist() {
                     .unwrap_or(false);
                 if !from_root && !from_file {
                     missing.insert(format!("{}: {}", source.display(), token));
+                } else if token.contains('/') {
+                    // A token with a separator is a path; a bare filename such as
+                    // `Agents.md` inside a sentence is prose, and the case check
+                    // would flag it for not matching a tracked file. Resolve the
+                    // token the way the OS would, then require the result to be
+                    // spelled as git tracks it, because this filesystem may be
+                    // case-insensitive while Linux CI is not.
+                    let resolved = source.parent().map(|dir| normalize_path(&dir.join(token)));
+                    let as_root = normalize_path(&root.join(token));
+                    let candidate = resolved.filter(|path| path.exists()).unwrap_or(as_root);
+                    if candidate.exists()
+                        && !tracked
+                            .iter()
+                            .any(|entry| normalize_path(&root.join(entry)) == candidate)
+                    {
+                        mismatched.insert(format!("{}: {}", source.display(), token));
+                    }
                 }
             }
         }
@@ -470,6 +507,12 @@ fn referenced_repository_paths_exist() {
         missing.is_empty(),
         "documentation or tests name paths that do not exist:\n{}",
         missing.into_iter().collect::<Vec<_>>().join("\n")
+    );
+    assert!(
+        mismatched.is_empty(),
+        "documentation or tests name paths whose spelling differs from git, \
+         which resolves here but not on a case-sensitive checkout:\n{}",
+        mismatched.into_iter().collect::<Vec<_>>().join("\n")
     );
 }
 
@@ -912,4 +955,21 @@ fn the_documented_test_gate_still_denies_the_dangerous_lints() {
         script.contains("usage: scripts/build.sh [release|dev|check|test]"),
         "the script's own usage line lists the modes"
     );
+}
+
+/// Lexically normalise a path: drop `.` components and fold `..` against the
+/// preceding component. It does not touch the filesystem, so it works for a
+/// path whose spelling may not match the disk.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalised = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalised.pop();
+            }
+            other => normalised.push(other.as_os_str()),
+        }
+    }
+    normalised
 }
