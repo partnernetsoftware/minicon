@@ -765,6 +765,66 @@ mod tests {
         assert_eq!(tree_hit(layout, 500, 40, 0, 4, 1.0), TreeHit::Outside);
     }
 
+    /// The header tools each own their hit before the tree rows are considered,
+    /// including the ones the first test did not probe. A click on any of them
+    /// must never fall through to a row underneath.
+    #[test]
+    fn every_header_tool_wins_over_the_rows_beneath_it() {
+        let layout = Layout::new(1000, 500, 1.0);
+        for (rect, expected) in [
+            (layout.new_root, TreeHit::NewRoot),
+            (layout.help, TreeHit::Help),
+            (
+                layout.language_chinese,
+                TreeHit::Language(UiLanguage::Chinese),
+            ),
+            (
+                layout.language_english,
+                TreeHit::Language(UiLanguage::English),
+            ),
+        ] {
+            let hit = tree_hit(layout, rect.x, rect.y, 0, 4, 1.0);
+            assert_eq!(hit, expected, "corner of {expected:?} must hit it");
+        }
+    }
+
+    /// The first tree row starts exactly at `tree_header_height`: one pixel
+    /// above is background and the boundary pixel itself is row zero. Each row
+    /// owns `tree_row_height` pixels, so the boundary between row 0 and row 1
+    /// decides which index a click selects.
+    #[test]
+    fn rows_begin_at_the_header_boundary_and_partition_by_row_height() {
+        let layout = Layout::new(1000, 500, 1.0);
+        let header = layout.tree_header_height;
+        let row_h = layout.tree_row_height;
+        // One pixel above the first row is still background.
+        assert_eq!(
+            tree_hit(layout, 20, header - 1, 0, 8, 1.0),
+            TreeHit::Background
+        );
+        // The boundary pixel is the first row.
+        assert_eq!(tree_hit(layout, 20, header, 0, 8, 1.0), TreeHit::Select(0));
+        // The last pixel of row 0 is still row 0; the next pixel is row 1.
+        assert_eq!(
+            tree_hit(layout, 20, header + row_h - 1, 0, 8, 1.0),
+            TreeHit::Select(0)
+        );
+        assert_eq!(
+            tree_hit(layout, 20, header + row_h, 0, 8, 1.0),
+            TreeHit::Select(1)
+        );
+        // A scroll offset shifts which item a visible row maps to.
+        assert_eq!(
+            tree_hit(layout, 20, header + row_h, 5, 8, 1.0),
+            TreeHit::Select(6)
+        );
+        // Past the last item is background, not a negative or wrapped index.
+        assert_eq!(
+            tree_hit(layout, 20, header + row_h * 8, 0, 8, 1.0),
+            TreeHit::Background
+        );
+    }
+
     #[test]
     fn scrolling_is_bounded_and_reveals_active_rows() {
         assert_eq!(scroll_tree(0, 3, 10, 4), 3);
