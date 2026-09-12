@@ -2976,6 +2976,126 @@ mod tests {
         }
     }
 
+    /// The round-trip above gives each command one tab-presence state, so a bug
+    /// that ignores or inverts the optional-tab flag would only show for the
+    /// state it does not use. Drive every optional-tab command through both
+    /// states and require them to decode to distinct commands.
+    #[test]
+    fn optional_tab_commands_round_trip_in_both_states() {
+        let with = TabId::new(9);
+        let pairs: Vec<(CliCommand, CliCommand)> = vec![
+            (
+                CliCommand::NewTab { parent: None },
+                CliCommand::NewTab { parent: Some(with) },
+            ),
+            (
+                CliCommand::CapturePane {
+                    target: None,
+                    max_bytes: 4096,
+                },
+                CliCommand::CapturePane {
+                    target: Some(with),
+                    max_bytes: 4096,
+                },
+            ),
+            (
+                CliCommand::ScreenshotPane {
+                    target: None,
+                    output: "p.png".to_owned(),
+                },
+                CliCommand::ScreenshotPane {
+                    target: Some(with),
+                    output: "p.png".to_owned(),
+                },
+            ),
+            (
+                CliCommand::SendText {
+                    target: None,
+                    text: "x".to_owned(),
+                },
+                CliCommand::SendText {
+                    target: Some(with),
+                    text: "x".to_owned(),
+                },
+            ),
+            (
+                CliCommand::SendPaste {
+                    target: None,
+                    text: "x".to_owned(),
+                },
+                CliCommand::SendPaste {
+                    target: Some(with),
+                    text: "x".to_owned(),
+                },
+            ),
+            (
+                CliCommand::SendKeys {
+                    target: None,
+                    keys: vec!["a".to_owned()],
+                },
+                CliCommand::SendKeys {
+                    target: Some(with),
+                    keys: vec!["a".to_owned()],
+                },
+            ),
+            (
+                CliCommand::SendMouse {
+                    target: None,
+                    action: MouseAction::Click,
+                    button: MouseButton::Left,
+                    column: 1,
+                    row: 1,
+                },
+                CliCommand::SendMouse {
+                    target: Some(with),
+                    action: MouseAction::Click,
+                    button: MouseButton::Left,
+                    column: 1,
+                    row: 1,
+                },
+            ),
+            (
+                CliCommand::SendWheel {
+                    target: None,
+                    column: 1,
+                    row: 1,
+                    notches: 1,
+                    ctrl: false,
+                },
+                CliCommand::SendWheel {
+                    target: Some(with),
+                    column: 1,
+                    row: 1,
+                    notches: 1,
+                    ctrl: false,
+                },
+            ),
+            (
+                CliCommand::WaitText {
+                    target: None,
+                    text: "t".to_owned(),
+                    timeout_ms: 250,
+                },
+                CliCommand::WaitText {
+                    target: Some(with),
+                    text: "t".to_owned(),
+                    timeout_ms: 250,
+                },
+            ),
+        ];
+        for (absent, present) in pairs {
+            let decoded_absent = decode_request(&encode_request(absent.clone()).unwrap()).unwrap();
+            assert_eq!(decoded_absent, absent, "the absent state must survive");
+            let decoded_present =
+                decode_request(&encode_request(present.clone()).unwrap()).unwrap();
+            assert_eq!(decoded_present, present, "the present state must survive");
+            assert_ne!(
+                decoded_absent, decoded_present,
+                "the two states must not collapse to the same command"
+            );
+        }
+    }
+
     #[test]
     fn typed_wire_rejects_trailing_and_invalid_fields() {
         let mut trailing = encode_request(CliCommand::ListTabs).unwrap();
