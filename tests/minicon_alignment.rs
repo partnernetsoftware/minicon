@@ -178,6 +178,18 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
             prd_text.contains(anchor),
             "missing exact PRD anchor for {id}"
         );
+        // A capability ships a `[x]` assertion. The same assertion text must not
+        // also appear as `[~]` (partial) or `[ ]` (planned) elsewhere in the
+        // PRD — a contradictory duplicate would let the contract claim shipped
+        // while the PRD still lists the work as outstanding.
+        let assertion = &anchor["- [x] ".len()..];
+        for state in ["- [~] ", "- [ ] "] {
+            assert!(
+                !prd_text.contains(&format!("{state}{assertion}")),
+                "{id} claims the statement shipped, but {prd} also lists it as \
+                 {state:?}: {assertion}"
+            );
+        }
         // One PRD assertion belongs to one capability. A duplicated anchor
         // would let a second capability cite evidence that does not actually
         // cover the assertion it claims to ship.
