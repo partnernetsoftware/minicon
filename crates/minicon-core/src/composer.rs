@@ -316,19 +316,27 @@ pub fn visible_window(
         // what gets dropped first.
         let mut trailing = budget;
         let preedit_offset = tail_offset(preedit, &mut trailing);
-        let after_caret = if preedit_offset > 0 {
+        let after_caret_span = if preedit_offset > 0 {
             // The preedit alone fills the box; nothing committed can show.
             0
         } else {
             cells_fitting_forward(&text[caret..], &mut trailing)
         };
+        // `after_caret_span` is not painted — the committed text shown starts at
+        // `text_offset` and runs to the caret — but charging it here is what
+        // keeps the leading span from claiming cells reserved for the text
+        // after the caret. Dropping the charge would let the leading span
+        // overrun the box once the painter adds the caret's trailing context.
+        debug_assert!(
+            trailing + after_caret_span <= budget,
+            "the after-caret charge must stay within the budget"
+        );
         let mut leading = trailing;
         let text_offset = if preedit_offset > 0 {
             text.len()
         } else {
             tail_offset(&text[..caret], &mut leading)
         };
-        let _ = after_caret;
         VisibleWindow {
             text: text_offset,
             preedit: preedit_offset,
@@ -678,6 +686,32 @@ mod tests {
         assert_eq!(window.text, text.len());
         assert!(window.preedit > 0);
         assert!(preedit.is_char_boundary(window.preedit));
+    }
+
+    /// The text after the caret is not painted, but it still reserves cells: the
+    /// committed span shown runs only to the caret, and the after-caret charge
+    /// keeps that leading span plus the caret and the truncation marker from
+    /// overrunning the box. Sweep the caret across a line that does not fit and
+    /// require every painted window to stay within its width.
+    #[test]
+    fn text_after_the_caret_reserves_cells_even_though_it_is_not_painted() {
+        let text = "abcdefghij";
+        for width in 3..12 {
+            for caret in 0..=text.len() {
+                let window = visible_window(text, "", caret, 1, width);
+                // The caret must stay inside the window, or the user is editing
+                // text they cannot see.
+                assert!(
+                    window.text <= caret,
+                    "width {width} caret {caret} hid the caret: {window:?}"
+                );
+                let painted = usize::from(window.truncated) + cells(&text[window.text..caret]) + 1;
+                assert!(
+                    painted <= width,
+                    "width {width} caret {caret} painted {painted} cells: {window:?}"
+                );
+            }
+        }
     }
 
     #[test]
