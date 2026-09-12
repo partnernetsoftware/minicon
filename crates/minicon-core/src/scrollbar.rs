@@ -157,11 +157,7 @@ pub fn scrollback_for_thumb_top(geometry: ScrollbarGeometry, top: i32, maximum: 
 ///
 /// The thumb is tested before the track halves so a click that lands on the
 /// thumb starts a drag rather than a page jump.
-pub fn scrollbar_hit_test(
-    geometry: &ScrollbarGeometry,
-    x: i32,
-    y: i32,
-) -> Option<ScrollbarHit> {
+pub fn scrollbar_hit_test(geometry: &ScrollbarGeometry, x: i32, y: i32) -> Option<ScrollbarHit> {
     if !geometry.track.contains(x, y) {
         None
     } else if geometry.thumb.contains(x, y) {
@@ -304,7 +300,10 @@ mod tests {
         let geometry = terminal_scrollbar_geometry(rect(), 12, 30, 45, 90);
         let x = geometry.thumb.left;
         let y = geometry.thumb.top + geometry.thumb.height() / 2;
-        assert_eq!(scrollbar_hit_test(&geometry, x, y), Some(ScrollbarHit::Thumb));
+        assert_eq!(
+            scrollbar_hit_test(&geometry, x, y),
+            Some(ScrollbarHit::Thumb)
+        );
         assert_eq!(
             scrollbar_hit_test(&geometry, x, geometry.thumb.top - 1),
             Some(ScrollbarHit::TrackAbove)
@@ -319,7 +318,10 @@ mod tests {
             scrollbar_hit_test(&geometry, geometry.track.left - 1, y),
             None
         );
-        assert_eq!(scrollbar_hit_test(&geometry, x, geometry.track.bottom), None);
+        assert_eq!(
+            scrollbar_hit_test(&geometry, x, geometry.track.bottom),
+            None
+        );
     }
 
     /// At the live end the thumb rests on the track's bottom edge, so the whole

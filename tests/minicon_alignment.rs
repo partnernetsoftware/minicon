@@ -347,7 +347,7 @@ fn landing_page_locales_define_the_same_keys() {
         let rest = &html[i..];
         let Some(eq) = rest.find('=') else { continue };
         let after = rest[eq + 1..].trim_start();
-        if after.chars().next() != Some('"') {
+        if !after.starts_with('"') {
             continue;
         }
         let Some(end) = after[1..].find('"') else {

@@ -5812,9 +5812,7 @@ impl PixelWindowApplication for ConApp {
                 (position.y * scale).max(0.0) as u32,
             ) {
                 let rows = match delta {
-                    WheelDelta::Lines { y, .. } => {
-                        minicon_core::numeric::round_f32(*y) as isize
-                    }
+                    WheelDelta::Lines { y, .. } => minicon_core::numeric::round_f32(*y) as isize,
                     WheelDelta::LogicalPixels { y, .. } => {
                         minicon_core::numeric::round_f64(*y / ui::TREE_ROW_HEIGHT_DIP) as isize
                     }
@@ -6257,9 +6255,7 @@ enum InjectedMouseButton {
 /// The remaining partial-failure window is injection itself, which can still
 /// fail mid-sequence; that one is reported as `terminal input failed` and is
 /// inherent to writing to a pty.
-fn parse_control_keys(
-    specs: &[String],
-) -> Result<Vec<(InjectedKey, bool, bool, bool)>, String> {
+fn parse_control_keys(specs: &[String]) -> Result<Vec<(InjectedKey, bool, bool, bool)>, String> {
     specs.iter().map(|spec| parse_control_key(spec)).collect()
 }
 
@@ -6482,8 +6478,7 @@ fn paint_help_panel(
     lines: [&str; 8],
     font_size_px: u16,
 ) {
-    let dip =
-        |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
+    let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
     let available_width = width.saturating_sub(layout.sidebar.width);
     let panel_width = dip(430.0).min(available_width.saturating_sub(dip(32.0)));
     let panel_height = dip(286.0).min(height.saturating_sub(dip(32.0)));
@@ -6571,8 +6566,7 @@ fn paint_header_icon_button(
     font_size_px: u16,
     scale: f64,
 ) {
-    let stroke =
-        minicon_core::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
+    let stroke = minicon_core::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
     let inset = stroke.saturating_mul(3);
     if selected {
         surface.fill_rect(

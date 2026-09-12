@@ -953,7 +953,7 @@ mod tests {
         );
         // The revealed window contains the last item.
         let offset = reveal_tree_index(0, items - 1, items, capacity);
-        assert!(offset <= items - 1 && items - 1 < offset + capacity);
+        assert!(offset < items && items - 1 < offset + capacity);
     }
 
     #[test]

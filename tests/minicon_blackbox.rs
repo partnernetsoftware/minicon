@@ -1099,11 +1099,11 @@ fn an_unwritable_snapshot_path_does_not_disturb_the_running_session() {
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut saw_marker = false;
     while Instant::now() < deadline {
-        if let Ok(output) = invoke_control_output(&session.endpoint, &["capture-pane".to_owned()]) {
-            if output.contains("SNAPSHOT_SURVIVOR") {
-                saw_marker = true;
-                break;
-            }
+        if let Ok(output) = invoke_control_output(&session.endpoint, &["capture-pane".to_owned()])
+            && output.contains("SNAPSHOT_SURVIVOR")
+        {
+            saw_marker = true;
+            break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }

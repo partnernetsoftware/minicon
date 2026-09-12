@@ -621,7 +621,7 @@ mod tests {
                     .accepted
             );
         }
-        let expected_bytes = 10 + 0 + "Ctrl+C".len() + 0 + 5;
+        let expected_bytes = (10 + "Ctrl+C".len()) + 5;
         assert_eq!(inbox.stats().pending_bytes, expected_bytes);
 
         let (batch, backlog) = inbox.pop_batch(usize::MAX);

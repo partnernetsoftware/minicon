@@ -267,9 +267,18 @@ mod tests {
             up: Option<u64>,
         }
         let tabs = [
-            Tab { number: 10, up: None },
-            Tab { number: 20, up: Some(10) },
-            Tab { number: 30, up: Some(20) },
+            Tab {
+                number: 10,
+                up: None,
+            },
+            Tab {
+                number: 20,
+                up: Some(10),
+            },
+            Tab {
+                number: 30,
+                up: Some(20),
+            },
         ];
         let depths =
             compute_tree_depths_by(&tabs, |tab| tab.number, |tab| tab.up).expect("well-formed");

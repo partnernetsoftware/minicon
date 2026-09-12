@@ -230,9 +230,21 @@ mod tests {
             if value == 0.0 {
                 continue;
             }
-            assert_eq!(trunc_f32(value).to_bits(), value.trunc().to_bits(), "trunc {value:e}");
-            assert_eq!(round_f32(value).to_bits(), value.round().to_bits(), "round {value:e}");
-            assert_eq!(ceil_f32(value).to_bits(), value.ceil().to_bits(), "ceil {value:e}");
+            assert_eq!(
+                trunc_f32(value).to_bits(),
+                value.trunc().to_bits(),
+                "trunc {value:e}"
+            );
+            assert_eq!(
+                round_f32(value).to_bits(),
+                value.round().to_bits(),
+                "round {value:e}"
+            );
+            assert_eq!(
+                ceil_f32(value).to_bits(),
+                value.ceil().to_bits(),
+                "ceil {value:e}"
+            );
             // The negative twin of the same encoding.
             let negated = -value;
             assert_eq!(trunc_f32(negated).to_bits(), negated.trunc().to_bits());
@@ -280,7 +292,11 @@ mod tests {
             (1.75, 10.0, 18),
             (2.0, 10.5, 21),
         ] {
-            assert_eq!(round_f64(logical * scale) as i64, expected, "{logical} x {scale}");
+            assert_eq!(
+                round_f64(logical * scale) as i64,
+                expected,
+                "{logical} x {scale}"
+            );
         }
     }
 }

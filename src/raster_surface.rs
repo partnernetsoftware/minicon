@@ -266,7 +266,7 @@ mod tests {
         surface.fill_rect(1, 1, 1, 1, INK);
         // Only the top-left pixel of the 2x2 clip is inked.
         assert_eq!(pixels[0], SENTINEL);
-        assert_eq!(pixels[1 * 4 + 1], INK);
+        assert_eq!(pixels[4 + 1], INK);
         assert_eq!(
             pixels.iter().filter(|pixel| **pixel == INK).count(),
             1,

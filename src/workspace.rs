@@ -327,8 +327,10 @@ mod tests {
     /// difference between "one id left" and "none left".
     #[test]
     fn the_last_usable_id_is_consumed_before_exhaustion() {
-        let mut workspace = Workspace::default();
-        workspace.next_id = u64::MAX - 1;
+        let mut workspace = Workspace {
+            next_id: u64::MAX - 1,
+            ..Default::default()
+        };
         let last = workspace
             .add_root("last".into())
             .expect("the id below the ceiling is usable");

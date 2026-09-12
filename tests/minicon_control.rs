@@ -1670,14 +1670,39 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     // spawn fails while the running one is unaffected.
     let dir = std::env::temp_dir().join(format!("minicon-oneshot-{suffix}"));
     fs::create_dir_all(&dir).expect("scratch dir");
-    let (real_shell, shell_args): (&str, Vec<&str>) = if cfg!(windows) {
-        ("cmd.exe", vec!["/Q", "/K"])
-    } else {
-        ("/bin/sh", Vec::new())
-    };
-    let real_path = resolve_on_path(real_shell).expect("a real shell on PATH");
     let stub = dir.join(format!("oneshot{}", std::env::consts::EXE_SUFFIX));
-    fs::copy(&real_path, &stub).expect("copy the shell to a disposable name");
+    // The first tab must run a program that stays alive, survives its own file
+    // being deleted, and still leaves the *second* spawn of the same path to
+    // fail. That "delete the running image, it keeps running" assumption only
+    // holds for a self-contained binary. On Windows a copy of a real shell
+    // works (a running image is delete-pending). On macOS neither a copied
+    // system binary (an arm64e platform binary the kernel refuses) nor a shell
+    // script (macOS /bin/sh re-opens the script path as it runs, so deleting
+    // it kills the shell) survives, so compile a tiny standalone binary: once
+    // running it holds its own inode and outlives its file, while the second
+    // spawn of the deleted path still fails.
+    let shell_args: Vec<&str> = if cfg!(windows) {
+        let real_path = resolve_on_path("cmd.exe").expect("a real shell on PATH");
+        fs::copy(&real_path, &stub).expect("copy the shell to a disposable name");
+        vec!["/Q", "/K"]
+    } else {
+        let src = dir.join("oneshot.rs");
+        fs::write(
+            &src,
+            "fn main() { std::thread::sleep(std::time::Duration::from_secs(86_400)); }\n",
+        )
+        .expect("write the stub source");
+        let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+        let built = Command::new(&rustc)
+            .arg("-O")
+            .arg(&src)
+            .arg("-o")
+            .arg(&stub)
+            .status()
+            .expect("run rustc to build the stub");
+        assert!(built.success(), "rustc must build the stub binary");
+        Vec::new()
+    };
 
     let mut host = Command::new(exe);
     host.arg("--no-activate")
@@ -1699,14 +1724,44 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     );
     let first = tab_id(&listed["tabs"][0]["id"]).to_owned();
 
-    // Remove the program the running tab uses. Windows may keep the live image
-    // mapped, so the delete can fail; either way the *next* spawn must not be
-    // able to start it. If the delete is refused, rename the directory holding
-    // it out of the way after the first tab has already opened.
-    let _ = fs::remove_file(&stub);
-    if stub.exists() {
-        let moved = dir.with_file_name(format!("minicon-oneshot-gone-{suffix}"));
-        let _ = fs::rename(&dir, &moved);
+    // The stub must actually be running before this test means anything: it
+    // asserts a *failed* second tab leaves the first alive, which proves
+    // nothing if the first was never alive. Poll until its child is up.
+    let alive_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let now = cli_json(exe, &endpoint, &["list-tabs"]);
+        if now["tabs"][0]["child_alive"] == true {
+            break;
+        }
+        assert!(
+            Instant::now() < alive_deadline,
+            "the first tab's program must be alive before the failed-second-tab test; snapshot: {now}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Make the same program fail to start for the *second* tab without
+    // disturbing the first. On Windows delete it: a running image is
+    // delete-pending, so the first tab keeps running while the next spawn of
+    // the deleted path fails. On Unix drop its execute bit instead: deleting a
+    // running image *terminates* it on macOS (the kernel kills a process whose
+    // executable file is unlinked, unlike Linux which keeps it on its inode),
+    // so a delete would end the first tab and defeat the test; a running
+    // process is unaffected by a permission change, while a fresh execve of the
+    // now-unexecutable path fails with EACCES.
+    #[cfg(windows)]
+    {
+        let _ = fs::remove_file(&stub);
+        if stub.exists() {
+            let moved = dir.with_file_name(format!("minicon-oneshot-gone-{suffix}"));
+            let _ = fs::rename(&dir, &moved);
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o000))
+            .expect("drop the stub's execute bit so the second spawn fails");
     }
     // The user gesture (Ctrl+Shift+T) must fail as a *notice*, not by ending
     // the host: the control `new-tab` reply is a separate path that reports to

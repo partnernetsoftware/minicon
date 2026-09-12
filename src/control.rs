@@ -1625,18 +1625,16 @@ mod native_endpoint_tests {
         let disconnect = || FrameError::Io(io::Error::from(io::ErrorKind::UnexpectedEof));
         let other = || FrameError::Io(io::Error::from(io::ErrorKind::TimedOut));
 
-        assert_eq!(
+        assert!(
             lost_write("write control request", disconnect()).0,
-            true,
             "a request write that lost its connection may not have run"
         );
-        assert_eq!(
+        assert!(
             lost_read("read control response", disconnect()).0,
-            true,
             "a lost reply may have run and must retry with the same id"
         );
-        assert_eq!(lost_write("write control request", other()).0, false);
-        assert_eq!(lost_read("read control response", other()).0, false);
+        assert!(!lost_write("write control request", other()).0);
+        assert!(!lost_read("read control response", other()).0);
 
         let (_, message) = lost_read("read control response", other());
         assert!(
@@ -2489,12 +2487,12 @@ mod tests {
         let mut parsed: Vec<String> = Vec::new();
         for line in body.lines() {
             let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix('"') {
-                if let Some(verb) = rest.split('"').next() {
-                    if trimmed.ends_with("=> {") && !verb.contains(char::is_whitespace) {
-                        parsed.push(verb.to_owned());
-                    }
-                }
+            if let Some(rest) = trimmed.strip_prefix('"')
+                && let Some(verb) = rest.split('"').next()
+                && trimmed.ends_with("=> {")
+                && !verb.contains(char::is_whitespace)
+            {
+                parsed.push(verb.to_owned());
             }
         }
 
@@ -2545,12 +2543,12 @@ mod tests {
         let mut dispatched: Vec<String> = Vec::new();
         for line in body.lines() {
             let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix('"') {
-                if let Some(verb) = rest.split('"').next() {
-                    if trimmed.ends_with("=> {") && !verb.contains(char::is_whitespace) {
-                        dispatched.push(verb.to_owned());
-                    }
-                }
+            if let Some(rest) = trimmed.strip_prefix('"')
+                && let Some(verb) = rest.split('"').next()
+                && trimmed.ends_with("=> {")
+                && !verb.contains(char::is_whitespace)
+            {
+                dispatched.push(verb.to_owned());
             }
         }
         dispatched.push("list-commands".to_owned());
