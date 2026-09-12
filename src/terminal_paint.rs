@@ -344,4 +344,44 @@ mod tests {
         // A family emoji is a ZWJ sequence; only its first scalar survives.
         assert_eq!(first_grapheme("\u{1f468}\u{200d}\u{1f469}"), '\u{1f468}');
     }
+    /// A wide cell fills its background across **two** columns. Reverse video
+    /// makes a cell fill without needing a rasterized glyph, so the span is
+    /// directly observable in the pixels: a one-column span would leave the
+    /// second column at the default background. This pins the
+    /// `cell_w * 2` arithmetic, not the loop's fast paths — those are
+    /// unobservable because `Surface` clips identically either way.
+    #[test]
+    fn a_wide_cell_fills_two_columns() {
+        let mut parser = vt100::Parser::new(1, 4, 0);
+        // Reverse video for the wide glyph, normal video for the two after it.
+        parser.process("\u{1b}[7m\u{4e2d}\u{1b}[27mab".as_bytes());
+        let (cell_w, cell_h) = (8u32, 8u32);
+        let width = 4 * cell_w;
+        let mut pixels = vec![BG.to_xrgb(); (width * cell_h) as usize];
+        paint_cells(
+            &mut Surface::new(&mut pixels, width, cell_h),
+            parser.screen(),
+            None,
+            cell_w,
+            cell_h,
+            FG,
+            BG,
+            10,
+        );
+        // Sample the top row of each column: reverse video makes the filled
+        // background FG-coloured, so the wide glyph must own columns 0 and 1.
+        let column_ink = |col: usize| pixels[col * cell_w as usize];
+        assert_eq!(column_ink(0), FG.to_xrgb(), "the wide cell's first column");
+        assert_eq!(
+            column_ink(1),
+            FG.to_xrgb(),
+            "the wide cell's second column: a one-column span leaves this default"
+        );
+        assert_eq!(
+            column_ink(2),
+            BG.to_xrgb(),
+            "the cell after the wide glyph must not be filled"
+        );
+        assert_eq!(column_ink(3), BG.to_xrgb(), "and neither must the last");
+    }
 }
