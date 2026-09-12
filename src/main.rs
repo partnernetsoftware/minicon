@@ -4194,8 +4194,7 @@ impl ConTerminal {
         let bg = self.default_fg;
 
         for character in self.ime_preedit.chars() {
-            let wide = unicode_width::UnicodeWidthChar::width(character).unwrap_or(1) > 1;
-            let cells = if wide { 2 } else { 1 };
+            let cells = composer::character_cells(character) as u32;
             let x0 = self.content_left_px + (u32::from(cursor.1) + advance) * self.cell_w;
             if x0 >= surface.width || y0 >= surface.height {
                 break;
@@ -6698,12 +6697,8 @@ fn paint_host_ui_text_parts(
             // next character on top of the remains -- which is exactly why CJK
             // typed into the composer rendered as overlapping garbage while
             // ASCII stayed crisp.
-            let cells = if unicode_width::UnicodeWidthChar::width(character).unwrap_or(1) > 1 {
-                2
-            } else {
-                1
-            };
-            let span_w = cell_w.saturating_mul(cells);
+            let cells = composer::character_cells(character);
+            let span_w = cell_w.saturating_mul(cells as u32);
             if cursor.saturating_add(span_w) > limit {
                 return;
             }

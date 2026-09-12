@@ -200,7 +200,11 @@ pub struct VisibleWindow {
 
 /// The painter's own width rule, so the measurement here and the advance
 /// there cannot disagree: a double-width character owns two cells.
-fn character_cells(character: char) -> usize {
+/// Cells one character occupies in the fixed grid: a double-width character
+/// owns two, a structural soft break owns none, everything else one. The single
+/// definition of that rule — the painter, the IME preedit and the composer's
+/// own measurements all agree only because they call this and not a local copy.
+pub fn character_cells(character: char) -> usize {
     // Line-oriented callers slice before a newline. A structural soft break
     // has no horizontal width if a general measurement caller encounters it.
     if character == '\n' {
@@ -622,6 +626,34 @@ fn push_bounded(normalized: &mut String, character: char, limit: usize) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `character_cells` is the single width rule the painter, the IME preedit
+    /// and every measurement share, so its contract must be exact: a
+    /// double-width character owns two cells, a structural soft break owns
+    /// none, and everything else one. `cells` must be the sum of it.
+    #[test]
+    fn character_cells_is_the_single_width_rule() {
+        assert_eq!(character_cells('a'), 1);
+        assert_eq!(character_cells(' '), 1);
+        assert_eq!(character_cells('\u{4e2d}'), 2, "CJK is double width");
+        assert_eq!(
+            character_cells('\u{ff21}'),
+            2,
+            "fullwidth A is double width"
+        );
+        assert_eq!(character_cells('\n'), 0, "a soft break has no width");
+        // A control character that is not a break still occupies one cell, the
+        // same default `unicode-width` reports for an unassigned width.
+        assert_eq!(character_cells('\t'), 1);
+
+        // `cells` must agree with summing the rule over the same text, and the
+        // empty string is zero rather than a default of one.
+        for text in ["", "a", "\u{4e2d}\u{6587}", "a\u{4e2d}b", "a\nb"] {
+            let summed: usize = text.chars().map(character_cells).sum();
+            assert_eq!(cells(text), summed, "cells mismatch for {text:?}");
+        }
+        assert_eq!(cells("a\nb"), 2, "the break contributes nothing");
+    }
 
     fn state(text: &str) -> ComposerState {
         ComposerState {
