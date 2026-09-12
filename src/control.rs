@@ -2987,6 +2987,72 @@ mod tests {
         assert!(decode_response(&[9]).is_err());
     }
 
+    /// The response codec is the shape a summary answer arrives in: an error
+    /// string, a null, a plain string, or a JSON object. Every tag must round
+    /// trip, and the null tag must carry nothing after it — a stray byte there
+    /// means the writer and reader disagree about the layout.
+    #[test]
+    fn every_response_tag_round_trips() {
+        // An error reply is tag 0 and its text is the message.
+        assert_eq!(
+            decode_response(&encode_response(Err("boom".to_owned()))),
+            Err("boom".to_owned())
+        );
+        // A null reply is tag 1 with no payload, and decodes to the empty
+        // string a caller prints as nothing.
+        let null = encode_response(Ok(JsonValue::Null));
+        assert_eq!(null, vec![1], "null is one byte");
+        assert_eq!(decode_response(&null), Ok(String::new()));
+        // A plain string is tag 2.
+        assert_eq!(
+            decode_response(&encode_response(Ok(JsonValue::String("ok".to_owned())))),
+            Ok("ok".to_owned())
+        );
+        // Any other value is tag 3 carrying pretty JSON.
+        let object = encode_response(Ok(json::object(vec![("n", 1.into())])));
+        assert_eq!(object.first(), Some(&3));
+        let decoded = decode_response(&object).expect("the object decodes");
+        let parsed: serde_json::Value = serde_json::from_str(&decoded).expect("valid JSON");
+        assert_eq!(parsed["n"], 1);
+    }
+
+    /// Malformed responses must be refused with a reason, not read as empty or
+    /// truncated answers: an empty buffer has no tag, a null with trailing
+    /// bytes is a layout disagreement, invalid UTF-8 cannot be a text payload,
+    /// and an unknown tag has no meaning.
+    #[test]
+    fn malformed_responses_are_refused() {
+        assert_eq!(
+            decode_response(&[]),
+            Err("empty control response".to_owned())
+        );
+        assert_eq!(
+            decode_response(&[1, 0]),
+            Err("null control response has trailing bytes".to_owned()),
+            "tag 1 must be alone"
+        );
+        assert_eq!(
+            decode_response(&[2, 0xff, 0xfe]),
+            Err("control response is not valid UTF-8".to_owned())
+        );
+        assert_eq!(
+            decode_response(&[0, 0xff]),
+            Err("control response is not valid UTF-8".to_owned()),
+            "an error message must still be UTF-8"
+        );
+        for tag in [4u8, 9, 255] {
+            assert_eq!(
+                decode_response(&[tag]),
+                Err("unknown control response tag".to_owned()),
+                "tag {tag} is not a response"
+            );
+        }
+        // An empty text payload is a valid, empty answer rather than an error:
+        // the error tag with no message is the failing case, not an empty tag-2.
+        assert_eq!(decode_response(&[2]), Ok(String::new()));
+        assert_eq!(decode_response(&[0]), Err(String::new()));
+    }
+
     /// The frame layer — magic, length prefix, empty and oversized payloads —
     /// is separate from the payload codec above and was untested. Drive it
     /// over an in-memory stream so a bad frame is rejected before a length is
