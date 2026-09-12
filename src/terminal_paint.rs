@@ -384,4 +384,62 @@ mod tests {
         );
         assert_eq!(column_ink(3), BG.to_xrgb(), "and neither must the last");
     }
+
+    /// The dim attribute is not a palette entry: it is the foreground blended
+    /// toward the background, and an underline paints that blended colour, so
+    /// the attribute is readable straight from the pixels. Pin that a dim cell's
+    /// underline is exactly `blend(fg, bg, 0.55)` and that a normal cell's is
+    /// the untouched foreground — a change to the fraction or to which colour is
+    /// dimmed moves every dim cell on screen.
+    #[test]
+    fn a_dim_cell_underlines_in_the_blended_foreground() {
+        let (cell_w, cell_h) = (8u32, 8u32);
+        let width = 4 * cell_w;
+        let underline_row = cell_h as usize - 2;
+        let underline_at = |text: &str, col: usize| {
+            let mut parser = vt100::Parser::new(1, 4, 0);
+            parser.process(text.as_bytes());
+            let mut pixels = vec![BG.to_xrgb(); (width * cell_h) as usize];
+            paint_cells(
+                &mut Surface::new(&mut pixels, width, cell_h),
+                parser.screen(),
+                None,
+                cell_w,
+                cell_h,
+                FG,
+                BG,
+                10,
+            );
+            pixels[underline_row * width as usize + col * cell_w as usize]
+        };
+
+        // SGR 2 is dim, SGR 4 is underline, SGR 0 clears both.
+        let dim = underline_at("\u{1b}[2;4mab", 0);
+        assert_eq!(
+            dim,
+            palette::blend(FG, BG, 0.55).to_xrgb(),
+            "a dim cell underlines in the blended foreground"
+        );
+        assert_ne!(
+            dim,
+            FG.to_xrgb(),
+            "dim must differ from the plain foreground"
+        );
+
+        // Without dim the underline is the plain foreground, so the assertion
+        // above is measuring the dim blend and not the underline itself.
+        let plain = underline_at("\u{1b}[4mab", 0);
+        assert_eq!(
+            plain,
+            FG.to_xrgb(),
+            "an undimmed underline is the foreground"
+        );
+
+        // The blended colour is set once per cell, so it covers the whole span.
+        assert_eq!(
+            underline_at("\u{1b}[2;4mab", 1),
+            dim,
+            "the whole cell is dimmed, not just its first column"
+        );
+    }
 }
