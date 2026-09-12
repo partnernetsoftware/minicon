@@ -1221,6 +1221,81 @@ mod tests {
     /// keeps `TERMINAL_MIN_WIDTH_DIP`. A client too narrow to satisfy both
     /// floors the range at the minimum, and a negative pointer still clamps to
     /// the minimum rather than going negative.
+    /// The scrollbar width scales with the display and floors at one pixel, so
+    /// it is never invisible. A scale below one is treated as one — the layout
+    /// rule everywhere else — and a non-finite scale is bounded by that same
+    /// floor rather than propagating a NaN width. The function's own trailing
+    /// `.max(1)` is defensive: `dip` already floors the scale, so it cannot fire
+    /// for a scale the layout produces (pinned below).
+    #[test]
+    fn the_scrollbar_width_scales_and_never_vanishes() {
+        assert_eq!(
+            terminal_scrollbar_width(1.0),
+            TERMINAL_SCROLLBAR_WIDTH_DIP as u32
+        );
+        assert!(terminal_scrollbar_width(2.0) > terminal_scrollbar_width(1.0));
+        assert!(terminal_scrollbar_width(4.0) > terminal_scrollbar_width(2.0));
+        // Below one, the scale is floored: the same width as unscaled.
+        for scale in [0.0, 0.5] {
+            assert_eq!(
+                terminal_scrollbar_width(scale),
+                terminal_scrollbar_width(1.0),
+                "a sub-unit scale is floored to one, not shrunk"
+            );
+        }
+        // NaN floors to one through `f64::max`, so no NaN width escapes.
+        assert_eq!(
+            terminal_scrollbar_width(f64::NAN),
+            terminal_scrollbar_width(1.0)
+        );
+        // And it is never zero at any scale the layout can produce.
+        for scale in [0.0, 0.5, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0] {
+            assert!(
+                terminal_scrollbar_width(scale) >= 1,
+                "a scrollbar of zero width is invisible at scale {scale}"
+            );
+        }
+        // An unbounded scale saturates to `u32::MAX` rather than wrapping; the
+        // geometry layer clamps it to `i32::MAX` before it reaches a rect.
+        assert_eq!(terminal_scrollbar_width(f64::INFINITY), u32::MAX);
+    }
+
+    /// Dragging to either end reaches the ends at every display scale, not just
+    /// the unscaled one: the mapping between a thumb top and a scrollback offset
+    /// has to survive a change of scale, and the track must stay ordered.
+    #[test]
+    fn dragging_reaches_the_ends_at_every_display_scale() {
+        use agenterm_ui_core::scrollback_for_thumb_top;
+        for scale in [1.0, 1.25, 1.5, 2.0, 3.0] {
+            let geometry = terminal_scrollbar_geometry(viewport(scale, 24, 96), 0, 100);
+            assert!(
+                geometry.track.right >= geometry.track.left,
+                "the track must stay ordered at scale {scale}"
+            );
+            assert!(
+                geometry.thumb.height() > 0,
+                "the thumb must be visible at scale {scale}"
+            );
+            assert_eq!(
+                scrollback_for_thumb_top(geometry, geometry.track.top, 100),
+                100,
+                "the top of the track is the oldest scrollback at scale {scale}"
+            );
+            assert_eq!(
+                scrollback_for_thumb_top(geometry, geometry.track.bottom, 100),
+                0,
+                "dragging to the bottom returns to the live view at scale {scale}"
+            );
+            // The drawn thumb for the maximum offset reads back as the maximum.
+            let drawn = terminal_scrollbar_geometry(viewport(scale, 24, 96), 100, 100);
+            assert_eq!(
+                scrollback_for_thumb_top(geometry, drawn.thumb.top, 100),
+                100,
+                "the drawn top must read back as the maximum at scale {scale}"
+            );
+        }
+    }
+
     #[test]
     fn sidebar_width_follows_the_pointer_within_the_client_cap() {
         // A wide client: the pointer is limited only by the fixed maximum.
