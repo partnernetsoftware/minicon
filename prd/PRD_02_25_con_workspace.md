@@ -64,6 +64,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Untrusted/extreme dimensions cannot wrap a close target onto another row,
   overflow layout construction, or collapse the sidebar through an unordered
   floating-point comparison.
+- [~] the header's seven tools lay out at their own size and do not wrap, so a
+  window narrower than roughly 180 physical pixels clips the rightmost ones.
+  Measured on this build: `zoom_in` is still clipped at 176 wide and fully
+  visible at 200; below that the terminal itself still works and only the
+  header runs out of room. Recorded as a partial state rather than claim a
+  narrow-window guarantee the layout does not make. `ui.rs`'s
+  `a_narrow_frame_overflows_the_header_row_and_widening_it_does_not` pins the
+  boundary so a layout change has a number to beat.
 - [x] accessibility bounds use the same non-wrapping geometry policy: positive
   native coordinates and dimensions above `i32::MAX` saturate instead of
   collapsing to zero and making published controls disappear.

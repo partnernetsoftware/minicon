@@ -132,6 +132,11 @@ shrink, reset, and grow terminal and interface text together; `中` / `En`
 switch the interface language. Closing the final tab leaves a greeting page so
 you can start another terminal; it does not quit the window.
 
+The header row has seven tools and does not wrap, so a window narrower than
+roughly 180 physical pixels clips the rightmost ones — measured on this build,
+`zoom_in` is still clipped at 176 wide and fully visible at 200. Below that
+width the terminal itself still works; the header is what runs out of room.
+
 ### Reporting a problem
 
 Run `minicon --status` and include its output. It reports the build, the PTY
