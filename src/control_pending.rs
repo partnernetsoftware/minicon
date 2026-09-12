@@ -472,6 +472,72 @@ mod tests {
         );
     }
 
+    /// Waits are probed in the order they were enqueued, and survivors keep
+    /// that relative order across polls. The order is what decides which waiting
+    /// caller is answered first when several become ready at once, so a reorder
+    /// would not fail any count — it would silently answer a later request
+    /// before an earlier one. Observe it through which tab replies in which
+    /// poll, using a probe keyed by tab.
+    #[test]
+    fn waits_are_answered_in_the_order_they_were_enqueued() {
+        let mut pending = PendingControl::default();
+        let tabs = [TabId::new(1), TabId::new(2), TabId::new(3)];
+        let mut receivers = Vec::new();
+        for tab in tabs {
+            let (sender, receiver) = reply();
+            let mut sender = Some(sender);
+            pending
+                .enqueue_wait(tab, WaitKind::TabExit, 60_000, &mut sender, "capacity")
+                .expect("enqueue");
+            receivers.push(receiver);
+        }
+        assert_eq!(pending.wait_count(), 3);
+
+        // Poll 1: only tab 2 is ready. It must be answered, and the other two
+        // stay queued with their order intact.
+        let now = Instant::now();
+        let more = pending.poll_waits(now, |target, _| {
+            if target == TabId::new(2) {
+                WaitProbe::Completed(json::object(vec![("tab", 2.into())]))
+            } else {
+                WaitProbe::Pending
+            }
+        });
+        assert!(more.is_some(), "unfinished waits still set a deadline");
+        assert_eq!(pending.wait_count(), 2, "the answered wait is removed");
+        assert!(
+            receivers[1].recv_timeout(Duration::from_secs(1)).is_ok(),
+            "tab 2's wait is answered"
+        );
+        assert!(
+            receivers[0]
+                .recv_timeout(Duration::from_millis(20))
+                .is_err(),
+            "tab 1 must not be answered by tab 2's completion"
+        );
+        assert!(
+            receivers[2]
+                .recv_timeout(Duration::from_millis(20))
+                .is_err()
+        );
+
+        // Poll 2: tabs 1 and 3 are both ready. Both must be answered, and the
+        // earlier-enqueued tab must be probed first.
+        let mut probed: Vec<TabId> = Vec::new();
+        pending.poll_waits(now, |target, _| {
+            probed.push(target);
+            WaitProbe::Completed(json::object(vec![("tab", target.get().into())]))
+        });
+        assert_eq!(
+            probed,
+            vec![TabId::new(1), TabId::new(3)],
+            "survivors must be probed in enqueue order: {probed:?}"
+        );
+        assert!(receivers[0].recv_timeout(Duration::from_secs(1)).is_ok());
+        assert!(receivers[2].recv_timeout(Duration::from_secs(1)).is_ok());
+        assert_eq!(pending.wait_count(), 0);
+    }
+
     /// `prepare_screenshot` captures the previously active tab only when it
     /// differs from the capture target, so a capture of the active tab does not
     /// need a restore it would have to undo.
