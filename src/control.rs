@@ -2311,6 +2311,85 @@ mod tests {
         assert!(!more);
     }
 
+    /// A resize storm longer than one turn must be taken in several turns, and
+    /// every request must still come out exactly once: a missing request, a
+    /// duplicated one, or a turn that never drains would all fail here. The
+    /// absorb loop's own `batch.len() < REQUEST_QUEUE_CAPACITY` bound is
+    /// defensive — `push` refuses at that same capacity, so a batch can never
+    /// reach it and the bound cannot fire. The test records that by pushing as
+    /// the queue drains, which is the only way to run a storm longer than the
+    /// queue itself.
+    #[test]
+    fn a_long_resize_storm_is_absorbed_in_capped_turns_without_losing_one() {
+        let (queue, _alive) = queue_with(Vec::new());
+        // Twice the absorb cap, pushed as the queue drains so the capacity
+        // check in `push` never rejects.
+        let total = REQUEST_QUEUE_CAPACITY * 2;
+        let mut pushed = 0usize;
+        let mut delivered = 0usize;
+        let mut turns = 0usize;
+        let mut saw_a_capped_turn = false;
+
+        while delivered < total {
+            // Keep the queue supplied.
+            while pushed < total {
+                let (reply, _receiver) = reply_channel();
+                let request = IncomingRequest {
+                    command: resize(),
+                    reply,
+                };
+                match queue.push(request) {
+                    Ok(_) => pushed += 1,
+                    Err(_) => break, // full; drain and come back
+                }
+            }
+
+            let (batch, more) = queue.pop_batch(1);
+            turns += 1;
+            assert!(
+                !batch.is_empty(),
+                "a queue with {pushed} pushed and {delivered} delivered gave an empty batch"
+            );
+            assert!(
+                batch.len() <= REQUEST_QUEUE_CAPACITY,
+                "a turn cannot exceed the queue's own capacity: {}",
+                batch.len()
+            );
+            assert!(
+                batch
+                    .iter()
+                    .all(|request| matches!(&request.command, CliCommand::ResizeWindow { .. })),
+                "absorption must never mix another command in"
+            );
+            if batch.len() > 1 {
+                saw_a_capped_turn = true;
+            }
+            delivered += batch.len();
+            // `more` reports whether the queue still holds work. It can be
+            // false mid-storm when the turn drained exactly what was queued, so
+            // the invariant is only that nothing is lost: delivered never runs
+            // ahead of what was pushed.
+            assert!(
+                delivered <= pushed,
+                "delivered {delivered} more than the {pushed} pushed"
+            );
+            assert!(
+                turns <= total + 1,
+                "draining must terminate: {turns} turns for {total} requests"
+            );
+        }
+
+        assert_eq!(
+            delivered, total,
+            "every request must be delivered exactly once"
+        );
+        assert!(
+            saw_a_capped_turn,
+            "a storm must actually be absorbed by more than a limit of one"
+        );
+        assert!(!queue.pop_batch(1).1, "the queue is empty at the end");
+    }
+
     #[test]
     fn byte_search_matches_slice_oracle_and_utf8_boundaries() {
         assert!(contains_utf8("", ""));
