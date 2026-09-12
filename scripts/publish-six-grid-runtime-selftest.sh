@@ -2,13 +2,16 @@
 set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+. "$repo_root/scripts/lib/sha256-file.sh"
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/minicon-publish-selftest.XXXXXX")
 cleanup() { rm -rf "$fixture"; }
 trap cleanup EXIT
 
-mkdir -p "$fixture/scripts" "$fixture/target-six/cloud-runtime" "$fixture/bin"
+mkdir -p "$fixture/scripts/lib" "$fixture/target-six/cloud-runtime" "$fixture/bin"
 cp "$repo_root/scripts/publish-six-grid-runtime.sh" "$fixture/scripts/"
 cp "$repo_root/scripts/aggregate-six-grid-runtime.py" "$fixture/scripts/"
+# The publisher sources the shared digest helper, so the fixture needs it too.
+cp "$repo_root/scripts/lib/sha256-file.sh" "$fixture/scripts/lib/"
 identity=1111111111111111111111111111111111111111111111111111111111111111
 source_sha=2222222222222222222222222222222222222222
 printf '{"source_tree_sha256":"%s"}\n' "$identity" >"$fixture/target-six/receipt.json"
@@ -67,7 +70,7 @@ grep -F 'workflow run six-grid-runtime.yml' "$GH_LOG" >/dev/null
 grep -F 'evidence_probe_cell=none' "$GH_LOG" >/dev/null
 published="$fixture/target-six/cloud-runtime/minicon-six-grid-$identity-published.json"
 [ "$(jq -r .schema "$published")" -eq 2 ]
-[ "$(jq -r .runtime_aggregator_sha256 "$published")" = "$(shasum -a 256 "$fixture/scripts/aggregate-six-grid-runtime.py" | awk '{print $1}')" ]
+[ "$(jq -r .runtime_aggregator_sha256 "$published")" = "$(sha256_file "$fixture/scripts/aggregate-six-grid-runtime.py")" ]
 [ "$(jq '.cells | length' "$published")" -eq 6 ]
 for cell in "${cells[@]}"; do
   [ "$(jq -r --arg cell "$cell" '.cells[$cell]' "$published")" = \

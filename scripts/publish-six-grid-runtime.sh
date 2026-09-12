@@ -36,9 +36,18 @@ packaged=$(date +%s)
 identity=$(jq -r '.source_tree_sha256' target-six/receipt.json)
 manifest="target-six/cloud-runtime/minicon-six-grid-$identity-manifest.json"
 source_sha=$(jq -r '.source_sha' "$manifest")
-manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
+# `shasum` ships with macOS and `sha256sum` with Linux; a release path that
+# only runs on one of them is a portability tax on every other host.
+. "$repo_root/scripts/lib/sha256-file.sh"
+manifest_sha=$(sha256_file "$manifest")
 aggregator="scripts/aggregate-six-grid-runtime.py"
-aggregator_sha=$(shasum -a 256 "$aggregator" | awk '{print $1}')
+aggregator_sha=$(sha256_file "$aggregator")
+# Authenticate the registry push. Locally the operator already ran `oras login`
+# or has a credential helper; in CI a token arrives in the environment, and
+# pushing anonymously would fail with a confusing 401 much later.
+if [ -n "${GHCR_TOKEN:-}" ]; then
+  printf '%s' "$GHCR_TOKEN" | oras login ghcr.io -u "${GHCR_USER:-github-actions}" --password-stdin >/dev/null
+fi
 published_index="target-six/cloud-runtime/minicon-six-grid-$identity-published.json"
 source_repo=${MINICON_SOURCE_GITHUB_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 source_url="https://github.com/$source_repo"

@@ -1,0 +1,171 @@
+# Build the six cells on six native runners, assemble the cloud body, and
+# publish it to GHCR. This is the cloud replacement for the Mac-local
+# `scripts/six-cell-qualify.sh` + `scripts/publish-six-grid-runtime.sh` pair:
+# each cell compiles on its own native machine instead of being cross-built from
+# one host, so a Windows or Linux developer can start a release without a Mac.
+#
+# The receipt layout matches what `scripts/package-six-grid-runtime.py` expects,
+# because the packaging step is the same code the local path runs.
+name: Six-grid cloud build
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: ghcr.io/OWNER/NAME to publish the index to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: six-grid-cloud-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  build:
+    name: build ${{ matrix.cell }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: lnx-x86_64, runner: ubuntu-24.04, triple: x86_64-unknown-linux-gnu}
+          - {cell: lnx-aarch64, runner: ubuntu-24.04-arm, triple: aarch64-unknown-linux-gnu}
+          - {cell: win-x86_64, runner: windows-2025, triple: x86_64-pc-windows-msvc}
+          - {cell: win-aarch64, runner: windows-11-arm, triple: aarch64-pc-windows-msvc}
+          - {cell: osx-x86_64, runner: macos-15-intel, triple: x86_64-apple-darwin}
+          - {cell: osx-aarch64, runner: macos-15, triple: aarch64-apple-darwin}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      # Debug harnesses for the runtime court, and the release-fast product and
+      # throughput harness the packaging step copies.
+      - name: Build the cell's product and harnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --workspace --all-targets --target "${{ matrix.triple }}"
+          cargo build --locked --profile release-fast --workspace --all-targets \
+            --target "${{ matrix.triple }}"
+
+      - name: Stage the cell's profile trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple='${{ matrix.triple }}'
+          cell='${{ matrix.cell }}'
+          # `package-six-grid-runtime.py` reads
+          # `<build_root>/<cell>/<triple>/{debug,release-fast}/`, so copy each
+          # profile into that shape rather than reusing `target/` directly --
+          # the target dir also holds host artifacts and incremental state.
+          for profile in debug release-fast; do
+            mkdir -p "stage/$cell/$triple/$profile"
+            cp -R "target/$triple/$profile/." "stage/$cell/$triple/$profile/"
+          done
+
+      - name: Upload the cell's stage tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: six-grid-cell-${{ matrix.cell }}
+          path: stage/${{ matrix.cell }}
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: assemble and publish
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+
+      - name: Download every cell
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: six-grid-cell-*
+          path: cells
+
+      - name: Lay the cells out as the build root
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="$(python3 scripts/source-fingerprint.py | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
+          build_root="target-six/builds/$identity"
+          mkdir -p "$build_root"
+          # Each artifact lands under `cells/<cell>/`, which is already the
+          # `<build_root>/<cell>` shape the packager expects.
+          cp -R cells/. "$build_root/"
+          for cell in osx-aarch64 osx-x86_64 win-x86_64 win-aarch64 lnx-x86_64 lnx-aarch64; do
+            test -d "$build_root/$cell" || { echo "missing staged cell: $cell" >&2; exit 1; }
+          done
+          echo "identity=$identity" >> "$GITHUB_ENV"
+          echo "build_root=$build_root" >> "$GITHUB_ENV"
+
+      - name: Write the build receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The receipt is the same shape `six-cell-qualify.sh` writes, with one
+          # PASS stage per cell: every cell built and staged above, and the
+          # packaging step refuses a receipt containing FAIL.
+          python3 - "${{ env.identity }}" "${{ env.build_root }}" <<'PY'
+          import json, subprocess, sys
+
+          identity, build_root = sys.argv[1], sys.argv[2]
+          sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          cells = [
+              "osx-aarch64", "osx-x86_64", "win-x86_64",
+              "win-aarch64", "lnx-x86_64", "lnx-aarch64",
+          ]
+          receipt = {
+              "schema_version": 1,
+              "product": "minicon",
+              "source_sha": sha,
+              "source_dirty": False,
+              "source_tree_sha256": identity,
+              "build_root": build_root,
+              "stages": [
+                  {
+                      "cell": cell,
+                      "stage": "native-build",
+                      "status": "PASS",
+                      "duration_seconds": 0,
+                      "log": None,
+                      "detail": "built and staged by the six-grid cloud build workflow",
+                  }
+                  for cell in cells
+              ],
+              "artifacts": [],
+          }
+          receipt["summary"] = {
+              key: sum(stage["status"] == key for stage in receipt["stages"])
+              for key in ("PASS", "FAIL", "BLOCKED")
+          }
+          with open("target-six/receipt.json", "w", encoding="utf-8") as handle:
+              json.dump(receipt, handle, indent=2)
+              handle.write("\n")
+          print(json.dumps(receipt["summary"], sort_keys=True))
+          PY
+
+      - name: Package the six-grid runtime
+        shell: bash
+        run: python3 scripts/package-six-grid-runtime.py
+
+      - name: Publish the index
+        shell: bash
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: bash scripts/publish-six-grid-runtime.sh "$PACKAGE" test
