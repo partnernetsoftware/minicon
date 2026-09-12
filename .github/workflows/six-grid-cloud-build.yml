@@ -96,6 +96,10 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: six-grid-cell-*
+          # Without `merge-multiple` each artifact lands one level down, under a
+          # directory named after the artifact (`cells/six-grid-cell-lnx-x86_64/`),
+          # which is not the `<build_root>/<cell>` layout the packager reads.
+          merge-multiple: true
           path: cells
 
       - name: Lay the cells out as the build root
@@ -104,12 +108,19 @@ jobs:
           set -euo pipefail
           identity="$(python3 scripts/source-fingerprint.py | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha256"])')"
           build_root="target-six/builds/$identity"
+          cells=(osx-aarch64 osx-x86_64 win-x86_64 win-aarch64 lnx-x86_64 lnx-aarch64)
           mkdir -p "$build_root"
-          # Each artifact lands under `cells/<cell>/`, which is already the
-          # `<build_root>/<cell>` shape the packager expects.
-          cp -R cells/. "$build_root/"
-          for cell in osx-aarch64 osx-x86_64 win-x86_64 win-aarch64 lnx-x86_64 lnx-aarch64; do
-            test -d "$build_root/$cell" || { echo "missing staged cell: $cell" >&2; exit 1; }
+          for cell in "${cells[@]}"; do
+            # `upload-artifact` keeps the uploaded path's own leading directory,
+            # and `download-artifact` may add a level named after the artifact,
+            # so find the cell's tree wherever it landed rather than assuming.
+            source=""
+            for candidate in "cells/$cell" "cells/six-grid-cell-$cell" "cells/six-grid-cell-$cell/$cell"; do
+              if [ -d "$candidate" ]; then source="$candidate"; break; fi
+            done
+            [ -n "$source" ] || { echo "missing staged cell: $cell" >&2; ls -R cells | head -40 >&2; exit 1; }
+            mkdir -p "$build_root/$cell"
+            cp -R "$source/." "$build_root/$cell/"
           done
           echo "identity=$identity" >> "$GITHUB_ENV"
           echo "build_root=$build_root" >> "$GITHUB_ENV"
