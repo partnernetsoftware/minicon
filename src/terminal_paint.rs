@@ -328,4 +328,20 @@ mod tests {
             1,
         );
     }
+
+    /// Despite the name, `first_grapheme` takes the first **char**, not a
+    /// grapheme cluster: the rasterizer is handed one scalar, so a combining
+    /// mark or a ZWJ sequence is dropped and its base is drawn alone. Pin that
+    /// (it is what the painter relies on) and the empty-cell fallback.
+    #[test]
+    fn first_grapheme_takes_one_scalar_and_falls_back_to_space() {
+        assert_eq!(first_grapheme(""), ' ', "an empty cell draws a space");
+        assert_eq!(first_grapheme("a"), 'a');
+        assert_eq!(first_grapheme("abc"), 'a', "only the first scalar is used");
+        assert_eq!(first_grapheme("\u{4e2d}\u{6587}"), '\u{4e2d}');
+        // A base plus a combining acute: the base is returned, the mark is not.
+        assert_eq!(first_grapheme("e\u{0301}"), 'e');
+        // A family emoji is a ZWJ sequence; only its first scalar survives.
+        assert_eq!(first_grapheme("\u{1f468}\u{200d}\u{1f469}"), '\u{1f468}');
+    }
 }

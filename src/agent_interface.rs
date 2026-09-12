@@ -296,19 +296,29 @@ pub fn submit_png_atomic(
         }
     };
     if let Err(error) = worker.try_send(job) {
-        let (kind, message, job) = match error {
-            mpsc::TrySendError::Full(job) => (
-                std::io::ErrorKind::WouldBlock,
-                "PNG worker queue is full",
-                job,
-            ),
-            mpsc::TrySendError::Disconnected(job) => (
-                std::io::ErrorKind::BrokenPipe,
-                "PNG worker is unavailable",
-                job,
-            ),
-        };
+        let (kind, message, job) = superseded_png_job(error);
         complete_png(job.completion, Err(std::io::Error::new(kind, message)));
+    }
+}
+
+/// Classifies a rejected `try_send` into the error a caller sees and hands the
+/// job back so its completion still runs. Separate from the send so the mapping
+/// — a full queue is retryable (`WouldBlock`), a gone worker is not
+/// (`BrokenPipe`) — can be pinned without a live worker.
+fn superseded_png_job(
+    error: mpsc::TrySendError<PngJob>,
+) -> (std::io::ErrorKind, &'static str, PngJob) {
+    match error {
+        mpsc::TrySendError::Full(job) => (
+            std::io::ErrorKind::WouldBlock,
+            "PNG worker queue is full",
+            job,
+        ),
+        mpsc::TrySendError::Disconnected(job) => (
+            std::io::ErrorKind::BrokenPipe,
+            "PNG worker is unavailable",
+            job,
+        ),
     }
 }
 
@@ -525,6 +535,39 @@ mod tests {
     /// second worker or change the answer. `initialize_png_worker` is the thin
     /// wrapper the control path calls before each screenshot, so its result must
     /// match the worker it fronts.
+    /// A rejected PNG send must still run its completion: a full queue is a
+    /// retryable `WouldBlock`, a gone worker a terminal `BrokenPipe`. The job is
+    /// handed back in both cases so the caller is never left waiting. Build the
+    /// two `TrySendError` shapes directly and check the classification.
+    #[test]
+    fn a_rejected_png_job_is_classified_and_returned_with_its_completion() {
+        let job = || PngJob {
+            path: std::path::PathBuf::from("unused.png"),
+            pixels: OwnedXrgbPixels::copy_from(1, 1, &[0]).expect("one pixel"),
+            width: 1,
+            height: 1,
+            completion: Box::new(|_| {}),
+        };
+
+        let (kind, message, returned) = superseded_png_job(mpsc::TrySendError::Full(job()));
+        assert_eq!(
+            kind,
+            std::io::ErrorKind::WouldBlock,
+            "a full queue is retryable"
+        );
+        assert_eq!(message, "PNG worker queue is full");
+        assert_eq!(returned.width, 1, "the job must come back, not be dropped");
+
+        let (kind, message, returned) = superseded_png_job(mpsc::TrySendError::Disconnected(job()));
+        assert_eq!(
+            kind,
+            std::io::ErrorKind::BrokenPipe,
+            "a gone worker is terminal"
+        );
+        assert_eq!(message, "PNG worker is unavailable");
+        assert_eq!(returned.path, std::path::PathBuf::from("unused.png"));
+    }
+
     #[test]
     fn the_png_worker_is_a_single_cached_instance() {
         let first = png_worker().map(std::ptr::from_ref);
