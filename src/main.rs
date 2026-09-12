@@ -1282,6 +1282,20 @@ impl ConApp {
         }
     }
 
+    /// Drops a tab's session and its tree node, carrying the closed terminal's
+    /// settings forward as the seed the next tab inherits, and reports whether
+    /// that left the workspace empty. Window-free by design: the caller decides
+    /// what an empty window paints and titles, and a test can drive the state
+    /// transition without a pixel window.
+    fn detach_session(&mut self, id: workspace::TabId) -> bool {
+        if let Some(session) = self.sessions.remove(&id) {
+            self.session_seed = SessionSeed::from_session(&session);
+            drop(session);
+        }
+        self.workspace.close(id);
+        self.workspace.active().is_none()
+    }
+
     fn activate_session(&mut self, window: &PixelWindow, id: workspace::TabId) {
         if self.workspace.active() == Some(id) {
             return;
@@ -1310,12 +1324,8 @@ impl ConApp {
                 id.get()
             ),
         );
-        if let Some(session) = self.sessions.remove(&id) {
-            self.session_seed = SessionSeed::from_session(&session);
-            drop(session);
-        }
-        self.workspace.close(id);
-        if self.workspace.active().is_none() {
+        let emptied = self.detach_session(id);
+        if emptied {
             self.tree_scroll_offset = 0;
             self.composer = composer::ComposerState::default();
             self.current_window_title = product_window_title();
@@ -8018,6 +8028,57 @@ mod tests {
     /// missing tab into a typed refusal instead of a panic or a silent retarget.
     /// Cover an explicit live tab, the `None` fallback to the active tab, a
     /// stale id, and `None` with no active tab at all.
+    /// Closing a tab drops its session and node, and reports whether that left
+    /// the workspace empty — the case the windowed caller answers with a
+    /// greeting page instead of a new active session. It also carries the
+    /// closed terminal's settings forward, so the next tab opens configured
+    /// like the one that just closed.
+    #[test]
+    fn detaching_a_session_reports_an_emptied_workspace_and_seeds_the_next_tab() {
+        let mut app = ConApp::new(None, None);
+        let only = app.workspace.active().expect("one tab to start");
+        // One tab in the tree, one session: closing it empties the workspace.
+        assert_eq!(app.workspace.nodes().len(), 1);
+        assert!(app.sessions.contains_key(&only));
+        assert!(
+            app.detach_session(only),
+            "closing the only tab must report an empty workspace"
+        );
+        assert!(app.workspace.nodes().is_empty());
+        assert!(app.workspace.active().is_none());
+        assert!(
+            !app.sessions.contains_key(&only),
+            "the session must be gone"
+        );
+
+        // With a second tab left behind, the workspace is not empty and the
+        // remaining tab becomes active.
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.active().unwrap();
+        let second = app.workspace.add_root("second".to_owned()).unwrap();
+        app.sessions.insert(second, ConTerminal::new(None)).is_ok();
+        assert!(app.sessions.contains_key(&second));
+        assert!(app.workspace.set_active(first));
+        assert!(
+            !app.detach_session(first),
+            "a surviving tab means the workspace is not empty"
+        );
+        assert_eq!(app.workspace.active(), Some(second));
+        assert_eq!(app.workspace.nodes().len(), 1);
+
+        // The seed carries the closed terminal forward: a terminal seeded from
+        // it opens at the same size the closed one had.
+        let mut app = ConApp::new(None, None);
+        let only = app.workspace.active().unwrap();
+        let session = app.sessions.get_mut(&only).expect("the session exists");
+        session.cols = 120;
+        session.rows = 40;
+        assert!(app.detach_session(only));
+        let mut reopened = app.session_seed.create_session();
+        assert_eq!(reopened.cols, 120, "the next tab inherits the closed size");
+        assert_eq!(reopened.rows, 40);
+    }
+
     #[test]
     fn a_control_target_resolves_live_tabs_and_refuses_the_rest() {
         let mut app = ConApp::new(None, None);
