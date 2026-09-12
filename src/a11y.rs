@@ -553,4 +553,142 @@ mod tests {
             "the byte budget must be available again after a full drain"
         );
     }
+
+    /// `payload_bytes` is what the queue's byte budget is charged against, so
+    /// its per-variant rule must be exact: text and key event strings count
+    /// their bytes, and the pointer-free actions cost nothing. A change here
+    /// silently moves every budget it feeds.
+    #[test]
+    fn payload_bytes_counts_text_and_keys_but_not_clicks() {
+        let at = |action: PublishedAction| {
+            Request {
+                node: NODE_COMMAND,
+                action,
+            }
+            .payload_bytes()
+        };
+        assert_eq!(at(PublishedAction::SetText(String::new())), 0);
+        assert_eq!(at(PublishedAction::SetText("abc".to_owned())), 3);
+        // Bytes, not characters: three CJK characters are nine bytes.
+        assert_eq!(
+            at(PublishedAction::SetText(
+                "\u{4e2d}\u{6587}\u{5b57}".to_owned()
+            )),
+            9
+        );
+        assert_eq!(
+            at(PublishedAction::Key(
+                agenterm_platform::accessibility_publish::PublishedKey {
+                    keysym: 0,
+                    event_string: "Ctrl+Shift+P".to_owned(),
+                    is_text: false,
+                    modifiers: 0,
+                    pressed: true,
+                }
+            )),
+            "Ctrl+Shift+P".len(),
+            "a key is charged for its event string"
+        );
+        assert_eq!(at(PublishedAction::Click), 0, "a click carries no payload");
+        assert_eq!(at(PublishedAction::Focus), 0, "a focus carries no payload");
+    }
+
+    /// The single-action bound is inclusive: exactly `PASTE_LIMIT_BYTES` is
+    /// accepted and one byte more is refused. Which side of that line the
+    /// comparison falls on is the whole difference between a large paste
+    /// working and being silently dropped.
+    #[test]
+    fn the_single_action_bound_accepts_exactly_the_paste_limit() {
+        let inbox = ActionInbox::default();
+        let set = |bytes: usize| Request {
+            node: NODE_COMMAND,
+            action: PublishedAction::SetText("x".repeat(bytes)),
+        };
+        // Exactly the limit is accepted.
+        assert!(
+            inbox.push(set(crate::composer::PASTE_LIMIT_BYTES)).accepted,
+            "exactly the limit must be accepted"
+        );
+        // One byte more is refused, and the refusal is counted rather than
+        // silent.
+        assert!(
+            !inbox
+                .push(set(crate::composer::PASTE_LIMIT_BYTES + 1))
+                .accepted,
+            "one byte over the limit must be refused"
+        );
+        assert_eq!(inbox.stats().dropped, 1, "a refusal is counted");
+        assert_eq!(
+            inbox.stats().pending_bytes,
+            crate::composer::PASTE_LIMIT_BYTES,
+            "the refused push must not be charged"
+        );
+    }
+
+    /// A wide character is charged by its UTF-8 bytes, so a text of
+    /// `PASTE_LIMIT_BYTES / 3` three-byte characters is exactly at the limit
+    /// while one more character crosses it. A character-counted budget would
+    /// accept three times the intended payload.
+    #[test]
+    fn the_byte_budget_counts_utf8_bytes_not_characters() {
+        let inbox = ActionInbox::default();
+        // The limit is not divisible by three, so `n` characters hold
+        // `3n` bytes and the remainder is what stops the next one from fitting.
+        let limit = crate::composer::PASTE_LIMIT_BYTES;
+        let cjk_chars = limit / 3;
+        let fits = cjk_chars * 3;
+        assert!(fits <= limit, "{fits} three-byte characters fit in {limit}");
+        assert!(
+            fits + 3 > limit,
+            "one more character must not fit: {} > {limit}",
+            fits + 3
+        );
+        assert!(
+            inbox
+                .push(Request {
+                    node: NODE_COMMAND,
+                    action: PublishedAction::SetText("\u{4e2d}".repeat(cjk_chars)),
+                })
+                .accepted,
+            "as many three-byte characters as fit must be accepted"
+        );
+        assert_eq!(inbox.stats().pending_bytes, fits);
+        assert!(
+            !inbox
+                .push(Request {
+                    node: NODE_COMMAND,
+                    action: PublishedAction::SetText("\u{4e2d}".repeat(cjk_chars + 1)),
+                })
+                .accepted,
+            "one more three-byte character must cross the limit"
+        );
+    }
+
+    /// Zero-cost actions still consume queue slots, so the capacity bound — not
+    /// the byte bound — is what stops them from growing without limit.
+    #[test]
+    fn zero_byte_actions_are_bounded_by_capacity_not_bytes() {
+        let inbox = ActionInbox::default();
+        for _ in 0..ACTION_QUEUE_CAPACITY {
+            assert!(
+                inbox
+                    .push(Request {
+                        node: NODE_COMMAND,
+                        action: PublishedAction::Focus,
+                    })
+                    .accepted
+            );
+        }
+        assert_eq!(inbox.stats().pending_bytes, 0, "focus actions are free");
+        assert_eq!(inbox.stats().pending, ACTION_QUEUE_CAPACITY);
+        assert!(
+            !inbox
+                .push(Request {
+                    node: NODE_COMMAND,
+                    action: PublishedAction::Focus,
+                })
+                .accepted,
+            "the slot bound stops free actions, not the byte budget"
+        );
+    }
 }
