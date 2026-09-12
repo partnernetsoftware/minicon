@@ -838,6 +838,83 @@ mod tests {
     /// the scroll to zero rather than underflowing or scrolling into blank
     /// rows; a zero capacity is treated as one visible row, not as "show
     /// nothing".
+    /// `tree_capacity` is the single "visible rows" input the scroll functions
+    /// take. It is the sidebar height minus the header, divided by the row
+    /// height, and must be zero rather than a panic when the header is taller
+    /// than the sidebar or the row height is degenerate.
+    #[test]
+    fn tree_capacity_divides_the_sidebar_below_the_header() {
+        let layout = Layout::new(1000, 500, 1.0);
+        let usable = layout.sidebar.height - layout.tree_header_height;
+        assert_eq!(
+            layout.tree_capacity(),
+            (usable / layout.tree_row_height) as usize
+        );
+        // A sidebar shorter than its header has no room for a row.
+        let cramped = Layout::with_sidebar_width(1000, layout.tree_header_height, 1.0, 224.0);
+        assert_eq!(cramped.tree_capacity(), 0, "no room means no rows");
+        // A taller window shows more rows, never fewer.
+        let taller = Layout::new(1000, 900, 1.0);
+        assert!(taller.tree_capacity() >= layout.tree_capacity());
+    }
+
+    /// The scroll offset and the capacity are consumed together, so whatever
+    /// the pair, the result must stay inside the reachable range: never past
+    /// `item_count - capacity` (a blank strip below the last row) and never a
+    /// panic when the capacity exceeds the item count or is zero.
+    #[test]
+    fn scroll_and_capacity_stay_within_the_reachable_range() {
+        for item_count in [0_usize, 1, 2, 5, 40] {
+            for capacity in [0_usize, 1, 2, 3, 7, 64] {
+                let effective = capacity.max(1);
+                let maximum = item_count.saturating_sub(effective);
+
+                // Every reveal of the last item bottoms the window out.
+                let offset =
+                    reveal_tree_index(0, item_count.saturating_sub(1), item_count, capacity);
+                assert!(
+                    offset <= maximum,
+                    "reveal left {offset} past the max {maximum} (items {item_count}, capacity {capacity})"
+                );
+
+                // Clamping an already-too-large offset (a window shrunk after
+                // the offset was set) brings it back in range.
+                let clamped = clamp_tree_scroll(usize::MAX, item_count, capacity);
+                assert_eq!(clamped, maximum, "a stale offset must be clamped");
+
+                // Scrolling never moves outside the range either, whichever
+                // direction the delta points.
+                for delta in [isize::MIN, -5, -1, 0, 1, 5, isize::MAX] {
+                    let moved = scroll_tree(clamped, delta, item_count, capacity);
+                    assert!(
+                        moved <= maximum,
+                        "scroll {delta} left {moved} past the max {maximum}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The scroll functions take the capacity the layout actually reports, so a
+    /// capacity change in the layout cannot silently break the scroll: revealing
+    /// the last item bottoms out at `items - capacity` and the revealed window
+    /// still contains that item.
+    #[test]
+    fn the_layout_capacity_drives_the_scroll_functions() {
+        let layout = Layout::new(1000, 500, 1.0);
+        let capacity = layout.tree_capacity();
+        assert!(capacity > 0, "this window must show at least one row");
+        let items = capacity + 10;
+        // Revealing the last item must bottom out at `items - capacity`.
+        assert_eq!(
+            reveal_tree_index(0, items - 1, items, capacity),
+            items - capacity
+        );
+        // The revealed window contains the last item.
+        let offset = reveal_tree_index(0, items - 1, items, capacity);
+        assert!(offset <= items - 1 && items - 1 < offset + capacity);
+    }
+
     #[test]
     fn scrolling_handles_empty_and_degenerate_viewports() {
         // The whole tree fits: no scrolling is possible.
