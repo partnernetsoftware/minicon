@@ -163,6 +163,77 @@ mod tests {
         assert_eq!(workspace.depths(), &[0, 1, 2]);
     }
 
+    fn depth_of(workspace: &Workspace, id: TabId) -> u32 {
+        let index = workspace
+            .nodes()
+            .iter()
+            .position(|node| node.id == id)
+            .expect("node present");
+        workspace.depths()[index]
+    }
+
+    /// Closing a node with several children promotes all of them to its parent,
+    /// and every depth below the removed node shifts up by one — not just the
+    /// promoted node's own row.
+    #[test]
+    fn closing_a_branch_promotes_every_child_and_rewrites_the_subtree_depths() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        let branch = workspace.add_child(root, "branch".into()).unwrap();
+        let leaf_a = workspace.add_child(branch, "a".into()).unwrap();
+        let leaf_b = workspace.add_child(branch, "b".into()).unwrap();
+        let deep = workspace.add_child(leaf_a, "a1".into()).unwrap();
+        assert_eq!(depth_of(&workspace, deep), 3, "before: root>branch>a>a1");
+
+        workspace.close(branch).unwrap();
+
+        // Both leaves move up under the root, and `a`'s own child follows it.
+        assert_eq!(workspace.node(leaf_a).unwrap().parent, Some(root));
+        assert_eq!(workspace.node(leaf_b).unwrap().parent, Some(root));
+        assert_eq!(workspace.node(deep).unwrap().parent, Some(leaf_a));
+        assert_eq!(depth_of(&workspace, root), 0);
+        assert_eq!(depth_of(&workspace, leaf_a), 1, "promoted one level");
+        assert_eq!(depth_of(&workspace, leaf_b), 1, "promoted one level");
+        assert_eq!(depth_of(&workspace, deep), 2, "the grandchild moves up too");
+    }
+
+    /// Closing the root promotes its direct children to roots (depth 0) and the
+    /// rest of each subtree follows them down.
+    #[test]
+    fn closing_the_root_makes_its_children_roots() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        let child_one = workspace.add_child(root, "one".into()).unwrap();
+        let child_two = workspace.add_child(root, "two".into()).unwrap();
+        let grandchild = workspace.add_child(child_one, "one-a".into()).unwrap();
+
+        workspace.close(root).unwrap();
+
+        assert_eq!(workspace.node(child_one).unwrap().parent, None);
+        assert_eq!(workspace.node(child_two).unwrap().parent, None);
+        assert_eq!(depth_of(&workspace, child_one), 0);
+        assert_eq!(depth_of(&workspace, child_two), 0);
+        assert_eq!(
+            depth_of(&workspace, grandchild),
+            1,
+            "the subtree follows its root"
+        );
+    }
+
+    /// Closing a deep leaf leaves its ancestors' depths unchanged.
+    #[test]
+    fn closing_a_deep_leaf_does_not_move_its_ancestors() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        let middle = workspace.add_child(root, "middle".into()).unwrap();
+        let leaf = workspace.add_child(middle, "leaf".into()).unwrap();
+
+        workspace.close(leaf).unwrap();
+        assert_eq!(depth_of(&workspace, root), 0);
+        assert_eq!(depth_of(&workspace, middle), 1);
+        assert_eq!(workspace.nodes().len(), 2);
+    }
+
     #[test]
     fn closing_active_tab_selects_a_remaining_neighbor() {
         let mut workspace = Workspace::default();
