@@ -930,6 +930,77 @@ mod tests {
         );
     }
 
+    fn viewport(scale: f64, rows: usize, bottom_inset: u32) -> TerminalViewport {
+        TerminalViewport {
+            width: 1200,
+            height: 800,
+            left: 224,
+            top: 0,
+            bottom_inset,
+            scale,
+            rows,
+        }
+    }
+
+    /// With nothing to scroll (`maximum == 0`) the thumb is the whole track and
+    /// rests at the top, whatever offset is handed in.
+    #[test]
+    fn scrollbar_thumb_fills_the_track_when_there_is_nothing_to_scroll() {
+        let g = terminal_scrollbar_geometry(viewport(1.0, 24, 96), 0, 0);
+        assert_eq!(g.thumb.top, g.track.top);
+        assert_eq!(g.thumb.height(), g.track.height(), "the thumb is the track");
+        // A stale non-zero offset cannot move a thumb with no travel.
+        let moved = terminal_scrollbar_geometry(viewport(1.0, 24, 96), 50, 0);
+        assert_eq!(moved.thumb.top, g.thumb.top);
+    }
+
+    /// `offset > maximum` is clamped, so the thumb never travels past the
+    /// bottom of the track and never reports a negative travel.
+    #[test]
+    fn scrollbar_thumb_clamps_an_out_of_range_offset_to_the_bottom() {
+        let bottom = terminal_scrollbar_geometry(viewport(1.0, 24, 96), 100, 100);
+        let over = terminal_scrollbar_geometry(viewport(1.0, 24, 96), 1_000_000, 100);
+        assert_eq!(
+            over.thumb.top, bottom.thumb.top,
+            "past the end clamps to the end"
+        );
+        assert!(
+            over.thumb.top >= over.track.top,
+            "the thumb stays in the track"
+        );
+        assert!(
+            over.thumb.bottom <= over.track.bottom,
+            "the thumb never leaves the track bottom"
+        );
+    }
+
+    /// An inset taller than the viewport, or zero rows, must not underflow or
+    /// divide by zero; the geometry stays a valid, empty-or-flat shape.
+    #[test]
+    fn scrollbar_geometry_survives_a_degenerate_viewport() {
+        // bottom_inset > height: the track collapses to zero height. The
+        // saturating subtraction is what makes the bottom land at the top of
+        // the viewport instead of wrapping to a near-`i32::MAX` value.
+        let collapsed = terminal_scrollbar_geometry(viewport(1.0, 24, 5000), 0, 100);
+        assert_eq!(
+            collapsed.track.bottom, 0,
+            "an inset past the height must collapse the track, not wrap it"
+        );
+        assert_eq!(collapsed.track.height(), 0);
+
+        // Zero visible rows: the proportional share is guarded by `.max(1)`.
+        let no_rows = terminal_scrollbar_geometry(viewport(1.0, 0, 96), 0, 100);
+        assert!(no_rows.thumb.height() >= 0);
+        assert!(no_rows.thumb.top >= no_rows.track.top);
+
+        // An extreme scale keeps the width conversion inside `i32`.
+        let huge = terminal_scrollbar_geometry(viewport(f64::INFINITY, 24, 96), 0, 100);
+        assert!(
+            huge.track.right >= huge.track.left,
+            "the track stays ordered"
+        );
+    }
+
     #[test]
     fn extreme_geometry_inputs_saturate_without_panicking_or_collapsing_sidebar() {
         let layout = Layout::with_sidebar_width(u32::MAX, u32::MAX, f64::INFINITY, f64::NAN);
