@@ -992,3 +992,93 @@ fn tracked_files(root: &Path) -> Vec<String> {
     assert!(!tracked.is_empty(), "git ls-files returned nothing");
     tracked
 }
+
+/// Every manifest `path = "…"` and every asset `build.rs` reads must exist with
+/// the spelling git records. These are build inputs: a wrong case works on this
+/// filesystem and fails a case-sensitive checkout, and a missing one fails only
+/// on the platform that needs it (the Linux vendor libraries, the macOS plist).
+/// A manifest's paths are relative to that manifest's own directory, not the
+/// repository root.
+#[test]
+fn manifest_and_build_asset_paths_exist_with_the_tracked_spelling() {
+    let root = repo_root();
+    let tracked = tracked_files(&root);
+    let mut broken = BTreeSet::new();
+
+    let check = |base: &Path, token: &str, broken: &mut BTreeSet<String>| {
+        let candidate = normalize_path(&base.join(token));
+        if !candidate.exists() {
+            broken.insert(format!("{}: {token} does not exist", base.display()));
+            return;
+        }
+        if candidate.is_file()
+            && !tracked
+                .iter()
+                .any(|entry| normalize_path(&root.join(entry)) == candidate)
+        {
+            broken.insert(format!(
+                "{}: {token} is spelled differently from the tracked file",
+                base.display()
+            ));
+        }
+    };
+
+    // Manifests: `path = "…"` entries, each relative to the manifest itself.
+    let mut manifests = vec![root.join("Cargo.toml")];
+    if let Ok(entries) = fs::read_dir(root.join("crates")) {
+        for entry in entries.flatten() {
+            let manifest = entry.path().join("Cargo.toml");
+            if manifest.exists() {
+                manifests.push(manifest);
+            }
+        }
+    }
+    assert!(manifests.len() >= 2, "expected more than one manifest");
+    for manifest in manifests {
+        let text = fs::read_to_string(&manifest).expect("read manifest");
+        let base = manifest.parent().expect("a manifest has a directory");
+        let mut found = 0usize;
+        for line in text.lines() {
+            let line = line.trim();
+            let Some(rest) = line.strip_prefix("path = \"") else {
+                continue;
+            };
+            let Some((token, _)) = rest.split_once('"') else {
+                continue;
+            };
+            found += 1;
+            check(base, token, &mut broken);
+        }
+        assert!(
+            found > 0,
+            "{} declares no `path =` entries; the scan found nothing to check",
+            manifest.display()
+        );
+    }
+
+    // Build assets: the quoted relative paths `build.rs` reads.
+    let build = fs::read_to_string(root.join("build.rs")).expect("read build.rs");
+    let mut assets = 0usize;
+    for token in ["assets/minicon.ico", "assets/macos-info.plist"] {
+        if build.contains(token) {
+            assets += 1;
+            check(&root, token, &mut broken);
+        }
+    }
+    assert!(assets >= 2, "build.rs must name its embedded assets");
+    // The Linux vendor libraries are composed from an arch directory.
+    for (arch, soname) in [
+        ("x86_64", "libxkbcommon-x11.so.0"),
+        ("x86_64", "libxcb-xkb.so.1"),
+        ("aarch64", "libxkbcommon-x11.so.0"),
+        ("aarch64", "libxcb-xkb.so.1"),
+    ] {
+        check(&root, &format!("vendor/linux/{arch}/{soname}"), &mut broken);
+    }
+
+    assert!(
+        broken.is_empty(),
+        "build inputs are missing or wrongly spelled:\n{}",
+        broken.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}
