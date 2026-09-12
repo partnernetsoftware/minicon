@@ -502,6 +502,85 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Each rejection carries the reason it was rejected for, so a caller can
+    /// tell an overflowing size from a zero one from a mismatched buffer. A
+    /// generic message would make the three indistinguishable in a log.
+    #[test]
+    fn a_rejected_png_names_the_reason_it_was_rejected() {
+        let dir = scratch("png-reason");
+        let path = dir.join("shot.png");
+        let reason = |pixels: &[u32], width: u32, height: u32| {
+            write_png_atomic(&path, pixels, width, height)
+                .expect_err("must be rejected")
+                .to_string()
+        };
+
+        // A zero in either axis is a zero dimension, and the message says so
+        // whichever axis it is.
+        for (width, height) in [(0u32, 1u32), (1, 0), (0, 0)] {
+            assert_eq!(
+                reason(&[], width, height),
+                "PNG dimensions must be non-zero",
+                "{width}x{height} is a zero dimension"
+            );
+        }
+        // A wrong buffer length is its own reason, and the guard runs before
+        // any file is opened. Note that `u32::MAX * u32::MAX` does **not**
+        // overflow `usize` on a 64-bit host, so this is the reason a huge size
+        // actually gets: the overflow guard below is unreachable through this
+        // API, and a real caller sees the count mismatch instead.
+        assert_eq!(
+            reason(&[0, 0, 0], 2, 2),
+            "PNG pixel count does not match dimensions"
+        );
+        assert_eq!(
+            reason(&[], u32::MAX, u32::MAX),
+            "PNG pixel count does not match dimensions",
+            "a u32-sized frame cannot overflow usize on a 64-bit host"
+        );
+        assert!(!path.exists(), "no rejected call may create a file");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The three guards are distinct and their precedence is real: a zero axis
+    /// is a zero dimension, and it is reported as such even when the other axis
+    /// is enormous. Pin the order so a future reordering cannot silently change
+    /// which reason a caller sees.
+    #[test]
+    fn a_zero_axis_is_reported_as_a_zero_dimension_not_an_overflow() {
+        let dir = scratch("png-precedence");
+        let path = dir.join("shot.png");
+        for (width, height) in [(u32::MAX, 0u32), (0, u32::MAX)] {
+            let error = write_png_atomic(&path, &[], width, height).unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+            assert_eq!(
+                error.to_string(),
+                "PNG dimensions must be non-zero",
+                "{width}x{height} has a zero axis"
+            );
+        }
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The overflow guard is defensive: `write_png_atomic` takes `u32`
+    /// dimensions, and on a 64-bit host their product cannot reach `usize`'s
+    /// maximum, so no call through this API can trip it. Record the arithmetic
+    /// so the guard is understood as belt-and-braces rather than dead weight a
+    /// future reader deletes as unreachable.
+    #[test]
+    fn u32_dimensions_cannot_overflow_a_64_bit_usize() {
+        let product = (u32::MAX as usize).checked_mul(u32::MAX as usize);
+        assert!(
+            product.is_some(),
+            "u32::MAX squared fits usize on a 64-bit host: {product:?}"
+        );
+        assert!(
+            product.unwrap() < usize::MAX,
+            "and it stays below usize::MAX, so the guard cannot fire here"
+        );
+    }
+
     #[test]
     fn rejected_snapshot_completes_without_creating_a_file() {
         let dir = scratch("rejected-snapshot");
