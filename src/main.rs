@@ -6752,6 +6752,44 @@ mod tests {
         assert_eq!(scaled_host_ui_font(15, 36.0, 2.0), 40);
     }
 
+    /// `candidate_bounds` clips a repaint candidate to the frame and turns it
+    /// into the rectangle the surface painter receives. The three shapes the
+    /// render loop can hold — full, empty, and a partial rectangle — must each
+    /// produce a rectangle inside the frame, and a candidate entirely outside
+    /// the frame must become empty rather than an out-of-bounds rect.
+    #[test]
+    fn candidate_bounds_clips_every_dirty_shape_to_the_frame() {
+        // Full with no dimensions yet: clipped to the whole frame.
+        assert_eq!(
+            candidate_bounds(DirtyRegion::full(), 80, 24),
+            PixelRect::from_xywh(0, 0, 80, 24)
+        );
+        // Empty: no rectangle at all.
+        assert_eq!(
+            candidate_bounds(DirtyRegion::empty(), 80, 24),
+            PixelRect::empty()
+        );
+        // A partial rectangle inside the frame passes through unchanged.
+        let mut partial = DirtyRegion::empty();
+        partial.mark_rect(PixelRect::from_xywh(3, 4, 10, 5));
+        assert_eq!(
+            candidate_bounds(partial, 80, 24),
+            PixelRect::from_xywh(3, 4, 10, 5)
+        );
+        // A partial rectangle straddling the edge is clipped to the frame.
+        let mut overhang = DirtyRegion::empty();
+        overhang.mark_rect(PixelRect::from_xywh(70, 20, 40, 40));
+        assert_eq!(
+            candidate_bounds(overhang, 80, 24),
+            PixelRect::from_xywh(70, 20, 10, 4)
+        );
+        // A zero-size frame yields an empty rectangle even for a full region.
+        assert_eq!(
+            candidate_bounds(DirtyRegion::full(), 0, 0),
+            PixelRect::empty()
+        );
+    }
+
     #[test]
     fn ime_status_snapshot_keeps_fixed_types_when_known_or_unknown() {
         assert_eq!(
