@@ -8043,6 +8043,107 @@ mod tests {
     /// windowed caller can skip the pointer-gesture cancel when the user
     /// re-selected the tab they are already on. A stale id is refused by
     /// `set_active` and reports no change rather than silently retargeting.
+    /// Closing an ancestor must not disturb the tab the user is actually in:
+    /// the descendant keeps its session and stays active, while the closed
+    /// node's own session is the one dropped. Only the node's slot moves.
+    #[test]
+    fn closing_an_ancestor_leaves_an_active_descendant_selected() {
+        let mut app = ConApp::new(None, None);
+        let root = app.workspace.active().expect("one tab to start");
+        let parent = app.workspace.add_root("parent".to_owned()).unwrap();
+        let child = app.workspace.add_child(parent, "child".to_owned()).unwrap();
+        app.sessions.insert(parent, ConTerminal::new(None)).is_ok();
+        app.sessions.insert(child, ConTerminal::new(None)).is_ok();
+        assert!(app.workspace.set_active(child));
+
+        // Close the parent, not the tab that is active.
+        assert!(
+            !app.detach_session(parent),
+            "two tabs remain, so the workspace is not empty"
+        );
+
+        // The descendant is promoted to a root and is still the active tab.
+        assert_eq!(
+            app.workspace.node(child).and_then(|node| node.parent),
+            None,
+            "the child is promoted out of the closed branch"
+        );
+        assert_eq!(
+            app.workspace.active(),
+            Some(child),
+            "an active descendant must stay selected"
+        );
+        // The closed node's session went; the descendant's stayed.
+        assert!(!app.sessions.contains_key(&parent));
+        assert!(
+            app.sessions.contains_key(&child),
+            "the active descendant keeps its session"
+        );
+        assert_eq!(app.workspace.nodes().len(), 2);
+        assert!(app.workspace.nodes().iter().any(|node| node.id == root));
+    }
+
+    /// The other order: close the child first, then its parent. Neither close
+    /// may leave a dangling session or a node whose parent is gone, and after
+    /// both the workspace holds exactly the untouched tab.
+    #[test]
+    fn closing_a_child_then_its_parent_leaves_no_dangling_session() {
+        let mut app = ConApp::new(None, None);
+        let root = app.workspace.active().expect("one tab to start");
+        let parent = app.workspace.add_root("parent".to_owned()).unwrap();
+        let child = app.workspace.add_child(parent, "child".to_owned()).unwrap();
+        for id in [parent, child] {
+            app.sessions.insert(id, ConTerminal::new(None)).is_ok();
+        }
+
+        assert!(app.workspace.set_active(child));
+        assert!(!app.detach_session(child), "the parent still remains");
+        assert!(!app.sessions.contains_key(&child));
+        // The parent is still there, and now has no children.
+        assert!(app.workspace.node(parent).is_some());
+        assert!(
+            !app.workspace
+                .nodes()
+                .iter()
+                .any(|node| node.parent == Some(child)),
+            "no node may point at the closed child"
+        );
+
+        assert!(!app.detach_session(parent), "the untouched root remains");
+        assert!(!app.sessions.contains_key(&parent));
+        // Every surviving node's parent, if any, exists — no dangling links.
+        for node in app.workspace.nodes() {
+            if let Some(parent) = node.parent {
+                assert!(
+                    app.workspace.node(parent).is_some(),
+                    "node @{} points at absent parent @{}",
+                    node.id.get(),
+                    parent.get()
+                );
+            }
+        }
+        assert_eq!(app.workspace.nodes().len(), 1);
+        assert_eq!(app.workspace.nodes()[0].id, root);
+        assert_eq!(app.workspace.active(), Some(root));
+    }
+
+    /// Closing a tab that was never given a session (the tree and the session
+    /// store can be out of step mid-startup) still closes its node and reports
+    /// the emptied workspace, rather than leaving the node behind.
+    #[test]
+    fn closing_a_tab_with_no_session_still_closes_its_node() {
+        let mut app = ConApp::new(None, None);
+        let only = app.workspace.active().unwrap();
+        // Drop the session, leaving the node orphaned in the store's view.
+        app.sessions.remove(&only);
+        assert!(
+            app.detach_session(only),
+            "the last node closing empties the workspace"
+        );
+        assert!(app.workspace.nodes().is_empty());
+        assert!(app.workspace.active().is_none());
+    }
+
     #[test]
     fn selecting_a_tab_reports_whether_the_active_tab_changed() {
         let mut app = ConApp::new(None, None);
