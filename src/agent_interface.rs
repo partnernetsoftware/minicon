@@ -520,6 +520,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// `png_worker` backs the submission hot path from a `OnceLock`, so every
+    /// caller must reach the **same** sender: a second lookup must not spawn a
+    /// second worker or change the answer. `initialize_png_worker` is the thin
+    /// wrapper the control path calls before each screenshot, so its result must
+    /// match the worker it fronts.
+    #[test]
+    fn the_png_worker_is_a_single_cached_instance() {
+        let first = png_worker().map(std::ptr::from_ref);
+        let second = png_worker().map(std::ptr::from_ref);
+        assert_eq!(
+            first.is_ok(),
+            second.is_ok(),
+            "a cached worker result must be stable across calls"
+        );
+        if let (Ok(a), Ok(b)) = (first, second) {
+            assert_eq!(
+                a, b,
+                "the worker must be one cached instance, not a fresh one"
+            );
+        }
+        // The wrapper the control path uses must agree with the worker it fronts.
+        assert_eq!(
+            initialize_png_worker().is_ok(),
+            png_worker().is_ok(),
+            "initialize_png_worker must report the same worker state"
+        );
+    }
+
     #[test]
     fn panicking_png_completion_is_contained() {
         let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
