@@ -937,6 +937,64 @@ mod tests {
         assert_eq!(composer_hit(layout, 500, 100), ComposerHit::Outside);
     }
 
+    /// The control buttons sit inside the composer strip, so the only reason a
+    /// click on one is not `Input` is the priority chain. Pin that: a point in
+    /// both the strip and a button resolves to the button, the boundary pixel
+    /// just past a button falls back to the strip, and the gap between the
+    /// input area and the buttons is still `Input` rather than dead space.
+    #[test]
+    fn composer_buttons_take_priority_inside_their_strip() {
+        let layout = Layout::new(1200, 800, 1.0);
+        // Buttons live inside the composer strip.
+        assert!(
+            layout
+                .composer
+                .contains(layout.composer_send.x, layout.composer_send.y)
+        );
+        // A point in the send button is Send, not Input, even though the strip
+        // also contains it.
+        assert_eq!(
+            composer_hit(layout, layout.composer_send.x, layout.composer_send.y),
+            ComposerHit::Send
+        );
+        // One pixel past the send button's right edge is no longer Send.
+        let past = layout.composer_send.x + layout.composer_send.width;
+        assert_ne!(
+            composer_hit(layout, past, layout.composer_send.y),
+            ComposerHit::Send
+        );
+        // The gap between the input area and the send button is part of the
+        // strip, so it is Input rather than Outside.
+        let gap_x = layout.composer_input.x + layout.composer_input.width + 1;
+        assert!(
+            gap_x < layout.composer_send.x,
+            "the layout must keep a gap: input ends at {} send starts at {}",
+            layout.composer_input.x + layout.composer_input.width,
+            layout.composer_send.x
+        );
+        assert_eq!(
+            composer_hit(layout, gap_x, layout.composer_input.y + 1),
+            ComposerHit::Input,
+            "the gap between input and send belongs to the strip"
+        );
+        // The newline button is below the send button and takes its own point.
+        assert_eq!(
+            composer_hit(layout, layout.composer_newline.x, layout.composer_newline.y),
+            ComposerHit::Newline
+        );
+        // The very first pixel of the strip, left of the input inset, is still
+        // the strip (padding) rather than outside it.
+        assert_eq!(
+            composer_hit(
+                layout,
+                layout.composer.x,
+                layout.composer.y + layout.composer.height - 1
+            ),
+            ComposerHit::Input,
+            "the strip's own corner is Input"
+        );
+    }
+
     #[test]
     fn the_two_composer_buttons_stack_without_overlapping() {
         let layout = Layout::new(1000, 500, 1.0);
