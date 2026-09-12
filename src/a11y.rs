@@ -784,4 +784,80 @@ mod tests {
             "the slot bound stops free actions, not the byte budget"
         );
     }
+
+    /// Four producers push while a consumer drains the same queue. Both take the
+    /// same lock, so the byte ledger and the queue contents cannot interleave,
+    /// and the ledger must balance: every push is either drained or counted as
+    /// dropped, and draining to empty returns `pending_bytes` to zero. A leak
+    /// here would make the queue look full and silently refuse later pushes.
+    #[test]
+    fn the_byte_ledger_balances_under_concurrent_push_and_drain() {
+        const PRODUCERS: usize = 4;
+        const PER_PRODUCER: usize = 500;
+        let inbox = std::sync::Arc::new(ActionInbox::default());
+
+        let producers: Vec<_> = (0..PRODUCERS)
+            .map(|producer| {
+                let inbox = std::sync::Arc::clone(&inbox);
+                std::thread::spawn(move || {
+                    let mut accepted = 0usize;
+                    for index in 0..PER_PRODUCER {
+                        let node = (index + producer * 1000) as u32;
+                        let action = PublishedAction::SetText("x".repeat(1 + (index % 7)));
+                        if inbox.push(Request { node, action }).accepted {
+                            accepted += 1;
+                        }
+                    }
+                    accepted
+                })
+            })
+            .collect();
+
+        let consumer = {
+            let inbox = std::sync::Arc::clone(&inbox);
+            std::thread::spawn(move || {
+                let mut drained = 0usize;
+                for _ in 0..(PRODUCERS * PER_PRODUCER) {
+                    let (batch, _) = inbox.pop_batch(3);
+                    drained += batch.len();
+                    if drained >= PRODUCERS * PER_PRODUCER {
+                        break;
+                    }
+                    std::thread::yield_now();
+                }
+                drained
+            })
+        };
+
+        let accepted: usize = producers
+            .into_iter()
+            .map(|producer| producer.join().expect("a producer thread finishes"))
+            .sum();
+        let mut drained = consumer.join().expect("the consumer thread finishes");
+        // Drain whatever the consumer's loop bound left behind, so the ledger is
+        // read at emptiness rather than mid-flight.
+        loop {
+            let (batch, more) = inbox.pop_batch(usize::MAX);
+            drained += batch.len();
+            if !more {
+                break;
+            }
+        }
+
+        let stats = inbox.stats();
+        assert_eq!(stats.pending, 0, "the queue must be empty");
+        assert_eq!(
+            stats.pending_bytes, 0,
+            "a drained queue must return its byte budget to zero"
+        );
+        assert_eq!(
+            accepted as u64 + stats.dropped,
+            (PRODUCERS * PER_PRODUCER) as u64,
+            "every push is either accepted or counted as dropped"
+        );
+        assert_eq!(
+            drained, accepted,
+            "every accepted push must come out exactly once"
+        );
+    }
 }
