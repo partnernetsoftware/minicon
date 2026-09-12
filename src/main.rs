@@ -6686,40 +6686,61 @@ fn paint_host_ui_text_parts(
     let metrics = font::cell_metrics(font_size_px);
     let cell_w = metrics.width.max(1);
     let cell_h = metrics.height.max(1);
-    let mut cursor = x;
     let limit = x.saturating_add(max_width).min(surface.width);
+    for placed in layout_text_parts(parts, x, cell_w, limit) {
+        if surface.intersects_rect(placed.x, y, placed.width, cell_h)
+            && let Some(glyph) = font::raster(placed.character, font_size_px)
+        {
+            surface.blit_glyph(
+                &glyph,
+                CellRect {
+                    x: placed.x,
+                    y,
+                    w: placed.width,
+                    h: cell_h,
+                },
+                color,
+                0.0,
+            );
+        }
+    }
+}
+
+/// One character placed on the grid: where it starts and how many pixels wide.
+struct PlacedGlyph {
+    character: char,
+    x: u32,
+    width: u32,
+}
+
+/// Lays `parts` out left to right from `x`, stopping at the first character
+/// that would cross `limit`.
+///
+/// Separate from the painter so the two rules it encodes are testable without a
+/// font: the parts are **concatenated** with nothing between them (a segment
+/// boundary is not a space), and each character advances by its own cell count
+/// — a double-width character owns two cells, a soft break owns none — so the
+/// clip lands between characters rather than through a wide glyph. A character
+/// the limit cannot hold ends the layout, so nothing after it is placed either.
+fn layout_text_parts(parts: &[&str], x: u32, cell_w: u32, limit: u32) -> Vec<PlacedGlyph> {
+    let cell_w = cell_w.max(1);
+    let mut placed = Vec::new();
+    let mut cursor = x;
     for part in parts {
         for character in part.chars() {
-            // The same width rule `paint_cells` and the terminal IME preedit
-            // already apply: a double-width character owns two cells. Advancing
-            // one narrow cell per character truncated every wide glyph to half
-            // its width via the CellRect clip in `blit_glyph`, then started the
-            // next character on top of the remains -- which is exactly why CJK
-            // typed into the composer rendered as overlapping garbage while
-            // ASCII stayed crisp.
-            let cells = composer::character_cells(character);
-            let span_w = cell_w.saturating_mul(cells as u32);
+            let span_w = cell_w.saturating_mul(composer::character_cells(character) as u32);
             if cursor.saturating_add(span_w) > limit {
-                return;
+                return placed;
             }
-            if surface.intersects_rect(cursor, y, span_w, cell_h)
-                && let Some(glyph) = font::raster(character, font_size_px)
-            {
-                surface.blit_glyph(
-                    &glyph,
-                    CellRect {
-                        x: cursor,
-                        y,
-                        w: span_w,
-                        h: cell_h,
-                    },
-                    color,
-                    0.0,
-                );
-            }
+            placed.push(PlacedGlyph {
+                character,
+                x: cursor,
+                width: span_w,
+            });
             cursor = cursor.saturating_add(span_w);
         }
     }
+    placed
 }
 
 // ---------------------------------------------------------------------------
@@ -6819,6 +6840,58 @@ mod tests {
         // One pixel of slack rounds down, keeping the extra cell on the right.
         assert_eq!(centered_label_origin(button, 99, 23), (40, 12));
         assert_eq!(centered_label_origin(button, 98, 22), (40 + 1, 12 + 1));
+    }
+
+    /// The host-UI text layout: parts are concatenated with nothing inserted
+    /// between them, each character advances by its own cell count, and the
+    /// first character the limit cannot hold ends the layout so nothing after
+    /// it is placed. These are the rules the painter used to hold inline.
+    #[test]
+    fn host_ui_text_layout_concatenates_and_clips_between_characters() {
+        let placed = |parts: &[&str], x: u32, cell: u32, limit: u32| {
+            layout_text_parts(parts, x, cell, limit)
+                .into_iter()
+                .map(|g| (g.character, g.x, g.width))
+                .collect::<Vec<_>>()
+        };
+
+        // Two parts are adjacent: "ab" + "cd" lays out as abcd with no gap.
+        assert_eq!(
+            placed(&["ab", "cd"], 0, 8, 32),
+            vec![('a', 0, 8), ('b', 8, 8), ('c', 16, 8), ('d', 24, 8)]
+        );
+        // An empty part contributes nothing and does not advance the cursor.
+        assert_eq!(
+            placed(&["ab", "", "cd"], 0, 8, 32),
+            vec![('a', 0, 8), ('b', 8, 8), ('c', 16, 8), ('d', 24, 8)]
+        );
+        // A leading empty part leaves the first character at x.
+        assert_eq!(placed(&["", "z"], 100, 8, 200), vec![('z', 100, 8)]);
+
+        // A double-width character owns two cells, and the clip falls between
+        // characters: 3 narrow (24 px) + one wide (16 px) needs a 40 px limit.
+        assert_eq!(
+            placed(&["abc\u{4e2d}"], 0, 8, 40),
+            vec![('a', 0, 8), ('b', 8, 8), ('c', 16, 8), ('\u{4e2d}', 24, 16)]
+        );
+        // One pixel less and the wide glyph cannot fit, so it and everything
+        // after it are dropped — the clip never cuts a glyph in half.
+        assert_eq!(
+            placed(&["abc\u{4e2d}"], 0, 8, 39),
+            vec![('a', 0, 8), ('b', 8, 8), ('c', 16, 8)]
+        );
+        // The limit is exclusive: a character ending exactly at it is kept.
+        assert_eq!(placed(&["ab"], 0, 8, 16).len(), 2);
+        assert_eq!(placed(&["abc"], 0, 8, 16).len(), 2);
+
+        // A soft break occupies no cells, so it is placed at the cursor without
+        // moving it and the text after it lands at the same x.
+        let with_break = placed(&["a\nb"], 0, 8, 64);
+        assert_eq!(with_break, vec![('a', 0, 8), ('\n', 8, 0), ('b', 8, 8)]);
+
+        // An empty layout is empty, not a zero-width placeholder.
+        assert!(placed(&[], 0, 8, 64).is_empty());
+        assert!(placed(&[""], 0, 8, 64).is_empty());
     }
 
     #[test]
