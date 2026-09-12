@@ -538,6 +538,72 @@ mod tests {
         assert_eq!(pending.wait_count(), 0);
     }
 
+    /// Cancelling one tab's work must touch only that tab: the other waits stay
+    /// queued in their original relative order, and a screenshot belonging to a
+    /// different tab is left alone. Cancelling everything would pass a count-only
+    /// test, so this observes which callers were answered and in what order.
+    #[test]
+    fn cancelling_one_tab_leaves_the_other_work_in_order() {
+        let mut pending = PendingControl::default();
+        let doomed = TabId::new(2);
+        // Interleave the doomed tab with survivors so a filter that dropped the
+        // wrong entries would reorder what remains.
+        let order = [TabId::new(1), doomed, TabId::new(3), doomed, TabId::new(4)];
+        let mut receivers = Vec::new();
+        for tab in order {
+            let (sender, receiver) = reply();
+            let mut sender = Some(sender);
+            pending
+                .enqueue_wait(tab, WaitKind::TabExit, 60_000, &mut sender, "capacity")
+                .expect("enqueue");
+            receivers.push((tab, receiver));
+        }
+        // A screenshot on a survivor tab must outlive the cancellation.
+        let (shot_reply, _shot_receiver) = reply();
+        let mut shot_reply = Some(shot_reply);
+        pending
+            .enqueue_screenshot(TabId::new(4), PathBuf::from("keep.png"), &mut shot_reply)
+            .expect("enqueue screenshot");
+
+        pending.cancel_for_tab(doomed, "tab closed");
+
+        // Every doomed wait is answered with the reason, exactly once.
+        for (tab, receiver) in &receivers {
+            if *tab == doomed {
+                assert_eq!(
+                    receiver
+                        .recv_timeout(Duration::from_secs(1))
+                        .expect("the doomed wait is answered"),
+                    Err("tab closed".to_owned())
+                );
+            } else {
+                assert!(
+                    receiver.recv_timeout(Duration::from_millis(20)).is_err(),
+                    "a survivor on @{} must not be answered",
+                    tab.get()
+                );
+            }
+        }
+        // Three waits survive, and they are still probed in enqueue order:
+        // 1, 3, 4 — the doomed entries removed without disturbing the rest.
+        let now = Instant::now();
+        let mut probed: Vec<TabId> = Vec::new();
+        pending.poll_waits(now, |target, _| {
+            probed.push(target);
+            WaitProbe::Pending
+        });
+        assert_eq!(
+            probed,
+            vec![TabId::new(1), TabId::new(3), TabId::new(4)],
+            "survivors must keep their order: {probed:?}"
+        );
+        // The other tab's screenshot is untouched, so it is still the queued one.
+        assert!(
+            pending.has_pending_screenshot(),
+            "a screenshot on another tab must survive the cancellation"
+        );
+    }
+
     /// `prepare_screenshot` captures the previously active tab only when it
     /// differs from the capture target, so a capture of the active tab does not
     /// need a restore it would have to undo.
