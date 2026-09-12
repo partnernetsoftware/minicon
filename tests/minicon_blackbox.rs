@@ -20,6 +20,7 @@
 //! uses physical `SendInput` virtual keys; it never substitutes Unicode input
 //! or synthetic `WM_IME_*` messages for the real input-method path.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -2410,4 +2411,61 @@ fn the_two_snapshots_agree_on_title_and_child_life() {
         "the snapshots disagree on the exit code: file={dead}, ui={ui}"
     );
     let _ = session.child.kill();
+}
+
+/// `ui-snapshot` is a public contract: scripts and harnesses read these keys by
+/// name, so a rename or a dropped key breaks them silently while the command
+/// still succeeds. Pin the whole top-level set. Adding a key is meant to fail
+/// here too — that is the moment to decide it is public and update the list.
+#[test]
+fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("ui-snapshot-keys");
+    let script = write_journey(&dir, &format!(r#"[{{"wait_ms":{}}}]"#, 50));
+    let args = interactive_shell_args(&script);
+    let session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+
+    let ui = session.control_json(&["ui-snapshot"]);
+    let actual: BTreeSet<&str> = ui
+        .as_object()
+        .expect("ui-snapshot is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let expected: BTreeSet<&str> = [
+        "a11y_dropped_actions",
+        "a11y_pending_actions",
+        "a11y_pending_bytes",
+        "active",
+        "composer_focused",
+        "composer_input",
+        "composer_preedit",
+        "composer_submit_error",
+        "composer_text",
+        "control_pointer_owner",
+        "help_open",
+        "host_notice",
+        "ime_status",
+        "pending_control_screenshots",
+        "pending_control_waits",
+        "terminal_clipboard_paste",
+        "terminal_ime_preedit",
+        "ui_language",
+        "workspace_empty",
+    ]
+    .into_iter()
+    .collect();
+    let missing: Vec<&&str> = expected.difference(&actual).collect();
+    let added: Vec<&&str> = actual.difference(&expected).collect();
+    assert!(
+        missing.is_empty(),
+        "ui-snapshot lost keys a consumer reads: {missing:?}"
+    );
+    assert!(
+        added.is_empty(),
+        "ui-snapshot gained keys; if they are public, add them here: {added:?}"
+    );
 }
