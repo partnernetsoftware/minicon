@@ -1082,3 +1082,113 @@ fn manifest_and_build_asset_paths_exist_with_the_tracked_spelling() {
         broken.into_iter().collect::<Vec<_>>().join("\n")
     );
 }
+
+/// The workflows are a blind spot: a broken reference or an unpinned action is
+/// only discovered after a push, on someone else's machine. Require every
+/// `uses:` to be pinned to a full 40-character commit SHA — a mutable tag or a
+/// truncated hash can change under the build — and every repository path a
+/// workflow names to exist, excluding `dist/`, which is a build output.
+#[test]
+fn workflow_references_are_pinned_and_exist() {
+    let root = repo_root();
+    let tracked = tracked_files(&root);
+    let workflows = root.join(".github/workflows");
+    let mut broken = BTreeSet::new();
+    let mut pins = 0usize;
+
+    let mut files: Vec<PathBuf> = fs::read_dir(&workflows)
+        .expect("read workflows")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "yml" || extension == "yaml")
+        })
+        .collect();
+    files.sort();
+    assert!(!files.is_empty(), "no workflows found");
+
+    for workflow in files {
+        let name = workflow
+            .file_name()
+            .expect("a workflow has a name")
+            .to_string_lossy()
+            .into_owned();
+        let text = fs::read_to_string(&workflow).expect("read workflow");
+        for line in text.lines() {
+            let line = line.trim();
+
+            // Action pins: `uses: owner/repo@ref`, or a local `./path`.
+            if let Some(rest) = line
+                .strip_prefix("- uses: ")
+                .or_else(|| line.strip_prefix("uses: "))
+            {
+                let reference = rest.split_whitespace().next().unwrap_or("");
+                if reference.starts_with("./") {
+                    // A local composite action is a path in this repository.
+                    let candidate = normalize_path(&root.join(reference.trim_start_matches("./")));
+                    if !candidate.exists() {
+                        broken.insert(format!("{name}: local action {reference} does not exist"));
+                    }
+                } else {
+                    pins += 1;
+                    let Some((action, reference)) = reference.rsplit_once('@') else {
+                        broken.insert(format!("{name}: {reference} is not pinned to a revision"));
+                        continue;
+                    };
+                    if reference.len() != 40 || !reference.bytes().all(|b| b.is_ascii_hexdigit()) {
+                        broken.insert(format!(
+                            "{name}: {action}@{reference} is not a full 40-character commit SHA"
+                        ));
+                    }
+                }
+            }
+
+            // Repository paths named anywhere in the file.
+            for token in text_paths(line) {
+                if token.contains("/dist/") || token.contains("dist/") {
+                    continue;
+                }
+                if !root.join(&token).exists() {
+                    broken.insert(format!("{name}: {token} does not exist"));
+                }
+            }
+        }
+    }
+
+    assert!(pins >= 5, "expected several action pins, found {pins}");
+    assert!(
+        broken.is_empty(),
+        "workflow references are unpinned or missing:\n{}",
+        broken.into_iter().collect::<Vec<_>>().join("\n")
+    );
+    let _ = tracked;
+}
+
+/// Repository-relative path tokens in one line of a workflow.
+fn text_paths(line: &str) -> Vec<String> {
+    let prefixes = [
+        "scripts/",
+        "tests/",
+        "src/",
+        "crates/",
+        "research/",
+        "prd/",
+        "plan/",
+        "docs/",
+        "assets/",
+        "vendor/",
+    ];
+    let suffixes = [
+        ".rs", ".md", ".html", ".json", ".toml", ".sh", ".ps1", ".py", ".c",
+    ];
+    line.split(|c: char| c.is_whitespace() || "\"'`()<>|:,".contains(c))
+        .filter(|token| {
+            prefixes.iter().any(|prefix| token.starts_with(prefix))
+                && suffixes.iter().any(|suffix| token.ends_with(suffix))
+                && !token.contains('*')
+                && !token.contains("...")
+        })
+        .map(str::to_owned)
+        .collect()
+}
