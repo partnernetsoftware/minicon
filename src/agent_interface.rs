@@ -651,6 +651,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// A pixel buffer whose length does not match its dimensions is refused
+    /// before any job reaches the worker: the completion still runs (with an
+    /// `InvalidInput` from `copy_from`), and no file is created. This is the
+    /// call path a caller with a stale frame hits, so it must not hang on a
+    /// completion that never fires.
+    #[test]
+    fn submit_png_refuses_a_dimension_pixel_mismatch_without_writing() {
+        let dir = scratch("png-mismatch");
+        let path = dir.join("shot.png");
+        let (send, receive) = mpsc::channel();
+        // 3x3 wants nine pixels; supply eight.
+        submit_png_atomic(
+            path.clone(),
+            &[0u32; 8],
+            3,
+            3,
+            Box::new(move |result| {
+                send.send(result).unwrap();
+            }),
+        );
+        let result = receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a refused frame must still complete its caller");
+        let error = result.expect_err("a mismatched buffer must be refused");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(
+            error.to_string().contains("pixel count"),
+            "the mechanism message must survive: {error}"
+        );
+        assert!(!path.exists(), "a refused frame must not create a file");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     fn sample_snapshot(title: &str) -> ScreenSnapshot {
         ScreenSnapshot {
             cols: 80,
