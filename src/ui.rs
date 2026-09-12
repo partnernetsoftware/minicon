@@ -620,6 +620,47 @@ mod tests {
         }
     }
 
+    /// The header's seven tools lay out at their own size regardless of how
+    /// narrow the frame is, so a frame narrower than roughly two hundred pixels
+    /// has header controls with area outside the frame — `zoom_in` is the last
+    /// one out, at `x = 156` with a 24-pixel box. That is the current behaviour
+    /// and it is recorded rather than asserted away: the ordering test only
+    /// covers wide frames, so a reader should not assume narrow ones are safe.
+    /// What is pinned here is the exact boundary and the fact that widening the
+    /// frame fixes it, so a future layout change has a number to beat.
+    #[test]
+    fn a_narrow_frame_overflows_the_header_row_and_widening_it_does_not() {
+        // A probe established the boundary: 176 wide still clips `zoom_in`,
+        // 200 wide does not.
+        let clipped = Layout::new(176, 80, 1.0);
+        assert!(
+            clipped.zoom_in.x + clipped.zoom_in.width > clipped.sidebar.width,
+            "the last tool overflows a 176-wide frame: {:?} vs sidebar {}",
+            clipped.zoom_in,
+            clipped.sidebar.width
+        );
+        let fits = Layout::new(200, 80, 1.0);
+        assert!(
+            fits.zoom_in.x + fits.zoom_in.width <= fits.sidebar.width,
+            "a 200-wide frame holds the whole row: {:?} vs sidebar {}",
+            fits.zoom_in,
+            fits.sidebar.width
+        );
+        // Even where the row overflows, the frame itself is still partitioned:
+        // the sidebar and composer never claim more than the frame, and the
+        // composer's own children stay inside it.
+        for (width, height) in [(176u32, 80u32), (150, 60), (100, 40)] {
+            let layout = Layout::new(width, height, 1.0);
+            assert!(layout.sidebar.width <= width, "the sidebar fits the frame");
+            assert!(layout.sidebar.height <= height);
+            assert!(
+                layout.composer.x + layout.composer.width <= width,
+                "the composer strip fits the frame at {width}x{height}"
+            );
+            assert!(layout.composer.y + layout.composer.height <= height);
+        }
+    }
+
     #[test]
     fn new_root_header_button_has_its_own_hit_target() {
         let layout = Layout::new(1000, 500, 1.0);
