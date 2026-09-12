@@ -578,4 +578,89 @@ mod tests {
         assert_eq!(pending.screenshot_count(), 0, "a finished job is reaped");
         assert!(!pending.has_pending_screenshot());
     }
+
+    /// The in-flight screenshot's reply lives in a shared slot that both the
+    /// worker's completion and a cancellation reach for. Whoever takes it first
+    /// answers exactly once; the other finds nothing and must not answer again.
+    /// This is what keeps a cancelled screenshot from producing two replies.
+    #[test]
+    fn in_flight_reply_is_taken_once_when_the_worker_finishes_first() {
+        let mut pending = PendingControl::default();
+        let (sender, receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("shot.png"), &mut sender)
+            .expect("enqueue");
+        let work = pending.take_screenshot().expect("work");
+        let shared = Arc::new(Mutex::new(Some(work.reply)));
+        let done = Arc::new(AtomicBool::new(false));
+        pending.start_screenshot(TabId::new(1), Arc::clone(&shared), Arc::clone(&done));
+
+        // The worker finishes first and takes the reply.
+        let taken = shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .expect("the worker takes the reply");
+        assert!(
+            taken
+                .send(Ok(json::object(vec![("ok", true.into())])))
+                .is_ok()
+        );
+        done.store(true, Ordering::Release);
+
+        // A later cancellation finds nothing left to answer.
+        pending.cancel_for_tab(TabId::new(1), "closed after finish");
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("the worker's reply"),
+            Ok(json::object(vec![("ok", true.into())])),
+            "the worker's reply must be the only one"
+        );
+        assert!(
+            receiver.recv_timeout(Duration::from_millis(20)).is_err(),
+            "a cancellation after completion must not send a second reply"
+        );
+    }
+
+    /// The opposite order: a cancellation reaches the shared reply first, so the
+    /// worker's completion finds it taken and sends nothing. Either way exactly
+    /// one reply reaches the caller.
+    #[test]
+    fn in_flight_reply_is_taken_once_when_cancellation_wins() {
+        let mut pending = PendingControl::default();
+        let (sender, receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("shot.png"), &mut sender)
+            .expect("enqueue");
+        let work = pending.take_screenshot().expect("work");
+        let shared = Arc::new(Mutex::new(Some(work.reply)));
+        let done = Arc::new(AtomicBool::new(false));
+        pending.start_screenshot(TabId::new(1), Arc::clone(&shared), Arc::clone(&done));
+
+        // Cancellation wins the race.
+        pending.cancel_for_tab(TabId::new(1), "tab closed");
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("the cancellation reply"),
+            Err("tab closed".to_owned())
+        );
+
+        // The worker's completion then finds the slot empty and sends nothing.
+        let leftover = shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        assert!(
+            leftover.is_none(),
+            "the cancellation already took the reply"
+        );
+        assert!(
+            receiver.recv_timeout(Duration::from_millis(20)).is_err(),
+            "the completion must not send a second reply"
+        );
+    }
 }
