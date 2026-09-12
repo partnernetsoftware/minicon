@@ -774,6 +774,79 @@ mod tests {
         assert_eq!(reveal_tree_index(5, 2, 10, 4), 2);
     }
 
+    /// A tree that fits, an empty tree, or a zero-height viewport must all pin
+    /// the scroll to zero rather than underflowing or scrolling into blank
+    /// rows; a zero capacity is treated as one visible row, not as "show
+    /// nothing".
+    #[test]
+    fn scrolling_handles_empty_and_degenerate_viewports() {
+        // The whole tree fits: no scrolling is possible.
+        for offset in [0, 1, 5] {
+            assert_eq!(
+                scroll_tree(offset, 3, 3, 4),
+                0,
+                "a fitting tree cannot scroll"
+            );
+            assert_eq!(clamp_tree_scroll(offset, 3, 4), 0);
+        }
+        // An empty tree has nothing to scroll to.
+        for capacity in [0, 1, 8] {
+            assert_eq!(
+                scroll_tree(9, 2, 0, capacity),
+                0,
+                "an empty tree stays at zero"
+            );
+            assert_eq!(reveal_tree_index(4, 0, 0, capacity), 0);
+        }
+        // A zero-height viewport still reveals one row (capacity floored to 1),
+        // so the offset can move freely up to `item_count - 1`.
+        assert_eq!(
+            scroll_tree(0, 5, 10, 0),
+            5,
+            "one visible row, but the offset still moves"
+        );
+        assert_eq!(
+            reveal_tree_index(0, 3, 10, 0),
+            3,
+            "the row is the whole viewport"
+        );
+        assert_eq!(
+            clamp_tree_scroll(9, 10, 0),
+            9,
+            "with capacity 1 the max offset is n-1"
+        );
+        assert_eq!(clamp_tree_scroll(99, 10, 0), 9, "and it is bounded there");
+    }
+
+    /// `reveal_tree_index` scrolls exactly when the row is outside the window,
+    /// including the two boundary rows, and never past the end. The last row of
+    /// a long tree must end up visible with the window bottomed out.
+    #[test]
+    fn reveal_scrolls_at_the_window_edges_and_bottoms_out() {
+        // index == offset + capacity is the first row past the window.
+        assert_eq!(reveal_tree_index(0, 4, 10, 4), 1);
+        // index == offset is already visible.
+        assert_eq!(reveal_tree_index(0, 0, 10, 4), 0);
+        assert_eq!(reveal_tree_index(3, 3, 10, 4), 3);
+        // index == offset + capacity - 1 is the last visible row.
+        assert_eq!(reveal_tree_index(0, 3, 10, 4), 0);
+        // The final row of the tree: the window bottoms out, not past the end.
+        assert_eq!(reveal_tree_index(0, 9, 10, 4), 6);
+        assert_eq!(reveal_tree_index(6, 9, 10, 4), 6, "already visible");
+    }
+
+    /// `scroll_tree` takes a signed delta; the most-negative value must scroll
+    /// to the top instead of overflowing `unsigned_abs`.
+    #[test]
+    fn scroll_tree_handles_the_most_negative_delta() {
+        assert_eq!(scroll_tree(3, isize::MIN, 10, 4), 0);
+        assert_eq!(
+            scroll_tree(3, isize::MAX, 10, 4),
+            6,
+            "a huge down-scroll clamps"
+        );
+    }
+
     #[test]
     fn composer_hit_has_a_distinct_send_action() {
         let layout = Layout::new(1000, 500, 1.0);
