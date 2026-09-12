@@ -2365,10 +2365,17 @@ mod tests {
                 saw_a_capped_turn = true;
             }
             delivered += batch.len();
-            // `more` reports whether the queue still holds work. It can be
-            // false mid-storm when the turn drained exactly what was queued, so
-            // the invariant is only that nothing is lost: delivered never runs
-            // ahead of what was pushed.
+            // `more` reports whether the queue still holds work. It may be false
+            // mid-storm when the turn drained exactly what was queued, but it
+            // must never claim work remains that the counters cannot account
+            // for: when it is false the queue is empty, so a later push is what
+            // refills it.
+            if !more {
+                assert_eq!(
+                    delivered, pushed,
+                    "an empty queue must have delivered everything pushed"
+                );
+            }
             assert!(
                 delivered <= pushed,
                 "delivered {delivered} more than the {pushed} pushed"
