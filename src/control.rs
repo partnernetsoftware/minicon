@@ -1433,6 +1433,46 @@ mod native_endpoint_tests {
         );
     }
 
+    /// A legacy client sends the bare command with no envelope, so the decoder
+    /// must read it as an id-less request. That request is executed every time
+    /// and never enters the replay cache, which is why the deduplication
+    /// guarantee only holds for an enveloped client. Pin both shapes and the
+    /// malformed envelope so the first byte keeps meaning exactly this.
+    #[test]
+    fn a_legacy_request_decodes_without_an_id_and_is_never_deduplicated() {
+        let command = CliCommand::SendText {
+            target: None,
+            text: "twice".to_owned(),
+        };
+        // The bare form: what an old client writes, with no envelope byte.
+        let bare = encode_request(command.clone()).unwrap();
+        assert_ne!(
+            bare.first(),
+            Some(&21),
+            "the bare form must not start with 21"
+        );
+        let decoded = decode_wire_request(&bare).unwrap();
+        assert_eq!(decoded.id, None, "a bare request carries no id");
+        assert_eq!(decoded.command, command);
+
+        // With an envelope the same command decodes with its id, so the two
+        // forms are distinguished by the first byte alone.
+        let id = RequestId(42);
+        let enveloped = encode_wire_request(id, command.clone()).unwrap();
+        assert_eq!(enveloped.first(), Some(&21));
+        let decoded = decode_wire_request(&enveloped).unwrap();
+        assert_eq!(decoded.id, Some(id));
+        assert_eq!(decoded.command, command);
+
+        // An empty buffer has no first byte and no command: it must be refused
+        // rather than silently read as an id-less request.
+        assert!(decode_wire_request(&[]).is_err());
+        // An envelope with fewer than sixteen id bytes is truncated.
+        assert!(decode_wire_request(&[21, 0, 1, 2]).is_err());
+        // Sixteen id bytes and no command is also truncated.
+        assert!(decode_wire_request(&[21u8; 17]).is_err());
+    }
+
     #[test]
     fn request_id_round_trip_preserves_a_mutation_for_safe_reply_replay() {
         let id = RequestId(0x1234_5678_9abc_def0_1357_2468_ace0_bdf1);
