@@ -172,6 +172,64 @@ mod tests {
         assert_eq!(workspace.active(), Some(first));
     }
 
+    /// Closing the active tab must land on a neighbour by a rule, not an
+    /// accident: the node that shifted into the closed slot (the next tab in
+    /// tree order) when one exists, otherwise the new last tab. Only the
+    /// two-tab case was covered.
+    #[test]
+    fn closing_the_active_tab_picks_the_next_tab_then_the_previous() {
+        let mut workspace = Workspace::default();
+        let first = workspace.add_root("first".into()).unwrap();
+        let second = workspace.add_root("second".into()).unwrap();
+        let third = workspace.add_root("third".into()).unwrap();
+
+        // Close the middle tab: the next tab (`third`) shifts into its slot.
+        assert!(workspace.set_active(second));
+        workspace.close(second).unwrap();
+        assert_eq!(
+            workspace.active(),
+            Some(third),
+            "the next tab in order takes the slot"
+        );
+        assert_eq!(workspace.nodes().len(), 2);
+
+        // Close the last tab: there is no next one, so the new last is chosen.
+        assert!(workspace.set_active(third));
+        workspace.close(third).unwrap();
+        assert_eq!(
+            workspace.active(),
+            Some(first),
+            "the previous tab is the new last"
+        );
+
+        // Closing the only remaining tab leaves no active tab at all.
+        assert!(workspace.set_active(first));
+        workspace.close(first).unwrap();
+        assert_eq!(workspace.active(), None, "an empty tree has no active tab");
+        assert!(workspace.nodes().is_empty());
+    }
+
+    /// Closing a tab that is not active must not move the selection, however
+    /// many neighbours it has.
+    #[test]
+    fn closing_a_background_tab_leaves_the_active_tab_alone() {
+        let mut workspace = Workspace::default();
+        let first = workspace.add_root("first".into()).unwrap();
+        let second = workspace.add_root("second".into()).unwrap();
+        let third = workspace.add_root("third".into()).unwrap();
+        assert!(workspace.set_active(third));
+
+        workspace.close(first).unwrap();
+        assert_eq!(
+            workspace.active(),
+            Some(third),
+            "a background close is inert"
+        );
+        workspace.close(second).unwrap();
+        assert_eq!(workspace.active(), Some(third), "still inert");
+        assert_eq!(workspace.nodes().len(), 1);
+    }
+
     #[test]
     fn creation_limits_fail_without_mutating_tree_or_active_tab() {
         let mut workspace = Workspace::default();
