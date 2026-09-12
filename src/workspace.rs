@@ -321,6 +321,49 @@ mod tests {
         assert_eq!(workspace.active(), active);
     }
 
+    /// The last usable id is `u64::MAX - 1`: the guard refuses only when
+    /// `next_id` is already `u64::MAX`, so the tab below it is created and the
+    /// counter lands exactly on the exhausted value. That boundary is the whole
+    /// difference between "one id left" and "none left".
+    #[test]
+    fn the_last_usable_id_is_consumed_before_exhaustion() {
+        let mut workspace = Workspace::default();
+        workspace.next_id = u64::MAX - 1;
+        let last = workspace
+            .add_root("last".into())
+            .expect("the id below the ceiling is usable");
+        assert_eq!(last.get(), u64::MAX - 1);
+        // The counter is now exhausted, so the next add is a typed refusal.
+        assert_eq!(workspace.add_root("none left".into()), None);
+        assert_eq!(workspace.nodes().len(), 1, "the refusal must not add a tab");
+        assert_eq!(
+            workspace.active(),
+            Some(last),
+            "the refusal must not move the selection"
+        );
+    }
+
+    /// Closing a tab frees its slot in the tree but not its id: ids are drawn
+    /// from a monotonic counter and never reused, so a stale id held by a caller
+    /// can never be mistaken for a newly opened tab.
+    #[test]
+    fn a_closed_tabs_id_is_never_reused() {
+        let mut workspace = Workspace::default();
+        let first = workspace.add_root("first".into()).unwrap();
+        let second = workspace.add_root("second".into()).unwrap();
+        workspace.close(first).unwrap();
+        let third = workspace.add_root("third".into()).unwrap();
+        assert_ne!(third, first, "a closed id must not come back");
+        assert_ne!(third, second);
+        assert!(third.get() > second.get());
+        // The stale id stays unknown rather than resolving to the new tab.
+        assert!(workspace.node(first).is_none());
+        assert_eq!(
+            workspace.node(third).map(|node| node.title.as_str()),
+            Some("third")
+        );
+    }
+
     /// The depth recomputation is documented as unable to fail for a tree this
     /// module builds, so the failure branch is not reachable through the public
     /// API. Force the ill-formed state (a child whose parent id is absent) and
