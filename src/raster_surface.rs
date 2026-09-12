@@ -273,4 +273,103 @@ mod tests {
             "exactly one pixel must be inked"
         );
     }
+
+    /// A full-alpha glyph: every pixel of the mask is opaque, so a blit marks
+    /// exactly the mask cells that land inside the clip.
+    fn solid_glyph(width: u32, height: u32) -> font::RasterGlyph {
+        font::RasterGlyph {
+            alpha: vec![255; (width * height) as usize],
+            width,
+            height,
+            offset_x: 0,
+            offset_y: 0,
+        }
+    }
+
+    fn cell(x: u32, y: u32, w: u32, h: u32) -> CellRect {
+        CellRect { x, y, w, h }
+    }
+
+    /// A glyph smaller than its cell inks exactly its own pixels at the cell
+    /// origin; nothing outside the mask is touched.
+    #[test]
+    fn blit_glyph_inks_the_mask_within_the_cell() {
+        const SENTINEL: u32 = 0x0000_0001;
+        let fg = Rgb(0xFF, 0xFF, 0xFF);
+        let mut pixels = vec![SENTINEL; 8 * 8];
+        let mut surface = make(&mut pixels, 8, 8, PixelRect::full_frame(8, 8));
+        let glyph = solid_glyph(2, 2);
+        surface.blit_glyph(&glyph, cell(3, 4, 4, 4), fg, 0.0);
+
+        // The 2x2 mask sits at (3,4)..(5,6).
+        for y in 0..8 {
+            for x in 0..8 {
+                let inked = (3..5).contains(&x) && (4..6).contains(&y);
+                assert_eq!(
+                    pixels[y * 8 + x] != SENTINEL,
+                    inked,
+                    "pixel ({x},{y}) inked should be {inked}"
+                );
+            }
+        }
+    }
+
+    /// The blit is clipped to the cell, so a glyph wider than its cell must not
+    /// spill into the neighbouring cell's columns even though the mask covers
+    /// them.
+    #[test]
+    fn blit_glyph_never_spills_past_its_cell() {
+        const SENTINEL: u32 = 0x0000_0001;
+        let fg = Rgb(0xFF, 0xFF, 0xFF);
+        let mut pixels = vec![SENTINEL; 8 * 8];
+        let mut surface = make(&mut pixels, 8, 8, PixelRect::full_frame(8, 8));
+        // A 6-wide glyph in a 2-wide cell at (2,2).
+        let glyph = solid_glyph(6, 1);
+        surface.blit_glyph(&glyph, cell(2, 2, 2, 4), fg, 0.0);
+
+        for x in 0..8 {
+            let inked = pixels[2 * 8 + x] != SENTINEL;
+            let should = (2..4).contains(&x);
+            assert_eq!(inked, should, "column {x} inked should be {should}");
+        }
+    }
+
+    /// Shear slants the glyph: rows nearer the top shift further right,
+    /// pivoting on the bottom of the cell. A single-column mask becomes a
+    /// diagonal staircase.
+    #[test]
+    fn blit_glyph_shears_rows_further_right_toward_the_top() {
+        const SENTINEL: u32 = 0x0000_0001;
+        let fg = Rgb(0xFF, 0xFF, 0xFF);
+        // Wide enough that the slant stays inside the surface.
+        let mut pixels = vec![SENTINEL; 16 * 8];
+        let mut surface = make(&mut pixels, 16, 8, PixelRect::full_frame(16, 8));
+        // A 1x4 vertical bar in a 4-cell-wide, 4-tall cell at (2,2).
+        let glyph = solid_glyph(1, 4);
+        surface.blit_glyph(&glyph, cell(2, 2, 10, 4), fg, 0.5);
+
+        // The bottom row (py = clip_y1 - 1) has slant 0; each row up gains 0.5
+        // rounded, so the column shifts right as y decreases.
+        let column_at = |y: usize| (0..16).find(|x| pixels[y * 16 + *x] != SENTINEL);
+        let bottom = column_at(5).expect("bottom row inked");
+        let top = column_at(2).expect("top row inked");
+        assert!(
+            top > bottom,
+            "the top row must lean right of the bottom: top={top:?} bottom={bottom:?}"
+        );
+    }
+
+    /// A cell entirely outside the clip inks nothing, so a glyph on a hidden
+    /// cell cannot reach the visible ones.
+    #[test]
+    fn blit_glyph_outside_the_clip_inks_nothing() {
+        let fg = Rgb(0xFF, 0xFF, 0xFF);
+        let mut pixels = vec![0u32; 8 * 8];
+        let mut surface = make(&mut pixels, 8, 8, PixelRect::from_xywh(4, 4, 4, 4));
+        surface.blit_glyph(&solid_glyph(2, 2), cell(0, 0, 2, 2), fg, 0.0);
+        assert!(
+            pixels.iter().all(|pixel| *pixel == 0),
+            "a glyph on a cell outside the clip must write nothing"
+        );
+    }
 }
