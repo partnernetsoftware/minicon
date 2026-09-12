@@ -781,3 +781,76 @@ fn the_help_and_readme_list_the_same_shortcuts() {
         "the README lists shortcuts --help does not: {only_readme:?}"
     );
 }
+
+/// The landing page's scripting section names CLI commands in two structured
+/// places: `minicon cli … <verb>` inside a code block, and the `<dt>` lists that
+/// follow it. Neither is checked by anything — the existing reference gate reads
+/// `docs/control-cli.html` only — so a renamed command would leave the landing
+/// page advertising something the build no longer accepts. Take the command set
+/// from the catalog the binary publishes and require every command named in
+/// those structured places to be a member.
+#[test]
+fn the_landing_page_names_only_real_cli_commands() {
+    let root = repo_root();
+    let source = fs::read_to_string(root.join("src/control.rs")).expect("read control.rs");
+    let raw = source
+        .split_once("CLI_COMMAND_CATALOG: &str = \"")
+        .expect("the command catalog exists")
+        .1;
+    let raw = raw.split_once("\";").expect("the catalog ends").0;
+    let mut catalog: BTreeSet<&str> = raw.split(r"\n").filter(|line| !line.is_empty()).collect();
+    // The catalog is the dispatch list plus `list-commands`, which is handled
+    // before dispatch; both are public spellings.
+    catalog.insert("list-commands");
+
+    let page = fs::read_to_string(root.join("docs/index.html")).expect("read the landing page");
+    let mut named: Vec<String> = Vec::new();
+
+    // `minicon cli --control <endpoint> <verb> …`, allowing markup between.
+    let mut rest = page.as_str();
+    while let Some(index) = rest.find("minicon cli ") {
+        let line = &rest[index..];
+        let line = &line[..line.find('\n').unwrap_or(line.len())];
+        // The verb follows the endpoint argument.
+        if let Some(command_index) = line.find("control.sock ") {
+            let tail = &line[command_index + "control.sock ".len()..];
+            let verb: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                .collect();
+            if !verb.is_empty() {
+                named.push(verb);
+            }
+        }
+        rest = &rest[index + "minicon cli ".len()..];
+    }
+
+    // `<dt>a · b · c</dt>` command lists.
+    let mut rest = page.as_str();
+    while let Some(index) = rest.find("<dt>") {
+        let after = &rest[index + "<dt>".len()..];
+        let Some(end) = after.find("</dt>") else {
+            break;
+        };
+        for token in after[..end].split('·') {
+            let token = token.trim();
+            if !token.is_empty() {
+                named.push(token.to_owned());
+            }
+        }
+        rest = &after[end..];
+    }
+
+    assert!(
+        named.len() >= 10,
+        "the landing page should name several commands, found {named:?}"
+    );
+    let unknown: Vec<&String> = named
+        .iter()
+        .filter(|name| !catalog.contains(name.as_str()))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "docs/index.html names commands the build does not accept: {unknown:?}"
+    );
+}
