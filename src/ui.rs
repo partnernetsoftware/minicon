@@ -504,9 +504,9 @@ pub fn terminal_scrollbar_geometry(
     viewport: TerminalViewport,
     offset: usize,
     maximum: usize,
-) -> agenterm_ui_core::ScrollbarGeometry {
-    agenterm_ui_core::terminal_scrollbar_geometry(
-        agenterm_ui_core::Rect {
+) -> minicon_core::scrollbar::ScrollbarGeometry {
+    minicon_core::scrollbar::terminal_scrollbar_geometry(
+        minicon_core::scrollbar::ScrollbarRect {
             left: viewport.left.min(i32::MAX as u32) as i32,
             top: viewport.top.min(i32::MAX as u32) as i32,
             right: viewport.width.min(i32::MAX as u32) as i32,
@@ -1306,7 +1306,7 @@ mod tests {
     /// has to survive a change of scale, and the track must stay ordered.
     #[test]
     fn dragging_reaches_the_ends_at_every_display_scale() {
-        use agenterm_ui_core::scrollback_for_thumb_top;
+        use minicon_core::scrollbar::scrollback_for_thumb_top;
         for scale in [1.0, 1.25, 1.5, 2.0, 3.0] {
             let geometry = terminal_scrollbar_geometry(viewport(scale, 24, 96), 0, 100);
             assert!(
@@ -1382,7 +1382,7 @@ mod tests {
     /// require the same offset within the rounding the geometry implies.
     #[test]
     fn dragging_a_thumb_round_trips_to_the_offset_it_was_drawn_from() {
-        use agenterm_ui_core::{ScrollbarGeometry, scrollback_for_thumb_top};
+        use minicon_core::scrollbar::{ScrollbarGeometry, scrollback_for_thumb_top};
         let view = viewport(1.0, 24, 96);
         for maximum in [0usize, 1, 7, 100, 5000] {
             let geometry: ScrollbarGeometry = terminal_scrollbar_geometry(view, 0, maximum);
@@ -1430,7 +1430,7 @@ mod tests {
     /// instead of producing an out-of-range scrollback.
     #[test]
     fn dragging_to_the_ends_reaches_the_extremes_and_clamps() {
-        use agenterm_ui_core::scrollback_for_thumb_top;
+        use minicon_core::scrollbar::scrollback_for_thumb_top;
         let view = viewport(1.0, 24, 96);
         let geometry = terminal_scrollbar_geometry(view, 0, 100);
         assert_eq!(

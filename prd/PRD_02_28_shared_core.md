@@ -77,9 +77,19 @@ the dependency's `test` cfg — so a test-only helper simply disappears. Every
   assert — the accessor form reading parentage from a caller's own node type,
   and depths resolving correctly across sparse, unordered ids — because those
   are the parts that make it reusable.
+- [x] move scrollbar geometry out of `agenterm-ui-core` into this crate.
+  `minicon-core::scrollbar` now owns `ScrollbarRect`, `ScrollbarGeometry`,
+  `ScrollbarHit`, `ScrollbarThumbDrag`, `terminal_scrollbar_geometry`,
+  `scrollback_for_thumb_top` and `scrollbar_hit_test`; `src/ui.rs` and
+  `src/main.rs` use them from here. The moved arithmetic is unchanged, so the
+  change is behaviour-preserving rather than merely plausible. Writing tests for
+  it surfaced two behaviours that were true but undocumented and easy to assume
+  otherwise: an inverted track is passed through with a `height()` that is
+  negative, so callers cannot treat a non-negative height as free, and a thumb
+  at the live end rests on the track's bottom edge, so there is deliberately no
+  `TrackBelow` region to hit there. Both are now asserted.
 - [ ] move the remaining leaf helpers MiniCon needs out of `agenterm-ui-core`
-  into this crate: scrollbar geometry and the numeric rounding shims. They are
-  small, pure and have no reverse dependency on anything above them.
+  into this crate: the numeric rounding shims.
 - [ ] `workspace`, `session_store`, `ui` and `palette` then follow, because the
   single helper each was waiting on is here.
 - [ ] `agenterm` depends on `minicon-core` for those helpers. This is the

@@ -26,6 +26,7 @@
 
 pub mod composer;
 pub mod json;
+pub mod scrollbar;
 pub mod tree;
 
 #[cfg(test)]

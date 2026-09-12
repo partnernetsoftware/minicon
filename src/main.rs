@@ -53,9 +53,9 @@ use agenterm_platform::window_host::{
     PixelWindowDirective, PixelWindowError, PixelWindowEvent, PixelWindowOptions, PointerButton,
     PointerButtonState, WheelDelta, XrgbPixelFrame, run_pixel_window,
 };
-use agenterm_ui_core::{
-    DirtyRegion, DirtyRows, PixelRect, ScrollbarHit, ScrollbarThumbDrag, scrollback_for_thumb_top,
-    scrollbar_hit_test,
+use agenterm_ui_core::{DirtyRegion, DirtyRows, PixelRect};
+use minicon_core::scrollbar::{
+    ScrollbarHit, ScrollbarThumbDrag, scrollback_for_thumb_top, scrollbar_hit_test,
 };
 
 use control_pending::{PendingControl, WaitKind, WaitProbe};
@@ -4422,7 +4422,7 @@ impl ConTerminal {
         &mut self,
         width: u32,
         height: u32,
-    ) -> (agenterm_ui_core::ScrollbarGeometry, usize, usize) {
+    ) -> (minicon_core::scrollbar::ScrollbarGeometry, usize, usize) {
         let (offset, maximum) = self.scrollback_bounds();
         (
             ui::terminal_scrollbar_geometry(
