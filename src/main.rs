@@ -8005,6 +8005,67 @@ mod tests {
         app
     }
 
+    fn preedit_surface<'a>(pixels: &'a mut [u32], width: u32, height: u32) -> Surface<'a> {
+        Surface::new(pixels, width, height)
+    }
+
+    /// The IME preedit reports how many cells it drew so the caller can push the
+    /// cursor past the composition. The count must be exactly the cells that
+    /// landed on screen: a preedit running past the right edge or below the
+    /// surface stops there and reports only what was drawn, so the cursor is
+    /// never pushed off-screen and never lands on unwritten cells.
+    #[test]
+    fn preedit_advance_counts_only_the_cells_it_drew() {
+        // A surface 5 cells wide and 2 rows tall, with a 1-cell cursor row.
+        let mut app = prepared_pointer_terminal();
+        app.content_left_px = 0;
+        app.content_top_px = 0;
+
+        // A short preedit that fits entirely: every cell is drawn.
+        app.ime_preedit = "abc".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(advance, 3, "three one-cell characters occupy three cells");
+
+        // A double-width character counts two, not one.
+        app.ime_preedit = "a\u{4e2d}".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(advance, 3, "a wide glyph owns two cells");
+
+        // Ten cells of preedit into a five-cell wide surface: only the cells
+        // that fit are drawn and reported; the rest are dropped.
+        app.ime_preedit = "abcdefghij".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(
+            advance, 5,
+            "a preedit wider than the surface must stop at its edge"
+        );
+
+        // A preedit beginning at the last column has room for exactly one.
+        app.ime_preedit = "abcd".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 4));
+        assert_eq!(advance, 1, "only the last column fits");
+
+        // A cursor row below the surface draws nothing and advances nothing.
+        app.ime_preedit = "abcd".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (99, 0));
+        assert_eq!(advance, 0, "an off-surface row cannot draw");
+
+        // An empty preedit is zero cells and writes nothing.
+        app.ime_preedit = String::new();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(advance, 0);
+        assert!(
+            pixels.iter().all(|pixel| *pixel == 0),
+            "an empty preedit must not paint"
+        );
+    }
+
     #[test]
     fn idle_pointer_motion_does_not_dirty_an_unchanged_selection() {
         let mut app = prepared_pointer_terminal();
