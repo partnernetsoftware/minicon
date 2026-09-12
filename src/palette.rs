@@ -153,6 +153,78 @@ mod tests {
             resolve(vt100::Color::Rgb(1, 2, 3), Rgb(9, 9, 9), false),
             Rgb(1, 2, 3)
         );
+        // Bold must not alter an explicit RGB colour: the promotion only
+        // applies to the indexed 0..7 range.
+        assert_eq!(
+            resolve(vt100::Color::Rgb(1, 2, 3), Rgb(9, 9, 9), true),
+            Rgb(1, 2, 3)
+        );
+    }
+
+    /// `Default` is the terminal's own foreground/background, which this layer
+    /// does not know — it must be handed back untouched, bold or not.
+    #[test]
+    fn default_returns_the_callers_colour() {
+        let fallback = Rgb(0x12, 0x34, 0x56);
+        assert_eq!(resolve(vt100::Color::Default, fallback, false), fallback);
+        assert_eq!(resolve(vt100::Color::Default, fallback, true), fallback);
+    }
+
+    /// Bold promotes only the standard 0..7 range to its bright counterpart.
+    /// Index 7 is the last promoted one and 8 is already bright, so the
+    /// boundary between them is the whole rule.
+    #[test]
+    fn bold_promotes_only_the_standard_range() {
+        let black = Rgb(0, 0, 0);
+        // 7 (silver) promotes to 15 (white); 8 is bright grey and stays put.
+        assert_eq!(
+            resolve(vt100::Color::Idx(7), black, false),
+            Rgb(0xE5, 0xE5, 0xE5)
+        );
+        assert_eq!(
+            resolve(vt100::Color::Idx(7), black, true),
+            Rgb(0xFF, 0xFF, 0xFF)
+        );
+        assert_eq!(
+            resolve(vt100::Color::Idx(8), black, true),
+            Rgb(0x7F, 0x7F, 0x7F),
+            "index 8 is outside the promoted range"
+        );
+        // 0 is the first promoted index: black to bright black.
+        assert_eq!(resolve(vt100::Color::Idx(0), black, false), Rgb(0, 0, 0));
+        assert_eq!(
+            resolve(vt100::Color::Idx(0), black, true),
+            Rgb(0x7F, 0x7F, 0x7F)
+        );
+        // Above the standard range bold changes nothing.
+        for index in [15u8, 16, 231, 255] {
+            assert_eq!(
+                resolve(vt100::Color::Idx(index), black, true),
+                resolve(vt100::Color::Idx(index), black, false),
+                "bold must not affect index {index}"
+            );
+        }
+    }
+
+    /// The generated table has three regions with known boundaries: the 16 ANSI
+    /// entries, a 6x6x6 cube, and a 24-step grayscale ramp. Pin one value at
+    /// each edge so a change to the generator cannot drift the palette silently.
+    #[test]
+    fn palette_regions_have_the_xterm_boundaries() {
+        let black = Rgb(0, 0, 0);
+        let at = |index: u8| resolve(vt100::Color::Idx(index), black, false);
+        // ANSI: index 1 is standard red, 9 is its bright form.
+        assert_eq!(at(1), Rgb(0xCD, 0x00, 0x00));
+        assert_eq!(at(9), Rgb(0xFF, 0x00, 0x00));
+        // Cube: 16 is the all-zero corner, 231 the all-max corner, and each
+        // component follows the xterm ramp 0/95/135/175/215/255.
+        assert_eq!(at(16), Rgb(0, 0, 0));
+        assert_eq!(at(17), Rgb(0, 0, 95), "the blue component ramps first");
+        assert_eq!(at(231), Rgb(255, 255, 255));
+        // Grayscale: 232 starts at 8 and each step adds 10, so 255 is 238.
+        assert_eq!(at(232), Rgb(8, 8, 8));
+        assert_eq!(at(233), Rgb(18, 18, 18));
+        assert_eq!(at(255), Rgb(238, 238, 238));
     }
 
     #[test]
