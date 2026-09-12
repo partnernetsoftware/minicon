@@ -388,11 +388,20 @@ mod tests {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             workspace.recompute_depths()
         }));
-        match result {
-            Err(_) => {}
-            Ok(depths) => {
-                panic!("an ill-formed tree must trip the debug assertion, got depths {depths:?}")
-            }
+        if cfg!(debug_assertions) {
+            // Debug builds trip the debug_assert on the malformed parent.
+            assert!(
+                result.is_err(),
+                "an ill-formed tree must trip the debug assertion in a debug build; got {result:?}"
+            );
+        } else {
+            // Release builds (e.g. release-fast, which the runtime payload runs)
+            // compile the debug_assert out and must tolerate the ill-formed
+            // tree flatly, returning depths rather than panicking.
+            assert!(
+                result.is_ok(),
+                "a release build must tolerate an ill-formed tree without panicking"
+            );
         }
     }
 

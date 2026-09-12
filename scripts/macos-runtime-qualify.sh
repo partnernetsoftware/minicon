@@ -71,7 +71,9 @@ case "$MODE" in
   test)
     run_test minicon
     run_test minicon_core
-    run_test minicon_alignment
+    # minicon_alignment is a build-time source/doc contract (it reads repo
+    # files); it is gated by `cargo test` in six-cell and cannot run in the
+    # source-less runtime payload, so it is intentionally not run here.
     run_test minicon_load_portability
     run_test minicon_console_agent
     run_test minicon_control
