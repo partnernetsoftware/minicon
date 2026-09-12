@@ -238,6 +238,23 @@ dependency, so a slim X11 desktop does not need separate
 | `docs/` | the website at `minicon.agenterm.work` |
 | `tests/` | black-box journeys and the gates below |
 
+`minicon-core` is not a dumping ground for anything that happens to be in the
+binary; it holds logic whose *correctness* is independent of the host, which is
+why it can be reasoned about and tested without a window:
+
+| module | what it owns |
+| --- | --- |
+| `composer` | the input-composition rules — the text buffer, caret, recall history and cell accounting |
+| `json` | the bounded codec for the fixed control schemas |
+| `numeric` | float rounding that does not depend on a platform C math runtime |
+| `scrollbar` | scrollbar geometry and the two-way map between offset and thumb |
+| `tree` | tab-tree depth derivation from parentage |
+
+Each of these was previously reached for through a rendering or platform crate.
+The crate's own `no_platform_dependency_creeps_in` test keeps that boundary
+enforced rather than intended, because it is the kind of line that erodes one
+convenient import at a time.
+
 Two gates are worth knowing about, because each one exists where a claim
 would otherwise be unchecked:
 
