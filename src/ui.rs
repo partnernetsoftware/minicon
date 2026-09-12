@@ -526,6 +526,57 @@ pub fn terminal_scrollbar_geometry(
 mod tests {
     use super::*;
 
+    /// `Rect::contains` is half-open on both axes, and the saturating add means
+    /// an extreme origin plus width cannot wrap past zero and swallow unrelated
+    /// pixels. A degenerate rect contains nothing.
+    #[test]
+    fn rect_contains_is_half_open_and_never_wraps() {
+        let rect = Rect {
+            x: 10,
+            y: 20,
+            width: 5,
+            height: 4,
+        };
+        // Corners: the near corner is inside, the far corner is not.
+        assert!(rect.contains(10, 20), "the origin is inside");
+        assert!(rect.contains(14, 23), "the last cell is inside");
+        assert!(!rect.contains(15, 23), "x == x + width is outside");
+        assert!(!rect.contains(14, 24), "y == y + height is outside");
+        assert!(!rect.contains(9, 20), "left of the rect is outside");
+        assert!(!rect.contains(10, 19), "above the rect is outside");
+
+        // Zero-sized rects cover nothing, whatever is probed.
+        let flat = Rect {
+            x: 5,
+            y: 5,
+            width: 0,
+            height: 0,
+        };
+        for (x, y) in [(5, 5), (0, 0), (6, 6)] {
+            assert!(!flat.contains(x, y), "a zero rect contains ({x},{y})");
+        }
+
+        // An origin near the ceiling plus a large width must not wrap. The
+        // right edge saturates at `u32::MAX`, and the half-open bound then
+        // *excludes* `u32::MAX` itself — a one-pixel shrink at the extreme,
+        // chosen over wrapping to zero and swallowing everything.
+        let ceiling = Rect {
+            x: u32::MAX - 1,
+            y: 0,
+            width: 100,
+            height: 1,
+        };
+        assert!(ceiling.contains(u32::MAX - 1, 0));
+        assert!(
+            !ceiling.contains(u32::MAX, 0),
+            "the saturated right edge is exclusive"
+        );
+        assert!(
+            !ceiling.contains(0, 0),
+            "the saturated rect must not wrap to zero"
+        );
+    }
+
     #[test]
     fn layout_separates_sidebar_terminal_and_composer_controls() {
         let layout = Layout::new(1200, 800, 1.0);
