@@ -396,6 +396,9 @@ fn referenced_repository_paths_exist() {
         }
     }
     sources.push(root.join("README.md"));
+    // `AGENTS.md` names the same scripts and paths and is not prose the
+    // referenced-path gate used to read; include it so its commands stay real.
+    sources.push(root.join("AGENTS.md"));
     if let Ok(entries) = fs::read_dir(root.join("src")) {
         for entry in entries.flatten() {
             if entry.path().extension().is_some_and(|e| e == "rs") {
@@ -437,6 +440,11 @@ fn referenced_repository_paths_exist() {
                 // `crates/agenterm-platform/.../windows/runtime.rs` elides the
                 // middle on purpose; only a path that names one file is a claim.
                 if token.contains("...") {
+                    continue;
+                }
+                // `scripts/*-utm-runner.sh` names a family of files, not one
+                // path; a pattern is not a claim that a literal file exists.
+                if token.contains('*') {
                     continue;
                 }
                 if !root.join(token).exists() {
@@ -852,5 +860,43 @@ fn the_landing_page_names_only_real_cli_commands() {
     assert!(
         unknown.is_empty(),
         "docs/index.html names commands the build does not accept: {unknown:?}"
+    );
+}
+
+/// `AGENTS.md` tells contributors to run the gate through `./scripts/build.sh
+/// test` because that path denies the lints which let a test run nothing. Keep
+/// the instruction and the mechanism tied: if the script stops denying them, or
+/// the document stops naming them, the rule has become folklore.
+#[test]
+fn the_documented_test_gate_still_denies_the_dangerous_lints() {
+    let root = repo_root();
+    let script = fs::read_to_string(root.join("scripts/build.sh")).expect("read build.sh");
+    let agents = fs::read_to_string(root.join("AGENTS.md")).expect("read AGENTS.md");
+
+    let arm_start = script
+        .find("  test) cargo test")
+        .expect("the test mode runs cargo test");
+    let arm = &script[arm_start..];
+    let arm = &arm[..arm.find(";;").expect("the test arm ends")];
+
+    for lint in ["dead_code", "unused_variables", "unused_must_use"] {
+        assert!(
+            arm.contains(lint),
+            "the test mode no longer denies {lint}, so a test can silently run nothing"
+        );
+        assert!(
+            agents.contains(lint),
+            "AGENTS.md no longer explains why {lint} is denied"
+        );
+    }
+    // The rule names the entry point it is about, and the README keeps
+    // documenting that same entry.
+    assert!(
+        agents.contains("./scripts/build.sh test"),
+        "AGENTS.md must name the test entry it describes"
+    );
+    assert!(
+        script.contains("usage: scripts/build.sh [release|dev|check|test]"),
+        "the script's own usage line lists the modes"
     );
 }

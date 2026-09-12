@@ -75,6 +75,14 @@ Public Promotion always requires explicit human version and publish authority.
   meaning in MiniCon-owned code. Do not make MiniCon depend on AgenTerm product
   state or evidence.
 - Exercise observable behavior through public CLI/GUI black boxes.
+- Every test must be provable: change the code it guards and watch the test
+  fail before you trust it. A test that passes with its guard removed is
+  documentation, not evidence.
+- Run the test gate through `./scripts/build.sh test`, not bare `cargo test`. It
+  denies `dead_code`, `unused_variables` and `unused_must_use`, because a test
+  that loses its `#[test]` attribute compiles as dead code and silently runs
+  nothing, and an unused `Result` hides a setup that failed. Add a test and
+  confirm the gate's test count went up.
 - Keep `README.md` brief and human-facing; keep operational agent rules here.
 - Preserve user changes in a dirty tree and stage only exact reviewed paths.
 - In public documents use repo-relative paths for this clone and `~/...` for
