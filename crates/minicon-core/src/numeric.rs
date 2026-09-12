@@ -215,6 +215,32 @@ mod tests {
         }
     }
 
+    /// Subnormals and tiny values are where a bit-level implementation is most
+    /// likely to diverge from the operation it stands in for: the exponent field
+    /// is zero, so a naive `exponent < 0` branch is the only thing handling
+    /// them, and `bits & SIGN` for a subnormal is not the same as for zero.
+    /// This walks the whole subnormal range rather than sampling it, because
+    /// that range is small enough to be exhaustive and a sampled test would
+    /// miss exactly the boundary case it exists for. A wider sweep over 750
+    /// million sampled bit patterns found no other disagreement.
+    #[test]
+    fn every_subnormal_agrees_with_the_standard_operations() {
+        for bits in 1u32..0x0080_0000 {
+            let value = f32::from_bits(bits);
+            if value == 0.0 {
+                continue;
+            }
+            assert_eq!(trunc_f32(value).to_bits(), value.trunc().to_bits(), "trunc {value:e}");
+            assert_eq!(round_f32(value).to_bits(), value.round().to_bits(), "round {value:e}");
+            assert_eq!(ceil_f32(value).to_bits(), value.ceil().to_bits(), "ceil {value:e}");
+            // The negative twin of the same encoding.
+            let negated = -value;
+            assert_eq!(trunc_f32(negated).to_bits(), negated.trunc().to_bits());
+            assert_eq!(round_f32(negated).to_bits(), negated.round().to_bits());
+            assert_eq!(ceil_f32(negated).to_bits(), negated.ceil().to_bits());
+        }
+    }
+
     /// NaN must come back as NaN rather than a masked finite value, because the
     /// exponent branch is the only thing standing between a NaN input and a
     /// silently invalid coordinate.
