@@ -26,6 +26,7 @@
 
 pub mod composer;
 pub mod json;
+pub mod tree;
 
 #[cfg(test)]
 mod boundary_tests {

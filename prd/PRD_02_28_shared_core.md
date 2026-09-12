@@ -65,12 +65,21 @@ Across a crate boundary it does not — a consumer's test build does not enable
 the dependency's `test` cfg — so a test-only helper simply disappears. Every
 `cfg(test)` item crossing a new boundary has to be re-examined.
 
-## Stage 2 — planned
+## Stage 2 — in progress
 
-- [ ] move the leaf helpers MiniCon needs out of `agenterm-ui-core` into this
-  crate: tree-depth computation, scrollbar geometry, and the numeric rounding
-  shims. They are small, pure and have no reverse dependency on anything above
-  them.
+- [x] move tree-depth computation out of `agenterm-ui-core` into this crate.
+  `minicon-core::tree` now owns `TreeDepthNode`, `TreeDepthError`,
+  `compute_tree_depths` and `compute_tree_depths_by`, and `src/workspace.rs`
+  calls it there instead of reaching into the UI crate. The move is
+  behaviour-preserving by construction: the transferred logic is line-for-line
+  identical to the helper it replaces, and it is checked here rather than only
+  in the crate it left. Two tests were added for properties the original did not
+  assert — the accessor form reading parentage from a caller's own node type,
+  and depths resolving correctly across sparse, unordered ids — because those
+  are the parts that make it reusable.
+- [ ] move the remaining leaf helpers MiniCon needs out of `agenterm-ui-core`
+  into this crate: scrollbar geometry and the numeric rounding shims. They are
+  small, pure and have no reverse dependency on anything above them.
 - [ ] `workspace`, `session_store`, `ui` and `palette` then follow, because the
   single helper each was waiting on is here.
 - [ ] `agenterm` depends on `minicon-core` for those helpers. This is the

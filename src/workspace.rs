@@ -115,7 +115,7 @@ impl Workspace {
     /// a flat tree rather than turning a rendering glitch into a panic in a
     /// windowed process with no console.
     fn recompute_depths(&self) -> Vec<u32> {
-        match agenterm_ui_core::compute_tree_depths_by(
+        match minicon_core::tree::compute_tree_depths_by(
             &self.nodes,
             |node| node.id,
             |node| node.parent,
