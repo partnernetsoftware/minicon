@@ -385,6 +385,94 @@ mod tests {
         assert_eq!(column_ink(3), BG.to_xrgb(), "and neither must the last");
     }
 
+    /// Reverse video swaps the cell's foreground and background, so the cell
+    /// fills with what would otherwise be its text colour. Pin the swap in
+    /// pixels: an inverse cell's background band is the plain foreground, and a
+    /// plain cell's background band is the default background.
+    #[test]
+    fn an_inverse_cell_fills_with_the_foreground() {
+        let (cell_w, cell_h) = (8u32, 8u32);
+        let width = 4 * cell_w;
+        // The top row of the cell is background-only: the glyph starts below it.
+        let band_at = |sgr: &str| {
+            let mut parser = vt100::Parser::new(1, 4, 0);
+            parser.process(format!("\u{1b}[{sgr}mab").as_bytes());
+            let mut pixels = vec![BG.to_xrgb(); (width * cell_h) as usize];
+            paint_cells(
+                &mut Surface::new(&mut pixels, width, cell_h),
+                parser.screen(),
+                None,
+                cell_w,
+                cell_h,
+                FG,
+                BG,
+                10,
+            );
+            pixels[0]
+        };
+        assert_eq!(
+            band_at("0"),
+            BG.to_xrgb(),
+            "a plain cell keeps the background"
+        );
+        assert_eq!(
+            band_at("7"),
+            FG.to_xrgb(),
+            "reverse video fills the cell with the foreground"
+        );
+    }
+
+    /// Reverse video and dim compose in a specific order: the swap happens
+    /// first, so dim blends the *new* foreground — the background colour —
+    /// toward the *new* background. Getting the order backwards would blend the
+    /// same two colours in the opposite direction, which is a visibly different
+    /// shade. The underline is the readable channel because it paints the
+    /// resolved foreground.
+    #[test]
+    fn inverse_and_dim_compose_swap_first_then_blend() {
+        let (cell_w, cell_h) = (8u32, 8u32);
+        let width = 4 * cell_w;
+        let underline_row = cell_h as usize - 2;
+        let underline_at = |sgr: &str| {
+            let mut parser = vt100::Parser::new(1, 4, 0);
+            parser.process(format!("\u{1b}[{sgr}mab").as_bytes());
+            let mut pixels = vec![BG.to_xrgb(); (width * cell_h) as usize];
+            paint_cells(
+                &mut Surface::new(&mut pixels, width, cell_h),
+                parser.screen(),
+                None,
+                cell_w,
+                cell_h,
+                FG,
+                BG,
+                10,
+            );
+            pixels[underline_row * width as usize]
+        };
+
+        // Inverse with an underline: the underline takes the swapped foreground,
+        // which is the default background.
+        assert_eq!(
+            underline_at("7;4"),
+            BG.to_xrgb(),
+            "after the swap the underline uses the background colour"
+        );
+        // Inverse *and* dim: the blend runs from the swapped foreground (BG)
+        // toward the swapped background (FG).
+        assert_eq!(
+            underline_at("7;2;4"),
+            palette::blend(BG, FG, 0.55).to_xrgb(),
+            "dim blends the swapped colours, not the original pair"
+        );
+        // The opposite direction is a different shade, so the assertion above
+        // is measuring the order and not just any dim colour.
+        assert_ne!(
+            palette::blend(BG, FG, 0.55).to_xrgb(),
+            palette::blend(FG, BG, 0.55).to_xrgb(),
+            "the two blend directions must differ for this test to mean anything"
+        );
+    }
+
     /// The dim attribute is not a palette entry: it is the foreground blended
     /// toward the background, and an underline paints that blended colour, so
     /// the attribute is readable straight from the pixels. Pin that a dim cell's
