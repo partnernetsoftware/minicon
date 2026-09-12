@@ -179,6 +179,82 @@ mod perf_stats_tests {
     };
     use agenterm_ui_core::PixelRect;
 
+    /// The candidate ledger has two identities that must hold after any mix of
+    /// idle and burst frames: every candidate observation is either full or
+    /// partial, and dirty pixels can never exceed the frame pixels they were
+    /// accounted against. An idle stretch must change nothing at all.
+    #[test]
+    fn the_raster_ledger_balances_across_idle_and_burst() {
+        let mut stats = PerfStats::default();
+        let (width, height) = (64u32, 32u32);
+        let per_frame = u64::from(width) * u64::from(height);
+
+        // Idle: recording nothing must leave every counter at zero.
+        for field in [
+            stats.frames,
+            stats.observed_frames,
+            stats.full_candidate_frames,
+            stats.partial_candidate_frames,
+            stats.dirty_pixels,
+            stats.frame_pixels,
+        ] {
+            assert_eq!(field, 0, "an idle ledger must stay at zero");
+        }
+
+        // Burst: alternate full frames with partial ones of known area, plus an
+        // empty candidate which is partial but contributes no dirty pixels.
+        let mut expected_full = 0u64;
+        let mut expected_partial = 0u64;
+        let mut expected_dirty = 0u64;
+        let mut expected_frames = 0u64;
+        for index in 0..25u32 {
+            stats.record_frame(Duration::from_micros(u64::from(index)));
+            expected_frames += 1;
+            if index % 3 == 0 {
+                stats.record_raster_candidate(
+                    DirtyRegion::full_frame(width, height),
+                    width,
+                    height,
+                );
+                expected_full += 1;
+                expected_dirty += per_frame;
+            } else if index % 3 == 1 {
+                let mut partial = DirtyRegion::empty();
+                partial.mark_rect(PixelRect::from_xywh(1, 2, 3, 4));
+                stats.record_raster_candidate(partial, width, height);
+                expected_partial += 1;
+                expected_dirty += 12;
+            } else {
+                stats.record_raster_candidate(DirtyRegion::empty(), width, height);
+                expected_partial += 1;
+            }
+
+            // The identities must hold after every frame, not only at the end.
+            assert_eq!(
+                stats.full_candidate_frames + stats.partial_candidate_frames,
+                expected_full + expected_partial,
+                "every candidate observation is full or partial"
+            );
+            assert!(
+                stats.dirty_pixels <= stats.frame_pixels,
+                "dirty pixels cannot exceed the frames they were measured in"
+            );
+        }
+
+        assert_eq!(stats.observed_frames, expected_frames);
+        assert_eq!(stats.frames, expected_frames);
+        assert_eq!(stats.full_candidate_frames, expected_full);
+        assert_eq!(stats.partial_candidate_frames, expected_partial);
+        assert_eq!(stats.dirty_pixels, expected_dirty);
+        assert_eq!(stats.frame_pixels, expected_frames * per_frame);
+        // The empty candidate is counted as a partial observation but adds no
+        // dirty pixels, which is what keeps the two totals from being the same.
+        assert!(
+            stats.partial_candidate_frames > 0 && stats.dirty_pixels < stats.frame_pixels,
+            "the ledger must not equate observations with dirty area"
+        );
+    }
+
     #[test]
     pub(super) fn raster_candidate_fields_serialize_and_reset() {
         let mut stats = PerfStats::default();
