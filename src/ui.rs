@@ -949,4 +949,48 @@ mod tests {
             SIDEBAR_MIN_WIDTH_DIP
         );
     }
+
+    /// The sidebar width follows the pointer within two bounds: the fixed
+    /// minimum/maximum, and a cap derived from the client width so the terminal
+    /// keeps `TERMINAL_MIN_WIDTH_DIP`. A client too narrow to satisfy both
+    /// floors the range at the minimum, and a negative pointer still clamps to
+    /// the minimum rather than going negative.
+    #[test]
+    fn sidebar_width_follows_the_pointer_within_the_client_cap() {
+        // A wide client: the pointer is limited only by the fixed maximum.
+        let wide = 2000.0;
+        assert_eq!(
+            sidebar_width_from_pointer(100.0, wide),
+            SIDEBAR_MIN_WIDTH_DIP,
+            "below the minimum clamps up"
+        );
+        assert_eq!(sidebar_width_from_pointer(300.0, wide), 300.0, "in range");
+        assert_eq!(
+            sidebar_width_from_pointer(999.0, wide),
+            SIDEBAR_MAX_WIDTH_DIP,
+            "past the maximum clamps down to the fixed cap"
+        );
+
+        // A narrow client caps the sidebar below the fixed maximum so the
+        // terminal keeps its minimum width: 320 + 400 = 720.
+        let narrow = TERMINAL_MIN_WIDTH_DIP + 400.0;
+        assert_eq!(
+            sidebar_width_from_pointer(999.0, narrow),
+            400.0,
+            "the client-derived cap wins over the fixed maximum"
+        );
+
+        // A client too narrow to hold the terminal at all floors both bounds at
+        // the minimum, so the sidebar cannot shrink below it.
+        assert_eq!(
+            sidebar_width_from_pointer(999.0, 100.0),
+            SIDEBAR_MIN_WIDTH_DIP,
+            "a cramped client still keeps the minimum sidebar"
+        );
+        assert_eq!(
+            sidebar_width_from_pointer(-50.0, wide),
+            SIDEBAR_MIN_WIDTH_DIP,
+            "a negative pointer clamps to the minimum"
+        );
+    }
 }
