@@ -198,12 +198,13 @@ pub struct VisibleWindow {
     pub truncated: bool,
 }
 
-/// The painter's own width rule, so the measurement here and the advance
-/// there cannot disagree: a double-width character owns two cells.
 /// Cells one character occupies in the fixed grid: a double-width character
-/// owns two, a structural soft break owns none, everything else one. The single
-/// definition of that rule — the painter, the IME preedit and the composer's
-/// own measurements all agree only because they call this and not a local copy.
+/// owns two, a structural soft break owns none, everything else one.
+///
+/// This is the painter's own width rule, so the measurement here and the advance
+/// there cannot disagree. It is the single definition of that rule — the
+/// painter, the IME preedit and the composer's own measurements agree only
+/// because they call this and not a local copy.
 pub fn character_cells(character: char) -> usize {
     // Line-oriented callers slice before a newline. A structural soft break
     // has no horizontal width if a general measurement caller encounters it.
