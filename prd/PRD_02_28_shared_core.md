@@ -88,13 +88,24 @@ the dependency's `test` cfg — so a test-only helper simply disappears. Every
   negative, so callers cannot treat a non-negative height as free, and a thumb
   at the live end rests on the track's bottom edge, so there is deliberately no
   `TrackBelow` region to hit there. Both are now asserted.
-- [ ] move the remaining leaf helpers MiniCon needs out of `agenterm-ui-core`
-  into this crate: the numeric rounding shims.
+- [x] move the numeric rounding shims out of `agenterm-platform` into this
+  crate. `minicon-core::numeric` now owns `round_f32`, `round_f64`, `ceil_f32`
+  and `trunc_f32`, and all twenty call sites in `font`, `main`, `palette`,
+  `raster_surface` and `ui` use them from here. This one mattered more than the
+  others: the shims exist to avoid a platform C runtime math import, so the
+  crate that forbids platform dependencies is their natural home, and while they
+  lived in `agenterm-platform` the product could not have dropped that dependency
+  for geometry alone. The moved code is identical, verified by comparing the
+  bodies rather than by reading them.
 - [ ] `workspace`, `session_store`, `ui` and `palette` then follow, because the
-  single helper each was waiting on is here.
+  single helper each was waiting on is here: `workspace` needed tree depths,
+  and `ui` and `palette` needed the rounding shims.
 - [ ] `agenterm` depends on `minicon-core` for those helpers. This is the
   dependency inversion the README describes, proved on leaves rather than on
   the terminal engine.
+
+Stage 2's leaf moves are therefore done, and the successors above are scheduled
+rather than assumed.
 
 The value is not line count. It is that the inversion gets tested on code where
 being wrong is cheap, before it is attempted on `pty` / `font` / `ime`, where

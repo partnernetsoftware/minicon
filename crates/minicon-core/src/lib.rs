@@ -26,6 +26,7 @@
 
 pub mod composer;
 pub mod json;
+pub mod numeric;
 pub mod scrollbar;
 pub mod tree;
 

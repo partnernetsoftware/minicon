@@ -1364,9 +1364,9 @@ impl ConApp {
     fn configure_host_ui(session: &mut ConTerminal, scale: f64, sidebar_width_logical: f64) {
         let scale = scale.max(1.0);
         session.set_content_insets(
-            agenterm_platform::numeric::round_f64(sidebar_width_logical * scale) as u32,
+            minicon_core::numeric::round_f64(sidebar_width_logical * scale) as u32,
             0,
-            agenterm_platform::numeric::round_f64(ui::COMPOSER_HEIGHT_DIP * scale) as u32,
+            minicon_core::numeric::round_f64(ui::COMPOSER_HEIGHT_DIP * scale) as u32,
         );
     }
 
@@ -1947,8 +1947,8 @@ impl ConApp {
         let line_height = font::cell_metrics(composer_font_size).height.max(1);
         let rows = (layout.composer_input.height.saturating_sub(8) / line_height).max(1) as usize;
         let lines = composer::visible_line_window(&self.composer.text, self.composer.caret, rows);
-        let physical_x = agenterm_platform::numeric::round_f64(position.x * scale) as u32;
-        let physical_y = agenterm_platform::numeric::round_f64(position.y * scale) as u32;
+        let physical_x = minicon_core::numeric::round_f64(position.x * scale) as u32;
+        let physical_y = minicon_core::numeric::round_f64(position.y * scale) as u32;
         let clicked_row = physical_y
             .saturating_sub(layout.composer_input.y.saturating_add(4))
             .checked_div(line_height)
@@ -3886,7 +3886,7 @@ impl ConTerminal {
     /// (Re)computes physical cell metrics from the logical font size and scale.
     fn recompute_metrics(&mut self, scale: f64) {
         self.font_size_px =
-            agenterm_platform::numeric::round_f64(self.font_size_logical * scale).max(8.0) as u16;
+            minicon_core::numeric::round_f64(self.font_size_logical * scale).max(8.0) as u16;
         let m = font::cell_metrics(self.font_size_px);
         self.cell_w = m.width.max(1);
         self.cell_h = m.height.max(1);
@@ -4452,8 +4452,8 @@ impl ConTerminal {
         let scale = self.scale;
         let physical = |position: &LogicalPoint| {
             (
-                agenterm_platform::numeric::round_f64(position.x * scale) as i32,
-                agenterm_platform::numeric::round_f64(position.y * scale) as i32,
+                minicon_core::numeric::round_f64(position.x * scale) as i32,
+                minicon_core::numeric::round_f64(position.y * scale) as i32,
             )
         };
         match event {
@@ -4711,7 +4711,7 @@ impl ConTerminal {
             // crash tied to repeated cumulative resizes means replaying
             // that shape, not collapsing it into a single jump.
             let before = self.font_size_logical;
-            let count = agenterm_platform::numeric::round_f32(notches.abs()).max(1.0) as usize;
+            let count = minicon_core::numeric::round_f32(notches.abs()).max(1.0) as usize;
             for _ in 0..count.min(64) {
                 self.zoom_font(window, notches > 0.0);
             }
@@ -4940,7 +4940,7 @@ impl ConTerminal {
         position: Option<LogicalPoint>,
     ) -> std::io::Result<WheelOutcome> {
         let up = notches > 0.0;
-        let count = (agenterm_platform::numeric::round_f32(notches.abs()) as usize).clamp(1, 32);
+        let count = (minicon_core::numeric::round_f32(notches.abs()) as usize).clamp(1, 32);
         let signed_count = if up { count as i16 } else { -(count as i16) };
 
         // An application that grabbed the mouse gets buttons 64/65.
@@ -5380,7 +5380,7 @@ impl ConTerminal {
                         _ => 0.0,
                     };
                     self.wheel_accumulator += lines;
-                    let whole = agenterm_platform::numeric::trunc_f32(self.wheel_accumulator);
+                    let whole = minicon_core::numeric::trunc_f32(self.wheel_accumulator);
                     self.wheel_accumulator -= whole;
                     if whole != 0.0 {
                         let _ = self.handle_wheel(whole, &modifiers, position);
@@ -5806,10 +5806,10 @@ impl PixelWindowApplication for ConApp {
             ) {
                 let rows = match delta {
                     WheelDelta::Lines { y, .. } => {
-                        agenterm_platform::numeric::round_f32(*y) as isize
+                        minicon_core::numeric::round_f32(*y) as isize
                     }
                     WheelDelta::LogicalPixels { y, .. } => {
-                        agenterm_platform::numeric::round_f64(*y / ui::TREE_ROW_HEIGHT_DIP) as isize
+                        minicon_core::numeric::round_f64(*y / ui::TREE_ROW_HEIGHT_DIP) as isize
                     }
                     _ => 0,
                 };
@@ -6359,7 +6359,7 @@ const BUTTON_HINT_SIZE_PX: u16 = 11;
 
 fn scaled_host_ui_font(nominal: u16, logical_font_size: f64, display_scale: f64) -> u16 {
     let display_scale = display_scale.clamp(1.0, 4.0);
-    agenterm_platform::numeric::round_f64(
+    minicon_core::numeric::round_f64(
         f64::from(nominal) * logical_font_size / DEFAULT_FONT_PX * display_scale,
     )
     // Layout dimensions are already expressed as DIPs multiplied by the
@@ -6458,7 +6458,7 @@ fn paint_help_panel(
     font_size_px: u16,
 ) {
     let dip =
-        |value: f64| agenterm_platform::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
+        |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
     let available_width = width.saturating_sub(layout.sidebar.width);
     let panel_width = dip(430.0).min(available_width.saturating_sub(dip(32.0)));
     let panel_height = dip(286.0).min(height.saturating_sub(dip(32.0)));
@@ -6547,7 +6547,7 @@ fn paint_header_icon_button(
     scale: f64,
 ) {
     let stroke =
-        agenterm_platform::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
+        minicon_core::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
     let inset = stroke.saturating_mul(3);
     if selected {
         surface.fill_rect(
@@ -8232,7 +8232,7 @@ mod tests {
         session.cols = 120;
         session.rows = 40;
         assert!(app.detach_session(only));
-        let mut reopened = app.session_seed.create_session();
+        let reopened = app.session_seed.create_session();
         assert_eq!(reopened.cols, 120, "the next tab inherits the closed size");
         assert_eq!(reopened.rows, 40);
     }

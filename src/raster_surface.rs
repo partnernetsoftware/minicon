@@ -115,7 +115,7 @@ impl<'a> Surface<'a> {
             let slant = if shear == 0.0 {
                 0
             } else {
-                agenterm_platform::numeric::round_f32((clip_y1 - py) as f32 * shear) as i64
+                minicon_core::numeric::round_f32((clip_y1 - py) as f32 * shear) as i64
             };
             let row_start_x = start_x + slant;
             let source_x_start = (clip_x0 - row_start_x).max(0).min(i64::from(u32::MAX)) as u32;

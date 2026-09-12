@@ -32,7 +32,7 @@ pub fn blend(from: Rgb, to: Rgb, amount: f32) -> Rgb {
         let a = f32::from(a);
         let b = f32::from(b);
         clamp_f32(
-            agenterm_platform::numeric::round_f32(a + (b - a) * amount),
+            minicon_core::numeric::round_f32(a + (b - a) * amount),
             0.0,
             255.0,
         ) as u8
