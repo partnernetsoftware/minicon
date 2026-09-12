@@ -1259,4 +1259,78 @@ mod tests {
             "a negative pointer clamps to the minimum"
         );
     }
+
+    /// The drag path draws a thumb at the offset's position and then reads a
+    /// dragged thumb position back into an offset, so the two must be inverses.
+    /// Round-trip every offset: place the thumb for it, feed that top back, and
+    /// require the same offset within the rounding the geometry implies.
+    #[test]
+    fn dragging_a_thumb_round_trips_to_the_offset_it_was_drawn_from() {
+        use agenterm_ui_core::{ScrollbarGeometry, scrollback_for_thumb_top};
+        let view = viewport(1.0, 24, 96);
+        for maximum in [0usize, 1, 7, 100, 5000] {
+            let geometry: ScrollbarGeometry = terminal_scrollbar_geometry(view, 0, maximum);
+            let travel = geometry.track.height() - geometry.thumb.height();
+            for offset in 0..=maximum.min(200) {
+                let drawn = terminal_scrollbar_geometry(view, offset, maximum);
+                let back = scrollback_for_thumb_top(geometry, drawn.thumb.top, maximum);
+                if maximum == 0 || travel <= 0 {
+                    assert_eq!(back, 0, "no travel means no scrollback");
+                    continue;
+                }
+                // One pixel of travel can only resolve to a band of offsets, so
+                // the round trip must land within that band, never wildly off.
+                let band = (maximum as i64 + travel as i64 - 1) / travel as i64;
+                let delta = (back as i64 - offset as i64).abs();
+                assert!(
+                    delta <= band,
+                    "offset {offset} of {maximum} round-tripped to {back} (band {band})"
+                );
+            }
+
+            // The round trip is only meaningful if the drawing actually moves:
+            // with travel the two extremes must differ, so an offset cannot be
+            // "recovered" merely because every drag reports the same position.
+            if maximum > 0 && travel > 0 {
+                let top = terminal_scrollbar_geometry(view, maximum, maximum)
+                    .thumb
+                    .top;
+                let bottom = terminal_scrollbar_geometry(view, 0, maximum).thumb.top;
+                assert!(
+                    top < bottom,
+                    "maximum {maximum} must place the thumb above offset 0: {top} vs {bottom}"
+                );
+                assert_eq!(
+                    scrollback_for_thumb_top(geometry, top, maximum),
+                    maximum,
+                    "the drawn top must read back as the maximum offset"
+                );
+            }
+        }
+    }
+
+    /// Dragging to either end lands at the ends: the top of the track is offset
+    /// `maximum` and the bottom is `0`, and a drag past either edge clamps there
+    /// instead of producing an out-of-range scrollback.
+    #[test]
+    fn dragging_to_the_ends_reaches_the_extremes_and_clamps() {
+        use agenterm_ui_core::scrollback_for_thumb_top;
+        let view = viewport(1.0, 24, 96);
+        let geometry = terminal_scrollbar_geometry(view, 0, 100);
+        assert_eq!(
+            scrollback_for_thumb_top(geometry, geometry.track.top, 100),
+            100,
+            "the top of the track is the oldest scrollback"
+        );
+        assert_eq!(
+            scrollback_for_thumb_top(geometry, geometry.track.bottom, 100),
+            0,
+            "dragging past the bottom clamps to the live view"
+        );
+        assert_eq!(
+            scrollback_for_thumb_top(geometry, geometry.track.top - 500, 100),
+            100,
+            "dragging above the track clamps to the oldest"
+        );
+    }
 }
