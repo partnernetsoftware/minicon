@@ -1366,6 +1366,73 @@ mod native_endpoint_tests {
         }
     }
 
+    /// The reply slot answers exactly once: a second `send` returns the value
+    /// it was handed instead of overwriting the first, and `recv_timeout`
+    /// takes the value so a second receive cannot read it again. A caller that
+    /// relied on either would see a replayed or lost mutation.
+    #[test]
+    fn a_reply_is_delivered_exactly_once() {
+        let (sender, receiver) = reply_channel();
+        let first = Ok(json::object(vec![("n", 1.into())]));
+        assert!(sender.send(first.clone()).is_ok(), "the first send wins");
+
+        // A second send is refused and hands the value back, leaving the first
+        // in place — a mutation must never be answered twice.
+        let second = Ok(json::object(vec![("n", 2.into())]));
+        assert_eq!(
+            sender.send(second.clone()),
+            Err(second),
+            "the second is refused"
+        );
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the first reply arrives");
+        assert_eq!(received, first, "the first reply, not the refused second");
+
+        // The value is consumed: a second receive times out rather than
+        // replaying it.
+        assert!(
+            receiver.recv_timeout(Duration::from_millis(20)).is_err(),
+            "the reply must not be delivered twice"
+        );
+    }
+
+    /// An error reply is delivered like any other, so a failed command is still
+    /// answered exactly once rather than leaving the caller to time out.
+    #[test]
+    fn an_error_reply_is_also_delivered_once() {
+        let (sender, receiver) = reply_channel();
+        assert!(sender.send(Err("boom".to_owned())).is_ok());
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("the error arrives"),
+            Err("boom".to_owned())
+        );
+    }
+
+    /// Dropping the sender wakes a waiting receiver instead of leaving it to
+    /// burn the whole timeout: the wait predicate watches `sender_alive`, so a
+    /// request whose owner vanished is reported promptly.
+    #[test]
+    fn dropping_the_sender_wakes_a_waiting_receiver() {
+        let (sender, receiver) = reply_channel();
+        let start = std::time::Instant::now();
+        let waiter = std::thread::spawn(move || {
+            // A long timeout: only the drop can end this wait early.
+            receiver.recv_timeout(Duration::from_secs(30))
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        drop(sender);
+        let result = waiter.join().expect("the waiter thread finishes");
+        assert!(result.is_err(), "a dropped sender yields no reply");
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "the drop must wake the receiver, not let it time out"
+        );
+    }
+
     #[test]
     fn request_id_round_trip_preserves_a_mutation_for_safe_reply_replay() {
         let id = RequestId(0x1234_5678_9abc_def0_1357_2468_ace0_bdf1);
