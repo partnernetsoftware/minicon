@@ -118,54 +118,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The receipt is the same shape `six-cell-qualify.sh` writes, with one
-          # PASS stage per cell: every cell built and staged above, and the
-          # packaging step refuses a receipt containing FAIL.
-          python3 - "${{ env.identity }}" "${{ env.build_root }}" <<'PY'
-          import json, subprocess, sys
-
-          identity, build_root = sys.argv[1], sys.argv[2]
-          sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-          cells = [
-              "osx-aarch64", "osx-x86_64", "win-x86_64",
-              "win-aarch64", "lnx-x86_64", "lnx-aarch64",
-          ]
-          receipt = {
-              "schema_version": 1,
-              "product": "minicon",
-              "source_sha": sha,
-              "source_dirty": False,
-              "source_tree_sha256": identity,
-              "build_root": build_root,
-              "stages": [
-                  {
-                      "cell": cell,
-                      "stage": "native-build",
-                      "status": "PASS",
-                      "duration_seconds": 0,
-                      "log": None,
-                      "detail": "built and staged by the six-grid cloud build workflow",
-                  }
-                  for cell in cells
-              ],
-              "artifacts": [],
-          }
-          receipt["summary"] = {
-              key: sum(stage["status"] == key for stage in receipt["stages"])
-              for key in ("PASS", "FAIL", "BLOCKED")
-          }
-          with open("target-six/receipt.json", "w", encoding="utf-8") as handle:
-              json.dump(receipt, handle, indent=2)
-              handle.write("\n")
-          print(json.dumps(receipt["summary"], sort_keys=True))
-          PY
+          # The receipt is the shape `six-cell-qualify.sh` writes, produced by
+          # the shared writer so the workflow holds no inline Python. It fails
+          # for any cell missing from the assembly, which stops the publish
+          # before a partial body can reach the registry.
+          python3 scripts/write-six-grid-receipt.py --build-root "$BUILD_ROOT"
+        env:
+          BUILD_ROOT: ${{ env.build_root }}
 
       - name: Package the six-grid runtime
         shell: bash
         run: python3 scripts/package-six-grid-runtime.py
 
-      - name: Publish the index
+      - name: Publish the index and dispatch the runtime
         shell: bash
         env:
           PACKAGE: ${{ inputs.package }}
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USER: ${{ github.actor }}
         run: bash scripts/publish-six-grid-runtime.sh "$PACKAGE" test

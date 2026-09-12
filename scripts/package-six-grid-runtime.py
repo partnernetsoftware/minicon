@@ -14,6 +14,7 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import sys
 from pathlib import Path
 
 
@@ -207,7 +208,7 @@ def main() -> None:
 
     repo = Path(__file__).resolve().parent.parent
     subprocess.run(
-        ["python3", str(repo / "scripts" / "cleanup-build-state.py"), "--apply", "--scope", "cloud"],
+        [sys.executable, str(repo / "scripts" / "cleanup-build-state.py"), "--apply", "--scope", "cloud"],
         cwd=repo,
         check=True,
     )
@@ -221,7 +222,7 @@ def main() -> None:
     if any(stage["status"] == "FAIL" for stage in receipt.get("stages", [])):
         raise SystemExit("refusing to package a build receipt containing FAIL")
     current_state = json.loads(subprocess.check_output(
-        ["python3", str(repo / "scripts" / "source-fingerprint.py")], cwd=repo, text=True
+        [sys.executable, str(repo / "scripts" / "source-fingerprint.py")], cwd=repo, text=True
     ))
     if current_state.get("sha256") != identity and not args.allow_dirty:
         raise SystemExit("build receipt does not represent the current source tree; rerun scripts/six-cell-qualify.sh")
