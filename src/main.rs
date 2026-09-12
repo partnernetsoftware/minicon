@@ -697,6 +697,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+I       Focus the external input area
   Enter              Insert a soft newline in the input area
   Ctrl+O             Send the complete input-area draft
+  Up / Down          Recall what you sent before, in the input area
   Click a tab to select it. Closing the final tab leaves the greeting page.
 
   -e, --command  Run PROGRAM instead of the default shell. Everything after

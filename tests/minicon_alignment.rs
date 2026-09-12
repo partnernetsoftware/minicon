@@ -696,3 +696,88 @@ fn the_narrow_window_limit_is_quoted_consistently() {
         }
     }
 }
+
+/// The shortcut list appears twice: in `minicon --help` and as the README's key
+/// table. They are prose, so one can gain a chord the other lacks and no
+/// behaviour test notices — which is how the README came to document `Up`/`Down`
+/// recall that the help text never listed. Compare the chord names as sets after
+/// stripping the formatting each uses.
+#[test]
+fn the_help_and_readme_list_the_same_shortcuts() {
+    let root = repo_root();
+    let source = fs::read_to_string(root.join("src/main.rs")).expect("read main.rs");
+    let readme = fs::read_to_string(root.join("README.md")).expect("read README");
+
+    // The help block: lines shaped `<chord>  <description>` between the
+    // "Keys use names such as" paragraph and the trailing click sentence.
+    let start = source
+        .find("Keys use names such as Enter")
+        .expect("the help documents key naming");
+    let block = &source[start..];
+    let end = block
+        .find("Click a tab to select it")
+        .expect("the help block ends with the click sentence");
+    let block = &block[..end];
+    let mut help: BTreeSet<String> = BTreeSet::new();
+    for line in block.lines() {
+        let Some(chord) = line.split_whitespace().next() else {
+            continue;
+        };
+        // A chord is either a modifier form or a bare named key that the help
+        // uses as a shortcut (the navigation keys are named without modifiers).
+        if chord.contains('+') || matches!(chord, "Enter" | "Escape" | "Tab" | "Up") {
+            help.insert(chord.to_owned());
+        }
+    }
+
+    // The README table: first cell of each row, minus the backticks and with
+    // the combined forms kept as they are written.
+    let table = readme
+        .split_once("| Key |")
+        .expect("the README has a key table")
+        .1;
+    let table = table.split("\n\n").next().unwrap_or(table);
+    let mut documented: BTreeSet<String> = BTreeSet::new();
+    for line in table.lines() {
+        let Some(cell) = line.strip_prefix('|') else {
+            continue;
+        };
+        let Some((cell, _)) = cell.split_once('|') else {
+            continue;
+        };
+        let cell = cell.trim().replace('`', "");
+        if cell == "Key" || cell.starts_with('-') || cell.is_empty() {
+            continue;
+        }
+        // A combined row such as `Ctrl+Shift+[` / `]` describes two chords of
+        // one family. Key the row by its first chord so both spellings of the
+        // bracket pair reduce to the same token.
+        let first = cell.split_whitespace().next().unwrap_or(&cell);
+        documented.insert(first.to_owned());
+    }
+
+    assert!(!help.is_empty(), "no chords were parsed from the help text");
+    assert!(
+        !documented.is_empty(),
+        "no chords were parsed from the README table"
+    );
+    // `Up` / `Down` is one README row for two keys; the help lists it the same
+    // way, so compare after collapsing whitespace around the slash.
+    let collapse = |set: &BTreeSet<String>| -> BTreeSet<String> {
+        set.iter()
+            .map(|chord| chord.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect()
+    };
+    let help = collapse(&help);
+    let documented = collapse(&documented);
+    let only_help: Vec<&String> = help.difference(&documented).collect();
+    let only_readme: Vec<&String> = documented.difference(&help).collect();
+    assert!(
+        only_help.is_empty(),
+        "--help lists shortcuts the README does not: {only_help:?}"
+    );
+    assert!(
+        only_readme.is_empty(),
+        "the README lists shortcuts --help does not: {only_readme:?}"
+    );
+}
