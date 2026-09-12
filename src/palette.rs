@@ -19,6 +19,12 @@ impl Rgb {
 ///
 /// Used for the dim attribute, which is expressed as a colour blended toward
 /// the background rather than a separate palette entry.
+///
+/// A finite `amount` outside `0.0..=1.0` is clamped to an endpoint. A
+/// non-finite `amount` is **not** guarded: both clamps compare with `<`/`>`, so
+/// NaN passes through and the `u8` cast saturates each channel to 0 (black).
+/// The one caller passes a constant fraction, so this is unreachable today;
+/// a future caller computing the fraction must not feed it a NaN.
 #[inline]
 pub fn blend(from: Rgb, to: Rgb, amount: f32) -> Rgb {
     let amount = clamp_f32(amount, 0.0, 1.0);
@@ -153,5 +159,48 @@ mod tests {
     fn xrgb_pixel_packs_channels_correctly() {
         assert_eq!(Rgb(0xFF, 0x00, 0x00).to_xrgb(), 0x00FF_0000);
         assert_eq!(Rgb(0x12, 0x34, 0x56).to_xrgb(), 0x0012_3456);
+    }
+
+    /// `blend` is the dim primitive: the whole colour moves toward the
+    /// background by a fixed fraction. Pin the endpoints, the midpoint, and
+    /// that an out-of-range `amount` is clamped rather than extrapolated (a
+    /// negative amount would otherwise push channels past the endpoints and
+    /// wrap when cast to `u8`).
+    #[test]
+    fn blend_moves_between_endpoints_and_clamps_its_amount() {
+        let from = Rgb(0, 0, 0);
+        let to = Rgb(255, 255, 255);
+        assert_eq!(blend(from, to, 0.0), from, "0.0 is the source colour");
+        assert_eq!(blend(from, to, 1.0), to, "1.0 is the target colour");
+        assert_eq!(blend(from, to, 0.5), Rgb(128, 128, 128), "halfway");
+
+        // Finite out-of-range amounts clamp to the endpoints. The inner
+        // 0..255 clamp already catches these, so the assertions document the
+        // contract rather than pin the outer clamp specifically.
+        assert_eq!(blend(from, to, -1.0), from);
+        assert_eq!(blend(from, to, 2.0), to);
+
+        // Identical endpoints are fixed points at any amount.
+        let grey = Rgb(17, 17, 17);
+        for amount in [0.0, 0.25, 0.55, 1.0] {
+            assert_eq!(blend(grey, grey, amount), grey, "amount {amount}");
+        }
+
+        // Each channel moves independently, so a mixed pair stays in range.
+        let mixed = blend(Rgb(0, 128, 255), Rgb(255, 128, 0), 0.5);
+        assert_eq!(mixed, Rgb(128, 128, 128));
+
+        // A non-finite amount is **not** clamped: `clamp_f32` compares with
+        // `<`/`>`, both false for NaN, so NaN flows into the `u8` cast, which
+        // saturates it to 0 and the colour becomes black. Pin that honestly
+        // rather than claim a guard that is not there. `blend`'s only caller
+        // passes the constant 0.55, so this is unreachable today; the test
+        // exists so a future non-constant amount sees the real behaviour.
+        let source = Rgb(10, 20, 30);
+        assert_eq!(
+            blend(source, to, f32::NAN),
+            Rgb(0, 0, 0),
+            "a NaN amount currently saturates each channel to 0"
+        );
     }
 }
