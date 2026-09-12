@@ -162,3 +162,115 @@ impl<'a> Surface<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make<'a>(pixels: &'a mut [u32], w: u32, h: u32, clip: PixelRect) -> Surface<'a> {
+        Surface::with_clip(pixels, w, h, clip)
+    }
+
+    /// `with_clip` must intersect the requested clip with the frame, so a clip
+    /// larger than the buffer cannot let a fill run past it.
+    #[test]
+    fn the_surface_clip_is_intersected_with_the_frame() {
+        let mut pixels = vec![0u32; 4 * 4];
+        let grew = make(&mut pixels, 4, 4, PixelRect::from_xywh(0, 0, 100, 100));
+        assert_eq!(grew.clip, PixelRect::full_frame(4, 4));
+
+        let mut pixels = vec![0u32; 4 * 4];
+        let partial = make(&mut pixels, 4, 4, PixelRect::from_xywh(1, 1, 2, 2));
+        assert_eq!(partial.clip, PixelRect::from_xywh(1, 1, 2, 2));
+    }
+
+    /// `clipped_rect` intersects the request with the frame and the clip, and
+    /// collapses an out-of-clip request to an empty rect (`right <= left`)
+    /// rather than a malformed one with `right < left`.
+    #[test]
+    fn clipped_rect_intersects_and_never_inverts() {
+        let mut pixels = vec![0u32; 8 * 8];
+        let surface = make(&mut pixels, 8, 8, PixelRect::from_xywh(2, 2, 4, 4));
+
+        // Inside the clip: unchanged.
+        assert_eq!(
+            surface.clipped_rect(3, 3, 2, 2),
+            PixelRect::from_xywh(3, 3, 2, 2)
+        );
+        // Straddling the clip's left edge: trimmed to the clip.
+        assert_eq!(
+            surface.clipped_rect(0, 0, 4, 4),
+            PixelRect::from_xywh(2, 2, 2, 2)
+        );
+        // Entirely left of the clip: empty, and still a valid half-open rect.
+        let outside = surface.clipped_rect(0, 0, 1, 1);
+        assert!(
+            outside.is_empty(),
+            "an out-of-clip rect must be empty: {outside:?}"
+        );
+        assert!(outside.right >= outside.left && outside.bottom >= outside.top);
+    }
+
+    #[test]
+    fn intersects_rect_reports_only_overlap() {
+        let mut pixels = vec![0u32; 8 * 8];
+        let surface = make(&mut pixels, 8, 8, PixelRect::from_xywh(4, 4, 4, 4));
+        assert!(surface.intersects_rect(4, 4, 1, 1));
+        assert!(surface.intersects_rect(3, 3, 4, 4), "an overlap counts");
+        assert!(
+            !surface.intersects_rect(0, 0, 4, 4),
+            "touching is not overlapping"
+        );
+        assert!(
+            !surface.intersects_rect(20, 20, 1, 1),
+            "past the frame is empty"
+        );
+        assert!(!surface.intersects_rect(0, 0, 0, 0), "a zero rect is empty");
+    }
+
+    /// A fill outside the clip must write nothing; a fill straddling the clip
+    /// must touch only the clipped pixels, leaving the rest as the sentinel.
+    #[test]
+    fn fill_rect_writes_only_inside_the_clip() {
+        const SENTINEL: u32 = 0x00AB_CDEF;
+        const INK: u32 = 0x0011_2233;
+
+        let mut pixels = vec![SENTINEL; 4 * 4];
+        let mut surface = make(&mut pixels, 4, 4, PixelRect::from_xywh(1, 1, 2, 2));
+        surface.fill_rect(0, 0, 4, 4, INK);
+        // The fill request covers the frame, but the clip is 2x2 at (1,1), so
+        // exactly those four pixels are inked and the rest keep the sentinel.
+        for y in 0..4 {
+            for x in 0..4 {
+                let inside = (1..3).contains(&x) && (1..3).contains(&y);
+                assert_eq!(
+                    pixels[y * 4 + x],
+                    if inside { INK } else { SENTINEL },
+                    "pixel ({x},{y}) is {} the clip",
+                    if inside { "inside" } else { "outside" }
+                );
+            }
+        }
+
+        let mut pixels = vec![SENTINEL; 4 * 4];
+        let mut surface = make(&mut pixels, 4, 4, PixelRect::from_xywh(1, 1, 2, 2));
+        surface.fill_rect(0, 0, 1, 1, INK);
+        assert_eq!(
+            pixels,
+            vec![SENTINEL; 16],
+            "a fill outside the clip writes nothing"
+        );
+
+        let mut pixels = vec![SENTINEL; 4 * 4];
+        let mut surface = make(&mut pixels, 4, 4, PixelRect::from_xywh(1, 1, 2, 2));
+        surface.fill_rect(1, 1, 1, 1, INK);
+        // Only the top-left pixel of the 2x2 clip is inked.
+        assert_eq!(pixels[0], SENTINEL);
+        assert_eq!(pixels[1 * 4 + 1], INK);
+        assert_eq!(
+            pixels.iter().filter(|pixel| **pixel == INK).count(),
+            1,
+            "exactly one pixel must be inked"
+        );
+    }
+}
