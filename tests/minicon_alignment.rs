@@ -427,7 +427,12 @@ fn referenced_repository_paths_exist() {
             }
             for token in line.split(|c: char| c.is_whitespace() || "\"'`()<>".contains(c)) {
                 let token = token.trim_end_matches(|c: char| ",;:.".contains(c));
-                if !prefixes.iter().any(|prefix| token.starts_with(prefix)) {
+                // A markdown link is a claim about a repository file whether or
+                // not it sits under one of the scanned directories: `PRD.md` and
+                // `plan/*.md` are as breakable as `scripts/*.sh`. A `~`-relative
+                // path points outside this clone and is not a claim about it.
+                let markdown = token.ends_with(".md") && token != ".md" && !token.starts_with('~');
+                if !markdown && !prefixes.iter().any(|prefix| token.starts_with(prefix)) {
                     continue;
                 }
                 if !suffixes.iter().any(|suffix| token.ends_with(suffix)) {
@@ -447,7 +452,15 @@ fn referenced_repository_paths_exist() {
                 if token.contains('*') {
                     continue;
                 }
-                if !root.join(token).exists() {
+                // A link may be written relative to the repository root or to
+                // the file that contains it; accept either, so a document's own
+                // sibling links are not reported as dead.
+                let from_root = root.join(token).exists();
+                let from_file = source
+                    .parent()
+                    .map(|dir| dir.join(token).exists())
+                    .unwrap_or(false);
+                if !from_root && !from_file {
                     missing.insert(format!("{}: {}", source.display(), token));
                 }
             }

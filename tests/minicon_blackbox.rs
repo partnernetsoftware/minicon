@@ -182,9 +182,9 @@ fn interactive_shell_args(journey: &Path) -> Vec<String> {
 
 /// Locates a real `less.exe` (bundled with Git for Windows) if one is
 /// installed, for tests that need a genuine raw-mode/curses-style TUI
-/// rather than a cooked-mode shell — closing the gap plan-v0.1.16.md §C
-/// flagged: "no test against a real TUI exists because no dependency was
-/// found that installs reliably on this machine." `less` turns out to
+/// rather than a cooked-mode shell. A raw-mode TUI was the one program
+/// category with no black-box coverage, because no dependency was
+/// found that installs reliably on this machine. `less` turns out to
 /// already be exactly that dependency: Git for Windows ships it, and Git
 /// for Windows is a near-universal dev-machine prerequisite (this repo's
 /// own tooling assumes Git). Not on `PATH` for a plain `CreateProcess`
@@ -911,7 +911,7 @@ impl Drop for ConSession {
         // Best-effort: the process may have already exited on its own (the
         // child-exit tests rely on exactly that). TerminateProcess-style
         // kill does not run this process's own Drop chain for its PTY child,
-        // same caveat noted in plan/plan-v0.1.16.md — acceptable for a test
+        // an accepted caveat — acceptable for a test
         // teardown, not for a real session.
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -1738,8 +1738,8 @@ fn real_tui_less_scrolls_via_character_and_space_keys() {
     // Every other test in this file drives cmd.exe — a cooked-mode line
     // editor. `less` is a genuinely different animal: a raw/cbreak-mode
     // curses-style TUI that reads keys directly rather than through a line
-    // editor, which is exactly the category of program plan-v0.1.16.md §C
-    // says has zero black-box coverage. This proves character-key and
+    // editor — the program category that had zero black-box coverage. This
+    // proves character-key and
     // space-key forwarding (`forward_key` -> `write_pty`) reaches such a
     // program and it responds correctly — real integration evidence, not
     // just the encoder-level/single-process coverage that existed before.

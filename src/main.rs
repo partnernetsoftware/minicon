@@ -9,7 +9,7 @@
 //! crash inside most often dies during resize storms or VT-sequence floods, so
 //! resize is trailing-edge debounced, the PTY reader runs on its own thread
 //! (never blocking the render path), and the VT parser is the same one the
-//! product terminal already hardened. See `plan/plan-v0.1.16.md` §C.
+//! product terminal already hardened.
 
 // GUI subsystem: prevents conhost from attaching a console window.
 // Earlier this was omitted to work around cmd.exe exit(0), but that root
