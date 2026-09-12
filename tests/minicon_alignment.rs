@@ -417,22 +417,7 @@ fn referenced_repository_paths_exist() {
         ".ps1", ".sh", ".py", ".md", ".js", ".qjs", ".cmd", ".bat", ".c", ".rs",
     ];
     let mut missing = BTreeSet::new();
-    // The tracked names are the ones a Linux checkout sees; a path that only
-    // resolves case-insensitively is a claim this host cannot verify.
-    let tracked: Vec<String> = String::from_utf8(
-        Command::new("git")
-            .args(["-C"])
-            .arg(&root)
-            .args(["ls-files"])
-            .output()
-            .expect("run git ls-files")
-            .stdout,
-    )
-    .expect("git output is UTF-8")
-    .lines()
-    .map(str::to_owned)
-    .collect();
-    assert!(!tracked.is_empty(), "git ls-files returned nothing");
+    let tracked = tracked_files(&root);
     let mut mismatched = BTreeSet::new();
     for source in sources {
         let text = fs::read_to_string(&source).expect("read source");
@@ -590,6 +575,7 @@ fn walk_markdown(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn documentation_links_resolve() {
     let root = repo_root();
+    let tracked = tracked_files(&root);
     let docs = root.join("docs");
     let pages: Vec<PathBuf> = fs::read_dir(&docs)
         .expect("read docs")
@@ -648,6 +634,20 @@ fn documentation_links_resolve() {
             if !candidate.exists() {
                 broken.insert(format!("{page_name}: {target} does not exist"));
                 continue;
+            }
+            // The link resolves, but this filesystem may be case-insensitive:
+            // a wrong-case `href` would still 404 on a case-sensitive host. The
+            // pages are served from a checkout, so a file's spelling must match
+            // what git records. A directory target (`href="./"`) is tracked as
+            // its files, not as an entry of its own, so it is exempt.
+            if candidate.is_file()
+                && !tracked
+                    .iter()
+                    .any(|entry| normalize_path(&root.join(entry)) == normalize_path(&candidate))
+            {
+                broken.insert(format!(
+                    "{page_name}: {target} is spelled differently from the tracked file"
+                ));
             }
             // A cross-page anchor must land on an id in the target page.
             if let Some(fragment) = fragment {
@@ -972,4 +972,23 @@ fn normalize_path(path: &Path) -> PathBuf {
         }
     }
     normalised
+}
+
+/// Every path git tracks, with `/` separators. These are the names a
+/// case-sensitive checkout sees, so a link must be spelled as they are: this
+/// host's filesystem may resolve a wrong case that Linux CI would not.
+fn tracked_files(root: &Path) -> Vec<String> {
+    let output = Command::new("git")
+        .args(["-C"])
+        .arg(root)
+        .arg("ls-files")
+        .output()
+        .expect("run git ls-files");
+    let tracked: Vec<String> = String::from_utf8(output.stdout)
+        .expect("git output is UTF-8")
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert!(!tracked.is_empty(), "git ls-files returned nothing");
+    tracked
 }
