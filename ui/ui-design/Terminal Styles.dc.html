@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; }
+  a { color: #2f6f63; }
+  a:hover { color: #1d4a41; }
+</style>
+</helmet>
+
+<section style="padding: 28px 28px 36px; font-family: 'IBM Plex Sans', system-ui, sans-serif; border-bottom: 1px solid #cfccc5;">
+  <div style="max-width: 780px; margin-bottom: 20px;">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #7a766e; margin-bottom: 10px;">Turn 5 — 网格准星</div>
+    <h1 style="font-size: 27px; font-weight: 600; letter-spacing: -0.01em; color: #1f2124; margin: 0 0 8px;">鼠标所在的行与列，画出来也写出来</h1>
+    <p style="font-size: 14px; line-height: 1.6; color: #4a4d51; margin: 0; text-wrap: pretty;">把鼠标移进下面这块终端试试。准星严格吸附到字符格：竖线落在 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">col × 字宽</code>，横线落在 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">row × 行高</code>，字宽在挂载时用一段 50 字符实测，不猜。状态条右端常驻 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">L###:C###</code>，离开时显示 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">---</code> 而不是消失 —— 位置固定的读数才不会让状态条抖动。</p>
+  </div>
+
+  <div id="5a" style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #04180a; background: #7ee787; padding: 3px 7px;">5a</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">实时准星 · 可交互</span>
+      </div>
+      <div style="width: 640px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace;">
+        <div style="position: relative; overflow: hidden;">
+          <span ref="{{ probeRef }}" style="position: absolute; visibility: hidden; white-space: pre; font-size: 13px; font-family: 'JetBrains Mono', monospace;">00000000000000000000000000000000000000000000000000</span>
+          <div ref="{{ gridRef }}" onMouseMove="{{ onMove }}" onMouseLeave="{{ onLeave }}" style="padding: 12px; font-size: 13px; line-height: 20px; color: #c3d1dc; white-space: pre; position: relative; z-index: 2;"><span style="color: #68d8f0;">~/infra/api</span> <span style="color: #9baab8;">$</span> ./scripts/healthcheck --all --verbose
+<span style="color: #9baab8;">resolving 6 endpoints from inventory.yaml</span>
+<span style="color: #7ee787;">OK  </span>api        200  41ms   revision 7f3c2ab
+<span style="color: #7ee787;">OK  </span>worker     200  17ms   revision 7f3c2ab
+<span style="color: #7ee787;">OK  </span>postgres   200  63ms   primary, 2 replicas
+<span style="color: #f0c86b;">WARN</span>queue      200  812ms  depth 1420, rising
+<span style="color: #f2776b;">FAIL</span>cache      503  timeout after 2000ms
+<span style="color: #f2776b;">FAIL</span>edge-eu     -   no route to host
+<span style="color: #9baab8;">6 checked · 4 passing · 1 warning · 2 failing</span>
+<span style="color: #68d8f0;">~/infra/api</span> <span style="color: #9baab8;">$</span> <span style="color: #eef4f8;">redis-cli -h cache ping</span></div>
+          <sc-if value="{{ inside }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; top: 0; bottom: 0; width: 1px; background: {{ guide }}; opacity: 0.28; left: {{ vx }}; z-index: 1;"></div>
+          </sc-if>
+          <sc-if value="{{ inside }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; left: 0; right: 0; height: 1px; background: {{ guide }}; opacity: 0.28; top: {{ hy }}; z-index: 1;"></div>
+          </sc-if>
+          <sc-if value="{{ band }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; left: 0; right: 0; height: {{ bandH }}; background: #ffffff; opacity: 0.035; top: {{ hy }}; z-index: 1;"></div>
+          </sc-if>
+          <sc-if value="{{ band }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; top: 0; bottom: 0; width: {{ bandW }}; background: #ffffff; opacity: 0.035; left: {{ vx }}; z-index: 1;"></div>
+          </sc-if>
+        </div>
+        <div style="display: flex; align-items: center; border-top: 1px solid #2b3948; background: #111821; font-size: 11px; height: 26px; color: #9baab8;">
+          <span style="padding: 0 10px; color: #7ee787;">● connected</span>
+          <span style="padding: 0 10px;">ssh · 10.2.4.11</span>
+          <span style="padding: 0 10px; color: #f2776b; margin-left: auto;">2 errors</span>
+          <span style="padding: 0 10px; border-left: 1px solid #2b3948; color: #eef4f8; white-space: pre;">L{{ rowLabel }}:C{{ colLabel }}</span>
+          <span style="padding: 0 10px; border-left: 1px solid #2b3948;">⚙</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px; max-width: 320px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124;">实现要点</div>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">1 — 准星吸附到格子，不跟随像素。等宽网格的价值就在这里：鼠标停在哪个字符上是确定的，不是近似的。</p>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">2 — 线是 1px，透明度 0.28；另加一层 3.5% 白的行列高亮带，比纯线更容易在长行里追踪对齐关系。两者都可关。</p>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">3 — 读数用 <code style="font-family: 'JetBrains Mono', monospace;">L###:C###</code> 三位补零定宽，数字变化时状态条不重排。这一条和「无花哨动效」是同一个原则：视觉上不该有任何东西因为鼠标移动而位移。</p>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">4 — 行列从 1 起数，和 <code style="font-family: 'JetBrains Mono', monospace;">vt100</code> 的 CUP 坐标一致，便于对照 <code style="font-family: 'JetBrains Mono', monospace;">capture-pane</code> 输出定位。</p>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">5 — 每帧只重绘两条 1px 线，不触发文本重排；在 minicon 的光栅层就是两次 <code style="font-family: 'JetBrains Mono', monospace;">fill_rect</code>，比重画一行字便宜。</p>
+    </div>
+  </div>
+</section>
+
+<section style="padding: 28px 28px 36px; font-family: 'IBM Plex Sans', system-ui, sans-serif; border-bottom: 1px solid #cfccc5;">
+  <div style="max-width: 780px; margin-bottom: 20px;">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #7a766e; margin-bottom: 10px;">Turn 4 — 工具条放哪 + 设置入口</div>
+    <h1 style="font-size: 27px; font-weight: 600; letter-spacing: -0.01em; color: #1f2124; margin: 0 0 8px;">7 个按钮减到 2 个，其余下沉</h1>
+    <p style="font-size: 14px; line-height: 1.6; color: #4a4d51; margin: 0 0 10px; text-wrap: pretty;">现在别扭的根因不是位置，是<strong style="font-weight: 600;">频次混装</strong>：新建终端（每天几十次）和语言切换（一辈子一次）挤在同一条 24dip 工具条里，而且它挤占的是标签树的标题栏。拆开就不别扭了。</p>
+    <p style="font-size: 13px; line-height: 1.6; color: #6a6d71; margin: 0; text-wrap: pretty;">注意：你说的「顶部 server tabs 右边」在当前代码里不存在 —— minicon 的标签就是左侧那棵树，没有顶部标签条。4c 把它画出来了，代价一并写在下面。三套配色在这里可互换，下面统一用 2b。</p>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+    <div id="4a" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #04180a; background: #7ee787; padding: 3px 7px;">4a</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">侧栏头部只留两个</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #2f7d43;">推荐</span>
+      </div>
+      <div style="width: 500px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; color: #eef4f8;">
+        <div style="display: grid; grid-template-columns: 180px 1fr;">
+          <div style="border-right: 1px solid #2b3948; background: #0b1016;">
+            <div style="display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; border-bottom: 1px solid #2b3948;">
+              <div style="width: 26px; height: 26px; display: grid; place-items: center; font-size: 17px; color: #0b1016; background: #7ee787;">+</div>
+              <div style="font-size: 11px; color: #9baab8; letter-spacing: 0.08em;">TERMINALS</div>
+              <div style="width: 26px; height: 26px; display: grid; place-items: center; font-size: 14px; color: #9baab8; margin-left: auto;">⚙</div>
+            </div>
+            <div style="font-size: 12px; line-height: 30px; padding: 6px 0;">
+              <div style="padding: 0 10px; color: #9baab8;">▾ infra</div>
+              <div style="padding: 0 10px 0 20px; color: #eef4f8; background: #17212c; border-left: 2px solid #7ee787;">api</div>
+              <div style="padding: 0 10px 0 22px; color: #c3d1dc;">worker</div>
+              <div style="padding: 0 10px 0 22px; color: #c3d1dc;">cache</div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; min-height: 188px;">
+            <div style="flex: 1; padding: 10px 12px; font-size: 12px; line-height: 19px; color: #c3d1dc;">
+              <div><span style="color: #68d8f0;">~/infra/api</span> <span style="color: #9baab8;">$</span> ./scripts/healthcheck</div>
+              <div><span style="color: #7ee787; display: inline-block; width: 40px;">OK</span><span style="white-space: pre;">api        200</span></div>
+              <div><span style="color: #f2776b; display: inline-block; width: 40px;">FAIL</span><span style="white-space: pre;">cache      503</span></div>
+            </div>
+            <div style="border-top: 1px solid #2b3948; background: #111821; padding: 8px 12px; font-size: 12px; display: flex; gap: 8px;"><span style="color: #7ee787;">$</span><span>redis-cli ping</span></div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; border-top: 1px solid #2b3948; background: #111821; font-size: 11px; height: 26px;">
+          <span style="padding: 0 10px; color: #7ee787;">● connected</span>
+          <span style="padding: 0 10px; color: #9baab8;">ssh · 10.2.4.11</span>
+          <span style="padding: 0 10px; color: #f2776b; margin-left: auto;">1 error</span>
+          <span style="padding: 0 10px; color: #9baab8;">12:04</span>
+        </div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 500px;">头部只剩 <strong style="font-weight: 600;">＋ 新建</strong>（实心，唯一主操作）和最右的 <strong style="font-weight: 600;">⚙ 设置</strong>。帮助、语言、字号三组全部进设置面板。改动最小，且彻底消除窄侧栏裁切问题（2 个工具在 224dip 里绰绰有余）。</div>
+    </div>
+
+    <div id="4b" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">4b</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">环境类控件下沉状态条</span>
+      </div>
+      <div style="width: 500px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; color: #eef4f8;">
+        <div style="display: grid; grid-template-columns: 180px 1fr;">
+          <div style="border-right: 1px solid #2b3948; background: #0b1016;">
+            <div style="display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; border-bottom: 1px solid #2b3948;">
+              <div style="width: 26px; height: 26px; display: grid; place-items: center; font-size: 17px; color: #0b1016; background: #7ee787;">+</div>
+              <div style="font-size: 11px; color: #9baab8; letter-spacing: 0.08em;">TERMINALS</div>
+            </div>
+            <div style="font-size: 12px; line-height: 30px; padding: 6px 0;">
+              <div style="padding: 0 10px; color: #9baab8;">▾ infra</div>
+              <div style="padding: 0 10px 0 20px; color: #eef4f8; background: #17212c; border-left: 2px solid #7ee787;">api</div>
+              <div style="padding: 0 10px 0 22px; color: #c3d1dc;">worker</div>
+              <div style="padding: 0 10px 0 22px; color: #c3d1dc;">cache</div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; min-height: 188px;">
+            <div style="flex: 1; padding: 10px 12px; font-size: 12px; line-height: 19px; color: #c3d1dc;">
+              <div><span style="color: #68d8f0;">~/infra/api</span> <span style="color: #9baab8;">$</span> ./scripts/healthcheck</div>
+              <div><span style="color: #7ee787; display: inline-block; width: 40px;">OK</span><span style="white-space: pre;">api        200</span></div>
+              <div><span style="color: #f2776b; display: inline-block; width: 40px;">FAIL</span><span style="white-space: pre;">cache      503</span></div>
+            </div>
+            <div style="border-top: 1px solid #2b3948; background: #111821; padding: 8px 12px; font-size: 12px; display: flex; gap: 8px;"><span style="color: #7ee787;">$</span><span>redis-cli ping</span></div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; border-top: 1px solid #2b3948; background: #111821; font-size: 11px; height: 26px;">
+          <span style="padding: 0 10px; color: #7ee787;">● connected</span>
+          <span style="padding: 0 10px; color: #9baab8;">ssh · 10.2.4.11</span>
+          <span style="padding: 0 10px; color: #f2776b; margin-left: auto;">1 error</span>
+          <span style="display: flex; align-items: center; border-left: 1px solid #2b3948; height: 100%;">
+            <span style="padding: 0 8px; color: #9baab8;">中/En</span>
+            <span style="padding: 0 8px; color: #9baab8; border-left: 1px solid #2b3948;">100%</span>
+            <span style="padding: 0 8px; color: #9baab8; border-left: 1px solid #2b3948;">?</span>
+            <span style="padding: 0 8px; color: #eef4f8; border-left: 1px solid #2b3948; background: #17212c;">⚙</span>
+          </span>
+        </div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 500px;">状态条右端做成一排可点击的分段：语言、字号（点数字弹 −/100%/+）、帮助、设置。这是终端类工具的成熟惯例，低频控件离正文最远，但永远在。侧栏头部只剩新建。</div>
+    </div>
+
+    <div id="4c" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">4c</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">顶部标签条右侧</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8a3f2d;">代价最大</span>
+      </div>
+      <div style="width: 500px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; color: #eef4f8;">
+        <div style="display: flex; align-items: center; height: 32px; border-bottom: 1px solid #2b3948; background: #0b1016;">
+          <span style="padding: 0 12px; font-size: 12px; line-height: 31px; color: #eef4f8; background: #17212c; border-bottom: 2px solid #7ee787;">api</span>
+          <span style="padding: 0 12px; font-size: 12px; color: #9baab8;">worker</span>
+          <span style="padding: 0 12px; font-size: 12px; color: #9baab8;">cache</span>
+          <span style="padding: 0 10px; font-size: 15px; color: #9baab8;">+</span>
+          <span style="display: flex; align-items: center; margin-left: auto; height: 100%;">
+            <span style="padding: 0 9px; font-size: 12px; color: #9baab8;">中/En</span>
+            <span style="padding: 0 9px; font-size: 12px; color: #9baab8;">100%</span>
+            <span style="padding: 0 9px; font-size: 12px; color: #9baab8;">?</span>
+            <span style="padding: 0 10px; font-size: 13px; color: #eef4f8;">⚙</span>
+          </span>
+        </div>
+        <div style="display: grid; grid-template-columns: 180px 1fr;">
+          <div style="border-right: 1px solid #2b3948; background: #0b1016; font-size: 12px; line-height: 30px; padding: 6px 0; min-height: 156px;">
+            <div style="padding: 0 10px; color: #9baab8;">▾ infra</div>
+            <div style="padding: 0 10px 0 20px; color: #eef4f8; background: #17212c; border-left: 2px solid #7ee787;">api</div>
+            <div style="padding: 0 10px 0 22px; color: #c3d1dc;">worker</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="flex: 1; padding: 10px 12px; font-size: 12px; line-height: 19px; color: #c3d1dc;">
+              <div><span style="color: #68d8f0;">~/infra/api</span> <span style="color: #9baab8;">$</span> ./scripts/healthcheck</div>
+              <div><span style="color: #7ee787; display: inline-block; width: 40px;">OK</span><span style="white-space: pre;">api        200</span></div>
+            </div>
+            <div style="border-top: 1px solid #2b3948; background: #111821; padding: 8px 12px; font-size: 12px; display: flex; gap: 8px;"><span style="color: #7ee787;">$</span><span>redis-cli ping</span></div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; border-top: 1px solid #2b3948; background: #111821; font-size: 11px; height: 26px;">
+          <span style="padding: 0 10px; color: #7ee787;">● connected</span>
+          <span style="padding: 0 10px; color: #9baab8;">ssh · 10.2.4.11</span>
+          <span style="padding: 0 10px; color: #f2776b; margin-left: auto;">1 error</span>
+        </div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 500px;">不是不专业，是<strong style="font-weight: 600;">重复</strong>：标签同时出现在顶部和左树，得二选一或让左树降级为分组视图。而且要新增顶部 32dip 条 + 标签宽度计算 + 溢出滚动，是三个方案里工作量最大的。若将来真要做窗口级多工作区，再上这套。</div>
+    </div>
+
+    <div id="4d" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">4d</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">设置面板 · 收纳了什么</span>
+      </div>
+      <div style="width: 340px; background: #0b1016; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; color: #eef4f8; font-size: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #2b3948;"><span style="letter-spacing: 0.08em; color: #9baab8;">设置</span><span style="color: #9baab8;">×</span></div>
+        <div style="padding: 12px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><span style="color: #c3d1dc;">界面语言</span><span style="display: flex; border: 1px solid #2b3948;"><span style="padding: 4px 12px; background: #7ee787; color: #04180a;">中</span><span style="padding: 4px 12px; color: #9baab8;">En</span></span></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><span style="color: #c3d1dc;">字号</span><span style="display: flex; border: 1px solid #2b3948;"><span style="padding: 4px 12px; color: #9baab8;">−</span><span style="padding: 4px 12px; color: #eef4f8; border-left: 1px solid #2b3948; border-right: 1px solid #2b3948;">100%</span><span style="padding: 4px 12px; color: #9baab8;">+</span></span></div>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><span style="color: #c3d1dc;">主题</span><span style="display: flex; gap: 6px;"><span style="width: 22px; height: 22px; background: #080808; border: 1px solid #2b3948;"></span><span style="width: 22px; height: 22px; background: #0b1016; border: 1px solid #7ee787;"></span><span style="width: 22px; height: 22px; background: #f3f5f7; border: 1px solid #2b3948;"></span></span></div>
+          <div style="border-top: 1px solid #2b3948; padding-top: 12px; color: #9baab8; font-size: 11px; line-height: 19px;">
+            <div style="color: #c3d1dc; margin-bottom: 4px;">快捷键</div>
+            <div style="white-space: pre;">Ctrl+Shift+T   新建终端</div>
+            <div style="white-space: pre;">Ctrl+Shift+W   关闭标签</div>
+            <div style="white-space: pre;">Ctrl+Shift+I   聚焦输入区</div>
+            <div style="white-space: pre;">Ctrl+O         送出输入</div>
+            <div style="white-space: pre;">Ctrl+[ / ]     上一个 / 下一个</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 340px;">原来的 <code style="font-family: 'JetBrains Mono', monospace;">help_lines()</code> 八行直接成为面板底部的快捷键区，<code style="font-family: 'JetBrains Mono', monospace;">?</code> 按钮因此可以取消。主题三色块对应 2a/2b/2c。面板建议锚在触发按钮上方/下方，不做居中模态。</div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 22px; max-width: 920px; border-top: 1px solid #cfccc5; padding-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px;">
+    <div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124; margin-bottom: 8px;">按钮增减结论</div>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">7 → 2。保留：<code style="font-family: 'JetBrains Mono', monospace;">new_root</code>、新增 <code style="font-family: 'JetBrains Mono', monospace;">settings</code>。移入设置：<code style="font-family: 'JetBrains Mono', monospace;">help</code>（并入快捷键区，按钮取消）、<code style="font-family: 'JetBrains Mono', monospace;">language_chinese</code>/<code style="font-family: 'JetBrains Mono', monospace;">language_english</code>、<code style="font-family: 'JetBrains Mono', monospace;">zoom_out</code>/<code style="font-family: 'JetBrains Mono', monospace;">zoom_reset</code>/<code style="font-family: 'JetBrains Mono', monospace;">zoom_in</code>。字号仍保留 Ctrl+滚轮，日常不必点。</p>
+    </div>
+    <div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124; margin-bottom: 8px;">对 ui.rs 的改动</div>
+      <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;"><code style="font-family: 'JetBrains Mono', monospace;">Layout</code> 删 6 个 Rect、加 <code style="font-family: 'JetBrains Mono', monospace;">settings</code> 与 <code style="font-family: 'JetBrains Mono', monospace;">status</code>（24dip，从 terminal 高度扣除）；<code style="font-family: 'JetBrains Mono', monospace;">TreeHit</code> 相应删 <code style="font-family: 'JetBrains Mono', monospace;">Help/Language/Zoom*</code>、加 <code style="font-family: 'JetBrains Mono', monospace;">Settings</code>，新增 <code style="font-family: 'JetBrains Mono', monospace;">StatusHit</code>。窄侧栏溢出测试可以直接删掉 —— 那个问题不再存在。</p>
+    </div>
+  </div>
+</section>
+
+<section style="padding: 28px 28px 36px; font-family: 'IBM Plex Sans', system-ui, sans-serif; border-bottom: 1px solid #cfccc5;">
+  <div style="max-width: 760px; margin-bottom: 20px;">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #7a766e; margin-bottom: 10px;">Turn 3 — 按钮清单（对照 src/ui.rs）</div>
+    <h1 style="font-size: 27px; font-weight: 600; letter-spacing: -0.01em; color: #1f2124; margin: 0 0 8px;">现在代码里真实存在的按钮，以及两处待定</h1>
+    <p style="font-size: 14px; line-height: 1.6; color: #4a4d51; margin: 0; text-wrap: pretty;">尺寸取自 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">src/ui.rs</code>：侧栏 224–480dip、标题栏 32dip、工具 24dip、组间距 4dip、标签行 30dip、关闭键 20dip、输入区 96dip、送出键宽 76dip。下面用 2b 配色画出各状态。</p>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+    <div id="3a" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">3a</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">头部工具条 · 7 个工具</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">TreeHit::NewRoot / Help / Language / Zoom*</span>
+      </div>
+      <div style="width: 448px; background: #0b1016; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; padding: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 48px;">
+          <div style="display: flex; gap: 0;">
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 20px; color: #eef4f8; background: #17212c; border: 1px solid #2b3948;">+</div>
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 18px; color: #9baab8; border: 1px solid transparent;">?</div>
+          </div>
+          <div style="display: flex; gap: 0;">
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 17px; color: #0b1016; background: #7ee787;">中</div>
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 16px; color: #9baab8;">En</div>
+          </div>
+          <div style="display: flex; gap: 0;">
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 20px; color: #9baab8;">−</div>
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 14px; color: #9baab8;">100%</div>
+            <div style="width: 48px; height: 48px; display: grid; place-items: center; font-size: 20px; color: #eef4f8;">+</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 448px;">放大 2× 展示。三组之间只有 4dip 间隙，分组靠间隙而非分隔线 — 建议加一条 1px <code style="font-family: 'JetBrains Mono', monospace;">#2b3948</code> 竖线，让“新建/帮助”“语言”“字号”三组读得出来。当前语言键选中态无样式，此处给的是实心底色。</div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #8a3f2d; max-width: 448px; border-left: 2px solid #c98a76; padding-left: 10px;">已知问题：<code style="font-family: 'JetBrains Mono', monospace;">ui.rs</code> 自己的测试记录了侧栏窄于 200px 时第 7 个工具（zoom_in）被裁出侧栏。要么把字号三键移到底部，要么窄侧栏时折叠成一个「⋯」。</div>
+    </div>
+
+    <div id="3b" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">3b</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">标签行关闭键 · 四态</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">tree_close_rect · TreeHit::Close</span>
+      </div>
+      <div style="width: 448px; background: #0b1016; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; font-size: 13px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; color: #c3d1dc;"><span>prod-api-01</span><span style="color: #0b1016;">×</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; color: #eef4f8; background: #17212c; border-left: 2px solid #7ee787;"><span>prod-api-02</span><span style="color: #9baab8;">×</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; color: #eef4f8; background: #131c26;"><span>db-primary</span><span style="width: 24px; height: 24px; display: grid; place-items: center; background: #2b3948; color: #f2776b;">×</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 12px; color: #9baab8;"><span>worker · exited 1</span><span style="color: #f2776b;">●</span></div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 448px;">四行依次为：静默（关闭键完全隐藏）、选中、悬停（关闭键出底色）、已退出且非零退出码（红点常驻，代替关闭键提示需要处理）。现在代码里关闭键是常驻的 — 隐藏到悬停/选中才出现，能明显降低误关。</div>
+    </div>
+
+    <div id="3c" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">3c</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">输入区 · 送出 / 换行</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">composer_send · composer_newline</span>
+      </div>
+      <div style="width: 448px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace;">
+        <div style="padding: 8px 12px; font-size: 11px; color: #9baab8; letter-spacing: 0.06em;">送往 @ prod-api-01</div>
+        <div style="display: flex; gap: 10px; padding: 0 12px 12px;">
+          <div style="flex: 1; background: #0b1016; border: 1px solid #2b3948; padding: 8px 10px; font-size: 12px; color: #eef4f8; line-height: 19px; min-height: 76px;">redis-cli -h cache ping<span style="width: 7px; height: 14px; background: #7ee787; display: inline-block; vertical-align: -2px; margin-left: 2px;"></span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px; width: 76px;">
+            <div style="flex: 1; background: #7ee787; color: #04180a; display: grid; place-items: center; font-size: 12px; font-weight: 700;">
+              <div style="text-align: center; line-height: 1.3;">送出<div style="font-weight: 400; font-size: 10px; opacity: 0.75;">ctrl-o</div></div>
+            </div>
+            <div style="flex: 1; background: #111821; border: 1px solid #2b3948; color: #c3d1dc; display: grid; place-items: center; font-size: 12px;">
+              <div style="text-align: center; line-height: 1.3;">换行<div style="font-size: 10px; color: #9baab8;">Enter</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 448px;">主次要分明：送出是整套 UI 里唯一的实心按钮，换行是描边。送出禁用态（输入为空）建议用 <code style="font-family: 'JetBrains Mono', monospace;">#2b3948</code> 底 + <code style="font-family: 'JetBrains Mono', monospace;">#5d6f7e</code> 字，不要只降透明度。</div>
+    </div>
+
+    <div id="3d" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">3d</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">空态主按钮</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">empty_new_terminal · 184×42dip</span>
+      </div>
+      <div style="width: 448px; height: 190px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; display: grid; place-items: center; gap: 14px; align-content: center;">
+        <div style="font-size: 12px; letter-spacing: 0.14em; color: #9baab8;">準備開啟新終端</div>
+        <div style="width: 184px; height: 42px; background: #7ee787; color: #04180a; display: grid; place-items: center; font-size: 13px; font-weight: 700; letter-spacing: 0.06em;">新建終端</div>
+        <div style="font-size: 11px; color: #5d6f7e;">Ctrl+Shift+T</div>
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.55; color: #55585c; max-width: 448px;">代码里空态文案是繁体（<code style="font-family: 'JetBrains Mono', monospace;">準備開啟新終端</code>／<code style="font-family: 'JetBrains Mono', monospace;">新建終端</code>），而 2a 主题界面其他中文是简体，需要统一。</div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 22px; max-width: 920px; border-top: 1px solid #cfccc5; padding-top: 14px;">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124; margin-bottom: 8px;">代码里还没有、但这版设计画了的东西</div>
+    <p style="font-size: 13px; line-height: 1.6; color: #55585c; margin: 0;">底部状态条（连接状态 / 主机 / shell / 错误计数 / 时间）在 <code style="font-family: 'JetBrains Mono', monospace;">ui.rs</code> 的 Layout 里不存在 — 目前只有 sidebar、composer、terminal 三块。要落地需要新增一个 22–24dip 的 status Rect 并从 composer/terminal 高度里扣掉。这是本轮最大的结构性新增，先确认要不要做。</p>
+  </div>
+</section>
+
+<section style="padding: 28px 28px 36px; font-family: 'IBM Plex Sans', system-ui, sans-serif; border-bottom: 1px solid #cfccc5;">
+  <div style="max-width: 760px; margin-bottom: 22px;">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #7a766e; margin-bottom: 10px;">Turn 2 — 基于 minicon 代码的配色</div>
+    <h1 style="font-size: 27px; font-weight: 600; letter-spacing: -0.01em; color: #1f2124; margin: 0 0 8px;">三套主题，都用 1a 的硬边框结构</h1>
+    <p style="font-size: 14px; line-height: 1.6; color: #4a4d51; margin: 0; text-wrap: pretty;">2a 是仓库里 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">src/main.rs</code> 当前实际在用的中性灰（tree_bg <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">#080808</code>、active_bg <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">#323232</code>、text <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">#F5F5F5</code>、error <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">#FF5C5C</code>）；2b 换成 <code style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">docs/index.html</code> 官网那套蓝墨色变量；2c 是同一组色相的浅色版。终端正文内容仍走 xterm 256 调色板，主题只改外壳与状态色。</p>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+
+    <!-- 2a -->
+    <div id="2a" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">2a</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">Neutral Ink · 现状</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">main.rs 现值</span>
+      </div>
+      <div style="width: 520px; background: #000000; border: 1px solid #484848; font-family: 'JetBrains Mono', monospace; color: #F5F5F5;">
+        <div style="display: flex; border-bottom: 1px solid #484848; background: #080808;">
+          <div style="padding: 7px 12px; font-size: 12px; color: #F5F5F5; background: #323232; border-right: 1px solid #484848;">prod-api-01</div>
+          <div style="padding: 7px 12px; font-size: 12px; color: #A8A8A8; border-right: 1px solid #484848;">prod-api-02</div>
+          <div style="padding: 7px 12px; font-size: 12px; color: #A8A8A8; border-right: 1px solid #484848;">db-primary</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 140px 1fr; min-height: 212px;">
+          <div style="border-right: 1px solid #484848; background: #080808; padding: 8px 0; font-size: 12px; line-height: 19px;">
+            <div style="padding: 0 10px; color: #A8A8A8;">▾ infra</div>
+            <div style="padding: 0 10px 0 20px; color: #F5F5F5; background: #323232; border-left: 2px solid #FFFFFF;">api</div>
+            <div style="padding: 0 10px 0 22px; color: #C0C0C0;">worker</div>
+            <div style="padding: 0 10px 0 22px; color: #C0C0C0;">cache</div>
+            <div style="padding: 0 10px; color: #A8A8A8; margin-top: 6px;">▾ data</div>
+            <div style="padding: 0 10px 0 22px; color: #C0C0C0;">postgres</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="flex: 1; padding: 10px 12px; font-size: 12px; line-height: 19px;">
+              <div><span style="color: #C0C0C0;">~/infra/api</span> <span style="color: #A8A8A8;">$</span> kubectl rollout status deploy/api</div>
+              <div style="color: #A8A8A8;">3 of 6 updated replicas available</div>
+              <div><span style="color: #FFFFFF; display: inline-block; width: 46px; font-weight: 700;">OK</span><span style="color: #C0C0C0;">deployment "api" rolled out</span></div>
+              <div style="height: 8px;"></div>
+              <div><span style="color: #FFFFFF; display: inline-block; width: 46px; font-weight: 700;">OK</span><span style="color: #C0C0C0; white-space: pre;">api        200  41ms</span></div>
+              <div><span style="color: #FFFFFF; display: inline-block; width: 46px; font-weight: 700;">OK</span><span style="color: #C0C0C0; white-space: pre;">worker     200  17ms</span></div>
+              <div><span style="color: #FF5C5C; display: inline-block; width: 46px; font-weight: 700;">FAIL</span><span style="color: #C0C0C0; white-space: pre;">cache      503  timeout</span></div>
+            </div>
+            <div style="border-top: 1px solid #484848; background: #000000; padding: 9px 12px; font-size: 12px; display: flex; gap: 8px;">
+              <span style="color: #FFFFFF;">$</span><span>redis-cli -h cache ping</span>
+              <span style="width: 7px; height: 15px; background: #FFFFFF; display: inline-block;"></span>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; border-top: 1px solid #484848; font-size: 11px; background: #141414;">
+          <div style="padding: 5px 10px; border-right: 1px solid #484848; color: #F5F5F5;">● connected</div>
+          <div style="padding: 5px 10px; border-right: 1px solid #484848; color: #A8A8A8;">ssh · 10.2.4.11</div>
+          <div style="padding: 5px 10px; color: #FF5C5C; margin-left: auto;">1 error</div>
+          <div style="padding: 5px 10px; color: #A8A8A8;">12:04:18</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #7a766e;">
+        <span style="width: 26px; height: 14px; background: #080808;"></span>
+        <span style="width: 26px; height: 14px; background: #323232;"></span>
+        <span style="width: 26px; height: 14px; background: #484848;"></span>
+        <span style="width: 26px; height: 14px; background: #C0C0C0;"></span>
+        <span style="width: 26px; height: 14px; background: #F5F5F5; border: 1px solid #d8d5ce;"></span>
+        <span style="width: 26px; height: 14px; background: #FF5C5C;"></span>
+        <span style="margin-left: 6px;">唯一彩色是错误红</span>
+      </div>
+    </div>
+
+    <!-- 2b -->
+    <div id="2b" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">2b</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">Docs Ink · 品牌一致</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">docs/index.html 变量</span>
+      </div>
+      <div style="width: 520px; background: #070b10; border: 1px solid #2b3948; font-family: 'JetBrains Mono', monospace; color: #eef4f8;">
+        <div style="display: flex; border-bottom: 1px solid #2b3948; background: #0b1016;">
+          <div style="padding: 7px 12px; font-size: 12px; color: #eef4f8; background: #17212c; border-right: 1px solid #2b3948; border-bottom: 2px solid #7ee787;">prod-api-01</div>
+          <div style="padding: 7px 12px; font-size: 12px; color: #9baab8; border-right: 1px solid #2b3948;">prod-api-02</div>
+          <div style="padding: 7px 12px; font-size: 12px; color: #9baab8; border-right: 1px solid #2b3948;">db-primary</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 140px 1fr; min-height: 212px;">
+          <div style="border-right: 1px solid #2b3948; background: #0b1016; padding: 8px 0; font-size: 12px; line-height: 19px;">
+            <div style="padding: 0 10px; color: #9baab8;">▾ infra</div>
+            <div style="padding: 0 10px 0 20px; color: #eef4f8; background: #17212c; border-left: 2px solid #7ee787;">api</div>
+            <div style="padding: 0 10px 0 22px; color: #c3d1dc;">worker</div>
+            <div style="padding: 0 10px 0 22px; color: #c3d1dc;">cache</div>
+            <div style="padding: 0 10px; color: #9baab8; margin-top: 6px;">▾ data</div>
+            <div style="padding: 0 10px 0 22px; color: #c3d1dc;">postgres</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="flex: 1; padding: 10px 12px; font-size: 12px; line-height: 19px;">
+              <div><span style="color: #68d8f0;">~/infra/api</span> <span style="color: #9baab8;">$</span> kubectl rollout status deploy/api</div>
+              <div style="color: #9baab8;">3 of 6 updated replicas available</div>
+              <div><span style="color: #7ee787; display: inline-block; width: 46px;">OK</span><span style="color: #c3d1dc;">deployment "api" rolled out</span></div>
+              <div style="height: 8px;"></div>
+              <div><span style="color: #7ee787; display: inline-block; width: 46px;">OK</span><span style="color: #c3d1dc; white-space: pre;">api        200  41ms</span></div>
+              <div><span style="color: #f0c86b; display: inline-block; width: 46px;">WARN</span><span style="color: #c3d1dc; white-space: pre;">worker     200  17ms  retry 1</span></div>
+              <div><span style="color: #f2776b; display: inline-block; width: 46px;">FAIL</span><span style="color: #c3d1dc; white-space: pre;">cache      503  timeout</span></div>
+            </div>
+            <div style="border-top: 1px solid #2b3948; background: #111821; padding: 9px 12px; font-size: 12px; display: flex; gap: 8px;">
+              <span style="color: #7ee787;">$</span><span>redis-cli -h cache ping</span>
+              <span style="width: 7px; height: 15px; background: #7ee787; display: inline-block;"></span>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; border-top: 1px solid #2b3948; font-size: 11px; background: #111821;">
+          <div style="padding: 5px 10px; border-right: 1px solid #2b3948; color: #7ee787;">● connected</div>
+          <div style="padding: 5px 10px; border-right: 1px solid #2b3948; color: #9baab8;">ssh · 10.2.4.11</div>
+          <div style="padding: 5px 10px; color: #f2776b; margin-left: auto;">1 error</div>
+          <div style="padding: 5px 10px; color: #9baab8;">12:04:18</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #7a766e;">
+        <span style="width: 26px; height: 14px; background: #0b1016;"></span>
+        <span style="width: 26px; height: 14px; background: #17212c;"></span>
+        <span style="width: 26px; height: 14px; background: #2b3948;"></span>
+        <span style="width: 26px; height: 14px; background: #9baab8;"></span>
+        <span style="width: 26px; height: 14px; background: #7ee787;"></span>
+        <span style="width: 26px; height: 14px; background: #68d8f0;"></span>
+        <span style="width: 26px; height: 14px; background: #f0c86b;"></span>
+        <span style="margin-left: 6px;">与官网同源</span>
+      </div>
+    </div>
+
+    <!-- 2c -->
+    <div id="2c" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 10px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 3px 7px;">2c</span>
+        <span style="font-size: 16px; font-weight: 600; color: #1f2124;">Paper Ink · 浅色</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #7a766e;">同色相反转</span>
+      </div>
+      <div style="width: 520px; background: #ffffff; border: 1px solid #c7d0d9; font-family: 'JetBrains Mono', monospace; color: #0b1016;">
+        <div style="display: flex; border-bottom: 1px solid #c7d0d9; background: #f3f5f7;">
+          <div style="padding: 7px 12px; font-size: 12px; color: #0b1016; background: #e4e9ee; border-right: 1px solid #c7d0d9; border-bottom: 2px solid #2f7d43;">prod-api-01</div>
+          <div style="padding: 7px 12px; font-size: 12px; color: #5b6a77; border-right: 1px solid #c7d0d9;">prod-api-02</div>
+          <div style="padding: 7px 12px; font-size: 12px; color: #5b6a77; border-right: 1px solid #c7d0d9;">db-primary</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 140px 1fr; min-height: 212px;">
+          <div style="border-right: 1px solid #c7d0d9; background: #f3f5f7; padding: 8px 0; font-size: 12px; line-height: 19px;">
+            <div style="padding: 0 10px; color: #5b6a77;">▾ infra</div>
+            <div style="padding: 0 10px 0 20px; color: #0b1016; background: #e4e9ee; border-left: 2px solid #2f7d43;">api</div>
+            <div style="padding: 0 10px 0 22px; color: #37424d;">worker</div>
+            <div style="padding: 0 10px 0 22px; color: #37424d;">cache</div>
+            <div style="padding: 0 10px; color: #5b6a77; margin-top: 6px;">▾ data</div>
+            <div style="padding: 0 10px 0 22px; color: #37424d;">postgres</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div style="flex: 1; padding: 10px 12px; font-size: 12px; line-height: 19px;">
+              <div><span style="color: #1f6f86;">~/infra/api</span> <span style="color: #5b6a77;">$</span> kubectl rollout status deploy/api</div>
+              <div style="color: #37424d;">3 of 6 updated replicas available</div>
+              <div><span style="color: #2f7d43; display: inline-block; width: 46px;">OK</span><span style="color: #37424d;">deployment "api" rolled out</span></div>
+              <div style="height: 8px;"></div>
+              <div><span style="color: #2f7d43; display: inline-block; width: 46px;">OK</span><span style="color: #37424d; white-space: pre;">api        200  41ms</span></div>
+              <div><span style="color: #8a5c1f; display: inline-block; width: 46px;">WARN</span><span style="color: #37424d; white-space: pre;">worker     200  17ms  retry 1</span></div>
+              <div><span style="color: #b03a2e; display: inline-block; width: 46px;">FAIL</span><span style="color: #37424d; white-space: pre;">cache      503  timeout</span></div>
+            </div>
+            <div style="border-top: 1px solid #c7d0d9; background: #f3f5f7; padding: 9px 12px; font-size: 12px; display: flex; gap: 8px;">
+              <span style="color: #2f7d43;">$</span><span>redis-cli -h cache ping</span>
+              <span style="width: 7px; height: 15px; background: #2f7d43; display: inline-block;"></span>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; border-top: 1px solid #c7d0d9; font-size: 11px; background: #e9edf1;">
+          <div style="padding: 5px 10px; border-right: 1px solid #c7d0d9; color: #2f7d43;">● connected</div>
+          <div style="padding: 5px 10px; border-right: 1px solid #c7d0d9; color: #37424d;">ssh · 10.2.4.11</div>
+          <div style="padding: 5px 10px; color: #b03a2e; margin-left: auto;">1 error</div>
+          <div style="padding: 5px 10px; color: #5b6a77;">12:04:18</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #7a766e;">
+        <span style="width: 26px; height: 14px; background: #f3f5f7; border: 1px solid #d8d5ce;"></span>
+        <span style="width: 26px; height: 14px; background: #e4e9ee;"></span>
+        <span style="width: 26px; height: 14px; background: #c7d0d9;"></span>
+        <span style="width: 26px; height: 14px; background: #5b6a77;"></span>
+        <span style="width: 26px; height: 14px; background: #2f7d43;"></span>
+        <span style="width: 26px; height: 14px; background: #1f6f86;"></span>
+        <span style="width: 26px; height: 14px; background: #b03a2e;"></span>
+        <span style="margin-left: 6px;">白天 / 投屏</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding: 28px 28px 36px; font-family: 'IBM Plex Sans', system-ui, sans-serif;">
+  <div style="max-width: 760px; margin-bottom: 24px;">
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #7a766e; margin-bottom: 12px;">Turn 1 — 三个稳健方向</div>
+    <h1 style="font-size: 27px; font-weight: 600; letter-spacing: -0.01em; color: #1f2124; margin: 0 0 8px;">让终端显得“稳”的三种结构策略</h1>
+    <p style="font-size: 15px; line-height: 1.65; color: #4a4d51; margin: 0; text-wrap: pretty;">同一套信息架构（左侧树式导航 / 顶部服务器标签 / 内容区 / 输入区 / 状态条），区别只在于边界如何表达、密度如何分配、状态如何着色。每个方案给出深浅两套。</p>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start;">
+
+    <!-- ============ 1a ============ -->
+    <div id="1a" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 4px 8px;">1a</span>
+        <span style="font-size: 17px; font-weight: 600; color: #1f2124;">硬边框网格 · Instrument</span>
+      </div>
+      <p style="font-size: 13.5px; line-height: 1.55; color: #55585c; margin: 0; max-width: 560px;">每个区块都有 1px 实边框，零圆角，行高严格 20px 基线。稳健感来自“任何东西都不会浮动”。</p>
+
+      <!-- dark -->
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #8a857c;">DARK</div>
+        <div style="width: 560px; background: #0e1113; border: 1px solid #262d31; font-family: 'JetBrains Mono', monospace; color: #cdd6d8;">
+          <div style="display: flex; border-bottom: 1px solid #262d31;">
+            <div style="padding: 9px 14px; font-size: 12px; color: #e6eced; border-right: 1px solid #262d31; border-bottom: 2px solid #7fb37a; background: #14181b;">prod-api-01</div>
+            <div style="padding: 9px 14px; font-size: 12px; color: #6d7a80; border-right: 1px solid #262d31;">prod-api-02</div>
+            <div style="padding: 9px 14px; font-size: 12px; color: #6d7a80; border-right: 1px solid #262d31;">db-primary</div>
+            <div style="padding: 9px 14px; font-size: 12px; color: #4c575c; margin-left: auto;">+</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 156px 1fr; min-height: 268px;">
+            <div style="border-right: 1px solid #262d31; padding: 10px 0; font-size: 12px; line-height: 20px;">
+              <div style="padding: 0 12px; color: #6d7a80;">▾ infra</div>
+              <div style="padding: 0 12px 0 24px; color: #cdd6d8; background: #1b2125; border-left: 2px solid #7fb37a;">api</div>
+              <div style="padding: 0 12px 0 26px; color: #93a0a5;">worker</div>
+              <div style="padding: 0 12px 0 26px; color: #93a0a5;">cache</div>
+              <div style="padding: 0 12px; color: #6d7a80; margin-top: 8px;">▾ data</div>
+              <div style="padding: 0 12px 0 26px; color: #93a0a5;">postgres</div>
+              <div style="padding: 0 12px 0 26px; color: #93a0a5;">migrations</div>
+              <div style="padding: 0 12px; color: #6d7a80; margin-top: 8px;">▸ logs</div>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <div style="flex: 1; padding: 12px 14px; font-size: 12px; line-height: 20px;">
+                <div><span style="color: #6fa8b8;">~/infra/api</span> <span style="color: #6d7a80;">$</span> kubectl rollout status deploy/api</div>
+                <div style="color: #93a0a5;">Waiting for deployment "api" rollout to finish</div>
+                <div style="color: #93a0a5;">3 of 6 updated replicas available</div>
+                <div><span style="color: #7fb37a; display: inline-block; width: 46px;">OK</span><span style="color: #93a0a5;">deployment "api" successfully rolled out</span></div>
+                <div style="color: #4c575c; margin-top: 4px;">────────────────────────────────</div>
+                <div><span style="color: #6fa8b8;">~/infra/api</span> <span style="color: #6d7a80;">$</span> ./scripts/healthcheck --all</div>
+                <div><span style="color: #7fb37a; display: inline-block; width: 46px;">OK</span><span style="color: #93a0a5; white-space: pre;">api        200  41ms</span></div>
+                <div><span style="color: #7fb37a; display: inline-block; width: 46px;">OK</span><span style="color: #93a0a5; white-space: pre;">worker     200  17ms</span></div>
+                <div><span style="color: #d2766a; display: inline-block; width: 46px;">FAIL</span><span style="color: #93a0a5; white-space: pre;">cache      503  timeout after 2000ms</span></div>
+              </div>
+              <div style="border-top: 1px solid #262d31; padding: 10px 14px; font-size: 12px; display: flex; gap: 8px; background: #14181b;">
+                <span style="color: #7fb37a;">$</span>
+                <span style="color: #cdd6d8;">redis-cli -h cache ping</span>
+                <span style="width: 7px; height: 15px; background: #7fb37a; display: inline-block;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; border-top: 1px solid #262d31; font-size: 11px; background: #14181b;">
+            <div style="padding: 6px 12px; border-right: 1px solid #262d31; color: #7fb37a;">● connected</div>
+            <div style="padding: 6px 12px; border-right: 1px solid #262d31; color: #93a0a5;">ssh · 10.2.4.11</div>
+            <div style="padding: 6px 12px; border-right: 1px solid #262d31; color: #93a0a5;">zsh</div>
+            <div style="padding: 6px 12px; color: #6d7a80; margin-left: auto;">1 error · 12:04:18</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- light -->
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #8a857c;">LIGHT</div>
+        <div style="width: 560px; background: #fbfaf8; border: 1px solid #d5d1c9; font-family: 'JetBrains Mono', monospace; color: #22262a;">
+          <div style="display: flex; border-bottom: 1px solid #d5d1c9;">
+            <div style="padding: 9px 14px; font-size: 12px; color: #15181b; border-right: 1px solid #d5d1c9; border-bottom: 2px solid #2f6f63; background: #f2f0eb;">prod-api-01</div>
+            <div style="padding: 9px 14px; font-size: 12px; color: #7b7f83; border-right: 1px solid #d5d1c9;">prod-api-02</div>
+            <div style="padding: 9px 14px; font-size: 12px; color: #7b7f83; border-right: 1px solid #d5d1c9;">db-primary</div>
+            <div style="padding: 9px 14px; font-size: 12px; color: #a9aaa8; margin-left: auto;">+</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 156px 1fr; min-height: 268px;">
+            <div style="border-right: 1px solid #d5d1c9; padding: 10px 0; font-size: 12px; line-height: 20px; background: #f6f4f0;">
+              <div style="padding: 0 12px; color: #7b7f83;">▾ infra</div>
+              <div style="padding: 0 12px 0 24px; color: #15181b; background: #e8e5dd; border-left: 2px solid #2f6f63;">api</div>
+              <div style="padding: 0 12px 0 26px; color: #4a4d51;">worker</div>
+              <div style="padding: 0 12px 0 26px; color: #4a4d51;">cache</div>
+              <div style="padding: 0 12px; color: #7b7f83; margin-top: 8px;">▾ data</div>
+              <div style="padding: 0 12px 0 26px; color: #4a4d51;">postgres</div>
+              <div style="padding: 0 12px 0 26px; color: #4a4d51;">migrations</div>
+              <div style="padding: 0 12px; color: #7b7f83; margin-top: 8px;">▸ logs</div>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <div style="flex: 1; padding: 12px 14px; font-size: 12px; line-height: 20px;">
+                <div><span style="color: #2b6a7d;">~/infra/api</span> <span style="color: #7b7f83;">$</span> kubectl rollout status deploy/api</div>
+                <div style="color: #4a4d51;">Waiting for deployment "api" rollout to finish</div>
+                <div style="color: #4a4d51;">3 of 6 updated replicas available</div>
+                <div><span style="color: #2f6f63; display: inline-block; width: 46px;">OK</span><span style="color: #4a4d51;">deployment "api" successfully rolled out</span></div>
+                <div style="color: #c3bfb6; margin-top: 4px;">────────────────────────────────</div>
+                <div><span style="color: #2b6a7d;">~/infra/api</span> <span style="color: #7b7f83;">$</span> ./scripts/healthcheck --all</div>
+                <div><span style="color: #2f6f63; display: inline-block; width: 46px;">OK</span><span style="color: #4a4d51; white-space: pre;">api        200  41ms</span></div>
+                <div><span style="color: #2f6f63; display: inline-block; width: 46px;">OK</span><span style="color: #4a4d51; white-space: pre;">worker     200  17ms</span></div>
+                <div><span style="color: #a8432f; display: inline-block; width: 46px;">FAIL</span><span style="color: #4a4d51; white-space: pre;">cache      503  timeout after 2000ms</span></div>
+              </div>
+              <div style="border-top: 1px solid #d5d1c9; padding: 10px 14px; font-size: 12px; display: flex; gap: 8px; background: #f2f0eb;">
+                <span style="color: #2f6f63;">$</span>
+                <span style="color: #22262a;">redis-cli -h cache ping</span>
+                <span style="width: 7px; height: 15px; background: #2f6f63; display: inline-block;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; border-top: 1px solid #d5d1c9; font-size: 11px; background: #f2f0eb;">
+            <div style="padding: 6px 12px; border-right: 1px solid #d5d1c9; color: #2f6f63;">● connected</div>
+            <div style="padding: 6px 12px; border-right: 1px solid #d5d1c9; color: #4a4d51;">ssh · 10.2.4.11</div>
+            <div style="padding: 6px 12px; border-right: 1px solid #d5d1c9; color: #4a4d51;">zsh</div>
+            <div style="padding: 6px 12px; color: #7b7f83; margin-left: auto;">1 error · 12:04:18</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 1b ============ -->
+    <div id="1b" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 4px 8px;">1b</span>
+        <span style="font-size: 17px; font-weight: 600; color: #1f2124;">留白分区 · Sheet</span>
+      </div>
+      <p style="font-size: 13.5px; line-height: 1.55; color: #55585c; margin: 0; max-width: 560px;">几乎不用边框，靠底色层级与大内边距分区。稳健感来自“呼吸均匀、没有一处拥挤”。</p>
+
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #8a857c;">DARK</div>
+        <div style="width: 560px; background: #101416; font-family: 'JetBrains Mono', monospace; color: #d2dadc; padding: 4px;">
+          <div style="display: flex; gap: 4px; padding: 8px 10px 10px;">
+            <div style="padding: 7px 14px; font-size: 12px; color: #e8eeef; background: #1a2024; border-radius: 3px;">prod-api-01</div>
+            <div style="padding: 7px 14px; font-size: 12px; color: #6f7c82;">prod-api-02</div>
+            <div style="padding: 7px 14px; font-size: 12px; color: #6f7c82;">db-primary</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 164px 1fr; gap: 4px; min-height: 268px;">
+            <div style="padding: 16px 12px; font-size: 12px; line-height: 24px;">
+              <div style="color: #5d686d; letter-spacing: 0.08em; font-size: 11px;">INFRA</div>
+              <div style="color: #e8eeef; padding-left: 10px; background: #1a2024; border-radius: 3px;">api</div>
+              <div style="color: #98a3a8; padding-left: 10px;">worker</div>
+              <div style="color: #98a3a8; padding-left: 10px;">cache</div>
+              <div style="color: #5d686d; letter-spacing: 0.08em; font-size: 11px; margin-top: 14px;">DATA</div>
+              <div style="color: #98a3a8; padding-left: 10px;">postgres</div>
+              <div style="color: #98a3a8; padding-left: 10px;">migrations</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="flex: 1; background: #161b1e; border-radius: 3px; padding: 18px 20px; font-size: 12px; line-height: 22px;">
+                <div><span style="color: #74a9bb;">~/infra/api</span> <span style="color: #6f7c82;">$</span> kubectl rollout status deploy/api</div>
+                <div style="color: #98a3a8;">Waiting for deployment "api" rollout to finish</div>
+                <div style="color: #98a3a8;">3 of 6 updated replicas available</div>
+                <div style="color: #82b57d;">✓ deployment "api" successfully rolled out</div>
+                <div style="height: 12px;"></div>
+                <div><span style="color: #74a9bb;">~/infra/api</span> <span style="color: #6f7c82;">$</span> ./scripts/healthcheck --all</div>
+                <div><span style="color: #82b57d; display: inline-block; width: 20px;">✓</span><span style="color: #98a3a8; white-space: pre;">api        200  41ms</span></div>
+                <div><span style="color: #82b57d; display: inline-block; width: 20px;">✓</span><span style="color: #98a3a8; white-space: pre;">worker     200  17ms</span></div>
+                <div><span style="color: #d47f72; display: inline-block; width: 20px;">✕</span><span style="color: #98a3a8; white-space: pre;">cache      503  timeout after 2000ms</span></div>
+              </div>
+              <div style="background: #1a2024; border-radius: 3px; padding: 14px 20px; font-size: 12px; display: flex; gap: 10px;">
+                <span style="color: #82b57d;">$</span>
+                <span style="color: #d2dadc;">redis-cli -h cache ping</span>
+                <span style="width: 7px; height: 15px; background: #82b57d; display: inline-block;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 24px; padding: 12px 16px; font-size: 11px; color: #6f7c82;">
+            <span style="color: #82b57d;">● connected</span>
+            <span>ssh · 10.2.4.11</span>
+            <span>zsh</span>
+            <span style="margin-left: auto;">1 error · 12:04:18</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #8a857c;">LIGHT</div>
+        <div style="width: 560px; background: #eeece7; font-family: 'JetBrains Mono', monospace; color: #22262a; padding: 4px;">
+          <div style="display: flex; gap: 4px; padding: 8px 10px 10px;">
+            <div style="padding: 7px 14px; font-size: 12px; color: #15181b; background: #fbfaf8; border-radius: 3px;">prod-api-01</div>
+            <div style="padding: 7px 14px; font-size: 12px; color: #7b7f83;">prod-api-02</div>
+            <div style="padding: 7px 14px; font-size: 12px; color: #7b7f83;">db-primary</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 164px 1fr; gap: 4px; min-height: 268px;">
+            <div style="padding: 16px 12px; font-size: 12px; line-height: 24px;">
+              <div style="color: #8b8e8f; letter-spacing: 0.08em; font-size: 11px;">INFRA</div>
+              <div style="color: #15181b; padding-left: 10px; background: #fbfaf8; border-radius: 3px;">api</div>
+              <div style="color: #4a4d51; padding-left: 10px;">worker</div>
+              <div style="color: #4a4d51; padding-left: 10px;">cache</div>
+              <div style="color: #8b8e8f; letter-spacing: 0.08em; font-size: 11px; margin-top: 14px;">DATA</div>
+              <div style="color: #4a4d51; padding-left: 10px;">postgres</div>
+              <div style="color: #4a4d51; padding-left: 10px;">migrations</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="flex: 1; background: #fbfaf8; border-radius: 3px; padding: 18px 20px; font-size: 12px; line-height: 22px;">
+                <div><span style="color: #2b6a7d;">~/infra/api</span> <span style="color: #7b7f83;">$</span> kubectl rollout status deploy/api</div>
+                <div style="color: #4a4d51;">Waiting for deployment "api" rollout to finish</div>
+                <div style="color: #4a4d51;">3 of 6 updated replicas available</div>
+                <div style="color: #2f6f63;">✓ deployment "api" successfully rolled out</div>
+                <div style="height: 12px;"></div>
+                <div><span style="color: #2b6a7d;">~/infra/api</span> <span style="color: #7b7f83;">$</span> ./scripts/healthcheck --all</div>
+                <div><span style="color: #2f6f63; display: inline-block; width: 20px;">✓</span><span style="color: #4a4d51; white-space: pre;">api        200  41ms</span></div>
+                <div><span style="color: #2f6f63; display: inline-block; width: 20px;">✓</span><span style="color: #4a4d51; white-space: pre;">worker     200  17ms</span></div>
+                <div><span style="color: #a8432f; display: inline-block; width: 20px;">✕</span><span style="color: #4a4d51; white-space: pre;">cache      503  timeout after 2000ms</span></div>
+              </div>
+              <div style="background: #fbfaf8; border-radius: 3px; padding: 14px 20px; font-size: 12px; display: flex; gap: 10px;">
+                <span style="color: #2f6f63;">$</span>
+                <span style="color: #22262a;">redis-cli -h cache ping</span>
+                <span style="width: 7px; height: 15px; background: #2f6f63; display: inline-block;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 24px; padding: 12px 16px; font-size: 11px; color: #7b7f83;">
+            <span style="color: #2f6f63;">● connected</span>
+            <span>ssh · 10.2.4.11</span>
+            <span>zsh</span>
+            <span style="margin-left: auto;">1 error · 12:04:18</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 1c ============ -->
+    <div id="1c" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: #fff; background: #1f2124; padding: 4px 8px;">1c</span>
+        <span style="font-size: 17px; font-weight: 600; color: #1f2124;">机箱框架 · Chassis</span>
+      </div>
+      <p style="font-size: 13.5px; line-height: 1.55; color: #55585c; margin: 0; max-width: 560px;">外壳厚重、内容区下沉，状态条是整条实色。稳健感来自“像一台设备，而不是一个窗口”。</p>
+
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #8a857c;">DARK</div>
+        <div style="width: 560px; background: #1a1f22; font-family: 'JetBrains Mono', monospace; color: #cfd7d9; padding: 10px; border: 1px solid #2e373b;">
+          <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+            <div style="padding: 8px 14px; font-size: 12px; color: #eaf0f1; background: #0d1113; border: 1px solid #39444a; border-bottom-color: #0d1113;">prod-api-01</div>
+            <div style="padding: 8px 14px; font-size: 12px; color: #77848a; background: #161b1e; border: 1px solid #2e373b;">prod-api-02</div>
+            <div style="padding: 8px 14px; font-size: 12px; color: #77848a; background: #161b1e; border: 1px solid #2e373b;">db-primary</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 156px 1fr; gap: 10px; min-height: 268px;">
+            <div style="background: #14191c; border: 1px solid #2e373b; padding: 12px 0; font-size: 12px; line-height: 22px;">
+              <div style="padding: 0 12px; color: #77848a;">▾ infra</div>
+              <div style="padding: 0 12px 0 22px; color: #eaf0f1; background: #0d1113; border-left: 3px solid #c08f4a;">api</div>
+              <div style="padding: 0 12px 0 25px; color: #9aa5aa;">worker</div>
+              <div style="padding: 0 12px 0 25px; color: #9aa5aa;">cache</div>
+              <div style="padding: 0 12px; color: #77848a; margin-top: 10px;">▾ data</div>
+              <div style="padding: 0 12px 0 25px; color: #9aa5aa;">postgres</div>
+              <div style="padding: 0 12px 0 25px; color: #9aa5aa;">migrations</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="flex: 1; background: #0d1113; border: 1px solid #2e373b; box-shadow: inset 0 1px 0 #05080a; padding: 14px 16px; font-size: 12px; line-height: 21px;">
+                <div><span style="color: #6fa8b8;">~/infra/api</span> <span style="color: #77848a;">$</span> kubectl rollout status deploy/api</div>
+                <div style="color: #9aa5aa;">Waiting for deployment "api" rollout to finish</div>
+                <div style="color: #9aa5aa;">3 of 6 updated replicas available</div>
+                <div><span style="display: inline-block; width: 54px;"><span style="background: #2f5b3a; color: #d9ecd8; padding: 0 6px;">DONE</span></span><span style="color: #9aa5aa;">deployment "api" rolled out</span></div>
+                <div style="height: 10px;"></div>
+                <div><span style="color: #6fa8b8;">~/infra/api</span> <span style="color: #77848a;">$</span> ./scripts/healthcheck --all</div>
+                <div><span style="display: inline-block; width: 54px;"><span style="color: #85b880;">PASS</span></span><span style="color: #9aa5aa; white-space: pre;">api        200  41ms</span></div>
+                <div><span style="display: inline-block; width: 54px;"><span style="color: #85b880;">PASS</span></span><span style="color: #9aa5aa; white-space: pre;">worker     200  17ms</span></div>
+                <div><span style="display: inline-block; width: 54px;"><span style="background: #6e3028; color: #f3ded9; padding: 0 6px;">FAIL</span></span><span style="color: #9aa5aa; white-space: pre;">cache      503  timeout 2000ms</span></div>
+              </div>
+              <div style="background: #14191c; border: 1px solid #39444a; padding: 12px 16px; font-size: 12px; display: flex; gap: 10px;">
+                <span style="color: #c08f4a;">❯</span>
+                <span style="color: #cfd7d9;">redis-cli -h cache ping</span>
+                <span style="width: 7px; height: 15px; background: #c08f4a; display: inline-block;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; margin-top: 10px; font-size: 11px; background: #2a3236; color: #b9c3c7;">
+            <span style="padding: 7px 12px; background: #2f5b3a; color: #dcefdb;">CONNECTED</span>
+            <span style="padding: 7px 12px;">ssh · 10.2.4.11</span>
+            <span style="padding: 7px 12px;">zsh</span>
+            <span style="padding: 7px 12px; margin-left: auto; background: #6e3028; color: #f3ded9;">1 ERROR</span>
+            <span style="padding: 7px 12px;">12:04:18</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #8a857c;">LIGHT</div>
+        <div style="width: 560px; background: #e4e1da; font-family: 'JetBrains Mono', monospace; color: #22262a; padding: 10px; border: 1px solid #c6c1b7;">
+          <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+            <div style="padding: 8px 14px; font-size: 12px; color: #15181b; background: #fbfaf8; border: 1px solid #c6c1b7; border-bottom-color: #fbfaf8;">prod-api-01</div>
+            <div style="padding: 8px 14px; font-size: 12px; color: #7b7f83; background: #edeae4; border: 1px solid #c6c1b7;">prod-api-02</div>
+            <div style="padding: 8px 14px; font-size: 12px; color: #7b7f83; background: #edeae4; border: 1px solid #c6c1b7;">db-primary</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 156px 1fr; gap: 10px; min-height: 268px;">
+            <div style="background: #f2efea; border: 1px solid #c6c1b7; padding: 12px 0; font-size: 12px; line-height: 22px;">
+              <div style="padding: 0 12px; color: #7b7f83;">▾ infra</div>
+              <div style="padding: 0 12px 0 22px; color: #15181b; background: #fbfaf8; border-left: 3px solid #8a5c1f;">api</div>
+              <div style="padding: 0 12px 0 25px; color: #4a4d51;">worker</div>
+              <div style="padding: 0 12px 0 25px; color: #4a4d51;">cache</div>
+              <div style="padding: 0 12px; color: #7b7f83; margin-top: 10px;">▾ data</div>
+              <div style="padding: 0 12px 0 25px; color: #4a4d51;">postgres</div>
+              <div style="padding: 0 12px 0 25px; color: #4a4d51;">migrations</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="flex: 1; background: #fbfaf8; border: 1px solid #c6c1b7; box-shadow: inset 0 1px 0 #ddd9d1; padding: 14px 16px; font-size: 12px; line-height: 21px;">
+                <div><span style="color: #2b6a7d;">~/infra/api</span> <span style="color: #7b7f83;">$</span> kubectl rollout status deploy/api</div>
+                <div style="color: #4a4d51;">Waiting for deployment "api" rollout to finish</div>
+                <div style="color: #4a4d51;">3 of 6 updated replicas available</div>
+                <div><span style="display: inline-block; width: 54px;"><span style="background: #2f6f63; color: #f4faf8; padding: 0 6px;">DONE</span></span><span style="color: #4a4d51;">deployment "api" rolled out</span></div>
+                <div style="height: 10px;"></div>
+                <div><span style="color: #2b6a7d;">~/infra/api</span> <span style="color: #7b7f83;">$</span> ./scripts/healthcheck --all</div>
+                <div><span style="display: inline-block; width: 54px;"><span style="color: #2f6f63;">PASS</span></span><span style="color: #4a4d51; white-space: pre;">api        200  41ms</span></div>
+                <div><span style="display: inline-block; width: 54px;"><span style="color: #2f6f63;">PASS</span></span><span style="color: #4a4d51; white-space: pre;">worker     200  17ms</span></div>
+                <div><span style="display: inline-block; width: 54px;"><span style="background: #a8432f; color: #fdf1ee; padding: 0 6px;">FAIL</span></span><span style="color: #4a4d51; white-space: pre;">cache      503  timeout 2000ms</span></div>
+              </div>
+              <div style="background: #f2efea; border: 1px solid #b8b2a7; padding: 12px 16px; font-size: 12px; display: flex; gap: 10px;">
+                <span style="color: #8a5c1f;">❯</span>
+                <span style="color: #22262a;">redis-cli -h cache ping</span>
+                <span style="width: 7px; height: 15px; background: #8a5c1f; display: inline-block;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; margin-top: 10px; font-size: 11px; background: #d7d2c9; color: #3d4044;">
+            <span style="padding: 7px 12px; background: #2f6f63; color: #f4faf8;">CONNECTED</span>
+            <span style="padding: 7px 12px;">ssh · 10.2.4.11</span>
+            <span style="padding: 7px 12px;">zsh</span>
+            <span style="padding: 7px 12px; margin-left: auto; background: #a8432f; color: #fdf1ee;">1 ERROR</span>
+            <span style="padding: 7px 12px;">12:04:18</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 28px; max-width: 900px; border-top: 1px solid #cfccc5; padding-top: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;">
+    <div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124; margin-bottom: 8px;">共同规则 · 排版</div>
+      <p style="font-size: 13px; line-height: 1.65; color: #55585c; margin: 0;">终端正文 12/20px 严格基线，等宽字体唯一；UI 文字不混入终端区。所有列用空格对齐而非缩进猜测。</p>
+    </div>
+    <div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124; margin-bottom: 8px;">共同规则 · 状态</div>
+      <p style="font-size: 13px; line-height: 1.65; color: #55585c; margin: 0;">状态只用三色：成功绿、失败红、进行中中性灰，且永远出现在行首固定列，扫视时形成一条竖直的状态带。</p>
+    </div>
+    <div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #1f2124; margin-bottom: 8px;">共同规则 · 动效</div>
+      <p style="font-size: 13px; line-height: 1.65; color: #55585c; margin: 0;">只保留光标闪烁与滚动，无缓动、无弹性、无渐变背景。切换标签是瞬时的，不做过渡。</p>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;guideColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#7ee787&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#7ee787&quot;,&quot;#68d8f0&quot;,&quot;#eef4f8&quot;,&quot;#f0c86b&quot;],&quot;section&quot;:&quot;网格准星&quot;},&quot;showBand&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;网格准星&quot;}}">
+class Component extends DCLogic {
+  state = { row: null, col: null, cw: 7.8, lh: 20, inside: false };
+
+  componentDidMount() {
+    this.measure();
+  }
+
+  measure = () => {
+    const probe = this.probeRef && this.probeRef.current;
+    if (!probe) return;
+    const cw = probe.getBoundingClientRect().width / 50;
+    if (cw > 0 && Math.abs(cw - this.state.cw) > 0.01) this.setState({ cw });
+  };
+
+  probeRef = React.createRef();
+  gridRef = React.createRef();
+
+  onMove = (e) => {
+    const grid = this.gridRef.current;
+    if (!grid) return;
+    const r = grid.getBoundingClientRect();
+    const col = Math.max(0, Math.floor((e.clientX - r.left - 12) / this.state.cw));
+    const row = Math.max(0, Math.floor((e.clientY - r.top - 12) / this.state.lh));
+    if (row !== this.state.row || col !== this.state.col || !this.state.inside) {
+      this.setState({ row, col, inside: true });
+    }
+  };
+
+  onLeave = () => this.setState({ inside: false });
+
+  renderVals() {
+    const { row, col, cw, lh, inside } = this.state;
+    const guide = this.props.guideColor ?? '#7ee787';
+    const band = this.props.showBand ?? true;
+    const pad = 12;
+    return {
+      onMove: this.onMove,
+      onLeave: this.onLeave,
+      gridRef: this.gridRef,
+      probeRef: this.probeRef,
+      inside,
+      band: inside && band,
+      guide,
+      vx: pad + (col ?? 0) * cw + 'px',
+      hy: pad + (row ?? 0) * lh + 'px',
+      bandW: cw + 'px',
+      bandH: lh + 'px',
+      rowLabel: inside ? String((row ?? 0) + 1).padStart(3, '0') : '---',
+      colLabel: inside ? String((col ?? 0) + 1).padStart(3, '0') : '---',
+    };
+  }
+}
+</script>
+</body>
+</html>

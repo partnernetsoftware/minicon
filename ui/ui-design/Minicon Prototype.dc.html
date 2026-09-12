@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #1a1c1e; }
+  a { color: #7ee787; }
+  a:hover { color: #49c760; }
+  textarea, button { font: inherit; }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; padding: 24px; display: flex; flex-direction: column; gap: 14px; font-family: 'IBM Plex Sans', system-ui, sans-serif;">
+  <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #8d9196;">minicon · 交互原型</span>
+    <span style="font-size: 12.5px; color: #6f7479;">左侧 ＋ 新建 · 行尾 × 关闭 · ⚙ 设置（语言 / 字号 / 主题）· 输入区 Ctrl+O 送出，Enter 换行 · 鼠标移到输出区看准星</span>
+  </div>
+
+  <div style="flex: 1; border: 1px solid {{ t.border }}; background: {{ t.bg }}; font-family: 'JetBrains Mono', monospace; display: grid; grid-template-columns: 224px 1fr; min-height: 560px;">
+
+    <div style="border-right: 1px solid {{ t.border }}; background: {{ t.chrome }}; display: flex; flex-direction: column; min-width: 0;">
+      <div style="display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; border-bottom: 1px solid {{ t.border }}; flex: none;">
+        <button onClick="{{ newTab }}" title="新建终端 Ctrl+Shift+T" style="width: 26px; height: 26px; display: grid; place-items: center; font-size: 17px; line-height: 1; border: 0; cursor: pointer; background: {{ t.accent }}; color: {{ t.accentInk }};">+</button>
+        <span style="font-size: 11px; letter-spacing: 0.08em; color: {{ t.muted }};">{{ s.terminals }}</span>
+        <button onClick="{{ toggleSettings }}" title="设置" style="width: 26px; height: 26px; display: grid; place-items: center; font-size: 14px; line-height: 1; border: 0; cursor: pointer; margin-left: auto; background: {{ gearBg }}; color: {{ t.text }};">⚙</button>
+      </div>
+      <div style="flex: 1; padding: 6px 0; overflow: auto; min-height: 0;">
+        <sc-for list="{{ rows }}" as="row" hint-placeholder-count="4">
+          <div onClick="{{ row.select }}" onMouseEnter="{{ row.enter }}" onMouseLeave="{{ row.leave }}" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; height: 30px; padding: 0 8px 0 {{ row.indent }}; font-size: 12px; cursor: {{ row.cursor }}; color: {{ row.color }}; background: {{ row.bg }}; border-left: 2px solid {{ row.mark }};">
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ row.label }}</span>
+            <span onClick="{{ row.close }}" title="关闭标签 Ctrl+Shift+W" style="width: 20px; height: 20px; display: grid; place-items: center; flex: none; font-size: 13px; color: {{ row.closeColor }}; background: {{ row.closeBg }};">{{ row.closeGlyph }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; min-width: 0; position: relative;">
+
+      <sc-if value="{{ hasTabs }}" hint-placeholder-val="{{ true }}">
+        <div style="flex: 1; position: relative; overflow: hidden; min-height: 0;">
+          <span ref="{{ probeRef }}" style="position: absolute; visibility: hidden; white-space: pre; font-size: {{ fontPx }};">00000000000000000000000000000000000000000000000000</span>
+          <div ref="{{ gridRef }}" onMouseMove="{{ onMove }}" onMouseLeave="{{ onLeave }}" style="position: absolute; inset: 0; padding: 12px; overflow: auto; z-index: 2; font-size: {{ fontPx }}; line-height: {{ linePx }}; color: {{ t.dim }};">
+            <sc-for list="{{ lines }}" as="line" hint-placeholder-count="6">
+              <div style="white-space: pre; color: {{ line.color }};"><span style="display: inline-block; width: {{ markerW }}; color: {{ line.markerColor }};">{{ line.marker }}</span>{{ line.text }}</div>
+            </sc-for>
+            <div style="white-space: pre; color: {{ t.muted }};"><span style="display: inline-block; width: {{ markerW }}; color: {{ t.accent }};">$</span>{{ draft }}<span style="display: inline-block; width: 7px; height: 14px; vertical-align: -2px; background: {{ t.accent }};"></span></div>
+          </div>
+          <sc-if value="{{ inside }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; top: 0; bottom: 0; width: 1px; z-index: 1; opacity: 0.3; background: {{ guide }}; left: {{ vx }};"></div>
+          </sc-if>
+          <sc-if value="{{ inside }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; left: 0; right: 0; height: 1px; z-index: 1; opacity: 0.3; background: {{ guide }}; top: {{ hy }};"></div>
+          </sc-if>
+          <sc-if value="{{ band }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; left: 0; right: 0; z-index: 1; opacity: 0.04; background: {{ t.text }}; height: {{ bandH }}; top: {{ hy }};"></div>
+          </sc-if>
+          <sc-if value="{{ band }}" hint-placeholder-val="{{ true }}">
+            <div style="position: absolute; top: 0; bottom: 0; z-index: 1; opacity: 0.04; background: {{ t.text }}; width: {{ bandW }}; left: {{ vx }};"></div>
+          </sc-if>
+        </div>
+
+        <div style="flex: none; border-top: 1px solid {{ t.border }}; background: {{ t.surface }};">
+          <div style="padding: 7px 12px 0; font-size: 11px; letter-spacing: 0.06em; color: {{ t.muted }};">{{ sendTo }}</div>
+          <div style="display: flex; gap: 10px; padding: 8px 12px 12px;">
+            <textarea value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" spellcheck="false" style="flex: 1; min-width: 0; height: 62px; resize: none; outline: none; padding: 8px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 19px; border: 1px solid {{ t.border }}; background: {{ t.bg }}; color: {{ t.text }};"></textarea>
+            <div style="display: flex; flex-direction: column; gap: 6px; width: 76px; flex: none;">
+              <button onClick="{{ send }}" style="flex: 1; border: 0; cursor: pointer; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; background: {{ sendBg }}; color: {{ sendFg }};">
+                <span style="text-align: center; line-height: 1.3;">{{ s.send }}<span style="display: block; font-weight: 400; font-size: 10px;">(ctrl-o)</span></span>
+              </button>
+              <button onClick="{{ newline }}" style="flex: 1; cursor: pointer; display: grid; place-items: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; border: 1px solid {{ t.border }}; background: {{ t.surface2 }}; color: {{ t.dim }};">
+                <span style="text-align: center; line-height: 1.3;">{{ s.newline }}<span style="display: block; font-size: 10px;">(Enter)</span></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; display: grid; place-items: center; align-content: center; gap: 14px;">
+          <div style="font-size: 12px; letter-spacing: 0.14em; color: {{ t.muted }};">{{ s.emptyTitle }}</div>
+          <button onClick="{{ newTab }}" style="width: 184px; height: 42px; border: 0; cursor: pointer; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; background: {{ t.accent }}; color: {{ t.accentInk }};">{{ s.newTerminal }}</button>
+          <div style="font-size: 11px; color: {{ t.muted }};">Ctrl+Shift+T</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ settingsOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position: absolute; left: 12px; top: 12px; width: 320px; z-index: 20; font-size: 12px; border: 1px solid {{ t.border }}; background: {{ t.chrome }}; color: {{ t.text }}; box-shadow: 0 12px 32px rgba(0,0,0,0.45);">
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid {{ t.border }};">
+            <span style="letter-spacing: 0.08em; color: {{ t.muted }};">{{ s.settings }}</span>
+            <span onClick="{{ toggleSettings }}" style="cursor: pointer; color: {{ t.muted }};">×</span>
+          </div>
+          <div style="padding: 12px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <span style="color: {{ t.dim }};">{{ s.language }}</span>
+              <span style="display: flex; border: 1px solid {{ t.border }};">
+                <span onClick="{{ setZh }}" style="padding: 4px 12px; cursor: pointer; background: {{ zhBg }}; color: {{ zhFg }};">中</span>
+                <span onClick="{{ setEn }}" style="padding: 4px 12px; cursor: pointer; background: {{ enBg }}; color: {{ enFg }};">En</span>
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <span style="color: {{ t.dim }};">{{ s.fontSize }}</span>
+              <span style="display: flex; border: 1px solid {{ t.border }};">
+                <span onClick="{{ zoomOut }}" style="padding: 4px 12px; cursor: pointer; color: {{ t.muted }};">−</span>
+                <span onClick="{{ zoomReset }}" style="padding: 4px 12px; cursor: pointer; color: {{ t.text }}; border-left: 1px solid {{ t.border }}; border-right: 1px solid {{ t.border }};">{{ zoomLabel }}</span>
+                <span onClick="{{ zoomIn }}" style="padding: 4px 12px; cursor: pointer; color: {{ t.muted }};">+</span>
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <span style="color: {{ t.dim }};">{{ s.theme }}</span>
+              <span style="display: flex; gap: 6px;">
+                <span onClick="{{ setNeutral }}" title="2a Neutral Ink" style="width: 22px; height: 22px; cursor: pointer; background: #080808; border: 1px solid {{ neutralRing }};"></span>
+                <span onClick="{{ setDocs }}" title="2b Docs Ink" style="width: 22px; height: 22px; cursor: pointer; background: #0b1016; border: 1px solid {{ docsRing }};"></span>
+                <span onClick="{{ setPaper }}" title="2c Paper Ink" style="width: 22px; height: 22px; cursor: pointer; background: #f3f5f7; border: 1px solid {{ paperRing }};"></span>
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <span style="color: {{ t.dim }};">{{ s.crosshair }}</span>
+              <span onClick="{{ toggleBand }}" style="padding: 4px 12px; cursor: pointer; border: 1px solid {{ t.border }}; color: {{ bandFg }}; background: {{ bandBg }};">{{ bandLabel }}</span>
+            </div>
+            <div style="border-top: 1px solid {{ t.border }}; padding-top: 12px; font-size: 11px; line-height: 19px; color: {{ t.muted }};">
+              <div style="color: {{ t.dim }}; margin-bottom: 4px;">{{ s.shortcuts }}</div>
+              <sc-for list="{{ shortcuts }}" as="k" hint-placeholder-count="5">
+                <div style="white-space: pre;">{{ k }}</div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="flex: none; display: flex; align-items: center; height: 26px; border-top: 1px solid {{ t.border }}; background: {{ t.surface }}; font-size: 11px; color: {{ t.muted }};">
+        <span style="padding: 0 10px; color: {{ connColor }};">{{ connLabel }}</span>
+        <span style="padding: 0 10px;">{{ hostLabel }}</span>
+        <span style="padding: 0 10px;">zsh</span>
+        <span style="padding: 0 10px; margin-left: auto; color: {{ errColor }};">{{ errLabel }}</span>
+        <span style="padding: 0 10px; border-left: 1px solid {{ t.border }}; white-space: pre; color: {{ t.text }};">L{{ rowLabel }}:C{{ colLabel }}</span>
+        <span onClick="{{ toggleSettings }}" style="padding: 0 10px; border-left: 1px solid {{ t.border }}; cursor: pointer;">⚙</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;docs&quot;,&quot;options&quot;:[&quot;neutral&quot;,&quot;docs&quot;,&quot;paper&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;外观&quot;},&quot;guideColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#7ee787&quot;,&quot;options&quot;:[&quot;#7ee787&quot;,&quot;#68d8f0&quot;,&quot;#eef4f8&quot;,&quot;#f0c86b&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;网格准星&quot;},&quot;showBand&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;网格准星&quot;}}">
+const THEMES = {
+  neutral: { bg:'#000000', chrome:'#080808', surface:'#141414', surface2:'#242424', border:'#484848', text:'#F5F5F5', muted:'#A8A8A8', dim:'#C0C0C0', accent:'#FFFFFF', accentInk:'#000000', ok:'#FFFFFF', warn:'#C0C0C0', err:'#FF5C5C', cyan:'#C0C0C0' },
+  docs:    { bg:'#070b10', chrome:'#0b1016', surface:'#111821', surface2:'#17212c', border:'#2b3948', text:'#eef4f8', muted:'#9baab8', dim:'#c3d1dc', accent:'#7ee787', accentInk:'#04180a', ok:'#7ee787', warn:'#f0c86b', err:'#f2776b', cyan:'#68d8f0' },
+  paper:   { bg:'#ffffff', chrome:'#f3f5f7', surface:'#e9edf1', surface2:'#e4e9ee', border:'#c7d0d9', text:'#0b1016', muted:'#5b6a77', dim:'#37424d', accent:'#2f7d43', accentInk:'#ffffff', ok:'#2f7d43', warn:'#8a5c1f', err:'#b03a2e', cyan:'#1f6f86' },
+};
+
+const STRINGS = {
+  zh: { terminals:'终端', send:'送出', newline:'换行', sendTo:'送往 @', emptyTitle:'准备开启新终端', newTerminal:'新建终端',
+        settings:'设置', language:'界面语言', fontSize:'字号', theme:'主题', crosshair:'准星高亮带', shortcuts:'快捷键',
+        on:'开', off:'关', connected:'● 已连接', errors:(n) => n === 0 ? '无错误' : n + ' 个错误',
+        keys:['Ctrl+Shift+T   新建终端','Ctrl+Shift+W   关闭标签','Ctrl+Shift+I   聚焦输入区','Ctrl+O         送出输入','Enter          软换行','Ctrl+[ / ]     上一个 / 下一个'] },
+  en: { terminals:'TERMINALS', send:'Send', newline:'New Line', sendTo:'SEND TO @', emptyTitle:'READY FOR A NEW TERMINAL', newTerminal:'NEW TERMINAL',
+        settings:'Settings', language:'Language', fontSize:'Font size', theme:'Theme', crosshair:'Guide band', shortcuts:'Keyboard',
+        on:'On', off:'Off', connected:'● connected', errors:(n) => n === 0 ? 'no errors' : n + (n === 1 ? ' error' : ' errors'),
+        keys:['Ctrl+Shift+T   New terminal','Ctrl+Shift+W   Close tab','Ctrl+Shift+I   Focus input','Ctrl+O         Send input','Enter          Soft newline','Ctrl+[ / ]     Previous / next tab'] },
+};
+
+const SEED = [
+  { tag:'cmd',  text:'./scripts/healthcheck --all' },
+  { tag:'dim',  text:'resolving 6 endpoints from inventory.yaml' },
+  { tag:'ok',   text:'api        200  41ms   revision 7f3c2ab' },
+  { tag:'ok',   text:'worker     200  17ms   revision 7f3c2ab' },
+  { tag:'warn', text:'queue      200  812ms  depth 1420, rising' },
+  { tag:'err',  text:'cache      503  timeout after 2000ms' },
+  { tag:'dim',  text:'6 checked · 4 passing · 1 warning · 1 failing' },
+];
+
+let NEXT = 4;
+
+class Component extends DCLogic {
+  state = {
+    theme: 'docs', lang: 'zh', fontSize: 13, band: true, settingsOpen: false,
+    hover: null, row: null, col: null, cw: 7.8, inside: false, draft: 'redis-cli -h cache ping',
+    activeId: 1,
+    tabs: [
+      { id:1, group:'infra', name:'api',      host:'10.2.4.11', lines: SEED.slice() },
+      { id:2, group:'infra', name:'worker',   host:'10.2.4.12', lines:[{tag:'cmd',text:'tail -f /var/log/worker.log'},{tag:'dim',text:'waiting for events…'}] },
+      { id:3, group:'data',  name:'postgres', host:'10.2.9.4',  lines:[{tag:'cmd',text:'psql -c "select now()"'},{tag:'ok',text:'2026-09-12 12:04:18+08'}] },
+    ],
+  };
+
+  probeRef = React.createRef();
+  gridRef = React.createRef();
+
+  componentDidMount() {
+    const patch = {};
+    if (this.props.theme && THEMES[this.props.theme]) patch.theme = this.props.theme;
+    if (typeof this.props.showBand === 'boolean') patch.band = this.props.showBand;
+    if (Object.keys(patch).length) this.setState(patch);
+    this.measure();
+  }
+  lastFont = 13;
+  componentDidUpdate() {
+    if (this.lastFont !== this.state.fontSize) {
+      this.lastFont = this.state.fontSize;
+      this.measure();
+    }
+  }
+
+  measure = () => {
+    const probe = this.probeRef.current;
+    if (!probe) return;
+    const cw = probe.getBoundingClientRect().width / 50;
+    if (cw > 0 && Math.abs(cw - this.state.cw) > 0.01) this.setState({ cw });
+  };
+
+  lineHeight() { return Math.round(this.state.fontSize * 1.54); }
+
+  active() { return this.state.tabs.find((t) => t.id === this.state.activeId) || null; }
+
+  onMove = (e) => {
+    const grid = this.gridRef.current;
+    if (!grid) return;
+    const r = grid.getBoundingClientRect();
+    const col = Math.max(0, Math.floor((e.clientX - r.left - 12) / this.state.cw));
+    const row = Math.max(0, Math.floor((e.clientY - r.top - 12 + grid.scrollTop) / this.lineHeight()));
+    if (row !== this.state.row || col !== this.state.col || !this.state.inside) this.setState({ row, col, inside: true });
+  };
+  onLeave = () => this.setState({ inside: false });
+
+  newTab = () => {
+    const id = NEXT++;
+    const tab = { id, group:'infra', name:'shell-' + id, host:'10.2.4.' + (20 + id), lines:[{tag:'dim',text:'connected · zsh 5.9'}] };
+    this.setState((s) => ({ tabs: s.tabs.concat([tab]), activeId: id, settingsOpen: false }));
+  };
+
+  closeTab = (id) => (e) => {
+    if (e) e.stopPropagation();
+    this.setState((s) => {
+      const i = s.tabs.findIndex((t) => t.id === id);
+      const tabs = s.tabs.filter((t) => t.id !== id);
+      let activeId = s.activeId;
+      if (activeId === id) activeId = tabs.length ? tabs[Math.min(i, tabs.length - 1)].id : null;
+      return { tabs, activeId };
+    });
+  };
+
+  run(cmd) {
+    const text = cmd.trim();
+    if (!text) return;
+    const out = [{ tag:'cmd', text }];
+    if (/^clear$/.test(text)) {
+      this.setState((s) => ({ tabs: s.tabs.map((t) => t.id === s.activeId ? Object.assign({}, t, { lines: [] }) : t), draft: '' }));
+      return;
+    }
+    if (/healthcheck/.test(text)) out.push(...SEED.slice(1));
+    else if (/^redis-cli/.test(text)) out.push({ tag:'err', text:'Could not connect to Redis at cache:6379: Connection timed out' });
+    else if (/^ls/.test(text)) out.push({ tag:'', text:'deploy.yaml  inventory.yaml  scripts/  README.md' });
+    else if (/^kubectl/.test(text)) out.push({ tag:'dim', text:'Waiting for deployment rollout to finish' }, { tag:'ok', text:'deployment "api" successfully rolled out' });
+    else out.push({ tag:'dim', text:'zsh: command not found: ' + text.split(/\s+/)[0] });
+    this.setState((s) => ({ tabs: s.tabs.map((t) => t.id === s.activeId ? Object.assign({}, t, { lines: t.lines.concat(out) }) : t), draft: '' }));
+  }
+
+  send = () => this.run(this.state.draft);
+  newline = () => this.setState((s) => ({ draft: s.draft + '\n' }));
+  onDraft = (e) => this.setState({ draft: e.target.value });
+  onKey = (e) => { if (e.ctrlKey && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); this.send(); } };
+
+  set = (patch) => () => this.setState(patch);
+
+  renderVals() {
+    const st = this.state;
+    const t = THEMES[st.theme] || THEMES.docs;
+    const s = STRINGS[st.lang];
+    const active = this.active();
+    const lh = this.lineHeight();
+    const guide = this.props.guideColor ?? t.accent;
+    const markerFor = (tag) => tag === 'ok' ? 'OK  ' : tag === 'warn' ? 'WARN' : tag === 'err' ? 'FAIL' : tag === 'cmd' ? '$   ' : '    ';
+    const markerColor = (tag) => tag === 'ok' ? t.ok : tag === 'warn' ? t.warn : tag === 'err' ? t.err : tag === 'cmd' ? t.accent : t.muted;
+
+    const rows = [];
+    let lastGroup = null;
+    st.tabs.forEach((tab) => {
+      if (tab.group !== lastGroup) {
+        lastGroup = tab.group;
+        rows.push({ key:'g-'+tab.group, label:'▾ '+tab.group, indent:'10px', color:t.muted, bg:'transparent', mark:'transparent',
+                    cursor:'default', closeGlyph:'', closeColor:'transparent', closeBg:'transparent',
+                    select:()=>{}, close:()=>{}, enter:()=>{}, leave:()=>{} });
+      }
+      const isActive = tab.id === st.activeId;
+      const isHover = st.hover === tab.id;
+      rows.push({
+        key: tab.id, label: tab.name, indent: '22px',
+        color: isActive ? t.text : t.dim,
+        bg: isActive ? t.surface2 : (isHover ? t.surface : 'transparent'),
+        mark: isActive ? t.accent : 'transparent',
+        cursor: 'pointer',
+        closeGlyph: (isActive || isHover) ? '×' : '',
+        closeColor: isHover ? t.err : t.muted,
+        closeBg: isHover ? t.surface2 : 'transparent',
+        select: () => this.setState({ activeId: tab.id }),
+        close: this.closeTab(tab.id),
+        enter: () => this.setState({ hover: tab.id }),
+        leave: () => this.setState((p) => p.hover === tab.id ? { hover: null } : null),
+      });
+    });
+
+    const errCount = active ? active.lines.filter((l) => l.tag === 'err').length : 0;
+    const sendable = st.draft.trim().length > 0;
+
+    return {
+      t, s, rows, guide,
+      hasTabs: !!active, isEmpty: !active,
+      lines: active ? active.lines.map((l, i) => ({ key: i, text: l.text, marker: markerFor(l.tag), markerColor: markerColor(l.tag), color: l.tag === 'dim' ? t.muted : t.dim })) : [],
+      draft: st.draft,
+      markerW: Math.round(st.cw * 5) + 'px',
+      fontPx: st.fontSize + 'px',
+      linePx: lh + 'px',
+      sendTo: s.sendTo + ' ' + (active ? active.name : '—'),
+      sendBg: sendable ? t.accent : t.surface2, sendFg: sendable ? t.accentInk : t.muted,
+      settingsOpen: st.settingsOpen,
+      toggleSettings: () => this.setState((p) => ({ settingsOpen: !p.settingsOpen })),
+      gearBg: st.settingsOpen ? t.surface2 : 'transparent',
+      newTab: this.newTab, send: this.send, newline: this.newline, onDraft: this.onDraft, onKey: this.onKey,
+      onMove: this.onMove, onLeave: this.onLeave, gridRef: this.gridRef, probeRef: this.probeRef,
+      inside: st.inside, band: st.inside && st.band,
+      vx: 12 + (st.col ?? 0) * st.cw + 'px', hy: 12 + (st.row ?? 0) * lh + 'px',
+      bandW: st.cw + 'px', bandH: lh + 'px',
+      rowLabel: st.inside ? String((st.row ?? 0) + 1).padStart(3, '0') : '---',
+      colLabel: st.inside ? String((st.col ?? 0) + 1).padStart(3, '0') : '---',
+      setZh: this.set({ lang: 'zh' }), setEn: this.set({ lang: 'en' }),
+      zhBg: st.lang === 'zh' ? t.accent : 'transparent', zhFg: st.lang === 'zh' ? t.accentInk : t.muted,
+      enBg: st.lang === 'en' ? t.accent : 'transparent', enFg: st.lang === 'en' ? t.accentInk : t.muted,
+      zoomOut: () => this.setState((p) => ({ fontSize: Math.max(11, p.fontSize - 1) })),
+      zoomIn: () => this.setState((p) => ({ fontSize: Math.min(20, p.fontSize + 1) })),
+      zoomReset: () => this.setState({ fontSize: 13 }),
+      zoomLabel: Math.round((st.fontSize / 13) * 100) + '%',
+      setNeutral: this.set({ theme: 'neutral' }), setDocs: this.set({ theme: 'docs' }), setPaper: this.set({ theme: 'paper' }),
+      neutralRing: st.theme === 'neutral' ? t.accent : t.border,
+      docsRing: st.theme === 'docs' ? t.accent : t.border,
+      paperRing: st.theme === 'paper' ? t.accent : t.border,
+      toggleBand: () => this.setState((p) => ({ band: !p.band })),
+      bandLabel: st.band ? s.on : s.off,
+      bandFg: st.band ? t.accentInk : t.muted, bandBg: st.band ? t.accent : 'transparent',
+      shortcuts: s.keys,
+      connColor: t.ok, connLabel: s.connected,
+      hostLabel: active ? 'ssh · ' + active.host : 'ssh · —',
+      errColor: errCount ? t.err : t.muted, errLabel: s.errors(errCount),
+    };
+  }
+}
+</script>
+</body>
+</html>
