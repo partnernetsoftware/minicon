@@ -181,6 +181,14 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   to the live viewport only after that write succeeds. A closed PTY preserves
   the caller's scrollback position instead of presenting a failed paste as a
   delivered input-side state change.
+- [x] a key sequence is validated as a whole before any of its keys is applied.
+  `send-keys` and terminal-routed `send-ui-keys` parse every key first, so a
+  malformed key anywhere in the sequence delivers nothing rather than a silent
+  prefix of it. Previously each arm parsed inside its injection loop, which
+  meant a bad third key arrived after the first two had already reached the
+  terminal — an error report with a partially applied side effect the caller had
+  no way to detect. Injection itself can still fail mid-sequence, and that is
+  reported as a PTY write failure rather than claimed as delivered.
 - [x] `send-paste` remains deterministic direct-payload injection, while
   terminal-routed `send-keys` or `send-ui-keys` with `Ctrl+Shift+V` queues the
   same bounded asynchronous OS clipboard read as physical input but explicitly

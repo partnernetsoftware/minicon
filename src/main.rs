@@ -2660,9 +2660,12 @@ impl ConApp {
             }
             CliCommand::SendKeys { target, keys } => (|| {
                 let id = self.control_target(target)?;
+                // Validate every key before injecting any of them, so a
+                // malformed key late in the sequence cannot leave an earlier
+                // one already delivered.
+                let parsed = parse_control_keys(&keys)?;
                 self.forward_keys_to_terminal(window, id, |session| {
-                    for key in &keys {
-                        let (key, ctrl, alt, shift) = parse_control_key(key)?;
+                    for (key, ctrl, alt, shift) in parsed {
                         session
                             .inject_key(key, ctrl, alt, shift)
                             .map_err(|error| format!("terminal input failed: {error}"))?;
@@ -2672,8 +2675,12 @@ impl ConApp {
                 Ok(single_field_json("sent_keys", keys.len().into()))
             })(),
             CliCommand::SendUiKeys { keys } => (|| {
-                for key in &keys {
-                    let (key, ctrl, alt, shift) = parse_control_key(key)?;
+                // Same rule as `SendKeys`, and it matters more here: a UI key
+                // can move focus or open a menu, so a prefix applied before a
+                // later key is rejected leaves the interface in a state the
+                // caller never asked for and cannot predict from the error.
+                let parsed = parse_control_keys(&keys)?;
+                for (key, ctrl, alt, shift) in parsed {
                     let event = injected_key_event(key, ctrl, alt, shift);
                     if self
                         .handle_workspace_shortcut(window, &event)
@@ -6238,6 +6245,24 @@ enum InjectedMouseButton {
     Right,
 }
 
+/// Parses a whole key sequence before any of it is applied.
+///
+/// Both `SendKeys` and `SendUiKeys` used to parse inside their injection
+/// loops, so a malformed key late in a sequence arrived after the earlier keys
+/// had already been delivered. The caller then got an error and a partially
+/// applied side effect, with no way to tell how much had happened. Validating
+/// the whole sequence first makes the operation all-or-nothing with respect to
+/// its input, which is the only contract a remote caller can reason about.
+///
+/// The remaining partial-failure window is injection itself, which can still
+/// fail mid-sequence; that one is reported as `terminal input failed` and is
+/// inherent to writing to a pty.
+fn parse_control_keys(
+    specs: &[String],
+) -> Result<Vec<(InjectedKey, bool, bool, bool)>, String> {
+    specs.iter().map(|spec| parse_control_key(spec)).collect()
+}
+
 fn parse_control_key(spec: &str) -> Result<(InjectedKey, bool, bool, bool), String> {
     let mut parts: Vec<_> = spec.split('+').collect();
     let key_name = parts
@@ -6776,6 +6801,69 @@ fn layout_text_parts(parts: &[&str], x: u32, cell_w: u32, limit: u32) -> Vec<Pla
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A key sequence is validated as a whole before any of it is delivered.
+    ///
+    /// What this guards is the *separation*, not the parser: `SendKeys` and
+    /// `SendUiKeys` must parse every key before the first one is applied. The
+    /// parser alone is trivially total over a slice, so the interesting claim is
+    /// that the keys a caller sees applied are exactly the ones that validated.
+    /// This replays both shapes — validate-then-apply, and the older
+    /// apply-as-you-parse — and asserts the first delivers nothing on a bad
+    /// sequence while the second delivers a prefix. If the dispatch arms ever go
+    /// back to parsing inside their loops, the second shape is what they become.
+    #[test]
+    fn a_key_sequence_is_validated_before_any_key_is_applied() {
+        let sequence = [
+            "ctrl+a".to_owned(),
+            "shift+F1".to_owned(),
+            "ctrl+".to_owned(),
+            "b".to_owned(),
+        ];
+
+        // The shape the dispatch uses now: parse all, then apply all.
+        let mut delivered = 0usize;
+        if let Ok(parsed) = parse_control_keys(&sequence) {
+            delivered += parsed.len();
+        }
+        assert_eq!(
+            delivered, 0,
+            "a malformed key anywhere must stop the whole sequence before any key is applied"
+        );
+
+        // The shape that was there before, which delivered a prefix.
+        let mut legacy_delivered = 0usize;
+        for spec in &sequence {
+            if parse_control_key(spec).is_err() {
+                break;
+            }
+            legacy_delivered += 1;
+        }
+        assert_eq!(
+            legacy_delivered, 2,
+            "the old apply-as-you-parse shape really did deliver a prefix, so the assertion \
+             above is not vacuous"
+        );
+
+        // And a valid sequence still delivers everything, so the guard is not
+        // passing by refusing all input.
+        let good = ["ctrl+a".to_owned(), "b".to_owned()];
+        assert_eq!(parse_control_keys(&good).map(|keys| keys.len()), Ok(2));
+    }
+
+    #[test]
+    fn a_key_sequence_with_no_bad_member_parses_entirely() {
+        let sequence = ["a".to_owned(), "ctrl+alt+Delete".to_owned()];
+        let parsed = parse_control_keys(&sequence).expect("all keys are valid");
+        assert_eq!(parsed.len(), sequence.len());
+        // `InjectedKey` deliberately carries no `Debug`/`PartialEq`, so the
+        // modifiers are what is checked directly and the key itself through the
+        // event it produces.
+        assert_eq!((parsed[1].1, parsed[1].2, parsed[1].3), (true, true, false));
+        let event = injected_key_event(parsed[1].0, parsed[1].1, parsed[1].2, parsed[1].3);
+        assert!(event.modifiers.control && event.modifiers.alt && !event.modifiers.shift);
+        assert!(parse_control_keys(&[]).expect("empty is valid").is_empty());
+    }
 
     #[test]
     fn composer_enter_is_soft_newline_and_ctrl_o_is_the_only_send_chord() {
