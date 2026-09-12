@@ -121,6 +121,7 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
     }
 
     let mut capability_ids = BTreeSet::new();
+    let mut claimed_anchors = BTreeSet::new();
     let mut referenced_evidence = BTreeSet::new();
     let mut contracted_commands = BTreeSet::new();
     let declared_commands: BTreeSet<_> = required_array(&contract, "public_commands")
@@ -176,6 +177,13 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
         assert!(
             prd_text.contains(anchor),
             "missing exact PRD anchor for {id}"
+        );
+        // One PRD assertion belongs to one capability. A duplicated anchor
+        // would let a second capability cite evidence that does not actually
+        // cover the assertion it claims to ship.
+        assert!(
+            claimed_anchors.insert(anchor.to_owned()),
+            "PRD anchor {anchor:?} is claimed by more than one capability"
         );
 
         let evidence = required_array(capability, "evidence");
