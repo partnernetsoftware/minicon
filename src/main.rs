@@ -8014,6 +8014,52 @@ mod tests {
     /// landed on screen: a preedit running past the right edge or below the
     /// surface stops there and reports only what was drawn, so the cursor is
     /// never pushed off-screen and never lands on unwritten cells.
+    /// Resolving a control target is the server-side check that turns a stale or
+    /// missing tab into a typed refusal instead of a panic or a silent retarget.
+    /// Cover an explicit live tab, the `None` fallback to the active tab, a
+    /// stale id, and `None` with no active tab at all.
+    #[test]
+    fn a_control_target_resolves_live_tabs_and_refuses_the_rest() {
+        let mut app = ConApp::new(None, None);
+        let live = app.workspace.active().expect("a new app has one tab");
+
+        // An explicit live tab resolves to itself.
+        assert_eq!(app.control_target(Some(live)), Ok(live));
+        // No target falls back to the active tab.
+        assert_eq!(app.control_target(None), Ok(live));
+
+        // A stale id — a tab that has since closed — is refused by name.
+        let stale = workspace::TabId::new(9_999);
+        assert_eq!(
+            app.control_target(Some(stale)),
+            Err(format!("terminal @{} does not exist", stale.get()))
+        );
+
+        // A tab in the tree with no session yet is refused the same way: the
+        // authority is the session store, not the workspace.
+        let treeless = app
+            .workspace
+            .add_root("pending".to_owned())
+            .expect("a second root is accepted");
+        assert_eq!(
+            app.control_target(Some(treeless)),
+            Err(format!("terminal @{} does not exist", treeless.get()))
+        );
+
+        // With no active tab, a `None` target has nothing to fall back to.
+        app.workspace.close(live);
+        if let Some(pending) = app.workspace.active() {
+            // The freshly added root became active; close it too so the
+            // workspace is empty for the no-active case.
+            app.workspace.close(pending);
+        }
+        assert_eq!(app.workspace.active(), None, "the workspace must be empty");
+        assert_eq!(
+            app.control_target(None),
+            Err("no active terminal".to_owned())
+        );
+    }
+
     #[test]
     fn preedit_advance_counts_only_the_cells_it_drew() {
         // A surface 5 cells wide and 2 rows tall, with a 1-cell cursor row.
