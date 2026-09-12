@@ -1138,6 +1138,93 @@ mod tests {
         assert_eq!(composer.caret, composer.text.len());
     }
 
+    /// A failed delivery hands the submission back to the editor, so taking and
+    /// restoring it must reproduce exactly what was typed. The trailing byte
+    /// `take_submission` adds is an Enter, not content, and the embedded breaks
+    /// are visual soft newlines — so the restore must strip one trailing break
+    /// and no more, or a draft that ends in a newline would lose it.
+    #[test]
+    fn a_failed_submission_round_trips_every_draft_shape() {
+        for draft in [
+            "echo ok",
+            "first\nsecond",
+            "first\nsecond\n",
+            "\n",
+            "\n\n",
+            "trailing \n\n",
+            "\u{4e2d}\u{6587}\n\u{5b57}",
+            "a\nb\nc\nd",
+        ] {
+            let mut composer = state(draft);
+            let submission = composer
+                .take_submission()
+                .expect("a non-empty draft submits");
+            // The wire form carries no soft newline and ends in exactly one
+            // Enter.
+            assert!(!submission.contains('\n'), "{draft:?} left a soft newline");
+            assert!(submission.ends_with('\r'), "{draft:?} lost its Enter");
+            assert_eq!(
+                submission.matches('\r').count(),
+                draft.matches('\n').count() + 1,
+                "{draft:?} must carry one Enter per break plus the final one"
+            );
+            // Restoring returns the draft exactly, breaks and all.
+            composer.restore_failed_submission(submission, "PTY is closed".to_owned());
+            assert_eq!(
+                composer.text, draft,
+                "the draft did not survive the round trip"
+            );
+            assert_eq!(composer.submit_error.as_deref(), Some("PTY is closed"));
+            assert!(composer.focused, "a failed send must refocus the editor");
+            assert!(composer.preedit.is_empty());
+            assert!(!composer.select_all);
+
+            // Submitting the restored draft again yields the same wire form, so
+            // a retry is not subtly different from the first attempt.
+            let again = composer
+                .take_submission()
+                .expect("the restored draft submits");
+            assert_eq!(
+                again,
+                submission_for(draft),
+                "a retry must match the first try"
+            );
+        }
+    }
+
+    /// The wire form of a draft: soft newlines become Enter bytes and one final
+    /// Enter is appended. Spelled out separately so the round-trip assertions
+    /// do not simply restate the implementation.
+    fn submission_for(draft: &str) -> String {
+        format!("{}\r", draft.replace('\n', "\r"))
+    }
+
+    /// A restore whose submission has no trailing Enter (a delivery that failed
+    /// before the final byte, or a caller that stripped it) must not eat a
+    /// character of the draft.
+    #[test]
+    fn restoring_a_submission_without_a_trailing_enter_keeps_every_character() {
+        let mut composer = ComposerState::default();
+        composer.restore_failed_submission("plain".to_owned(), "boom".to_owned());
+        assert_eq!(
+            composer.text, "plain",
+            "nothing to strip means nothing stripped"
+        );
+
+        let mut composer = ComposerState::default();
+        composer.restore_failed_submission("one\rtwo".to_owned(), "boom".to_owned());
+        assert_eq!(
+            composer.text, "one\ntwo",
+            "interior breaks still become soft newlines"
+        );
+
+        // A draft that is only an Enter inside the wire's final Enter: the one
+        // trailing byte is the submit, so an empty text comes back.
+        let mut composer = ComposerState::default();
+        composer.restore_failed_submission("\r".to_owned(), "boom".to_owned());
+        assert_eq!(composer.text, "", "the lone trailing Enter is the submit");
+    }
+
     #[test]
     fn cancel_and_submit_clear_transient_state_atomically() {
         let mut composer = ComposerState {
