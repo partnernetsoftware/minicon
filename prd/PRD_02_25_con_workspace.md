@@ -326,7 +326,10 @@ the window rather than being hidden to save pixels.
   Ctrl+O use this same path; embedded breaks remain inside the paste.
   The raw-PTY black-box `composer_send_delivers_paste_then_submit_to_raw_application`
   verifies single- and multiline drafts with exactly one final Enter outside
-  the paste markers, without a second user action. This protocol check is
+  the paste markers, without a second user action. That test is `#[cfg(unix)]`:
+  it needs a PTY peer it can drive with `stty`/`dd`, so on Windows this specific
+  protocol check does not run and the framing is covered there only by the
+  in-process tests. This protocol check is
   not a claim of validation against every interactive harness version.
   Clipboard paste stores the same visible soft breaks as
   Newline after folding CRLF/CR to LF and dropping unsafe controls; Send is
