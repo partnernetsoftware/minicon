@@ -361,6 +361,99 @@ mod tests {
         assert_eq!(tree.children_of(NODE_SESSION), vec![NODE_OFFSCREEN_FIELD]);
     }
 
+    /// `saturating_i32` is the only bridge from the frame's `u32` geometry to
+    /// the accessibility tree's `i32` bounds, so it must clamp rather than wrap:
+    /// a wrapped negative would place a node off the screen's top-left, where a
+    /// screen reader would read it as being behind the window.
+    #[test]
+    fn saturating_i32_clamps_instead_of_wrapping() {
+        assert_eq!(saturating_i32(0), 0);
+        assert_eq!(saturating_i32(1), 1);
+        assert_eq!(saturating_i32(i32::MAX as u32), i32::MAX, "the boundary");
+        assert_eq!(
+            saturating_i32(i32::MAX as u32 + 1),
+            i32::MAX,
+            "one past the boundary clamps rather than going negative"
+        );
+        assert_eq!(saturating_i32(u32::MAX), i32::MAX);
+        assert!(
+            saturating_i32(u32::MAX) > 0,
+            "a wrapped value would be negative, which is the bug this prevents"
+        );
+    }
+
+    /// The session box is the frame inset by the sidebar and capped at the
+    /// composer's top edge, so the published bounds never claim the tab column
+    /// or the input strip. A frame narrower than the sidebar yields a zero-width
+    /// box rather than an underflow.
+    #[test]
+    fn session_rect_is_inset_by_the_sidebar_and_capped_at_the_composer() {
+        let layout = Layout::new(960, 600, 1.0);
+        let session = session_rect(layout, 960, 600);
+        assert_eq!(
+            session.x, layout.sidebar.width,
+            "the tab column is excluded"
+        );
+        assert_eq!(session.y, 0);
+        assert_eq!(session.width, 960 - layout.sidebar.width);
+        assert_eq!(
+            session.height, layout.composer.y,
+            "the box stops where the composer starts"
+        );
+
+        // A frame shorter than the composer's top edge is capped by the frame.
+        let short = session_rect(layout, 960, 10);
+        assert_eq!(short.height, 10, "the frame height caps the box");
+
+        // A frame narrower than the sidebar has no width left, not a negative.
+        let narrow = session_rect(layout, 10, 600);
+        assert_eq!(narrow.width, 0, "width saturates rather than underflowing");
+    }
+
+    /// The offscreen field sits just below the session box — AT-SPI needs a
+    /// text field that exists but is out of the visual way — and it keeps at
+    /// least one pixel of width so the tool cannot reject a zero-sized node.
+    #[test]
+    fn the_offscreen_field_sits_below_the_session_and_keeps_a_pixel_of_width() {
+        let layout = Layout::new(960, 600, 1.0);
+        let session = session_rect(layout, 960, 600);
+        let field = offscreen_field_rect(session);
+        assert_eq!(field.x, session.x, "it aligns with the session's left edge");
+        assert_eq!(
+            field.y,
+            session.y + session.height + OFFSCREEN_FIELD_GAP,
+            "it starts a gap below the session"
+        );
+        assert_eq!(field.width, session.width);
+        assert_eq!(field.height, OFFSCREEN_FIELD_HEIGHT);
+
+        // A session with no width still yields a usable node.
+        let empty = Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        };
+        let from_empty = offscreen_field_rect(empty);
+        assert_eq!(
+            from_empty.width, 1,
+            "a zero-width session still gets a node"
+        );
+        assert_eq!(from_empty.y, OFFSCREEN_FIELD_GAP);
+
+        // A session tall enough that the offset would overflow saturates, so the
+        // field stays on the positive side of the origin.
+        let huge = Rect {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: u32::MAX,
+        };
+        let from_huge = offscreen_field_rect(huge);
+        assert_eq!(from_huge.y, u32::MAX, "the offset saturates");
+        assert!(from_huge.y > 0, "a wrapped offset would be near zero");
+    }
+
     #[test]
     fn extreme_frame_bounds_saturate_instead_of_collapsing() {
         let tree = tree(
