@@ -93,12 +93,7 @@ impl Workspace {
                 node.parent = removed.parent;
             }
         }
-        self.depths = agenterm_ui_core::compute_tree_depths_by(
-            &self.nodes,
-            |node| node.id,
-            |node| node.parent,
-        )
-        .unwrap_or_else(|_| vec![0; self.nodes.len()]);
+        self.depths = self.recompute_depths();
         if self.active == Some(id) {
             self.active = self
                 .nodes
@@ -107,6 +102,33 @@ impl Workspace {
                 .map(|node| node.id);
         }
         Some(removed)
+    }
+
+    /// Recomputes every node's depth from parentage.
+    ///
+    /// The tree this module builds cannot make `compute_tree_depths_by` fail:
+    /// ids come from a monotonic counter (no duplicates), `add_child` demands a
+    /// live parent, and `close` reparents a removed node's children to its own
+    /// parent (still an ancestor, so no cycle). A failure would therefore be a
+    /// bug in this module, not bad input. Surface it loudly under `debug_assert`
+    /// so a test catches it, but keep the shipped build's defined behaviour of
+    /// a flat tree rather than turning a rendering glitch into a panic in a
+    /// windowed process with no console.
+    fn recompute_depths(&self) -> Vec<u32> {
+        match agenterm_ui_core::compute_tree_depths_by(
+            &self.nodes,
+            |node| node.id,
+            |node| node.parent,
+        ) {
+            Ok(depths) => depths,
+            Err(error) => {
+                debug_assert!(
+                    false,
+                    "workspace parentage is not a well-formed tree: {error:?}"
+                );
+                vec![0; self.nodes.len()]
+            }
+        }
     }
 
     fn add(&mut self, parent: Option<TabId>, title: String, depth: u32) -> Option<TabId> {
@@ -168,6 +190,36 @@ mod tests {
         assert_eq!(workspace.add_root("exhausted".into()), None);
         assert_eq!(workspace.nodes().len(), node_count);
         assert_eq!(workspace.active(), active);
+    }
+
+    /// The depth recomputation is documented as unable to fail for a tree this
+    /// module builds, so the failure branch is not reachable through the public
+    /// API. Force the ill-formed state (a child whose parent id is absent) and
+    /// prove two things: it is loud under `debug_assert` (a test build panics),
+    /// and the shipped path still returns a defined flat vector rather than
+    /// propagating the error into a windowed process with no console.
+    #[test]
+    fn an_ill_formed_tree_is_loud_in_debug_and_flat_in_release() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("root".into()).unwrap();
+        workspace.add_child(root, "child".into()).unwrap();
+        // Splice in a parent id that no node carries. Only reachable here
+        // because the test module can see `nodes`; the public API cannot.
+        workspace.nodes.push(TabNode {
+            id: TabId::new(500),
+            parent: Some(TabId::new(999)),
+            title: "orphan".into(),
+        });
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            workspace.recompute_depths()
+        }));
+        match result {
+            Err(_) => {}
+            Ok(depths) => {
+                panic!("an ill-formed tree must trip the debug assertion, got depths {depths:?}")
+            }
+        }
     }
 
     /// A stale id (a click on a tab that has since closed, a control command
