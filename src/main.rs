@@ -1296,12 +1296,23 @@ impl ConApp {
         self.workspace.active().is_none()
     }
 
+    /// Makes `id` the active tab and reports whether that changed anything. A
+    /// re-selection of the already-active tab is a no-op, which is what keeps
+    /// the windowed caller from cancelling pointer gestures the user is still
+    /// performing.
+    fn select_tab(&mut self, id: workspace::TabId) -> bool {
+        if self.workspace.active() == Some(id) {
+            return false;
+        }
+        self.workspace.set_active(id)
+    }
+
     fn activate_session(&mut self, window: &PixelWindow, id: workspace::TabId) {
         if self.workspace.active() == Some(id) {
             return;
         }
         self.cancel_pointer_gestures_for_activation(window);
-        self.workspace.set_active(id);
+        self.select_tab(id);
     }
 
     fn refresh_title(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
@@ -8028,6 +8039,38 @@ mod tests {
     /// missing tab into a typed refusal instead of a panic or a silent retarget.
     /// Cover an explicit live tab, the `None` fallback to the active tab, a
     /// stale id, and `None` with no active tab at all.
+    /// Selecting a tab reports whether it changed the active tab, so the
+    /// windowed caller can skip the pointer-gesture cancel when the user
+    /// re-selected the tab they are already on. A stale id is refused by
+    /// `set_active` and reports no change rather than silently retargeting.
+    #[test]
+    fn selecting_a_tab_reports_whether_the_active_tab_changed() {
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.active().expect("one tab to start");
+        let second = app.workspace.add_root("second".to_owned()).unwrap();
+        assert!(app.workspace.set_active(first));
+
+        // Re-selecting the active tab changes nothing.
+        assert!(!app.select_tab(first), "already active is a no-op");
+        assert_eq!(app.workspace.active(), Some(first));
+        // Selecting a different tab changes the active tab and reports it.
+        assert!(app.select_tab(second), "a new tab is a change");
+        assert_eq!(app.workspace.active(), Some(second));
+        // And back again.
+        assert!(app.select_tab(first));
+        assert_eq!(app.workspace.active(), Some(first));
+
+        // An id that no longer exists is refused: no change is reported and the
+        // selection stays where it was, rather than moving to nothing.
+        let stale = workspace::TabId::new(9_999);
+        assert!(!app.select_tab(stale), "an unknown id cannot become active");
+        assert_eq!(
+            app.workspace.active(),
+            Some(first),
+            "a refused selection must not disturb the current one"
+        );
+    }
+
     /// Closing a tab drops its session and node, and reports whether that left
     /// the workspace empty — the case the windowed caller answers with a
     /// greeting page instead of a new active session. It also carries the
