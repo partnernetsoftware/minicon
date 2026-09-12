@@ -1455,6 +1455,83 @@ mod native_endpoint_tests {
         );
     }
 
+    /// A completed reply whose bytes would exceed the cache budget is kept as a
+    /// tombstone: the id is recognised so a retry fails closed rather than
+    /// executing the mutation a second time, but the payload is not replayable.
+    #[test]
+    fn an_oversized_reply_is_tombstoned_not_replayed() {
+        let cache = ResponseReplayCache::default();
+        let big = vec![0u8; RESPONSE_REPLAY_CACHE_MAX_BYTES / 2 + 1];
+        let first = RequestId(1);
+        let second = RequestId(2);
+        assert!(matches!(cache.claim(first), ReplayClaim::Owner));
+        assert!(matches!(cache.claim(second), ReplayClaim::Owner));
+        cache.complete(first, big.clone());
+        assert!(
+            matches!(cache.claim(first), ReplayClaim::Replay(_)),
+            "the first fits the budget"
+        );
+        // The second pushes the total past the budget, so it is tombstoned.
+        cache.complete(second, big);
+        assert!(
+            matches!(cache.claim(second), ReplayClaim::Tombstone),
+            "an over-budget reply must fail closed, not replay"
+        );
+        // The tombstone still owns the id: it is never handed out as an Owner
+        // again, which is what would let the mutation run twice.
+        assert!(!matches!(cache.claim(second), ReplayClaim::Owner));
+    }
+
+    /// The cache drops entries older than its TTL, so an id from a long-finished
+    /// request is claimed as an Owner again. That window is deliberate — it is
+    /// what keeps the cache from growing forever — so pin it rather than assume
+    /// an id is replayable indefinitely.
+    #[test]
+    fn a_stale_entry_expires_and_the_id_can_be_claimed_again() {
+        let cache = ResponseReplayCache::default();
+        let id = RequestId(7);
+        assert!(matches!(cache.claim(id), ReplayClaim::Owner));
+        cache.complete(id, vec![1, 2, 3]);
+        assert!(matches!(cache.claim(id), ReplayClaim::Replay(_)));
+
+        // Age every entry well past the TTL. The next claim must evict it and
+        // report a fresh Owner rather than a replay.
+        {
+            let mut entries = cache
+                .entries
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for entry in entries.iter_mut() {
+                entry.created = Instant::now()
+                    .checked_sub(RESPONSE_REPLAY_CACHE_TTL * 2)
+                    .expect("a two-TTL instant is representable");
+            }
+        }
+        assert!(
+            matches!(cache.claim(id), ReplayClaim::Owner),
+            "an expired entry must not be replayed"
+        );
+    }
+
+    /// `RequestId::fresh` is the value a mutation is deduplicated on, so two
+    /// calls must not collide. It is drawn from the platform entropy source,
+    /// and must fail loudly rather than invent a constant when that is
+    /// unavailable — a constant would make every request the same id.
+    #[test]
+    fn fresh_request_ids_are_distinct_and_never_a_constant() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..1024 {
+            let id = RequestId::fresh().expect("the entropy source answers");
+            assert!(seen.insert(id.0), "a fresh id repeated: {:?}", id.0);
+        }
+        // A zero id is the shape a "no entropy" fallback would take, so rule it
+        // out explicitly even though the set above already would.
+        assert!(
+            !seen.contains(&0),
+            "a fresh id must not be the zero fallback"
+        );
+    }
+
     #[test]
     fn response_replay_cache_is_bounded_and_never_replaces_an_id() {
         let cache = ResponseReplayCache::default();
