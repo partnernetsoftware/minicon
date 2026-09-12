@@ -6359,13 +6359,26 @@ fn paint_button_label(
         .width
         .max(1)
         .saturating_mul(u32::try_from(composer::cells(label)).unwrap_or(u32::MAX));
+    let (x, y) = centered_label_origin(button, label_width, metrics.height.max(1));
+    paint_host_ui_text(surface, x, y, label, color, font_size_px, button.width);
+}
+
+/// Where a label of `label_width` by `label_height` sits inside `button`.
+///
+/// Centring is computed rather than tuned, and it must stay inside the button
+/// for every label: a label wider or taller than its box has no slack to
+/// centre in, so the saturating subtraction pins it to the button's origin
+/// instead of letting it start before the button. The painter then clips it,
+/// keeping the label's first characters readable rather than centring the
+/// middle of a word.
+fn centered_label_origin(button: ui::Rect, label_width: u32, label_height: u32) -> (u32, u32) {
     let x = button
         .x
         .saturating_add(button.width.saturating_sub(label_width) / 2);
     let y = button
         .y
-        .saturating_add(button.height.saturating_sub(metrics.height.max(1)) / 2);
-    paint_host_ui_text(surface, x, y, label, color, font_size_px, button.width);
+        .saturating_add(button.height.saturating_sub(label_height) / 2);
+    (x, y)
 }
 
 fn paint_two_line_button_label(
@@ -6788,6 +6801,29 @@ mod tests {
             candidate_bounds(DirtyRegion::full(), 0, 0),
             PixelRect::empty()
         );
+    }
+
+    /// A label narrower than its button is centred with the leftover split two
+    /// ways; one wider or taller than the button has no slack, so it pins to
+    /// the button's origin (left-aligned) rather than starting before it. The
+    /// origin must never leave the button.
+    #[test]
+    fn a_label_is_centred_when_it_fits_and_pinned_when_it_does_not() {
+        let button = ui::Rect {
+            x: 40,
+            y: 12,
+            width: 100,
+            height: 24,
+        };
+        // Narrower: centred. Leftover 40 splits to 20 each side.
+        assert_eq!(centered_label_origin(button, 60, 10), (40 + 20, 12 + 7));
+        // Exactly the button's size: no slack, so the origin is the button's.
+        assert_eq!(centered_label_origin(button, 100, 24), (40, 12));
+        // Wider and taller: still the button's origin, never before it.
+        assert_eq!(centered_label_origin(button, 500, 500), (40, 12));
+        // One pixel of slack rounds down, keeping the extra cell on the right.
+        assert_eq!(centered_label_origin(button, 99, 23), (40, 12));
+        assert_eq!(centered_label_origin(button, 98, 22), (40 + 1, 12 + 1));
     }
 
     #[test]
