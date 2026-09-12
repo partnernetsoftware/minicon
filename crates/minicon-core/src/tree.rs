@@ -86,15 +86,29 @@ where
             .map(|index| indexes[index].1)
     };
 
+    // Validate and resolve parentage in one pass, keeping the resolved index
+    // rather than the id. The walk below then indexes directly, so there is no
+    // second lookup and no `expect` on a "this cannot fail" invariant: the only
+    // way to get a `None` here is the `MissingParent` return above, and after
+    // that every entry is either the root or a valid index into `nodes`.
+    //
+    // The alternative -- resolving again inside the walk -- is what the original
+    // did, and it is the kind of unreachable panic that is invisible until it is
+    // not: this crate's output feeds a windowed process with no console.
+    let mut parent_indexes = Vec::with_capacity(parents.len());
     for (index, parent) in parents.iter().copied().enumerate() {
-        if let Some(parent) = parent
-            && index_of(parent).is_none()
-        {
-            return Err(TreeDepthError::MissingParent {
-                id: ids[index],
-                parent,
-                index,
-            });
+        match parent {
+            None => parent_indexes.push(None),
+            Some(parent) => match index_of(parent) {
+                Some(parent_index) => parent_indexes.push(Some(parent_index)),
+                None => {
+                    return Err(TreeDepthError::MissingParent {
+                        id: ids[index],
+                        parent,
+                        index,
+                    });
+                }
+            },
         }
     }
 
@@ -126,8 +140,8 @@ where
 
             state[current] = 1;
             path.push(current);
-            match parents[current] {
-                Some(parent) => current = index_of(parent).expect("validated parent index"),
+            match parent_indexes[current] {
+                Some(parent_index) => current = parent_index,
                 None => break,
             }
         }
@@ -135,10 +149,8 @@ where
         // Settle the path from the deepest node back towards its root, so each
         // depth is already known when it is needed.
         for &index in path.iter().rev() {
-            depths[index] = parents[index]
-                .map(|parent| {
-                    depths[index_of(parent).expect("validated parent index")].saturating_add(1)
-                })
+            depths[index] = parent_indexes[index]
+                .map(|parent_index| depths[parent_index].saturating_add(1))
                 .unwrap_or(0);
             state[index] = 2;
         }
@@ -190,6 +202,54 @@ mod tests {
 
     fn node(id: u32, parent: Option<u32>) -> TreeDepthNode<u32> {
         TreeDepthNode { id, parent }
+    }
+
+    /// Depths do not depend on the order the walk happens to settle nodes in.
+    ///
+    /// The walk resolves each parent to an index once, up front, and then
+    /// follows those indexes; an earlier version re-resolved the parent id while
+    /// walking and settled the path from the deepest node back. Both are
+    /// supposed to produce the same depths, and this checks that on shapes
+    /// where the two orders differ: a parent declared after its child, a forest
+    /// of several roots interleaved in the input, and a chain that shares a
+    /// prefix with a sibling branch.
+    #[test]
+    fn depth_does_not_depend_on_the_order_nodes_are_settled_in() {
+        for nodes in [
+            vec![node(3, Some(2)), node(1, None), node(2, Some(1))],
+            vec![node(5, Some(1)), node(9, None), node(1, Some(9)), node(4, None)],
+            vec![
+                node(1, None),
+                node(2, Some(1)),
+                node(3, Some(2)),
+                node(4, Some(2)),
+                node(5, Some(3)),
+            ],
+        ] {
+            let depths = compute_tree_depths(&nodes).expect("well-formed");
+            // Recompute through the accessor form on a by-value copy, which
+            // builds its own index and so cannot share the first pass's state.
+            let copies: Vec<_> = nodes
+                .iter()
+                .map(|n| TreeDepthNode { id: n.id, parent: n.parent })
+                .collect();
+            let again = compute_tree_depths_by(&copies, |n| n.id, |n| n.parent)
+                .expect("well-formed");
+            assert_eq!(depths, again);
+            // Every depth is one more than its parent's, which is the property
+            // the ordering must not violate.
+            for (index, n) in nodes.iter().enumerate() {
+                if let Some(parent) = n.parent {
+                    let parent_index = nodes.iter().position(|c| c.id == parent).unwrap();
+                    assert_eq!(
+                        depths[index],
+                        depths[parent_index] + 1,
+                        "node {} under {parent}",
+                        n.id
+                    );
+                }
+            }
+        }
     }
 
     #[test]
