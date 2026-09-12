@@ -781,6 +781,62 @@ mod tests {
         }
     }
 
+    /// The line window is the vertical half of the same fit rule, and it is
+    /// consumed together with the horizontal window. Sweep multi-line drafts of
+    /// mixed narrow and wide characters: whatever the caret and visible rows,
+    /// the returned window must be a real subrange of the text's lines, must
+    /// contain the caret's line, and must keep the caret on a row inside it.
+    #[test]
+    fn the_line_window_always_contains_the_caret_line() {
+        let texts = [
+            "a",
+            "a\nb",
+            "first\nsecond\nthird",
+            "\u{4e2d}\u{6587}\n\u{4e2d}",
+            "one\ntwo\n\u{4e2d}\u{6587}\u{5b57}\nfour\nfive",
+            "trailing\n",
+            "\n\n\n",
+        ];
+        for text in texts {
+            let total = line_count(text);
+            // Every caret on a character boundary, including both ends.
+            let mut carets: Vec<usize> = (0..=text.len())
+                .filter(|index| text.is_char_boundary(*index))
+                .collect();
+            carets.dedup();
+            for caret in carets {
+                for rows in [1usize, 2, 3, 4, 100] {
+                    let window = visible_line_window(text, caret, rows);
+                    assert!(
+                        window.line_count >= 1,
+                        "text {text:?} caret {caret} rows {rows} showed no line"
+                    );
+                    assert!(
+                        window.line_count <= rows.max(1),
+                        "text {text:?} caret {caret} rows {rows} showed more than asked"
+                    );
+                    assert!(
+                        window.first_line + window.line_count <= total,
+                        "text {text:?} caret {caret} rows {rows} ran past the text: {:?}",
+                        window
+                    );
+                    let caret_line = line_index_at(text, caret);
+                    assert!(
+                        window.first_line <= caret_line
+                            && caret_line < window.first_line + window.line_count,
+                        "text {text:?} caret {caret} rows {rows} hid the caret line {caret_line}: {:?}",
+                        window
+                    );
+                    assert_eq!(
+                        window.caret_row,
+                        caret_line - window.first_line,
+                        "the caret row must be its offset inside the window"
+                    );
+                }
+            }
+        }
+    }
+
     // --- the caret --------------------------------------------------------
 
     /// The whole point of the caret: text can be inserted in the middle, not
