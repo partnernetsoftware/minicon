@@ -36,6 +36,12 @@ case "$mode" in
   release) cargo build --locked --release "$@" ;;
   dev) cargo build --locked "$@" ;;
   check) cargo check --locked --workspace --all-targets "$@" ;;
-  test) cargo test --locked --workspace "$@" ;;
+  # Deny the lints that can silently disable a test. An unused function in a
+  # test module compiles and runs nothing, and an unused `Result` hides a
+  # failing setup, so the test gate treats both as errors. Passed per
+  # invocation rather than through `RUSTFLAGS` so the build cache stays valid.
+  test) cargo test --locked --workspace \
+    --config 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]' \
+    "$@" ;;
   *) echo "usage: scripts/build.sh [release|dev|check|test] [cargo arguments...]" >&2; exit 2 ;;
 esac

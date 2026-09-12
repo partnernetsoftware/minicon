@@ -8053,8 +8053,14 @@ mod tests {
         let root = app.workspace.active().expect("one tab to start");
         let parent = app.workspace.add_root("parent".to_owned()).unwrap();
         let child = app.workspace.add_child(parent, "child".to_owned()).unwrap();
-        app.sessions.insert(parent, ConTerminal::new(None)).is_ok();
-        app.sessions.insert(child, ConTerminal::new(None)).is_ok();
+        assert!(
+            app.sessions.insert(parent, ConTerminal::new(None)).is_ok(),
+            "a fresh store accepts the parent"
+        );
+        assert!(
+            app.sessions.insert(child, ConTerminal::new(None)).is_ok(),
+            "a fresh store accepts the child"
+        );
         assert!(app.workspace.set_active(child));
 
         // Close the parent, not the tab that is active.
@@ -8094,7 +8100,11 @@ mod tests {
         let parent = app.workspace.add_root("parent".to_owned()).unwrap();
         let child = app.workspace.add_child(parent, "child".to_owned()).unwrap();
         for id in [parent, child] {
-            app.sessions.insert(id, ConTerminal::new(None)).is_ok();
+            assert!(
+                app.sessions.insert(id, ConTerminal::new(None)).is_ok(),
+                "a fresh store accepts @{}",
+                id.get()
+            );
         }
 
         assert!(app.workspace.set_active(child));
@@ -8201,7 +8211,10 @@ mod tests {
         let mut app = ConApp::new(None, None);
         let first = app.workspace.active().unwrap();
         let second = app.workspace.add_root("second".to_owned()).unwrap();
-        app.sessions.insert(second, ConTerminal::new(None)).is_ok();
+        assert!(
+            app.sessions.insert(second, ConTerminal::new(None)).is_ok(),
+            "a fresh store accepts the second tab"
+        );
         assert!(app.sessions.contains_key(&second));
         assert!(app.workspace.set_active(first));
         assert!(
