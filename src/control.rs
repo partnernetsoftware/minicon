@@ -3107,6 +3107,79 @@ mod tests {
         assert!(decode_response(&[9]).is_err());
     }
 
+    /// The reader is the decoder's only defense against a malformed or hostile
+    /// peer, so each guard must refuse with its own reason rather than reading
+    /// past the buffer: a declared length larger than what remains (including
+    /// one that would overflow the position) is truncation, a non-UTF-8 text
+    /// field is refused, a boolean tag other than 0/1 is invalid, and a tab id
+    /// of zero is not a tab.
+    #[test]
+    fn the_wire_reader_refuses_truncation_and_invalid_fields() {
+        // send-text = tag 8, no target (0), then a length that is far larger
+        // than the bytes actually present.
+        let mut short_string = vec![8u8, 0];
+        short_string.extend_from_slice(&99u32.to_le_bytes());
+        short_string.extend_from_slice(b"only a few");
+        assert_eq!(
+            decode_request(&short_string),
+            Err("truncated control request".to_owned()),
+            "a length past the end must be truncation"
+        );
+
+        // A declared length of u32::MAX cannot be satisfied by any buffer, and
+        // the checked add must reject it before allocating or slicing.
+        let mut huge = vec![8u8, 0];
+        huge.extend_from_slice(&u32::MAX.to_le_bytes());
+        huge.extend_from_slice(b"data");
+        assert_eq!(
+            decode_request(&huge),
+            Err("truncated control request".to_owned())
+        );
+
+        // A well-sized text field carrying invalid UTF-8 is refused as such,
+        // not as truncation.
+        let mut bad_utf8 = vec![8u8, 0];
+        bad_utf8.extend_from_slice(&2u32.to_le_bytes());
+        bad_utf8.extend_from_slice(&[0xff, 0xfe]);
+        assert_eq!(
+            decode_request(&bad_utf8),
+            Err("control string is not valid UTF-8".to_owned())
+        );
+
+        // new-tab = tag 3, then a presence byte of 2, which is neither absent
+        // nor present.
+        assert_eq!(
+            decode_request(&[3, 2]),
+            Err("invalid control boolean tag".to_owned())
+        );
+        // select-tab = tag 4 with a zero tab id.
+        let mut zero_tab = vec![4u8];
+        zero_tab.extend_from_slice(&0u64.to_le_bytes());
+        assert_eq!(
+            decode_request(&zero_tab),
+            Err("control tab id must not be zero".to_owned())
+        );
+
+        // A field that ends exactly at the buffer's end is not truncated: the
+        // guard checks the end, not "some bytes left over".
+        let mut exact = vec![8u8, 0];
+        exact.extend_from_slice(&2u32.to_le_bytes());
+        exact.extend_from_slice(b"hi");
+        assert_eq!(
+            decode_request(&exact),
+            Ok(CliCommand::SendText {
+                target: None,
+                text: "hi".to_owned(),
+            })
+        );
+        // One byte short of that length is truncation again.
+        exact.pop();
+        assert_eq!(
+            decode_request(&exact),
+            Err("truncated control request".to_owned())
+        );
+    }
+
     /// The response codec is the shape a summary answer arrives in: an error
     /// string, a null, a plain string, or a JSON object. Every tag must round
     /// trip, and the null tag must carry nothing after it — a stray byte there
