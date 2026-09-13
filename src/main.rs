@@ -3058,17 +3058,11 @@ impl ConApp {
                 // hovered row actually changes, so motion over the terminal or
                 // an unchanged row costs no frame.
                 let count = self.workspace.nodes().len();
-                let hovered = match ui::tree_hit(
-                    layout,
-                    x,
-                    y,
-                    self.tree_scroll_offset,
-                    count,
-                    scale,
-                ) {
-                    ui::TreeHit::Select(index) | ui::TreeHit::Close(index) => Some(index),
-                    _ => None,
-                };
+                let hovered =
+                    match ui::tree_hit(layout, x, y, self.tree_scroll_offset, count, scale) {
+                        ui::TreeHit::Select(index) | ui::TreeHit::Close(index) => Some(index),
+                        _ => None,
+                    };
                 if hovered != self.hovered_tree_row {
                     self.hovered_tree_row = hovered;
                     self.mark_host_ui_full();
@@ -3580,7 +3574,16 @@ impl ConApp {
             (layout.zoom_reset, HeaderIcon::ZoomReset, false),
             (layout.zoom_in, HeaderIcon::ZoomIn, false),
         ] {
-            paint_header_icon_button(&mut surface, button, icon, text, selected, t.surface, icon_size, scale);
+            paint_header_icon_button(
+                &mut surface,
+                button,
+                icon,
+                text,
+                selected,
+                t.surface,
+                icon_size,
+                scale,
+            );
         }
 
         let strings = self.ui_language.strings();
@@ -6603,7 +6606,13 @@ fn paint_status_bar(
         return;
     }
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
-    surface.fill_rect(bar.x, bar.y, bar.width, bar.height, theme.sidebar_bg.to_xrgb());
+    surface.fill_rect(
+        bar.x,
+        bar.y,
+        bar.width,
+        bar.height,
+        theme.sidebar_bg.to_xrgb(),
+    );
     // A one-pixel rule separates the bar from the composer above it.
     surface.fill_rect(bar.x, bar.y, bar.width, 1, theme.border.to_xrgb());
     let metrics = font::cell_metrics(font_size_px);
@@ -6641,9 +6650,7 @@ fn paint_status_bar(
     // Left: the active tab label, clipped so it never runs into the readout.
     if !left_label.is_empty() {
         let left_x = bar.x.saturating_add(pad);
-        let left_max = readout_x
-            .saturating_sub(dip(8.0))
-            .saturating_sub(left_x);
+        let left_max = readout_x.saturating_sub(dip(8.0)).saturating_sub(left_x);
         paint_host_ui_text(
             surface,
             left_x,
@@ -6656,6 +6663,7 @@ fn paint_status_bar(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn paint_help_panel(
     surface: &mut Surface<'_>,
     layout: ui::Layout,
@@ -6697,11 +6705,7 @@ fn paint_help_panel(
             x,
             y,
             line,
-            if index == 0 {
-                theme.text
-            } else {
-                theme.muted
-            },
+            if index == 0 { theme.text } else { theme.muted },
             font_size_px,
             panel.width.saturating_sub(dip(48.0)),
         );
@@ -6745,6 +6749,7 @@ fn stroke_rect(surface: &mut Surface<'_>, rect: ui::Rect, stroke: u32, color: Rg
 /// drawn around them. Selection uses a quiet background and short underline;
 /// the icon itself stays high-contrast. Geometry avoids depending on a symbol
 /// font while keeping the zoom family to the simplest possible marks.
+#[allow(clippy::too_many_arguments)]
 fn paint_header_icon_button(
     surface: &mut Surface<'_>,
     button: ui::Rect,

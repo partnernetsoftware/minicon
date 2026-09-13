@@ -339,7 +339,7 @@ impl UiLanguage {
         }
     }
 
-        /// The label painted on this language's own entry. Each is written in the
+    /// The label painted on this language's own entry. Each is written in the
     /// language it selects: a switch labelled in the language you are leaving
     /// is unreadable to the person who needs it.
     #[must_use]
@@ -840,8 +840,18 @@ mod tests {
         );
         // The tab identifier travels with the label, so a translated prefix
         // must still leave the `@` that names the tab.
-        assert!(UiLanguage::ChineseSimplified.strings().send_to.ends_with('@'));
-        assert!(UiLanguage::ChineseTraditional.strings().send_to.ends_with('@'));
+        assert!(
+            UiLanguage::ChineseSimplified
+                .strings()
+                .send_to
+                .ends_with('@')
+        );
+        assert!(
+            UiLanguage::ChineseTraditional
+                .strings()
+                .send_to
+                .ends_with('@')
+        );
         assert!(UiLanguage::English.strings().send_to.ends_with('@'));
     }
 
