@@ -358,6 +358,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
             "control_pointer_owner",
             "terminal_clipboard_paste",
             "ui_language",
+            "ui_theme",
             "composer_focused",
             "composer_text",
             "composer_preedit",

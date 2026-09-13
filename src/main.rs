@@ -33,6 +33,7 @@ mod session_store;
 #[cfg(windows)]
 mod startup;
 mod terminal_paint;
+mod theme;
 mod ui;
 mod workspace;
 
@@ -695,6 +696,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+W       Close active terminal (children are promoted)
   Ctrl+Shift+[ / ]   Switch terminal tabs
   Ctrl+Shift+I       Focus the external input area
+  Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
   Enter              Insert a soft newline in the input area
   Ctrl+O             Send the complete input-area draft
   Up / Down          Recall what you sent before, in the input area
@@ -921,6 +923,7 @@ struct ConApp {
     /// The language MiniCon labels its own host UI in. Child output is never
     /// touched by this.
     ui_language: ui::UiLanguage,
+    ui_theme: theme::ThemeChoice,
     help_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
@@ -1178,6 +1181,7 @@ impl ConApp {
             session_seed,
             composer: composer::ComposerState::default(),
             ui_language: ui::UiLanguage::default(),
+            ui_theme: theme::ThemeChoice::default(),
             help_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
@@ -1736,6 +1740,12 @@ impl ConApp {
         }
         if text == "]" {
             self.select_relative(window, 1)?;
+            return Ok(true);
+        }
+        if text.eq_ignore_ascii_case("p") {
+            self.ui_theme = self.ui_theme.next();
+            self.mark_host_ui_full();
+            self.request_dirty_redraw(window);
             return Ok(true);
         }
         Ok(false)
@@ -2551,6 +2561,7 @@ impl ConApp {
                                 ]),
                             ),
                             ("ui_language", self.ui_language.tag().into()),
+                            ("ui_theme", self.ui_theme.tag().into()),
                             ("composer_focused", self.composer.focused.into()),
                             ("composer_text", self.composer.text.as_str().into()),
                             ("composer_preedit", self.composer.preedit.as_str().into()),
@@ -3076,18 +3087,19 @@ impl ConApp {
         let header_height = layout.tree_header_height;
         let row_height = layout.tree_row_height;
         let host_ui_size = |nominal| scaled_host_ui_font(nominal, session.font_size_logical, scale);
-        // High-contrast monochrome host UI. Applications still retain their
-        // explicit ANSI colors inside the terminal; only the host UI uses
-        // black/white/gray so controls remain legible without color cues.
-        let tree_bg = Rgb(0x08, 0x08, 0x08);
-        let tree_rule = Rgb(0x70, 0x70, 0x70);
-        let branch = Rgb(0x98, 0x98, 0x98);
-        let active_bg = Rgb(0x32, 0x32, 0x32);
-        let accent = Rgb(0xFF, 0xFF, 0xFF);
-        let error_accent = Rgb(0xFF, 0x5C, 0x5C);
-        let composer_bg = Rgb(0x00, 0x00, 0x00);
-        let text = Rgb(0xF5, 0xF5, 0xF5);
-        let muted = Rgb(0xC0, 0xC0, 0xC0);
+        // The host chrome (sidebar, tabs, composer, borders) is themed; the
+        // terminal body keeps its ANSI/xterm colors regardless. Only these
+        // outer surfaces change when the user switches themes.
+        let t = theme::Theme::for_choice(self.ui_theme);
+        let tree_bg = t.sidebar_bg;
+        let tree_rule = t.border;
+        let branch = t.branch;
+        let active_bg = t.surface;
+        let accent = t.accent;
+        let error_accent = t.error;
+        let composer_bg = t.composer_bg;
+        let text = t.text;
+        let muted = t.muted;
         surface.fill_rect(0, 0, tree_width, height, tree_bg.to_xrgb());
         surface.fill_rect(
             tree_width.saturating_sub(1),
@@ -3118,6 +3130,7 @@ impl ConApp {
             HeaderIcon::NewRoot,
             accent,
             false,
+            t.surface,
             header_icon_size,
             scale,
         );
@@ -3127,6 +3140,7 @@ impl ConApp {
             HeaderIcon::Help,
             accent,
             self.help_open,
+            t.surface,
             header_icon_size,
             scale,
         );
@@ -3140,6 +3154,7 @@ impl ConApp {
             }),
             accent,
             self.ui_language.is_chinese(),
+            t.surface,
             header_icon_size,
             scale,
         );
@@ -3149,6 +3164,7 @@ impl ConApp {
             HeaderIcon::Language(ui::UiLanguage::English),
             accent,
             self.ui_language == ui::UiLanguage::English,
+            t.surface,
             header_icon_size,
             scale,
         );
@@ -3163,6 +3179,7 @@ impl ConApp {
                 icon,
                 accent,
                 false,
+                t.surface,
                 header_icon_size,
                 scale,
             );
@@ -3454,6 +3471,7 @@ impl ConApp {
                 scale,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                t,
             );
         }
         Ok(())
@@ -3467,11 +3485,12 @@ impl ConApp {
             PixelRect::from_xywh(0, 0, width, height),
         );
         let layout = self.layout(width, height, scale);
-        let tree_bg = Rgb(0x08, 0x08, 0x08);
-        let canvas = Rgb(0x00, 0x00, 0x00);
-        let rule = Rgb(0x48, 0x48, 0x48);
-        let muted = Rgb(0xA8, 0xA8, 0xA8);
-        let text = Rgb(0xF5, 0xF5, 0xF5);
+        let t = theme::Theme::for_choice(self.ui_theme);
+        let tree_bg = t.sidebar_bg;
+        let canvas = t.canvas_bg;
+        let rule = t.border;
+        let muted = t.muted;
+        let text = t.text;
         surface.fill_rect(0, 0, width, height, canvas.to_xrgb());
         surface.fill_rect(0, 0, layout.sidebar.width, height, tree_bg.to_xrgb());
         surface.fill_rect(
@@ -3507,7 +3526,7 @@ impl ConApp {
             (layout.zoom_reset, HeaderIcon::ZoomReset, false),
             (layout.zoom_in, HeaderIcon::ZoomIn, false),
         ] {
-            paint_header_icon_button(&mut surface, button, icon, text, selected, icon_size, scale);
+            paint_header_icon_button(&mut surface, button, icon, text, selected, t.surface, icon_size, scale);
         }
 
         let strings = self.ui_language.strings();
@@ -3539,7 +3558,7 @@ impl ConApp {
             button.y,
             button.width,
             button.height,
-            Rgb(0x28, 0x28, 0x28).to_xrgb(),
+            t.surface.to_xrgb(),
         );
         stroke_rect(&mut surface, button, scale.max(1.0) as u32, rule);
         paint_button_label(
@@ -3575,6 +3594,7 @@ impl ConApp {
                 scale,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                t,
             );
         }
     }
@@ -6493,6 +6513,7 @@ fn paint_help_panel(
     scale: f64,
     lines: [&str; 8],
     font_size_px: u16,
+    theme: theme::Theme,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
     let available_width = width.saturating_sub(layout.sidebar.width);
@@ -6512,9 +6533,9 @@ fn paint_help_panel(
         panel.y,
         panel.width,
         panel.height,
-        Rgb(0x14, 0x14, 0x14).to_xrgb(),
+        theme.panel_bg.to_xrgb(),
     );
-    stroke_rect(surface, panel, dip(1.0).max(1), Rgb(0x60, 0x60, 0x60));
+    stroke_rect(surface, panel, dip(1.0).max(1), theme.border);
     let metrics = font::cell_metrics(font_size_px);
     let line_height = metrics.height.max(1).saturating_add(dip(9.0));
     let x = panel.x.saturating_add(dip(24.0));
@@ -6526,9 +6547,9 @@ fn paint_help_panel(
             y,
             line,
             if index == 0 {
-                Rgb(0xF5, 0xF5, 0xF5)
+                theme.text
             } else {
-                Rgb(0xC8, 0xC8, 0xC8)
+                theme.muted
             },
             font_size_px,
             panel.width.saturating_sub(dip(48.0)),
@@ -6579,6 +6600,7 @@ fn paint_header_icon_button(
     icon: HeaderIcon,
     color: Rgb,
     selected: bool,
+    selected_bg: Rgb,
     font_size_px: u16,
     scale: f64,
 ) {
@@ -6590,7 +6612,7 @@ fn paint_header_icon_button(
             button.y,
             button.width,
             button.height,
-            Rgb(0x24, 0x24, 0x24).to_xrgb(),
+            selected_bg.to_xrgb(),
         );
         let indicator_width = button.width / 2;
         surface.fill_rect(

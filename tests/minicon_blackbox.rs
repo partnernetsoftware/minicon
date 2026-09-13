@@ -2454,6 +2454,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "terminal_clipboard_paste",
         "terminal_ime_preedit",
         "ui_language",
+        "ui_theme",
         "workspace_empty",
     ]
     .into_iter()
