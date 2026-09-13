@@ -114,13 +114,15 @@ MiniCon has no installer and changes no system configuration. Removing the
 downloaded executable removes MiniCon. It stores only user-local configuration
 and failure diagnostics described by `minicon --status`.
 
-## macOS (not signed yet)
+## macOS
 
-This policy governs Windows only. No MiniCon macOS artifact has been Developer
-ID signed or notarized; the shipped universal binary is ad-hoc signed with no
-team identifier and Gatekeeper rejects it. macOS company signing — Developer ID
-Application plus notarization — is scheduled for **v0.1.9 or v0.1.10**, after
-the Windows switch has shipped alone in the preceding version. Preparation and
+Since **v0.1.9** the macOS universal binary is Developer ID Application signed
+(team `L2N7M5M544`) with a hardened runtime and secure timestamp, and
+Apple-notarized as PARTNERNET SOFTWARE PTY LTD. The `tar.gz` ships the signed
+binary (Gatekeeper clears it online) and a signed + notarized + **stapled**
+`.dmg` ships alongside for offline Gatekeeper acceptance. `release-policy.json`
+carries an independent `signing.macos.mode`; when `required`, missing provider
+configuration blocks the release rather than shipping unsigned. Procedure and
 owner steps live in the company
 [macOS signing skill](https://github.com/partnernetsoftware/company-dev-hub/tree/main/skills/sign-macos-artifacts).
 
