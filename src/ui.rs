@@ -8,6 +8,7 @@ pub const SIDEBAR_WIDTH_DIP: f64 = 224.0;
 pub const TREE_HEADER_HEIGHT_DIP: f64 = 32.0;
 pub const TREE_ROW_HEIGHT_DIP: f64 = 30.0;
 pub const COMPOSER_HEIGHT_DIP: f64 = 96.0;
+pub const STATUS_HEIGHT_DIP: f64 = 24.0;
 pub const SIDEBAR_MIN_WIDTH_DIP: f64 = 224.0;
 pub const SIDEBAR_MAX_WIDTH_DIP: f64 = 480.0;
 pub const TERMINAL_MIN_WIDTH_DIP: f64 = 320.0;
@@ -45,6 +46,9 @@ pub struct Layout {
     /// width the input would otherwise have, and taking a second column from a
     /// single-line input is what makes a long command stop fitting.
     pub composer_newline: Rect,
+    /// Informational bar along the bottom of the terminal side. Carved from
+    /// the terminal height, it never overlaps the sidebar or composer.
+    pub status: Rect,
     pub zoom_out: Rect,
     pub zoom_reset: Rect,
     pub zoom_in: Rect,
@@ -75,12 +79,22 @@ impl Layout {
             scale,
         )
         .min(width);
-        let composer_height = dip(COMPOSER_HEIGHT_DIP, scale).min(height);
+        let status_height = dip(STATUS_HEIGHT_DIP, scale).min(height);
+        let composer_height =
+            dip(COMPOSER_HEIGHT_DIP, scale).min(height.saturating_sub(status_height));
         let composer = Rect {
             x: sidebar_width,
-            y: height.saturating_sub(composer_height),
+            y: height
+                .saturating_sub(status_height)
+                .saturating_sub(composer_height),
             width: width.saturating_sub(sidebar_width),
             height: composer_height,
+        };
+        let status = Rect {
+            x: sidebar_width,
+            y: height.saturating_sub(status_height),
+            width: width.saturating_sub(sidebar_width),
+            height: status_height,
         };
         let padding = dip(12.0, scale);
         let label_height = dip(24.0, scale);
@@ -178,6 +192,7 @@ impl Layout {
             tree_header_height: dip(TREE_HEADER_HEIGHT_DIP, scale),
             tree_row_height: dip(TREE_ROW_HEIGHT_DIP, scale).max(1),
             composer,
+            status,
             composer_input: input,
             composer_send: send,
             composer_newline: newline,
@@ -268,6 +283,15 @@ pub enum ComposerHit {
     Input,
     Send,
     Newline,
+}
+
+/// Where a pointer landed on the bottom status bar. The bar is informational
+/// today; the variant exists so clicks on it are consumed rather than falling
+/// through, and so the settings-era controls have a home to grow into.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StatusHit {
+    Outside,
+    Bar,
 }
 
 /// The language MiniCon labels itself in.
@@ -479,6 +503,16 @@ pub fn composer_hit(layout: Layout, x: u32, y: u32) -> ComposerHit {
     }
 }
 
+/// Hit-test the bottom status bar.
+#[must_use]
+pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
+    if layout.status.contains(x, y) {
+        StatusHit::Bar
+    } else {
+        StatusHit::Outside
+    }
+}
+
 pub fn clamp_tree_scroll(offset: usize, item_count: usize, capacity: usize) -> usize {
     offset.min(item_count.saturating_sub(capacity.max(1)))
 }
@@ -624,10 +658,19 @@ mod tests {
     fn layout_separates_sidebar_terminal_and_composer_controls() {
         let layout = Layout::new(1200, 800, 1.0);
         assert_eq!(layout.sidebar.width, 224);
-        assert_eq!(layout.composer.y, 704);
+        // The status bar carves 24 DIP off the bottom, so the composer ends
+        // above it rather than at the window edge.
+        assert_eq!(layout.composer.y, 680);
         assert!(layout.composer_input.width > layout.composer_send.width);
         assert!(layout.composer_input.x >= layout.composer.x);
         assert!(layout.composer_input.x + layout.composer_input.width < layout.composer_send.x);
+        // The status bar spans the terminal side, sits flush at the bottom, and
+        // the composer stacks directly on top of it with no gap or overlap.
+        assert_eq!(layout.status.x, layout.sidebar.width);
+        assert_eq!(layout.status.width, 1200 - layout.sidebar.width);
+        assert_eq!(layout.status.y, 776);
+        assert_eq!(layout.status.y + layout.status.height, 800);
+        assert_eq!(layout.composer.y + layout.composer.height, layout.status.y);
     }
 
     /// New-root, help, two language entries and three size controls never overlap —
@@ -1071,6 +1114,26 @@ mod tests {
             scroll_tree(3, isize::MAX, 10, 4),
             6,
             "a huge down-scroll clamps"
+        );
+    }
+
+    #[test]
+    fn status_hit_covers_the_bar_and_nothing_above_it() {
+        let layout = Layout::new(1200, 800, 1.0);
+        let bar = layout.status;
+        assert_eq!(
+            status_hit(layout, bar.x + bar.width / 2, bar.y + bar.height / 2),
+            StatusHit::Bar
+        );
+        // A point one row above the bar (in the composer) is not the bar.
+        assert_eq!(
+            status_hit(layout, bar.x + 1, bar.y.saturating_sub(1)),
+            StatusHit::Outside
+        );
+        // A point in the sidebar column is left of the bar's terminal-side span.
+        assert_eq!(
+            status_hit(layout, 0, bar.y + bar.height / 2),
+            StatusHit::Outside
         );
     }
 

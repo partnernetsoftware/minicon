@@ -1,5 +1,19 @@
 # Enroll a company Azure tenant for Artifact Signing (redacted)
 
+## Provenance of this page
+
+The tenant, subscription, payment, MFA, the Microsoft vetting email and
+Microsoft Verified ID were the human's actions. Every command in
+"From Completed to a wired signing profile" — certificate profile, Entra
+application, federated credential, RBAC, `gh secret set` — was executed on the
+dev Mac on 2026-09-03 and committed under the `MiniCon Automation` identity;
+the portal was not used for them. There is no downloaded certificate, PFX or
+token anywhere, because the key is non-exportable inside the service. The
+read-only procedure to re-derive all of this from the live accounts, plus the
+checklist for reusing it on another product, is
+`company-dev-hub/skills/sign-windows-artifacts/references/azure-artifact-signing-setup.md`
+§6.
+
 Status: company Artifact Signing account created; Public organization identity
 validation **Completed** and the MiniCon Public Trust profile became Active on
 2026-09-03. GitHub OIDC/profile-scoped signer configuration exists; live

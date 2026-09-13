@@ -3462,6 +3462,21 @@ impl ConApp {
             host_ui_size(BUTTON_LABEL_SIZE_PX),
             host_ui_size(BUTTON_HINT_SIZE_PX),
         );
+        let status_cursor = self
+            .active_session_opt()
+            .map(|session| session.parser.screen().cursor_position());
+        let status_label = self
+            .active_session_opt()
+            .map_or("", |session| session.current_title.as_str());
+        paint_status_bar(
+            &mut surface,
+            layout,
+            t,
+            status_label,
+            status_cursor,
+            host_ui_size(HOST_UI_STATUS_SIZE_PX),
+            scale,
+        );
         if self.help_open {
             paint_help_panel(
                 &mut surface,
@@ -3584,6 +3599,15 @@ impl ConApp {
             muted,
             hint_size,
             content_width,
+        );
+        paint_status_bar(
+            &mut surface,
+            layout,
+            t,
+            "",
+            None,
+            host_ui_size(HOST_UI_STATUS_SIZE_PX),
+            scale,
         );
         if self.help_open {
             paint_help_panel(
@@ -5913,6 +5937,22 @@ impl PixelWindowApplication for ConApp {
                 }
                 return Ok(PixelWindowDirective::Continue);
             }
+            {
+                let metrics = window.metrics()?;
+                let scale = metrics.scale_factor.max(1.0);
+                let layout = self.layout(
+                    metrics.physical_width,
+                    metrics.physical_height,
+                    metrics.scale_factor,
+                );
+                let x = (position.x * scale).max(0.0) as u32;
+                let y = (position.y * scale).max(0.0) as u32;
+                // The status bar is informational; consume a click on it so it
+                // neither defocuses the composer nor reaches the terminal.
+                if ui::status_hit(layout, x, y) == ui::StatusHit::Bar {
+                    return Ok(PixelWindowDirective::Continue);
+                }
+            }
             match self.composer_hit(window, position)? {
                 ui::ComposerHit::Input => {
                     self.composer.focused = true;
@@ -6503,6 +6543,78 @@ fn paint_two_line_button_label(
         block_y.saturating_add(label_height).saturating_add(gap),
         hint_font_size_px,
     );
+}
+
+/// Paints the bottom status bar: an optional left label (the active tab) and a
+/// fixed-width `L###:C###` cursor readout pinned to the right. The readout keeps
+/// a constant width (zero-padded, three digits) so the bar never reflows as the
+/// cursor moves — the same no-jitter rule the crosshair will rely on. Rows and
+/// columns are 1-based to match vt100 CUP coordinates.
+fn paint_status_bar(
+    surface: &mut Surface<'_>,
+    layout: ui::Layout,
+    theme: theme::Theme,
+    left_label: &str,
+    cursor: Option<(u16, u16)>,
+    font_size_px: u16,
+    scale: f64,
+) {
+    let bar = layout.status;
+    if bar.width == 0 || bar.height == 0 {
+        return;
+    }
+    let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
+    surface.fill_rect(bar.x, bar.y, bar.width, bar.height, theme.sidebar_bg.to_xrgb());
+    // A one-pixel rule separates the bar from the composer above it.
+    surface.fill_rect(bar.x, bar.y, bar.width, 1, theme.border.to_xrgb());
+    let metrics = font::cell_metrics(font_size_px);
+    let cell_w = metrics.width.max(1);
+    let pad = dip(12.0);
+    let text_y = bar
+        .y
+        .saturating_add(bar.height.saturating_sub(metrics.height) / 2);
+    // Right: the fixed-width cursor readout.
+    let clamp3 = |v: u32| v.min(999);
+    let readout = match cursor {
+        Some((row, col)) => format!(
+            "L{:03}:C{:03}",
+            clamp3(u32::from(row).saturating_add(1)),
+            clamp3(u32::from(col).saturating_add(1))
+        ),
+        None => "L---:C---".to_owned(),
+    };
+    let readout_width = cell_w.saturating_mul(readout.chars().count() as u32);
+    let readout_x = bar
+        .x
+        .saturating_add(bar.width)
+        .saturating_sub(pad)
+        .saturating_sub(readout_width)
+        .max(bar.x);
+    paint_host_ui_text(
+        surface,
+        readout_x,
+        text_y,
+        &readout,
+        theme.muted,
+        font_size_px,
+        readout_width,
+    );
+    // Left: the active tab label, clipped so it never runs into the readout.
+    if !left_label.is_empty() {
+        let left_x = bar.x.saturating_add(pad);
+        let left_max = readout_x
+            .saturating_sub(dip(8.0))
+            .saturating_sub(left_x);
+        paint_host_ui_text(
+            surface,
+            left_x,
+            text_y,
+            left_label,
+            theme.muted,
+            font_size_px,
+            left_max,
+        );
+    }
 }
 
 fn paint_help_panel(
