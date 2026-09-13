@@ -1795,10 +1795,18 @@ impl ConApp {
                 return Ok(true);
             }
             ui::TreeHit::Language(language) => {
+                // One Chinese button serves both variants until the settings
+                // panel lands: pressing it while already in Chinese toggles
+                // Simplified and Traditional; from English it selects Chinese.
+                let target = if language.is_chinese() && self.ui_language.is_chinese() {
+                    self.ui_language.toggled_chinese()
+                } else {
+                    language
+                };
                 // Repainting only on a real change keeps clicking the active
                 // entry from costing a frame.
-                if self.ui_language != language {
-                    self.ui_language = language;
+                if self.ui_language != target {
+                    self.ui_language = target;
                     self.mark_host_ui_full();
                     self.request_dirty_redraw(window);
                 }
@@ -3125,9 +3133,13 @@ impl ConApp {
         paint_header_icon_button(
             &mut surface,
             layout.language_chinese,
-            HeaderIcon::Language(ui::UiLanguage::Chinese),
+            HeaderIcon::Language(if self.ui_language.is_chinese() {
+                self.ui_language
+            } else {
+                ui::UiLanguage::ChineseSimplified
+            }),
             accent,
-            self.ui_language == ui::UiLanguage::Chinese,
+            self.ui_language.is_chinese(),
             header_icon_size,
             scale,
         );
@@ -3479,8 +3491,12 @@ impl ConApp {
             (layout.help, HeaderIcon::Help, self.help_open),
             (
                 layout.language_chinese,
-                HeaderIcon::Language(ui::UiLanguage::Chinese),
-                self.ui_language == ui::UiLanguage::Chinese,
+                HeaderIcon::Language(if self.ui_language.is_chinese() {
+                    self.ui_language
+                } else {
+                    ui::UiLanguage::ChineseSimplified
+                }),
+                self.ui_language.is_chinese(),
             ),
             (
                 layout.language_english,

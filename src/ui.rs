@@ -280,7 +280,8 @@ pub enum ComposerHit {
 pub enum UiLanguage {
     #[default]
     English,
-    Chinese,
+    ChineseSimplified,
+    ChineseTraditional,
 }
 
 impl UiLanguage {
@@ -290,18 +291,39 @@ impl UiLanguage {
     pub const fn tag(self) -> &'static str {
         match self {
             Self::English => "en",
-            Self::Chinese => "zh",
+            Self::ChineseSimplified => "zh-hans",
+            Self::ChineseTraditional => "zh-hant",
         }
     }
 
-    /// The label painted on this language's own entry. Each is written in the
+    /// Whether this is one of the Chinese variants, used to decide whether a
+    /// Chinese-button press should toggle the variant instead of re-selecting.
+    #[must_use]
+    pub const fn is_chinese(self) -> bool {
+        matches!(self, Self::ChineseSimplified | Self::ChineseTraditional)
+    }
+
+    /// The other Chinese variant, so the single Chinese button can toggle
+    /// Simplified and Traditional while the settings panel is still to come.
+    /// English is returned unchanged so callers can pass any language safely.
+    #[must_use]
+    pub const fn toggled_chinese(self) -> Self {
+        match self {
+            Self::ChineseSimplified => Self::ChineseTraditional,
+            Self::ChineseTraditional => Self::ChineseSimplified,
+            Self::English => Self::English,
+        }
+    }
+
+        /// The label painted on this language's own entry. Each is written in the
     /// language it selects: a switch labelled in the language you are leaving
     /// is unreadable to the person who needs it.
     #[must_use]
     pub const fn entry_label(self) -> &'static str {
         match self {
             Self::English => "En",
-            Self::Chinese => "中",
+            Self::ChineseSimplified => "中",
+            Self::ChineseTraditional => "繁",
         }
     }
 
@@ -319,7 +341,18 @@ impl UiLanguage {
                 new_terminal: "NEW TERMINAL",
                 new_terminal_hint: "Ctrl+Shift+T",
             },
-            Self::Chinese => HostUiStrings {
+            Self::ChineseSimplified => HostUiStrings {
+                paste_failed: "粘贴失败",
+                send: "送出",
+                send_hint: "(ctrl-o)",
+                newline: "换行",
+                newline_hint: "(Enter)",
+                send_to: "送往 @",
+                empty_title: "准备开启新终端",
+                new_terminal: "新建终端",
+                new_terminal_hint: "Ctrl+Shift+T",
+            },
+            Self::ChineseTraditional => HostUiStrings {
                 paste_failed: "貼上失敗",
                 send: "送出",
                 send_hint: "(ctrl-o)",
@@ -346,7 +379,17 @@ impl UiLanguage {
                 "Ctrl+[ / ]     Previous / next tab",
                 "Tab tree · multiline composer · PTY",
             ],
-            Self::Chinese => [
+            Self::ChineseSimplified => [
+                "快捷键与功能",
+                "Ctrl+Shift+T   新建终端",
+                "Ctrl+Shift+W   关闭标签",
+                "Ctrl+Shift+I   聚焦输入区",
+                "Ctrl+O         送出输入",
+                "Enter          软换行",
+                "Ctrl+[ / ]     上一个 / 下一个标签",
+                "标签树 · 多行输入 · PTY 终端",
+            ],
+            Self::ChineseTraditional => [
                 "快捷鍵與功能",
                 "Ctrl+Shift+T   新建終端",
                 "Ctrl+Shift+W   關閉標籤",
@@ -395,7 +438,7 @@ pub fn tree_hit(
         return TreeHit::Help;
     }
     if layout.language_chinese.contains(x, y) {
-        return TreeHit::Language(UiLanguage::Chinese);
+        return TreeHit::Language(UiLanguage::ChineseSimplified);
     }
     if layout.language_english.contains(x, y) {
         return TreeHit::Language(UiLanguage::English);
@@ -705,7 +748,7 @@ mod tests {
                 4,
                 1.0
             ),
-            TreeHit::Language(UiLanguage::Chinese)
+            TreeHit::Language(UiLanguage::ChineseSimplified)
         );
         assert_eq!(
             tree_hit(
@@ -725,7 +768,11 @@ mod tests {
     /// what makes the second half a compile error instead of a blank label.
     #[test]
     fn each_language_labels_itself_and_translates_every_string() {
-        for language in [UiLanguage::English, UiLanguage::Chinese] {
+        for language in [
+            UiLanguage::English,
+            UiLanguage::ChineseSimplified,
+            UiLanguage::ChineseTraditional,
+        ] {
             assert!(!language.entry_label().is_empty());
             assert!(!language.tag().is_empty());
             let strings = language.strings();
@@ -736,7 +783,8 @@ mod tests {
             assert!(!strings.newline_hint.is_empty());
             assert!(!strings.send_to.is_empty());
         }
-        assert_eq!(UiLanguage::Chinese.entry_label(), "中");
+        assert_eq!(UiLanguage::ChineseSimplified.entry_label(), "中");
+        assert_eq!(UiLanguage::ChineseTraditional.entry_label(), "繁");
         assert_eq!(UiLanguage::English.entry_label(), "En");
         assert_eq!(UiLanguage::English.strings().send, "Send");
         assert_eq!(UiLanguage::English.strings().send_hint, "(ctrl-o)");
@@ -744,12 +792,13 @@ mod tests {
         assert_eq!(UiLanguage::English.strings().newline_hint, "(Enter)");
         assert_ne!(
             UiLanguage::English.strings().send,
-            UiLanguage::Chinese.strings().send,
+            UiLanguage::ChineseSimplified.strings().send,
             "a language that translates nothing is a switch with no effect"
         );
         // The tab identifier travels with the label, so a translated prefix
         // must still leave the `@` that names the tab.
-        assert!(UiLanguage::Chinese.strings().send_to.ends_with('@'));
+        assert!(UiLanguage::ChineseSimplified.strings().send_to.ends_with('@'));
+        assert!(UiLanguage::ChineseTraditional.strings().send_to.ends_with('@'));
         assert!(UiLanguage::English.strings().send_to.ends_with('@'));
     }
 
@@ -817,7 +866,7 @@ mod tests {
             (layout.help, TreeHit::Help),
             (
                 layout.language_chinese,
-                TreeHit::Language(UiLanguage::Chinese),
+                TreeHit::Language(UiLanguage::ChineseSimplified),
             ),
             (
                 layout.language_english,
