@@ -122,6 +122,17 @@ jobs:
             [[ "$signing_mode" == off ]]
             test ! -e candidate/signing-receipt.json
           fi
+          macos_signing_mode="$(jq -r '.signing.macos.mode // "off"' "$manifest")"
+          if [[ "$macos_signing_mode" == required ]]; then
+            [[ "$(sha256sum candidate/macos-signing-receipt.json | cut -d' ' -f1)" == \
+              "$(jq -r .receipts.macos_signing.sha256 "$manifest")" ]]
+            dmg="candidate/payload/minicon-$VERSION-macos-universal.dmg"
+            test -s "$dmg"
+            [[ "$(sha256sum "$dmg" | cut -d' ' -f1)" == "$(jq -r '.signing.macos.dmg_sha256' "$manifest")" ]]
+          else
+            [[ "$macos_signing_mode" == off ]]
+            test ! -e candidate/macos-signing-receipt.json
+          fi
           python3 research/minicon-com-loader/reputation_court.py verify \
             --manifest "$manifest" \
             --qualification reputation/reputation-qualification.json

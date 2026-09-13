@@ -11,6 +11,10 @@ on:
         description: Successful six-cell run selected by release-policy.json
         required: true
         type: string
+      macos_signing_run_id:
+        description: Successful macos-signing run (required only when signing.macos.mode=required)
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -30,6 +34,7 @@ jobs:
       payload_artifact: ${{ steps.identity.outputs.payload_artifact }}
       aggregate_artifact: ${{ steps.identity.outputs.aggregate_artifact }}
       signing_mode: ${{ steps.identity.outputs.signing_mode }}
+      macos_signing_mode: ${{ steps.identity.outputs.macos_signing_mode }}
       include_com: ${{ steps.identity.outputs.include_com }}
       version: ${{ steps.identity.outputs.version }}
     steps:
@@ -45,6 +50,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           UPSTREAM_RUN_ID: ${{ inputs.upstream_run_id }}
+          MACOS_SIGNING_RUN_ID: ${{ inputs.macos_signing_run_id }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -86,6 +92,21 @@ jobs:
               --name trusted-signed-minicon --dir signed-preflight
             jq -e '.release_eligible == true' signed-preflight/signing-receipt.json >/dev/null
           fi
+          macos_signing_mode="$(jq -r '.signing.macos.mode // "off"' release-policy.json)"
+          [[ "$macos_signing_mode" == off || "$macos_signing_mode" == required ]]
+          if [[ "$macos_signing_mode" == required ]]; then
+            [[ "$MACOS_SIGNING_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+            macrun="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MACOS_SIGNING_RUN_ID")"
+            [[ "$(jq -r .path <<<"$macrun")" == ".github/workflows/macos-signing.yml" ]]
+            [[ "$(jq -r .event <<<"$macrun")" == "workflow_dispatch" ]]
+            [[ "$(jq -r .status <<<"$macrun")" == "completed" ]]
+            [[ "$(jq -r .conclusion <<<"$macrun")" == "success" ]]
+            [[ "$(jq -r .head_sha <<<"$macrun")" == "$SOURCE_SHA" ]]
+            rm -rf macos-preflight
+            gh run download "$MACOS_SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name macos-signed-minicon --dir macos-preflight
+            jq -e '.release_eligible == true' macos-preflight/macos-signing-receipt.json >/dev/null
+          fi
           cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
           [[ "$version" == "$cargo_version" ]]
           {
@@ -94,6 +115,7 @@ jobs:
             echo "payload_artifact=$payload_artifact"
             echo "aggregate_artifact=$aggregate_artifact"
             echo "signing_mode=$signing_mode"
+            echo "macos_signing_mode=$macos_signing_mode"
             echo "include_com=$include_com"
             echo "version=$version"
           } >>"$GITHUB_OUTPUT"
@@ -130,6 +152,10 @@ jobs:
 
       - name: Verify payload identity and stage package binary
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACOS_SIGNING_MODE: ${{ needs.preflight.outputs.macos_signing_mode }}
+          MACOS_SIGNING_RUN_ID: ${{ inputs.macos_signing_run_id }}
         run: |
           set -euo pipefail
           receipt=upstream/build-receipt.json
@@ -155,11 +181,20 @@ jobs:
           mkdir -p package-bin
           case '${{ matrix.platform_id }}' in
             macos-universal)
-              arm=upstream/cells/osx-aarch64/minicon
-              intel=upstream/cells/osx-x86_64/minicon
-              verify_cell osx-aarch64 "$arm"
-              verify_cell osx-x86_64 "$intel"
-              lipo -create -output package-bin/minicon "$arm" "$intel"
+              if [[ "${MACOS_SIGNING_MODE:-off}" == required ]]; then
+                # Use the Developer ID-signed, notarized universal binary and the
+                # stapled .dmg from the macOS signing court instead of the
+                # unsigned cells. candidate_bundle re-verifies the signed SHAs.
+                gh run download "$MACOS_SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+                  --name macos-signed-minicon --dir macsig
+                cp macsig/minicon package-bin/minicon
+              else
+                arm=upstream/cells/osx-aarch64/minicon
+                intel=upstream/cells/osx-x86_64/minicon
+                verify_cell osx-aarch64 "$arm"
+                verify_cell osx-x86_64 "$intel"
+                lipo -create -output package-bin/minicon "$arm" "$intel"
+              fi
               [[ "$(lipo -archs package-bin/minicon)" == *arm64* ]]
               [[ "$(lipo -archs package-bin/minicon)" == *x86_64* ]]
               ;;
@@ -177,6 +212,8 @@ jobs:
 
       - name: Archive exact package bytes
         shell: bash
+        env:
+          MACOS_SIGNING_MODE: ${{ needs.preflight.outputs.macos_signing_mode }}
         run: |
           set -euo pipefail
           version='${{ needs.preflight.outputs.version }}'
@@ -200,6 +237,16 @@ jobs:
           else
             shasum -a 256 "$archive" >"$archive.sha256"
           fi
+          # Ship the stapled .dmg alongside the macOS tar.gz when signing is on.
+          if [[ "$platform" == macos-universal && "${MACOS_SIGNING_MODE:-off}" == required ]]; then
+            dmg="minicon-$version-macos-universal.dmg"
+            cp "$GITHUB_WORKSPACE/macsig/$dmg" "$dmg"
+            if command -v sha256sum >/dev/null; then
+              sha256sum "$dmg" >"$dmg.sha256"
+            else
+              shasum -a 256 "$dmg" >"$dmg.sha256"
+            fi
+          fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -207,6 +254,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.dmg
             dist/*.sha256
           if-no-files-found: error
           retention-days: 14
@@ -302,6 +350,8 @@ jobs:
           UPSTREAM_ARTIFACT: ${{ needs.preflight.outputs.upstream_artifact }}
           AGGREGATE_ARTIFACT: ${{ needs.preflight.outputs.aggregate_artifact }}
           INCLUDE_COM: ${{ needs.preflight.outputs.include_com }}
+          MACOS_SIGNING_MODE: ${{ needs.preflight.outputs.macos_signing_mode }}
+          MACOS_SIGNING_RUN_ID: ${{ inputs.macos_signing_run_id }}
         run: |
           set -euo pipefail
           mkdir upstream
@@ -320,6 +370,10 @@ jobs:
           aggregate="$(find upstream/aggregate -maxdepth 1 -name '*aggregate-receipt.json' -print -quit)"
           test -n "$aggregate"
           cp "$aggregate" upstream/aggregate-receipt.json
+          if [[ "${MACOS_SIGNING_MODE:-off}" == required ]]; then
+            gh run download "$MACOS_SIGNING_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name macos-signed-minicon --dir upstream/macos
+          fi
 
       - name: Seal exact six-cell release set
         run: |
@@ -329,6 +383,9 @@ jobs:
             python3 research/minicon-com-loader/signing_receipt.py \
               --receipt upstream/signing-receipt.json --root upstream/source
             signing_args=(--signing-receipt upstream/signing-receipt.json)
+          fi
+          if [[ '${{ needs.preflight.outputs.macos_signing_mode }}' == required ]]; then
+            signing_args+=(--macos-signing-receipt upstream/macos/macos-signing-receipt.json)
           fi
           python3 research/minicon-com-loader/candidate_bundle.py seal \
             --payload payload \
@@ -352,6 +409,7 @@ jobs:
           cp upstream/g3-receipt.json sealed/
           cp release-policy.json sealed/
           if [[ -f upstream/signing-receipt.json ]]; then cp upstream/signing-receipt.json sealed/; fi
+          if [[ -f upstream/macos/macos-signing-receipt.json ]]; then cp upstream/macos/macos-signing-receipt.json sealed/; fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
