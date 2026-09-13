@@ -81,6 +81,41 @@ impl<'a> Surface<'a> {
         );
     }
 
+    /// Alpha-blends `color` over the existing pixels in the rect (0.0 = keep,
+    /// 1.0 = replace). Used for translucent overlays like the grid crosshair,
+    /// which must sit over terminal content without erasing it.
+    pub(super) fn blend_rect(
+        &mut self,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        color: crate::palette::Rgb,
+        alpha: f32,
+    ) {
+        let rect = self.clipped_rect(x, y, w, h);
+        if rect.is_empty() {
+            return;
+        }
+        let a = alpha.clamp(0.0, 1.0);
+        let inv = 1.0 - a;
+        let (cr, cg, cb) = (f32::from(color.0), f32::from(color.1), f32::from(color.2));
+        for row in rect.top..rect.bottom {
+            let base = (row * self.width) as usize;
+            for col in rect.left..rect.right {
+                let idx = base + col as usize;
+                let px = self.pixels[idx];
+                let dr = f32::from(((px >> 16) & 0xff) as u8);
+                let dg = f32::from(((px >> 8) & 0xff) as u8);
+                let db = f32::from((px & 0xff) as u8);
+                let nr = (dr * inv + cr * a).round().clamp(0.0, 255.0) as u32;
+                let ng = (dg * inv + cg * a).round().clamp(0.0, 255.0) as u32;
+                let nb = (db * inv + cb * a).round().clamp(0.0, 255.0) as u32;
+                self.pixels[idx] = (nr << 16) | (ng << 8) | nb;
+            }
+        }
+    }
+
     /// Blits a rasterized glyph into a cell, clipped to that cell.
     ///
     /// `shear` slants the glyph for faux italic: a per-row horizontal offset

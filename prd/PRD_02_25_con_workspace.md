@@ -99,7 +99,8 @@ header tools, and the composer. It is not the browser, and it is not layout.
   close targets and a two-tool header: a New root-terminal action and a
   Settings button that opens the settings panel. A distinct bottom composer
   owns input, Send and Newline, and a bottom status bar shows a fixed-width
-  cursor readout.
+  `L###:C###` readout that follows the grid crosshair (the hovered cell) and
+  falls back to the text cursor.
 - [x] a tab whose shell has exited stays in the tree (remain-on-exit) and is
   visibly inert: its label dims, and the change repaints the tab column
   immediately rather than waiting for unrelated host-UI damage. A pixel
@@ -138,6 +139,10 @@ header tools, and the composer. It is not the browser, and it is not layout.
   and Paper Ink (light) — from the panel swatches or `Ctrl+Shift+P`. Only the
   chrome changes; the terminal body keeps its xterm 256 palette. The chosen
   theme is reported by `ui-snapshot` as `ui_theme`.
+- [x] a grid crosshair snaps to the hovered terminal cell: a translucent
+  row/column band (3.5%) plus 1px lines (28%) drawn over the content without
+  erasing it, and the same 1-based cell written to the status bar. It redraws
+  only when the hovered cell changes, and toggles with `Ctrl+Shift+G`.
 - [x] **only host UI is translated.** Everything a child process prints is
   passed through untouched, and that line does not move: a terminal that
   rewrote program output would be lying about what ran. Host UI strings live in

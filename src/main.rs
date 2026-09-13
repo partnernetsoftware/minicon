@@ -697,6 +697,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+[ / ]   Switch terminal tabs
   Ctrl+Shift+I       Focus the external input area
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
+  Ctrl+Shift+G       Toggle the grid crosshair
   Enter              Insert a soft newline in the input area
   Ctrl+O             Send the complete input-area draft
   Up / Down          Recall what you sent before, in the input area
@@ -896,6 +897,13 @@ struct ConTerminal {
     /// redraw requests. Unknown damage remains full rather than guessed.
     dirty: DirtyRegion,
     last_cursor: Option<TerminalPoint>,
+    /// Grid crosshair: the terminal cell the pointer last hovered (persists so
+    /// the status readout does not blank when the pointer leaves), whether the
+    /// pointer is currently over the grid (gates drawing the lines), and whether
+    /// the crosshair is enabled at all (Ctrl+Shift+G).
+    crosshair_cell: Option<TerminalPoint>,
+    crosshair_active: bool,
+    crosshair_on: bool,
     frame_width: u32,
     frame_height: u32,
 }
@@ -1748,6 +1756,16 @@ impl ConApp {
         }
         if text.eq_ignore_ascii_case("p") {
             self.ui_theme = self.ui_theme.next();
+            self.mark_host_ui_full();
+            self.request_dirty_redraw(window);
+            return Ok(true);
+        }
+        if text.eq_ignore_ascii_case("g") {
+            // Toggle the grid crosshair (lines + row/column band).
+            if let Ok(session) = self.active_session_mut() {
+                session.crosshair_on = !session.crosshair_on;
+                session.dirty.mark_full();
+            }
             self.mark_host_ui_full();
             self.request_dirty_redraw(window);
             return Ok(true);
@@ -3032,6 +3050,21 @@ impl ConApp {
                     self.mark_host_ui_full();
                     window.request_redraw();
                 }
+                // Grid crosshair: track the hovered terminal cell. Repaint the
+                // terminal (and the status readout) only when the cell changes.
+                let fw = metrics.physical_width;
+                let fh = metrics.physical_height;
+                let crosshair_changed = self
+                    .active_session_mut()
+                    .map(|session| session.update_crosshair(position, fw, fh))
+                    .unwrap_or(false);
+                if crosshair_changed {
+                    if let Ok(session) = self.active_session_mut() {
+                        session.dirty.mark_full();
+                    }
+                    self.mark_host_ui_full();
+                    window.request_redraw();
+                }
                 Ok(over_grip)
             }
             PixelWindowEvent::PointerButton {
@@ -3419,9 +3452,15 @@ impl ConApp {
             host_ui_size(BUTTON_LABEL_SIZE_PX),
             host_ui_size(BUTTON_HINT_SIZE_PX),
         );
+        // The status readout follows the grid crosshair (the hovered cell) when
+        // the pointer has been over the terminal, and falls back to the text
+        // cursor otherwise.
         let status_cursor = self
             .active_session_opt()
-            .map(|session| session.parser.screen().cursor_position());
+            .map(|session| match session.crosshair_cell {
+                Some(cell) => (cell.row, cell.col),
+                None => session.parser.screen().cursor_position(),
+            });
         let status_label = self
             .active_session_opt()
             .map_or("", |session| session.current_title.as_str());
@@ -3655,6 +3694,9 @@ impl ConTerminal {
             content_bottom_px: 0,
             dirty: DirtyRegion::full(),
             last_cursor: None,
+            crosshair_cell: None,
+            crosshair_active: false,
+            crosshair_on: true,
             frame_width: 0,
             frame_height: 0,
         }
@@ -4545,6 +4587,29 @@ impl ConTerminal {
             row: ((phys_y / self.cell_h as f64) as u16).min(self.rows.saturating_sub(1)),
             col: (phys_x / self.cell_w as f64) as u16,
         }
+    }
+
+    /// Update the grid crosshair for a pointer position. Returns whether the
+    /// hovered cell or over-grid state changed (so the caller only repaints on a
+    /// real change, not every pixel of motion). The cell persists when the
+    /// pointer leaves the grid so the status readout does not blank.
+    fn update_crosshair(&mut self, pos: &LogicalPoint, fw: u32, fh: u32) -> bool {
+        let px = pos.x * self.scale;
+        let py = pos.y * self.scale;
+        let bottom = fh.saturating_sub(self.content_bottom_px);
+        let over = px >= f64::from(self.content_left_px)
+            && py >= f64::from(self.content_top_px)
+            && py < f64::from(bottom)
+            && px < f64::from(fw);
+        let cell = if over {
+            Some(self.hit_test(pos))
+        } else {
+            self.crosshair_cell
+        };
+        let changed = over != self.crosshair_active || cell != self.crosshair_cell;
+        self.crosshair_active = over;
+        self.crosshair_cell = cell;
+        changed
     }
 
     /// The inverse of [`Self::hit_test`]: a logical position that lands back
@@ -5524,6 +5589,43 @@ impl ConTerminal {
                 blink_visible: self.blink_visible,
             },
         );
+
+        // Grid crosshair: a translucent row/column band plus 1px lines snapped
+        // to the hovered cell, drawn over the content without erasing it.
+        if self.crosshair_on
+            && self.crosshair_active
+            && let Some(cell) = self.crosshair_cell
+        {
+            let terminal_h = fh
+                .saturating_sub(self.content_top_px)
+                .saturating_sub(self.content_bottom_px);
+            let term_w = fw.saturating_sub(self.content_left_px);
+            let col_x = self
+                .content_left_px
+                .saturating_add(u32::from(cell.col).saturating_mul(self.cell_w));
+            let row_y = self
+                .content_top_px
+                .saturating_add(u32::from(cell.row).saturating_mul(self.cell_h));
+            let mark = Rgb(0xff, 0xff, 0xff);
+            surface.blend_rect(
+                self.content_left_px,
+                row_y,
+                term_w,
+                self.cell_h,
+                mark,
+                0.035,
+            );
+            surface.blend_rect(
+                col_x,
+                self.content_top_px,
+                self.cell_w,
+                terminal_h,
+                mark,
+                0.035,
+            );
+            surface.blend_rect(col_x, self.content_top_px, 1, terminal_h, mark, 0.28);
+            surface.blend_rect(self.content_left_px, row_y, term_w, 1, mark, 0.28);
+        }
 
         surface.fill_rect(
             scrollbar.track.left.max(0) as u32,
