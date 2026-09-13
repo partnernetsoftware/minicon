@@ -24,13 +24,25 @@ remainder.
   `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, var `MACOS_SIGN_IDENTITY`) and in the
   local vault `~/.private_keys/` (0600). No key material is in Git.
 
+## Signing court (built + CI-verified 2026-09-13)
+
+`.github/workflows/macos-signing.yml` — the macOS counterpart of the Windows
+`company-signing.yml`. It assembles the universal binary from the verified osx
+cells, signs it (hardened runtime + timestamp) in a throwaway keychain,
+notarizes it, and builds a signed+notarized+**stapled** `.dmg`, then writes a
+`macos-signing-receipt.json` and uploads it. Proven in CI (qualification run:
+preflight+sign green; dmg `spctl` = accepted; both notarizations Accepted).
+`release-policy.json` carries an independent `signing.macos.mode` (default off).
+
 ## Remaining (the engineering, delegable)
 
 1. **Packaging decision.** The mac artifact ships as `tar.gz` today; a bare
    Mach-O cannot be stapled. Decide: keep `tar.gz` (Gatekeeper online check, no
    staple) or move to a stapleable `.dmg`/`.pkg` (a `.pkg` also needs a
    *Developer ID Installer* certificate). This decision gates the rest.
-2. **CI job** on the `macos-15` runner: temporary keychain import of the
+2. **Candidate/release integration** — consume the court's receipt, verify the
+   signed macOS bytes, ship the signed binary + `.dmg`, and gate on
+   `signing.macos.mode`. (The court itself — the `macos-15` signing job: temporary keychain import of the
    `.p12` + `set-key-partition-list`; `lipo` then `codesign --options runtime
    --timestamp`; package; `notarytool submit --wait`; `stapler staple` where
    supported; `spctl -a -t exec` verify.
