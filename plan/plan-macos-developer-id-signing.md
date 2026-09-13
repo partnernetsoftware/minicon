@@ -1,83 +1,43 @@
-# macOS Developer ID signing + notarization plan
+# macOS Developer ID signing — status and remaining work
 
-Status: **not started; blocked on owner-gated Apple actions.** MiniCon's macOS
-release is today a bare, unsigned, un-notarized universal Mach-O inside a
-`tar.gz`. This is the plan to make it a Developer ID-signed, notarized,
-Gatekeeper-clean download, distributed outside the App Store. Windows signing
-(Azure Artifact Signing) is unrelated and already wired; this concerns only the
-macOS artifact.
+Status: **credentials done; signed release still to build.** As of 2026-09-13
+the two Apple credentials exist, are verified, and are wired into CI. The signed
+macOS release itself (workflow, policy gate, packaging, receipts) is scheduled
+for **v0.1.9 / v0.1.10**, after the Windows signing switch ships alone first.
 
-## What already exists (reusable)
+The reusable procedure and the redacted setup evidence live in the company hub
+skill `sign-macos-artifacts` (`skills/sign-macos-artifacts/SKILL.md` and
+`references/apple-signing-setup.md`). This file tracks only the minicon-specific
+remainder.
 
-- Paid Apple Developer Program membership under PARTNERNET SOFTWARE PTY LTD,
-  Team ID `L2N7M5M544`, Xcode authenticated to that team (company hub
-  `docs/current-state.md`).
-- Local toolchain on the Mac mini: Xcode 26.6, `codesign`, `notarytool` 1.1.2,
-  `stapler`, `lipo` — all present.
-- A stable bundle identifier `com.partnernetsoftware.minicon`, embedded in the
-  Mach-O via `build.rs` (`assets/macos-info.plist`; it carries a UI
-  compatibility key, not signing keys).
-- The universal binary is already produced by `lipo -create` in
-  `candidate.yml`, so there is a single artifact to sign.
+## Done (2026-09-13)
 
-## What is missing
+- **Developer ID Application certificate** created (portal route, G2 Sub-CA),
+  CN `Developer ID Application: PARTNERNET SOFTWARE PTY LTD (L2N7M5M544)`,
+  expires 2031. Verified with `security find-identity` and a real
+  `codesign --options runtime --timestamp` that chains to Apple Root CA and
+  passes `--verify --strict`.
+- **App Store Connect API notary key** (Team Key, Developer role) created and
+  validated (`notarytool store-credentials --validate` → Success).
+- Both stored as `release-signing` GitHub Environment secrets/vars
+  (`MACOS_CERT_P12_BASE64`, `MACOS_CERT_P12_PASSWORD`, `ASC_API_KEY_P8_BASE64`,
+  `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, var `MACOS_SIGN_IDENTITY`) and in the
+  local vault `~/.private_keys/` (0600). No key material is in Git.
 
-1. **Developer ID Application certificate** — none exists (0 code-signing
-   identities in the local keychain; none in CI). This is a different cert type
-   from the iOS Apple Development/Distribution certs and from Azure (Windows).
-2. **Notary credential** — none exists. Needs either an App Store Connect API
-   key (issuer id + key id + `.p8`) or an app-specific password, stored as a
-   `notarytool store-credentials` profile locally and as CI secrets.
-3. **Codesign step** (hardened runtime) in the release chain — none exists.
-4. **Notarize + staple step** — none exists. A bare Mach-O cannot be stapled;
-   the binary must be wrapped in a `.zip` (for notarization) and shipped as a
-   stapled `.dmg`/`.pkg`, or shipped as the notarized `.zip`.
-5. **Policy + receipts wiring** — `release-policy.json` and
-   `CODE_SIGNING_POLICY.md` cover Windows only; both need a macOS Developer ID
-   dimension and a `codesign --verify` / `spctl` release check.
-6. **CI runner keychain setup** — the `macos-15` runner needs the Developer ID
-   cert imported into a temporary keychain and the notary credential as secrets.
+## Remaining (the engineering, delegable)
 
-## Owner-gated steps (only the account owner can do these)
-
-These require Apple portal sign-in and credential creation, which are owner
-gates; an agent cannot perform them:
-
-1. **Create a Developer ID Application certificate** in the Apple Developer
-   portal (Certificates → Developer ID Application) under team `L2N7M5M544`.
-   Export the certificate + private key as a `.p12` with a strong password.
-2. **Create a notary credential**: preferably an App Store Connect API key
-   (Users and Access → Integrations → App Store Connect API → generate a key
-   with the Developer role). Download the `.p8`; record the issuer id and key
-   id. (An app-specific password on the Apple ID is the fallback.)
-3. Hand both to the signing operator as GitHub Actions secrets on a protected
-   environment (mirroring the Windows `release-signing` environment): the base64
-   `.p12` + its password, and the API key `.p8` + issuer id + key id.
-
-## Agent-doable steps (once the credentials above exist)
-
-1. Add a `signing.macos` dimension to `release-policy.json` (mode off/required),
-   parallel to the Windows `signing.mode`, and document it in
-   `CODE_SIGNING_POLICY.md`.
-2. Add a macOS signing job to the release chain that, on the `macos-15` runner:
-   imports the `.p12` into a temporary keychain; runs
-   `codesign --force --options runtime --timestamp --sign "Developer ID
-   Application: PARTNERNET SOFTWARE PTY LTD (L2N7M5M544)"` on the lipo'd binary;
-   zips it; `xcrun notarytool submit --wait` with the stored credential;
-   `xcrun stapler staple` the container; and records a signing receipt.
-3. Change the macOS packaging to ship the notarized+stapled container (a
-   `.dmg` or `.pkg` can be stapled; a loose binary cannot) instead of, or
-   alongside, the current `tar.gz`.
-4. Add a release verify step asserting `codesign --verify --deep --strict` and
-   `spctl -a -t exec -vv` pass on the shipped artifact.
-
-## Notes
-
-- Because MiniCon is a single-file CLI Mach-O, not an `.app` bundle,
-  notarization is simpler than an app (no framework deep-signing) but the
-  stapling target must be a container, not the loose binary.
-- A CLI Mach-O usually needs no entitlements file; add a minimal
-  `.entitlements` only if the hardened runtime blocks something at runtime.
-- The iOS `ship-ios-app` skill in the company hub shares the account/Team
-  scaffolding and the owner-gate discipline, but has no Developer ID or
-  notarization procedure to reuse directly.
+1. **Packaging decision.** The mac artifact ships as `tar.gz` today; a bare
+   Mach-O cannot be stapled. Decide: keep `tar.gz` (Gatekeeper online check, no
+   staple) or move to a stapleable `.dmg`/`.pkg` (a `.pkg` also needs a
+   *Developer ID Installer* certificate). This decision gates the rest.
+2. **CI job** on the `macos-15` runner: temporary keychain import of the
+   `.p12` + `set-key-partition-list`; `lipo` then `codesign --options runtime
+   --timestamp`; package; `notarytool submit --wait`; `stapler staple` where
+   supported; `spctl -a -t exec` verify.
+3. **Policy + receipts.** Add an independent macOS switch to
+   `release-policy.json` (parallel to the Windows `signing.mode`), document it in
+   `CODE_SIGNING_POLICY.md`, and record before/after SHA, TeamIdentifier, cert
+   CN, notarization submission id and `spctl` verdict.
+4. **The APE `minicon.com` is likely unsignable on macOS** (PE/ZipOS hybrid, not
+   a Mach-O; `codesign` signs Mach-O). Resolve before promising macOS coverage
+   for that artifact; the native universal Mach-O is the safe target.
