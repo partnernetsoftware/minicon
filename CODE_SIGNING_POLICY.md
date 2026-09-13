@@ -114,6 +114,16 @@ MiniCon has no installer and changes no system configuration. Removing the
 downloaded executable removes MiniCon. It stores only user-local configuration
 and failure diagnostics described by `minicon --status`.
 
+## macOS (not signed yet)
+
+This policy governs Windows only. No MiniCon macOS artifact has been Developer
+ID signed or notarized; the shipped universal binary is ad-hoc signed with no
+team identifier and Gatekeeper rejects it. macOS company signing — Developer ID
+Application plus notarization — is scheduled for **v0.1.9 or v0.1.10**, after
+the Windows switch has shipped alone in the preceding version. Preparation and
+owner steps live in the company
+[macOS signing skill](https://github.com/partnernetsoftware/company-dev-hub/tree/main/skills/sign-macos-artifacts).
+
 ## Verification and incident response
 
 Maintainers and users can inspect a downloaded file without reading workflow
