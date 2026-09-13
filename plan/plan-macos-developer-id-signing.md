@@ -1,6 +1,6 @@
 # macOS Developer ID signing — status and remaining work
 
-Status: **credentials done; signed release still to build.** As of 2026-09-13
+Status: **SHIPPED in v0.1.9 (2026-09-13).** macOS Developer ID signing + notarization is live in the first dual-signed MiniCon release; the sections below are kept as the record of how it was built. As of 2026-09-13
 the two Apple credentials exist, are verified, and are wired into CI. The signed
 macOS release itself (workflow, policy gate, packaging, receipts) is scheduled
 for **v0.1.9 / v0.1.10**, after the Windows signing switch ships alone first.
