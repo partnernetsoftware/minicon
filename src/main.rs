@@ -927,7 +927,7 @@ struct ConApp {
     /// Absolute node index the pointer is hovering in the tree, or None.
     /// The per-row close button shows only for the active or hovered row.
     hovered_tree_row: Option<usize>,
-    help_open: bool,
+    settings_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
     sidebar_resizing: bool,
@@ -1186,7 +1186,7 @@ impl ConApp {
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
             hovered_tree_row: None,
-            help_open: false,
+            settings_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_resizing: false,
@@ -1781,49 +1781,13 @@ impl ConApp {
             ui::TreeHit::Outside => return Ok(false),
             ui::TreeHit::Background => return Ok(true),
             ui::TreeHit::NewRoot => {
-                self.help_open = false;
+                self.settings_open = false;
                 self.open_session_contained(window, false);
                 return Ok(true);
             }
-            ui::TreeHit::Help => {
-                self.help_open = !self.help_open;
+            ui::TreeHit::Settings => {
+                self.settings_open = !self.settings_open;
                 self.mark_host_ui_full_and_repaint(window);
-                return Ok(true);
-            }
-            ui::TreeHit::ZoomOut => {
-                if let Ok(session) = self.active_session_mut() {
-                    session.zoom_font(window, false);
-                }
-                return Ok(true);
-            }
-            ui::TreeHit::ZoomReset => {
-                if let Ok(session) = self.active_session_mut() {
-                    session.reset_font(window);
-                }
-                return Ok(true);
-            }
-            ui::TreeHit::ZoomIn => {
-                if let Ok(session) = self.active_session_mut() {
-                    session.zoom_font(window, true);
-                }
-                return Ok(true);
-            }
-            ui::TreeHit::Language(language) => {
-                // One Chinese button serves both variants until the settings
-                // panel lands: pressing it while already in Chinese toggles
-                // Simplified and Traditional; from English it selects Chinese.
-                let target = if language.is_chinese() && self.ui_language.is_chinese() {
-                    self.ui_language.toggled_chinese()
-                } else {
-                    language
-                };
-                // Repainting only on a real change keeps clicking the active
-                // entry from costing a frame.
-                if self.ui_language != target {
-                    self.ui_language = target;
-                    self.mark_host_ui_full();
-                    self.request_dirty_redraw(window);
-                }
                 return Ok(true);
             }
             ui::TreeHit::Close(index) => {
@@ -2522,7 +2486,7 @@ impl ConApp {
                         json::object(vec![
                             ("active", tab_id_json(self.workspace.active())),
                             ("workspace_empty", self.workspace.active().is_none().into()),
-                            ("help_open", self.help_open.into()),
+                            ("settings_open", self.settings_open.into()),
                             (
                                 "host_notice",
                                 self.host_notice
@@ -3165,54 +3129,14 @@ impl ConApp {
         );
         paint_header_icon_button(
             &mut surface,
-            layout.help,
-            HeaderIcon::Help,
+            layout.settings,
+            HeaderIcon::Settings,
             accent,
-            self.help_open,
+            self.settings_open,
             t.surface,
             header_icon_size,
             scale,
         );
-        paint_header_icon_button(
-            &mut surface,
-            layout.language_chinese,
-            HeaderIcon::Language(if self.ui_language.is_chinese() {
-                self.ui_language
-            } else {
-                ui::UiLanguage::ChineseSimplified
-            }),
-            accent,
-            self.ui_language.is_chinese(),
-            t.surface,
-            header_icon_size,
-            scale,
-        );
-        paint_header_icon_button(
-            &mut surface,
-            layout.language_english,
-            HeaderIcon::Language(ui::UiLanguage::English),
-            accent,
-            self.ui_language == ui::UiLanguage::English,
-            t.surface,
-            header_icon_size,
-            scale,
-        );
-        for (entry, icon) in [
-            (layout.zoom_out, HeaderIcon::ZoomOut),
-            (layout.zoom_reset, HeaderIcon::ZoomReset),
-            (layout.zoom_in, HeaderIcon::ZoomIn),
-        ] {
-            paint_header_icon_button(
-                &mut surface,
-                entry,
-                icon,
-                accent,
-                false,
-                t.surface,
-                header_icon_size,
-                scale,
-            );
-        }
 
         let nodes = self.workspace.nodes();
         let depths = self.workspace.depths();
@@ -3510,16 +3434,16 @@ impl ConApp {
             host_ui_size(HOST_UI_STATUS_SIZE_PX),
             scale,
         );
-        if self.help_open {
-            paint_help_panel(
+        if self.settings_open {
+            paint_settings_panel(
                 &mut surface,
                 layout,
-                width,
-                height,
                 scale,
+                t,
+                self.ui_language,
+                self.ui_theme,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
-                t,
             );
         }
         Ok(())
@@ -3555,24 +3479,7 @@ impl ConApp {
         let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         for (button, icon, selected) in [
             (layout.new_root, HeaderIcon::NewRoot, false),
-            (layout.help, HeaderIcon::Help, self.help_open),
-            (
-                layout.language_chinese,
-                HeaderIcon::Language(if self.ui_language.is_chinese() {
-                    self.ui_language
-                } else {
-                    ui::UiLanguage::ChineseSimplified
-                }),
-                self.ui_language.is_chinese(),
-            ),
-            (
-                layout.language_english,
-                HeaderIcon::Language(ui::UiLanguage::English),
-                self.ui_language == ui::UiLanguage::English,
-            ),
-            (layout.zoom_out, HeaderIcon::ZoomOut, false),
-            (layout.zoom_reset, HeaderIcon::ZoomReset, false),
-            (layout.zoom_in, HeaderIcon::ZoomIn, false),
+            (layout.settings, HeaderIcon::Settings, self.settings_open),
         ] {
             paint_header_icon_button(
                 &mut surface,
@@ -3651,16 +3558,16 @@ impl ConApp {
             host_ui_size(HOST_UI_STATUS_SIZE_PX),
             scale,
         );
-        if self.help_open {
-            paint_help_panel(
+        if self.settings_open {
+            paint_settings_panel(
                 &mut surface,
                 layout,
-                width,
-                height,
                 scale,
+                t,
+                self.ui_language,
+                self.ui_theme,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
-                t,
             );
         }
     }
@@ -5791,7 +5698,7 @@ impl PixelWindowApplication for ConApp {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
-        if self.help_open
+        if self.settings_open
             && matches!(
                 &event,
                 PixelWindowEvent::Keyboard(NormalizedKeyEvent {
@@ -5801,7 +5708,7 @@ impl PixelWindowApplication for ConApp {
                 })
             )
         {
-            self.help_open = false;
+            self.settings_open = false;
             self.mark_host_ui_full_and_repaint(window);
             return Ok(PixelWindowDirective::Continue);
         }
@@ -5938,7 +5845,7 @@ impl PixelWindowApplication for ConApp {
             ..
         } = &event
         {
-            if self.help_open {
+            if self.settings_open {
                 let metrics = window.metrics()?;
                 let scale = metrics.scale_factor.max(1.0);
                 let layout = self.layout(
@@ -5948,11 +5855,53 @@ impl PixelWindowApplication for ConApp {
                 );
                 let x = (position.x * scale).max(0.0) as u32;
                 let y = (position.y * scale).max(0.0) as u32;
-                if layout.help.contains(x, y) {
-                    let _ = self.handle_tree_pointer(window, position)?;
-                } else {
-                    self.help_open = false;
-                    self.mark_host_ui_full_and_repaint(window);
+                match ui::settings_hit(layout, x, y, scale) {
+                    ui::SettingsHit::Language(lang) => {
+                        if self.ui_language != lang {
+                            self.ui_language = lang;
+                            self.mark_host_ui_full_and_repaint(window);
+                        }
+                    }
+                    ui::SettingsHit::FontDown => {
+                        if let Ok(session) = self.active_session_mut() {
+                            session.zoom_font(window, false);
+                        }
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
+                    ui::SettingsHit::FontReset => {
+                        if let Ok(session) = self.active_session_mut() {
+                            session.reset_font(window);
+                        }
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
+                    ui::SettingsHit::FontUp => {
+                        if let Ok(session) = self.active_session_mut() {
+                            session.zoom_font(window, true);
+                        }
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
+                    ui::SettingsHit::Theme(index) => {
+                        let choice = match index {
+                            0 => theme::ThemeChoice::Neutral,
+                            1 => theme::ThemeChoice::Docs,
+                            _ => theme::ThemeChoice::Paper,
+                        };
+                        if self.ui_theme != choice {
+                            self.ui_theme = choice;
+                            self.mark_host_ui_full_and_repaint(window);
+                        }
+                    }
+                    ui::SettingsHit::Panel => {}
+                    ui::SettingsHit::Outside => {
+                        // A header click still works (toggle settings, new tab);
+                        // anything else outside the panel closes it.
+                        if layout.new_root.contains(x, y) || layout.settings.contains(x, y) {
+                            let _ = self.handle_tree_pointer(window, position)?;
+                        } else {
+                            self.settings_open = false;
+                            self.mark_host_ui_full_and_repaint(window);
+                        }
+                    }
                 }
                 return Ok(PixelWindowDirective::Continue);
             }
@@ -6664,63 +6613,143 @@ fn paint_status_bar(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn paint_help_panel(
+fn paint_settings_panel(
     surface: &mut Surface<'_>,
     layout: ui::Layout,
-    width: u32,
-    height: u32,
     scale: f64,
-    lines: [&str; 8],
-    font_size_px: u16,
     theme: theme::Theme,
+    ui_language: ui::UiLanguage,
+    ui_theme: theme::ThemeChoice,
+    shortcuts: [&str; 8],
+    font_size_px: u16,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
-    let available_width = width.saturating_sub(layout.sidebar.width);
-    let panel_width = dip(430.0).min(available_width.saturating_sub(dip(32.0)));
-    let panel_height = dip(286.0).min(height.saturating_sub(dip(32.0)));
-    let panel = ui::Rect {
-        x: layout
-            .sidebar
-            .width
-            .saturating_add(available_width.saturating_sub(panel_width) / 2),
-        y: height.saturating_sub(panel_height) / 2,
-        width: panel_width,
-        height: panel_height,
-    };
+    let s = layout.settings_panel(scale);
+    let strings = ui_language.strings();
+    let metrics = font::cell_metrics(font_size_px);
     surface.fill_rect(
-        panel.x,
-        panel.y,
-        panel.width,
-        panel.height,
+        s.panel.x,
+        s.panel.y,
+        s.panel.width,
+        s.panel.height,
         theme.panel_bg.to_xrgb(),
     );
-    stroke_rect(surface, panel, dip(1.0).max(1), theme.border);
-    let metrics = font::cell_metrics(font_size_px);
-    let line_height = metrics.height.max(1).saturating_add(dip(9.0));
-    let x = panel.x.saturating_add(dip(24.0));
-    let mut y = panel.y.saturating_add(dip(22.0));
-    for (index, line) in lines.into_iter().enumerate() {
+    stroke_rect(surface, s.panel, dip(1.0).max(1), theme.border);
+    let inner_x = s.panel.x.saturating_add(dip(12.0));
+    let inner_w = s.panel.width.saturating_sub(dip(24.0));
+    let text_dy = |rect: ui::Rect| {
+        rect.y
+            .saturating_add(rect.height.saturating_sub(metrics.height) / 2)
+    };
+    let section_label = |surface: &mut Surface<'_>, first: ui::Rect, label: &str| {
         paint_host_ui_text(
             surface,
-            x,
+            inner_x,
+            first
+                .y
+                .saturating_sub(metrics.height)
+                .saturating_sub(dip(2.0)),
+            label,
+            theme.muted,
+            font_size_px,
+            inner_w,
+        );
+    };
+    let option = |surface: &mut Surface<'_>, rect: ui::Rect, label: &str, active: bool| {
+        let bg = if active { theme.accent } else { theme.surface };
+        let fg = if active { theme.panel_bg } else { theme.text };
+        surface.fill_rect(rect.x, rect.y, rect.width, rect.height, bg.to_xrgb());
+        paint_host_ui_text(
+            surface,
+            rect.x.saturating_add(dip(8.0)),
+            text_dy(rect),
+            label,
+            fg,
+            font_size_px,
+            rect.width,
+        );
+    };
+    // Interface language
+    section_label(surface, s.language[0], strings.settings_language);
+    let langs = [
+        ui::UiLanguage::English,
+        ui::UiLanguage::ChineseSimplified,
+        ui::UiLanguage::ChineseTraditional,
+    ];
+    for (rect, lang) in s.language.iter().zip(langs) {
+        option(surface, *rect, lang.entry_label(), ui_language == lang);
+    }
+    // Font size
+    section_label(surface, s.font_down, strings.settings_font);
+    option(surface, s.font_down, "-", false);
+    option(surface, s.font_reset, "100%", false);
+    option(surface, s.font_up, "+", false);
+    // Theme (each swatch shows that theme's own canvas + accent stripe)
+    section_label(surface, s.theme[0], strings.settings_theme);
+    let choices = [
+        theme::ThemeChoice::Neutral,
+        theme::ThemeChoice::Docs,
+        theme::ThemeChoice::Paper,
+    ];
+    for (rect, choice) in s.theme.iter().zip(choices) {
+        let pal = theme::Theme::for_choice(choice);
+        surface.fill_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            pal.canvas_bg.to_xrgb(),
+        );
+        // an accent stripe so dark and light swatches are both legible
+        surface.fill_rect(
+            rect.x,
+            rect.y.saturating_add(rect.height.saturating_sub(dip(5.0))),
+            rect.width,
+            dip(5.0),
+            pal.accent.to_xrgb(),
+        );
+        let border = if ui_theme == choice {
+            theme.accent
+        } else {
+            theme.border
+        };
+        let stroke = if ui_theme == choice {
+            dip(2.0).max(2)
+        } else {
+            dip(1.0).max(1)
+        };
+        stroke_rect(surface, *rect, stroke, border);
+    }
+    // Shortcuts (the reused help text)
+    section_label(
+        surface,
+        ui::Rect {
+            x: inner_x,
+            y: s.shortcuts_y,
+            width: inner_w,
+            height: metrics.height,
+        },
+        strings.settings_shortcuts,
+    );
+    let mut y = s.shortcuts_y;
+    for (index, line) in shortcuts.into_iter().enumerate() {
+        paint_host_ui_text(
+            surface,
+            inner_x,
             y,
             line,
             if index == 0 { theme.text } else { theme.muted },
             font_size_px,
-            panel.width.saturating_sub(dip(48.0)),
+            inner_w,
         );
-        y = y.saturating_add(line_height);
+        y = y.saturating_add(s.shortcut_line_height);
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum HeaderIcon {
     NewRoot,
-    Help,
-    Language(ui::UiLanguage),
-    ZoomOut,
-    ZoomReset,
-    ZoomIn,
+    Settings,
 }
 
 fn stroke_rect(surface: &mut Surface<'_>, rect: ui::Rect, stroke: u32, color: Rgb) {
@@ -6757,7 +6786,7 @@ fn paint_header_icon_button(
     color: Rgb,
     selected: bool,
     selected_bg: Rgb,
-    font_size_px: u16,
+    _font_size_px: u16,
     scale: f64,
 ) {
     let stroke = minicon_core::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
@@ -6785,10 +6814,6 @@ fn paint_header_icon_button(
     }
 
     match icon {
-        HeaderIcon::Language(language) => {
-            paint_button_label(surface, button, language.entry_label(), color, font_size_px)
-        }
-        HeaderIcon::Help => paint_button_label(surface, button, "?", color, font_size_px),
         HeaderIcon::NewRoot => {
             let window = ui::Rect {
                 x: button.x.saturating_add(inset),
@@ -6838,61 +6863,32 @@ fn paint_header_icon_button(
                 color.to_xrgb(),
             );
         }
-        HeaderIcon::ZoomOut | HeaderIcon::ZoomIn => {
-            let arm = button.width.min(button.height).saturating_sub(inset * 2);
-            let center_x = button.x.saturating_add(button.width / 2);
-            let center_y = button.y.saturating_add(button.height / 2);
-            surface.fill_rect(
-                center_x.saturating_sub(arm / 2),
-                center_y,
-                arm,
-                stroke,
-                color.to_xrgb(),
-            );
-            if icon == HeaderIcon::ZoomIn {
+        HeaderIcon::Settings => {
+            // A sliders/adjust glyph: three tracks, each with an offset knob.
+            let left = button.x.saturating_add(inset);
+            let track_w = button.width.saturating_sub(inset.saturating_mul(2));
+            let gap = button
+                .height
+                .saturating_sub(inset.saturating_mul(2))
+                .checked_div(3)
+                .unwrap_or(stroke);
+            let knob = stroke.saturating_mul(2);
+            let offsets = [track_w / 5, track_w * 3 / 5, track_w * 2 / 5];
+            for (i, off) in offsets.iter().enumerate() {
+                let y = button
+                    .y
+                    .saturating_add(inset)
+                    .saturating_add(gap.saturating_mul(i as u32))
+                    .saturating_add(gap / 2);
+                surface.fill_rect(left, y, track_w, stroke, color.to_xrgb());
                 surface.fill_rect(
-                    center_x,
-                    center_y.saturating_sub(arm / 2),
-                    stroke,
-                    arm,
+                    left.saturating_add(*off),
+                    y.saturating_sub(knob),
+                    knob,
+                    knob.saturating_mul(2).saturating_add(stroke),
                     color.to_xrgb(),
                 );
             }
-        }
-        HeaderIcon::ZoomReset => {
-            // A focus mark: central point plus four short cardinal ticks.
-            let center_x = button.x.saturating_add(button.width / 2);
-            let center_y = button.y.saturating_add(button.height / 2);
-            let arm = stroke.saturating_mul(2);
-            surface.fill_rect(center_x, center_y, stroke, stroke, color.to_xrgb());
-            surface.fill_rect(
-                center_x.saturating_sub(arm.saturating_mul(2)),
-                center_y,
-                arm,
-                stroke,
-                color.to_xrgb(),
-            );
-            surface.fill_rect(
-                center_x.saturating_add(arm),
-                center_y,
-                arm,
-                stroke,
-                color.to_xrgb(),
-            );
-            surface.fill_rect(
-                center_x,
-                center_y.saturating_sub(arm.saturating_mul(2)),
-                stroke,
-                arm,
-                color.to_xrgb(),
-            );
-            surface.fill_rect(
-                center_x,
-                center_y.saturating_add(arm),
-                stroke,
-                arm,
-                color.to_xrgb(),
-            );
         }
     }
 }

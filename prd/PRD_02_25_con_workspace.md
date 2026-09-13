@@ -64,14 +64,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Untrusted/extreme dimensions cannot wrap a close target onto another row,
   overflow layout construction, or collapse the sidebar through an unordered
   floating-point comparison.
-- [~] the header's seven tools lay out at their own size and do not wrap, so a
-  window narrower than roughly 180 physical pixels clips the rightmost ones.
-  Measured on this build: `zoom_in` is still clipped at 176 wide and fully
-  visible at 200; below that the terminal itself still works and only the
-  header runs out of room. Recorded as a partial state rather than claim a
-  narrow-window guarantee the layout does not make. `ui.rs`'s
-  `a_narrow_frame_overflows_the_header_row_and_widening_it_does_not` pins the
-  boundary so a layout change has a number to beat.
+- [x] the header keeps exactly two tools — New (left) and Settings (right) — so
+  the row no longer overflows a narrow sidebar; help, language, font size and
+  theme all moved into the settings panel. `ui.rs`'s
+  `the_header_tools_are_ordered_and_disjoint` and
+  `the_header_row_fits_and_the_frame_stays_partitioned` pin the layout across
+  widths and DPI scales.
 - [x] accessibility bounds use the same non-wrapping geometry policy: positive
   native coordinates and dimensions above `i32::MAX` saturate instead of
   collapsing to zero and making published controls disappear.
@@ -98,37 +96,36 @@ header tools, and the composer. It is not the browser, and it is not layout.
 `Layout` is only the geometry of those regions.
 
 - [x] the host UI owns a vertically scrollable left tree with row-level
-  close targets and one aligned top icon strip: new root terminal, help,
-  Chinese, English, zoom out, reset and zoom in. A distinct bottom composer
-  owns input, Send and Newline.
+  close targets and a two-tool header: a New root-terminal action and a
+  Settings button that opens the settings panel. A distinct bottom composer
+  owns input, Send and Newline, and a bottom status bar shows a fixed-width
+  cursor readout.
 - [x] a tab whose shell has exited stays in the tree (remain-on-exit) and is
   visibly inert: its label dims, and the change repaints the tab column
   immediately rather than waiting for unrelated host-UI damage. A pixel
   journey screenshots the window before and after the shell exits and asserts
   the tab column changed while the window kept its size.
 - [x] the tree header does not repeat the `MiniCon` product label already owned
-  by the native window title. It spends that scarce row on actions and groups
-  them as `new/help | languages | zoom`, with 24-DIP hit targets and no
-  permanent button borders. High-contrast, minimal marks float on the shared
-  toolbar; selected state uses a quiet fill and short underline instead of
-  turning every action into a boxed field.
-- [x] the help icon opens a lightweight in-app panel describing the tab tree,
-  multiline composer, PTY terminal and current keyboard shortcuts. Clicking
-  outside or pressing Escape dismisses it; help is available with zero tabs.
-- [x] the header row carries a visible new-root action, then a language switch
-  left of the size controls. Two entries rather than one toggle: a toggle
-  labelled with the language you are leaving is unreadable to exactly the
-  person who needs it. Each is written in the language it selects, and the
-  active one is drawn in the accent colour, so the control reports state as
-  well as offering a change.
-- [~] the size controls are compact icon actions: shrink, restore
-  the configured launch size, and grow. The same zoom source sizes terminal
-  content and every host UI label, including tabs, header tools, composer text,
-  IME status, and Send/Newline buttons; hit-testing uses the matching metrics.
-  **Reopened from direct macOS use:** although the zoom path is wired, the
-  default non-content roles remain much too small to read. The next UI increment
-  must increase the nominal tab/header/composer-button type roles, and prove
-  that `z`/`0`/`Z` visibly resize them rather than only terminal content.
+  by the native window title. It spends that scarce row on two actions — New
+  (left) and Settings (right) — with 24-DIP hit targets and no permanent button
+  borders. High-contrast, minimal marks float on the shared toolbar; the open
+  Settings button uses a quiet selected fill.
+- [x] the settings icon opens a lightweight in-app panel, anchored under the
+  header on the sidebar rather than a centered modal. It carries four sections:
+  interface language (English / 简 / 繁, the active one filled with the accent),
+  font size (−/100%/+), a theme picker of three swatches (Neutral / Docs Ink /
+  Paper Ink, each showing its own canvas and accent, the active one outlined),
+  and the keyboard shortcuts (the former help text). Escape or a click outside
+  closes it; the panel is available with zero tabs.
+- [x] interface language is chosen from the panel (English / Simplified /
+  Traditional). Only host UI is translated; each option is written in the
+  language it selects, and the active one is drawn in the accent colour, so the
+  control reports state as well as offering a change.
+- [~] font size is adjusted from the panel (−/100%/+) and by Ctrl+wheel; the
+  same zoom source sizes terminal content and every host UI label — tabs,
+  header, composer, status bar. **Tracking from direct macOS use:** the default
+  non-content type roles must be large enough to read; prove `z`/`0`/`Z`
+  visibly resize them, not only terminal content.
 - [ ] larger host UI text must not make the toolbars wasteful. Reduce internal
   button padding, sibling gaps, and outer header/composer margins to the minimum
   that preserves disjoint hit targets and glyph bounds. Success is paired PNG +
@@ -136,10 +133,11 @@ header tools, and the composer. It is not the browser, and it is not layout.
   no clipping/overlap, and no increase in total header/composer height unless
   the old height cannot contain the larger glyph bounds. Merely enlarging the
   terminal cell font, or enlarging empty padding with the label, fails.
-- [x] the zoom family uses the same bright monochrome weight because all three
-  are **actions**: minus, focus/reset, plus. Language selection is reported by
-  a subtle background and underline, not by lowering every inactive icon's
-  contrast; the old `Z` is not accented merely for being the larger one.
+- [x] the theme picker switches three host-chrome themes at runtime — Neutral
+  Ink (the historical monochrome default), Docs Ink (the website's blue palette)
+  and Paper Ink (light) — from the panel swatches or `Ctrl+Shift+P`. Only the
+  chrome changes; the terminal body keeps its xterm 256 palette. The chosen
+  theme is reported by `ui-snapshot` as `ui_theme`.
 - [x] **only host UI is translated.** Everything a child process prints is
   passed through untouched, and that line does not move: a terminal that
   rewrote program output would be lying about what ran. Host UI strings live in
@@ -147,9 +145,6 @@ header tools, and the composer. It is not the browser, and it is not layout.
   error and not a blank label found by a user.
 - [x] the language is reported by `ui-snapshot` as a stable tag, so automation
   can read and assert it without matching a display label.
-- [x] the seven header tools stay ordered and disjoint across window widths and
-  DPI scales. An overlap would make one of them unreachable, which is a defect
-  no rendering test would notice.
 - [~] **cross-platform sizing follows a logical-unit contract, not shared raw
   pixels.** Layout, hit targets, and nominal type roles are expressed in DIPs;
   the host window supplies a possibly fractional display scale, and raster

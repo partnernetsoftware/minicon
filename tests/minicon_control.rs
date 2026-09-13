@@ -353,7 +353,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
         for key in [
             "active",
             "workspace_empty",
-            "help_open",
+            "settings_open",
             "host_notice",
             "control_pointer_owner",
             "terminal_clipboard_paste",

@@ -49,16 +49,11 @@ pub struct Layout {
     /// Informational bar along the bottom of the terminal side. Carved from
     /// the terminal height, it never overlaps the sidebar or composer.
     pub status: Rect,
-    pub zoom_out: Rect,
-    pub zoom_reset: Rect,
-    pub zoom_in: Rect,
-    /// Opens a new root terminal; first tool in the header strip.
+    /// Opens a new root terminal; the primary header action (left).
     pub new_root: Rect,
-    /// Opens the shortcut and feature guide.
-    pub help: Rect,
-    /// The two language entries, left of the size controls.
-    pub language_chinese: Rect,
-    pub language_english: Rect,
+    /// Opens the settings panel (far right of the header). Help, language, font
+    /// size and theme all live inside that panel.
+    pub settings: Rect,
 }
 
 impl Layout {
@@ -143,41 +138,14 @@ impl Layout {
             width: tool_size,
             height: tool_size,
         };
-        let help = Rect {
-            x: new_root.x.saturating_add(tool_size),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        let language_chinese = Rect {
-            x: help.x.saturating_add(tool_size).saturating_add(group_gap),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        let language_english = Rect {
-            x: language_chinese.x.saturating_add(tool_size),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        let zoom_out = Rect {
-            x: language_english
-                .x
-                .saturating_add(tool_size)
-                .saturating_add(group_gap),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        let zoom_reset = Rect {
-            x: zoom_out.x.saturating_add(tool_size),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
-        };
-        let zoom_in = Rect {
-            x: zoom_reset.x.saturating_add(tool_size),
+        // Two tools only: New (left, the daily action) and Settings (far right).
+        // Everything else — help, language, font size, theme — moved into the
+        // settings panel, so the header row never overflows a narrow sidebar.
+        let _ = group_gap;
+        let settings = Rect {
+            x: sidebar_width
+                .saturating_sub(dip(4.0, scale))
+                .saturating_sub(tool_size),
             y: tool_y,
             width: tool_size,
             height: tool_size,
@@ -196,13 +164,8 @@ impl Layout {
             composer_input: input,
             composer_send: send,
             composer_newline: newline,
-            zoom_out,
-            zoom_reset,
-            zoom_in,
             new_root,
-            help,
-            language_chinese,
-            language_english,
+            settings,
         }
     }
 
@@ -268,11 +231,7 @@ pub enum TreeHit {
     Outside,
     Background,
     NewRoot,
-    Help,
-    ZoomOut,
-    ZoomReset,
-    ZoomIn,
-    Language(UiLanguage),
+    Settings,
     Select(usize),
     Close(usize),
 }
@@ -320,25 +279,6 @@ impl UiLanguage {
         }
     }
 
-    /// Whether this is one of the Chinese variants, used to decide whether a
-    /// Chinese-button press should toggle the variant instead of re-selecting.
-    #[must_use]
-    pub const fn is_chinese(self) -> bool {
-        matches!(self, Self::ChineseSimplified | Self::ChineseTraditional)
-    }
-
-    /// The other Chinese variant, so the single Chinese button can toggle
-    /// Simplified and Traditional while the settings panel is still to come.
-    /// English is returned unchanged so callers can pass any language safely.
-    #[must_use]
-    pub const fn toggled_chinese(self) -> Self {
-        match self {
-            Self::ChineseSimplified => Self::ChineseTraditional,
-            Self::ChineseTraditional => Self::ChineseSimplified,
-            Self::English => Self::English,
-        }
-    }
-
     /// The label painted on this language's own entry. Each is written in the
     /// language it selects: a switch labelled in the language you are leaving
     /// is unreadable to the person who needs it.
@@ -364,6 +304,11 @@ impl UiLanguage {
                 empty_title: "READY FOR A NEW TERMINAL",
                 new_terminal: "NEW TERMINAL",
                 new_terminal_hint: "Ctrl+Shift+T",
+                settings_title: "SETTINGS",
+                settings_language: "Interface language",
+                settings_font: "Font size",
+                settings_theme: "Theme",
+                settings_shortcuts: "Shortcuts",
             },
             Self::ChineseSimplified => HostUiStrings {
                 paste_failed: "粘贴失败",
@@ -375,6 +320,11 @@ impl UiLanguage {
                 empty_title: "准备开启新终端",
                 new_terminal: "新建终端",
                 new_terminal_hint: "Ctrl+Shift+T",
+                settings_title: "设置",
+                settings_language: "界面语言",
+                settings_font: "字号",
+                settings_theme: "主题",
+                settings_shortcuts: "快捷键",
             },
             Self::ChineseTraditional => HostUiStrings {
                 paste_failed: "貼上失敗",
@@ -386,6 +336,11 @@ impl UiLanguage {
                 empty_title: "準備開啟新終端",
                 new_terminal: "新建終端",
                 new_terminal_hint: "Ctrl+Shift+T",
+                settings_title: "設定",
+                settings_language: "介面語言",
+                settings_font: "字級",
+                settings_theme: "佈景主題",
+                settings_shortcuts: "快捷鍵",
             },
         }
     }
@@ -442,6 +397,11 @@ pub struct HostUiStrings {
     pub empty_title: &'static str,
     pub new_terminal: &'static str,
     pub new_terminal_hint: &'static str,
+    pub settings_title: &'static str,
+    pub settings_language: &'static str,
+    pub settings_font: &'static str,
+    pub settings_theme: &'static str,
+    pub settings_shortcuts: &'static str,
 }
 
 pub fn tree_hit(
@@ -458,23 +418,8 @@ pub fn tree_hit(
     if layout.new_root.contains(x, y) {
         return TreeHit::NewRoot;
     }
-    if layout.help.contains(x, y) {
-        return TreeHit::Help;
-    }
-    if layout.language_chinese.contains(x, y) {
-        return TreeHit::Language(UiLanguage::ChineseSimplified);
-    }
-    if layout.language_english.contains(x, y) {
-        return TreeHit::Language(UiLanguage::English);
-    }
-    if layout.zoom_out.contains(x, y) {
-        return TreeHit::ZoomOut;
-    }
-    if layout.zoom_reset.contains(x, y) {
-        return TreeHit::ZoomReset;
-    }
-    if layout.zoom_in.contains(x, y) {
-        return TreeHit::ZoomIn;
+    if layout.settings.contains(x, y) {
+        return TreeHit::Settings;
     }
     if y < layout.tree_header_height {
         return TreeHit::Background;
@@ -511,6 +456,142 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
     } else {
         StatusHit::Outside
     }
+}
+
+/// Number of settings-panel shortcut lines (mirrors `UiLanguage::help_lines`).
+pub const SETTINGS_SHORTCUT_LINES: u32 = 8;
+
+/// Geometry of the settings panel and its interactive controls. Computed on
+/// demand from the `Layout` + scale so paint and hit-testing agree exactly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SettingsLayout {
+    pub panel: Rect,
+    /// Interface-language options: English, Simplified, Traditional (in order).
+    pub language: [Rect; 3],
+    pub font_down: Rect,
+    pub font_reset: Rect,
+    pub font_up: Rect,
+    /// Theme swatches: Neutral, Docs, Paper (in order).
+    pub theme: [Rect; 3],
+    /// Where the shortcut lines begin (the reused help text).
+    pub shortcuts_y: u32,
+    pub shortcut_line_height: u32,
+}
+
+/// Where a pointer landed inside the settings panel. Theme is an index (0=Neutral
+/// 1=Docs 2=Paper) so this module stays free of the chrome theme type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettingsHit {
+    Outside,
+    Panel,
+    Language(UiLanguage),
+    FontDown,
+    FontReset,
+    FontUp,
+    Theme(usize),
+}
+
+impl Layout {
+    /// Compute the settings panel geometry. Anchored under the header on the
+    /// sidebar side, never a centered modal.
+    #[must_use]
+    pub fn settings_panel(self, scale: f64) -> SettingsLayout {
+        let scale = scale.max(1.0);
+        let pad = dip(12.0, scale);
+        let gap = dip(8.0, scale);
+        let row_h = dip(28.0, scale);
+        let label_h = dip(20.0, scale);
+        let line_h = dip(20.0, scale);
+        let inner_x = self.sidebar.x.saturating_add(pad);
+        let inner_w = self.sidebar.width.saturating_sub(pad.saturating_mul(2));
+        let top = self.tree_header_height.saturating_add(pad);
+
+        // three equal cells across the inner width, for a labelled control row.
+        let cell_gap = dip(6.0, scale);
+        let cell_w = inner_w
+            .saturating_sub(cell_gap.saturating_mul(2))
+            .checked_div(3)
+            .unwrap_or(0);
+        let cell = |i: u32, y: u32| Rect {
+            x: inner_x.saturating_add((cell_w.saturating_add(cell_gap)).saturating_mul(i)),
+            y,
+            width: cell_w,
+            height: row_h,
+        };
+
+        let lang_row = top.saturating_add(label_h);
+        let language = [cell(0, lang_row), cell(1, lang_row), cell(2, lang_row)];
+
+        let font_row = lang_row
+            .saturating_add(row_h)
+            .saturating_add(gap)
+            .saturating_add(label_h);
+        let font_down = cell(0, font_row);
+        let font_reset = cell(1, font_row);
+        let font_up = cell(2, font_row);
+
+        let theme_row = font_row
+            .saturating_add(row_h)
+            .saturating_add(gap)
+            .saturating_add(label_h);
+        let theme = [cell(0, theme_row), cell(1, theme_row), cell(2, theme_row)];
+
+        let shortcuts_label_y = theme_row.saturating_add(row_h).saturating_add(gap);
+        let shortcuts_y = shortcuts_label_y.saturating_add(label_h);
+        let panel_bottom = shortcuts_y
+            .saturating_add(line_h.saturating_mul(SETTINGS_SHORTCUT_LINES))
+            .saturating_add(pad);
+        let panel = Rect {
+            x: self.sidebar.x,
+            y: self.tree_header_height,
+            width: self.sidebar.width,
+            height: panel_bottom.saturating_sub(self.tree_header_height),
+        };
+        SettingsLayout {
+            panel,
+            language,
+            font_down,
+            font_reset,
+            font_up,
+            theme,
+            shortcuts_y,
+            shortcut_line_height: line_h,
+        }
+    }
+}
+
+/// Hit-test the open settings panel. Call only while the panel is open.
+#[must_use]
+pub fn settings_hit(layout: Layout, x: u32, y: u32, scale: f64) -> SettingsHit {
+    let s = layout.settings_panel(scale);
+    if !s.panel.contains(x, y) {
+        return SettingsHit::Outside;
+    }
+    let langs = [
+        UiLanguage::English,
+        UiLanguage::ChineseSimplified,
+        UiLanguage::ChineseTraditional,
+    ];
+    for (rect, lang) in s.language.iter().zip(langs) {
+        if rect.contains(x, y) {
+            return SettingsHit::Language(lang);
+        }
+    }
+    if s.font_down.contains(x, y) {
+        return SettingsHit::FontDown;
+    }
+    if s.font_reset.contains(x, y) {
+        return SettingsHit::FontReset;
+    }
+    if s.font_up.contains(x, y) {
+        return SettingsHit::FontUp;
+    }
+    for (i, rect) in s.theme.iter().enumerate() {
+        if rect.contains(x, y) {
+            return SettingsHit::Theme(i);
+        }
+    }
+    SettingsHit::Panel
 }
 
 pub fn clamp_tree_scroll(offset: usize, item_count: usize, capacity: usize) -> usize {
@@ -673,70 +754,44 @@ mod tests {
         assert_eq!(layout.composer.y + layout.composer.height, layout.status.y);
     }
 
-    /// New-root, help, two language entries and three size controls never overlap —
-    /// seven tool rects share one header row, and
-    /// an overlap would make one of them unreachable.
+    /// The two header tools — New (left) and Settings (right) — never overlap
+    /// and both stay inside the sidebar header row, at any width or scale.
     #[test]
     fn the_header_tools_are_ordered_and_disjoint() {
         for (width, scale) in [(1000, 1.0), (760, 1.0), (1600, 1.5), (2400, 2.0)] {
             let layout = Layout::new(width, 600, scale);
-            let tools = [
-                layout.new_root,
-                layout.help,
-                layout.language_chinese,
-                layout.language_english,
-                layout.zoom_out,
-                layout.zoom_reset,
-                layout.zoom_in,
-            ];
-            for pair in tools.windows(2) {
+            assert!(
+                layout.new_root.x + layout.new_root.width <= layout.settings.x,
+                "New and Settings overlap at {width}x{scale}"
+            );
+            assert!(
+                layout.settings.x + layout.settings.width <= layout.sidebar.width,
+                "Settings leaves the sidebar at {width}x{scale}"
+            );
+            for tool in [layout.new_root, layout.settings] {
                 assert!(
-                    pair[0].x + pair[0].width <= pair[1].x,
-                    "tools overlap at {width}x{scale}: {pair:?}"
+                    tool.y + tool.height <= layout.tree_header_height,
+                    "a header tool spills into the tab rows at {width}x{scale}"
                 );
             }
-            assert!(
-                tools[6].x + tools[6].width <= layout.sidebar.width,
-                "the rightmost tool leaves the sidebar at {width}x{scale}"
-            );
-            assert!(
-                tools[0].y + tools[0].height <= layout.tree_header_height,
-                "tools spill into the tab rows at {width}x{scale}"
-            );
         }
     }
 
-    /// The header's seven tools lay out at their own size regardless of how
-    /// narrow the frame is, so a frame narrower than roughly two hundred pixels
-    /// has header controls with area outside the frame — `zoom_in` is the last
-    /// one out, at `x = 156` with a 24-pixel box. That is the current behaviour
-    /// and it is recorded rather than asserted away: the ordering test only
-    /// covers wide frames, so a reader should not assume narrow ones are safe.
-    /// What is pinned here is the exact boundary and the fact that widening the
-    /// frame fixes it, so a future layout change has a number to beat.
+    /// With only two header tools the row no longer overflows a narrow sidebar
+    /// (the old seven-tool overflow is designed out), and the frame stays
+    /// partitioned at every width.
     #[test]
-    fn a_narrow_frame_overflows_the_header_row_and_widening_it_does_not() {
-        // A probe established the boundary: 176 wide still clips `zoom_in`,
-        // 200 wide does not.
-        let clipped = Layout::new(176, 80, 1.0);
-        assert!(
-            clipped.zoom_in.x + clipped.zoom_in.width > clipped.sidebar.width,
-            "the last tool overflows a 176-wide frame: {:?} vs sidebar {}",
-            clipped.zoom_in,
-            clipped.sidebar.width
-        );
-        let fits = Layout::new(200, 80, 1.0);
-        assert!(
-            fits.zoom_in.x + fits.zoom_in.width <= fits.sidebar.width,
-            "a 200-wide frame holds the whole row: {:?} vs sidebar {}",
-            fits.zoom_in,
-            fits.sidebar.width
-        );
-        // Even where the row overflows, the frame itself is still partitioned:
-        // the sidebar and composer never claim more than the frame, and the
-        // composer's own children stay inside it.
-        for (width, height) in [(176u32, 80u32), (150, 60), (100, 40)] {
+    fn the_header_row_fits_and_the_frame_stays_partitioned() {
+        for (width, height) in [(200u32, 80u32), (176, 80), (150, 60), (100, 40)] {
             let layout = Layout::new(width, height, 1.0);
+            assert!(
+                layout.new_root.x + layout.new_root.width <= layout.settings.x,
+                "the two tools overlap at {width}x{height}"
+            );
+            assert!(
+                layout.settings.x + layout.settings.width <= layout.sidebar.width,
+                "the header row holds both tools at {width}x{height}"
+            );
             assert!(layout.sidebar.width <= width, "the sidebar fits the frame");
             assert!(layout.sidebar.height <= height);
             assert!(
@@ -764,45 +819,41 @@ mod tests {
     }
 
     #[test]
-    fn help_header_button_has_its_own_hit_target() {
+    fn settings_header_button_has_its_own_hit_target() {
         let layout = Layout::new(1200, 800, 1.0);
         assert_eq!(
             tree_hit(
                 layout,
-                layout.help.x + layout.help.width / 2,
-                layout.help.y + layout.help.height / 2,
+                layout.settings.x + layout.settings.width / 2,
+                layout.settings.y + layout.settings.height / 2,
                 0,
                 1,
                 1.0,
             ),
-            TreeHit::Help
+            TreeHit::Settings
         );
     }
 
     #[test]
-    fn each_language_entry_is_hit_separately() {
-        let layout = Layout::new(1000, 500, 1.0);
+    fn settings_panel_hit_maps_language_font_and_theme_controls() {
+        let layout = Layout::new(1200, 800, 1.0);
+        let s = layout.settings_panel(1.0);
         assert_eq!(
-            tree_hit(
-                layout,
-                layout.language_chinese.x + 1,
-                layout.language_chinese.y + 1,
-                0,
-                4,
-                1.0
-            ),
-            TreeHit::Language(UiLanguage::ChineseSimplified)
+            settings_hit(layout, s.language[1].x + 1, s.language[1].y + 1, 1.0),
+            SettingsHit::Language(UiLanguage::ChineseSimplified)
         );
         assert_eq!(
-            tree_hit(
-                layout,
-                layout.language_english.x + 1,
-                layout.language_english.y + 1,
-                0,
-                4,
-                1.0
-            ),
-            TreeHit::Language(UiLanguage::English)
+            settings_hit(layout, s.font_up.x + 1, s.font_up.y + 1, 1.0),
+            SettingsHit::FontUp
+        );
+        assert_eq!(
+            settings_hit(layout, s.theme[2].x + 1, s.theme[2].y + 1, 1.0),
+            SettingsHit::Theme(2)
+        );
+        // A point in the header above the panel is Outside the panel.
+        assert_eq!(
+            settings_hit(layout, layout.settings.x + 1, layout.settings.y + 1, 1.0),
+            SettingsHit::Outside
         );
     }
 
@@ -868,35 +919,13 @@ mod tests {
         assert_eq!(
             tree_hit(
                 layout,
-                layout.zoom_out.x + 1,
-                layout.zoom_out.y + 1,
+                layout.settings.x + 1,
+                layout.settings.y + 1,
                 0,
                 4,
                 1.0
             ),
-            TreeHit::ZoomOut
-        );
-        assert_eq!(
-            tree_hit(
-                layout,
-                layout.zoom_reset.x + 1,
-                layout.zoom_reset.y + 1,
-                0,
-                4,
-                1.0
-            ),
-            TreeHit::ZoomReset
-        );
-        assert_eq!(
-            tree_hit(
-                layout,
-                layout.zoom_in.x + 1,
-                layout.zoom_in.y + 1,
-                0,
-                4,
-                1.0
-            ),
-            TreeHit::ZoomIn
+            TreeHit::Settings
         );
         assert_eq!(tree_hit(layout, 20, 40, 1, 4, 1.0), TreeHit::Select(1));
         let close = layout.tree_close_rect(0, 1.0);
@@ -916,15 +945,7 @@ mod tests {
         let layout = Layout::new(1000, 500, 1.0);
         for (rect, expected) in [
             (layout.new_root, TreeHit::NewRoot),
-            (layout.help, TreeHit::Help),
-            (
-                layout.language_chinese,
-                TreeHit::Language(UiLanguage::ChineseSimplified),
-            ),
-            (
-                layout.language_english,
-                TreeHit::Language(UiLanguage::English),
-            ),
+            (layout.settings, TreeHit::Settings),
         ] {
             let hit = tree_hit(layout, rect.x, rect.y, 0, 4, 1.0);
             assert_eq!(hit, expected, "corner of {expected:?} must hit it");

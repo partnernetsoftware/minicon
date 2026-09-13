@@ -2446,7 +2446,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "composer_submit_error",
         "composer_text",
         "control_pointer_owner",
-        "help_open",
+        "settings_open",
         "host_notice",
         "ime_status",
         "pending_control_screenshots",

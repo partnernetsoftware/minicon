@@ -128,15 +128,12 @@ minicon --help                   # everything else
 | `Ctrl+O` | send the complete input-area draft |
 | `Up` / `Down` | in the input area, recall what you sent before |
 
-The header's `?` opens the in-app shortcut and feature guide. Its size controls
-shrink, reset, and grow terminal and interface text together; `中` / `En`
-switch the interface language. Closing the final tab leaves a greeting page so
-you can start another terminal; it does not quit the window.
-
-The header row has seven tools and does not wrap, so a window narrower than
-roughly 180 physical pixels clips the rightmost ones — measured on this build,
-`zoom_in` is still clipped at 176 wide and fully visible at 200. Below that
-width the terminal itself still works; the header is what runs out of room.
+The header keeps two tools. **New** (＋, left) opens a terminal; **Settings**
+(⚙, far right) opens a panel with the interface language (English / 简 / 繁),
+font size, a theme picker (Neutral / Docs Ink / Paper Ink), and the keyboard
+shortcuts — `Ctrl+Shift+P` also cycles the theme. With only two tools the header
+never overflows a narrow sidebar. Closing the final tab leaves a greeting page
+so you can start another terminal; it does not quit the window.
 
 ### Reporting a problem
 
