@@ -36,20 +36,50 @@ preflight+sign green; dmg `spctl` = accepted; both notarizations Accepted).
 
 ## Remaining (the engineering, delegable)
 
-1. **Packaging decision.** The mac artifact ships as `tar.gz` today; a bare
-   Mach-O cannot be stapled. Decide: keep `tar.gz` (Gatekeeper online check, no
-   staple) or move to a stapleable `.dmg`/`.pkg` (a `.pkg` also needs a
-   *Developer ID Installer* certificate). This decision gates the rest.
-2. **Candidate/release integration** — consume the court's receipt, verify the
-   signed macOS bytes, ship the signed binary + `.dmg`, and gate on
-   `signing.macos.mode`. (The court itself — the `macos-15` signing job: temporary keychain import of the
-   `.p12` + `set-key-partition-list`; `lipo` then `codesign --options runtime
-   --timestamp`; package; `notarytool submit --wait`; `stapler staple` where
-   supported; `spctl -a -t exec` verify.
-3. **Policy + receipts.** Add an independent macOS switch to
-   `release-policy.json` (parallel to the Windows `signing.mode`), document it in
-   `CODE_SIGNING_POLICY.md`, and record before/after SHA, TeamIdentifier, cert
-   CN, notarization submission id and `spctl` verdict.
-4. **The APE `minicon.com` is likely unsignable on macOS** (PE/ZipOS hybrid, not
-   a Mach-O; `codesign` signs Mach-O). Resolve before promising macOS coverage
-   for that artifact; the native universal Mach-O is the safe target.
+Deliberately deferred to the v0.1.9 cut (done + tested together with the version
+bump and the Windows switch), because this changes the working release chain and
+its `required` path can only be exercised by a real signed release — exactly as
+the Windows integration in candidate.yml/release.yml has never run until the
+first signed release either. Turnkey steps:
+
+1. **Packaging decision — confirmed:** ship the signed+notarized binary in the
+   existing `tar.gz` AND add a stapled `.dmg` asset. No Developer ID Installer
+   cert needed.
+
+2. **candidate.yml preflight** — after the Windows `signing_mode` block, read the
+   independent `macos_signing_mode = jq -r '.signing.macos.mode // "off"'`. When
+   `required`: require a successful `macos-signing.yml` run for `source_sha`
+   (event workflow_dispatch, head_sha match), download its `macos-signed-minicon`
+   artifact, and assert `.release_eligible == true` in its
+   `macos-signing-receipt.json`. Emit a `macos_signing_mode` output. Recommended
+   model is **side-input** (candidate keeps its existing upstream and additionally
+   pulls the macOS court's signed binary + dmg), so Windows and macOS signing can
+   compose; do not make macOS a whole-upstream replacement like Windows unless
+   only one signing line is ever on at a time.
+
+3. **candidate.yml macos-universal packaging** — when `macos_signing_mode ==
+   required`, instead of `lipo`-ing the unsigned cells, use the court's signed
+   universal binary (verify its sha256 == receipt `macos-universal.after_sha256`)
+   as `package-bin/minicon`; and stage the court's stapled
+   `minicon-<version>-macos-universal.dmg` (verify sha256 == receipt
+   `macos-universal-dmg.sha256`) as an additional dist asset.
+
+4. **candidate manifest / receipts** — record the macОS signing receipt sha in the
+   candidate manifest under `receipts.macos_signing.sha256` (mirror the Windows
+   `receipts.signing`), so release.yml can bind it.
+
+5. **release.yml verify** — mirror the Windows check (`release.yml:117-123`): when
+   `macos_signing_mode == required`, assert the shipped `.dmg` and signed binary
+   sha256 match the manifest, and that `spctl` in the receipt is `accepted`.
+   Publish the `.dmg` alongside the `tar.gz`.
+
+6. **Policy + docs** — flip `signing.macos.mode` to `required` in the same commit
+   that bumps to the target version; `CODE_SIGNING_POLICY.md` already has the
+   macOS section. Keep the two signing switches independent.
+
+7. **Test at cut** — run the full chain once (six-cell → minicon-com →
+   company-signing if Windows on → macos-signing → candidate → reputation →
+   release, dry-run first) to exercise both the off and required paths before the
+   real publish.
+
+### Also open
