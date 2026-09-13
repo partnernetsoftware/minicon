@@ -924,6 +924,9 @@ struct ConApp {
     /// touched by this.
     ui_language: ui::UiLanguage,
     ui_theme: theme::ThemeChoice,
+    /// Absolute node index the pointer is hovering in the tree, or None.
+    /// The per-row close button shows only for the active or hovered row.
+    hovered_tree_row: Option<usize>,
     help_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
@@ -1182,6 +1185,7 @@ impl ConApp {
             composer: composer::ComposerState::default(),
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
+            hovered_tree_row: None,
             help_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
@@ -1823,15 +1827,25 @@ impl ConApp {
                 return Ok(true);
             }
             ui::TreeHit::Close(index) => {
+                // The close button is only shown for the active or hovered row,
+                // so a click on its region only closes when it was actually
+                // visible; otherwise it selects the row like any other click.
+                let close_visible = self.hovered_tree_row == Some(index)
+                    || self.workspace.active() == Some(ids[index]);
+                if close_visible {
+                    self.activate_session(window, ids[index]);
+                    self.mark_host_ui_full();
+                    self.close_active_session(window)?;
+                    self.tree_scroll_offset = ui::clamp_tree_scroll(
+                        self.tree_scroll_offset,
+                        self.workspace.nodes().len(),
+                        layout.tree_capacity(),
+                    );
+                    return Ok(true);
+                }
                 self.activate_session(window, ids[index]);
+                self.reveal_active_tree_row(window)?;
                 self.mark_host_ui_full();
-                self.close_active_session(window)?;
-                self.tree_scroll_offset = ui::clamp_tree_scroll(
-                    self.tree_scroll_offset,
-                    self.workspace.nodes().len(),
-                    layout.tree_capacity(),
-                );
-                return Ok(true);
             }
             ui::TreeHit::Select(index) => {
                 self.activate_session(window, ids[index]);
@@ -3039,6 +3053,27 @@ impl ConApp {
                 } else {
                     PixelPointerCursor::Arrow
                 });
+                // Track the hovered tree row so the per-row close button appears
+                // only for the hovered (or active) row. Repaint only when the
+                // hovered row actually changes, so motion over the terminal or
+                // an unchanged row costs no frame.
+                let count = self.workspace.nodes().len();
+                let hovered = match ui::tree_hit(
+                    layout,
+                    x,
+                    y,
+                    self.tree_scroll_offset,
+                    count,
+                    scale,
+                ) {
+                    ui::TreeHit::Select(index) | ui::TreeHit::Close(index) => Some(index),
+                    _ => None,
+                };
+                if hovered != self.hovered_tree_row {
+                    self.hovered_tree_row = hovered;
+                    self.mark_host_ui_full();
+                    window.request_redraw();
+                }
                 Ok(over_grip)
             }
             PixelWindowEvent::PointerButton {
@@ -3238,16 +3273,20 @@ impl ConApp {
                 host_ui_size(HOST_UI_TAB_SIZE_PX),
                 tree_width.saturating_sub(indent + 38),
             );
-            let close = layout.tree_close_rect(visible_index, scale);
-            paint_host_ui_text(
-                &mut surface,
-                close.x + 6,
-                close.y + 3,
-                "x",
-                muted,
-                host_ui_size(HOST_UI_CLOSE_SIZE_PX),
-                close.width.saturating_sub(6),
-            );
+            let row_active = self.workspace.active() == Some(node.id);
+            let row_hovered = self.hovered_tree_row == Some(node_index);
+            if row_active || row_hovered {
+                let close = layout.tree_close_rect(visible_index, scale);
+                paint_host_ui_text(
+                    &mut surface,
+                    close.x + 6,
+                    close.y + 3,
+                    "x",
+                    muted,
+                    host_ui_size(HOST_UI_CLOSE_SIZE_PX),
+                    close.width.saturating_sub(6),
+                );
+            }
         }
 
         let active_id = self.workspace.active().map(|id| id.get()).unwrap_or(0);
