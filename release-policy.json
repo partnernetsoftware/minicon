@@ -6,7 +6,10 @@
     "minicon_com": true
   },
   "signing": {
-    "mode": "off"
+    "mode": "off",
+    "macos": {
+      "mode": "off"
+    }
   },
   "reputation": {
     "mode": "defender",
