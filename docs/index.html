@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1016">
   <title>MiniCon™ — A terminal that is one file</title>
-  <meta name="description" content="MiniCon — native executables plus an experimental one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.">
+  <meta name="description" content="MiniCon — native executables plus a signed one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.">
   <link rel="canonical" href="https://minicon.agenterm.work/">
   <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
   <link rel="alternate" hreflang="zh-CN" href="https://minicon.agenterm.work/?lang=zh-CN">
@@ -16,11 +16,11 @@
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:title" content="MiniCon™ — A terminal that is one file">
-  <meta property="og:description" content="Native executables plus an experimental one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
+  <meta property="og:description" content="Native executables plus a signed one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
   <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MiniCon™ — A terminal that is one file">
-  <meta name="twitter:description" content="Native executables plus an experimental one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
+  <meta name="twitter:description" content="Native executables plus a signed one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
   <meta name="twitter:image" content="https://minicon.agenterm.work/assets/minicon-window.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <style>
@@ -246,19 +246,20 @@
         <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · no bundled runtime</p>
         <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
         <p class="hero-emotion" data-i18n="heroEmotion">Copy it over. Run it on a normal desktop.</p>
-        <p class="lead" data-i18n="heroLead">Native executables plus an experimental one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.</p>
+        <p class="lead" data-i18n="heroLead">Native executables plus a signed one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.</p>
         <div class="cta-row">
           <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon" data-i18n="ctaSource">Source on GitHub</a>
           <a class="button" href="old-windows.html" data-i18n="ctaOld">Old Windows support</a>
         </div>
-        <p class="hero-cta-hint" data-i18n="heroCtaHint">MIT OR Apache-2.0 · delete it and it's gone · no background service</p>
+        <p class="hero-cta-hint" data-i18n="heroCtaHint">Permanently open source (MIT OR Apache-2.0) · signed &amp; notarized · delete it and it's gone</p>
         <div class="spec-row" aria-label="Product specs" data-i18n-aria-label="specLabel">
           <span class="spec-pill" data-i18n-html="specSize"><strong>~660 KB</strong> Windows · <strong>~1.4 MB</strong> macOS · <strong>~5 MB</strong> Linux</span>
           <span class="spec-pill" data-i18n-html="specBudget"><strong>Measured</strong>, per target</span>
           <span class="spec-pill" data-i18n="specDeps">OS libraries only</span>
           <span class="spec-pill" data-i18n="specOld">Windows Server 2016+</span>
           <span class="spec-pill" data-i18n="specOpen">MIT / Apache-2.0</span>
+          <span class="spec-pill" data-i18n="specSigned">Signed &amp; notarized</span>
         </div>
       </div>
     </section>
@@ -278,6 +279,30 @@
           <div>
             <span class="rule" data-i18n="inv3Rule">Small ≠ toy</span>
             <p data-i18n="inv3Body">Real PTY, real VT parsing, tabs, IME, mouse, scrollback — small is the size, not the feature list.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="invariant-strip" aria-labelledby="pillars-heading">
+      <div class="wrap">
+        <h2 id="pillars-heading" data-i18n="pillarsTitle">Open, safe, and small — on purpose.</h2>
+        <div class="invariant-grid">
+          <div>
+            <span class="rule" data-i18n="pillarOpenRule">Permanently open source</span>
+            <p data-i18n="pillarOpenBody">MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no updater, no phone-home — the source is the product.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="pillarSafeRule">Signed and notarized</span>
+            <p data-i18n="pillarSafeBody">Since v0.1.9 the Windows binaries and <code>minicon.com</code> are Authenticode-signed and the macOS build is Developer ID-signed and Apple-notarized as PARTNERNET SOFTWARE PTY LTD. Windows imports are gated to OS libraries; nothing runs in the background.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="pillarSmallRule">Genuinely mini</span>
+            <p data-i18n="pillarSmallBody">One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux, every size measured, not estimated. No installer and no bundled language runtime.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="pillarLeanRule">Minimal resources</span>
+            <p data-i18n="pillarLeanBody">A small memory footprint and no daemon. It starts fast, holds a real PTY and scrollback, and leaves nothing behind when the window closes — delete the file and it's gone.</p>
           </div>
         </div>
       </div>
@@ -406,7 +431,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
     <section id="install">
       <div class="wrap">
         <h2 data-i18n="installTitle">Getting it</h2>
-        <p class="section-lead" data-i18n="installLead">Download a native archive or the experimental unsigned <code>minicon.com</code> and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no <code>-dev</code> package is required.</p>
+        <p class="section-lead" data-i18n="installLead">Download a native archive or the signed, notarized <code>minicon.com</code> and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no <code>-dev</code> package is required.</p>
         <div class="cta-row">
           <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
@@ -461,7 +486,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
       const copy = {
                 en: {
           title: "MiniCon™ — A terminal that is one file",
-          description: "MiniCon — native executables plus an experimental one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.",
+          description: "MiniCon — native executables plus a signed one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.",
           skip: "Skip to content",
           navLabel: "Primary navigation",
           languageLabel: "Language",
@@ -474,17 +499,27 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           heroEyebrow: "one file · no install · no bundled runtime",
           heroTitle: "A terminal that is <em>one file</em>.",
           heroEmotion: "Copy it over. Run it on a normal desktop.",
-          heroLead: "Native executables plus an experimental one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.",
+          heroLead: "Native executables plus a signed one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.",
           ctaGet: "Get MiniCon",
           ctaSource: "Source on GitHub",
           ctaOld: "Old Windows support",
-          heroCtaHint: "MIT OR Apache-2.0 · delete it and it's gone · no background service",
+          heroCtaHint: "Permanently open source (MIT OR Apache-2.0) · signed & notarized · delete it and it's gone",
           specLabel: "Product specs",
           specSize: "<strong>~660 KB</strong> Windows · <strong>~1.4 MB</strong> macOS · <strong>~5 MB</strong> Linux",
           specBudget: "<strong>Measured</strong>, per target",
           specDeps: "OS libraries only",
           specOld: "Windows Server 2016+",
           specOpen: "MIT / Apache-2.0",
+          specSigned: "Signed & notarized",
+          pillarsTitle: "Open, safe, and small — on purpose.",
+          pillarOpenRule: "Permanently open source",
+          pillarOpenBody: "MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no updater, no phone-home — the source is the product.",
+          pillarSafeRule: "Signed and notarized",
+          pillarSafeBody: "Since v0.1.9 the Windows binaries and minicon.com are Authenticode-signed, and the macOS build is Developer ID-signed and Apple-notarized, as PARTNERNET SOFTWARE PTY LTD. Windows imports are gated to OS libraries; nothing runs in the background.",
+          pillarSmallRule: "Genuinely mini",
+          pillarSmallBody: "One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux, every size measured, not estimated. No installer and no bundled language runtime.",
+          pillarLeanRule: "Minimal resources",
+          pillarLeanBody: "A small memory footprint and no daemon. It starts fast, holds a real PTY and scrollback, and leaves nothing behind when the window closes — delete the file and it's gone.",
           invariantHeading: "What MiniCon is",
           inv1Rule: "One file",
           inv1Body: "The executable is the whole product. Nothing installs, nothing runs in the background. Delete the file and it's gone.",
@@ -530,7 +565,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "Block until the condition holds or the timeout expires, and say which.",
           scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
           installTitle: "Getting it",
-          installLead: "Download a native archive or the experimental unsigned minicon.com and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no -dev package is required.",
+          installLead: "Download a native archive or the signed, notarized minicon.com and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no -dev package is required.",
           installRelease: "Latest release",
           installBuild: "Build from source",
           familyTitle: "MiniCon is the terminal. AgenTerm is the Agent-era workbench.",
@@ -558,7 +593,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
-          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供实验性单文件六格启动器。免安装、免捆绑语言运行时、免后台服务。",
+          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供已签名的单文件六格启动器。免安装、免捆绑语言运行时、免后台服务。",
           skip: "跳到正文",
           navLabel: "主导航",
           languageLabel: "语言",
@@ -571,17 +606,27 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           heroEyebrow: "一个文件 · 免安装 · 免捆绑运行时",
           heroTitle: "一个<em>文件</em>就是一个终端。",
           heroEmotion: "拷过去，在具备系统桌面库的电脑上直接运行。",
-          heroLead: "Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供实验性单文件六格启动器。没有安装包和捆绑语言运行时；每一处都能被脚本驱动。",
+          heroLead: "Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供已签名的单文件六格启动器。没有安装包和捆绑语言运行时；每一处都能被脚本驱动。",
           ctaGet: "获取 MiniCon",
           ctaSource: "GitHub 源码",
           ctaOld: "旧版 Windows 支持",
-          heroCtaHint: "MIT 或 Apache-2.0 · 删掉即卸载 · 无后台服务",
+          heroCtaHint: "永久开源(MIT 或 Apache-2.0) · 已签名并公证 · 删掉即卸载",
           specLabel: "产品规格",
           specSize: "Windows <strong>约 660 KB</strong> · macOS <strong>约 1.4 MB</strong> · Linux <strong>约 5 MB</strong>",
           specBudget: "<strong>实测</strong>，按目标",
           specDeps: "只依赖系统库",
           specOld: "Windows Server 2016+",
           specOpen: "MIT / Apache-2.0",
+          specSigned: "已签名并公证",
+          pillarsTitle: "开源、安全、迷你——都是刻意为之。",
+          pillarOpenRule: "永久开源",
+          pillarOpenBody: "MIT 或 Apache-2.0,而且永远如此。每一行都能读、能自己编译、能 fork。无遥测、无账号、无自动更新、不回传——源码就是产品。",
+          pillarSafeRule: "已签名并公证",
+          pillarSafeBody: "自 v0.1.9 起,Windows 二进制与 minicon.com 经 Authenticode 签名,macOS 版经 Developer ID 签名并通过 Apple 公证,主体均为 PARTNERNET SOFTWARE PTY LTD。Windows 导入表被限制在系统库内;后台什么都不跑。",
+          pillarSmallRule: "真的迷你",
+          pillarSmallBody: "一个文件——Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB,每个体积都是实测,不是估算。免安装,免捆绑语言运行时。",
+          pillarLeanRule: "极省资源",
+          pillarLeanBody: "内存占用很小,没有常驻进程。启动快,带真 PTY 和回滚;窗口一关什么都不留——删掉文件,就没了。",
           invariantHeading: "MiniCon 是什么",
           inv1Rule: "一个文件",
           inv1Body: "可执行文件就是整个产品。什么都不装、后台什么都不跑。删掉文件，就没了。",
@@ -627,7 +672,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
           scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
           installTitle: "获取",
-          installLead: "下载原生归档或实验性的未签名 minicon.com 直接运行，不另带安装程序或语言运行时。Linux 可执行文件已内嵌仅运行时的 X11 bridge 及 XCB-XKB 依赖，不需要 -dev 包。",
+          installLead: "下载原生归档或已签名并公证的 minicon.com 直接运行，不另带安装程序或语言运行时。Linux 可执行文件已内嵌仅运行时的 X11 bridge 及 XCB-XKB 依赖，不需要 -dev 包。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
           familyTitle: "MiniCon 是终端。AgenTerm 是 Agent 时代的工作台。",
@@ -655,7 +700,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
         },
 "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
-          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生執行檔，另提供實驗性單檔六格啟動器。免安裝、免捆綁語言執行環境、免背景服務。",
+          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生執行檔，另提供已簽署的單檔六格啟動器。免安裝、免捆綁語言執行環境、免背景服務。",
           skip: "跳到內容",
           navLabel: "主導覽",
           languageLabel: "語言",
@@ -668,17 +713,27 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           heroEyebrow: "一個檔案 · 六格平台 · 免安裝",
           heroTitle: "一個<em>檔案</em>就是一個終端機。",
           heroEmotion: "複製過去，執行。安裝就這樣結束了。",
-          heroLead: "MiniCon 為 Windows、Linux、macOS × x86_64、aarch64 六格提供原生執行檔，另有實驗性單檔六格啟動器。沒有安裝程式或捆綁語言執行環境；每個部分都可由腳本操控與讀取。",
+          heroLead: "MiniCon 為 Windows、Linux、macOS × x86_64、aarch64 六格提供原生執行檔，另有已簽署的單檔六格啟動器。沒有安裝程式或捆綁語言執行環境；每個部分都可由腳本操控與讀取。",
           ctaGet: "取得 MiniCon",
           ctaSource: "GitHub 原始碼",
           ctaOld: "舊版 Windows 支援",
-          heroCtaHint: "MIT 或 Apache-2.0 · 沒有東西需要解除安裝 · 不留背景服務",
+          heroCtaHint: "永久開源(MIT 或 Apache-2.0) · 已簽署並公證 · 刪掉即卸載",
           specLabel: "產品規格",
           specSize: "Windows <strong>約 660 KB</strong> · macOS <strong>約 1.4 MB</strong> · Linux <strong>約 5 MB</strong>",
           specBudget: "<strong>依 profile</strong> 報告體積",
           specDeps: "只依賴系統程式庫",
           specOld: "Windows Server 2016 起",
           specOpen: "MIT / Apache-2.0",
+          specSigned: "已簽署並公證",
+          pillarsTitle: "開源、安全、迷你——都是刻意為之。",
+          pillarOpenRule: "永久開源",
+          pillarOpenBody: "MIT 或 Apache-2.0,而且永遠如此。每一行都能讀、能自己編譯、能 fork。無遙測、無帳號、無自動更新、不回傳——原始碼就是產品。",
+          pillarSafeRule: "已簽署並公證",
+          pillarSafeBody: "自 v0.1.9 起,Windows 二進位與 minicon.com 經 Authenticode 簽署,macOS 版經 Developer ID 簽署並通過 Apple 公證,主體均為 PARTNERNET SOFTWARE PTY LTD。Windows 匯入表被限制在系統程式庫內;背景什麼都不跑。",
+          pillarSmallRule: "真的迷你",
+          pillarSmallBody: "一個檔案——Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB,每個體積都是實測,不是估算。免安裝,免捆綁語言執行環境。",
+          pillarLeanRule: "極省資源",
+          pillarLeanBody: "記憶體占用很小,沒有常駐程序。啟動快,帶真 PTY 與回捲;視窗一關什麼都不留——刪掉檔案,就沒了。",
           invariantHeading: "MiniCon 是什麼",
           inv1Rule: "就一個檔案",
           inv1Body: "整個產品就是那個執行檔。不安裝任何東西、不留背景程式，刪掉檔案就等於完全移除。",
@@ -724,7 +779,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
           scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
           installTitle: "取得方式",
-          installLead: "下載原生封裝或實驗性的未簽名 minicon.com 即可執行，不另帶安裝程式或語言執行環境。Linux 執行檔已內嵌僅執行期的 X11 bridge 與 XCB-XKB 相依項，不需要 -dev 套件。",
+          installLead: "下載原生封裝或已簽署並公證的 minicon.com 即可執行，不另帶安裝程式或語言執行環境。Linux 執行檔已內嵌僅執行期的 X11 bridge 與 XCB-XKB 相依項，不需要 -dev 套件。",
           installRelease: "最新發行版",
           installBuild: "自行建置",
           familyTitle: "MiniCon 是終端機。AgenTerm 是 Agent 時代的工作臺。",
