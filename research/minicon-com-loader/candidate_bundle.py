@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import re
+import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
@@ -23,7 +24,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def asset_names(version: str, include_com: bool) -> list[str]:
+def asset_names(version: str, include_com: bool, macos_signed: bool = False) -> list[str]:
     names = [
         f"minicon-{version}-windows-x86_64.zip",
         f"minicon-{version}-windows-arm64.zip",
@@ -33,6 +34,10 @@ def asset_names(version: str, include_com: bool) -> list[str]:
     ]
     if include_com:
         names.append("minicon.com")
+    # A stapled .dmg ships alongside the tar.gz only when macOS is signed; the
+    # tar.gz always carries the (signed, when required) universal binary.
+    if macos_signed:
+        names.append(f"minicon-{version}-macos-universal.dmg")
     return names
 
 
@@ -64,12 +69,18 @@ def require_policy(policy: dict, version: str) -> tuple[bool, str]:
         raise ValueError("invalid release asset/signing policy")
     if mode == "required" and not include_com:
         raise ValueError("required signing without minicon.com is not a supported release shape")
+    # macOS Developer ID signing is an independent switch from the Windows
+    # Authenticode one; either, both, or neither may be required.
+    macos = signing.get("macos") if isinstance(signing, dict) else None
+    macos_mode = macos.get("mode") if isinstance(macos, dict) else "off"
+    if macos_mode not in {"off", "required"}:
+        raise ValueError("invalid macOS signing policy")
     expected_reputation = ["windows-x86_64", "windows-arm64"]
     if include_com:
         expected_reputation.insert(0, "minicon.com")
     if not isinstance(reputation, dict) or reputation.get("mode") != "defender" or reputation.get("assets") != expected_reputation:
         raise ValueError("release reputation policy does not match its asset shape")
-    return include_com, mode
+    return include_com, mode, macos_mode
 
 
 def require_identity(build: dict, aggregate: dict, signing: dict | None, source: str,
@@ -121,6 +132,29 @@ def require_identity(build: dict, aggregate: dict, signing: dict | None, source:
         raise ValueError("aggregate does not contain exactly six cells")
 
 
+def require_macos_identity(macos: dict | None, macos_mode: str, source: str, version: str) -> None:
+    """Validate the macOS Developer ID signing receipt, independent of Windows."""
+    if macos_mode != "required":
+        if macos is not None:
+            raise ValueError("macОS signing receipt supplied while macOS signing policy is off")
+        return
+    if not isinstance(macos, dict) or macos.get("kind") != "minicon-macos-signing-court":
+        raise ValueError("macOS signing identity mismatch")
+    if macos.get("source_sha") != source or macos.get("version") != version:
+        raise ValueError("macOS signing receipt source/version mismatch")
+    if macos.get("release_eligible") is not True:
+        raise ValueError("qualification-only macOS signing receipt cannot enter a Candidate")
+    assets = macos.get("assets")
+    if not isinstance(assets, dict):
+        raise ValueError("macOS signing receipt missing assets")
+    binary = assets.get("macos-universal")
+    dmg = assets.get("macos-universal-dmg")
+    if not isinstance(binary, dict) or not SHA_RE.fullmatch(str(binary.get("after_sha256"))):
+        raise ValueError("macOS signing receipt missing signed binary digest")
+    if not isinstance(dmg, dict) or not SHA_RE.fullmatch(str(dmg.get("sha256"))) or dmg.get("stapled") is not True:
+        raise ValueError("macOS signing receipt missing stapled .dmg digest")
+
+
 def require_g3(build: dict, g3: dict, g3_path: Path, source: str) -> None:
     if g3.get("schema") != 1 or g3.get("kind") != "minicon-com-g3-courts":
         raise ValueError("unsupported G3 receipt")
@@ -150,13 +184,16 @@ def seal(args: argparse.Namespace) -> None:
     build = read_json(build_path)
     aggregate = read_json(aggregate_path)
     policy = read_json(policy_path)
-    include_com, signing_mode = require_policy(policy, args.version)
+    include_com, signing_mode, macos_mode = require_policy(policy, args.version)
     signing = read_json(signing_path) if signing_path else None
+    macos_signing_path = args.macos_signing_receipt.resolve() if getattr(args, "macos_signing_receipt", None) else None
+    macos_signing = read_json(macos_signing_path) if macos_signing_path else None
     g3 = read_json(g3_path)
     require_identity(build, aggregate, signing, args.source_sha, args.version, signing_mode)
+    require_macos_identity(macos_signing, macos_mode, args.source_sha, args.version)
     require_g3(build, g3, g3_path, args.source_sha)
 
-    expected = asset_names(args.version, include_com)
+    expected = asset_names(args.version, include_com, macos_signed=(macos_mode == "required"))
     allowed = set(expected + [f"{name}.sha256" for name in expected])
     actual = {path.name for path in payload.iterdir() if path.is_file()}
     if actual != allowed:
@@ -188,6 +225,22 @@ def seal(args: argparse.Namespace) -> None:
                 raise ValueError("minicon.com asset does not match signed after-SHA receipt")
         elif com["sha256"] != build.get("minicon_com_sha256") or com["bytes"] != build.get("minicon_com_bytes"):
             raise ValueError("unsigned minicon.com asset does not match the one-build receipt")
+
+    if macos_mode == "required":
+        tar_name = f"minicon-{args.version}-macos-universal.tar.gz"
+        member_name = f"minicon-{args.version}-macos-universal/minicon"
+        with tarfile.open(payload / tar_name) as archive:
+            extracted = archive.extractfile(member_name)
+            if extracted is None:
+                raise ValueError("macOS tar.gz missing the universal minicon binary")
+            binary_bytes = extracted.read()
+        signed_after = macos_signing["assets"]["macos-universal"]["after_sha256"]
+        if hashlib.sha256(binary_bytes).hexdigest() != signed_after:
+            raise ValueError("macOS tar.gz binary is not the signed after-SHA")
+        dmg_name = f"minicon-{args.version}-macos-universal.dmg"
+        dmg_row = next(item for item in assets if item["name"] == dmg_name)
+        if dmg_row["sha256"] != macos_signing["assets"]["macos-universal-dmg"]["sha256"]:
+            raise ValueError("macOS .dmg asset does not match the signed receipt")
 
     manifest = {
         "schema": 1,
@@ -238,6 +291,16 @@ def seal(args: argparse.Namespace) -> None:
                 for key in ("minicon.com", "win-x86_64", "win-aarch64")
             },
         })
+    if macos_mode == "required":
+        manifest["receipts"]["macos_signing"] = {"name": macos_signing_path.name, "sha256": sha256(macos_signing_path)}
+        manifest["signing"]["macos"] = {
+            "mode": "required",
+            "provider": macos_signing.get("provider"),
+            "identity": macos_signing.get("identity"),
+            "team_identifier": macos_signing.get("team_identifier"),
+            "universal_after_sha256": macos_signing["assets"]["macos-universal"]["after_sha256"],
+            "dmg_sha256": macos_signing["assets"]["macos-universal-dmg"]["sha256"],
+        }
     args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     verify_manifest(manifest, payload, policy_path)
     print(json.dumps({"manifest": args.output.name, "assets": len(assets), "source_sha": args.source_sha}, indent=2))
@@ -253,14 +316,14 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
     if not isinstance(policy, dict):
         raise ValueError("Candidate lacks release policy")
     policy_digest = policy.pop("sha256", None)
-    include_com, signing_mode = require_policy(policy, version)
+    include_com, signing_mode, macos_mode = require_policy(policy, version)
     policy["sha256"] = policy_digest
     if not SHA_RE.fullmatch(str(policy_digest)):
         raise ValueError("invalid release policy digest")
     if policy_path is not None and sha256(policy_path) != policy_digest:
         raise ValueError("release policy file does not match Candidate manifest")
     rows = manifest.get("assets")
-    if not isinstance(rows, list) or [row.get("name") for row in rows] != asset_names(version, include_com):
+    if not isinstance(rows, list) or [row.get("name") for row in rows] != asset_names(version, include_com, macos_signed=(macos_mode == "required")):
         raise ValueError("Candidate asset order/set mismatch")
     allowed = {row["name"] for row in rows} | {row["sidecar"]["name"] for row in rows}
     actual = {path.name for path in payload.iterdir() if path.is_file()}
@@ -287,30 +350,62 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
         if hashlib.sha256(raw).hexdigest() != row.get("sha256") or len(raw) != row.get("bytes", len(raw)):
             raise ValueError(f"{key}: reputation bytes mismatch")
     signing = manifest.get("signing")
+    if not isinstance(signing, dict):
+        raise ValueError("Candidate lacks signing identity")
+    # --- Windows (Authenticode / Azure) ---
     if signing_mode == "off":
-        if signing != {"mode": "off"} or "signing" in manifest.get("receipts", {}):
-            raise ValueError("unsigned Candidate carries signing identity")
-        return
-    allowed_publishers = {"azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD"}
-    if not isinstance(signing, dict) or signing.get("mode") != "required" or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
-        raise ValueError("missing or mismatched trusted signing identity")
-    after = signing.get("signed_after_sha256")
-    if not isinstance(after, dict) or set(after) != {"minicon.com", "win-x86_64", "win-aarch64"}:
-        raise ValueError("missing signed after-SHA set")
-    if sha256(payload / "minicon.com") != after["minicon.com"]:
-        raise ValueError("sealed minicon.com is not the signed after-SHA")
-    if (payload / "minicon.com").stat().st_size > CANDIDATE_CEILING_BYTES:
-        raise ValueError("sealed minicon.com exceeds the stamped 9 MiB Candidate ceiling")
-    for cell, platform in (("win-x86_64", "windows-x86_64"), ("win-aarch64", "windows-arm64")):
-        archive = payload / f"minicon-{version}-{platform}.zip"
-        member = f"minicon-{version}-{platform}/minicon.exe"
-        with zipfile.ZipFile(archive) as zipped:
-            try:
-                binary = zipped.read(member)
-            except KeyError as exc:
-                raise ValueError(f"{archive.name}: missing signed minicon.exe") from exc
-        if hashlib.sha256(binary).hexdigest() != after[cell]:
-            raise ValueError(f"{archive.name}: embedded PE is not the signed after-SHA")
+        if signing.get("mode") != "off" or "signing" in manifest.get("receipts", {}):
+            raise ValueError("unsigned Candidate carries Windows signing identity")
+        if any(key in signing for key in ("provider", "publisher_organization", "signed_after_sha256")):
+            raise ValueError("unsigned Candidate carries Windows signing fields")
+    else:
+        allowed_publishers = {"azure-artifact-signing": "PARTNERNET SOFTWARE PTY LTD"}
+        if signing.get("mode") != "required" or allowed_publishers.get(signing.get("provider")) != signing.get("publisher_organization"):
+            raise ValueError("missing or mismatched trusted signing identity")
+        after = signing.get("signed_after_sha256")
+        if not isinstance(after, dict) or set(after) != {"minicon.com", "win-x86_64", "win-aarch64"}:
+            raise ValueError("missing signed after-SHA set")
+        if sha256(payload / "minicon.com") != after["minicon.com"]:
+            raise ValueError("sealed minicon.com is not the signed after-SHA")
+        if (payload / "minicon.com").stat().st_size > CANDIDATE_CEILING_BYTES:
+            raise ValueError("sealed minicon.com exceeds the stamped 9 MiB Candidate ceiling")
+        for cell, platform in (("win-x86_64", "windows-x86_64"), ("win-aarch64", "windows-arm64")):
+            archive = payload / f"minicon-{version}-{platform}.zip"
+            member = f"minicon-{version}-{platform}/minicon.exe"
+            with zipfile.ZipFile(archive) as zipped:
+                try:
+                    binary = zipped.read(member)
+                except KeyError as exc:
+                    raise ValueError(f"{archive.name}: missing signed minicon.exe") from exc
+            if hashlib.sha256(binary).hexdigest() != after[cell]:
+                raise ValueError(f"{archive.name}: embedded PE is not the signed after-SHA")
+    # --- macOS (Developer ID / notarization), an independent switch ---
+    macos = signing.get("macos")
+    if macos_mode == "off":
+        if isinstance(macos, dict) and macos.get("mode") != "off":
+            raise ValueError("unsigned-macOS Candidate carries macOS signing identity")
+        if "macos_signing" in manifest.get("receipts", {}):
+            raise ValueError("unsigned-macOS Candidate carries a macOS signing receipt")
+    else:
+        if not isinstance(macos, dict) or macos.get("mode") != "required":
+            raise ValueError("missing macOS signing identity")
+        if macos.get("team_identifier") != "L2N7M5M544":
+            raise ValueError("unexpected macOS signing team")
+        tar_after = macos.get("universal_after_sha256")
+        dmg_sha = macos.get("dmg_sha256")
+        if not SHA_RE.fullmatch(str(tar_after)) or not SHA_RE.fullmatch(str(dmg_sha)):
+            raise ValueError("missing macOS signed digests")
+        tar_name = f"minicon-{version}-macos-universal.tar.gz"
+        member_name = f"minicon-{version}-macos-universal/minicon"
+        with tarfile.open(payload / tar_name) as archive:
+            extracted = archive.extractfile(member_name)
+            if extracted is None:
+                raise ValueError(f"{tar_name}: missing the universal minicon binary")
+            binary_bytes = extracted.read()
+        if hashlib.sha256(binary_bytes).hexdigest() != tar_after:
+            raise ValueError(f"{tar_name}: binary is not the signed after-SHA")
+        if sha256(payload / f"minicon-{version}-macos-universal.dmg") != dmg_sha:
+            raise ValueError("sealed .dmg is not the signed digest")
 
 
 def verify(args: argparse.Namespace) -> None:
@@ -476,6 +571,88 @@ def self_test() -> None:
         verify_manifest(unsigned_manifest, unsigned, unsigned_policy_path)
         print("PASS unsigned APE plus five-archive Candidate policy court")
 
+        # --- macOS signing court (independent switch: Windows off, macOS required) ---
+        mac = root / "mac"
+        mac.mkdir()
+        mac_policy_path = root / "mac-policy.json"
+        mac_policy = {"schema": 1, "version": version,
+                      "assets": {"native_archives": True, "minicon_com": True},
+                      "signing": {"mode": "off", "macos": {"mode": "required"}},
+                      "reputation": {"mode": "defender", "assets": [
+                          "minicon.com", "windows-x86_64", "windows-arm64"]}}
+        mac_policy_path.write_text(json.dumps(mac_policy))
+        signed_mac_binary = b"signed-universal-macho"
+        for name in asset_names(version, True, macos_signed=True):
+            target = mac / name
+            if name == "minicon.com":
+                target.write_bytes(b"unsigned-com")
+            elif name == f"minicon-{version}-macos-universal.tar.gz":
+                import io
+                with tarfile.open(target, "w:gz") as tf:
+                    info = tarfile.TarInfo(f"minicon-{version}-macos-universal/minicon")
+                    info.size = len(signed_mac_binary)
+                    tf.addfile(info, io.BytesIO(signed_mac_binary))
+            elif name == f"minicon-{version}-macos-universal.dmg":
+                target.write_bytes(b"stapled-dmg-bytes")
+            elif name in signed_windows:
+                platform = name.removeprefix(f"minicon-{version}-").removesuffix(".zip")
+                with zipfile.ZipFile(target, "w") as zipped:
+                    zipped.writestr(f"minicon-{version}-{platform}/minicon.exe", signed_windows[name])
+            else:
+                target.write_bytes(name.encode())
+            (mac / f"{name}.sha256").write_text(f"{sha256(target)}  {name}\n")
+        mac_dmg_sha = sha256(mac / f"minicon-{version}-macos-universal.dmg")
+        mac_receipt_path = root / "macos-signing-receipt.json"
+        mac_receipt_path.write_text(json.dumps({
+            "schema": 2, "kind": "minicon-macos-signing-court", "source_sha": source,
+            "version": version, "provider": "Apple Developer ID + notarization",
+            "identity": "Developer ID Application: PARTNERNET SOFTWARE PTY LTD (L2N7M5M544)",
+            "team_identifier": "L2N7M5M544",
+            "assets": {
+                "macos-universal": {"before_sha256": "d" * 64,
+                                     "after_sha256": hashlib.sha256(signed_mac_binary).hexdigest(),
+                                     "hardened_runtime": True, "stapled": False},
+                "macos-universal-dmg": {"sha256": mac_dmg_sha, "stapled": True, "spctl": "accepted"},
+            },
+            "release_eligible": True,
+        }))
+        # unsigned Windows aggregate/build already set above; reuse them.
+        seal(argparse.Namespace(
+            payload=mac, build_receipt=build_path, aggregate_receipt=aggregate_path,
+            signing_receipt=None, macos_signing_receipt=mac_receipt_path,
+            policy=mac_policy_path, g3_receipt=g3_path, source_sha=source, version=version,
+            candidate_run_id=13, candidate_run_attempt=1, output=output,
+        ))
+        mac_manifest = read_json(output)
+        assert mac_manifest["signing"]["macos"]["mode"] == "required"
+        assert len(mac_manifest["assets"]) == 7
+        verify_manifest(mac_manifest, mac, mac_policy_path)
+        print("PASS macOS-signed Candidate seal + verify court")
+        # qualification-only macОS receipt must not enter a Candidate
+        mac_fixture = read_json(mac_receipt_path)
+        mac_fixture["release_eligible"] = False
+        mac_receipt_path.write_text(json.dumps(mac_fixture))
+        try:
+            seal(argparse.Namespace(
+                payload=mac, build_receipt=build_path, aggregate_receipt=aggregate_path,
+                signing_receipt=None, macos_signing_receipt=mac_receipt_path,
+                policy=mac_policy_path, g3_receipt=g3_path, source_sha=source, version=version,
+                candidate_run_id=13, candidate_run_attempt=1, output=output,
+            ))
+        except ValueError as exc:
+            assert "qualification-only macOS" in str(exc)
+            print("PASS qualification-only macOS signing cannot enter Candidate")
+        else:
+            raise SystemExit("qualification-only macOS receipt entered Candidate")
+        # tampered .dmg must fail verify
+        (mac / f"minicon-{version}-macos-universal.dmg").write_bytes(b"tampered-dmg")
+        try:
+            verify_manifest(mac_manifest, mac)
+        except ValueError:
+            print("PASS macOS .dmg substitution court")
+        else:
+            raise SystemExit("macOS .dmg substitution court did not fail")
+
 
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser()
@@ -486,6 +663,7 @@ def parser() -> argparse.ArgumentParser:
     make.add_argument("--build-receipt", type=Path, required=True)
     make.add_argument("--aggregate-receipt", type=Path, required=True)
     make.add_argument("--signing-receipt", type=Path)
+    make.add_argument("--macos-signing-receipt", type=Path)
     make.add_argument("--policy", type=Path, required=True)
     make.add_argument("--g3-receipt", type=Path, required=True)
     make.add_argument("--source-sha", required=True)
