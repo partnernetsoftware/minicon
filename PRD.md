@@ -74,8 +74,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.9-release-history.md
 │   ├── [x] v0.1.10 released — complete UI (settings panel, themes, crosshair); dual-signed + signed .dmg
 │   │   └── prd/archive/v0.1.10-release-history.md
-│   ├── [x] v0.1.11 released — per-theme terminal colors; dual-signed (latest)
+│   ├── [x] v0.1.11 released — per-theme terminal colors; dual-signed
 │   │   └── prd/archive/v0.1.11-release-history.md
+│   ├── [x] v0.1.12 released — finish & polish (composer selection, UI); dual-signed (latest)
+│   │   └── prd/archive/v0.1.12-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -129,7 +131,8 @@ flowchart LR
         C17["v0.1.7 released<br/>UI groundwork · last unsigned"]
         SR9["v0.1.9 released<br/>FIRST dual-signed · Win Authenticode + macOS notarized"]
         R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
-        R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed · latest"]
+        R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed"]
+        R112["v0.1.12 released<br/>finish & polish · composer selection · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -152,7 +155,7 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 --> C17 --> SR9 --> R110 --> R111
+    C16 --> C17 --> SR9 --> R110 --> R111 --> R112
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -192,10 +195,12 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.11 is the latest public release: the six-cell native set plus a
-  signed `minicon.com` and a signed, notarized macOS `.dmg`, with per-theme
-  terminal colors, the settings panel, three themes, and the grid crosshair.
-  History: `prd/archive/v0.1.11-release-history.md`.
+- [x] v0.1.12 is the latest public release: a finish-and-polish release on the
+  dual-signed line (composer Shift+Arrow selection, theme-consistent crosshair/
+  scrollbar, complete shortcut list, tab-title ellipsis, close-button exit
+  coloring, header hover, live zoom %, Escape-to-close, and the macOS/Linux
+  paste-review multiline fix). No new surface. History:
+  `prd/archive/v0.1.12-release-history.md`.
 - [x] Every release since **v0.1.9** is dual-signed: Windows executables and
   `minicon.com` are Authenticode-signed via Azure Artifact Signing, and the
   macOS build is Developer ID-signed and Apple-notarized, as PARTNERNET

@@ -87,6 +87,7 @@ flowchart LR
     X17 --> R19["v0.1.9 released<br/>first dual-signed (Win Authenticode + macOS notarized)"]
     R19 --> R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
     R110 --> R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed"]
+    R111 --> R112["v0.1.12 released<br/>finish & polish · dual-signed"]
 ```
 
 - [x] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
@@ -123,6 +124,14 @@ flowchart LR
   untouched. Also fixed the clipped settings-panel shortcut lines. Ledger:
   `archive/v0.1.11-release-history.md`. The stale `.github/release-notes.md`
   template was rewritten so future auto-notes state the signed, current product.
+
+- [x] **v0.1.12 released — finish & polish, dual-signed.** Both signing switches
+  stay `required`. No new surface: composer Shift+Arrow text selection, a
+  theme-consistent crosshair/scrollbar, the complete/correct settings shortcut
+  list, tab-title ellipsis, close-button hover + non-zero-exit coloring, header
+  hover, a live zoom % readout, Escape-to-close, and the macOS/Linux
+  paste-review multiline fix. From the post-0.1.11 review
+  (`plan/plan-0.1.12-review.md`). Ledger: `archive/v0.1.12-release-history.md`.
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_28_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
