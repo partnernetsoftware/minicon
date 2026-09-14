@@ -6,7 +6,7 @@ language runtime. It opens a real PTY,
 renders a real terminal, and a script can drive and read every part of it on
 Windows, Linux, and macOS.
 
-![MiniCon](docs/assets/minicon-window.png)
+![MiniCon](docs/assets/minicon-neutral.png)
 
 | | |
 | --- | --- |
@@ -50,7 +50,7 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.10-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.11-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a signed, notarized universal binary — the same `.dmg` runs

@@ -66,12 +66,16 @@ MiniCon — one-file local terminal
 │   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
 │   │   └── prd/archive/v0.1.5-release-history.md
 │   ├── [x] v0.1.6 released — multiline paste + unsigned six-cell + minicon.com
-│   │   ├── composer paste keeps LF; terminal review paints CRLF; PTY still CR
-│   │   ├── exact Candidate promoted without rebuild after gates + human authority
 │   │   └── prd/archive/v0.1.6-release-history.md
-│   ├── [x] company Artifact Signing mechanism qualified, not yet used by a public release
-│   │   ├── policy-selected OIDC signing + Windows/portable inspection + six-cell after-SHA evidence
-│   │   └── prd/archive/azure-work-tenant-signing-enroll.md
+│   ├── [x] v0.1.7 released — UI groundwork; last unsigned line
+│   │   └── prd/archive/v0.1.7-release-history.md
+│   ├── [x] v0.1.9 released — FIRST dual-signed (Windows Authenticode + macOS notarized)
+│   │   ├── both signing switches required; PARTNERNET SOFTWARE PTY LTD
+│   │   └── prd/archive/v0.1.9-release-history.md
+│   ├── [x] v0.1.10 released — complete UI (settings panel, themes, crosshair); dual-signed + signed .dmg
+│   │   └── prd/archive/v0.1.10-release-history.md
+│   ├── [x] v0.1.11 released — per-theme terminal colors; dual-signed (latest)
+│   │   └── prd/archive/v0.1.11-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -122,11 +126,14 @@ flowchart LR
         C14["v0.1.4 released<br/>unsigned native six-cell · X11 fix"]
         C15["v0.1.5 released<br/>native six-cell + unsigned minicon.com"]
         C16["v0.1.6 released<br/>multiline paste + unsigned six-cell"]
+        C17["v0.1.7 released<br/>UI groundwork · last unsigned"]
+        SR9["v0.1.9 released<br/>FIRST dual-signed · Win Authenticode + macOS notarized"]
+        R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
+        R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
         SP["SignPath Foundation<br/>declined 2026-09 · path closed"]
-        SR["later signed release<br/>signing.mode=required · new final-byte courts"]
         SI["company Artifact Signing<br/>account · OIDC signer identity"]
         SV["Public Organization validation<br/>Completed 2026-09-03"]
         SC["MiniCon Public Trust profile<br/>Active · company-signing.yml wired"]
@@ -145,11 +152,11 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 -. later baseline .-> SR
+    C16 --> C17 --> SR9 --> R110 --> R111
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
-    SC -->|first exact signed run| SR
-    SP -. independent transition .-> SR
+    SC -->|first exact signed run| SR9
+    SP -. path closed; company path shipped .-> SR9
     QE -. later .-> QX
     X -. native baseline .-> QX
     QX --> QG
@@ -185,16 +192,17 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.6 is the latest public baseline: five native archives cover six
-  OS/ISA cells, unsigned `minicon.com`, and multiline paste rendering.
-  Exact history lives in `prd/archive/v0.1.6-release-history.md`; the completed
-  execution plan lives in `plan/archive/plan-v0.1.6.md`. v0.1.5 remains
-  immutable.
-- [x] Company Artifact Signing is qualified through a non-promotable exact-byte
-  court, with Windows and portable inspection tools. No public release is
-  signed yet; a later version must explicitly change `release-policy.json` to
-  `required` and qualify the final signed bytes. Enrollment and operating
-  history live in `prd/archive/azure-work-tenant-signing-enroll.md`.
+- [x] v0.1.11 is the latest public release: the six-cell native set plus a
+  signed `minicon.com` and a signed, notarized macOS `.dmg`, with per-theme
+  terminal colors, the settings panel, three themes, and the grid crosshair.
+  History: `prd/archive/v0.1.11-release-history.md`.
+- [x] Every release since **v0.1.9** is dual-signed: Windows executables and
+  `minicon.com` are Authenticode-signed via Azure Artifact Signing, and the
+  macOS build is Developer ID-signed and Apple-notarized, as PARTNERNET
+  SOFTWARE PTY LTD. `release-policy.json` keeps `signing.mode` and
+  `signing.macos.mode` at `required`; missing credentials block a release
+  rather than fall back to unsigned. Enrollment history:
+  `prd/archive/azure-work-tenant-signing-enroll.md`.
 - [x] The QVM false-positive experiment selected the current Windows release
   profile; do not reintroduce compacting changes without reputation evidence.
   Decision record: `plan/archive/design-qvm-false-positive-experiment.md`.

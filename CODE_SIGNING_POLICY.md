@@ -2,20 +2,22 @@
 
 MiniCon's accepted Windows signing provider is a publicly trusted Authenticode
 certificate issued to PARTNERNET SOFTWARE PTY LTD through Azure Artifact
-Signing (Public Trust). No public MiniCon release has used it yet. The SignPath Foundation open-source application was
-declined, so no SignPath signature will ever appear on a MiniCon release. A
+Signing (Public Trust). Every public MiniCon release since v0.1.9 has used it,
+alongside macOS Developer ID signing and Apple notarization. The SignPath
+Foundation open-source application was declined, so no SignPath signature will
+ever appear on a MiniCon release. A
 release is signed only when its downloadable bytes have a valid Authenticode
 signature and its release receipt says so; repository metadata, this policy,
 an identity validation, a certificate profile, or a test certificate is not a
 signature.
 
 The committed `release-policy.json` decides whether a version requires signing.
-MiniCon v0.1.4, v0.1.5 and v0.1.6 deliberately published unsigned artifacts.
-Checksums, six-cell runtime courts and Defender evidence remain mandatory.
-Company signing of `minicon.com` and the native Windows executables is a later
-explicit policy switch for a new version. When policy says
-`signing.mode=required`, missing provider configuration blocks the release; it
-never falls back to unsigned output.
+MiniCon v0.1.4–v0.1.7 deliberately published unsigned artifacts; every release
+from **v0.1.9** on is dual-signed (Windows Authenticode + macOS Developer ID /
+notarization). Checksums, six-cell runtime courts and Defender evidence remain
+mandatory. When policy says `signing.mode=required` (as it has since v0.1.9),
+missing provider configuration blocks the release; it never falls back to
+unsigned output.
 
 Before dispatch, operators use the company signing skill's read-only
 `check-product-signing-readiness.sh` court. It rejects dirty/stale source,
