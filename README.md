@@ -50,24 +50,23 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.6-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.10-linux-x86_64.tar.gz.sha256
 ```
 
-The macOS build is a universal binary — the same file runs on Apple Silicon and
-Intel. v0.1.6 also publishes raw `minicon.com` as an experimental, unsigned
-one-file launcher containing all six OS/ISA payloads. The five native archives
-remain the conventional fallback; every distributable has its own checksum.
+The macOS build is a signed, notarized universal binary — the same `.dmg` runs
+on Apple Silicon and Intel. `minicon.com` is a signed one-file launcher that
+carries all six OS/ISA payloads; the native per-platform archives remain the
+conventional choice, and every distributable has its own checksum.
 
 ## Code signing policy
 
-MiniCon v0.1.6 published the native six-cell set and experimental `minicon.com`
-unsigned; checksums and exact build/runtime receipts remain mandatory. SignPath
-Foundation declined the open-source application, so the company publisher path
-is now the only signing route: an Azure Artifact Signing Public Trust
-certificate profile for PARTNERNET SOFTWARE PTY LTD exists and the release
-signing workflow is wired to it. A non-promotable live qualification has signed
-all three Windows-facing files and executed the signed `minicon.com` in all six
-native cells; no public release has been signed yet. The
+MiniCon v0.1.4–v0.1.6 published unsigned artifacts. Since **v0.1.9**, every
+public release is dual-signed: the Windows executables and `minicon.com` are
+Authenticode-signed via Azure Artifact Signing, and the macOS build is
+Developer ID-signed and Apple-notarized — all as PARTNERNET SOFTWARE PTY LTD,
+with an RFC 3161 timestamp. Checksums and exact build/runtime receipts remain
+mandatory. SignPath Foundation declined the open-source application, so the
+company publisher path is the only signing route. The
 committed `release-policy.json` selects whether the same
 Candidate/Release workflows require signing; missing credentials never
 silently turn it off. A test certificate, application or repository statement
@@ -197,9 +196,9 @@ jq '{source_tree_sha256, artifacts}' target-six/receipt.json
 
 The `research/minicon-com-loader/dist/cells/` files are payload copies used to
 assemble the adjacent `minicon.com`; they are not an additional release set.
-`minicon.com` itself remains experimental, but v0.1.6 publishes its exact raw
-bytes and checksum beside the native archives. Its receipt and checksum must
-travel with it when testing it on another machine.
+`minicon.com` is a signed launcher; the release publishes its exact bytes and
+checksum beside the native archives. Its receipt and checksum must travel with
+it when testing it on another machine.
 Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
 folders, logs, and cache snapshots are implementation state, not handoff
 artifacts.
@@ -315,11 +314,10 @@ August 2026.
 
 ## Code signing policy / 代码签名政策
 
-v0.1.6 发布的是未签名的六格原生包和实验性的未签名 `minicon.com`；五个原生归档仍是
-常规回退选择。SignPath Foundation 已拒绝开源申请，公司发布者路线成为唯一签名路径：
-PARTNERNET SOFTWARE PTY LTD 的 Azure Artifact Signing Public Trust 证书配置文件已建立，
-发布签名工作流已接入；一次不可晋升的真实资格验证已经让三个目标文件通过公司签名，
-并让签后的同一个 `minicon.com` 跑过六格，但尚未有任何公开版本完成签名。
+v0.1.4–v0.1.6 发布的是未签名产物。自 **v0.1.9** 起，每个公开版本都双签名：Windows 可执行文件
+与 `minicon.com` 经 Azure Artifact Signing 做 Authenticode 签名，macOS 版经 Developer ID 签名
+并通过 Apple 公证——主体均为 PARTNERNET SOFTWARE PTY LTD，并带 RFC 3161 时间戳。校验和与
+精确的构建/运行时回执仍是强制项。SignPath Foundation 已拒绝开源申请，公司发布者路线是唯一签名路径。
 同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
 测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
 exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。

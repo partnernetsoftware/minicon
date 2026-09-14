@@ -83,11 +83,37 @@ flowchart LR
     X15 --> G15["six APE courts + native parity<br/>three-object Defender"]
     G15 --> R15["exact no-rebuild Promotion"]
     R15 --> X16["v0.1.6 released<br/>multiline paste + unsigned six-cell"]
+    X16 --> X17["v0.1.7 released<br/>UI groundwork · last unsigned"]
+    X17 --> R19["v0.1.9 released<br/>first dual-signed (Win Authenticode + macOS notarized)"]
+    R19 --> R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
 ```
 
 - [x] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
   plus `minicon.com`, multiline paste fix. Ledger:
   `archive/v0.1.6-release-history.md`.
+
+- [x] **v0.1.7 released — last unsigned line.** Aligned toolbar, greeting page
+  after the final tab, explicit Linux X11 runtime boundary, screenshot-priority
+  under sustained output, and replay-safe Windows control across named-pipe
+  disconnects. Still unsigned (predates the signing switch-on). Ledger:
+  `archive/v0.1.7-release-history.md`.
+
+- [x] **v0.1.9 released — first dual-signed release.** The Windows executables
+  and `minicon.com` are Authenticode-signed via Azure Artifact Signing, and the
+  macOS build is Developer ID-signed and Apple-notarized — all as PARTNERNET
+  SOFTWARE PTY LTD, with an RFC 3161 timestamp. `release-policy.json` sets both
+  the Windows and macOS signing switches to `required`; missing credentials
+  block the release rather than falling back to unsigned. Shipped the first UI
+  wave (A+B+C+D): switchable locale, per-row close, theme engine + three themes,
+  bottom status bar. Ledger: `archive/v0.1.9-release-history.md`.
+
+- [x] **v0.1.10 released — complete UI, dual-signed.** Both signing switches
+  remain `required`, and a signed, notarized, stapled macOS `.dmg` joins the
+  archives. Completes the UI: two-tool header + settings panel (interface
+  language, font size, theme swatches, shortcut list; `Ctrl+Shift+,`), the
+  discoverable three-theme picker (`Ctrl+Shift+P`), and the grid crosshair
+  (`Ctrl+Shift+G`) reading into the status bar. Ledger:
+  `archive/v0.1.10-release-history.md`.
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_28_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
