@@ -42,7 +42,7 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 
 ## Backlog — UI/UX (finish what shipped; user value / effort)
 
-- [ ] **M-L** — Composer text selection with Shift+Arrows (requested):
+- [x] **DONE** — Composer text selection with Shift+Arrows (commit 9318db4):
   Shift+←/→ extend by character, Shift+↑/↓ extend by line, Shift+Home/End to
   line ends. The composer today has only a `select_all` boolean, so this needs
   a real anchor/caret selection model in `crates/minicon-core/src/composer.rs`
