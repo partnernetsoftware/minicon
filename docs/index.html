@@ -336,17 +336,17 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
                data-i18n-alt="shotSettingsAlt" alt="MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.">
           <figcaption data-i18n="shotSettingsCaption">The settings panel: interface language, font size, three theme swatches, and the shortcut reference.</figcaption>
         </figure>
-        <p class="section-lead shot-sub" data-i18n="shotThemesLead">Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.</p>
+        <p class="section-lead shot-sub" data-i18n="shotThemesLead">Three built-in themes — chrome and terminal recolor together. Switch in Settings, or cycle with Ctrl+Shift+P.</p>
         <div class="shot-gallery">
           <figure class="shot">
             <img src="assets/minicon-docs.png" width="1200" height="748" loading="lazy"
-                 data-i18n-alt="shotDocsAlt" alt="The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.">
-            <figcaption data-i18n="shotDocsCaption">Docs Ink — a dark blue-ink theme with cyan accents.</figcaption>
+                 data-i18n-alt="shotDocsAlt" alt="The same MiniCon window in the Docs Ink theme: a deep-navy tab column, header, composer, and terminal, with cyan accents.">
+            <figcaption data-i18n="shotDocsCaption">Docs Ink — a deep-navy console with cyan accents.</figcaption>
           </figure>
           <figure class="shot">
             <img src="assets/minicon-paper.png" width="1200" height="748" loading="lazy"
-                 data-i18n-alt="shotPaperAlt" alt="The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.">
-            <figcaption data-i18n="shotPaperCaption">Paper Ink — a light theme in the same hues, with teal accents.</figcaption>
+                 data-i18n-alt="shotPaperAlt" alt="The same MiniCon window in the Paper Ink theme: a light tab column, header, composer, and terminal, with teal accents.">
+            <figcaption data-i18n="shotPaperCaption">Paper Ink — a light console with teal accents.</figcaption>
           </figure>
         </div>
       </div>
@@ -477,11 +477,11 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           pillarSmallBody: "One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux (real measured sizes, not estimates). No installer, no bundled language runtime.",
           pillarLeanRule: "Minimal resources",
           pillarLeanBody: "It starts instantly, uses little memory, and runs no background service. Keep a real shell session with full scrollback while it is open; close the window and nothing is left behind.",
-          shotThemesLead: "Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.",
-          shotDocsAlt: "The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.",
-          shotDocsCaption: "Docs Ink — a dark blue-ink theme with cyan accents.",
-          shotPaperAlt: "The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.",
-          shotPaperCaption: "Paper Ink — a light theme in the same hues, with teal accents.",
+          shotThemesLead: "Three built-in themes — chrome and terminal recolor together. Switch in Settings, or cycle with Ctrl+Shift+P.",
+          shotDocsAlt: "The same MiniCon window in the Docs Ink theme: a deep-navy tab column, header, composer, and terminal, with cyan accents.",
+          shotDocsCaption: "Docs Ink — a deep-navy console with cyan accents.",
+          shotPaperAlt: "The same MiniCon window in the Paper Ink theme: a light tab column, header, composer, and terminal, with teal accents.",
+          shotPaperCaption: "Paper Ink — a light console with teal accents.",
           shotSettingsAlt: "MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.",
           shotSettingsCaption: "The settings panel: interface language, font size, three theme swatches, and the shortcut reference.",
           oldTitle: "Works on older Windows, too.",
@@ -565,11 +565,11 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           pillarSmallBody: "一个文件——Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB,都是实测,不是估算。免安装,不捆绑语言运行时。",
           pillarLeanRule: "极省资源",
           pillarLeanBody: "启动飞快、占用极小、没有后台服务。开着时保留真实 shell 会话与完整回滚;关窗后什么都不留。",
-          shotThemesLead: "三款内置主题。在设置里切换，或用 Ctrl+Shift+P 循环。",
-          shotDocsAlt: "同一个 MiniCon 窗口在 Docs Ink 主题下：深蓝墨色的标签列、头部与输入区，配青色高亮。",
-          shotDocsCaption: "Docs Ink——深蓝墨色主题，青色高亮。",
-          shotPaperAlt: "同一个 MiniCon 窗口在 Paper Ink 主题下：浅色标签列、头部与输入区，配蓝绿高亮。",
-          shotPaperCaption: "Paper Ink——同色系的浅色主题，蓝绿高亮。",
+          shotThemesLead: "三款内置主题——窗框与终端一起换色。在设置里切换，或用 Ctrl+Shift+P 循环。",
+          shotDocsAlt: "同一个 MiniCon 窗口在 Docs Ink 主题下：深蓝墨色的标签列、头部、输入区与终端，配青色高亮。",
+          shotDocsCaption: "Docs Ink——深蓝墨色终端，青色高亮。",
+          shotPaperAlt: "同一个 MiniCon 窗口在 Paper Ink 主题下：浅色标签列、头部、输入区与终端，配蓝绿高亮。",
+          shotPaperCaption: "Paper Ink——浅色终端，蓝绿高亮。",
           shotSettingsAlt: "在终端上方打开的设置面板：界面语言按钮(English、简、繁)、字号加减、三个主题色板，以及快捷键列表。",
           shotSettingsCaption: "设置面板：界面语言、字号、三个主题色板，以及快捷键速查。",
           oldTitle: "在旧版 Windows 上照样跑。",
@@ -653,11 +653,11 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           pillarSmallBody: "一個檔案——Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB,都是實測,不是估算。免安裝,不捆綁語言執行環境。",
           pillarLeanRule: "極省資源",
           pillarLeanBody: "啟動飛快、占用極小、沒有背景服務。開著時保留真實 shell 工作階段與完整回捲;關窗後什麼都不留。",
-          shotThemesLead: "三款內建主題。在設定裡切換,或以 Ctrl+Shift+P 循環。",
-          shotDocsAlt: "同一個 MiniCon 視窗在 Docs Ink 主題下:深藍墨色的分頁欄、頭部與輸入區,配青色強調色。",
-          shotDocsCaption: "Docs Ink——深藍墨色主題,青色強調。",
-          shotPaperAlt: "同一個 MiniCon 視窗在 Paper Ink 主題下:淺色分頁欄、頭部與輸入區,配藍綠強調色。",
-          shotPaperCaption: "Paper Ink——同色系的淺色主題,藍綠強調。",
+          shotThemesLead: "三款內建主題——外框與終端一起換色。在設定裡切換,或以 Ctrl+Shift+P 循環。",
+          shotDocsAlt: "同一個 MiniCon 視窗在 Docs Ink 主題下:深藍墨色的分頁欄、頭部、輸入區與終端機,配青色強調色。",
+          shotDocsCaption: "Docs Ink——深藍墨色終端機,青色強調。",
+          shotPaperAlt: "同一個 MiniCon 視窗在 Paper Ink 主題下:淺色分頁欄、頭部、輸入區與終端機,配藍綠強調色。",
+          shotPaperCaption: "Paper Ink——淺色終端機,藍綠強調。",
           shotSettingsAlt: "在終端機上方開啟的設定面板:介面語言按鈕(English、簡、繁)、字級加減、三個主題色板,以及快捷鍵清單。",
           shotSettingsCaption: "設定面板:介面語言、字級、三個主題色板,以及快捷鍵速查。",
           oldTitle: "在舊版 Windows 上照樣跑。",
