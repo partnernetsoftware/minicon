@@ -321,6 +321,14 @@ the window rather than being hidden to save pixels.
   an edge case that returns early cannot leave a stale mid-character offset for
   the next slice to panic on. The caret can outlive the text it pointed into,
   because the accessibility bus can replace the contents underneath it.
+- [x] the composer supports keyboard text selection through an anchor/caret
+  model. Shift+Left/Right extend by character and Shift+Up/Down by line
+  (preserving the visual column, measured in cells so CJK stays aligned);
+  Shift+Home/End reach the line ends, which are line-relative in a multiline
+  draft. A plain arrow collapses the selection (Up/Down stay history recall).
+  Typing, Backspace/Delete, cut and copy act on the selection, and each row
+  paints a highlight under the selected cells, integrated with the horizontal
+  window so a scrolled line highlights the right characters.
 - [x] the composer is a bounded multiline editor. The explicit Newline button
   inserts a stored soft break and immediately paints the following text on a
   real new row; it never submits by itself. The fixed-height viewport follows

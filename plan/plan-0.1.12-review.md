@@ -63,14 +63,14 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
   OFF, or make it clearly discoverable (now at least listed in the panel).
 - [ ] **S** — Font "reset" cell shows a static "100%" that never reflects the
   real zoom after Ctrl+wheel; render the current percentage.
-- [ ] **M** — Font size is per-tab while language and theme are global, in the
-  same panel with no indication; make font global or label it "this tab".
-- [ ] **M** — Tree close button never got the design's hover-plate / non-zero
-  exit-code red dot (Turn 3); it's a plain muted "x" today.
-- [ ] **S-M** — Header icon buttons (New/Settings) have no hover state or
-  tooltip; add a hover plate and an accessible name.
-- [ ] **S-M** — Tab titles hard-clip with no ellipsis (tree + status bar), while
-  the composer already uses "…"; reuse it.
+- [~] Font stays per-tab by design (Ctrl+wheel zooms the focused tab); the live
+  zoom % readout added this pass makes the active-tab scope clear. Making the
+  panel buttons global is a possible future change, not a bug.
+- [x] DONE (`b3d6944`) — Tree close button now has a hover plate; a non-zero
+  shell exit colors the tab title in the error color (clean exit dims to muted).
+- [x] DONE (`480c11c`) — Header New/Settings buttons get a hover plate.
+  (Tooltip/accessible name still open — deferred, needs a11y name plumbing.)
+- [x] DONE (`b3d6944`) — Tab titles (tree + status bar) end in "…" when clipped.
 - [ ] **S/M** — Settings panel: bind Escape to close and add a focus ring
   (full keyboard nav is out of scope for a minimal terminal; Escape + focus is
   the cheap high-value slice). Add hover/press feedback on panel + composer
