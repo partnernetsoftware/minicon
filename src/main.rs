@@ -941,6 +941,9 @@ struct ConApp {
     /// Absolute node index the pointer is hovering in the tree, or None.
     /// The per-row close button shows only for the active or hovered row.
     hovered_tree_row: Option<usize>,
+    /// The header icon button (New / Settings) the pointer is over, for hover
+    /// feedback. `None` when the pointer is elsewhere.
+    hovered_header: Option<HeaderIcon>,
     settings_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
@@ -1200,6 +1203,7 @@ impl ConApp {
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
             hovered_tree_row: None,
+            hovered_header: None,
             settings_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
@@ -3089,13 +3093,19 @@ impl ConApp {
                 // hovered row actually changes, so motion over the terminal or
                 // an unchanged row costs no frame.
                 let count = self.workspace.nodes().len();
-                let hovered =
-                    match ui::tree_hit(layout, x, y, self.tree_scroll_offset, count, scale) {
-                        ui::TreeHit::Select(index) | ui::TreeHit::Close(index) => Some(index),
-                        _ => None,
-                    };
-                if hovered != self.hovered_tree_row {
+                let hit = ui::tree_hit(layout, x, y, self.tree_scroll_offset, count, scale);
+                let hovered = match hit {
+                    ui::TreeHit::Select(index) | ui::TreeHit::Close(index) => Some(index),
+                    _ => None,
+                };
+                let hovered_header = match hit {
+                    ui::TreeHit::NewRoot => Some(HeaderIcon::NewRoot),
+                    ui::TreeHit::Settings => Some(HeaderIcon::Settings),
+                    _ => None,
+                };
+                if hovered != self.hovered_tree_row || hovered_header != self.hovered_header {
                     self.hovered_tree_row = hovered;
+                    self.hovered_header = hovered_header;
                     self.mark_host_ui_full();
                     window.request_redraw();
                 }
@@ -3204,7 +3214,7 @@ impl ConApp {
             layout.new_root,
             HeaderIcon::NewRoot,
             accent,
-            false,
+            self.hovered_header == Some(HeaderIcon::NewRoot),
             t.surface,
             header_icon_size,
             scale,
@@ -3214,7 +3224,7 @@ impl ConApp {
             layout.settings,
             HeaderIcon::Settings,
             accent,
-            self.settings_open,
+            self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
             t.surface,
             header_icon_size,
             scale,
@@ -3613,8 +3623,16 @@ impl ConApp {
         };
         let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         for (button, icon, selected) in [
-            (layout.new_root, HeaderIcon::NewRoot, false),
-            (layout.settings, HeaderIcon::Settings, self.settings_open),
+            (
+                layout.new_root,
+                HeaderIcon::NewRoot,
+                self.hovered_header == Some(HeaderIcon::NewRoot),
+            ),
+            (
+                layout.settings,
+                HeaderIcon::Settings,
+                self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
+            ),
         ] {
             paint_header_icon_button(
                 &mut surface,
