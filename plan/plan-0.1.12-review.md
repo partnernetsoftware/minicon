@@ -112,12 +112,19 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 
 ## Backlog — docs organization
 
-- [ ] **S** — Move seven `plan/research-*.md` into `research/` beside their data.
+- [x] DONE — Renumber the duplicate `PRD_02_28` id (qjswasm → `PRD_02_29`); the
+  three cross-refs (`PRD.md`, `PRD_02_27` ×2) updated with it.
+- [x] DONE — `PRD_02_29_qjswasm_horizon.md` re-anchored: dropped the stale "not
+  v0.1.3 scope" (8 versions old) for "not near-term (through v0.1.12) scope"; it
+  stays a genuine horizon (agenterm qjswasm+TinyVM dependency still unshipped).
+- [~] DEFERRED (deliberate) — Move seven `plan/research-*.md` into `research/`
+  beside their data. Rejected this pass: the seven reports cross-link each other
+  and `prd/PRD_02_27` by relative path, and are referenced back from `PRD_02_27`,
+  `plan-runtime-memory-next.md`, and two `research/*/README.md`. The link churn
+  (~8 files) outweighs the tidiness; these are internal diagnostics, not
+  user/owner docs. Revisit only if `research/` gets a proper index.
 - [ ] **S** — Consolidate the "10 MiB idle RSS" story under its owner
   (`PRD_02_27`); collapse the scattered `plan/research-*` diagnostics.
-- [ ] **S** — Renumber the duplicate `PRD_02_28` id (qjswasm → `02_29`).
-- [ ] **S** — `PRD_02_28_qjswasm_horizon.md` re-anchors against "not v0.1.3
-  scope" (8 versions stale); re-frame or re-decide whether it's still the horizon.
 
 ## Product-thinking note
 

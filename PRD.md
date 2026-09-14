@@ -84,7 +84,7 @@ MiniCon — one-file local terminal
 │   └── prd/PRD_02_28_shared_core.md
 ├── Future experiments — not current-version scope
 │   ├── qjswasm + TinyVM portable logic; six native OS shells remain
-│   │   └── prd/PRD_02_28_qjswasm_horizon.md
+│   │   └── prd/PRD_02_29_qjswasm_horizon.md
 │   └── dedicated OS/HarmonyOS feasibility belongs to portfolio horizon
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence

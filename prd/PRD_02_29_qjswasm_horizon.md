@@ -1,7 +1,8 @@
-# PRD 02.28 — qjswasm portable-logic horizon
+# PRD 02.29 — qjswasm portable-logic horizon
 
-Status: **future exploration**. This is not v0.1.3 scope and is not evidence
-that the dependency, architecture, or size reduction has shipped.
+Status: **future exploration**. This remains a horizon, not near-term (through
+v0.1.12) scope, and is not evidence that the dependency, architecture, or size
+reduction has shipped.
 
 ## Product outcome tree
 

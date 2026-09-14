@@ -133,8 +133,8 @@ flowchart LR
   paste-review multiline fix. From the post-0.1.11 review
   (`plan/plan-0.1.12-review.md`). Ledger: `archive/v0.1.12-release-history.md`.
 
-- [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
-  Owner: `prd/PRD_02_28_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
+- [ ] **horizon / dependency not ready — qjswasm portable core.**
+  Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
   mature, research may move portable logic out of six native payloads into
   qjswasm; six native thin shells keep window/PTY/font/input/IPC. Size cut is
   a hypothesis, not a promise. Kill if engine+glue does not reduce the total
@@ -738,7 +738,7 @@ auto-raise 9 MiB.
 | RELR / `-z pack-relative-relocs` | n/a | zig lld rejects it |
 
 qjswasm-as-size-cut remains a later hypothesis
-([28-horizon](PRD_02_28_qjswasm_horizon.md)), not a current lever.
+([29-horizon](PRD_02_29_qjswasm_horizon.md)), not a current lever.
 
 ## Delivery ownership
 
