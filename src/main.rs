@@ -7718,9 +7718,14 @@ mod tests {
     #[test]
     fn paste_review_keeps_visual_line_breaks_until_pty_delivery() {
         let clipboard = "first\nsecond\r\nthird";
+        let expected_display = if cfg!(target_os = "windows") {
+            "first\r\nsecond\r\nthird"
+        } else {
+            "first\nsecond\nthird"
+        };
         assert_eq!(
             composer::paste_review_display_text(clipboard),
-            "first\r\nsecond\r\nthird"
+            expected_display
         );
         assert_eq!(
             terminal_input::normalize_terminal_paste(clipboard),

@@ -554,11 +554,19 @@ fn normalize_composer_paste(text: &str) -> String {
     normalize_paste_chars(text, NewlineForm::Lf, PASTE_LIMIT_BYTES)
 }
 
-/// Human-facing terminal paste review. Win32 multiline EDIT paints a new row
-/// only on CRLF; LF or CR alone collapses onto one line. Delivery still goes
-/// through PTY normalization, which accepts CRLF.
+/// Human-facing terminal paste review, in the newline form the host's native
+/// review control paints multiple rows with. Windows' multiline EDIT paints a
+/// new row only on CRLF; macOS (NSTextView) and Linux controls use LF and would
+/// collapse CRLF's lone CR into a garbled single line — the reported bug where a
+/// multiline paste previewed as one line on macOS. Delivery still goes through
+/// PTY normalization, which accepts either.
 pub fn paste_review_display_text(text: &str) -> String {
-    normalize_paste_chars(text, NewlineForm::CrLf, usize::MAX)
+    let form = if cfg!(target_os = "windows") {
+        NewlineForm::CrLf
+    } else {
+        NewlineForm::Lf
+    };
+    normalize_paste_chars(text, form, usize::MAX)
 }
 
 #[derive(Clone, Copy)]
@@ -1176,11 +1184,13 @@ mod tests {
     }
 
     #[test]
-    fn paste_review_display_uses_crlf_so_native_editors_paint_rows() {
-        assert_eq!(
-            paste_review_display_text("a\nb\r\nc\rd\t\u{1b}e"),
+    fn paste_review_display_uses_the_host_editor_newline_so_it_paints_rows() {
+        let expected = if cfg!(target_os = "windows") {
             "a\r\nb\r\nc\r\nd\te"
-        );
+        } else {
+            "a\nb\nc\nd\te"
+        };
+        assert_eq!(paste_review_display_text("a\nb\r\nc\rd\t\u{1b}e"), expected);
         assert_eq!(paste_review_display_text("\u{1b}"), "");
     }
 
