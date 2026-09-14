@@ -3258,13 +3258,21 @@ impl ConApp {
             // the row is the only thing that can say the shell is gone. Dim the
             // label: it reads as inert next to a live tab without moving or
             // recolouring the row a user is aiming at.
-            let label_color = if session.is_some_and(|terminal| terminal.child_gone) {
-                muted
-            } else {
-                text
+            // A tab whose shell exited non-zero reads in the error color so a
+            // crash is visible at a glance; a clean exit dims to muted; a live
+            // shell uses the normal text color.
+            let label_color = match session {
+                Some(terminal) if terminal.child_gone => {
+                    if terminal.child_exit_code.unwrap_or(0) != 0 {
+                        error_accent
+                    } else {
+                        muted
+                    }
+                }
+                _ => text,
             };
             let mut id = itoa::Buffer::new();
-            paint_host_ui_text_parts(
+            paint_host_ui_text_parts_clipped(
                 &mut surface,
                 indent,
                 y + 7,
@@ -3277,12 +3285,23 @@ impl ConApp {
             let row_hovered = self.hovered_tree_row == Some(node_index);
             if row_active || row_hovered {
                 let close = layout.tree_close_rect(visible_index, scale);
+                // A hover plate behind the glyph so it reads as a button, not
+                // floating text.
+                if row_hovered {
+                    surface.fill_rect(
+                        close.x,
+                        close.y,
+                        close.width,
+                        close.height,
+                        active_bg.to_xrgb(),
+                    );
+                }
                 paint_host_ui_text(
                     &mut surface,
                     close.x + 6,
                     close.y + 3,
                     "x",
-                    muted,
+                    text,
                     host_ui_size(HOST_UI_CLOSE_SIZE_PX),
                     close.width.saturating_sub(6),
                 );
@@ -6816,11 +6835,11 @@ fn paint_status_bar(
     if !left_label.is_empty() {
         let left_x = bar.x.saturating_add(pad);
         let left_max = readout_x.saturating_sub(dip(8.0)).saturating_sub(left_x);
-        paint_host_ui_text(
+        paint_host_ui_text_parts_clipped(
             surface,
             left_x,
             text_y,
-            left_label,
+            &[left_label],
             theme.muted,
             font_size_px,
             left_max,
@@ -7123,6 +7142,82 @@ fn paint_host_ui_text(
     max_width: u32,
 ) {
     paint_host_ui_text_parts(surface, x, y, &[text], color, font_size_px, max_width);
+}
+
+/// Like [`paint_host_ui_text_parts`], but when the text does not fit it drops
+/// trailing glyphs and paints a single-cell "…" so a clipped tab title reads as
+/// truncated rather than cut mid-glyph. Used where a name can outrun its column
+/// (the tab tree, the status bar).
+fn paint_host_ui_text_parts_clipped(
+    surface: &mut Surface<'_>,
+    x: u32,
+    y: u32,
+    parts: &[&str],
+    color: Rgb,
+    font_size_px: u16,
+    max_width: u32,
+) {
+    let metrics = font::cell_metrics(font_size_px);
+    let cell_w = metrics.width.max(1);
+    let cell_h = metrics.height.max(1);
+    let limit = x.saturating_add(max_width).min(surface.width);
+    let total: usize = parts.iter().map(|part| part.chars().count()).sum();
+    let placed = layout_text_parts(parts, x, cell_w, limit);
+    let ellipsis_x = if placed.len() >= total {
+        None
+    } else {
+        // Re-lay out with one cell reserved for the marker, then place it after
+        // the last glyph that fit.
+        let reduced = layout_text_parts(parts, x, cell_w, limit.saturating_sub(cell_w));
+        let ellipsis_x = reduced.last().map_or(x, |glyph| glyph.x + glyph.width);
+        for placed in &reduced {
+            blit_placed_glyph(surface, placed, y, cell_h, color, font_size_px);
+        }
+        Some(ellipsis_x)
+    };
+    if let Some(ellipsis_x) = ellipsis_x {
+        blit_placed_glyph(
+            surface,
+            &PlacedGlyph {
+                character: '…',
+                x: ellipsis_x,
+                width: cell_w,
+            },
+            y,
+            cell_h,
+            color,
+            font_size_px,
+        );
+        return;
+    }
+    for placed in &placed {
+        blit_placed_glyph(surface, placed, y, cell_h, color, font_size_px);
+    }
+}
+
+fn blit_placed_glyph(
+    surface: &mut Surface<'_>,
+    placed: &PlacedGlyph,
+    y: u32,
+    cell_h: u32,
+    color: Rgb,
+    font_size_px: u16,
+) {
+    if surface.intersects_rect(placed.x, y, placed.width, cell_h)
+        && let Some(glyph) = font::raster(placed.character, font_size_px)
+    {
+        surface.blit_glyph(
+            &glyph,
+            CellRect {
+                x: placed.x,
+                y,
+                w: placed.width,
+                h: cell_h,
+            },
+            color,
+            0.0,
+        );
+    }
 }
 
 fn paint_host_ui_text_parts(
