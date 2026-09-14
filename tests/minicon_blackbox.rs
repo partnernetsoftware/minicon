@@ -132,6 +132,18 @@ fn binary() -> &'static str {
 /// test's own correctness.
 static GUI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Multiplier applied to every `wait_for` deadline, from `MINICON_TEST_SLOWDOWN`
+/// (default 1, clamped to 1..=20). The six-cell harness sets this so cells that
+/// run in parallel on one machine get proportionally longer budgets instead of
+/// flaking on host starvation.
+fn test_slowdown() -> u32 {
+    std::env::var("MINICON_TEST_SLOWDOWN")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(1)
+        .clamp(1, 20)
+}
+
 fn gui_test_guard() -> std::sync::MutexGuard<'static, ()> {
     GUI_TEST_LOCK
         .lock()
@@ -811,7 +823,12 @@ impl ConSession {
         timeout: Duration,
         predicate: impl Fn(&serde_json::Value) -> bool,
     ) -> serde_json::Value {
-        let deadline = Instant::now() + timeout;
+        // Scale every GUI-test deadline by MINICON_TEST_SLOWDOWN so a loaded
+        // host (e.g. the six-cell harness running many cells at once) gets a
+        // proportionally longer budget. This changes only how long we wait, not
+        // what we assert — the point is to stop host starvation from reading as
+        // a product failure.
+        let deadline = Instant::now() + timeout * test_slowdown();
         let mut last_seen: Option<serde_json::Value> = None;
         loop {
             if let Some(error) = self
@@ -2127,6 +2144,10 @@ fn zooming_in_while_the_shell_is_actively_producing_output_survives() {
         r#"for i in $(seq 1 500); do echo \"LINE_$i █▒░ 中文日本語\"; done\r"#
     };
     let mut commands = vec![
+        // Let the interactive shell reach its prompt before typing the loop —
+        // on a loaded host the old script typed the producer before the shell
+        // was ready, so its CJK output never appeared and the test timed out.
+        r#"{"wait_ms": 400}"#.to_owned(),
         format!(r#"{{"text": "{busy_loop}"}}"#),
         r#"{"wait_ms": 200}"#.to_owned(),
     ];

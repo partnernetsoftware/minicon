@@ -200,6 +200,11 @@ case "$BUILD_JOBS:$CARGO_JOBS_PER_CELL" in
   *[!0-9:]*|0:*|*:0) printf 'build concurrency must be positive integers\n' >&2; exit 2 ;;
 esac
 export CARGO_BUILD_JOBS="$CARGO_JOBS_PER_CELL"
+# Several cells run cargo test concurrently on one host, so give the GUI
+# black-box tests a proportionally longer deadline budget (they scale every
+# wait_for by this) instead of flaking on host starvation. Assertions are
+# unchanged; only the wait budget grows.
+export MINICON_TEST_SLOWDOWN="${MINICON_TEST_SLOWDOWN:-4}"
 
 SOURCE_STATE_START="$(python3 scripts/source-fingerprint.py)"
 BUILD_DIR="${MINICON_SIX_CELL_BUILD_DIR:-$OUT_DIR/builds/current}"
