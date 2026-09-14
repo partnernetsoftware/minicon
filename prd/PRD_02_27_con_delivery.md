@@ -86,6 +86,7 @@ flowchart LR
     X16 --> X17["v0.1.7 released<br/>UI groundwork · last unsigned"]
     X17 --> R19["v0.1.9 released<br/>first dual-signed (Win Authenticode + macOS notarized)"]
     R19 --> R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
+    R110 --> R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed"]
 ```
 
 - [x] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
@@ -114,6 +115,14 @@ flowchart LR
   discoverable three-theme picker (`Ctrl+Shift+P`), and the grid crosshair
   (`Ctrl+Shift+G`) reading into the status bar. Ledger:
   `archive/v0.1.10-release-history.md`.
+
+- [x] **v0.1.11 released — per-theme terminal colors, dual-signed.** Both
+  signing switches stay `required`. Each theme now recolors the terminal body
+  (default background/foreground, cursor, 16 ANSI colors), not just the chrome;
+  the 6x6x6 cube and grayscale stay standard and explicit program colors are
+  untouched. Also fixed the clipped settings-panel shortcut lines. Ledger:
+  `archive/v0.1.11-release-history.md`. The stale `.github/release-notes.md`
+  template was rewritten so future auto-notes state the signed, current product.
 
 - [ ] **horizon / not v0.1.3 / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_28_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
