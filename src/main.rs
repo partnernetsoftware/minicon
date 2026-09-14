@@ -2053,9 +2053,7 @@ impl ConApp {
             if text.eq_ignore_ascii_case("a") {
                 composer::select_all(&mut self.composer);
             } else if text.eq_ignore_ascii_case("c") {
-                if let Some(text) =
-                    composer::selected_text(&self.composer.text, &self.composer.select_all)
-                {
+                if let Some(text) = composer::selection_text(&self.composer) {
                     let _ = agenterm_platform::clipboard::set_text(text);
                 }
             } else if text.eq_ignore_ascii_case("x") {
@@ -2078,23 +2076,50 @@ impl ConApp {
             LogicalKey::Named(NamedKey::Delete) => {
                 composer::delete_forward(&mut self.composer);
             }
+            // Shift+Arrow extends a selection; a plain arrow moves/recalls.
+            // Up/Down without Shift stay history recall; with Shift they select
+            // by line inside a multiline draft.
             LogicalKey::Named(NamedKey::ArrowUp) => {
-                self.composer.recall_previous();
+                if key.modifiers.shift {
+                    composer::extend_selection(&mut self.composer, composer::Move::Up);
+                } else {
+                    self.composer.recall_previous();
+                }
             }
             LogicalKey::Named(NamedKey::ArrowDown) => {
-                self.composer.recall_next();
+                if key.modifiers.shift {
+                    composer::extend_selection(&mut self.composer, composer::Move::Down);
+                } else {
+                    self.composer.recall_next();
+                }
             }
             LogicalKey::Named(NamedKey::ArrowLeft) => {
-                composer::move_caret(&mut self.composer, composer::Move::Left);
+                if key.modifiers.shift {
+                    composer::extend_selection(&mut self.composer, composer::Move::Left);
+                } else {
+                    composer::move_caret(&mut self.composer, composer::Move::Left);
+                }
             }
             LogicalKey::Named(NamedKey::ArrowRight) => {
-                composer::move_caret(&mut self.composer, composer::Move::Right);
+                if key.modifiers.shift {
+                    composer::extend_selection(&mut self.composer, composer::Move::Right);
+                } else {
+                    composer::move_caret(&mut self.composer, composer::Move::Right);
+                }
             }
             LogicalKey::Named(NamedKey::Home) => {
-                composer::move_caret(&mut self.composer, composer::Move::LineStart);
+                if key.modifiers.shift {
+                    composer::extend_selection(&mut self.composer, composer::Move::LineStart);
+                } else {
+                    composer::move_caret(&mut self.composer, composer::Move::LineStart);
+                }
             }
             LogicalKey::Named(NamedKey::End) => {
-                composer::move_caret(&mut self.composer, composer::Move::LineEnd);
+                if key.modifiers.shift {
+                    composer::extend_selection(&mut self.composer, composer::Move::LineEnd);
+                } else {
+                    composer::move_caret(&mut self.composer, composer::Move::LineEnd);
+                }
             }
             LogicalKey::Named(NamedKey::Escape) => {
                 self.composer.cancel_focus();
@@ -2359,12 +2384,12 @@ impl ConApp {
             .map_err(|error| format!("clipboard read failed: {error}"))
             .and_then(|text| {
                 if pending.review {
-                    // Hands CRLF text to the human and returns immediately.
-                    // PTY normalization uses CR, and a Win32 multiline EDIT
-                    // paints a new row only on CRLF — feeding it CR collapsed
-                    // every paste onto one line. The event loop keeps running
-                    // while the review is open; completion arrives through
-                    // `try_poll`.
+                    // Hands the human the text in the host review control's own
+                    // newline form (CRLF on Windows' multiline EDIT, LF on
+                    // macOS/Linux) so a multiline paste paints as multiple rows
+                    // everywhere; delivery re-normalizes to CR. The event loop
+                    // keeps running while the review is open; completion arrives
+                    // through `try_poll`.
                     let display = composer::paste_review_display_text(&text);
                     if display.is_empty() {
                         return Err("clipboard text contains no pasteable characters".to_owned());
@@ -3351,12 +3376,9 @@ impl ConApp {
             layout.composer_input.y + 1,
             layout.composer_input.width.saturating_sub(2),
             layout.composer_input.height.saturating_sub(2),
-            if self.composer.select_all {
-                active_bg
-            } else {
-                composer_bg
-            }
-            .to_xrgb(),
+            // The selection is drawn per row over the text below, so the box
+            // itself keeps the plain composer background.
+            composer_bg.to_xrgb(),
         );
         // Both buttons get the same plate. Filling only one left the other as
         // floating text with no edge -- it read as a label rather than
@@ -3370,7 +3392,8 @@ impl ConApp {
                 active_bg.to_xrgb(),
             );
         }
-        let show_caret = self.composer.focused && !self.composer.select_all;
+        let composer_selection = composer::selection_bounds(&self.composer);
+        let show_caret = self.composer.focused && composer_selection.is_none();
         // Each stored newline owns a real painted row. The fixed-height input
         // follows the caret's row, while each row retains the existing
         // horizontal sliding window for commands wider than the box.
@@ -3421,6 +3444,29 @@ impl ConApp {
                 .y
                 .saturating_add(4)
                 .saturating_add(composer_line_height.saturating_mul(row as u32));
+            // Selection highlight for this row, drawn under the text: intersect
+            // the global selection with the line, clamp to the visible window,
+            // and fill the selected cells (a truncation "…" shifts cells by one).
+            if let Some((sel_start, sel_end)) = composer_selection {
+                let row_start = sel_start.max(range.start).min(range.end);
+                let row_end = sel_end.max(range.start).min(range.end);
+                let vis_start = (row_start - range.start).max(window.text);
+                let vis_end = (row_end - range.start).max(window.text);
+                if vis_end > vis_start {
+                    let lead = usize::from(window.truncated);
+                    let start_cell = lead + composer::cells(&line[window.text..vis_start]);
+                    let end_cell = lead + composer::cells(&line[window.text..vis_end]);
+                    let x = layout.composer_input.x
+                        + COMPOSER_TEXT_INSET
+                        + composer_cell_width.saturating_mul(start_cell as u32);
+                    let w = composer_cell_width
+                        .saturating_mul((end_cell - start_cell) as u32)
+                        .min(composer_text_width.saturating_sub(
+                            x.saturating_sub(layout.composer_input.x + COMPOSER_TEXT_INSET),
+                        ));
+                    surface.fill_rect(x, y, w, composer_line_height, active_bg.to_xrgb());
+                }
+            }
             paint_host_ui_text_parts(
                 &mut surface,
                 layout.composer_input.x + COMPOSER_TEXT_INSET,

@@ -27,6 +27,11 @@ pub struct ComposerState {
     /// character boundary and never past the end, so slicing on it cannot
     /// panic.
     pub caret: usize,
+    /// The fixed end of a Shift+Arrow selection, as a byte offset; the moving
+    /// end is `caret`. `None` means no ranged selection. A selection is active
+    /// only when `anchor` is `Some` and differs from `caret`. `select_all` stays
+    /// a separate fast path for select-all; [`selection_bounds`] unifies both.
+    pub anchor: Option<usize>,
     /// Lines already sent, oldest first.
     ///
     /// A dedicated input area only earns its permanent share of the window if
@@ -63,6 +68,7 @@ impl ComposerState {
         self.focused = false;
         self.preedit.clear();
         self.select_all = false;
+        self.anchor = None;
         self.submit_error = None;
     }
 
@@ -136,6 +142,7 @@ impl ComposerState {
         self.text = text;
         self.caret = self.text.len();
         self.select_all = false;
+        self.anchor = None;
         self.preedit.clear();
     }
 
@@ -156,6 +163,7 @@ impl ComposerState {
         self.text.clear();
         self.preedit.clear();
         self.select_all = false;
+        self.anchor = None;
         self.submit_error = None;
         self.caret = 0;
         // Sending ends a recall: the next Up should start from the newest
@@ -175,6 +183,7 @@ impl ComposerState {
         self.text = submission.replace('\r', "\n");
         self.preedit.clear();
         self.select_all = false;
+        self.anchor = None;
         self.focused = true;
         self.submit_error = Some(error);
     }
@@ -374,13 +383,50 @@ pub enum Move {
     Right,
     LineStart,
     LineEnd,
+    Up,
+    Down,
 }
 
 pub fn select_all(state: &mut ComposerState) {
     state.select_all = !state.text.is_empty();
+    // Select-all is its own fast path, not an anchored range.
+    state.anchor = None;
     // A selection covers everything, so the caret has no meaningful position
     // inside it until the next edit collapses it.
     state.caret = state.text.len();
+}
+
+/// The active selection as a byte range `[start, end)`, or `None`. Unifies the
+/// `select_all` fast path with a Shift+Arrow `anchor..caret` range so paint,
+/// copy, and edit-replace all read one source of truth.
+#[must_use]
+pub fn selection_bounds(state: &ComposerState) -> Option<(usize, usize)> {
+    if state.select_all && !state.text.is_empty() {
+        return Some((0, state.text.len()));
+    }
+    let anchor = clamp_caret(&state.text, state.anchor?);
+    let caret = clamp_caret(&state.text, state.caret);
+    (anchor != caret).then(|| (anchor.min(caret), anchor.max(caret)))
+}
+
+/// The selected text, for copy/cut. `None` when nothing is selected.
+#[must_use]
+pub fn selection_text(state: &ComposerState) -> Option<&str> {
+    selection_bounds(state).map(|(start, end)| &state.text[start..end])
+}
+
+/// Extend the selection by one movement: the anchor is pinned on the first
+/// Shift+Arrow and the caret moves, exactly like every text field. A plain
+/// arrow (see [`move_caret`]) collapses instead.
+pub fn extend_selection(state: &mut ComposerState, movement: Move) {
+    let caret = state.clamped_caret();
+    if state.anchor.is_none() {
+        // A select-all that gets shift-extended becomes an explicit range from
+        // the far end, so the moving caret shrinks/grows it predictably.
+        state.anchor = Some(if state.select_all { 0 } else { caret });
+    }
+    state.select_all = false;
+    state.caret = apply_move(&state.text, caret, movement);
 }
 
 pub fn insert(state: &mut ComposerState, text: &str) {
@@ -430,13 +476,68 @@ pub fn delete_forward(state: &mut ComposerState) {
 /// the caret here", not "edit everything".
 pub fn move_caret(state: &mut ComposerState, movement: Move) {
     state.select_all = false;
+    state.anchor = None;
     let caret = state.clamped_caret();
-    state.caret = match movement {
-        Move::Left => previous_boundary(&state.text, caret).unwrap_or(0),
-        Move::Right => next_boundary(&state.text, caret).unwrap_or(state.text.len()),
-        Move::LineStart => 0,
-        Move::LineEnd => state.text.len(),
-    };
+    state.caret = apply_move(&state.text, caret, movement);
+}
+
+/// One caret movement over `text`, on a character boundary. Home/End and
+/// Up/Down are line-relative so they behave in a multiline composer; Up/Down
+/// preserve the visual column (in cells, so CJK stays aligned).
+fn apply_move(text: &str, caret: usize, movement: Move) -> usize {
+    let caret = clamp_caret(text, caret);
+    match movement {
+        Move::Left => previous_boundary(text, caret).unwrap_or(0),
+        Move::Right => next_boundary(text, caret).unwrap_or(text.len()),
+        Move::LineStart => line_start(text, caret),
+        Move::LineEnd => line_end(text, caret),
+        Move::Up => vertical_caret(text, caret, true),
+        Move::Down => vertical_caret(text, caret, false),
+    }
+}
+
+fn line_start(text: &str, caret: usize) -> usize {
+    text[..caret].rfind('\n').map_or(0, |i| i + 1)
+}
+
+fn line_end(text: &str, caret: usize) -> usize {
+    text[caret..].find('\n').map_or(text.len(), |i| caret + i)
+}
+
+/// Byte offset of the character at visual column `col` (in cells) within the
+/// line `[start, end)`; clamps to `end` if the line is shorter.
+fn caret_at_column(text: &str, start: usize, end: usize, col: usize) -> usize {
+    let mut consumed = 0;
+    for (index, character) in text[start..end].char_indices() {
+        if consumed >= col {
+            return start + index;
+        }
+        consumed += character_cells(character);
+    }
+    end
+}
+
+/// Move the caret up or down one line, keeping the visual column. Returns the
+/// caret unchanged when there is no line in that direction.
+fn vertical_caret(text: &str, caret: usize, up: bool) -> usize {
+    let start = line_start(text, caret);
+    let col = cells(&text[start..caret]);
+    if up {
+        if start == 0 {
+            return caret;
+        }
+        let prev_end = start - 1; // the '\n' that ends the previous line
+        let prev_start = line_start(text, prev_end);
+        caret_at_column(text, prev_start, prev_end, col)
+    } else {
+        let end = line_end(text, caret);
+        if end == text.len() {
+            return caret;
+        }
+        let next_start = end + 1;
+        let next_end = line_end(text, next_start);
+        caret_at_column(text, next_start, next_end, col)
+    }
 }
 
 /// Places the caret at a painted column, for a pointer click.
@@ -462,17 +563,14 @@ pub fn caret_at_cell(text: &str, from: usize, cell: usize) -> usize {
     text.len()
 }
 
-pub fn selected_text<'a>(buffer: &'a str, selected: &bool) -> Option<&'a str> {
-    (*selected && !buffer.is_empty()).then_some(buffer)
-}
-
 pub fn cut(state: &mut ComposerState) -> Option<String> {
-    if state.select_all && !state.text.is_empty() {
-        state.select_all = false;
-        state.caret = 0;
-        return Some(std::mem::take(&mut state.text));
-    }
-    None
+    let (start, end) = selection_bounds(state)?;
+    let removed = state.text[start..end].to_owned();
+    state.text.replace_range(start..end, "");
+    state.caret = start;
+    state.select_all = false;
+    state.anchor = None;
+    Some(removed)
 }
 
 pub fn paste(state: &mut ComposerState, text: &str) {
@@ -487,6 +585,7 @@ pub fn paste(state: &mut ComposerState, text: &str) {
 /// are inserted through the product's explicit Newline action.
 pub fn replace_text(state: &mut ComposerState, text: &str) {
     state.select_all = false;
+    state.anchor = None;
     state.text = normalize_single_line(text);
     state.caret = state.text.len();
 }
@@ -515,10 +614,11 @@ fn next_boundary(text: &str, caret: usize) -> Option<usize> {
 }
 
 fn prepare_edit(state: &mut ComposerState) -> bool {
-    if state.select_all {
-        state.text.clear();
+    if let Some((start, end)) = selection_bounds(state) {
+        state.text.replace_range(start..end, "");
+        state.caret = start;
         state.select_all = false;
-        state.caret = 0;
+        state.anchor = None;
         return true;
     }
     false
@@ -1160,14 +1260,83 @@ mod tests {
     }
 
     #[test]
+    fn shift_left_right_builds_and_reports_a_selection() {
+        let mut composer = state("hello");
+        // caret at end; Shift+Left twice selects "lo".
+        extend_selection(&mut composer, Move::Left);
+        extend_selection(&mut composer, Move::Left);
+        assert_eq!(composer.anchor, Some(5));
+        assert_eq!(composer.caret, 3);
+        assert_eq!(selection_bounds(&composer), Some((3, 5)));
+        assert_eq!(selection_text(&composer), Some("lo"));
+        // Shift+Right shrinks it back to "o".
+        extend_selection(&mut composer, Move::Right);
+        assert_eq!(selection_text(&composer), Some("o"));
+    }
+
+    #[test]
+    fn a_plain_arrow_collapses_the_selection() {
+        let mut composer = state("hello");
+        extend_selection(&mut composer, Move::Left);
+        assert!(selection_bounds(&composer).is_some());
+        move_caret(&mut composer, Move::Left);
+        assert_eq!(composer.anchor, None);
+        assert_eq!(selection_bounds(&composer), None);
+    }
+
+    #[test]
+    fn typing_replaces_the_selection() {
+        let mut composer = state("hello");
+        extend_selection(&mut composer, Move::Left);
+        extend_selection(&mut composer, Move::Left); // "lo" selected
+        insert(&mut composer, "p");
+        assert_eq!(composer.text, "help");
+        assert_eq!(composer.caret, 4);
+        assert_eq!(selection_bounds(&composer), None);
+    }
+
+    #[test]
+    fn backspace_deletes_the_selection() {
+        let mut composer = state("hello");
+        extend_selection(&mut composer, Move::Left);
+        extend_selection(&mut composer, Move::Left); // "lo"
+        backspace(&mut composer);
+        assert_eq!(composer.text, "hel");
+        assert_eq!(composer.caret, 3);
+    }
+
+    #[test]
+    fn shift_up_down_selects_by_line_keeping_the_column() {
+        let mut composer = state("abcd\nefgh\nijkl");
+        // Put the caret on the middle line at column 2 (after "ef").
+        composer.caret = 7; // "abcd\nef|gh\nijkl"
+        extend_selection(&mut composer, Move::Up); // extend up to column 2 of line 0
+        assert_eq!(composer.anchor, Some(7));
+        assert_eq!(composer.caret, 2); // "ab|cd"
+        assert_eq!(selection_text(&composer), Some("cd\nef"));
+        // From the collapsed caret, select down two lines.
+        move_caret(&mut composer, Move::LineStart); // caret to col 0 of line 0
+        extend_selection(&mut composer, Move::Down);
+        assert_eq!(composer.caret, 5); // start of line 1
+        assert_eq!(selection_text(&composer), Some("abcd\n"));
+    }
+
+    #[test]
+    fn home_and_end_are_line_relative() {
+        let mut composer = state("abcd\nefgh");
+        composer.caret = 7; // middle of line 1
+        move_caret(&mut composer, Move::LineStart);
+        assert_eq!(composer.caret, 5); // start of "efgh", not 0
+        move_caret(&mut composer, Move::LineEnd);
+        assert_eq!(composer.caret, 9); // end of "efgh"
+    }
+
+    #[test]
     fn copy_and_cut_require_a_selection() {
         let mut composer = state("copy me");
-        assert_eq!(selected_text(&composer.text, &composer.select_all), None);
+        assert_eq!(selection_text(&composer), None);
         select_all(&mut composer);
-        assert_eq!(
-            selected_text(&composer.text, &composer.select_all),
-            Some("copy me")
-        );
+        assert_eq!(selection_text(&composer), Some("copy me"));
         assert_eq!(cut(&mut composer), Some("copy me".to_owned()));
         assert!(composer.text.is_empty());
         assert_eq!(composer.caret, 0);
