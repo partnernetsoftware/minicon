@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1016">
   <title>MiniCon™ — A terminal that is one file</title>
-  <meta name="description" content="MiniCon — native executables plus a signed one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.">
+  <meta name="description" content="MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.">
   <link rel="canonical" href="https://minicon.agenterm.work/">
   <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
   <link rel="alternate" hreflang="zh-CN" href="https://minicon.agenterm.work/?lang=zh-CN">
@@ -16,11 +16,11 @@
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:title" content="MiniCon™ — A terminal that is one file">
-  <meta property="og:description" content="Native executables plus a signed one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
+  <meta property="og:description" content="MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.">
   <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-neutral.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MiniCon™ — A terminal that is one file">
-  <meta name="twitter:description" content="Native executables plus a signed one-file six-cell launcher across Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime.">
+  <meta name="twitter:description" content="MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.">
   <meta name="twitter:image" content="https://minicon.agenterm.work/assets/minicon-neutral.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <style>
@@ -192,6 +192,8 @@
     }
     @media (max-width: 640px) { .shot-gallery { grid-template-columns: 1fr; } }
     .shot-sub { margin-top: 3rem; }
+    .hero-shot { margin-top: 2.2rem; }
+    .cards .card .button { margin-top: .9rem; }
 
     pre.code {
       background: #070b10; border: 1px solid var(--border);
@@ -230,11 +232,10 @@
     <div class="wrap">
       <a class="brand" href="#main">MiniCon<span class="tm">™</span></a>
       <nav aria-label="Primary navigation" data-i18n-aria-label="navLabel">
-        <a href="#what" data-i18n="navWhat">What</a>
-        <a href="#old" data-i18n="navOld">Old Windows</a>
+        <a href="#input" data-i18n="navInput">Input</a>
         <a href="#script" data-i18n="navScript">Scripting</a>
-        <a href="#family" data-i18n="navFamily">AgenTerm</a>
-        <a href="#install" data-i18n="navInstall">Get it</a>
+        <a href="#themes" data-i18n="navThemes">Themes</a>
+        <a href="#download" data-i18n="navDownload">Download</a>
         <a href="#docs" data-i18n="navDocs">Docs</a>
       </nav>
       <div class="header-tail">
@@ -249,147 +250,31 @@
   <main id="main">
     <section class="hero">
       <div class="wrap">
-        <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · no bundled runtime</p>
+        <p class="eyebrow" data-i18n="heroEyebrow">one file · no install · nothing left behind</p>
         <h1 data-i18n-html="heroTitle">A terminal that is <em>one file</em>.</h1>
         <p class="hero-emotion" data-i18n="heroEmotion">Copy it over. Run it on a normal desktop.</p>
-        <p class="lead" data-i18n="heroLead">Native executables plus a signed one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.</p>
+        <p class="lead" data-i18n="heroLead">Copy one file and run it — a fast terminal for Windows, macOS, and Linux, with an input line of its own and a control command your scripts can read.</p>
         <div class="cta-row">
-          <a class="button primary" href="#install" data-i18n="ctaGet">Get MiniCon</a>
+          <a class="button primary" href="#download" data-i18n="ctaGet">Download</a>
           <a class="button" href="https://github.com/partnernetsoftware/minicon" data-i18n="ctaSource">Source on GitHub</a>
-          <a class="button" href="old-windows.html" data-i18n="ctaOld">Old Windows support</a>
         </div>
-        <p class="hero-cta-hint" data-i18n="heroCtaHint">Permanently open source (MIT OR Apache-2.0) · signed &amp; notarized · delete it and it's gone</p>
-        <div class="spec-row" aria-label="Product specs" data-i18n-aria-label="specLabel">
-          <span class="spec-pill" data-i18n-html="specSize"><strong>~660 KB</strong> Windows · <strong>~1.4 MB</strong> macOS · <strong>~5 MB</strong> Linux</span>
-          <span class="spec-pill" data-i18n-html="specBudget"><strong>Measured</strong>, per target</span>
-          <span class="spec-pill" data-i18n="specDeps">OS libraries only</span>
-          <span class="spec-pill" data-i18n="specOld">Windows Server 2016+</span>
-          <span class="spec-pill" data-i18n="specOpen">MIT / Apache-2.0</span>
-          <span class="spec-pill" data-i18n="specSigned">Signed &amp; notarized</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="invariant-strip" id="what" aria-labelledby="invariant-heading">
-      <div class="wrap">
-        <h2 id="invariant-heading" class="visually-hidden" data-i18n="invariantHeading">What MiniCon is</h2>
-        <div class="invariant-grid">
-          <div>
-            <span class="rule" data-i18n="inv1Rule">One file</span>
-            <p data-i18n="inv1Body">The executable is the whole product. Nothing installs, nothing runs in the background. Delete the file and it's gone.</p>
-          </div>
-          <div>
-            <span class="rule" data-i18n="inv2Rule">Small, verified</span>
-            <p data-i18n="inv2Body">All six target artifacts are checked; Windows additionally gates its PE import table to OS libraries. Every size shown is measured.</p>
-          </div>
-          <div>
-            <span class="rule" data-i18n="inv3Rule">Small ≠ toy</span>
-            <p data-i18n="inv3Body">Real PTY, real VT parsing, tabs, IME, mouse, scrollback — small is the size, not the feature list.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="invariant-strip" aria-labelledby="pillars-heading">
-      <div class="wrap">
-        <h2 id="pillars-heading" data-i18n="pillarsTitle">Open, safe, and small — on purpose.</h2>
-        <div class="invariant-grid">
-          <div>
-            <span class="rule" data-i18n="pillarOpenRule">Permanently open source</span>
-            <p data-i18n="pillarOpenBody">MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no updater, no phone-home — the source is the product.</p>
-          </div>
-          <div>
-            <span class="rule" data-i18n="pillarSafeRule">Signed and notarized</span>
-            <p data-i18n="pillarSafeBody">Since v0.1.9 the Windows binaries and <code>minicon.com</code> are Authenticode-signed and the macOS build is Developer ID-signed and Apple-notarized as PARTNERNET SOFTWARE PTY LTD. Windows imports are gated to OS libraries; nothing runs in the background.</p>
-          </div>
-          <div>
-            <span class="rule" data-i18n="pillarSmallRule">Genuinely mini</span>
-            <p data-i18n="pillarSmallBody">One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux, every size measured, not estimated. No installer and no bundled language runtime.</p>
-          </div>
-          <div>
-            <span class="rule" data-i18n="pillarLeanRule">Minimal resources</span>
-            <p data-i18n="pillarLeanBody">A small memory footprint and no daemon. It starts fast, holds a real PTY and scrollback, and leaves nothing behind when the window closes — delete the file and it's gone.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <div class="wrap">
-        <h2 data-i18n="shotTitle">This is the whole application.</h2>
-        <p class="section-lead" data-i18n="shotLead">A tab column, a terminal, an input line. That's it.</p>
-        <figure class="shot">
-          <img src="assets/minicon-neutral.png" width="1200" height="748" loading="lazy"
-               data-i18n-alt="shotAlt"
-               alt="MiniCon in its default Neutral Ink theme: a dark monochrome two-tool header (New and Settings), three tabs on the left, a zsh session with colorized git output, and a bottom status bar showing the cursor line and column.">
-          <figcaption data-i18n="shotCaption">The default Neutral Ink theme — tab tree, terminal, a separate input line, and a fixed-width L###:C### cursor readout in the status bar.</figcaption>
-        </figure>
-
-        <p class="section-lead shot-sub" data-i18n="shotThemesLead">Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.</p>
-        <div class="shot-gallery">
-          <figure class="shot">
-            <img src="assets/minicon-docs.png" width="1200" height="748" loading="lazy"
-                 data-i18n-alt="shotDocsAlt"
-                 alt="The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.">
-            <figcaption data-i18n="shotDocsCaption">Docs Ink — a dark blue-ink theme with cyan accents.</figcaption>
-          </figure>
-          <figure class="shot">
-            <img src="assets/minicon-paper.png" width="1200" height="748" loading="lazy"
-                 data-i18n-alt="shotPaperAlt"
-                 alt="The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.">
-            <figcaption data-i18n="shotPaperCaption">Paper Ink — a light theme in the same hues, with teal accents.</figcaption>
-          </figure>
-        </div>
-
-        <h2 class="shot-sub" data-i18n="shotSettingsTitle">One panel for everything.</h2>
-        <p class="section-lead" data-i18n="shotSettingsLead">Interface language, font size, theme, and every shortcut — in one place, no menus to hunt through.</p>
-        <figure class="shot">
-          <img src="assets/minicon-settings.png" width="1200" height="748" loading="lazy"
-               data-i18n-alt="shotSettingsAlt"
-               alt="MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.">
-          <figcaption data-i18n="shotSettingsCaption">The settings panel: interface language, font size, three theme swatches, and the shortcut reference.</figcaption>
+        <figure class="shot hero-shot">
+          <img src="assets/minicon-neutral.png" width="1200" height="748" loading="eager"
+               data-i18n-alt="heroShotAlt" alt="The MiniCon window: a tab tree on the left, a terminal with colorized git output, and a separate input line with Send and New Line controls at the bottom.">
+          <figcaption data-i18n="heroShotCaption">The whole app: a tab tree, the terminal, and its own input line at the bottom.</figcaption>
         </figure>
       </div>
     </section>
 
-    <section id="old">
-      <div class="wrap">
-        <h2 data-i18n="oldTitle">It runs where modern terminals cannot.</h2>
-        <p class="section-lead" data-i18n="oldLead">Windows Terminal needs build 17763, and so does ConPTY. Your Server 2016 box has neither. MiniCon doesn't care — it finds the pseudoconsole at run time, or hosts the shell itself.</p>
-        <div class="cards">
-          <div class="card">
-            <span class="index" data-i18n="old1Index">01 / NO DEAD END</span>
-            <h3 data-i18n="old1Title">A missing API is not a dead program</h3>
-            <p data-i18n="old1Body">The pseudoconsole entry points are resolved at run time. Imported statically, one missing symbol stops the program before it starts.</p>
-          </div>
-          <div class="card">
-            <span class="index" data-i18n="old2Index">02 / ITS OWN FALLBACK</span>
-            <h3 data-i18n="old2Title">No ConPTY? It hosts the shell itself</h3>
-            <p data-i18n="old2Body">MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary.</p>
-          </div>
-          <div class="card">
-            <span class="index" data-i18n="old3Index">03 / CAPABILITY, NOT VERSION</span>
-            <h3 data-i18n="old3Title">It asks the system, not a table</h3>
-            <p data-i18n="old3Body">The backend is chosen by whether the exports exist. Version numbers are only for the message you read.</p>
-          </div>
-          <div class="card">
-            <span class="index" data-i18n="old5Index">05 / SELF-DESCRIBING</span>
-            <h3 data-i18n="old5Title">It tells you what it got</h3>
-            <p data-i18n="old5Body">`--status` reports the backend this machine selected and why, the font the system resolved to, and where failures are written. It opens no window.</p>
-          </div>
-          <div class="card">
-            <span class="index" data-i18n="old4Index">04 / NO REDISTRIBUTABLE</span>
-            <h3 data-i18n="old4Title">Nothing to install first</h3>
-            <p data-i18n="old4Body">The VC runtime is linked in. A test parses the import table and fails on anything outside Windows' own set.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section>
+    <section id="input">
       <div class="wrap">
         <h2 data-i18n="inputTitle">A place to type that is not the output.</h2>
-        <p class="section-lead" data-i18n="inputLead">Most terminals make you type into the same region a program is printing into — so a long command and a burst of output get tangled. MiniCon gives input its own area.</p>
+        <p class="section-lead" data-i18n="inputLead">In most terminals you type into the same area a program is printing into, so a long command and a burst of output get tangled together. MiniCon gives your input its own line.</p>
+        <figure class="shot">
+          <img src="assets/minicon-input.png" width="1200" height="748" loading="lazy"
+               data-i18n-alt="inputShotAlt" alt="Hundreds of build lines stream through the terminal while a long, unsent command sits in the separate input line below.">
+          <figcaption data-i18n="inputShotCaption">Output streams in while a long command waits, untouched, in the input line. Enter makes a new line; Ctrl+O sends.</figcaption>
+        </figure>
         <div class="cards">
           <div class="card">
             <span class="index" data-i18n="input1Index">01 / NO COLLISION</span>
@@ -404,7 +289,7 @@
           <div class="card">
             <span class="index" data-i18n="input3Index">03 / IT SAYS WHERE</span>
             <h3 data-i18n="input3Title">Named, not numbered</h3>
-            <p data-i18n="input3Body">The label names the tab the text is going to. In a tab tree, that's the difference between confidence and a guess.</p>
+            <p data-i18n="input3Body">The label shows the name of the tab your text will go to — so in a tree of tabs you always know where a command is headed.</p>
           </div>
         </div>
       </div>
@@ -413,7 +298,7 @@
     <section id="script">
       <div class="wrap">
         <h2 data-i18n="scriptTitle">A terminal your scripts can see into.</h2>
-        <p class="section-lead" data-i18n="scriptLead">Sending a keystroke is easy and blind. MiniCon's control CLI reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits on a real condition, not a timer. And it's all local: a named pipe on Windows or a Unix socket on Linux and macOS, with no server or cloud.</p>
+        <p class="section-lead" data-i18n="scriptLead">Sending a keystroke is easy — but blind. MiniCon's control command reads back what the window actually shows — text, screenshots, focus, tabs — so your automation waits for a real result instead of guessing with a sleep. It is all local: no server, no network, no cloud.</p>
         <pre class="code"><span class="c"># start a session with a local control endpoint</span>
 minicon --control unix:/tmp/minicon-build/control.sock
 <span class="c"># Windows: minicon --control pipe:\\.\pipe\build</span>
@@ -428,61 +313,115 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
         <div class="dl">
           <div>
             <dt>ui-snapshot</dt>
-            <dd data-i18n="scriptSnapshot">Focus, IME state, input, pending work, geometry — as JSON.</dd>
+            <dd data-i18n="scriptSnapshot">Focus, input-method state, pending work, and layout — as JSON.</dd>
           </div>
           <div>
             <dt>wait-text · wait-tab-exit</dt>
-            <dd data-i18n="scriptWait">Block until the condition holds or the timeout expires, and say which.</dd>
+            <dd data-i18n="scriptWait">Block until the condition holds or the timeout expires, and tell you which.</dd>
           </div>
           <div>
             <dt>send-keys · send-mouse · send-wheel · send-ui-ime</dt>
-            <dd data-i18n="scriptInput">Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.</dd>
+            <dd data-i18n="scriptInput">Type keys, click and scroll, even compose CJK text — through the very same paths a person's input takes.</dd>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="family">
+    <section id="themes">
       <div class="wrap">
-        <h2 data-i18n="familyTitle">MiniCon is the terminal. AgenTerm is the Agent-era workbench.</h2>
-        <p class="section-lead" data-i18n="familyLead">Same platform layer, different job. MiniCon is one file and one window. AgenTerm is what you run when a session must outlive that window — Fleet, mux, persistence, Agent permissions.</p>
-        <div class="dl">
+        <h2 data-i18n="uiTitle">Make it yours.</h2>
+        <p class="section-lead" data-i18n="uiLead">Three built-in themes, and a settings panel with everything in one place — language, font size, theme, and the shortcut list.</p>
+        <figure class="shot">
+          <img src="assets/minicon-settings.png" width="1200" height="748" loading="lazy"
+               data-i18n-alt="shotSettingsAlt" alt="MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.">
+          <figcaption data-i18n="shotSettingsCaption">The settings panel: interface language, font size, three theme swatches, and the shortcut reference.</figcaption>
+        </figure>
+        <p class="section-lead shot-sub" data-i18n="shotThemesLead">Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.</p>
+        <div class="shot-gallery">
+          <figure class="shot">
+            <img src="assets/minicon-docs.png" width="1200" height="748" loading="lazy"
+                 data-i18n-alt="shotDocsAlt" alt="The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.">
+            <figcaption data-i18n="shotDocsCaption">Docs Ink — a dark blue-ink theme with cyan accents.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="assets/minicon-paper.png" width="1200" height="748" loading="lazy"
+                 data-i18n-alt="shotPaperAlt" alt="The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.">
+            <figcaption data-i18n="shotPaperCaption">Paper Ink — a light theme in the same hues, with teal accents.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="invariant-strip" aria-labelledby="pillars-heading">
+      <div class="wrap">
+        <h2 id="pillars-heading" data-i18n="pillarsTitle">Open, safe, and small — on purpose.</h2>
+        <div class="invariant-grid">
           <div>
-            <dt data-i18n="familyMiniDt">MiniCon</dt>
-            <dd data-i18n="familyMiniDd">Local conhost: PTY, tabs, composer, IME. Automation is <code>--control</code> on a Unix socket or named pipe inside that GUI process. Close the window and the endpoint is gone. No daemon, no default port, no remote.</dd>
+            <span class="rule" data-i18n="pillarOpenRule">Permanently open source</span>
+            <p data-i18n="pillarOpenBody">MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no auto-updater, no phone-home — the source is the product.</p>
           </div>
           <div>
-            <dt data-i18n="familyAgenDt">AgenTerm</dt>
-            <dd data-i18n="familyAgenDd">The Agent-era upgrade on the same rendering and input-area design: a workbench whose server identity can outlive one terminal. Shared verb spellings, different wire and lifetime.</dd>
+            <span class="rule" data-i18n="pillarSafeRule">Signed and notarized</span>
+            <p data-i18n="pillarSafeBody">The Windows and macOS downloads are code-signed, and the macOS build is notarized by Apple, as PARTNERNET SOFTWARE PTY LTD — so your system trusts them out of the box. Nothing runs in the background, and it uses only the libraries your OS already ships.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="pillarSmallRule">Genuinely mini</span>
+            <p data-i18n="pillarSmallBody">One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux (real measured sizes, not estimates). No installer, no bundled language runtime.</p>
+          </div>
+          <div>
+            <span class="rule" data-i18n="pillarLeanRule">Minimal resources</span>
+            <p data-i18n="pillarLeanBody">It starts instantly, uses little memory, and runs no background service. Keep a real shell session with full scrollback while it is open; close the window and nothing is left behind.</p>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="install">
+    <section id="old">
       <div class="wrap">
-        <h2 data-i18n="installTitle">Getting it</h2>
-        <p class="section-lead" data-i18n="installLead">Download a native archive or the signed, notarized <code>minicon.com</code> and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no <code>-dev</code> package is required.</p>
-        <div class="cta-row">
-          <a class="button primary" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="installRelease">Latest release</a>
-          <a class="button" href="https://github.com/partnernetsoftware/minicon#build" data-i18n="installBuild">Build from source</a>
+        <h2 data-i18n="oldTitle">Works on older Windows, too.</h2>
+        <p class="section-lead" data-i18n="oldLead">Newer terminals need a recent Windows build and simply will not start on older machines. MiniCon runs all the way back to Windows Server 2016: it uses the modern console when it is there, and quietly runs your shell itself when it is not — so the same download just works.</p>
+        <p class="honest"><span data-i18n="oldNote">It runs on Windows Server 2016 and up. Everything it needs is in the one file — nothing extra to install.</span> <a href="old-windows.html" data-i18n="oldLink">How it works</a> →</p>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <h2 data-i18n="downloadTitle">Download</h2>
+        <p class="section-lead" data-i18n="downloadLead">Pick your platform and run the file. No installer, and no runtime to add first.</p>
+        <div class="cards">
+          <div class="card">
+            <h3 data-i18n="dlWinTitle">Windows</h3>
+            <p data-i18n="dlWinNote">x64 or ARM64 · signed (Authenticode)</p>
+            <a class="button" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="dlGet">Get it</a>
+          </div>
+          <div class="card">
+            <h3 data-i18n="dlMacTitle">macOS</h3>
+            <p data-i18n="dlMacNote">Apple Silicon or Intel .dmg · signed & notarized</p>
+            <a class="button" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="dlGet">Get it</a>
+          </div>
+          <div class="card">
+            <h3 data-i18n="dlLinuxTitle">Linux</h3>
+            <p data-i18n="dlLinuxNote">x64 or ARM64 · no extra system packages</p>
+            <a class="button" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="dlGet">Get it</a>
+          </div>
         </div>
+        <p class="hero-cta-hint" data-i18n="dlAdvanced">Advanced: one signed minicon.com launcher bundles every platform in a single file.</p>
+        <p class="honest" data-i18n="dlTrust">About 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux — measured, not estimated. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.</p>
         <pre class="code"><span class="c"># or build it yourself</span>
 git clone https://github.com/partnernetsoftware/minicon
 cd minicon
 cargo build --release   <span class="c"># target/release/minicon[.exe]</span></pre>
-        <p class="honest" data-i18n-html="installHonest"><strong>Honest scope.</strong> MiniCon qualifies Windows, Linux, and macOS on x86_64 and aarch64. Old-Windows fallback and PE import-table checks are Windows-specific; the terminal, UI, and control contract span all six cells. No server, persistence, MCP, or plugins — on purpose. When you want those, that's AgenTerm.</p>
       </div>
     </section>
 
     <section id="docs">
       <div class="wrap">
         <h2 data-i18n="docsTitle">Documentation</h2>
-        <p class="section-lead" data-i18n="docsLead">Written to be checkable. Every number came from a measurement.</p>
+        <p class="section-lead" data-i18n="docsLead">Written to be checked. Every number here came from a real measurement.</p>
         <div class="cards">
           <div class="card">
             <h3><a href="old-windows.html" data-i18n="docsOldTitle">Running on old Windows</a></h3>
-            <p data-i18n="docsOldBody">Why terminals stop at build 17763, what MiniCon does instead, and how to diagnose a machine that still won't start it.</p>
+            <p data-i18n="docsOldBody">Why other terminals stop at recent Windows builds, what MiniCon does instead, and how to diagnose a machine that still will not start it.</p>
           </div>
           <div class="card">
             <h3><a href="control-cli.html" data-i18n="docsCliTitle">Driving MiniCon from a script</a></h3>
@@ -490,7 +429,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           </div>
           <div class="card">
             <h3><a href="https://github.com/partnernetsoftware/minicon" data-i18n="docsRepoTitle">Source and tests</a></h3>
-            <p data-i18n="docsRepoBody">The behaviour claimed here is pinned by the test suite — import table, size gates, and the CLI's own contract.</p>
+            <p data-i18n="docsRepoBody">Everything claimed here is pinned by the test suite — the download sizes, the Windows dependency check, and the control command's own behavior.</p>
           </div>
         </div>
       </div>
@@ -515,81 +454,40 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
   <script>
     (function () {
       const copy = {
-                en: {
+        en: {
           title: "MiniCon™ — A terminal that is one file",
-          description: "MiniCon — native executables plus a signed one-file six-cell launcher for Windows, Linux, and macOS on x86_64 and aarch64. No installer, bundled language runtime, or background service.",
+          description: "MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.",
           skip: "Skip to content",
           navLabel: "Primary navigation",
           languageLabel: "Language",
-          navWhat: "What",
-          navOld: "Old Windows",
           navScript: "Scripting",
-          navFamily: "AgenTerm",
-          navInstall: "Get it",
           navDocs: "Docs",
-          heroEyebrow: "one file · no install · no bundled runtime",
+          heroEyebrow: "one file · no install · nothing left behind",
           heroTitle: "A terminal that is <em>one file</em>.",
           heroEmotion: "Copy it over. Run it on a normal desktop.",
-          heroLead: "Native executables plus a signed one-file six-cell launcher cover Windows, Linux, and macOS on x86_64 and aarch64. No installer or bundled language runtime — and a script can drive every part of it.",
-          ctaGet: "Get MiniCon",
+          heroLead: "Copy one file and run it — a fast terminal for Windows, macOS, and Linux, with an input line of its own and a control command your scripts can read.",
+          ctaGet: "Download",
           ctaSource: "Source on GitHub",
-          ctaOld: "Old Windows support",
-          heroCtaHint: "Permanently open source (MIT OR Apache-2.0) · signed & notarized · delete it and it's gone",
-          specLabel: "Product specs",
-          specSize: "<strong>~660 KB</strong> Windows · <strong>~1.4 MB</strong> macOS · <strong>~5 MB</strong> Linux",
-          specBudget: "<strong>Measured</strong>, per target",
-          specDeps: "OS libraries only",
-          specOld: "Windows Server 2016+",
-          specOpen: "MIT / Apache-2.0",
-          specSigned: "Signed & notarized",
           pillarsTitle: "Open, safe, and small — on purpose.",
           pillarOpenRule: "Permanently open source",
-          pillarOpenBody: "MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no updater, no phone-home — the source is the product.",
+          pillarOpenBody: "MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no auto-updater, no phone-home — the source is the product.",
           pillarSafeRule: "Signed and notarized",
-          pillarSafeBody: "Since v0.1.9 the Windows binaries and minicon.com are Authenticode-signed, and the macOS build is Developer ID-signed and Apple-notarized, as PARTNERNET SOFTWARE PTY LTD. Windows imports are gated to OS libraries; nothing runs in the background.",
+          pillarSafeBody: "The Windows and macOS downloads are code-signed, and the macOS build is notarized by Apple, as PARTNERNET SOFTWARE PTY LTD — so your system trusts them out of the box. Nothing runs in the background, and it uses only the libraries your OS already ships.",
           pillarSmallRule: "Genuinely mini",
-          pillarSmallBody: "One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux, every size measured, not estimated. No installer and no bundled language runtime.",
+          pillarSmallBody: "One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux (real measured sizes, not estimates). No installer, no bundled language runtime.",
           pillarLeanRule: "Minimal resources",
-          pillarLeanBody: "A small memory footprint and no daemon. It starts fast, holds a real PTY and scrollback, and leaves nothing behind when the window closes — delete the file and it's gone.",
-          invariantHeading: "What MiniCon is",
-          inv1Rule: "One file",
-          inv1Body: "The executable is the whole product. Nothing installs, nothing runs in the background. Delete the file and it's gone.",
-          inv2Rule: "Small, verified",
-          inv2Body: "All six target artifacts are checked; Windows additionally gates its PE import table to OS libraries. Every size shown is measured.",
-          inv3Rule: "Small ≠ toy",
-          inv3Body: "Real PTY, real VT parsing, tabs, IME, mouse, scrollback — small is the size, not the feature list.",
-          shotTitle: "This is the whole application.",
-          shotLead: "A tab column, a terminal, an input line. That's it.",
-          shotAlt: "MiniCon in its default Neutral Ink theme: a dark monochrome two-tool header (New and Settings), three tabs on the left, a zsh session with colorized git output, and a bottom status bar showing the cursor line and column.",
-          shotCaption: "The default Neutral Ink theme — tab tree, terminal, a separate input line, and a fixed-width L###:C### cursor readout in the status bar.",
+          pillarLeanBody: "It starts instantly, uses little memory, and runs no background service. Keep a real shell session with full scrollback while it is open; close the window and nothing is left behind.",
           shotThemesLead: "Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.",
           shotDocsAlt: "The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.",
           shotDocsCaption: "Docs Ink — a dark blue-ink theme with cyan accents.",
           shotPaperAlt: "The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.",
           shotPaperCaption: "Paper Ink — a light theme in the same hues, with teal accents.",
-          shotSettingsTitle: "One panel for everything.",
-          shotSettingsLead: "Interface language, font size, theme, and every shortcut — in one place, no menus to hunt through.",
           shotSettingsAlt: "MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.",
           shotSettingsCaption: "The settings panel: interface language, font size, three theme swatches, and the shortcut reference.",
-          oldTitle: "It runs where modern terminals cannot.",
-          oldLead: "Windows Terminal needs build 17763, and so does ConPTY. Your Server 2016 box has neither. MiniCon doesn't care — it finds the pseudoconsole at run time, or hosts the shell itself.",
-          old1Index: "01 / NO DEAD END",
-          old1Title: "A missing API is not a dead program",
-          old1Body: "The pseudoconsole entry points are resolved at run time. Imported statically, one missing symbol stops the program before it starts.",
-          old2Index: "02 / ITS OWN FALLBACK",
-          old2Title: "No ConPTY? It hosts the shell itself",
-          old2Body: "MiniCon re-executes itself to host your shell in a hidden console and reads the screen buffer. That agent is MiniCon — no second binary.",
-          old3Index: "03 / CAPABILITY, NOT VERSION",
-          old3Title: "It asks the system, not a table",
-          old3Body: "The backend is chosen by whether the exports exist. Version numbers are only for the message you read.",
-          old5Index: "05 / SELF-DESCRIBING",
-          old5Title: "It tells you what it got",
-          old5Body: "`--status` reports the backend this machine selected and why, the font the system resolved to, and where failures are written. It opens no window.",
-          old4Index: "04 / NO REDISTRIBUTABLE",
-          old4Title: "Nothing to install first",
-          old4Body: "The VC runtime is linked in. A test parses the import table and fails on anything outside Windows' own set.",
+          oldTitle: "Works on older Windows, too.",
+          oldLead: "Newer terminals need a recent Windows build and simply will not start on older machines. MiniCon runs all the way back to Windows Server 2016: it uses the modern console when it is there, and quietly runs your shell itself when it is not — so the same download just works.",
           inputTitle: "A place to type that is not the output.",
-          inputLead: "Most terminals make you type into the same region a program is printing into — so a long command and a burst of output get tangled. MiniCon gives input its own area.",
+          inputLead: "In most terminals you type into the same area a program is printing into, so a long command and a burst of output get tangled together. MiniCon gives your input its own line.",
           input1Index: "01 / NO COLLISION",
           input1Title: "Compose while it scrolls",
           input1Body: "Write a long command while output keeps arriving. Nothing you type interleaves with anything a program prints.",
@@ -598,31 +496,22 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input2Body: "Up and Down walk what you sent before. Half-typed text is kept while you browse.",
           input3Index: "03 / IT SAYS WHERE",
           input3Title: "Named, not numbered",
-          input3Body: "The label names the tab the text is going to. In a tab tree, that's the difference between confidence and a guess.",
+          input3Body: "The label shows the name of the tab your text will go to — so in a tree of tabs you always know where a command is headed.",
           scriptTitle: "A terminal your scripts can see into.",
-          scriptLead: "Sending a keystroke is easy and blind. MiniCon's control CLI reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits on a real condition, not a timer. The window binds a local Unix socket or named pipe only if you pass --control; close the window and that endpoint dies. That is not AgenTerm's workbench server.",
-          scriptSnapshot: "Focus, IME state, input, pending work, geometry — as JSON.",
-          scriptWait: "Block until the condition holds or the timeout expires, and say which.",
-          scriptInput: "Named keys, pointer events in cells, scrolling, IME preedit — the same paths a person's input takes.",
-          installTitle: "Getting it",
-          installLead: "Download a native archive or the signed, notarized minicon.com and run it—there is no separate installer or bundled language runtime. Linux binaries embed the runtime-only X11 bridge and its XCB-XKB dependency; no -dev package is required.",
+          scriptLead: "Sending a keystroke is easy — but blind. MiniCon's control command reads back what the window actually shows — text, screenshots, focus, tabs — so your automation waits for a real result instead of guessing with a sleep. It is all local: no server, no network, no cloud.",
+          scriptSnapshot: "Focus, input-method state, pending work, and layout — as JSON.",
+          scriptWait: "Block until the condition holds or the timeout expires, and tell you which.",
+          scriptInput: "Type keys, click and scroll, even compose CJK text — through the very same paths a person's input takes.",
           installRelease: "Latest release",
           installBuild: "Build from source",
-          familyTitle: "MiniCon is the terminal. AgenTerm is the Agent-era workbench.",
-          familyLead: "Same platform layer, different job. MiniCon is one file and one window. AgenTerm is what you run when a session must outlive that window — Fleet, mux, persistence, Agent permissions.",
-          familyMiniDt: "MiniCon",
-          familyMiniDd: "Local conhost: PTY, tabs, composer, IME. Automation is --control on a Unix socket or named pipe inside that GUI process. Close the window and the endpoint is gone. No daemon, no default port, no remote.",
-          familyAgenDt: "AgenTerm",
-          familyAgenDd: "The Agent-era upgrade on the same rendering and input-area design: a workbench whose server identity can outlive one terminal. Shared verb spellings, different wire and lifetime.",
-          installHonest: "<strong>Honest scope.</strong> MiniCon qualifies Windows, Linux, and macOS on x86_64 and aarch64. Old-Windows fallback and PE import-table checks are Windows-specific; the terminal, UI, and control contract span all six cells. No workbench server, persistence, MCP, or plugins — on purpose. When you want those, that's AgenTerm.",
           docsTitle: "Documentation",
-          docsLead: "Written to be checkable. Every number came from a measurement.",
+          docsLead: "Written to be checked. Every number here came from a real measurement.",
           docsOldTitle: "Running on old Windows",
-          docsOldBody: "Why terminals stop at build 17763, what MiniCon does instead, and how to diagnose a machine that still won't start it.",
+          docsOldBody: "Why other terminals stop at recent Windows builds, what MiniCon does instead, and how to diagnose a machine that still will not start it.",
           docsCliTitle: "Driving MiniCon from a script",
           docsCliBody: "The full control surface: read state, wait on conditions, send input, manage tabs, run one command.",
           docsRepoTitle: "Source and tests",
-          docsRepoBody: "The behaviour claimed here is pinned by the test suite — six-cell artifacts, the Windows import-table gate, measured sizes, and the CLI's own contract.",
+          docsRepoBody: "Everything claimed here is pinned by the test suite — the download sizes, the Windows dependency check, and the control command's own behavior.",
           footerRepo: "GitHub",
           footerReleases: "Releases",
           footerOld: "Old Windows",
@@ -630,82 +519,63 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.",
           footerOrigin: "MiniCon is the one-file local terminal. AgenTerm is the Agent-era workbench on the same platform. MiniCon began as AgenTerm's console host and became its own product in August 2026.",
+          navInput: "Input",
+          navThemes: "Themes",
+          navDownload: "Download",
+          heroShotAlt: "The MiniCon window: a tab tree on the left, a terminal with colorized git output, and a separate input line with Send and New Line controls at the bottom.",
+          heroShotCaption: "The whole app: a tab tree, the terminal, and its own input line at the bottom.",
+          inputShotAlt: "Hundreds of build lines stream through the terminal while a long, unsent command sits in the separate input line below.",
+          inputShotCaption: "Output streams in while a long command waits, untouched, in the input line. Enter makes a new line; Ctrl+O sends.",
+          uiTitle: "Make it yours.",
+          uiLead: "Three built-in themes, and a settings panel with everything in one place — language, font size, theme, and the shortcut list.",
+          oldNote: "It runs on Windows Server 2016 and up. Everything it needs is in the one file — nothing extra to install.",
+          oldLink: "How it works",
+          downloadTitle: "Download",
+          downloadLead: "Pick your platform and run the file. No installer, and no runtime to add first.",
+          dlWinTitle: "Windows",
+          dlWinNote: "x64 or ARM64 · signed (Authenticode)",
+          dlMacTitle: "macOS",
+          dlMacNote: "Apple Silicon or Intel .dmg · signed & notarized",
+          dlLinuxTitle: "Linux",
+          dlLinuxNote: "x64 or ARM64 · no extra system packages",
+          dlGet: "Get it",
+          dlAdvanced: "Advanced: one signed minicon.com launcher bundles every platform in a single file.",
+          dlTrust: "About 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux — measured, not estimated. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.",
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
-          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供已签名的单文件六格启动器。免安装、免捆绑语言运行时、免后台服务。",
+          description: "MiniCon 是一个面向 Windows、Linux、macOS(Intel 与 Apple Silicon)的单文件终端。免安装、免捆绑运行时、后台零常驻——拷一个文件就能跑。已签名并公证,每个部分都能用脚本驱动。",
           skip: "跳到正文",
           navLabel: "主导航",
           languageLabel: "语言",
-          navWhat: "是什么",
-          navOld: "旧版 Windows",
-          navScript: "脚本",
-          navFamily: "AgenTerm",
-          navInstall: "获取",
+          navScript: "脚本控制",
           navDocs: "文档",
-          heroEyebrow: "一个文件 · 免安装 · 免捆绑运行时",
+          heroEyebrow: "一个文件 · 免安装 · 删掉不留痕",
           heroTitle: "一个<em>文件</em>就是一个终端。",
-          heroEmotion: "拷过去，在具备系统桌面库的电脑上直接运行。",
-          heroLead: "Windows、Linux、macOS × x86_64、aarch64 六格原生可执行文件，并提供已签名的单文件六格启动器。没有安装包和捆绑语言运行时；每一处都能被脚本驱动。",
-          ctaGet: "获取 MiniCon",
+          heroEmotion: "拷过去,在普通电脑上直接运行。",
+          heroLead: "拷一个文件就能运行——一个面向 Windows、macOS、Linux 的快速终端,带独立的输入行,还有一个脚本能读取的控制命令。",
+          ctaGet: "下载",
           ctaSource: "GitHub 源码",
-          ctaOld: "旧版 Windows 支持",
-          heroCtaHint: "永久开源(MIT 或 Apache-2.0) · 已签名并公证 · 删掉即卸载",
-          specLabel: "产品规格",
-          specSize: "Windows <strong>约 660 KB</strong> · macOS <strong>约 1.4 MB</strong> · Linux <strong>约 5 MB</strong>",
-          specBudget: "<strong>实测</strong>，按目标",
-          specDeps: "只依赖系统库",
-          specOld: "Windows Server 2016+",
-          specOpen: "MIT / Apache-2.0",
-          specSigned: "已签名并公证",
           pillarsTitle: "开源、安全、迷你——都是刻意为之。",
           pillarOpenRule: "永久开源",
           pillarOpenBody: "MIT 或 Apache-2.0,而且永远如此。每一行都能读、能自己编译、能 fork。无遥测、无账号、无自动更新、不回传——源码就是产品。",
           pillarSafeRule: "已签名并公证",
-          pillarSafeBody: "自 v0.1.9 起,Windows 二进制与 minicon.com 经 Authenticode 签名,macOS 版经 Developer ID 签名并通过 Apple 公证,主体均为 PARTNERNET SOFTWARE PTY LTD。Windows 导入表被限制在系统库内;后台什么都不跑。",
+          pillarSafeBody: "Windows 与 macOS 的下载都经过代码签名,macOS 版还通过 Apple 公证(主体:PARTNERNET SOFTWARE PTY LTD),系统开箱即信任。后台什么都不跑,只用系统自带的库。",
           pillarSmallRule: "真的迷你",
-          pillarSmallBody: "一个文件——Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB,每个体积都是实测,不是估算。免安装,免捆绑语言运行时。",
+          pillarSmallBody: "一个文件——Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB,都是实测,不是估算。免安装,不捆绑语言运行时。",
           pillarLeanRule: "极省资源",
-          pillarLeanBody: "内存占用很小,没有常驻进程。启动快,带真 PTY 和回滚;窗口一关什么都不留——删掉文件,就没了。",
-          invariantHeading: "MiniCon 是什么",
-          inv1Rule: "一个文件",
-          inv1Body: "可执行文件就是整个产品。什么都不装、后台什么都不跑。删掉文件，就没了。",
-          inv2Rule: "小，但有证据",
-          inv2Body: "六个目标产物全部受检；Windows 另有 PE 导入表系统库门禁。这里展示的体积全部来自实测。",
-          inv3Rule: "小 ≠ 缩水",
-          inv3Body: "真 PTY、真 VT 解析、标签页、输入法、鼠标、回滚——小的是体积，不是功能。",
-          shotTitle: "这就是整个应用。",
-          shotLead: "一列标签页、一个终端、一行输入。就这些。",
-          shotAlt: "默认 Neutral Ink 主题下的 MiniCon 窗口：深色单色两工具头部(新建与设置)、左侧三个标签，终端里是带彩色 git 输出的 zsh 会话，底部状态栏显示光标行列。",
-          shotCaption: "默认的 Neutral Ink 主题——标签树、终端、独立输入行，以及状态栏里定宽的 L###:C### 光标读数。",
+          pillarLeanBody: "启动飞快、占用极小、没有后台服务。开着时保留真实 shell 会话与完整回滚;关窗后什么都不留。",
           shotThemesLead: "三款内置主题。在设置里切换，或用 Ctrl+Shift+P 循环。",
           shotDocsAlt: "同一个 MiniCon 窗口在 Docs Ink 主题下：深蓝墨色的标签列、头部与输入区，配青色高亮。",
           shotDocsCaption: "Docs Ink——深蓝墨色主题，青色高亮。",
           shotPaperAlt: "同一个 MiniCon 窗口在 Paper Ink 主题下：浅色标签列、头部与输入区，配蓝绿高亮。",
           shotPaperCaption: "Paper Ink——同色系的浅色主题，蓝绿高亮。",
-          shotSettingsTitle: "一个面板管全部。",
-          shotSettingsLead: "界面语言、字号、主题、以及每一个快捷键——集中一处，无需翻菜单。",
           shotSettingsAlt: "在终端上方打开的设置面板：界面语言按钮(English、简、繁)、字号加减、三个主题色板，以及快捷键列表。",
           shotSettingsCaption: "设置面板：界面语言、字号、三个主题色板，以及快捷键速查。",
-          oldTitle: "现代终端跑不动的地方，它跑得动。",
-          oldLead: "Windows Terminal 要 build 17763，ConPTY 也要。你的 Server 2016 两样都没有。MiniCon 不在乎——运行时找到伪控制台就用，找不到就自己托管 shell。",
-          old1Index: "01 / 没有死路",
-          old1Title: "缺一个 API，不等于程序就废了",
-          old1Body: "伪控制台的入口点是运行时解析的。要是静态导入，少一个符号程序在启动前就被拦下。",
-          old2Index: "02 / 自备兜底",
-          old2Title: "没有 ConPTY？它自己托管 shell",
-          old2Body: "MiniCon 会重新拉起自己，把你的 shell 放进一个隐藏控制台，再读屏幕缓冲区。那个代理就是它自己——不用第二个二进制。",
-          old3Index: "03 / 看能力，不看版本号",
-          old3Title: "问系统，不查表",
-          old3Body: "后端靠「导出函数是否存在」来选。版本号只用在你看得到的那条提示里。",
-          old5Index: "05 / 自描述",
-          old5Title: "它会告诉你拿到了什么",
-          old5Body: "`--status` 会报告这台机器选了哪个后端、系统解析到哪个字体、失败写到了哪里。它不弹窗口。",
-          old4Index: "04 / 免运行库",
-          old4Title: "不用先装任何东西",
-          old4Body: "VC 运行时是静态链接进去的。有一项测试解析导入表，出现 Windows 自带集合之外的就失败。",
+          oldTitle: "在旧版 Windows 上照样跑。",
+          oldLead: "新一点的终端需要较新的 Windows 版本,在老机器上根本装不上。MiniCon 一路支持到 Windows Server 2016:有新式控制台就用,没有就自己把 shell 跑起来——同一个文件,直接就能用。",
           inputTitle: "一个不跟输出混在一起的输入区。",
-          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字，长命令和一屏输出搅成一团。MiniCon 给输入单独一块区域。",
+          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字,长命令和一屏输出容易搅成一团。MiniCon 给输入单独一行。",
           input1Index: "01 / 互不干扰",
           input1Title: "一边滚动一边写",
           input1Body: "输出不断刷新，照样写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起。",
@@ -714,31 +584,22 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input2Body: "上下键翻回之前发过的内容，重发或改改都不用重敲。翻历史时敲到一半的字会被保留。",
           input3Index: "03 / 明确去向",
           input3Title: "叫名字，不叫编号",
-          input3Body: "标签上写的是文字要发往哪个标签页。在标签页树里，这就是「有把握」和「靠猜」的区别。",
+          input3Body: "标签上写着文字将发往哪个标签页的名字——在标签页树里,你始终清楚命令会去哪。",
           scriptTitle: "一个脚本能「看进去」的终端。",
-          scriptLead: "发一个按键简单，但是个瞎子。MiniCon 的控制 CLI 把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实条件，而不是计时器。只有你传了 --control，这一窗才会在本机 Unix socket 或命名管道上听；关窗即拆。那不是 AgenTerm 工作台的 server。",
-          scriptSnapshot: "焦点、输入法状态、输入、待处理工作、坐标——以 JSON 返回。",
-          scriptWait: "阻塞到条件成立或超时为止，并告诉你哪一种。",
-          scriptInput: "具名按键、按单元格计的鼠标事件、滚动、输入法预编辑——走的都是真人输入的同一条路径。",
-          installTitle: "获取",
-          installLead: "下载原生归档或已签名并公证的 minicon.com 直接运行，不另带安装程序或语言运行时。Linux 可执行文件已内嵌仅运行时的 X11 bridge 及 XCB-XKB 依赖，不需要 -dev 包。",
+          scriptLead: "发一个按键很简单,但那是「瞎发」。MiniCon 的控制命令能把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实结果,而不是靠 sleep 瞎猜。而且全程本地:没有服务、没有网络、没有云。",
+          scriptSnapshot: "焦点、输入法状态、待处理工作、布局——以 JSON 返回。",
+          scriptWait: "阻塞到条件成立或超时,并告诉你是哪一种。",
+          scriptInput: "敲键、点击与滚动,甚至中日韩组字——走的都是真人输入的同一条路径。",
           installRelease: "最新版本",
           installBuild: "从源码构建",
-          familyTitle: "MiniCon 是终端。AgenTerm 是 Agent 时代的工作台。",
-          familyLead: "同一套平台层，活法不同。MiniCon 是一个文件、一扇窗。需要会话比这一窗更长——Fleet、mux、持久化、Agent 权限——那就是 AgenTerm。",
-          familyMiniDt: "MiniCon",
-          familyMiniDd: "本机 conhost：PTY、标签、输入条、输入法。自动化是这一 GUI 进程里的 --control（Unix socket / 命名管道）。关窗，endpoint 就没了。没有守护进程、没有默认端口、没有远程。",
-          familyAgenDt: "AgenTerm",
-          familyAgenDd: "同一套原生绘制和独立输入区之上的 Agent 时代升级：工作台的 server 身份可以比单扇终端更长。动词拼写可以相同，线和寿命不同。",
-          installHonest: "<strong>先把范围说清楚。</strong>MiniCon 对 Windows、Linux、macOS × x86_64、aarch64 六格做资格验证。旧版 Windows 兜底和 PE 导入表门禁是 Windows 专属，终端、界面与控制契约覆盖全部六格。没有工作台 server、持久化、MCP、插件——这是有意的；需要这些时请选择 AgenTerm。",
           docsTitle: "文档",
-          docsLead: "写得可核查：每个数字都来自实测。",
+          docsLead: "写得可核查:凡有数字,都是量出来的。",
           docsOldTitle: "在旧版 Windows 上运行",
-          docsOldBody: "为什么终端停在 build 17763、MiniCon 改用了什么做法、机器还是起不来时怎么排查。",
+          docsOldBody: "为什么别的终端停在较新的 Windows 版本、MiniCon 改用了什么做法,以及机器仍然起不来时怎么排查。",
           docsCliTitle: "用脚本驱动 MiniCon",
-          docsCliBody: "完整控制接口：读状态、等条件、发输入、管理标签页、跑一条命令。",
+          docsCliBody: "完整控制接口:读状态、等条件、发输入、管理标签页、跑一条命令。",
           docsRepoTitle: "源码与测试",
-          docsRepoBody: "这里宣称的行为都由测试钉死——六格产物、Windows 导入表门禁、实测体积和 CLI 自身契约。",
+          docsRepoBody: "这里宣称的行为都由测试钉住——下载体积、Windows 依赖检查,以及控制命令自身的行为。",
           footerRepo: "GitHub",
           footerReleases: "版本发布",
           footerOld: "旧版 Windows",
@@ -746,82 +607,63 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 是 PartnerNet Software 的商标。",
           footerOrigin: "MiniCon 是一文件本机终端。AgenTerm 是同一平台上的 Agent 时代工作台。MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成产品。",
+          navInput: "独立输入",
+          navThemes: "主题",
+          navDownload: "下载",
+          heroShotAlt: "MiniCon 窗口:左侧标签树、带彩色 git 输出的终端,底部是带「发送」和「换行」的独立输入行。",
+          heroShotCaption: "整个应用:标签树、终端,以及底部独立的输入行。",
+          inputShotAlt: "数百行构建输出在终端里飞速刷过,而下方独立输入行里静静躺着一条尚未发送的长命令。",
+          inputShotCaption: "输出不断刷屏,一条长命令仍原封不动地留在输入行里。Enter 换行,Ctrl+O 发送。",
+          uiTitle: "按你的喜好来。",
+          uiLead: "三款内置主题,以及一个把一切集中在一处的设置面板——语言、字号、主题和快捷键列表。",
+          oldNote: "它在 Windows Server 2016 及以上都能跑。所需的一切都在这一个文件里——不用另装任何东西。",
+          oldLink: "它是怎么做到的",
+          downloadTitle: "下载",
+          downloadLead: "选你的平台,直接运行文件。没有安装程序,也不用先装运行时。",
+          dlWinTitle: "Windows",
+          dlWinNote: "x64 或 ARM64 · 已签名(Authenticode)",
+          dlMacTitle: "macOS",
+          dlMacNote: "Apple Silicon 或 Intel 的 .dmg · 已签名并公证",
+          dlLinuxTitle: "Linux",
+          dlLinuxNote: "x64 或 ARM64 · 无需额外系统软件包",
+          dlGet: "获取",
+          dlAdvanced: "进阶:一个已签名的 minicon.com 启动器把所有平台打包进单个文件。",
+          dlTrust: "Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB——实测,不是估算。开源(MIT 或 Apache-2.0);无遥测、无账号、无自动更新。",
         },
-"zh-Hant": {
+        "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
-          description: "MiniCon —— Windows、Linux、macOS × x86_64、aarch64 六格原生執行檔，另提供已簽署的單檔六格啟動器。免安裝、免捆綁語言執行環境、免背景服務。",
+          description: "MiniCon 是一個面向 Windows、Linux、macOS(Intel 與 Apple Silicon)的單檔終端機。免安裝、免捆綁執行環境、背景零常駐——複製一個檔案就能跑。已簽署並公證,每個部分都能用腳本驅動。",
           skip: "跳到內容",
           navLabel: "主導覽",
           languageLabel: "語言",
-          navWhat: "是什麼",
-          navOld: "舊版 Windows",
           navScript: "腳本操控",
-          navFamily: "AgenTerm",
-          navInstall: "取得",
           navDocs: "文件",
-          heroEyebrow: "一個檔案 · 六格平台 · 免安裝",
+          heroEyebrow: "一個檔案 · 免安裝 · 刪掉不留痕",
           heroTitle: "一個<em>檔案</em>就是一個終端機。",
-          heroEmotion: "複製過去，執行。安裝就這樣結束了。",
-          heroLead: "MiniCon 為 Windows、Linux、macOS × x86_64、aarch64 六格提供原生執行檔，另有已簽署的單檔六格啟動器。沒有安裝程式或捆綁語言執行環境；每個部分都可由腳本操控與讀取。",
-          ctaGet: "取得 MiniCon",
+          heroEmotion: "複製過去,在一般電腦上直接執行。",
+          heroLead: "複製一個檔案就能執行——一個面向 Windows、macOS、Linux 的快速終端機,帶獨立的輸入行,還有一個腳本能讀取的控制指令。",
+          ctaGet: "下載",
           ctaSource: "GitHub 原始碼",
-          ctaOld: "舊版 Windows 支援",
-          heroCtaHint: "永久開源(MIT 或 Apache-2.0) · 已簽署並公證 · 刪掉即卸載",
-          specLabel: "產品規格",
-          specSize: "Windows <strong>約 660 KB</strong> · macOS <strong>約 1.4 MB</strong> · Linux <strong>約 5 MB</strong>",
-          specBudget: "<strong>依 profile</strong> 報告體積",
-          specDeps: "只依賴系統程式庫",
-          specOld: "Windows Server 2016 起",
-          specOpen: "MIT / Apache-2.0",
-          specSigned: "已簽署並公證",
           pillarsTitle: "開源、安全、迷你——都是刻意為之。",
           pillarOpenRule: "永久開源",
           pillarOpenBody: "MIT 或 Apache-2.0,而且永遠如此。每一行都能讀、能自己編譯、能 fork。無遙測、無帳號、無自動更新、不回傳——原始碼就是產品。",
           pillarSafeRule: "已簽署並公證",
-          pillarSafeBody: "自 v0.1.9 起,Windows 二進位與 minicon.com 經 Authenticode 簽署,macOS 版經 Developer ID 簽署並通過 Apple 公證,主體均為 PARTNERNET SOFTWARE PTY LTD。Windows 匯入表被限制在系統程式庫內;背景什麼都不跑。",
+          pillarSafeBody: "Windows 與 macOS 的下載都經過程式碼簽署,macOS 版還通過 Apple 公證(主體:PARTNERNET SOFTWARE PTY LTD),系統開箱即信任。背景什麼都不跑,只用系統自帶的程式庫。",
           pillarSmallRule: "真的迷你",
-          pillarSmallBody: "一個檔案——Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB,每個體積都是實測,不是估算。免安裝,免捆綁語言執行環境。",
+          pillarSmallBody: "一個檔案——Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB,都是實測,不是估算。免安裝,不捆綁語言執行環境。",
           pillarLeanRule: "極省資源",
-          pillarLeanBody: "記憶體占用很小,沒有常駐程序。啟動快,帶真 PTY 與回捲;視窗一關什麼都不留——刪掉檔案,就沒了。",
-          invariantHeading: "MiniCon 是什麼",
-          inv1Rule: "就一個檔案",
-          inv1Body: "整個產品就是那個執行檔。不安裝任何東西、不留背景程式，刪掉檔案就等於完全移除。",
-          inv2Rule: "小，也要有證據",
-          inv2Body: "Windows 匯入表受系統程式庫檢查；執行檔體積依每個目標和 profile 實測、報告。",
-          inv3Rule: "小，但不是玩具",
-          inv3Body: "真 PTY、真 VT 解析、分頁樹、輸入法、滑鼠、回捲，還有一套腳本可驅動的控制介面。",
-          shotTitle: "這就是應用程式的全部。",
-          shotLead: "一欄分頁、一個終端機、一行輸入。沒有面板要排、沒有工作區要設定、沒有帳號要註冊。",
-          shotAlt: "預設 Neutral Ink 主題下的 MiniCon 視窗:深色單色兩工具頭部(新建與設定)、左側三個分頁,終端機裡是帶彩色 git 輸出的 zsh 工作階段,底部狀態列顯示游標行列。",
-          shotCaption: "預設的 Neutral Ink 主題——分頁樹、終端機、獨立輸入行，以及狀態列裡定寬的 L###:C### 游標讀數。",
+          pillarLeanBody: "啟動飛快、占用極小、沒有背景服務。開著時保留真實 shell 工作階段與完整回捲;關窗後什麼都不留。",
           shotThemesLead: "三款內建主題。在設定裡切換,或以 Ctrl+Shift+P 循環。",
           shotDocsAlt: "同一個 MiniCon 視窗在 Docs Ink 主題下:深藍墨色的分頁欄、頭部與輸入區,配青色強調色。",
           shotDocsCaption: "Docs Ink——深藍墨色主題,青色強調。",
           shotPaperAlt: "同一個 MiniCon 視窗在 Paper Ink 主題下:淺色分頁欄、頭部與輸入區,配藍綠強調色。",
           shotPaperCaption: "Paper Ink——同色系的淺色主題,藍綠強調。",
-          shotSettingsTitle: "一個面板管全部。",
-          shotSettingsLead: "介面語言、字級、主題、以及每一個快捷鍵——集中一處,無需翻選單。",
           shotSettingsAlt: "在終端機上方開啟的設定面板:介面語言按鈕(English、簡、繁)、字級加減、三個主題色板,以及快捷鍵清單。",
           shotSettingsCaption: "設定面板:介面語言、字級、三個主題色板,以及快捷鍵速查。",
-          oldTitle: "在現代終端機跑不動的地方，它跑得動。",
-          oldLead: "Windows 到 build 17763（1809 版）才有虛擬主控台。建構在它之上的終端機就停在那裡——而微軟的 ConPTY 可轉散發套件並不能往下相容，因為它支援的版本和系統內建的一模一樣。MiniCon 在 Windows Server 2016 上照樣跑。",
-          old1Index: "01 / 執行期解析，而非匯入",
-          old1Title: "缺一個 API 不等於程式報廢",
-          old1Body: "虛擬主控台的進入點是執行期查找的。若採靜態匯入，少一個符號程式就在啟動前被擋下——跳出一個你無從處理的符號名稱。",
-          old2Index: "02 / 後備方案",
-          old2Title: "它自備主控台代理",
-          old2Body: "沒有 ConPTY 時，MiniCon 重新執行自己，把你的 shell 放進一個隱藏主控台並讀取畫面緩衝區。那個代理就是 MiniCon 本身——不必額外發佈第二個執行檔。",
-          old3Index: "03 / 看能力，不看版本號",
-          old3Title: "它問系統，不查表",
-          old3Body: "後端是依「匯出是否存在」來選的。用版本號比對的話，只要情況一變就得重新檢討；版本號只用在給你看的訊息裡。",
-          old5Index: "05 / 自我描述",
-          old5Title: "它會告訴你它拿到了什麼",
-          old5Body: "`--status` 回報這台機器選了哪個後端與原因、系統實際解析到哪個字體與其實測字寬，以及失敗寫在哪裡。它不開視窗，所以在「開終端機這件事本身就壞掉」的機器上照樣能跑。",
-          old4Index: "04 / 免可轉散發套件",
-          old4Title: "不必先裝別的東西",
-          old4Body: "VC 執行期是靜態連結進去的。有一項測試會解析發佈執行檔的匯入表，一旦出現 Windows 自帶集合以外的東西就失敗，所以不可能悄悄退步。",
+          oldTitle: "在舊版 Windows 上照樣跑。",
+          oldLead: "新一點的終端機需要較新的 Windows 版本,在老機器上根本裝不上。MiniCon 一路支援到 Windows Server 2016:有新式主控台就用,沒有就自己把 shell 跑起來——同一個檔案,直接就能用。",
           inputTitle: "一個不與輸出混在一起的輸入區。",
-          inputLead: "多數終端機要你在「程式正在輸出的同一塊區域」裡打字。一長串指令和一波輸出交錯在畫面上，你會弄不清自己到底打了什麼。MiniCon 給輸入一塊自己的區域——而輸入一旦有了自己的區域，就能做到輸出區做不到的事。",
+          inputLead: "多數終端機要你在「程式正在輸出的同一塊區域」裡打字,一長串指令和一波輸出容易攪成一團。MiniCon 給輸入單獨一行。",
           input1Index: "01 / 不互相干擾",
           input1Title: "一邊滾一邊寫",
           input1Body: "輸出持續進來的同時，照樣書寫並檢查一長串指令。你打的字不會和程式印的東西交錯，清畫面也帶不走你寫到一半的那行。",
@@ -830,38 +672,51 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input2Body: "上下鍵走訪先前送出的內容，重送或改一改都不必重打。開始翻閱時你打到一半的字會被保留，往前翻過最新一筆會原樣放回。",
           input3Index: "03 / 它會說送去哪",
           input3Title: "叫名字，不是叫號碼",
-          input3Body: "標籤上寫的是文字要送往哪個分頁的名字。在分頁樹裡，知道哪個終端機即將收到這道指令，是「有把握」和「用猜的」之間的差別。",
+          input3Body: "標籤上寫著文字將送往哪個分頁的名字——在分頁樹裡,你始終清楚指令會去哪。",
           scriptTitle: "一個腳本看得進去的終端機。",
-          scriptLead: "送出一個按鍵是簡單的那一半。MiniCon 的控制 CLI 把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等真實條件，而不是計時器。只有傳了 --control，這一窗才會在本機 Unix socket 或命名管道上聽；關窗即拆。那不是 AgenTerm 工作臺的 server。",
-          scriptSnapshot: "焦點、輸入法狀態、輸入內容、待處理工作與控制項座標，以 JSON 回傳。",
-          scriptWait: "阻塞到條件成立或逾時為止，並回報是哪一種。",
-          scriptInput: "具名按鍵、以終端格為單位的滑鼠事件、捲動，以及輸入法組字——走的都是真人輸入的同一條路徑。",
-          installTitle: "取得方式",
-          installLead: "下載原生封裝或已簽署並公證的 minicon.com 即可執行，不另帶安裝程式或語言執行環境。Linux 執行檔已內嵌僅執行期的 X11 bridge 與 XCB-XKB 相依項，不需要 -dev 套件。",
+          scriptLead: "送一個按鍵很簡單,但那是「盲送」。MiniCon 的控制指令能把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等一個真實結果,而不是靠 sleep 瞎猜。而且全程本機:沒有伺服器、沒有網路、沒有雲。",
+          scriptSnapshot: "焦點、輸入法狀態、待處理工作與版面——以 JSON 回傳。",
+          scriptWait: "阻塞到條件成立或逾時,並回報是哪一種。",
+          scriptInput: "敲鍵、點擊與捲動,甚至中日韓組字——走的都是真人輸入的同一條路徑。",
           installRelease: "最新發行版",
           installBuild: "自行建置",
-          familyTitle: "MiniCon 是終端機。AgenTerm 是 Agent 時代的工作臺。",
-          familyLead: "同一套平台層，職責不同。MiniCon 是一個檔案、一扇窗。需要工作階段比這一窗更長——Fleet、mux、持久化、Agent 權限——那就是 AgenTerm。",
-          familyMiniDt: "MiniCon",
-          familyMiniDd: "本機 conhost：PTY、分頁、輸入列、輸入法。自動化是這一 GUI 行程裡的 --control（Unix socket / 命名管道）。關窗，endpoint 就沒了。沒有常駐服務、沒有預設連接埠、沒有遠端。",
-          familyAgenDt: "AgenTerm",
-          familyAgenDd: "同一套原生繪製與獨立輸入區之上的 Agent 時代升級：工作臺的 server 身分可以比單一終端更長。動詞拼寫可以相同，線與壽命不同。",
-          installHonest: "<strong>範圍要說清楚。</strong>MiniCon 對 Windows、Linux、macOS × x86_64、aarch64 六格做資格驗證。舊版 Windows 後備與 PE 匯入表門禁是 Windows 專屬；終端、介面與控制契約涵蓋全部六格。沒有工作臺 server、持久化、MCP 或外掛，這是刻意的；需要那些時請用 AgenTerm。",
           docsTitle: "文件",
-          docsLead: "寫成可查核的樣子。只要出現數字，都是量出來的。",
+          docsLead: "寫成可查核的樣子:凡是數字,都是量出來的。",
           docsOldTitle: "在舊版 Windows 上執行",
-          docsOldBody: "為什麼其他終端機停在 build 17763、MiniCon 改用什麼做法、確切的相依集合，以及機器仍然啟動失敗時該怎麼診斷。",
+          docsOldBody: "為什麼別的終端機停在較新的 Windows 版本、MiniCon 改用什麼做法,以及機器仍然啟動失敗時該怎麼診斷。",
           docsCliTitle: "用腳本驅動 MiniCon",
-          docsCliBody: "完整控制介面：讀取狀態、等待條件、送出輸入、管理分頁樹，以及用單一指令取代 shell。",
+          docsCliBody: "完整控制介面:讀取狀態、等待條件、送出輸入、管理分頁,以及用單一指令取代 shell。",
           docsRepoTitle: "原始碼與測試",
-          docsRepoBody: "這裡宣稱的行為都由測試套件釘住——包含六格產物、Windows 匯入表門禁、實測體積與 CLI 自身契約。",
+          docsRepoBody: "這裡宣稱的行為都由測試套件釘住——下載體積、Windows 相依檢查,以及控制指令自身的行為。",
           footerRepo: "GitHub",
           footerReleases: "發行版",
           footerOld: "舊版 Windows",
           footerCli: "控制 CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 為 PartnerNet Software 之商標。",
-          footerOrigin: "MiniCon 是一檔案本機終端。AgenTerm 是同一平台上的 Agent 時代工作臺。MiniCon 源自 AgenTerm 的最小主控台宿主，於 2026 年 8 月獨立成產品。"
+          footerOrigin: "MiniCon 是一檔案本機終端。AgenTerm 是同一平台上的 Agent 時代工作臺。MiniCon 源自 AgenTerm 的最小主控台宿主，於 2026 年 8 月獨立成產品。",
+          navInput: "獨立輸入",
+          navThemes: "主題",
+          navDownload: "下載",
+          heroShotAlt: "MiniCon 視窗:左側分頁樹、帶彩色 git 輸出的終端機,底部是帶「傳送」與「換行」的獨立輸入行。",
+          heroShotCaption: "整個應用程式:分頁樹、終端機,以及底部獨立的輸入行。",
+          inputShotAlt: "數百行建構輸出在終端機裡飛速捲動,而下方獨立輸入行裡靜靜躺著一條尚未送出的長指令。",
+          inputShotCaption: "輸出不斷刷屏,一條長指令仍原封不動地留在輸入行裡。Enter 換行,Ctrl+O 送出。",
+          uiTitle: "按你的喜好來。",
+          uiLead: "三款內建主題,以及一個把一切集中在一處的設定面板——語言、字級、主題與快捷鍵清單。",
+          oldNote: "它在 Windows Server 2016 以上都能跑。所需的一切都在這一個檔案裡——不必另裝任何東西。",
+          oldLink: "它是怎麼做到的",
+          downloadTitle: "下載",
+          downloadLead: "選你的平台,直接執行檔案。沒有安裝程式,也不必先裝執行環境。",
+          dlWinTitle: "Windows",
+          dlWinNote: "x64 或 ARM64 · 已簽署(Authenticode)",
+          dlMacTitle: "macOS",
+          dlMacNote: "Apple Silicon 或 Intel 的 .dmg · 已簽署並公證",
+          dlLinuxTitle: "Linux",
+          dlLinuxNote: "x64 或 ARM64 · 無需額外系統套件",
+          dlGet: "取得",
+          dlAdvanced: "進階:一個已簽署的 minicon.com 啟動器把所有平台打包進單一檔案。",
+          dlTrust: "Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB——實測,不是估算。開源(MIT 或 Apache-2.0);無遙測、無帳號、無自動更新。",
         }
       };
 
