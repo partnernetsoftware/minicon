@@ -1,4 +1,4 @@
-# 0.1.10 UI — finish the ui/ui-design vision (do it properly)
+# 0.1.10 UI — finish the ui/ui-design vision (SHIPPED in v0.1.10, 2026-09-14)
 
 0.1.8/0.1.9 shipped A+B+C+D from the `ui/ui-design/` study. 0.1.10 must finish
 the two deferred pieces **completely** — no half-delivery. Both are in the design
