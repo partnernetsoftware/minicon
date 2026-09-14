@@ -3510,6 +3510,10 @@ impl ConApp {
                 self.ui_theme,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                self.active_session_opt().map_or(100, |session| {
+                    ((session.font_size_logical / session.font_size_baseline.max(1.0)) * 100.0)
+                        .round() as u16
+                }),
             );
         }
         Ok(())
@@ -3634,6 +3638,10 @@ impl ConApp {
                 self.ui_theme,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                self.active_session_opt().map_or(100, |session| {
+                    ((session.font_size_logical / session.font_size_baseline.max(1.0)) * 100.0)
+                        .round() as u16
+                }),
             );
         }
     }
@@ -5949,6 +5957,19 @@ impl PixelWindowApplication for ConApp {
         {
             return Ok(PixelWindowDirective::Continue);
         }
+        // Escape closes the settings panel — the expected modal dismissal —
+        // before the key reaches the composer or terminal.
+        if self.settings_open
+            && let PixelWindowEvent::Keyboard(key) = &event
+            && key.state == KeyPressState::Pressed
+            && matches!(key.logical, LogicalKey::Named(NamedKey::Escape))
+            && !key.modifiers.control
+            && !key.modifiers.alt
+        {
+            self.settings_open = false;
+            self.mark_host_ui_full_and_repaint(window);
+            return Ok(PixelWindowDirective::Continue);
+        }
         if let PixelWindowEvent::MouseWheel {
             delta,
             position: Some(position),
@@ -6771,6 +6792,7 @@ fn paint_settings_panel(
     ui_theme: theme::ThemeChoice,
     shortcuts: [&str; 12],
     font_size_px: u16,
+    font_percent: u16,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
     let s = layout.settings_panel(scale);
@@ -6831,7 +6853,10 @@ fn paint_settings_panel(
     // Font size
     section_label(surface, s.font_down, strings.settings_font);
     option(surface, s.font_down, "-", false);
-    option(surface, s.font_reset, "100%", false);
+    // The reset cell shows the current zoom, so it reads as a live readout
+    // rather than a misleading static "100%" after Ctrl+wheel zooming.
+    let font_percent_label = format!("{font_percent}%");
+    option(surface, s.font_reset, &font_percent_label, false);
     option(surface, s.font_up, "+", false);
     // Theme (each swatch shows that theme's own canvas + accent stripe)
     section_label(surface, s.theme[0], strings.settings_theme);
