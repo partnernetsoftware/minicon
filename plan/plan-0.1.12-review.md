@@ -42,6 +42,22 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 
 ## Backlog — UI/UX (finish what shipped; user value / effort)
 
+- [ ] **M-L** — Composer text selection with Shift+Arrows (requested):
+  Shift+←/→ extend by character, Shift+↑/↓ extend by line, Shift+Home/End to
+  line ends. The composer today has only a `select_all` boolean, so this needs
+  a real anchor/caret selection model in `crates/minicon-core/src/composer.rs`
+  (add `anchor: Option<usize>`, `Move::Up`/`Down` with column-preserving
+  vertical motion, generalize `prepare_edit`/`cut`/`selected_text` to the
+  selection range) plus **per-row highlight rendering** woven into the existing
+  multi-line horizontal-window paint in `paint_host_ui` (main.rs ~3392), plus
+  Shift+arrow key dispatch (main.rs ~2081). Validate with composer unit tests +
+  a scripted `send-ui-keys Shift+Left` screenshot of the highlight. Do as one
+  dedicated, tested unit — it's a core editing path.
+- [x] Paste-review preview collapsed multiline to one line on macOS/Linux —
+  FIXED (`6a5c8f3`): emit the host control's newline form (CRLF Windows, LF
+  else).
+- [x] Settings panel: live zoom % readout + Escape-to-close (`2878825`).
+
 - [ ] **S** — Crosshair defaults ON with no discoverable off-switch; the
   mouse-following band is surprising for a minimal terminal. Reconsider default
   OFF, or make it clearly discoverable (now at least listed in the panel).
