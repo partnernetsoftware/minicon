@@ -191,6 +191,7 @@
       grid-template-columns: repeat(2, 1fr); gap: 1.4rem;
     }
     @media (max-width: 640px) { .shot-gallery { grid-template-columns: 1fr; } }
+    .shot-sub { margin-top: 3rem; }
 
     pre.code {
       background: #070b10; border: 1px solid var(--border);
@@ -320,23 +321,34 @@
         <figure class="shot">
           <img src="assets/minicon-neutral.png" width="1200" height="748" loading="lazy"
                data-i18n-alt="shotAlt"
-               alt="The default MiniCon window in the Neutral Ink theme: a light two-tool header (New and Settings), three tabs on the left, a zsh session with colorized git output, and a bottom status bar showing the cursor line and column.">
-          <figcaption data-i18n="shotCaption">The default look — no theme applied. Tab tree, terminal, a separate input line, and a fixed-width L###:C### cursor readout in the status bar.</figcaption>
+               alt="MiniCon in its default Neutral Ink theme: a dark monochrome two-tool header (New and Settings), three tabs on the left, a zsh session with colorized git output, and a bottom status bar showing the cursor line and column.">
+          <figcaption data-i18n="shotCaption">The default Neutral Ink theme — tab tree, terminal, a separate input line, and a fixed-width L###:C### cursor readout in the status bar.</figcaption>
         </figure>
+
+        <p class="section-lead shot-sub" data-i18n="shotThemesLead">Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.</p>
         <div class="shot-gallery">
           <figure class="shot">
-            <img src="assets/minicon-settings.png" width="1200" height="748" loading="lazy"
-                 data-i18n-alt="shotSettingsAlt"
-                 alt="MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.">
-            <figcaption data-i18n="shotSettingsCaption">Everything in one panel: interface language, font size, three themes, and the shortcut reference — no menus to hunt through.</figcaption>
+            <img src="assets/minicon-docs.png" width="1200" height="748" loading="lazy"
+                 data-i18n-alt="shotDocsAlt"
+                 alt="The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.">
+            <figcaption data-i18n="shotDocsCaption">Docs Ink — a dark blue-ink theme with cyan accents.</figcaption>
           </figure>
           <figure class="shot">
-            <img src="assets/minicon-docs.png" width="1200" height="748" loading="lazy"
-                 data-i18n-alt="shotThemesAlt"
-                 alt="The same MiniCon window in the dark Docs Ink theme, with a dark tab column and header.">
-            <figcaption data-i18n="shotThemesCaption">Three built-in themes, light to dark. Pick one in Settings, or cycle with Ctrl+Shift+P.</figcaption>
+            <img src="assets/minicon-paper.png" width="1200" height="748" loading="lazy"
+                 data-i18n-alt="shotPaperAlt"
+                 alt="The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.">
+            <figcaption data-i18n="shotPaperCaption">Paper Ink — a light theme in the same hues, with teal accents.</figcaption>
           </figure>
         </div>
+
+        <h2 class="shot-sub" data-i18n="shotSettingsTitle">One panel for everything.</h2>
+        <p class="section-lead" data-i18n="shotSettingsLead">Interface language, font size, theme, and every shortcut — in one place, no menus to hunt through.</p>
+        <figure class="shot">
+          <img src="assets/minicon-settings.png" width="1200" height="748" loading="lazy"
+               data-i18n-alt="shotSettingsAlt"
+               alt="MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.">
+          <figcaption data-i18n="shotSettingsCaption">The settings panel: interface language, font size, three theme swatches, and the shortcut reference.</figcaption>
+        </figure>
       </div>
     </section>
 
@@ -548,12 +560,17 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           inv3Body: "Real PTY, real VT parsing, tabs, IME, mouse, scrollback — small is the size, not the feature list.",
           shotTitle: "This is the whole application.",
           shotLead: "A tab column, a terminal, an input line. That's it.",
-          shotAlt: "The default MiniCon window in the Neutral Ink theme: a light two-tool header (New and Settings), three tabs on the left, a zsh session with colorized git output, and a bottom status bar showing the cursor line and column.",
-          shotCaption: "The default look — no theme applied. Tab tree, terminal, a separate input line, and a fixed-width L###:C### cursor readout in the status bar.",
+          shotAlt: "MiniCon in its default Neutral Ink theme: a dark monochrome two-tool header (New and Settings), three tabs on the left, a zsh session with colorized git output, and a bottom status bar showing the cursor line and column.",
+          shotCaption: "The default Neutral Ink theme — tab tree, terminal, a separate input line, and a fixed-width L###:C### cursor readout in the status bar.",
+          shotThemesLead: "Three built-in themes. Switch in Settings, or cycle with Ctrl+Shift+P.",
+          shotDocsAlt: "The same MiniCon window in the Docs Ink theme: a dark blue-ink tab column, header, and composer, with cyan accents.",
+          shotDocsCaption: "Docs Ink — a dark blue-ink theme with cyan accents.",
+          shotPaperAlt: "The same MiniCon window in the Paper Ink theme: a light tab column, header, and composer, with teal accents.",
+          shotPaperCaption: "Paper Ink — a light theme in the same hues, with teal accents.",
+          shotSettingsTitle: "One panel for everything.",
+          shotSettingsLead: "Interface language, font size, theme, and every shortcut — in one place, no menus to hunt through.",
           shotSettingsAlt: "MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.",
-          shotSettingsCaption: "Everything in one panel: interface language, font size, three themes, and the shortcut reference — no menus to hunt through.",
-          shotThemesAlt: "The same MiniCon window in the dark Docs Ink theme, with a dark tab column and header.",
-          shotThemesCaption: "Three built-in themes, light to dark. Pick one in Settings, or cycle with Ctrl+Shift+P.",
+          shotSettingsCaption: "The settings panel: interface language, font size, three theme swatches, and the shortcut reference.",
           oldTitle: "It runs where modern terminals cannot.",
           oldLead: "Windows Terminal needs build 17763, and so does ConPTY. Your Server 2016 box has neither. MiniCon doesn't care — it finds the pseudoconsole at run time, or hosts the shell itself.",
           old1Index: "01 / NO DEAD END",
@@ -659,12 +676,17 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           inv3Body: "真 PTY、真 VT 解析、标签页、输入法、鼠标、回滚——小的是体积，不是功能。",
           shotTitle: "这就是整个应用。",
           shotLead: "一列标签页、一个终端、一行输入。就这些。",
-          shotAlt: "Neutral Ink 主题下的 MiniCon 默认窗口：浅色两工具头部(新建与设置)、左侧三个标签，终端里是带彩色 git 输出的 zsh 会话，底部状态栏显示光标行列。",
-          shotCaption: "默认外观——未套用任何主题。标签树、终端、独立输入行，以及状态栏里定宽的 L###:C### 光标读数。",
+          shotAlt: "默认 Neutral Ink 主题下的 MiniCon 窗口：深色单色两工具头部(新建与设置)、左侧三个标签，终端里是带彩色 git 输出的 zsh 会话，底部状态栏显示光标行列。",
+          shotCaption: "默认的 Neutral Ink 主题——标签树、终端、独立输入行，以及状态栏里定宽的 L###:C### 光标读数。",
+          shotThemesLead: "三款内置主题。在设置里切换，或用 Ctrl+Shift+P 循环。",
+          shotDocsAlt: "同一个 MiniCon 窗口在 Docs Ink 主题下：深蓝墨色的标签列、头部与输入区，配青色高亮。",
+          shotDocsCaption: "Docs Ink——深蓝墨色主题，青色高亮。",
+          shotPaperAlt: "同一个 MiniCon 窗口在 Paper Ink 主题下：浅色标签列、头部与输入区，配蓝绿高亮。",
+          shotPaperCaption: "Paper Ink——同色系的浅色主题，蓝绿高亮。",
+          shotSettingsTitle: "一个面板管全部。",
+          shotSettingsLead: "界面语言、字号、主题、以及每一个快捷键——集中一处，无需翻菜单。",
           shotSettingsAlt: "在终端上方打开的设置面板：界面语言按钮(English、简、繁)、字号加减、三个主题色板，以及快捷键列表。",
-          shotSettingsCaption: "一个面板搞定：界面语言、字号、三种主题、快捷键速查——无需翻菜单。",
-          shotThemesAlt: "同一个 MiniCon 窗口在深色 Docs Ink 主题下，标签列与头部为深色。",
-          shotThemesCaption: "三款内置主题，由浅到深。在设置里点选，或用 Ctrl+Shift+P 循环切换。",
+          shotSettingsCaption: "设置面板：界面语言、字号、三个主题色板，以及快捷键速查。",
           oldTitle: "现代终端跑不动的地方，它跑得动。",
           oldLead: "Windows Terminal 要 build 17763，ConPTY 也要。你的 Server 2016 两样都没有。MiniCon 不在乎——运行时找到伪控制台就用，找不到就自己托管 shell。",
           old1Index: "01 / 没有死路",
@@ -770,12 +792,17 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           inv3Body: "真 PTY、真 VT 解析、分頁樹、輸入法、滑鼠、回捲，還有一套腳本可驅動的控制介面。",
           shotTitle: "這就是應用程式的全部。",
           shotLead: "一欄分頁、一個終端機、一行輸入。沒有面板要排、沒有工作區要設定、沒有帳號要註冊。",
-          shotAlt: "Neutral Ink 主題下的 MiniCon 預設視窗:淺色兩工具頭部(新建與設定)、左側三個分頁,終端機裡是帶彩色 git 輸出的 zsh 工作階段,底部狀態列顯示游標行列。",
-          shotCaption: "預設外觀——未套用任何主題。分頁樹、終端機、獨立輸入行，以及狀態列裡定寬的 L###:C### 游標讀數。",
+          shotAlt: "預設 Neutral Ink 主題下的 MiniCon 視窗:深色單色兩工具頭部(新建與設定)、左側三個分頁,終端機裡是帶彩色 git 輸出的 zsh 工作階段,底部狀態列顯示游標行列。",
+          shotCaption: "預設的 Neutral Ink 主題——分頁樹、終端機、獨立輸入行，以及狀態列裡定寬的 L###:C### 游標讀數。",
+          shotThemesLead: "三款內建主題。在設定裡切換,或以 Ctrl+Shift+P 循環。",
+          shotDocsAlt: "同一個 MiniCon 視窗在 Docs Ink 主題下:深藍墨色的分頁欄、頭部與輸入區,配青色強調色。",
+          shotDocsCaption: "Docs Ink——深藍墨色主題,青色強調。",
+          shotPaperAlt: "同一個 MiniCon 視窗在 Paper Ink 主題下:淺色分頁欄、頭部與輸入區,配藍綠強調色。",
+          shotPaperCaption: "Paper Ink——同色系的淺色主題,藍綠強調。",
+          shotSettingsTitle: "一個面板管全部。",
+          shotSettingsLead: "介面語言、字級、主題、以及每一個快捷鍵——集中一處,無需翻選單。",
           shotSettingsAlt: "在終端機上方開啟的設定面板:介面語言按鈕(English、簡、繁)、字級加減、三個主題色板,以及快捷鍵清單。",
-          shotSettingsCaption: "一個面板搞定:介面語言、字級、三款主題、快捷鍵速查——無需翻選單。",
-          shotThemesAlt: "同一個 MiniCon 視窗在深色 Docs Ink 主題下,分頁欄與頭部為深色。",
-          shotThemesCaption: "三款內建主題,由淺至深。在設定裡點選,或以 Ctrl+Shift+P 循環切換。",
+          shotSettingsCaption: "設定面板:介面語言、字級、三個主題色板,以及快捷鍵速查。",
           oldTitle: "在現代終端機跑不動的地方，它跑得動。",
           oldLead: "Windows 到 build 17763（1809 版）才有虛擬主控台。建構在它之上的終端機就停在那裡——而微軟的 ConPTY 可轉散發套件並不能往下相容，因為它支援的版本和系統內建的一模一樣。MiniCon 在 Windows Server 2016 上照樣跑。",
           old1Index: "01 / 執行期解析，而非匯入",
