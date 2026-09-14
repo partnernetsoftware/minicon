@@ -3479,12 +3479,15 @@ impl ConApp {
         // The status readout follows the grid crosshair (the hovered cell) when
         // the pointer has been over the terminal, and falls back to the text
         // cursor otherwise.
-        let status_cursor = self
-            .active_session_opt()
-            .map(|session| match session.crosshair_cell {
-                Some(cell) => (cell.row, cell.col),
-                None => session.parser.screen().cursor_position(),
-            });
+        let status_cursor = self.active_session_opt().map(|session| {
+            if session.crosshair_active
+                && let Some(cell) = session.crosshair_cell
+            {
+                (cell.row, cell.col)
+            } else {
+                session.parser.screen().cursor_position()
+            }
+        });
         let status_label = self
             .active_session_opt()
             .map_or("", |session| session.current_title.as_str());
@@ -5644,7 +5647,9 @@ impl ConTerminal {
             let row_y = self
                 .content_top_px
                 .saturating_add(u32::from(cell.row).saturating_mul(self.cell_h));
-            let mark = Rgb(0xff, 0xff, 0xff);
+            // Follow the terminal foreground so the crosshair stays visible on
+            // every theme (a hardcoded white vanished on the light Paper theme).
+            let mark = self.default_fg;
             surface.blend_rect(
                 self.content_left_px,
                 row_y,
@@ -5665,24 +5670,27 @@ impl ConTerminal {
             surface.blend_rect(self.content_left_px, row_y, term_w, 1, mark, 0.28);
         }
 
+        // Scrollbar tones ride the terminal palette so they stay legible on
+        // every theme (a fixed dark track was near-invisible on light Paper).
+        let track_color = palette::blend(self.default_bg, self.default_fg, 0.12);
+        let thumb_color = palette::blend(
+            self.default_bg,
+            self.default_fg,
+            if scrollbar_active { 0.55 } else { 0.33 },
+        );
         surface.fill_rect(
             scrollbar.track.left.max(0) as u32,
             scrollbar.track.top.max(0) as u32,
             scrollbar.track.width().max(0) as u32,
             scrollbar.track.height().max(0) as u32,
-            Rgb(0x18, 0x18, 0x18).to_xrgb(),
+            track_color.to_xrgb(),
         );
         surface.fill_rect(
             scrollbar.thumb.left.max(0) as u32,
             scrollbar.thumb.top.max(0) as u32,
             scrollbar.thumb.width().max(0) as u32,
             scrollbar.thumb.height().max(0) as u32,
-            if scrollbar_active {
-                Rgb(0xF0, 0xF0, 0xF0)
-            } else {
-                Rgb(0xA8, 0xA8, 0xA8)
-            }
-            .to_xrgb(),
+            thumb_color.to_xrgb(),
         );
 
         self.write_snapshot_if_requested();
@@ -6761,7 +6769,7 @@ fn paint_settings_panel(
     theme: theme::Theme,
     ui_language: ui::UiLanguage,
     ui_theme: theme::ThemeChoice,
-    shortcuts: [&str; 8],
+    shortcuts: [&str; 12],
     font_size_px: u16,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;

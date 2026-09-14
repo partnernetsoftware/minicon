@@ -346,37 +346,49 @@ impl UiLanguage {
     }
 
     #[must_use]
-    pub const fn help_lines(self) -> [&'static str; 8] {
+    pub const fn help_lines(self) -> [&'static str; 12] {
         match self {
             Self::English => [
-                "KEYBOARD + FEATURES",
-                "Ctrl+Shift+T   New tab",
+                "KEYBOARD",
+                "Ctrl+Shift+T   New root",
+                "Ctrl+Shift+N   New child",
                 "Ctrl+Shift+W   Close tab",
+                "Ctrl+Shift+[/] Switch tab",
                 "Ctrl+Shift+I   Focus input",
-                "Ctrl+O         Send input",
+                "Ctrl+Shift+P   Cycle theme",
+                "Ctrl+Shift+,   Settings",
+                "Ctrl+Shift+G   Crosshair",
+                "Ctrl+O         Send",
                 "Enter          Newline",
-                "Ctrl+[ / ]     Prev / next",
-                "Tab tree · composer · PTY",
+                "Up / Down      History",
             ],
             Self::ChineseSimplified => [
-                "快捷键与功能",
-                "Ctrl+Shift+T   新建标签",
+                "快捷键",
+                "Ctrl+Shift+T   新建根",
+                "Ctrl+Shift+N   新建子",
                 "Ctrl+Shift+W   关闭标签",
+                "Ctrl+Shift+[/] 切换标签",
                 "Ctrl+Shift+I   聚焦输入",
-                "Ctrl+O         送出输入",
+                "Ctrl+Shift+P   切换主题",
+                "Ctrl+Shift+,   设置",
+                "Ctrl+Shift+G   十字线",
+                "Ctrl+O         发送",
                 "Enter          软换行",
-                "Ctrl+[ / ]     切换标签",
-                "标签树 · 多行输入 · PTY",
+                "Up / Down      历史",
             ],
             Self::ChineseTraditional => [
-                "快捷鍵與功能",
-                "Ctrl+Shift+T   新建分頁",
+                "快捷鍵",
+                "Ctrl+Shift+T   新建根",
+                "Ctrl+Shift+N   新建子",
                 "Ctrl+Shift+W   關閉分頁",
+                "Ctrl+Shift+[/] 切換分頁",
                 "Ctrl+Shift+I   聚焦輸入",
-                "Ctrl+O         送出輸入",
+                "Ctrl+Shift+P   切換主題",
+                "Ctrl+Shift+,   設定",
+                "Ctrl+Shift+G   十字線",
+                "Ctrl+O         送出",
                 "Enter          軟換行",
-                "Ctrl+[ / ]     切換分頁",
-                "標籤樹 · 多行輸入 · PTY",
+                "Up / Down      歷史",
             ],
         }
     }
@@ -459,7 +471,7 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
 }
 
 /// Number of settings-panel shortcut lines (mirrors `UiLanguage::help_lines`).
-pub const SETTINGS_SHORTCUT_LINES: u32 = 8;
+pub const SETTINGS_SHORTCUT_LINES: u32 = 12;
 
 /// Geometry of the settings panel and its interactive controls. Computed on
 /// demand from the `Layout` + scale so paint and hit-testing agree exactly.
