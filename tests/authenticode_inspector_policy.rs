@@ -51,7 +51,10 @@ fn portable_inspector_does_not_claim_windows_authority() {
         TRUST_BUNDLE.contains("36e731cfa9bfd69dafb643809f6dec500902f7197daeaad86ea0159a2268a2b8")
     );
     assert!(TRUST_BUNDLE.contains("mv -- \"$staged\" \"$output\""));
-    assert!(words.contains("no public release has been signed yet"));
+    // The README must state the current signing reality: releases have been
+    // dual-signed since v0.1.9 (this replaced the earlier "no public release
+    // has been signed yet" once signing went live).
+    assert!(words.contains("every public release is dual-signed"));
 }
 
 #[test]

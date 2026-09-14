@@ -70,6 +70,20 @@ pub struct Theme {
     pub accent: Rgb,
     /// Error and host-notice color.
     pub error: Rgb,
+
+    // --- Terminal body (the PTY content area) ---
+    // The program inside still chooses its own colors via ANSI escapes; these
+    // set the terminal's *own* scheme — the default background and text, the
+    // cursor, and the RGB behind the 16 ANSI names. Indices 16..256 (the
+    // 6x6x6 cube and grayscale) always use the standard xterm ramp.
+    /// Terminal default background (the canvas behind cell text).
+    pub term_bg: Rgb,
+    /// Terminal default foreground (uncolored text).
+    pub term_fg: Rgb,
+    /// Terminal cursor color.
+    pub term_cursor: Rgb,
+    /// The 16 ANSI colors (8 normal + 8 bright) for terminal content.
+    pub term_ansi: [Rgb; 16],
 }
 
 impl Theme {
@@ -91,6 +105,12 @@ impl Theme {
                 muted: Rgb(0xC0, 0xC0, 0xC0),
                 accent: Rgb(0xFF, 0xFF, 0xFF),
                 error: Rgb(0xFF, 0x5C, 0x5C),
+                // Historical terminal look: black canvas, near-white text, the
+                // stock xterm 16. Keeps the classic console unchanged.
+                term_bg: Rgb(0x00, 0x00, 0x00),
+                term_fg: Rgb(0xF0, 0xF0, 0xF0),
+                term_cursor: Rgb(0xFF, 0xFF, 0xFF),
+                term_ansi: crate::palette::STANDARD_ANSI,
             },
             // = docs/index.html brand variables (Turn 2, 2b Docs Ink).
             ThemeChoice::Docs => Self {
@@ -105,6 +125,29 @@ impl Theme {
                 muted: Rgb(0x9b, 0xaa, 0xb8),
                 accent: Rgb(0x68, 0xd8, 0xf0),
                 error: Rgb(0xf2, 0x77, 0x6b),
+                // Dark terminal tuned for the navy chrome (GitHub-dark hues:
+                // legible on a deep background, cyan cursor to match the accent).
+                term_bg: Rgb(0x07, 0x0b, 0x10),
+                term_fg: Rgb(0xe6, 0xed, 0xf3),
+                term_cursor: Rgb(0x68, 0xd8, 0xf0),
+                term_ansi: [
+                    Rgb(0x48, 0x4f, 0x58),
+                    Rgb(0xff, 0x7b, 0x72),
+                    Rgb(0x3f, 0xb9, 0x50),
+                    Rgb(0xd2, 0x99, 0x22),
+                    Rgb(0x58, 0xa6, 0xff),
+                    Rgb(0xbc, 0x8c, 0xff),
+                    Rgb(0x39, 0xc5, 0xcf),
+                    Rgb(0xb1, 0xba, 0xc4),
+                    Rgb(0x6e, 0x76, 0x81),
+                    Rgb(0xff, 0xa1, 0x98),
+                    Rgb(0x56, 0xd3, 0x64),
+                    Rgb(0xe3, 0xb3, 0x41),
+                    Rgb(0x79, 0xc0, 0xff),
+                    Rgb(0xd2, 0xa8, 0xff),
+                    Rgb(0xa5, 0xe9, 0xf7),
+                    Rgb(0xf0, 0xf6, 0xfc),
+                ],
             },
             // = same hues, light (Turn 2, 2c Paper Ink).
             ThemeChoice::Paper => Self {
@@ -119,6 +162,30 @@ impl Theme {
                 muted: Rgb(0x5b, 0x6a, 0x77),
                 accent: Rgb(0x1f, 0x6f, 0x86),
                 error: Rgb(0xb0, 0x3a, 0x2e),
+                // Light terminal (GitHub-light hues): darker, saturated ANSI so
+                // content stays legible on a white background — bright yellow or
+                // cyan on white would wash out, so those are deepened.
+                term_bg: Rgb(0xff, 0xff, 0xff),
+                term_fg: Rgb(0x1f, 0x23, 0x28),
+                term_cursor: Rgb(0x1f, 0x6f, 0x86),
+                term_ansi: [
+                    Rgb(0x24, 0x29, 0x2f),
+                    Rgb(0xcf, 0x22, 0x2e),
+                    Rgb(0x11, 0x63, 0x29),
+                    Rgb(0x7d, 0x4e, 0x00),
+                    Rgb(0x09, 0x69, 0xda),
+                    Rgb(0x82, 0x50, 0xdf),
+                    Rgb(0x1b, 0x7c, 0x83),
+                    Rgb(0x6e, 0x77, 0x81),
+                    Rgb(0x57, 0x60, 0x6a),
+                    Rgb(0xa4, 0x0e, 0x26),
+                    Rgb(0x1a, 0x7f, 0x37),
+                    Rgb(0x63, 0x3c, 0x01),
+                    Rgb(0x21, 0x8b, 0xff),
+                    Rgb(0xa4, 0x75, 0xf9),
+                    Rgb(0x31, 0x92, 0xaa),
+                    Rgb(0x8c, 0x95, 0x9f),
+                ],
             },
         }
     }

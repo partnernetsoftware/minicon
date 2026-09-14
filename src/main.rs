@@ -842,6 +842,11 @@ struct ConTerminal {
 
     default_fg: Rgb,
     default_bg: Rgb,
+    /// Terminal cursor color and the themable 16 ANSI colors, kept in sync with
+    /// `ui_theme` (see `ConTerminal::apply_theme`). The 6x6x6 cube and grayscale ramp
+    /// stay standard.
+    term_cursor: Rgb,
+    term_ansi: [Rgb; 16],
 
     /// Set when the reader thread exits (PTY EOF or error).
     child_gone: bool,
@@ -1642,6 +1647,7 @@ impl ConApp {
         })?;
 
         let mut session = seed.create_session();
+        session.apply_theme(self.ui_theme);
         Self::configure_host_ui(
             &mut session,
             window.metrics()?.scale_factor,
@@ -1712,6 +1718,16 @@ impl ConApp {
         Ok(())
     }
 
+    /// Re-apply the active chrome theme's terminal colors to every open
+    /// terminal. Call after any `ui_theme` change so the terminal bodies recolor
+    /// with the rest of the UI.
+    fn apply_theme_to_all_sessions(&mut self) {
+        let choice = self.ui_theme;
+        for (_, session) in self.sessions.entries_mut() {
+            session.apply_theme(choice);
+        }
+    }
+
     fn handle_workspace_shortcut(
         &mut self,
         window: &PixelWindow,
@@ -1757,6 +1773,7 @@ impl ConApp {
         }
         if text.eq_ignore_ascii_case("p") {
             self.ui_theme = self.ui_theme.next();
+            self.apply_theme_to_all_sessions();
             self.mark_host_ui_full();
             self.request_dirty_redraw(window);
             return Ok(true);
@@ -3627,6 +3644,17 @@ fn product_window_title() -> String {
 }
 
 impl ConTerminal {
+    /// Adopt a chrome theme's terminal-body colors: default background/text,
+    /// cursor, and the 16 ANSI colors. The 6x6x6 cube and grayscale ramp stay
+    /// standard, and programs that request explicit colors are unaffected.
+    fn apply_theme(&mut self, choice: theme::ThemeChoice) {
+        let t = theme::Theme::for_choice(choice);
+        self.default_fg = t.term_fg;
+        self.default_bg = t.term_bg;
+        self.term_cursor = t.term_cursor;
+        self.term_ansi = t.term_ansi;
+    }
+
     /// The one place a window title is built, so the OSC path and the
     /// activation path cannot format it differently. They did, which is how
     /// the same window showed two different titles depending on which one had
@@ -3679,6 +3707,8 @@ impl ConTerminal {
             last_geometry_at: Instant::now(),
             default_fg: Rgb(0xF0, 0xF0, 0xF0),
             default_bg: Rgb(0x00, 0x00, 0x00),
+            term_cursor: Rgb(0xFF, 0xFF, 0xFF),
+            term_ansi: palette::STANDARD_ANSI,
             child_gone: false,
             exit: false,
             scroll_offset: 0,
@@ -5565,6 +5595,7 @@ impl ConTerminal {
             self.cell_h,
             self.default_fg,
             self.default_bg,
+            self.term_ansi,
             self.font_size_px,
             self.content_left_px,
             self.content_top_px,
@@ -5586,8 +5617,8 @@ impl ConTerminal {
             CursorPaintSpec {
                 cell_w: self.cell_w,
                 cell_h: self.cell_h,
-                default_fg: self.default_fg,
                 default_bg: self.default_bg,
+                cursor: self.term_cursor,
                 font_size_px: self.font_size_px,
                 left: self.content_left_px,
                 top: self.content_top_px,
@@ -5997,6 +6028,7 @@ impl PixelWindowApplication for ConApp {
                         };
                         if self.ui_theme != choice {
                             self.ui_theme = choice;
+                            self.apply_theme_to_all_sessions();
                             self.mark_host_ui_full_and_repaint(window);
                         }
                     }
@@ -7559,6 +7591,7 @@ mod tests {
             16,
             Rgb(0xEE, 0xEE, 0xEE),
             Rgb(0x00, 0x00, 0x00),
+            palette::STANDARD_ANSI,
             12,
             24,
             0,
@@ -8148,6 +8181,7 @@ mod tests {
             cell_h,
             Rgb(0xCC, 0xCC, 0xCC),
             Rgb(0, 0, 0),
+            palette::STANDARD_ANSI,
             10,
         );
         (pixels, cell_w, cell_h)
@@ -8227,7 +8261,13 @@ mod tests {
         let (pixels, cell_w, cell_h) = render_to_buffer(b"XX\x1b[41mRR\x1b[0mYY", 10, 1);
         let mid_y = cell_h / 2;
         let row_base = (mid_y * cell_w * 10) as usize;
-        let red = palette::resolve(vt100::Color::Idx(1), Rgb(0, 0, 0), false).to_xrgb();
+        let red = palette::resolve(
+            vt100::Color::Idx(1),
+            Rgb(0, 0, 0),
+            &palette::STANDARD_ANSI,
+            false,
+        )
+        .to_xrgb();
 
         let sample = |col: u32| pixels[row_base + (col * cell_w + cell_w / 2) as usize];
         assert_ne!(sample(0), red, "col 0 (plain) must not be red");
@@ -8333,6 +8373,7 @@ mod tests {
                 cell_h,
                 Rgb(0xCC, 0xCC, 0xCC),
                 Rgb(0, 0, 0),
+                palette::STANDARD_ANSI,
                 size,
             );
         }

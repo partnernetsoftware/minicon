@@ -134,11 +134,19 @@ header tools, and the composer. It is not the browser, and it is not layout.
   no clipping/overlap, and no increase in total header/composer height unless
   the old height cannot contain the larger glyph bounds. Merely enlarging the
   terminal cell font, or enlarging empty padding with the label, fails.
-- [x] the theme picker switches three host-chrome themes at runtime — Neutral
+- [x] the theme picker switches three themes at runtime — Neutral
   Ink (the historical monochrome default), Docs Ink (the website's blue palette)
-  and Paper Ink (light) — from the panel swatches or `Ctrl+Shift+P`. Only the
-  chrome changes; the terminal body keeps its xterm 256 palette. The chosen
+  and Paper Ink (light) — from the panel swatches or `Ctrl+Shift+P`. The chosen
   theme is reported by `ui-snapshot` as `ui_theme`.
+- [x] each theme also carries a terminal color scheme (the conventional model:
+  default background/foreground, cursor, and the 16 ANSI colors — Windows
+  Terminal / Alacritty / iTerm2 all define exactly these), so the terminal body
+  recolors with the chrome: Neutral keeps the classic black console, Docs Ink a
+  deep-navy console, Paper Ink a light console with a legibility-tuned ANSI set.
+  Indices 16..256 (the 6x6x6 cube and grayscale ramp) stay standard, and a
+  program's own explicit color requests are never overridden — the theme sets
+  the terminal's *defaults and named colors*, not what an app paints. Colors are
+  stored per `ConTerminal` and re-applied to every open tab on a theme change.
 - [x] a grid crosshair snaps to the hovered terminal cell: a translucent
   row/column band (3.5%) plus 1px lines (28%) drawn over the content without
   erasing it, and the same 1-based cell written to the status bar. It redraws

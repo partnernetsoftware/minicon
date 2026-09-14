@@ -51,6 +51,28 @@ fn clamp_f32(value: f32, minimum: f32, maximum: f32) -> f32 {
     }
 }
 
+/// The standard xterm 16-color ANSI set (8 normal + 8 bright). Themes may
+/// override these; indices 16..256 (the 6x6x6 cube and grayscale ramp) always
+/// use the standard values from [`palette`].
+pub const STANDARD_ANSI: [Rgb; 16] = [
+    Rgb(0x00, 0x00, 0x00),
+    Rgb(0xCD, 0x00, 0x00),
+    Rgb(0x00, 0xCD, 0x00),
+    Rgb(0xCD, 0xCD, 0x00),
+    Rgb(0x00, 0x00, 0xEE),
+    Rgb(0xCD, 0x00, 0xCD),
+    Rgb(0x00, 0xCD, 0xCD),
+    Rgb(0xE5, 0xE5, 0xE5),
+    Rgb(0x7F, 0x7F, 0x7F),
+    Rgb(0xFF, 0x00, 0x00),
+    Rgb(0x00, 0xFF, 0x00),
+    Rgb(0xFF, 0xFF, 0x00),
+    Rgb(0x5C, 0x5C, 0xFF),
+    Rgb(0xFF, 0x00, 0xFF),
+    Rgb(0x00, 0xFF, 0xFF),
+    Rgb(0xFF, 0xFF, 0xFF),
+];
+
 /// Builds the standard 256-entry xterm palette once.
 fn palette() -> &'static [Rgb; 256] {
     use std::sync::OnceLock;
@@ -58,27 +80,9 @@ fn palette() -> &'static [Rgb; 256] {
     PALETTE.get_or_init(|| {
         let mut table = Box::new([Rgb(0, 0, 0); 256]);
 
-        // 0..16: ANSI standard + bright. Matches xterm's built-in set.
-        let ansi: [[u8; 3]; 16] = [
-            [0x00, 0x00, 0x00],
-            [0xCD, 0x00, 0x00],
-            [0x00, 0xCD, 0x00],
-            [0xCD, 0xCD, 0x00],
-            [0x00, 0x00, 0xEE],
-            [0xCD, 0x00, 0xCD],
-            [0x00, 0xCD, 0xCD],
-            [0xE5, 0xE5, 0xE5],
-            [0x7F, 0x7F, 0x7F],
-            [0xFF, 0x00, 0x00],
-            [0x00, 0xFF, 0x00],
-            [0xFF, 0xFF, 0x00],
-            [0x5C, 0x5C, 0xFF],
-            [0xFF, 0x00, 0xFF],
-            [0x00, 0xFF, 0xFF],
-            [0xFF, 0xFF, 0xFF],
-        ];
-        for (index, rgb) in ansi.iter().enumerate() {
-            table[index] = Rgb(rgb[0], rgb[1], rgb[2]);
+        // 0..16: the standard ANSI set (see `STANDARD_ANSI`).
+        for (index, rgb) in STANDARD_ANSI.iter().enumerate() {
+            table[index] = *rgb;
         }
 
         // 16..232: 6x6x6 color cube. Component levels follow the xterm ramp.
@@ -108,16 +112,22 @@ fn palette() -> &'static [Rgb; 256] {
 /// `bold` selects the bright variant for indexed foreground colors 0..7,
 /// matching the conventional "bold → bright" behavior TUI apps rely on.
 #[inline]
-pub fn resolve(color: vt100::Color, default: Rgb, bold: bool) -> Rgb {
+pub fn resolve(color: vt100::Color, default: Rgb, ansi: &[Rgb; 16], bold: bool) -> Rgb {
     match color {
         vt100::Color::Default => default,
         vt100::Color::Rgb(r, g, b) => Rgb(r, g, b),
         vt100::Color::Idx(index) => {
-            // Bold maps the standard 0..7 range to the bright 8..15 counterparts.
-            if bold && index < 8 {
-                palette()[usize::from(index) + 8]
+            let idx = usize::from(index);
+            if idx < 16 {
+                // The themable 16. Bold maps standard 0..7 to bright 8..15.
+                if bold && idx < 8 {
+                    ansi[idx + 8]
+                } else {
+                    ansi[idx]
+                }
             } else {
-                palette()[usize::from(index)]
+                // The 6x6x6 cube and grayscale ramp are always standard.
+                palette()[idx]
             }
         }
     }
@@ -130,19 +140,19 @@ mod tests {
     #[test]
     fn black_and_white_corners_are_stable() {
         assert_eq!(
-            resolve(vt100::Color::Idx(16), Rgb(0, 0, 0), false),
+            resolve(vt100::Color::Idx(16), Rgb(0, 0, 0), &STANDARD_ANSI, false),
             Rgb(0, 0, 0)
         );
         assert_eq!(
-            resolve(vt100::Color::Idx(231), Rgb(0, 0, 0), false),
+            resolve(vt100::Color::Idx(231), Rgb(0, 0, 0), &STANDARD_ANSI, false),
             Rgb(255, 255, 255)
         );
     }
 
     #[test]
     fn bold_promotes_standard_red_to_bright() {
-        let normal = resolve(vt100::Color::Idx(1), Rgb(0, 0, 0), false);
-        let bright = resolve(vt100::Color::Idx(1), Rgb(0, 0, 0), true);
+        let normal = resolve(vt100::Color::Idx(1), Rgb(0, 0, 0), &STANDARD_ANSI, false);
+        let bright = resolve(vt100::Color::Idx(1), Rgb(0, 0, 0), &STANDARD_ANSI, true);
         assert_eq!(normal, Rgb(0xCD, 0x00, 0x00));
         assert_eq!(bright, Rgb(0xFF, 0x00, 0x00));
     }
@@ -150,13 +160,23 @@ mod tests {
     #[test]
     fn rgb_passes_through_unchanged() {
         assert_eq!(
-            resolve(vt100::Color::Rgb(1, 2, 3), Rgb(9, 9, 9), false),
+            resolve(
+                vt100::Color::Rgb(1, 2, 3),
+                Rgb(9, 9, 9),
+                &STANDARD_ANSI,
+                false
+            ),
             Rgb(1, 2, 3)
         );
         // Bold must not alter an explicit RGB colour: the promotion only
         // applies to the indexed 0..7 range.
         assert_eq!(
-            resolve(vt100::Color::Rgb(1, 2, 3), Rgb(9, 9, 9), true),
+            resolve(
+                vt100::Color::Rgb(1, 2, 3),
+                Rgb(9, 9, 9),
+                &STANDARD_ANSI,
+                true
+            ),
             Rgb(1, 2, 3)
         );
     }
@@ -166,8 +186,14 @@ mod tests {
     #[test]
     fn default_returns_the_callers_colour() {
         let fallback = Rgb(0x12, 0x34, 0x56);
-        assert_eq!(resolve(vt100::Color::Default, fallback, false), fallback);
-        assert_eq!(resolve(vt100::Color::Default, fallback, true), fallback);
+        assert_eq!(
+            resolve(vt100::Color::Default, fallback, &STANDARD_ANSI, false),
+            fallback
+        );
+        assert_eq!(
+            resolve(vt100::Color::Default, fallback, &STANDARD_ANSI, true),
+            fallback
+        );
     }
 
     /// Bold promotes only the standard 0..7 range to its bright counterpart.
@@ -178,29 +204,32 @@ mod tests {
         let black = Rgb(0, 0, 0);
         // 7 (silver) promotes to 15 (white); 8 is bright grey and stays put.
         assert_eq!(
-            resolve(vt100::Color::Idx(7), black, false),
+            resolve(vt100::Color::Idx(7), black, &STANDARD_ANSI, false),
             Rgb(0xE5, 0xE5, 0xE5)
         );
         assert_eq!(
-            resolve(vt100::Color::Idx(7), black, true),
+            resolve(vt100::Color::Idx(7), black, &STANDARD_ANSI, true),
             Rgb(0xFF, 0xFF, 0xFF)
         );
         assert_eq!(
-            resolve(vt100::Color::Idx(8), black, true),
+            resolve(vt100::Color::Idx(8), black, &STANDARD_ANSI, true),
             Rgb(0x7F, 0x7F, 0x7F),
             "index 8 is outside the promoted range"
         );
         // 0 is the first promoted index: black to bright black.
-        assert_eq!(resolve(vt100::Color::Idx(0), black, false), Rgb(0, 0, 0));
         assert_eq!(
-            resolve(vt100::Color::Idx(0), black, true),
+            resolve(vt100::Color::Idx(0), black, &STANDARD_ANSI, false),
+            Rgb(0, 0, 0)
+        );
+        assert_eq!(
+            resolve(vt100::Color::Idx(0), black, &STANDARD_ANSI, true),
             Rgb(0x7F, 0x7F, 0x7F)
         );
         // Above the standard range bold changes nothing.
         for index in [15u8, 16, 231, 255] {
             assert_eq!(
-                resolve(vt100::Color::Idx(index), black, true),
-                resolve(vt100::Color::Idx(index), black, false),
+                resolve(vt100::Color::Idx(index), black, &STANDARD_ANSI, true),
+                resolve(vt100::Color::Idx(index), black, &STANDARD_ANSI, false),
                 "bold must not affect index {index}"
             );
         }
@@ -212,7 +241,7 @@ mod tests {
     #[test]
     fn palette_regions_have_the_xterm_boundaries() {
         let black = Rgb(0, 0, 0);
-        let at = |index: u8| resolve(vt100::Color::Idx(index), black, false);
+        let at = |index: u8| resolve(vt100::Color::Idx(index), black, &STANDARD_ANSI, false);
         // ANSI: index 1 is standard red, 9 is its bright form.
         assert_eq!(at(1), Rgb(0xCD, 0x00, 0x00));
         assert_eq!(at(9), Rgb(0xFF, 0x00, 0x00));

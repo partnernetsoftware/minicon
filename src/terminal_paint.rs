@@ -17,8 +17,8 @@ const CURSOR_THICKNESS: u32 = 2;
 pub(super) struct CursorPaintSpec {
     pub cell_w: u32,
     pub cell_h: u32,
-    pub default_fg: Rgb,
     pub default_bg: Rgb,
+    pub cursor: Rgb,
     pub font_size_px: u16,
     pub left: u32,
     pub top: u32,
@@ -47,6 +47,7 @@ pub(super) fn paint_cells(
     cell_h: u32,
     default_fg: Rgb,
     default_bg: Rgb,
+    ansi: [Rgb; 16],
     font_size_px: u16,
 ) {
     paint_cells_at(
@@ -57,6 +58,7 @@ pub(super) fn paint_cells(
         cell_h,
         default_fg,
         default_bg,
+        ansi,
         font_size_px,
         0,
         0,
@@ -72,6 +74,7 @@ pub(super) fn paint_cells_at(
     cell_h: u32,
     default_fg: Rgb,
     default_bg: Rgb,
+    ansi: [Rgb; 16],
     font_size_px: u16,
     left: u32,
     top: u32,
@@ -106,8 +109,8 @@ pub(super) fn paint_cells_at(
                 continue;
             }
 
-            let mut fg = palette::resolve(cell.fgcolor(), default_fg, cell.bold());
-            let mut bg = palette::resolve(cell.bgcolor(), default_bg, false);
+            let mut fg = palette::resolve(cell.fgcolor(), default_fg, &ansi, cell.bold());
+            let mut bg = palette::resolve(cell.bgcolor(), default_bg, &ansi, false);
 
             if let Some((lo, hi)) = selection
                 && row >= lo.row
@@ -188,7 +191,7 @@ pub(super) fn paint_cursor(
 
     match screen.cursor_shape() {
         vt100::CursorShape::Block => {
-            surface.fill_rect(x, y, span, spec.cell_h, spec.default_fg.to_xrgb());
+            surface.fill_rect(x, y, span, spec.cell_h, spec.cursor.to_xrgb());
             let glyph = under
                 .filter(|cell| cell.has_contents())
                 .and_then(|cell| font::raster(first_grapheme(cell.contents()), spec.font_size_px));
@@ -208,16 +211,10 @@ pub(super) fn paint_cursor(
         }
         vt100::CursorShape::Underline => {
             let y = y.saturating_add(spec.cell_h.saturating_sub(CURSOR_THICKNESS));
-            surface.fill_rect(x, y, span, CURSOR_THICKNESS, spec.default_fg.to_xrgb());
+            surface.fill_rect(x, y, span, CURSOR_THICKNESS, spec.cursor.to_xrgb());
         }
         vt100::CursorShape::Bar => {
-            surface.fill_rect(
-                x,
-                y,
-                CURSOR_THICKNESS,
-                spec.cell_h,
-                spec.default_fg.to_xrgb(),
-            );
+            surface.fill_rect(x, y, CURSOR_THICKNESS, spec.cell_h, spec.cursor.to_xrgb());
         }
     }
 }
@@ -241,8 +238,8 @@ mod tests {
         CursorPaintSpec {
             cell_w: 8,
             cell_h: 12,
-            default_fg: FG,
             default_bg: BG,
+            cursor: FG,
             font_size_px: 10,
             left: 0,
             top: 0,
@@ -325,6 +322,7 @@ mod tests {
             1,
             FG,
             BG,
+            palette::STANDARD_ANSI,
             1,
         );
     }
@@ -366,6 +364,7 @@ mod tests {
             cell_h,
             FG,
             BG,
+            palette::STANDARD_ANSI,
             10,
         );
         // Sample the top row of each column: reverse video makes the filled
@@ -406,6 +405,7 @@ mod tests {
                 cell_h,
                 FG,
                 BG,
+                palette::STANDARD_ANSI,
                 10,
             );
             pixels[0]
@@ -445,6 +445,7 @@ mod tests {
                 cell_h,
                 FG,
                 BG,
+                palette::STANDARD_ANSI,
                 10,
             );
             pixels[underline_row * width as usize]
@@ -496,6 +497,7 @@ mod tests {
                 cell_h,
                 FG,
                 BG,
+                palette::STANDARD_ANSI,
                 10,
             );
             pixels[underline_row * width as usize + col * cell_w as usize]
