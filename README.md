@@ -124,6 +124,7 @@ minicon --help                   # everything else
 | `Ctrl+Shift+[` / `]` | switch tabs |
 | `Ctrl+Shift+I` | focus the input area |
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |
+| `Ctrl+Shift+,` | open or close the settings panel |
 | `Ctrl+Shift+G` | toggle the grid crosshair |
 | `Enter` | in the input area, insert a soft newline without sending |
 | `Ctrl+O` | send the complete input-area draft |

@@ -697,6 +697,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+[ / ]   Switch terminal tabs
   Ctrl+Shift+I       Focus the external input area
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
+  Ctrl+Shift+,       Open or close the settings panel
   Ctrl+Shift+G       Toggle the grid crosshair
   Enter              Insert a soft newline in the input area
   Ctrl+O             Send the complete input-area draft
@@ -1758,6 +1759,12 @@ impl ConApp {
             self.ui_theme = self.ui_theme.next();
             self.mark_host_ui_full();
             self.request_dirty_redraw(window);
+            return Ok(true);
+        }
+        if text == "," {
+            // Open or close the settings panel.
+            self.settings_open = !self.settings_open;
+            self.mark_host_ui_full_and_repaint(window);
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("g") {
