@@ -491,7 +491,7 @@ pub struct SettingsLayout {
 }
 
 /// Where a pointer landed inside the settings panel. Theme is an index (0=Neutral
-/// 1=Docs 2=Paper) so this module stays free of the chrome theme type.
+/// 1=Docs 2=Paper) so this module stays free of the host-UI theme type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsHit {
     Outside,

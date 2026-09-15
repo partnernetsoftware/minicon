@@ -1,6 +1,6 @@
 //! Scrollbar geometry and pointer mapping.
 //!
-//! A scrollbar is the one piece of terminal chrome whose *arithmetic* is easy to
+//! A scrollbar is the one piece of terminal host UI whose *arithmetic* is easy to
 //! get subtly wrong and hard to notice: a thumb that is one pixel off, a drag
 //! that drifts by one row per screen, a clamped value that jumps at the ends.
 //! None of that is platform-specific, so it lives here where it can be tested

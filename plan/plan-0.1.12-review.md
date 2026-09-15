@@ -14,11 +14,11 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
   saturating geometry, clamped grid/font, `catch_unwind` control workers,
   disciplined teardown). Robustness work is therefore about *test robustness*
   and a few deliberately-swallowed errors, not crash bugs.
-- **The 0.1.11 theming was half-applied to chrome-only widgets.** Recoloring the
+- **The 0.1.11 theming was half-applied to host-UI-only widgets.** Recoloring the
   terminal body exposed that the crosshair and scrollbar were still hardcoded.
   (Fixed this pass.)
-- **`main.rs` (~9k lines) blurs the chrome/terminal/control boundary.** The
-  biggest structural win is lifting the chrome-paint layer into its own module;
+- **`main.rs` (~9k lines) blurs the host-UI/terminal/control boundary.** The
+  biggest structural win is lifting the host-UI-paint layer into its own module;
   the deeper win is decomposing the ~50-field `ConTerminal` god-struct.
 - **Doc drift lived in the top-level, non-owning docs** (`PRD.md`,
   `CODE_SIGNING_POLICY.md`) even after the owning PRD/README were refreshed.
@@ -78,16 +78,18 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 
 ## Backlog — code structure (impact / risk)
 
-- [x] DONE — Extracted the chrome-paint cluster into `src/chrome.rs` (16 free
+- [x] DONE — Extracted the host-UI-paint cluster into `src/host_ui.rs` (16 free
   fns/consts/types + their 5 unit tests): status bar, settings panel, header
   icon buttons, composer button labels, and the shared host-UI text/glyph
   layout. All are argument-driven (no `ConApp`/`ConTerminal` field access), so
   the module is readable and testable on its own. `main.rs` 9281 → 8518 lines;
-  `chrome.rs` 790. `pub(crate)` surface kept minimal (internals — `PlacedGlyph`,
+  `host_ui.rs` 790. `pub(crate)` surface kept minimal (internals — `PlacedGlyph`,
   `layout_text_parts`, `blit_placed_glyph`, `centered_label_origin` — stay
-  private). clippy clean, 261 bin tests pass. The `center_offset`/`to_physical`/
-  `host_ui_text_width` shared-helper dedupe is deferred to the `ChromeCtx` item
-  below — do it there, not as a separate pass.
+  private). clippy clean, 261 bin tests pass. (Named `host_ui`, not `chrome`:
+  `chrome` collides with the browser and other meanings; `host_ui` matches the
+  existing `paint_host_ui_text` / `scaled_host_ui_font` vocabulary.) The
+  `center_offset`/`to_physical`/`host_ui_text_width` shared-helper dedupe is a
+  possible later cleanup, not a blocker.
 - [x] REJECTED (assessed, not a clean win) — "Collapse the `_checked`/unchecked
   pairs into one `ignore_closed_pty` helper." On inspection these are not
   PTY-write pairs but **event-handler pairs**: a fallible `foo_checked() ->
@@ -100,8 +102,9 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
   focused impls read better than one 3k-line block. The `#[cfg(test)]` gate on
   the test-only `paint_cells` wrapper is the only real slice — folded into the
   robustness pass.
-- [x] REJECTED (over-engineering for one caller) — `ChromeCtx` bundle. After the
-  chrome extraction, only **one** function (`paint_settings_panel`, 9 args) trips
+- [x] REJECTED (over-engineering for one caller) — a host-UI context bundle
+  (`HostUiCtx { layout, theme, scale, fonts }`). After the host-UI extraction,
+  only **one** function (`paint_settings_panel`, 9 args) trips
   `too_many_arguments`; `paint_status_bar` sits at the 7-arg threshold and
   `paint_header_icon_button`'s 8 args are per-button, not a shared context.
   Introducing a context struct to silence a single `#[allow]` adds indirection
@@ -115,7 +118,7 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 - [ ] **L** — Decompose the ~50-field `ConTerminal` god-struct into `PtyProcess`
   / `PointerGesture` / `BlinkState` / `CrosshairState`. Widest edit surface
   (every `self.field` across ~4k lines of impl → `self.sub.field`). Payoff is
-  real but **lower per unit risk** than the chrome extraction was: the fields are
+  real but **lower per unit risk** than the host-UI extraction was: the fields are
   already documented and grouped by comment. Recommend doing it sub-struct at a
   time (smallest cohesive cluster first), each its own verified commit — not one
   sweep. Weigh against directions 2–4 before committing the surface.
@@ -159,6 +162,6 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 The next release (0.1.12) is best framed as a **"finish and polish" release**:
 theme consistency (done), discoverability (mostly done), plus the small UI
 coherence items above — no new surface, in keeping with the one-file, no-config
-identity. The chrome-extraction refactor is internal quality and can land
+identity. The host-UI-extraction refactor is internal quality and can land
 independently of any release. `PRD_02_25_con_workspace.md` already documents the
 shipped UI; as UI items above land, keep it the single source of truth.

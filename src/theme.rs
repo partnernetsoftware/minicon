@@ -1,4 +1,4 @@
-//! Host-chrome color themes.
+//! Host-UI color themes.
 //!
 //! The theme paints only MiniCon's own shell — sidebar, tab column, composer,
 //! borders, and status color. Terminal body text keeps the xterm 256 palette in
@@ -44,7 +44,7 @@ impl ThemeChoice {
     }
 }
 
-/// Concrete chrome colors for one theme. Field names are semantic roles, not
+/// Concrete host-UI colors for one theme. Field names are semantic roles, not
 /// palette-specific names, so all three themes fill the same slots.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Theme {
@@ -62,9 +62,9 @@ pub struct Theme {
     pub border: Rgb,
     /// Tree branch markers.
     pub branch: Rgb,
-    /// Primary chrome text.
+    /// Primary host-UI text.
     pub text: Rgb,
-    /// Secondary chrome text.
+    /// Secondary host-UI text.
     pub muted: Rgb,
     /// Primary accent: the new-terminal button, the active-tab bar, carets.
     pub accent: Rgb,
@@ -125,7 +125,7 @@ impl Theme {
                 muted: Rgb(0x9b, 0xaa, 0xb8),
                 accent: Rgb(0x68, 0xd8, 0xf0),
                 error: Rgb(0xf2, 0x77, 0x6b),
-                // Dark terminal tuned for the navy chrome (GitHub-dark hues:
+                // Dark terminal tuned for the navy host UI (GitHub-dark hues:
                 // legible on a deep background, cyan cursor to match the accent).
                 term_bg: Rgb(0x07, 0x0b, 0x10),
                 term_fg: Rgb(0xe6, 0xed, 0xf3),

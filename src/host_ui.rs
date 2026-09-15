@@ -1,10 +1,10 @@
-//! Host-UI ("chrome") painting: everything drawn around the terminal grid.
+//! Host-UI painting: everything drawn around the terminal grid.
 //!
 //! These are the status bar, the settings panel, the header icon buttons, the
 //! composer button labels, and the shared host-UI text/glyph layout the rest of
-//! the chrome is built from. They are deliberately free functions that take
+//! the host UI is built from. They are deliberately free functions that take
 //! their geometry, theme, scale and fonts as arguments and touch no `ConApp` or
-//! `ConTerminal` state, so the chrome layer can be read, tested and changed
+//! `ConTerminal` state, so the host-UI layer can be read, tested and changed
 //! without the ~9k-line render/state file around it. The terminal *grid* is
 //! painted in `terminal_paint`; this module never touches cell contents.
 

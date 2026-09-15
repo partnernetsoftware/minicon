@@ -21,8 +21,8 @@ mod a11y;
 mod agent_interface;
 use minicon_core::{composer, json};
 
-mod chrome;
-use chrome::{
+mod host_ui;
+use host_ui::{
     BUTTON_HINT_SIZE_PX, BUTTON_LABEL_SIZE_PX, HeaderIcon, paint_button_label,
     paint_header_icon_button, paint_host_ui_text, paint_host_ui_text_parts,
     paint_host_ui_text_parts_clipped, paint_settings_panel, paint_status_bar,
@@ -1729,7 +1729,7 @@ impl ConApp {
         Ok(())
     }
 
-    /// Re-apply the active chrome theme's terminal colors to every open
+    /// Re-apply the active host-UI theme's terminal colors to every open
     /// terminal. Call after any `ui_theme` change so the terminal bodies recolor
     /// with the rest of the UI.
     fn apply_theme_to_all_sessions(&mut self) {
@@ -3179,7 +3179,7 @@ impl ConApp {
         let header_height = layout.tree_header_height;
         let row_height = layout.tree_row_height;
         let host_ui_size = |nominal| scaled_host_ui_font(nominal, session.font_size_logical, scale);
-        // The host chrome (sidebar, tabs, composer, borders) is themed; the
+        // The host UI (sidebar, tabs, composer, borders) is themed; the
         // terminal body keeps its ANSI/xterm colors regardless. Only these
         // outer surfaces change when the user switches themes.
         let t = theme::Theme::for_choice(self.ui_theme);
@@ -3745,7 +3745,7 @@ fn product_window_title() -> String {
 }
 
 impl ConTerminal {
-    /// Adopt a chrome theme's terminal-body colors: default background/text,
+    /// Adopt a host-UI theme's terminal-body colors: default background/text,
     /// cursor, and the 16 ANSI colors. The 6x6x6 cube and grayscale ramp stay
     /// standard, and programs that request explicit colors are unaffected.
     fn apply_theme(&mut self, choice: theme::ThemeChoice) {
