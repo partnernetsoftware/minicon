@@ -78,11 +78,16 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
 
 ## Backlog — code structure (impact / risk)
 
-- [ ] **S/M** — Extract the chrome-paint cluster (`main.rs:~6589-7193`:
-  paint_status_bar / paint_settings_panel / paint_header_icon_button /
-  host-UI text + glyph helpers) into `src/chrome.rs`; near-mechanical (no
-  `ConApp` field access), with shared `center_offset`, `to_physical` (DIP), and
-  `host_ui_text_width` helpers (dedupes 9× / 2× / 2× repeats).
+- [x] DONE — Extracted the chrome-paint cluster into `src/chrome.rs` (16 free
+  fns/consts/types + their 5 unit tests): status bar, settings panel, header
+  icon buttons, composer button labels, and the shared host-UI text/glyph
+  layout. All are argument-driven (no `ConApp`/`ConTerminal` field access), so
+  the module is readable and testable on its own. `main.rs` 9281 → 8518 lines;
+  `chrome.rs` 790. `pub(crate)` surface kept minimal (internals — `PlacedGlyph`,
+  `layout_text_parts`, `blit_placed_glyph`, `centered_label_origin` — stay
+  private). clippy clean, 261 bin tests pass. The `center_offset`/`to_physical`/
+  `host_ui_text_width` shared-helper dedupe is deferred to the `ChromeCtx` item
+  below — do it there, not as a separate pass.
 - [ ] **S** — Collapse the five `_checked`/unchecked PTY-write wrapper pairs into
   one `ignore_closed_pty` helper; gate the test-only `paint_cells` wrapper behind
   `#[cfg(test)]`; merge the two `impl ConTerminal` blocks.
