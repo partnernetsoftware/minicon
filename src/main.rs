@@ -4722,8 +4722,12 @@ impl ConTerminal {
         let phys_x = (pos.x * self.scale - f64::from(self.content_left_px)).max(0.0);
         let phys_y = (pos.y * self.scale - f64::from(self.content_top_px)).max(0.0);
         TerminalPoint {
+            // Both axes clamp to the last cell: a pointer or control coordinate
+            // past the right/bottom edge lands on the edge cell rather than an
+            // off-grid column, which would otherwise seed a phantom-width
+            // selection or an out-of-grid reported cell.
             row: ((phys_y / self.cell_h as f64) as u16).min(self.rows.saturating_sub(1)),
-            col: (phys_x / self.cell_w as f64) as u16,
+            col: ((phys_x / self.cell_w as f64) as u16).min(self.cols.saturating_sub(1)),
         }
     }
 
@@ -7881,6 +7885,27 @@ mod tests {
         app.scale = 1.0;
         app.dirty = DirtyRegion::empty();
         app
+    }
+
+    /// A pointer or control coordinate past the grid's right/bottom edge must
+    /// land on the last cell, not an off-grid column or row. Row already
+    /// clamped; the column did not, so a coordinate to the right of the grid
+    /// produced an out-of-grid cell that could seed a phantom-width selection.
+    #[test]
+    fn hit_test_clamps_both_axes_to_the_last_cell() {
+        let app = prepared_pointer_terminal(); // 80x24 grid, 8x16 cells, scale 1
+        // In-grid coordinates map straight through (no clamp applied).
+        let inside = app.hit_test(&LogicalPoint { x: 100.0, y: 160.0 });
+        assert_eq!((inside.col, inside.row), (12, 10));
+        // Far past the right and bottom edges: clamp to the last col and row.
+        let outside = app.hit_test(&LogicalPoint {
+            x: 100_000.0,
+            y: 100_000.0,
+        });
+        assert_eq!((outside.col, outside.row), (79, 23));
+        // Exactly on the trailing edge of the last cell stays on the last cell.
+        let edge = app.hit_test(&LogicalPoint { x: 640.0, y: 384.0 });
+        assert_eq!((edge.col, edge.row), (79, 23));
     }
 
     fn preedit_surface<'a>(pixels: &'a mut [u32], width: u32, height: u32) -> Surface<'a> {
