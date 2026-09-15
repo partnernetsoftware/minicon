@@ -1096,6 +1096,20 @@ fn composer_commit_action(key: &NormalizedKeyEvent) -> Option<ComposerCommitActi
     None
 }
 
+/// Keys the composer declines even while it has focus, so they reach the same
+/// terminal handler that runs when the terminal is focused. Scrollback paging
+/// (Shift+PageUp/PageDown) is a terminal action, not composer text: declining
+/// it here keeps history scrolling identical in both focus states instead of
+/// silently swallowing the key while the user is typing.
+fn composer_declines_key(key: &NormalizedKeyEvent) -> bool {
+    key.state == KeyPressState::Pressed
+        && key.modifiers.shift
+        && matches!(
+            key.logical,
+            LogicalKey::Named(NamedKey::PageUp | NamedKey::PageDown)
+        )
+}
+
 /// Why a paste could not enter review. `Unsupported` has a defined fallback —
 /// the platform never offered a review and the unreviewed path is what shipped
 /// there — while `Failed` is a real failure the human must be shown.
@@ -2042,6 +2056,12 @@ impl ConApp {
     fn handle_composer_key(&mut self, window: &PixelWindow, key: &NormalizedKeyEvent) -> bool {
         if key.state != KeyPressState::Pressed {
             return true;
+        }
+        // Decline scrollback paging so it falls through to the same terminal
+        // handler that runs when the terminal has focus (see
+        // `composer_declines_key`).
+        if composer_declines_key(key) {
+            return false;
         }
         self.composer.submit_error = None;
         match composer_commit_action(key) {
@@ -6788,6 +6808,45 @@ mod tests {
             Some(ComposerCommitAction::Send)
         );
         assert_eq!(composer_commit_action(&plain_o), None);
+    }
+
+    /// The composer declines Shift+PageUp/PageDown so scrollback paging falls
+    /// through to the terminal handler and works identically whether the
+    /// composer or the terminal is focused. Everything else it keeps.
+    #[test]
+    fn composer_declines_scrollback_paging_but_keeps_other_keys() {
+        let shift_pageup =
+            injected_key_event(InjectedKey::Named(NamedKey::PageUp), false, false, true);
+        let shift_pagedown =
+            injected_key_event(InjectedKey::Named(NamedKey::PageDown), false, false, true);
+        assert!(composer_declines_key(&shift_pageup));
+        assert!(composer_declines_key(&shift_pagedown));
+
+        // Without Shift a page key is not a scroll request — the composer keeps
+        // it (its own handler ignores it, but it must not fall through).
+        let plain_pageup =
+            injected_key_event(InjectedKey::Named(NamedKey::PageUp), false, false, false);
+        assert!(!composer_declines_key(&plain_pageup));
+        // Shift with a non-page key is composer selection, not a scroll.
+        let shift_up =
+            injected_key_event(InjectedKey::Named(NamedKey::ArrowUp), false, false, true);
+        assert!(!composer_declines_key(&shift_up));
+
+        // A key release is never declined (only the press drives the scroll).
+        let release = NormalizedKeyEvent {
+            logical: LogicalKey::Named(NamedKey::PageUp),
+            physical: PhysicalKeyCode::Other,
+            text: None,
+            state: KeyPressState::Released,
+            repeat: false,
+            modifiers: ModifierState {
+                control: false,
+                alt: false,
+                shift: true,
+                meta: false,
+            },
+        };
+        assert!(!composer_declines_key(&release));
     }
 
     /// `candidate_bounds` clips a repaint candidate to the frame and turns it
