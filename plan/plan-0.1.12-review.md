@@ -88,23 +88,46 @@ Legend: [x] done this pass · [ ] planned · effort S/M/L.
   private). clippy clean, 261 bin tests pass. The `center_offset`/`to_physical`/
   `host_ui_text_width` shared-helper dedupe is deferred to the `ChromeCtx` item
   below — do it there, not as a separate pass.
-- [ ] **S** — Collapse the five `_checked`/unchecked PTY-write wrapper pairs into
-  one `ignore_closed_pty` helper; gate the test-only `paint_cells` wrapper behind
-  `#[cfg(test)]`; merge the two `impl ConTerminal` blocks.
-- [ ] **S/M** — Give the `too_many_arguments` paint fns a `ChromeCtx { layout,
-  theme, scale, fonts }`; drop the `#[allow]`s.
-- [ ] **M** — Split `dispatch_control` (~450-line match) into per-verb handlers.
+- [x] REJECTED (assessed, not a clean win) — "Collapse the `_checked`/unchecked
+  pairs into one `ignore_closed_pty` helper." On inspection these are not
+  PTY-write pairs but **event-handler pairs**: a fallible `foo_checked() ->
+  io::Result<()>` that control paths propagate with `?`, and a thin infallible
+  `foo()` the winit event loop calls (`let _ = self.foo_checked(...)`). The five
+  differ in signature, so they cannot fold into one helper; the `let _ =` swallow
+  is the deliberate "winit can't return Result" seam. The genuine improvement is
+  the robustness item below (make the swallow observable via `diagnostics`), not
+  a merge. "Merge the two `impl ConTerminal` blocks" is also rejected: two
+  focused impls read better than one 3k-line block. The `#[cfg(test)]` gate on
+  the test-only `paint_cells` wrapper is the only real slice — folded into the
+  robustness pass.
+- [x] REJECTED (over-engineering for one caller) — `ChromeCtx` bundle. After the
+  chrome extraction, only **one** function (`paint_settings_panel`, 9 args) trips
+  `too_many_arguments`; `paint_status_bar` sits at the 7-arg threshold and
+  `paint_header_icon_button`'s 8 args are per-button, not a shared context.
+  Introducing a context struct to silence a single `#[allow]` adds indirection
+  for no real dedupe. Leave the one `#[allow]` in place.
+- [ ] **M** — Split `dispatch_control` (~450-line match, ~22 arms) into per-verb
+  handlers. Real legibility win but **moderate** risk: the match consumes
+  `request.command` by value (destructuring arms move fields out) and `reply` is
+  shared across arms (WaitText/WaitTabExit stash it for a deferred async reply),
+  so per-arm methods must thread `&mut Option<Reply>`. Do as its own focused,
+  fully-tested unit — not folded into an unrelated pass.
 - [ ] **L** — Decompose the ~50-field `ConTerminal` god-struct into `PtyProcess`
-  / `PointerGesture` / `BlinkState` / `CrosshairState`. Highest structural
-  payoff, widest edit surface — do after the chrome extraction.
+  / `PointerGesture` / `BlinkState` / `CrosshairState`. Widest edit surface
+  (every `self.field` across ~4k lines of impl → `self.sub.field`). Payoff is
+  real but **lower per unit risk** than the chrome extraction was: the fields are
+  already documented and grouped by comment. Recommend doing it sub-struct at a
+  time (smallest cohesive cluster first), each its own verified commit — not one
+  sweep. Weigh against directions 2–4 before committing the surface.
 
 ## Backlog — robustness / tests
 
 - [ ] **S** — Convert the few silent `let _ =` on user paths (terminal-query
   replies in `drain_pty`, keystroke `forward_key`, clipboard/OSC-52) into
   `diagnostics::record` (and retain-and-retry the query replies).
-- [ ] **S** — Clamp `hit_test` column to `cols-1` (row already is), so
-  off-grid pointer/control coords don't make phantom-width selections.
+- [x] DONE (`b5717a5`) — Clamp `hit_test` column to `cols-1` (row already was),
+  so off-grid pointer/control coords can't seed phantom-width selections or an
+  out-of-grid reported cell. Unit test covers pass-through, far-outside, edge.
 - [ ] **S** — `blend_rect` should use `get`/`get_mut` like `blit_glyph` for
   index-safety symmetry.
 - [ ] **M** — Zoom-test flake root: the scripted control journey can't
