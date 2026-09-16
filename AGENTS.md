@@ -6,6 +6,13 @@ evidence. Machine truth lives in `alignment-contract.json`, public evidence
 identities in `evidence-registry.json`, and release selection in
 `release-policy.json`.
 
+## Working language
+
+Think, reason, and discuss with the user in Chinese (中文). Code, identifiers,
+commit messages, and file/doc content stay in their existing language (mostly
+English); only the assistant's own thinking and conversational replies default
+to Chinese unless the user asks otherwise.
+
 ## Planning method: tree DAG + memory palace
 
 Use both views for material product planning; neither replaces the other.
