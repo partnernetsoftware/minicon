@@ -1110,6 +1110,23 @@ fn composer_declines_key(key: &NormalizedKeyEvent) -> bool {
         )
 }
 
+/// The modifier that means "clipboard action" in the host UI text areas
+/// (copy / cut / paste / select-all). macOS uses Command — delivered as `meta`
+/// — matching every native macOS app, since a Mac keyboard has no Insert key
+/// and `Ctrl+C` there is not copy; every other platform uses Control. Command
+/// and Control are distinct from the terminal's own `Ctrl+C` (SIGINT) and
+/// `Ctrl+V` (readline quoted-insert), so the clipboard keys never shadow them.
+/// Alt/AltGr never triggers a clipboard action so composed characters still
+/// type. Control is also accepted on macOS so existing `Ctrl+C/V` keeps working.
+#[cfg(target_os = "macos")]
+fn uses_clipboard_modifier(modifiers: &ModifierState) -> bool {
+    (modifiers.meta || modifiers.control) && !modifiers.alt
+}
+#[cfg(not(target_os = "macos"))]
+fn uses_clipboard_modifier(modifiers: &ModifierState) -> bool {
+    modifiers.control && !modifiers.alt
+}
+
 /// Why a paste could not enter review. `Unsupported` has a defined fallback —
 /// the platform never offered a review and the unreviewed path is what shipped
 /// there — while `Failed` is a real failure the human must be shown.
@@ -2077,8 +2094,7 @@ impl ConApp {
             }
             None => {}
         }
-        if key.modifiers.control
-            && !key.modifiers.alt
+        if uses_clipboard_modifier(&key.modifiers)
             && let LogicalKey::Character(text) = &key.logical
         {
             if text.eq_ignore_ascii_case("a") {
@@ -4501,6 +4517,21 @@ impl ConTerminal {
         // Host shortcuts are resolved before the application sees the key.
         if let LogicalKey::Character(text) = &event.logical {
             let control = event.modifiers.control;
+            // macOS: Command is the clipboard modifier (a Mac keyboard has no
+            // Insert key and Ctrl+C stays SIGINT). Command never reaches the
+            // shell, so it cannot shadow a terminal control key — Cmd+C copies
+            // any selection, Cmd+V pastes, matching every native macOS terminal.
+            #[cfg(target_os = "macos")]
+            if event.modifiers.meta && !control && !event.modifiers.alt {
+                if text.eq_ignore_ascii_case("c") {
+                    self.copy_selection();
+                    return Ok(());
+                }
+                if text.eq_ignore_ascii_case("v") {
+                    self.request_clipboard_paste();
+                    return Ok(());
+                }
+            }
             if control && event.modifiers.shift {
                 if text.eq_ignore_ascii_case("c") {
                     self.copy_selection();
@@ -6847,6 +6878,34 @@ mod tests {
             },
         };
         assert!(!composer_declines_key(&release));
+    }
+
+    /// The clipboard modifier follows the platform: Command on macOS (a Mac
+    /// keyboard has no Insert key and Ctrl+C stays SIGINT), Control elsewhere.
+    /// Alt/AltGr is never a clipboard action so composed characters still type.
+    #[test]
+    fn clipboard_modifier_follows_the_platform() {
+        let modifiers = |control, meta, alt| ModifierState {
+            control,
+            alt,
+            shift: false,
+            meta,
+        };
+        // No modifier is never a clipboard action; Alt never is either.
+        assert!(!uses_clipboard_modifier(&modifiers(false, false, false)));
+        assert!(!uses_clipboard_modifier(&modifiers(true, false, true)));
+        #[cfg(target_os = "macos")]
+        {
+            // Command is the clipboard modifier; Control still works too.
+            assert!(uses_clipboard_modifier(&modifiers(false, true, false)));
+            assert!(uses_clipboard_modifier(&modifiers(true, false, false)));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Control is the clipboard modifier; the Super/Windows key is not.
+            assert!(uses_clipboard_modifier(&modifiers(true, false, false)));
+            assert!(!uses_clipboard_modifier(&modifiers(false, true, false)));
+        }
     }
 
     /// `candidate_bounds` clips a repaint candidate to the frame and turns it
