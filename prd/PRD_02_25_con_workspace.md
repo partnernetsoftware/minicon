@@ -359,7 +359,13 @@ the window rather than being hidden to save pixels.
   is centred as a unit, each line is centred independently, and the smaller hint
   type fits the existing stacked controls without stealing draft width.
 - [x] while focused, the composer owns Space and all keyboard events instead of
-  leaking ignored keys into the PTY. `Ctrl+A/C/V/X` provide select-all, copy,
+  leaking ignored keys into the PTY, with one deliberate exception:
+  Shift+PageUp/PageDown are declined so scrollback paging works identically
+  whether the composer or the terminal has focus (they would otherwise be
+  swallowed while typing). Select-all / copy / paste / cut use the **platform's
+  native clipboard modifier** — Command on macOS (a Mac keyboard has no Insert
+  key and Ctrl+C is not copy there), Control on Windows/Linux — so
+  `Cmd+A/C/V/X` on macOS and `Ctrl+A/C/V/X` elsewhere provide select-all, copy,
   bounded multiline paste and cut semantics. Every keyboard, IME, paste and
   accessibility insertion shares a 64 KiB total-buffer ceiling and truncates
   only at UTF-8 boundaries. Its explicit send action is the only path that
@@ -412,6 +418,15 @@ the window rather than being hidden to save pixels.
   text, while a rangeless click, application-owned gesture, scrollbar drag or
   divider resize must not mutate the clipboard — is shared and owned by
   the selected platform terminal runtime.
+- [x] Terminal clipboard keys follow the platform, and never shadow a terminal
+  control key: on macOS **Cmd+C** copies the selection and **Cmd+V** pastes
+  (Command never reaches the shell, so bare `Ctrl+C` stays SIGINT and `Ctrl+V`
+  stays readline quoted-insert); on Windows/Linux the terminal uses
+  **Ctrl+Shift+C / Ctrl+Shift+V**. All four macOS paths (composer and terminal,
+  copy and paste, plus Shift+PageUp scrollback while the composer is focused)
+  are verified on real hardware by driving OS-level Cmd keys (System Events)
+  into a control-socket session and reading `ui-snapshot` / `capture-pane` /
+  the system clipboard back.
 - [x] Windows selection auto-copy counts UTF-16 units, performs one checked
   movable `GlobalAlloc`, and encodes directly into the locked system allocation
   instead of first collecting a Rust vector and copying it. The caller frees
