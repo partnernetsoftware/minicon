@@ -3512,7 +3512,13 @@ impl ConApp {
         // Both buttons get the same plate. Filling only one left the other as
         // floating text with no edge -- it read as a label rather than
         // something to press, which is the whole difference a button makes.
-        for button in [layout.composer_send, layout.composer_newline] {
+        for button in [
+            layout.composer_send,
+            layout.composer_newline,
+            layout.composer_copy,
+            layout.composer_paste,
+            layout.composer_cut,
+        ] {
             surface.fill_rect(
                 button.x,
                 button.y,
@@ -3650,6 +3656,34 @@ impl ConApp {
             accent,
             host_ui_size(BUTTON_LABEL_SIZE_PX),
             host_ui_size(BUTTON_HINT_SIZE_PX),
+        );
+        // Copy / Paste / Cut buttons. Copy and Cut need a selection to do
+        // anything, so they dim to the muted tone when nothing is selected;
+        // Paste is always live. Zero-width (hidden on a narrow composer)
+        // buttons paint nothing, so no guard is needed here.
+        let has_selection = composer::selection_bounds(&self.composer).is_some();
+        let clip_label_size = host_ui_size(BUTTON_HINT_SIZE_PX);
+        let selection_tone = if has_selection { text } else { muted };
+        paint_button_label(
+            &mut surface,
+            layout.composer_copy,
+            strings.copy,
+            selection_tone,
+            clip_label_size,
+        );
+        paint_button_label(
+            &mut surface,
+            layout.composer_paste,
+            strings.paste,
+            text,
+            clip_label_size,
+        );
+        paint_button_label(
+            &mut surface,
+            layout.composer_cut,
+            strings.cut,
+            selection_tone,
+            clip_label_size,
         );
         // The status readout follows the grid crosshair (the hovered cell) when
         // the pointer has been over the terminal, and falls back to the text
@@ -6405,6 +6439,34 @@ impl PixelWindowApplication for ConApp {
                     // being edited. Sending here would make the two buttons the
                     // same button with different labels.
                     composer::insert(&mut self.composer, "\n");
+                    self.composer.focused = true;
+                    self.update_composer_ime_anchor(window)?;
+                    self.mark_composer_dirty();
+                    self.request_dirty_redraw(window);
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                // The Copy / Paste / Cut buttons give mouse-only users the
+                // clipboard actions without a shortcut. Copy and Cut act on the
+                // current selection (no-op with none); Paste inserts at the
+                // caret. The composer keeps focus so the caret stays put.
+                ui::ComposerHit::Copy => {
+                    if let Some(text) = composer::selection_text(&self.composer) {
+                        let _ = agenterm_platform::clipboard::set_text(text);
+                    }
+                    self.composer.focused = true;
+                    self.mark_composer_dirty();
+                    self.request_dirty_redraw(window);
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                ui::ComposerHit::Paste => {
+                    self.composer.focused = true;
+                    self.paste_clipboard_into_composer(window);
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                ui::ComposerHit::Cut => {
+                    if let Some(text) = composer::cut(&mut self.composer) {
+                        let _ = agenterm_platform::clipboard::set_text(&text);
+                    }
                     self.composer.focused = true;
                     self.update_composer_ime_anchor(window)?;
                     self.mark_composer_dirty();

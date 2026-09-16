@@ -358,6 +358,14 @@ the window rather than being hidden to save pixels.
   translated primary labels retain the same shortcut lines. Each two-line block
   is centred as a unit, each line is centred independently, and the smaller hint
   type fits the existing stacked controls without stealing draft width.
+- [x] a Copy / Paste / Cut button column sits just left of Send/New Line so a
+  mouse-only user (who may have no keymap awareness) can edit the draft without
+  a shortcut. Copy and Cut act on the selection and dim to the muted tone when
+  nothing is selected; Paste is always live. The column is reserved only when
+  the input keeps a usable width, so a narrow window hides it (zero-width,
+  skipped by `composer_hit`) and keeps a typable input. Labels are translated in
+  all three languages. Paired with the mouse selection below, this is the whole
+  non-keyboard clipboard path.
 - [x] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY, with one deliberate exception:
   Shift+PageUp/PageDown are declined so scrollback paging works identically

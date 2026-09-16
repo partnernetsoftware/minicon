@@ -46,6 +46,13 @@ pub struct Layout {
     /// width the input would otherwise have, and taking a second column from a
     /// single-line input is what makes a long command stop fitting.
     pub composer_newline: Rect,
+    /// Copy / Paste / Cut convenience buttons, stacked in a column just left of
+    /// the Send/New Line column so mouse-only users can edit the draft without
+    /// knowing a shortcut. Zero-width (hidden, and skipped by `composer_hit`)
+    /// when the composer is too narrow to spare the column for the input.
+    pub composer_copy: Rect,
+    pub composer_paste: Rect,
+    pub composer_cut: Rect,
     /// Informational bar along the bottom of the terminal side. Carved from
     /// the terminal height, it never overlaps the sidebar or composer.
     pub status: Rect,
@@ -120,13 +127,48 @@ impl Layout {
                 .saturating_sub(button_gap),
         };
         let input_x = composer.x.saturating_add(padding);
+        // Copy / Paste / Cut column, stacked just left of the Send column. It is
+        // only reserved when the input keeps a usable width afterwards, so a
+        // narrow window keeps a typable input instead of three buttons.
+        let clip_gap = dip(8.0, scale);
+        let clip_width = dip(60.0, scale);
+        let min_input = dip(160.0, scale);
+        let clip_col_x = button_x.saturating_sub(clip_gap).saturating_sub(clip_width);
+        let show_clip = clip_col_x.saturating_sub(clip_gap).saturating_sub(input_x) >= min_input;
+        let clip_button_h = control_height.saturating_sub(button_gap.saturating_mul(2)) / 3;
+        let clip_slot_stride = clip_button_h.saturating_add(button_gap);
+        let clip_rect = |slot: u32, height: u32| {
+            if show_clip {
+                Rect {
+                    x: clip_col_x,
+                    y: control_y.saturating_add(clip_slot_stride.saturating_mul(slot)),
+                    width: clip_width,
+                    height,
+                }
+            } else {
+                Rect {
+                    x: clip_col_x,
+                    y: control_y,
+                    width: 0,
+                    height: 0,
+                }
+            }
+        };
+        let copy = clip_rect(0, clip_button_h);
+        let paste = clip_rect(1, clip_button_h);
+        let cut = clip_rect(
+            2,
+            control_height.saturating_sub(clip_slot_stride.saturating_mul(2)),
+        );
+        let input_right = if show_clip {
+            clip_col_x.saturating_sub(clip_gap)
+        } else {
+            send.x.saturating_sub(dip(8.0, scale))
+        };
         let input = Rect {
             x: input_x,
             y: control_y,
-            width: send
-                .x
-                .saturating_sub(dip(8.0, scale))
-                .saturating_sub(input_x),
+            width: input_right.saturating_sub(input_x),
             height: control_height,
         };
         let tool_size = dip(24.0, scale).min(sidebar_width / 2);
@@ -164,6 +206,9 @@ impl Layout {
             composer_input: input,
             composer_send: send,
             composer_newline: newline,
+            composer_copy: copy,
+            composer_paste: paste,
+            composer_cut: cut,
             new_root,
             settings,
         }
@@ -242,6 +287,9 @@ pub enum ComposerHit {
     Input,
     Send,
     Newline,
+    Copy,
+    Paste,
+    Cut,
 }
 
 /// Where a pointer landed on the bottom status bar. The bar is informational
@@ -300,6 +348,9 @@ impl UiLanguage {
                 send_hint: "(ctrl-o)",
                 newline: "New Line",
                 newline_hint: "(Enter)",
+                copy: "Copy",
+                paste: "Paste",
+                cut: "Cut",
                 send_to: "SEND TO @",
                 empty_title: "READY FOR A NEW TERMINAL",
                 new_terminal: "NEW TERMINAL",
@@ -316,6 +367,9 @@ impl UiLanguage {
                 send_hint: "(ctrl-o)",
                 newline: "换行",
                 newline_hint: "(Enter)",
+                copy: "复制",
+                paste: "粘贴",
+                cut: "剪切",
                 send_to: "送往 @",
                 empty_title: "准备开启新终端",
                 new_terminal: "新建终端",
@@ -332,6 +386,9 @@ impl UiLanguage {
                 send_hint: "(ctrl-o)",
                 newline: "換行",
                 newline_hint: "(Enter)",
+                copy: "複製",
+                paste: "貼上",
+                cut: "剪下",
                 send_to: "送往 @",
                 empty_title: "準備開啟新終端",
                 new_terminal: "新建終端",
@@ -405,6 +462,9 @@ pub struct HostUiStrings {
     pub send_hint: &'static str,
     pub newline: &'static str,
     pub newline_hint: &'static str,
+    pub copy: &'static str,
+    pub paste: &'static str,
+    pub cut: &'static str,
     pub send_to: &'static str,
     pub empty_title: &'static str,
     pub new_terminal: &'static str,
@@ -453,6 +513,12 @@ pub fn composer_hit(layout: Layout, x: u32, y: u32) -> ComposerHit {
         ComposerHit::Send
     } else if layout.composer_newline.contains(x, y) {
         ComposerHit::Newline
+    } else if layout.composer_copy.contains(x, y) {
+        ComposerHit::Copy
+    } else if layout.composer_paste.contains(x, y) {
+        ComposerHit::Paste
+    } else if layout.composer_cut.contains(x, y) {
+        ComposerHit::Cut
     } else if layout.composer.contains(x, y) {
         ComposerHit::Input
     } else {
@@ -1208,6 +1274,36 @@ mod tests {
             ComposerHit::Newline
         );
         assert_eq!(composer_hit(layout, 500, 100), ComposerHit::Outside);
+    }
+
+    #[test]
+    fn composer_clipboard_buttons_hit_test_and_hide_when_narrow() {
+        // A comfortably wide composer shows the Copy / Paste / Cut column, each
+        // a distinct hit inside the composer strip.
+        let layout = Layout::new(1200, 800, 1.0);
+        assert!(layout.composer_copy.width > 0);
+        for (rect, expected) in [
+            (layout.composer_copy, ComposerHit::Copy),
+            (layout.composer_paste, ComposerHit::Paste),
+            (layout.composer_cut, ComposerHit::Cut),
+        ] {
+            assert_eq!(composer_hit(layout, rect.x + 1, rect.y + 1), expected);
+        }
+        // The buttons sit left of the Send column, not overlapping it.
+        assert!(layout.composer_cut.x + layout.composer_cut.width <= layout.composer_send.x);
+
+        // A narrow composer drops the column (zero-width) so the input keeps a
+        // usable width; a click where the column would be is plain Input.
+        let narrow = Layout::new(480, 500, 1.0);
+        assert_eq!(narrow.composer_copy.width, 0);
+        assert_eq!(
+            composer_hit(
+                narrow,
+                narrow.composer_input.x + 1,
+                narrow.composer_input.y + 1
+            ),
+            ComposerHit::Input
+        );
     }
 
     /// The control buttons sit inside the composer strip, so the only reason a
