@@ -415,6 +415,48 @@ pub fn selection_text(state: &ComposerState) -> Option<&str> {
     selection_bounds(state).map(|(start, end)| &state.text[start..end])
 }
 
+/// Byte range of the token at `offset`, for double-click selection: the run of
+/// non-whitespace characters around it — path-friendly like the terminal's word
+/// selection, so a double-click on `/usr/local/bin` takes the whole path — or
+/// the run of whitespace when the offset sits on a space. `offset` must be a
+/// char boundary (it comes from the pointer-to-caret mapping).
+#[must_use]
+pub fn word_bounds(text: &str, offset: usize) -> (usize, usize) {
+    let len = text.len();
+    if len == 0 {
+        return (0, 0);
+    }
+    let offset = offset.min(len);
+    let is_word = |c: char| !c.is_whitespace();
+    let before = text[..offset].chars().next_back();
+    let after = text[offset..].chars().next();
+    // Favour the token to the left, so double-clicking just past a word (the
+    // caret landing on the space after it) still selects that word.
+    let target_is_word = match (before, after) {
+        (Some(b), _) if is_word(b) => true,
+        (_, Some(a)) => is_word(a),
+        (Some(b), None) => is_word(b),
+        (None, None) => return (0, 0),
+    };
+    let mut start = offset;
+    for (index, character) in text[..offset].char_indices().rev() {
+        if is_word(character) == target_is_word {
+            start = index;
+        } else {
+            break;
+        }
+    }
+    let mut end = offset;
+    for (index, character) in text[offset..].char_indices() {
+        if is_word(character) == target_is_word {
+            end = offset + index + character.len_utf8();
+        } else {
+            break;
+        }
+    }
+    (start, end)
+}
+
 /// Extend the selection by one movement: the anchor is pinned on the first
 /// Shift+Arrow and the caret moves, exactly like every text field. A plain
 /// arrow (see [`move_caret`]) collapses instead.
@@ -1588,5 +1630,25 @@ mod tests {
         let _ = composer.take_submission();
         assert_eq!(composer.recall, None);
         assert_eq!(composer.draft, "");
+    }
+
+    #[test]
+    fn word_bounds_selects_the_non_whitespace_token() {
+        // Double-click inside a token takes the whole token.
+        let text = "cd /usr/local/bin";
+        assert_eq!(word_bounds(text, 0), (0, 2)); // "cd"
+        assert_eq!(word_bounds(text, 1), (0, 2));
+        // Path-friendly: the whole path is one token (like the terminal).
+        assert_eq!(word_bounds(text, 8), (3, 17)); // inside "/usr/local/bin"
+        // A click just past a word (on the space after it) still takes the word.
+        assert_eq!(word_bounds(text, 2), (0, 2));
+        // On a whitespace run, the run itself is selected.
+        assert_eq!(word_bounds("a   b", 2), (1, 4));
+        // End of string takes the last token.
+        assert_eq!(word_bounds(text, 17), (3, 17));
+        // Empty draft has no word.
+        assert_eq!(word_bounds("", 0), (0, 0));
+        // CJK counts as non-whitespace, so a token of wide chars is one word.
+        assert_eq!(word_bounds("你好 world", 0), (0, "你好".len()));
     }
 }

@@ -941,6 +941,14 @@ struct ConApp {
     /// the greeting page is a lifecycle boundary rather than a settings reset.
     session_seed: SessionSeed,
     composer: composer::ComposerState,
+    /// True while the left button is held after pressing inside the composer,
+    /// so pointer motion extends a mouse selection there instead of reaching
+    /// the terminal. Cleared on release.
+    composer_selecting: bool,
+    /// Time, byte offset and streak of the last composer press, for
+    /// double-click (word) and triple-click (all) selection — the composer's
+    /// own counterpart to the terminal's `last_click`.
+    composer_last_click: Option<(Instant, usize, u8)>,
     /// The language MiniCon labels its own host UI in. Child output is never
     /// touched by this.
     ui_language: ui::UiLanguage,
@@ -1238,6 +1246,8 @@ impl ConApp {
             sessions,
             session_seed,
             composer: composer::ComposerState::default(),
+            composer_selecting: false,
+            composer_last_click: None,
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
             hovered_tree_row: None,
@@ -2002,11 +2012,15 @@ impl ConApp {
     /// click resolves to the character the user can actually see under the
     /// pointer rather than to an offset in the full buffer, which for a
     /// scrolled line is a different character entirely.
-    fn place_composer_caret(
-        &mut self,
+    /// The composer text byte offset a pointer position lands on, mapping a
+    /// pixel through the same visible-line window the painter uses. Shared by
+    /// click-to-place-caret and mouse selection (press/drag) so both agree on
+    /// where the pointer is in the draft.
+    fn composer_offset_at(
+        &self,
         window: &PixelWindow,
         position: &LogicalPoint,
-    ) -> Result<(), PixelWindowError> {
+    ) -> Result<usize, PixelWindowError> {
         let metrics = window.metrics()?;
         let scale = metrics.scale_factor.max(1.0);
         let layout = self.layout(
@@ -2065,9 +2079,52 @@ impl ConApp {
             // character, so a click must not be charged for it.
             .saturating_add(u32::from(visible.truncated).saturating_mul(cell_width));
         let cell = physical_x.saturating_sub(origin) / cell_width;
-        self.composer.caret =
-            range.start + composer::caret_at_cell(line, visible.text, cell as usize);
+        Ok(range.start + composer::caret_at_cell(line, visible.text, cell as usize))
+    }
+
+    /// Composer click streak (1 → 2 → 3 → 1) for word / all selection. A repeat
+    /// only counts on the same byte offset inside the multi-click window, the
+    /// composer's counterpart to the terminal's `register_click`.
+    fn register_composer_click(&mut self, offset: usize) -> u8 {
+        let now = Instant::now();
+        let count = match self.composer_last_click {
+            Some((at, at_offset, count))
+                if at_offset == offset && now.duration_since(at) <= MULTI_CLICK_WINDOW =>
+            {
+                count % 3 + 1
+            }
+            _ => 1,
+        };
+        self.composer_last_click = Some((now, offset, count));
+        count
+    }
+
+    /// Extends the composer mouse selection to `position` during a drag. The
+    /// anchor was pinned on press; motion only moves the caret, so
+    /// `selection_bounds` reports the covered range.
+    fn drag_composer_selection(
+        &mut self,
+        window: &PixelWindow,
+        position: &LogicalPoint,
+    ) -> Result<(), PixelWindowError> {
+        let offset = self.composer_offset_at(window, position)?;
+        self.composer.caret = offset;
+        self.update_composer_ime_anchor(window)?;
+        self.mark_composer_dirty();
+        self.request_dirty_redraw(window);
         Ok(())
+    }
+
+    /// Pastes the clipboard into the composer at the caret (replacing any
+    /// selection), the mouse counterpart to Ctrl/Cmd+V. Used by right-click and
+    /// the composer's Paste button so non-keyboard users can paste too.
+    fn paste_clipboard_into_composer(&mut self, window: &PixelWindow) {
+        if let Ok(text) = agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES) {
+            composer::paste(&mut self.composer, &text);
+            let _ = self.update_composer_ime_anchor(window);
+            self.mark_composer_dirty();
+            self.request_dirty_redraw(window);
+        }
     }
 
     fn handle_composer_key(&mut self, window: &PixelWindow, key: &NormalizedKeyEvent) -> bool {
@@ -6152,6 +6209,46 @@ impl PixelWindowApplication for ConApp {
                 return Ok(PixelWindowDirective::Continue);
             }
         }
+        // A composer mouse selection in progress owns pointer motion and the
+        // left release, so a drag extends the selection instead of reaching the
+        // terminal. Handled before the press block below and before the terminal
+        // gets the event.
+        if self.composer_selecting {
+            if let PixelWindowEvent::PointerMoved { position, .. } = &event {
+                self.drag_composer_selection(window, position)?;
+                return Ok(PixelWindowDirective::Continue);
+            }
+            if let PixelWindowEvent::PointerButton {
+                button: PointerButton::Left,
+                state: PointerButtonState::Released,
+                ..
+            } = &event
+            {
+                self.composer_selecting = false;
+                // A press with no drag collapses back to a plain caret so a
+                // click does not leave a zero-width "selection" armed.
+                if self.composer.anchor == Some(self.composer.caret) {
+                    self.composer.anchor = None;
+                }
+                self.mark_composer_dirty();
+                self.request_dirty_redraw(window);
+                return Ok(PixelWindowDirective::Continue);
+            }
+        }
+        // Right-click inside the composer pastes at the caret — the mouse
+        // counterpart to Ctrl/Cmd+V, for users who never learn the chord.
+        if let PixelWindowEvent::PointerButton {
+            button: PointerButton::Right,
+            state: PointerButtonState::Pressed,
+            position: Some(position),
+            ..
+        } = &event
+            && self.composer_hit(window, position)? == ui::ComposerHit::Input
+        {
+            self.composer.focused = true;
+            self.paste_clipboard_into_composer(window);
+            return Ok(PixelWindowDirective::Continue);
+        }
         if let PixelWindowEvent::PointerButton {
             button: PointerButton::Left,
             state: PointerButtonState::Pressed,
@@ -6263,7 +6360,29 @@ impl PixelWindowApplication for ConApp {
                 ui::ComposerHit::Input => {
                     self.composer.focused = true;
                     self.composer.select_all = false;
-                    self.place_composer_caret(window, position)?;
+                    let offset = self.composer_offset_at(window, position)?;
+                    self.composer.caret = offset;
+                    match self.register_composer_click(offset) {
+                        // Single press: seed a collapsed selection and begin a
+                        // drag. Motion extends it; a release with no motion
+                        // collapses it back to a caret.
+                        1 => {
+                            self.composer.anchor = Some(offset);
+                            self.composer_selecting = true;
+                        }
+                        // Double: select the word (non-whitespace token) here.
+                        2 => {
+                            let (start, end) = composer::word_bounds(&self.composer.text, offset);
+                            self.composer.anchor = Some(start);
+                            self.composer.caret = end;
+                            self.composer_selecting = false;
+                        }
+                        // Triple (and the 3→1 cycle stops here): select all.
+                        _ => {
+                            composer::select_all(&mut self.composer);
+                            self.composer_selecting = false;
+                        }
+                    }
                     self.update_composer_ime_anchor(window)?;
                     self.mark_composer_dirty();
                     // A physical client click has already activated and
