@@ -27,7 +27,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agenterm-platform"
 version = "0.1.16"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=7036c239ba697834b6245ca25f0c8bb96e5fa285#7036c239ba697834b6245ca25f0c8bb96e5fa285"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=945ab8ec206f11bbb81dd6200cb994e9ac19cfe1#945ab8ec206f11bbb81dd6200cb994e9ac19cfe1"
 dependencies = [
  "ab_glyph",
  "atspi",
@@ -41,6 +41,7 @@ dependencies = [
  "serde_json",
  "softbuffer",
  "tokio",
+ "unicode-width",
  "windows-sys 0.61.2",
  "winit",
  "x11rb",
@@ -50,7 +51,7 @@ dependencies = [
 [[package]]
 name = "agenterm-ui-core"
 version = "0.1.16"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=7036c239ba697834b6245ca25f0c8bb96e5fa285#7036c239ba697834b6245ca25f0c8bb96e5fa285"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=945ab8ec206f11bbb81dd6200cb994e9ac19cfe1#945ab8ec206f11bbb81dd6200cb994e9ac19cfe1"
 dependencies = [
  "vt100",
 ]
@@ -981,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "agenterm-platform",
  "agenterm-ui-core",
@@ -1808,7 +1809,7 @@ dependencies = [
 [[package]]
 name = "softbuffer"
 version = "0.4.8"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=7036c239ba697834b6245ca25f0c8bb96e5fa285#7036c239ba697834b6245ca25f0c8bb96e5fa285"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=945ab8ec206f11bbb81dd6200cb994e9ac19cfe1#945ab8ec206f11bbb81dd6200cb994e9ac19cfe1"
 dependencies = [
  "as-raw-xcb-connection",
  "bytemuck",
@@ -2127,7 +2128,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=7036c239ba697834b6245ca25f0c8bb96e5fa285#7036c239ba697834b6245ca25f0c8bb96e5fa285"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=945ab8ec206f11bbb81dd6200cb994e9ac19cfe1#945ab8ec206f11bbb81dd6200cb994e9ac19cfe1"
 dependencies = [
  "itoa",
  "unicode-width",

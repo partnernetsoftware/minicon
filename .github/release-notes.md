@@ -22,6 +22,10 @@ operating system's own desktop libraries.
   after the last tab closes.
 - Runs on older Windows (Server 2016 / Windows 10 1607), and on Linux the
   runtime-only `libxkbcommon-x11.so.0` starts without a `-dev` package.
+- **Correct CJK / double-width text on legacy Windows.** On Windows without
+  ConPTY (Server 2016 / 1607), Chinese, Japanese, Korean and other double-width
+  characters now render aligned — no stray spaces between glyphs and no drift on
+  lines that mix CJK with ASCII.
 
 ## Downloads
 

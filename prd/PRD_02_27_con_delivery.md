@@ -88,6 +88,7 @@ flowchart LR
     R19 --> R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
     R110 --> R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed"]
     R111 --> R112["v0.1.12 released<br/>finish & polish · dual-signed"]
+    R112 --> R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed"]
 ```
 
 - [x] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
@@ -132,6 +133,18 @@ flowchart LR
   hover, a live zoom % readout, Escape-to-close, and the macOS/Linux
   paste-review multiline fix. From the post-0.1.11 review
   (`plan/plan-0.1.12-review.md`). Ledger: `archive/v0.1.12-release-history.md`.
+
+- [x] **v0.1.13 released — legacy-Windows CJK console fix, dual-signed.** Both
+  signing switches stay `required`. Fixes garbled Chinese rendering on Windows
+  without ConPTY (build < 17763, e.g. Server 2016 / 14393): the pre-ConPTY
+  console agent in `agenterm-platform` keyed a double-width glyph's trailing cell
+  only on the console's `COMMON_LVB_TRAILING_BYTE`, unreliable on those hosts, so
+  it emitted a stray space/ASCII between CJK characters and drifted mixed
+  CJK+ASCII lines. The fix derives wide-char continuation from the character's
+  display width (`unicode_width`, the same oracle the vt100 parser advances on),
+  keeping the LVB bit only as a secondary signal; the `agenterm-platform` pin was
+  bumped to carry it. Diagnosed against a real build-14393 host and a UTM Win7
+  test bed. Ledger: `archive/v0.1.13-release-history.md`.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is

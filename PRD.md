@@ -76,8 +76,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.10-release-history.md
 │   ├── [x] v0.1.11 released — per-theme terminal colors; dual-signed
 │   │   └── prd/archive/v0.1.11-release-history.md
-│   ├── [x] v0.1.12 released — finish & polish (composer selection, UI); dual-signed (latest)
+│   ├── [x] v0.1.12 released — finish & polish (composer selection, UI); dual-signed
 │   │   └── prd/archive/v0.1.12-release-history.md
+│   ├── [x] v0.1.13 released — legacy-Windows CJK console rendering fix; dual-signed (latest)
+│   │   └── prd/archive/v0.1.13-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -132,7 +134,8 @@ flowchart LR
         SR9["v0.1.9 released<br/>FIRST dual-signed · Win Authenticode + macOS notarized"]
         R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
         R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed"]
-        R112["v0.1.12 released<br/>finish & polish · composer selection · dual-signed · latest"]
+        R112["v0.1.12 released<br/>finish & polish · composer selection · dual-signed"]
+        R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -155,7 +158,7 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 --> C17 --> SR9 --> R110 --> R111 --> R112
+    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -195,12 +198,20 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.12 is the latest public release: a finish-and-polish release on the
-  dual-signed line (composer Shift+Arrow selection, theme-consistent crosshair/
-  scrollbar, complete shortcut list, tab-title ellipsis, close-button exit
-  coloring, header hover, live zoom %, Escape-to-close, and the macOS/Linux
-  paste-review multiline fix). No new surface. History:
-  `prd/archive/v0.1.12-release-history.md`.
+- [x] v0.1.13 is the latest public release: a bug-fix release on the dual-signed
+  line. It fixes garbled CJK rendering on **legacy Windows without ConPTY**
+  (build < 17763, e.g. Server 2016 / 14393): the pre-ConPTY console agent
+  identified a double-width glyph's trailing cell only by the console's
+  `COMMON_LVB_TRAILING_BYTE`, which is unreliable there, so it emitted a stray
+  space/ASCII between CJK characters and drifted mixed CJK+ASCII lines. The fix
+  (in `agenterm-platform`, pinned rev bumped) derives wide-char continuation from
+  the character's display width — the same oracle the vt100 parser uses — so
+  console cells consumed equals parser columns advanced by construction. History:
+  `prd/archive/v0.1.13-release-history.md`.
+- [x] v0.1.12: finish-and-polish (composer Shift+Arrow selection, theme-consistent
+  crosshair/scrollbar, complete shortcut list, tab-title ellipsis, close-button
+  exit coloring, header hover, live zoom %, Escape-to-close, macOS/Linux
+  paste-review multiline fix). History: `prd/archive/v0.1.12-release-history.md`.
 - [x] Every release since **v0.1.9** is dual-signed: Windows executables and
   `minicon.com` are Authenticode-signed via Azure Artifact Signing, and the
   macOS build is Developer ID-signed and Apple-notarized, as PARTNERNET
