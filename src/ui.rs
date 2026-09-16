@@ -403,7 +403,11 @@ impl UiLanguage {
     }
 
     #[must_use]
-    pub const fn help_lines(self) -> [&'static str; 12] {
+    pub const fn help_lines(self) -> [&'static str; 13] {
+        // The clipboard keys are the only platform-native ones: Cmd on macOS,
+        // Ctrl elsewhere. The workspace shortcuts stay Ctrl+Shift on every
+        // platform, so only the clipboard line switches via `cfg`. Exactly one
+        // of the two `#[cfg]` variants is compiled in, keeping the length fixed.
         match self {
             Self::English => [
                 "KEYBOARD",
@@ -415,6 +419,10 @@ impl UiLanguage {
                 "Ctrl+Shift+P   Cycle theme",
                 "Ctrl+Shift+,   Settings",
                 "Ctrl+Shift+G   Crosshair",
+                #[cfg(target_os = "macos")]
+                "Cmd+C/V/X      Copy/Paste/Cut",
+                #[cfg(not(target_os = "macos"))]
+                "Ctrl+C/V/X     Copy/Paste/Cut",
                 "Ctrl+O         Send",
                 "Enter          Newline",
                 "Up / Down      History",
@@ -429,6 +437,10 @@ impl UiLanguage {
                 "Ctrl+Shift+P   切换主题",
                 "Ctrl+Shift+,   设置",
                 "Ctrl+Shift+G   十字线",
+                #[cfg(target_os = "macos")]
+                "Cmd+C/V/X      复制/粘贴/剪切",
+                #[cfg(not(target_os = "macos"))]
+                "Ctrl+C/V/X     复制/粘贴/剪切",
                 "Ctrl+O         发送",
                 "Enter          软换行",
                 "Up / Down      历史",
@@ -443,6 +455,10 @@ impl UiLanguage {
                 "Ctrl+Shift+P   切換主題",
                 "Ctrl+Shift+,   設定",
                 "Ctrl+Shift+G   十字線",
+                #[cfg(target_os = "macos")]
+                "Cmd+C/V/X      複製/貼上/剪下",
+                #[cfg(not(target_os = "macos"))]
+                "Ctrl+C/V/X     複製/貼上/剪下",
                 "Ctrl+O         送出",
                 "Enter          軟換行",
                 "Up / Down      歷史",
@@ -537,7 +553,7 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
 }
 
 /// Number of settings-panel shortcut lines (mirrors `UiLanguage::help_lines`).
-pub const SETTINGS_SHORTCUT_LINES: u32 = 12;
+pub const SETTINGS_SHORTCUT_LINES: u32 = 13;
 
 /// Geometry of the settings panel and its interactive controls. Computed on
 /// demand from the `Layout` + scale so paint and hit-testing agree exactly.

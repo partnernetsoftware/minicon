@@ -199,7 +199,7 @@ pub(crate) fn paint_settings_panel(
     theme: theme::Theme,
     ui_language: ui::UiLanguage,
     ui_theme: theme::ThemeChoice,
-    shortcuts: [&str; 12],
+    shortcuts: [&str; 13],
     font_size_px: u16,
     font_percent: u16,
 ) {
