@@ -78,8 +78,12 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.11-release-history.md
 │   ├── [x] v0.1.12 released — finish & polish (composer selection, UI); dual-signed
 │   │   └── prd/archive/v0.1.12-release-history.md
-│   ├── [x] v0.1.13 released — legacy-Windows CJK console rendering fix; dual-signed (latest)
+│   ├── [x] v0.1.13 released — legacy-Windows CJK console rendering fix; dual-signed
 │   │   └── prd/archive/v0.1.13-release-history.md
+│   ├── [x] v0.1.14 released — Windows per-monitor DPI awareness + mouse-wheel; dual-signed
+│   │   └── prd/archive/v0.1.14-release-history.md
+│   ├── [x] v0.1.15 released — Windows terminal/composer overlap + bottom-row click fix; dual-signed (latest)
+│   │   └── prd/archive/v0.1.15-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -137,7 +141,9 @@ flowchart LR
         R110["v0.1.10 released<br/>complete UI · dual-signed · signed .dmg"]
         R111["v0.1.11 released<br/>per-theme terminal colors · dual-signed"]
         R112["v0.1.12 released<br/>finish & polish · composer selection · dual-signed"]
-        R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed · latest"]
+        R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed"]
+        R114["v0.1.14 released<br/>Windows DPI awareness + mouse-wheel · dual-signed"]
+        R115["v0.1.15 released<br/>Windows terminal/composer overlap + click fix · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -160,7 +166,7 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113
+    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -200,7 +206,21 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.13 is the latest public release: a bug-fix release on the dual-signed
+- [x] v0.1.15 is the latest public release: a Windows bug-fix release on the
+  dual-signed line. It fixes the terminal's bottom row overlapping the composer
+  input, and clicks on a full-screen program's bottom input line being captured
+  by the composer instead of forwarded — one root cause (`content_bottom_px`
+  reserved only the composer, not the status bar beneath it), exposed once
+  v0.1.14's per-monitor DPI awareness made rendering happen at the real scale.
+  Fixed via `ui::bottom_inset` and locked with a cross-scale layout/hit-test
+  invariant suite plus a machine-verifiable `geometry` object in `ui-snapshot`.
+  History: `prd/archive/v0.1.15-release-history.md`.
+- [x] v0.1.14: Windows per-monitor DPI awareness (crisp text on scaled displays,
+  with `GetProcAddress`-resolved modern APIs so it still loads on Server 2016 /
+  1607) and mouse-wheel scrolling in Windows terminal programs (the wheel report
+  now carries the hovered cell). History:
+  `prd/archive/v0.1.14-release-history.md`.
+- [x] v0.1.13 was a bug-fix release on the dual-signed
   line. It fixes garbled CJK rendering on **legacy Windows without ConPTY**
   (build < 17763, e.g. Server 2016 / 14393): the pre-ConPTY console agent
   identified a double-width glyph's trailing cell only by the console's
