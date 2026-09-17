@@ -1440,7 +1440,7 @@ impl ConApp {
         session.set_content_insets(
             minicon_core::numeric::round_f64(sidebar_width_logical * scale) as u32,
             0,
-            minicon_core::numeric::round_f64(ui::COMPOSER_HEIGHT_DIP * scale) as u32,
+            ui::bottom_inset(scale),
         );
     }
 
@@ -2654,10 +2654,79 @@ impl ConApp {
                             metrics.physical_height,
                             metrics.scale_factor,
                         );
+                        let rect_obj = |r: ui::Rect| {
+                            json::object(vec![
+                                ("x", r.x.into()),
+                                ("y", r.y.into()),
+                                ("width", r.width.into()),
+                                ("height", r.height.into()),
+                            ])
+                        };
+                        // Terminal viewport (the pixels the grid owns) and grid
+                        // shape come from the active session, which holds the
+                        // content insets the paint path uses. Exposing them makes
+                        // layout correctness — e.g. "the viewport bottom meets the
+                        // composer top with no overlap" — verifiable from the
+                        // control plane on any live window, including a headless
+                        // session with no GPU where a screenshot never rasterizes.
+                        let geometry = self.active_session_opt().map(|session| {
+                            let scrollbar = ui::terminal_scrollbar_width(metrics.scale_factor);
+                            // Frame extent comes from the live window metrics, not
+                            // the session's paint-time `frame_*` fields: those stay
+                            // zero until the first present, so a headless or
+                            // not-yet-painted window would otherwise report a
+                            // zero-size viewport and defeat the very check this
+                            // exists for. Content insets are set at layout time
+                            // (not paint time), so pairing them with live metrics
+                            // yields the true viewport in every state.
+                            let frame_w = metrics.physical_width;
+                            let frame_h = metrics.physical_height;
+                            let viewport = ui::Rect {
+                                x: session.content_left_px,
+                                y: session.content_top_px,
+                                width: frame_w
+                                    .saturating_sub(session.content_left_px)
+                                    .saturating_sub(scrollbar),
+                                height: frame_h
+                                    .saturating_sub(session.content_top_px)
+                                    .saturating_sub(session.content_bottom_px),
+                            };
+                            json::object(vec![
+                                // Integer permille (1500 == 1.5x) to keep float
+                                // formatting out of the release binary, matching
+                                // the delivery module's f64-removal discipline.
+                                (
+                                    "scale_permille",
+                                    (minicon_core::numeric::round_f64(session.scale * 1000.0)
+                                        as u64)
+                                        .into(),
+                                ),
+                                (
+                                    "frame",
+                                    json::object(vec![
+                                        ("width", frame_w.into()),
+                                        ("height", frame_h.into()),
+                                    ]),
+                                ),
+                                ("terminal_viewport", rect_obj(viewport)),
+                                ("composer_band", rect_obj(layout.composer)),
+                                ("status_band", rect_obj(layout.status)),
+                                (
+                                    "grid",
+                                    json::object(vec![
+                                        ("cols", session.cols.into()),
+                                        ("rows", session.rows.into()),
+                                        ("cell_w", session.cell_w.into()),
+                                        ("cell_h", session.cell_h.into()),
+                                    ]),
+                                ),
+                            ])
+                        });
                         json::object(vec![
                             ("active", tab_id_json(self.workspace.active())),
                             ("workspace_empty", self.workspace.active().is_none().into()),
                             ("settings_open", self.settings_open.into()),
+                            ("geometry", geometry.unwrap_or(json::JsonValue::Null)),
                             (
                                 "host_notice",
                                 self.host_notice
@@ -8205,6 +8274,84 @@ mod tests {
         // Exactly on the trailing edge of the last cell stays on the last cell.
         let edge = app.hit_test(&LogicalPoint { x: 640.0, y: 384.0 });
         assert_eq!((edge.col, edge.row), (79, 23));
+    }
+
+    /// Builds a terminal whose cell metrics, grid and content insets are derived
+    /// the same way `opened`/`configure_host_ui` derive them at runtime, so a
+    /// coordinate test exercises the real scale pipeline rather than hand-picked
+    /// numbers. The bottom inset reserves composer + status, matching
+    /// [`ui::bottom_inset`].
+    fn pointer_terminal_at(scale: f64, frame_w: u32, frame_h: u32) -> ConTerminal {
+        let mut app = ConTerminal::new(None);
+        app.scale = scale;
+        app.recompute_metrics(scale);
+        let left = minicon_core::numeric::round_f64(ui::SIDEBAR_WIDTH_DIP * scale) as u32;
+        let bottom = ui::bottom_inset(scale);
+        app.set_content_insets(left, 0, bottom);
+        app.frame_width = frame_w;
+        app.frame_height = frame_h;
+        let usable_w = frame_w
+            .saturating_sub(left)
+            .saturating_sub(ui::terminal_scrollbar_width(scale));
+        let usable_h = frame_h
+            .saturating_sub(app.content_top_px)
+            .saturating_sub(bottom);
+        let (cols, rows) = ConTerminal::compute_grid(usable_w, usable_h, app.cell_w, app.cell_h);
+        app.cols = cols;
+        app.rows = rows;
+        app.dirty = DirtyRegion::empty();
+        app
+    }
+
+    /// Every grid cell must survive a `terminal_point_to_logical` →
+    /// `hit_test` round trip at any DPI scale. This is the coordinate-consistency
+    /// invariant behind mouse forwarding: a cell's center, converted to a logical
+    /// pointer and hit-tested back, must return that same cell — otherwise a real
+    /// click on a mouse-tracking TUI reports the wrong cell (or none). The scales
+    /// include the fractional values real Windows displays report, where a
+    /// physical/logical mix-up would surface.
+    #[test]
+    fn every_cell_round_trips_through_logical_at_every_scale() {
+        for scale in [1.0, 1.25, 1.5, 2.0, 2.5] {
+            let app = pointer_terminal_at(scale, 1600, 900);
+            assert!(app.cols >= 2 && app.rows >= 2, "degenerate grid at {scale}");
+            for row in 0..app.rows {
+                for col in 0..app.cols {
+                    let point = TerminalPoint { row, col };
+                    let logical = app.terminal_point_to_logical(point);
+                    let back = app.hit_test(&logical);
+                    assert_eq!(
+                        (back.col, back.row),
+                        (col, row),
+                        "cell ({col},{row}) failed the logical round trip at scale {scale}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The last physically-clickable pixel of the terminal viewport — one pixel
+    /// above the reserved host-UI band — must map to the last grid cell, and the
+    /// first pixel of that band must NOT (it belongs to the composer). Together
+    /// with the `ui::tests` tiling invariant this proves the terminal's clickable
+    /// area meets the composer with neither a dead strip nor an overlap, at scale.
+    #[test]
+    fn the_terminal_viewport_meets_the_host_ui_band_exactly() {
+        for scale in [1.0, 1.5, 2.0] {
+            let app = pointer_terminal_at(scale, 1600, 900);
+            let viewport_bottom_px = app.frame_height.saturating_sub(app.content_bottom_px);
+            // One physical pixel above the band, converted to a logical pointer.
+            let inside = LogicalPoint {
+                x: f64::from(app.content_left_px + 2) / scale,
+                y: f64::from(viewport_bottom_px - 1) / scale,
+            };
+            let cell = app.hit_test(&inside);
+            assert_eq!(
+                cell.row,
+                app.rows - 1,
+                "last viewport pixel row must hit the last grid row at scale {scale}"
+            );
+        }
     }
 
     fn preedit_surface<'a>(pixels: &'a mut [u32], width: u32, height: u32) -> Surface<'a> {

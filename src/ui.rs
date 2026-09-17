@@ -721,6 +721,22 @@ pub fn terminal_scrollbar_width(scale: f64) -> u32 {
     dip(TERMINAL_SCROLLBAR_WIDTH_DIP, scale).max(1)
 }
 
+/// Total physical height reserved at the bottom of the window for host UI: the
+/// composer plus the status bar stacked beneath it (see `with_sidebar_width`,
+/// where `composer.y = height - status_height - composer_height`). The terminal
+/// viewport's bottom must land exactly on the composer's top, so this reserves
+/// both bands — summed the same way the layout stacks them, so rounding matches
+/// `composer.y` to the pixel.
+///
+/// Reserving only the composer left the terminal's bottom rows overlapping the
+/// composer by `status_height`. That gap was masked while Windows ran
+/// DPI-unaware (rendered at scale 1.0, then bitmap-stretched by the OS); once
+/// per-monitor DPI awareness made rendering happen at the real scale, the
+/// `status_height * scale` overlap became visible.
+pub fn bottom_inset(scale: f64) -> u32 {
+    dip(COMPOSER_HEIGHT_DIP, scale).saturating_add(dip(STATUS_HEIGHT_DIP, scale))
+}
+
 pub fn sidebar_width_from_pointer(pointer_x: f64, client_width: f64) -> f64 {
     let maximum = clamp_f64(
         client_width - TERMINAL_MIN_WIDTH_DIP,
@@ -777,6 +793,181 @@ pub fn terminal_scrollbar_geometry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A representative spread of window sizes and DPI scales the layout must
+    /// survive: phone-narrow to 4K-wide, 100 % to 300 %, plus a couple of
+    /// awkward fractional scales real monitors actually report. Kept in one
+    /// place so every cross-cutting invariant below sweeps the same grid.
+    const LAYOUT_SWEEP: &[(u32, u32, f64)] = &[
+        (420, 600, 1.0),
+        (800, 600, 1.0),
+        (1200, 800, 1.0),
+        (1280, 720, 1.25),
+        (1600, 900, 1.5),
+        (1920, 1080, 1.5),
+        (2560, 1440, 2.0),
+        (3840, 2160, 2.0),
+        (1000, 700, 1.75),
+        (900, 1600, 3.0),
+    ];
+
+    /// The bottom of the window is three stacked bands on the terminal side —
+    /// terminal viewport, composer, status — and they must tile it with no gap
+    /// and no overlap at every size and scale. This is the invariant the Windows
+    /// "last terminal row overlaps the composer" bug violated: the reserved
+    /// bottom inset had omitted the status band, so the terminal viewport
+    /// extended past the composer's top. See [`bottom_inset`].
+    #[test]
+    fn terminal_composer_and_status_tile_the_bottom_with_no_overlap() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let layout = Layout::new(w, h, scale);
+            let viewport_bottom = h.saturating_sub(bottom_inset(scale));
+            assert_eq!(
+                viewport_bottom, layout.composer.y,
+                "terminal viewport bottom must meet the composer top ({w}x{h}@{scale})"
+            );
+            assert_eq!(
+                layout.composer.y.saturating_add(layout.composer.height),
+                layout.status.y,
+                "composer must sit flush on the status bar ({w}x{h}@{scale})"
+            );
+            assert_eq!(
+                layout.status.y.saturating_add(layout.status.height),
+                h,
+                "status bar must reach the window bottom ({w}x{h}@{scale})"
+            );
+        }
+    }
+
+    /// No pixel a mouse-tracking child draws into may be stolen by host UI: the
+    /// last terminal-viewport pixel row must classify as terminal (outside both
+    /// the composer and the status bar), while the very next row down is the
+    /// composer. This is the direct guard for "can't click the TUI's bottom
+    /// input line" — with the old inset that row's pixels fell inside the
+    /// composer rect and the click never reached the child.
+    #[test]
+    fn the_last_terminal_row_is_never_captured_by_host_ui() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let layout = Layout::new(w, h, scale);
+            // A column safely on the terminal side of the sidebar.
+            let x = layout
+                .sidebar
+                .width
+                .saturating_add(4)
+                .min(w.saturating_sub(1));
+            let last_terminal_y = layout.composer.y.saturating_sub(1);
+            assert_eq!(
+                composer_hit(layout, x, last_terminal_y),
+                ComposerHit::Outside,
+                "last terminal row leaked into the composer ({w}x{h}@{scale})"
+            );
+            assert_eq!(
+                status_hit(layout, x, last_terminal_y),
+                StatusHit::Outside,
+                "last terminal row leaked into the status bar ({w}x{h}@{scale})"
+            );
+            // And the seam is exact: one row lower is unambiguously the composer.
+            assert_eq!(
+                composer_hit(layout, x, layout.composer.y),
+                ComposerHit::Input,
+                "composer top row is not classified as the composer ({w}x{h}@{scale})"
+            );
+        }
+    }
+
+    /// Every interactive rect stays inside the window at any size or scale —
+    /// nothing overflows the right or bottom edge, which would put a control
+    /// half off-screen or make it unhittable. Degenerate inputs (a window
+    /// smaller than the chrome, a non-finite scale) must clamp, not overflow.
+    #[test]
+    fn host_ui_rects_never_overflow_the_window() {
+        let mut cases: Vec<(u32, u32, f64)> = LAYOUT_SWEEP.to_vec();
+        cases.extend_from_slice(&[
+            (1, 1, 1.0),
+            (200, 100, 2.0),
+            (0, 0, 1.0),
+            (u32::MAX, u32::MAX, f64::INFINITY),
+            (640, 480, f64::NAN),
+        ]);
+        for (w, h, scale) in cases {
+            let layout = Layout::new(w, h, scale);
+            for (name, r) in [
+                ("sidebar", layout.sidebar),
+                ("composer", layout.composer),
+                ("status", layout.status),
+                ("composer_input", layout.composer_input),
+                ("composer_send", layout.composer_send),
+                ("composer_newline", layout.composer_newline),
+            ] {
+                // A zero-area rect paints nothing and `contains` rejects every
+                // pixel, so its origin is harmless; only a rect that is actually
+                // drawn (positive on both axes) must stay inside the window.
+                if r.width == 0 || r.height == 0 {
+                    continue;
+                }
+                assert!(
+                    r.x.saturating_add(r.width) <= w,
+                    "{name} overflows width at {w}x{h}@{scale}: {r:?}"
+                );
+                assert!(
+                    r.y.saturating_add(r.height) <= h,
+                    "{name} overflows height at {w}x{h}@{scale}: {r:?}"
+                );
+            }
+        }
+    }
+
+    /// Every interactive control inside the composer must stay within the
+    /// composer band and the typing area must never overlap the Send/Newline
+    /// buttons — otherwise a click meant for the input toggles a button, or a
+    /// button paints over the text. Swept across sizes and scales so a scale-only
+    /// rounding drift cannot slip a control half out of its band.
+    #[test]
+    fn composer_controls_stay_within_the_band_and_never_overlap_the_input() {
+        fn overlaps(a: Rect, b: Rect) -> bool {
+            a.width > 0
+                && a.height > 0
+                && b.width > 0
+                && b.height > 0
+                && a.x < b.x.saturating_add(b.width)
+                && b.x < a.x.saturating_add(a.width)
+                && a.y < b.y.saturating_add(b.height)
+                && b.y < a.y.saturating_add(a.height)
+        }
+        fn within(inner: Rect, outer: Rect) -> bool {
+            inner.width == 0
+                || inner.height == 0
+                || (inner.x >= outer.x
+                    && inner.y >= outer.y
+                    && inner.x.saturating_add(inner.width) <= outer.x.saturating_add(outer.width)
+                    && inner.y.saturating_add(inner.height) <= outer.y.saturating_add(outer.height))
+        }
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let l = Layout::new(w, h, scale);
+            for (name, r) in [
+                ("input", l.composer_input),
+                ("send", l.composer_send),
+                ("newline", l.composer_newline),
+                ("copy", l.composer_copy),
+                ("paste", l.composer_paste),
+                ("cut", l.composer_cut),
+            ] {
+                assert!(
+                    within(r, l.composer),
+                    "composer {name} escapes the band at {w}x{h}@{scale}: {r:?} vs {:?}",
+                    l.composer
+                );
+            }
+            assert!(
+                !overlaps(l.composer_input, l.composer_send),
+                "input overlaps Send at {w}x{h}@{scale}"
+            );
+            assert!(
+                !overlaps(l.composer_input, l.composer_newline),
+                "input overlaps Newline at {w}x{h}@{scale}"
+            );
+        }
+    }
 
     /// `Rect::contains` is half-open on both axes, and the saturating add means
     /// an extreme origin plus width cannot wrap past zero and swallow unrelated
@@ -846,6 +1037,24 @@ mod tests {
         assert_eq!(layout.status.y, 776);
         assert_eq!(layout.status.y + layout.status.height, 800);
         assert_eq!(layout.composer.y + layout.composer.height, layout.status.y);
+    }
+
+    /// The terminal viewport's reserved bottom inset must land exactly on the
+    /// composer's top at every scale, so the bottom terminal rows never overlap
+    /// the composer. Regression for the Windows overlap that surfaced once
+    /// per-monitor DPI awareness made rendering happen at the real scale: the
+    /// inset had reserved only the composer, omitting the status bar beneath it.
+    #[test]
+    fn bottom_inset_matches_the_composer_top_at_every_scale() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let height = 800;
+            let layout = Layout::new(1200, height, scale);
+            assert_eq!(
+                height - bottom_inset(scale),
+                layout.composer.y,
+                "viewport bottom must equal composer top at scale {scale}"
+            );
+        }
     }
 
     /// The two header tools — New (left) and Settings (right) — never overlap

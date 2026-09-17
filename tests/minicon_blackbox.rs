@@ -1273,6 +1273,64 @@ fn snapshot_reports_exit_code_and_retains_tab_until_explicit_close() {
     let _ = session.child.kill();
 }
 
+/// End-to-end guard for the Windows "terminal bottom row overlaps the composer"
+/// bug: on a real running host, the terminal viewport the grid is painted into
+/// must end exactly where the composer band begins, and the composer must sit
+/// flush on the status bar which reaches the window bottom — no overlap, no gap.
+/// This reads the live `ui-snapshot` geometry (not the unit-level layout math),
+/// so it would catch the regression on any platform a runner covers, at that
+/// platform's real DPI scale. The bug shipped precisely because no runtime test
+/// asserted the viewport/host-UI seam.
+#[test]
+fn the_terminal_viewport_never_overlaps_the_host_ui_bands() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("viewport-seam");
+    // A long-lived child so the window stays up while we query geometry.
+    let command = if cfg!(windows) {
+        "ping -n 30 127.0.0.1 >nul"
+    } else {
+        "sleep 30"
+    };
+    let args = command_shell_args(command);
+    let mut session = ConSession::spawn(&dir, &args);
+    // Wait until the host has laid out at least once (a live tab exists).
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+
+    let snapshot = session.control_json(&["ui-snapshot"]);
+    let geometry = &snapshot["geometry"];
+    assert!(
+        geometry.is_object(),
+        "ui-snapshot must expose geometry: {snapshot}"
+    );
+    let u = |v: &serde_json::Value| v.as_u64().unwrap_or(u64::MAX);
+    let viewport = &geometry["terminal_viewport"];
+    let composer = &geometry["composer_band"];
+    let status = &geometry["status_band"];
+    let frame_h = u(&geometry["frame"]["height"]);
+
+    let viewport_bottom = u(&viewport["y"]) + u(&viewport["height"]);
+    let composer_top = u(&composer["y"]);
+    let composer_bottom = u(&composer["y"]) + u(&composer["height"]);
+    let status_top = u(&status["y"]);
+    let status_bottom = u(&status["y"]) + u(&status["height"]);
+
+    assert_eq!(
+        viewport_bottom, composer_top,
+        "terminal viewport bottom must meet the composer top: {geometry}"
+    );
+    assert_eq!(
+        composer_bottom, status_top,
+        "composer must sit flush on the status bar: {geometry}"
+    );
+    assert_eq!(
+        status_bottom, frame_h,
+        "status bar must reach the window bottom: {geometry}"
+    );
+    let _ = session.child.kill();
+}
+
 #[test]
 fn typed_input_echoes_back_well_under_one_blink_cycle() {
     let _guard = gui_test_guard();
@@ -2467,6 +2525,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "composer_submit_error",
         "composer_text",
         "control_pointer_owner",
+        "geometry",
         "settings_open",
         "host_notice",
         "ime_status",

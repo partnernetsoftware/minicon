@@ -33,6 +33,14 @@ operating system's own desktop libraries.
 - **Mouse-wheel scrolling in Windows terminal apps.** The wheel now carries the
   pointer position, so scrolling inside a full-screen terminal program, and over
   the tab sidebar, works on Windows the same as on macOS and Linux.
+- **No more overlap between the terminal and the input box on scaled Windows
+  displays.** The terminal's bottom row was overrunning the composer's top edge
+  once per-monitor DPI scaling was active; the terminal now ends exactly where
+  the composer begins.
+- **Clicking a terminal program's bottom input line now works on Windows.**
+  Because of that same overlap, a click on the very bottom row of a mouse-aware
+  full-screen program (its input line) could be captured by the composer instead
+  of reaching the program. The click now reaches the program as it does on macOS.
 
 ## Downloads
 
