@@ -88,13 +88,30 @@ fn main() {
         // XL through the TLS Directory. The default CRT entry is intentionally
         // absent, so link.exe cannot infer that every `.CRT` family is handled.
         println!("cargo:rustc-link-arg-bin=minicon=/IGNORE:4210");
+        // Declare the exe per-monitor DPI-aware in its manifest so Windows never
+        // bitmap-stretches the window on a scaled display (the cause of blurry
+        // text next to a crisp cmd.exe). `dpiAware` (true = system aware) is
+        // honored back to Vista/7; `dpiAwareness` (PerMonitorV2) is honored on
+        // Windows 10+. The runtime also declares awareness dynamically for APE
+        // builds and as a belt-and-braces fallback.
+        const MINICON_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
+    </windowsSettings>
+  </application>
+</assembly>
+"#;
         let mut resource = winresource::WindowsResource::new();
         resource
             .set_icon(ICON)
             .set("ProductName", "MiniCon")
             .set("FileDescription", "MiniCon standalone terminal")
             .set("OriginalFilename", "minicon.exe")
-            .set("InternalName", "minicon");
+            .set("InternalName", "minicon")
+            .set_manifest(MINICON_MANIFEST);
         resource
             .compile()
             .expect("failed to embed minicon resources");

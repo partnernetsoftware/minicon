@@ -47,6 +47,15 @@ const LOAD_TIME_BLOCKERS: &[(&str, &str)] = &[
         "SetThreadDescription",
         "the kernel32 forwarder, Windows 10 build 15063 (1703)",
     ),
+    // Per-monitor DPI awareness. The window adapter declares awareness through
+    // GetProcAddress so blurry bitmap-stretch on scaled displays is fixed
+    // without locking out Server 2016 (build 14393), which has neither. Listed
+    // so a future switch back to a plain `use` turns this gate red.
+    (
+        "SetProcessDpiAwarenessContext",
+        "Windows 10 build 15063 (1703)",
+    ),
+    ("SetProcessDpiAwareness", "Windows 8.1 (shcore.dll)"),
 ];
 
 /// Modules the operating system itself provides on the oldest Windows this

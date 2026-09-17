@@ -26,6 +26,13 @@ operating system's own desktop libraries.
   ConPTY (Server 2016 / 1607), Chinese, Japanese, Korean and other double-width
   characters now render aligned — no stray spaces between glyphs and no drift on
   lines that mix CJK with ASCII.
+- **Crisp text on scaled Windows displays.** MiniCon now declares per-monitor
+  DPI awareness, so on a display scaled above 100% Windows no longer
+  bitmap-stretches the window — text is sharp at the correct size instead of
+  blurry.
+- **Mouse-wheel scrolling in Windows terminal apps.** The wheel now carries the
+  pointer position, so scrolling inside a full-screen terminal program, and over
+  the tab sidebar, works on Windows the same as on macOS and Linux.
 
 ## Downloads
 
