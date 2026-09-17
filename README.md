@@ -50,7 +50,7 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.11-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.15-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a signed, notarized universal binary — the same `.dmg` runs
@@ -58,9 +58,26 @@ on Apple Silicon and Intel. `minicon.com` is a signed one-file launcher that
 carries all six OS/ISA payloads; the native per-platform archives remain the
 conventional choice, and every distributable has its own checksum.
 
+### Opening on macOS the first time
+
+The current macOS build is a signed, notarized command-line binary (not yet a
+`.app` bundle). A bare Mach-O cannot have the notarization ticket *stapled* to
+it, so on first launch Gatekeeper may report that it "cannot be verified" —
+even though it is genuinely Developer ID-signed and Apple-notarized (Apple holds
+the ticket on its servers). Open it any one of these ways:
+
+- **Finder:** right-click (Control-click) the file → **Open**, then **Open**
+  again in the dialog; or
+- **System Settings → Privacy & Security** → **Open Anyway** next to the blocked
+  item; or
+- **Terminal:** `xattr -d com.apple.quarantine /path/to/minicon`, then run it.
+
+A future release will ship a stapled `MiniCon.app` bundle so a plain
+double-click opens with no prompt.
+
 ## Code signing policy
 
-MiniCon v0.1.4–v0.1.6 published unsigned artifacts. Since **v0.1.9**, every
+MiniCon v0.1.4–v0.1.7 published unsigned artifacts. Since **v0.1.9**, every
 public release is dual-signed: the Windows executables and `minicon.com` are
 Authenticode-signed via Azure Artifact Signing, and the macOS build is
 Developer ID-signed and Apple-notarized — all as PARTNERNET SOFTWARE PTY LTD,
@@ -314,7 +331,7 @@ August 2026.
 
 ## Code signing policy / 代码签名政策
 
-v0.1.4–v0.1.6 发布的是未签名产物。自 **v0.1.9** 起，每个公开版本都双签名：Windows 可执行文件
+v0.1.4–v0.1.7 发布的是未签名产物。自 **v0.1.9** 起，每个公开版本都双签名：Windows 可执行文件
 与 `minicon.com` 经 Azure Artifact Signing 做 Authenticode 签名，macOS 版经 Developer ID 签名
 并通过 Apple 公证——主体均为 PARTNERNET SOFTWARE PTY LTD，并带 RFC 3161 时间戳。校验和与
 精确的构建/运行时回执仍是强制项。SignPath Foundation 已拒绝开源申请，公司发布者路线是唯一签名路径。
