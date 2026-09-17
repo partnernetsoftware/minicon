@@ -93,6 +93,17 @@ From the repository root:
 ./scripts/six-cell-qualify.sh
 ```
 
+Work directly on `main`. Do not create worktrees or side branches for MiniCon
+work — the owner has ruled that out after it cost real time. The one exception
+is the throwaway `candidate-src-<v>` branch a release dispatch needs when `main`
+has moved past the Candidate SHA; delete it immediately after.
+
+Before you commit or run six-cell, run `cargo fmt` and
+`cargo clippy --all-targets -- -D warnings`. six-cell gates on fmt and clippy
+while `cargo test` does not, so a change that passes every test can still fail
+the release gate and cost a whole round. Painting helpers with many parameters
+carry `#[allow(clippy::too_many_arguments)]` (precedent in `terminal_paint.rs`).
+
 Do not pick a product binary by modification time. Canonical local outputs are
 documented in `README.md`. Do not commit generated binaries; local outputs stay
 under ignored `target*/`, `dist/` or research output directories.
