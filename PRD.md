@@ -82,8 +82,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.13-release-history.md
 │   ├── [x] v0.1.14 released — Windows per-monitor DPI awareness + mouse-wheel; dual-signed
 │   │   └── prd/archive/v0.1.14-release-history.md
-│   ├── [x] v0.1.15 released — Windows terminal/composer overlap + bottom-row click fix; dual-signed (latest)
+│   ├── [x] v0.1.15 released — Windows terminal/composer overlap + bottom-row click fix; dual-signed
 │   │   └── prd/archive/v0.1.15-release-history.md
+│   ├── [x] v0.1.16 released — macOS MiniCon.app bundle + install-cli; dual-signed (latest)
+│   │   └── prd/archive/v0.1.16-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -143,7 +145,8 @@ flowchart LR
         R112["v0.1.12 released<br/>finish & polish · composer selection · dual-signed"]
         R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed"]
         R114["v0.1.14 released<br/>Windows DPI awareness + mouse-wheel · dual-signed"]
-        R115["v0.1.15 released<br/>Windows terminal/composer overlap + click fix · dual-signed · latest"]
+        R115["v0.1.15 released<br/>Windows terminal/composer overlap + click fix · dual-signed"]
+        R116["v0.1.16 released<br/>macOS MiniCon.app bundle + install-cli · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -166,7 +169,7 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115
+    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -206,7 +209,16 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.15 is the latest public release: a Windows bug-fix release on the
+- [x] v0.1.16 is the latest public release: the macOS download is now a real
+  application bundle. A bare Mach-O cannot be stapled and Gatekeeper's
+  GUI-launch path rejects it (`spctl -t exec` says "does not seem to be an
+  app"), so a double-click warned that Apple could not verify it even though the
+  binary was signed and notarized. The `.dmg` now carries a signed, notarized
+  and stapled `MiniCon.app`; asset names were left unchanged so the release
+  chain itself needed no edits. `minicon install-cli` links the bundle's
+  executable onto `PATH`, refusing to touch anything that is not a symlink it
+  owns. History: `prd/archive/v0.1.16-release-history.md`.
+- [x] v0.1.15 was a Windows bug-fix release on the
   dual-signed line. It fixes the terminal's bottom row overlapping the composer
   input, and clicks on a full-screen program's bottom input line being captured
   by the composer instead of forwarded — one root cause (`content_bottom_px`
