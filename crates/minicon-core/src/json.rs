@@ -70,16 +70,12 @@ pub struct ConfigValues {
     pub font_size: Option<f64>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
-    /// Windows only: host the shell through the classic console instead of
-    /// ConPTY. ConPTY discards mouse input in both directions, so a TUI cannot
-    /// see clicks; the classic path owns a real console and can deliver them.
-    pub console_agent: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ValueKind {
     Null,
-    Bool(bool),
+    Bool,
     Number { start: usize, end: usize },
     String,
     Array,
@@ -97,7 +93,6 @@ enum ConfigField {
     FontSize,
     Cols,
     Rows,
-    ConsoleAgent,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -114,7 +109,6 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         font_size: None,
         cols: None,
         rows: None,
-        console_agent: None,
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -154,11 +148,11 @@ impl ConfigParser<'_> {
             }
             Some(b't') => {
                 self.keyword(b"true")?;
-                Ok(ValueKind::Bool(true))
+                Ok(ValueKind::Bool)
             }
             Some(b'f') => {
                 self.keyword(b"false")?;
-                Ok(ValueKind::Bool(false))
+                Ok(ValueKind::Bool)
             }
             Some(b'"') => {
                 self.skip_string()?;
@@ -220,9 +214,6 @@ impl ConfigParser<'_> {
                     ConfigField::Rows => {
                         config.rows = self.u16_value(value, "rows")?;
                     }
-                    ConfigField::ConsoleAgent => {
-                        config.console_agent = self.bool_value(value, "console_agent")?;
-                    }
                 }
             }
             keys.push(key);
@@ -270,14 +261,6 @@ impl ConfigParser<'_> {
         }
     }
 
-    fn bool_value(&self, value: ValueKind, key: &str) -> Result<Option<bool>, String> {
-        match value {
-            ValueKind::Null => Ok(None),
-            ValueKind::Bool(flag) => Ok(Some(flag)),
-            _ => Err(format!("{key} must be true or false")),
-        }
-    }
-
     fn u16_value(&self, value: ValueKind, key: &str) -> Result<Option<u16>, String> {
         match value {
             ValueKind::Null => Ok(None),
@@ -295,8 +278,6 @@ impl ConfigParser<'_> {
             Some(ConfigField::FontSize)
         } else if self.key_equals(key, "cols") {
             Some(ConfigField::Cols)
-        } else if self.key_equals(key, "console_agent") {
-            Some(ConfigField::ConsoleAgent)
         } else if self.key_equals(key, "rows") {
             Some(ConfigField::Rows)
         } else {

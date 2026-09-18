@@ -260,11 +260,6 @@ struct ConConfig {
     font_size: Option<f64>,
     cols: Option<u16>,
     rows: Option<u16>,
-    /// Windows only: host the shell through the classic console rather than
-    /// ConPTY. See where it is applied in `main`. Parsed everywhere so the
-    /// config file stays portable, but only read on Windows.
-    #[cfg_attr(not(windows), allow(dead_code))]
-    console_agent: Option<bool>,
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
@@ -289,7 +284,6 @@ fn load_config() -> ConConfig {
         font_size: config.font_size,
         cols: config.cols,
         rows: config.rows,
-        console_agent: config.console_agent,
     }
 }
 
@@ -307,6 +301,67 @@ struct ConArgs {
     command: Option<Vec<String>>,
     /// `--emit-snapshot`: see `agent_interface` module docs.
     snapshot_path: Option<PathBuf>,
+    /// `--feature` selections, already resolved to their final on/off state.
+    features: Features,
+}
+
+/// Backend selections chosen with `--feature`, as distinct from the user
+/// preferences in `minicon.json`. A preference (font size, geometry) is
+/// something a person sets once and wants remembered; a feature selects which
+/// implementation hosts the shell, which belongs to a single invocation and
+/// must be visible in the command line that reproduces a bug report. Keeping
+/// them in one namespace is what lets a future switch land without inventing
+/// another flag.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Features {
+    /// Host the shell through ConPTY instead of the classic Windows console.
+    ///
+    /// Default off because mouse input does not currently survive our ConPTY
+    /// path in either direction: measured on the court, the child's
+    /// `ESC[?1000h` never reaches the host and the host's SGR reports are
+    /// dropped coming back, so a hosted TUI never sees a click. The classic
+    /// console owns a real console and delivers them — confirmed on a real
+    /// machine, where the same program answered the mouse only on this path.
+    ///
+    /// The cause is NOT that ConPTY lacks mouse support: upstream added it in
+    /// 2021 (microsoft/terminal#376, PR #9970 relays the child's mouse-mode
+    /// request to the host). So the gap is on our side and is expected to be
+    /// fixable — note that `ENABLE_MOUSE_INPUT` appears nowhere in our ConPTY
+    /// setup. This flag keeps ConPTY reachable meanwhile, and is how you get
+    /// back to the Microsoft-blessed path once it carries the mouse.
+    conpty: bool,
+}
+
+/// Every name `--feature` accepts, with the one-line help shown in usage.
+/// A name absent here is a typo, not an unsupported feature, and is rejected.
+const FEATURES: &[(&str, &str)] = &[(
+    "conpty",
+    "Windows: host the shell through ConPTY instead of the classic\n\
+     \x20                    console. Mouse input does not survive this path today,\n\
+     \x20                    so a TUI hosted through it never sees clicks. Off by\n\
+     \x20                    default; inert on other platforms.",
+)];
+
+impl Features {
+    /// Applies one `--feature` word. `no-<name>` turns a feature off, so a
+    /// script can state its intent instead of relying on today's defaults.
+    fn apply(&mut self, word: &str) -> Result<(), String> {
+        let (name, enable) = match word.strip_prefix("no-") {
+            Some(rest) => (rest, false),
+            None => (word, true),
+        };
+        match name {
+            "conpty" => self.conpty = enable,
+            _ => {
+                let known: Vec<&str> = FEATURES.iter().map(|(name, _)| *name).collect();
+                return Err(format!(
+                    "error: unknown feature '{word}'; known features: {}\n",
+                    known.join(", ")
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Parses arguments, returning the message to print on failure.
@@ -333,6 +388,27 @@ fn parse_args(args: &[String]) -> Result<ConArgs, String> {
                     &other["--font-size=".len()..],
                     "--font-size",
                 )?);
+            }
+            // Comma-separated and repeatable, so `--feature a,b` and
+            // `--feature a --feature b` mean the same thing. Later words win,
+            // which is what makes a wrapper script able to append an override.
+            "--feature" => {
+                let list = rest
+                    .next()
+                    .cloned()
+                    .ok_or_else(|| "error: --feature requires a name\n".to_owned())?;
+                for word in list.split(',').map(str::trim).filter(|w| !w.is_empty()) {
+                    parsed.features.apply(word)?;
+                }
+            }
+            other if other.starts_with("--feature=") => {
+                for word in other["--feature=".len()..]
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|w| !w.is_empty())
+                {
+                    parsed.features.apply(word)?;
+                }
             }
             "--cols" => parsed.cols = next_value(&mut rest, "--cols")?,
             "--rows" => parsed.rows = next_value(&mut rest, "--rows")?,
@@ -442,16 +518,6 @@ fn main() {
     // the default handler runs, so the next "闪退" leaves a line that names
     // itself. The hook must never panic; `record` is written for a failure path.
     install_panic_diagnostics();
-    // ConPTY discards mouse input in both directions, so a hosted TUI never
-    // sees a click; the classic console path owns a real console and delivers
-    // them. `console_agent: true` in minicon.json selects it. Applied here
-    // because `set_var` is only sound while this process is single-threaded —
-    // before any window, PTY or reader thread exists.
-    #[cfg(windows)]
-    if load_config().console_agent == Some(true) {
-        // SAFETY: nothing has been spawned yet; this is still single-threaded.
-        unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
-    }
     let args = match agenterm_platform::runtime::application_arguments() {
         Ok(args) => args,
         Err(error) => {
@@ -495,7 +561,25 @@ fn main() {
         control_endpoint,
         command,
         snapshot_path,
+        features,
     } = parsed;
+    // The classic Windows console is the default host because mouse input does
+    // not survive our ConPTY path today, which left every hosted TUI blind to
+    // clicks — confirmed on a real machine, where the same program answered the
+    // mouse only once this path was selected. Upstream ConPTY has supported the
+    // mouse since 2021, so this default is "the path we have proven", not a
+    // verdict on ConPTY; `--feature conpty` selects it back.
+    //
+    // Applied here, and only here, because `set_var` is sound only while the
+    // process is single-threaded: this runs before any window, PTY or reader
+    // thread exists, and after argument parsing so the flag can be read.
+    #[cfg(windows)]
+    if !features.conpty {
+        // SAFETY: nothing has been spawned yet; this is still single-threaded.
+        unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
+    }
+    #[cfg(not(windows))]
+    let _ = features;
     no_activate |=
         agenterm_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
 
@@ -686,12 +770,17 @@ fn status_text() -> String {
 }
 
 fn usage_text() -> String {
+    let feature_list = FEATURES
+        .iter()
+        .map(|(name, help)| format!("  --feature {name}  {help}"))
+        .collect::<Vec<String>>()
+        .join("\n");
     format!(
         "\
 Usage: minicon [--no-activate] [--working-dir DIR]
                    [--font-size N] [--cols N] [--rows N]
                    [--control ENDPOINT] [--emit-snapshot PATH]
-                   [-e PROGRAM [ARGS...]]
+                   [--feature NAME[,NAME...]] [-e PROGRAM [ARGS...]]
        minicon --version
        minicon --status
        minicon --help
@@ -700,6 +789,11 @@ Usage: minicon [--no-activate] [--working-dir DIR]
        minicon uninstall-cli [--prefix DIR]
 
 A standalone console host (conhost equivalent). No server, mux, or Fleet.
+
+Features select which implementation hosts the shell, as opposed to the user
+preferences in minicon.json. Repeatable and comma-separated; prefix a name with
+`no-` to state the off position explicitly:
+{feature_list}
 
 Control endpoint and CLI (TAB is a stable @ID; omitted target means active tab):
   minicon cli list-commands
@@ -8198,6 +8292,69 @@ mod tests {
     }
 
     #[test]
+    fn conpty_is_off_unless_a_feature_asks_for_it() {
+        // The product invariant behind this release: the classic Windows
+        // console hosts the shell by default, because ConPTY cannot carry
+        // mouse input. If this ever defaults back to true, every hosted TUI
+        // silently goes blind to clicks again.
+        assert!(!ConArgs::default().features.conpty);
+        assert!(
+            !parse_args(&argv(&["--cols", "80"]))
+                .expect("parses")
+                .features
+                .conpty
+        );
+    }
+
+    #[test]
+    fn features_accept_both_spellings_and_can_be_turned_back_off() {
+        for argv_form in [
+            vec!["--feature", "conpty"],
+            vec!["--feature=conpty"],
+            // Comma-separated and repeated forms must agree, including when a
+            // later word overrides an earlier one.
+            vec!["--feature", "no-conpty,conpty"],
+            vec!["--feature", "no-conpty", "--feature", "conpty"],
+        ] {
+            let parsed = parse_args(&argv(&argv_form)).expect("parses");
+            assert!(parsed.features.conpty, "{argv_form:?} should enable conpty");
+        }
+        for argv_form in [
+            vec!["--feature", "no-conpty"],
+            vec!["--feature", "conpty,no-conpty"],
+            vec!["--feature", "conpty", "--feature", "no-conpty"],
+        ] {
+            let parsed = parse_args(&argv(&argv_form)).expect("parses");
+            assert!(
+                !parsed.features.conpty,
+                "{argv_form:?} should disable conpty"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_feature_is_a_typo_and_names_the_known_set() {
+        // Silently ignoring an unrecognised name is how a user believes a
+        // switch is on while it never was — the exact failure that made the
+        // Windows mouse look unfixable.
+        let error = parse_args(&argv(&["--feature", "conpyt"])).expect_err("should reject");
+        assert!(error.contains("conpyt"), "{error}");
+        assert!(error.contains("conpty"), "must list the known set: {error}");
+        // A bad name anywhere in the list fails the whole list.
+        assert!(parse_args(&argv(&["--feature", "conpty,nope"])).is_err());
+        assert!(parse_args(&argv(&["--feature=no-nope"])).is_err());
+    }
+
+    #[test]
+    fn usage_lists_every_feature_so_none_is_undiscoverable() {
+        let usage = usage_text();
+        assert!(usage.contains("--feature"), "{usage}");
+        for (name, _) in FEATURES {
+            assert!(usage.contains(name), "usage omits feature {name}");
+        }
+    }
+
+    #[test]
     fn unknown_flags_are_rejected_with_usage() {
         let error = parse_args(&argv(&["--nope"])).expect_err("should reject");
         assert!(error.contains("--nope"), "{error}");
@@ -8214,6 +8371,7 @@ mod tests {
             ("--rows", "--rows"),
             ("--control", "--control"),
             ("--emit-snapshot", "--emit-snapshot"),
+            ("--feature", "--feature"),
         ] {
             let error = parse_args(&argv(&[flag])).expect_err(flag);
             assert!(
