@@ -84,8 +84,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.14-release-history.md
 │   ├── [x] v0.1.15 released — Windows terminal/composer overlap + bottom-row click fix; dual-signed
 │   │   └── prd/archive/v0.1.15-release-history.md
-│   ├── [x] v0.1.16 released — macOS MiniCon.app bundle + install-cli; dual-signed (latest)
+│   ├── [x] v0.1.16 released — macOS MiniCon.app bundle + install-cli; dual-signed
 │   │   └── prd/archive/v0.1.16-release-history.md
+│   ├── [x] v0.1.17 released — real Enter after Send; --file/--output cross-tab I/O; dual-signed (latest)
+│   │   └── prd/archive/v0.1.17-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -146,7 +148,8 @@ flowchart LR
         R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed"]
         R114["v0.1.14 released<br/>Windows DPI awareness + mouse-wheel · dual-signed"]
         R115["v0.1.15 released<br/>Windows terminal/composer overlap + click fix · dual-signed"]
-        R116["v0.1.16 released<br/>macOS MiniCon.app bundle + install-cli · dual-signed · latest"]
+        R116["v0.1.16 released<br/>macOS MiniCon.app bundle + install-cli · dual-signed"]
+        R117["v0.1.17 released<br/>real Enter after Send · --file/--output · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -169,7 +172,7 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116
+    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -209,7 +212,18 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.16 is the latest public release: the macOS download is now a real
+- [x] v0.1.17 is the latest public release. The composer's Send (`Ctrl+O`) now
+  delivers the Enter as its own key press: the paste and its committing CR used
+  to reach the child in a single `read()`, so a TUI that applies pastes
+  asynchronously handled the CR first — against an empty input box — and left
+  the text unsent. Splitting the writes was not enough (the kernel merged them);
+  the Enter is held 12 ms and encoded through the shared key encoder rather than
+  as a hardcoded CR. Cross-tab read/write gained file endpoints
+  (`send-text`/`send-paste --file`, `capture-pane --output`) so payloads no
+  longer have to survive shell quoting, with paths staying client-side. The
+  Windows startup diagnostic moved out of every archive into its own Release
+  asset. History: `prd/archive/v0.1.17-release-history.md`.
+- [x] v0.1.16: the macOS download is a real
   application bundle. A bare Mach-O cannot be stapled and Gatekeeper's
   GUI-launch path rejects it (`spctl -t exec` says "does not seem to be an
   app"), so a double-click warned that Apple could not verify it even though the
