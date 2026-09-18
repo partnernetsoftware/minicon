@@ -46,6 +46,23 @@ operating system's own desktop libraries.
   no Gatekeeper prompt, online or offline. A bare command-line binary cannot
   carry a stapled notarization ticket, which is why earlier downloads could warn
   that the app "could not be verified" even though they were properly signed.
+- **Mouse works in Windows terminal programs (opt-in).** ConPTY — the Windows
+  mechanism every third-party terminal must use — discards mouse input in both
+  directions, which is why clicks never reached a program running inside
+  MiniCon, while the same program in a plain `cmd.exe` window handled them fine.
+  MiniCon can now host the shell through the classic console instead, where it
+  owns a real console and can deliver clicks, drags and wheel events. Turn it on
+  by putting `{"console_agent": true}` in `minicon.json`. It is opt-in for now
+  because the classic path is a different implementation from ConPTY and wants
+  real-world mileage before it becomes the default.
+- **A Quit button on the greeting page.** With no tabs open the window could not
+  be closed at all — the close button did nothing and the only way out was
+  killing the process. The greeting page now offers an explicit exit, and the
+  window close button works again.
+- **The Linux download is about a quarter smaller** (6.0 MB → 4.5 MB). It was
+  carrying an AT-SPI accessibility stack built for a sibling product's
+  automation, which MiniCon never used. Linux automation is served by the
+  control CLI instead.
 - **Send (Ctrl+O) now delivers a real Enter.** The composer used to write the
   bracketed paste and its Enter as one buffer, so a terminal program received
   both in a single read. Programs that apply a paste asynchronously then handled

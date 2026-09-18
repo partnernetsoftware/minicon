@@ -260,6 +260,11 @@ struct ConConfig {
     font_size: Option<f64>,
     cols: Option<u16>,
     rows: Option<u16>,
+    /// Windows only: host the shell through the classic console rather than
+    /// ConPTY. See where it is applied in `main`. Parsed everywhere so the
+    /// config file stays portable, but only read on Windows.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    console_agent: Option<bool>,
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
@@ -284,6 +289,7 @@ fn load_config() -> ConConfig {
         font_size: config.font_size,
         cols: config.cols,
         rows: config.rows,
+        console_agent: config.console_agent,
     }
 }
 
@@ -436,6 +442,16 @@ fn main() {
     // the default handler runs, so the next "闪退" leaves a line that names
     // itself. The hook must never panic; `record` is written for a failure path.
     install_panic_diagnostics();
+    // ConPTY discards mouse input in both directions, so a hosted TUI never
+    // sees a click; the classic console path owns a real console and delivers
+    // them. `console_agent: true` in minicon.json selects it. Applied here
+    // because `set_var` is only sound while this process is single-threaded —
+    // before any window, PTY or reader thread exists.
+    #[cfg(windows)]
+    if load_config().console_agent == Some(true) {
+        // SAFETY: nothing has been spawned yet; this is still single-threaded.
+        unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
+    }
     let args = match agenterm_platform::runtime::application_arguments() {
         Ok(args) => args,
         Err(error) => {

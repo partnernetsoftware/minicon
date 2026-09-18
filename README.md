@@ -10,7 +10,7 @@ Windows, Linux, and macOS.
 
 | | |
 | --- | --- |
-| Executable | six-cell `strip=true` measurements are roughly Windows ~660 KB, macOS ~1.4 MB, and Linux ~5 MB. Exact measurements: Windows aarch64 677,376 bytes / x86_64 731,136; macOS aarch64 1,413,408 / x86_64 1,455,424; Linux aarch64 4,846,400 / x86_64 5,732,544. They are target-qualified evidence, not a universal product limit; see [Delivery](prd/PRD_02_27_con_delivery.md) for context. |
+| Executable | six-cell `strip=true` measurements are roughly Windows ~660 KB, macOS ~1.4 MB, and Linux ~4.5 MB. Exact measurements: Windows aarch64 677,376 bytes / x86_64 731,136; macOS aarch64 1,413,408 / x86_64 1,455,424; Linux aarch64 4,200,480 / x86_64 4,519,696 (0.1.18, after the AT-SPI stack was removed). They are target-qualified evidence, not a universal product limit; see [Delivery](prd/PRD_02_27_con_delivery.md) for context. |
 | Dependencies | operating-system libraries only |
 | Supported | Windows, Linux, and macOS on x86_64 and aarch64; Windows reaches back to Server 2016 / Windows 10 1607 |
 | Licence | MIT OR Apache-2.0 |
@@ -50,7 +50,7 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.15-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.18-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a signed, notarized universal binary — the same `.dmg` runs
@@ -168,6 +168,34 @@ backend this machine selected and why, the font face the system actually
 resolved to with its measured cell width, and where MiniCon writes when
 something fails. None of that can be answered by reading the source, because
 all of it depends on the machine.
+
+## Configuration
+
+MiniCon reads an optional `minicon.json` from your user config directory. Every
+key is optional.
+
+| Key | Meaning |
+| --- | --- |
+| `font_size` | Starting font size in logical pixels |
+| `cols`, `rows` | Starting grid size |
+| `console_agent` | Windows only — see below |
+
+### Mouse in Windows terminal programs
+
+A third-party terminal on Windows must host programs through ConPTY, and ConPTY
+discards mouse input in both directions. That is why a program which handles the
+mouse perfectly in a plain `cmd.exe` window sees no clicks at all inside MiniCon
+— the same limitation applies to other terminals built on ConPTY.
+
+MiniCon can host the shell through the classic Windows console instead, where it
+owns a real console and can deliver clicks, drags and wheel events to the
+program:
+
+    { "console_agent": true }
+
+This is opt-in for now: the classic path is a different implementation from
+ConPTY and is still collecting real-world mileage. It is ignored on macOS and
+Linux.
 
 ## Build
 
