@@ -99,6 +99,13 @@ work — the owner has ruled that out after it cost real time. The one exception
 is the throwaway `candidate-src-<v>` branch a release dispatch needs when `main`
 has moved past the Candidate SHA; delete it immediately after.
 
+When you change the pinned `agenterm` platform crate, verify with **MiniCon's**
+build, not with a `cargo check` inside agenterm. That crate's default feature
+set omits features MiniCon enables (`pty` among them), so whole modules — the
+Windows console agent, for one — are not compiled there at all and a green check
+proves nothing about them. Measured: two "clean" agenterm checks in a row while
+the code did not compile under MiniCon's features.
+
 Before you commit or run six-cell, run `cargo fmt` and
 `cargo clippy --all-targets -- -D warnings`. six-cell gates on fmt and clippy
 while `cargo test` does not, so a change that passes every test can still fail

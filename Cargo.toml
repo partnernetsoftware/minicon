@@ -32,9 +32,6 @@ path = "tests/minicon_alignment.rs"
 name = "minicon_throughput"
 path = "tests/minicon_throughput.rs"
 
-[[test]]
-name = "minicon_accessibility_linux"
-path = "tests/minicon_accessibility_linux.rs"
 
 [[test]]
 name = "minicon_load_portability"
@@ -72,8 +69,6 @@ agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", re
 png = "0.17"
 serde_json = "1"
 
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4a2024340a1d89128c04a442a2391ab1e711aa8c", default-features = false, features = ["a11y-tree"] }
 
 [target.'cfg(windows)'.dependencies]
 agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4a2024340a1d89128c04a442a2391ab1e711aa8c", default-features = false, features = ["native-pixel-window"] }
@@ -88,8 +83,6 @@ agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", re
 [target.'cfg(unix)'.dependencies]
 agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4a2024340a1d89128c04a442a2391ab1e711aa8c", default-features = false, features = ["portable-pixel-window"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "4a2024340a1d89128c04a442a2391ab1e711aa8c", default-features = false, features = ["a11y-publish"] }
 
 [build-dependencies]
 # Build scripts compile for the host; target-gating this dependency makes

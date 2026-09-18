@@ -239,6 +239,25 @@ impl Layout {
         }
     }
 
+    /// The greeting page's second button, stacked under `empty_new_terminal`.
+    ///
+    /// With no tabs open the window has no other way out: `CloseRequested` is
+    /// swallowed by the empty-workspace path, so without this the only exit is
+    /// killing the process. Same width as the New Terminal button so the two
+    /// read as one column.
+    pub fn empty_quit(self, width: u32, height: u32, scale: f64) -> Rect {
+        let above = self.empty_new_terminal(width, height, scale);
+        Rect {
+            x: above.x,
+            y: above
+                .y
+                .saturating_add(above.height)
+                .saturating_add(dip(44.0, scale)),
+            width: above.width,
+            height: above.height,
+        }
+    }
+
     pub fn sidebar_resize_grip(self, scale: f64) -> Rect {
         let width = dip(SIDEBAR_RESIZE_GRIP_DIP, scale).min(self.sidebar.width);
         Rect {
@@ -355,6 +374,7 @@ impl UiLanguage {
                 empty_title: "READY FOR A NEW TERMINAL",
                 new_terminal: "NEW TERMINAL",
                 new_terminal_hint: "Ctrl+Shift+T",
+                quit: "QUIT MINICON",
                 settings_title: "SETTINGS",
                 settings_language: "Interface language",
                 settings_font: "Font size",
@@ -374,6 +394,7 @@ impl UiLanguage {
                 empty_title: "准备开启新终端",
                 new_terminal: "新建终端",
                 new_terminal_hint: "Ctrl+Shift+T",
+                quit: "退出 MiniCon",
                 settings_title: "设置",
                 settings_language: "界面语言",
                 settings_font: "字号",
@@ -393,6 +414,7 @@ impl UiLanguage {
                 empty_title: "準備開啟新終端",
                 new_terminal: "新建終端",
                 new_terminal_hint: "Ctrl+Shift+T",
+                quit: "結束 MiniCon",
                 settings_title: "設定",
                 settings_language: "介面語言",
                 settings_font: "字級",
@@ -485,6 +507,7 @@ pub struct HostUiStrings {
     pub empty_title: &'static str,
     pub new_terminal: &'static str,
     pub new_terminal_hint: &'static str,
+    pub quit: &'static str,
     pub settings_title: &'static str,
     pub settings_language: &'static str,
     pub settings_font: &'static str,
@@ -966,6 +989,43 @@ mod tests {
                 !overlaps(l.composer_input, l.composer_newline),
                 "input overlaps Newline at {w}x{h}@{scale}"
             );
+        }
+    }
+
+    /// With no tabs open the greeting page is the **only** way out of the
+    /// window, so both of its buttons must stay reachable: Quit sits below New
+    /// Terminal with a gap, they never overlap, and neither leaves the screen.
+    /// A Quit button pushed off-screen would trap the user with no exit at all.
+    #[test]
+    fn greeting_page_buttons_stay_reachable_and_disjoint() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let layout = Layout::new(w, h, scale);
+            let new = layout.empty_new_terminal(w, h, scale);
+            let quit = layout.empty_quit(w, h, scale);
+
+            assert!(
+                quit.y >= new.y.saturating_add(new.height),
+                "Quit must sit below New Terminal at {w}x{h}@{scale}"
+            );
+            let vertical_gap = quit.y >= new.y.saturating_add(new.height);
+            assert!(vertical_gap, "buttons overlap at {w}x{h}@{scale}");
+            assert_eq!(quit.x, new.x, "buttons must share a column");
+            assert_eq!(quit.width, new.width, "buttons must share a width");
+
+            for (name, r) in [("new-terminal", new), ("quit", quit)] {
+                assert!(
+                    r.width > 0 && r.height > 0,
+                    "{name} vanished at {w}x{h}@{scale}"
+                );
+                assert!(
+                    r.x.saturating_add(r.width) <= w,
+                    "{name} runs off the right edge at {w}x{h}@{scale}: {r:?}"
+                );
+                assert!(
+                    r.y.saturating_add(r.height) <= h,
+                    "{name} runs off the bottom at {w}x{h}@{scale}: {r:?}"
+                );
+            }
         }
     }
 

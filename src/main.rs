@@ -4079,6 +4079,19 @@ impl ConApp {
             hint_size,
             content_width,
         );
+        // With no tabs there is otherwise no way out of the window at all, so
+        // the greeting page carries an explicit exit. Drawn muted: quitting is
+        // the secondary action next to opening a terminal.
+        let quit = layout.empty_quit(width, height, scale);
+        surface.fill_rect(quit.x, quit.y, quit.width, quit.height, t.surface.to_xrgb());
+        stroke_rect(&mut surface, quit, scale.max(1.0) as u32, rule);
+        paint_button_label(
+            &mut surface,
+            quit,
+            strings.quit,
+            muted,
+            host_ui_size(BUTTON_LABEL_SIZE_PX),
+        );
         paint_status_bar(
             &mut surface,
             layout,
@@ -6654,6 +6667,12 @@ impl PixelWindowApplication for ConApp {
                     self.open_session_contained(window, false);
                     window.focus();
                     window.request_redraw();
+                } else if layout
+                    .empty_quit(metrics.physical_width, metrics.physical_height, scale)
+                    .contains(x, y)
+                {
+                    self.exit = true;
+                    return Ok(PixelWindowDirective::Exit);
                 }
                 return Ok(PixelWindowDirective::Continue);
             }
@@ -6779,6 +6798,14 @@ impl PixelWindowApplication for ConApp {
             }
         }
         if self.workspace.active().is_none() {
+            // Closing must keep working with no tabs open. `CloseRequested` is
+            // handled in the session layer, which this early return never
+            // reaches — so without this the window could not be closed at all
+            // and the only way out was killing the process.
+            if matches!(event, PixelWindowEvent::CloseRequested) {
+                self.exit = true;
+                return Ok(PixelWindowDirective::Exit);
+            }
             return Ok(PixelWindowDirective::Continue);
         }
         let active = self.workspace.active().ok_or_else(|| {
