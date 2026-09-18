@@ -27,7 +27,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agenterm-platform"
 version = "0.1.16"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=9986d2e713460389cdac2d772a2cfda167299401#9986d2e713460389cdac2d772a2cfda167299401"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=28577d3d#28577d3d15089a52da83cc66c85ca5bdfa498b30"
 dependencies = [
  "ab_glyph",
  "cc",
@@ -47,7 +47,7 @@ dependencies = [
 [[package]]
 name = "agenterm-ui-core"
 version = "0.1.16"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=9986d2e713460389cdac2d772a2cfda167299401#9986d2e713460389cdac2d772a2cfda167299401"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=28577d3d#28577d3d15089a52da83cc66c85ca5bdfa498b30"
 dependencies = [
  "vt100",
 ]
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "agenterm-platform",
  "agenterm-ui-core",
@@ -1454,7 +1454,7 @@ dependencies = [
 [[package]]
 name = "softbuffer"
 version = "0.4.8"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=9986d2e713460389cdac2d772a2cfda167299401#9986d2e713460389cdac2d772a2cfda167299401"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=28577d3d#28577d3d15089a52da83cc66c85ca5bdfa498b30"
 dependencies = [
  "as-raw-xcb-connection",
  "bytemuck",
@@ -1688,7 +1688,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=9986d2e713460389cdac2d772a2cfda167299401#9986d2e713460389cdac2d772a2cfda167299401"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=28577d3d#28577d3d15089a52da83cc66c85ca5bdfa498b30"
 dependencies = [
  "itoa",
  "unicode-width",

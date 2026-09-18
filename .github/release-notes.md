@@ -46,15 +46,28 @@ operating system's own desktop libraries.
   no Gatekeeper prompt, online or offline. A bare command-line binary cannot
   carry a stapled notarization ticket, which is why earlier downloads could warn
   that the app "could not be verified" even though they were properly signed.
-- **Mouse works in Windows terminal programs (opt-in).** ConPTY — the Windows
-  mechanism every third-party terminal must use — discards mouse input in both
-  directions, which is why clicks never reached a program running inside
-  MiniCon, while the same program in a plain `cmd.exe` window handled them fine.
-  MiniCon can now host the shell through the classic console instead, where it
-  owns a real console and can deliver clicks, drags and wheel events. Turn it on
-  by putting `{"console_agent": true}` in `minicon.json`. It is opt-in for now
-  because the classic path is a different implementation from ConPTY and wants
-  real-world mileage before it becomes the default.
+- **Pasting non-English text works again on macOS.** Every paste containing a
+  non-ASCII character — a typographic apostrophe, Chinese, an emoji — failed
+  with "clipboard read failed: invalid utf-8 sequence", in both the terminal
+  area and the composer. The macOS clipboard helper encodes its output in the
+  text encoding implied by the environment, and an app launched from Finder
+  inherits almost no environment, so on a system whose language is not English
+  the bytes came back in that language's legacy encoding. MiniCon now pins a
+  UTF-8 locale for the helper instead of inheriting whatever the launcher
+  provided. Launching from a terminal masked the bug, which is why it survived
+  this long.
+- **Mouse works in Windows terminal programs, by default.** Clicks never reached
+  a program running inside MiniCon, while the same program in a plain `cmd.exe`
+  window handled them fine. The cause is specific: ConPTY converts an incoming
+  mouse report into a console event record and never turns it back into the byte
+  sequence a VT program reads, so such a program is blind to the mouse no matter
+  what the terminal sends. MiniCon now hosts the shell through the classic
+  Windows console, which delivers clicks, drags and wheel events. ConPTY remains
+  available with `--feature conpty`.
+
+  The previous release offered this as `{"console_agent": true}` in
+  `minicon.json`. That key is gone; an existing config file keeps working and
+  the key is simply ignored.
 - **A Quit button on the greeting page.** With no tabs open the window could not
   be closed at all — the close button did nothing and the only way out was
   killing the process. The greeting page now offers an explicit exit, and the
