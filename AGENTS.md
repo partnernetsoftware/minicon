@@ -69,14 +69,15 @@ workflow file, and do not hand-roll a local equivalent.
 | Windows Authenticode / Azure Artifact Signing / APE `.com` | `sign-windows-artifacts` |
 | sealed Candidate → Defender court → reputation → release publish | `run-reputation-and-release` |
 
-**A skill's `SKILL.md` is only its index — the operational detail lives in its
-`references/`. Read the references before you run anything.** Skipping them
+Skills are registered under `~/.claude/skills/`, which is also where to read
+them. **A skill's top-level page is only its index — the operational detail
+lives in its `references/`. Read those before you run anything.** Skipping them
 means re-deriving what is already written down, wrongly. Real instance
 (2026-09-17): a local `codesign` was run against the login keychain and hung
 forever on an authorization prompt, while
-`sign-macos-artifacts/references/apple-signing-setup.md` §4 already specified a
-temporary keychain plus `set-key-partition-list` for exactly this reason — and
-§6 already flagged that a bare Mach-O may not be staplable.
+`~/.claude/skills/sign-macos-artifacts/references/apple-signing-setup.md` §4
+already specified a temporary keychain plus `set-key-partition-list` for exactly
+this reason — and §6 already flagged that a bare Mach-O may not be staplable.
 
 When a task teaches something durable, write it back into the owning skill (and
 its `references/`), not only into private notes. A skill that is not registered

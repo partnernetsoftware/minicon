@@ -1,9 +1,10 @@
 # Plan 0.1.16 — macOS `.app` packaging + clarity & test fortification
 
-Status: **in progress.** A "clarity + fortify" release. Lead item is the macOS
-distribution fix (the Gatekeeper warning a user hit on 0.1.15), which is the only
-user-facing regression-class issue open. Everything else is debt paydown and the
-proactive UX-testing net the owner asked for.
+Status: **Theme M shipped as v0.1.16; Themes A/B/C carry to 0.1.17.** The macOS
+distribution fix (the Gatekeeper warning hit on 0.1.15) was the only
+user-facing regression-class issue open, so 0.1.16 was deliberately scoped to it
+plus the `install-cli` requirement — bundling the large `main.rs` refactor into
+the same release would have put unrelated risk in front of a user-facing fix.
 
 Owner directives feeding this plan:
 - "把 UI/UX 做到极致,别老让我一个个发现 bug" → proactive invariant tests
@@ -14,7 +15,17 @@ Owner directives feeding this plan:
 
 ---
 
-## Theme M (lead) — macOS `.app` bundle + CLI on PATH
+## Theme M (lead) — macOS `.app` bundle + CLI on PATH — **SHIPPED in v0.1.16**
+
+Delivered: `macos-signing.yml` now builds `MiniCon.app`, signs it inner-out with
+a hardened runtime, notarizes and **staples the bundle**, asserts
+`spctl -a -t exec` is `accepted / source=Notarized Developer ID` (the gate a bare
+Mach-O can never pass), and ships it inside the `.dmg`. Asset *names* are
+unchanged, so `candidate_bundle.py`, `release.yml` and the policy needed no
+edits; the signing receipt gained a `macos-universal-app` entry. `install-cli`
+/ `uninstall-cli` link the executable onto `PATH` and refuse to touch anything
+that is not a symlink they own (covered by
+`tests/minicon_control.rs`).
 
 ### The problem (verified on 0.1.15 bytes)
 minicon ships as a bare Mach-O, not a `.app`. Consequences, measured:

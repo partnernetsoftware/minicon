@@ -58,22 +58,30 @@ on Apple Silicon and Intel. `minicon.com` is a signed one-file launcher that
 carries all six OS/ISA payloads; the native per-platform archives remain the
 conventional choice, and every distributable has its own checksum.
 
-### Opening on macOS the first time
+### macOS: the app, and the `minicon` command
 
-The current macOS build is a signed, notarized command-line binary (not yet a
-`.app` bundle). A bare Mach-O cannot have the notarization ticket *stapled* to
-it, so on first launch Gatekeeper may report that it "cannot be verified" —
-even though it is genuinely Developer ID-signed and Apple-notarized (Apple holds
-the ticket on its servers). Open it any one of these ways:
+The `.dmg` carries **`MiniCon.app`** — a signed, notarized and *stapled* bundle.
+Drag it to Applications and double-click it; Gatekeeper raises no prompt, online
+or offline.
 
-- **Finder:** right-click (Control-click) the file → **Open**, then **Open**
-  again in the dialog; or
-- **System Settings → Privacy & Security** → **Open Anyway** next to the blocked
-  item; or
-- **Terminal:** `xattr -d com.apple.quarantine /path/to/minicon`, then run it.
+MiniCon is also a control CLI, and a bundle keeps its executable at
+`Contents/MacOS/minicon`, which is not on `PATH`. One command fixes that:
 
-A future release will ship a stapled `MiniCon.app` bundle so a plain
-double-click opens with no prompt.
+```bash
+/Applications/MiniCon.app/Contents/MacOS/minicon install-cli
+# ...or into a directory you own, needing no sudo:
+/Applications/MiniCon.app/Contents/MacOS/minicon install-cli --prefix ~/.local/bin
+```
+
+`minicon uninstall-cli` removes the link again. Both only ever create or remove
+a *symlink*: a real file of that name is refused and left untouched.
+
+The `.tar.gz` still ships the bare signed binary for command-line-only use. A
+bare Mach-O cannot carry a stapled ticket, so Gatekeeper may warn the first time
+it runs even though it is genuinely Developer ID-signed and notarized. Open it
+once with right-click → **Open**, or **System Settings → Privacy & Security** →
+**Open Anyway**, or clear the quarantine flag with
+`xattr -d com.apple.quarantine /path/to/minicon`.
 
 ## Code signing policy
 

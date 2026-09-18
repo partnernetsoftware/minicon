@@ -671,6 +671,8 @@ Usage: minicon [--no-activate] [--working-dir DIR]
        minicon --status
        minicon --help
        minicon cli --control ENDPOINT COMMAND [ARGS...]
+       minicon install-cli [--prefix DIR]     (link `minicon` onto PATH)
+       minicon uninstall-cli [--prefix DIR]
 
 A standalone console host (conhost equivalent). No server, mux, or Fleet.
 
@@ -773,6 +775,8 @@ fn offline_cli_exit(args: &[String]) -> Option<i32> {
             let _ = agenterm_platform::parent_console::write_stdout(&usage_text());
             Some(0)
         }
+        Some("install-cli") => Some(install_cli(&args[1..], true)),
+        Some("uninstall-cli") => Some(install_cli(&args[1..], false)),
         Some("--version" | "-V" | "--help" | "-h" | "--status") => {
             let _ = agenterm_platform::parent_console::write_stderr(
                 "error: --version/--status/--help must be used alone",
@@ -781,6 +785,155 @@ fn offline_cli_exit(args: &[String]) -> Option<i32> {
         }
         _ => None,
     }
+}
+
+/// Links this executable as `minicon` on `PATH`, or removes that link.
+///
+/// A macOS `.app` bundle keeps its executable at `Contents/MacOS/minicon`,
+/// which is deliberately not on `PATH` — but MiniCon is also a control CLI
+/// (`minicon cli ...`), so a GUI install still needs one step to be usable from
+/// a shell. This is the VS Code `code` model: an explicit symlink into a prefix
+/// the user names, never an installer silently writing into the system.
+#[cfg(unix)]
+fn install_cli(rest: &[String], install: bool) -> i32 {
+    use std::os::unix::fs::symlink;
+
+    let mut prefix = PathBuf::from("/usr/local/bin");
+    let mut rest = rest.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--prefix" => match rest.next() {
+                Some(dir) => prefix = PathBuf::from(dir),
+                None => {
+                    let _ = agenterm_platform::parent_console::write_stderr(
+                        "error: --prefix requires a directory\n",
+                    );
+                    return 2;
+                }
+            },
+            other if other.starts_with("--prefix=") => {
+                prefix = PathBuf::from(&other["--prefix=".len()..]);
+            }
+            unknown => {
+                let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                    "error: unknown argument '{unknown}'\n"
+                ));
+                return 2;
+            }
+        }
+    }
+
+    let link = prefix.join("minicon");
+    let existing = std::fs::symlink_metadata(&link).ok();
+
+    if !install {
+        return match existing {
+            None => {
+                let _ = agenterm_platform::parent_console::write_stdout(&format!(
+                    "nothing to remove: {} does not exist\n",
+                    link.display()
+                ));
+                0
+            }
+            // Only ever remove a symlink. A real file there belongs to someone
+            // else — a package manager, a hand-placed copy — and deleting it is
+            // not this command's business.
+            Some(meta) if meta.file_type().is_symlink() => match std::fs::remove_file(&link) {
+                Ok(()) => {
+                    let _ = agenterm_platform::parent_console::write_stdout(&format!(
+                        "removed {}\n",
+                        link.display()
+                    ));
+                    0
+                }
+                Err(error) => {
+                    let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                        "error: cannot remove {}: {error}\n{}",
+                        link.display(),
+                        install_cli_permission_hint(&prefix)
+                    ));
+                    1
+                }
+            },
+            Some(_) => {
+                let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                    "error: {} exists and is not a symlink; refusing to delete a real file\n",
+                    link.display()
+                ));
+                1
+            }
+        };
+    }
+
+    let target = match std::env::current_exe().and_then(|path| path.canonicalize()) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                "error: cannot resolve this executable: {error}\n"
+            ));
+            return 1;
+        }
+    };
+    if !prefix.is_dir() {
+        let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            "error: {} is not a directory\ntry: minicon install-cli --prefix ~/.local/bin\n",
+            prefix.display()
+        ));
+        return 1;
+    }
+    if let Some(meta) = existing {
+        if !meta.file_type().is_symlink() {
+            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                "error: {} already exists and is not a symlink; refusing to replace it\n",
+                link.display()
+            ));
+            return 1;
+        }
+        if let Err(error) = std::fs::remove_file(&link) {
+            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                "error: cannot replace {}: {error}\n{}",
+                link.display(),
+                install_cli_permission_hint(&prefix)
+            ));
+            return 1;
+        }
+    }
+    match symlink(&target, &link) {
+        Ok(()) => {
+            let _ = agenterm_platform::parent_console::write_stdout(&format!(
+                "linked {} -> {}\nopen a new shell, then `minicon --version`\n",
+                link.display(),
+                target.display()
+            ));
+            0
+        }
+        Err(error) => {
+            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                "error: cannot create {}: {error}\n{}",
+                link.display(),
+                install_cli_permission_hint(&prefix)
+            ));
+            1
+        }
+    }
+}
+
+#[cfg(unix)]
+fn install_cli_permission_hint(prefix: &std::path::Path) -> String {
+    format!(
+        "{} may not be writable by this user. Re-run with sudo, or choose a \
+         directory you own:\n  minicon install-cli --prefix ~/.local/bin\n",
+        prefix.display()
+    )
+}
+
+#[cfg(not(unix))]
+fn install_cli(_rest: &[String], _install: bool) -> i32 {
+    let _ = agenterm_platform::parent_console::write_stderr(
+        "error: install-cli is a Unix convenience; on Windows add the folder \
+         holding minicon.exe to PATH instead\n",
+    );
+    2
 }
 
 struct ConTerminal {

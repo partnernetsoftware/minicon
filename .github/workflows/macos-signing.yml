@@ -208,7 +208,54 @@ jobs:
           printf '%s' "$ASC_API_KEY_P8_BASE64" | base64 -d > "$p8"
           trap 'rm -f "$p8"' EXIT
           mkdir -p work/dmgroot
-          cp work/minicon work/dmgroot/minicon
+          # A bare Mach-O cannot be stapled (Error 73) and Gatekeeper's GUI
+          # launch path rejects it as "does not seem to be an app" even from
+          # inside a stapled .dmg, so the double-clickable deliverable must be a
+          # bundle. The tar.gz keeps shipping the bare signed binary for
+          # command-line use. See sign-macos-artifacts skill, references §6.
+          app="work/MiniCon.app"
+          rm -rf "$app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp work/minicon "$app/Contents/MacOS/minicon"
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>MiniCon</string>
+            <key>CFBundleDisplayName</key><string>MiniCon</string>
+            <key>CFBundleIdentifier</key><string>com.partnernetsoftware.minicon</string>
+            <key>CFBundleExecutable</key><string>minicon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$VERSION</string>
+            <key>CFBundleVersion</key><string>$VERSION</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+          </dict>
+          </plist>
+          PLIST
+          # Sign inner-out: the executable first, then the bundle.
+          codesign --force --options runtime --timestamp --keychain "$SIGN_KEYCHAIN" \
+            --sign "$MACOS_SIGN_IDENTITY" "$app/Contents/MacOS/minicon"
+          codesign --force --options runtime --timestamp --keychain "$SIGN_KEYCHAIN" \
+            --sign "$MACOS_SIGN_IDENTITY" "$app"
+          codesign --verify --strict --verbose=2 "$app"
+          ditto -c -k --keepParent "$app" work/app.zip
+          out="$(xcrun notarytool submit work/app.zip \
+            --key "$p8" --key-id "$ASC_API_KEY_ID" --issuer "$ASC_API_ISSUER_ID" \
+            --wait --output-format json)"
+          echo "$out"
+          [[ "$(jq -r .status <<<"$out")" == "Accepted" ]]
+          jq -r .id <<<"$out" > work/app_notary_id.txt
+          rm -f work/app.zip
+          # Staple the .app itself (bundles are staplable), then prove the gate
+          # the bare binary can never pass.
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl -a -t exec -vv "$app" 2>&1 | grep -q "accepted"
+          spctl -a -t exec -vv "$app" 2>&1 | grep -q "source=Notarized Developer ID"
+          cp -R "$app" work/dmgroot/MiniCon.app
           dmg="work/minicon-$VERSION-macos-universal.dmg"
           hdiutil create -volname "MiniCon" -srcfolder work/dmgroot -ov -format UDZO "$dmg"
           codesign --force --timestamp --keychain "$SIGN_KEYCHAIN" \
@@ -240,6 +287,7 @@ jobs:
           dmg_sha="$(shasum -a 256 work/minicon-macos-universal.dmg | cut -d' ' -f1)"
           team="$(codesign -dv --verbose=2 work/minicon 2>&1 | sed -n 's/^TeamIdentifier=//p')"
           spctl_dmg="$(spctl -a -t open --context context:primary-signature -vv work/minicon-macos-universal.dmg 2>&1 | sed -n 's/^work.*: //p' | head -1)"
+          spctl_app="$(spctl -a -t exec -vv work/MiniCon.app 2>&1 | sed -n 's/^work.*: //p' | head -1)"
           mkdir -p signed
           cp work/minicon signed/minicon
           cp work/minicon-macos-universal.dmg "signed/minicon-$VERSION-macos-universal.dmg"
@@ -267,6 +315,15 @@ jobs:
                 "notarization_id": open("work/dmg_notary_id.txt").read().strip(),
                 "stapled": True,
                 "spctl": "$spctl_dmg",
+              },
+              # The bundle the .dmg carries: unlike the bare Mach-O this one is
+              # staplable and passes `spctl -t exec`, which is what makes a
+              # plain double-click open without a Gatekeeper warning.
+              "macos-universal-app": {
+                "notarization_id": open("work/app_notary_id.txt").read().strip(),
+                "hardened_runtime": True,
+                "stapled": True,
+                "spctl": "$spctl_app",
               },
             },
             "release_eligible": ("$RELEASE_ELIGIBLE" == "true"),

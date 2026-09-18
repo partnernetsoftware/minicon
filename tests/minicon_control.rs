@@ -1886,3 +1886,93 @@ fn resolve_on_path(program: &str) -> Option<PathBuf> {
     }
     None
 }
+
+/// `install-cli` is what makes `minicon` reachable from a shell after a GUI
+/// install: a macOS `.app` bundle keeps its executable at
+/// `Contents/MacOS/minicon`, deliberately off `PATH`, yet MiniCon is also a
+/// control CLI. Cover the whole contract here — link, execute *through* the
+/// link, unlink — plus the two refusals. The refusals are the part a careless
+/// implementation gets wrong: this command must never be able to replace or
+/// delete a real file it does not own (a package manager's binary, a
+/// hand-placed copy), only a symlink it created.
+#[cfg(unix)]
+#[test]
+fn install_cli_links_unlinks_and_refuses_to_clobber_real_files() {
+    let exe = minicon_binary();
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let unique = UNIQUE.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("minicon-install-cli-{stamp}-{unique}"));
+    fs::create_dir_all(&dir).expect("scratch prefix");
+    let link = dir.join("minicon");
+
+    let install = Command::new(&exe)
+        .args(["install-cli", "--prefix"])
+        .arg(&dir)
+        .output()
+        .expect("install-cli");
+    assert!(
+        install.status.success(),
+        "install-cli failed: {}",
+        String::from_utf8_lossy(&install.stderr)
+    );
+    assert!(
+        fs::symlink_metadata(&link)
+            .expect("link exists")
+            .file_type()
+            .is_symlink(),
+        "install-cli did not create a symlink"
+    );
+
+    // The link must actually run the binary, not merely exist.
+    let version = Command::new(&link)
+        .arg("--version")
+        .output()
+        .expect("run through the link");
+    assert!(version.status.success());
+    assert!(
+        String::from_utf8_lossy(&version.stdout).contains("minicon"),
+        "running through the link did not report a version"
+    );
+
+    let uninstall = Command::new(&exe)
+        .args(["uninstall-cli", "--prefix"])
+        .arg(&dir)
+        .output()
+        .expect("uninstall-cli");
+    assert!(uninstall.status.success());
+    assert!(
+        fs::symlink_metadata(&link).is_err(),
+        "the link survived uninstall-cli"
+    );
+
+    // A real file occupying the name is neither replaced nor deleted.
+    fs::write(&link, b"not ours").expect("place a real file");
+    let clobber = Command::new(&exe)
+        .args(["install-cli", "--prefix"])
+        .arg(&dir)
+        .output()
+        .expect("install-cli over a real file");
+    assert!(
+        !clobber.status.success(),
+        "install-cli replaced a real file"
+    );
+    let remove = Command::new(&exe)
+        .args(["uninstall-cli", "--prefix"])
+        .arg(&dir)
+        .output()
+        .expect("uninstall-cli over a real file");
+    assert!(
+        !remove.status.success(),
+        "uninstall-cli deleted a real file"
+    );
+    assert_eq!(
+        fs::read(&link).expect("real file intact"),
+        b"not ours",
+        "the real file was modified"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}

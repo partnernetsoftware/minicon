@@ -41,6 +41,16 @@ operating system's own desktop libraries.
   Because of that same overlap, a click on the very bottom row of a mouse-aware
   full-screen program (its input line) could be captured by the composer instead
   of reaching the program. The click now reaches the program as it does on macOS.
+- **macOS now ships `MiniCon.app`.** The `.dmg` carries a signed, notarized and
+  *stapled* application bundle — drag it to Applications and double-click, with
+  no Gatekeeper prompt, online or offline. A bare command-line binary cannot
+  carry a stapled notarization ticket, which is why earlier downloads could warn
+  that the app "could not be verified" even though they were properly signed.
+- **`minicon install-cli` puts `minicon` on your PATH.** An app bundle keeps its
+  executable inside `Contents/MacOS`, so one command links it where your shell
+  can find it — `install-cli`, optionally `--prefix ~/.local/bin` to avoid sudo,
+  and `uninstall-cli` to undo. It only ever creates or removes a symlink; a real
+  file of that name is refused, never overwritten.
 
 ## Downloads
 
@@ -57,8 +67,9 @@ Pick your platform and run the file — there is no installer.
 | Advanced: one signed launcher, all platforms | `minicon.com` |
 <!-- OPTIONAL_APE_END -->
 
-The macOS `.dmg` is a signed, notarized, stapled universal binary; a `.tar.gz`
-of the same binary is also provided. Every archive has a SHA-256 beside it.
+The macOS `.dmg` contains a signed, notarized, stapled **`MiniCon.app`**
+(universal — Apple Silicon and Intel). A `.tar.gz` of the bare signed binary is
+also provided for command-line-only use. Every archive has a SHA-256 beside it.
 
 Linux archives use the distribution runtime libraries `libxkbcommon0` and
 `libwayland-client0` (no `-dev` packages required) and bundle the runtime-only
