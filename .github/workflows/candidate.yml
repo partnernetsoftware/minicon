@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       upstream_run_id:
-        description: Successful six-cell run selected by release-policy.json
+        description: Run selected by release-policy.json — company-signing when signing.mode=required, else minicon-com
         required: true
         type: string
       macos_signing_run_id:

@@ -86,8 +86,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.15-release-history.md
 │   ├── [x] v0.1.16 released — macOS MiniCon.app bundle + install-cli; dual-signed
 │   │   └── prd/archive/v0.1.16-release-history.md
-│   ├── [x] v0.1.17 released — real Enter after Send; --file/--output cross-tab I/O; dual-signed (latest)
+│   ├── [x] v0.1.17 released — real Enter after Send; --file/--output cross-tab I/O; dual-signed
 │   │   └── prd/archive/v0.1.17-release-history.md
+│   ├── [x] v0.1.18 released — opt-in Windows console agent for mouse; greeting-page Quit; dual-signed (latest)
+│   │   └── prd/archive/v0.1.18-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -149,7 +151,8 @@ flowchart LR
         R114["v0.1.14 released<br/>Windows DPI awareness + mouse-wheel · dual-signed"]
         R115["v0.1.15 released<br/>Windows terminal/composer overlap + click fix · dual-signed"]
         R116["v0.1.16 released<br/>macOS MiniCon.app bundle + install-cli · dual-signed"]
-        R117["v0.1.17 released<br/>real Enter after Send · --file/--output · dual-signed · latest"]
+        R117["v0.1.17 released<br/>real Enter after Send · --file/--output · dual-signed"]
+        R118["v0.1.18 released<br/>Windows mouse via console agent · greeting Quit · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -212,7 +215,17 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.17 is the latest public release. The composer's Send (`Ctrl+O`) now
+- [x] v0.1.18 is the latest public release. Mouse input can now reach Windows
+  terminal programs: ConPTY — which every third-party terminal must use —
+  discards mouse traffic in both directions, which is why a program that handled
+  clicks fine in a plain `cmd.exe` window (classic conhost, no translation) saw
+  nothing inside MiniCon. The classic console-agent path is reachable with
+  `{"console_agent": true}` in `minicon.json`, opt-in until it has real-world
+  mileage. The greeting page gained `[Quit MiniCon]` and its window close button
+  works again — with no tabs the window previously could not be closed at all.
+  The Linux binary dropped an AT-SPI stack MiniCon never consumed (6.0 MB →
+  4.5 MB). History: `prd/archive/v0.1.18-release-history.md`.
+- [x] v0.1.17. The composer's Send (`Ctrl+O`) now
   delivers the Enter as its own key press: the paste and its committing CR used
   to reach the child in a single `read()`, so a TUI that applies pastes
   asynchronously handled the CR first — against an empty input box — and left
