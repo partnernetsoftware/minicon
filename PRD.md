@@ -88,8 +88,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.16-release-history.md
 │   ├── [x] v0.1.17 released — real Enter after Send; --file/--output cross-tab I/O; dual-signed
 │   │   └── prd/archive/v0.1.17-release-history.md
-│   ├── [x] v0.1.18 released — opt-in Windows console agent for mouse; greeting-page Quit; dual-signed (latest)
+│   ├── [x] v0.1.18 released — opt-in Windows console agent for mouse; greeting-page Quit; dual-signed
 │   │   └── prd/archive/v0.1.18-release-history.md
+│   ├── [x] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed (latest)
+│   │   └── prd/archive/v0.1.19-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -152,7 +154,8 @@ flowchart LR
         R115["v0.1.15 released<br/>Windows terminal/composer overlap + click fix · dual-signed"]
         R116["v0.1.16 released<br/>macOS MiniCon.app bundle + install-cli · dual-signed"]
         R117["v0.1.17 released<br/>real Enter after Send · --file/--output · dual-signed"]
-        R118["v0.1.18 released<br/>Windows mouse via console agent · greeting Quit · dual-signed · latest"]
+        R118["v0.1.18 released<br/>Windows mouse via console agent · greeting Quit · dual-signed"]
+        R119["v0.1.19 released<br/>non-ASCII paste fix · classic console default · --feature · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -215,7 +218,17 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.18 is the latest public release. Mouse input can now reach Windows
+- [x] v0.1.19 is the latest public release. Pasting any non-ASCII text on macOS
+  failed outright — `pbpaste` encodes in the locale's text encoding and an app
+  launched from Finder inherits almost no environment, so on a non-English
+  system the bytes arrived in a legacy encoding; the helpers now pin a UTF-8
+  locale. The Windows mouse works with no configuration: the classic console is
+  the default host and ConPTY is selected with the new `--feature conpty`.
+  Measured on the court, ConPTY relays the mouse-mode request and converts an
+  inbound report into a console record, but never re-serializes it to VT bytes,
+  so a byte-reading TUI is blind to the mouse there.
+  History: `prd/archive/v0.1.19-release-history.md`.
+- [x] v0.1.18. Mouse input can now reach Windows
   terminal programs: ConPTY — which every third-party terminal must use —
   discards mouse traffic in both directions, which is why a program that handled
   clicks fine in a plain `cmd.exe` window (classic conhost, no translation) saw
