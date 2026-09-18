@@ -145,6 +145,7 @@ minicon --help                   # everything else
 | `Ctrl+Shift+T` | new terminal |
 | `Ctrl+Shift+N` | new terminal below the active tab |
 | `Ctrl+Shift+W` | close the active terminal; children are promoted |
+| `Ctrl+Shift+B` | collapse the tab sidebar to a rail, or expand it again |
 | `Ctrl+Shift+[` / `]` | switch tabs |
 | `Ctrl+Shift+I` | focus the input area |
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |

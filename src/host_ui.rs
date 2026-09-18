@@ -199,7 +199,7 @@ pub(crate) fn paint_settings_panel(
     theme: theme::Theme,
     ui_language: ui::UiLanguage,
     ui_theme: theme::ThemeChoice,
-    shortcuts: [&str; 13],
+    shortcuts: [&str; 14],
     font_size_px: u16,
     font_percent: u16,
 ) {
@@ -333,6 +333,13 @@ pub(crate) fn paint_settings_panel(
 pub(crate) enum HeaderIcon {
     NewRoot,
     Settings,
+    /// Collapses the sidebar to a rail, or expands it again. Drawn as a panel
+    /// with a chevron pointing the way the sidebar will move, so the glyph
+    /// states the outcome rather than the current state — a control that shows
+    /// where you are gives you nothing you cannot already see.
+    SidebarToggle {
+        collapsed: bool,
+    },
 }
 
 pub(crate) fn stroke_rect(surface: &mut Surface<'_>, rect: ui::Rect, stroke: u32, color: Rgb) {
@@ -473,7 +480,71 @@ pub(crate) fn paint_header_icon_button(
                 );
             }
         }
+        HeaderIcon::SidebarToggle { collapsed } => {
+            let panel = ui::Rect {
+                x: button.x.saturating_add(inset),
+                y: button.y.saturating_add(inset),
+                width: button.width.saturating_sub(inset.saturating_mul(2)),
+                height: button.height.saturating_sub(inset.saturating_mul(2)),
+            };
+            stroke_rect(surface, panel, stroke, color);
+            // The divider sits where the sidebar's edge is: on the left of the
+            // frame when collapsed (a thin rail), further in when expanded.
+            let divider_x = if collapsed {
+                panel.x.saturating_add(panel.width / 4)
+            } else {
+                panel.x.saturating_add(panel.width / 2)
+            };
+            surface.fill_rect(divider_x, panel.y, stroke, panel.height, color.to_xrgb());
+            // A chevron in the larger half, pointing the direction the edge
+            // will travel when clicked.
+            let mid_y = panel.y.saturating_add(panel.height / 2);
+            let arm_len = (panel.height / 4).max(stroke);
+            for step in 0..arm_len {
+                let dx = if collapsed {
+                    divider_x
+                        .saturating_add(stroke)
+                        .saturating_add(arm_len.saturating_sub(step))
+                } else {
+                    divider_x
+                        .saturating_sub(stroke)
+                        .saturating_sub(arm_len.saturating_sub(step))
+                };
+                surface.fill_rect(
+                    dx,
+                    mid_y.saturating_sub(step),
+                    stroke,
+                    stroke,
+                    color.to_xrgb(),
+                );
+                surface.fill_rect(
+                    dx,
+                    mid_y.saturating_add(step),
+                    stroke,
+                    stroke,
+                    color.to_xrgb(),
+                );
+            }
+        }
     }
+}
+
+/// Width in pixels the host UI font needs for `text`.
+///
+/// The host UI paints on the same monospace cell grid the terminal uses, so a
+/// string's width is its display columns times the cell width — wide CJK
+/// characters included. Needed wherever something must be centred or sized to
+/// fit its own text rather than to a guessed constant.
+pub(crate) fn host_ui_text_width(text: &str, font_size_px: u16) -> u32 {
+    let cell_w = font::cell_metrics(font_size_px).width.max(1);
+    let columns: u32 = text
+        .chars()
+        .map(|character| {
+            u32::try_from(unicode_width::UnicodeWidthChar::width(character).unwrap_or(0))
+                .unwrap_or(0)
+        })
+        .sum();
+    cell_w.saturating_mul(columns)
 }
 
 pub(crate) fn paint_host_ui_text(

@@ -1857,6 +1857,108 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     let _ = &mut gui;
 }
 
+/// Collapsing the sidebar must actually hand the column to the terminal, and
+/// expanding must hand it back exactly — not approximately. A rail that shrinks
+/// the chrome without widening the grid is the failure this pins: the user sees
+/// a narrower sidebar and the same amount of terminal, which is the change
+/// looking like it worked while doing nothing.
+#[test]
+fn collapsing_the_sidebar_widens_the_terminal_and_expanding_restores_it_exactly() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let screenshot = if cfg!(windows) {
+        std::env::temp_dir().join(format!("minicon-rail-{suffix}.png"))
+    } else {
+        agenterm_platform::ipc::native_runtime_directory().join(format!("rail-{suffix}.png"))
+    };
+    let mut host = Command::new(exe);
+    host.arg("--no-activate")
+        .arg("--cols")
+        .arg("80")
+        .arg("--rows")
+        .arg("24")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui { child, screenshot };
+    let _ = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+
+    let viewport = |exe: &Path, endpoint: &str| -> (u64, u64, u64) {
+        let snapshot = cli_json(exe, endpoint, &["ui-snapshot"]);
+        let geometry = &snapshot["geometry"];
+        (
+            geometry["terminal_viewport"]["x"].as_u64().expect("x"),
+            geometry["terminal_viewport"]["width"]
+                .as_u64()
+                .expect("width"),
+            geometry["grid"]["cols"].as_u64().expect("cols"),
+        )
+    };
+
+    let expanded = viewport(exe, &endpoint);
+    let toggled = invoke(exe, &endpoint, &["send-ui-keys", "ctrl+shift+b"]);
+    assert!(toggled.status.success(), "{}", error_text(&toggled));
+    let collapsed = wait_for_change(exe, &endpoint, expanded, &viewport);
+    assert!(
+        collapsed.0 < expanded.0,
+        "the rail did not move the terminal left: {collapsed:?} vs {expanded:?}"
+    );
+    assert!(
+        collapsed.1 > expanded.1 && collapsed.2 > expanded.2,
+        "the terminal did not gain the column the sidebar gave up: {collapsed:?} vs {expanded:?}"
+    );
+
+    let toggled = invoke(exe, &endpoint, &["send-ui-keys", "ctrl+shift+b"]);
+    assert!(toggled.status.success(), "{}", error_text(&toggled));
+    let restored = wait_for_change(exe, &endpoint, collapsed, &viewport);
+    assert_eq!(
+        restored, expanded,
+        "expanding did not restore the exact geometry it started from"
+    );
+
+    let _ = &mut gui;
+}
+
+/// Polls `ui-snapshot` until the terminal **grid** differs from `previous`, so
+/// the test does not race the repaint that follows a key.
+///
+/// Waiting on the viewport rectangle is not enough: the host rect moves in the
+/// frame the sidebar changes, while the cell grid is re-derived on the queued
+/// resize a moment later. Keying on the grid means the assertion runs only once
+/// the terminal has actually been told its new size. Panics rather than
+/// returning the old value, because a silent timeout would make a broken toggle
+/// look like a passing test.
+fn wait_for_change(
+    exe: &Path,
+    endpoint: &str,
+    previous: (u64, u64, u64),
+    read: &dyn Fn(&Path, &str) -> (u64, u64, u64),
+) -> (u64, u64, u64) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let current = read(exe, endpoint);
+        if current.2 != previous.2 {
+            return current;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "geometry never changed from {previous:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 /// Finds a bare program on `PATH` (Windows also tries `PATHEXT`), so the test
 /// can point `-e` at a real image it is able to copy and then remove.
 fn resolve_on_path(program: &str) -> Option<PathBuf> {

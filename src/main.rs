@@ -23,7 +23,7 @@ use minicon_core::{composer, json};
 
 mod host_ui;
 use host_ui::{
-    BUTTON_HINT_SIZE_PX, BUTTON_LABEL_SIZE_PX, HeaderIcon, paint_button_label,
+    BUTTON_HINT_SIZE_PX, BUTTON_LABEL_SIZE_PX, HeaderIcon, host_ui_text_width, paint_button_label,
     paint_header_icon_button, paint_host_ui_text, paint_host_ui_text_parts,
     paint_host_ui_text_parts_clipped, paint_settings_panel, paint_status_bar,
     paint_two_line_button_label, scaled_host_ui_font, stroke_rect,
@@ -822,6 +822,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+T       New root terminal
   Ctrl+Shift+N       New child terminal below the active tab
   Ctrl+Shift+W       Close active terminal (children are promoted)
+  Ctrl+Shift+B       Collapse the tab sidebar to a rail, or expand it again
   Ctrl+Shift+[ / ]   Switch terminal tabs
   Ctrl+Shift+I       Focus the external input area
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
@@ -1237,6 +1238,10 @@ struct ConApp {
     settings_open: bool,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
+    /// The sidebar is showing as a rail. Session-scoped on purpose: it is a
+    /// view state, not a preference, and a restart should not strand a user in
+    /// a collapsed sidebar they do not remember choosing.
+    sidebar_collapsed: bool,
     sidebar_resizing: bool,
     exit: bool,
     control_endpoint: Option<String>,
@@ -1530,6 +1535,7 @@ impl ConApp {
             settings_open: false,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
+            sidebar_collapsed: false,
             sidebar_resizing: false,
             exit: false,
             control_endpoint,
@@ -1696,7 +1702,7 @@ impl ConApp {
         }
         self.mark_host_ui_full();
         let metrics = window.metrics()?;
-        let sidebar_width = self.sidebar_width_logical;
+        let sidebar_width = self.effective_sidebar_dip();
         let session = self.active_session_mut()?;
         Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
         session.apply_resize(
@@ -1741,7 +1747,40 @@ impl ConApp {
     }
 
     fn layout(&self, width: u32, height: u32, scale: f64) -> ui::Layout {
-        ui::Layout::with_sidebar_width(width, height, scale, self.sidebar_width_logical)
+        ui::Layout::with_sidebar(
+            width,
+            height,
+            scale,
+            self.sidebar_width_logical,
+            self.sidebar_collapsed,
+        )
+    }
+
+    /// The width the terminal must be inset by — the rail's width while
+    /// collapsed, so the terminal reclaims the column instead of leaving a gap
+    /// where the expanded sidebar used to be.
+    fn effective_sidebar_dip(&self) -> f64 {
+        if self.sidebar_collapsed {
+            ui::SIDEBAR_RAIL_WIDTH_DIP
+        } else {
+            self.sidebar_width_logical
+        }
+    }
+
+    /// Re-applies the terminal inset after the sidebar's width changed, so the
+    /// terminal reclaims (or yields) the column in the same frame as the rail.
+    fn apply_sidebar_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        let metrics = window.metrics()?;
+        let sidebar_width = self.effective_sidebar_dip();
+        if let Ok(session) = self.active_session_mut() {
+            Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+            session.queue_resize(
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            );
+        }
+        Ok(())
     }
 
     fn mark_a11y_dirty(&mut self) {
@@ -1978,7 +2017,7 @@ impl ConApp {
         Self::configure_host_ui(
             &mut session,
             window.metrics()?.scale_factor,
-            self.sidebar_width_logical,
+            self.effective_sidebar_dip(),
         );
         if let Err(error) = session.opened(window) {
             self.workspace.close(id);
@@ -2080,6 +2119,18 @@ impl ConApp {
             }
             return Ok(true);
         }
+        // Collapse/expand the sidebar. The pointer has the header button; this
+        // is the same action for someone who does not want to leave the
+        // keyboard, and it is what makes the rail reachable from the control
+        // CLI, so the collapsed chrome can be machine-verified.
+        if text.eq_ignore_ascii_case("b") {
+            self.sidebar_collapsed = !self.sidebar_collapsed;
+            self.settings_open = false;
+            self.hovered_tree_row = None;
+            self.apply_sidebar_width(window)?;
+            self.mark_host_ui_full_and_repaint(window);
+            return Ok(true);
+        }
         if text.eq_ignore_ascii_case("i") {
             if self.workspace.active().is_none() {
                 return Ok(true);
@@ -2152,6 +2203,16 @@ impl ConApp {
             ui::TreeHit::NewRoot => {
                 self.settings_open = false;
                 self.open_session_contained(window, false);
+                return Ok(true);
+            }
+            ui::TreeHit::SidebarToggle => {
+                self.sidebar_collapsed = !self.sidebar_collapsed;
+                // Collapsing while the settings panel is open would leave the
+                // panel floating over a rail that no longer has room for it.
+                self.settings_open = false;
+                self.hovered_tree_row = None;
+                self.apply_sidebar_width(window)?;
+                self.mark_host_ui_full_and_repaint(window);
                 return Ok(true);
             }
             ui::TreeHit::Settings => {
@@ -3520,7 +3581,7 @@ impl ConApp {
             PixelWindowEvent::PointerMoved { position, .. } if self.sidebar_resizing => {
                 self.sidebar_width_logical =
                     ui::sidebar_width_from_pointer(position.x, metrics.logical_size.width);
-                let sidebar_width = self.sidebar_width_logical;
+                let sidebar_width = self.effective_sidebar_dip();
                 if let Ok(session) = self.active_session_mut() {
                     Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
                     session.queue_resize(
@@ -3554,6 +3615,9 @@ impl ConApp {
                 let hovered_header = match hit {
                     ui::TreeHit::NewRoot => Some(HeaderIcon::NewRoot),
                     ui::TreeHit::Settings => Some(HeaderIcon::Settings),
+                    ui::TreeHit::SidebarToggle => Some(HeaderIcon::SidebarToggle {
+                        collapsed: layout.sidebar_collapsed,
+                    }),
                     _ => None,
                 };
                 if hovered != self.hovered_tree_row || hovered_header != self.hovered_header {
@@ -3682,6 +3746,23 @@ impl ConApp {
             header_icon_size,
             scale,
         );
+        let toggle_icon = HeaderIcon::SidebarToggle {
+            collapsed: layout.sidebar_collapsed,
+        };
+        paint_header_icon_button(
+            &mut surface,
+            layout.sidebar_toggle,
+            toggle_icon,
+            accent,
+            self.hovered_header == Some(toggle_icon),
+            t.surface,
+            header_icon_size,
+            scale,
+        );
+        // A rail row shows `@N` and nothing else, so the hovered row's full
+        // label has to be drawn somewhere; collected here and painted after the
+        // rows so it floats above them.
+        let mut rail_tooltip: Option<(u32, String)> = None;
 
         let nodes = self.workspace.nodes();
         let depths = self.workspace.depths();
@@ -3735,6 +3816,31 @@ impl ConApp {
                 _ => text,
             };
             let mut id = itoa::Buffer::new();
+            let row_active = self.workspace.active() == Some(node.id);
+            let row_hovered = self.hovered_tree_row == Some(node_index);
+            if layout.sidebar_collapsed {
+                // The rail identifies a tab by its stable `@ID` — the same
+                // handle the control CLI uses — so what a user reads here is
+                // what they would type. Depth, branch lines and the close
+                // button are dropped: none of them survive a 44dip column
+                // legibly, and a half-drawn close button is worse than none.
+                let label = ["@", id.format(node.id.get())].concat();
+                let text_width = host_ui_text_width(&label, host_ui_size(HOST_UI_TAB_SIZE_PX));
+                let x = tree_width.saturating_sub(text_width) / 2;
+                paint_host_ui_text(
+                    &mut surface,
+                    x,
+                    y + 7,
+                    &label,
+                    label_color,
+                    host_ui_size(HOST_UI_TAB_SIZE_PX),
+                    tree_width,
+                );
+                if row_hovered {
+                    rail_tooltip = Some((visible_index as u32, title.to_owned()));
+                }
+                continue;
+            }
             paint_host_ui_text_parts_clipped(
                 &mut surface,
                 indent,
@@ -3744,8 +3850,6 @@ impl ConApp {
                 host_ui_size(HOST_UI_TAB_SIZE_PX),
                 tree_width.saturating_sub(indent + 38),
             );
-            let row_active = self.workspace.active() == Some(node.id);
-            let row_hovered = self.hovered_tree_row == Some(node_index);
             if row_active || row_hovered {
                 let close = layout.tree_close_rect(visible_index, scale);
                 // A hover plate behind the glyph so it reads as a button, not
@@ -3767,6 +3871,26 @@ impl ConApp {
                     text,
                     host_ui_size(HOST_UI_CLOSE_SIZE_PX),
                     close.width.saturating_sub(6),
+                );
+            }
+        }
+
+        if let Some((visible_row, title)) = rail_tooltip {
+            let tip_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
+            let text_width = host_ui_text_width(&title, tip_size);
+            if let Some(tip) = ui::rail_tooltip_rect(layout, visible_row, text_width, width, scale)
+            {
+                surface.fill_rect(tip.x, tip.y, tip.width, tip.height, active_bg.to_xrgb());
+                stroke_rect(&mut surface, tip, 1, tree_rule);
+                let padding = tip.width.saturating_sub(text_width) / 2;
+                paint_host_ui_text(
+                    &mut surface,
+                    tip.x.saturating_add(padding),
+                    tip.y.saturating_add(tip.height / 2).saturating_sub(7),
+                    &title,
+                    text,
+                    tip_size,
+                    tip.width.saturating_sub(padding),
                 );
             }
         }
@@ -6430,7 +6554,7 @@ fn composer_submission_payload(submission: &str, bracketed: bool) -> Vec<u8> {
 impl PixelWindowApplication for ConApp {
     fn opened(&mut self, window: &PixelWindow) -> Result<PixelWindowDirective, PixelWindowError> {
         let metrics = window.metrics()?;
-        let sidebar_width = self.sidebar_width_logical;
+        let sidebar_width = self.effective_sidebar_dip();
         Self::configure_host_ui(
             self.active_session_mut()?,
             metrics.scale_factor,
@@ -6589,7 +6713,7 @@ impl PixelWindowApplication for ConApp {
         }
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
             self.mark_host_ui_full();
-            let sidebar_width = self.sidebar_width_logical;
+            let sidebar_width = self.effective_sidebar_dip();
             if let Ok(session) = self.active_session_mut() {
                 Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
             }

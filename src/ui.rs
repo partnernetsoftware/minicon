@@ -13,6 +13,17 @@ pub const SIDEBAR_MIN_WIDTH_DIP: f64 = 224.0;
 pub const SIDEBAR_MAX_WIDTH_DIP: f64 = 480.0;
 pub const TERMINAL_MIN_WIDTH_DIP: f64 = 320.0;
 pub const SIDEBAR_RESIZE_GRIP_DIP: f64 = 6.0;
+/// Width of the collapsed sidebar. Wide enough for one icon-sized control plus
+/// its padding, and for an `@12` label at the smallest supported scale — the
+/// rail's whole job is to keep every tab reachable and identifiable while
+/// giving the terminal back the rest of the column.
+pub const SIDEBAR_RAIL_WIDTH_DIP: f64 = 44.0;
+/// Horizontal gap between the rail and a hover tooltip, and the tooltip's own
+/// padding. The tooltip is drawn over the terminal, so it must not touch the
+/// rail edge or it reads as part of the sidebar.
+pub const TOOLTIP_GAP_DIP: f64 = 6.0;
+pub const TOOLTIP_PADDING_DIP: f64 = 8.0;
+pub const TOOLTIP_HEIGHT_DIP: f64 = 26.0;
 pub const TERMINAL_SCROLLBAR_WIDTH_DIP: f64 = 12.0;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -58,29 +69,58 @@ pub struct Layout {
     pub status: Rect,
     /// Opens a new root terminal; the primary header action (left).
     pub new_root: Rect,
-    /// Opens the settings panel (far right of the header). Help, language, font
-    /// size and theme all live inside that panel.
+    /// Opens the settings panel. Help, language, font size and theme all live
+    /// inside that panel.
     pub settings: Rect,
+    /// Collapses the sidebar to a rail and expands it again. Sits at the far
+    /// right of the header, to the right of [`Self::settings`], because the
+    /// rightmost edge is where a panel's own collapse affordance belongs — the
+    /// control that takes the column away is the one nearest the column edge.
+    ///
+    /// While collapsed the three header controls stack vertically instead,
+    /// since the rail cannot seat them side by side; every one of them stays
+    /// reachable, which is the point of a rail rather than a hidden sidebar.
+    pub sidebar_toggle: Rect,
+    /// True when the sidebar is showing as a rail.
+    pub sidebar_collapsed: bool,
 }
 
 impl Layout {
     #[cfg(test)]
     pub fn new(width: u32, height: u32, scale: f64) -> Self {
-        Self::with_sidebar_width(width, height, scale, SIDEBAR_WIDTH_DIP)
+        Self::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, false)
     }
 
-    pub fn with_sidebar_width(width: u32, height: u32, scale: f64, sidebar_dip: f64) -> Self {
+    #[cfg(test)]
+    pub fn collapsed(width: u32, height: u32, scale: f64) -> Self {
+        Self::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, true)
+    }
+
+    pub fn with_sidebar(
+        width: u32,
+        height: u32,
+        scale: f64,
+        sidebar_dip: f64,
+        collapsed: bool,
+    ) -> Self {
         let scale = scale.max(1.0);
         let maximum = clamp_f64(
             f64::from(width) / scale - TERMINAL_MIN_WIDTH_DIP,
             SIDEBAR_MIN_WIDTH_DIP,
             SIDEBAR_MAX_WIDTH_DIP,
         );
-        let sidebar_width = dip(
-            clamp_f64(sidebar_dip, SIDEBAR_MIN_WIDTH_DIP, maximum),
-            scale,
-        )
-        .min(width);
+        // Collapsing bypasses the expanded clamp entirely: the rail is allowed
+        // to be narrower than SIDEBAR_MIN_WIDTH_DIP, because that minimum
+        // exists to keep tree labels readable and a rail has no labels.
+        let sidebar_width = if collapsed {
+            dip(SIDEBAR_RAIL_WIDTH_DIP, scale).min(width)
+        } else {
+            dip(
+                clamp_f64(sidebar_dip, SIDEBAR_MIN_WIDTH_DIP, maximum),
+                scale,
+            )
+            .min(width)
+        };
         let status_height = dip(STATUS_HEIGHT_DIP, scale).min(height);
         let composer_height =
             dip(COMPOSER_HEIGHT_DIP, scale).min(height.saturating_sub(status_height));
@@ -171,26 +211,54 @@ impl Layout {
             width: input_right.saturating_sub(input_x),
             height: control_height,
         };
-        let tool_size = dip(24.0, scale).min(sidebar_width / 2);
-        let tool_y = dip(4.0, scale);
-        let group_gap = dip(4.0, scale);
-        let new_root = Rect {
-            x: dip(4.0, scale),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
+        let pad = dip(4.0, scale);
+        let tool_y = pad;
+        // Three tools now: New (left), Settings, and the collapse toggle at the
+        // far right. Expanded they share one row; the row is sized so the pair
+        // on the right cannot run into New on a narrow sidebar.
+        let expanded_tool_size = dip(24.0, scale).min(sidebar_width / 3);
+        let rail_tool_size =
+            dip(24.0, scale).min(sidebar_width.saturating_sub(pad.saturating_mul(2)));
+        let tool_size = if collapsed {
+            rail_tool_size
+        } else {
+            expanded_tool_size
         };
-        // Two tools only: New (left, the daily action) and Settings (far right).
-        // Everything else — help, language, font size, theme — moved into the
-        // settings panel, so the header row never overflows a narrow sidebar.
-        let _ = group_gap;
-        let settings = Rect {
-            x: sidebar_width
-                .saturating_sub(dip(4.0, scale))
-                .saturating_sub(tool_size),
-            y: tool_y,
-            width: tool_size,
-            height: tool_size,
+        let (new_root, settings, sidebar_toggle) = if collapsed {
+            // The rail seats one control per row. Stacking keeps New and
+            // Settings reachable instead of trading them away for the rail.
+            let column = sidebar_width.saturating_sub(tool_size) / 2;
+            let step = tool_size.saturating_add(pad);
+            let stacked = |slot: u32| Rect {
+                x: column,
+                y: tool_y.saturating_add(step.saturating_mul(slot)),
+                width: tool_size,
+                height: tool_size,
+            };
+            (stacked(1), stacked(2), stacked(0))
+        } else {
+            let toggle = Rect {
+                x: sidebar_width.saturating_sub(pad).saturating_sub(tool_size),
+                y: tool_y,
+                width: tool_size,
+                height: tool_size,
+            };
+            let settings = Rect {
+                x: toggle.x.saturating_sub(pad).saturating_sub(tool_size),
+                y: tool_y,
+                width: tool_size,
+                height: tool_size,
+            };
+            (
+                Rect {
+                    x: pad,
+                    y: tool_y,
+                    width: tool_size,
+                    height: tool_size,
+                },
+                settings,
+                toggle,
+            )
         };
         Self {
             sidebar: Rect {
@@ -199,7 +267,16 @@ impl Layout {
                 width: sidebar_width,
                 height,
             },
-            tree_header_height: dip(TREE_HEADER_HEIGHT_DIP, scale),
+            // The rail stacks its controls, so rows begin under the last one
+            // rather than under a single header row.
+            tree_header_height: if collapsed {
+                settings
+                    .y
+                    .saturating_add(settings.height)
+                    .saturating_add(pad)
+            } else {
+                dip(TREE_HEADER_HEIGHT_DIP, scale)
+            },
             tree_row_height: dip(TREE_ROW_HEIGHT_DIP, scale).max(1),
             composer,
             status,
@@ -211,6 +288,8 @@ impl Layout {
             composer_cut: cut,
             new_root,
             settings,
+            sidebar_toggle,
+            sidebar_collapsed: collapsed,
         }
     }
 
@@ -296,6 +375,7 @@ pub enum TreeHit {
     Background,
     NewRoot,
     Settings,
+    SidebarToggle,
     Select(usize),
     Close(usize),
 }
@@ -425,7 +505,7 @@ impl UiLanguage {
     }
 
     #[must_use]
-    pub const fn help_lines(self) -> [&'static str; 13] {
+    pub const fn help_lines(self) -> [&'static str; 14] {
         // The clipboard keys are the only platform-native ones: Cmd on macOS,
         // Ctrl elsewhere. The workspace shortcuts stay Ctrl+Shift on every
         // platform, so only the clipboard line switches via `cfg`. Exactly one
@@ -441,6 +521,7 @@ impl UiLanguage {
                 "Ctrl+Shift+P   Cycle theme",
                 "Ctrl+Shift+,   Settings",
                 "Ctrl+Shift+G   Crosshair",
+                "Ctrl+Shift+B   Collapse tabs",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      Copy/Paste/Cut",
                 #[cfg(not(target_os = "macos"))]
@@ -459,6 +540,7 @@ impl UiLanguage {
                 "Ctrl+Shift+P   切换主题",
                 "Ctrl+Shift+,   设置",
                 "Ctrl+Shift+G   十字线",
+                "Ctrl+Shift+B   收起标签",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      复制/粘贴/剪切",
                 #[cfg(not(target_os = "macos"))]
@@ -477,6 +559,7 @@ impl UiLanguage {
                 "Ctrl+Shift+P   切換主題",
                 "Ctrl+Shift+,   設定",
                 "Ctrl+Shift+G   十字線",
+                "Ctrl+Shift+B   收起分頁",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      複製/貼上/剪下",
                 #[cfg(not(target_os = "macos"))]
@@ -532,6 +615,9 @@ pub fn tree_hit(
     if layout.settings.contains(x, y) {
         return TreeHit::Settings;
     }
+    if layout.sidebar_toggle.contains(x, y) {
+        return TreeHit::SidebarToggle;
+    }
     if y < layout.tree_header_height {
         return TreeHit::Background;
     }
@@ -545,6 +631,52 @@ pub fn tree_hit(
     } else {
         TreeHit::Select(index)
     }
+}
+
+/// Where the hover tooltip for a collapsed rail row is drawn.
+///
+/// The rail shows only `@N`, so the full label has to appear somewhere; it is
+/// drawn over the terminal just right of the rail, vertically centred on its
+/// row. Returns `None` when the sidebar is expanded (labels are already
+/// visible) or when the terminal column is too narrow to host the tooltip
+/// without covering it entirely — a tooltip wider than the area it floats over
+/// is worse than none.
+pub fn rail_tooltip_rect(
+    layout: Layout,
+    visible_row: u32,
+    text_width_px: u32,
+    window_width: u32,
+    scale: f64,
+) -> Option<Rect> {
+    if !layout.sidebar_collapsed {
+        return None;
+    }
+    let gap = dip(TOOLTIP_GAP_DIP, scale);
+    let padding = dip(TOOLTIP_PADDING_DIP, scale);
+    let height = dip(TOOLTIP_HEIGHT_DIP, scale);
+    let x = layout.sidebar.width.saturating_add(gap);
+    let width = text_width_px.saturating_add(padding.saturating_mul(2));
+    let available = window_width.saturating_sub(x);
+    if width == 0 || available == 0 || width > available {
+        return None;
+    }
+    let row_top = layout
+        .tree_header_height
+        .saturating_add(layout.tree_row_height.saturating_mul(visible_row));
+    let centred = row_top.saturating_add(layout.tree_row_height / 2);
+    let y = centred.saturating_sub(height / 2);
+    // Never let it hang below the terminal area into the composer band.
+    let floor = layout
+        .composer
+        .y
+        .saturating_sub(height)
+        .max(layout.tree_header_height);
+    Some(Rect {
+        x,
+        y: y.min(floor),
+        width,
+        height,
+    })
 }
 
 pub fn composer_hit(layout: Layout, x: u32, y: u32) -> ComposerHit {
@@ -833,6 +965,158 @@ mod tests {
         (1000, 700, 1.75),
         (900, 1600, 3.0),
     ];
+
+    /// Every invariant the expanded sidebar has, the rail has too. Collapsing is
+    /// a geometry change, and the sweep is what stops it from being a geometry
+    /// change that only looks right at the size it was written on.
+    #[test]
+    fn the_rail_keeps_every_header_control_reachable_and_inside_it() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let rail = Layout::collapsed(w, h, scale);
+            assert!(rail.sidebar_collapsed, "{w}x{h}@{scale}");
+            let controls = [
+                ("toggle", rail.sidebar_toggle),
+                ("new", rail.new_root),
+                ("settings", rail.settings),
+            ];
+            for (name, control) in controls {
+                assert!(
+                    control.width > 0 && control.height > 0,
+                    "{name} vanished at {w}x{h}@{scale}: {control:?}"
+                );
+                // Inside the rail horizontally, and inside the window vertically.
+                assert!(
+                    control.x.saturating_add(control.width) <= rail.sidebar.width,
+                    "{name} overflows the rail at {w}x{h}@{scale}: {control:?}"
+                );
+                assert!(
+                    control.y.saturating_add(control.height) <= h,
+                    "{name} runs past the window bottom at {w}x{h}@{scale}: {control:?}"
+                );
+                // Each one must be hit-testable as itself, or it is decoration.
+                let hit = tree_hit(
+                    rail,
+                    control.x + control.width / 2,
+                    control.y + control.height / 2,
+                    0,
+                    0,
+                    scale,
+                );
+                let expected = match name {
+                    "toggle" => TreeHit::SidebarToggle,
+                    "new" => TreeHit::NewRoot,
+                    _ => TreeHit::Settings,
+                };
+                assert_eq!(hit, expected, "{name} is not clickable at {w}x{h}@{scale}");
+            }
+            // Stacked, so no two may overlap.
+            for (a_name, a) in controls {
+                for (b_name, b) in controls {
+                    if a_name == b_name {
+                        continue;
+                    }
+                    let disjoint = a.y.saturating_add(a.height) <= b.y
+                        || b.y.saturating_add(b.height) <= a.y
+                        || a.x.saturating_add(a.width) <= b.x
+                        || b.x.saturating_add(b.width) <= a.x;
+                    assert!(disjoint, "{a_name} overlaps {b_name} at {w}x{h}@{scale}");
+                }
+            }
+            // Rows begin below the stack, never under it.
+            assert!(
+                rail.tree_header_height >= rail.settings.y.saturating_add(rail.settings.height),
+                "rail rows would start inside the controls at {w}x{h}@{scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn collapsing_gives_the_column_back_to_the_terminal() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let open = Layout::new(w, h, scale);
+            let rail = Layout::collapsed(w, h, scale);
+            assert!(
+                rail.sidebar.width < open.sidebar.width,
+                "the rail is not narrower at {w}x{h}@{scale}: {} vs {}",
+                rail.sidebar.width,
+                open.sidebar.width
+            );
+            assert!(
+                rail.sidebar.width > 0,
+                "a collapsed sidebar is a rail, not a disappearance, at {w}x{h}@{scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_expanded_header_seats_settings_and_the_toggle_without_collision() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let layout = Layout::new(w, h, scale);
+            assert!(!layout.sidebar_collapsed);
+            // The toggle is the rightmost control: it takes the column away, so
+            // it sits nearest the column edge.
+            assert!(
+                layout.sidebar_toggle.x > layout.settings.x,
+                "the toggle must sit right of settings at {w}x{h}@{scale}"
+            );
+            assert!(
+                layout.settings.x.saturating_add(layout.settings.width) <= layout.sidebar_toggle.x,
+                "settings and the toggle overlap at {w}x{h}@{scale}"
+            );
+            assert!(
+                layout.new_root.x.saturating_add(layout.new_root.width) <= layout.settings.x,
+                "New collides with settings at {w}x{h}@{scale}"
+            );
+            assert!(
+                layout
+                    .sidebar_toggle
+                    .x
+                    .saturating_add(layout.sidebar_toggle.width)
+                    <= layout.sidebar.width,
+                "the toggle overflows the sidebar at {w}x{h}@{scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rail_tooltip_floats_over_the_terminal_and_never_over_the_composer() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let rail = Layout::collapsed(w, h, scale);
+            // An expanded sidebar already shows labels, so it has no tooltip.
+            assert!(
+                rail_tooltip_rect(Layout::new(w, h, scale), 0, 80, w, scale).is_none(),
+                "expanded sidebars must not draw tooltips at {w}x{h}@{scale}"
+            );
+            let Some(tip) = rail_tooltip_rect(rail, 0, 80, w, scale) else {
+                continue; // too narrow to host one; that is a documented answer
+            };
+            assert!(
+                tip.x >= rail.sidebar.width,
+                "the tooltip covers the rail at {w}x{h}@{scale}"
+            );
+            assert!(
+                tip.x.saturating_add(tip.width) <= w,
+                "the tooltip runs off the window at {w}x{h}@{scale}: {tip:?}"
+            );
+            assert!(
+                tip.y.saturating_add(tip.height) <= rail.composer.y,
+                "the tooltip hangs into the composer at {w}x{h}@{scale}: {tip:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tooltip_wider_than_the_terminal_column_is_refused_rather_than_clipped() {
+        let rail = Layout::collapsed(1200, 800, 1.0);
+        assert!(
+            rail_tooltip_rect(rail, 0, 100, 1200, 1.0).is_some(),
+            "a normal label should fit"
+        );
+        assert!(
+            rail_tooltip_rect(rail, 0, 100_000, 1200, 1.0).is_none(),
+            "a label wider than the column must be refused, not clipped over itself"
+        );
+    }
 
     /// The bottom of the window is three stacked bands on the terminal side —
     /// terminal viewport, composer, status — and they must tile it with no gap
@@ -1378,7 +1662,7 @@ mod tests {
             (usable / layout.tree_row_height) as usize
         );
         // A sidebar shorter than its header has no room for a row.
-        let cramped = Layout::with_sidebar_width(1000, layout.tree_header_height, 1.0, 224.0);
+        let cramped = Layout::with_sidebar(1000, layout.tree_header_height, 1.0, 224.0, false);
         assert_eq!(cramped.tree_capacity(), 0, "no room means no rows");
         // A taller window shows more rows, never fewer.
         let taller = Layout::new(1000, 900, 1.0);
@@ -1775,7 +2059,7 @@ mod tests {
 
     #[test]
     fn extreme_geometry_inputs_saturate_without_panicking_or_collapsing_sidebar() {
-        let layout = Layout::with_sidebar_width(u32::MAX, u32::MAX, f64::INFINITY, f64::NAN);
+        let layout = Layout::with_sidebar(u32::MAX, u32::MAX, f64::INFINITY, f64::NAN, false);
         assert_eq!(layout.sidebar.width, u32::MAX);
         assert_eq!(layout.composer.width, 0);
         assert_eq!(layout.composer_send.width, 0);
