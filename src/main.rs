@@ -2419,14 +2419,19 @@ impl ConApp {
                 .active_session_mut()
                 .map_err(|error| error.to_string())?;
             session.ensure_pty_input_open()?;
-            let (payload, enter) =
-                composer_submission_parts(&input, session.parser.screen().bracketed_paste());
+            let payload =
+                composer_submission_payload(&input, session.parser.screen().bracketed_paste());
             session
                 .write_pty(&payload)
                 .map_err(|error| format!("terminal input failed: {error}"))?;
+            // Committing a draft *is* a key press, so encode it the way a
+            // physical Enter and `send-keys Enter` are encoded instead of
+            // assuming a bare CR — it then follows whatever keyboard mode the
+            // terminal has negotiated.
+            let enter = session.encoded_enter();
             // Deliberately not written here: back-to-back writes still land in
-            // one `read()`. Hold the Enter briefly so the child consumes the
-            // paste first and sees the commit as its own key press.
+            // one `read()`. Hold it briefly so the child consumes the paste
+            // first and sees the commit arrive as its own key press.
             session.pending_submit_enter = Some((Instant::now() + COMPOSER_ENTER_DELAY, enter));
             // Submission crosses the PTY boundary and can change arbitrary
             // terminal cells; commit view state only after delivery succeeds.
@@ -4922,6 +4927,19 @@ impl ConTerminal {
         Ok(())
     }
 
+    /// The bytes a real Enter key press produces in this terminal's current
+    /// keyboard mode — the same encoding a physical press and `send-keys Enter`
+    /// go through. A composer commit is a key press, so it must not diverge
+    /// from that path by hardcoding a carriage return.
+    fn encoded_enter(&self) -> Vec<u8> {
+        let mode = TerminalKeyMode {
+            application_cursor: self.parser.screen().application_cursor(),
+            ime_active: self.ime_attached,
+        };
+        let event = injected_key_event(InjectedKey::Named(NamedKey::Enter), false, false, false);
+        terminal_input::key_event_to_bytes(&event, mode).unwrap_or_else(|| vec![b'\r'])
+    }
+
     fn forward_key(&mut self, event: &NormalizedKeyEvent) {
         let _ = self.forward_key_checked(event);
     }
@@ -6276,18 +6294,14 @@ impl ConTerminal {
 /// it and appending a second Enter would submit twice — harmless in a shell
 /// (one blank prompt) but actively wrong in an agent TUI, where it sends an
 /// extra empty message.
-fn composer_submission_parts(submission: &str, bracketed: bool) -> (Vec<u8>, Vec<u8>) {
+fn composer_submission_payload(submission: &str, bracketed: bool) -> Vec<u8> {
     let draft = submission.strip_suffix('\r').unwrap_or(submission);
     if !bracketed {
-        // Without bracketed paste the draft is ordinary typed input and the CR
-        // is simply the newline that submits it.
-        return (draft.as_bytes().to_vec(), vec![b'\r']);
+        // Without bracketed paste the draft is ordinary typed input.
+        return draft.as_bytes().to_vec();
     }
     let normalized = terminal_input::normalize_terminal_paste(draft);
-    (
-        terminal_input::terminal_paste_bytes(&normalized, true),
-        vec![b'\r'],
-    )
+    terminal_input::terminal_paste_bytes(&normalized, true)
 }
 
 impl PixelWindowApplication for ConApp {
@@ -7716,13 +7730,12 @@ mod tests {
             let submission = composer.take_submission().unwrap();
             let plain = submission.strip_suffix('\r').unwrap_or(&submission);
 
-            let (payload, enter) = composer_submission_parts(&submission, false);
+            let payload = composer_submission_payload(&submission, false);
             assert_eq!(payload, plain.as_bytes());
-            assert_eq!(enter, b"\r");
 
             parser.process(b"\x1b[?2004h");
-            let (payload, enter) =
-                composer_submission_parts(&submission, parser.screen().bracketed_paste());
+            let payload =
+                composer_submission_payload(&submission, parser.screen().bracketed_paste());
             let expected = format!("\x1b[200~{}\x1b[201~", draft.replace('\n', "\r"));
             assert_eq!(payload, expected.as_bytes());
             // The commit must not ride inside or immediately behind the paste:
@@ -7732,14 +7745,39 @@ mod tests {
                 !payload.ends_with(b"\r"),
                 "payload must not carry its own commit"
             );
-            assert_eq!(enter, b"\r", "exactly one Enter, handed over separately");
 
             parser.process(b"\x1b[?2004l");
-            let (payload, enter) =
-                composer_submission_parts(&submission, parser.screen().bracketed_paste());
+            let payload =
+                composer_submission_payload(&submission, parser.screen().bracketed_paste());
             assert_eq!(payload, plain.as_bytes());
-            assert_eq!(enter, b"\r");
         }
+    }
+
+    /// Committing a composer draft must send the *same* bytes a physical Enter
+    /// produces, taken from the shared key encoder rather than hardcoded. In a
+    /// terminal there is no separate "key event" channel — a key press *is*
+    /// those bytes — so the only way the commit stays a real Enter is to encode
+    /// it through the same path `send-keys Enter` and a physical press use. If a
+    /// negotiated keyboard mode ever changes what Enter means, this follows it.
+    #[test]
+    fn composer_commit_uses_the_real_enter_key_encoding() {
+        let app = prepared_pointer_terminal();
+        let mode = TerminalKeyMode {
+            application_cursor: app.parser.screen().application_cursor(),
+            ime_active: app.ime_attached,
+        };
+        let event = injected_key_event(InjectedKey::Named(NamedKey::Enter), false, false, false);
+        let expected = terminal_input::key_event_to_bytes(&event, mode).expect("Enter encodes");
+        assert_eq!(
+            app.encoded_enter(),
+            expected,
+            "commit must use the key encoder"
+        );
+        assert_eq!(
+            app.encoded_enter(),
+            b"\r",
+            "which today is a carriage return"
+        );
     }
 
     #[test]
