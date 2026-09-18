@@ -58,9 +58,11 @@ operating system's own desktop libraries.
   quotes and backslashes no longer have to survive shell quoting or the
   argument-length limit. `capture-pane --output PATH` writes the captured text
   to a file instead of stdout.
-- The Windows-only `probe-imports.ps1` diagnostic no longer ships inside the
-  Linux and macOS archives, and the old-Windows page now gives the path it
-  actually has inside the archive.
+- **The startup diagnostic left the downloads.** It used to be copied into
+  every archive, including Linux and macOS where a PowerShell script is useless.
+  It is now published on the Release page on its own, under a name that says
+  what it is: `diagnose-startup-windows.ps1`. You only need it if MiniCon
+  refuses to start on an older Windows.
 - **`minicon install-cli` puts `minicon` on your PATH.** An app bundle keeps its
   executable inside `Contents/MacOS`, so one command links it where your shell
   can find it — `install-cli`, optionally `--prefix ~/.local/bin` to avoid sudo,

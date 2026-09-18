@@ -223,13 +223,10 @@ jobs:
           mkdir -p "dist/$name"
           cp "$binary" "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          # Windows-only diagnostic: it reports which static imports the local
-          # Windows cannot resolve. Shipping it to Linux/macOS users put an
-          # unusable PowerShell script in their archive; a failed copy must not
-          # be swallowed either, because the Windows packages depend on it.
-          if [[ "$platform" == windows-* ]]; then
-            cp scripts/probe-imports.ps1 "dist/$name/"
-          fi
+          # The startup diagnostic is deliberately NOT bundled: it is a
+          # troubleshooting tool almost nobody needs, and anyone who does need it
+          # is already looking at the Release page. It ships there as its own
+          # asset instead (see release.yml).
           cd dist
           if [[ "$platform" == windows-* ]]; then
             archive="$name.zip"

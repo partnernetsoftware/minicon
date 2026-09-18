@@ -260,7 +260,8 @@ machines new enough to satisfy the import.
   dependency turn it red instead of quietly widening what a user must install.
   The gate was negative-controlled — adding an actually-imported symbol to the
   blocker list turns it red — so it is not a vacuous assertion.
-- [x] `scripts/probe-imports.ps1` answers the whole question from the target
+- [x] `scripts/diagnose-startup-windows.ps1`, published as a Release asset rather
+  than bundled into any archive, answers the whole question from the target
   machine in one pass, because the loader names only one missing symbol at a
   time and iterating costs a round trip per symbol, paid by whoever owns that
   machine. It parses the PE itself (the target has no Visual Studio) and

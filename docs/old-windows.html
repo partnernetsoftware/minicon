@@ -151,10 +151,10 @@ api-ms-win-crt-string-l1-1-0.dll</code></pre>
         fixing the one it named just reveals the next.
       </p>
       <p>
-        <code>probe-imports.ps1</code>, shipped beside <code>minicon.exe</code> in the Windows archive, answers the whole question at once. Run it
+        <code>diagnose-startup-windows.ps1</code>, downloadable from the Release page, answers the whole question at once. Put it beside <code>minicon.exe</code> and run it
         <strong>on the machine that fails</strong>:
       </p>
-      <pre><code>powershell -ExecutionPolicy Bypass -File .\probe-imports.ps1 -Path .\minicon.exe</code></pre>
+      <pre><code>powershell -ExecutionPolicy Bypass -File .\diagnose-startup-windows.ps1 -Path .\minicon.exe</code></pre>
       <p>
         It parses the executable's import table itself — the target needs no Visual Studio —
         resolves every named import against the running system, and prints the complete missing

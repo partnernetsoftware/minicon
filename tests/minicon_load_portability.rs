@@ -32,7 +32,7 @@ use std::path::PathBuf;
 /// entry whenever a newer API becomes reachable statically.
 /// Its weakness is that it is hand-written: it can only refuse what someone
 /// already knew to list. Both entries below were added *after* a user's
-/// machine found them, in two separate rounds. `scripts/probe-imports.ps1`
+/// machine found them, in two separate rounds. `scripts/diagnose-startup-windows.ps1`
 /// exists so the next round is a full answer from the target system instead
 /// of another guess from this one.
 const LOAD_TIME_BLOCKERS: &[(&str, &str)] = &[

@@ -243,7 +243,8 @@ jobs:
           PY
           gh release create "$TAG" --draft --target "$SOURCE_SHA" \
             --title "MiniCon $VERSION" --notes-file candidate/release-notes.md \
-            candidate/payload/* candidate/*.json
+            candidate/payload/* candidate/*.json \
+            scripts/diagnose-startup-windows.ps1
           gh release edit "$TAG" --draft=false
 
   post-publish-posix:

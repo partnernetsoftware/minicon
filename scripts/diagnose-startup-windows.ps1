@@ -27,7 +27,7 @@
     this script or in a sibling `dist` directory.
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File probe-imports.ps1 -Path .\minicon.exe
+    powershell -ExecutionPolicy Bypass -File diagnose-startup-windows.ps1 -Path .\minicon.exe
 #>
 [CmdletBinding()]
 param(
