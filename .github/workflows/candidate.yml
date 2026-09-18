@@ -223,7 +223,13 @@ jobs:
           mkdir -p "dist/$name"
           cp "$binary" "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          cp scripts/probe-imports.ps1 "dist/$name/" 2>/dev/null || true
+          # Windows-only diagnostic: it reports which static imports the local
+          # Windows cannot resolve. Shipping it to Linux/macOS users put an
+          # unusable PowerShell script in their archive; a failed copy must not
+          # be swallowed either, because the Windows packages depend on it.
+          if [[ "$platform" == windows-* ]]; then
+            cp scripts/probe-imports.ps1 "dist/$name/"
+          fi
           cd dist
           if [[ "$platform" == windows-* ]]; then
             archive="$name.zip"

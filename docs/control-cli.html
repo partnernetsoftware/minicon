@@ -79,7 +79,7 @@ minicon cli --control pipe:\\.\pipe\my-session list-tabs</code></pre>
         <tbody>
           <tr><td><code>list-tabs</code></td><td>every tab, its <code>@ID</code>, title, parent, and whether its child is alive</td></tr>
           <tr><td><code>ui-snapshot</code></td><td>focus, IME state, input contents, pending work, control geometry</td></tr>
-          <tr><td><code>capture-pane</code></td><td>the pane as text</td></tr>
+          <tr><td><code>capture-pane</code></td><td>the pane as text; <code>--output PATH</code> writes it to a file instead of stdout</td></tr>
           <tr><td><code>screenshot-pane</code></td><td>the pane as a PNG</td></tr>
           <tr><td><code>perf-stats</code></td><td>frame and throughput counters</td></tr>
           <tr><td><code>reset-perf-stats</code></td><td>zero the counters so a measurement starts from a known point</td></tr>
@@ -104,8 +104,8 @@ minicon cli --control ENDPOINT wait-tab-exit --target @2 --timeout-ms 60000</cod
       <table>
         <thead><tr><th>Command</th><th>Use</th></tr></thead>
         <tbody>
-          <tr><td><code>send-text</code></td><td>type text into a terminal</td></tr>
-          <tr><td><code>send-paste</code></td><td>paste, with bracketed-paste handling</td></tr>
+          <tr><td><code>send-text</code></td><td>type text into a terminal; <code>--file PATH</code> sends a file's contents</td></tr>
+          <tr><td><code>send-paste</code></td><td>paste, with bracketed-paste handling; <code>--file PATH</code> sends a file's contents</td></tr>
           <tr><td><code>send-keys</code></td><td>named keys — <code>Enter</code>, <code>Escape</code>, <code>Tab</code>, <code>Up</code>, <code>F1</code>, <code>Ctrl+C</code></td></tr>
           <tr><td><code>send-ui-keys</code></td><td>follows current UI focus rather than a terminal</td></tr>
           <tr><td><code>send-ui-ime</code></td><td>drive an IME preedit and commit</td></tr>

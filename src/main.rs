@@ -176,6 +176,15 @@ fn selection_text(screen: &vt100::Screen, a: TerminalPoint, b: TerminalPoint) ->
 /// SIGWINCH/ConPTY resize instead of a redraw storm.
 const RESIZE_DEBOUNCE: Duration = Duration::from_millis(60);
 
+/// How long a composer submission's Enter is held back after its payload.
+///
+/// Measured with a raw-mode probe: writing the bracketed paste and the CR back
+/// to back — even as two separate `write` calls — still arrives in the child's
+/// *single* `read()`. Only an actual gap lets the child consume the paste first
+/// and then see the commit as its own key press. See
+/// [`composer_submission_parts`].
+const COMPOSER_ENTER_DELAY: Duration = Duration::from_millis(12);
+
 /// Read buffer for the PTY pump thread.
 const READ_BUF: usize = 8192;
 
@@ -683,10 +692,10 @@ Control endpoint and CLI (TAB is a stable @ID; omitted target means active tab):
   ... resize-window --width N --height N
   ... new-tab [--parent TAB]
   ... select-tab --target TAB | close-tab --target TAB
-  ... capture-pane [--target TAB] [--max-bytes N]
+  ... capture-pane [--target TAB] [--max-bytes N] [--output PATH]
   ... screenshot-pane [--target TAB] --output PATH
-  ... send-text [--target TAB] TEXT
-  ... send-paste [--target TAB] TEXT
+  ... send-text [--target TAB] TEXT|--file PATH
+  ... send-paste [--target TAB] TEXT|--file PATH
   ... send-keys [--target TAB] KEY...
   ... send-ui-ime enabled|disabled|preedit TEXT [--cursor N]|commit TEXT
   ... send-ui-keys KEY...
@@ -999,6 +1008,9 @@ struct ConTerminal {
     /// Latest un-applied geometry (coalesced). Applied once the stream settles.
     pending_geometry: Option<(u32, u32, f64)>,
     last_geometry_at: Instant,
+    /// A composer submission's Enter, held back so the child does not read it
+    /// as trailing bytes of the paste. See [`COMPOSER_ENTER_DELAY`].
+    pending_submit_enter: Option<(Instant, Vec<u8>)>,
 
     default_fg: Rgb,
     default_bg: Rgb,
@@ -2407,11 +2419,15 @@ impl ConApp {
                 .active_session_mut()
                 .map_err(|error| error.to_string())?;
             session.ensure_pty_input_open()?;
-            let bytes =
-                composer_submission_bytes(&input, session.parser.screen().bracketed_paste());
+            let (payload, enter) =
+                composer_submission_parts(&input, session.parser.screen().bracketed_paste());
             session
-                .write_pty(&bytes)
+                .write_pty(&payload)
                 .map_err(|error| format!("terminal input failed: {error}"))?;
+            // Deliberately not written here: back-to-back writes still land in
+            // one `read()`. Hold the Enter briefly so the child consumes the
+            // paste first and sees the commit as its own key press.
+            session.pending_submit_enter = Some((Instant::now() + COMPOSER_ENTER_DELAY, enter));
             // Submission crosses the PTY boundary and can change arbitrary
             // terminal cells; commit view state only after delivery succeeds.
             session.dirty.mark_full();
@@ -3023,20 +3039,20 @@ impl ConApp {
                     .map_err(|error| error.to_string())?;
                 Ok(single_field_json("closed", tab_id_json(Some(id))))
             }),
-            CliCommand::CapturePane { target, max_bytes } => {
-                self.control_session_mut(target).map(|session| {
-                    session.drain_pty();
-                    let mut text = session.build_snapshot().rows_text.join("\n");
-                    if text.len() > max_bytes {
-                        let mut end = max_bytes;
-                        while end > 0 && !text.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        text.truncate(end);
+            CliCommand::CapturePane {
+                target, max_bytes, ..
+            } => self.control_session_mut(target).map(|session| {
+                session.drain_pty();
+                let mut text = session.build_snapshot().rows_text.join("\n");
+                if text.len() > max_bytes {
+                    let mut end = max_bytes;
+                    while end > 0 && !text.is_char_boundary(end) {
+                        end -= 1;
                     }
-                    json::JsonValue::String(text)
-                })
-            }
+                    text.truncate(end);
+                }
+                json::JsonValue::String(text)
+            }),
             CliCommand::SendText { target, text } => {
                 self.send_to_control_terminal(target, "sent_bytes", |session| {
                     session.scroll_to_bottom();
@@ -4155,6 +4171,7 @@ impl ConTerminal {
             rows: 24,
             pending_geometry: None,
             last_geometry_at: Instant::now(),
+            pending_submit_enter: None,
             default_fg: Rgb(0xF0, 0xF0, 0xF0),
             default_bg: Rgb(0x00, 0x00, 0x00),
             term_cursor: Rgb(0xFF, 0xFF, 0xFF),
@@ -6195,6 +6212,18 @@ impl ConTerminal {
             next_wake = Some(next_wake.map_or(deadline, |current| current.min(deadline)));
         };
 
+        if let Some((deadline, _)) = self.pending_submit_enter.as_ref().map(|(d, b)| (*d, b)) {
+            if now >= deadline {
+                if let Some((_, bytes)) = self.pending_submit_enter.take() {
+                    // Best effort: a child that died between the payload and the
+                    // commit is an ordinary exit, not a submission failure.
+                    let _ = self.write_pty(&bytes);
+                }
+            } else {
+                fold_wake(deadline);
+            }
+        }
+
         if let Some((pw, ph, scale)) = self.pending_geometry {
             let deadline = self.last_geometry_at + RESIZE_DEBOUNCE;
             if now >= deadline {
@@ -6232,15 +6261,33 @@ impl ConTerminal {
 
 // The composer owns submission; the child owns its negotiated paste mode.
 // Keep the final Enter outside the paste so a TUI does not absorb it as text.
-fn composer_submission_bytes(submission: &str, bracketed: bool) -> Vec<u8> {
-    if !bracketed {
-        return submission.as_bytes().to_vec();
-    }
+/// Splits a composer submission into the payload and the Enter that commits it.
+///
+/// They must reach the child as two separate writes. Sent as one buffer the
+/// bracketed paste and its trailing CR land in a single `read()` — measured
+/// with a raw-mode probe, which received
+/// `ESC[200~hello-from-composer ESC[201~\r` as one chunk. A TUI that emits the
+/// paste asynchronously (ink/React, Bubble Tea and friends) then handles the CR
+/// first, while its input box is still empty: it submits nothing and the pasted
+/// text is left sitting there unsent. That is why such programs "need a real
+/// Enter press".
+///
+/// The payload deliberately does **not** keep a trailing CR of its own. Keeping
+/// it and appending a second Enter would submit twice — harmless in a shell
+/// (one blank prompt) but actively wrong in an agent TUI, where it sends an
+/// extra empty message.
+fn composer_submission_parts(submission: &str, bracketed: bool) -> (Vec<u8>, Vec<u8>) {
     let draft = submission.strip_suffix('\r').unwrap_or(submission);
+    if !bracketed {
+        // Without bracketed paste the draft is ordinary typed input and the CR
+        // is simply the newline that submits it.
+        return (draft.as_bytes().to_vec(), vec![b'\r']);
+    }
     let normalized = terminal_input::normalize_terminal_paste(draft);
-    let mut bytes = terminal_input::terminal_paste_bytes(&normalized, true);
-    bytes.push(b'\r');
-    bytes
+    (
+        terminal_input::terminal_paste_bytes(&normalized, true),
+        vec![b'\r'],
+    )
 }
 
 impl PixelWindowApplication for ConApp {
@@ -7667,19 +7714,31 @@ mod tests {
             let mut composer = composer::ComposerState::default();
             composer::insert(&mut composer, draft);
             let submission = composer.take_submission().unwrap();
-            assert_eq!(
-                composer_submission_bytes(&submission, false),
-                submission.as_bytes()
-            );
+            let plain = submission.strip_suffix('\r').unwrap_or(&submission);
+
+            let (payload, enter) = composer_submission_parts(&submission, false);
+            assert_eq!(payload, plain.as_bytes());
+            assert_eq!(enter, b"\r");
+
             parser.process(b"\x1b[?2004h");
-            let bytes = composer_submission_bytes(&submission, parser.screen().bracketed_paste());
-            let expected = format!("\x1b[200~{}\x1b[201~\r", draft.replace('\n', "\r"));
-            assert_eq!(bytes, expected.as_bytes());
-            parser.process(b"\x1b[?2004l");
-            assert_eq!(
-                composer_submission_bytes(&submission, parser.screen().bracketed_paste()),
-                submission.as_bytes()
+            let (payload, enter) =
+                composer_submission_parts(&submission, parser.screen().bracketed_paste());
+            let expected = format!("\x1b[200~{}\x1b[201~", draft.replace('\n', "\r"));
+            assert_eq!(payload, expected.as_bytes());
+            // The commit must not ride inside or immediately behind the paste:
+            // a child reading the payload sees no CR at all, so it cannot
+            // submit an empty input before the pasted text has landed.
+            assert!(
+                !payload.ends_with(b"\r"),
+                "payload must not carry its own commit"
             );
+            assert_eq!(enter, b"\r", "exactly one Enter, handed over separately");
+
+            parser.process(b"\x1b[?2004l");
+            let (payload, enter) =
+                composer_submission_parts(&submission, parser.screen().bracketed_paste());
+            assert_eq!(payload, plain.as_bytes());
+            assert_eq!(enter, b"\r");
         }
     }
 

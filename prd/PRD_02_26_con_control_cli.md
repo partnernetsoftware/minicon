@@ -70,6 +70,16 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   press/release/move/click, `send-wheel`, bounded `wait-text`, bounded
   `wait-tab-exit`, logical-client `resize-window`, and GUI-lifetime
   `close-window`.
+- [x] cross-tab read and write have file endpoints. `send-text` and
+  `send-paste` accept `--file PATH` instead of a literal `TEXT`, and
+  `capture-pane` accepts `--output PATH` instead of returning the text on
+  stdout. Passing a payload as an argv word cannot survive multi-line content,
+  quotes, backslashes or the argument-length limit, and a large capture should
+  not have to cross a pipe — which is what writing into, and reading out of,
+  another tab actually needs. Both are client-side conveniences: the wire still
+  carries only text, never a path, so the GUI never opens a caller's file. This
+  is a bounded read/write surface, not a message channel: MiniCon gains no
+  server, queue or envelope format.
 - [x] the two public observation surfaces agree where they overlap. The
   per-render `--emit-snapshot` file (terminal state) and the on-demand
   `list-tabs`/`ui-snapshot` replies describe the same session, so the active

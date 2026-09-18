@@ -46,6 +46,21 @@ operating system's own desktop libraries.
   no Gatekeeper prompt, online or offline. A bare command-line binary cannot
   carry a stapled notarization ticket, which is why earlier downloads could warn
   that the app "could not be verified" even though they were properly signed.
+- **Send (Ctrl+O) now delivers a real Enter.** The composer used to write the
+  bracketed paste and its Enter as one buffer, so a terminal program received
+  both in a single read. Programs that apply a paste asynchronously then handled
+  the Enter first — while their input box was still empty — so the text arrived
+  but was never submitted, and you had to press Enter yourself. The Enter is now
+  held back briefly and written on its own, arriving as an actual key press.
+  Still exactly one submission, so nothing is sent twice.
+- **Cross-tab read and write accept files.** `send-text --file PATH` and
+  `send-paste --file PATH` deliver a file's exact contents, so multi-line text,
+  quotes and backslashes no longer have to survive shell quoting or the
+  argument-length limit. `capture-pane --output PATH` writes the captured text
+  to a file instead of stdout.
+- The Windows-only `probe-imports.ps1` diagnostic no longer ships inside the
+  Linux and macOS archives, and the old-Windows page now gives the path it
+  actually has inside the archive.
 - **`minicon install-cli` puts `minicon` on your PATH.** An app bundle keeps its
   executable inside `Contents/MacOS`, so one command links it where your shell
   can find it — `install-cli`, optionally `--prefix ~/.local/bin` to avoid sudo,

@@ -207,6 +207,11 @@ pub enum CliCommand {
     CapturePane {
         target: Option<TabId>,
         max_bytes: usize,
+        /// Client-side only: write the captured text to this path instead of
+        /// returning it on stdout. Deliberately **not** encoded on the wire —
+        /// the GUI never opens a caller's file, and a large capture should not
+        /// have to survive a pipe.
+        output: Option<String>,
     },
     ScreenshotPane {
         target: Option<TabId>,
@@ -317,6 +322,36 @@ const DEFAULT_CAPTURE_BYTES: usize = 256 * 1024;
 const MAX_CAPTURE_BYTES: usize = 1024 * 1024;
 const MAX_WINDOW_DIMENSION: u16 = 16_384;
 
+/// The largest payload `--file` will hand to a terminal in one delivery.
+///
+/// A cross-tab write is the reason `--file` exists at all, so the ceiling has
+/// to be generous enough for a real message while staying well inside the
+/// control request frame.
+const MAX_SEND_FILE_BYTES: usize = 1 << 20;
+
+/// Reads a text payload given either literally or with `--file PATH`.
+///
+/// Passing content as an argv word is fine for a word and hopeless for
+/// anything else: multi-line drafts, quotes, backslashes and anything near the
+/// argument-length limit all get mangled by the shell before MiniCon ever sees
+/// them. `--file` is the escape hatch, and it is what makes writing into
+/// another tab practical.
+fn text_payload(cursor: &mut Cursor<'_>, verb: &str) -> Result<String, String> {
+    if let Some(path) = cursor.optional_value("--file")? {
+        let bytes = agenterm_platform::filesystem_read::read_bounded(
+            std::path::Path::new(path),
+            MAX_SEND_FILE_BYTES,
+        )
+        .map_err(|error| format!("{verb} --file {path}: {error}"))?;
+        return String::from_utf8(bytes)
+            .map_err(|_| format!("{verb} --file {path}: file is not valid UTF-8"));
+    }
+    cursor
+        .next()
+        .map(str::to_owned)
+        .ok_or_else(|| format!("{verb} requires TEXT or --file PATH"))
+}
+
 #[inline(never)]
 pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
     let mut cursor = Cursor::new(args);
@@ -381,8 +416,13 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
                     "--max-bytes must be between 1 and {MAX_CAPTURE_BYTES}"
                 ));
             }
+            let output = cursor.optional_value("--output")?.map(str::to_owned);
             cursor.finish()?;
-            CliCommand::CapturePane { target, max_bytes }
+            CliCommand::CapturePane {
+                target,
+                max_bytes,
+                output,
+            }
         }
         "screenshot-pane" => {
             let target = cursor.optional_target()?;
@@ -392,19 +432,13 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
         }
         "send-text" => {
             let target = cursor.optional_target()?;
-            let text = cursor
-                .next()
-                .ok_or_else(|| "send-text requires TEXT".to_owned())?
-                .to_owned();
+            let text = text_payload(&mut cursor, "send-text")?;
             cursor.finish()?;
             CliCommand::SendText { target, text }
         }
         "send-paste" => {
             let target = cursor.optional_target()?;
-            let text = cursor
-                .next()
-                .ok_or_else(|| "send-paste requires TEXT".to_owned())?
-                .to_owned();
+            let text = text_payload(&mut cursor, "send-paste")?;
             cursor.finish()?;
             CliCommand::SendPaste { target, text }
         }
@@ -690,6 +724,15 @@ impl<'a> Cursor<'a> {
         } else {
             false
         }
+    }
+
+    fn optional_value(&mut self, flag: &str) -> Result<Option<&'a str>, String> {
+        if !self.take_if_flag(flag) {
+            return Ok(None);
+        }
+        self.next()
+            .ok_or_else(|| format!("{flag} requires a value"))
+            .map(Some)
     }
 
     fn optional_usize(&mut self, flag: &str) -> Result<Option<usize>, String> {
@@ -1186,11 +1229,24 @@ pub fn run_cli(args: &[String]) -> Result<String, String> {
     }
     let request = parse_cli(args)?;
     let endpoint = parse_native_endpoint(&request.control)?;
+    // Where `capture-pane --output` should land. Read before the command is
+    // encoded, because the destination is the caller's business and never
+    // reaches the GUI.
+    let capture_output = match &request.command {
+        CliCommand::CapturePane { output, .. } => output.clone(),
+        _ => None,
+    };
     let payload = encode_wire_request(RequestId::fresh()?, request.command)?;
     let mut last_error = String::new();
     for attempt in 0..LOST_REPLY_ATTEMPTS {
         match run_cli_exchange(&endpoint, &request.control, &payload) {
-            Ok(response) => return decode_response(&response),
+            Ok(response) => {
+                let text = decode_response(&response)?;
+                return match capture_output.as_deref() {
+                    Some(path) => write_capture(path, &text),
+                    None => Ok(text),
+                };
+            }
             Err((lost_reply, error)) if lost_reply && attempt + 1 < LOST_REPLY_ATTEMPTS => {
                 last_error = error;
             }
@@ -1198,6 +1254,14 @@ pub fn run_cli(args: &[String]) -> Result<String, String> {
         }
     }
     Err(last_error)
+}
+
+/// Writes a capture to disk instead of returning it on stdout, so a large pane
+/// does not have to survive a pipe, and reports what was written.
+fn write_capture(path: &str, text: &str) -> Result<String, String> {
+    std::fs::write(path, text.as_bytes())
+        .map_err(|error| format!("capture-pane --output {path}: {error}"))?;
+    Ok(format!("wrote {} bytes to {path}", text.len()))
 }
 
 fn run_cli_exchange(
@@ -1783,7 +1847,9 @@ fn encode_request(command: CliCommand) -> Result<Vec<u8>, String> {
             wire.byte(5);
             wire.tab(target);
         }
-        CliCommand::CapturePane { target, max_bytes } => {
+        CliCommand::CapturePane {
+            target, max_bytes, ..
+        } => {
             wire.byte(6);
             wire.optional_tab(target);
             wire.u64(max_bytes as u64);
@@ -1920,7 +1986,11 @@ fn decode_request(bytes: &[u8]) -> Result<CliCommand, String> {
             if max_bytes == 0 || max_bytes > MAX_CAPTURE_BYTES {
                 return Err("capture size is outside its allowed range".to_owned());
             }
-            CliCommand::CapturePane { target, max_bytes }
+            CliCommand::CapturePane {
+                target,
+                max_bytes,
+                output: None,
+            }
         }
         7 => CliCommand::ScreenshotPane {
             target: wire.optional_tab()?,
@@ -2422,6 +2492,81 @@ mod tests {
     }
 
     #[test]
+    fn file_payloads_and_capture_output_stay_client_side() {
+        // `--file` exists because a shell mangles anything larger than a word:
+        // multi-line text, quotes, backslashes, `$` and backticks never survive
+        // argv intact, and a long message hits the argument-length limit. That
+        // is precisely what writing into another tab needs.
+        let dir = std::env::temp_dir().join("minicon-cli-file-payload");
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("msg.txt");
+        let payload = "line-1 \"quoted\" \\backslash\nline-2 $HOME and `cmd`\n";
+        std::fs::write(&path, payload).expect("write payload");
+        let path = path.to_string_lossy().to_string();
+
+        for verb in ["send-text", "send-paste"] {
+            let request = parse_cli(&args(&[
+                "cli",
+                "--control",
+                "pipe:test",
+                verb,
+                "--file",
+                &path,
+            ]))
+            .expect("--file payload");
+            let text = match request.command {
+                CliCommand::SendText { text, .. } | CliCommand::SendPaste { text, .. } => text,
+                other => panic!("unexpected command: {other:?}"),
+            };
+            assert_eq!(
+                text, payload,
+                "{verb} --file must deliver the file verbatim"
+            );
+        }
+
+        // `--output` is the caller's destination and must never reach the GUI:
+        // the wire form carries no path, so the host never opens a file.
+        let request = parse_cli(&args(&[
+            "cli",
+            "--control",
+            "pipe:test",
+            "capture-pane",
+            "--output",
+            "/tmp/capture.txt",
+        ]))
+        .expect("--output parses");
+        match &request.command {
+            CliCommand::CapturePane { output, .. } => {
+                assert_eq!(output.as_deref(), Some("/tmp/capture.txt"));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+        let encoded =
+            encode_wire_request(RequestId::fresh().expect("id"), request.command).expect("encode");
+        match decode_wire_request(&encoded).expect("decode").command {
+            CliCommand::CapturePane { output, .. } => {
+                assert_eq!(output, None, "the wire must not carry a client path");
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        // A missing or unreadable file is a clean refusal, not a panic.
+        assert!(
+            parse_cli(&args(&[
+                "cli",
+                "--control",
+                "pipe:test",
+                "send-text",
+                "--file",
+                "/nonexistent/minicon/payload.txt",
+            ]))
+            .is_err()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn capture_pane_uses_stable_target_and_bounded_output() {
         assert_eq!(
             parse_cli(&args(&[
@@ -2439,6 +2584,7 @@ mod tests {
                 command: CliCommand::CapturePane {
                     target: Some(TabId::new(7)),
                     max_bytes: 4096,
+                    output: None,
                 },
             })
         );
@@ -3003,6 +3149,7 @@ mod tests {
             CliCommand::CapturePane {
                 target: Some(TabId::new(4)),
                 max_bytes: 4096,
+                output: None,
             },
             CliCommand::ScreenshotPane {
                 target: None,
@@ -3076,10 +3223,12 @@ mod tests {
                 CliCommand::CapturePane {
                     target: None,
                     max_bytes: 4096,
+                    output: None,
                 },
                 CliCommand::CapturePane {
                     target: Some(with),
                     max_bytes: 4096,
+                    output: None,
                 },
             ),
             (
