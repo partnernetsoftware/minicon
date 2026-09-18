@@ -45,8 +45,8 @@ mod ui;
 mod workspace;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use agent_interface::ScreenSnapshot;
@@ -59,7 +59,7 @@ use agenterm_platform::window_host::{
     GeometryChange, LogicalPoint, LogicalSize, PixelBackingRetention, PixelFrameWrite,
     PixelPointerCursor, PixelRect as HostPixelRect, PixelWindow, PixelWindowApplication,
     PixelWindowDirective, PixelWindowError, PixelWindowEvent, PixelWindowOptions, PointerButton,
-    PointerButtonState, WheelDelta, XrgbPixelFrame, run_pixel_window,
+    PointerButtonState, WheelDelta, WindowWaker, XrgbPixelFrame, run_pixel_window,
 };
 use agenterm_ui_core::{DirtyRegion, DirtyRows, PixelRect};
 use minicon_core::scrollbar::{
@@ -587,6 +587,15 @@ fn main() {
     let config = load_config();
 
     let mut app = ConApp::new(working_dir.clone(), control_endpoint);
+    // Before the window: the endpoint belongs to the process, so a bind failure
+    // is a startup failure with no window to close, and a client racing startup
+    // finds a listener rather than a refused connection.
+    if let Err(error) = app.bind_control_endpoint() {
+        let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            "minicon: control endpoint unavailable: {error}\n"
+        ));
+        std::process::exit(1);
+    }
     app.no_activate = no_activate;
     let session = app.active_session_mut().expect("initial terminal session");
     session.command = command;
@@ -1246,6 +1255,15 @@ struct ConApp {
     exit: bool,
     control_endpoint: Option<String>,
     control_server: Option<control::ControlServer>,
+    /// The event loop's waker, once a window exists to supply it.
+    ///
+    /// The control endpoint is bound before any window is, so its wake callback
+    /// cannot capture a `WindowWaker` directly — it reads this slot instead. A
+    /// wake with the slot empty is a no-op rather than an error: the request is
+    /// already queued, and the loop drains every ready producer as soon as it
+    /// starts. That indirection is what lets the endpoint's lifetime belong to
+    /// the process rather than to the window.
+    waker_slot: Arc<Mutex<Option<WindowWaker>>>,
     pending_control: PendingControl,
     pending_resize_requests: Vec<control::IncomingRequest>,
     pending_resize_deadline: Option<Instant>,
@@ -1540,6 +1558,7 @@ impl ConApp {
             exit: false,
             control_endpoint,
             control_server: None,
+            waker_slot: Arc::new(Mutex::new(None)),
             pending_control: PendingControl::default(),
             pending_resize_requests: Vec::new(),
             pending_resize_deadline: None,
@@ -1780,6 +1799,27 @@ impl ConApp {
                 metrics.scale_factor,
             );
         }
+        Ok(())
+    }
+
+    /// Binds the control endpoint before any window exists.
+    ///
+    /// Called from `main` so a client that connects during startup is answered
+    /// rather than refused, and so a bind failure is reported before a window
+    /// is put on screen instead of after. The wake callback reaches the event
+    /// loop through `waker_slot`, which `opened` fills.
+    fn bind_control_endpoint(&mut self) -> Result<(), String> {
+        let Some(endpoint) = self.control_endpoint.clone() else {
+            return Ok(());
+        };
+        let slot = Arc::clone(&self.waker_slot);
+        self.control_server = Some(control::ControlServer::bind(&endpoint, move || {
+            if let Ok(slot) = slot.lock()
+                && let Some(waker) = slot.as_ref()
+            {
+                let _ = waker.wake();
+            }
+        })?);
         Ok(())
     }
 
@@ -6567,15 +6607,13 @@ impl PixelWindowApplication for ConApp {
             window.focus();
         }
         let _ = self.refresh_ime_status();
-        if let Some(endpoint) = self.control_endpoint.clone() {
-            let waker = window.waker();
-            self.control_server = Some(
-                control::ControlServer::bind(&endpoint, move || {
-                    let _ = waker.wake();
-                })
-                .map_err(|error| PixelWindowError::failed("con_control_bind", error))?,
-            );
+        // The endpoint was bound before this window existed; hand the loop's
+        // waker to the callback that has been waiting for one, then drain
+        // anything a client sent while there was nothing to wake.
+        if let Ok(mut slot) = self.waker_slot.lock() {
+            *slot = Some(window.waker());
         }
+        let _ = window.waker().wake();
         self.refresh_title(window)?;
         match agenterm_platform::accessibility_publish::start("minicon", window.native_identity()) {
             // Keep a reconnectable publisher even if the first bus connect

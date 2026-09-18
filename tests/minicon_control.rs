@@ -148,12 +148,23 @@ fn cli_text(exe: &Path, endpoint: &str, arguments: &[&str]) -> String {
     output_text(&output)
 }
 
-/// The two readiness failures must be distinguishable. A host that exits
-/// (here because `-e` names no program) is a crash-class result and must say
-/// so; a live-but-slow host must not be reported as a death. This drives the
-/// first branch without waiting out the timeout.
+/// A host whose `-e` program cannot be spawned exits non-zero and names the
+/// failure, rather than lingering as a windowless process.
+///
+/// This test used to assert something stronger — that such a host dies *before*
+/// its control endpoint answers at all. That ordering was a side effect of
+/// binding the endpoint inside the window's `opened` callback, and it stopped
+/// holding when the endpoint became process-owned: the listener is now up
+/// before the first shell is spawned, so a doomed host can answer once on its
+/// way out. The ordering was never the guarantee worth having, and bending the
+/// product to preserve it would have undone the change on purpose. What matters
+/// — and what is asserted here — is that the failure is fatal, is attributed to
+/// the spawn, and leaves nothing running.
+///
+/// `wait_until_ready_for` separately re-checks liveness after its first
+/// successful answer, so no other test can mistake a corpse for a healthy start.
 #[test]
-fn a_host_that_exits_before_ready_is_reported_as_a_death() {
+fn a_host_whose_program_cannot_be_spawned_dies_and_says_why() {
     let exe = minicon_binary();
     let exe = exe.as_path();
     let suffix = unique_suffix();
@@ -171,30 +182,28 @@ fn a_host_that_exits_before_ready_is_reported_as_a_death() {
         screenshot: std::env::temp_dir().join(format!("minicon-{suffix}.png")),
     };
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        wait_until_ready_for(
-            exe,
-            &endpoint,
-            Duration::from_secs(15),
-            Some(&mut gui.child),
-        )
-    }));
-    let message = panic_message(&result);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let status = loop {
+        if let Some(status) = gui.child.try_wait().expect("poll minicon exit") {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a host with an unspawnable program must not keep running"
+        );
+        thread::sleep(Duration::from_millis(25));
+    };
     assert!(
-        message.contains("exited") && message.contains("before its control endpoint was ready"),
-        "a dead host must be named as a death, not a slow start; got: {message}"
+        !status.success(),
+        "an unspawnable program must be a non-zero exit, got {status}"
     );
-}
-
-fn panic_message(result: &Result<Value, Box<dyn std::any::Any + Send>>) -> String {
-    match result {
-        Ok(_) => panic!("the bad-program host was expected to end before control came up"),
-        Err(payload) => payload
-            .downcast_ref::<String>()
-            .cloned()
-            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
-            .unwrap_or_default(),
-    }
+    // And the endpoint must be gone with it: a listener outliving its process
+    // would leave a stale socket that the next run cannot bind.
+    let after = invoke(exe, &endpoint, &["list-tabs"]);
+    assert!(
+        !after.status.success(),
+        "the control endpoint answered after the host exited"
+    );
 }
 
 /// Polls until the control endpoint answers `list-tabs`, or fails with a
@@ -217,6 +226,20 @@ fn wait_until_ready_for(
     loop {
         let output = invoke(exe, endpoint, &["list-tabs"]);
         if output.status.success() {
+            // The endpoint is bound before the first shell is spawned, so a
+            // host that is about to die of a spawn failure can answer once on
+            // its way out. "Ready" has to mean the process is still there after
+            // it answered, or this helper would report a corpse as a healthy
+            // start and every caller downstream would fail somewhere less
+            // obvious.
+            if let Some(host) = host.as_deref_mut()
+                && let Some(status) = host.try_wait().expect("poll minicon exit")
+            {
+                panic!(
+                    "minicon exited ({status}) before its control endpoint was ready; \
+                     the host died rather than being slow.\nit answered once on the way out"
+                );
+            }
             return serde_json::from_str(&output_text(&output))
                 .expect("list-tabs output must be JSON");
         }
@@ -1925,6 +1948,122 @@ fn collapsing_the_sidebar_widens_the_terminal_and_expanding_restores_it_exactly(
     assert_eq!(
         restored, expanded,
         "expanding did not restore the exact geometry it started from"
+    );
+
+    let _ = &mut gui;
+}
+
+/// The control endpoint belongs to the process, not to the window.
+///
+/// It used to be bound inside the window's `opened` callback, so a client that
+/// connected during startup was refused outright — and, more importantly for
+/// what comes next, the endpoint could not outlive a window. This pins the
+/// observable half of that change: a client racing startup finds a listener.
+///
+/// It also pins the failure direction. A bind failure must now be a startup
+/// failure, reported before anything is put on screen, rather than a window
+/// that appears and then dies.
+#[test]
+fn the_control_endpoint_answers_a_client_that_races_the_window() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let mut host = Command::new(exe);
+    host.arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(format!("minicon-unused-{suffix}.png")),
+    };
+
+    // Poll hard from the first instant. What is being asserted is not that the
+    // endpoint eventually works — every other test covers that — but that the
+    // first answer arrives without the process having had to finish opening a
+    // window first. A refused connection here is the regression.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut refusals = 0_u32;
+    loop {
+        let output = invoke(exe, &endpoint, &["list-tabs"]);
+        if output.status.success() {
+            break;
+        }
+        let text = error_text(&output);
+        // "not found" is the endpoint not existing yet; anything else is a
+        // real protocol failure and should not be swallowed by a retry loop.
+        assert!(
+            text.contains("connect") || text.contains("No such file") || text.contains("cannot"),
+            "unexpected control failure while racing startup: {text}"
+        );
+        refusals += 1;
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the endpoint never answered; {refusals} refusals, last: {text}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let _ = &mut gui;
+}
+
+/// A second process cannot bind an endpoint that is already taken, and it must
+/// say so and exit rather than opening a window it will immediately lose.
+#[test]
+fn a_taken_endpoint_fails_at_startup_instead_of_opening_a_window() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let mut host = Command::new(exe);
+    host.arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(format!("minicon-unused2-{suffix}.png")),
+    };
+    let _ = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+
+    let mut second = Command::new(exe);
+    second
+        .arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        second.arg(arg);
+    }
+    let output = second
+        .output()
+        .expect("the second host must run to completion");
+    assert!(
+        !output.status.success(),
+        "a duplicate endpoint must not be accepted"
+    );
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        text.contains("control endpoint unavailable"),
+        "the failure must name the endpoint as the cause, got: {text}"
     );
 
     let _ = &mut gui;
