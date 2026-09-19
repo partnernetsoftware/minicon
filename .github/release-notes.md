@@ -46,6 +46,27 @@ operating system's own desktop libraries.
   no Gatekeeper prompt, online or offline. A bare command-line binary cannot
   carry a stapled notarization ticket, which is why earlier downloads could warn
   that the app "could not be verified" even though they were properly signed.
+- **The tab sidebar collapses.** A toggle joins the sidebar header, to the right
+  of Settings, and `Ctrl+Shift+B` does the same from the keyboard. Collapsed, the
+  sidebar becomes a narrow rail: each tab shows its `@ID` — the same handle the
+  control CLI uses — and hovering a row floats the full title beside it. The
+  terminal actually gains the column rather than the chrome merely getting
+  thinner.
+- **MiniCon.app has an icon.** Running it from the `.dmg` used to leave a blank
+  square in the Dock.
+- **The window can be detached and reattached, and MiniCon can start without
+  one.** `minicon cli --control … detach-gui` releases the window while the
+  process, its sessions and the control endpoint keep running; `attach-gui`
+  brings a window back with the scrollback intact. `minicon --headless` starts
+  with no window at all, which is useful when something else — a script, an
+  agent, eventually a phone — is going to attach to the session later. This
+  narrows one line of the product boundary and nothing else: the endpoint's
+  lifetime is now the process rather than the window, and there is still no
+  server, daemon, persistent workspace, session sharing or background start.
+
+  Detaching does **not** measurably reduce memory on macOS: 84,432 KB attached
+  against 84,512 KB detached, release build, one shell session. That was one of
+  the reasons for building it, and it is withdrawn rather than repeated.
 - **Pasting non-English text works again on macOS.** Every paste containing a
   non-ASCII character — a typographic apostrophe, Chinese, an emoji — failed
   with "clipboard read failed: invalid utf-8 sequence", in both the terminal
