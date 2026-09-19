@@ -452,16 +452,6 @@ fn main() {
     }
 }
 
-/// The facts a bug report needs, gathered from the machine it runs on.
-///
-/// Every line here answers a question that has actually cost a round trip:
-/// which binary is this, which Windows is it on, which PTY backend did it
-/// choose, which font face did the system really give it, and where does it
-/// write when something fails. None of these can be answered by reading the
-/// source, because all of them depend on the machine.
-///
-/// Opens no window and starts no session — the point is to be runnable on a
-/// machine where starting a session is the thing that does not work.
 /// The short name a program is known by: `C:\Windows\system32\cmd.exe` → `cmd`.
 fn program_leaf(program: &str) -> &str {
     program

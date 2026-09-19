@@ -397,6 +397,30 @@ fn landing_page_locales_define_the_same_keys() {
 /// passed when finally run, which is the point: a dormant check is
 /// indistinguishable from a working one until something it guards ships. This
 /// keeps a new one from joining them silently.
+/// The built `minicon`, for gates that must ask the product rather than read a
+/// source file. Same resolution the black-box suites use.
+fn minicon_binary() -> std::path::PathBuf {
+    if let Some(path) = std::env::var_os("MINICON_TEST_BINARY") {
+        let path = std::path::PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "MINICON_TEST_BINARY is missing at {}",
+            path.display()
+        );
+        return path;
+    }
+    let mut path = std::env::current_exe().expect("test executable path");
+    path.pop();
+    path.pop();
+    path.push(format!("minicon{}", std::env::consts::EXE_SUFFIX));
+    assert!(
+        path.is_file(),
+        "minicon is missing at {}; build it with `cargo build --bin minicon`",
+        path.display()
+    );
+    path
+}
+
 #[test]
 fn every_selftest_script_is_listed_in_the_selftest_entrypoint() {
     let root = repo_root();
@@ -792,7 +816,20 @@ fn every_docs_page_is_wholly_localized_or_wholly_english() {
 #[test]
 fn the_help_and_readme_list_the_same_shortcuts() {
     let root = repo_root();
-    let source = fs::read_to_string(root.join("src/cli.rs")).expect("read cli.rs");
+    // Read the help from the built binary, not from a source file.
+    //
+    // This gate used to grep `src/main.rs` for sentinel strings, so moving the
+    // usage text into `src/cli.rs` — a pure code move with no behaviour change —
+    // failed it. A gate on what the product *says* should ask the product; one
+    // that asks a particular file is a gate on where the code happens to live,
+    // and it will break again on the next move.
+    let binary = minicon_binary();
+    let output = std::process::Command::new(&binary)
+        .arg("--help")
+        .output()
+        .expect("run minicon --help");
+    assert!(output.status.success(), "minicon --help failed");
+    let source = String::from_utf8(output.stdout).expect("help output is UTF-8");
     let readme = fs::read_to_string(root.join("README.md")).expect("read README");
 
     // The help block: lines shaped `<chord>  <description>` between the

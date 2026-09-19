@@ -11,6 +11,20 @@
 use super::*;
 
 impl ConApp {
+    /// The zoom level the status bar reports, as a percentage of the session's
+    /// starting font size.
+    ///
+    /// Both status bars — the one under a terminal and the one under the
+    /// greeting page — showed this, each with its own copy of the same
+    /// expression and the same `100` fallback. Two copies of a number that must
+    /// never disagree is one copy too many.
+    fn font_zoom_percent(&self) -> u16 {
+        self.active_session_opt().map_or(100, |session| {
+            ((session.font_size_logical / session.font_size_baseline.max(1.0)) * 100.0).round()
+                as u16
+        })
+    }
+
     pub(crate) fn paint_host_ui(
         &self,
         pixels: &mut [u32],
@@ -534,10 +548,7 @@ impl ConApp {
                 self.ui_theme,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
-                self.active_session_opt().map_or(100, |session| {
-                    ((session.font_size_logical / session.font_size_baseline.max(1.0)) * 100.0)
-                        .round() as u16
-                }),
+                self.font_zoom_percent(),
             );
         }
         Ok(())
@@ -689,10 +700,7 @@ impl ConApp {
                 self.ui_theme,
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
-                self.active_session_opt().map_or(100, |session| {
-                    ((session.font_size_logical / session.font_size_baseline.max(1.0)) * 100.0)
-                        .round() as u16
-                }),
+                self.font_zoom_percent(),
             );
         }
     }

@@ -238,6 +238,16 @@ const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under th
 const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under the user config directory\n\
      (Unix: ~/.config/minicon.json via runtime::user_config_directory).";
 
+/// The facts a bug report needs, gathered from the machine it runs on.
+///
+/// Every line here answers a question that has actually cost a round trip:
+/// which binary is this, which Windows is it on, which PTY backend did it
+/// choose, which font face did the system really give it, and where does it
+/// write when something fails. None of these can be answered by reading the
+/// source, because all of them depend on the machine.
+///
+/// Opens no window and starts no session — the point is to be runnable on a
+/// machine where starting a session is the thing that does not work.
 pub(crate) fn status_text() -> String {
     use std::fmt::Write as _;
 
@@ -376,7 +386,6 @@ and grow the whole interface.",
     )
 }
 
-/// Flags that must not open a window. Returns `Some(exit_code)` when handled.
 fn write_offline_stdout(text: &str) {
     let _ = agenterm_platform::parent_console::write_stdout(text);
 }
@@ -385,6 +394,7 @@ fn write_offline_stderr(text: &str) {
     let _ = agenterm_platform::parent_console::write_stderr(text);
 }
 
+/// Flags that must not open a window. Returns `Some(exit_code)` when handled.
 pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
     if args.first().is_some_and(|arg| arg == "cli") {
         return Some(match control::run_cli(args) {
