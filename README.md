@@ -188,29 +188,34 @@ key is optional.
 Nothing to configure: the mouse works out of the box for the programs most
 people run in MiniCon.
 
-Windows has two ways a program can ask for the mouse, and no terminal can serve
-both at once. MiniCon hosts the shell through the classic Windows console by
-default, which serves programs that ask the Windows way — agent CLIs and most
-things built on Node. `--feature conpty` switches to ConPTY, which serves
-programs that ask the terminal way, such as Vim and Neovim.
+Windows ships two ways to host a console program, and MiniCon uses the classic
+one by default because the newer one — ConPTY — has a bug in the copy that comes
+with Windows: it turns a mouse click into a burst of meaningless keystrokes for
+programs that read console events, which is most agent CLIs. `--feature conpty`
+selects it anyway, which is what Vim-style programs want.
 
     minicon                    # default: clicks reach agent CLIs
     minicon --feature conpty   # instead: clicks reach Vim-style programs
 
-The split is Microsoft's, not MiniCon's: under ConPTY a mouse click is delivered
-to the first kind of program as a burst of meaningless keystrokes rather than as
-a click, which is an open defect in the Windows console
-([microsoft/terminal#15083](https://github.com/microsoft/terminal/issues/15083)).
-Terminals built on ConPTY, Windows Terminal included, inherit it. So the switch
-exists to pick a side, and the default picks the side most MiniCon users are on.
+**Microsoft has already fixed that bug** — just not in the copy Windows ships.
+Windows Terminal carries its own newer console host, which is why a program can
+answer the mouse there and not here on the same machine. If you put `conpty.dll`
+and `OpenConsole.exe` (matching your architecture) from Microsoft's
+[`Microsoft.Windows.Console.ConPTY`](https://www.nuget.org/packages/Microsoft.Windows.Console.ConPTY)
+package beside `minicon.exe`, MiniCon uses them. `minicon --status` says which
+console host actually served the session, so you can check rather than assume —
+and the DLL without its companion silently does nothing, which is exactly the
+case that status line exists to catch.
 
-If clicks do not reach your program, try the other one. Measured on both paths,
-so the table is what to expect rather than a guess:
+**What that does not do yet:** on our measurements it does not restore the mouse
+for console-event readers inside MiniCon, even though the fixed host is
+demonstrably in use. A test program driving the same layer, in the same
+directory, with the same bytes, does get its mouse. That discrepancy is
+unexplained and being tracked; until it is resolved, treat the files as a
+diagnostic aid rather than a fix, and use the default path for mouse support.
 
-| program asks for the mouse via | default | `--feature conpty` |
-| --- | --- | --- |
-| the Windows console API (agent CLIs, Node) | works | arrives as junk keystrokes |
-| terminal escape sequences (Vim, Neovim) | never forwarded | works |
+They are not bundled: about 1.2 MB against MiniCon's own 660 KB, for something
+that does not yet buy a user anything the default path does not already give.
 
 ## Build
 
