@@ -58,12 +58,13 @@ operating system's own desktop libraries.
   this long.
 - **Mouse works in Windows terminal programs, by default.** Clicks never reached
   a program running inside MiniCon, while the same program in a plain `cmd.exe`
-  window handled them fine. The cause is specific: ConPTY converts an incoming
-  mouse report into a console event record and never turns it back into the byte
-  sequence a VT program reads, so such a program is blind to the mouse no matter
-  what the terminal sends. MiniCon now hosts the shell through the classic
-  Windows console, which delivers clicks, drags and wheel events. ConPTY remains
-  available with `--feature conpty`.
+  window handled them fine. Windows has two ways a program can ask for the
+  mouse and no terminal can serve both: MiniCon now hosts the shell through the
+  classic Windows console, which serves the programs most people run here —
+  agent CLIs and most things built on Node. `--feature conpty` switches to
+  ConPTY, which serves Vim-style programs instead. The split is an open defect
+  in the Windows console (microsoft/terminal#15083), inherited by every terminal
+  built on ConPTY, Windows Terminal included.
 
   The previous release offered this as `{"console_agent": true}` in
   `minicon.json`. That key is gone; an existing config file keeps working and

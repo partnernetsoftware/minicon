@@ -337,9 +337,10 @@ struct Features {
 const FEATURES: &[(&str, &str)] = &[(
     "conpty",
     "Windows: host the shell through ConPTY instead of the classic\n\
-     \x20                    console. Mouse input does not survive this path today,\n\
-     \x20                    so a TUI hosted through it never sees clicks. Off by\n\
-     \x20                    default; inert on other platforms.",
+     \x20                    console. Pick by what the program uses: the default\n\
+     \x20                    carries the mouse to agent CLIs, this carries it to\n\
+     \x20                    Vim-style programs. No terminal can do both — see\n\
+     \x20                    microsoft/terminal#15083. Inert off Windows.",
 )];
 
 impl Features {

@@ -224,9 +224,11 @@ flowchart LR
   system the bytes arrived in a legacy encoding; the helpers now pin a UTF-8
   locale. The Windows mouse works with no configuration: the classic console is
   the default host and ConPTY is selected with the new `--feature conpty`.
-  Measured on the court, ConPTY relays the mouse-mode request and converts an
-  inbound report into a console record, but never re-serializes it to VT bytes,
-  so a byte-reading TUI is blind to the mouse there.
+  Windows has two ways a program can ask for the mouse and no terminal serves
+  both: the default carries it to programs that ask through the console API
+  (agent CLIs), `--feature conpty` to programs that ask with escape sequences
+  (Vim). Both halves are structural — see the 0.1.19 history, which also records
+  why two earlier explanations were withdrawn.
   History: `prd/archive/v0.1.19-release-history.md`.
 - [x] v0.1.18. Mouse input can now reach Windows
   terminal programs: ConPTY — which every third-party terminal must use —

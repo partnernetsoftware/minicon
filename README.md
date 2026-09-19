@@ -179,24 +179,35 @@ key is optional.
 | --- | --- |
 | `font_size` | Starting font size in logical pixels |
 | `cols`, `rows` | Starting grid size |
-| `console_agent` | Windows only — see below |
 
 ### Mouse in Windows terminal programs
 
-A third-party terminal on Windows must host programs through ConPTY, and ConPTY
-discards mouse input in both directions. That is why a program which handles the
-mouse perfectly in a plain `cmd.exe` window sees no clicks at all inside MiniCon
-— the same limitation applies to other terminals built on ConPTY.
+Nothing to configure: the mouse works out of the box for the programs most
+people run in MiniCon.
 
-MiniCon can host the shell through the classic Windows console instead, where it
-owns a real console and can deliver clicks, drags and wheel events to the
-program:
+Windows has two ways a program can ask for the mouse, and no terminal can serve
+both at once. MiniCon hosts the shell through the classic Windows console by
+default, which serves programs that ask the Windows way — agent CLIs and most
+things built on Node. `--feature conpty` switches to ConPTY, which serves
+programs that ask the terminal way, such as Vim and Neovim.
 
-    { "console_agent": true }
+    minicon                    # default: clicks reach agent CLIs
+    minicon --feature conpty   # instead: clicks reach Vim-style programs
 
-This is opt-in for now: the classic path is a different implementation from
-ConPTY and is still collecting real-world mileage. It is ignored on macOS and
-Linux.
+The split is Microsoft's, not MiniCon's: under ConPTY a mouse click is delivered
+to the first kind of program as a burst of meaningless keystrokes rather than as
+a click, which is an open defect in the Windows console
+([microsoft/terminal#15083](https://github.com/microsoft/terminal/issues/15083)).
+Terminals built on ConPTY, Windows Terminal included, inherit it. So the switch
+exists to pick a side, and the default picks the side most MiniCon users are on.
+
+If clicks do not reach your program, try the other one. Measured on both paths,
+so the table is what to expect rather than a guess:
+
+| program asks for the mouse via | default | `--feature conpty` |
+| --- | --- | --- |
+| the Windows console API (agent CLIs, Node) | works | arrives as junk keystrokes |
+| terminal escape sequences (Vim, Neovim) | never forwarded | works |
 
 ## Build
 
