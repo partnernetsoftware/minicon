@@ -217,6 +217,12 @@ jobs:
           rm -rf "$app"
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           cp work/minicon "$app/Contents/MacOS/minicon"
+          # The icon must be inside the bundle before codesign runs: the seal
+          # covers Contents/Resources, so adding it afterwards would leave the
+          # signature disagreeing with the contents. Without it the Dock shows
+          # the generic blank-document tile. Regenerate with
+          # assets/icon/generate_icons.py; see assets/icon/README.md.
+          cp assets/minicon.icns "$app/Contents/Resources/minicon.icns"
           cat > "$app/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -226,6 +232,7 @@ jobs:
             <key>CFBundleDisplayName</key><string>MiniCon</string>
             <key>CFBundleIdentifier</key><string>com.partnernetsoftware.minicon</string>
             <key>CFBundleExecutable</key><string>minicon</string>
+            <key>CFBundleIconFile</key><string>minicon</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleShortVersionString</key><string>$VERSION</string>
             <key>CFBundleVersion</key><string>$VERSION</string>
@@ -235,6 +242,10 @@ jobs:
           </dict>
           </plist>
           PLIST
+          # Prove the icon is in place and declared before anything is sealed.
+          [[ -s "$app/Contents/Resources/minicon.icns" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' \
+            "$app/Contents/Info.plist")" == minicon ]]
           # Sign inner-out: the executable first, then the bundle.
           codesign --force --options runtime --timestamp --keychain "$SIGN_KEYCHAIN" \
             --sign "$MACOS_SIGN_IDENTITY" "$app/Contents/MacOS/minicon"
