@@ -124,11 +124,21 @@ minicon cli --control ENDPOINT wait-tab-exit --target @2 --timeout-ms 60000</cod
 minicon cli --control ENDPOINT select-tab --target @2
 minicon cli --control ENDPOINT close-tab --target @2
 minicon cli --control ENDPOINT resize-window --width 1000 --height 700
-minicon cli --control ENDPOINT close-window</code></pre>
+minicon cli --control ENDPOINT close-window
+minicon cli --control ENDPOINT detach-gui
+minicon cli --control ENDPOINT attach-gui</code></pre>
       <p>
         Tabs form a tree. Closing a parent promotes its children rather than taking them with
         it. <code>@ID</code> values are stable for the life of a tab, so a script can hold one
         across many commands without re-reading the list.
+      </p>
+      <p>
+        <code>detach-gui</code> releases the window while the process keeps running: the
+        sessions stay alive and this endpoint keeps answering, so
+        <code>list-tabs</code> and <code>capture-pane</code> still work with nothing on
+        screen. Commands that need a window say so instead of hanging.
+        <code>attach-gui</code> brings a window back. Both name the state they want, so
+        either is safe to repeat.
       </p>
 
       <h2>Running one command instead of a shell</h2>

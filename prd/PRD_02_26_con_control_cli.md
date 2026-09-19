@@ -17,7 +17,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   named pipe or Unix socket **inside the GUI process**; a second invocation
   (`minicon cli --control …`) is a short-lived ATC1 client. Capture,
   screenshots and `ui-snapshot` use that socket; `--emit-snapshot` writes a
-  file with no listener. Closing the GUI ends the endpoint. There is no
+  file with no listener. The endpoint is bound before any window and ends with
+  the **process**, so it survives a `detach-gui`. There is no
   default port, no remote transport, no Fleet, mux, session persistence, or
   Agent permission model. AgenTerm's server identity may outlive one window;
   MiniCon's must not. A listener inside the GUI is the design, not a missing
@@ -59,7 +60,8 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 - [x] `minicon cli list-commands` is an offline, no-window and no-endpoint
   discovery surface. Its exact command set is owned by con's machine-readable
   capability contract and checked against the running executable in CI. The
-  catalog is `cancel-pointer`, `capture-pane`, `close-tab`, `close-window`, `list-commands`,
+  catalog is `attach-gui`, `cancel-pointer`, `capture-pane`, `close-tab`,
+  `close-window`, `detach-gui`, `list-commands`,
   `list-tabs`, `new-tab`, `perf-stats`, `reset-perf-stats`, `resize-window`,
   `screenshot-pane`, `select-tab`, `send-keys`, `send-mouse`, `send-paste`,
   `send-text`, `send-ui-ime`, `send-ui-keys`, `send-wheel`, `ui-snapshot`, `wait-tab-exit` and
@@ -223,6 +225,12 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   screenshot reply with a typed target-close error. `ui-snapshot` exposes
   pending counts, so a black-box journey proves registration, cancellation,
   worker release and clean final-host exit without timing guesses.
+- [x] `detach-gui` releases the window while the process, its sessions and this
+  endpoint keep running; `attach-gui` builds a window again from session state.
+  Both name the state asked for, so either is idempotent. A platform that cannot
+  detach answers a typed unsupported error rather than reporting success while
+  the window is still on screen. This is the boundary amendment in practice: the
+  endpoint's lifetime is the process, never the window.
 - [x] pending text/exit deadlines have a fixed ten-minute upper bound. A larger
   syntactically valid `u64` timeout fails only that request, preserves its reply
   owner for the normal dispatch error path, and registers no latent wait instead

@@ -191,6 +191,13 @@ pub enum CliCommand {
     ResetPerfStats,
     CancelPointer,
     CloseWindow,
+    /// Releases the window while the process, its sessions and this endpoint
+    /// keep running, or builds a window again. `attached` is the state asked
+    /// for, so the verb is idempotent: attaching an attached window succeeds
+    /// and changes nothing.
+    SetWindowAttached {
+        attached: bool,
+    },
     ResizeWindow {
         width: u16,
         height: u16,
@@ -384,6 +391,14 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
             cursor.finish()?;
             CliCommand::CloseWindow
         }
+        "detach-gui" => {
+            cursor.finish()?;
+            CliCommand::SetWindowAttached { attached: false }
+        }
+        "attach-gui" => {
+            cursor.finish()?;
+            CliCommand::SetWindowAttached { attached: true }
+        }
         "resize-window" => {
             let width = cursor.required_u16("--width")?;
             let height = cursor.required_u16("--height")?;
@@ -541,10 +556,10 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
 }
 
 pub fn usage() -> String {
-    "usage: minicon cli list-commands\n       minicon cli --control ENDPOINT <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-mouse|send-wheel|wait-text|wait-tab-exit> ...".to_owned()
+    "usage: minicon cli list-commands\n       minicon cli --control ENDPOINT <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-mouse|send-wheel|wait-text|wait-tab-exit> ...".to_owned()
 }
 
-const CLI_COMMAND_CATALOG: &str = "cancel-pointer\ncapture-pane\nclose-tab\nclose-window\nlist-commands\nlist-tabs\nnew-tab\nperf-stats\nreset-perf-stats\nresize-window\nscreenshot-pane\nselect-tab\nsend-keys\nsend-mouse\nsend-paste\nsend-text\nsend-ui-ime\nsend-ui-keys\nsend-wheel\nui-snapshot\nwait-tab-exit\nwait-text\n";
+const CLI_COMMAND_CATALOG: &str = "attach-gui\ncancel-pointer\ncapture-pane\nclose-tab\nclose-window\ndetach-gui\nlist-commands\nlist-tabs\nnew-tab\nperf-stats\nreset-perf-stats\nresize-window\nscreenshot-pane\nselect-tab\nsend-keys\nsend-mouse\nsend-paste\nsend-text\nsend-ui-ime\nsend-ui-keys\nsend-wheel\nui-snapshot\nwait-tab-exit\nwait-text\n";
 
 const MAX_IME_TEXT_BYTES: usize = 64 * 1024;
 
@@ -1830,6 +1845,10 @@ fn encode_request(command: CliCommand) -> Result<Vec<u8>, String> {
         CliCommand::ResetPerfStats => wire.byte(2),
         CliCommand::CancelPointer => wire.byte(19),
         CliCommand::CloseWindow => wire.byte(15),
+        CliCommand::SetWindowAttached { attached } => {
+            wire.byte(21);
+            wire.boolean(attached);
+        }
         CliCommand::ResizeWindow { width, height } => {
             wire.byte(14);
             wire.u16(width);
@@ -2107,6 +2126,9 @@ fn decode_request(bytes: &[u8]) -> Result<CliCommand, String> {
             CliCommand::ResizeWindow { width, height }
         }
         15 => CliCommand::CloseWindow,
+        21 => CliCommand::SetWindowAttached {
+            attached: wire.boolean()?,
+        },
         19 => CliCommand::CancelPointer,
         18 => {
             let target = wire.tab()?;
@@ -2771,6 +2793,8 @@ mod tests {
             &["reset-perf-stats"],
             &["cancel-pointer"],
             &["close-window"],
+            &["detach-gui"],
+            &["attach-gui"],
             &["resize-window", "--width", "80", "--height", "24"],
             &["new-tab"],
             &["select-tab", "--target", "@1"],

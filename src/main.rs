@@ -809,6 +809,7 @@ Control endpoint and CLI (TAB is a stable @ID; omitted target means active tab):
   minicon cli list-commands
 {control_examples}
   ... ui-snapshot | perf-stats | reset-perf-stats | cancel-pointer | close-window
+  ... detach-gui | attach-gui   (release the window; the process keeps running)
   ... resize-window --width N --height N
   ... new-tab [--parent TAB]
   ... select-tab --target TAB | close-tab --target TAB
@@ -1265,6 +1266,10 @@ struct ConApp {
     /// starts. That indirection is what lets the endpoint's lifetime belong to
     /// the process rather than to the window.
     waker_slot: Arc<Mutex<Option<WindowWaker>>>,
+    /// Reattaches a window after `detach-gui`. Deliberately not a `PixelWindow`:
+    /// holding one of those across a detach would keep the native window alive
+    /// and defeat the detach.
+    attachment: Option<agenterm_platform::window_host::WindowAttachment>,
     pending_control: PendingControl,
     pending_resize_requests: Vec<control::IncomingRequest>,
     pending_resize_deadline: Option<Instant>,
@@ -1474,6 +1479,14 @@ fn exit_code_json(exit_code: Option<i32>) -> json::JsonValue {
     exit_code.map_or(json::JsonValue::Null, |code| i64::from(code).into())
 }
 
+#[inline(never)]
+fn tab_id_json(id: Option<workspace::TabId>) -> json::JsonValue {
+    match id {
+        Some(id) => json::JsonValue::TabId(id.get()),
+        None => json::JsonValue::Null,
+    }
+}
+
 fn tab_exit_json(id: workspace::TabId, exit_code: Option<i32>) -> json::JsonValue {
     json::object(vec![
         ("id", json::JsonValue::TabId(id.get())),
@@ -1560,6 +1573,7 @@ impl ConApp {
             control_endpoint,
             control_server: None,
             waker_slot: Arc::new(Mutex::new(None)),
+            attachment: None,
             pending_control: PendingControl::default(),
             pending_resize_requests: Vec::new(),
             pending_resize_deadline: None,
@@ -2980,23 +2994,18 @@ impl ConApp {
         Ok(())
     }
 
-    fn dispatch_control(&mut self, window: &PixelWindow, request: control::IncomingRequest) {
-        #[inline(never)]
-        fn tab_id_json(id: Option<workspace::TabId>) -> json::JsonValue {
-            match id {
-                Some(id) => json::JsonValue::TabId(id.get()),
-                None => json::JsonValue::Null,
-            }
-        }
-
+    /// Commands that need no window, so one implementation serves both the
+    /// attached path and a detached process.
+    ///
+    /// `None` means "this one needs a window"; the caller decides whether that
+    /// is a normal dispatch or a typed refusal.
+    fn windowless_command(
+        &mut self,
+        command: &control::CliCommand,
+    ) -> Option<Result<json::JsonValue, String>> {
         use control::CliCommand;
-        self.perf_stats.sync_present_stats(window.present_stats());
-        if matches!(&request.command, CliCommand::UiSnapshot) && self.refresh_ime_status() {
-            self.request_dirty_redraw(window);
-        }
-        let mut reply = Some(request.reply);
-        let result = match request.command {
-            CliCommand::ListTabs => {
+        match command {
+            CliCommand::ListTabs => Some({
                 let active = self.workspace.active();
                 let tabs: Vec<_> = self
                     .workspace
@@ -3028,6 +3037,59 @@ impl ConApp {
                     })
                     .collect();
                 Ok(single_field_json("tabs", json::JsonValue::Array(tabs)))
+            }),
+            CliCommand::CapturePane {
+                target, max_bytes, ..
+            } => Some(self.control_session_mut(*target).map(|session| {
+                session.drain_pty();
+                let max_bytes = *max_bytes;
+                let mut text = session.build_snapshot().rows_text.join("\n");
+                if text.len() > max_bytes {
+                    let mut end = max_bytes;
+                    while end > 0 && !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    text.truncate(end);
+                }
+                json::JsonValue::String(text)
+            })),
+            CliCommand::SetWindowAttached { attached } => {
+                let attached = *attached;
+                if !attached {
+                    self.pending_paste_review = None;
+                }
+                Some(match self.attachment.as_ref() {
+                    Some(attachment) => attachment
+                        .set(attached)
+                        .map_err(|error| error.to_string())
+                        .map(|()| single_field_json("attached", attached.into())),
+                    None => Err("this platform has no detachable window".to_owned()),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn dispatch_control(&mut self, window: &PixelWindow, request: control::IncomingRequest) {
+        use control::CliCommand;
+        self.perf_stats.sync_present_stats(window.present_stats());
+        if matches!(&request.command, CliCommand::UiSnapshot) && self.refresh_ime_status() {
+            self.request_dirty_redraw(window);
+        }
+        let mut reply = Some(request.reply);
+        if let Some(result) = self.windowless_command(&request.command) {
+            if let Some(reply) = reply.take() {
+                let _ = reply.send(result);
+            }
+            return;
+        }
+        let result = match request.command {
+            // Served above by `windowless_command`; unreachable here, and kept
+            // only so this match stays exhaustive over the public verbs.
+            CliCommand::SetWindowAttached { .. }
+            | CliCommand::ListTabs
+            | CliCommand::CapturePane { .. } => {
+                Err("this command is handled before dispatch".to_owned())
             }
             CliCommand::UiSnapshot => {
                 let a11y = self.a11y_inbox.stats();
@@ -3256,20 +3318,6 @@ impl ConApp {
                     .map_err(|error| error.to_string())?;
                 Ok(single_field_json("closed", tab_id_json(Some(id))))
             }),
-            CliCommand::CapturePane {
-                target, max_bytes, ..
-            } => self.control_session_mut(target).map(|session| {
-                session.drain_pty();
-                let mut text = session.build_snapshot().rows_text.join("\n");
-                if text.len() > max_bytes {
-                    let mut end = max_bytes;
-                    while end > 0 && !text.is_char_boundary(end) {
-                        end -= 1;
-                    }
-                    text.truncate(end);
-                }
-                json::JsonValue::String(text)
-            }),
             CliCommand::SendText { target, text } => {
                 self.send_to_control_terminal(target, "sent_bytes", |session| {
                     session.scroll_to_bottom();
@@ -3497,6 +3545,44 @@ impl ConApp {
         if let Some(reply) = reply {
             let _ = reply.send(result);
         }
+    }
+
+    /// One loop turn with no window attached.
+    ///
+    /// The process still owns its sessions and its endpoint, so both keep
+    /// working: PTY output is drained so nothing is lost, and control requests
+    /// are answered — served where the verb needs no window, refused by name
+    /// where it does. A silent hang would be the worst of the three.
+    fn detached_turn(&mut self) -> Result<PixelWindowDirective, PixelWindowError> {
+        if self.exit {
+            return Ok(PixelWindowDirective::Exit);
+        }
+        for session in self
+            .workspace
+            .nodes()
+            .iter()
+            .map(|node| node.id)
+            .collect::<Vec<_>>()
+        {
+            if let Some(session) = self.sessions.get_mut(&session) {
+                session.drain_pty();
+            }
+        }
+        let (requests, _backlog) = self
+            .control_server
+            .as_ref()
+            .map(|server| server.recv_batch(CONTROL_DRAIN_BUDGET_REQUESTS))
+            .unwrap_or_else(|| (Vec::new(), false));
+        for request in requests {
+            let result = self
+                .windowless_command(&request.command)
+                .unwrap_or_else(|| Err("the window is detached; attach-gui first".to_owned()));
+            let _ = request.reply.send(result);
+        }
+        if self.exit {
+            return Ok(PixelWindowDirective::Exit);
+        }
+        Ok(PixelWindowDirective::Wait)
     }
 
     fn drain_control(&mut self, window: &PixelWindow, now: Instant) -> Option<Instant> {
@@ -6614,6 +6700,7 @@ impl PixelWindowApplication for ConApp {
         if let Ok(mut slot) = self.waker_slot.lock() {
             *slot = Some(window.waker());
         }
+        self.attachment = window.attachment();
         let _ = window.waker().wake();
         self.refresh_title(window)?;
         match agenterm_platform::accessibility_publish::start("minicon", window.native_identity()) {
@@ -7299,6 +7386,10 @@ impl PixelWindowApplication for ConApp {
         self.perf_stats
             .record_raster_candidate(candidate, width, height);
         Ok(directive)
+    }
+
+    fn detached(&mut self) -> Result<PixelWindowDirective, PixelWindowError> {
+        self.detached_turn()
     }
 
     fn about_to_wait(

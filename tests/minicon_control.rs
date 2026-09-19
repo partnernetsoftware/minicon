@@ -1880,6 +1880,122 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     let _ = &mut gui;
 }
 
+/// Detaching releases the window; the process, its sessions and this endpoint
+/// do not notice.
+///
+/// This is the boundary amendment made observable. Before it, the control
+/// endpoint was bound inside the window's `opened` callback, so "no window"
+/// and "no endpoint" were the same state and neither could be tested apart
+/// from the other. The assertions below are exactly the pair that used to be
+/// impossible: the endpoint answers with no window, and the session's
+/// scrollback survives the window that was displaying it.
+#[test]
+fn detaching_the_gui_keeps_the_process_and_its_sessions() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let screenshot = if cfg!(windows) {
+        std::env::temp_dir().join(format!("minicon-detach-{suffix}.png"))
+    } else {
+        agenterm_platform::ipc::native_runtime_directory().join(format!("detach-{suffix}.png"))
+    };
+    let mut host = Command::new(exe);
+    host.arg("--no-activate")
+        .arg("--cols")
+        .arg("80")
+        .arg("--rows")
+        .arg("24")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui { child, screenshot };
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+    let tab = tab_id(&listed["tabs"][0]["id"]).to_owned();
+
+    // Something in the scrollback that must outlive the window.
+    let marker = format!("detach-marker-{suffix}");
+    let sent = invoke(exe, &endpoint, &["send-text", "--target", &tab, &marker]);
+    assert!(sent.status.success(), "{}", error_text(&sent));
+
+    let detached = invoke(exe, &endpoint, &["detach-gui"]);
+    if !detached.status.success() {
+        // A platform without a detachable window must say so in a typed error
+        // rather than report success, and the host must still be healthy.
+        let text = error_text(&detached);
+        assert!(
+            text.contains("unsupported") || text.contains("detachable"),
+            "a refusal must name the missing capability, got: {text}"
+        );
+        let alive = invoke(exe, &endpoint, &["list-tabs"]);
+        assert!(
+            alive.status.success(),
+            "refusing a detach must not kill the host"
+        );
+        let _ = &mut gui;
+        return;
+    }
+
+    // The endpoint answers with no window at all — the pair that could not
+    // previously be separated.
+    let listed = cli_json(exe, &endpoint, &["list-tabs"]);
+    assert_eq!(listed["tabs"].as_array().map(Vec::len), Some(1));
+    assert!(
+        gui.child.try_wait().expect("poll minicon exit").is_none(),
+        "detaching must not end the process"
+    );
+    let captured = invoke(exe, &endpoint, &["capture-pane", "--target", &tab]);
+    assert!(captured.status.success(), "{}", error_text(&captured));
+    assert!(
+        output_text(&captured).contains(&marker),
+        "the session's scrollback did not survive its window"
+    );
+
+    // Detach is idempotent, and attaching brings a window back.
+    let again = invoke(exe, &endpoint, &["detach-gui"]);
+    assert!(again.status.success(), "{}", error_text(&again));
+    let attached = invoke(exe, &endpoint, &["attach-gui"]);
+    assert!(attached.status.success(), "{}", error_text(&attached));
+    let snapshot = wait_for_geometry(exe, &endpoint);
+    assert!(
+        snapshot["geometry"]["frame"]["width"].as_u64().unwrap_or(0) > 0,
+        "attaching did not produce a window with real geometry: {snapshot}"
+    );
+    let captured = invoke(exe, &endpoint, &["capture-pane", "--target", &tab]);
+    assert!(
+        output_text(&captured).contains(&marker),
+        "the scrollback did not survive the reattach"
+    );
+
+    let _ = &mut gui;
+}
+
+/// Polls `ui-snapshot` until a window reports non-zero geometry, so the test
+/// does not race the window the attach just asked for.
+fn wait_for_geometry(exe: &Path, endpoint: &str) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let snapshot = cli_json(exe, endpoint, &["ui-snapshot"]);
+        if snapshot["geometry"]["frame"]["width"].as_u64().unwrap_or(0) > 0 {
+            return snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no window appeared after attach-gui"
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 /// Collapsing the sidebar must actually hand the column to the terminal, and
 /// expanding must hand it back exactly — not approximately. A rail that shrinks
 /// the chrome without widening the grid is the failure this pins: the user sees

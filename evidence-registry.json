@@ -120,6 +120,15 @@
       "source": "tests/minicon_blackbox.rs"
     },
     {
+      "id": "minicon_control::detaching_the_gui_keeps_the_process_and_its_sessions",
+      "kind": "public-black-box",
+      "emitter": "cargo-test-harness",
+      "platform": "windows-x86_64",
+      "test_target": "minicon_control",
+      "test_name": "detaching_the_gui_keeps_the_process_and_its_sessions",
+      "source": "tests/minicon_control.rs"
+    },
+    {
       "id": "minicon_control::gui_control_surface_isolated_multitab_black_box",
       "kind": "public-black-box",
       "emitter": "cargo-test-harness",
