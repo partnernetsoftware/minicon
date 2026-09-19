@@ -762,7 +762,7 @@ fn every_docs_page_is_wholly_localized_or_wholly_english() {
 #[test]
 fn the_help_and_readme_list_the_same_shortcuts() {
     let root = repo_root();
-    let source = fs::read_to_string(root.join("src/main.rs")).expect("read main.rs");
+    let source = fs::read_to_string(root.join("src/cli.rs")).expect("read cli.rs");
     let readme = fs::read_to_string(root.join("README.md")).expect("read README");
 
     // The help block: lines shaped `<chord>  <description>` between the
