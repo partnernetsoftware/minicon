@@ -1880,6 +1880,90 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     let _ = &mut gui;
 }
 
+/// `--headless` starts a working process with no window at all.
+///
+/// Not the same claim as detaching one later: here `opened` never runs, so the
+/// session, the PTY and the endpoint all have to come up without a surface to
+/// measure. The grid comes from `--cols`/`--rows` instead.
+#[test]
+fn a_headless_start_runs_a_session_and_can_grow_a_window_later() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let screenshot = if cfg!(windows) {
+        std::env::temp_dir().join(format!("minicon-headless-{suffix}.png"))
+    } else {
+        agenterm_platform::ipc::native_runtime_directory().join(format!("headless-{suffix}.png"))
+    };
+    let mut host = Command::new(exe);
+    host.arg("--headless")
+        .arg("--no-activate")
+        .arg("--cols")
+        .arg("80")
+        .arg("--rows")
+        .arg("24")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    let child = host.spawn().expect("minicon must start headless");
+    let mut gui = OwnedGui { child, screenshot };
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+    assert_eq!(
+        listed["tabs"].as_array().map(Vec::len),
+        Some(1),
+        "a headless start must still open its session"
+    );
+    let tab = tab_id(&listed["tabs"][0]["id"]).to_owned();
+
+    let marker = format!("headless-{suffix}");
+    let sent = invoke(exe, &endpoint, &["send-text", "--target", &tab, &marker]);
+    assert!(sent.status.success(), "{}", error_text(&sent));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let captured = invoke(exe, &endpoint, &["capture-pane", "--target", &tab]);
+        if captured.status.success() && output_text(&captured).contains(&marker) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a headless session never echoed what was written to it"
+        );
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    let attached = invoke(exe, &endpoint, &["attach-gui"]);
+    if !attached.status.success() {
+        let text = error_text(&attached);
+        assert!(
+            text.contains("unsupported") || text.contains("detachable"),
+            "a refusal must name the missing capability, got: {text}"
+        );
+        let _ = &mut gui;
+        return;
+    }
+    let snapshot = wait_for_geometry(exe, &endpoint);
+    assert!(
+        snapshot["geometry"]["frame"]["width"].as_u64().unwrap_or(0) > 0,
+        "attaching to a headless process did not produce a window: {snapshot}"
+    );
+    let captured = invoke(exe, &endpoint, &["capture-pane", "--target", &tab]);
+    assert!(
+        output_text(&captured).contains(&marker),
+        "the headless session's scrollback did not survive gaining a window"
+    );
+
+    let _ = &mut gui;
+}
+
 /// Detaching releases the window; the process, its sessions and this endpoint
 /// do not notice.
 ///

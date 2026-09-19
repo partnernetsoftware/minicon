@@ -55,7 +55,10 @@ would mean building it against an implicit seam and then moving it.
     - evidence: idle CPU sampled headless vs attached; PTY throughput cell
       unchanged
     - non-goal: a second event loop. One loop, one owner.
-  - [ ] **`detach-gui` / `attach-gui` control verbs + `--headless` start**
+  - [x] **`detach-gui` / `attach-gui` control verbs + `--headless` start** —
+    shipped on `main`. Verified end to end: a `--headless` process starts with
+    no window, runs a shell, answers `send-text`/`capture-pane`, and grows a
+    real window on `attach-gui` (1920×1200, 90×32) with its scrollback intact.
     - invariant: detach releases the surface and its GPU/bitmap memory; attach
       rebuilds a window whose contents match the session state exactly
     - evidence: `ui-snapshot` geometry identical before detach and after
@@ -63,14 +66,34 @@ would mean building it against an implicit seam and then moving it.
       detach/attach cycle; scrollback and cursor position preserved
     - safe failure: attach on a machine with no display fails as a typed error,
       leaving the process detached and healthy — never a half-built window
-  - [ ] **The memory claim, measured not asserted**
-    - invariant: detached RSS is *reported*, with a named floor, not promised in
-      advance
-    - evidence: RSS sampled attached / detached / reattached on each platform;
-      the number goes in the release notes only after it is measured
-    - note: prior work measured macOS GUI memory floors (ColorSync, bitmap,
-      window server) — the honest expectation is that detach returns the
-      surface and font/bitmap caches, not that it approaches a CLI's footprint
+  - [x] **The memory claim, measured — and it does not hold on macOS.**
+
+    Measured on the dev Mac, release-fast, one session on `/bin/sh`:
+
+    | state | RSS |
+    | --- | --- |
+    | attached | 84,432 KB |
+    | detached | 84,512 KB |
+    | reattached | 84,880 KB |
+    | detached again, settled 6s | 84,752 KB |
+
+    A debug build agrees (86,400 → 86,528 KB). **Detaching frees nothing
+    measurable**, so the memory motivation this plan opened with is withdrawn
+    for macOS until a different measurement says otherwise.
+
+    Why that is plausible rather than a bug: RSS counts shared framework pages
+    that a released surface does not give back, and the allocator does not
+    return freed pages to the OS just because a Rust `Drop` ran. Either could
+    hide a real saving, which is exactly why this was written as "report, do not
+    promise".
+
+    Still open, and worth doing before the claim is made or dropped for good:
+    measure footprint rather than RSS on macOS, and measure RSS on Linux and
+    Windows where the surface is ours rather than the window server's.
+
+    What survives regardless: a session that outlives its window, and a stable
+    attach point for a future mobile client. Those were the other reasons, and
+    they are now demonstrated rather than argued.
   - [ ] **No regression to the attached path**
     - evidence: the existing layout invariant net (`LAYOUT_SWEEP`) and the
       six-cell gate stay green; attach/detach adds cells, removes none

@@ -303,6 +303,9 @@ struct ConArgs {
     snapshot_path: Option<PathBuf>,
     /// `--feature` selections, already resolved to their final on/off state.
     features: Features,
+    /// `--headless`: start with no window. The sessions, the PTYs and the
+    /// control endpoint all run; only the surface is absent until `attach-gui`.
+    headless: bool,
 }
 
 /// Backend selections chosen with `--feature`, as distinct from the user
@@ -373,6 +376,7 @@ fn parse_args(args: &[String]) -> Result<ConArgs, String> {
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--no-activate" => parsed.no_activate = true,
+            "--headless" => parsed.headless = true,
             "--working-dir" => {
                 parsed.working_dir = Some(
                     rest.next()
@@ -563,6 +567,7 @@ fn main() {
         command,
         snapshot_path,
         features,
+        headless,
     } = parsed;
     // The classic Windows console is the default host because mouse input does
     // not survive our ConPTY path today, which left every hosted TUI blind to
@@ -627,9 +632,11 @@ fn main() {
     // it to recover keyboard input, but the actual cause was the missing
     // focus request in `opened` — see the Ime arm in `event` for the other
     // half (composed text never reached the PTY, which made IME look broken).
+    app.pending_headless_session = headless;
     let options = PixelWindowOptions::new("minicon", LogicalSize::new(960.0, 600.0))
         .with_no_activate(no_activate)
-        .with_ime_allowed(true);
+        .with_ime_allowed(true)
+        .with_start_detached(headless);
 
     if let Err(error) = run_pixel_window(options, Box::new(app)) {
         let _ = agenterm_platform::parent_console::write_stderr(&format!("minicon: {error}"));
@@ -787,7 +794,7 @@ fn usage_text() -> String {
         .join("\n");
     format!(
         "\
-Usage: minicon [--no-activate] [--working-dir DIR]
+Usage: minicon [--no-activate] [--headless] [--working-dir DIR]
                    [--font-size N] [--cols N] [--rows N]
                    [--control ENDPOINT] [--emit-snapshot PATH]
                    [--feature NAME[,NAME...]] [-e PROGRAM [ARGS...]]
@@ -810,6 +817,9 @@ Control endpoint and CLI (TAB is a stable @ID; omitted target means active tab):
 {control_examples}
   ... ui-snapshot | perf-stats | reset-perf-stats | cancel-pointer | close-window
   ... detach-gui | attach-gui   (release the window; the process keeps running)
+
+--headless starts with no window at all: sessions and --control run, and a
+window appears only when something sends attach-gui.
   ... resize-window --width N --height N
   ... new-tab [--parent TAB]
   ... select-tab --target TAB | close-tab --target TAB
@@ -1270,6 +1280,9 @@ struct ConApp {
     /// holding one of those across a detach would keep the native window alive
     /// and defeat the detach.
     attachment: Option<agenterm_platform::window_host::WindowAttachment>,
+    /// `--headless`: the first session has not been started yet, because there
+    /// was no window whose `opened` would have started it.
+    pending_headless_session: bool,
     pending_control: PendingControl,
     pending_resize_requests: Vec<control::IncomingRequest>,
     pending_resize_deadline: Option<Instant>,
@@ -1574,6 +1587,7 @@ impl ConApp {
             control_server: None,
             waker_slot: Arc::new(Mutex::new(None)),
             attachment: None,
+            pending_headless_session: false,
             pending_control: PendingControl::default(),
             pending_resize_requests: Vec::new(),
             pending_resize_deadline: None,
@@ -3053,6 +3067,15 @@ impl ConApp {
                 }
                 json::JsonValue::String(text)
             })),
+            CliCommand::SendText { target, text } => {
+                let text = text.clone();
+                Some(
+                    self.send_to_control_terminal(*target, "sent_bytes", |session| {
+                        session.scroll_to_bottom();
+                        session.write_pty(text.as_bytes()).map(|()| text.len())
+                    }),
+                )
+            }
             CliCommand::SetWindowAttached { attached } => {
                 let attached = *attached;
                 if !attached {
@@ -3088,7 +3111,8 @@ impl ConApp {
             // only so this match stays exhaustive over the public verbs.
             CliCommand::SetWindowAttached { .. }
             | CliCommand::ListTabs
-            | CliCommand::CapturePane { .. } => {
+            | CliCommand::CapturePane { .. }
+            | CliCommand::SendText { .. } => {
                 Err("this command is handled before dispatch".to_owned())
             }
             CliCommand::UiSnapshot => {
@@ -3318,12 +3342,7 @@ impl ConApp {
                     .map_err(|error| error.to_string())?;
                 Ok(single_field_json("closed", tab_id_json(Some(id))))
             }),
-            CliCommand::SendText { target, text } => {
-                self.send_to_control_terminal(target, "sent_bytes", |session| {
-                    session.scroll_to_bottom();
-                    session.write_pty(text.as_bytes()).map(|()| text.len())
-                })
-            }
+
             CliCommand::SendPaste { target, text } => {
                 self.send_to_control_terminal(target, "sent_bytes", |session| {
                     session.paste_text(&text).map(|()| text.len())
@@ -4834,7 +4853,7 @@ impl ConTerminal {
     }
 
     /// Spawns the shell PTY and the reader thread. Called once from `opened`.
-    fn spawn_pty(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+    fn spawn_pty(&mut self, waker: &WindowWaker) -> Result<(), PixelWindowError> {
         agenterm_platform::pty::initialize_shutdown_reaper().map_err(|error| {
             PixelWindowError::failed("pty_reaper_init_failed", format!("{error}"))
         })?;
@@ -4896,7 +4915,7 @@ impl ConTerminal {
         })?;
         let output = Arc::new(BoundedOutputPipe::new(PTY_QUEUE_BYTES));
         let reader_output = Arc::clone(&output);
-        let waker = window.waker();
+        let reader_waker = waker.clone();
         let wake_pending = Arc::new(AtomicBool::new(false));
         let reader_wake_pending = Arc::clone(&wake_pending);
         agenterm_platform::threading::spawn_named_detached(
@@ -4911,7 +4930,7 @@ impl ConTerminal {
                                 break;
                             }
                             if !reader_wake_pending.swap(true, Ordering::AcqRel) {
-                                let _ = waker.wake();
+                                let _ = reader_waker.wake();
                             }
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
@@ -4920,7 +4939,7 @@ impl ConTerminal {
                 }
                 reader_output.close();
                 if !reader_wake_pending.swap(true, Ordering::AcqRel) {
-                    let _ = waker.wake();
+                    let _ = reader_waker.wake();
                 }
             }),
         )
@@ -4945,7 +4964,7 @@ impl ConTerminal {
         let waiter_exit_pending = Arc::clone(&child_exit_pending);
         let child_exit_code_encoded = Arc::new(AtomicU64::new(0));
         let waiter_exit_code = Arc::clone(&child_exit_code_encoded);
-        let exit_waker = window.waker();
+        let exit_waker = waker.clone();
         agenterm_platform::threading::spawn_named_detached(
             "minicon-waiter",
             Box::new(move || {
@@ -6259,8 +6278,20 @@ impl ConTerminal {
         self.rows = rows;
         self.parser.screen_mut().set_size(rows, cols);
 
-        self.spawn_pty(window)?;
+        self.spawn_pty(&window.waker())?;
         Ok(PixelWindowDirective::Continue)
+    }
+
+    /// Opens this session with no window to measure.
+    ///
+    /// The grid comes from `--cols`/`--rows` instead of a surface, and the
+    /// scale is 1.0: a headless session has no display to be scaled for. An
+    /// attach later re-measures and resizes, which is the same path a window
+    /// resize already takes.
+    fn open_detached(&mut self, waker: &WindowWaker) -> Result<(), PixelWindowError> {
+        self.recompute_metrics(1.0);
+        self.scale = 1.0;
+        self.spawn_pty(waker)
     }
 
     fn event(
@@ -7388,7 +7419,27 @@ impl PixelWindowApplication for ConApp {
         Ok(directive)
     }
 
-    fn detached(&mut self) -> Result<PixelWindowDirective, PixelWindowError> {
+    fn detached(
+        &mut self,
+        waker: &WindowWaker,
+        attachment: &agenterm_platform::window_host::WindowAttachment,
+    ) -> Result<PixelWindowDirective, PixelWindowError> {
+        // A headless process never ran `opened`, so this is where it learns how
+        // to ask for its first window.
+        if self.attachment.is_none() {
+            self.attachment = Some(attachment.clone());
+        }
+        if self.pending_headless_session {
+            self.pending_headless_session = false;
+            if let Ok(mut slot) = self.waker_slot.lock() {
+                *slot = Some(waker.clone());
+            }
+            // A bind failure already exited; a spawn failure here is the same
+            // class of startup failure and must not leave a silent, empty
+            // process behind.
+            let session = self.active_session_mut()?;
+            session.open_detached(waker)?;
+        }
         self.detached_turn()
     }
 
