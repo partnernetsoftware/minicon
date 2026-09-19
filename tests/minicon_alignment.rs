@@ -383,6 +383,34 @@ fn landing_page_locales_define_the_same_keys() {
 /// checkout. Two shapes are not claims about this repo and are skipped: a
 /// token inside a URL (an upstream project's path) and a token with `...`
 /// (a deliberately elided path).
+/// A local path override must never reach a commit.
+///
+/// Verifying a platform-crate change means pointing the dependency at a working
+/// copy, which is correct while it is local and invisible once it is pushed:
+/// the machine that made the change still builds, and CI fails with "failed to
+/// load source for dependency" on a directory it has never had. That happened
+/// during 0.1.20 and cost a build round; nothing but this notices.
+#[test]
+fn the_manifest_never_ships_a_local_path_override() {
+    let root = repo_root();
+    let manifest = fs::read_to_string(root.join("Cargo.toml")).expect("read Cargo.toml");
+    for (index, line) in manifest.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        assert!(
+            !(trimmed.contains("path = \"..") || trimmed.contains("path = \"/")),
+            "Cargo.toml line {} points a dependency outside this clone: {trimmed}",
+            index + 1
+        );
+    }
+    assert!(
+        !manifest.contains("[patch.\"https://github.com/partnernetsoftware/agenterm\"]"),
+        "Cargo.toml still patches the agenterm git source; that is a local-only override"
+    );
+}
+
 #[test]
 fn referenced_repository_paths_exist() {
     let root = repo_root();

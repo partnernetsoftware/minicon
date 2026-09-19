@@ -139,6 +139,3 @@ strip = false
 [patch.crates-io]
 vt100 = { git = "https://github.com/partnernetsoftware/agenterm", rev = "8b4c33bd" }
 softbuffer = { git = "https://github.com/partnernetsoftware/agenterm", rev = "8b4c33bd" }
-
-[patch."https://github.com/partnernetsoftware/agenterm"]
-agenterm-platform = { path = "../agenterm/crates/agenterm-platform" }
