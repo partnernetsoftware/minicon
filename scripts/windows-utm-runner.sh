@@ -21,6 +21,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 . "$SCRIPT_DIR/lib/utm-court.sh"
 COURT_CLI="$(minicon_utm_court_cli)" || exit 2
 WINDOWS_ROOT="${UTM_COURT_WINDOWS_ROOT:-$("$COURT_CLI" windows-root)}"
+# The agent's own root, asked for rather than spelled here. This file carried
+# `agent-v2` while the court had moved to v4, so jobs were being written where
+# nothing listened — invisible because the Windows cells were BLOCKED for an
+# unrelated reason. One owner for the path is what stops that recurring.
+WINDOWS_AGENT_ROOT="${UTM_COURT_WINDOWS_AGENT_ROOT:-$("$COURT_CLI" windows-agent-root)}"
 
 case "$CELL" in
   win-aarch64)
@@ -155,8 +160,8 @@ PY
 court push "$COURT" "$runner_tmp/test-manifest.json" \
   "$GUEST_ROOT\\target\\test-manifest.json"
 
-JOB="$WINDOWS_ROOT\\agent-v2\\job.pending.ps1"
-READY="$WINDOWS_ROOT\\agent-v2\\job.ready"
+JOB="$WINDOWS_AGENT_ROOT\\job.pending.ps1"
+READY="$WINDOWS_AGENT_ROOT\\job.ready"
 job_id="${CELL//-/_}_${MODE}_$$_${RANDOM}"
 RESULT="$WINDOWS_ROOT\\job-$job_id.exit"
 RESULT_TMP="$RESULT.tmp"

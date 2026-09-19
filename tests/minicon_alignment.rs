@@ -390,6 +390,36 @@ fn landing_page_locales_define_the_same_keys() {
 /// the machine that made the change still builds, and CI fails with "failed to
 /// load source for dependency" on a directory it has never had. That happened
 /// during 0.1.20 and cost a build round; nothing but this notices.
+/// Every self-test is reachable from the one entrypoint that runs them.
+///
+/// Seven `*-selftest` scripts existed with nothing invoking them — not
+/// `build.sh`, not six-cell, not CI, not a line in `AGENTS.md`. They all
+/// passed when finally run, which is the point: a dormant check is
+/// indistinguishable from a working one until something it guards ships. This
+/// keeps a new one from joining them silently.
+#[test]
+fn every_selftest_script_is_listed_in_the_selftest_entrypoint() {
+    let root = repo_root();
+    let entrypoint =
+        fs::read_to_string(root.join("scripts/selftest.sh")).expect("read scripts/selftest.sh");
+    let mut missing = BTreeSet::new();
+    for name in tracked_files(&root) {
+        if !name.contains("selftest") || name == "scripts/selftest.sh" {
+            continue;
+        }
+        if !name.ends_with(".sh") && !name.ends_with(".py") {
+            continue;
+        }
+        if !entrypoint.contains(&name) {
+            missing.insert(name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "self-tests that nothing runs: {missing:?}; add them to scripts/selftest.sh"
+    );
+}
+
 #[test]
 fn the_manifest_never_ships_a_local_path_override() {
     let root = repo_root();

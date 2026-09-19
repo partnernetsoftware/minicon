@@ -97,8 +97,14 @@ From the repository root:
 ./scripts/build.sh dev
 ./scripts/build.sh release
 ./scripts/build.sh test
+./scripts/selftest.sh          # the checks that guard the scripts, not the product
 ./scripts/six-cell-qualify.sh
 ```
+
+Run `six-cell` **before** pushing, not after CI fails. It is the only thing that
+cross-compiles, and 0.1.20 lost three build rounds to changes that a macOS build
+accepts and Linux does not — a `Cell` imported under a macOS `cfg`, among
+others.
 
 Work directly on `main`. Do not create worktrees or side branches for MiniCon
 work — the owner has ruled that out after it cost real time. The one exception
