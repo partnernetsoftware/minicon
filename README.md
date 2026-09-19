@@ -50,7 +50,7 @@ normal desktop runtime libraries documented under [Build](#build); development
 packages are not required. Each archive ships a SHA-256 beside it:
 
 ```bash
-sha256sum -c minicon-0.1.18-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-0.1.19-linux-x86_64.tar.gz.sha256
 ```
 
 The macOS build is a signed, notarized universal binary — the same `.dmg` runs
@@ -155,11 +155,14 @@ minicon --help                   # everything else
 | `Ctrl+O` | send the complete input-area draft |
 | `Up` / `Down` | in the input area, recall what you sent before |
 
-The header keeps two tools. **New** (＋, left) opens a terminal; **Settings**
-(⚙, far right) opens a panel with the interface language (English / 简 / 繁),
-font size, a theme picker (Neutral / Docs Ink / Paper Ink), and the keyboard
-shortcuts — `Ctrl+Shift+P` also cycles the theme. With only two tools the header
-never overflows a narrow sidebar. Closing the final tab leaves a greeting page
+The sidebar header keeps only what a panel cannot hold. **New** (＋, left) opens
+a terminal; **Settings** (⚙) opens a panel with the interface language
+(English / 简 / 繁), font size, a theme picker (Neutral / Docs Ink / Paper Ink),
+and the keyboard shortcuts — `Ctrl+Shift+P` also cycles the theme; the third
+control, at the column edge, collapses the sidebar to a rail and expands it
+again. That short row never overflows a narrow sidebar. Collapsed, each tab
+still shows the `@ID` the control CLI uses and hovering floats its full title.
+Closing the final tab leaves a greeting page
 so you can start another terminal; it does not quit the window.
 
 ### Reporting a problem
@@ -354,7 +357,7 @@ August 2026.
 系统库。它在 Windows、Linux 和 macOS 上开真正的 PTY、画真正的终端，而且每一部分都能
 被脚本驱动和读取。
 
-- 六格 `strip=true` 实测约为：Windows ~660 KB、macOS ~1.4 MB、Linux ~5 MB。精确值：Windows aarch64 677,376 bytes / x86_64 731,136；macOS aarch64 1,413,408 / x86_64 1,455,424；Linux aarch64 4,846,400 / x86_64 5,732,544。它们是按目标验证的证据，不是全产品统一上限；测量语境见[交付](prd/PRD_02_27_con_delivery.md)。
+- 六格 `strip=true` 实测约为：Windows ~660 KB、macOS ~1.4 MB、Linux ~4.5 MB。精确值：Windows aarch64 677,376 bytes / x86_64 731,136；macOS aarch64 1,413,408 / x86_64 1,455,424；Linux aarch64 4,200,480 / x86_64 4,519,696（0.1.18 移除 AT-SPI 栈之后）。它们是按目标验证的证据，不是全产品统一上限；测量语境见[交付](prd/PRD_02_27_con_delivery.md)。
 - 只依赖操作系统库
 - 支持 Windows、Linux、macOS × x86_64、aarch64 六格；Windows 最低覆盖 Server 2016 / Windows 10 1607
 - MIT 或 Apache-2.0

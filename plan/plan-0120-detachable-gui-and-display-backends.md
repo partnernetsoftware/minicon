@@ -25,8 +25,9 @@ That is the whole claim.
 
 ## Why headless comes first
 
-The control endpoint is bound inside `ConApp::opened` using `window.waker()`,
-so the wake path is structurally owned by the window. `display_backend_facts()`
+The control endpoint *was* bound inside `ConApp::opened` using `window.waker()`,
+so the wake path was structurally owned by the window (step 1 below has since
+moved it; the rest of this section is why). `display_backend_facts()`
 already reports `headless`, but only to **refuse** to start. Making the GUI
 detachable forces that seam to become explicit: the event loop, the control
 endpoint and the session store must stop assuming a surface exists.
@@ -37,7 +38,10 @@ would mean building it against an implicit seam and then moving it.
 ## Tree
 
 - [ ] The GUI can be detached and reattached without losing sessions
-  - [ ] **Process-owned control endpoint**
+  - [~] **Process-owned control endpoint** — bind moved out of the window
+    (sequencing step 1, shipped on `main`); the "during and after a detach"
+    half waits on step 2, which needs a platform directive that tears the
+    window down while the loop runs.
     - invariant: the endpoint answers before, during and after a window exists;
       a detach does not break an in-flight request
     - evidence: `--control` bound with `--headless`, `list-tabs` answers with no
@@ -114,9 +118,14 @@ flowchart TB
 
 ## Sequencing
 
-1. Process-owned endpoint + window-independent waker. No user-visible change yet
-   — the attached path must stay byte-identical. This is the risky part; it is
-   done alone so a regression has one suspect.
+1. **Done.** Process-owned endpoint + window-independent waker: the server binds
+   in `main` before any window and reaches the loop through a waker slot that
+   `opened` fills. Two black-box tests pin the new lifetime, falsified by
+   restoring the in-window bind. Two improvements fell out: a client racing
+   startup finds a listener instead of a refused connection, and a bind failure
+   is now a startup failure reported before a window appears. Still missing for
+   step 2: `PixelWindowDirective` has only Continue, Wait, WaitUntil and Exit,
+   so nothing can tear down the window while the loop keeps running.
 2. `--headless`, `detach-gui`, `attach-gui`, with the state-preservation
    evidence above.
 3. Measure and report memory honestly.

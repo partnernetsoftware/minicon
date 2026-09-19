@@ -103,8 +103,27 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   system either exports the pseudoconsole entry points or it does not, and that
   is the whole decision. A build-number comparison would need revisiting the
   moment a redistributable or servicing update changed the floor. The build
-  number is used only in the message a person reads.
-- [x] where ConPTY is absent, a **console agent** stands in: the executable
+  number is used only in the message a person reads. Capability is the *floor*,
+  not the preference: since 0.1.19 a capable system is still hosted through the
+  classic console unless the user asks otherwise, per the next entry.
+- [x] **since 0.1.19 the classic console is the Windows default, and ConPTY is
+  opt-in through `--feature conpty`.** Windows has two ways a program can ask
+  for the mouse and neither host serves both: the classic console carries clicks
+  to programs that ask through `ENABLE_MOUSE_INPUT` (agent CLIs, most things
+  built on Node) and cannot serve programs that ask with `ESC[?1000h`, because
+  conhost consumes that request before the host sees it; ConPTY serves those and
+  delivers the first kind's clicks as junk keystrokes, which is upstream's open
+  [microsoft/terminal#15083](https://github.com/microsoft/terminal/issues/15083).
+  The default picks the side the reported case is on; it is "the path proven on
+  a real machine", not a verdict that ConPTY is incapable. `--feature` is a
+  per-invocation selection and deliberately not a `minicon.json` key, so the
+  command line that reproduces a bug report carries it. 0.1.18's opt-in
+  `{"console_agent": true}` key is gone; an existing config keeps working and
+  the key is ignored. Evidence and the two withdrawn mechanism claims:
+  `archive/v0.1.19-release-history.md`.
+- [x] where ConPTY is absent it is not a choice — the **console agent** is the
+  only host, and it is the same path the default selects on a capable system:
+  the executable
   re-executes itself with an internal argument, that process takes a hidden
   console, spawns the child into it, and polls the screen buffer with
   `ReadConsoleOutputW`, synthesizing a terminal stream from what changed. The
@@ -139,9 +158,10 @@ and paints, typed input reaches the child and its *computed* output returns, a
 session survives resizes and stays usable, a wide character is not emitted twice
 for its two cells, closing the host leaves no orphan on an invisible console,
 Ctrl+C interrupts a running command and leaves the shell alive, and both sides
-agree on the argument. `AGENTERM_FORCE_CONSOLE_AGENT=1` selects the fallback on
-a modern system, without which this path would be reachable only on a machine
-old enough to need it — which is neither CI nor any developer's.
+agree on the argument. `AGENTERM_FORCE_CONSOLE_AGENT=1` selects this path on a
+modern system; since 0.1.19 MiniCon itself sets it on Windows unless
+`--feature conpty` was given, so the path a test forces is the path users get,
+and the variable remains the way a test reaches it without a command line.
 
 Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
 

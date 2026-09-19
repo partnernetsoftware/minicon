@@ -64,12 +64,24 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Untrusted/extreme dimensions cannot wrap a close target onto another row,
   overflow layout construction, or collapse the sidebar through an unordered
   floating-point comparison.
-- [x] the header keeps exactly two tools — New (left) and Settings (right) — so
-  the row no longer overflows a narrow sidebar; help, language, font size and
-  theme all moved into the settings panel. `ui.rs`'s
+- [x] the header keeps only tools that cannot live in the settings panel — New
+  (left) and Settings (right), joined later by the rail toggle at the column
+  edge — so the row no longer overflows a narrow sidebar; help, language, font
+  size and theme all moved into the settings panel. `ui.rs`'s
   `the_header_tools_are_ordered_and_disjoint` and
   `the_header_row_fits_and_the_frame_stays_partitioned` pin the layout across
   widths and DPI scales.
+- [x] the tab sidebar collapses to a 44dip rail and expands again, from
+  `Ctrl+Shift+B` or a third header control placed at the column edge — which is
+  why the header row above is now three controls in the expanded state and a
+  vertical stack in the rail. Collapsed is a narrower sidebar, not a hidden one:
+  each row keeps the stable `@ID` the control CLI uses, hover floats the full
+  title, and depth, branch lines and per-row close are dropped rather than drawn
+  half-legibly. The terminal is re-inset to the rail width, so the column is
+  handed over instead of left blank, and expanding restores viewport origin,
+  width and column count exactly. The collapsed layout joins `LAYOUT_SWEEP`, so
+  both states are checked at all ten size/scale combinations rather than one
+  state having no geometry to check. Unreleased on `main` as of v0.1.19.
 - [x] accessibility bounds use the same non-wrapping geometry policy: positive
   native coordinates and dimensions above `i32::MAX` saturate instead of
   collapsing to zero and making published controls disappear.

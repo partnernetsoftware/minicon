@@ -19,7 +19,7 @@ MiniCon remains useful precisely because it is not AgenTerm: it has no
 workbench server, persistent workspace, Fleet, mux, MCP, script runtime,
 plugin host, or Agent permission policy. AgenTerm is the Agent-era workbench
 on the same platform layer. MiniCon `--control` is a GUI-lifetime local
-socket/pipe inside that window, not AgenTerm's server. Details:
+socket/pipe inside that process, not AgenTerm's server. Details:
 `prd/PRD_02_23_minicon.md`, `prd/PRD_02_26_con_control_cli.md`.
 
 ## Markdown-tree DAG PRD
@@ -178,7 +178,7 @@ flowchart LR
     R --> V12 --> C13
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
-    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117
+    C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117 --> R118 --> R119
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -230,13 +230,12 @@ flowchart LR
   (Vim). Both halves are structural — see the 0.1.19 history, which also records
   why two earlier explanations were withdrawn.
   History: `prd/archive/v0.1.19-release-history.md`.
-- [x] v0.1.18. Mouse input can now reach Windows
-  terminal programs: ConPTY — which every third-party terminal must use —
-  discards mouse traffic in both directions, which is why a program that handled
-  clicks fine in a plain `cmd.exe` window (classic conhost, no translation) saw
-  nothing inside MiniCon. The classic console-agent path is reachable with
-  `{"console_agent": true}` in `minicon.json`, opt-in until it has real-world
-  mileage. The greeting page gained `[Quit MiniCon]` and its window close button
+- [x] v0.1.18. Mouse input first reached Windows terminal programs, by making
+  the classic console-agent path reachable from the product as an opt-in
+  `minicon.json` key. 0.1.19 removed that key and made the path the default;
+  the mechanism this release gave for why ConPTY failed was withdrawn twice and
+  is not evidence — the settled account is the 0.1.19 entry above. The greeting
+  page gained `[Quit MiniCon]` and its window close button
   works again — with no tabs the window previously could not be closed at all.
   The Linux binary dropped an AT-SPI stack MiniCon never consumed (6.0 MB →
   4.5 MB). History: `prd/archive/v0.1.18-release-history.md`.

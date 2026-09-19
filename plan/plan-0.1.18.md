@@ -1,8 +1,13 @@
 # Plan 0.1.18 — unblock Windows mouse, give the greeting page an exit
 
-Status: **planning.** Two items block a user right now; everything else is
-carried debt. Ordered so the two blockers land first and the risky refactor does
-not sit in front of them.
+Status: **both blockers shipped; this file now carries only the debt below.**
+P0-2 shipped in v0.1.18. P0-1 shipped in two steps — the opt-in console-agent
+path in v0.1.18, then the default switch plus `--feature conpty` in v0.1.19,
+where the mechanism reasoning recorded under "What is known" was measured false
+and withdrawn (see `prd/archive/v0.1.19-release-history.md`; current truth is
+the PTY-backend section of `prd/PRD_02_24_con_terminal.md`). Read P0-1 below as
+the diagnosis method that was used, not as an open question or as evidence.
+P1/P2 remain open and are this file's reason to stay out of `plan/archive/`.
 
 ## P0-1 — Mouse does not work in Windows TUIs
 
@@ -71,5 +76,7 @@ must offer an explicit exit.
   frames, so real mouse and pixel tests are impossible there. An interactive
   logged-in court would make P0-1's *real* mouse path testable, not just the
   injected one.
-- **Theme C, doc debt**: archive the completed plans. (The README signing range
-  and the old-Windows diagnostic path were already fixed in 0.1.15/0.1.17.)
+- ~~**Theme C, doc debt**: archive the completed plans.~~ Done: 0.1.9 signing,
+  macOS Developer ID, the 0.1.12 review and 0.1.16 are in `plan/archive/`.
+  (The README signing range and the old-Windows diagnostic path were already
+  fixed in 0.1.15/0.1.17.)

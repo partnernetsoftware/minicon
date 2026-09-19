@@ -132,7 +132,7 @@ flowchart LR
   list, tab-title ellipsis, close-button hover + non-zero-exit coloring, header
   hover, a live zoom % readout, Escape-to-close, and the macOS/Linux
   paste-review multiline fix. From the post-0.1.11 review
-  (`plan/plan-0.1.12-review.md`). Ledger: `archive/v0.1.12-release-history.md`.
+  (`plan/archive/plan-0.1.12-review.md`). Ledger: `archive/v0.1.12-release-history.md`.
 
 - [x] **v0.1.13 released — legacy-Windows CJK console fix, dual-signed.** Both
   signing switches stay `required`. Fixes garbled Chinese rendering on Windows
@@ -408,7 +408,7 @@ six-cell claim.
   Hiragino TTC mapping: 22.4 MiB virtual, 224 KiB resident, zero dirty.
   The second run loaded to 109.92 MiB, added at most 1.34 MiB for a tab, and
   grew 11.11 MiB over four cycles. GUI multitab black box also PASS.
-  Evidence and artifact identity: `plan/plan-lazy-font-memory.md`.
+  Evidence and artifact identity: `plan/archive/plan-lazy-font-memory.md`.
   The **384 MiB regression ceiling is unchanged; 10 MiB remains unmet**.
   These measurements supersede the macOS baseline above, not Windows/Linux
   measurements or runtime qualification of any other cell.

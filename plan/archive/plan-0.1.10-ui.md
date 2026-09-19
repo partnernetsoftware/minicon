@@ -53,5 +53,5 @@ the status bar's `L###:C###` (already present from D).
 - Refresh the website screenshot afterwards with
   `scripts/capture-website-screenshot.sh` so the shot shows the 2-tool header +
   settings panel.
-- Cut 0.1.10 with the dual-signed runbook `plan/plan-0.1.9-dual-signed-release.md`
+- Cut 0.1.10 with the dual-signed runbook `plan/archive/plan-0.1.9-dual-signed-release.md`
   (both signing switches stay on).
