@@ -56,7 +56,9 @@ failure, resize storms, process exit, and interaction races.
 - `minicon cli` for tab listing/lifecycle, content capture, screenshots,
   text/paste/key/mouse/wheel input, deterministic waits, resize, performance
   evidence, and bounded shutdown.
-- GUI-lifetime local control only. Closing the GUI ends its control endpoint.
+- Process-lifetime local control only. The endpoint is bound before any window
+  and dies with the process — never a server, daemon, listening network
+  interface, persistent workspace, shared session or background auto-start.
 
 ### Explicit non-goals
 

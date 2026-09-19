@@ -37,7 +37,13 @@ Use both views for material product planning; neither replaces the other.
 
 MiniCon is a one-file local terminal. Preserve these exclusions: no server,
 persistent workspace, Fleet, mux, MCP, script runtime, plugin host or Agent
-permission policy. Its `--control` endpoint lives only as long as its GUI.
+permission policy. Its `--control` endpoint's lifetime is bound to the
+**process**, not to the window: it is bound before any window exists and dies
+with the process. That amendment (0.1.19) admits a GUI that can be detached and
+reattached; it does not admit a server, a daemon, a listening network
+interface, a persistent workspace, session sharing or discovery, or background
+auto-start. A MiniCon without a window is the same single process, minus its
+window.
 
 Preserve these invariants:
 

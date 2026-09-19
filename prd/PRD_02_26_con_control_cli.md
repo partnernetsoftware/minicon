@@ -12,7 +12,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
 ## Boundary against `agenterm cli`
 
-- [x] `minicon cli` is a GUI-lifetime local control surface, not a client
+- [x] `minicon cli` is a process-lifetime local control surface, not a client
   of the workbench and not a daemon. `--control` binds an explicit local
   named pipe or Unix socket **inside the GUI process**; a second invocation
   (`minicon cli --control …`) is a short-lived ATC1 client. Capture,
@@ -64,11 +64,11 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   `screenshot-pane`, `select-tab`, `send-keys`, `send-mouse`, `send-paste`,
   `send-text`, `send-ui-ime`, `send-ui-keys`, `send-wheel`, `ui-snapshot`, `wait-tab-exit` and
   `wait-text`.
-- [x] the fixed GUI-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,
+- [x] the fixed process-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,
   `new-tab`, `select-tab`, `close-tab`, `capture-pane`, `screenshot-pane`,
   `send-text`, `send-paste`, `send-keys`, cell-addressed mouse
   press/release/move/click, `send-wheel`, bounded `wait-text`, bounded
-  `wait-tab-exit`, logical-client `resize-window`, and GUI-lifetime
+  `wait-tab-exit`, logical-client `resize-window`, and process-lifetime
   `close-window`.
 - [x] cross-tab read and write have file endpoints. `send-text` and
   `send-paste` accept `--file PATH` instead of a literal `TEXT`, and
@@ -161,7 +161,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   syntax, error text, stable tab ids and wire bytes are unchanged.
 - [x] native shell parsing intentionally does not claim equivalence for
   ambiguous hand-crafted quote sequences. Standard launcher quoting, the offline
-  CLI, `-e` passthrough and GUI-lifetime control startup are the supported
+  CLI, `-e` passthrough and process-lifetime control startup are the supported
   evidence.
 
 ## Transport and bounds

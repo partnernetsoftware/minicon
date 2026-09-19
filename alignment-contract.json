@@ -101,7 +101,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_26_con_control_cli.md",
-      "prd_anchor": "- [x] the fixed GUI-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,",
+      "prd_anchor": "- [x] the fixed process-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,",
       "evidence": [
         "minicon_blackbox::controlled_screenshot_produces_a_valid_nonempty_png",
         "minicon_blackbox::the_two_snapshots_agree_on_title_and_child_life",
