@@ -90,8 +90,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.17-release-history.md
 │   ├── [x] v0.1.18 released — opt-in Windows console agent for mouse; greeting-page Quit; dual-signed
 │   │   └── prd/archive/v0.1.18-release-history.md
-│   ├── [x] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed (latest)
+│   ├── [x] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed
 │   │   └── prd/archive/v0.1.19-release-history.md
+│   ├── [x] v0.1.20 released — detachable/headless GUI; collapsible tab rail; MiniCon.app icon; dual-signed (latest)
+│   │   └── prd/archive/v0.1.20-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -155,7 +157,8 @@ flowchart LR
         R116["v0.1.16 released<br/>macOS MiniCon.app bundle + install-cli · dual-signed"]
         R117["v0.1.17 released<br/>real Enter after Send · --file/--output · dual-signed"]
         R118["v0.1.18 released<br/>Windows mouse via console agent · greeting Quit · dual-signed"]
-        R119["v0.1.19 released<br/>non-ASCII paste fix · classic console default · --feature · dual-signed · latest"]
+        R119["v0.1.19 released<br/>non-ASCII paste fix · classic console default · --feature · dual-signed"]
+        R120["v0.1.20 released<br/>detachable + headless GUI · collapsible tab rail · app icon · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -218,7 +221,16 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.19 is the latest public release. Pasting any non-ASCII text on macOS
+- [x] v0.1.20 is the latest public release. The window became something the
+  process can put down: `detach-gui` releases it while the sessions and the
+  control endpoint keep running, `attach-gui` builds one again, and
+  `--headless` starts with none at all. The product boundary was amended to
+  match — the endpoint's lifetime is the process, not the window — while server,
+  daemon, persistence, sharing and auto-start stay excluded. The tab sidebar
+  collapses to a rail of `@ID` handles, and `MiniCon.app` has an icon. The
+  memory saving that partly motivated detaching was measured and withdrawn: it
+  frees nothing on macOS. History: `prd/archive/v0.1.20-release-history.md`.
+- [x] v0.1.19. Pasting any non-ASCII text on macOS
   failed outright — `pbpaste` encodes in the locale's text encoding and an app
   launched from Finder inherits almost no environment, so on a non-English
   system the bytes arrived in a legacy encoding; the helpers now pin a UTF-8
