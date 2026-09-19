@@ -24,7 +24,7 @@ P1/P2 remain open and are this file's reason to stay out of `plan/archive/`.
   - **inbound**: MiniCon forwards SGR reports but they never reach the child.
 
 **First step is diagnosis, not code.** A PowerShell probe is ready
-(`diagnose-terminal-io` skill, `references/probes.md`). Distinguishing trick,
+(`~/.claude/skills/diagnose-terminal-io/references/probes.md`). Distinguishing trick,
 no new debug surface needed: after an injected click, read the snapshot's
 `selection` —
 
@@ -72,10 +72,14 @@ must offer an explicit exit.
   `cli.rs` / `app.rs` / `terminal.rs`; extract `paint_host_ui` and
   `build_ui_snapshot`. Pure refactor, now covered by the invariant suite. Kept
   behind the blockers on purpose: it is the largest-risk, lowest-user-value item.
-- **Theme B, interactive desktop court**: the session-0 Windows court presents no
-  frames, so real mouse and pixel tests are impossible there. An interactive
-  logged-in court would make P0-1's *real* mouse path testable, not just the
-  injected one.
+- ~~**Theme B, interactive desktop court**~~: half delivered. `utm-court
+  interactive-exec` now supports Windows, so commands run in the logged-on
+  session instead of session 0 — which mattered more than expected: the same
+  ConPTY probe run through session 0 returned a mouse record on one run and 20
+  key events on the next, and an entire investigation was built on those
+  readings before the contradiction surfaced. Measurements now repeat 3/3.
+  Still open: the court presents no frames, so *real* pointer events and pixel
+  comparison remain out of reach; only injected input is testable.
 - ~~**Theme C, doc debt**: archive the completed plans.~~ Done: 0.1.9 signing,
   macOS Developer ID, the 0.1.12 review and 0.1.16 are in `plan/archive/`.
   (The README signing range and the old-Windows diagnostic path were already

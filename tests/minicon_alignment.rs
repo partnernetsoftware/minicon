@@ -411,6 +411,25 @@ fn referenced_repository_paths_exist() {
     for entry in walk_markdown(&root.join("research")) {
         sources.push(entry);
     }
+    // The product's own memory palace was not covered, and a reference there
+    // rots the same way: an owning PRD module pointed at a plan for releases
+    // after that plan was archived, and nothing caught it. These are the
+    // documents an agent is told to start from, so a dead link in them costs
+    // more than one in prose, not less.
+    //
+    // `archive/` is deliberately excluded. A release history records what was
+    // true at the time — including scripts since renamed — and rewriting that
+    // to keep a link alive would falsify the record. Live documents are the
+    // ones that must still resolve.
+    sources.push(root.join("PRD.md"));
+    for directory in ["prd", "plan"] {
+        for entry in walk_markdown(&root.join(directory)) {
+            if entry.components().any(|part| part.as_os_str() == "archive") {
+                continue;
+            }
+            sources.push(entry);
+        }
+    }
 
     let prefixes = ["scripts/", "tools/", "examples/", "packaging/", "research/"];
     let suffixes = [
