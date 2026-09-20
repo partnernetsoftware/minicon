@@ -219,6 +219,20 @@ step that pays off on its own and leaves the line better specified.
   product-neutral, already consumed by both, and gained Windows
   `interactive-exec` from MiniCon's work. Growing it is cheaper and safer than
   starting a second shared binary.
+- [ ] **Treat an artifact size budget as a refactor signal, not a release
+  gate to argue with.** AgenTerm 0.1.17 was stopped twice by one: first
+  `agenterm-cu.exe` at 7,302,144 bytes against a 2 MiB "thin control CLI"
+  budget, then `agenterm-cu-provider.dll` at 13,522,944 against 12 MiB. Both
+  have the same cause — 42 `agenterm-platform` features statically linked
+  where MiniCon links 13 — and neither is fixable by anything the release
+  chain can do. The owner's ruling (2026-09-20): rebaseline the budgets
+  honestly in one pass so the release moves, and let the numbers come back
+  down on their own during the abstraction-and-reuse refactor, where narrowing
+  the feature surface is the actual work. The rule this leaves the line: when
+  a size budget fires, measure **every** artifact in one local cross-build
+  pass and rebaseline once — never one CI round per over-budget file — and
+  record the rebaselined value as a debt the refactor is expected to repay,
+  not as the new intended size.
 - [ ] **Defer the driver.** Two consumers have now exercised the assembly
   order; neither has exercised a shared driver. Deciding its shape before a
   third consumer would repeat the mistake this page was written to avoid.
