@@ -147,7 +147,7 @@ Three properties of that failure mode are what the line has to answer:
 
 | inventory step | evidence from the 2nd consumer | verdict |
 |---|---|---|
-| 1 six-cell qualify | AgenTerm already owns the harness (`agenterm/scripts/qjs/build-all.qjs` and its `six-cell-qualify.qjs`, same `cargo-xwin` + `cargo-zigbuild` drivers, "Building is host-only; running is not"), yet its `candidate.yml` rebuilds all six cells on hosted runners: `cargo build|test` appears **17 times** there against **0** in MiniCon's | **[generic]** — the harness carried over unchanged; what did not carry is the decision to *use* it |
+| 1 six-cell qualify | AgenTerm already owns the harness (`agenterm/scripts/qjs/build-all.qjs` and its `six-cell-qualify.qjs`, same `cargo-xwin` + `cargo-zigbuild` drivers, "Building is host-only; running is not"), yet its `candidate.yml` compiles in all six cells: `cargo build|test` appears **17 times** there against **0** in MiniCon's, whose bytes come from one upstream cross-build job | **[generic]** — the harness carried over unchanged; what did not carry is the topology that uses it, one build feeding six execute-only cells |
 | 3 dual signing | not exercised: `signing.windows=off`, `macos=unsigned-preview` | stays **[parameterize]**, undecided |
 | 4 candidate seal | exact-SHA binding held; `reputation.yml:63` and `release.yml:59` both assert controller `GITHUB_SHA == source_sha` | **[generic]**, confirmed twice |
 | 5 court / AV scan | rehearsed end to end on a synthetic candidate before the real one existed, and the rehearsal is what found the blocker: `interactive-ready` timed out claiming its nonce, while a guest-agent scan of the same bytes on the same VM returned exit 0 with an unchanged post-scan hash | **[generic]** via `utm-court`; **new parameter**: which guest path drives the scan, recorded in the receipt |
@@ -185,11 +185,21 @@ mechanisms rather than product state.
 Nothing here authorizes a `foundry` repository. Each item is a MiniCon-side
 step that pays off on its own and leaves the line better specified.
 
-- [ ] **Write the discovery/attestation split down as the line's first rule.**
-  CI seals and attests; the developer machine discovers. MiniCon already obeys
-  it (0 compiles in `candidate.yml`); AgenTerm owns the harness and does not.
-  The rule is what transfers, and it is worth one paragraph in the playbooks
-  repository before any code is shared.
+- [ ] **Write down "build once, execute six times" as the line's first rule.**
+  Not "build locally": both products compile in CI, and they must, because the
+  sealed Candidate's provenance is that CI built it from the exact SHA in a
+  clean checkout. The rule is about *how many times* the bytes are produced.
+  MiniCon cross-builds all six targets in **one** job (`minicon-com.yml`'s
+  "pack once (macos-15)" running `rebuild-payloads.sh` with `cargo zigbuild` +
+  `cargo xwin`), then six runtime cells download that one artifact and run it
+  under `Guard runner identity (no compile)` — each cell first proving its
+  `RUNNER_OS`/`RUNNER_ARCH` really is the platform it claims and that the
+  SHA-256 matches, before a final job requires "six unique PASS same digest".
+  AgenTerm's `candidate.yml` instead compiles in all six cells, so its cells
+  attest six independently produced binaries rather than one, and each pays the
+  build again — the windows-x86_64 cell alone takes about 40 minutes.
+  The developer machine's role is separate and smaller: discovery before
+  pushing, never a source of shipped bytes.
 - [ ] **Publish the local-gate invocation as part of the line's contract.** A
   gate runnable only in CI is a gate nobody runs. The exact shape matters and
   was learned twice the hard way: `--max-operations 1000000000` (CI's own
