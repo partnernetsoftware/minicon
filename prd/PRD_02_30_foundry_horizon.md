@@ -114,10 +114,111 @@ The order below is the real assembly order; each step's genericness is marked.
 - Nothing product-specific may leak into the shared craft; if it must, it is a
   parameter, not a fork.
 
+## Second consumer, measured — AgenTerm 0.1.17, 2026-09-19/20
+
+The inventory above was written from one consumer. AgenTerm then ran the same
+assembly order for its own 0.1.17 and exercised every step, which is the
+condition this file set for deciding what graduates. What follows is what that
+attempt cost and what it proved; it is evidence, not a plan to copy AgenTerm.
+
+**Fifteen-plus Candidate rounds, and not one of them failed on a product
+defect.** Every failure was a gate or a test whose own assumption had gone
+stale or had never held on Windows: a leaked child handle exhausting the qjs
+door's 32-slot cap, CRLF reaching a source parser, a cold self-relaunch
+exceeding its budget, guest memory exhausted by retained gate output, a
+PowerShell ledger that had not been reachable since 2026-09-03, an artifact
+budget last validated before seventeen days of work landed.
+
+Three properties of that failure mode are what the line has to answer:
+
+- **Failure is a queue, not a bug.** The first failing gate hides every gate
+  behind it, so seventeen days of accumulated drift discharges one item per
+  round. AgenTerm's round is ~40 minutes.
+- **A gate that is never reached is indistinguishable from a passing gate.**
+  The PowerShell ledger threw at its first unaccounted file for seventeen days;
+  when it finally ran to completion it reported three more problems at once,
+  including that the script could not finish inside its own step budget.
+- **Where you discover decides the cost.** The same `agenterm-cu.exe` size that
+  took a 40-minute CI round to learn was produced on this Mac by
+  `cargo xwin build --release --target x86_64-pc-windows-msvc` in **62
+  seconds**, within 2.6% of the figure derived from the ARM artifact.
+
+### What that decides
+
+| inventory step | evidence from the 2nd consumer | verdict |
+|---|---|---|
+| 1 six-cell qualify | AgenTerm already owns the harness (`agenterm/scripts/qjs/build-all.qjs` and its `six-cell-qualify.qjs`, same `cargo-xwin` + `cargo-zigbuild` drivers, "Building is host-only; running is not"), yet its `candidate.yml` rebuilds all six cells on hosted runners: `cargo build|test` appears **17 times** there against **0** in MiniCon's | **[generic]** — the harness carried over unchanged; what did not carry is the decision to *use* it |
+| 3 dual signing | not exercised: `signing.windows=off`, `macos=unsigned-preview` | stays **[parameterize]**, undecided |
+| 4 candidate seal | exact-SHA binding held; `reputation.yml:63` and `release.yml:59` both assert controller `GITHUB_SHA == source_sha` | **[generic]**, confirmed twice |
+| 5 court / AV scan | rehearsed end to end on a synthetic candidate before the real one existed, and the rehearsal is what found the blocker: `interactive-ready` timed out claiming its nonce, while a guest-agent scan of the same bytes on the same VM returned exit 0 with an unchanged post-scan hash | **[generic]** via `utm-court`; **new parameter**: which guest path drives the scan, recorded in the receipt |
+| 6 weld receipt → qualification | two independent implementations, one rule set. `agenterm-reputation-court.py` (263 lines) and `reputation_court.py` (233) share two function names and nothing else | **[generic]** as a *contract*, not as code |
+| 7–8 reputation, release | dispatch input shapes differ between products (`release.yml` takes no `source_sha` and no `version` in AgenTerm; MiniCon's does) | **[generic]** flow, **[parameterize]** inputs — and never from memory: read the workflow file |
+
+### Corrections this evidence forces on the red lines above
+
+- **"use a throwaway branch at the SHA if `main` moved" is wrong as a general
+  rule.** The owner forbids branches and worktrees outright — they slow the
+  work and introduce their own failures — and AgenTerm's `AGENTS.md` encodes
+  that. The line's rule is the invariant, not the workaround: **keep `main`
+  frozen at the Candidate SHA for the whole promotion**, and if a fix must
+  land, re-cut the Candidate. A branch is one product's permitted means, never
+  the line's instruction.
+- **Add a red line the first consumer never needed:** a budget that guards a
+  compile is a runaway guard, not a contract. Raising it is correct when the
+  gate *is* the build and nothing is left to prebuild out of the window; it is
+  wrong when the number states a behaviour. Both cases occurred in one night,
+  and telling them apart is the judgement the line must encode.
+
+### The code half, for contrast
+
+Both products consume the same `agenterm-platform`. MiniCon enables **13**
+features; `agenterm-cu` enables **42**, and ships a 7,302,144-byte control CLI
+against a PRD-stated 2 MiB ceiling that was set when the same binary measured
+1,420,800 bytes. The crate is not the problem and neither is the ceiling: a
+shared platform layer only stays shareable while each consumer takes a
+declared slice of it. That is the same rule [`PRD_02_28`](PRD_02_28_shared_core.md)
+states from the other direction, and it is the reason this file's boundary is
+mechanisms rather than product state.
+
+## Plan — ordered by measured cost, not by ambition
+
+Nothing here authorizes a `foundry` repository. Each item is a MiniCon-side
+step that pays off on its own and leaves the line better specified.
+
+- [ ] **Write the discovery/attestation split down as the line's first rule.**
+  CI seals and attests; the developer machine discovers. MiniCon already obeys
+  it (0 compiles in `candidate.yml`); AgenTerm owns the harness and does not.
+  The rule is what transfers, and it is worth one paragraph in the playbooks
+  repository before any code is shared.
+- [ ] **Publish the local-gate invocation as part of the line's contract.** A
+  gate runnable only in CI is a gate nobody runs. The exact shape matters and
+  was learned twice the hard way: `--max-operations 1000000000` (CI's own
+  value) and a wall-clock budget sized for a debug build, or the gate reports
+  `budget exhausted` and reads as broken.
+- [ ] **State the reachability requirement.** A consumer's gate set must be
+  provably reachable end to end at least once per release, because an
+  unreachable gate reads exactly like a passing one. This is the cheapest rule
+  on this page and it is the one whose absence cost the most.
+- [ ] **Extract the Defender-court rule set as a contract document**, not as
+  code: lease → transport-ready → push exact manifest-selected assets →
+  `MpCmdRun -DisableRemediation` → compare pre/post SHA-256 → typed receipt →
+  release the lease, with the guest path named in the receipt. Two
+  implementations already satisfy it; a third consumer should implement the
+  contract, not inherit either script.
+- [ ] **Keep `utm-court` as the only shared executable.** It is already
+  product-neutral, already consumed by both, and gained Windows
+  `interactive-exec` from MiniCon's work. Growing it is cheaper and safer than
+  starting a second shared binary.
+- [ ] **Defer the driver.** Two consumers have now exercised the assembly
+  order; neither has exercised a shared driver. Deciding its shape before a
+  third consumer would repeat the mistake this page was written to avoid.
+
 ## Deferred decisions
 
-- Which parts graduate from **[parameterize]** to **[generic]** — decided only
-  when the 2nd consumer exercises them, not before.
-- The driver's interface shape (single binary vs. script set vs. workflow).
+- The driver's interface shape (single binary vs. script set vs. workflow) —
+  still deferred; see the plan item above for why the 2nd consumer does not
+  settle it.
 - Whether `company-dev-hub/skills` call `foundry` directly or through playbooks.
 - Numeric per-product ceilings, fixed per consumer at onboarding.
+- Dual signing's genericness: AgenTerm 0.1.17 ran with Windows signing `off`
+  and macOS `unsigned-preview`, so step 3 is still evidenced by one consumer.
