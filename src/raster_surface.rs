@@ -129,6 +129,19 @@ impl<'a> Surface<'a> {
         fg: Rgb,
         shear: f32,
     ) {
+        self.blit_glyph_with(glyph, cell, fg, shear, CORRECT_COVERAGE);
+    }
+
+    /// `blit_glyph` with the coverage correction chosen explicitly, so both
+    /// paths are testable on every host.
+    fn blit_glyph_with(
+        &mut self,
+        glyph: &font::RasterGlyph,
+        cell: CellRect,
+        fg: Rgb,
+        shear: f32,
+        correct_coverage: bool,
+    ) {
         let clip = self.clipped_rect(cell.x, cell.y, cell.w, cell.h);
         if clip.is_empty() {
             return;
@@ -193,9 +206,36 @@ impl<'a> Surface<'a> {
             let Some(source) = glyph.alpha.get(source_start..source_end) else {
                 continue;
             };
-            agenterm_ui_core::pixel::blend_mask_xrgb(destination, source, fg.to_xrgb());
+            if correct_coverage {
+                blend_corrected(destination, source, fg.to_xrgb());
+            } else {
+                agenterm_ui_core::pixel::blend_mask_xrgb(destination, source, fg.to_xrgb());
+            }
         }
     }
+}
+
+/// Whether glyph coverage goes through DirectWrite's grayscale correction
+/// before blending (see `text_contrast`). Windows only: that is where the
+/// rasteriser hands over raw GDI coverage and where the thin, washed-out text
+/// was reported. Other hosts keep the linear blend they were tuned with.
+const CORRECT_COVERAGE: bool = cfg!(windows);
+
+/// Maps a mask row through the colour's correction table in fixed-size stack
+/// chunks, so the corrected path allocates nothing and still hands the blend
+/// kernel whole runs.
+fn blend_corrected(destination: &mut [u32], source: &[u8], foreground: u32) {
+    const CHUNK: usize = 128;
+    crate::text_contrast::with_table(foreground, |table| {
+        let mut corrected = [0_u8; CHUNK];
+        for (destination, source) in destination.chunks_mut(CHUNK).zip(source.chunks(CHUNK)) {
+            let corrected = &mut corrected[..source.len()];
+            for (out, coverage) in corrected.iter_mut().zip(source) {
+                *out = table[usize::from(*coverage)];
+            }
+            agenterm_ui_core::pixel::blend_mask_xrgb(destination, corrected, foreground);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -323,6 +363,56 @@ mod tests {
 
     fn cell(x: u32, y: u32, w: u32, h: u32) -> CellRect {
         CellRect { x, y, w, h }
+    }
+
+    /// The corrected path must put the same ink where the linear path does
+    /// -- fully covered pixels unchanged, empty ones untouched -- and make
+    /// partially covered pixels of light text heavier, across a row longer
+    /// than one chunk.
+    #[test]
+    fn corrected_coverage_keeps_the_shape_and_thickens_light_edges() {
+        let width = 300_u32;
+        let alpha: Vec<u8> = (0..width)
+            .map(|x| [0_u8, 128, 255][(x % 3) as usize])
+            .collect();
+        let glyph = font::RasterGlyph {
+            alpha,
+            width,
+            height: 1,
+            offset_x: 0,
+            offset_y: 0,
+        };
+        let cell = CellRect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: 1,
+        };
+        let background = 0x0010_1010;
+        let mut linear = vec![background; width as usize];
+        let mut corrected = vec![background; width as usize];
+        Surface::new(&mut linear, width, 1).blit_glyph_with(
+            &glyph,
+            cell,
+            Rgb(255, 255, 255),
+            0.0,
+            false,
+        );
+        Surface::new(&mut corrected, width, 1).blit_glyph_with(
+            &glyph,
+            cell,
+            Rgb(255, 255, 255),
+            0.0,
+            true,
+        );
+        for x in 0..width as usize {
+            let (l, c) = (linear[x] & 0xff, corrected[x] & 0xff);
+            match x % 3 {
+                0 => assert_eq!(c, background & 0xff, "empty pixel {x} was inked"),
+                2 => assert_eq!(c, 0xff, "full pixel {x} changed"),
+                _ => assert!(c > l + 30, "edge pixel {x}: corrected {c} vs linear {l}"),
+            }
+        }
     }
 
     /// A glyph smaller than its cell inks exactly its own pixels at the cell

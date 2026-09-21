@@ -46,6 +46,7 @@ mod session_store;
 #[cfg(windows)]
 mod startup;
 mod terminal_paint;
+mod text_contrast;
 mod theme;
 mod ui;
 mod workspace;
