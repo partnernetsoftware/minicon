@@ -33,6 +33,7 @@ mod cli;
 use cli::{ConArgs, offline_cli_exit, parse_args};
 #[cfg(test)]
 use cli::{FEATURES, status_text, usage_text};
+mod clipboard_status;
 mod control;
 mod control_dispatch;
 mod control_pending;
@@ -169,6 +170,27 @@ use agenterm_ui_core::terminal_selection::{
 
 fn selection_should_auto_copy(selection: Option<(TerminalPoint, TerminalPoint)>) -> bool {
     selection.is_some_and(|(anchor, focus)| anchor != focus)
+}
+
+/// The span a left-button drag covered while the application owned the
+/// mouse, if it covered any text.
+///
+/// A program that turns on mouse reporting (Claude Code, vim, htop) receives
+/// every drag, so MiniCon never makes a local selection and the copy-on-select
+/// every other drag gets never happened: the text the user just swept over
+/// was not on the clipboard. MiniCon still knows where the drag began and
+/// ended, and the screen under it, so it copies that span first and then
+/// hands the release to the program. Only the left button, and only a drag
+/// that moved -- a click is a click, and a right or middle drag is not a
+/// selection gesture.
+fn application_drag_copy_span(
+    button: u8,
+    anchor: Option<TerminalPoint>,
+    release: TerminalPoint,
+) -> Option<(TerminalPoint, TerminalPoint)> {
+    const LEFT: u8 = 0;
+    let anchor = anchor.filter(|_| button == LEFT)?;
+    (anchor != release).then_some((anchor, release))
 }
 
 /// Extracts text from the VT screen between two points (inclusive).
@@ -604,6 +626,9 @@ struct ConTerminal {
     /// Button code of the in-flight application gesture, so the release
     /// reports the same button that was pressed.
     active_button: Option<u8>,
+    /// Where the in-flight application gesture was pressed, so its span can
+    /// be copied on release (`application_drag_copy_span`).
+    application_drag_anchor: Option<TerminalPoint>,
     clipboard_paste_requested: bool,
 
     /// Whether the cursor is in its "on" phase of the blink cycle. Ignored
@@ -667,6 +692,8 @@ struct ConApp {
     /// the greeting page is a lifecycle boundary rather than a settings reset.
     session_seed: SessionSeed,
     composer: composer::ComposerState,
+    /// The clipboard length the status bar shows.
+    clipboard_status: clipboard_status::ClipboardStatus,
     /// True while the left button is held after pressing inside the composer,
     /// so pointer motion extends a mouse selection there instead of reaching
     /// the terminal. Cleared on release.
@@ -1001,6 +1028,7 @@ impl ConApp {
             session_seed,
             composer: composer::ComposerState::default(),
             composer_selecting: false,
+            clipboard_status: clipboard_status::ClipboardStatus::new(),
             composer_last_click: None,
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
@@ -1397,6 +1425,14 @@ impl ConApp {
     /// travel together — marking without repainting leaves a stale frame until
     /// unrelated damage arrives, and repainting without marking can present an
     /// unchanged one — so the pair gets one spelling.
+    /// The status bar's clipboard-length text, in the UI's language.
+    fn clipboard_readout(&self) -> Option<String> {
+        clipboard_status::readout(
+            self.clipboard_status.length(),
+            !matches!(self.ui_language, ui::UiLanguage::English),
+        )
+    }
+
     fn mark_host_ui_full_and_repaint(&mut self, window: &PixelWindow) {
         self.mark_host_ui_full();
         window.request_redraw();
@@ -1992,11 +2028,11 @@ impl ConApp {
                 composer::select_all(&mut self.composer);
             } else if text.eq_ignore_ascii_case("c") {
                 if let Some(text) = composer::selection_text(&self.composer) {
-                    let _ = agenterm_platform::clipboard::set_text(text);
+                    let _ = clipboard_status::set_text(text);
                 }
             } else if text.eq_ignore_ascii_case("x") {
                 if let Some(text) = composer::cut(&mut self.composer) {
-                    let _ = agenterm_platform::clipboard::set_text(&text);
+                    let _ = clipboard_status::set_text(&text);
                 }
             } else if text.eq_ignore_ascii_case("v")
                 && let Ok(text) =
@@ -2665,6 +2701,7 @@ impl ConTerminal {
             mouse_dragging: false,
             last_reported_cell: None,
             active_button: None,
+            application_drag_anchor: None,
             clipboard_paste_requested: false,
             blink_visible: true,
             last_blink_at: Instant::now(),
@@ -3663,14 +3700,21 @@ impl ConTerminal {
         self.selection.filter(|(anchor, focus)| anchor != focus)
     }
 
-    fn copy_selection(&self) {
+    fn copy_selection(&mut self) {
         let Some((start, end)) = self.active_selection() else {
             return;
         };
         let text = selection_text(self.parser.screen(), start, end);
-        if !text.is_empty() {
-            let _ = agenterm_platform::clipboard::set_text(&text);
+        self.copy_text(&text);
+    }
+
+    /// Every copy MiniCon makes goes through here, so the status bar's
+    /// clipboard length follows it without waiting to re-read the clipboard.
+    fn copy_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
         }
+        let _ = clipboard_status::set_text(text);
     }
 
     fn request_clipboard_paste(&mut self) {
@@ -4144,6 +4188,7 @@ impl ConTerminal {
             if report.consumed {
                 self.mouse_dragging = true;
                 self.active_button = Some(code);
+                self.application_drag_anchor = Some(point);
                 // The application owns this gesture; drop any stale selection
                 // so the highlight does not linger over its UI.
                 self.selection = None;
@@ -4156,6 +4201,14 @@ impl ConTerminal {
             }
         } else if self.mouse_dragging {
             let held = self.active_button.unwrap_or(code);
+            // Copy before the program sees the release: it may redraw or clear
+            // its own highlight in response, and the span is read from the
+            // screen as the user saw it at the end of the drag.
+            if let Some((start, end)) =
+                application_drag_copy_span(held, self.application_drag_anchor.take(), point)
+            {
+                self.copy_text(&selection_text(self.parser.screen(), start, end));
+            }
             let reported = self.report_mouse_checked(held, point, false, false, modifiers);
             self.mouse_dragging = false;
             self.active_button = None;
@@ -4936,6 +4989,11 @@ impl PixelWindowApplication for ConApp {
             self.cancel_pointer_gestures_for_activation(window);
             return Ok(PixelWindowDirective::Continue);
         }
+        // Another program may have changed the clipboard while MiniCon was in
+        // the background, on a host that has no counter to say so.
+        if matches!(&event, PixelWindowEvent::FocusChanged(true)) {
+            self.clipboard_status.request_refresh();
+        }
         if matches!(
             &event,
             PixelWindowEvent::FocusChanged(_)
@@ -5225,7 +5283,7 @@ impl PixelWindowApplication for ConApp {
                 // caret. The composer keeps focus so the caret stays put.
                 ui::ComposerHit::Copy => {
                     if let Some(text) = composer::selection_text(&self.composer) {
-                        let _ = agenterm_platform::clipboard::set_text(text);
+                        let _ = clipboard_status::set_text(text);
                     }
                     self.composer.focused = true;
                     self.mark_composer_dirty();
@@ -5239,7 +5297,7 @@ impl PixelWindowApplication for ConApp {
                 }
                 ui::ComposerHit::Cut => {
                     if let Some(text) = composer::cut(&mut self.composer) {
-                        let _ = agenterm_platform::clipboard::set_text(&text);
+                        let _ = clipboard_status::set_text(&text);
                     }
                     self.composer.focused = true;
                     self.update_composer_ime_anchor(window)?;
@@ -5541,6 +5599,17 @@ impl PixelWindowApplication for ConApp {
         }
         if self.pending_control.has_pending_screenshot() {
             window.request_redraw();
+        }
+        // Cheap enough per iteration: on Windows it reads a system counter and
+        // only starts a (background) read when the clipboard really changed.
+        let waker = window.waker();
+        if self.clipboard_status.poll(|limit| {
+            agenterm_platform::clipboard::read_text_async(limit, move || {
+                let _ = waker.wake();
+            })
+            .ok()
+        }) {
+            self.mark_host_ui_full_and_repaint(window);
         }
         if self.a11y_dirty {
             self.publish_a11y(window);
@@ -6364,6 +6433,32 @@ mod tests {
         // ...and scrolling down from the bottom must not underflow.
         app.scroll_by(-10);
         assert_eq!(app.scroll_offset, 0);
+    }
+
+    #[test]
+    fn a_left_drag_the_application_owns_is_copied_by_its_span() {
+        let at = |row, col| TerminalPoint { row, col };
+        // A drag that moved: its span is copied.
+        assert_eq!(
+            application_drag_copy_span(0, Some(at(2, 3)), at(4, 10)),
+            Some((at(2, 3), at(4, 10)))
+        );
+        // A click is not a selection.
+        assert_eq!(
+            application_drag_copy_span(0, Some(at(2, 3)), at(2, 3)),
+            None
+        );
+        // Middle and right drags are not selection gestures.
+        assert_eq!(
+            application_drag_copy_span(1, Some(at(0, 0)), at(3, 3)),
+            None
+        );
+        assert_eq!(
+            application_drag_copy_span(2, Some(at(0, 0)), at(3, 3)),
+            None
+        );
+        // No recorded press, nothing to copy.
+        assert_eq!(application_drag_copy_span(0, None, at(3, 3)), None);
     }
 
     #[test]

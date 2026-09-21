@@ -115,16 +115,19 @@ pub(crate) fn paint_two_line_button_label(
     );
 }
 
-/// Paints the bottom status bar: an optional left label (the active tab) and a
+/// Paints the bottom status bar: an optional left label (the active tab), an
+/// optional fixed-width clipboard-length readout, and a
 /// fixed-width `L###:C###` cursor readout pinned to the right. The readout keeps
 /// a constant width (zero-padded, three digits) so the bar never reflows as the
 /// cursor moves — the same no-jitter rule the crosshair will rely on. Rows and
 /// columns are 1-based to match vt100 CUP coordinates.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_status_bar(
     surface: &mut Surface<'_>,
     layout: ui::Layout,
     theme: theme::Theme,
     left_label: &str,
+    clipboard: Option<&str>,
     cursor: Option<(u16, u16)>,
     font_size_px: u16,
     scale: f64,
@@ -175,10 +178,35 @@ pub(crate) fn paint_status_bar(
         font_size_px,
         readout_width,
     );
-    // Left: the active tab label, clipped so it never runs into the readout.
+    // The clipboard length, left of the cursor readout. It is fixed-width in
+    // characters, but CJK labels are two cells wide, so it is measured in
+    // cells rather than assumed.
+    let mut right_edge = readout_x;
+    if let Some(clipboard) = clipboard {
+        let cells: u32 = clipboard
+            .chars()
+            .map(|ch| if ch.is_ascii() { 1 } else { 2 })
+            .sum();
+        let clipboard_width = cell_w.saturating_mul(cells);
+        let clipboard_x = readout_x
+            .saturating_sub(dip(16.0))
+            .saturating_sub(clipboard_width)
+            .max(bar.x);
+        paint_host_ui_text(
+            surface,
+            clipboard_x,
+            text_y,
+            clipboard,
+            theme.muted,
+            font_size_px,
+            clipboard_width,
+        );
+        right_edge = clipboard_x;
+    }
+    // Left: the active tab label, clipped so it never runs into the readouts.
     if !left_label.is_empty() {
         let left_x = bar.x.saturating_add(pad);
-        let left_max = readout_x.saturating_sub(dip(8.0)).saturating_sub(left_x);
+        let left_max = right_edge.saturating_sub(dip(8.0)).saturating_sub(left_x);
         paint_host_ui_text_parts_clipped(
             surface,
             left_x,

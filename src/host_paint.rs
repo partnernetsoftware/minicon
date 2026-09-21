@@ -529,11 +529,13 @@ impl ConApp {
         let status_label = self
             .active_session_opt()
             .map_or("", |session| session.current_title.as_str());
+        let clipboard = self.clipboard_readout();
         paint_status_bar(
             &mut surface,
             layout,
             t,
             status_label,
+            clipboard.as_deref(),
             status_cursor,
             host_ui_size(HOST_UI_STATUS_SIZE_PX),
             scale,
@@ -681,11 +683,13 @@ impl ConApp {
             muted,
             host_ui_size(BUTTON_LABEL_SIZE_PX),
         );
+        let clipboard = self.clipboard_readout();
         paint_status_bar(
             &mut surface,
             layout,
             t,
             "",
+            clipboard.as_deref(),
             None,
             host_ui_size(HOST_UI_STATUS_SIZE_PX),
             scale,
