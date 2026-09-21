@@ -92,7 +92,9 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.18-release-history.md
 │   ├── [x] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed
 │   │   └── prd/archive/v0.1.19-release-history.md
-│   ├── [x] v0.1.20 released — detachable/headless GUI; collapsible tab rail; MiniCon.app icon; dual-signed (latest)
+│   ├── [x] v0.1.21 released — Windows Latin face + DirectWrite-style text; copy-on-select in mouse apps; clipboard length; dual-signed (latest)
+│   │   └── prd/archive/v0.1.21-release-history.md
+│   ├── [x] v0.1.20 released — detachable/headless GUI; collapsible tab rail; MiniCon.app icon; dual-signed
 │   │   └── prd/archive/v0.1.20-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
@@ -158,7 +160,8 @@ flowchart LR
         R117["v0.1.17 released<br/>real Enter after Send · --file/--output · dual-signed"]
         R118["v0.1.18 released<br/>Windows mouse via console agent · greeting Quit · dual-signed"]
         R119["v0.1.19 released<br/>non-ASCII paste fix · classic console default · --feature · dual-signed"]
-        R120["v0.1.20 released<br/>detachable + headless GUI · collapsible tab rail · app icon · dual-signed · latest"]
+        R120["v0.1.20 released<br/>detachable + headless GUI · collapsible tab rail · app icon · dual-signed"]
+        R121["v0.1.21 released<br/>Windows Latin face · DirectWrite-style text · copy-on-select in mouse apps · clipboard length · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -221,7 +224,13 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.20 is the latest public release. The window became something the
+- [x] v0.1.21 is the latest public release. Windows text is drawn in a Latin
+  terminal face (Consolas or Cascadia Mono) instead of NSimSun, blended the way
+  DirectWrite blends it, with GDI or DirectWrite chosen per size by measuring
+  against the outline; CJK still spans exactly two cells. Selecting inside a
+  program that owns the mouse copies the dragged span, and the status bar shows
+  the clipboard's length. History: `prd/archive/v0.1.21-release-history.md`.
+- [x] v0.1.20. The window became something the
   process can put down: `detach-gui` releases it while the sessions and the
   control endpoint keep running, `attach-gui` builds one again, and
   `--headless` starts with none at all. The product boundary was amended to
