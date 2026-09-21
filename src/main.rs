@@ -38,6 +38,7 @@ mod control;
 mod control_dispatch;
 mod control_pending;
 mod font;
+mod ime_mode;
 #[cfg(target_os = "linux")]
 mod linux_startup;
 mod palette;
@@ -753,6 +754,9 @@ struct ConApp {
     host_notice: Option<String>,
     ime_status: Option<agenterm_platform::ime::ImeStatus>,
     ime_status_label: String,
+    /// macOS cannot report an input method's internal latin/native toggle;
+    /// this infers it from keystrokes (see `ime_mode`).
+    ime_mode: ime_mode::ImeModeInference,
     control_pointer_owner: Option<workspace::TabId>,
     perf_stats: PerfStats,
     host_ui_dirty: DirtyRegion,
@@ -1054,6 +1058,7 @@ impl ConApp {
             host_notice: None,
             ime_status: None,
             ime_status_label: "IME: ?".to_owned(),
+            ime_mode: ime_mode::ImeModeInference::default(),
             control_pointer_owner: None,
             perf_stats: PerfStats::default(),
             host_ui_dirty: DirtyRegion::full(),
@@ -1080,7 +1085,19 @@ impl ConApp {
     }
 
     fn refresh_ime_status(&mut self) -> bool {
-        let next = agenterm_platform::ime::status();
+        let mut next = agenterm_platform::ime::status();
+        // macOS reports "an input method is selected" as native whatever its
+        // internal Shift toggle says; apply the mode its keystrokes showed.
+        if cfg!(target_os = "macos")
+            && let Some(status) = next.as_mut()
+        {
+            self.ime_mode.observe_source(&status.name);
+            if status.available
+                && let Some(native) = self.ime_mode.native()
+            {
+                status.native_mode = native;
+            }
+        }
         if next == self.ime_status {
             return false;
         }
@@ -4993,6 +5010,15 @@ impl PixelWindowApplication for ConApp {
         // the background, on a host that has no counter to say so.
         if matches!(&event, PixelWindowEvent::FocusChanged(true)) {
             self.clipboard_status.request_refresh();
+        }
+        match &event {
+            PixelWindowEvent::Keyboard(key) => {
+                self.ime_mode.observe_key(key);
+            }
+            PixelWindowEvent::Ime(ime) => {
+                self.ime_mode.observe_ime(ime);
+            }
+            _ => {}
         }
         if matches!(
             &event,
