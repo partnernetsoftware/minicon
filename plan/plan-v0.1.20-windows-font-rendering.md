@@ -75,7 +75,14 @@ keep saying so after the change. It is the regression test.
 `minicon --status` already reports the resolved face via
 `primary_face_report`; keep it reporting both faces once there are two.
 
-## 2. GDI rasterisation, not DirectWrite
+## Owner's verdict after items 1 and 3 (2026-09-21)
+
+On the owner's Windows machine (`minicon --status`: `Consolas (8x18 cells)`,
+`half/full width correct`): "visually better than before, acceptable at
+least". Better and acceptable, not yet Windows Terminal's "very comfortable".
+The remaining gap is expected to sit in rasterisation, which is item 2.
+
+## 2. GDI rasterisation, not DirectWrite — NEXT
 
 Today: `CreateFontW(..., ANTIALIASED_QUALITY)` plus
 `GetGlyphOutlineW(GGO_GRAY8_BITMAP | GGO_GLYPH_INDEX)`, which returns 65
