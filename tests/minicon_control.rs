@@ -1407,6 +1407,13 @@ fn host_rss_bytes_stable(child: &Child) -> u64 {
     samples[1]
 }
 
+// On Windows the `not(windows)` block below is compiled out, which leaves the
+// `return` looking redundant; on every other host it is what ends the Windows
+// block early. The lint cannot see across the cfg split.
+#[cfg_attr(
+    windows,
+    expect(clippy::needless_return, reason = "cfg-split early return")
+)]
 fn host_rss_bytes(child: &Child) -> u64 {
     #[cfg(windows)]
     {
