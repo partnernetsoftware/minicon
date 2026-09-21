@@ -1,4 +1,7 @@
-# v0.1.20 — Windows text that reads as well as Windows Terminal
+# v0.1.21 — Windows text that reads as well as Windows Terminal
+
+(Drafted as "v0.1.20"; 0.1.20 had already shipped on 2026-09-19, so this work
+releases as 0.1.21.)
 
 The owner runs MiniCon on Windows daily and reports the text "isn't
 good-looking", while Windows Terminal on the same machine is comfortable. This

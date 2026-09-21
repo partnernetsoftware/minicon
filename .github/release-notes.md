@@ -63,6 +63,34 @@ operating system's own desktop libraries.
   narrows one line of the product boundary and nothing else: the endpoint's
   lifetime is now the process rather than the window, and there is still no
   server, daemon, persistent workspace, session sharing or background start.
+- **Windows text is drawn in a real terminal font.** MiniCon used to pick
+  新宋体 (NSimSun) for everything on any Windows with East Asian fonts
+  installed, so every Latin letter was drawn in a Song face. Latin text now
+  uses Cascadia Mono when it is installed and Consolas otherwise, and Chinese
+  still comes from NSimSun, sized so that each character spans exactly two
+  cells. `minicon --status` shows which face is in use. Rows are a little
+  taller than before (18 px instead of 15 at the default size), because
+  NSimSun's line spacing was unusually tight.
+- **Crisper, heavier text on dark backgrounds.** Glyph edges are now blended
+  the way DirectWrite blends them (the correction is ported from Windows
+  Terminal), so light text on a dark theme no longer looks thin and washed
+  out. For each font size, MiniCon measures GDI and DirectWrite against the
+  font's true outline and uses whichever is closer: DirectWrite at the default
+  size, GDI from 18 px up. `AGENTERM_FONT_RASTERIZER=gdi` or `=directwrite`
+  forces one of them.
+- **Selecting with the mouse copies, even inside full-screen programs.**
+  Programs that take over the mouse, such as Claude Code, vim or htop,
+  receive every drag, so MiniCon used to copy nothing. It now copies the text
+  under the drag when the button is released, then passes the release on to
+  the program.
+- **The status bar shows how much text is on the clipboard**, left of the
+  cursor position, and the count updates when anything is copied, in MiniCon
+  or in another program.
+- **The macOS input-method indicator follows the Chinese/English toggle.**
+  macOS offers no way for an application to read an input method's internal
+  mode, so the indicator used to say "native" whatever was selected. MiniCon
+  now works it out from what the input method does with the next letter you
+  type.
 
   Detaching does **not** measurably reduce memory on macOS: 84,432 KB attached
   against 84,512 KB detached, release build, one shell session. That was one of
