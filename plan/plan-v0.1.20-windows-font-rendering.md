@@ -21,7 +21,14 @@ CJK double-width relationship are sound. Whatever replaces the Latin face has
 to keep that property — a prettier face that breaks the grid is a worse
 terminal.
 
-## 1. The face is not the one we think — CONFIRMED
+## 1. The face is not the one we think — DONE (f9a13be, agenterm fe218d33a)
+
+On a Windows court after the change: `font Consolas (8x18 cells)`,
+`half/full width correct`. Twenty Windows font tests pass, including a new
+one that fails naming "NSimSun" when the Latin list is emptied. The cell grows
+15 -> 18 px tall: NSimSun's line spacing is unusually tight.
+
+### What was found and changed
 
 `agenterm-platform`'s Windows raster adapter carries a coverage-ordered wish
 list, and its own comment says `CreateFontW` never fails on a missing family:
