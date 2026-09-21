@@ -90,7 +90,13 @@ hinting/stem-darkening path; GDI's grayscale outline path predates all of it.
 glyph cache do not change. Keep GDI as the fallback for hosts where
 DirectWrite is unavailable.
 
-## 3. No gamma-correct blending — the most underrated of the four
+## 3. No gamma-correct blending — DONE (3e5a8b8)
+
+Ported Windows Terminal's `DWrite_GrayscaleBlend` (MIT) as a per-colour
+256-entry coverage table, Windows only. White text at half coverage now inks
+178/255 instead of 128. 290 unit tests pass on a Windows court with it on.
+
+### Original analysis
 
 Coverage from the rasteriser is being alpha-blended linearly. On a dark
 background that makes stems read thin, grey and washed out, and it is the
@@ -103,7 +109,16 @@ before blending. This is a small, self-contained change to the blend, testable
 without changing the rasteriser, and worth doing **before** item 2 because it
 is cheap and may carry most of the remaining difference.
 
-## 4. Box-drawing and Powerline glyphs
+## 4. Box-drawing and Powerline glyphs — measured, not urgent
+
+After item 1, measured on a Windows court with Consolas: `│ ─ ┼ █` reach
+every edge of the cell at 15, 16, 20 and 24 px (the default is 15). At 12 px
+`│` starts one pixel below the cell top, so borders get a 1 px gap there.
+agenterm pins the reaching sizes in
+`box_drawing_glyphs_reach_the_edges_of_the_cell`. Drawing these ranges from
+cell geometry would close the 12 px gap and make the result font-independent.
+
+### Original analysis
 
 Windows Terminal defaults `font.builtinGlyphs` to true and draws those ranges
 procedurally so they tile the cell grid exactly, whatever the font does.
