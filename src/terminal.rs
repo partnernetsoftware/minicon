@@ -2918,9 +2918,13 @@ pub(crate) mod tests {
     }
     #[test]
     fn background_fill_spans_exactly_the_attributed_columns() {
-        // "XX" plain, then red-background "RR", then plain "YY" again — the
-        // fill must start exactly at column 2 and end exactly at column 3.
-        let (pixels, cell_w, cell_h) = render_to_buffer(b"XX\x1b[41mRR\x1b[0mYY", 10, 1);
+        // "XX" plain, then two red-background blanks, then plain "YY" again —
+        // the fill must start exactly at column 2 and end exactly at column 3.
+        // The attributed cells are blank because the sample is the cell's
+        // centre pixel: with a glyph there, whether a stroke covers that pixel
+        // depends on the font (Cascadia Mono at 10 px on Windows does), and
+        // this test is about the fill, not the glyph.
+        let (pixels, cell_w, cell_h) = render_to_buffer(b"XX\x1b[41m  \x1b[0mYY", 10, 1);
         let mid_y = cell_h / 2;
         let row_base = (mid_y * cell_w * 10) as usize;
         let red = palette::resolve(
