@@ -218,11 +218,6 @@ const COMPOSER_ENTER_DELAY: Duration = Duration::from_millis(12);
 /// Read buffer for the PTY pump thread.
 const READ_BUF: usize = 8192;
 
-/// How long after a click a second one still counts as a double-click.
-/// Matches the common Windows default rather than reading SPI_GETDBLCLKTIME,
-/// which would drag a Win32 dependency into a platform-neutral binary.
-const MULTI_CLICK_WINDOW: Duration = Duration::from_millis(500);
-
 /// Cursor blink half-period, matching the Windows default caret blink rate
 /// rather than reading GetCaretBlinkTime, for the same reason as above.
 const BLINK_INTERVAL: Duration = Duration::from_millis(530);
@@ -650,7 +645,7 @@ struct ConTerminal {
 
     /// Time and place of the last left press, plus how many clicks it
     /// continued, for double/triple-click selection.
-    last_click: Option<(Instant, TerminalPoint, u8)>,
+    clicks: minicon_core::click::ClickCounter<TerminalPoint>,
     /// Current scale factor (for pointer hit-test DIP→pixel conversion).
     scale: f64,
     /// Physical space owned by the outer tab tree and composer.
@@ -701,8 +696,8 @@ struct ConApp {
     composer_selecting: bool,
     /// Time, byte offset and streak of the last composer press, for
     /// double-click (word) and triple-click (all) selection — the composer's
-    /// own counterpart to the terminal's `last_click`.
-    composer_last_click: Option<(Instant, usize, u8)>,
+    /// own counterpart to the terminal's click streak.
+    composer_clicks: minicon_core::click::ClickCounter<usize>,
     /// The language MiniCon labels its own host UI in. Child output is never
     /// touched by this.
     ui_language: ui::UiLanguage,
@@ -1033,7 +1028,7 @@ impl ConApp {
             composer: composer::ComposerState::default(),
             composer_selecting: false,
             clipboard_status: clipboard_status::ClipboardStatus::new(),
-            composer_last_click: None,
+            composer_clicks: Default::default(),
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
             hovered_tree_row: None,
@@ -1973,17 +1968,7 @@ impl ConApp {
     /// only counts on the same byte offset inside the multi-click window, the
     /// composer's counterpart to the terminal's `register_click`.
     fn register_composer_click(&mut self, offset: usize) -> u8 {
-        let now = Instant::now();
-        let count = match self.composer_last_click {
-            Some((at, at_offset, count))
-                if at_offset == offset && now.duration_since(at) <= MULTI_CLICK_WINDOW =>
-            {
-                count % 3 + 1
-            }
-            _ => 1,
-        };
-        self.composer_last_click = Some((now, offset, count));
-        count
+        self.composer_clicks.register(offset, Instant::now())
     }
 
     /// Extends the composer mouse selection to `position` during a drag. The
@@ -2724,7 +2709,7 @@ impl ConTerminal {
             last_blink_at: Instant::now(),
             ime_preedit: String::new(),
             ime_attached: false,
-            last_click: None,
+            clicks: Default::default(),
             scale: 1.0,
             content_left_px: 0,
             content_top_px: 0,
@@ -3273,19 +3258,7 @@ impl ConTerminal {
     /// multi-click window; moving to a different cell starts a fresh count, so
     /// a fast click in two places does not select a word by accident.
     fn register_click(&mut self, point: TerminalPoint) -> u8 {
-        let now = Instant::now();
-        let count = match self.last_click {
-            Some((at, at_point, count))
-                if at_point == point && now.duration_since(at) <= MULTI_CLICK_WINDOW =>
-            {
-                // Cycle 1 → 2 → 3 → 1 so a fourth click returns to character
-                // selection rather than sticking on whole-line.
-                count % 3 + 1
-            }
-            _ => 1,
-        };
-        self.last_click = Some((now, point, count));
-        count
+        self.clicks.register(point, Instant::now())
     }
 
     /// Expands to the word around `point`, or `None` if that cell is blank.

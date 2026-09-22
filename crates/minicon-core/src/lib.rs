@@ -24,6 +24,7 @@
 //! then resolve two copies of it. Moving those helpers here is the next step,
 //! and it is a deliberate one rather than an oversight.
 
+pub mod click;
 pub mod composer;
 pub mod json;
 pub mod numeric;
