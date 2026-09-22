@@ -109,12 +109,17 @@ and each is committed and verified on its own.
 | 3 tests beside code | `2c12755` | 42 terminal tests + 5 helpers moved |
 | workflow path invariant | `15517ee` | `every_path_a_workflow_names_exists` |
 | 4 release tooling | `ec50ba7` | `loader/` + `release/`; `research/` gone; 7 depth-relative root lookups fixed; `minicon-com.yml` 35678087514 green on it |
+| 2b narrow `ConTerminal` | `69a4e4e`, `27941f7` | 9 fields private (compiler-driven: all private, re-expose what fails); `SessionSeed` and startup sizing moved into `src/terminal.rs` |
+| 5 shared seam: scrollbar | `84ffa57` | local copy deleted, `agenterm-ui-core` used directly, pin `6ae0f9bb6`; 12 parity tests live in agenterm (`2e77d3195`) |
+| consumer matrix | `93e4c37` | MiniCon pins its five `agenterm-platform` feature blocks; AgenTerm builds the same sets in pre-push |
 
 `main.rs`: 7,947 lines at 0.1.21 -> 4,601.
 
-Still open in this section: narrowing `ConTerminal`'s `pub(super)` surface so
-`ConApp` asks the session instead of reaching into its fields (step 2's second
-half), and the shared-abstraction reassessment (step 5).
+Still open in this section: the remaining `pub(super)` fields are read by the
+host painters and control dispatch; each needs a method that says what is
+asked, not a visibility flip. Click streak sharing waits on the owners'
+decisions (fourth composer click; arm-on-success), recorded in
+`plan/plan-cross-project-reuse.md` §7.
 
 ## 4. Carried debt and backlog
 
