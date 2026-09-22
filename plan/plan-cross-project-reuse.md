@@ -89,14 +89,19 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
 
 Reordered after review by the AgenTerm lane.
 
-1. **Scrollbar geometry.** The strongest case: same type names, same function
-   names, same order on both sides -- one was copied from the other. But they
-   already differ (`Rect` against MiniCon's own `ScrollbarRect`; the geometry
-   function is 37 lines in AgenTerm and 52 in MiniCon), so first pin rounding,
-   drag inversion (`scrollback_for_thumb_top`) and hit-test edges as tests on
-   the shared side, run both implementations against them, and let the owners
-   decide each difference. Decide too whether MiniCon adapts its own types or
-   adopts `Rect`.
+1. **Scrollbar geometry.** The strongest case, and now measured: with
+   whitespace and comments removed and `ScrollbarRect` read as `Rect`, the two
+   implementations differ by one trailing comma -- the logic is identical
+   (the earlier "37 against 52 lines" was formatting and doc comments). All 10
+   of MiniCon's scrollbar tests (round trip over four maxima, full track,
+   narrow and inverted tracks, hit edges) pass when run against
+   `agenterm-ui-core` unchanged. So no owner decision is needed on behaviour;
+   what remains is to move MiniCon's tests to the shared side (an AgenTerm
+   change, claimed in the ledger first), then have MiniCon re-export
+   `agenterm-ui-core`'s types and delete its copy. One MiniCon decision rides
+   on it: `minicon-core` deliberately has no git dependency today, so the
+   re-export belongs in the product crate or `minicon-core` accepts
+   `agenterm-ui-core` as its one platform-free dependency.
 2. **Click streak.** Both products do have one (§7), but the rules differ in
    four places, so it waits on the owners' decisions D1-D4.
 3. **Composer editing rules.** Locate AgenTerm's real rules first.
