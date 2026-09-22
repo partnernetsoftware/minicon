@@ -66,7 +66,7 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
   Cheap — no MiniCon checkout — and it closes the "agenterm is green, minicon
   does not compile" class for good. MiniCon keeps the list in sync (a MiniCon
   test can assert its `Cargo.toml` features equal the list AgenTerm checks).
-- **A shared-seam ledger in AgenTerm** (proposed name `shared-seam.md` under its `docs/`): the shared crates, their owner, the
+- **A shared-seam ledger in AgenTerm** (a proposed shared-seam document under its docs directory): the shared crates, their owner, the
   current claims (file, agent, purpose, date), and the pin MiniCon is on. Both
   lanes update it in the same commit as the change.
 - **Pin cadence.** MiniCon moves its pin once at the start of each release
