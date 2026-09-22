@@ -215,6 +215,33 @@ mod tests {
     }
 
     #[test]
+    fn every_offset_returns_exactly_when_each_row_has_its_own_pixel() {
+        // The loose round trip above tolerates a row of drift; this one does
+        // not. The forward map truncates, so the inverse must round, and that
+        // is exact only with more than two pixels of travel per row. Below
+        // that ratio a press on the thumb can land one row away.
+        for maximum in [7_usize, 90, 200] {
+            let geometry = terminal_scrollbar_geometry(rect(), 12, 30, 0, maximum);
+            assert!(geometry.track.height() - geometry.thumb.height() > 2 * maximum as i32);
+            for offset in 0..=maximum {
+                let drawn = terminal_scrollbar_geometry(rect(), 12, 30, offset, maximum);
+                assert_eq!(
+                    scrollback_for_thumb_top(geometry, drawn.thumb.top, maximum),
+                    offset,
+                    "offset {offset} of {maximum}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_huge_scrollback_keeps_the_thumb_grabbable() {
+        let geometry = terminal_scrollbar_geometry(rect(), 12, 30, 0, 1_000_000);
+        // A literal, not the constant: the floor is the behaviour under test.
+        assert_eq!(geometry.thumb.height(), 24);
+    }
+
+    #[test]
     fn a_full_track_thumb_never_scrolls() {
         let geometry = terminal_scrollbar_geometry(rect(), 12, 30, 0, 0);
         assert_eq!(geometry.thumb.top, geometry.track.top);
