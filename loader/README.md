@@ -31,7 +31,7 @@ Never compile MiniCon or cosmocc on a guest/runner matrix.
 **Local accelerated** (this Mac packs; host/Lima/UTM only execute)
 
 ```bash
-./research/minicon-com-loader/local-accelerated.sh
+./loader/local-accelerated.sh
 ```
 
 `local-qualify.sh` is a compatibility alias. Lima instances this script starts
@@ -66,11 +66,11 @@ packed file.
 
 ```bash
 # repo root
-./research/minicon-com-loader/preflight.sh
-./research/minicon-com-loader/pack.sh          # host-cc dispatcher if no cosmocc
+./loader/preflight.sh
+./loader/pack.sh          # host-cc dispatcher if no cosmocc
 # after ~/cosmocc exists:
-COSMOCC_DIR=~/cosmocc ./research/minicon-com-loader/pack.sh
-./research/minicon-com-loader/dist/minicon.com --status
+COSMOCC_DIR=~/cosmocc ./loader/pack.sh
+./loader/dist/minicon.com --status
 ```
 
 `--status` of one `minicon.com` after rebuilding payloads from this tree (`0.1.2`):
@@ -133,7 +133,7 @@ Before spending a Public Trust signing operation, maintainers can exercise the
 APE mechanism locally with an explicitly untrusted, one-day certificate:
 
 ```sh
-bash research/minicon-com-loader/self-sign-rehearsal.sh path/to/minicon.com
+bash release/self-sign-rehearsal.sh path/to/minicon.com
 ```
 
 The script requires `openssl` and `osslsigncode`, destroys its ephemeral key,
@@ -154,7 +154,7 @@ scan court. Run `utm-win-defender-court.sh CANDIDATE_DIR OUTPUT_RECEIPT` against
 an active-Defender Windows guest to produce `defender-receipt.json`. Then run:
 
 ```sh
-python3 research/minicon-com-loader/reputation_court.py qualify \
+python3 release/reputation_court.py qualify \
   --manifest candidate-manifest.json --defender defender-receipt.json \
   --output reputation-qualification.json
 ```

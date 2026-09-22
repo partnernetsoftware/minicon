@@ -7,7 +7,7 @@ if [ "$#" -ne 3 ]; then
   exit 2
 fi
 HERE=$(cd "$(dirname "$0")" && pwd)
-ROOT=$(cd "$HERE/../.." && pwd)
+ROOT=$(cd "$HERE/.." && pwd)
 COURT_CLI="$ROOT/scripts/utm-court.sh"
 MANIFEST=$1
 FILES=$2

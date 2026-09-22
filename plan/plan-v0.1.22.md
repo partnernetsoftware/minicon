@@ -21,7 +21,7 @@ reuse. No new user-facing feature is the goal of this release; clarity is.
 
 ### What is live in `research/`
 
-Only `research/minicon-com-loader/` is referenced — by five release workflows,
+Only `loader/` is referenced — by five release workflows,
 three policy tests, `AGENTS.md` and `README.md`. It is not research: it holds
 the `minicon.com` APE loader source, its packaging, the signing and Candidate
 receipt tooling, and the Defender and reputation courts. Five of its 34 files
@@ -90,7 +90,7 @@ and each is committed and verified on its own.
    file) are one inline `mod tests`; after step 2 most belong to the terminal
    module.
 4. **The release tooling leaves `research/`.** Split
-   `research/minicon-com-loader/` into `loader/` (the `minicon.com` loader
+   `loader/` into `loader/` (the `minicon.com` loader
    source and its packaging) and `release/` (signing receipts, Candidate bundle,
    CI control, Defender and reputation courts), updating the workflows, policy
    tests, `AGENTS.md` and `README.md` together. Verified by the policy tests

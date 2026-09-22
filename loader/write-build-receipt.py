@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
+ROOT = HERE.parent
 DIST = HERE / "dist"
 CELLS = HERE / "dist" / "cells"
 PAYLOAD = HERE / "payload-build"

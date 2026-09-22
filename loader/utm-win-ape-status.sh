@@ -3,7 +3,7 @@
 # not via QGA-invoked PowerShell (that path is dead on the x86 TCG guest).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 COM="${1:-$HERE/dist/minicon.com}"
 CELL="${2:-win-x86_64}"
 case "$CELL" in

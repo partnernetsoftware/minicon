@@ -1,7 +1,7 @@
 #!/bin/bash
 # Checks cosmocc + six-cell payloads. No guess, no install.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="${MINICON_SIX_CELL_BUILD:-$ROOT/target-six/builds/current}"
 COSMO="${COSMOCC_DIR:-$HOME/cosmocc}"
 fail=0

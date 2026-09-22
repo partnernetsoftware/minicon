@@ -237,7 +237,7 @@ output:
 | Fastest current-host development build | `./scripts/build.sh dev` | `target/debug/minicon` (`.exe` on Windows) |
 | Optimized current-host build | `./scripts/build.sh release` | `target/release/minicon` (`.exe` on Windows) |
 | All six ordinary OS/ISA binaries | `./scripts/six-cell-qualify.sh` | paths listed under `artifacts` in `target-six/receipt.json` |
-| Experimental one-file six-cell launcher | `./research/minicon-com-loader/local-accelerated.sh` | `research/minicon-com-loader/dist/minicon.com`, its `.sha256`, and `build-receipt.json` |
+| Experimental one-file six-cell launcher | `./loader/local-accelerated.sh` | `loader/dist/minicon.com`, its `.sha256`, and `build-receipt.json` |
 | A published, user-facing build | no local build | archive and matching `.sha256` from GitHub Releases |
 
 For an ordinary local UI check on macOS or Linux:
@@ -267,7 +267,7 @@ python3 scripts/source-fingerprint.py
 jq '{source_tree_sha256, artifacts}' target-six/receipt.json
 ```
 
-The `research/minicon-com-loader/dist/cells/` files are payload copies used to
+The `loader/dist/cells/` files are payload copies used to
 assemble the adjacent `minicon.com`; they are not an additional release set.
 `minicon.com` is a signed launcher; the release publishes its exact bytes and
 checksum beside the native archives. Its receipt and checksum must travel with

@@ -3,7 +3,7 @@
 # Guests never compile. Lima instances we start, we stop.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 COM="$HERE/dist/minicon.com"
 export COSMOCC_DIR="${COSMOCC_DIR:-$HOME/cosmocc}"
 export PATH="$COSMOCC_DIR/bin:$PATH"

@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           mkdir qualified
           printf '%s' "$QUALIFICATION_BASE64" | base64 --decode >qualified/reputation-qualification.json
-          python3 research/minicon-com-loader/reputation_court.py verify \
+          python3 release/reputation_court.py verify \
             --manifest candidate/candidate-manifest.json \
             --qualification qualified/reputation-qualification.json
           cp candidate/candidate-manifest.json qualified/

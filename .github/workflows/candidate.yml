@@ -383,14 +383,14 @@ jobs:
           set -euo pipefail
           signing_args=()
           if [[ '${{ needs.preflight.outputs.signing_mode }}' == required ]]; then
-            python3 research/minicon-com-loader/signing_receipt.py \
+            python3 release/signing_receipt.py \
               --receipt upstream/signing-receipt.json --root upstream/source
             signing_args=(--signing-receipt upstream/signing-receipt.json)
           fi
           if [[ '${{ needs.preflight.outputs.macos_signing_mode }}' == required ]]; then
             signing_args+=(--macos-signing-receipt upstream/macos/macos-signing-receipt.json)
           fi
-          python3 research/minicon-com-loader/candidate_bundle.py seal \
+          python3 release/candidate_bundle.py seal \
             --payload payload \
             --build-receipt upstream/build-receipt.json \
             --aggregate-receipt upstream/aggregate-receipt.json \
@@ -402,7 +402,7 @@ jobs:
             --candidate-run-id "$GITHUB_RUN_ID" \
             --candidate-run-attempt "$GITHUB_RUN_ATTEMPT" \
             --output candidate-manifest.json
-          python3 research/minicon-com-loader/candidate_bundle.py verify \
+          python3 release/candidate_bundle.py verify \
             --manifest candidate-manifest.json --payload payload --policy release-policy.json
           mkdir sealed
           cp -R payload sealed/payload

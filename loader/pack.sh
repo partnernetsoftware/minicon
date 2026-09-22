@@ -3,7 +3,7 @@
 # cosmocc → dist/minicon.com ; else host cc → dist/minicon-loader (needs MINICON_COM_CELLS).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 BUILD="${MINICON_SIX_CELL_BUILD:-$ROOT/target-six/builds/current}"
 FRESH="$HERE/payload-build"
 COSMO="${COSMOCC_DIR:-$HOME/cosmocc}"

@@ -1,8 +1,8 @@
 const SIGNING_WORKFLOW: &str = include_str!("../.github/workflows/company-signing.yml");
 const CANDIDATE_WORKFLOW: &str = include_str!("../.github/workflows/candidate.yml");
-const SIGNING_RECEIPT: &str = include_str!("../research/minicon-com-loader/signing_receipt.py");
-const CANDIDATE_BUNDLE: &str = include_str!("../research/minicon-com-loader/candidate_bundle.py");
-const REPUTATION_COURT: &str = include_str!("../research/minicon-com-loader/reputation_court.py");
+const SIGNING_RECEIPT: &str = include_str!("../release/signing_receipt.py");
+const CANDIDATE_BUNDLE: &str = include_str!("../release/candidate_bundle.py");
+const REPUTATION_COURT: &str = include_str!("../release/reputation_court.py");
 
 #[test]
 fn signing_input_court_receives_every_identity_value_it_reads() {

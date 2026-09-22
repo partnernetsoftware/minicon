@@ -5,8 +5,8 @@
 # windows-release shape and remaps the builder home before debug locations are
 # admitted to a distributable PE.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT="${PAYLOAD_BUILD:-$ROOT/research/minicon-com-loader/payload-build}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="${PAYLOAD_BUILD:-$ROOT/loader/payload-build}"
 cd "$ROOT"
 export AGENTERM_NO_ACTIVATE=1
 mkdir -p "$OUT"

@@ -3,9 +3,9 @@
 # This uses an ephemeral untrusted certificate and is NEVER G6 evidence.
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 INPUT=${1:?usage: self-sign-rehearsal.sh UNSIGNED_MINICON_COM [OUTPUT_DIR]}
-OUTPUT_DIR=${2:-"$ROOT/research/minicon-com-loader/dist/self-sign-rehearsal"}
+OUTPUT_DIR=${2:-"$ROOT/loader/dist/self-sign-rehearsal"}
 CEILING=9437184
 
 command -v openssl >/dev/null

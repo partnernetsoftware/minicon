@@ -148,11 +148,11 @@ jobs:
           Copy-Item upstream/com/g3 signed/g3 -Recurse
           Copy-Item upstream/aggregate/aggregate-receipt.json signed/unsigned-aggregate-receipt.json
           Copy-Item upstream/native/cells/* signed/cells -Recurse
-          Copy-Item research/minicon-com-loader/ci-status.sh signed/
-          Copy-Item research/minicon-com-loader/ci-status.ps1 signed/
-          Copy-Item research/minicon-com-loader/ci-control.sh signed/
-          Copy-Item research/minicon-com-loader/ci-control.ps1 signed/
-          Copy-Item research/minicon-com-loader/signing_receipt.py signed/
+          Copy-Item loader/ci-status.sh signed/
+          Copy-Item loader/ci-status.ps1 signed/
+          Copy-Item loader/ci-control.sh signed/
+          Copy-Item loader/ci-control.ps1 signed/
+          Copy-Item release/signing_receipt.py signed/
           # actions/checkout on a Windows runner may materialize tracked shell
           # scripts with CRLF. These files execute later on Linux/macOS, so
           # publish deterministic LF bytes instead of a host-checkout accident.
@@ -311,7 +311,7 @@ jobs:
             assets = $assets
           }
           $receipt | ConvertTo-Json -Depth 8 | Set-Content signed/signing-receipt.json -Encoding utf8NoBOM
-          python research/minicon-com-loader/signing_receipt.py --receipt signed/signing-receipt.json --root signed
+          python release/signing_receipt.py --receipt signed/signing-receipt.json --root signed
           foreach ($entry in $paths.GetEnumerator()) {
             $path = Join-Path signed $entry.Value
             $digest = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()

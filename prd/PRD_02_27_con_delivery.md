@@ -611,7 +611,7 @@ six-cell claim.
 
 - [x] **`minicon.com` Candidate hard ceiling is `9,437,184` bytes (9 MiB).**
   Stamped 2026-08-29 (cdx) from rehearsal raw `8,880,268` (+556,916, ~6.27%).
-  Constant: `research/minicon-com-loader/write-size-report.py`
+  Constant: `loader/write-size-report.py`
   `CANDIDATE_CEILING_BYTES`. The 12 MiB (`12,582,912`) figure is a rehearsal
   fail-closed guard only and must not decide a Candidate. A unique G7 pack
   that exceeds 9 MiB fails; the ceiling must not be auto-raised.

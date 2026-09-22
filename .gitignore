@@ -1,11 +1,11 @@
 /target/
 /target-six/
-/research/minicon-com-loader/dist/
+/loader/dist/
 __pycache__/
 *.swp
 *.log
 *.tmp
-/research/minicon-com-loader/payload-build/
+/loader/payload-build/
 /archive/**/target/
 /archive/**/dist/
 .DS_Store

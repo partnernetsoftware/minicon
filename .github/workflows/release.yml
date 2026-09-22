@@ -112,7 +112,7 @@ jobs:
             "$(jq -r .receipts.aggregate.sha256 "$manifest")" ]]
           [[ "$(sha256sum candidate/g3-receipt.json | cut -d' ' -f1)" == \
             "$(jq -r .receipts.g3.sha256 "$manifest")" ]]
-          python3 research/minicon-com-loader/candidate_bundle.py verify \
+          python3 release/candidate_bundle.py verify \
             --manifest "$manifest" --payload candidate/payload --policy candidate/release-policy.json
           signing_mode="$(jq -r .signing.mode "$manifest")"
           if [[ "$signing_mode" == required ]]; then
@@ -133,7 +133,7 @@ jobs:
             [[ "$macos_signing_mode" == off ]]
             test ! -e candidate/macos-signing-receipt.json
           fi
-          python3 research/minicon-com-loader/reputation_court.py verify \
+          python3 release/reputation_court.py verify \
             --manifest "$manifest" \
             --qualification reputation/reputation-qualification.json
           cp reputation/reputation-qualification.json candidate/
@@ -215,7 +215,7 @@ jobs:
           TAG: ${{ needs.verify.outputs.tag }}
         run: |
           set -euo pipefail
-          python3 research/minicon-com-loader/candidate_bundle.py verify \
+          python3 release/candidate_bundle.py verify \
             --manifest candidate/candidate-manifest.json --payload candidate/payload \
             --policy candidate/release-policy.json
           [[ "$TAG" == "v$VERSION" ]]
@@ -269,7 +269,7 @@ jobs:
           while IFS= read -r name; do cp "released/$name" "released/payload/$name"; done < <(
             jq -r '.assets[] | .name, .sidecar.name' "$manifest"
           )
-          python3 research/minicon-com-loader/candidate_bundle.py verify \
+          python3 release/candidate_bundle.py verify \
             --manifest "$manifest" --payload released/payload \
             --policy released/release-policy.json
           archive="released/minicon-${{ inputs.version }}-linux-x86_64.tar.gz"

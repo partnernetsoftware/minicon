@@ -45,8 +45,8 @@ jobs:
             ~/.cargo/git
             ~/Library/Caches/cargo-xwin
             ~/minicon-cargo-tools
-            research/minicon-com-loader/payload-build
-          key: minicon-com-payloads-v2-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'src/**', 'crates/**', 'research/minicon-com-loader/rebuild-payloads.sh') }}
+            loader/payload-build
+          key: minicon-com-payloads-v2-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'src/**', 'crates/**', 'loader/rebuild-payloads.sh') }}
           restore-keys: |
             minicon-com-payloads-v2-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-
             minicon-com-payloads-${{ env.ZIG_VERSION }}-${{ env.CARGO_ZIGBUILD_VERSION }}-${{ env.CARGO_XWIN_VERSION }}-
@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           ZIG_HOME=""
-          ZIG_HOME=$(bash research/minicon-com-loader/install-zig.sh)
+          ZIG_HOME=$(bash loader/install-zig.sh)
           echo "$ZIG_HOME" >> "$GITHUB_PATH"
           export PATH="$ZIG_HOME:$PATH"
           test "$(zig version)" = "$ZIG_VERSION"
@@ -76,7 +76,7 @@ jobs:
             --locked --version "$CARGO_XWIN_VERSION"
           COSMOCC_SHA256="$COSMOCC_SHA256" COSMOCC_BIN_SHA256="$COSMOCC_BIN_SHA256" \
             COSMOCC_VERSION="$COSMOCC_VERSION" \
-            bash research/minicon-com-loader/install-cosmocc.sh
+            bash loader/install-cosmocc.sh
           echo "$HOME/cosmocc/bin" >> "$GITHUB_PATH"
 
       - name: Pack minicon.com
@@ -87,11 +87,11 @@ jobs:
           export PATH="$COSMOCC_DIR/bin:$PATH"
           g3_dir="$RUNNER_TEMP/minicon-g3"
           mkdir -p "$g3_dir"
-          bash research/minicon-com-loader/reaper-tests.sh |
+          bash loader/reaper-tests.sh |
             tee "$g3_dir/reaper.log"
-          bash research/minicon-com-loader/loader-lifecycle-tests.sh |
+          bash loader/loader-lifecycle-tests.sh |
             tee "$g3_dir/lifecycle.log"
-          bash research/minicon-com-loader/install-cosmocc-swap-test.sh |
+          bash loader/install-cosmocc-swap-test.sh |
             tee "$g3_dir/cosmocc-swap.log"
           python3 - <<'PY'
           import hashlib, json, os
@@ -117,15 +117,15 @@ jobs:
           }
           (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
           PY
-          bash research/minicon-com-loader/rebuild-payloads.sh
-          bash research/minicon-com-loader/pack.sh
-          mkdir -p research/minicon-com-loader/dist/g3
-          cp "$g3_dir"/* research/minicon-com-loader/dist/g3/
-          python3 research/minicon-com-loader/write-build-receipt.py
+          bash loader/rebuild-payloads.sh
+          bash loader/pack.sh
+          mkdir -p loader/dist/g3
+          cp "$g3_dir"/* loader/dist/g3/
+          python3 loader/write-build-receipt.py
           python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
-          rec = json.loads(Path("research/minicon-com-loader/dist/build-receipt.json").read_text())
+          rec = json.loads(Path("loader/dist/build-receipt.json").read_text())
           rec["lane"] = "github-ci"
           rec["builder"] = "macos-15"
           rec["run_id"] = os.environ["GITHUB_RUN_ID"]
@@ -134,10 +134,10 @@ jobs:
               raise SystemExit("github-ci pack requires source_dirty=false")
           if not rec.get("source_tree_digest"):
               raise SystemExit("missing source_tree_digest")
-          loader = Path("research/minicon-com-loader/loader.c")
+          loader = Path("loader/loader.c")
           if rec.get("loader_source_sha256") != hashlib.sha256(loader.read_bytes()).hexdigest():
               raise SystemExit("loader_source_sha256 mismatch")
-          g3_path = Path("research/minicon-com-loader/dist/g3/receipt.json")
+          g3_path = Path("loader/dist/g3/receipt.json")
           g3 = json.loads(g3_path.read_text())
           if g3.get("source_sha") != rec["source_sha"] or g3.get("job_status") != "success":
               raise SystemExit("G3 receipt identity/status mismatch")
@@ -146,7 +146,7 @@ jobs:
               "sha256": hashlib.sha256(g3_path.read_bytes()).hexdigest(),
               "courts": g3["courts"],
           }
-          Path("research/minicon-com-loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
+          Path("loader/dist/build-receipt.json").write_text(json.dumps(rec, indent=2) + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"minicon_com_sha256={rec['minicon_com_sha256']}\n")
               fh.write(f"source_sha={rec['source_sha']}\n")
@@ -157,14 +157,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifact
-          cp research/minicon-com-loader/dist/minicon.com artifact/
-          cp research/minicon-com-loader/dist/minicon.com.sha256 artifact/
-          cp research/minicon-com-loader/dist/build-receipt.json artifact/
-          cp research/minicon-com-loader/ci-status.sh artifact/
-          cp research/minicon-com-loader/ci-status.ps1 artifact/
-          cp research/minicon-com-loader/ci-control.sh artifact/
-          cp research/minicon-com-loader/ci-control.ps1 artifact/
-          cp -R research/minicon-com-loader/dist/g3 artifact/
+          cp loader/dist/minicon.com artifact/
+          cp loader/dist/minicon.com.sha256 artifact/
+          cp loader/dist/build-receipt.json artifact/
+          cp loader/ci-status.sh artifact/
+          cp loader/ci-status.ps1 artifact/
+          cp loader/ci-control.sh artifact/
+          cp loader/ci-control.ps1 artifact/
+          cp -R loader/dist/g3 artifact/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: upload_com
@@ -178,8 +178,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p native-payloads
-          cp -R research/minicon-com-loader/dist/cells native-payloads/
-          cp research/minicon-com-loader/dist/build-receipt.json native-payloads/
+          cp -R loader/dist/cells native-payloads/
+          cp loader/dist/build-receipt.json native-payloads/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
