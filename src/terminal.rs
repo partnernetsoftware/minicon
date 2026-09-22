@@ -21,8 +21,8 @@ pub(super) struct ConTerminal {
     pub(super) current_title: String,
     /// The program this session runs, and its short name. Kept so a title the
     /// child sets can be distinguished from the child naming itself.
-    pub(super) program_path: String,
-    pub(super) program_label: String,
+    program_path: String,
+    program_label: String,
 
     /// `--emit-snapshot`: written after each render when set. See
     /// `agent_interface` module docs.
@@ -32,15 +32,15 @@ pub(super) struct ConTerminal {
     pub(super) parser: vt100::Parser<ConCallbacks>,
 
     /// PTY master (input writes + resize). `None` until `opened` spawns it.
-    pub(super) master: Option<PtyMaster>,
+    master: Option<PtyMaster>,
 
     /// PTY child handle. MUST stay alive for the session lifetime: dropping it
     /// closes the platform-owned Job Object
     /// (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), which kills the shell tree.
-    pub(super) child: Option<PtyChild>,
+    child: Option<PtyChild>,
 
     /// Preallocated bounded handoff from the PTY reader thread.
-    pub(super) pty_output: Arc<BoundedOutputPipe>,
+    pty_output: Arc<BoundedOutputPipe>,
     /// Coalesces reader notifications so a burst produces one GUI wake until
     /// the event thread has consumed its bounded share.
     pub(super) pty_wake_pending: Arc<AtomicBool>,
@@ -49,10 +49,10 @@ pub(super) struct ConTerminal {
     /// (via Windows' process-exit notification, not PTY EOF — see `spawn_pty`).
     /// The existing window wake transports notification; this atomic owns only
     /// the completion state, so no general-purpose channel is required.
-    pub(super) child_exit_pending: Arc<AtomicBool>,
+    child_exit_pending: Arc<AtomicBool>,
     /// Encoded optional `ExitStatus::code`, published before
     /// `child_exit_pending` with release ordering.
-    pub(super) child_exit_code_encoded: Arc<AtomicU64>,
+    child_exit_code_encoded: Arc<AtomicU64>,
     pub(super) child_exit_code: Option<i32>,
 
     /// Logical font size in DIPs. Adjusted by the tab column's zoom buttons.
@@ -69,19 +69,19 @@ pub(super) struct ConTerminal {
     pub(super) rows: u16,
 
     /// Latest un-applied geometry (coalesced). Applied once the stream settles.
-    pub(super) pending_geometry: Option<(u32, u32, f64)>,
-    pub(super) last_geometry_at: Instant,
+    pending_geometry: Option<(u32, u32, f64)>,
+    last_geometry_at: Instant,
     /// A composer submission's Enter, held back so the child does not read it
     /// as trailing bytes of the paste. See [`COMPOSER_ENTER_DELAY`].
     pub(super) pending_submit_enter: Option<(Instant, Vec<u8>)>,
 
-    pub(super) default_fg: Rgb,
+    default_fg: Rgb,
     pub(super) default_bg: Rgb,
     /// Terminal cursor color and the themable 16 ANSI colors, kept in sync with
     /// `ui_theme` (see `ConTerminal::apply_theme`). The 6x6x6 cube and grayscale ramp
     /// stay standard.
-    pub(super) term_cursor: Rgb,
-    pub(super) term_ansi: [Rgb; 16],
+    term_cursor: Rgb,
+    term_ansi: [Rgb; 16],
 
     /// Set when the reader thread exits (PTY EOF or error).
     pub(super) child_gone: bool,
@@ -90,32 +90,32 @@ pub(super) struct ConTerminal {
     /// Scrollback scroll offset (0 = bottom/live). Positive = scrolled up.
     pub(super) scroll_offset: usize,
     /// Accumulated wheel delta (fractional lines pending application).
-    pub(super) wheel_accumulator: f32,
-    pub(super) scrollbar_drag: Option<ScrollbarThumbDrag>,
+    wheel_accumulator: f32,
+    scrollbar_drag: Option<ScrollbarThumbDrag>,
 
     /// Text selection: anchor + focus in terminal cell coordinates.
     /// None = no selection; Some = active or completed selection.
     pub(super) selection: Option<(TerminalPoint, TerminalPoint)>,
     /// True while left mouse button is held during a drag.
-    pub(super) selecting: bool,
+    selecting: bool,
     /// True while the application (not local selection) owns a button gesture.
     /// Keeps press/release paired so TUI buttons do not get a stuck-down state.
-    pub(super) mouse_dragging: bool,
+    mouse_dragging: bool,
     /// Last cell reported to the application, used to collapse motion spam.
-    pub(super) last_reported_cell: Option<TerminalPoint>,
+    last_reported_cell: Option<TerminalPoint>,
     /// Button code of the in-flight application gesture, so the release
     /// reports the same button that was pressed.
-    pub(super) active_button: Option<u8>,
+    active_button: Option<u8>,
     /// Where the in-flight application gesture was pressed, so its span can
     /// be copied on release (`application_drag_copy_span`).
-    pub(super) application_drag_anchor: Option<TerminalPoint>,
-    pub(super) clipboard_paste_requested: bool,
+    application_drag_anchor: Option<TerminalPoint>,
+    clipboard_paste_requested: bool,
 
     /// Whether the cursor is in its "on" phase of the blink cycle. Ignored
     /// entirely when `screen.cursor_blinking()` is false (a steady cursor).
     pub(super) blink_visible: bool,
     /// When `blink_visible` last flipped, for pacing the next flip.
-    pub(super) last_blink_at: Instant,
+    last_blink_at: Instant,
 
     /// In-progress IME composition, drawn inline at the cursor. While this is
     /// non-empty the keystrokes feeding the composition must not also be sent
@@ -129,7 +129,7 @@ pub(super) struct ConTerminal {
 
     /// Time and place of the last left press, plus how many clicks it
     /// continued, for double/triple-click selection.
-    pub(super) clicks: minicon_core::click::ClickCounter<TerminalPoint>,
+    clicks: minicon_core::click::ClickCounter<TerminalPoint>,
     /// Current scale factor (for pointer hit-test DIP→pixel conversion).
     pub(super) scale: f64,
     /// Physical space owned by the outer tab tree and composer.
@@ -140,7 +140,7 @@ pub(super) struct ConTerminal {
     /// Conservative raster-candidate evidence for retained pixels and native
     /// redraw requests. Unknown damage remains full rather than guessed.
     pub(super) dirty: DirtyRegion,
-    pub(super) last_cursor: Option<TerminalPoint>,
+    last_cursor: Option<TerminalPoint>,
     /// Grid crosshair: the terminal cell the pointer last hovered (persists so
     /// the status readout does not blank when the pointer leaves), whether the
     /// pointer is currently over the grid (gates drawing the lines), and whether
@@ -183,7 +183,7 @@ impl ConTerminal {
         format!("{} — {}", self.current_title, product_window_title())
     }
 
-    pub(super) fn shutdown_pty(&mut self) {
+    fn shutdown_pty(&mut self) {
         // First release product backpressure, then transfer both ownership
         // halves. ClosePseudoConsole may block while a flooded client drains,
         // so native teardown must never run on the GUI event thread.
@@ -284,13 +284,13 @@ impl ConTerminal {
         self.frame_height = height;
     }
 
-    pub(super) fn mark_cell(&mut self, point: TerminalPoint) {
+    fn mark_cell(&mut self, point: TerminalPoint) {
         if !self.mark_cursor_position((point.row, point.col)) {
             self.dirty.mark_full();
         }
     }
 
-    pub(super) fn mark_cursor_position(&mut self, position: (u16, u16)) -> bool {
+    fn mark_cursor_position(&mut self, position: (u16, u16)) -> bool {
         if self.frame_width == 0
             || self.frame_height == 0
             || self.cols == 0
@@ -332,7 +332,7 @@ impl ConTerminal {
         }
     }
 
-    pub(super) fn mark_terminal_rows(&mut self, rows: vt100::RowRange) -> bool {
+    fn mark_terminal_rows(&mut self, rows: vt100::RowRange) -> bool {
         let rows = rows.clip(self.rows);
         if rows.is_empty() {
             return false;
@@ -361,7 +361,7 @@ impl ConTerminal {
         true
     }
 
-    pub(super) fn mark_vt_damage(&mut self, damage: vt100::ScreenDamage) {
+    fn mark_vt_damage(&mut self, damage: vt100::ScreenDamage) {
         if damage.needs_full_raster() {
             self.dirty.mark_full();
             return;
@@ -386,7 +386,7 @@ impl ConTerminal {
         }
     }
 
-    pub(super) fn mark_cursor_change(&mut self) {
+    fn mark_cursor_change(&mut self) {
         if let Some(previous) = self.last_cursor {
             self.mark_cell(previous);
         }
@@ -400,12 +400,12 @@ impl ConTerminal {
     /// True while a blinking caret would actually be painted on the live
     /// viewport. Hidden and scrolled-away carets must not arm the 530ms
     /// present timer.
-    pub(super) fn cursor_blink_is_live(&self) -> bool {
+    fn cursor_blink_is_live(&self) -> bool {
         self.parser.screen().cursor_blinking()
             && cursor_visible(self.parser.screen(), self.scroll_offset, true)
     }
 
-    pub(super) fn mark_ime_bounds(&mut self) {
+    fn mark_ime_bounds(&mut self) {
         let cursor = self.parser.screen().cursor_position();
         let x = self
             .content_left_px
@@ -431,13 +431,13 @@ impl ConTerminal {
     /// Replaces the terminal IME preedit, marking the old and new bounds. The
     /// pair of marks is the point: a preedit change repaints the cells it left
     /// and the cells it now occupies, and every caller must do both.
-    pub(super) fn set_ime_preedit(&mut self, text: String) {
+    fn set_ime_preedit(&mut self, text: String) {
         self.mark_ime_bounds();
         self.ime_preedit = text;
         self.mark_ime_bounds();
     }
 
-    pub(super) fn mark_selection(&mut self, selection: Option<(TerminalPoint, TerminalPoint)>) {
+    fn mark_selection(&mut self, selection: Option<(TerminalPoint, TerminalPoint)>) {
         let Some((start, end)) = selection.map(|(a, b)| normalize_endpoints(a, b)) else {
             return;
         };
@@ -457,7 +457,7 @@ impl ConTerminal {
         }
     }
 
-    pub(super) fn mark_selection_change(
+    fn mark_selection_change(
         &mut self,
         previous: Option<(TerminalPoint, TerminalPoint)>,
         current: Option<(TerminalPoint, TerminalPoint)>,
@@ -466,7 +466,7 @@ impl ConTerminal {
         self.mark_selection(current);
     }
 
-    pub(super) fn mark_scrollbar_bounds(&mut self) {
+    fn mark_scrollbar_bounds(&mut self) {
         if self.frame_width == 0 || self.frame_height == 0 {
             self.dirty.mark_full();
             return;
@@ -489,14 +489,14 @@ impl ConTerminal {
     }
 
     /// Computes grid dimensions from physical pixels and current cell metrics.
-    pub(super) fn compute_grid(phys_w: u32, phys_h: u32, cell_w: u32, cell_h: u32) -> (u16, u16) {
+    fn compute_grid(phys_w: u32, phys_h: u32, cell_w: u32, cell_h: u32) -> (u16, u16) {
         let cols = (phys_w / cell_w.max(1)).clamp(2, 512) as u16;
         let rows = (phys_h / cell_h.max(1)).clamp(2, 512) as u16;
         (cols, rows)
     }
 
     /// (Re)computes physical cell metrics from the logical font size and scale.
-    pub(super) fn recompute_metrics(&mut self, scale: f64) {
+    fn recompute_metrics(&mut self, scale: f64) {
         self.font_size_px =
             minicon_core::numeric::round_f64(self.font_size_logical * scale).max(8.0) as u16;
         let m = font::cell_metrics(self.font_size_px);
@@ -505,7 +505,7 @@ impl ConTerminal {
     }
 
     /// Spawns the shell PTY and the reader thread. Called once from `opened`.
-    pub(super) fn spawn_pty(&mut self, waker: &WindowWaker) -> Result<(), PixelWindowError> {
+    fn spawn_pty(&mut self, waker: &WindowWaker) -> Result<(), PixelWindowError> {
         agenterm_platform::pty::initialize_shutdown_reaper().map_err(|error| {
             PixelWindowError::failed("pty_reaper_init_failed", format!("{error}"))
         })?;
@@ -734,11 +734,7 @@ impl ConTerminal {
     /// candidate window but the result never reaches the shell — which is what
     /// made "IME enabled" look like "keyboard broken" and led to IME being
     /// switched off entirely.
-    pub(super) fn handle_ime(
-        &mut self,
-        window: &PixelWindow,
-        event: agenterm_platform::ime::ImeEvent,
-    ) {
+    fn handle_ime(&mut self, window: &PixelWindow, event: agenterm_platform::ime::ImeEvent) {
         let _ = self.handle_ime_checked(window, event);
     }
 
@@ -793,25 +789,25 @@ impl ConTerminal {
     /// A repeat only counts when it lands on the same cell inside the
     /// multi-click window; moving to a different cell starts a fresh count, so
     /// a fast click in two places does not select a word by accident.
-    pub(super) fn register_click(&mut self, point: TerminalPoint) -> u8 {
+    fn register_click(&mut self, point: TerminalPoint) -> u8 {
         self.clicks.register(point, Instant::now())
     }
 
     /// Expands to the word around `point`, or `None` if that cell is blank.
-    pub(super) fn word_at(&self, point: TerminalPoint) -> Option<(TerminalPoint, TerminalPoint)> {
+    fn word_at(&self, point: TerminalPoint) -> Option<(TerminalPoint, TerminalPoint)> {
         word_selection(self.parser.screen(), point)
     }
 
     /// Triple-click owns one visible terminal row; soft-wrapped neighbors are
     /// separate selectable rows, matching the professional-selection contract.
-    pub(super) fn line_at(&self, point: TerminalPoint) -> Option<(TerminalPoint, TerminalPoint)> {
+    fn line_at(&self, point: TerminalPoint) -> Option<(TerminalPoint, TerminalPoint)> {
         visible_row_selection(self.parser.screen(), point.row)
     }
 
     /// Draws the in-progress composition starting at the cursor cell and
     /// returns how many cells it occupied, so the caller can push the cursor
     /// past it. Wide (CJK) characters take two cells, matching the grid.
-    pub(super) fn draw_preedit(&self, surface: &mut Surface<'_>, cursor: (u16, u16)) -> u32 {
+    fn draw_preedit(&self, surface: &mut Surface<'_>, cursor: (u16, u16)) -> u32 {
         let y0 = self.content_top_px + u32::from(cursor.0) * self.cell_h;
         let mut advance = 0u32;
         // Inverted so the provisional text is unmistakable against committed
@@ -854,7 +850,7 @@ impl ConTerminal {
 
     /// Anchors the OS candidate window to the cursor cell, so it does not
     /// appear at an arbitrary corner of the screen.
-    pub(super) fn update_ime_anchor(&self, window: &PixelWindow) {
+    fn update_ime_anchor(&self, window: &PixelWindow) {
         let (row, col) = self.parser.screen().cursor_position();
         let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
         let x = f64::from(self.content_left_px + u32::from(col) * self.cell_w) / scale;
@@ -980,7 +976,7 @@ impl ConTerminal {
         terminal_input::key_event_to_bytes(&event, mode).unwrap_or_else(|| vec![b'\r'])
     }
 
-    pub(super) fn forward_key(&mut self, event: &NormalizedKeyEvent) {
+    fn forward_key(&mut self, event: &NormalizedKeyEvent) {
         let _ = self.forward_key_checked(event);
     }
 
@@ -1009,7 +1005,7 @@ impl ConTerminal {
     /// Uses vt100's read-only scrollback length instead of temporarily moving
     /// the viewport to `usize::MAX` and restoring it. Bounds queries must not
     /// create their own viewport damage or perturb parser state.
-    pub(super) fn scroll_by(&mut self, lines: isize) {
+    fn scroll_by(&mut self, lines: isize) {
         if self.parser.screen().alternate_screen() {
             return;
         }
@@ -1025,7 +1021,7 @@ impl ConTerminal {
         }
     }
 
-    pub(super) fn scrollback_bounds(&mut self) -> (usize, usize) {
+    fn scrollback_bounds(&mut self) -> (usize, usize) {
         if self.parser.screen().alternate_screen() {
             return (0, 0);
         }
@@ -1035,7 +1031,7 @@ impl ConTerminal {
         (offset, maximum)
     }
 
-    pub(super) fn set_scrollback(&mut self, requested: usize) {
+    fn set_scrollback(&mut self, requested: usize) {
         if !self.parser.screen().alternate_screen() {
             let previous = self.scroll_offset;
             if previous != requested {
@@ -1053,7 +1049,7 @@ impl ConTerminal {
         }
     }
 
-    pub(super) fn scrollbar_geometry(
+    fn scrollbar_geometry(
         &mut self,
         width: u32,
         height: u32,
@@ -1078,7 +1074,7 @@ impl ConTerminal {
         )
     }
 
-    pub(super) fn handle_scrollbar_event(
+    fn handle_scrollbar_event(
         &mut self,
         window: &PixelWindow,
         event: &PixelWindowEvent,
@@ -1157,7 +1153,7 @@ impl ConTerminal {
     }
 
     /// Converts a logical (DIP) pointer position to terminal cell coordinates.
-    pub(super) fn hit_test(&self, pos: &LogicalPoint) -> TerminalPoint {
+    fn hit_test(&self, pos: &LogicalPoint) -> TerminalPoint {
         let phys_x = (pos.x * self.scale - f64::from(self.content_left_px)).max(0.0);
         let phys_y = (pos.y * self.scale - f64::from(self.content_top_px)).max(0.0);
         TerminalPoint {
@@ -1200,7 +1196,7 @@ impl ConTerminal {
     /// what lets control commands take cell coordinates (what a CLI caller
     /// actually thinks in) while still driving the same
     /// pixel-position-based handlers real pointer events go through.
-    pub(super) fn terminal_point_to_logical(&self, point: TerminalPoint) -> LogicalPoint {
+    fn terminal_point_to_logical(&self, point: TerminalPoint) -> LogicalPoint {
         let phys_x = f64::from(self.content_left_px)
             + f64::from(point.col) * self.cell_w as f64
             + self.cell_w as f64 / 2.0;
@@ -1225,11 +1221,11 @@ impl ConTerminal {
     /// rest of the session, a following right-click copied nothing instead of
     /// pasting, and bare Ctrl+C took the copy branch and returned, so the
     /// child process never received SIGINT.
-    pub(super) fn active_selection(&self) -> Option<(TerminalPoint, TerminalPoint)> {
+    fn active_selection(&self) -> Option<(TerminalPoint, TerminalPoint)> {
         self.selection.filter(|(anchor, focus)| anchor != focus)
     }
 
-    pub(super) fn copy_selection(&mut self) {
+    fn copy_selection(&mut self) {
         let Some((start, end)) = self.active_selection() else {
             return;
         };
@@ -1239,14 +1235,14 @@ impl ConTerminal {
 
     /// Every copy MiniCon makes goes through here, so the status bar's
     /// clipboard length follows it without waiting to re-read the clipboard.
-    pub(super) fn copy_text(&mut self, text: &str) {
+    fn copy_text(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
         let _ = clipboard_status::set_text(text);
     }
 
-    pub(super) fn request_clipboard_paste(&mut self) {
+    fn request_clipboard_paste(&mut self) {
         self.clipboard_paste_requested = true;
     }
 
@@ -1446,14 +1442,14 @@ impl ConTerminal {
     /// Errors are deliberately swallowed: a full disk or a test harness that
     /// deleted the target directory mid-run must not crash the session it is
     /// trying to observe.
-    pub(super) fn write_snapshot_if_requested(&mut self) {
+    fn write_snapshot_if_requested(&mut self) {
         if let Some(path) = self.snapshot_path.clone() {
             let _ = agent_interface::write_snapshot_atomic(&path, &self.build_snapshot());
         }
     }
 
     /// Current mouse reporting contract negotiated by the running application.
-    pub(super) fn mouse_mode(
+    fn mouse_mode(
         &self,
     ) -> (
         terminal_input::ApplicationMouseMode,
@@ -1481,7 +1477,7 @@ impl ConTerminal {
 
     /// Attempts to deliver a pointer event to the application. Returns true
     /// when the application consumed it, so the caller skips local selection.
-    pub(super) fn report_mouse_checked(
+    fn report_mouse_checked(
         &mut self,
         button: u8,
         point: TerminalPoint,
@@ -1528,7 +1524,7 @@ impl ConTerminal {
         })
     }
 
-    pub(super) fn report_mouse(
+    fn report_mouse(
         &mut self,
         button: u8,
         point: TerminalPoint,
@@ -1602,7 +1598,7 @@ impl ConTerminal {
 
     /// Routes a wheel notch: application report → alternate-screen cursor keys
     /// → local scrollback, in that order of precedence.
-    pub(super) fn handle_wheel(
+    fn handle_wheel(
         &mut self,
         notches: f32,
         modifiers: &agenterm_platform::input::ModifierState,
@@ -1675,7 +1671,7 @@ impl ConTerminal {
     }
 
     /// Routes a pointer button press/release, preferring the application.
-    pub(super) fn handle_pointer_button_checked(
+    fn handle_pointer_button_checked(
         &mut self,
         window: &PixelWindow,
         button: PointerButton,
@@ -1802,7 +1798,7 @@ impl ConTerminal {
         Ok(MouseOutcome { route, changed })
     }
 
-    pub(super) fn handle_pointer_button(
+    fn handle_pointer_button(
         &mut self,
         window: &PixelWindow,
         button: PointerButton,
@@ -1819,7 +1815,7 @@ impl ConTerminal {
     /// Factored out of the `PointerMoved` event arm so a control command
     /// `mouse_move` command drives the identical logic a real OS pointer
     /// move does, not a lookalike.
-    pub(super) fn handle_pointer_moved_checked(
+    fn handle_pointer_moved_checked(
         &mut self,
         window: &PixelWindow,
         position: LogicalPoint,
@@ -1839,7 +1835,7 @@ impl ConTerminal {
     /// hover (including over an existing selection, or same-cell 1003 motion)
     /// must not schedule a frame. Application reports that write the PTY are
     /// painted when the child echoes, through `Wake`.
-    pub(super) fn pointer_moved_outcome(
+    fn pointer_moved_outcome(
         &mut self,
         position: LogicalPoint,
         modifiers: &agenterm_platform::input::ModifierState,
@@ -1873,7 +1869,7 @@ impl ConTerminal {
         Ok((MouseOutcome { route, changed }, selection_changed))
     }
 
-    pub(super) fn handle_pointer_moved(
+    fn handle_pointer_moved(
         &mut self,
         window: &PixelWindow,
         position: LogicalPoint,
@@ -1896,7 +1892,7 @@ impl ConTerminal {
         window.request_redraw();
     }
 
-    pub(super) fn take_cancelled_pointer_release(&mut self) -> Option<(u8, TerminalPoint)> {
+    fn take_cancelled_pointer_release(&mut self) -> Option<(u8, TerminalPoint)> {
         let release = self.mouse_dragging.then(|| {
             (
                 self.active_button.unwrap_or(0),
