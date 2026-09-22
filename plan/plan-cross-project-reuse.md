@@ -20,6 +20,16 @@ in what the two repositories actually contain today.
   names no `default-features = false`, harmless while its default is empty).
 - The vendored forks `vt100` and `softbuffer`, patched to the same rev. A
   check that watches only the two crates misses this class (bdy-ds4flash).
+- **A patch-level requirement no feature matrix sees.** `terminal-selection`
+  pulls `vt100`, and the col-wrap underflow fix lives only in the fork. Both
+  products patch `crates.io`'s `vt100` to it, but a shared crate cannot force
+  its consumers to patch; a third consumer that did not would silently lose
+  the fix. Record it in the ledger as a consumer requirement.
+
+MiniCon's product crate already uses `agenterm-ui-core` directly (glyph cache,
+damage regions, `terminal_selection::{TerminalPoint, normalize_endpoints}`,
+with no local copy), so the scrollbar move is a layering choice, not a new
+dependency.
 
 **Written twice** — found by probing both trees on 2026-09-22:
 
@@ -155,6 +165,13 @@ each divergence row names which product expects what:
 | V6 | double on a blank cell, then third (D1) | 1 2 1 | 1 2 3 |
 | V7 | third press with host hint false (D3) | 1 2 1 | 1 2 3 |
 | V8 | composer, four presses (D2) | 1 2 3 3 (Unix) | 1 2 3 1 |
+
+**Narrowed on review:** AgenTerm's terminal already cycles on a fourth click
+(its Triple branch clears both stages, so the next press is Single), the same
+as MiniCon. D2 is therefore only about the Unix composer, and it is first an
+inconsistency *inside* AgenTerm (terminal cycles, composer saturates) that has
+to be settled before anything is shared. MiniCon's two call sites are in the
+product crate: `src/terminal.rs` and `src/main.rs`.
 
 **Recommendation:** the shared type should carry AgenTerm's `ClickChain`
 semantics -- surface-id key, arm-on-success, host hint -- because they are the
