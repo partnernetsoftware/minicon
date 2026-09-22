@@ -13,7 +13,8 @@ work.
 | local six-cell, full | ~20 min | osx-x86_64 tests under Rosetta; full rebuild when the build dir changes |
 | Windows court `test` stage | 227 s -> **72 s** | QGA file copy at ~240 KB/s; now HTTP (utm-court `b87196c`) |
 | Windows court rebuild after a one-line change | full build -> **4 s** | APFS clone of the previous fingerprint dir + incremental `cargo xwin` |
-| court cold start | ~150 s, flaky | disposable boot + session agent; a stale `ping.response` poisoned boots |
+| court cold start | ~150 s, flaky -> ~100 s cold, **5-9 s** from an in-memory pause | utm-court `fb1e3a8`, `cd56700`, `17c08c1` |
+| one Windows diagnostic round (build + resume + push + run) | not possible before | **20-26 s** | all of the above |
 | CI release chain | ~45 min per round | minicon-com -> signing x2 -> candidate -> reputation -> release |
 
 ## 1. Local loop
@@ -56,7 +57,15 @@ any workflow changes.
   `a_new_tab_that_cannot_start_is_a_notice_not_an_exit`,
   `gui_control_surface_isolated_multitab_black_box`.
 - `minicon_throughput`: `pty_drained_bytes` a few KB against the 32 MiB
-  payload, while `THROUGHPUT_DONE_32M` is seen.
+  payload, while `THROUGHPUT_DONE_32M` is seen. **Diagnosed 2026-09-22:**
+  the payload reaches the screen (the producer pane shows it), and the
+  drained count does not scale with the payload -- 1 MiB gave 6,628 bytes,
+  32 MiB gave 7,014. ConPTY renders the console itself and forwards only
+  viewport changes, so on Windows the PTY byte count can never cover what the
+  program wrote. The assertion's premise holds for Unix PTYs and not for
+  ConPTY. **Owner decision needed** on what the Windows receipt should prove
+  instead (the ordered `THROUGHPUT_DONE_32M` marker and the sustained-rate
+  bound already hold), before the assertion changes.
 
 Each gets its own diagnosis now that a court round is ~1 minute.
 
