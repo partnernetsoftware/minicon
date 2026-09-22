@@ -135,6 +135,16 @@ decisions (fourth composer click; arm-on-success), recorded in
 - The interactive court presents no frames, so real pointer events and pixel
   comparison remain out of reach. (from 0.1.18 P2)
 
+- **Windows ARM court gaps that predate 0.1.22.** With the transfer timeout
+  raised to 180 s the full Windows suite runs in the UTM court for the first
+  time. v0.1.21 (test-only fix applied) and 0.1.22 fail the same four:
+  `minicon_control` `a_host_whose_program_cannot_be_spawned_dies_and_says_why`,
+  `a_new_tab_that_cannot_start_is_a_notice_not_an_exit`,
+  `gui_control_surface_isolated_multitab_black_box`, and `minicon_throughput`
+  (`pty_drained_bytes` a few KB against the 32 MiB payload). Not regressions;
+  each needs its own diagnosis. The court's QGA file copy runs at ~240 KB/s,
+  which is why these were never reached before.
+
 ## Verification for every step
 
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` on the host
