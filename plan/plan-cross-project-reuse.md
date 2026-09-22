@@ -10,20 +10,28 @@ in what the two repositories actually contain today.
 
 **Shared by construction** — MiniCon pins two AgenTerm crates by git rev:
 
-- `agenterm-platform` — OS adapters. MiniCon enables 13 of its features
-  (`clipboard`, `font`, `ime`, `input`, `pty`, `window`, ...).
-- `agenterm-ui-core` — host-neutral UI arithmetic (`terminal-selection`).
+- `agenterm-platform` — OS adapters. MiniCon's features come from
+  five dependency blocks, not one: a main block of 13 (`clipboard`, `font`,
+  `ime`, `input`, `pty`, `window`, ...) plus `input-inject` (dev),
+  `native-pixel-window` (Windows), `runtime`, and `portable-pixel-window`
+  (Unix). A consumer check that tests only the 13 would miss exactly the
+  per-target modules that broke before.
+- `agenterm-ui-core` — host-neutral UI arithmetic (`terminal-selection`; it
+  names no `default-features = false`, harmless while its default is empty).
+- The vendored forks `vt100` and `softbuffer`, patched to the same rev. A
+  check that watches only the two crates misses this class (bdy-ds4flash).
 
 **Written twice** — found by probing both trees on 2026-09-22:
 
 | logic | AgenTerm | MiniCon |
 | --- | --- | --- |
 | scrollbar geometry | `agenterm-ui-core::ScrollbarGeometry` | its own `minicon-core/src/scrollbar.rs` (352 lines) |
-| click streak (1/2/3) | `src/frontend/pointer_input.rs` | `minicon-core::click::ClickCounter` |
-| composer editing rules | `src/frontend/composer`, `ui_geometry` | `minicon-core/src/composer.rs` (1,654 lines) |
+| click streak (1/2/3) | `ClickChain` in AgenTerm's frontend selection module, plus a separate Unix composer counter | `minicon-core::click::ClickCounter` (see §7: the rules differ) |
+| composer editing rules | **not yet located** -- AgenTerm's composer module is 68 lines; the rules are more likely in its frontend input and interaction modules and `ui_geometry` (bdy-ds4flash) | `minicon-core/src/composer.rs` (1,654 lines) |
 
-**Drift** — MiniCon's pin `5eda1de74` is 16 AgenTerm commits behind `main`
-(none touching the shared crates yet). Drift is cheap until it isn't: the
+**Drift** — MiniCon's pin `5eda1de74` was 16, then 17, then 18 AgenTerm commits
+behind `main` within an hour on 2026-09-22 -- which is the point: a drift
+figure is only true when computed, so reports compute it rather than quote it. Drift is cheap until it isn't: the
 v0.1.20 pin bump had to cross 11 platform commits at once.
 
 ## 2. Why this is hard
@@ -66,27 +74,32 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
   Cheap — no MiniCon checkout — and it closes the "agenterm is green, minicon
   does not compile" class for good. MiniCon keeps the list in sync (a MiniCon
   test can assert its `Cargo.toml` features equal the list AgenTerm checks).
-- **A shared-seam ledger in AgenTerm** (a proposed shared-seam document under its docs directory): the shared crates, their owner, the
-  current claims (file, agent, purpose, date), and the pin MiniCon is on. Both
-  lanes update it in the same commit as the change.
+- **A shared-seam ledger in AgenTerm** -- landed by cdx-agenterm as the
+  shared-seam ledger in its docs (agenterm `1ce19971c`): shared crates, owner,
+  the pin MiniCon is observed on, the feature combinations to check, current
+  claims. Two repositories cannot change atomically, so each lane updates the
+  ledger or its own record in its own commit and says so by envelope.
 - **Pin cadence.** MiniCon moves its pin once at the start of each release
   cycle and whenever it needs a shared change, never in the middle of a
   Candidate. The bump commit lists the shared-crate commits it crosses.
 - **Envelope protocol** for seam changes: title `seam: <crate>/<area>`, body =
   what changes, which consumer needs it, which tests pin it.
 
-## 5. First migrations, smallest first
+## 5. First migrations, strongest evidence first
 
-1. **Click streak → `agenterm-ui-core`.** Smallest, both products have it, and
-   MiniCon's version is already a pure, tested, generic type. Move
-   `ClickCounter<K>` into `agenterm-ui-core`; AgenTerm's
-   `pointer_input.rs` and MiniCon both use it; delete both copies.
-2. **Scrollbar geometry → one implementation in `agenterm-ui-core`.** First pin
-   both products' behaviour (thumb size, position, drag inversion, rounding) as
-   tests on `ScrollbarGeometry`, then point MiniCon at it and retire
-   `minicon-core/src/scrollbar.rs`.
-3. **Composer editing rules** — the largest and the most likely to differ in
-   intent. Survey first; decide with both owners.
+Reordered after review by the AgenTerm lane.
+
+1. **Scrollbar geometry.** The strongest case: same type names, same function
+   names, same order on both sides -- one was copied from the other. But they
+   already differ (`Rect` against MiniCon's own `ScrollbarRect`; the geometry
+   function is 37 lines in AgenTerm and 52 in MiniCon), so first pin rounding,
+   drag inversion (`scrollback_for_thumb_top`) and hit-test edges as tests on
+   the shared side, run both implementations against them, and let the owners
+   decide each difference. Decide too whether MiniCon adapts its own types or
+   adopts `Rect`.
+2. **Click streak.** Both products do have one (§7), but the rules differ in
+   four places, so it waits on the owners' decisions D1-D4.
+3. **Composer editing rules.** Locate AgenTerm's real rules first.
 
 ## 6. How we will know it is working
 
@@ -95,3 +108,59 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
   shared-crate break.
 - Zero "green in AgenTerm, broken in MiniCon" events once the feature-matrix
   gate exists.
+
+## 7. Click streak: the behaviour audit (read-only, 2026-09-22)
+
+Asked for by cdx-agenterm before any shared crate is edited, and it changed
+the plan: the first proposal named AgenTerm's `pointer_input.rs` as the
+counterpart, but that file validates an agent's *explicit* `--count 1..3`; it
+is not a human click streak. The real grouping sites are these.
+
+| surface | key | window | 2nd | 3rd | 4th | host specifics |
+| --- | --- | --- | --- | --- | --- | --- |
+| AgenTerm terminal, Unix (`ClickChain<u64, TerminalPoint>`) | tab id + cell | `multi_click_interval_ms()` = 500 (TODO: read the OS setting per host) | Double if same tab+cell within window | Triple only if the caller armed it -- which it does **only after the double's word selection succeeded** -- and the host hint is true (always on Unix) | Single (chain cleared) | -- |
+| AgenTerm terminal, Windows (`ClickChain<String, RemotePoint>`) | tab id + cell | same | same | Triple also requires the host hint `clicks >= 3` | Single | Win32 alternates `WM_LBUTTONDOWN`/`WM_LBUTTONDBLCLK` and has no triple message |
+| AgenTerm composer, Unix (`ComposerClick`) | byte offset | 500 | 2 | 3 | **stays 3** (`min(3)`) | -- |
+| AgenTerm composer, Windows | native `EDIT` control | OS `GetDoubleClickTime` | OS word select | **none** | -- | OS-owned |
+| MiniCon terminal (`ClickCounter<TerminalPoint>`, per session) | cell (the session is the tab) | fixed 500 | 2 | 3 always, even after an empty double | 1 (cycle) | identical on every host |
+| MiniCon composer (`ClickCounter<usize>`) | byte offset | fixed 500 | 2 | 3 | 1 (cycle) | identical on every host |
+
+**Divergences, each a decision for both owners, not a silent pick:**
+
+- D1 -- after a double-click on a blank cell (no word), AgenTerm's third click
+  is Single; MiniCon's is line select.
+- D2 -- a fourth composer click: AgenTerm/Unix stays on line select; MiniCon
+  cycles back to a caret.
+- D3 -- Windows triple click: AgenTerm follows the OS click count; MiniCon
+  synthesises it from time and position on every host.
+- D4 -- the window: both use 500 ms today; AgenTerm routes it through one
+  host policy function meant to read the OS setting, MiniCon hard-codes it.
+
+**Shared test vectors** -- `(surface id, cell, t ms, word found?, host hint)`
+in, stage out. A shared type must pass the rows both products agree on, and
+each divergence row names which product expects what:
+
+| # | presses | AgenTerm | MiniCon |
+| --- | --- | --- | --- |
+| V1 | same spot at 0, 100, 200, 300 | 1 2 3 1 | 1 2 3 1 |
+| V2 | second press on another cell | 1 1 | 1 1 |
+| V3 | second press after the window | 1 1 | 1 1 |
+| V4 | second press exactly at the window edge | 1 2 | 1 2 |
+| V5 | same cell, different surface id | 1 1 | 1 1 (separate counters) |
+| V6 | double on a blank cell, then third (D1) | 1 2 1 | 1 2 3 |
+| V7 | third press with host hint false (D3) | 1 2 1 | 1 2 3 |
+| V8 | composer, four presses (D2) | 1 2 3 3 (Unix) | 1 2 3 1 |
+
+**Recommendation:** the shared type should carry AgenTerm's `ClickChain`
+semantics -- surface-id key, arm-on-success, host hint -- because they are the
+richer model and MiniCon's is a special case of them (hint always true, arm
+always). MiniCon adopting them changes D1 for its users; the composer's fourth
+click (D2) needs one answer for both.
+
+**Exclusive files for the migration** (to be claimed in the ledger before
+editing): in AgenTerm, a new click module in `agenterm-ui-core` and its export,
+the frontend selection module (`ClickChain` becomes a re-export or thin
+wrapper), the Unix frontend's terminal classify call and `ComposerClick`, and
+the Windows remote frontend's classify call; in MiniCon,
+`crates/minicon-core/src/click.rs`, `src/terminal.rs` (`register_click`) and
+`src/main.rs` (`register_composer_click`).
