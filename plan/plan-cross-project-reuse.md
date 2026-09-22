@@ -127,6 +127,26 @@ Reordered after review by the AgenTerm lane.
    four places, so it waits on the owners' decisions D1-D4.
 3. **Composer editing rules.** Locate AgenTerm's real rules first.
 
+### Scrollbar: negative controls (kept here, not only in a commit message)
+
+Each is a temporary production edit, restored by copy, run against the
+shared tests. A control that stays green is either a coverage gap or an
+equivalent mutant, and says which.
+
+| # | mutation | result |
+| --- | --- | --- |
+| N1 | drop the inverse's `+ travel / 2` rounding | red: exact round trip |
+| N2 | minimum thumb height 24 -> 0 | red: huge scrollback |
+| N3 | drop the thumb inset clamp | red: narrow track |
+| N4 | hit test `y < thumb.top` -> `<=` | green: equivalent mutant, the thumb is tested first |
+| N5 | drop `offset.min(maximum)` | red: oversized offset |
+
+The huge-scrollback test asserts the literal 24, not the constant, on
+purpose: changing the floor must turn it red and be changed with a reason.
+Before N1 and N2 had tests, both controls stayed green against the original
+ten. Migration done: MiniCon calls `agenterm-ui-core` and pins it from
+`6ae0f9bb6`; the sparse-travel off-by-one is a separate product decision.
+
 ## 6. How we will know it is working
 
 - Duplicated implementations of the same rule: 3 today, trending to 0.
