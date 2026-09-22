@@ -1252,3 +1252,88 @@ fn text_paths(line: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
+
+/// A release workflow that names a path nobody has fails only when the release
+/// runs -- the one place a broken path is most expensive to find. Every
+/// repository path a workflow names must exist, except the directories a build
+/// creates.
+#[test]
+fn every_path_a_workflow_names_exists() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // Build outputs the workflows create and then read; not in the tree.
+    let generated = [
+        "dist",
+        "payload-build",
+        "target",
+        "target-six",
+        "candidate",
+        "evidence",
+    ];
+    let path = regex_lite_paths();
+    let mut missing = Vec::new();
+    for entry in fs::read_dir(root.join(".github/workflows")).expect("workflows") {
+        let file = entry.expect("entry").path();
+        if file.extension().is_none_or(|ext| ext != "yml") {
+            continue;
+        }
+        let text = fs::read_to_string(&file).expect("workflow text");
+        for candidate in path(&text) {
+            let trimmed = candidate.trim_end_matches(['.', ',', ':', ')', '"', '\'']);
+            if trimmed
+                .split('/')
+                .any(|part| generated.contains(&part) || part.contains('$') || part.contains('*'))
+            {
+                continue;
+            }
+            if !root.join(trimmed).exists() {
+                missing.push(format!("{}: {trimmed}", file.display()));
+            }
+        }
+    }
+    missing.sort();
+    missing.dedup();
+    assert!(
+        missing.is_empty(),
+        "workflows name paths that do not exist:\n{}",
+        missing.join("\n")
+    );
+}
+
+/// Tokens that look like repository paths under a top-level directory the
+/// workflows actually use, without pulling in a regex dependency.
+fn regex_lite_paths() -> impl Fn(&str) -> Vec<String> {
+    const ROOTS: [&str; 9] = [
+        "research/",
+        "loader/",
+        "release/",
+        "scripts/",
+        "tests/",
+        "src/",
+        "ui/",
+        "assets/",
+        "crates/",
+    ];
+    move |text: &str| {
+        let mut found = Vec::new();
+        for token in text.split(|c: char| {
+            c.is_whitespace() || matches!(c, '`' | '(' | '"' | '\'' | '=' | ',' | ';')
+        }) {
+            if let Some(start) = ROOTS.iter().filter_map(|root| token.find(root)).min() {
+                let tail = &token[start..];
+                let end = tail
+                    .find(|c: char| {
+                        !(c.is_ascii_alphanumeric()
+                            || matches!(c, '/' | '.' | '_' | '-' | '$' | '*' | '{' | '}'))
+                    })
+                    .unwrap_or(tail.len());
+                let path = &tail[..end];
+                // A root reached only through a longer word (e.g. `mysrc/`) is not one.
+                let preceded = start > 0 && token.as_bytes()[start - 1].is_ascii_alphanumeric();
+                if !preceded && path.len() > path.find('/').unwrap_or(0) + 1 {
+                    found.push(path.to_owned());
+                }
+            }
+        }
+        found
+    }
+}
