@@ -365,13 +365,13 @@ six-cell claim.
   has lost the plot. Shrinking to 10 MiB is current-version work. Do not raise
   the 384 MiB regression ceiling to hide the gap, and do not treat 64 MiB as a
   compromise budget.
-- [x] `lab/tinygui` is the Darwin empty-window floor, not a MiniCon cut.
+- [x] `archive/lab/tinygui` is the Darwin empty-window floor, not a MiniCon cut.
   2026-09-07 osx-aarch64, 960×600, no timer: ObjC AppKit **77.2–77.3 MiB**
   RSS, Rust AppKit **71.2–76.0 MiB** RSS (footprint **16 MiB**), empty
   winit+softbuffer **115.4 MiB** RSS. All three **0.0% CPU** and sleep in
   `mach_msg2_trap`. Same-host settled MiniCon release was **70.9 MiB** RSS
   at **5.2% CPU**. The 10 MiB **RSS** intent sits below this AppKit RSS
-  floor; CPU idle is available from the host. Evidence: `lab/tinygui/RESULTS.md`.
+  floor; CPU idle is available from the host. Evidence: `archive/lab/tinygui/RESULTS.md`.
   Linux/Windows tinygui courts are not this receipt.
 - [x] **macOS idle ~300 MiB is not the window stack and not per-tab PTY state.**
   2026-09-06 `vmmap` + `heap -s` on an idle debug GUI (80×24): physical
@@ -433,7 +433,7 @@ six-cell claim.
   tests, Clippy and 32 MiB output qualification passed; final throughput
   21.18 MB/s, zero host copies/present failures.
   Exact artifacts, commands, caveats and experiments:
-  `plan/plan-runtime-memory-next.md`. The **10 MiB RSS target stays open**,
+  `plan/archive/plan-runtime-memory-next.md`. The **10 MiB RSS target stays open**,
   with the 384 MiB regression ceiling unchanged.
 - [x] **Two independent baseline/increment investigations** explain the
   next owners. Native Cocoa-linked process 8.14 MiB, NSApplication init
@@ -446,10 +446,10 @@ six-cell claim.
   tab about 1.3 MiB. This narrows the remaining work to OS UI initialization
   and presentation while preserving input/menu behavior; it is not an
   irreducible lower-bound claim or an excuse to change the budget.
-  Owners: `plan/research-hello-memory.md`, `plan/research-minicon-memory.md`.
+  Owners: `plan/archive/research-hello-memory.md`, `plan/archive/research-minicon-memory.md`.
   Follow-up custom-input/pixel and shared-host checkerboards, including
   application-policy controls, narrow the remaining host attribution in
-  `plan/research-pixel-host.md`; these are research probes, not product gates.
+  `plan/archive/research-pixel-host.md`; these are research probes, not product gates.
 - [x] **Screenshot allocator-cache growth repaired**, shared main revision
   `745f52b2e169d5b41b51377a82cf8a93a9b00c8b`, now pinned by MiniCon.
   Real-product frame/provider tracing found bounded display-frame ownership,
@@ -461,12 +461,12 @@ six-cell claim.
   measured screenshot RSS increments 17.891/26.516 MiB versus 0.469/0.297 MiB;
   fixed processes had no `MALLOC_LARGE` after screenshot or final-tab close.
   Four PNGs decoded at 1920×1200. Exact prototype hashes and full caveats:
-  `plan/research-frame-lifetime.md`. Final pinned release
+  `plan/archive/research-frame-lifetime.md`. Final pinned release
   `8ce6e879898843f21a2d0a228a14e767e67025bd961a7448bbb909fe62a07480`
   passes 132 unit tests, public GUI/RSS courts, sustained output and Clippy.
   Named final RSS court idle is 86.39 MiB, load 84.52 MiB; the final screenshot
   journey has no large malloc regions and decodes 1920×1200. Commands and
-  exact receipts: `research/screenshot-memory/`. This is not a startup or
+  exact receipts: `archive/research/screenshot-memory/`. This is not a startup or
   10 MiB PASS.
 - [x] **Remaining RSS accounting is measured, not discounted.** A frozen
   macOS release receipt closes 79.265625 MiB resident = 18.046875 internal +
@@ -474,7 +474,7 @@ six-cell claim.
   not proof that every page is a normal file or can be freed. Another run's
   roughly 79→68 MiB decline coincides with compression, not an accepted source
   optimization. Controls, native-stage comparisons and observer limitations:
-  `plan/research-rss-ledger.md`. All resident components remain in the product
+  `plan/archive/research-rss-ledger.md`. All resident components remain in the product
   RSS criterion; OS initialization and display residency remain open owners.
 - [~] **AppKit Writing Tools startup load is causally identified, not yet a
   supported product repair.** Native `finishLaunching` probes Writing Tools
@@ -485,7 +485,7 @@ six-cell claim.
   60.500 MiB; both public GUI/RSS tests pass. This one-pair private experiment
   is not enabled in production and still exceeds 10 MiB. The compatibility
   choice is pending while independent initialization/allocation work continues.
-  Owner and exact receipts: `plan/research-external-residency-next.md`.
+  Owner and exact receipts: `plan/archive/research-external-residency-next.md`.
 - [~] osx, lnx and win name host RSS through the same black-box court. Native
   osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
   exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode
@@ -509,7 +509,7 @@ six-cell claim.
   idle measurement. Exact final log:
   `target/windows-memory/rss-exitmeta.host.log` includes explicit
   `HasExited=True` and `ExitCode_raw=0`; durable owner:
-  `plan/research-windows-memory.md`. This release remains above 10 MiB, and
+  `plan/archive/research-windows-memory.md`. This release remains above 10 MiB, and
   neither this Windows cell nor macOS fills any unavailable Linux cell.
   Latest same-PE attribution reads K32GetProcessMemoryInfo WS at
   11:04:10.816Z, .818Z and .829Z, before/after the page query and after
@@ -519,7 +519,7 @@ six-cell claim.
   is sharable 18,186,240 B plus nonsharable 4,276,224 B. Those partitions
   close internally; **32,768 B / 8 pages remain unexplained against PMC**.
   Earlier erroneous claims of exact WS closure are withdrawn; historical
-  7/8-page residuals and receipts remain in `plan/research-windows-memory.md`.
+  7/8-page residuals and receipts remain in `plan/archive/research-windows-memory.md`.
   All resident pages remain in the product WS budget.
   The unnamed mapped bucket is 2,736,128 B. Its largest allocation base has
   2,306,048 B resident (2.20 MiB), of which 2,154,496 B has ShareCount≥2.
@@ -543,7 +543,7 @@ six-cell claim.
   only 491,520 B between the fresh sizes; aggregate privatized image pages
   remain 1,069,056 B. Their numerical equality to TextInputFramework's total
   residency does not assign all those private pages to that module.
-  Evidence and controls: `research/windows-memory/live-owners.md`,
+  Evidence and controls: `archive/research/windows-memory/live-owners.md`,
   `target/windows-memory/size-compare-91752f59296e6e2e4b2d718c2a97df69f83746bc-20260906T111300Z.log.hostout`.
   Per-module counts now resolve that ambiguity: TextInputFramework has
   **24,576 B** of private resident pages; the 1,069,056 B aggregate spans
@@ -1975,7 +1975,7 @@ interactive Linux x86 installation.
   Foundation certificate is publicly trusted Authenticode but names SignPath
   Foundation as publisher, not PARTNERNET SOFTWARE PTY LTD. The public
   `CODE_SIGNING_POLICY.md` and redacted
-  `research/minicon-com-loader/signpath-application.md` own this distinction,
+  `archive/research/minicon-com-loader-retired/signpath-application.md` own this distinction,
   team roles, privacy statement and verifiable-build questions. The application
   was submitted on 2026-08-30. SignPath acknowledged receipt by email, then
   declined the application in early September 2026 on the grounds that the

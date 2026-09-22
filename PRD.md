@@ -346,7 +346,7 @@ flowchart LR
   other's verdict; unavailable runtime evidence is `BLOCKED`. Local UTM
   lifecycle is `partnernetsoftware/utm-court`; MiniCon keeps product runners
   only. Owner: `prd/PRD_02_27_con_delivery.md`,
-  `plan/plan-utm-court-extract.md`.
+  `plan/archive/plan-utm-court-extract.md`.
 - [~] Local courts are automation-capable but not sealed release baselines.
   Lima is optional acceleration; Rosetta is a provisional OSX x86_64 userspace
   court; real native runners retain claims translation cannot make.

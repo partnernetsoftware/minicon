@@ -5,7 +5,7 @@
 | Date | 2026-08-28 |
 | Status | **Completed decision record — local Intel-macOS VM branch rejected for routine qualification** |
 | Purpose | Decide whether Apple Silicon UTM can own the true Intel macOS court, or whether that cell must move to a real Intel Mac runner |
-| Implementation | `research/osx-x86-64-court/` |
+| Implementation | `archive/research/osx-x86-64-court/` |
 | Read first | `PRD.md`, `prd/PRD_02_27_con_delivery.md` |
 | Source discipline | Apple-origin installer only; OpenCore/QEMU components must retain upstream provenance and hashes |
 
@@ -116,7 +116,7 @@ runner; there is no “keep trying” state.
 ## §5 — result layout
 
 ```text
-research/osx-x86-64-court/
+archive/research/osx-x86-64-court/
 ├── README.md
 ├── preflight.sh
 └── RESULTS.md

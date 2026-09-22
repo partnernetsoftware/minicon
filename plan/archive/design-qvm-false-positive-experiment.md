@@ -5,7 +5,7 @@
 | Date | 2026-08-30 |
 | Status | **both small baseline variants flagged; PE resources ruled insufficient** |
 | Purpose | Decide whether 360 QVM reputation, Authenticode trust, or MiniCon's custom Windows startup is the actionable false-positive owner |
-| Implementation | `lab/hello-window/` (Q0 small baseline); `research/qvm-false-positive/` (later controlled variants) |
+| Implementation | `archive/lab/hello-window/` (Q0 small baseline); `research/qvm-false-positive/` (later controlled variants) |
 | Read first | `PRD.md`, `prd/PRD_02_27_con_delivery.md`, `CODE_SIGNING_POLICY.md` |
 | Source discipline | Only public exact Release bytes and reproducible one-variable variants; no evasion, packing, junk bytes, exclusions, or disabled protection |
 
@@ -56,7 +56,7 @@ behavior or to promise that one antivirus verdict proves universal safety.
 | Q2 trusted signature | Same qualified payload and behavior, provider signs through existing exact-byte workflow | Tests whether Public Trust publisher identity closes the verdict |
 | Q3 conventional startup | Unsigned same-source x86_64 build using standard MSVC/Rust startup; product features retained | Tests the strongest structural hypothesis if Q1 does not close it |
 
-The smaller `lab/hello-window` diagnostic baseline uses conventional startup
+The smaller `archive/lab/hello-window` diagnostic baseline uses conventional startup
 but statically links the CRT. It must not import the Visual C++ Redistributable;
 otherwise a clean-machine launch failure would contaminate the antivirus test.
 
@@ -93,7 +93,7 @@ or count VirusTotal vendors as a substitute for the named 360 regression.
 5. If none separates, rule **unlocalized QVM heuristic**: preserve behavior,
    continue official vendor review, and do not mutate bytes blindly.
 
-Before Q1, `lab/hello-window/` supplies a smaller diagnostic root. Its
+Before Q1, `archive/lab/hello-window/` supplies a smaller diagnostic root. Its
 196,608-byte conventional, static-CRT, unsigned GUI was reported with the same
 `HEUR/QVM202.0.B951.Malware.Gen` verdict. Therefore PTY, IPC, subprocesses,
 MiniCon's custom entry and terminal behavior are not necessary triggers. The

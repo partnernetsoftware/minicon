@@ -6,8 +6,8 @@ __pycache__/
 *.log
 *.tmp
 /research/minicon-com-loader/payload-build/
-/lab/**/target/
-/lab/**/dist/
+/archive/**/target/
+/archive/**/dist/
 .DS_Store
 target-six
 # Intermediate PNG faces that assets/icon/generate_icons.py feeds to iconutil.

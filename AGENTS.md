@@ -61,7 +61,7 @@ guest adapters and image recipes live in sibling `utm-court`
 `scripts/*-utm-runner.sh` and `scripts/lima-court.sh`. AgenTerm has its own
 caller and must not be routed through MiniCon scripts. Missing court is a
 locator failure or `BLOCKED`, never a skipped PASS. Caller map:
-`~/repos/utm-court/CALLERS.md`. Sequencing: `plan/plan-utm-court-extract.md`.
+`~/repos/utm-court/CALLERS.md`. Sequencing: `plan/archive/plan-utm-court-extract.md`.
 
 ## Skills: look them up BEFORE acting
 

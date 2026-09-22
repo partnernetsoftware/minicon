@@ -95,7 +95,7 @@ stale-owned. Never `#ifdef _WIN32` in cosmocc fat.
 
 v0.1.3 is released as five unsigned native archives covering all six cells;
 `minicon.com` is intentionally absent. Its completed gate ledger is
-`v0.1.3-candidate-plan.md`, and superseded APE experiments are indexed by
+`archive/research/minicon-com-loader-retired/v0.1.3-candidate-plan.md`, and superseded APE experiments are indexed by
 `prd/archive/v0.1.3-release-history.md`.
 
 This directory now owns v0.1.4 APE research. G3/G4 remain

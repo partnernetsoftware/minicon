@@ -205,7 +205,7 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   removing the duplicate product-owned full-window canvas and its copy.
   `minicon_throughput::sustained_long_output_keeps_control_and_sibling_responsive`
   requires `host_copy_frames=0` and verifies output/sibling responsiveness;
-  macOS release validation and memory evidence: `plan/plan-runtime-memory-next.md`.
+  macOS release validation and memory evidence: `plan/archive/plan-runtime-memory-next.md`.
 - [x] Windows maps typed physical damage to `InvalidateRect` and uses
   `PAINTSTRUCT.rcPaint` for top-down `StretchDIBits` partial present. Every
   successful `BeginPaint` is paired with exactly one `EndPaint`, short scanline
