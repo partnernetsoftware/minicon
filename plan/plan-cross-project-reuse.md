@@ -79,7 +79,10 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
 
 ## 4. Mechanisms
 
-- **A consumer feature-matrix check in AgenTerm.** One gate that builds and
+- **A consumer feature-matrix check in AgenTerm.** *Landed:* agenterm
+  `6283e6ccc` runs it in its local pre-push (six targets, plain and dev
+  combinations; Candidate not yet), and MiniCon's side is the
+  `agenterm_platform_features_match_the_consumer_matrix` test (`93e4c37`). One gate that builds and
   tests `agenterm-platform` with exactly MiniCon's feature set, per target.
   Cheap — no MiniCon checkout — and it closes the "agenterm is green, minicon
   does not compile" class for good. MiniCon keeps the list in sync (a MiniCon
