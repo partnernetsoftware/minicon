@@ -73,7 +73,7 @@ use agenterm_platform::window_host::{
     PointerButtonState, WheelDelta, WindowWaker, XrgbPixelFrame, run_pixel_window,
 };
 use agenterm_ui_core::{DirtyRegion, DirtyRows, PixelRect};
-use minicon_core::scrollbar::{
+use agenterm_ui_core::{
     ScrollbarHit, ScrollbarThumbDrag, scrollback_for_thumb_top, scrollbar_hit_test,
 };
 

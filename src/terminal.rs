@@ -1053,7 +1053,7 @@ impl ConTerminal {
         &mut self,
         width: u32,
         height: u32,
-    ) -> (minicon_core::scrollbar::ScrollbarGeometry, usize, usize) {
+    ) -> (agenterm_ui_core::ScrollbarGeometry, usize, usize) {
         let (offset, maximum) = self.scrollback_bounds();
         (
             ui::terminal_scrollbar_geometry(
