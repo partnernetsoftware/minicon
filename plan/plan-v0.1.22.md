@@ -99,6 +99,23 @@ and each is committed and verified on its own.
    shared seam is `agenterm-ui-core`; candidates are host-neutral pieces now in
    `minicon-core`. Nothing moves across repositories without a second consumer.
 
+## Progress
+
+| step | commit | result |
+| --- | --- | --- |
+| archive | `7329412` | 182 files moved; `research/` 163 -> 29 files, `lab/` gone |
+| 1 click counter | `b141749` | `minicon_core::click::ClickCounter<K>`, rule tested once |
+| 2 terminal module | `c2adb15` | `ConTerminal` -> `src/terminal.rs` (2,326 lines) |
+| 3 tests beside code | `2c12755` | 42 terminal tests + 5 helpers moved |
+| workflow path invariant | `15517ee` | `every_path_a_workflow_names_exists` |
+| 4 release tooling | `ec50ba7` | `loader/` + `release/`; `research/` gone; 7 depth-relative root lookups fixed; `minicon-com.yml` 35678087514 green on it |
+
+`main.rs`: 7,947 lines at 0.1.21 -> 4,601.
+
+Still open in this section: narrowing `ConTerminal`'s `pub(super)` surface so
+`ConApp` asks the session instead of reaching into its fields (step 2's second
+half), and the shared-abstraction reassessment (step 5).
+
 ## 4. Carried debt and backlog
 
 - `capture-pane --scrollback N` — decide the semantics (cross-screen stitching,
