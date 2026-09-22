@@ -2347,3 +2347,958 @@ impl ConTerminal {
         Ok(next_wake.map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil))
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    pub(crate) fn parser() -> vt100::Parser<ConCallbacks> {
+        vt100::Parser::<ConCallbacks>::new_with_callbacks(24, 80, 0, ConCallbacks::default())
+    }
+    /// Renders one screen and returns (pixel buffer, cell_w, cell_h) for exact
+    /// pixel assertions — the deterministic alternative to eyeballing a
+    /// screenshot, which is what actually caught this bug: a screenshot
+    /// suggested underline/background/inverse were shifted by a couple of
+    /// columns, but that could just as easily have been the screenshot
+    /// harness. This settles it in-process.
+    pub(crate) fn render_to_buffer(bytes: &[u8], cols: u16, rows: u16) -> (Vec<u32>, u32, u32) {
+        let cell_w = 10u32;
+        let cell_h = 20u32;
+        let mut screen_parser = vt100::Parser::<ConCallbacks>::new_with_callbacks(
+            rows,
+            cols,
+            0,
+            ConCallbacks::default(),
+        );
+        screen_parser.process(bytes);
+        let fw = u32::from(cols) * cell_w;
+        let fh = u32::from(rows) * cell_h;
+        let mut pixels = vec![Rgb(0, 0, 0).to_xrgb(); (fw * fh) as usize];
+        let mut surface = Surface::new(&mut pixels, fw, fh);
+        paint_cells(
+            &mut surface,
+            screen_parser.screen(),
+            None,
+            cell_w,
+            cell_h,
+            Rgb(0xCC, 0xCC, 0xCC),
+            Rgb(0, 0, 0),
+            palette::STANDARD_ANSI,
+            10,
+        );
+        (pixels, cell_w, cell_h)
+    }
+    pub(crate) fn prepared_pointer_terminal() -> ConTerminal {
+        let mut app = ConTerminal::new(None);
+        app.frame_width = 800;
+        app.frame_height = 400;
+        app.cell_w = 8;
+        app.cell_h = 16;
+        app.cols = 80;
+        app.rows = 24;
+        app.scale = 1.0;
+        app.dirty = DirtyRegion::empty();
+        app
+    }
+    /// Builds a terminal whose cell metrics, grid and content insets are derived
+    /// the same way `opened`/`configure_host_ui` derive them at runtime, so a
+    /// coordinate test exercises the real scale pipeline rather than hand-picked
+    /// numbers. The bottom inset reserves composer + status, matching
+    /// [`ui::bottom_inset`].
+    pub(crate) fn pointer_terminal_at(scale: f64, frame_w: u32, frame_h: u32) -> ConTerminal {
+        let mut app = ConTerminal::new(None);
+        app.scale = scale;
+        app.recompute_metrics(scale);
+        let left = minicon_core::numeric::round_f64(ui::SIDEBAR_WIDTH_DIP * scale) as u32;
+        let bottom = ui::bottom_inset(scale);
+        app.set_content_insets(left, 0, bottom);
+        app.frame_width = frame_w;
+        app.frame_height = frame_h;
+        let usable_w = frame_w
+            .saturating_sub(left)
+            .saturating_sub(ui::terminal_scrollbar_width(scale));
+        let usable_h = frame_h
+            .saturating_sub(app.content_top_px)
+            .saturating_sub(bottom);
+        let (cols, rows) = ConTerminal::compute_grid(usable_w, usable_h, app.cell_w, app.cell_h);
+        app.cols = cols;
+        app.rows = rows;
+        app.dirty = DirtyRegion::empty();
+        app
+    }
+    pub(crate) fn preedit_surface<'a>(
+        pixels: &'a mut [u32],
+        width: u32,
+        height: u32,
+    ) -> Surface<'a> {
+        Surface::new(pixels, width, height)
+    }
+    #[test]
+    fn vt_damage_rows_map_to_clamped_content_and_cursor_endpoints() {
+        let mut app = ConTerminal::new(None);
+        app.dirty = DirtyRegion::empty();
+        app.frame_width = 100;
+        app.frame_height = 60;
+        app.content_left_px = 10;
+        app.content_top_px = 8;
+        app.content_bottom_px = 12;
+        app.cell_w = 8;
+        app.cell_h = 10;
+        app.cols = 8;
+        app.rows = 4;
+        app.parser.screen_mut().set_size(4, 8);
+        let _ = app.parser.take_damage();
+
+        app.parser.process(b"\x1b[2J");
+        let damage = app.parser.take_damage();
+        assert!(!damage.needs_full_raster());
+        app.mark_vt_damage(damage);
+        let rows = app.dirty.bounds().expect("row damage has a pixel bound");
+        assert_eq!(rows.left, 10);
+        assert_eq!(rows.top, 8);
+        assert_eq!(rows.right, 74);
+        assert_eq!(rows.bottom, 48);
+        assert!(!app.dirty.is_full());
+
+        app.dirty = DirtyRegion::empty();
+        app.parser.process(b"A");
+        let _ = app.parser.take_damage();
+        app.parser.process(b"\x1b[1;1H");
+        let damage = app.parser.take_damage();
+        assert_eq!(damage.cursor_before(), Some((0, 1)));
+        assert_eq!(damage.cursor_after(), Some((0, 0)));
+        app.mark_vt_damage(damage);
+        let cursor = app.dirty.bounds().expect("cursor endpoints are dirty");
+        assert_eq!(cursor.left, 10);
+        assert_eq!(cursor.right, 34);
+        assert_eq!(cursor.top, 8);
+        assert_eq!(cursor.bottom, 18);
+        assert!(!app.dirty.is_full());
+    }
+    #[test]
+    fn pty_drain_consumes_vt_damage_without_unconditional_full() {
+        let mut app = ConTerminal::new(None);
+        app.pty_output = Arc::new(BoundedOutputPipe::new(1024));
+        app.dirty = DirtyRegion::empty();
+        app.frame_width = 640;
+        app.frame_height = 400;
+        app.content_left_px = 10;
+        app.content_top_px = 8;
+        app.content_bottom_px = 12;
+        app.cell_w = 8;
+        app.cell_h = 16;
+        app.pty_output.push_blocking(b"ASCII").expect("pipe open");
+
+        let outcome = app.drain_pty();
+        assert!(outcome.changed);
+        assert!(outcome.redraw);
+        assert!(!app.dirty.is_full());
+        assert!(app.dirty.bounds().is_some());
+    }
+    #[test]
+    fn full_vt_damage_is_the_explicit_safe_fallback() {
+        let mut app = ConTerminal::new(None);
+        app.dirty = DirtyRegion::empty();
+        app.frame_width = 640;
+        app.frame_height = 400;
+        app.parser.screen_mut().mark_full_damage();
+
+        let outcome = app.drain_pty();
+        assert!(outcome.redraw);
+        assert!(app.dirty.is_full());
+    }
+    #[test]
+    fn scrollback_bounds_uses_read_only_vt_length() {
+        let mut app = ConTerminal::new(None);
+        app.parser.screen_mut().set_size(3, 10);
+        let _ = app.parser.take_damage();
+        app.parser.process(b"a\r\nb\r\nc\r\nd");
+        let _ = app.parser.take_damage();
+
+        let before = app.parser.screen().scrollback();
+        let expected = app.parser.screen().scrollback_len();
+        let (offset, maximum) = app.scrollback_bounds();
+        assert_eq!(offset, before);
+        assert_eq!(maximum, expected);
+        assert_eq!(app.parser.screen().scrollback(), before);
+    }
+    #[test]
+    fn da1_query_gets_a_reply_queued_for_the_pty() {
+        let mut parser = parser();
+        parser.process(b"\x1b[c");
+        assert_eq!(parser.callbacks().pending_replies, b"\x1b[?1;2c");
+    }
+    #[test]
+    fn cpr_query_reports_the_real_current_cursor_position() {
+        let mut parser = parser();
+        // Two lines of output move the cursor to row 1 (0-indexed), col 0 —
+        // reported 1-indexed per the CPR spec, so row 2, col 1.
+        parser.process(b"hello\r\nworld");
+        parser.callbacks_mut().pending_replies.clear();
+        parser.process(b"\x1b[6n");
+        assert_eq!(parser.callbacks().pending_replies, b"\x1b[2;6R");
+    }
+    #[test]
+    fn dsr_ok_query_gets_a_reply_queued() {
+        let mut parser = parser();
+        parser.process(b"\x1b[5n");
+        assert_eq!(parser.callbacks().pending_replies, b"\x1b[0n");
+    }
+    #[test]
+    fn unrecognized_csi_queries_are_left_unanswered_not_guessed_at() {
+        // Anything with an intermediate byte (private-mode queries, etc.)
+        // or an unrecognized final byte must not get a made-up reply —
+        // silence is the correct, honest answer for a query this binary
+        // does not actually understand, not a guess that could mislead the
+        // caller into thinking a real capability exists.
+        let mut parser = parser();
+        parser.process(b"\x1b[?15n"); // DEC-private status (printer), unhandled
+        assert!(parser.callbacks().pending_replies.is_empty());
+    }
+    /// The escape-sequence tables are covered exhaustively in
+    /// `agenterm_platform::contract::terminal_input`. What matters here is this
+    /// host's own policy: that it reads the modes the application negotiated
+    /// and hands the shared encoder the right ones.
+    #[test]
+    fn key_encoding_is_driven_by_live_screen_mode() {
+        let mut parser = parser();
+        let up = NormalizedKeyEvent {
+            logical: LogicalKey::Named(NamedKey::ArrowUp),
+            physical: agenterm_platform::input::PhysicalKeyCode::Other,
+            text: None,
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: ModifierState::default(),
+        };
+
+        let mode = TerminalKeyMode {
+            application_cursor: parser.screen().application_cursor(),
+            ime_active: false,
+        };
+        assert_eq!(
+            terminal_input::key_event_to_bytes(&up, mode),
+            Some(b"\x1b[A".to_vec()),
+            "default mode must use CSI"
+        );
+
+        // The application turns on DECCKM; the same keypress must now encode as
+        // SS3. Ignoring this is what made vim/less misread arrow keys.
+        parser.process(b"\x1b[?1h");
+        let mode = TerminalKeyMode {
+            application_cursor: parser.screen().application_cursor(),
+            ime_active: false,
+        };
+        assert_eq!(
+            terminal_input::key_event_to_bytes(&up, mode),
+            Some(b"\x1bOA".to_vec()),
+            "DECCKM must switch cursor keys to SS3"
+        );
+    }
+    #[test]
+    fn paste_framing_follows_the_application_bracketed_paste_mode() {
+        let mut parser = parser();
+        assert!(!parser.screen().bracketed_paste());
+        let text = terminal_input::normalize_terminal_paste("a\nb");
+        assert_eq!(
+            terminal_input::terminal_paste_bytes(&text, parser.screen().bracketed_paste()),
+            b"a\rb".to_vec()
+        );
+
+        parser.process(b"\x1b[?2004h");
+        assert!(parser.screen().bracketed_paste());
+        assert_eq!(
+            terminal_input::terminal_paste_bytes(&text, parser.screen().bracketed_paste()),
+            b"\x1b[200~a\rb\x1b[201~".to_vec()
+        );
+    }
+    #[test]
+    fn mouse_mode_maps_the_vt100_variants_a_tui_actually_requests() {
+        let mut app = ConTerminal::new(None);
+        assert_eq!(
+            app.mouse_mode(),
+            (
+                terminal_input::ApplicationMouseMode::None,
+                terminal_input::MouseReportEncoding::Default
+            )
+        );
+
+        // ?1002h + ?1006h is what a modern TUI asks for.
+        app.parser.process(b"\x1b[?1002h\x1b[?1006h");
+        assert_eq!(
+            app.mouse_mode(),
+            (
+                terminal_input::ApplicationMouseMode::ButtonMotion,
+                terminal_input::MouseReportEncoding::Sgr
+            )
+        );
+    }
+    #[test]
+    fn selection_text_joins_rows_with_crlf_and_trims_trailing_blanks() {
+        let mut parser = parser();
+        parser.process(b"ab\r\ncd");
+        let text = selection_text(
+            parser.screen(),
+            TerminalPoint { row: 0, col: 0 },
+            TerminalPoint { row: 1, col: 79 },
+        );
+        assert_eq!(text, "ab\r\ncd");
+    }
+    #[test]
+    fn scrolling_clamps_to_available_scrollback() {
+        let mut app = ConTerminal::new(None);
+        // Nothing scrolled off yet, so the viewport cannot move up...
+        app.scroll_by(10);
+        assert_eq!(app.scroll_offset, 0);
+        // ...and scrolling down from the bottom must not underflow.
+        app.scroll_by(-10);
+        assert_eq!(app.scroll_offset, 0);
+    }
+    #[test]
+    fn queued_resize_coalesces_without_synchronously_mutating_the_grid() {
+        let mut terminal = ConTerminal::new(None);
+        let original_grid = (terminal.cols, terminal.rows);
+        terminal.queue_resize(900, 600, 1.0);
+        terminal.queue_resize(1200, 800, 1.25);
+        assert_eq!((terminal.cols, terminal.rows), original_grid);
+        assert_eq!(terminal.pending_geometry, Some((1200, 800, 1.25)));
+    }
+    #[test]
+    fn scrolling_up_actually_moves_once_real_content_is_off_screen() {
+        // Complements `scrolling_clamps_to_available_scrollback`, which only
+        // ever exercises a terminal with nothing scrolled off — a case where
+        // "clamped to 0 because there's nothing to see" and "clamped to 0
+        // because the bound was computed wrong" are indistinguishable, and
+        // did not catch a real bug: `scroll_by`'s old bound was
+        // `screen().scrollback() + scroll_offset`, but vendored vt100's
+        // `Screen::scrollback()` returns the *current* offset (its own doc
+        // comment says so), not the available range — so the bound was
+        // always `2 * scroll_offset`, i.e. always 0 from a fresh view, and
+        // wheel-up silently never worked in a live session. Only caught by
+        // a black-box control `send-wheel` test against a real session with
+        // actual scrolled-off lines; this pins the same fact as a fast unit
+        // test so it can't regress silently again.
+        let mut app = ConTerminal::new(None);
+        app.parser.screen_mut().set_size(4, 40);
+        for line in 0..20 {
+            app.parser.process(format!("line{line}\r\n").as_bytes());
+        }
+        assert_eq!(app.scroll_offset, 0);
+
+        app.scroll_by(3);
+        assert_eq!(
+            app.scroll_offset, 3,
+            "3 lines of real scrollback exist; scrolling up must move"
+        );
+
+        // Overshooting clamps to what's actually buffered, not to 0.
+        app.scroll_by(1000);
+        let max = app.scroll_offset;
+        assert!(
+            max > 3,
+            "clamp must be the real available scrollback, not stuck at the first move"
+        );
+
+        app.scroll_by(-1000);
+        assert_eq!(
+            app.scroll_offset, 0,
+            "scrolling back down must return to the bottom"
+        );
+    }
+    /// The same crash one level up, driven the way the product drives it:
+    /// a full Ctrl+wheel zoom-in sweep through `apply_resize` against a
+    /// shell that keeps printing CJK. Every notch shrinks the column count,
+    /// and the CJK text guarantees wide characters sit near whatever the new
+    /// right edge turns out to be. Deterministic — no window, no timing.
+    ///
+    /// The reason this angle went unnoticed for two rounds of investigation
+    /// is that the existing zoom stress tests either resize without any
+    /// output in flight, or push output through a fixed grid; only doing
+    /// both, with *wide* characters, reaches the broken invariant.
+    #[test]
+    fn zoom_in_sweep_while_printing_cjk_never_aborts() {
+        // A localized Windows shell banner is CJK, so this is what a real
+        // session looks like from its very first frame — not an exotic case.
+        let chunks: [&[u8]; 3] = [
+            "Microsoft Windows [版本 10.0.20348.1006]\r\n".as_bytes(),
+            "(c) Microsoft Corporation。保留所有权利。\r\n".as_bytes(),
+            "C:\\dev> 编译 中文日本語 한국어 ██▒░\r\n".as_bytes(),
+        ];
+        for &(phys_w, phys_h) in &[(960u32, 600u32), (1280, 400), (420, 900)] {
+            for scale_tenths in [10u32, 15, 25] {
+                let scale = f64::from(scale_tenths) / 10.0;
+                let mut app = ConTerminal::new(None);
+                app.apply_resize(phys_w, phys_h, scale);
+                // One notch per step across the whole clamp range, exactly
+                // as `zoom_font` walks it, with output in flight throughout.
+                for step in 0..=28u32 {
+                    app.font_size_logical = (8.0 + f64::from(step)).clamp(8.0, 36.0);
+                    app.apply_resize(phys_w, phys_h, scale);
+                    for chunk in &chunks {
+                        app.parser.process(chunk);
+                    }
+                }
+                assert!(app.cols >= 2 && app.rows >= 2);
+            }
+        }
+    }
+    #[test]
+    fn double_click_uses_shared_terminal_word_classes() {
+        let mut app = ConTerminal::new(None);
+        app.parser.screen_mut().set_size(4, 40);
+        app.parser.process(b"cd /usr/local/bin (note)");
+
+        // Inside the path: the whole path is one word, because '/', '.', '-'
+        // and ':' are word characters here — more useful than conhost's
+        // space-only rule.
+        let hit = TerminalPoint { row: 0, col: 8 };
+        let (start, end) = app.word_at(hit).expect("word under a path cell");
+        assert_eq!((start.col, end.col), (3, 16));
+
+        // Parentheses are delimiters, so "note" selects without them.
+        let hit = TerminalPoint { row: 0, col: 19 };
+        let (start, end) = app.word_at(hit).expect("word inside parens");
+        assert_eq!((start.col, end.col), (19, 22));
+
+        // Whitespace is its own terminal word class rather than being folded
+        // into either adjacent command token.
+        let (start, end) = app
+            .word_at(TerminalPoint { row: 0, col: 2 })
+            .expect("blank run is selectable");
+        assert_eq!((start.col, end.col), (2, 2));
+    }
+    #[test]
+    fn triple_click_selects_only_the_visible_row() {
+        let mut app = ConTerminal::new(None);
+        app.parser.screen_mut().set_size(4, 10);
+        // 15 characters over a 10-column grid soft-wraps onto row 1.
+        app.parser.process(b"abcdefghijklmno");
+        assert!(
+            app.parser.screen().row_wrapped(0),
+            "row 0 should be wrapped"
+        );
+
+        let (start, end) = app
+            .line_at(TerminalPoint { row: 1, col: 2 })
+            .expect("visible row");
+        assert_eq!((start.row, start.col), (1, 0));
+        assert_eq!((end.row, end.col), (1, 9));
+    }
+    #[test]
+    fn click_counting_requires_the_same_cell_within_the_window() {
+        let mut app = ConTerminal::new(None);
+        let here = TerminalPoint { row: 1, col: 1 };
+        let elsewhere = TerminalPoint { row: 5, col: 5 };
+
+        assert_eq!(app.register_click(here), 1);
+        assert_eq!(app.register_click(here), 2);
+        assert_eq!(app.register_click(here), 3);
+        // A fourth click cycles back to character selection.
+        assert_eq!(app.register_click(here), 1);
+
+        // Moving restarts the count, so a fast click in two places cannot
+        // accidentally select a word.
+        assert_eq!(app.register_click(here), 2);
+        assert_eq!(app.register_click(elsewhere), 1);
+    }
+    /// A plain click seeds a drag anchor, not a selection. Rendering, copying,
+    /// and the Ctrl+C / right-click branches must all agree that a degenerate
+    /// range is nothing — otherwise one click leaves its cell inverted forever,
+    /// bare Ctrl+C copies an empty string instead of interrupting the child,
+    /// and right-click stops pasting.
+    #[test]
+    fn a_click_without_a_drag_is_not_a_selection() {
+        let mut app = ConTerminal::new(None);
+        let point = TerminalPoint { row: 2, col: 4 };
+
+        app.selection = Some((point, point));
+        assert_eq!(
+            app.active_selection(),
+            None,
+            "an anchor-only range covers no cells and must not render or copy"
+        );
+
+        let dragged = TerminalPoint { row: 2, col: 7 };
+        app.selection = Some((point, dragged));
+        assert_eq!(
+            app.active_selection(),
+            Some((point, dragged)),
+            "a real drag stays a selection"
+        );
+
+        // The stored state agrees with what consumers see, so the next
+        // right-click pastes rather than copying nothing.
+        app.selection = Some((point, point));
+        app.selecting = true;
+        if !selection_should_auto_copy(app.selection) {
+            app.selection = None;
+        }
+        assert_eq!(app.selection, None);
+    }
+    #[test]
+    fn underline_paints_under_the_correct_columns_not_shifted() {
+        // "AA" plain, then underlined "BB". If underline were misplaced (the
+        // shift a screenshot seemed to show), it would land under "AA".
+        let (pixels, cell_w, cell_h) = render_to_buffer(b"AA\x1b[4mBB\x1b[0m", 10, 1);
+        let underline_y = cell_h - 2;
+        let bg = Rgb(0, 0, 0).to_xrgb();
+
+        // No underline under the plain run (cols 0-1).
+        for col in 0..2u32 {
+            let x = col * cell_w + cell_w / 2;
+            assert_eq!(
+                pixels[(underline_y * cell_w * 10 + x) as usize],
+                bg,
+                "col {col} must not be underlined"
+            );
+        }
+        // Underline present under the attributed run (cols 2-3).
+        for col in 2..4u32 {
+            let x = col * cell_w + cell_w / 2;
+            assert_ne!(
+                pixels[(underline_y * cell_w * 10 + x) as usize],
+                bg,
+                "col {col} must be underlined"
+            );
+        }
+    }
+    #[test]
+    fn background_fill_spans_exactly_the_attributed_columns() {
+        // "XX" plain, then red-background "RR", then plain "YY" again — the
+        // fill must start exactly at column 2 and end exactly at column 3.
+        let (pixels, cell_w, cell_h) = render_to_buffer(b"XX\x1b[41mRR\x1b[0mYY", 10, 1);
+        let mid_y = cell_h / 2;
+        let row_base = (mid_y * cell_w * 10) as usize;
+        let red = palette::resolve(
+            vt100::Color::Idx(1),
+            Rgb(0, 0, 0),
+            &palette::STANDARD_ANSI,
+            false,
+        )
+        .to_xrgb();
+
+        let sample = |col: u32| pixels[row_base + (col * cell_w + cell_w / 2) as usize];
+        assert_ne!(sample(0), red, "col 0 (plain) must not be red");
+        assert_ne!(sample(1), red, "col 1 (plain) must not be red");
+        assert_eq!(sample(2), red, "col 2 must be red");
+        assert_eq!(sample(3), red, "col 3 must be red");
+        assert_ne!(sample(4), red, "col 4 (plain again) must not be red");
+    }
+    #[test]
+    fn inverse_swaps_the_full_attributed_span_not_one_cell() {
+        let (pixels, cell_w, cell_h) = render_to_buffer(b"NN\x1b[7mIIII\x1b[0m", 10, 1);
+        let mid_y = cell_h / 2;
+        let row_base = (mid_y * cell_w * 10) as usize;
+        let fg = Rgb(0xCC, 0xCC, 0xCC).to_xrgb();
+
+        // Inverse fills the background with the swapped color across all 4
+        // attributed cells (2..6), not just the first one.
+        for col in 2..6u32 {
+            assert_eq!(
+                pixels[row_base + (col * cell_w + cell_w / 2) as usize],
+                fg,
+                "col {col} must show the inverted background"
+            );
+        }
+    }
+    #[test]
+    fn stress_apply_resize_across_extreme_scale_and_window_sizes() {
+        // Reproduce a reported crash: "font grows past a certain size and the
+        // program exits." Sweep scale factors (simulating high-DPI displays
+        // this dev machine does not have) crossed with window sizes from tiny
+        // to large, at every font size in the allowed range, and confirm
+        // apply_resize never panics and never produces a zero-sized grid.
+        for scale_tenths in 5..=40 {
+            let scale = f64::from(scale_tenths) / 10.0;
+            for logical in [8.0, 20.0, 36.0] {
+                for &(w, h) in &[(1u32, 1u32), (50, 50), (960, 600), (3840, 2160)] {
+                    let mut app = ConTerminal::new(None);
+                    app.font_size_logical = logical;
+                    app.apply_resize(w, h, scale);
+                    assert!(
+                        app.cols >= 2,
+                        "cols degenerated at scale={scale} logical={logical} w={w} h={h}"
+                    );
+                    assert!(
+                        app.rows >= 2,
+                        "rows degenerated at scale={scale} logical={logical} w={w} h={h}"
+                    );
+                    assert!(app.cell_w > 0);
+                    assert!(app.cell_h > 0);
+                }
+            }
+        }
+    }
+    #[test]
+    fn decscusr_selects_shape_and_blink() {
+        let mut parser = parser();
+        // Default before any DECSCUSR: blinking block.
+        assert_eq!(parser.screen().cursor_shape(), vt100::CursorShape::Block);
+        assert!(parser.screen().cursor_blinking());
+
+        parser.process(b"\x1b[6 q"); // steady bar (insert-mode convention)
+        assert_eq!(parser.screen().cursor_shape(), vt100::CursorShape::Bar);
+        assert!(!parser.screen().cursor_blinking());
+
+        parser.process(b"\x1b[3 q"); // blinking underline
+        assert_eq!(
+            parser.screen().cursor_shape(),
+            vt100::CursorShape::Underline
+        );
+        assert!(parser.screen().cursor_blinking());
+
+        parser.process(b"\x1b[2 q"); // steady block
+        assert_eq!(parser.screen().cursor_shape(), vt100::CursorShape::Block);
+        assert!(!parser.screen().cursor_blinking());
+
+        // Out-of-range resets to the default rather than leaving stale state.
+        parser.process(b"\x1b[9 q");
+        assert_eq!(parser.screen().cursor_shape(), vt100::CursorShape::Block);
+        assert!(parser.screen().cursor_blinking());
+    }
+    #[test]
+    fn blink_toggles_on_the_configured_interval_and_resets_on_keystroke() {
+        let mut app = ConTerminal::new(None);
+        assert!(app.blink_visible);
+        let start = app.last_blink_at;
+
+        // Simulate the interval having elapsed by moving the recorded time
+        // into the past rather than sleeping — deterministic and instant.
+        app.last_blink_at = start - BLINK_INTERVAL - Duration::from_millis(1);
+        let due = app.last_blink_at;
+        let now = Instant::now();
+        assert!(now.saturating_duration_since(due) >= BLINK_INTERVAL);
+
+        // A keystroke must force the cursor back to visible immediately,
+        // regardless of blink phase — this is what stops "did that key even
+        // register?" moments.
+        app.blink_visible = false;
+        let key = NormalizedKeyEvent {
+            logical: LogicalKey::Character("a".to_owned()),
+            physical: agenterm_platform::input::PhysicalKeyCode::Other,
+            text: Some("a".to_owned()),
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: ModifierState::default(),
+        };
+        app.forward_key(&key);
+        assert!(app.blink_visible);
+    }
+    /// A pointer or control coordinate past the grid's right/bottom edge must
+    /// land on the last cell, not an off-grid column or row. Row already
+    /// clamped; the column did not, so a coordinate to the right of the grid
+    /// produced an out-of-grid cell that could seed a phantom-width selection.
+    #[test]
+    fn hit_test_clamps_both_axes_to_the_last_cell() {
+        let app = prepared_pointer_terminal(); // 80x24 grid, 8x16 cells, scale 1
+        // In-grid coordinates map straight through (no clamp applied).
+        let inside = app.hit_test(&LogicalPoint { x: 100.0, y: 160.0 });
+        assert_eq!((inside.col, inside.row), (12, 10));
+        // Far past the right and bottom edges: clamp to the last col and row.
+        let outside = app.hit_test(&LogicalPoint {
+            x: 100_000.0,
+            y: 100_000.0,
+        });
+        assert_eq!((outside.col, outside.row), (79, 23));
+        // Exactly on the trailing edge of the last cell stays on the last cell.
+        let edge = app.hit_test(&LogicalPoint { x: 640.0, y: 384.0 });
+        assert_eq!((edge.col, edge.row), (79, 23));
+    }
+    /// Every grid cell must survive a `terminal_point_to_logical` →
+    /// `hit_test` round trip at any DPI scale. This is the coordinate-consistency
+    /// invariant behind mouse forwarding: a cell's center, converted to a logical
+    /// pointer and hit-tested back, must return that same cell — otherwise a real
+    /// click on a mouse-tracking TUI reports the wrong cell (or none). The scales
+    /// include the fractional values real Windows displays report, where a
+    /// physical/logical mix-up would surface.
+    #[test]
+    fn every_cell_round_trips_through_logical_at_every_scale() {
+        for scale in [1.0, 1.25, 1.5, 2.0, 2.5] {
+            let app = pointer_terminal_at(scale, 1600, 900);
+            assert!(app.cols >= 2 && app.rows >= 2, "degenerate grid at {scale}");
+            for row in 0..app.rows {
+                for col in 0..app.cols {
+                    let point = TerminalPoint { row, col };
+                    let logical = app.terminal_point_to_logical(point);
+                    let back = app.hit_test(&logical);
+                    assert_eq!(
+                        (back.col, back.row),
+                        (col, row),
+                        "cell ({col},{row}) failed the logical round trip at scale {scale}"
+                    );
+                }
+            }
+        }
+    }
+    /// The last physically-clickable pixel of the terminal viewport — one pixel
+    /// above the reserved host-UI band — must map to the last grid cell, and the
+    /// first pixel of that band must NOT (it belongs to the composer). Together
+    /// with the `ui::tests` tiling invariant this proves the terminal's clickable
+    /// area meets the composer with neither a dead strip nor an overlap, at scale.
+    #[test]
+    fn the_terminal_viewport_meets_the_host_ui_band_exactly() {
+        for scale in [1.0, 1.5, 2.0] {
+            let app = pointer_terminal_at(scale, 1600, 900);
+            let viewport_bottom_px = app.frame_height.saturating_sub(app.content_bottom_px);
+            // One physical pixel above the band, converted to a logical pointer.
+            let inside = LogicalPoint {
+                x: f64::from(app.content_left_px + 2) / scale,
+                y: f64::from(viewport_bottom_px - 1) / scale,
+            };
+            let cell = app.hit_test(&inside);
+            assert_eq!(
+                cell.row,
+                app.rows - 1,
+                "last viewport pixel row must hit the last grid row at scale {scale}"
+            );
+        }
+    }
+    #[test]
+    fn preedit_advance_counts_only_the_cells_it_drew() {
+        // A surface 5 cells wide and 2 rows tall, with a 1-cell cursor row.
+        let mut app = prepared_pointer_terminal();
+        app.content_left_px = 0;
+        app.content_top_px = 0;
+
+        // A short preedit that fits entirely: every cell is drawn.
+        app.ime_preedit = "abc".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(advance, 3, "three one-cell characters occupy three cells");
+
+        // A double-width character counts two, not one.
+        app.ime_preedit = "a\u{4e2d}".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(advance, 3, "a wide glyph owns two cells");
+
+        // Ten cells of preedit into a five-cell wide surface: only the cells
+        // that fit are drawn and reported; the rest are dropped.
+        app.ime_preedit = "abcdefghij".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(
+            advance, 5,
+            "a preedit wider than the surface must stop at its edge"
+        );
+
+        // A preedit beginning at the last column has room for exactly one.
+        app.ime_preedit = "abcd".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 4));
+        assert_eq!(advance, 1, "only the last column fits");
+
+        // A cursor row below the surface draws nothing and advances nothing.
+        app.ime_preedit = "abcd".to_owned();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (99, 0));
+        assert_eq!(advance, 0, "an off-surface row cannot draw");
+
+        // An empty preedit is zero cells and writes nothing.
+        app.ime_preedit = String::new();
+        let mut pixels = vec![0u32; 40 * 32];
+        let advance = app.draw_preedit(&mut preedit_surface(&mut pixels, 40, 32), (0, 0));
+        assert_eq!(advance, 0);
+        assert!(
+            pixels.iter().all(|pixel| *pixel == 0),
+            "an empty preedit must not paint"
+        );
+    }
+    #[test]
+    fn idle_pointer_motion_does_not_dirty_an_unchanged_selection() {
+        let mut app = prepared_pointer_terminal();
+        app.selection = Some((
+            TerminalPoint { row: 0, col: 0 },
+            TerminalPoint { row: 0, col: 8 },
+        ));
+        let position = app.terminal_point_to_logical(TerminalPoint { row: 2, col: 4 });
+        let (outcome, needs_redraw) = app
+            .pointer_moved_outcome(position, &ModifierState::default())
+            .expect("hover over a live terminal");
+        assert_eq!(outcome.route, "noop");
+        assert!(!outcome.changed);
+        assert!(!needs_redraw);
+        assert!(app.dirty.is_empty());
+    }
+    #[test]
+    fn selection_drag_dirties_only_when_the_focus_cell_changes() {
+        let mut app = prepared_pointer_terminal();
+        let anchor = TerminalPoint { row: 0, col: 0 };
+        app.selecting = true;
+        app.selection = Some((anchor, TerminalPoint { row: 0, col: 2 }));
+        let same = app.terminal_point_to_logical(TerminalPoint { row: 0, col: 2 });
+        let (outcome, needs_redraw) = app
+            .pointer_moved_outcome(same, &ModifierState::default())
+            .expect("same-cell drag");
+        assert_eq!(outcome.route, "selection");
+        assert!(!outcome.changed);
+        assert!(!needs_redraw);
+        assert!(app.dirty.is_empty());
+
+        let next = app.terminal_point_to_logical(TerminalPoint { row: 0, col: 5 });
+        let (outcome, needs_redraw) = app
+            .pointer_moved_outcome(next, &ModifierState::default())
+            .expect("cell-changing drag");
+        assert_eq!(outcome.route, "selection");
+        assert!(outcome.changed);
+        assert!(needs_redraw);
+        assert!(!app.dirty.is_empty());
+    }
+    #[test]
+    fn hidden_or_scrolled_cursor_does_not_arm_the_blink_timer() {
+        let mut app = ConTerminal::new(None);
+        assert!(app.cursor_blink_is_live());
+        app.scroll_offset = 3;
+        assert!(!app.cursor_blink_is_live());
+        app.scroll_offset = 0;
+        app.parser.process(b"\x1b[?25l");
+        assert!(!app.cursor_blink_is_live());
+        app.parser.process(b"\x1b[?25h");
+        assert!(app.cursor_blink_is_live());
+        app.parser.process(b"\x1b[2 q");
+        assert!(!app.cursor_blink_is_live());
+    }
+    #[test]
+    fn cursor_shape_default_is_block_absent_any_decscusr() {
+        // Regression guard: paint_cells and the cursor overlay must agree
+        // with vt100's own default, or a fresh terminal would draw the wrong
+        // cursor shape from the very first frame.
+        let parser = parser();
+        assert_eq!(parser.screen().cursor_shape(), vt100::CursorShape::Block);
+    }
+    #[test]
+    fn arrow_left_key_command_produces_the_expected_csi_bytes() {
+        // Isolates the encoder from the ConPTY/cmd.exe environment: if this
+        // passes but a real session's cursor still does not move, the bug is
+        // downstream of write_pty, not in event construction or encoding.
+        let mut app = ConTerminal::new(None);
+        app.master = None; // no real PTY; we only care what bytes WOULD be sent
+        // Reconstruct exactly what inject_key builds, bypassing
+        // forward_key's PTY write so we can inspect the encoder's output
+        // directly via the same TerminalKeyMode computation forward_key uses.
+        let mode = TerminalKeyMode {
+            application_cursor: app.parser.screen().application_cursor(),
+            ime_active: app.ime_attached,
+        };
+        let event = NormalizedKeyEvent {
+            logical: LogicalKey::Named(NamedKey::ArrowLeft),
+            physical: PhysicalKeyCode::Other,
+            text: None,
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: ModifierState::default(),
+        };
+        let bytes = terminal_input::key_event_to_bytes(&event, mode);
+        assert_eq!(bytes, Some(b"\x1b[D".to_vec()));
+    }
+    #[test]
+    fn capture_loss_cancels_local_selection_and_pairs_raw_mouse_release() {
+        let mut app = ConTerminal::new(None);
+        app.mouse_dragging = true;
+        app.selecting = true;
+        app.active_button = Some(2);
+        app.last_reported_cell = Some(TerminalPoint { row: 7, col: 11 });
+
+        assert_eq!(
+            app.take_cancelled_pointer_release(),
+            Some((2, TerminalPoint { row: 7, col: 11 }))
+        );
+        assert!(!app.mouse_dragging);
+        assert!(!app.selecting);
+        assert_eq!(app.active_button, None);
+        assert_eq!(app.take_cancelled_pointer_release(), None);
+    }
+    #[test]
+    fn application_mouse_failure_does_not_commit_reported_cell() {
+        let mut app = ConTerminal::new(None);
+        app.parser.process(b"\x1b[?1000h");
+        let point = TerminalPoint { row: 2, col: 3 };
+
+        let error = app
+            .report_mouse_checked(0, point, true, false, &ModifierState::default())
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        assert_eq!(app.last_reported_cell, None);
+        assert!(!app.mouse_dragging);
+        assert_eq!(app.active_button, None);
+    }
+    #[test]
+    fn alternate_screen_wheel_propagates_closed_pty() {
+        let mut app = ConTerminal::new(None);
+        app.parser.process(b"\x1b[?1049h");
+
+        let error = app
+            .handle_wheel(-1.0, &ModifierState::default(), None)
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+    #[test]
+    fn injected_terminal_key_propagates_closed_pty() {
+        let mut app = ConTerminal::new(None);
+
+        let error = app
+            .inject_key(InjectedKey::Char('a'), false, false, false)
+            .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        assert_eq!(app.scroll_offset, 0);
+    }
+    #[test]
+    fn failed_terminal_paste_does_not_commit_live_view_scroll() {
+        let mut app = ConTerminal::new(None);
+        app.scroll_offset = 7;
+
+        let error = app.paste_text("retry me").unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+        assert_eq!(app.scroll_offset, 7);
+    }
+    /// One builder, because two of them drifted: the OSC path and the
+    /// activation path formatted the window title independently, so the same
+    /// window read differently depending on which had written it last.
+    #[test]
+    fn every_path_builds_the_same_window_title() {
+        let mut terminal = ConTerminal::new(None);
+        let product = product_window_title();
+        assert_eq!(product, format!("MiniCon {}", env!("CARGO_PKG_VERSION")));
+        terminal.current_title = "deploy".to_owned();
+        assert_eq!(terminal.window_title(), format!("deploy — {product}"));
+        terminal.current_title = "cmd".to_owned();
+        assert_eq!(terminal.window_title(), format!("cmd — {product}"));
+        assert!(
+            terminal.window_title().contains(env!("CARGO_PKG_VERSION")),
+            "a taskbar title names the MiniCon version this binary was built with"
+        );
+        assert!(
+            !terminal.window_title().contains("新宋体") && !terminal.window_title().contains('@'),
+            "a taskbar title carries neither a font diagnostic nor a machine id"
+        );
+    }
+    /// A new tab inherits the active terminal's launch configuration through
+    /// `SessionSeed`, which copies the fields by hand in two places. Pin the
+    /// round trip so adding a field to `ConTerminal` and forgetting it here
+    /// fails this test instead of silently giving new tabs a different config.
+    #[test]
+    fn session_seed_round_trips_every_inherited_field() {
+        let mut source = ConTerminal::new(Some("C:\\work".to_owned()));
+        source.command = Some(vec!["cmd.exe".to_owned(), "/K".to_owned()]);
+        source.font_size_logical = 21.5;
+        source.font_size_baseline = 18.0;
+        source.cols = 101;
+        source.rows = 37;
+
+        let seeded = SessionSeed::from_session(&source).create_session();
+        assert_eq!(seeded.working_dir, source.working_dir);
+        assert_eq!(seeded.command, source.command);
+        assert_eq!(seeded.font_size_logical, source.font_size_logical);
+        assert_eq!(seeded.font_size_baseline, source.font_size_baseline);
+        assert_eq!(seeded.cols, source.cols);
+        assert_eq!(seeded.rows, source.rows);
+
+        // A fresh session starts with no PTY until `opened` spawns one; the
+        // seed must not carry a live handle across tabs.
+        assert!(seeded.master.is_none());
+        assert!(seeded.child.is_none());
+    }
+}
