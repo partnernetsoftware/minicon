@@ -84,6 +84,12 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
   Cheap — no MiniCon checkout — and it closes the "agenterm is green, minicon
   does not compile" class for good. MiniCon keeps the list in sync (a MiniCon
   test can assert its `Cargo.toml` features equal the list AgenTerm checks).
+- **A shared type-name list beside the feature list.** The scrollbar was not
+  an abstraction disagreement: it was born twice (AgenTerm 2026-08-11 with
+  `agenterm-ui-core`; MiniCon moved its own into `minicon-core` 2026-09-12)
+  and converged to within one trailing comma. Features cannot catch that.
+  AgenTerm lists the public types its shared crates export; MiniCon keeps a
+  text check that it defines none of those names itself (bdy-ds4flash).
 - **A shared-seam ledger in AgenTerm** -- landed by cdx-agenterm as the
   shared-seam ledger in its docs (agenterm `1ce19971c`): shared crates, owner,
   the pin MiniCon is observed on, the feature combinations to check, current
@@ -99,7 +105,12 @@ v0.1.20 pin bump had to cross 11 platform commits at once.
 
 Reordered after review by the AgenTerm lane.
 
-1. **Scrollbar geometry.** The strongest case, and now measured: with
+1. **Scrollbar geometry.** Pinned on the shared side: agenterm `2e77d3195`
+   (in review) carries MiniCon's twelve tests, two of them added after
+   negative controls showed the original ten stayed green with the inverse's
+   rounding removed or the thumb floor zeroed. One finding for both owners:
+   truncate-forward, round-back is exact only above two pixels of travel per
+   row. Measured before that: with
    whitespace and comments removed and `ScrollbarRect` read as `Rect`, the two
    implementations differ by one trailing comma -- the logic is identical
    (the earlier "37 against 52 lines" was formatting and doc comments). All 10
