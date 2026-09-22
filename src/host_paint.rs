@@ -587,7 +587,11 @@ impl ConApp {
         );
 
         let host_ui_size = |nominal| {
-            scaled_host_ui_font(nominal, self.session_seed.font_size_logical, scale.max(1.0))
+            scaled_host_ui_font(
+                nominal,
+                self.session_seed.font_size_logical(),
+                scale.max(1.0),
+            )
         };
         let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
         for (button, icon, selected) in [

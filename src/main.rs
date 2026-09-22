@@ -49,7 +49,7 @@ mod session_store;
 mod startup;
 mod terminal;
 mod terminal_paint;
-pub(crate) use terminal::ConTerminal;
+pub(crate) use terminal::{ConTerminal, SessionSeed};
 mod text_contrast;
 mod theme;
 mod ui;
@@ -435,27 +435,12 @@ fn main() {
     let session = app.active_session_mut().expect("initial terminal session");
     session.command = command;
     session.snapshot_path = snapshot_path;
-    // Config values (lowest priority)
-    if let Some(fs) = config.font_size {
-        session.font_size_logical = clamp_font_size(fs);
-    }
-    if let Some(cols) = config.cols {
-        session.cols = cols.max(2);
-    }
-    if let Some(rows) = config.rows {
-        session.rows = rows.max(2);
-    }
-    // CLI flags override config
-    if let Some(fs) = font_size {
-        session.font_size_logical = clamp_font_size(fs);
-    }
-    if let Some(cols) = initial_cols {
-        session.cols = cols.max(2);
-    }
-    if let Some(rows) = initial_rows {
-        session.rows = rows.max(2);
-    }
-    session.font_size_baseline = session.font_size_logical;
+    // CLI flags override config, config overrides defaults.
+    session.apply_startup_size(
+        [config.font_size, font_size],
+        [config.cols, initial_cols],
+        [config.rows, initial_rows],
+    );
     // IME must stay on: without it CJK cannot be typed at all, which no
     // console host on Windows gets to call acceptable. An earlier fix disabled
     // it to recover keyboard input, but the actual cause was the missing
@@ -616,39 +601,6 @@ struct ConApp {
     a11y_inbox: Arc<a11y::ActionInbox>,
     a11y_dirty: bool,
     current_window_title: String,
-}
-
-#[derive(Clone)]
-struct SessionSeed {
-    working_dir: Option<String>,
-    command: Option<Vec<String>>,
-    font_size_logical: f64,
-    font_size_baseline: f64,
-    cols: u16,
-    rows: u16,
-}
-
-impl SessionSeed {
-    fn from_session(session: &ConTerminal) -> Self {
-        Self {
-            working_dir: session.working_dir.clone(),
-            command: session.command.clone(),
-            font_size_logical: session.font_size_logical,
-            font_size_baseline: session.font_size_baseline,
-            cols: session.cols,
-            rows: session.rows,
-        }
-    }
-
-    fn create_session(&self) -> ConTerminal {
-        let mut session = ConTerminal::new(self.working_dir.clone());
-        session.command = self.command.clone();
-        session.font_size_logical = self.font_size_logical;
-        session.font_size_baseline = self.font_size_baseline;
-        session.cols = self.cols;
-        session.rows = self.rows;
-        session
-    }
 }
 
 impl Drop for ConApp {

@@ -9,7 +9,7 @@
 use super::*;
 
 pub(super) struct ConTerminal {
-    pub(super) working_dir: Option<String>,
+    working_dir: Option<String>,
 
     /// Program to host, from `-e`. `None` runs the user's default shell.
     pub(super) command: Option<Vec<String>>,
@@ -191,6 +191,27 @@ impl ConTerminal {
         let master = self.master.take();
         let child = self.child.take();
         let _ = agenterm_platform::pty::shutdown_session_detached(master, child);
+    }
+
+    /// Apply startup sizes in rising priority (config, then CLI flags); the
+    /// last given value wins. The font size that results becomes the baseline
+    /// that zoom reset returns to.
+    pub(super) fn apply_startup_size(
+        &mut self,
+        font_sizes: [Option<f64>; 2],
+        cols: [Option<u16>; 2],
+        rows: [Option<u16>; 2],
+    ) {
+        if let Some(size) = font_sizes.into_iter().flatten().last() {
+            self.font_size_logical = clamp_font_size(size);
+        }
+        if let Some(value) = cols.into_iter().flatten().last() {
+            self.cols = value.max(2);
+        }
+        if let Some(value) = rows.into_iter().flatten().last() {
+            self.rows = value.max(2);
+        }
+        self.font_size_baseline = self.font_size_logical;
     }
 
     pub(super) fn new(working_dir: Option<String>) -> Self {
@@ -2341,6 +2362,44 @@ impl ConTerminal {
         }
 
         Ok(next_wake.map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil))
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct SessionSeed {
+    working_dir: Option<String>,
+    command: Option<Vec<String>>,
+    font_size_logical: f64,
+    font_size_baseline: f64,
+    cols: u16,
+    rows: u16,
+}
+
+impl SessionSeed {
+    pub(super) fn from_session(session: &ConTerminal) -> Self {
+        Self {
+            working_dir: session.working_dir.clone(),
+            command: session.command.clone(),
+            font_size_logical: session.font_size_logical,
+            font_size_baseline: session.font_size_baseline,
+            cols: session.cols,
+            rows: session.rows,
+        }
+    }
+
+    /// The zoom the next session opens at; host chrome scales with it.
+    pub(super) fn font_size_logical(&self) -> f64 {
+        self.font_size_logical
+    }
+
+    pub(super) fn create_session(&self) -> ConTerminal {
+        let mut session = ConTerminal::new(self.working_dir.clone());
+        session.command = self.command.clone();
+        session.font_size_logical = self.font_size_logical;
+        session.font_size_baseline = self.font_size_baseline;
+        session.cols = self.cols;
+        session.rows = self.rows;
+        session
     }
 }
 
