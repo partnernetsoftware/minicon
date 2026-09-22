@@ -63,7 +63,7 @@ pub(super) struct ConTerminal {
     /// Physical cell metrics, recomputed whenever the font size or scale changes.
     pub(super) cell_w: u32,
     pub(super) cell_h: u32,
-    pub(super) font_size_px: u16,
+    font_size_px: u16,
 
     pub(super) cols: u16,
     pub(super) rows: u16,
@@ -76,7 +76,7 @@ pub(super) struct ConTerminal {
     pub(super) pending_submit_enter: Option<(Instant, Vec<u8>)>,
 
     default_fg: Rgb,
-    pub(super) default_bg: Rgb,
+    default_bg: Rgb,
     /// Terminal cursor color and the themable 16 ANSI colors, kept in sync with
     /// `ui_theme` (see `ConTerminal::apply_theme`). The 6x6x6 cube and grayscale ramp
     /// stay standard.
@@ -85,17 +85,17 @@ pub(super) struct ConTerminal {
 
     /// Set when the reader thread exits (PTY EOF or error).
     pub(super) child_gone: bool,
-    pub(super) exit: bool,
+    exit: bool,
 
     /// Scrollback scroll offset (0 = bottom/live). Positive = scrolled up.
-    pub(super) scroll_offset: usize,
+    scroll_offset: usize,
     /// Accumulated wheel delta (fractional lines pending application).
     wheel_accumulator: f32,
     scrollbar_drag: Option<ScrollbarThumbDrag>,
 
     /// Text selection: anchor + focus in terminal cell coordinates.
     /// None = no selection; Some = active or completed selection.
-    pub(super) selection: Option<(TerminalPoint, TerminalPoint)>,
+    selection: Option<(TerminalPoint, TerminalPoint)>,
     /// True while left mouse button is held during a drag.
     selecting: bool,
     /// True while the application (not local selection) owns a button gesture.
@@ -113,7 +113,7 @@ pub(super) struct ConTerminal {
 
     /// Whether the cursor is in its "on" phase of the blink cycle. Ignored
     /// entirely when `screen.cursor_blinking()` is false (a steady cursor).
-    pub(super) blink_visible: bool,
+    blink_visible: bool,
     /// When `blink_visible` last flipped, for pacing the next flip.
     last_blink_at: Instant,
 
@@ -148,8 +148,8 @@ pub(super) struct ConTerminal {
     pub(super) crosshair_cell: Option<TerminalPoint>,
     pub(super) crosshair_active: bool,
     pub(super) crosshair_on: bool,
-    pub(super) frame_width: u32,
-    pub(super) frame_height: u32,
+    frame_width: u32,
+    frame_height: u32,
 }
 
 impl Drop for ConTerminal {
