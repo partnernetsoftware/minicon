@@ -1825,11 +1825,17 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     // now-unexecutable path fails with EACCES.
     #[cfg(windows)]
     {
-        let _ = fs::remove_file(&stub);
-        if stub.exists() {
-            let moved = dir.with_file_name(format!("minicon-oneshot-gone-{suffix}"));
-            let _ = fs::rename(&dir, &moved);
-        }
+        // Deleting is not enough: a running image is only delete-pending, so
+        // the path still resolves and the next spawn succeeds (measured in
+        // the ARM court, 2026-09-23 -- both tabs came up alive). Renaming the
+        // directory does make the path disappear, and Windows allows it while
+        // the image runs, so the first tab is untouched.
+        let moved = dir.with_file_name(format!("minicon-oneshot-gone-{suffix}"));
+        fs::rename(&dir, &moved).expect("move the stub out of the way");
+        assert!(
+            !stub.exists(),
+            "the second spawn must have no program to run"
+        );
     }
     #[cfg(unix)]
     {
@@ -1866,6 +1872,37 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
             &after_shot.to_string_lossy(),
         ],
     );
+
+    // On Windows a start that cannot happen is not an open failure: ConPTY
+    // creates the console host first, so the tab opens and its child exits
+    // immediately (measured in the ARM court, 2026-09-23). There is nothing
+    // for the host to notice, and the invariant that matters is the same one
+    // the notice protects -- the gesture must not end the host, and the
+    // failure must be visible on the new tab.
+    if cfg!(windows) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut listed = cli_json(exe, &endpoint, &["list-tabs"]);
+        let dead = |listed: &Value| {
+            listed["tabs"]
+                .as_array()
+                .is_some_and(|tabs| tabs.iter().any(|t| t["child_alive"] == false))
+        };
+        while !dead(&listed) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(100));
+            listed = cli_json(exe, &endpoint, &["list-tabs"]);
+        }
+        assert!(
+            dead(&listed),
+            "the tab that could not start must report a dead child; tabs: {listed}"
+        );
+        assert!(
+            listed["tabs"].as_array().is_some_and(|tabs| tabs
+                .iter()
+                .any(|t| tab_id(&t["id"]) == first && t["child_alive"] == true)),
+            "the first tab must survive a failed second tab; tabs: {listed}"
+        );
+        return;
+    }
 
     let snapshot = cli_json(exe, &endpoint, &["ui-snapshot"]);
     let notice = &snapshot["host_notice"];
