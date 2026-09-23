@@ -86,6 +86,24 @@ operating system's own desktop libraries.
 - **The status bar shows how much text is on the clipboard**, left of the
   cursor position, and the count updates when anything is copied, in MiniCon
   or in another program.
+- **Scrolling back through shell output works on Windows again.** MiniCon
+  hosts the classic Windows console by default, and that path kept no history
+  at all: the console had nowhere to scroll into, so the rows that left the
+  screen were gone before MiniCon could see them. The wheel now scrolls
+  through them as it always did on macOS and Linux.
+- **`Ctrl+V` pastes in the terminal on Windows.** It used to reach the shell
+  as a control byte, so `cmd.exe` printed `^V` and nothing was pasted; only
+  `Ctrl+Shift+V` worked. Both work now, and `Ctrl+Alt+V` still belongs to the
+  program.
+- **A collapsed tab rail no longer closes a tab when you meant to select it.**
+  Collapsed, the rail is one icon wide and the close box covered most of a
+  row. While collapsed every row selects; the close target returns with the
+  rail.
+- **`minicon --status` names the console it will actually use.** It reported
+  ConPTY while every session ran on the classic console host. It now reports
+  the path a run with the same flags takes, and accepts `--feature conpty` so
+  you can ask about the other one.
+
 - **The macOS input-method indicator follows the Chinese/English toggle.**
   macOS offers no way for an application to read an input method's internal
   mode, so the indicator used to say "native" whatever was selected. MiniCon
