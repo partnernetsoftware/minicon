@@ -248,6 +248,16 @@ const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under th
 ///
 /// Opens no window and starts no session — the point is to be runnable on a
 /// machine where starting a session is the thing that does not work.
+/// The status a bare `--status` prints, including the Windows default that
+/// the offline CLI applies before reporting. Tests call this rather than
+/// `status_text`, which reports whatever the environment already says.
+#[cfg(all(test, windows))]
+pub(crate) fn offline_status_text_for_test() -> String {
+    // SAFETY: the test harness runs this before any PTY or window exists.
+    unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
+    status_text()
+}
+
 pub(crate) fn status_text() -> String {
     use std::fmt::Write as _;
 
@@ -259,6 +269,17 @@ pub(crate) fn status_text() -> String {
     let _ = writeln!(text, "  pty backend    {}", backend.kind);
     if !backend.detail.is_empty() {
         let _ = writeln!(text, "                 {}", backend.detail);
+    }
+    // The platform reports the mechanism ("forced by ...=1"); a user needs the
+    // product's reason. MiniCon picks the classic console by default because
+    // mouse input is proven on it, and that choice also costs the wheel its
+    // scrollback, so say both and name the way out.
+    #[cfg(windows)]
+    if backend.kind == "console-agent" {
+        let _ = writeln!(
+            text,
+            "                 MiniCon's default on Windows; `--feature conpty` selects ConPTY"
+        );
     }
 
     match agenterm_platform::font::primary_face_report(DEFAULT_FONT_PX as u16) {
@@ -420,6 +441,19 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             Some(0)
         }
         Some("--status") if alone => {
+            // `--status` answers for the run a user would get. On Windows that
+            // run hosts the classic console unless `--feature conpty` asks
+            // otherwise, and the switch is an environment variable the startup
+            // path sets after this point -- so a bare `--status` used to report
+            // "conpty" while every session it described ran on the console
+            // agent (measured in the Windows ARM court, 2026-09-23).
+            //
+            // SAFETY: the offline CLI runs before any window, PTY or reader
+            // thread exists, so the process is still single-threaded.
+            #[cfg(windows)]
+            unsafe {
+                std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1")
+            };
             let _ = agenterm_platform::parent_console::write_stdout(&status_text());
             Some(0)
         }

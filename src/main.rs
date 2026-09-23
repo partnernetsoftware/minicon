@@ -4521,6 +4521,25 @@ mod tests {
         );
     }
 
+    /// The status must describe the run a user gets, not a capability the
+    /// machine has. On Windows the default is the classic console (mouse
+    /// input is proven there), and the switch is set later in startup, so a
+    /// bare `--status` used to answer "conpty" for sessions that ran on the
+    /// console agent.
+    #[cfg(windows)]
+    #[test]
+    fn status_names_the_backend_a_default_windows_run_uses() {
+        let status = crate::cli::offline_status_text_for_test();
+        assert!(
+            status.contains("console-agent"),
+            "a default Windows run hosts the classic console: {status}"
+        );
+        assert!(
+            status.contains("--feature conpty"),
+            "the status must name the way to ConPTY: {status}"
+        );
+    }
+
     /// The font line reports a measurement, not just a name. The name alone
     /// cannot distinguish "resolved the right face" from "resolved a face that
     /// is the wrong shape for a grid", which is the failure it exists to
