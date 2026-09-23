@@ -626,7 +626,11 @@ pub fn tree_hit(
     if index >= item_count {
         return TreeHit::Background;
     }
-    if layout.tree_close_rect(visible_row, scale).contains(x, y) {
+    // A collapsed rail is one icon wide, so the close box covers most of the
+    // row and selecting a tab keeps closing it by accident (user report
+    // against 0.1.22). While collapsed the whole row selects; closing needs
+    // the rail expanded, where the box is a small target beside the title.
+    if !layout.sidebar_collapsed && layout.tree_close_rect(visible_row, scale).contains(x, y) {
         TreeHit::Close(index)
     } else {
         TreeHit::Select(index)
@@ -1557,6 +1561,30 @@ mod tests {
     fn english_is_the_default_language() {
         assert_eq!(UiLanguage::default(), UiLanguage::English);
         assert_eq!(UiLanguage::default().tag(), "en");
+    }
+
+    /// The collapsed rail is one icon wide: the close box then covers most of
+    /// a row, so a click meant to select a tab closed it instead. Collapsed,
+    /// every row selects; the close target comes back with the rail.
+    #[test]
+    fn a_collapsed_rail_never_closes_a_tab_by_a_row_click() {
+        let layout = Layout::collapsed(400, 300, 1.0);
+        assert!(layout.sidebar_collapsed);
+        let close = layout.tree_close_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(layout, close.x + 1, close.y + 1, 0, 4, 1.0),
+            TreeHit::Select(0),
+            "a collapsed row selects wherever it is clicked"
+        );
+
+        let expanded = Layout::new(400, 300, 1.0);
+        assert!(!expanded.sidebar_collapsed);
+        let close = expanded.tree_close_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(expanded, close.x + 1, close.y + 1, 0, 4, 1.0),
+            TreeHit::Close(0),
+            "an expanded rail keeps its close box"
+        );
     }
 
     #[test]
