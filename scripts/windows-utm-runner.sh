@@ -7,7 +7,7 @@
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
-  echo "usage: scripts/windows-utm-runner.sh CELL TARGET_DIR status|test|rss|throughput|console-agent|stop" >&2
+  echo "usage: scripts/windows-utm-runner.sh CELL TARGET_DIR status|test|one|rss|throughput|console-agent|stop" >&2
   exit 2
 fi
 
@@ -41,7 +41,7 @@ case "$CELL" in
 esac
 
 case "$MODE" in
-  status|test|rss|throughput|console-agent|stop) ;;
+  status|test|one|rss|throughput|console-agent|stop) ;;
   *)
     echo "unsupported Windows runner mode: $MODE" >&2
     exit 2
@@ -107,6 +107,7 @@ court push "$COURT" "$HOST_PROFILE/minicon.exe" \
 python3 - "$HOST_PROFILE/deps" "$build_identity" "$PROFILE" "$MODE" \
     >"$runner_tmp/test-manifest.json" <<'PY'
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -128,6 +129,9 @@ prefixes = {
     ),
     "rss": ("minicon_control",),
     "throughput": ("minicon_throughput",),
+    # `one` diagnoses a single test; the caller names its suite in
+    # MINICON_WINDOWS_ONE ("<suite> <test name>").
+    "one": tuple(os.environ.get("MINICON_WINDOWS_ONE", " ").split()[:1]),
 }[mode]
 tests = {}
 for prefix in prefixes:
@@ -171,6 +175,7 @@ printf '%s\n' \
   '$ErrorActionPreference = "Stop"' \
   '$PSDefaultParameterValues["Out-File:Encoding"] = "utf8"' \
   "\$env:MINICON_WINDOWS_CONSOLE_AGENT_FILTER = '$CONSOLE_AGENT_FILTER'" \
+  "\$env:MINICON_WINDOWS_ONE = '${MINICON_WINDOWS_ONE:-}'" \
   '$exitCode = 1' \
   'try {' \
   "    & '$GUEST_ROOT\\windows-runtime-qualify.ps1' -TargetDir '$GUEST_ROOT\\target' -Mode '$MODE' *> '$LOG'" \

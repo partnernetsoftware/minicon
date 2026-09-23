@@ -182,6 +182,49 @@ fn a_host_whose_program_cannot_be_spawned_dies_and_says_why() {
         screenshot: std::env::temp_dir().join(format!("minicon-{suffix}.png")),
     };
 
+    // How the failure surfaces is the platform's, not the product's. On Unix
+    // the spawn itself fails, so the host dies before it ever has a session.
+    // On Windows ConPTY starts the console host first and the missing program
+    // is reported afterwards, as a child that exited immediately (measured in
+    // the ARM court, 2026-09-23: exit code 251 with the program's name as the
+    // tab title). MiniCon's own invariant then applies -- a child's exit keeps
+    // its tab and its status -- so the host is alive by design. What must hold
+    // on both is that the failure is visible and attributed, and that nothing
+    // pretends the program is running.
+    if cfg!(windows) {
+        let mut tabs = wait_until_ready_for(
+            exe,
+            &endpoint,
+            Duration::from_secs(30),
+            Some(&mut gui.child),
+        );
+        // The console host reports the failed start a moment after the
+        // endpoint answers, so poll for the verdict rather than reading the
+        // first snapshot.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while tabs["tabs"][0]["child_alive"] == true && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(100));
+            tabs = cli_json(exe, &endpoint, &["list-tabs"]);
+        }
+        let tab = tabs["tabs"]
+            .as_array()
+            .and_then(|tabs| tabs.first())
+            .expect("the doomed host still reports its tab");
+        assert_eq!(
+            tab["child_alive"], false,
+            "a program that cannot start must not be reported alive: {tabs}"
+        );
+        assert_ne!(
+            tab["child_exit_code"], 0,
+            "a program that cannot start must leave a non-zero exit: {tabs}"
+        );
+        assert_eq!(
+            tab["title"], "minicon-no-such-program-for-this-test",
+            "the failure must name the program: {tabs}"
+        );
+        return;
+    }
+
     let deadline = Instant::now() + Duration::from_secs(15);
     let status = loop {
         if let Some(status) = gui.child.try_wait().expect("poll minicon exit") {

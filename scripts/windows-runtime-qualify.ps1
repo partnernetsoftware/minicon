@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$TargetDir,
     [Parameter(Mandatory = $true)]
-    [ValidateSet("status", "logic", "test", "rss", "throughput", "console-agent")]
+    [ValidateSet("status", "logic", "test", "rss", "throughput", "console-agent", "one")]
     [string]$Mode
 )
 
@@ -111,6 +111,17 @@ switch ($Mode) {
     }
     "throughput" {
         Invoke-Test "minicon_throughput" -Ignored
+    }
+    "one" {
+        # Diagnosis: run a single named test of a single suite, so a court
+        # round costs seconds instead of a full stage. MINICON_WINDOWS_ONE is
+        # "<suite> <test name>".
+        $parts = $env:MINICON_WINDOWS_ONE -split ' ', 2
+        if ($parts.Count -ne 2) { throw "MINICON_WINDOWS_ONE must be '<suite> <test>'" }
+        $testBinary = Find-TestBinary $parts[0]
+        Write-Host "[windows-runtime] RUN $([IO.Path]::GetFileName($testBinary)) $($parts[1])"
+        $testExit = Invoke-NativeWait $testBinary @($parts[1], "--exact", "--test-threads=1", "--nocapture")
+        if ($testExit -ne 0) { throw "$($parts[1]) failed with exit code $testExit" }
     }
     "console-agent" {
         Invoke-Status
