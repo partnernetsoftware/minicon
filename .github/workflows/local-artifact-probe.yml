@@ -1,0 +1,53 @@
+name: local-artifact-probe
+
+# Experiment (0.1.23): how long does a GitHub round cost when CI only runs
+# binaries that were cross-compiled on the developer's Mac? No toolchain, no
+# checkout, no build -- download one test executable and run it. The numbers
+# it prints decide whether "CI is only the seal" can lean on GitHub for the
+# environments the Mac cannot host.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_tag:
+        description: Draft release tag holding the prebuilt test executables
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: lnx-x86_64
+            runner: ubuntu-24.04
+          - cell: lnx-aarch64
+            runner: ubuntu-24.04-arm
+          - cell: win-x86_64
+            runner: windows-2025
+          - cell: win-aarch64
+            runner: windows-11-arm
+          - cell: osx-aarch64
+            runner: macos-15
+          - cell: osx-x86_64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download and run the prebuilt test executable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          started=$(date +%s)
+          echo "job started at $(date -u +%FT%TZ)"
+          gh release download "${{ inputs.bundle_tag }}" \
+            --repo "$GITHUB_REPOSITORY" --pattern "${{ matrix.cell }}-*" --dir bundle
+          downloaded=$(date +%s)
+          exe=$(ls bundle/${{ matrix.cell }}-*)
+          chmod +x "$exe" || true
+          "$exe" --test-threads 2
+          finished=$(date +%s)
+          echo "PROBE cell=${{ matrix.cell }} runner=${{ matrix.runner }} download=$((downloaded-started))s run=$((finished-downloaded))s total=$((finished-started))s"
