@@ -1,0 +1,47 @@
+name: gui-on-runner-probe
+
+# Experiment (0.1.23): can a GitHub-hosted Windows runner run MiniCon's GUI
+# black boxes? The local UTM court exists because those journeys need a real
+# logged-in desktop; if a runner has one, the daily loop can leave the Mac's
+# fans alone. Downloads a bundle built on the developer machine and runs one
+# suite. It builds nothing and it is not part of any release gate.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_tag:
+        description: Prerelease tag holding the prebuilt Windows bundle
+        required: true
+      suite:
+        description: Test executable prefix to run
+        required: false
+        default: minicon_control
+
+permissions:
+  contents: read
+
+jobs:
+  gui:
+    runs-on: windows-2025
+    steps:
+      - name: Report the session this runner gives us
+        shell: pwsh
+        run: |
+          query user 2>&1 | Out-String
+          "session id: $([System.Diagnostics.Process]::GetCurrentProcess().SessionId)"
+          "interactive: $([Environment]::UserInteractive)"
+          Add-Type -AssemblyName System.Windows.Forms
+          "screen: $([System.Windows.Forms.SystemInformation]::VirtualScreen)"
+      - name: Download and run the suite
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINICON_TEST_SLOWDOWN: "4"
+        run: |
+          set -eu
+          gh release download "${{ inputs.bundle_tag }}" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'win-x86_64-bundle.tar.gz' --dir .
+          mkdir -p run && tar -xzf win-x86_64-bundle.tar.gz -C run
+          started=$(date +%s)
+          exe=$(ls run/debug/deps/${{ inputs.suite }}-*.exe)
+          "$exe" --test-threads 1 --nocapture || echo "SUITE_EXIT=$?"
+          echo "PROBE suite=${{ inputs.suite }} seconds=$(( $(date +%s) - started ))"
