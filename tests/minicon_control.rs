@@ -1842,16 +1842,24 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     // now-unexecutable path fails with EACCES.
     #[cfg(windows)]
     {
-        // Deleting is not enough: a running image is only delete-pending, so
-        // the path still resolves and the next spawn succeeds (measured in
-        // the ARM court, 2026-09-23 -- both tabs came up alive). Renaming the
-        // directory does make the path disappear, and Windows allows it while
-        // the image runs, so the first tab is untouched.
-        let moved = dir.with_file_name(format!("minicon-oneshot-gone-{suffix}"));
-        fs::rename(&dir, &moved).expect("move the stub out of the way");
+        // The Windows analogue of the Unix permission drop below, and for the
+        // same reason: the running image must be untouched while a fresh
+        // spawn of the same path fails. Deleting only marks the file
+        // delete-pending, so the path still resolves and the second tab came
+        // up alive; renaming the image or its directory disturbed the first
+        // tab or was denied outright (all three measured in the ARM court,
+        // 2026-09-23). Denying execute leaves the file exactly where it is.
+        let user = std::env::var("USERNAME").expect("USERNAME on Windows");
+        let denied = Command::new("icacls")
+            .arg(&stub)
+            .arg("/deny")
+            .arg(format!("{user}:(RX)"))
+            .output()
+            .expect("icacls must run");
         assert!(
-            !stub.exists(),
-            "the second spawn must have no program to run"
+            denied.status.success(),
+            "denying execute on the stub failed: {}",
+            String::from_utf8_lossy(&denied.stderr)
         );
     }
     #[cfg(unix)]
@@ -1860,6 +1868,42 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o000))
             .expect("drop the stub's execute bit so the second spawn fails");
     }
+    // Windows takes neither screenshot below: they exist to prove a notice
+    // was painted and this platform has no notice to paint. One court run in
+    // three also hung inside `screenshot-pane` until the job's 20-minute
+    // deadline, so the gesture and its verdict come first and return.
+    if cfg!(windows) {
+        cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+Shift+T"]);
+        // On Windows a start that cannot happen is not an open failure: ConPTY
+        // creates the console host first, so the tab opens and its child exits
+        // immediately (measured in the ARM court, 2026-09-23). There is nothing
+        // for the host to notice, and the invariant that matters is the same one
+        // the notice protects -- the gesture must not end the host, and the
+        // failure must be visible on the new tab.
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut listed = cli_json(exe, &endpoint, &["list-tabs"]);
+        let dead = |listed: &Value| {
+            listed["tabs"]
+                .as_array()
+                .is_some_and(|tabs| tabs.iter().any(|t| t["child_alive"] == false))
+        };
+        while !dead(&listed) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(100));
+            listed = cli_json(exe, &endpoint, &["list-tabs"]);
+        }
+        assert!(
+            dead(&listed),
+            "the tab that could not start must report a dead child; tabs: {listed}"
+        );
+        assert!(
+            listed["tabs"].as_array().is_some_and(|tabs| tabs
+                .iter()
+                .any(|t| tab_id(&t["id"]) == first && t["child_alive"] == true)),
+            "the first tab must survive a failed second tab; tabs: {listed}"
+        );
+        return;
+    }
+
     // The user gesture (Ctrl+Shift+T) must fail as a *notice*, not by ending
     // the host: the control `new-tab` reply is a separate path that reports to
     // its caller. Capture the window before and after so the notice is proven
@@ -1889,37 +1933,6 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
             &after_shot.to_string_lossy(),
         ],
     );
-
-    // On Windows a start that cannot happen is not an open failure: ConPTY
-    // creates the console host first, so the tab opens and its child exits
-    // immediately (measured in the ARM court, 2026-09-23). There is nothing
-    // for the host to notice, and the invariant that matters is the same one
-    // the notice protects -- the gesture must not end the host, and the
-    // failure must be visible on the new tab.
-    if cfg!(windows) {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        let mut listed = cli_json(exe, &endpoint, &["list-tabs"]);
-        let dead = |listed: &Value| {
-            listed["tabs"]
-                .as_array()
-                .is_some_and(|tabs| tabs.iter().any(|t| t["child_alive"] == false))
-        };
-        while !dead(&listed) && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(100));
-            listed = cli_json(exe, &endpoint, &["list-tabs"]);
-        }
-        assert!(
-            dead(&listed),
-            "the tab that could not start must report a dead child; tabs: {listed}"
-        );
-        assert!(
-            listed["tabs"].as_array().is_some_and(|tabs| tabs
-                .iter()
-                .any(|t| tab_id(&t["id"]) == first && t["child_alive"] == true)),
-            "the first tab must survive a failed second tab; tabs: {listed}"
-        );
-        return;
-    }
 
     let snapshot = cli_json(exe, &endpoint, &["ui-snapshot"]);
     let notice = &snapshot["host_notice"];

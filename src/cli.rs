@@ -258,6 +258,29 @@ pub(crate) fn offline_status_text_for_test() -> String {
     status_text()
 }
 
+/// The feature names beside a `--status`, or `None` when the arguments are
+/// anything else.
+///
+/// `--status` answers for the run the same flags would produce, so it reads
+/// them; every other offline verb still stands alone.
+fn status_feature_request(args: &[String]) -> Option<Vec<String>> {
+    let mut rest = args.iter();
+    if rest.next().map(String::as_str) != Some("--status") {
+        return None;
+    }
+    let mut features = Vec::new();
+    while let Some(argument) = rest.next() {
+        if let Some(value) = argument.strip_prefix("--feature=") {
+            features.push(value.to_owned());
+        } else if argument == "--feature" {
+            features.push(rest.next()?.clone());
+        } else {
+            return None;
+        }
+    }
+    Some(features)
+}
+
 pub(crate) fn status_text() -> String {
     use std::fmt::Write as _;
 
@@ -440,20 +463,37 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             ));
             Some(0)
         }
-        Some("--status") if alone => {
-            // `--status` answers for the run a user would get. On Windows that
-            // run hosts the classic console unless `--feature conpty` asks
-            // otherwise, and the switch is an environment variable the startup
-            // path sets after this point -- so a bare `--status` used to report
-            // "conpty" while every session it described ran on the console
-            // agent (measured in the Windows ARM court, 2026-09-23).
-            //
-            // SAFETY: the offline CLI runs before any window, PTY or reader
-            // thread exists, so the process is still single-threaded.
+        Some("--status") if status_feature_request(args).is_some() => {
+            let features = status_feature_request(args).unwrap_or_default();
+            // MiniCon hosts the classic console on Windows unless a feature
+            // asks for ConPTY, and that switch is an environment variable the
+            // startup path sets after this point -- so `--status` used to
+            // report "conpty" while every session it described ran on the
+            // console agent (measured in the Windows ARM court, 2026-09-23).
+            // Reading the flags beside it is what makes the answer describe
+            // the run those same flags would produce.
             #[cfg(windows)]
-            unsafe {
-                std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1")
-            };
+            {
+                let conpty = features.iter().flat_map(|value| value.split(',')).fold(
+                    false,
+                    |selected, name| match name.trim() {
+                        "conpty" => true,
+                        "no-conpty" => false,
+                        _ => selected,
+                    },
+                );
+                // SAFETY: the offline CLI runs before any window, PTY or
+                // reader thread exists, so the process is single-threaded.
+                unsafe {
+                    if conpty {
+                        std::env::remove_var("AGENTERM_FORCE_CONSOLE_AGENT");
+                    } else {
+                        std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1");
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = features;
             let _ = agenterm_platform::parent_console::write_stdout(&status_text());
             Some(0)
         }
@@ -465,7 +505,7 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
         Some("uninstall-cli") => Some(install_cli(&args[1..], false)),
         Some("--version" | "-V" | "--help" | "-h" | "--status") => {
             let _ = agenterm_platform::parent_console::write_stderr(
-                "error: --version/--status/--help must be used alone",
+                "error: --version/--help must be used alone; --status takes only --feature",
             );
             Some(2)
         }

@@ -2399,30 +2399,47 @@ fn status_reports_the_machine_without_opening_a_window() {
     );
 }
 
-/// The whole point is that it reports the *running* machine, so the forced
-/// fallback has to change what it says. A status that reads the same either
-/// way would answer nothing.
+/// The whole point is that it reports the run the caller would get, so the
+/// flags that choose the host have to change what it says. A status that
+/// reads the same either way would answer nothing.
+///
+/// This used to compare a bare `--status` against one with
+/// `AGENTERM_FORCE_CONSOLE_AGENT=1`, which passed only because a bare
+/// `--status` answered "conpty" while MiniCon's own default forced the
+/// console agent for every session it described. The comparison is now
+/// between the default and `--feature conpty`, which is the choice a user
+/// actually makes.
 #[test]
 #[cfg(windows)]
 fn status_follows_the_backend_the_machine_will_actually_use() {
-    let normal = Command::new(binary())
+    let default = Command::new(binary())
         .arg("--status")
         .output()
         .expect("run --status");
-    let forced = Command::new(binary())
+    let with_conpty = Command::new(binary())
         .arg("--status")
-        .env("AGENTERM_FORCE_CONSOLE_AGENT", "1")
+        .arg("--feature")
+        .arg("conpty")
         .output()
-        .expect("run --status forced");
-    let forced_text = String::from_utf8_lossy(&forced.stdout);
+        .expect("run --status --feature conpty");
+    let default_text = String::from_utf8_lossy(&default.stdout);
+    let conpty_text = String::from_utf8_lossy(&with_conpty.stdout);
     assert!(
-        forced_text.contains("console-agent"),
-        "forcing the fallback must show it: {forced_text}"
+        default_text.contains("console-agent"),
+        "the default Windows run hosts the classic console: {default_text}"
+    );
+    assert!(
+        default_text.contains("--feature conpty"),
+        "the default status must name the way across: {default_text}"
+    );
+    assert!(
+        with_conpty.status.success(),
+        "--status must accept the feature flags it reports on: {}",
+        String::from_utf8_lossy(&with_conpty.stderr)
     );
     assert_ne!(
-        String::from_utf8_lossy(&normal.stdout),
-        forced_text,
-        "status must reflect the machine, not a constant"
+        default_text, conpty_text,
+        "status must follow the flags, not be a constant"
     );
 }
 
