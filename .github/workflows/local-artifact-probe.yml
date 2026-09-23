@@ -20,28 +20,43 @@ permissions:
   contents: read
 
 jobs:
+  plan:
+    # A job-level `if` cannot read `matrix`, and a job that exists at all can
+    # queue: macos-13 sits queued for many minutes and would hold a caller's
+    # round open. So the matrix itself is built from the requested cells.
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          CELLS: ${{ inputs.cells }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          runners = {
+              "lnx-x86_64": "ubuntu-24.04",
+              "lnx-aarch64": "ubuntu-24.04-arm",
+              "win-x86_64": "windows-2025",
+              "win-aarch64": "windows-11-arm",
+              "osx-aarch64": "macos-15",
+              "osx-x86_64": "macos-13",
+          }
+          wanted = os.environ.get("CELLS", "").split() or list(runners)
+          unknown = [c for c in wanted if c not in runners]
+          if unknown:
+              raise SystemExit(f"unknown cells: {unknown}")
+          include = [{"cell": c, "runner": runners[c]} for c in wanted]
+          print("matrix=" + json.dumps({"include": include}))
+          PY
+
   run:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - cell: lnx-x86_64
-            runner: ubuntu-24.04
-          - cell: lnx-aarch64
-            runner: ubuntu-24.04-arm
-          - cell: win-x86_64
-            runner: windows-2025
-          - cell: win-aarch64
-            runner: windows-11-arm
-          - cell: osx-aarch64
-            runner: macos-15
-          - cell: osx-x86_64
-            runner: macos-13
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    # A cell the caller did not ask for is skipped, not queued: macos-13 can
-    # sit queued for many minutes and a caller waiting on the run would wait
-    # with it.
-    if: ${{ inputs.cells == '' || contains(format('{0} ', inputs.cells), format('{0} ', matrix.cell)) }}
     steps:
       - name: Download and run the prebuilt test executable
         shell: bash
@@ -54,8 +69,10 @@ jobs:
           gh release download "${{ inputs.bundle_tag }}" \
             --repo "$GITHUB_REPOSITORY" --pattern "${{ matrix.cell }}-*" --dir bundle
           downloaded=$(date +%s)
-          exe=$(ls bundle/${{ matrix.cell }}-*)
-          chmod +x "$exe" || true
-          "$exe" --test-threads 2
+          for exe in bundle/${{ matrix.cell }}-*; do
+            chmod +x "$exe" || true
+            echo "== $exe"
+            "$exe" --test-threads 2
+          done
           finished=$(date +%s)
           echo "PROBE cell=${{ matrix.cell }} runner=${{ matrix.runner }} download=$((downloaded-started))s run=$((finished-downloaded))s total=$((finished-started))s"
