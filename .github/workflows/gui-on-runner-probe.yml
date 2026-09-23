@@ -42,8 +42,10 @@ jobs:
           MINICON_TEST_SLOWDOWN: "4"
         run: |
           set -eu
+          gh release view "${{ inputs.bundle_tag }}" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "asset: \(.name) \(.size)"'
           gh release download "${{ inputs.bundle_tag }}" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'win-x86_64-bundle.tar.gz' --dir .
+            --pattern '*bundle*' --dir .
           mkdir -p run && tar -xzf win-x86_64-bundle.tar.gz -C run
           started=$(date +%s)
           exe=$(ls run/debug/deps/${{ inputs.suite }}-*.exe)
