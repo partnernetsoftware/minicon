@@ -1,101 +1,128 @@
-# v0.1.23 — every loop fast, CI only seals
+# v0.1.23 — fold the cycle, then pay the debt
 
-Owner's brief (2026-09-22): trial and error only pays when each iteration is
-short. Compress every stage of the cycle, at least incrementally. The CI
-release chain shrinks to the last step, signing and stamping bytes that were
-already verified. All testing runs locally and is made fast by incremental
-work.
+Owner's brief (2026-09-22/23): trial and error only pays when a round is short,
+so compress every stage. The CI release chain shrinks to signing and stamping;
+testing runs locally, or on GitHub runners that only *run* what this Mac built.
+Do not release for the sake of releasing: 0.1.23 ships when the debt below has
+become something a user can notice.
 
-## Baseline (measured 2026-09-22, v0.1.22)
+## 0. Plan tree
 
-| stage | time | what dominates |
-| --- | --- | --- |
-| local six-cell, full | ~20 min | osx-x86_64 tests under Rosetta; full rebuild when the build dir changes |
-| Windows court `test` stage | 227 s -> **72 s** | QGA file copy at ~240 KB/s; now HTTP (utm-court `b87196c`) |
-| Windows court rebuild after a one-line change | full build -> **4 s** | APFS clone of the previous fingerprint dir + incremental `cargo xwin` |
-| court cold start | ~150 s, flaky -> ~100 s cold, **5-9 s** from an in-memory pause | utm-court `fb1e3a8`, `cd56700`, `17c08c1` |
-| one Windows diagnostic round (build + resume + push + run) | not possible before | **20-26 s** | all of the above |
-| CI release chain | ~45 min per round | minicon-com -> signing x2 -> candidate -> reputation -> release |
+```text
+[v0.1.23] a round costs seconds, and the old debt gets paid
+├── A. One round, one command — the release's spine
+│   ├── [ ] A1 `scripts/round.sh <cells>`: build → route → run → one receipt
+│   │        invariant: one receipt per round, naming every cell and its host
+│   │        evidence: the receipt; failure: BLOCKED cell, never a silent skip
+│   ├── [ ] A2 routing table (§2) as data, one backend per cell
+│   ├── [ ] A3 pre-flight (15 s): free disk, Rosetta probe, court nonce
+│   │        why: a broken Rosetta cost 20 min on 2026-09-22
+│   └── [ ] A4 per-stage timings in every receipt, so §1 updates itself
+├── B. Incremental local qualification            (depends on A1)
+│   ├── [ ] B1 seed a new fingerprint dir by APFS clone, then build incrementally
+│   │        caveat: host-run integration tests bake CARGO_BIN_EXE paths
+│   ├── [ ] B2 select cells from what changed; the receipt names what was skipped
+│   ├── [ ] B3 a stage runs every suite; no stop at the first failure
+│   │        why: minicon_blackbox has never run in the Windows court
+│   └── [ ] B4 push only binaries whose digest changed (utm-court ledger)
+├── C. Windows court gaps, found by 0.1.22's first full run   (needs A1)
+│   ├── [x] C1 throughput: ConPTY forwards viewport changes, not bytes (§4)
+│   ├── [ ] C2 decide what the Windows throughput receipt proves   (OWNER)
+│   ├── [ ] C3 `a_host_whose_program_cannot_be_spawned_dies_and_says_why`
+│   ├── [ ] C4 `a_new_tab_that_cannot_start_is_a_notice_not_an_exit`
+│   └── [ ] C5 `gui_control_surface_isolated_multitab_black_box`: wheel routed
+│             to scrollback but 0 notches delivered
+├── D. Carried product debt — what a user would actually notice
+│   ├── [ ] D1 `capture-pane --scrollback N`: decide semantics, then implement
+│   │        (cross-screen stitching, viewport restore; from 0.1.18 P1)
+│   ├── [ ] D2 black-box test: paste and Enter arrive in two `read()`s (0.1.18)
+│   ├── [ ] D3 box-drawing glyphs from cell geometry: Consolas 1 px gap at 12 px
+│   ├── [ ] D4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
+│   └── [ ] D5 the interactive court presents no frames, so real pointer events
+│             and pixel comparison stay out of reach (0.1.18 P2)
+└── E. Shared seam with AgenTerm — plan-cross-project-reuse.md
+    ├── [x] E1 scrollbar geometry: one implementation, pinned by parity tests
+    ├── [x] E2 consumer feature matrix gated on both sides
+    ├── [ ] E3 click streak D1–D4: four behaviour divergences      (OWNERS)
+    └── [ ] E4 composer rules: survey before anything moves
+```
 
-## 1. Local loop
+`[x]` landed in 0.1.22 and stays for the trail. `(OWNER)` waits on a decision,
+not on work. Non-goals for 0.1.23: no new product surface, no server, no
+rebuild-to-promote, no change to what a Candidate means.
 
-1. **Fingerprint dir by clone, not rebuild.** six-cell seeds
-   `target-six/builds/<new fp>` with `cp -c -R` from the newest previous
-   fingerprint dir, then builds incrementally. Integration tests bake
-   `CARGO_BIN_EXE_*` absolute paths, so host-run test cells must rebuild those
-   binaries (touch their crate) after the clone; Windows cells push exes and
-   are unaffected.
-2. **Select cells from the change.** Docs/plan-only changes skip build cells;
-   a change confined to one target's `cfg` runs that target's cells. The
-   receipt names what was skipped and why; nothing is skipped silently.
-3. **Pre-flight the environment (15 s).** Before any cell: free disk, a
-   one-line x86_64 binary under Rosetta, court agent nonce. A hung Rosetta
-   cost 20 minutes today.
-4. **nextest archive for courts.** Build test binaries once, archive, run the
-   archive in each court. Partition long suites.
+## 0b. Memory palace
 
-## 2. Courts
+```mermaid
+flowchart LR
+  CH[a change on this Mac] --> PF[A3 pre-flight]
+  PF --> BLD[B1 clone + incremental build]
+  BLD --> RT{A2 route per cell}
+  RT -->|lnx/win x4| GH[GitHub runners<br/>download and run only]
+  RT -->|osx arm + x86| MAC[this Mac<br/>native and Rosetta]
+  RT -->|desktop / legacy / offline| CRT[utm-court VM]
+  GH --> RC[A1 one receipt]
+  MAC --> RC
+  CRT --> RC
+  RC --> SIX[six-cell verdict]
+  SIX -->|green| CAND[Candidate: CI signs and stamps only]
+  CAND --> PUB[[publish: owner authority]]
+  RC -.timings.-> BASE[(§1 baseline table)]
+  C2{{C2 ConPTY receipt: owner}} -.blocks.-> SIX
+  PROV{{§3 build provenance: owner}} -.blocks.-> CAND
+```
 
-1. HTTP transfer (done for Windows; do the same for Linux courts).
-2. Keep the court warm across stages of one qualification; release it at the
-   end. Push only binaries whose hash changed since the last push.
-3. Snapshot a booted, agent-ready court and resume it instead of cold boot.
+## 1. Baseline (measured 2026-09-22/23)
 
-## 3. CI is only the seal
+| stage | before | now | lever |
+| --- | --- | --- | --- |
+| Windows court `test` stage | 227 s | 72 s | HTTP fetch instead of QGA copy (utm-court `b87196c`) |
+| transfer in, 4 MB exe | 19 s | 2 s | same |
+| rebuild for the court after a one-line change | full build | 4 s | APFS clone + incremental `cargo xwin` |
+| court start to desktop ready | ~150 s, flaky | ~100 s cold, **5–9 s** from an in-memory pause | `fb1e3a8`, `cd56700`, `17c08c1`, `77e79ed` |
+| one Windows diagnostic round | not achievable | **20–26 s** | all of the above |
+| five non-macOS cells in parallel on GitHub | never tried | **13 s** from dispatch | `local-artifact-probe.yml` |
+| local six-cell, full | ~20 min | unchanged | B1, B2 |
+| CI release chain | ~45 min per round | unchanged | §3 |
 
-CI stops building. Local qualification produces the exact bytes plus a
-receipt binding source SHA, source fingerprint, artifact digests and the
-six-cell/court results. CI verifies that binding (attestation), signs,
-notarizes, seals the Candidate, and promotes it. Rebuild-to-promote stays
-forbidden; the change is where the unsigned bytes come from. Needs an owner
-decision on how locally built bytes are trusted (build provenance), before
-any workflow changes.
-
-## 3b. Where each cell runs (measured 2026-09-23)
-
-CI stops building; it can still *run* what the Mac built. Probe
-`local-artifact-probe.yml`: cross-compile here, upload the test executables
-to a tagged prerelease, and let runners download and run them. No checkout,
-no toolchain, no build.
+## 2. Where each cell runs (measured 2026-09-23)
 
 | cell | host | measured |
 | --- | --- | --- |
-| lnx-x86_64, lnx-aarch64 | GitHub `ubuntu-24.04`, `ubuntu-24.04-arm` | 5 s per job (queue 4-5 s, download 2 s) |
-| win-x86_64, win-aarch64 | GitHub `windows-2025`, `windows-11-arm` | 9-10 s per job (download 5 s) |
+| lnx-x86_64, lnx-aarch64 | GitHub `ubuntu-24.04`, `ubuntu-24.04-arm` | 5 s per job (queue 4–5 s, download 2 s) |
+| win-x86_64, win-aarch64 | GitHub `windows-2025`, `windows-11-arm` | 9–10 s per job (download 5 s) |
 | osx-aarch64 | this Mac, natively | under 1 s (GitHub `macos-15`: 3 s) |
-| osx-x86_64 | this Mac, under Rosetta | 2 s. GitHub `macos-13` was still queued after 7 minutes; do not put it in the loop |
-| anything needing a logged-in desktop, or a legacy OS | utm-court | 20-26 s per round |
+| osx-x86_64 | this Mac, under Rosetta | 2 s. GitHub `macos-13` was still queued after 7 minutes; keep it out of the loop |
+| a logged-in desktop, a legacy OS, offline work, many iterations | utm-court | 20–26 s per round |
 
-Five GitHub cells answered within 13 s of one dispatch, in parallel; the six
-executables (29 MB) uploaded in 9 s. A **draft** release is not reachable by
-tag from a job ("release not found") -- use a tagged prerelease and delete it
-afterwards. Public repositories pay nothing for standard runners.
+Cross-compile here, upload the test executables to a **tagged prerelease** (a
+draft is not reachable by tag from a job: "release not found"), let the runners
+download and run them, then delete the prerelease. No checkout, no toolchain,
+no build in CI. Public repositories pay nothing for standard runners. Probe:
+`.github/workflows/local-artifact-probe.yml`.
 
-So the entry point is one command with a backend switch: GitHub by default
-for command-line suites, the Mac for both macOS cells, utm-court when the
-test needs a desktop, a legacy image, offline work, or many iterations.
-Pre-flight must include the Rosetta probe, since a broken Rosetta silently
-hangs the osx-x86_64 cell.
+## 3. CI is only the seal
 
-## 4. Pre-existing Windows court gaps (found by 0.1.22's first full run)
+CI stops building. Local qualification produces the exact bytes plus a receipt
+binding source SHA, source fingerprint, artifact digests and cell results; CI
+verifies that binding, signs, notarizes, seals the Candidate and promotes it.
+Rebuild-to-promote stays forbidden. **Owner decision needed** on how locally
+built bytes earn that trust (build provenance / attestation) before any
+workflow changes.
 
-- `minicon_control`: `a_host_whose_program_cannot_be_spawned_dies_and_says_why`,
-  `a_new_tab_that_cannot_start_is_a_notice_not_an_exit`,
-  `gui_control_surface_isolated_multitab_black_box`.
-- `minicon_throughput`: `pty_drained_bytes` a few KB against the 32 MiB
-  payload, while `THROUGHPUT_DONE_32M` is seen. **Diagnosed 2026-09-22:**
-  the payload reaches the screen (the producer pane shows it), and the
-  drained count does not scale with the payload -- 1 MiB gave 6,628 bytes,
-  32 MiB gave 7,014. ConPTY renders the console itself and forwards only
-  viewport changes, so on Windows the PTY byte count can never cover what the
-  program wrote. The assertion's premise holds for Unix PTYs and not for
-  ConPTY. **Owner decision needed** on what the Windows receipt should prove
-  instead (the ordered `THROUGHPUT_DONE_32M` marker and the sustained-rate
-  bound already hold), before the assertion changes.
+## 4. What C1 found
 
-Each gets its own diagnosis now that a court round is ~1 minute.
+The payload reaches the screen, and the drained count does not scale with it:
+1 MiB gave 6,628 bytes, 32 MiB gave 7,014. ConPTY renders the console itself
+and forwards only viewport changes, so on Windows a PTY byte count can never
+cover what a program wrote. The assertion's premise holds for Unix PTYs only.
+The ordered `THROUGHPUT_DONE_32M` marker and the sustained-rate bound already
+hold and are the candidates for what the Windows receipt should prove (C2).
 
-## Verification
+## 5. Rules that stay
 
-Every speed change is measured before and after, N runs, same machine; a
-single A/B is not evidence.
+- Cross-compile here, run it in a real environment, only then cut a Candidate.
+- A missing or unready environment is BLOCKED, never a skipped pass.
+- Transport bounds may be tuned; product assertions never are.
+- A warm or paused court belongs to one exclusive sequence; release it after.
+- Every speed change is measured before and after, N runs, same machine.
