@@ -934,6 +934,22 @@ impl ConTerminal {
                     return Ok(());
                 }
             }
+            // Windows binds Ctrl+V to paste everywhere, including its own
+            // terminals, and a shell there has no readline quoted-insert to
+            // shadow: before this, Ctrl+V reached cmd.exe as 0x16 and printed
+            // "^V" (measured in the ARM court, 2026-09-23), which is what a
+            // user reads as "paste does not work". Ctrl+Shift+V keeps working
+            // for anyone with the habit, and a program that wants a literal
+            // 0x16 can still receive it through the control CLI.
+            #[cfg(windows)]
+            if control
+                && !event.modifiers.alt
+                && !event.modifiers.shift
+                && text.eq_ignore_ascii_case("v")
+            {
+                self.request_clipboard_paste();
+                return Ok(());
+            }
             // Bare Ctrl+C copies when there is a selection, matching conhost;
             // with no selection it falls through to SIGINT (0x03).
             if control
@@ -3042,6 +3058,56 @@ pub(crate) mod tests {
         app.forward_key(&key);
         assert!(app.blink_visible);
     }
+    /// Windows binds Ctrl+V to paste everywhere, so a terminal that forwards
+    /// it as 0x16 looks broken: cmd.exe prints "^V" and nothing is pasted,
+    /// which is exactly what a user reported against 0.1.22. Ctrl+Shift+V
+    /// stays for the habit, and Ctrl+V with Alt still belongs to the program.
+    #[cfg(windows)]
+    #[test]
+    fn ctrl_v_asks_for_a_paste_on_windows_instead_of_reaching_the_shell() {
+        let mut app = prepared_pointer_terminal();
+        let press = |text: &str, control: bool, shift: bool, alt: bool| NormalizedKeyEvent {
+            logical: LogicalKey::Character(text.to_owned()),
+            physical: agenterm_platform::input::PhysicalKeyCode::Other,
+            text: Some(text.to_owned()),
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: ModifierState {
+                control,
+                shift,
+                alt,
+                ..ModifierState::default()
+            },
+        };
+
+        app.forward_key_checked(&press("v", true, false, false))
+            .expect("ctrl+v");
+        assert!(
+            app.take_clipboard_paste_request(),
+            "Ctrl+V must ask the host for a paste"
+        );
+
+        app.forward_key_checked(&press("v", true, true, false))
+            .expect("ctrl+shift+v");
+        assert!(
+            app.take_clipboard_paste_request(),
+            "Ctrl+Shift+V must keep asking for a paste"
+        );
+
+        // Ctrl+Alt+V belongs to the program: it is forwarded, so in this
+        // fixture it reaches a PTY that was never opened. That error is the
+        // proof it was not consumed as a host shortcut.
+        let forwarded = app.forward_key_checked(&press("v", true, false, true));
+        assert!(
+            !app.take_clipboard_paste_request(),
+            "Ctrl+Alt+V belongs to the program, not the host"
+        );
+        assert!(
+            forwarded.is_err(),
+            "Ctrl+Alt+V must reach the program's PTY"
+        );
+    }
+
     /// A pointer or control coordinate past the grid's right/bottom edge must
     /// land on the last cell, not an off-grid column or row. Row already
     /// clamped; the column did not, so a coordinate to the right of the grid
