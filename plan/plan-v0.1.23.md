@@ -28,10 +28,10 @@ become something a user can notice.
 ├── C. Windows court gaps, found by 0.1.22's first full run   (needs A1)
 │   ├── [x] C1 throughput: ConPTY forwards viewport changes, not bytes (§4)
 │   ├── [ ] C2 Windows throughput receipt: ordered marker + sustained rate
-│   ├── [ ] C3 `a_host_whose_program_cannot_be_spawned_dies_and_says_why`
-│   ├── [ ] C4 `a_new_tab_that_cannot_start_is_a_notice_not_an_exit`
-│   └── [ ] C5 `gui_control_surface_isolated_multitab_black_box`: wheel routed
-│             to scrollback but 0 notches delivered
+│   ├── [x] C3 unspawnable `-e`: platform-shaped, test now asserts per platform
+│   ├── [x] C4 a tab that cannot start: same, plus the stub must really vanish
+│   └── [ ] C5 **product gap, not a test bug**: with ConPTY the host keeps no
+│             scrollback, so the wheel delivers 0 notches (§6)
 ├── D. Carried product debt — what a user would actually notice
 │   ├── [ ] D1 `capture-pane --scrollback N`: decide semantics, then implement
 │   │        (cross-screen stitching, viewport restore; from 0.1.18 P1)
@@ -127,6 +127,24 @@ forwards the bytes. Windows asserts instead that `THROUGHPUT_DONE_32M` appears
 only after the payload (ordering proves the data went through) and that the
 sustained rate holds. That is not a relaxed gate: both still fail on a real
 regression, and the byte count was unprovable on ConPTY by construction.
+
+## 6. C5: no scrollback under ConPTY (found 2026-09-23)
+
+`gui_control_surface_isolated_multitab_black_box` sends 1,200 lines into a
+Windows tab, waits for the last one to appear, then scrolls one notch. The
+receipt is `{"route":"scrollback","delivered_notches":0,"changed":false}`:
+MiniCon's own scrollback is empty although every line arrived. Same root as
+§4 -- ConPTY renders the console itself and forwards viewport changes, so the
+history lives in the Windows console host and never reaches MiniCon's parser.
+
+For a user on Windows that means the wheel cannot scroll back through plain
+shell output. The test stays as it is and keeps failing until the product
+answers, because the assertion is right: a terminal must be able to scroll
+its own history. Options to measure, in order: whether the classic console
+path (`--feature no-conpty`) does keep scrollback; whether ConPTY can be asked
+for its history; whether MiniCon should accumulate rows as they scroll out of
+the viewport. This is the first C item that is a product change rather than a
+platform-shaped expectation.
 
 ## 5. Rules that stay
 

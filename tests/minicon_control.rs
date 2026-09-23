@@ -587,6 +587,23 @@ fn gui_control_surface_isolated_multitab_black_box() {
         &endpoint,
         &["send-text", "--target", &child_id, shell_vt_noise_body()],
     );
+    // Wait for the last noise line before anything asserts on scrollback: the
+    // wheel below needs rows to scroll, and on a slower guest the loop had not
+    // produced any yet, so the wheel reported 0 delivered notches (measured in
+    // the Windows ARM court, 2026-09-23). Waiting removes the race without
+    // weakening what the wheel must prove.
+    cli_json(
+        exe,
+        &endpoint,
+        &[
+            "wait-text",
+            "--target",
+            &child_id,
+            "--timeout-ms",
+            "60000",
+            "VT_NOISE_1200",
+        ],
+    );
     thread::scope(|scope| {
         let mut requests = Vec::new();
         let endpoint = endpoint.as_str();
