@@ -93,7 +93,20 @@ flowchart LR
 | win-x86_64, win-aarch64 | GitHub `windows-2025`, `windows-11-arm` | 9–10 s per job (download 5 s) |
 | osx-aarch64 | this Mac, natively | under 1 s (GitHub `macos-15`: 3 s) |
 | osx-x86_64 | this Mac, under Rosetta | 2 s. GitHub `macos-13` was still queued after 7 minutes; keep it out of the loop |
-| a logged-in desktop, a legacy OS, offline work, many iterations | utm-court | 20–26 s per round |
+| a legacy OS, offline work, many iterations, the Defender scan | utm-court (local fallback) | 20–26 s per round |
+
+**A hosted Windows runner has a real desktop** (measured 2026-09-23:
+`runneradmin`, session 2, Active, virtual screen 1024x768), and MiniCon's GUI
+suites run there: `minicon_control` 9/9 in 8.5 s, `minicon_blackbox` 29
+passed / 1 failed (the pre-existing zoom blank) / 1 ignored in 164 s. The
+local court is the fallback, not the only way to run a GUI journey, so a
+routine round no longer heats the Mac.
+
+Two GitHub facts the bundle transport has to respect: a **draft** release is
+not reachable from a job ("release not found"), so the bundle goes through a
+tagged prerelease that is deleted afterwards; and the tags endpoint can
+answer with an empty asset list while the release's own assets endpoint has
+the file, so a job fetches by release id.
 
 Cross-compile here, upload the test executables to a **tagged prerelease** (a
 draft is not reachable by tag from a job: "release not found"), let the runners
