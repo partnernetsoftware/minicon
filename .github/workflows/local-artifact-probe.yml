@@ -9,8 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       bundle_tag:
-        description: Draft release tag holding the prebuilt test executables
+        description: Prerelease tag holding the prebuilt test executables
         required: true
+      cells:
+        description: Space-separated cells to run; empty runs every cell
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -34,6 +38,10 @@ jobs:
           - cell: osx-x86_64
             runner: macos-13
     runs-on: ${{ matrix.runner }}
+    # A cell the caller did not ask for is skipped, not queued: macos-13 can
+    # sit queued for many minutes and a caller waiting on the run would wait
+    # with it.
+    if: ${{ inputs.cells == '' || contains(format('{0} ', inputs.cells), format('{0} ', matrix.cell)) }}
     steps:
       - name: Download and run the prebuilt test executable
         shell: bash
