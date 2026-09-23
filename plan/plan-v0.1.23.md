@@ -27,7 +27,7 @@ become something a user can notice.
 │   └── [ ] B4 push only binaries whose digest changed (utm-court ledger)
 ├── C. Windows court gaps, found by 0.1.22's first full run   (needs A1)
 │   ├── [x] C1 throughput: ConPTY forwards viewport changes, not bytes (§4)
-│   ├── [ ] C2 decide what the Windows throughput receipt proves   (OWNER)
+│   ├── [ ] C2 Windows throughput receipt: ordered marker + sustained rate
 │   ├── [ ] C3 `a_host_whose_program_cannot_be_spawned_dies_and_says_why`
 │   ├── [ ] C4 `a_new_tab_that_cannot_start_is_a_notice_not_an_exit`
 │   └── [ ] C5 `gui_control_surface_isolated_multitab_black_box`: wheel routed
@@ -101,14 +101,20 @@ download and run them, then delete the prerelease. No checkout, no toolchain,
 no build in CI. Public repositories pay nothing for standard runners. Probe:
 `.github/workflows/local-artifact-probe.yml`.
 
-## 3. CI is only the seal
+## 3. CI keeps building the release; it just stops being the debugger
 
-CI stops building. Local qualification produces the exact bytes plus a receipt
-binding source SHA, source fingerprint, artifact digests and cell results; CI
-verifies that binding, signs, notarizes, seals the Candidate and promotes it.
-Rebuild-to-promote stays forbidden. **Owner decision needed** on how locally
-built bytes earn that trust (build provenance / attestation) before any
-workflow changes.
+Decided 2026-09-23, after the owner asked the obvious question: the release
+chain already builds from source in CI and signs there, which is exactly what
+it should do. That build is the artifacts' provenance — if CI signed bytes
+built on this Mac instead, nothing would tie them to the commit, and the whole
+question of "how do locally built bytes earn trust" only exists because of a
+change that buys nothing: a release runs the chain once, not once per
+iteration.
+
+So the release chain is unchanged. What changes is habit: no round of
+debugging goes through it. Daily verification runs on this Mac and on GitHub
+runners that only execute what was built here (§2), in seconds; CI runs once,
+at release time.
 
 ## 4. What C1 found
 
@@ -116,8 +122,11 @@ The payload reaches the screen, and the drained count does not scale with it:
 1 MiB gave 6,628 bytes, 32 MiB gave 7,014. ConPTY renders the console itself
 and forwards only viewport changes, so on Windows a PTY byte count can never
 cover what a program wrote. The assertion's premise holds for Unix PTYs only.
-The ordered `THROUGHPUT_DONE_32M` marker and the sustained-rate bound already
-hold and are the candidates for what the Windows receipt should prove (C2).
+**Decided (C2):** Unix keeps the byte-count assertion, because a Unix PTY
+forwards the bytes. Windows asserts instead that `THROUGHPUT_DONE_32M` appears
+only after the payload (ordering proves the data went through) and that the
+sustained rate holds. That is not a relaxed gate: both still fail on a real
+regression, and the byte count was unprovable on ConPTY by construction.
 
 ## 5. Rules that stay
 
