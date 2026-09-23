@@ -26,11 +26,15 @@ jobs:
       - name: Report the session this runner gives us
         shell: pwsh
         run: |
-          query user 2>&1 | Out-String
+          $ErrorActionPreference = "Continue"
+          # `query user` exits non-zero when no one is signed in, which is not
+          # the question being asked here.
+          cmd /c "query user" 2>&1 | Out-String
           "session id: $([System.Diagnostics.Process]::GetCurrentProcess().SessionId)"
           "interactive: $([Environment]::UserInteractive)"
           Add-Type -AssemblyName System.Windows.Forms
           "screen: $([System.Windows.Forms.SystemInformation]::VirtualScreen)"
+          exit 0
       - name: Download and run the suite
         shell: bash
         env:
