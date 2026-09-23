@@ -176,6 +176,7 @@ printf '%s\n' \
   '$PSDefaultParameterValues["Out-File:Encoding"] = "utf8"' \
   "\$env:MINICON_WINDOWS_CONSOLE_AGENT_FILTER = '$CONSOLE_AGENT_FILTER'" \
   "\$env:MINICON_WINDOWS_ONE = '${MINICON_WINDOWS_ONE:-}'" \
+  "\$env:MINICON_TEST_SLOWDOWN = '${MINICON_TEST_SLOWDOWN:-2}'" \
   '$exitCode = 1' \
   'try {' \
   "    & '$GUEST_ROOT\\windows-runtime-qualify.ps1' -TargetDir '$GUEST_ROOT\\target' -Mode '$MODE' *> '$LOG'" \
@@ -192,13 +193,17 @@ printf 'ready' | court push "$COURT" - "$READY"
 
 # Each job publishes a unique result path atomically, so no prior run can be
 # mistaken for current-source evidence.
-deadline="$((SECONDS + 1200))"
+# The bound is a harness limit, not a product assertion, and the whole suite
+# now runs (it used to stop at its first failing group), with every wait
+# scaled by MINICON_TEST_SLOWDOWN. Both make a full stage longer than the
+# original 20 minutes.
+deadline="$((SECONDS + ${MINICON_WINDOWS_JOB_TIMEOUT:-2700}))"
 while :; do
   : >"$runner_tmp/exit"
   court pull "$COURT" "$RESULT" "$runner_tmp/exit" 2>/dev/null || true
   [ -s "$runner_tmp/exit" ] && break
   if [ "$SECONDS" -ge "$deadline" ]; then
-    echo "interactive Windows test job exceeded its 20-minute deadline" >&2
+    echo "interactive Windows test job exceeded its ${MINICON_WINDOWS_JOB_TIMEOUT:-2700}s deadline" >&2
     exit 1
   fi
   sleep 1

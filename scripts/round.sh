@@ -11,6 +11,15 @@
 #   lnx-*, win-*             -> GitHub runners: they download what was built
 #                               here and run it; no checkout, no toolchain,
 #                               no build in CI.
+# GitHub first, utm-court as the local fallback: a hosted Windows runner has
+# a real logged-in desktop (runneradmin, session 2, Active, 1024x768), and
+# MiniCon's GUI suites run there -- minicon_control 9/9 in 8.5 s against
+# 20 s and a hot Mac in the local court. The court stays for the Defender
+# scan, legacy images, offline work and many-iteration debugging.
+# The bundle goes through a *tagged prerelease*, deleted afterwards: a draft
+# release is not reachable from a job ("release not found"), and the tags
+# endpoint can answer with an empty asset list while the release's own
+# assets endpoint has the file, so the job fetches by release id.
 # A cell whose backend cannot answer is BLOCKED. It is never a silent pass,
 # and this script never signs, publishes, or touches the release chain.
 set -uo pipefail
