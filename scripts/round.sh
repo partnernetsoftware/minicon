@@ -20,7 +20,12 @@ cd "$REPO_ROOT"
 
 ALL_CELLS="osx-aarch64 osx-x86_64 lnx-x86_64 lnx-aarch64 win-x86_64 win-aarch64"
 CELLS="${*:-$ALL_CELLS}"
+# minicon_core is host-neutral and safe to run bare on any cell. The binary's
+# own `minicon` suite is not: some of its tests want a window or a control
+# endpoint and hang when the executable is run outside cargo's harness
+# (measured 2026-09-23: two rounds hung there). Name other suites explicitly.
 SUITES="${MINICON_ROUND_SUITES:-minicon_core}"
+SUITE_TIMEOUT="${MINICON_ROUND_SUITE_TIMEOUT:-120}"
 OUT_DIR="${MINICON_ROUND_OUT:-$REPO_ROOT/target-six}"
 RECEIPT="$OUT_DIR/round-receipt.json"
 LOGS="$OUT_DIR/round-logs"
@@ -142,8 +147,15 @@ run_local() {
       record "$cell" "$suite" BLOCKED $((SECONDS-t0)) "no test executable built"
       continue
     fi
-    if "$bin" >"$LOGS/$cell-$suite.log" 2>&1; then
+    # Bounded: a suite that wants a desktop can hang forever otherwise.
+    "$bin" >"$LOGS/$cell-$suite.log" 2>&1 & local pid=$! rc=0
+    { sleep "$SUITE_TIMEOUT"; kill -9 "$pid" 2>/dev/null; } & local killer=$!
+    wait "$pid" || rc=$?
+    kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null
+    if [ "$rc" -eq 0 ]; then
       record "$cell" "$suite" PASS $((SECONDS-t0)) "$(grep -c '^test .* ok$' "$LOGS/$cell-$suite.log") tests"
+    elif [ $((SECONDS-t0)) -ge "$SUITE_TIMEOUT" ]; then
+      record "$cell" "$suite" BLOCKED $((SECONDS-t0)) "no verdict within ${SUITE_TIMEOUT}s"
     else
       record "$cell" "$suite" FAIL $((SECONDS-t0)) "$LOGS/$cell-$suite.log"
     fi
@@ -202,8 +214,34 @@ run_github() {
   return 0
 }
 
+# --- B2: which cells does this change actually need? -------------------------
+# Paths that cannot change a compiled artifact do not need a build cell. The
+# receipt says what was skipped and why; nothing is skipped silently, and a
+# cell the caller named explicitly is always run.
+select_cells() {
+  local base changed
+  [ -n "${MINICON_ROUND_ALL:-}" ] && { echo "$ALL_CELLS"; return; }
+  [ "$#" -gt 0 ] && { echo "$*"; return; }
+  base="$(git rev-parse --verify --quiet HEAD 2>/dev/null)" || { echo "$ALL_CELLS"; return; }
+  # Tracked changes only: listing untracked files would walk target-six/,
+  # which holds tens of gigabytes of build output and takes minutes.
+  changed="$(git diff --name-only HEAD -- . ':!target*' 2>/dev/null | sort -u)"
+  [ -n "$changed" ] || { echo "$ALL_CELLS"; return; }
+  if printf '%s\n' "$changed" | grep -qvE '^(plan/|prd/|docs/|archive/|README|PRD\.md|AGENTS\.md|\.github/)'; then
+    echo "$ALL_CELLS"
+  else
+    echo ""
+  fi
+}
+
 # --- the round ---------------------------------------------------------------
 started=$SECONDS
+if [ "$#" -eq 0 ]; then
+  CELLS="$(select_cells)"
+  if [ -z "$CELLS" ]; then
+    record round selection PASS 0 "no compiled artifact can change; documents only"
+  fi
+fi
 preflight || true
 github_cells=""
 for cell in $CELLS; do
