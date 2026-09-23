@@ -132,6 +132,59 @@ Release is exact-source Candidate followed by no-rebuild Promotion. Signing is
 a `release-policy.json` choice, not a fallback inferred from credentials.
 Public Promotion always requires explicit human version and publish authority.
 
+## Where a test runs, and what that costs
+
+Measured 2026-09-23; the numbers are why, not decoration.
+
+**GitHub first, the local court as the fallback.** Cross-compile here, upload
+the test executables, let the runners execute them. CI builds nothing outside
+a release.
+
+| cell | host | measured |
+| --- | --- | --- |
+| lnx-x86_64, lnx-aarch64 | GitHub `ubuntu-24.04`, `ubuntu-24.04-arm` | 5 s per job |
+| win-x86_64, win-aarch64 | GitHub `windows-2025`, `windows-11-arm` | 9-10 s per job |
+| osx-aarch64 | this Mac, natively | under 1 s |
+| osx-x86_64 | this Mac, under Rosetta | 2 s. GitHub `macos-13` sat queued for 7 minutes; keep it out of the loop |
+| Defender scan, legacy images, offline, long debugging | utm-court | 20-26 s per round |
+
+A hosted Windows runner **has a real logged-in desktop** (`runneradmin`,
+session 2, Active, 1024x768) and MiniCon's GUI journeys run on it:
+`minicon_control` 9/9 in 8.5 s, `minicon_blackbox` 29 passed / 1 failed /
+1 ignored in 164 s. The local court used to be assumed necessary for those;
+it is not, and every routine round that stays off the Mac keeps it cool.
+
+`scripts/round.sh` is the one entry point: pre-flight, build, route, one
+receipt with per-stage timings. A cell whose backend cannot answer is
+BLOCKED, never a silent pass.
+
+Transport facts that cost a round each to learn:
+
+- A **draft** release is not reachable from a job ("release not found"). Use a
+  tagged prerelease and delete it afterwards.
+- The releases-by-tag endpoint can answer with an empty asset list while the
+  release's own assets endpoint reports the file as uploaded. Fetch by release
+  id inside a job.
+- `cargo xwin` only reaches the network when a proxy is configured; with the
+  CRT/SDK cache present it builds offline in seconds. Do not export a proxy
+  for builds -- a 503 through it failed two cells.
+- Bound every wait on something outside this machine. An unbounded
+  `gh run watch` on a queued `macos-13` held two rounds open for over an hour.
+- In the court, `MINICON_WINDOWS_ONE="<suite> <test>"` runs a single test
+  (~20 s per round), `MINICON_WINDOWS_UTM_DISPOSABLE=0` keeps the guest warm,
+  and an in-memory pause resumes to desktop-ready in 5-9 s against ~100 s
+  cold. Release the court when the sequence ends; it is shared with AgenTerm.
+
+Windows behaves differently from Unix in ways that are the platform's, not
+bugs to "fix" in the product:
+
+- A program that cannot start is not a spawn error: ConPTY creates the console
+  host first, so it arrives as a child that exited (code 251).
+- ConPTY forwards viewport changes, not bytes, so a PTY byte count can never
+  cover what a program wrote (1 MiB gave 6,628 bytes; 32 MiB gave 7,014).
+- Deleting a running image only marks it delete-pending, so the path still
+  resolves; deny execute instead when a spawn must fail.
+
 ## Change and documentation rules
 
 - Put cross-platform mechanisms in the shared platform crates and product
