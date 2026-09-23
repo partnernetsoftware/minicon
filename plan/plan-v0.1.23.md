@@ -51,6 +51,32 @@ forbidden; the change is where the unsigned bytes come from. Needs an owner
 decision on how locally built bytes are trusted (build provenance), before
 any workflow changes.
 
+## 3b. Where each cell runs (measured 2026-09-23)
+
+CI stops building; it can still *run* what the Mac built. Probe
+`local-artifact-probe.yml`: cross-compile here, upload the test executables
+to a tagged prerelease, and let runners download and run them. No checkout,
+no toolchain, no build.
+
+| cell | host | measured |
+| --- | --- | --- |
+| lnx-x86_64, lnx-aarch64 | GitHub `ubuntu-24.04`, `ubuntu-24.04-arm` | 5 s per job (queue 4-5 s, download 2 s) |
+| win-x86_64, win-aarch64 | GitHub `windows-2025`, `windows-11-arm` | 9-10 s per job (download 5 s) |
+| osx-aarch64 | this Mac, natively | under 1 s (GitHub `macos-15`: 3 s) |
+| osx-x86_64 | this Mac, under Rosetta | 2 s. GitHub `macos-13` was still queued after 7 minutes; do not put it in the loop |
+| anything needing a logged-in desktop, or a legacy OS | utm-court | 20-26 s per round |
+
+Five GitHub cells answered within 13 s of one dispatch, in parallel; the six
+executables (29 MB) uploaded in 9 s. A **draft** release is not reachable by
+tag from a job ("release not found") -- use a tagged prerelease and delete it
+afterwards. Public repositories pay nothing for standard runners.
+
+So the entry point is one command with a backend switch: GitHub by default
+for command-line suites, the Mac for both macOS cells, utm-court when the
+test needs a desktop, a legacy image, offline work, or many iterations.
+Pre-flight must include the Rosetta probe, since a broken Rosetta silently
+hangs the osx-x86_64 cell.
+
 ## 4. Pre-existing Windows court gaps (found by 0.1.22's first full run)
 
 - `minicon_control`: `a_host_whose_program_cannot_be_spawned_dies_and_says_why`,
