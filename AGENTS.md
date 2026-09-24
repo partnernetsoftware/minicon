@@ -36,14 +36,40 @@ Use both views for material product planning; neither replaces the other.
 ## Product boundary
 
 MiniCon is a one-file local terminal. Preserve these exclusions: no server,
-persistent workspace, Fleet, mux, MCP, script runtime, plugin host or Agent
-permission policy. Its `--control` endpoint's lifetime is bound to the
-**process**, not to the window: it is bound before any window exists and dies
-with the process. That amendment (0.1.19) admits a GUI that can be detached and
-reattached; it does not admit a server, a daemon, a listening network
-interface, a persistent workspace, session sharing or discovery, or background
-auto-start. A MiniCon without a window is the same single process, minus its
-window.
+persistent workspace, Fleet, MCP, or a general plugin host. Its `--control`
+endpoint's lifetime is bound to the **process**, not to the window: it is
+bound before any window exists and dies with the process. That amendment
+(0.1.19) admits a GUI that can be detached and reattached; it does not admit
+a server, a daemon, a listening network interface, a persistent workspace,
+session sharing or discovery, or background auto-start. A MiniCon without a
+window is the same single process, minus its window.
+
+**Amendment (2026-09-24, owner decision):** the prior blanket exclusion of
+"mux" and "script runtime, plugin host or Agent permission policy" is
+narrowed, not removed, to admit exactly two 0.2.x subcommands. Anything
+broader than what is written here still needs its own owner decision before
+it lands.
+
+- `mux` exposes and operates on MiniCon's own existing tabs the way `tmux`
+  exposes panes/windows — list, select, split-view query, send/capture —
+  over the same process-lifetime `--control` endpoint `PRD_02_26` already
+  owns. It is a richer view onto tabs MiniCon already has, not a new
+  multiplexing daemon, a session store independent of the running process,
+  or a way to attach to another machine's MiniCon.
+- `harness` is a minimal agent subcommand with exactly two tools, `file` and
+  `exec`, and no plugin system: adding a third tool or a general tool-plugin
+  interface is out of scope for this amendment and needs its own decision.
+  It calls out to a model over HTTPS (DeepSeek's own API first, then an
+  opencode-go-compatible key) and does not host, serve, or accept inbound
+  connections. There is deliberately no separate "Agent permission policy"
+  layer: the two tools' own bounds (which files, which command) are the
+  entire policy, matching MiniCon's existing preference for a narrow bounded
+  surface over a general framework.
+
+Both stay subject to every other invariant in this section (no server, no
+persistent workspace, no Fleet, no MCP, no general plugin host) and to the
+one-file / no-bundled-runtime charter. Design and evidence detail:
+`prd/PRD_02_31_v0_2_horizon.md`.
 
 Preserve these invariants:
 

@@ -109,7 +109,11 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_29_qjswasm_horizon.md
 │   ├── foundry software production line (cross-product; not MiniCon scope)
 │   │   └── prd/PRD_02_30_foundry_horizon.md
-│   └── dedicated OS/HarmonyOS feasibility belongs to portfolio horizon
+│   ├── dedicated OS/HarmonyOS feasibility belongs to portfolio horizon
+│   └── [ ] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
+│       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
+│       owner decision 2026-09-24
+│       └── prd/PRD_02_31_v0_2_horizon.md
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence
     ├── evidence-registry.json — evidence identity → public test target
