@@ -155,6 +155,21 @@ fn wait_for_shell(
     );
 }
 
+/// What the producing shell actually printed.
+///
+/// A byte-count assertion can say the payload never arrived and nothing else,
+/// which is where run 35994583675 stopped: 6752 bytes drained of a 32 MiB
+/// payload, with the reason sitting unread on the pane. The generator is a
+/// one-line PowerShell program, so its failure is a message on that pane.
+fn pane_text(exe: &Path, endpoint: &str, tab: &str) -> String {
+    let output = invoke(exe, endpoint, &["capture-pane", "--target", tab]);
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn tab_id(value: &Value) -> &str {
     value.as_str().expect("tab ID must be a string")
 }
@@ -328,7 +343,8 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
         / elapsed.as_nanos().max(1).min(u128::from(u64::MAX)) as u64;
     assert!(
         bytes_per_second >= MIN_BYTES_PER_SECOND,
-        "sustained rate {bytes_per_second} B/s is below {MIN_BYTES_PER_SECOND} B/s"
+        "sustained rate {bytes_per_second} B/s is below {MIN_BYTES_PER_SECOND} B/s\nproducer pane:\n{}",
+        pane_text(exe, &endpoint, &producer)
     );
 
     let perf = cli_json(exe, &endpoint, &["perf-stats"]);
@@ -336,7 +352,8 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
         perf["pty_drained_bytes"]
             .as_u64()
             .is_some_and(|bytes| bytes >= OUTPUT_BYTES),
-        "PTY receipt did not cover the fixed payload: {perf}"
+        "PTY receipt did not cover the fixed payload: {perf}\nproducer pane:\n{}",
+        pane_text(exe, &endpoint, &producer)
     );
     // The native pipe may deliver chunks below the per-Wake budget even for a
     // large payload, in which case zero yields is the correct result rather
