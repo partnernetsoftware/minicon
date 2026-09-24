@@ -134,3 +134,58 @@ overflowed on the first long one — a table that formats itself is part of
 being one table.
 
 Branch A is complete except A5, which is a non-goal and needs no work.
+
+## B1 diagnosed (2026-09-24, runs 35978904963 / 35979574823)
+
+**Reproduced on a hosted Windows runner, not on macOS.** The new black-box
+test `zooming_all_the_way_out_keeps_the_terminal_readable` fails there with a
+snapshot that says everything:
+
+```
+"child_alive": true, "font_size_px": 8, "cols": 141, "rows": 40,
+"cursor": { "row": 0, "col": 0 }, "rows_text": [ "", "", "", ... ]
+```
+
+The shell is alive, the grid is sane, and every row is empty — including the
+one the cursor is on. Text written *before* the zoom is gone and text typed
+*after* it never arrives. So the terminal is not mis-scrolled; it has stopped
+showing anything at all.
+
+**Where it comes from** — `console_agent.rs::resize()` in `agenterm-platform`:
+
+1. It shrinks the console window to a 1x1 rectangle (`minimal`) so the buffer
+   is free to change size. That is the standard dance and is fine.
+2. It sets the buffer, then sets the window to the requested size.
+3. If that last `SetConsoleWindowInfo` fails, it returns `Err` — **and leaves
+   the console window at 1x1**. Every later scrape then reads a one-cell
+   window, which is exactly a blank screen.
+4. MiniCon discards the error (`let _ = master.resize(...)`), so nothing
+   anywhere reports that the console is now one cell wide.
+
+**Why the failure needs a small font.** A console window cannot exceed
+`GetLargestConsoleWindowSize`, which is set by the desktop and the console
+font. The runner's desktop is 1024x768; with the usual 8x16 console font that
+is about 128 columns. The failing snapshot asks for **141**. Zooming in shrinks
+the request back under the limit, the call succeeds, and the terminal "heals" —
+which is precisely the shape the owner reported.
+
+`GetLargestConsoleWindowSize` appears nowhere in the crate.
+
+**Unverified step:** that the failing call is the window resize and that the
+limit is the reason. Everything up to it is observed; this last link is
+inferred from the numbers. It needs one diagnostic round on Windows, not a
+guess committed as a fix.
+
+**Whose code:** `crates/agenterm-platform/src/adapters/windows/console_agent.rs`
+belongs to the AgenTerm lane. Claimed by envelope; the change lands there and
+MiniCon re-pins. Two things the fix owes:
+
+- clamp the requested window to the largest the console allows, so a grid
+  wider than the desktop degrades to a narrower window instead of failing;
+- never return from `resize()` with the window still at `minimal` — restore
+  the previous rectangle on any failure, so the worst case is a stale size
+  rather than a dead screen.
+
+MiniCon owes one thing regardless of what AgenTerm does: `apply_resize`
+discards the backend's resize error. A backend that says "I could not do that"
+should not be silently believed.
