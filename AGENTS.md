@@ -160,8 +160,16 @@ BLOCKED, never a silent pass.
 
 Transport facts that cost a round each to learn:
 
-- A **draft** release is not reachable from a job ("release not found"). Use a
-  tagged prerelease and delete it afterwards.
+- A **draft** release is not reachable from a job ("release not found"), and a
+  job that fetches a draft asset by id gets HTTP 403 "Resource not accessible
+  by integration". That is the design, not a misconfiguration: a draft is
+  visible only to an identity with push access. No `GITHUB_TOKEN` permission
+  set fixes it, and neither does a read-only fine-grained PAT -- seeing a draft
+  requires Contents: **write**, which is exactly what a Candidate must not
+  have. Do not spend a round retrying the download with another permission
+  combination. Use a tagged prerelease and delete it afterwards; when the bytes
+  must not be publicly usable, upload them encrypted and let the job decrypt
+  with a repository secret, so the read-only token stays sufficient.
 - The releases-by-tag endpoint can answer with an empty asset list while the
   release's own assets endpoint reports the file as uploaded. Fetch by release
   id inside a job.
