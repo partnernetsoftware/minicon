@@ -127,6 +127,13 @@ build_cell() {
   unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy
   target="$(target_of "$cell")"; builder="$(builder_of "$cell")"
   seed_cell_dir "$cell"
+  # The seeded dir arrives with a previous round's deps/ in it, so "an
+  # executable exists" proves nothing about which source it came from. This
+  # stamp is the line between the two: anything this build did not touch is
+  # older than it, and `fresh_binary` refuses it. Round 35979574823 shipped a
+  # win-x86_64 suite three commits stale and reported two already-fixed tests
+  # as live defects; the receipt said PASS on the build that produced it.
+  : >"$BUILD_DIR/$cell/.round-build-stamp"
   if CARGO_TARGET_DIR="$BUILD_DIR/$cell" $builder --locked --workspace --all-targets \
       --target "$target" >"$LOGS/$cell-build.log" 2>&1; then
     record "$cell" build PASS $((SECONDS-t0)) ""
@@ -136,14 +143,26 @@ build_cell() {
   return 1
 }
 
+# A file this round's build did not produce is not this round's answer.
+# Prints the path only when it is newer than the build stamp.
+fresh_binary() {
+  local path="$1" stamp="$BUILD_DIR/$2/.round-build-stamp"
+  [ -n "$path" ] && [ -f "$path" ] || return 1
+  [ -f "$stamp" ] && [ "$path" -nt "$stamp" ] || return 1
+  printf '%s\n' "$path"
+}
+
 suite_binary() {
   local cell="$1" suite="$2" target ext=""
   target="$(target_of "$cell")"
   case "$cell" in win-*) ext=.exe ;; esac
-  # deps/ also holds object files whose names start the same way; the test
-  # executable is exactly <suite>-<hash> (plus .exe on Windows).
-  ls "$BUILD_DIR/$cell/$target/debug/deps/$suite"-*"$ext" 2>/dev/null |
-    grep -E "/$suite-[0-9a-f]+${ext:+\\.exe}$" | head -1
+  # deps/ also holds object files whose names start the same way, and a seeded
+  # dir holds every previous round's hash as well. Newest first, then the
+  # stamp decides: alphabetical `head -1` picked by hash, which is a coin toss
+  # between this source and last week's.
+  ls -t "$BUILD_DIR/$cell/$target/debug/deps/$suite"-*"$ext" 2>/dev/null |
+    grep -E "/$suite-[0-9a-f]+${ext:+\\.exe}$" |
+    while read -r candidate; do fresh_binary "$candidate" "$cell" && break; done
 }
 
 # --- local backend -----------------------------------------------------------
@@ -153,7 +172,7 @@ run_local() {
     t0=$SECONDS
     bin="$(suite_binary "$cell" "$suite")"
     if [ -z "$bin" ]; then
-      record "$cell" "$suite" BLOCKED $((SECONDS-t0)) "no test executable built"
+      record "$cell" "$suite" BLOCKED $((SECONDS-t0)) "no test executable from this build"
       continue
     fi
     # Bounded: a suite that wants a desktop can hang forever otherwise.
@@ -188,10 +207,14 @@ run_github() {
     local product ext=""
     case "$cell" in win-*) ext=.exe ;; esac
     product="$BUILD_DIR/$cell/$(target_of "$cell")/debug/minicon$ext"
-    [ -f "$product" ] && cp "$product" "$bundle/$cell-minicon$ext"
+    if fresh_binary "$product" "$cell" >/dev/null; then
+      cp "$product" "$bundle/$cell-minicon$ext"
+    else
+      record "$cell" product BLOCKED 0 "no product binary from this build"
+    fi
     for suite in $SUITES; do
       bin="$(suite_binary "$cell" "$suite")"
-      [ -n "$bin" ] || { record "$cell" "$suite" BLOCKED 0 "no test executable built"; continue; }
+      [ -n "$bin" ] || { record "$cell" "$suite" BLOCKED 0 "no test executable from this build"; continue; }
       case "$cell" in win-*) cp "$bin" "$bundle/$cell-$suite.exe" ;; *) cp "$bin" "$bundle/$cell-$suite" ;; esac
     done
   done
