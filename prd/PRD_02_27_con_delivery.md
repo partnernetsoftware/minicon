@@ -268,11 +268,11 @@ flowchart LR
     Mach-O verification steps all passed. See the `[x]` entry above for the
     full evidence and remaining scope.
 
-- [ ] **Practice run, from a cloud/Linux session (2026-09-24): the
-  cross-compile-here-then-test-on-GitHub loop is BLOCKED at the upload step,
-  for this session specifically.** Ran `scripts/round.sh lnx-x86_64` end to
-  end from a Linux cloud sandbox to exercise the real workflow, not just plan
-  it:
+- [ ] **Practice run, from a cloud/Linux session (2026-09-24): `scripts/round.sh`'s
+  own local test-transport (not the release pipeline -- see the correction
+  below) is BLOCKED at its upload step, for this session specifically.**
+  Ran `scripts/round.sh lnx-x86_64` end to end from a Linux cloud sandbox to
+  exercise the real workflow, not just plan it:
   - `preflight` used `df -g /System/Volumes/Data`, a macOS-only flag and path;
     it unconditionally failed (`BLOCKED`) on Linux. Fixed in `484318f` with a
     portable `df -Pk` (1 KiB blocks) computation both hosts implement.
@@ -297,6 +297,24 @@ flowchart LR
     path granted to cloud sessions, or a transport for
     `local-artifact-probe.yml` that does not depend on a release asset --
     neither attempted yet.
+  - **Correction (2026-09-24, same day): this narrow finding does not extend
+    to the actual release-draft upload.** `scripts/round.sh`'s tagged-prerelease
+    transport is a routine-dev-round mechanism only, and it is the one thing
+    genuinely blocked by this session's invalid `GH_TOKEN`. The real 0.1.24
+    "cross-compile, upload to a release draft, download and test in CI" chain
+    is a different, already-built path that needs none of that: `minicon-com.yml`
+    / `company-signing.yml` builds all six cells natively in CI, `candidate.yml`
+    packages them (`contents: read` only -- it downloads via `gh run download`
+    using the job's own `github.token`), and `release.yml`'s `publish` job
+    (`permissions: contents: write`, `environment: release`) runs
+    `gh release create "$TAG" --draft ...` using `GH_TOKEN: ${{ github.token }}`
+    -- CI's own scoped token, never this session's. Every step in that chain is
+    dispatched with `workflow_dispatch`, which `mcp__github__actions_run_trigger`
+    already does successfully from this session (used earlier the same day for
+    `osxcross-experiment.yml`), and results are read back with
+    `mcp__github__actions_get`/`get_job_logs`. So the 0.1.24 release pipeline
+    itself is not blocked from this cloud session -- only `round.sh`'s separate,
+    smaller-scope local test-transport is.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
