@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Fetch macOS SDK (phracker/MacOSX-SDKs, MacOSX11.3)
         run: |
@@ -66,14 +66,17 @@ jobs:
           cargo build --locked --release --target "$TARGET" -p minicon
 
       - name: Verify the produced binary is a real macOS Mach-O
+        env:
+          TARGET: ${{ inputs.target }}
         run: |
           set -euo pipefail
-          BIN="target/${{ inputs.target }}/release/minicon"
+          PROFILE_DIR=release
+          BIN="target/$TARGET/$PROFILE_DIR/minicon"
           file "$BIN"
           file "$BIN" | grep -qi "Mach-O" || { echo "not a Mach-O binary" >&2; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: osxcross-probe-${{ inputs.target }}
-          path: target/${{ inputs.target }}/release/minicon
+          path: ${{ format('target/{0}/{1}/minicon', inputs.target, 'release') }}
           retention-days: 7
