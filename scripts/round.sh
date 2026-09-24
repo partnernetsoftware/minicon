@@ -142,6 +142,14 @@ build_cell() {
     record "$cell" build PASS $((SECONDS-t0)) ""
     return 0
   fi
+  # A pruned zig cache fails at the link step with a wall of "cannot open
+  # /Users/.../.cache/zig/o/...", which reads as a code failure and is not one:
+  # nothing in the tree changed and the remedy is to delete the cache so zig
+  # rebuilds it. Say so rather than let the next reader bisect commits.
+  if grep -q 'cannot open .*/\.cache/zig/o/' "$LOGS/$cell-build.log" 2>/dev/null; then
+    record "$cell" build BLOCKED $((SECONDS-t0)) "zig cache is incomplete; rm -rf ~/.cache/zig and retry"
+    return 1
+  fi
   record "$cell" build FAIL $((SECONDS-t0)) "$LOGS/$cell-build.log"
   return 1
 }
