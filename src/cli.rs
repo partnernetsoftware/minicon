@@ -404,9 +404,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
   Ctrl+Shift+,       Open or close the settings panel
   Ctrl+Shift+G       Toggle the grid crosshair
-  Enter              Insert a soft newline in the input area
-  Ctrl+O             Send the complete input-area draft
-  Up / Down          Recall what you sent before, in the input area
+{composer_keys}
   Click a tab to select it. Closing the final tab leaves the greeting page.
 
   -e, --command  Run PROGRAM instead of the default shell. Everything after
@@ -424,6 +422,7 @@ Keys: font_size, cols, rows (all optional).
 CLI flags override config; config overrides defaults.
 The header's ? opens its shortcut guide; adjacent size buttons shrink, reset,
 and grow the whole interface.",
+        composer_keys = composer_key_help(),
         control_examples = USAGE_CONTROL_EXAMPLES,
         shell_examples = USAGE_SHELL_EXAMPLES,
         config_location = USAGE_CONFIG_LOCATION,
@@ -660,4 +659,18 @@ fn install_cli(_rest: &[String], _install: bool) -> i32 {
          holding minicon.exe to PATH instead\n",
     );
     2
+}
+
+/// The composer's key list, rendered from the table that also decides what
+/// those keys do.
+///
+/// It used to be typed out here as prose. Prose cannot be wrong in a way the
+/// compiler notices, so the help promised `Up / Down  Recall what you sent
+/// before` for three releases after Shift+Up had already started selecting by
+/// line. Generating the lines means a key's behaviour and its description are
+/// the same edit.
+fn composer_key_help() -> String {
+    minicon_core::keymap::help_lines()
+        .collect::<Vec<_>>()
+        .join("\n")
 }

@@ -153,7 +153,8 @@ minicon --help                   # everything else
 | `Ctrl+Shift+G` | toggle the grid crosshair |
 | `Enter` | in the input area, insert a soft newline without sending |
 | `Ctrl+O` | send the complete input-area draft |
-| `Up` / `Down` | in the input area, recall what you sent before |
+| `Up` / `Down` | in the input area, move between lines; at the first or last line, recall what you sent before |
+| `Alt+Up` / `Down` | in the input area, recall what you sent before from any line |
 
 The sidebar header keeps only what a panel cannot hold. **New** (＋, left) opens
 a terminal; **Settings** (⚙) opens a panel with the interface language

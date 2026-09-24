@@ -19,7 +19,7 @@
 
 mod a11y;
 mod agent_interface;
-use minicon_core::{composer, json};
+use minicon_core::{composer, json, keymap};
 
 mod host_paint;
 mod host_ui;
@@ -657,58 +657,78 @@ struct PendingClipboardPaste {
     review: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ComposerCommitAction {
-    SoftNewline,
-    Send,
-}
-
-fn composer_commit_action(key: &NormalizedKeyEvent) -> Option<ComposerCommitAction> {
-    if key.state != KeyPressState::Pressed || key.modifiers.alt || key.modifiers.meta {
-        return None;
-    }
-    if !key.modifiers.control && matches!(key.logical, LogicalKey::Named(NamedKey::Enter)) {
-        return Some(ComposerCommitAction::SoftNewline);
-    }
-    if key.modifiers.control
-        && !key.modifiers.shift
-        && let LogicalKey::Character(text) = &key.logical
-        && text.eq_ignore_ascii_case("o")
-    {
-        return Some(ComposerCommitAction::Send);
-    }
-    None
-}
-
-/// Keys the composer declines even while it has focus, so they reach the same
-/// terminal handler that runs when the terminal is focused. Scrollback paging
-/// (Shift+PageUp/PageDown) is a terminal action, not composer text: declining
-/// it here keeps history scrolling identical in both focus states instead of
-/// silently swallowing the key while the user is typing.
-fn composer_declines_key(key: &NormalizedKeyEvent) -> bool {
-    key.state == KeyPressState::Pressed
-        && key.modifiers.shift
-        && matches!(
-            key.logical,
-            LogicalKey::Named(NamedKey::PageUp | NamedKey::PageDown)
-        )
-}
-
-/// The modifier that means "clipboard action" in the host UI text areas
-/// (copy / cut / paste / select-all). macOS uses Command — delivered as `meta`
-/// — matching every native macOS app, since a Mac keyboard has no Insert key
-/// and `Ctrl+C` there is not copy; every other platform uses Control. Command
-/// and Control are distinct from the terminal's own `Ctrl+C` (SIGINT) and
-/// `Ctrl+V` (readline quoted-insert), so the clipboard keys never shadow them.
-/// Alt/AltGr never triggers a clipboard action so composed characters still
-/// type. Control is also accepted on macOS so existing `Ctrl+C/V` keeps working.
+/// Which modifier means "clipboard action" in this host's text areas.
+///
+/// macOS uses Command -- delivered as `meta` -- matching every native macOS
+/// app, since a Mac keyboard has no Insert key and `Ctrl+C` there is not copy;
+/// every other platform uses Control. Command and Control are distinct from
+/// the terminal's own `Ctrl+C` (SIGINT) and `Ctrl+V` (readline quoted-insert),
+/// so the clipboard keys never shadow them. Control is also accepted on macOS
+/// so existing `Ctrl+C/V` keeps working.
+///
+/// This is the only `cfg` in the composer's key path. The rules themselves are
+/// target-neutral and live in `minicon_core::keymap`, which takes this as a
+/// value -- so the macOS rule is unit-tested on whatever machine runs the
+/// tests, instead of only on a Mac.
 #[cfg(target_os = "macos")]
-fn uses_clipboard_modifier(modifiers: &ModifierState) -> bool {
-    (modifiers.meta || modifiers.control) && !modifiers.alt
-}
+const CLIPBOARD_MODIFIER: keymap::ClipboardModifier = keymap::ClipboardModifier::ControlOrMeta;
 #[cfg(not(target_os = "macos"))]
-fn uses_clipboard_modifier(modifiers: &ModifierState) -> bool {
-    modifiers.control && !modifiers.alt
+const CLIPBOARD_MODIFIER: keymap::ClipboardModifier = keymap::ClipboardModifier::ControlOnly;
+
+/// Translate a host key event into the neutral chord the keymap understands.
+///
+/// `None` means the table has no name for this key, which is not the same as
+/// the table declining it: an unnamed key is simply not a composer key.
+/// Multi-character logical text (an IME commit, say) has no single-character
+/// spelling, so it is reported as a chord only when it is one character --
+/// longer text reaches the draft through the insert path instead.
+fn composer_chord(key: &NormalizedKeyEvent) -> Option<keymap::Chord> {
+    let named = |k| Some(k);
+    let key_name = match &key.logical {
+        LogicalKey::Named(NamedKey::Enter) => named(keymap::Key::Enter),
+        LogicalKey::Named(NamedKey::Backspace) => named(keymap::Key::Backspace),
+        LogicalKey::Named(NamedKey::Delete) => named(keymap::Key::Delete),
+        LogicalKey::Named(NamedKey::Escape) => named(keymap::Key::Escape),
+        LogicalKey::Named(NamedKey::Space) => named(keymap::Key::Space),
+        LogicalKey::Named(NamedKey::ArrowUp) => named(keymap::Key::Up),
+        LogicalKey::Named(NamedKey::ArrowDown) => named(keymap::Key::Down),
+        LogicalKey::Named(NamedKey::ArrowLeft) => named(keymap::Key::Left),
+        LogicalKey::Named(NamedKey::ArrowRight) => named(keymap::Key::Right),
+        LogicalKey::Named(NamedKey::Home) => named(keymap::Key::Home),
+        LogicalKey::Named(NamedKey::End) => named(keymap::Key::End),
+        LogicalKey::Named(NamedKey::PageUp) => named(keymap::Key::PageUp),
+        LogicalKey::Named(NamedKey::PageDown) => named(keymap::Key::PageDown),
+        LogicalKey::Character(text) => {
+            let mut characters = text.chars();
+            match (characters.next(), characters.next()) {
+                (Some(character), None) => named(keymap::Key::Character(character)),
+                _ => None,
+            }
+        }
+        LogicalKey::Named(_) => None,
+        // `LogicalKey` is non-exhaustive: a key this build has no name for is
+        // not a composer key, which is the same answer as an unnamed one.
+        _ => None,
+    }?;
+    Some(keymap::Chord {
+        key: key_name,
+        modifiers: keymap::Modifiers {
+            control: key.modifiers.control,
+            shift: key.modifiers.shift,
+            alt: key.modifiers.alt,
+            meta: key.modifiers.meta,
+        },
+    })
+}
+
+/// Where the caret sits, which is what decides whether Up moves or recalls.
+fn composer_draft_shape(state: &composer::ComposerState) -> keymap::Draft {
+    let caret = state.caret.min(state.text.len());
+    let line = composer::line_index_at(&state.text, caret);
+    keymap::Draft {
+        caret_on_first_line: line == 0,
+        caret_on_last_line: line + 1 >= composer::line_count(&state.text),
+    }
 }
 
 /// Why a paste could not enter review. `Unsupported` has a defined fallback —
@@ -1807,112 +1827,62 @@ impl ConApp {
         if key.state != KeyPressState::Pressed {
             return true;
         }
-        // Decline scrollback paging so it falls through to the same terminal
-        // handler that runs when the terminal has focus (see
-        // `composer_declines_key`).
-        if composer_declines_key(key) {
+        let Some(chord) = composer_chord(key) else {
+            return true;
+        };
+        let draft = composer_draft_shape(&self.composer);
+        let Some(action) = keymap::action(chord, CLIPBOARD_MODIFIER, draft) else {
+            // Named by the table, bound to nothing: consumed, so an unbound
+            // chord cannot type itself into the draft.
+            return true;
+        };
+        if action == keymap::Action::Decline {
+            // Handed to the same terminal handler that runs when the terminal
+            // has focus, so scrollback paging behaves identically in both
+            // focus states instead of being swallowed while typing.
             return false;
         }
         self.composer.submit_error = None;
-        match composer_commit_action(key) {
-            Some(ComposerCommitAction::SoftNewline) => {
-                composer::insert(&mut self.composer, "\n");
-                let _ = self.update_composer_ime_anchor(window);
-                return true;
-            }
-            Some(ComposerCommitAction::Send) => {
-                self.submit_composer();
-                let _ = self.update_composer_ime_anchor(window);
-                return true;
-            }
-            None => {}
-        }
-        if uses_clipboard_modifier(&key.modifiers)
-            && let LogicalKey::Character(text) = &key.logical
-        {
-            if text.eq_ignore_ascii_case("a") {
-                composer::select_all(&mut self.composer);
-            } else if text.eq_ignore_ascii_case("c") {
+        match action {
+            keymap::Action::Decline => unreachable!("returned above"),
+            keymap::Action::SoftNewline => composer::insert(&mut self.composer, "\n"),
+            keymap::Action::Send => self.submit_composer(),
+            keymap::Action::SelectAll => composer::select_all(&mut self.composer),
+            keymap::Action::Copy => {
                 if let Some(text) = composer::selection_text(&self.composer) {
                     let _ = clipboard_status::set_text(text);
                 }
-            } else if text.eq_ignore_ascii_case("x") {
+            }
+            keymap::Action::Cut => {
                 if let Some(text) = composer::cut(&mut self.composer) {
                     let _ = clipboard_status::set_text(&text);
                 }
-            } else if text.eq_ignore_ascii_case("v")
-                && let Ok(text) =
+            }
+            keymap::Action::Paste => {
+                if let Ok(text) =
                     agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES)
-            {
-                composer::paste(&mut self.composer, &text);
-            }
-            let _ = self.update_composer_ime_anchor(window);
-            return true;
-        }
-        match &key.logical {
-            LogicalKey::Named(NamedKey::Backspace) => {
-                composer::backspace(&mut self.composer);
-            }
-            LogicalKey::Named(NamedKey::Delete) => {
-                composer::delete_forward(&mut self.composer);
-            }
-            // Shift+Arrow extends a selection; a plain arrow moves/recalls.
-            // Up/Down without Shift stay history recall; with Shift they select
-            // by line inside a multiline draft.
-            LogicalKey::Named(NamedKey::ArrowUp) => {
-                if key.modifiers.shift {
-                    composer::extend_selection(&mut self.composer, composer::Move::Up);
-                } else {
-                    self.composer.recall_previous();
+                {
+                    composer::paste(&mut self.composer, &text);
                 }
             }
-            LogicalKey::Named(NamedKey::ArrowDown) => {
-                if key.modifiers.shift {
-                    composer::extend_selection(&mut self.composer, composer::Move::Down);
-                } else {
-                    self.composer.recall_next();
-                }
+            keymap::Action::Backspace => composer::backspace(&mut self.composer),
+            keymap::Action::DeleteForward => composer::delete_forward(&mut self.composer),
+            keymap::Action::Move(movement) => composer::move_caret(&mut self.composer, movement),
+            keymap::Action::Extend(movement) => {
+                composer::extend_selection(&mut self.composer, movement)
             }
-            LogicalKey::Named(NamedKey::ArrowLeft) => {
-                if key.modifiers.shift {
-                    composer::extend_selection(&mut self.composer, composer::Move::Left);
-                } else {
-                    composer::move_caret(&mut self.composer, composer::Move::Left);
-                }
+            keymap::Action::RecallPrevious => {
+                self.composer.recall_previous();
             }
-            LogicalKey::Named(NamedKey::ArrowRight) => {
-                if key.modifiers.shift {
-                    composer::extend_selection(&mut self.composer, composer::Move::Right);
-                } else {
-                    composer::move_caret(&mut self.composer, composer::Move::Right);
-                }
+            keymap::Action::RecallNext => {
+                self.composer.recall_next();
             }
-            LogicalKey::Named(NamedKey::Home) => {
-                if key.modifiers.shift {
-                    composer::extend_selection(&mut self.composer, composer::Move::LineStart);
-                } else {
-                    composer::move_caret(&mut self.composer, composer::Move::LineStart);
-                }
-            }
-            LogicalKey::Named(NamedKey::End) => {
-                if key.modifiers.shift {
-                    composer::extend_selection(&mut self.composer, composer::Move::LineEnd);
-                } else {
-                    composer::move_caret(&mut self.composer, composer::Move::LineEnd);
-                }
-            }
-            LogicalKey::Named(NamedKey::Escape) => {
-                self.composer.cancel_focus();
-            }
-            LogicalKey::Named(NamedKey::Space) if !key.modifiers.control && !key.modifiers.alt => {
-                composer::insert(&mut self.composer, " ");
-            }
-            LogicalKey::Character(text)
-                if !key.modifiers.control && !key.modifiers.alt && !text.is_empty() =>
-            {
-                composer::insert(&mut self.composer, text);
-            }
-            _ => {}
+            keymap::Action::CancelFocus => self.composer.cancel_focus(),
+            keymap::Action::Insert => match &key.logical {
+                LogicalKey::Named(NamedKey::Space) => composer::insert(&mut self.composer, " "),
+                LogicalKey::Character(text) => composer::insert(&mut self.composer, text),
+                _ => {}
+            },
         }
         let _ = self.update_composer_ime_anchor(window);
         true
@@ -3505,87 +3475,96 @@ mod tests {
         assert!(parse_control_keys(&[]).expect("empty is valid").is_empty());
     }
 
+    /// The rules themselves are unit-tested in `minicon_core::keymap`, which
+    /// is target-neutral. What can only be tested here is the translation: a
+    /// host key event becoming the chord the table expects. A rule proved
+    /// against the wrong chord proves nothing.
     #[test]
-    fn composer_enter_is_soft_newline_and_ctrl_o_is_the_only_send_chord() {
+    fn a_host_key_event_becomes_the_chord_the_table_expects() {
         let enter = injected_key_event(InjectedKey::Named(NamedKey::Enter), false, false, false);
+        assert_eq!(
+            composer_chord(&enter),
+            Some(keymap::Chord::plain(keymap::Key::Enter))
+        );
+
         let ctrl_o = injected_key_event(InjectedKey::Char('o'), true, false, false);
-        let plain_o = injected_key_event(InjectedKey::Char('o'), false, false, false);
         assert_eq!(
-            composer_commit_action(&enter),
-            Some(ComposerCommitAction::SoftNewline)
+            composer_chord(&ctrl_o),
+            Some(keymap::Chord {
+                key: keymap::Key::Character('o'),
+                modifiers: keymap::Modifiers {
+                    control: true,
+                    ..keymap::Modifiers::default()
+                },
+            })
         );
-        assert_eq!(
-            composer_commit_action(&ctrl_o),
-            Some(ComposerCommitAction::Send)
-        );
-        assert_eq!(composer_commit_action(&plain_o), None);
-    }
 
-    /// The composer declines Shift+PageUp/PageDown so scrollback paging falls
-    /// through to the terminal handler and works identically whether the
-    /// composer or the terminal is focused. Everything else it keeps.
-    #[test]
-    fn composer_declines_scrollback_paging_but_keeps_other_keys() {
-        let shift_pageup =
-            injected_key_event(InjectedKey::Named(NamedKey::PageUp), false, false, true);
-        let shift_pagedown =
-            injected_key_event(InjectedKey::Named(NamedKey::PageDown), false, false, true);
-        assert!(composer_declines_key(&shift_pageup));
-        assert!(composer_declines_key(&shift_pagedown));
-
-        // Without Shift a page key is not a scroll request — the composer keeps
-        // it (its own handler ignores it, but it must not fall through).
-        let plain_pageup =
-            injected_key_event(InjectedKey::Named(NamedKey::PageUp), false, false, false);
-        assert!(!composer_declines_key(&plain_pageup));
-        // Shift with a non-page key is composer selection, not a scroll.
+        // Every modifier is carried across; dropping one would silently turn a
+        // selection into a movement.
         let shift_up =
             injected_key_event(InjectedKey::Named(NamedKey::ArrowUp), false, false, true);
-        assert!(!composer_declines_key(&shift_up));
-
-        // A key release is never declined (only the press drives the scroll).
-        let release = NormalizedKeyEvent {
-            logical: LogicalKey::Named(NamedKey::PageUp),
-            physical: PhysicalKeyCode::Other,
-            text: None,
-            state: KeyPressState::Released,
-            repeat: false,
-            modifiers: ModifierState {
-                control: false,
-                alt: false,
+        assert_eq!(
+            composer_chord(&shift_up).map(|chord| chord.modifiers),
+            Some(keymap::Modifiers {
                 shift: true,
-                meta: false,
-            },
-        };
-        assert!(!composer_declines_key(&release));
+                ..keymap::Modifiers::default()
+            })
+        );
+
+        // A key with no name in the table is not a composer key. Tab is one:
+        // the table answers nothing for it and the host must not invent a
+        // chord that the rules would then have to reject.
+        let tab = injected_key_event(InjectedKey::Named(NamedKey::Tab), false, false, false);
+        assert_eq!(composer_chord(&tab), None);
     }
 
-    /// The clipboard modifier follows the platform: Command on macOS (a Mac
-    /// keyboard has no Insert key and Ctrl+C stays SIGINT), Control elsewhere.
-    /// Alt/AltGr is never a clipboard action so composed characters still type.
+    /// The end-to-end shape of the owner's 0.1.22 report, from a host event to
+    /// the action the handler will run: pasted lines, caret in the middle, Up
+    /// must move rather than replace the draft with history.
     #[test]
-    fn clipboard_modifier_follows_the_platform() {
-        let modifiers = |control, meta, alt| ModifierState {
-            control,
-            alt,
-            shift: false,
-            meta,
-        };
-        // No modifier is never a clipboard action; Alt never is either.
-        assert!(!uses_clipboard_modifier(&modifiers(false, false, false)));
-        assert!(!uses_clipboard_modifier(&modifiers(true, false, true)));
+    fn up_on_a_pasted_multi_line_draft_resolves_to_a_caret_move() {
+        let mut state = composer::ComposerState::default();
+        composer::paste(&mut state, "first\nsecond\nthird");
+        composer::move_caret(&mut state, composer::Move::Up);
+        let shape = composer_draft_shape(&state);
+        assert!(
+            !shape.caret_on_first_line && !shape.caret_on_last_line,
+            "the caret should be on the middle line of a three-line draft"
+        );
+
+        let up = injected_key_event(InjectedKey::Named(NamedKey::ArrowUp), false, false, false);
+        let chord = composer_chord(&up).expect("Up is a composer key");
+        assert_eq!(
+            keymap::action(chord, CLIPBOARD_MODIFIER, shape),
+            Some(keymap::Action::Move(composer::Move::Up))
+        );
+
+        // The invariant: an ordinary one-line draft still recalls.
+        let mut single = composer::ComposerState::default();
+        composer::insert(&mut single, "ls -l");
+        assert_eq!(
+            keymap::action(chord, CLIPBOARD_MODIFIER, composer_draft_shape(&single)),
+            Some(keymap::Action::RecallPrevious)
+        );
+    }
+
+    /// An empty draft has one line, not zero. Reported as "no last line" it
+    /// would make Down move nowhere on the most common state the box is in.
+    #[test]
+    fn an_empty_draft_is_one_line() {
+        let shape = composer_draft_shape(&composer::ComposerState::default());
+        assert!(shape.caret_on_first_line && shape.caret_on_last_line);
+    }
+
+    /// The clipboard modifier is the composer's only platform branch, so what
+    /// is checked here is that this build picked the right one. What that
+    /// choice then means is `keymap`'s to test, on any machine.
+    #[test]
+    fn this_build_picked_its_platform_clipboard_modifier() {
         #[cfg(target_os = "macos")]
-        {
-            // Command is the clipboard modifier; Control still works too.
-            assert!(uses_clipboard_modifier(&modifiers(false, true, false)));
-            assert!(uses_clipboard_modifier(&modifiers(true, false, false)));
-        }
+        assert_eq!(CLIPBOARD_MODIFIER, keymap::ClipboardModifier::ControlOrMeta);
         #[cfg(not(target_os = "macos"))]
-        {
-            // Control is the clipboard modifier; the Super/Windows key is not.
-            assert!(uses_clipboard_modifier(&modifiers(true, false, false)));
-            assert!(!uses_clipboard_modifier(&modifiers(false, true, false)));
-        }
+        assert_eq!(CLIPBOARD_MODIFIER, keymap::ClipboardModifier::ControlOnly);
     }
 
     /// `candidate_bounds` clips a repaint candidate to the frame and turns it
@@ -3696,7 +3675,6 @@ mod tests {
         assert_eq!(status_strip_notice(Some("tab"), None), Some("tab"));
         assert_eq!(status_strip_notice(Some("tab"), Some("clip")), Some("tab"));
     }
-    use agenterm_platform::input::ModifierState;
 
     /// Regression coverage for a real, confirmed hang: `claude` (a real
     /// modern Node/Ink TUI) run through `-e` produced zero output and never

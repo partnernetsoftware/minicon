@@ -27,6 +27,7 @@
 pub mod click;
 pub mod composer;
 pub mod json;
+pub mod keymap;
 pub mod numeric;
 pub mod tree;
 
@@ -79,6 +80,7 @@ mod boundary_tests {
         for (name, source) in [
             ("composer.rs", include_str!("composer.rs")),
             ("json.rs", include_str!("json.rs")),
+            ("keymap.rs", include_str!("keymap.rs")),
         ] {
             for forbidden in [
                 "cfg(windows)",
