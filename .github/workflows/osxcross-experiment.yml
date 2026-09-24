@@ -58,12 +58,16 @@ jobs:
           set -euo pipefail
           export PATH="/tmp/osxcross/target/bin:$PATH"
           # osxcross names its wrappers <arch>-apple-darwin<ver>-clang, where
-          # <arch> is arm64 (not aarch64) and <ver> tracks the SDK (darwin20.4
-          # for SDK 11.3). It also ships a *-cmake-clang variant, so match the
-          # plain wrapper exactly rather than globbing for "*-clang".
+          # <ver> tracks the SDK (darwin20.4 for SDK 11.3). Which string osxcross
+          # uses for <arch> on the arm64 side is not stable across its own
+          # versions -- run 36013231210 (this same recipe) produced
+          # `aarch64-apple-darwin20.4-clang`, not `arm64-apple-darwin20.4-clang`
+          # as an earlier run had implied -- so match either. It also ships a
+          # *-cmake-clang variant, so match the plain wrapper exactly rather
+          # than globbing for "*-clang".
           case "$TARGET" in
-            aarch64-apple-darwin) OSX_ARCH=arm64 ;;
-            x86_64-apple-darwin)  OSX_ARCH=x86_64 ;;
+            aarch64-apple-darwin) OSX_ARCH='(aarch64|arm64)' ;;
+            x86_64-apple-darwin)  OSX_ARCH='x86_64' ;;
             *) echo "unexpected target $TARGET" >&2; exit 2 ;;
           esac
           CLANG=$(find /tmp/osxcross/target/bin -maxdepth 1 -type f \
