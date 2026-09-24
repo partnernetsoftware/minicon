@@ -818,6 +818,31 @@ impl ConSession {
     /// makes this robust against slow CI machines and PTY scheduling
     /// jitter — a fixed sleep is exactly the kind of flake source a
     /// black-box GUI test needs to avoid, not introduce.
+    /// `wait_for` without the panic: the caller wants to look around before
+    /// deciding what the timeout means. Returns the last snapshot it saw.
+    fn wait_for_or_last(
+        &self,
+        timeout: Duration,
+        predicate: impl Fn(&serde_json::Value) -> bool,
+    ) -> Result<serde_json::Value, Option<serde_json::Value>> {
+        let deadline = Instant::now() + timeout * test_slowdown();
+        let mut last_seen: Option<serde_json::Value> = None;
+        loop {
+            if let Ok(bytes) = std::fs::read(&self.snapshot_path)
+                && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
+            {
+                if predicate(&value) {
+                    return Ok(value);
+                }
+                last_seen = Some(value);
+            }
+            if Instant::now() >= deadline {
+                return Err(last_seen);
+            }
+            std::thread::sleep(Duration::from_millis(30));
+        }
+    }
+
     fn wait_for(
         &self,
         timeout: Duration,
@@ -2598,6 +2623,65 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
 /// What is asserted is the content, at the far end of the clamp and again
 /// after coming back, because a bug that only shows at the minimum and heals
 /// on the way up is exactly the shape of the report.
+/// Ask the console agent's own screen buffer what it holds, at the moment the
+/// terminal is blank.
+///
+/// MiniCon's snapshot cannot answer this. Everything in it has already been
+/// through the agent's scrape and the VT parser, so "the screen is empty" and
+/// "the buffer is empty" look identical from here -- and the first theory for
+/// B1 died precisely because a value was read through one layer and
+/// interpreted as if it came from another.
+///
+/// The probe is `tests/assets/buffer-dump-probe.ps1`, written by the AgenTerm
+/// lane. It attaches to the agent's console from outside the product, so it
+/// needs no product change and runs against a frozen tree. `AttachConsole`
+/// rebinds this process's standard handles to that console, so the probe
+/// prints nothing and writes its result to a file, which is read back here.
+///
+/// Prints what it found and returns; it never fails a test. A diagnostic that
+/// can fail a run adds a second thing to explain when the run goes red.
+#[cfg(windows)]
+fn dump_agent_console(host: &std::process::Child, dir: &Path) {
+    let host_pid = host.id();
+    // The agent is the host's own image re-executed as its child, so the pid
+    // has to come from the process tree rather than from the image name.
+    let query = format!(
+        "Get-CimInstance Win32_Process -Filter 'ParentProcessId={host_pid}' | \
+         Select-Object -ExpandProperty ProcessId"
+    );
+    let Ok(listed) = Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", &query])
+        .output()
+    else {
+        eprintln!("BUFFER_DUMP: could not enumerate children of {host_pid}");
+        return;
+    };
+    let children: Vec<u32> = String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .filter_map(|line| line.trim().parse().ok())
+        .collect();
+    eprintln!("BUFFER_DUMP: host={host_pid} children={children:?}");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("assets")
+        .join("buffer-dump-probe.ps1");
+    for pid in children {
+        let out = dir.join(format!("buffer-dump-{pid}.json"));
+        let status = Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .args(["-AgentPid", &pid.to_string(), "-Out"])
+            .arg(&out)
+            .status();
+        match std::fs::read_to_string(&out) {
+            Ok(text) => eprintln!("BUFFER_DUMP pid={pid}: {text}"),
+            Err(error) => {
+                eprintln!("BUFFER_DUMP pid={pid}: no result ({error}); probe exit {status:?}")
+            }
+        }
+    }
+}
+
 #[test]
 fn zooming_all_the_way_out_keeps_the_terminal_readable() {
     let dir = scratch_dir("zoom-out-blank");
@@ -2630,9 +2714,23 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
         "ZOOM_CONTROL before the zoom: max_scrollback={} rows={} cols={} font_size_px={}",
         before["max_scrollback"], before["rows"], before["cols"], before["font_size_px"]
     );
-    let at_minimum = session.wait_for(Duration::from_secs(30), |snapshot| {
+    let at_minimum = match session.wait_for_or_last(Duration::from_secs(30), |snapshot| {
         ConSession::screen_text(snapshot).contains("ZOOM_MIN_MARKER")
-    });
+    }) {
+        Ok(snapshot) => snapshot,
+        Err(last_seen) => {
+            // The blank is still on screen right now, which is the only moment
+            // the buffer can be asked about it.
+            #[cfg(windows)]
+            dump_agent_console(&session.child, dir.as_path());
+            panic!(
+                "the minimum-font marker never arrived; last snapshot: {}",
+                last_seen
+                    .map(|v| serde_json::to_string_pretty(&v).unwrap_or_default())
+                    .unwrap_or_else(|| "<none>".to_owned())
+            );
+        }
+    };
     let text = ConSession::screen_text(&at_minimum);
     assert_eq!(
         at_minimum["child_alive"], true,
