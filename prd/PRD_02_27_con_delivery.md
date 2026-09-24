@@ -230,12 +230,26 @@ flowchart LR
     phracker/MacOSX-SDKs; osxcross links against the SDK's own stub library,
     not a real dyld, so a symbol newer than the pinned SDK version is
     unconditionally missing at link time regardless of what runs at runtime.
-    Two ways forward, neither tried yet: (a) fetch a newer SDK from the same
-    phracker collection (12.x/13.x) and see whether its stub declares the
-    symbol, or (b) find where `agenterm-platform` calls it and weak-link or
-    gate that call -- out of scope for a MiniCon-side probe since the symbol
-    lives in a dependency, not this crate. Still `[ ]`: no Mach-O has been
-    produced end to end.
+    Two ways forward were named, neither tried at the time: (a) a newer SDK,
+    or (b) find where `agenterm-platform` calls the missing symbol and
+    weak-link or gate that call -- out of scope for a MiniCon-side probe since
+    the symbol lives in a dependency, not this crate.
+  - **SDK source switched (2026-09-24): phracker/MacOSX-SDKs does not have a
+    newer SDK to fetch** -- 11.3 is its newest, confirmed by listing the repo
+    directly, so option (a) above needed a different source, not a different
+    version from the same one.
+    [alexey-lysiuk/macos-sdk](https://github.com/alexey-lysiuk/macos-sdk)
+    publishes one GitHub Release per SDK version and reaches `15.5`
+    (verified reachable 2026-09-24: asset `MacOSX15.5.tar.xz`, HTTP 200 via a
+    signed redirect; its tarball's top-level directory is already
+    `MacOSX15.5.sdk/`, just the release filename itself drops the `.sdk`).
+    `.github/workflows/osxcross-experiment.yml` now fetches this SDK instead
+    of phracker's 11.3; whether its stub `libSystem.tbd` declares
+    `_proc_signal_with_audittoken` (and whether SDK 15.5's own newer symbol
+    floor introduces a *different* missing-symbol failure against
+    `agenterm-platform` or MiniCon's other pinned crates) is untried -- the
+    next probe run is the test. Still `[ ]`: no Mach-O has been produced end
+    to end.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is

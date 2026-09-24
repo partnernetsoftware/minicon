@@ -34,17 +34,27 @@ jobs:
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
-      - name: Fetch macOS SDK (phracker/MacOSX-SDKs, MacOSX11.3)
+      - name: Fetch macOS SDK (alexey-lysiuk/macos-sdk, MacOSX15.5, the newest available)
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/phracker/MacOSX-SDKs.git /tmp/sdks
-          tar -C /tmp/sdks -cJf /tmp/MacOSX11.3.sdk.tar.xz MacOSX11.3.sdk
+          # phracker/MacOSX-SDKs tops out at 11.3, whose stub libSystem.tbd is
+          # missing symbols agenterm-platform references (run 36018434924:
+          # "Undefined symbols for architecture arm64:
+          # _proc_signal_with_audittoken"), since osxcross links against the
+          # SDK's own stub library, not a real dyld. alexey-lysiuk/macos-sdk
+          # publishes one GitHub Release per SDK version up to 15.5 (verified
+          # reachable 2026-09-24). Its asset filename drops ".sdk", but the
+          # tarball's own top-level directory is already MacOSX15.5.sdk/, so
+          # save it under the name osxcross's build.sh globs for
+          # (tarballs/MacOSX*.sdk.tar.*).
+          curl -fsSL -o /tmp/MacOSX15.5.sdk.tar.xz \
+            https://github.com/alexey-lysiuk/macos-sdk/releases/download/15.5/MacOSX15.5.tar.xz
 
       - name: Build osxcross toolchain
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/tpoechtrager/osxcross.git /tmp/osxcross
-          cp /tmp/MacOSX11.3.sdk.tar.xz /tmp/osxcross/tarballs/
+          cp /tmp/MacOSX15.5.sdk.tar.xz /tmp/osxcross/tarballs/
           cd /tmp/osxcross
           UNATTENDED=1 ./build.sh
 
