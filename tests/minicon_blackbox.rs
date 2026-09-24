@@ -2674,13 +2674,29 @@ fn agent_pid(host_pid: u32, within: Duration) -> Option<u32> {
 #[cfg(windows)]
 fn diagnostic_script(name: &str) -> Option<PathBuf> {
     let path = match std::env::var_os("MINICON_BUFFER_DUMP_PROBE") {
-        Some(probe) => PathBuf::from(probe).parent()?.join(name),
+        Some(probe) => {
+            // The bundle prefixes every file with its cell, so a sibling is
+            // found by keeping that prefix rather than by name alone. Run
+            // 35997109651 looked for a bare `window-watch.ps1` next to
+            // `win-x86_64-buffer-dump-probe.ps1` and reported no watcher.
+            let probe = PathBuf::from(probe);
+            let prefix = probe
+                .file_name()?
+                .to_str()?
+                .strip_suffix("buffer-dump-probe.ps1")?
+                .to_owned();
+            probe.parent()?.join(format!("{prefix}{name}"))
+        }
         None => Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("assets")
             .join(name),
     };
-    path.is_file().then_some(path)
+    if !path.is_file() {
+        eprintln!("DIAGNOSTIC: {name} is not at {}", path.display());
+        return None;
+    }
+    Some(path)
 }
 
 /// Samples the agent's console window for the length of the journey, in the
