@@ -1742,6 +1742,75 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
         );
     }
 }
+/// The paste and its Enter must reach the child in two separate `read()`s.
+/// The raw-application test above reads fixed byte counts with `dd`, which
+/// pins the bytes but not the boundary; this one lets the child read as much
+/// as the PTY offers each time and print every chunk it got, so a payload and
+/// an Enter that arrived together would show as one chunk ending in `0d`.
+/// That boundary is what regressed in 0.1.17: a shell in bracketed-paste mode
+/// that reads both at once treats the Enter as part of the paste and never
+/// submits. Unix only, and only where `python3` exists: the probe needs a raw
+/// tty and unbuffered `os.read`, which a shell script cannot promise.
+#[cfg(unix)]
+#[test]
+fn composer_send_reaches_the_child_in_two_reads() {
+    let Some(python) = resolve_on_path("python3") else {
+        eprintln!("DIAGNOSTIC: python3 is not on PATH; the two-read probe cannot run");
+        return;
+    };
+    let binary = minicon_binary();
+    let endpoint = control_endpoint(&unique_suffix());
+    let probe = "import os,sys,time,tty\n\
+                 tty.setraw(0)\n\
+                 sys.stdout.write('\\x1b[?2004hREAD_PROBE_READY\\r\\n'); sys.stdout.flush()\n\
+                 for n in range(1, 5):\n\
+                 \x20   chunk = os.read(0, 65536)\n\
+                 \x20   sys.stdout.write('CHUNK%d %s\\r\\n' % (n, chunk.hex())); sys.stdout.flush()\n\
+                 time.sleep(10)\n";
+    let child = Command::new(&binary)
+        .args(["--no-activate", "--control", &endpoint, "-e"])
+        .arg(&python)
+        .args(["-c", probe])
+        .spawn()
+        .expect("read probe GUI");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(unique_suffix()),
+    };
+    wait_until_ready_for(
+        &binary,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+    cli_json(
+        &binary,
+        &endpoint,
+        &["wait-text", "--timeout-ms", "10000", "READ_PROBE_READY"],
+    );
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+Shift+I"]);
+    let hex = |bytes: &str| -> String { bytes.bytes().map(|b| format!("{b:02x}")).collect() };
+    let mut expected = Vec::new();
+    for draft in ["hello", "first\nsecond"] {
+        cli_json(&binary, &endpoint, &["send-ui-ime", "commit", draft]);
+        cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+O"]);
+        expected.push(hex(&format!("\x1b[200~{}\x1b[201~", draft.replace('\n', "\r"))));
+        expected.push(hex("\r"));
+        let last = format!("CHUNK{} {}", expected.len(), expected[expected.len() - 1]);
+        cli_json(&binary, &endpoint, &["wait-text", "--timeout-ms", "10000", &last]);
+    }
+    let pane = cli_text(&binary, &endpoint, &["capture-pane"]);
+    let chunks: Vec<&str> = pane
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("CHUNK"))
+        .filter_map(|line| line.split_once(' ').map(|(_, hex)| hex.trim()))
+        .collect();
+    assert_eq!(
+        chunks, expected,
+        "each paste and each Enter must be its own read()\nprobe pane:\n{pane}"
+    );
+}
+
 /// A shell that will not start must not end the host. The initial tab runs a
 /// copy of a real shell that is deleted once it is running (Windows marks a
 /// running image delete-pending), so the *second* spawn of the same program
