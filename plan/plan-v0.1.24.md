@@ -26,12 +26,15 @@ deferring them is gone.
 │   └── [ ] A5 non-goal: no modal (vim) editing. MiniCon's surface stays
 │            small; revisit only if the Notepad-shaped one proves not enough
 ├── B. Windows gaps still open after 0.1.23
-│   ├── [ ] B1 zooming out far enough blanks the terminal until the next zoom
+│   ├── [x] B1 zooming out far enough blanks the terminal until the next zoom
 │   │        in -- reproduces on 0.1.22, so older than the 0.1.23 work
-│   ├── [ ] B2 C2 from 0.1.23: the Windows throughput receipt asserts the
+│   │        diagnosed and timed; MiniCon's half done, fix is AgenTerm's
+│   ├── [x] B2 C2 from 0.1.23: the Windows throughput receipt asserts the
 │   │        ordered completion marker and the sustained rate
-│   └── [ ] B3 ConPTY keeps no host scrollback; the classic path now does.
-│            Decide whether ConPTY should mirror it too, or stay as is
+│   │        green on both Windows cells, run 35996754365
+│   └── [x] B3 ConPTY keeps no host scrollback; the classic path now does.
+│            decided: no. MiniCon's scrollback is the product's, on every
+│            backend; the console buffer stays a scraping detail
 ├── C. Carried product debt (0.1.18 and 0.1.21)
 │   ├── [ ] C1 `capture-pane --scrollback N`: decide the semantics
 │   │        (cross-screen stitching, viewport restore), then implement
@@ -298,3 +301,37 @@ the propagated error (`ba491a4`), the uncleared counter that refuted the
 watcher. The first watcher round was itself useless in the same way -- its
 first sample already showed the failure -- which is the same mistake one layer
 up: an instrument that starts after the event it is timing.
+
+## B3 decided: ConPTY does not get a host scrollback (2026-09-24)
+
+**No.** The product's scrollback is MiniCon's own, on every backend, and the
+classic path's console buffer is not a feature to copy.
+
+The question read as a gap: the classic Windows path scrolls back through
+shell output and ConPTY does not, so make ConPTY match. It is the wrong way
+round. What the classic path has is not a second scrollback MiniCon offers --
+it is the console buffer the agent has to scrape, which exists because that
+backend works by reading a real console. The 500 rows of scroll room are how
+the agent avoids losing lines between scrapes, not a place the user scrolls.
+
+Two things settle it:
+
+- **Two scrollbacks can disagree, and one of them is not ours.** Today's B1
+  work is exactly that shape: the console buffer grew to 141x540 and its
+  window collapsed, and nothing MiniCon did caused it or could prevent it.
+  Building a user-visible feature on a buffer whose geometry another process
+  recomputes means shipping that process's surprises.
+- **ConPTY has no host scrollback to mirror.** A pseudoconsole has no window
+  and no visible buffer; synthesising one would mean MiniCon keeping a second
+  copy of what its VT parser already holds, and then keeping the two in step.
+
+So the work B3 implies is the opposite of adding: the classic path's buffer
+stays an implementation detail of scraping. If Windows scrollback feels worse
+than macOS, that is a MiniCon scrollback question (`SCROLLBACK`, currently
+4000 lines) and belongs with C1, which already owns scrollback semantics.
+
+One instrument gap found on the way and left open deliberately:
+`max_scrollback` in the snapshot reports the parser's capacity, not how much
+scrollback exists, so nothing observable answers "how much did we keep". C1
+should fix that, since it cannot decide `capture-pane --scrollback N`
+semantics without it.
