@@ -365,15 +365,35 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     let perf = cli_json(exe, &endpoint, &["perf-stats"]);
     let pane = pane_text(exe, &endpoint, &producer);
     // The completion marker has to arrive *after* the payload, or a host that
-    // dropped the whole stream and printed the last line would pass. The
-    // payload is the only thing on the pane made of the repeated chunk.
-    let payload_line = pane
-        .lines()
-        .position(|line| line.contains("0123456789ABCDEF0123456789ABCDEF"));
+    // dropped the whole stream and printed the last line would pass.
+    //
+    // A payload line is one made of nothing but the chunk's own alphabet. Not
+    // "contains the chunk twice": the pane wraps at the terminal width, and on
+    // Linux that is one bare `0123456789ABCDEF` per line, which is how run
+    // 36001866683 read a full screen of payload as no payload at all. Not
+    // "contains the chunk" either: the generator's own command line is echoed
+    // on the pane and has the chunk inside it, along with quotes and sigils
+    // that a payload line cannot have.
+    let is_payload = |line: &str| {
+        let line = line.trim();
+        line.len() >= 16 && line.chars().all(|c| "0123456789ABCDEF".contains(c))
+    };
+    let lines: Vec<&str> = pane.lines().collect();
+    let payload_line = lines.iter().position(|line| is_payload(line));
+    let marker_line = lines
+        .iter()
+        .rposition(|line| line.contains("THROUGHPUT_DONE_32M"));
     assert!(
         payload_line.is_some(),
         "the payload never reached the screen\nproducer pane:\n{pane}"
     );
+    if let (Some(payload), Some(marker)) = (payload_line, marker_line) {
+        assert!(
+            payload < marker,
+            "the completion marker arrived before the payload it completes\n\
+             producer pane:\n{pane}"
+        );
+    }
 
     if backend_drains_a_pipe(exe) {
         assert!(
