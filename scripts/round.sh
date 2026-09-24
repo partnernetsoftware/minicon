@@ -127,15 +127,18 @@ build_cell() {
   unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy
   target="$(target_of "$cell")"; builder="$(builder_of "$cell")"
   seed_cell_dir "$cell"
-  # The seeded dir arrives with a previous round's deps/ in it, so "an
-  # executable exists" proves nothing about which source it came from. This
-  # stamp is the line between the two: anything this build did not touch is
-  # older than it, and `fresh_binary` refuses it. Round 35979574823 shipped a
-  # win-x86_64 suite three commits stale and reported two already-fixed tests
-  # as live defects; the receipt said PASS on the build that produced it.
-  : >"$BUILD_DIR/$cell/.round-build-stamp"
+  # Ask Cargo which files this build stands behind instead of guessing from
+  # the directory. The seeded dir arrives holding every previous round's
+  # <suite>-<hash>, so "an executable exists" proves nothing about its source,
+  # and mtime proves nothing either once a build is fully cached. Cargo names
+  # the current artifact whether it recompiled it or found it fresh.
+  #
+  # Round 35979574823 shipped a win-x86_64 suite three commits stale and
+  # reported two already-fixed tests as live defects, while its receipt
+  # recorded the build as PASS.
   if CARGO_TARGET_DIR="$BUILD_DIR/$cell" $builder --locked --workspace --all-targets \
-      --target "$target" >"$LOGS/$cell-build.log" 2>&1; then
+      --target "$target" --message-format=json-render-diagnostics \
+      >"$LOGS/$cell-build.json" 2>"$LOGS/$cell-build.log"; then
     record "$cell" build PASS $((SECONDS-t0)) ""
     return 0
   fi
@@ -143,27 +146,15 @@ build_cell() {
   return 1
 }
 
-# A file this round's build did not produce is not this round's answer.
-# Prints the path only when it is newer than the build stamp.
-fresh_binary() {
-  local path="$1" stamp="$BUILD_DIR/$2/.round-build-stamp"
-  [ -n "$path" ] && [ -f "$path" ] || return 1
-  [ -f "$stamp" ] && [ "$path" -nt "$stamp" ] || return 1
-  printf '%s\n' "$path"
+# The one reader of Cargo's build record. `kind` is "test" for a suite
+# executable and "bin" for the product; a bin's own test harness carries the
+# same name and is excluded by profile.test. Prints nothing when this build
+# named no such artifact, which is a BLOCKED round, not an older answer.
+built_binary() {
+  python3 scripts/cargo-artifact.py "$LOGS/$1-build.json" "$2" "$3"
 }
 
-suite_binary() {
-  local cell="$1" suite="$2" target ext=""
-  target="$(target_of "$cell")"
-  case "$cell" in win-*) ext=.exe ;; esac
-  # deps/ also holds object files whose names start the same way, and a seeded
-  # dir holds every previous round's hash as well. Newest first, then the
-  # stamp decides: alphabetical `head -1` picked by hash, which is a coin toss
-  # between this source and last week's.
-  ls -t "$BUILD_DIR/$cell/$target/debug/deps/$suite"-*"$ext" 2>/dev/null |
-    grep -E "/$suite-[0-9a-f]+${ext:+\\.exe}$" |
-    while read -r candidate; do fresh_binary "$candidate" "$cell" && break; done
-}
+suite_binary() { built_binary "$1" "$2" test; }
 
 # --- local backend -----------------------------------------------------------
 run_local() {
@@ -206,11 +197,11 @@ run_github() {
     # missing file (measured 2026-09-24, run 35978904963).
     local product ext=""
     case "$cell" in win-*) ext=.exe ;; esac
-    product="$BUILD_DIR/$cell/$(target_of "$cell")/debug/minicon$ext"
-    if fresh_binary "$product" "$cell" >/dev/null; then
+    product="$(built_binary "$cell" minicon bin)"
+    if [ -n "$product" ] && [ -f "$product" ]; then
       cp "$product" "$bundle/$cell-minicon$ext"
     else
-      record "$cell" product BLOCKED 0 "no product binary from this build"
+      record "$cell" product BLOCKED 0 "this build named no product binary"
     fi
     for suite in $SUITES; do
       bin="$(suite_binary "$cell" "$suite")"
