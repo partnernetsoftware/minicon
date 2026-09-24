@@ -1068,6 +1068,24 @@ fn nonexistent_program_via_dash_e_exits_cleanly_instead_of_hanging() {
         .spawn()
         .expect("spawn with a bad -e target");
 
+    // Windows reports a missing program differently: ConPTY starts the
+    // console host first, so the spawn succeeds and the program's absence
+    // arrives as a child that exited (measured in the ARM court,
+    // 2026-09-23). MiniCon's invariant then keeps the tab and its status, so
+    // the host stays up on purpose. The tab's side of that is asserted in
+    // minicon_control's a_host_whose_program_cannot_be_spawned_dies_and_says_why;
+    // here the point is that the host neither hangs nor dies silently.
+    if cfg!(windows) {
+        std::thread::sleep(Duration::from_secs(3));
+        let running = child.try_wait().expect("poll child").is_none();
+        let _ = child.kill();
+        assert!(
+            running,
+            "on Windows the failure belongs to the tab, so the host stays up"
+        );
+        return;
+    }
+
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
         if let Some(status) = child.try_wait().expect("poll child") {
