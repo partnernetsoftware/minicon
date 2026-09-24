@@ -58,6 +58,27 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
+      # MiniCon is a windowed terminal, and a hosted Linux runner has no
+      # display. Without one, 23 of 28 black-box tests and 9 of 11 control
+      # tests fail on "screenshots were not written" -- a wall of red that
+      # says only that nobody was there to draw on (run 36000799948). The
+      # Windows runners have a real desktop and need nothing here.
+      - name: Give Linux a display to draw on
+        if: startsWith(matrix.cell, 'lnx-')
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb
+          Xvfb :99 -screen 0 1280x1024x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          # Give the server a moment to accept connections before any test
+          # tries to open a window against it.
+          for _ in $(seq 20); do
+            if DISPLAY=:99 xdpyinfo >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          DISPLAY=:99 xdpyinfo | head -3
+
       - name: Download and run the prebuilt test executable
         shell: bash
         env:
