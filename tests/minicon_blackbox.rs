@@ -2810,13 +2810,19 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
     // from a failure cannot be called abnormal: the failing Windows snapshot
     // reports `max_scrollback` at its 4000-line ceiling, and that means
     // something only against the same session before the zoom.
-    let before = session.wait_for(Duration::from_secs(30), |snapshot| {
+    // Not fatal if it is missed. The window to see it is the 1500 ms before
+    // the wheel arrives, and after that the marker is gone with everything
+    // else -- run 35997545463 timed out here and took the whole diagnostic
+    // down with it, which is a control costing more than it is worth.
+    match session.wait_for_or_last(Duration::from_secs(30), |snapshot| {
         ConSession::screen_text(snapshot).contains("ZOOM_BLANK_MARKER")
-    });
-    eprintln!(
-        "ZOOM_CONTROL before the zoom: max_scrollback={} rows={} cols={} font_size_px={}",
-        before["max_scrollback"], before["rows"], before["cols"], before["font_size_px"]
-    );
+    }) {
+        Ok(before) => eprintln!(
+            "ZOOM_CONTROL before the zoom: max_scrollback={} rows={} cols={} font_size_px={}",
+            before["max_scrollback"], before["rows"], before["cols"], before["font_size_px"]
+        ),
+        Err(_) => eprintln!("ZOOM_CONTROL: the pre-zoom screen was never observed"),
+    }
     let at_minimum = match session.wait_for_or_last(Duration::from_secs(30), |snapshot| {
         ConSession::screen_text(snapshot).contains("ZOOM_MIN_MARKER")
     }) {
