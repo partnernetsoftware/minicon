@@ -44,8 +44,10 @@ deferring them is gone.
 │   ├── [ ] C3 box-drawing glyphs from cell geometry (Consolas, 1 px at 12 px)
 │   └── [ ] C4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
 ├── D. Loop work that 0.1.23 proved worth finishing
-│   ├── [ ] D1 route the Windows and Linux suites through GitHub by default
+│   ├── [x] D1 route the Windows and Linux suites through GitHub by default
 │   │        in `round.sh`, court on demand -- measured 8.5 s against 20 s
+│   │        done d991a0a (before this session; verified 2026-09-24:
+│   │        `backend_of()` sends every non-osx cell to GitHub already)
 │   ├── [ ] D2 select cells from the change (the detector exists; wire the
 │   │        per-cell case, not just documents-only)
 │   └── [x] D3 per-stage timings in every receipt, so the baselines update
