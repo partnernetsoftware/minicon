@@ -181,6 +181,14 @@ run_github() {
   tag="round-$(date -u +%Y%m%d-%H%M%S)"
   bundle="$LOGS/bundle"; rm -rf "$bundle"; mkdir -p "$bundle"
   for cell in $cells; do
+    # The product binary rides along, because the black-box suites spawn it
+    # rather than linking it. Without it every one of them fails identically
+    # on "minicon is missing", which reads like 30 product defects and is one
+    # missing file (measured 2026-09-24, run 35978904963).
+    local product ext=""
+    case "$cell" in win-*) ext=.exe ;; esac
+    product="$BUILD_DIR/$cell/$(target_of "$cell")/debug/minicon$ext"
+    [ -f "$product" ] && cp "$product" "$bundle/$cell-minicon$ext"
     for suite in $SUITES; do
       bin="$(suite_binary "$cell" "$suite")"
       [ -n "$bin" ] || { record "$cell" "$suite" BLOCKED 0 "no test executable built"; continue; }

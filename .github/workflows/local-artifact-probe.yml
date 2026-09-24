@@ -69,8 +69,20 @@ jobs:
           gh release download "${{ inputs.bundle_tag }}" \
             --repo "$GITHUB_REPOSITORY" --pattern "${{ matrix.cell }}-*" --dir bundle
           downloaded=$(date +%s)
+          chmod +x bundle/* || true
+          # The product binary is not a suite: the black-box tests spawn it,
+          # and `MINICON_TEST_BINARY` is the supported way to say where it is
+          # (the default guess is a sibling of cargo's `deps/`, which does not
+          # exist here). Exporting it for every cell is harmless where no suite
+          # reads it.
+          product="bundle/${{ matrix.cell }}-minicon"
+          [ -f "$product.exe" ] && product="$product.exe"
+          if [ -f "$product" ]; then
+            export MINICON_TEST_BINARY="$PWD/$product"
+            echo "product binary: $MINICON_TEST_BINARY"
+          fi
           for exe in bundle/${{ matrix.cell }}-*; do
-            chmod +x "$exe" || true
+            case "$exe" in *-minicon|*-minicon.exe) continue ;; esac
             echo "== $exe"
             "$exe" --test-threads 2
           done
