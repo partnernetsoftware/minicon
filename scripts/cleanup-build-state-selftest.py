@@ -49,11 +49,16 @@ def main() -> None:
         (repo / "target-six" / "receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
         cloud = repo / "target-six" / "cloud-runtime"
         cloud.mkdir()
-        for identity in (receipt_id, stale_id):
+        # receipt_id must rank strictly newer than stale_id so the "keep
+        # newest N" tie-break has a deterministic winner: on Linux,
+        # directory iteration order is not creation order, so two groups
+        # sharing one mtime let stale_id win the tie non-deterministically
+        # and survive the cleanup this test expects to remove it.
+        for identity, mtime in ((receipt_id, OLD + 100), (stale_id, OLD)):
             for suffix in ("-manifest.json", "-lnx-x86_64.tar.gz"):
                 path = cloud / f"minicon-six-grid-{identity}{suffix}"
                 path.write_bytes(b"evidence")
-                os.utime(path, (OLD, OLD))
+                os.utime(path, (mtime, mtime))
         archive = cloud / f"minicon-six-grid-{stale_id}-archive.json"
         archive.write_text(
             json.dumps({"verified": True, "source_tree_sha256": stale_id}), encoding="utf-8"
