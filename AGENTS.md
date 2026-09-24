@@ -132,6 +132,37 @@ Release is exact-source Candidate followed by no-rebuild Promotion. Signing is
 a `release-policy.json` choice, not a fallback inferred from credentials.
 Public Promotion always requires explicit human version and publish authority.
 
+## Where the bytes come from
+
+Owner decision, 2026-09-24. This is the division of labour; anything in a plan
+or a PRD that contradicts it is out of date, not an alternative.
+
+| stage | where | why |
+| --- | --- | --- |
+| six-cell cross-compile, every iteration | **this Mac** | APFS clone plus incremental rebuilds a cell in about 4 s; a CI job starts cold |
+| test execution | **GitHub hosted runners** | they have a real logged-in desktop; `minicon_control` runs 9/9 in 8.5 s |
+| fallback tests | `utm-court` | Defender scans, legacy images, offline, long debugging |
+| signing and stamping | **CI** | the only stage that must be there, because the keys are there |
+| cold-build verification | a GHCR image, weekly or before a release | proves the build does not depend on this machine's local state |
+
+Moving the whole build into CI was considered and rejected on 2026-09-24. The
+reasoning, so it is not re-litigated from scratch:
+
+- A GHCR image covers four cells, not six. Containers run on Linux runners
+  only, so the two macOS cells fall back to `macos-14`/`macos-13` -- and
+  `macos-13` is the queue that cost two rounds over an hour each.
+- The loop would lose incremental builds. GitHub's per-repository cache quota
+  does not hold six target trees, so restores evict and jobs go cold. That
+  trades a 4-second rebuild for a network round trip, which is the shape of
+  "CI as a debugger" this repository forbids.
+- Splitting the six cells across several images changes what the Candidate's
+  byte set attests. That is a deliberate piece of work, not a side effect.
+
+What the proposal was actually after -- proof that the build does not depend on
+one machine's accumulated state -- is a low-frequency cold-build job. That
+answers the question at the rate it is asked, instead of taxing every
+iteration.
+
 ## Where a test runs, and what that costs
 
 Measured 2026-09-23; the numbers are why, not decoration.

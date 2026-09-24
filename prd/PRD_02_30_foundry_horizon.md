@@ -186,9 +186,15 @@ Nothing here authorizes a `foundry` repository. Each item is a MiniCon-side
 step that pays off on its own and leaves the line better specified.
 
 - [ ] **Write down "build once, execute six times" as the line's first rule.**
-  Not "build locally": both products compile in CI, and they must, because the
-  sealed Candidate's provenance is that CI built it from the exact SHA in a
-  clean checkout. The rule is about *how many times* the bytes are produced.
+  The rule is about *how many times* the bytes are produced, not about where.
+  Where is settled separately, and the two answers differ (2026-09-24 owner
+  decision, see AGENTS.md "Where the bytes come from"): the development loop
+  cross-builds on the developer's Mac, because an incremental cell rebuilds in
+  about four seconds there and no CI round can match that; the sealed
+  Candidate's bytes are still produced by `minicon-com.yml` from the exact SHA
+  in a clean checkout, because that is what its provenance currently asserts.
+  Whether the release should also take the Mac's bytes and leave CI to sign
+  them is an open decision, not something this file settles.
   MiniCon cross-builds all six targets in **one** job (`minicon-com.yml`'s
   "pack once (macos-15)" running `rebuild-payloads.sh` with `cargo zigbuild` +
   `cargo xwin`), then six runtime cells download that one artifact and run it
@@ -198,8 +204,9 @@ step that pays off on its own and leaves the line better specified.
   AgenTerm's `candidate.yml` instead compiles in all six cells, so its cells
   attest six independently produced binaries rather than one, and each pays the
   build again — the windows-x86_64 cell alone takes about 40 minutes.
-  The developer machine's role is separate and smaller: discovery before
-  pushing, never a source of shipped bytes.
+  The developer machine's role is the whole development loop -- every
+  iteration, all six cells -- and today it is not a source of *shipped* bytes;
+  those come from the Candidate job above.
 - [ ] **Publish the local-gate invocation as part of the line's contract.** A
   gate runnable only in CI is a gate nobody runs. The exact shape matters and
   was learned twice the hard way: `--max-operations 1000000000` (CI's own
