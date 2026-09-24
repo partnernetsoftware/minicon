@@ -62,19 +62,34 @@ jobs:
           # uses for <arch> on the arm64 side is not stable across its own
           # versions -- run 36013231210 (this same recipe) produced
           # `aarch64-apple-darwin20.4-clang`, not `arm64-apple-darwin20.4-clang`
-          # as an earlier run had implied -- so match either. It also ships a
-          # *-cmake-clang variant, so match the plain wrapper exactly rather
-          # than globbing for "*-clang".
+          # as an earlier run had implied -- so match either. It also ships
+          # *-clang++ and *-cmake-clang variants beside the plain wrapper.
+          #
+          # `find -regextype posix-extended -regex '.*/(aarch64|arm64)-...'`
+          # was tried first and failed on this exact runner even though the
+          # plain wrapper was confirmed present in the same `ls` the script
+          # printed on failure (run 36015677103) -- so the regex path is
+          # unreliable here for a reason not yet root-caused. Bash globbing
+          # needs no external regex engine and is checked directly against
+          # the same directory, so use that instead.
           case "$TARGET" in
-            aarch64-apple-darwin) OSX_ARCH='(aarch64|arm64)' ;;
-            x86_64-apple-darwin)  OSX_ARCH='x86_64' ;;
+            aarch64-apple-darwin) ARCHES="aarch64 arm64" ;;
+            x86_64-apple-darwin)  ARCHES="x86_64" ;;
             *) echo "unexpected target $TARGET" >&2; exit 2 ;;
           esac
-          CLANG=$(find /tmp/osxcross/target/bin -maxdepth 1 -type f \
-            -regextype posix-extended \
-            -regex ".*/${OSX_ARCH}-apple-darwin[0-9.]+-clang" -print -quit)
+          CLANG=""
+          for arch in $ARCHES; do
+            for candidate in /tmp/osxcross/target/bin/"$arch"-apple-darwin*-clang; do
+              [ -e "$candidate" ] || continue
+              case "$(basename "$candidate")" in
+                *-clang++*|*-cmake-clang*) continue ;;
+              esac
+              CLANG="$candidate"
+              break 2
+            done
+          done
           if [ -z "$CLANG" ]; then
-            echo "no osxcross clang wrapper for $OSX_ARCH; toolchain contains:" >&2
+            echo "no osxcross clang wrapper for $ARCHES; toolchain contains:" >&2
             ls /tmp/osxcross/target/bin >&2
             exit 2
           fi
