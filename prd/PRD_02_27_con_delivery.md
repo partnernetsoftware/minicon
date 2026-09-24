@@ -146,6 +146,39 @@ flowchart LR
   bumped to carry it. Diagnosed against a real build-14393 host and a UTM Win7
   test bed. Ledger: `archive/v0.1.13-release-history.md`.
 
+- [ ] **BLOCKED — non-Mac macOS cross-compile from a Linux CI/cloud host.**
+  Owner: this section; no dedicated skill or script yet. Motivation: reduce
+  reliance on "this Mac" as the only host that can produce osx-aarch64/osx-x86_64
+  bytes, so a Linux CI runner could build all six cells and a Mac stays optional.
+  Explored 2026-09-24 from a Linux sandbox session (evidence trail in that
+  session's transcript, not yet a script in this repo):
+  - `cargo check --target aarch64-apple-darwin` type-checks clean — the crate
+    graph (winit/objc2/core-foundation and MiniCon's own code) has no
+    Linux-side compile blocker.
+  - Real linking fails on stock Linux `cc`: `-framework`/`-arch`/
+    `-mmacosx-version-min` are Apple `ld64`-only flags.
+  - `cargo-zigbuild` (zig's `ld64` reimplementation) accepts those flags but
+    rejects minicon's `-Wl,-sectcreate,__TEXT,__info_plist,...` (used to embed
+    `assets/macos-info.plist` straight into the Mach-O without a `.app`
+    bundle) with `unsupported linker arg: -sectcreate`.
+  - A usable macOS SDK exists in [phracker/MacOSX-SDKs](https://github.com/phracker/MacOSX-SDKs)
+    up to `MacOSX11.3.sdk`, sufficient for `aarch64-apple-darwin`'s SDK-11
+    floor.
+  - `tpoechtrager/osxcross` (real Apple `ld64`, not a reimplementation) is the
+    likely path past `-sectcreate`, since `ld64` supports it natively — **not
+    verified**: building it requires running its `build.sh`, which fetches and
+    compiles third-party cctools/ld64 sources, and that action is refused by
+    this environment's own safety policy as "running external code" from a
+    sandboxed session. That refusal is a guardrail of the execution
+    environment, not a project rule, and it does not fall to a session running
+    inside that sandbox to waive for itself.
+  - No macOS binary has been produced end to end from a non-Mac host. Nothing
+    here is evidence of `[x]`.
+  Next step, not yet done: run the same recipe as a job on a GitHub-hosted
+  Linux runner (osxcross build + SDK + minicon build), where the sandbox
+  restriction above does not apply, and keep the receipt (`file`/`otool`
+  output showing a real Mach-O) before upgrading this line past `[ ]`.
+
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
   mature, research may move portable logic out of six native payloads into

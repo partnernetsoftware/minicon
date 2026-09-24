@@ -163,6 +163,17 @@ one machine's accumulated state -- is a low-frequency cold-build job. That
 answers the question at the rate it is asked, instead of taxing every
 iteration.
 
+That 2026-09-24 rejection covered moving the *whole* build into CI as the
+routine loop, and still stands for that. A separate, narrower question --
+whether a Linux CI runner could ever produce the two macOS cells at all,
+as a low-frequency fallback rather than the routine path -- is still open
+and tracked as `[ ]` in `prd/PRD_02_27_con_delivery.md` under "BLOCKED --
+non-Mac macOS cross-compile from a Linux CI/cloud host", with what has and
+has not been verified so far. Do not read that entry as reversing this
+section's decision, and do not upgrade it past `[ ]` without a real
+Mach-O produced end to end and named evidence, per this file's own
+`[x]`-requires-evidence rule.
+
 ## Where a test runs, and what that costs
 
 Measured 2026-09-23; the numbers are why, not decoration.
