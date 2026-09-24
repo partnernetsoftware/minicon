@@ -2603,7 +2603,10 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
     let dir = scratch_dir("zoom-out-blank");
     let mut commands = vec![
         r#"{"text": "echo ZOOM_BLANK_MARKER\r"}"#.to_owned(),
-        r#"{"wait_ms": 400}"#.to_owned(),
+        // Long enough that the pre-zoom state can be observed before the
+        // wheel arrives. Without it the two events race and there is no
+        // control to compare the failing snapshot against.
+        r#"{"wait_ms": 1500}"#.to_owned(),
     ];
     // 8..=36 logical px is the clamp; 40 notches down overshoots the bottom
     // from anywhere in range, so the minimum is really reached.
@@ -2616,6 +2619,17 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
 
     let args = interactive_shell_args(script.as_path());
     let session = ConSession::spawn(&dir, &args);
+    // The control for whatever the failing snapshot says. A number read only
+    // from a failure cannot be called abnormal: the failing Windows snapshot
+    // reports `max_scrollback` at its 4000-line ceiling, and that means
+    // something only against the same session before the zoom.
+    let before = session.wait_for(Duration::from_secs(30), |snapshot| {
+        ConSession::screen_text(snapshot).contains("ZOOM_BLANK_MARKER")
+    });
+    eprintln!(
+        "ZOOM_CONTROL before the zoom: max_scrollback={} rows={} cols={} font_size_px={}",
+        before["max_scrollback"], before["rows"], before["cols"], before["font_size_px"]
+    );
     let at_minimum = session.wait_for(Duration::from_secs(30), |snapshot| {
         ConSession::screen_text(snapshot).contains("ZOOM_MIN_MARKER")
     });
