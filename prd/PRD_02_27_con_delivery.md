@@ -146,7 +146,26 @@ flowchart LR
   bumped to carry it. Diagnosed against a real build-14393 host and a UTM Win7
   test bed. Ledger: `archive/v0.1.13-release-history.md`.
 
-- [ ] **BLOCKED — non-Mac macOS cross-compile from a Linux CI/cloud host.**
+- [x] **non-Mac macOS cross-compile from a Linux CI/cloud host, SDK-15.5 probe
+  succeeded end to end.** Evidence: run
+  [36024044608](https://github.com/partnernetsoftware/minicon/actions/runs/36024044608)
+  (source `5c5541c`, `ubuntu-24.04`, `aarch64-apple-darwin`), every step green:
+  SDK fetch, `osxcross` toolchain build (10m51s), Rust target install,
+  `cargo build --release -p minicon` via the osxcross `clang` wrapper, and
+  "Verify the produced binary is a real macOS Mach-O" all passed. This answers
+  the question this line named: a Linux runner alone, no macOS runner at all,
+  can produce a genuine macOS Mach-O for MiniCon. The SDK-15.5 switch (below)
+  was the fix — the same recipe against SDK 11.3 failed on a missing symbol.
+  Scope of what is proven: one target (`aarch64-apple-darwin`), one crate
+  (`minicon` itself, not yet the full six-cell test/package pipeline this
+  file's evidence discipline requires for a release Candidate), from
+  `.github/workflows/osxcross-experiment.yml`, which is still explicitly
+  experimental/manual-dispatch-only, not wired into `six-grid-cloud-build.yml`
+  or any Candidate. `x86_64-apple-darwin` has not yet been run against SDK
+  15.5 — do that before claiming both osx cells. Not yet started: the
+  container pre-baking follow-on below, and wiring this path into
+  `scripts/round.sh` or a release workflow.
+  History that led here (kept for the next agent, not still open):
   Owner: this section; no dedicated skill or script yet. Motivation: reduce
   reliance on "this Mac" as the only host that can produce osx-aarch64/osx-x86_64
   bytes, so a Linux CI runner could build all six cells and a Mac stays optional.
@@ -244,12 +263,40 @@ flowchart LR
     signed redirect; its tarball's top-level directory is already
     `MacOSX15.5.sdk/`, just the release filename itself drops the `.sdk`).
     `.github/workflows/osxcross-experiment.yml` now fetches this SDK instead
-    of phracker's 11.3; whether its stub `libSystem.tbd` declares
-    `_proc_signal_with_audittoken` (and whether SDK 15.5's own newer symbol
-    floor introduces a *different* missing-symbol failure against
-    `agenterm-platform` or MiniCon's other pinned crates) is untried -- the
-    next probe run is the test. Still `[ ]`: no Mach-O has been produced end
-    to end.
+    of phracker's 11.3. **Result (run 36024044608): SDK 15.5 resolves the
+    missing-symbol failure and no new one appeared** -- the link, build, and
+    Mach-O verification steps all passed. See the `[x]` entry above for the
+    full evidence and remaining scope.
+
+- [ ] **Practice run, from a cloud/Linux session (2026-09-24): the
+  cross-compile-here-then-test-on-GitHub loop is BLOCKED at the upload step,
+  for this session specifically.** Ran `scripts/round.sh lnx-x86_64` end to
+  end from a Linux cloud sandbox to exercise the real workflow, not just plan
+  it:
+  - `preflight` used `df -g /System/Volumes/Data`, a macOS-only flag and path;
+    it unconditionally failed (`BLOCKED`) on Linux. Fixed in `484318f` with a
+    portable `df -Pk` (1 KiB blocks) computation both hosts implement.
+  - After the fix, `preflight` PASSes on Linux (measured: 14G free) and the
+    native `lnx-x86_64` build PASSes in 38s directly on this cloud host -- no
+    cross-toolchain needed for that cell, confirming this cell at least can
+    move off "this Mac" today.
+  - The run then correctly BLOCKs at the GitHub-upload step (`gh release
+    create`/`upload`, the transport `scripts/round.sh` uses to hand test
+    executables to `local-artifact-probe.yml`). Root cause, confirmed not a
+    script bug: this cloud session's `GH_TOKEN`/`GITHUB_TOKEN` does not
+    authenticate the `gh` CLI against github.com (`gh auth status`: "The token
+    in GH_TOKEN is invalid"). This session's GitHub access is mediated through
+    the Claude GitHub App/connector, not a raw PAT usable by arbitrary shell
+    tools -- by design, not misconfiguration. The available `mcp__github__`
+    MCP tools were also checked and have no release-create or
+    asset-upload-equivalent capability, so this step cannot currently be
+    exercised from a cloud session via any available means. Per this file's
+    own evidence discipline, this is `BLOCKED`, not a skipped step: a Mac
+    session (or any session with real `gh` credentials) is unaffected and can
+    still run the full loop. Fixing it needs either a different GitHub write
+    path granted to cloud sessions, or a transport for
+    `local-artifact-probe.yml` that does not depend on a release asset --
+    neither attempted yet.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
