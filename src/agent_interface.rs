@@ -92,6 +92,17 @@ pub struct ScreenSnapshot {
     /// running and for non-numeric termination such as a Unix signal.
     pub child_exit_code: Option<i32>,
     pub font_size_px: u16,
+    /// Why the terminal backend last refused a resize, if it did.
+    ///
+    /// A backend is allowed to reject a size, and the model converges anyway
+    /// so the next event stays consistent. What is not acceptable is that the
+    /// refusal leaves no trace: on Windows a refused console resize can leave
+    /// the console window at the one-cell rectangle the resize sequence
+    /// shrinks it to, and every later scrape then reads a blank screen with
+    /// nothing anywhere saying why (measured on a hosted runner, 2026-09-24).
+    /// Cleared by the next resize that succeeds, so this reports the current
+    /// state rather than accumulating history.
+    pub backend_resize_error: Option<String>,
 }
 
 /// Writes `snapshot` to `path` atomically: serialize to a sibling temp file,
@@ -149,6 +160,15 @@ fn snapshot_json(snapshot: &ScreenSnapshot) -> super::json::JsonValue {
             nullable(snapshot.child_exit_code.map(i64::from)),
         ),
         ("font_size_px", snapshot.font_size_px.into()),
+        (
+            "backend_resize_error",
+            nullable(
+                snapshot
+                    .backend_resize_error
+                    .as_deref()
+                    .map(JsonValue::from),
+            ),
+        ),
     ])
 }
 
@@ -339,6 +359,35 @@ mod tests {
         path
     }
 
+    /// A refused resize must be visible to whoever is reading the snapshot.
+    ///
+    /// This exists because the opposite was shipped: the backend's error was
+    /// discarded, so a Windows console left at a one-cell window after a
+    /// failed resize presented as a blank terminal with no explanation
+    /// anywhere -- in the logs, in the snapshot, or on screen. A field that is
+    /// `null` almost always is worth having for the times it is not.
+    #[test]
+    fn a_refused_resize_reaches_the_snapshot_instead_of_vanishing() {
+        let mut snapshot = sample_snapshot("minicon");
+        let bytes = super::super::json::to_vec(&snapshot_json(&snapshot));
+        let json = String::from_utf8_lossy(&bytes).into_owned();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+        assert!(
+            value["backend_resize_error"].is_null(),
+            "a healthy session reports no resize error: {json}"
+        );
+
+        snapshot.backend_resize_error = Some("resize to 141x40 failed: bad rect".to_owned());
+        let bytes = super::super::json::to_vec(&snapshot_json(&snapshot));
+        let json = String::from_utf8_lossy(&bytes).into_owned();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+        assert_eq!(
+            value["backend_resize_error"],
+            "resize to 141x40 failed: bad rect",
+            "the refusal must survive the round trip: {json}"
+        );
+    }
+
     #[test]
     fn snapshot_round_trips_with_stable_fields() {
         let snapshot = ScreenSnapshot {
@@ -363,6 +412,7 @@ mod tests {
             child_alive: true,
             child_exit_code: None,
             font_size_px: 16,
+            backend_resize_error: None,
         };
         let value: serde_json::Value =
             serde_json::from_slice(&super::super::json::to_vec(&snapshot_json(&snapshot))).unwrap();
@@ -382,6 +432,7 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "backend_resize_error",
                 "child_alive",
                 "child_exit_code",
                 "cols",
@@ -783,6 +834,7 @@ mod tests {
             child_alive: true,
             child_exit_code: None,
             font_size_px: 15,
+            backend_resize_error: None,
         }
     }
 

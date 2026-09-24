@@ -64,6 +64,9 @@ pub(super) struct ConTerminal {
     pub(super) cell_w: u32,
     pub(super) cell_h: u32,
     font_size_px: u16,
+    /// The backend's last refusal to resize, surfaced in the snapshot.
+    /// `None` once a resize succeeds.
+    backend_resize_error: Option<String>,
 
     pub(super) cols: u16,
     pub(super) rows: u16,
@@ -237,6 +240,7 @@ impl ConTerminal {
             cell_w: 8,
             cell_h: 16,
             font_size_px: 10,
+            backend_resize_error: None,
             cols: 80,
             rows: 24,
             pending_geometry: None,
@@ -739,7 +743,14 @@ impl ConTerminal {
         self.cols = cols;
         self.rows = rows;
         if let Some(master) = &self.master {
-            let _ = master.resize(TerminalSize { rows, cols });
+            // Recorded, not discarded. The model converges either way, but a
+            // backend that could not apply the size may have left its own
+            // window in a state that shows nothing, and a silent failure there
+            // is indistinguishable from a product that stopped painting.
+            self.backend_resize_error = match master.resize(TerminalSize { rows, cols }) {
+                Ok(()) => None,
+                Err(error) => Some(format!("resize to {cols}x{rows} failed: {error}")),
+            };
         }
         self.parser.screen_mut().set_size(rows, cols);
     }
@@ -1472,6 +1483,7 @@ impl ConTerminal {
             child_alive: !self.child_gone,
             child_exit_code: self.child_exit_code,
             font_size_px: self.font_size_px,
+            backend_resize_error: self.backend_resize_error.clone(),
         }
     }
 
