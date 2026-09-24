@@ -200,7 +200,12 @@ it is not, and every routine round that stays off the Mac keeps it cool.
 receipt with per-stage timings. A cell whose backend cannot answer is
 BLOCKED, never a silent pass.
 
-Transport facts that cost a round each to learn:
+Transport facts that cost a round each to learn. The first two are **already
+solved in code**, not open problems: `scripts/round.sh` uploads the locally
+built test executables to a throwaway tagged prerelease, dispatches
+`.github/workflows/local-artifact-probe.yml` with that `bundle_tag`, and
+deletes the prerelease when the round ends. Read those two files before
+redesigning the transport; the facts below are why they are shaped that way.
 
 - A **draft** release is not reachable from a job ("release not found"), and a
   job that fetches a draft asset by id gets HTTP 403 "Resource not accessible

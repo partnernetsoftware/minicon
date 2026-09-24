@@ -57,12 +57,29 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/tmp/osxcross/target/bin:$PATH"
-          ARCH_TRIPLE=$(basename /tmp/osxcross/target/bin/*-clang | sed 's/-clang$//')
-          export CC_aarch64_apple_darwin="${ARCH_TRIPLE}-clang"
-          export CC_x86_64_apple_darwin="${ARCH_TRIPLE}-clang"
-          TARGET_ENV=$(echo "$TARGET" | tr '-' '_')
-          export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${ARCH_TRIPLE}-clang"
-          export CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="${ARCH_TRIPLE}-clang"
+          # osxcross names its wrappers <arch>-apple-darwin<ver>-clang, where
+          # <arch> is arm64 (not aarch64) and <ver> tracks the SDK (darwin20.4
+          # for SDK 11.3). It also ships a *-cmake-clang variant, so match the
+          # plain wrapper exactly rather than globbing for "*-clang".
+          case "$TARGET" in
+            aarch64-apple-darwin) OSX_ARCH=arm64 ;;
+            x86_64-apple-darwin)  OSX_ARCH=x86_64 ;;
+            *) echo "unexpected target $TARGET" >&2; exit 2 ;;
+          esac
+          CLANG=$(find /tmp/osxcross/target/bin -maxdepth 1 -type f \
+            -regextype posix-extended \
+            -regex ".*/${OSX_ARCH}-apple-darwin[0-9.]+-clang" -print -quit)
+          if [ -z "$CLANG" ]; then
+            echo "no osxcross clang wrapper for $OSX_ARCH; toolchain contains:" >&2
+            ls /tmp/osxcross/target/bin >&2
+            exit 2
+          fi
+          echo "using $CLANG"
+          CLANG_NAME=$(basename "$CLANG")
+          export CC_aarch64_apple_darwin="$CLANG_NAME"
+          export CC_x86_64_apple_darwin="$CLANG_NAME"
+          export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$CLANG_NAME"
+          export CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="$CLANG_NAME"
           cargo build --locked --release --target "$TARGET" -p minicon
 
       - name: Verify the produced binary is a real macOS Mach-O
