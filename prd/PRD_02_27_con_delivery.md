@@ -214,6 +214,28 @@ flowchart LR
   - Do not build this image before the `-sectcreate` probe above is `[x]`:
     baking a toolchain that cannot actually link MiniCon's own linker flags
     would be premature investment in an unproven path.
+  - **`-sectcreate` probe run (2026-09-24, run 36018434924, source `994c011`):
+    the wrapper-lookup script from the earlier evidence had a bug of its
+    own** -- `find -regextype posix-extended -regex '.*/(aarch64|arm64)-...'`
+    matched nothing even though the same run's own failure-path `ls` showed
+    `aarch64-apple-darwin20.4-clang` present, root cause not identified.
+    Replaced with plain bash globbing (`.github/workflows/osxcross-experiment.yml`,
+    commit `994c011`); the fixed probe found the wrapper and reached the real
+    link step. **`-sectcreate` itself was accepted with no complaint** -- the
+    unknown this line named is answered: real `ld64` via osxcross does take
+    MiniCon's plist-embedding flag. Linking then failed on something else:
+    `Undefined symbols for architecture arm64: "_proc_signal_with_audittoken"`,
+    referenced from `agenterm-platform`. That symbol is not declared in the
+    `MacOSX11.3.sdk` stub `libSystem.tbd` this recipe fetches from
+    phracker/MacOSX-SDKs; osxcross links against the SDK's own stub library,
+    not a real dyld, so a symbol newer than the pinned SDK version is
+    unconditionally missing at link time regardless of what runs at runtime.
+    Two ways forward, neither tried yet: (a) fetch a newer SDK from the same
+    phracker collection (12.x/13.x) and see whether its stub declares the
+    symbol, or (b) find where `agenterm-platform` calls it and weak-link or
+    gate that call -- out of scope for a MiniCon-side probe since the symbol
+    lives in a dependency, not this crate. Still `[ ]`: no Mach-O has been
+    produced end to end.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
