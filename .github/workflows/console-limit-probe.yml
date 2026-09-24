@@ -1,0 +1,112 @@
+name: console-limit-probe
+
+# Read-only. Answers one question and nothing else: on a hosted Windows
+# runner's desktop, what is GetLargestConsoleWindowSize, and does the exact
+# resize sequence `console_agent.rs` performs fail at the width MiniCon asks
+# for when the font is at its minimum (141 columns, measured in run
+# 35979574823)?
+#
+# It builds nothing, checks out nothing, and touches no product code. The
+# console APIs are called directly so the answer is about Windows, not about
+# either product's wrapper around it. Delete this workflow once it has
+# answered, the way the GUI probe was deleted.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cols:
+        description: columns to request (the failing snapshot said 141)
+        default: "141"
+      rows:
+        description: rows to request
+        default: "40"
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - name: Query the console's own limits
+        shell: powershell
+        env:
+          WANT_COLS: ${{ inputs.cols }}
+          WANT_ROWS: ${{ inputs.rows }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public struct COORD { public short X; public short Y; }
+          public struct SMALL_RECT { public short Left, Top, Right, Bottom; }
+          public struct CONSOLE_SCREEN_BUFFER_INFO {
+            public COORD dwSize; public COORD dwCursorPosition; public ushort wAttributes;
+            public SMALL_RECT srWindow; public COORD dwMaximumWindowSize;
+          }
+          public static class K {
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern bool AllocConsole();
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern bool FreeConsole();
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr CreateFileW(
+              string name, uint access, uint share, IntPtr sec, uint disp, uint flags, IntPtr tmpl);
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern bool
+              GetConsoleScreenBufferInfo(IntPtr h, out CONSOLE_SCREEN_BUFFER_INFO i);
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern COORD
+              GetLargestConsoleWindowSize(IntPtr h);
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern bool
+              SetConsoleScreenBufferSize(IntPtr h, COORD size);
+            [DllImport("kernel32.dll", SetLastError=true)] public static extern bool
+              SetConsoleWindowInfo(IntPtr h, bool absolute, ref SMALL_RECT rect);
+          }
+          '@
+          # A job step has no console of its own; make one on the desktop this
+          # runner really has, so these are console handles and not pipes.
+          [void][K]::FreeConsole()
+          if (-not [K]::AllocConsole()) { throw "AllocConsole failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+          $h = [K]::CreateFileW("CONOUT$", 0xC0000000, 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
+          if ($h -eq [IntPtr]::new(-1)) { throw "CONOUT$ open failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+
+          function Report($label) {
+            $i = New-Object CONSOLE_SCREEN_BUFFER_INFO
+            $ok = [K]::GetConsoleScreenBufferInfo($h, [ref]$i)
+            "PROBE $label ok=$ok buffer=$($i.dwSize.X)x$($i.dwSize.Y) " +
+            "window=[$($i.srWindow.Left),$($i.srWindow.Top)..$($i.srWindow.Right),$($i.srWindow.Bottom)] " +
+            "maxWindow=$($i.dwMaximumWindowSize.X)x$($i.dwMaximumWindowSize.Y)"
+          }
+
+          $largest = [K]::GetLargestConsoleWindowSize($h)
+          "PROBE runner=${{ matrix.runner }}"
+          "PROBE largestConsoleWindowSize=$($largest.X)x$($largest.Y)"
+          Report "initial"
+
+          $cols = [int]$env:WANT_COLS
+          $rows = [int]$env:WANT_ROWS
+          "PROBE requesting cols=$cols rows=$rows (buffer rows = rows + 500, as console_agent.rs does)"
+
+          # Step 1: the 1x1 shrink console_agent.rs performs first.
+          $minimal = New-Object SMALL_RECT
+          $r1 = [K]::SetConsoleWindowInfo($h, $true, [ref]$minimal)
+          "PROBE setWindow(minimal) = $r1 err=$([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+
+          # Step 2: the buffer.
+          $target = New-Object COORD
+          $target.X = [short]$cols
+          $target.Y = [short]($rows + 500)
+          $r2 = [K]::SetConsoleScreenBufferSize($h, $target)
+          "PROBE setBufferSize($($target.X)x$($target.Y)) = $r2 err=$([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+
+          # Step 3: the window at the requested size -- the call under suspicion.
+          $window = New-Object SMALL_RECT
+          $window.Left = 0; $window.Top = 0
+          $window.Right = [short]($cols - 1); $window.Bottom = [short]($rows - 1)
+          $r3 = [K]::SetConsoleWindowInfo($h, $true, [ref]$window)
+          "PROBE setWindow(${cols}x${rows}) = $r3 err=$([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+          Report "after"
+
+          if (-not $r3) {
+            "PROBE VERDICT the window resize failed and the console is left at the rectangle above"
+          } else {
+            "PROBE VERDICT the window resize succeeded at this size; the limit is not the cause here"
+          }
