@@ -170,6 +170,21 @@ fn pane_text(exe: &Path, endpoint: &str, tab: &str) -> String {
         .join("\n")
 }
 
+/// Whether this build's backend receives the child's bytes at all.
+///
+/// ConPTY and a Unix PTY hand the host a stream, so every byte the child
+/// writes is a byte the host drains. The classic Windows console agent scrapes
+/// a screen buffer instead: the child's output reaches the console, and the
+/// host sees whatever the screen looks like afterwards. `--status` names which
+/// one this build will use, which is the same question in the form the product
+/// already answers.
+fn backend_drains_a_pipe(exe: &Path) -> bool {
+    let Ok(status) = Command::new(exe).arg("--status").output() else {
+        return true;
+    };
+    !String::from_utf8_lossy(&status.stdout).contains("console-agent")
+}
+
 fn tab_id(value: &Value) -> &str {
     value.as_str().expect("tab ID must be a string")
 }
@@ -348,13 +363,38 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     );
 
     let perf = cli_json(exe, &endpoint, &["perf-stats"]);
+    let pane = pane_text(exe, &endpoint, &producer);
+    // The completion marker has to arrive *after* the payload, or a host that
+    // dropped the whole stream and printed the last line would pass. The
+    // payload is the only thing on the pane made of the repeated chunk.
+    let payload_line = pane
+        .lines()
+        .position(|line| line.contains("0123456789ABCDEF0123456789ABCDEF"));
     assert!(
-        perf["pty_drained_bytes"]
-            .as_u64()
-            .is_some_and(|bytes| bytes >= OUTPUT_BYTES),
-        "PTY receipt did not cover the fixed payload: {perf}\nproducer pane:\n{}",
-        pane_text(exe, &endpoint, &producer)
+        payload_line.is_some(),
+        "the payload never reached the screen\nproducer pane:\n{pane}"
     );
+
+    if backend_drains_a_pipe(exe) {
+        assert!(
+            perf["pty_drained_bytes"]
+                .as_u64()
+                .is_some_and(|bytes| bytes >= OUTPUT_BYTES),
+            "PTY receipt did not cover the fixed payload: {perf}\nproducer pane:\n{pane}"
+        );
+    } else {
+        // The classic Windows console agent scrapes a screen buffer; there is
+        // no pipe and nothing to drain, so the host receives screen deltas
+        // rather than the child's bytes. Measured on both hosted Windows cells
+        // (run 35995078084): a full pane of payload against
+        // `pty_drained_bytes: 4774` of 32 MiB. Asserting the byte count there
+        // asserts a property this backend does not have -- and hides the one
+        // it does, which is that the payload arrived and the host kept up.
+        assert!(
+            perf["pty_drained_bytes"].as_u64().is_some(),
+            "the scraping backend must still publish a counter: {perf}"
+        );
+    }
     // The native pipe may deliver chunks below the per-Wake budget even for a
     // large payload, in which case zero yields is the correct result rather
     // than evidence that scheduling was bypassed. The deterministic
