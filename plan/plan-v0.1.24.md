@@ -16,8 +16,10 @@ deferring them is gone.
 │   │        history recall at the first/last line, or Alt+Up/Down anywhere
 │   │        invariant: a single-line draft still recalls on Up -- held
 │   │        done 4825813; the rule was in the table, the branch was missing
-│   ├── [ ] A2 word motion: Ctrl+Left/Right, Ctrl+Backspace/Delete
-│   ├── [ ] A3 Home/End per line; Ctrl+Home/End for the whole draft
+│   ├── [x] A2 word motion: Ctrl+Left/Right, Ctrl+Backspace/Delete
+│   │        done 2ca7b22; Windows rule, both ends land on word starts
+│   ├── [x] A3 Home/End per line; Ctrl+Home/End for the whole draft
+│   │        done 2ca7b22; Control widens, Shift selects, they compose
 │   ├── [x] A4 the rules are one table: `minicon_core::keymap`, read by the
 │   │        key handler and by `--help`, so the list cannot drift
 │   │        done 4825813 (with A1; A1 alone would have been a fifth copy)
@@ -106,3 +108,29 @@ is in the box nearly every time — behaving exactly as it did.
 
 A2 and A3 are now each a row plus a `Move` variant. Do them against this
 table, not against the old shape.
+
+## A2 + A3, as built (2026-09-24, `2ca7b22`)
+
+Each was a row in the table plus a primitive in the crate, which is what A4
+was for. `Move` gained `WordLeft`/`WordRight`/`DraftStart`/`DraftEnd`;
+`keymap` gained four rows; `main.rs` gained two match arms and nothing else.
+
+Two decisions worth keeping:
+
+- **Word motion is reversible.** Both directions land on a word's first
+  character (Windows' rule), so Ctrl+Left undoes a Ctrl+Right. Landing on word
+  *ends* going right would drift the caret on every round trip, and that is
+  the kind of thing nobody reports and everybody feels. A test asserts the
+  round trip rather than the literal offsets.
+- **`word_bounds` was not reused.** It favours the token to the left so a
+  double-click just past a word still selects it. Correct for selection, wrong
+  for motion. Two rules that look alike are not one rule.
+
+The alignment gate caught a real drift mid-change: the README gained
+`Ctrl+Backspace` before the table did and the build went red naming the chord.
+That is A4 working from the direction it was built to work from. The help
+column is also measured from the widest chord now, after a hard-coded 18
+overflowed on the first long one — a table that formats itself is part of
+being one table.
+
+Branch A is complete except A5, which is a non-goal and needs no work.
