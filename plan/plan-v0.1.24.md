@@ -207,9 +207,16 @@ blank screen, on both Windows cells:
 "backend_resize_failures": 0,
 ```
 
-The count never clears, so this is not a failure that healed. **No resize was
-refused at any point in the session.** Every `master.resize()` returned `Ok`
-and the terminal is still blank at 141x40 with an 8 px font.
+The count never clears, so this is not a failure that healed. **No refusal
+reached MiniCon at any point in the session** -- every `master.resize()`
+returned `Ok`, and the terminal is still blank at 141x40 with an 8 px font.
+
+Corrected 2026-09-24, after cc-agenterm found the rest of the chain: this was
+written as "no resize was refused", which the counter cannot support. The
+adapter's `resize()` *did* fail, and the error was dropped one layer below
+MiniCon's boundary by a `let _ =` in `console_agent.rs`. A counter at a
+boundary proves what crossed it, not what happened beyond it -- the same
+distinction, one layer down, that the counter itself was built to make.
 
 What survives:
 
@@ -335,3 +342,42 @@ One instrument gap found on the way and left open deliberately:
 scrollback exists, so nothing observable answers "how much did we keep". C1
 should fix that, since it cannot decide `capture-pane --scrollback N`
 semantics without it.
+
+## B1 closed: the chain, end to end (2026-09-24)
+
+cc-agenterm assembled the last link, and it corrects a claim made here. The
+sequence, every step now evidenced:
+
+1. Zoom out records `resize(141, 40)`.
+2. `resize()` sets the window to `minimal {0,0,0,0}` to free the buffer.
+3. `SetConsoleScreenBufferSize` grows the buffer to 141x540 and **succeeds** --
+   the watcher timed exactly this at 12:22:22.767.
+4. conhost recomputes the window and collapses it to 1x1 at the cursor.
+5. `resize()` tries to set the window back to 141 columns.
+   `GetLargestConsoleWindowSize` is 128x43, so the call is refused with
+   `ERROR_INVALID_PARAMETER` and the window stays degenerate.
+6. `resize()` returns `Err` -- and the caller drops it: `let _ = console.resize(...)`.
+7. The next poll reads a 1x1 `srWindow`, scrapes one cell, and the mirror
+   rebuilds around it. Blank screen; the content never moved.
+
+**Why the counter read 0, and what that was worth.** `backend_resize_failures`
+sits at MiniCon's boundary, and step 6 means nothing ever crossed it. The
+reading was accurate and the conclusion drawn from it here was not: "nothing
+reached us" was written up as "nothing happened". Both lanes made the same
+mistake in opposite directions on the same day -- theirs was accepting the
+refutation and discarding a correct code reading, ours was overstating what a
+boundary counter can see. Two true observations were treated as exclusive when
+they were describing different layers.
+
+What the instruments were actually worth: the counter did not find the cause,
+but it destroyed a theory that fit every number available and would otherwise
+have been committed as a fix. The dump and the watcher then supplied the
+timing that no amount of reading the code could settle.
+
+The fix is two changes in `console_agent.rs`, both AgenTerm's: clamp the
+window to `GetLargestConsoleWindowSize` (still zero hits in that crate), and
+stop dropping the error -- restoring the previous rectangle on failure, so the
+worst case is a stale size rather than a dead screen. Their negative control
+for the second one runs through MiniCon: with the error propagated and the
+clamp removed, `backend_resize_failures` must go from 0 to non-zero, which
+verifies the counter and the explanation for its earlier reading at once.
