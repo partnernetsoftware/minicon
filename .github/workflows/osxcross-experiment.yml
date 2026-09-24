@@ -1,0 +1,79 @@
+# EXPERIMENTAL — not part of the release or test pipeline.
+#
+# Answers one narrow question, tracked as `[ ] BLOCKED` in
+# prd/PRD_02_27_con_delivery.md ("non-Mac macOS cross-compile from a Linux
+# CI/cloud host"): can a Linux runner alone (osxcross + a macOS SDK, no macOS
+# runner at all) produce a real macOS Mach-O for MiniCon? This does NOT
+# replace six-grid-cloud-build.yml, which already builds the macOS cells
+# natively on macos-14/macos-13 runners — that path works today. This
+# workflow only tests whether osxcross can additionally remove even that
+# native-macOS-runner dependency. Manual trigger only; never runs on push,
+# never feeds a Candidate, never gates anything.
+name: osxcross experiment (non-Mac macOS cross-compile)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: macOS Rust target triple to attempt
+        required: true
+        type: choice
+        options:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+        default: aarch64-apple-darwin
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe ${{ inputs.target }} via osxcross
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch macOS SDK (phracker/MacOSX-SDKs, MacOSX11.3)
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/phracker/MacOSX-SDKs.git /tmp/sdks
+          tar -C /tmp/sdks -cJf /tmp/MacOSX11.3.sdk.tar.xz MacOSX11.3.sdk
+
+      - name: Build osxcross toolchain
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/tpoechtrager/osxcross.git /tmp/osxcross
+          cp /tmp/MacOSX11.3.sdk.tar.xz /tmp/osxcross/tarballs/
+          cd /tmp/osxcross
+          UNATTENDED=1 ./build.sh
+
+      - name: Install Rust target
+        run: rustup target add "${{ inputs.target }}"
+
+      - name: Cross-build minicon
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/osxcross/target/bin:$PATH"
+          ARCH_TRIPLE=$(basename /tmp/osxcross/target/bin/*-clang | sed 's/-clang$//')
+          export CC_aarch64_apple_darwin="${ARCH_TRIPLE}-clang"
+          export CC_x86_64_apple_darwin="${ARCH_TRIPLE}-clang"
+          TARGET_ENV=$(echo "$TARGET" | tr '-' '_')
+          export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="${ARCH_TRIPLE}-clang"
+          export CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="${ARCH_TRIPLE}-clang"
+          cargo build --locked --release --target "$TARGET" -p minicon
+
+      - name: Verify the produced binary is a real macOS Mach-O
+        run: |
+          set -euo pipefail
+          BIN="target/${{ inputs.target }}/release/minicon"
+          file "$BIN"
+          file "$BIN" | grep -qi "Mach-O" || { echo "not a Mach-O binary" >&2; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osxcross-probe-${{ inputs.target }}
+          path: target/${{ inputs.target }}/release/minicon
+          retention-days: 7
