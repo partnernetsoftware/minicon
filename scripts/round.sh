@@ -237,6 +237,12 @@ run_github() {
   fi
   sleep 6
   run_id="$(gh run list --workflow "$GH_WORKFLOW" -L1 --json databaseId -q '.[0].databaseId')"
+  # An empty id means the listing failed, not that nothing ran: polling with
+  # it would sit out the whole timeout asking GitHub about run "". Say so now.
+  if [ -z "$run_id" ]; then
+    for cell in $cells; do record "$cell" github BLOCKED $((SECONDS-stage)) "run id not found after dispatch (tag $tag kept)"; done
+    return 1
+  fi
   # Bound the wait: a queued runner (macos-13 especially) must not hold a
   # round open. Past the bound the cells are BLOCKED, never a pass.
   local watch_deadline=$((SECONDS + ${MINICON_ROUND_GH_TIMEOUT:-300}))

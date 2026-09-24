@@ -356,6 +356,14 @@ fn sustained_long_output_keeps_control_and_sibling_responsive() {
     );
     let bytes_per_second = OUTPUT_BYTES.saturating_mul(1_000_000_000)
         / elapsed.as_nanos().max(1).min(u128::from(u64::MAX)) as u64;
+    // Reported on every outcome, not only on failure: a rate read on the
+    // failing side alone has nothing to be compared with (run 36009129332
+    // gave 1969204 B/s on hosted arm64 Linux and no number from any cell that
+    // passed). The probe runs this suite with --nocapture so the line lands
+    // in the job log.
+    eprintln!(
+        "THROUGHPUT: {OUTPUT_BYTES} bytes in {elapsed:?} = {bytes_per_second} B/s (floor {MIN_BYTES_PER_SECOND})"
+    );
     assert!(
         bytes_per_second >= MIN_BYTES_PER_SECOND,
         "sustained rate {bytes_per_second} B/s is below {MIN_BYTES_PER_SECOND} B/s\nproducer pane:\n{}",

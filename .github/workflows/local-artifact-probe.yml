@@ -133,7 +133,7 @@ jobs:
             # The throughput journey is `#[ignore]`d because it owns a
             # machine for a minute; a runner is exactly where it should run.
             case "$exe" in
-              *-minicon_throughput|*-minicon_throughput.exe) extra=--include-ignored ;;
+              *-minicon_throughput|*-minicon_throughput.exe) extra="--include-ignored --nocapture" ;;
               *) extra= ;;
             esac
             echo "== $exe $extra"
