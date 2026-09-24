@@ -266,3 +266,35 @@ it is labelling.
 MiniCon's side of B1 is complete: the error propagates (`ba491a4`), the
 counter that refuted the first theory (`23fa6f5`), and the probe that answered
 it. The fix belongs to `console_agent.rs`.
+
+## B1 timed (2026-09-24, run 35998453182)
+
+The watcher, once it was looking before the wheel rather than after it, caught
+the transition. 954 samples, three states:
+
+```
+12:22:20.673  window {0, 0, 77, 21} = 78x22   buffer 78x522   cursor (21,3)
+12:22:22.767  window {21, 3, 21, 3} = 1x1     buffer 141x540  cursor (21,3)
+12:22:23.272  window {41, 6, 41, 6} = 1x1     buffer 141x540  cursor (21,6)
+```
+
+`largest` is 128x43 throughout, against a buffer 141 wide.
+
+The window collapses in the same sample the buffer grows to 141x540, and it
+collapses *onto the cursor* -- `left`/`top` equal `dwCursorPosition` exactly.
+That is conhost recomputing the window after a buffer resize, not a rectangle
+the adapter wrote: every rectangle it writes has `Left = 0`.
+
+It also cannot be put back. The buffer is 141 columns and the largest window
+the desktop and font allow is 128, so a window of the requested width is not
+available at that font size. `resize()` still returned `Ok` and
+`backend_resize_failures` is 0, so whatever happened to that call, it did not
+reach MiniCon -- and not reaching MiniCon is not the same as not happening.
+That part is inside `console_agent.rs`.
+
+Three MiniCon instruments produced this, and each one killed a wrong answer:
+the propagated error (`ba491a4`), the uncleared counter that refuted the
+`SetConsoleWindowInfo`-failure theory (`23fa6f5`), and the vendored probe and
+watcher. The first watcher round was itself useless in the same way -- its
+first sample already showed the failure -- which is the same mistake one layer
+up: an instrument that starts after the event it is timing.
