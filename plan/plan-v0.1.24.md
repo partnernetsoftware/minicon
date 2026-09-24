@@ -227,3 +227,42 @@ committed as a fix in `console_agent.rs` on the strength of the fit.
 35993158583, hidden until then behind the job's `set -e`. It was the probe
 exporting a shell path where PowerShell compares a native one — harness, not
 product, fixed in 85c60ff.
+
+## B1 answered (2026-09-24, run 35996044506)
+
+The console buffer, read from outside the product while the terminal was
+blank, on both Windows cells, identically:
+
+```
+"buffer": { "x": 141, "y": 540 },
+"cursor": { "x": 21,  "y": 6 },
+"window": { "left": 41, "right": 41, "top": 6, "bottom": 6 },
+"non_blank_rows": 5, "rows_read_failed": 0,
+sample: row0 "C:\a\minicon\minicon>echo ZOOM_BLANK_MARKER"
+        row1 "ZOOM_BLANK_MARKER"
+        row3 "C:\a\minicon\minicon>echo ZOOM_MIN_MARKER"
+```
+
+**Nothing was lost.** Every line the test wrote is still in the buffer. The
+console window — `srWindow` — is a 1x1 rectangle at (41,6), and the agent
+scrapes 141x40 starting from its top-left corner. That rectangle covers
+columns 41.. of rows 6.., and the text lives in columns 0..21 of rows 0..6.
+So the scrape reads blank cells and reports a blank screen, correctly.
+
+The first diagnosis named this rectangle and was still wrong, which is worth
+keeping straight: the *mechanism* was right, the *cause* was not. It is not a
+`SetConsoleWindowInfo` failure, because `backend_resize_failures` is 0 for the
+whole session — every `resize()` returned `Ok` while leaving the window 1x1.
+Whether the final call succeeded without effect, was never made, or was made
+with the minimal rectangle is a question inside `console_agent.rs`, which is
+the AgenTerm lane's.
+
+A note on the probe's own verdict field, which read
+`content-inside-window`: it tests row membership only, and row 6 does fall
+inside a one-row window. The blank is a *column* miss. A three-way label is
+still much better than a number, but it has to be read against the rectangle
+it is labelling.
+
+MiniCon's side of B1 is complete: the error propagates (`ba491a4`), the
+counter that refuted the first theory (`23fa6f5`), and the probe that answered
+it. The fix belongs to `console_agent.rs`.
