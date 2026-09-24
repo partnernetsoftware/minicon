@@ -67,6 +67,7 @@ pub(super) struct ConTerminal {
     /// The backend's last refusal to resize, surfaced in the snapshot.
     /// `None` once a resize succeeds.
     backend_resize_error: Option<String>,
+    backend_resize_failures: u64,
 
     pub(super) cols: u16,
     pub(super) rows: u16,
@@ -241,6 +242,7 @@ impl ConTerminal {
             cell_h: 16,
             font_size_px: 10,
             backend_resize_error: None,
+            backend_resize_failures: 0,
             cols: 80,
             rows: 24,
             pending_geometry: None,
@@ -747,12 +749,32 @@ impl ConTerminal {
             // backend that could not apply the size may have left its own
             // window in a state that shows nothing, and a silent failure there
             // is indistinguishable from a product that stopped painting.
-            self.backend_resize_error = match master.resize(TerminalSize { rows, cols }) {
-                Ok(()) => None,
-                Err(error) => Some(format!("resize to {cols}x{rows} failed: {error}")),
-            };
+            let outcome = master
+                .resize(TerminalSize { rows, cols })
+                .map_err(|error| error.to_string());
+            self.record_resize_outcome(cols, rows, outcome);
         }
         self.parser.screen_mut().set_size(rows, cols);
+    }
+
+    /// What the session remembers about a resize the backend answered.
+    ///
+    /// The message is the current state and clears on the next success; the
+    /// count is the history and never clears. They differ exactly when a
+    /// failure was followed by a success, which is the case that reads as a
+    /// healthy session and is not one: run 35992342157 found a blank Windows
+    /// terminal whose error field was null, and a null field cannot say
+    /// whether nothing ever failed or something failed and was papered over.
+    ///
+    /// Separated from `apply_resize` so it can be tested without a PTY.
+    fn record_resize_outcome(&mut self, cols: u16, rows: u16, outcome: Result<(), String>) {
+        self.backend_resize_error = match outcome {
+            Ok(()) => None,
+            Err(error) => {
+                self.backend_resize_failures = self.backend_resize_failures.saturating_add(1);
+                Some(format!("resize to {cols}x{rows} failed: {error}"))
+            }
+        };
     }
 
     pub(super) fn queue_resize(&mut self, phys_w: u32, phys_h: u32, scale: f64) {
@@ -1484,6 +1506,7 @@ impl ConTerminal {
             child_exit_code: self.child_exit_code,
             font_size_px: self.font_size_px,
             backend_resize_error: self.backend_resize_error.clone(),
+            backend_resize_failures: self.backend_resize_failures,
         }
     }
 
@@ -2987,6 +3010,38 @@ pub(crate) mod tests {
             );
         }
     }
+    /// A backend that refuses a resize and then accepts the next one leaves a
+    /// session that looks healthy and is not: on Windows the console can be
+    /// left at the one-cell rectangle the resize sequence shrinks it to, so
+    /// every later scrape reads a blank screen while the last resize reports
+    /// success. The message answers "now"; only the count answers "ever".
+    #[test]
+    fn a_healed_resize_still_admits_that_one_was_refused() {
+        let mut app = ConTerminal::new(None);
+        assert_eq!(app.backend_resize_failures, 0);
+        assert!(app.backend_resize_error.is_none());
+
+        app.record_resize_outcome(141, 40, Err("bad rect".to_owned()));
+        assert_eq!(
+            app.backend_resize_error.as_deref(),
+            Some("resize to 141x40 failed: bad rect")
+        );
+        assert_eq!(app.backend_resize_failures, 1);
+
+        app.record_resize_outcome(128, 40, Ok(()));
+        assert!(
+            app.backend_resize_error.is_none(),
+            "a success clears the message, because it describes the present"
+        );
+        assert_eq!(
+            app.backend_resize_failures, 1,
+            "and never the count, because that is the only surviving witness"
+        );
+
+        app.record_resize_outcome(141, 40, Err("bad rect".to_owned()));
+        assert_eq!(app.backend_resize_failures, 2, "failures accumulate");
+    }
+
     #[test]
     fn stress_apply_resize_across_extreme_scale_and_window_sizes() {
         // Reproduce a reported crash: "font grows past a certain size and the

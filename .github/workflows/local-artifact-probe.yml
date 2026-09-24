@@ -81,10 +81,19 @@ jobs:
             export MINICON_TEST_BINARY="$PWD/$product"
             echo "product binary: $MINICON_TEST_BINARY"
           fi
+          # Every suite runs, then the job fails. Under `set -e` the first
+          # red suite ended the job and the rest were never attempted, so a
+          # round answered one question per 45 minutes and a backlog could
+          # hide behind whichever suite sorted first.
+          failed=""
           for exe in bundle/${{ matrix.cell }}-*; do
             case "$exe" in *-minicon|*-minicon.exe) continue ;; esac
             echo "== $exe"
-            "$exe" --test-threads 2
+            if "$exe" --test-threads 2; then :; else failed="$failed $exe"; fi
           done
           finished=$(date +%s)
           echo "PROBE cell=${{ matrix.cell }} runner=${{ matrix.runner }} download=$((downloaded-started))s run=$((finished-downloaded))s total=$((finished-started))s"
+          if [ -n "$failed" ]; then
+            echo "PROBE failed suites:$failed"
+            exit 1
+          fi

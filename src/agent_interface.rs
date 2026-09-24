@@ -103,6 +103,12 @@ pub struct ScreenSnapshot {
     /// Cleared by the next resize that succeeds, so this reports the current
     /// state rather than accumulating history.
     pub backend_resize_error: Option<String>,
+    /// How many resizes the backend has refused for the life of the session.
+    /// `backend_resize_error` answers "is it broken now"; this answers "was it
+    /// ever", and the two differ whenever a later resize succeeded. A blank
+    /// screen with a null error and a non-zero count is a backend that failed,
+    /// reported success on the way back, and left something behind.
+    pub backend_resize_failures: u64,
 }
 
 /// Writes `snapshot` to `path` atomically: serialize to a sibling temp file,
@@ -160,6 +166,10 @@ fn snapshot_json(snapshot: &ScreenSnapshot) -> super::json::JsonValue {
             nullable(snapshot.child_exit_code.map(i64::from)),
         ),
         ("font_size_px", snapshot.font_size_px.into()),
+        (
+            "backend_resize_failures",
+            snapshot.backend_resize_failures.into(),
+        ),
         (
             "backend_resize_error",
             nullable(
@@ -378,6 +388,7 @@ mod tests {
         );
 
         snapshot.backend_resize_error = Some("resize to 141x40 failed: bad rect".to_owned());
+        snapshot.backend_resize_failures = 1;
         let bytes = super::super::json::to_vec(&snapshot_json(&snapshot));
         let json = String::from_utf8_lossy(&bytes).into_owned();
         let value: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
@@ -385,6 +396,23 @@ mod tests {
             value["backend_resize_error"],
             "resize to 141x40 failed: bad rect",
             "the refusal must survive the round trip: {json}"
+        );
+
+        // The state that mattered and could not be read: healed, but not
+        // healthy. Run 35992342157 caught a blank Windows terminal whose
+        // `backend_resize_error` was null, which says nothing about whether a
+        // resize failed earlier in the session and was cleared by a later one.
+        snapshot.backend_resize_error = None;
+        let bytes = super::super::json::to_vec(&snapshot_json(&snapshot));
+        let json = String::from_utf8_lossy(&bytes).into_owned();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
+        assert!(
+            value["backend_resize_error"].is_null(),
+            "a resize that later succeeded clears the message: {json}"
+        );
+        assert_eq!(
+            value["backend_resize_failures"], 1,
+            "but never the count, or the history is unreadable: {json}"
         );
     }
 
@@ -413,6 +441,7 @@ mod tests {
             child_exit_code: None,
             font_size_px: 16,
             backend_resize_error: None,
+            backend_resize_failures: 0,
         };
         let value: serde_json::Value =
             serde_json::from_slice(&super::super::json::to_vec(&snapshot_json(&snapshot))).unwrap();
@@ -433,6 +462,7 @@ mod tests {
             keys,
             [
                 "backend_resize_error",
+                "backend_resize_failures",
                 "child_alive",
                 "child_exit_code",
                 "cols",
@@ -835,6 +865,7 @@ mod tests {
             child_exit_code: None,
             font_size_px: 15,
             backend_resize_error: None,
+            backend_resize_failures: 0,
         }
     }
 
