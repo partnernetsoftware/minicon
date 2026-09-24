@@ -38,7 +38,9 @@ deferring them is gone.
 ├── C. Carried product debt (0.1.18 and 0.1.21)
 │   ├── [ ] C1 `capture-pane --scrollback N`: decide the semantics
 │   │        (cross-screen stitching, viewport restore), then implement
-│   ├── [ ] C2 black-box test: paste and Enter arrive in two `read()`s
+│   ├── [x] C2 black-box test: paste and Enter arrive in two `read()`s
+│   │        done f1d298b; python3 probe reads the PTY as offered, asserts
+│   │        the paste and its Enter are separate chunks (unix-only)
 │   ├── [ ] C3 box-drawing glyphs from cell geometry (Consolas, 1 px at 12 px)
 │   └── [ ] C4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
 ├── D. Loop work that 0.1.23 proved worth finishing
