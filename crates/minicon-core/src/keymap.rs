@@ -130,6 +130,8 @@ pub enum Action {
     Paste,
     Backspace,
     DeleteForward,
+    DeleteWordBack,
+    DeleteWordForward,
     Move(Move),
     Extend(Move),
     RecallPrevious,
@@ -180,6 +182,10 @@ pub fn action(chord: Chord, clipboard: ClipboardModifier, draft: Draft) -> Optio
     }
 
     match chord.key {
+        // Control turns a character delete into a word delete, matching the
+        // span Ctrl+Left/Right would have moved over.
+        Key::Backspace if modifiers.control => Some(Action::DeleteWordBack),
+        Key::Delete if modifiers.control => Some(Action::DeleteWordForward),
         Key::Backspace => Some(Action::Backspace),
         Key::Delete => Some(Action::DeleteForward),
         Key::Escape => Some(Action::CancelFocus),
@@ -207,10 +213,42 @@ pub fn action(chord: Chord, clipboard: ClipboardModifier, draft: Draft) -> Optio
             Action::Move(Move::Down)
         }),
 
-        Key::Left => Some(movement(modifiers, Move::Left)),
-        Key::Right => Some(movement(modifiers, Move::Right)),
-        Key::Home => Some(movement(modifiers, Move::LineStart)),
-        Key::End => Some(movement(modifiers, Move::LineEnd)),
+        // Control widens each horizontal motion: by word instead of by
+        // character, and to the whole draft instead of to the line. Shift
+        // still decides whether the motion moves or selects, so the two
+        // modifiers compose rather than override each other.
+        Key::Left => Some(movement(
+            modifiers,
+            if modifiers.control {
+                Move::WordLeft
+            } else {
+                Move::Left
+            },
+        )),
+        Key::Right => Some(movement(
+            modifiers,
+            if modifiers.control {
+                Move::WordRight
+            } else {
+                Move::Right
+            },
+        )),
+        Key::Home => Some(movement(
+            modifiers,
+            if modifiers.control {
+                Move::DraftStart
+            } else {
+                Move::LineStart
+            },
+        )),
+        Key::End => Some(movement(
+            modifiers,
+            if modifiers.control {
+                Move::DraftEnd
+            } else {
+                Move::LineEnd
+            },
+        )),
 
         Key::Space if !modifiers.control && !modifiers.alt => Some(Action::Insert),
         Key::Character(_) if !modifiers.control && !modifiers.alt => Some(Action::Insert),
@@ -253,13 +291,40 @@ pub const HELP: &[Binding] = &[
         chord: "Alt+Up / Down",
         description: "Recall what you sent before, from any line",
     },
+    Binding {
+        chord: "Ctrl+Left / Right",
+        description: "Move the input caret by whole words",
+    },
+    Binding {
+        chord: "Ctrl+Home / End",
+        description: "Move the input caret to the start or end of the draft",
+    },
+    Binding {
+        chord: "Ctrl+Backspace / Delete",
+        description: "Delete the word before or after the input caret",
+    },
 ];
 
 /// The help list as the lines `--help` prints, so the formatting lives with
 /// the table rather than at each call site.
+///
+/// The column is as wide as the widest chord in the table, with a floor at the
+/// width the surrounding help block already uses. Measuring it means a long
+/// new chord widens the column instead of overflowing it, which a hard-coded
+/// width did on the first one added.
 pub fn help_lines() -> impl Iterator<Item = String> {
+    const SURROUNDING_COLUMN: usize = 18;
+    let width = HELP
+        .iter()
+        .map(|binding| binding.chord.chars().count())
+        .max()
+        .unwrap_or(0)
+        // One past the widest chord, so even that row keeps a gap rather than
+        // running into its own description.
+        .saturating_add(1)
+        .max(SURROUNDING_COLUMN);
     HELP.iter()
-        .map(|binding| format!("  {:<18} {}", binding.chord, binding.description))
+        .map(move |binding| format!("  {:<width$} {}", binding.chord, binding.description))
 }
 
 #[cfg(test)]
@@ -484,6 +549,78 @@ mod tests {
         );
     }
 
+    #[test]
+    fn control_widens_horizontal_motion_to_whole_words() {
+        for draft in [Draft::single_line(), multiline_middle()] {
+            assert_eq!(
+                action(chord(Key::Left, ctrl()), PC, draft),
+                Some(Action::Move(Move::WordLeft))
+            );
+            assert_eq!(
+                action(chord(Key::Right, ctrl()), PC, draft),
+                Some(Action::Move(Move::WordRight))
+            );
+        }
+    }
+
+    #[test]
+    fn control_widens_home_and_end_to_the_whole_draft() {
+        assert_eq!(
+            action(chord(Key::Home, ctrl()), PC, multiline_middle()),
+            Some(Action::Move(Move::DraftStart))
+        );
+        assert_eq!(
+            action(chord(Key::End, ctrl()), PC, multiline_middle()),
+            Some(Action::Move(Move::DraftEnd))
+        );
+        // Without Control they stay line-relative, which is the whole point of
+        // having both.
+        assert_eq!(
+            action(Chord::plain(Key::Home), PC, multiline_middle()),
+            Some(Action::Move(Move::LineStart))
+        );
+    }
+
+    /// Control and Shift compose: Control picks how far, Shift picks whether
+    /// the motion selects. Overriding one with the other would cost the user
+    /// the only way to select a word from the keyboard.
+    #[test]
+    fn control_and_shift_compose_rather_than_override() {
+        let both = Modifiers {
+            control: true,
+            shift: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(
+            action(chord(Key::Right, both), PC, multiline_middle()),
+            Some(Action::Extend(Move::WordRight))
+        );
+        assert_eq!(
+            action(chord(Key::Home, both), PC, multiline_middle()),
+            Some(Action::Extend(Move::DraftStart))
+        );
+    }
+
+    #[test]
+    fn control_turns_a_character_delete_into_a_word_delete() {
+        assert_eq!(
+            action(chord(Key::Backspace, ctrl()), PC, Draft::single_line()),
+            Some(Action::DeleteWordBack)
+        );
+        assert_eq!(
+            action(chord(Key::Delete, ctrl()), PC, Draft::single_line()),
+            Some(Action::DeleteWordForward)
+        );
+        assert_eq!(
+            action(Chord::plain(Key::Backspace), PC, Draft::single_line()),
+            Some(Action::Backspace)
+        );
+        assert_eq!(
+            action(Chord::plain(Key::Delete), PC, Draft::single_line()),
+            Some(Action::DeleteForward)
+        );
+    }
+
     /// The point of the table: the list a human reads is generated from it, so
     /// a row cannot promise a key the resolver does not answer.
     #[test]
@@ -500,6 +637,12 @@ mod tests {
             (chord(Key::Character('o'), ctrl()), Draft::single_line()),
             (Chord::plain(Key::Up), multiline_middle()),
             (chord(Key::Up, alt()), multiline_middle()),
+            (chord(Key::Left, ctrl()), multiline_middle()),
+            (chord(Key::Right, ctrl()), multiline_middle()),
+            (chord(Key::Home, ctrl()), multiline_middle()),
+            (chord(Key::End, ctrl()), multiline_middle()),
+            (chord(Key::Backspace, ctrl()), multiline_middle()),
+            (chord(Key::Delete, ctrl()), multiline_middle()),
         ];
         for (chord, draft) in documented {
             assert!(
@@ -508,5 +651,20 @@ mod tests {
             );
         }
         assert_eq!(help_lines().count(), HELP.len());
+
+        // Every rendered line puts its description in the same column, so the
+        // block stays a table when a long chord joins it.
+        let columns: Vec<usize> = HELP
+            .iter()
+            .zip(help_lines())
+            .map(|(binding, line)| {
+                line.find(binding.description)
+                    .expect("the line contains its description")
+            })
+            .collect();
+        assert!(
+            columns.windows(2).all(|pair| pair[0] == pair[1]),
+            "descriptions do not share a column: {columns:?}"
+        );
     }
 }

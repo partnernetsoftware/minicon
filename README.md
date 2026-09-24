@@ -155,6 +155,9 @@ minicon --help                   # everything else
 | `Ctrl+O` | send the complete input-area draft |
 | `Up` / `Down` | in the input area, move between lines; at the first or last line, recall what you sent before |
 | `Alt+Up` / `Down` | in the input area, recall what you sent before from any line |
+| `Ctrl+Left` / `Right` | in the input area, move the caret by whole words |
+| `Ctrl+Home` / `End` | in the input area, move the caret to the start or end of the draft |
+| `Ctrl+Backspace` / `Delete` | in the input area, delete the word before or after the caret |
 
 The sidebar header keeps only what a panel cannot hold. **New** (＋, left) opens
 a terminal; **Settings** (⚙) opens a panel with the interface language

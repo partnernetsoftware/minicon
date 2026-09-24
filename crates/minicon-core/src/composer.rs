@@ -381,8 +381,19 @@ fn cells_fitting_forward(text: &str, budget: &mut usize) -> usize {
 pub enum Move {
     Left,
     Right,
+    /// To the start of the previous word, crossing lines. Windows' rule, which
+    /// is what a Notepad-shaped composer owes its user: both Ctrl+Left and
+    /// Ctrl+Right land on a word's first character, so repeated presses walk
+    /// the same boundaries in both directions.
+    WordLeft,
+    /// To the start of the next word, crossing lines.
+    WordRight,
     LineStart,
     LineEnd,
+    /// The very beginning of the draft, however many lines it has.
+    DraftStart,
+    /// The very end of the draft.
+    DraftEnd,
     Up,
     Down,
 }
@@ -514,6 +525,39 @@ pub fn delete_forward(state: &mut ComposerState) {
     state.caret = caret;
 }
 
+/// Deletes from the start of the previous word up to the caret.
+///
+/// The span is the one Ctrl+Left would have moved over, so what disappears is
+/// exactly what the caret would have crossed -- a deletion that does not match
+/// its own motion key is the kind users learn to distrust.
+pub fn delete_word_back(state: &mut ComposerState) {
+    if prepare_edit(state) {
+        return;
+    }
+    let caret = state.clamped_caret();
+    let start = word_left(&state.text, caret);
+    if start == caret {
+        return;
+    }
+    state.text.replace_range(start..caret, "");
+    state.caret = start;
+}
+
+/// Deletes from the caret up to the start of the next word, the span Ctrl+Right
+/// would have moved over.
+pub fn delete_word_forward(state: &mut ComposerState) {
+    if prepare_edit(state) {
+        return;
+    }
+    let caret = state.clamped_caret();
+    let end = word_right(&state.text, caret);
+    if end == caret {
+        return;
+    }
+    state.text.replace_range(caret..end, "");
+    state.caret = caret;
+}
+
 /// Moves the caret, collapsing any selection first: an arrow key means "put
 /// the caret here", not "edit everything".
 pub fn move_caret(state: &mut ComposerState, movement: Move) {
@@ -531,11 +575,60 @@ fn apply_move(text: &str, caret: usize, movement: Move) -> usize {
     match movement {
         Move::Left => previous_boundary(text, caret).unwrap_or(0),
         Move::Right => next_boundary(text, caret).unwrap_or(text.len()),
+        Move::WordLeft => word_left(text, caret),
+        Move::WordRight => word_right(text, caret),
         Move::LineStart => line_start(text, caret),
         Move::LineEnd => line_end(text, caret),
+        Move::DraftStart => 0,
+        Move::DraftEnd => text.len(),
         Move::Up => vertical_caret(text, caret, true),
         Move::Down => vertical_caret(text, caret, false),
     }
+}
+
+/// The start of the word at or before `caret`.
+///
+/// Whitespace is skipped first, so pressing Ctrl+Left from the space after a
+/// word reaches that word rather than stopping on the gap. A newline is
+/// ordinary whitespace here: word motion crosses lines, which is what every
+/// text box does and what makes a pasted paragraph navigable.
+fn word_left(text: &str, caret: usize) -> usize {
+    let mut offset = caret;
+    while let Some(previous) = previous_boundary(text, offset) {
+        if text[previous..offset].chars().all(char::is_whitespace) {
+            offset = previous;
+        } else {
+            break;
+        }
+    }
+    while let Some(previous) = previous_boundary(text, offset) {
+        if text[previous..offset].chars().any(char::is_whitespace) {
+            break;
+        }
+        offset = previous;
+    }
+    offset
+}
+
+/// The start of the word after `caret`: the rest of the current word, then the
+/// whitespace behind it. Landing on a word's first character rather than its
+/// last is what makes Ctrl+Left undo a Ctrl+Right.
+fn word_right(text: &str, caret: usize) -> usize {
+    let mut offset = caret;
+    while let Some(next) = next_boundary(text, offset) {
+        if text[offset..next].chars().any(char::is_whitespace) {
+            break;
+        }
+        offset = next;
+    }
+    while let Some(next) = next_boundary(text, offset) {
+        if text[offset..next].chars().all(char::is_whitespace) {
+            offset = next;
+        } else {
+            break;
+        }
+    }
+    offset
 }
 
 fn line_start(text: &str, caret: usize) -> usize {
@@ -775,6 +868,150 @@ fn push_bounded(normalized: &mut String, character: char, limit: usize) -> bool 
 
 #[cfg(test)]
 mod tests {
+    fn draft_at(text: &str, caret: usize) -> ComposerState {
+        let mut state = ComposerState::default();
+        state.text = text.to_owned();
+        state.caret = caret;
+        state
+    }
+
+    fn caret_after(text: &str, caret: usize, movement: Move) -> usize {
+        let mut state = draft_at(text, caret);
+        move_caret(&mut state, movement);
+        state.caret
+    }
+
+    /// Both directions land on a word's first character, so pressing Ctrl+Left
+    /// after Ctrl+Right returns to where it started. A rule that stopped at
+    /// word *ends* going right would not have this property, and the caret
+    /// would drift on every round trip.
+    #[test]
+    fn word_motion_is_reversible_because_both_ends_land_on_word_starts() {
+        let text = "alpha beta gamma";
+        let mut caret = 0;
+        let mut visited = vec![caret];
+        for _ in 0..3 {
+            caret = caret_after(text, caret, Move::WordRight);
+            visited.push(caret);
+        }
+        assert_eq!(visited, vec![0, 6, 11, text.len()]);
+        // And back, over the same boundaries.
+        let mut back = vec![caret];
+        for _ in 0..3 {
+            caret = caret_after(text, caret, Move::WordLeft);
+            back.push(caret);
+        }
+        assert_eq!(back, vec![text.len(), 11, 6, 0]);
+    }
+
+    /// From inside a word, Ctrl+Left goes to that word's start rather than
+    /// skipping to the previous one.
+    #[test]
+    fn word_left_from_inside_a_word_reaches_its_own_start() {
+        assert_eq!(caret_after("alpha beta", 8, Move::WordLeft), 6);
+        // From a word's own start it must still make progress, or the key
+        // would appear dead when pressed twice.
+        assert_eq!(caret_after("alpha beta", 6, Move::WordLeft), 0);
+    }
+
+    /// Word motion crosses lines. A pasted paragraph is exactly the case the
+    /// owner reported, and stopping at every newline would make Ctrl+Left the
+    /// slower way to do what Home already does.
+    #[test]
+    fn word_motion_crosses_line_boundaries() {
+        let text = "first line\nsecond line";
+        // At the end of the first line, the next word start is on line two.
+        assert_eq!(caret_after(text, 10, Move::WordRight), 11);
+        // And back over the newline into the first line's last word.
+        assert_eq!(caret_after(text, 11, Move::WordLeft), 6);
+    }
+
+    #[test]
+    fn word_motion_stops_at_the_ends_instead_of_wrapping() {
+        assert_eq!(caret_after("alpha", 0, Move::WordLeft), 0);
+        assert_eq!(caret_after("alpha", 5, Move::WordRight), 5);
+        assert_eq!(caret_after("", 0, Move::WordLeft), 0);
+        assert_eq!(caret_after("", 0, Move::WordRight), 0);
+        // Trailing whitespace is consumed, not stepped over one space at a
+        // time.
+        assert_eq!(caret_after("alpha    ", 0, Move::WordRight), 9);
+    }
+
+    /// The caret is a byte offset into UTF-8; a word boundary that landed
+    /// mid-character would panic the next slice rather than misbehave visibly.
+    #[test]
+    fn word_motion_lands_on_character_boundaries_in_wide_text() {
+        let text = "你好 世界 abc";
+        let mut caret = 0;
+        for _ in 0..4 {
+            caret = caret_after(text, caret, Move::WordRight);
+            assert!(
+                text.is_char_boundary(caret),
+                "caret {caret} split a character in {text:?}"
+            );
+        }
+        assert_eq!(caret, text.len());
+        while caret > 0 {
+            let next = caret_after(text, caret, Move::WordLeft);
+            assert!(next < caret, "word_left made no progress at {caret}");
+            assert!(text.is_char_boundary(next));
+            caret = next;
+        }
+    }
+
+    #[test]
+    fn draft_motion_ignores_lines_where_line_motion_respects_them() {
+        let text = "first\nsecond\nthird";
+        let middle = 8;
+        assert_eq!(caret_after(text, middle, Move::DraftStart), 0);
+        assert_eq!(caret_after(text, middle, Move::DraftEnd), text.len());
+        assert_eq!(caret_after(text, middle, Move::LineStart), 6);
+        assert_eq!(caret_after(text, middle, Move::LineEnd), 12);
+    }
+
+    /// A word delete removes exactly the span the matching motion would have
+    /// crossed. Asserting it against the motion rather than against a literal
+    /// is what keeps the two from drifting apart later.
+    #[test]
+    fn a_word_delete_removes_what_its_motion_would_have_crossed() {
+        let text = "alpha beta gamma";
+        let caret = 11;
+
+        let mut state = draft_at(text, caret);
+        delete_word_back(&mut state);
+        let start = caret_after(text, caret, Move::WordLeft);
+        assert_eq!(state.text, format!("{}{}", &text[..start], &text[caret..]));
+        assert_eq!(state.caret, start);
+
+        let mut state = draft_at(text, caret);
+        delete_word_forward(&mut state);
+        let end = caret_after(text, caret, Move::WordRight);
+        assert_eq!(state.text, format!("{}{}", &text[..caret], &text[end..]));
+        assert_eq!(state.caret, caret);
+    }
+
+    /// With a selection up, a word delete removes the selection and nothing
+    /// else -- the same rule Backspace follows, because a user who selected
+    /// text and reached for delete meant the selection.
+    #[test]
+    fn a_word_delete_with_a_selection_removes_only_the_selection() {
+        let mut state = draft_at("alpha beta gamma", 16);
+        state.anchor = Some(11);
+        delete_word_back(&mut state);
+        assert_eq!(state.text, "alpha beta ");
+        assert_eq!(state.caret, 11);
+    }
+
+    #[test]
+    fn a_word_delete_at_the_edge_changes_nothing() {
+        let mut state = draft_at("alpha", 0);
+        delete_word_back(&mut state);
+        assert_eq!(state.text, "alpha");
+        let mut state = draft_at("alpha", 5);
+        delete_word_forward(&mut state);
+        assert_eq!(state.text, "alpha");
+    }
+
     use super::*;
 
     /// `character_cells` is the single width rule the painter, the IME preedit

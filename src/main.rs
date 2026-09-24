@@ -1867,6 +1867,10 @@ impl ConApp {
             }
             keymap::Action::Backspace => composer::backspace(&mut self.composer),
             keymap::Action::DeleteForward => composer::delete_forward(&mut self.composer),
+            keymap::Action::DeleteWordBack => composer::delete_word_back(&mut self.composer),
+            keymap::Action::DeleteWordForward => {
+                composer::delete_word_forward(&mut self.composer)
+            }
             keymap::Action::Move(movement) => composer::move_caret(&mut self.composer, movement),
             keymap::Action::Extend(movement) => {
                 composer::extend_selection(&mut self.composer, movement)
