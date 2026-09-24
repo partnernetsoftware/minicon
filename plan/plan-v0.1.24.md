@@ -12,14 +12,15 @@ deferring them is gone.
 ```text
 [v0.1.24] the input box becomes editable, and old debts get answered
 ├── A. The composer — the owner's report, and the release's spine
-│   ├── [ ] A1 multi-line caret: Up/Down move inside a multi-line draft;
-│   │        history recall moves to the first/last line or Alt+Up/Down
-│   │        invariant: a single-line draft still recalls on Up
-│   │        evidence: composer unit tests + one control-CLI journey
+│   ├── [x] A1 multi-line caret: Up/Down move inside a multi-line draft;
+│   │        history recall at the first/last line, or Alt+Up/Down anywhere
+│   │        invariant: a single-line draft still recalls on Up -- held
+│   │        done 4825813; the rule was in the table, the branch was missing
 │   ├── [ ] A2 word motion: Ctrl+Left/Right, Ctrl+Backspace/Delete
 │   ├── [ ] A3 Home/End per line; Ctrl+Home/End for the whole draft
-│   ├── [ ] A4 the rules are one table, read by both the key handler and the
-│   │        settings panel, so the list cannot drift from the behaviour
+│   ├── [x] A4 the rules are one table: `minicon_core::keymap`, read by the
+│   │        key handler and by `--help`, so the list cannot drift
+│   │        done 4825813 (with A1; A1 alone would have been a fifth copy)
 │   └── [ ] A5 non-goal: no modal (vim) editing. MiniCon's surface stays
 │            small; revisit only if the Notepad-shaped one proves not enough
 ├── B. Windows gaps still open after 0.1.23
@@ -72,3 +73,36 @@ adopts as D, and C2/C5 which become B2/B3 here.
 - Transport bounds may be tuned; product assertions never are.
 - Every speed change is measured before and after, N runs, same machine.
 - A test must fail when its guard is removed.
+
+## A1 + A4, as built (2026-09-24, `4825813`)
+
+A survey before starting changed the order. `composer::Move::Up` already moved
+by line and preserved the visual column; the binary only called it under
+Shift. So A1 was never an algorithm, and A2 (`word_bounds`) and A3
+(`Move::LineStart`/`LineEnd`) are not either — their primitives are in the
+crate too. The work is dispatch, and dispatch was spread over four copies of
+one decision: a `match` in the key handler, a commit-action helper, a decline
+helper, and the prose in `--help` and the README. Adding keys to that shape
+would have made each new key four edits, so A4 went first.
+
+What exists now:
+
+- `crates/minicon-core/src/keymap.rs` — `Key`/`Modifiers`/`Chord` in,
+  `Action` out. `action()` is the only reader for behaviour, `help_lines()`
+  the only reader for prose. 12 unit tests.
+- The clipboard modifier is a parameter (`ClipboardModifier`), not a `cfg`, so
+  the macOS Command rule is tested on whatever machine runs the tests. The
+  crate's no-platform boundary test forced this, and it was the right force.
+- `src/main.rs` keeps only `composer_chord()` (host event → neutral chord) and
+  `composer_draft_shape()` (where the caret sits). The 115-line `match` and
+  the three helpers are gone.
+- `--help` renders its composer lines from `HELP`; the README follows, which
+  the existing alignment gate enforces.
+
+`Draft` is the one piece of context the table takes, and it exists for exactly
+one reason: Up and Down serve two jobs. The rule is "move while there is a
+line to move to, recall at the edge", which keeps the single-line draft — what
+is in the box nearly every time — behaving exactly as it did.
+
+A2 and A3 are now each a row plus a `Move` variant. Do them against this
+table, not against the old shape.
