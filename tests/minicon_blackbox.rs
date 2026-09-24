@@ -2585,3 +2585,52 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "ui-snapshot gained keys; if they are public, add them here: {added:?}"
     );
 }
+
+/// Zoom out to the smallest font and the terminal must still show its text.
+///
+/// Every zoom test before this one asked whether the process survived. Going
+/// blank survives: the host stays up, the shell stays alive, the snapshot
+/// still parses, and the only thing wrong is that the screen has nothing on
+/// it. So the reported "zoom out far enough and the terminal goes blank until
+/// you zoom back in" walked past a wall of green zoom tests, and it is still
+/// reproducible on released 0.1.22 — older than any of the 0.1.23 work.
+///
+/// What is asserted is the content, at the far end of the clamp and again
+/// after coming back, because a bug that only shows at the minimum and heals
+/// on the way up is exactly the shape of the report.
+#[test]
+fn zooming_all_the_way_out_keeps_the_terminal_readable() {
+    let dir = scratch_dir("zoom-out-blank");
+    let mut commands = vec![
+        r#"{"text": "echo ZOOM_BLANK_MARKER\r"}"#.to_owned(),
+        r#"{"wait_ms": 400}"#.to_owned(),
+    ];
+    // 8..=36 logical px is the clamp; 40 notches down overshoots the bottom
+    // from anywhere in range, so the minimum is really reached.
+    commands.push(r#"{"wheel": {"row": 0, "col": 0, "notches": -40}, "ctrl": true}"#.to_owned());
+    commands.push(r#"{"wait_ms": 600}"#.to_owned());
+    commands.push(r#"{"text": "echo ZOOM_MIN_MARKER\r"}"#.to_owned());
+    commands.push(r#"{"wait_ms": 600}"#.to_owned());
+    let script_json = format!("[{}]", commands.join(","));
+    let script = write_journey(&dir, &script_json);
+
+    let args = interactive_shell_args(script.as_path());
+    let session = ConSession::spawn(&dir, &args);
+    let at_minimum = session.wait_for(Duration::from_secs(30), |snapshot| {
+        ConSession::screen_text(snapshot).contains("ZOOM_MIN_MARKER")
+    });
+    let text = ConSession::screen_text(&at_minimum);
+    assert_eq!(
+        at_minimum["child_alive"], true,
+        "the shell must survive zooming out: {at_minimum}"
+    );
+    assert!(
+        text.contains("ZOOM_BLANK_MARKER"),
+        "text written before the zoom vanished at the minimum font size; \
+         screen was:\n{text}"
+    );
+    assert!(
+        !text.trim().is_empty(),
+        "the terminal is blank at the minimum font size"
+    );
+}
