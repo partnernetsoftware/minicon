@@ -99,8 +99,14 @@ jobs:
           failed=""
           for exe in bundle/${{ matrix.cell }}-*; do
             case "$exe" in *-minicon|*-minicon.exe) continue ;; esac
-            echo "== $exe"
-            if "$exe" --test-threads 2; then :; else failed="$failed $exe"; fi
+            # The throughput journey is `#[ignore]`d because it owns a
+            # machine for a minute; a runner is exactly where it should run.
+            case "$exe" in
+              *-minicon_throughput|*-minicon_throughput.exe) extra=--include-ignored ;;
+              *) extra= ;;
+            esac
+            echo "== $exe $extra"
+            if "$exe" --test-threads 2 $extra; then :; else failed="$failed $exe"; fi
           done
           finished=$(date +%s)
           echo "PROBE cell=${{ matrix.cell }} runner=${{ matrix.runner }} download=$((downloaded-started))s run=$((finished-downloaded))s total=$((finished-started))s"
