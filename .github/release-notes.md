@@ -4,6 +4,13 @@ operating system's own desktop libraries.
 
 ## Highlights
 
+- **The composer is now a real multi-line editor.** Up/Down move the caret
+  inside a multi-line draft (falling back to history recall only at the first
+  or last line, or anywhere with Alt+Up/Down); Ctrl+Left/Right and
+  Ctrl+Backspace/Delete move and delete by word; Home/End work per line and
+  Ctrl+Home/End jump to the start or end of the whole draft. Every rule lives
+  in one table (`minicon_core::keymap`), so the key handler, `--help` and the
+  README can no longer drift apart.
 - **Signed and notarized.** The Windows executables and `minicon.com` are
   Authenticode-signed (Azure Artifact Signing), and the macOS build is
   Developer ID-signed and Apple-notarized — all as PARTNERNET SOFTWARE PTY LTD,
