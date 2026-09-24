@@ -2640,6 +2640,89 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
 ///
 /// Prints what it found and returns; it never fails a test. A diagnostic that
 /// can fail a run adds a second thing to explain when the run goes red.
+/// The pid of the agent the host spawned, once it exists.
+///
+/// The agent is the host's own image re-executed as its child, so the image
+/// name cannot tell them apart and the pid has to come from the process tree.
+#[cfg(windows)]
+fn agent_pid(host_pid: u32, within: Duration) -> Option<u32> {
+    let deadline = Instant::now() + within;
+    loop {
+        let query = format!(
+            "Get-CimInstance Win32_Process -Filter 'ParentProcessId={host_pid}' | \
+             Select-Object -ExpandProperty ProcessId"
+        );
+        if let Ok(listed) = Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &query])
+            .output()
+            && let Some(pid) = String::from_utf8_lossy(&listed.stdout)
+                .lines()
+                .find_map(|line| line.trim().parse::<u32>().ok())
+        {
+            return Some(pid);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Locates a vendored diagnostic. The suites also run as bare executables next
+/// to their bundle, where no source tree exists, so the bundle names the
+/// directory it put them in.
+#[cfg(windows)]
+fn diagnostic_script(name: &str) -> Option<PathBuf> {
+    let path = match std::env::var_os("MINICON_BUFFER_DUMP_PROBE") {
+        Some(probe) => PathBuf::from(probe).parent()?.join(name),
+        None => Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("assets")
+            .join(name),
+    };
+    path.is_file().then_some(path)
+}
+
+/// Samples the agent's console window for the length of the journey, in the
+/// background, writing every transition it sees.
+///
+/// This is the observation the dump could not make. The dump says the window
+/// is 1x1 at (41,6) at the end; no rectangle the adapter writes has a non-zero
+/// Left, so something moved it there after the resize returned. Only a series
+/// says whether it went straight there or through the minimal rectangle first.
+#[cfg(windows)]
+fn watch_agent_window(host_pid: u32, dir: &Path) -> Option<(std::process::Child, PathBuf)> {
+    let script = diagnostic_script("window-watch.ps1")?;
+    let pid = agent_pid(host_pid, Duration::from_secs(10))?;
+    let out = dir.join(format!("window-watch-{pid}.json"));
+    let child = Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&script)
+        .args(["-AgentPid", &pid.to_string(), "-Seconds", "60", "-Out"])
+        .arg(&out)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    eprintln!("WINDOW_WATCH: watching agent {pid}");
+    Some((child, out))
+}
+
+/// Waits for the watcher and prints what it saw. Like the dump, it never
+/// fails a test: a diagnostic that can go red adds a second thing to explain.
+#[cfg(windows)]
+fn report_window_watch(watcher: Option<(std::process::Child, PathBuf)>) {
+    let Some((mut child, out)) = watcher else {
+        eprintln!("WINDOW_WATCH: no watcher ran");
+        return;
+    };
+    let _ = child.wait();
+    match std::fs::read_to_string(&out) {
+        Ok(text) => eprintln!("WINDOW_WATCH: {text}"),
+        Err(error) => eprintln!("WINDOW_WATCH: no result ({error})"),
+    }
+}
+
 #[cfg(windows)]
 fn dump_agent_console(host: &std::process::Child, dir: &Path) {
     let host_pid = host.id();
@@ -2661,20 +2744,10 @@ fn dump_agent_console(host: &std::process::Child, dir: &Path) {
         .filter_map(|line| line.trim().parse().ok())
         .collect();
     eprintln!("BUFFER_DUMP: host={host_pid} children={children:?}");
-    // The suite also runs as a bare executable next to its bundle, where no
-    // source tree exists; run 35995567122 found the probe missing for exactly
-    // that reason. The bundle says where it put it.
-    let script = match std::env::var_os("MINICON_BUFFER_DUMP_PROBE") {
-        Some(path) => PathBuf::from(path),
-        None => Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("assets")
-            .join("buffer-dump-probe.ps1"),
-    };
-    if !script.is_file() {
-        eprintln!("BUFFER_DUMP: no probe at {}", script.display());
+    let Some(script) = diagnostic_script("buffer-dump-probe.ps1") else {
+        eprintln!("BUFFER_DUMP: the probe did not travel with this bundle");
         return;
-    }
+    };
     for pid in children {
         let out = dir.join(format!("buffer-dump-{pid}.json"));
         let status = Command::new("powershell.exe")
@@ -2713,6 +2786,10 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
 
     let args = interactive_shell_args(script.as_path());
     let session = ConSession::spawn(&dir, &args);
+    // Started before the zoom, because the question is what the window looked
+    // like on the way to 1x1, and that is over by the time anything fails.
+    #[cfg(windows)]
+    let watcher = watch_agent_window(session.child.id(), dir.as_path());
     // The control for whatever the failing snapshot says. A number read only
     // from a failure cannot be called abnormal: the failing Windows snapshot
     // reports `max_scrollback` at its 4000-line ceiling, and that means
@@ -2733,6 +2810,8 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
             // the buffer can be asked about it.
             #[cfg(windows)]
             dump_agent_console(&session.child, dir.as_path());
+            #[cfg(windows)]
+            report_window_watch(watcher);
             panic!(
                 "the minimum-font marker never arrived; last snapshot: {}",
                 last_seen
@@ -2741,6 +2820,8 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
             );
         }
     };
+    #[cfg(windows)]
+    report_window_watch(watcher);
     let text = ConSession::screen_text(&at_minimum);
     assert_eq!(
         at_minimum["child_alive"], true,
