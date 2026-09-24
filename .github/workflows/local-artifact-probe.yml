@@ -78,7 +78,18 @@ jobs:
           product="bundle/${{ matrix.cell }}-minicon"
           [ -f "$product.exe" ] && product="$product.exe"
           if [ -f "$product" ]; then
-            export MINICON_TEST_BINARY="$PWD/$product"
+            # A native path, not this shell's. The suites spawn the binary
+            # either way, but `minicon_console_agent` compares it against
+            # PowerShell's `$_.Path` to find the session's own processes, and
+            # `/d/a/...` never equals `D:\a\...`. That comparison silently
+            # found nothing and the teardown test reported the host and agent
+            # as never started (run 35993158583).
+            if command -v cygpath >/dev/null; then
+              MINICON_TEST_BINARY="$(cygpath -w "$PWD/$product")"
+            else
+              MINICON_TEST_BINARY="$PWD/$product"
+            fi
+            export MINICON_TEST_BINARY
             echo "product binary: $MINICON_TEST_BINARY"
           fi
           # Every suite runs, then the job fails. Under `set -e` the first
