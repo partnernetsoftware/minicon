@@ -165,19 +165,27 @@ flowchart LR
     up to `MacOSX11.3.sdk`, sufficient for `aarch64-apple-darwin`'s SDK-11
     floor.
   - `tpoechtrager/osxcross` (real Apple `ld64`, not a reimplementation) is the
-    likely path past `-sectcreate`, since `ld64` supports it natively — **not
-    verified**: building it requires running its `build.sh`, which fetches and
-    compiles third-party cctools/ld64 sources, and that action is refused by
-    this environment's own safety policy as "running external code" from a
-    sandboxed session. That refusal is a guardrail of the execution
-    environment, not a project rule, and it does not fall to a session running
-    inside that sandbox to waive for itself.
-  - No macOS binary has been produced end to end from a non-Mac host. Nothing
-    here is evidence of `[x]`.
-  Next step, not yet done: run the same recipe as a job on a GitHub-hosted
-  Linux runner (osxcross build + SDK + minicon build), where the sandbox
-  restriction above does not apply, and keep the receipt (`file`/`otool`
-  output showing a real Mach-O) before upgrading this line past `[ ]`.
+    path past `-sectcreate`, since `ld64` supports it natively. Its `build.sh`
+    **succeeds unattended on `ubuntu-24.04`**: measured 2026-09-24 on run
+    `36011056592`, SDK fetch (shallow clone of phracker + `tar -cJf`) took
+    3m58s and the toolchain build (cctools + ld64 from source) 10m01s. That
+    ten-minute cost is why this belongs in a one-off probe or a cached image,
+    never in a routine round.
+  - The wrapper names osxcross produces are **not** the Rust triple: for SDK
+    11.3 they are `arm64-apple-darwin20.4-clang` — `arm64`, not `aarch64`, with
+    an SDK-derived `darwin20.4` suffix. A `*-cmake-clang` variant sits beside
+    each one, so globbing `*-clang` matches several files and breaks
+    `basename`. Match `<arch>-apple-darwin<ver>-clang` exactly and map
+    `aarch64-apple-darwin` -> `arm64` yourself.
+  - No macOS binary has been produced end to end from a non-Mac host yet.
+    Nothing here is evidence of `[x]`.
+  Next step: the probe workflow
+  `.github/workflows/osxcross-experiment.yml` (manual dispatch) carries the
+  recipe; the remaining unknown is only whether the link step clears
+  `-sectcreate` and yields a real Mach-O. Keep that receipt (`file` output)
+  before upgrading this line past `[ ]`. The end goal is running the recipe on
+  the Linux build host itself, so `scripts/round.sh:10`'s
+  `osx-* -> this Mac` routing can drop the Mac.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
