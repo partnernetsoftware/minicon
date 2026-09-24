@@ -97,8 +97,18 @@ jobs:
           # round answered one question per 45 minutes and a backlog could
           # hide behind whichever suite sorted first.
           failed=""
+          probe="bundle/${{ matrix.cell }}-buffer-dump-probe.ps1"
+          if [ -f "$probe" ]; then
+            if command -v cygpath >/dev/null; then
+              MINICON_BUFFER_DUMP_PROBE="$(cygpath -w "$PWD/$probe")"
+            else
+              MINICON_BUFFER_DUMP_PROBE="$PWD/$probe"
+            fi
+            export MINICON_BUFFER_DUMP_PROBE
+            echo "buffer-dump probe: $MINICON_BUFFER_DUMP_PROBE"
+          fi
           for exe in bundle/${{ matrix.cell }}-*; do
-            case "$exe" in *-minicon|*-minicon.exe) continue ;; esac
+            case "$exe" in *-minicon|*-minicon.exe|*.ps1) continue ;; esac
             # The throughput journey is `#[ignore]`d because it owns a
             # machine for a minute; a runner is exactly where it should run.
             case "$exe" in

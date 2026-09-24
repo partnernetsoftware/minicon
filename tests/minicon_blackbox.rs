@@ -2661,10 +2661,20 @@ fn dump_agent_console(host: &std::process::Child, dir: &Path) {
         .filter_map(|line| line.trim().parse().ok())
         .collect();
     eprintln!("BUFFER_DUMP: host={host_pid} children={children:?}");
-    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("assets")
-        .join("buffer-dump-probe.ps1");
+    // The suite also runs as a bare executable next to its bundle, where no
+    // source tree exists; run 35995567122 found the probe missing for exactly
+    // that reason. The bundle says where it put it.
+    let script = match std::env::var_os("MINICON_BUFFER_DUMP_PROBE") {
+        Some(path) => PathBuf::from(path),
+        None => Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("assets")
+            .join("buffer-dump-probe.ps1"),
+    };
+    if !script.is_file() {
+        eprintln!("BUFFER_DUMP: no probe at {}", script.display());
+        return;
+    }
     for pid in children {
         let out = dir.join(format!("buffer-dump-{pid}.json"));
         let status = Command::new("powershell.exe")

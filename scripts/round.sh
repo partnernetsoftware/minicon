@@ -203,6 +203,9 @@ run_github() {
     else
       record "$cell" product BLOCKED 0 "this build named no product binary"
     fi
+    # A diagnostic the suites shell out to. It is not a suite and the job
+    # skips it when iterating; it travels because the tree does not.
+    cp tests/assets/buffer-dump-probe.ps1 "$bundle/$cell-buffer-dump-probe.ps1" 2>/dev/null || true
     for suite in $SUITES; do
       bin="$(suite_binary "$cell" "$suite")"
       [ -n "$bin" ] || { record "$cell" "$suite" BLOCKED 0 "no test executable from this build"; continue; }
