@@ -189,3 +189,41 @@ MiniCon re-pins. Two things the fix owes:
 MiniCon owes one thing regardless of what AgenTerm does: `apply_resize`
 discards the backend's resize error. A backend that says "I could not do that"
 should not be silently believed.
+
+## B1: the theory is dead (2026-09-24, runs 35992342157 / 35993158583)
+
+The diagnosis above named a failed `SetConsoleWindowInfo` leaving the console
+window at the 1x1 rectangle. It is wrong, and the instrument that killed it is
+the one this release added for exactly that purpose.
+
+`apply_resize` now records what the backend answered. At the moment of the
+blank screen, on both Windows cells:
+
+```
+"backend_resize_error": null,
+"backend_resize_failures": 0,
+```
+
+The count never clears, so this is not a failure that healed. **No resize was
+refused at any point in the session.** Every `master.resize()` returned `Ok`
+and the terminal is still blank at 141x40 with an 8 px font.
+
+What survives:
+
+- the failure is real, reproducible on both cells, and about *content* — the
+  grid is sane and every row is empty;
+- it is not the backend refusing a size, so clamping to
+  `GetLargestConsoleWindowSize` would not have fixed it. That remains worth
+  doing for its own sake, but it is not B1's cause;
+- the remaining candidates are all downstream of a resize that succeeded: the
+  region the agent scrapes after a buffer change, or the buffer itself being
+  resized out from under the visible window.
+
+This is what the negative control is for. A theory that fit every number we
+had was refuted by the first number we did not have, and it would have been
+committed as a fix in `console_agent.rs` on the strength of the fit.
+
+`closing_the_host_takes_the_agent_and_its_child_with_it` also surfaced in
+35993158583, hidden until then behind the job's `set -e`. It was the probe
+exporting a shell path where PowerShell compares a native one — harness, not
+product, fixed in 85c60ff.
