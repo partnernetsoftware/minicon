@@ -381,3 +381,33 @@ worst case is a stale size rather than a dead screen. Their negative control
 for the second one runs through MiniCon: with the error propagated and the
 clamp removed, `backend_resize_failures` must go from 0 to non-zero, which
 verifies the counter and the explanation for its earlier reading at once.
+
+## Throughput on hosted Linux sits on the floor (runs 36009129332, 36012496339)
+
+The journey pushes 33,439,744 bytes through one tab and requires 2 MiB/s.
+Rates, now printed on every outcome (`THROUGHPUT:` line, probe runs the
+suite with `--nocapture`):
+
+| cell | rate (B/s) | note |
+|---|---|---|
+| osx-aarch64 (the Mac, local) | 4,675,943 | real GPU, real display |
+| lnx-x86_64 (hosted, Xvfb) | 2,577,791 | 1.23x the floor |
+| lnx-aarch64 (hosted, Xvfb) | 2,167,006 / 1,969,204 | one pass, one fail, 6% either side of the floor |
+| win-x86_64 / win-aarch64 | 98,571,364 / 59,717,155 | not a drain rate: the console agent scrapes the screen, the marker shows the moment the console shows it |
+
+The generator (`yes | head -c`) is not the bottleneck; it is faster than
+any of these by two orders of magnitude. What the Linux number measures is
+MiniCon draining and parsing 32 MiB under software rendering on a shared
+runner, and on the arm64 runner that lands within measurement noise of the
+floor. The floor stays: it is the product's promise on a real machine, and
+the Mac meets it with 2.2x to spare. What this leaves is an honest gap:
+the hosted arm64 Linux cell will flap on this one test until the Linux
+drain path is profiled (where do 13 s go on x86_64 when the Mac needs 7?).
+That profiling is product work for a later branch, not a test edit. A
+failure on that cell that prints a rate within 10% of the floor is this
+gap, not a regression; a rate well below it is.
+
+Round integrity, same session: `gh run list` failing behind the proxy gave
+an empty run id, and the round polled GitHub about run "" for the whole
+40-minute window. An empty id now records BLOCKED for every routed cell
+at once, keeping the bundle tag so the dispatched run can still be read.
