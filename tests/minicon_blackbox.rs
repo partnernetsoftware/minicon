@@ -2789,7 +2789,14 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
         // Long enough that the pre-zoom state can be observed before the
         // wheel arrives. Without it the two events race and there is no
         // control to compare the failing snapshot against.
-        r#"{"wait_ms": 1500}"#.to_owned(),
+        //
+        // 8 s, not 1.5: the window watcher has to find the agent in the
+        // process tree and start a PowerShell before it can sample anything,
+        // and in run 35997978849 its very first sample already showed the
+        // degenerate rectangle. That says the window never recovered, and
+        // says nothing about when it broke -- the transition had happened
+        // before the instrument was looking.
+        r#"{"wait_ms": 8000}"#.to_owned(),
     ];
     // 8..=36 logical px is the clamp; 40 notches down overshoots the bottom
     // from anywhere in range, so the minimum is really reached.
