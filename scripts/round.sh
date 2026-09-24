@@ -321,6 +321,15 @@ json.dump({"kind": "minicon-round", "source_sha": sha,
 print(json.dumps(tally, sort_keys=True))
 print(f"[round] receipt: {receipt}  total {seconds}s")
 PY
+
+# D3: the baseline table is generated from the receipt that was just written,
+# not edited by hand. A round comment claiming "measured 8.5s" goes stale the
+# first time the fixture, the runner image, or the suite changes; a generated
+# table can only be as stale as the last round actually run. Only a PASS
+# timing is a baseline -- a BLOCKED or FAILed stage measures how long it took
+# to not answer, which is not a number anyone should target.
+python3 scripts/render-round-baseline.py "$RECEIPT" plan/round-baseline.md || true
+
 case "$results" in *"	FAIL	"*) exit 1 ;; esac
 case "$results" in *"	BLOCKED	"*) exit 3 ;; esac
 exit 0

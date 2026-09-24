@@ -48,8 +48,11 @@ deferring them is gone.
 │   │        in `round.sh`, court on demand -- measured 8.5 s against 20 s
 │   ├── [ ] D2 select cells from the change (the detector exists; wire the
 │   │        per-cell case, not just documents-only)
-│   └── [ ] D3 per-stage timings in every receipt, so the baselines update
+│   └── [x] D3 per-stage timings in every receipt, so the baselines update
 │            themselves instead of being edited by hand
+│            done: `scripts/render-round-baseline.py` renders
+│            `plan/round-baseline.md` from the last green receipt after
+│            every round; only PASS rows are a baseline
 └── E. Shared seam with AgenTerm
     ├── [ ] E1 click streak D1-D4: four behaviour divergences      (OWNERS)
     └── [ ] E2 composer rules: survey before anything moves. A1-A3 land in
@@ -413,3 +416,14 @@ Round integrity, same session: `gh run list` failing behind the proxy gave
 an empty run id, and the round polled GitHub about run "" for the whole
 40-minute window. An empty id now records BLOCKED for every routed cell
 at once, keeping the bundle tag so the dispatched run can still be read.
+
+## D2 stays open on purpose
+
+`select_cells()` already answers "does anything compiled change" (all cells
+or none). The finer version -- which cells a specific change actually needs
+-- means trusting a path pattern to predict which target a change affects,
+and a wrong guess there is a silent skip: the exact failure mode this
+document's own rules forbid ("never fake a green gate"). That heuristic
+needs its own negative-control evidence (a change that should need `win-*`
+but doesn't touch an obviously Windows-named path) before it ships, not an
+autonomous guess. Left for a session that can run that control.
