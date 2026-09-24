@@ -73,7 +73,10 @@ backend_of() {
 # --- A3 pre-flight -----------------------------------------------------------
 preflight() {
   local t0=$SECONDS free rosetta_rc
-  free="$(df -g /System/Volumes/Data | awk 'NR==2 {print $4}')"
+  # `df -g` reads whole gigabytes but is macOS-only; `df -Pk` (1 KiB blocks)
+  # is the POSIX form both macOS and Linux implement, so divide by hand
+  # instead of relying on a flag only one of the two hosts has.
+  free="$(df -Pk . | awk 'NR==2 {print int($4/1024/1024)}')"
   if [ "${free:-0}" -lt 10 ]; then
     record preflight disk BLOCKED $((SECONDS-t0)) "only ${free}G free"
     return 1
