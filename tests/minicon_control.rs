@@ -1794,10 +1794,17 @@ fn composer_send_reaches_the_child_in_two_reads() {
     for draft in ["hello", "first\nsecond"] {
         cli_json(&binary, &endpoint, &["send-ui-ime", "commit", draft]);
         cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+O"]);
-        expected.push(hex(&format!("\x1b[200~{}\x1b[201~", draft.replace('\n', "\r"))));
+        expected.push(hex(&format!(
+            "\x1b[200~{}\x1b[201~",
+            draft.replace('\n', "\r")
+        )));
         expected.push(hex("\r"));
         let last = format!("CHUNK{} {}", expected.len(), expected[expected.len() - 1]);
-        cli_json(&binary, &endpoint, &["wait-text", "--timeout-ms", "10000", &last]);
+        cli_json(
+            &binary,
+            &endpoint,
+            &["wait-text", "--timeout-ms", "10000", &last],
+        );
     }
     let pane = cli_text(&binary, &endpoint, &["capture-pane"]);
     let chunks: Vec<&str> = pane

@@ -7,6 +7,15 @@ carried since 0.1.18 without a decision. The loop itself is fast now
 (`scripts/round.sh`, a hosted runner with a real desktop), so the excuse for
 deferring them is gone.
 
+**Scope decision for cutting 0.1.24 (2026-09-24, owner delegated the call):**
+branch A (the composer) and branch B (Windows gaps) are done, and D1/D3 are
+done. C1 (`capture-pane --scrollback` semantics), C3 (box-drawing glyphs), C4
+(idle RSS), and D2 (select cells from the change) carry forward to the next
+release rather than blocking this one -- none is a regression from 0.1.23,
+each is independent debt with its own design questions still open. E1/E2 stay
+`(OWNERS)`-blocked, unchanged. 0.1.24 ships as the composer release; the
+carried debt gets its own line in the next plan doc, not silently dropped.
+
 ## 0. Plan tree
 
 ```text

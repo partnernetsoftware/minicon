@@ -3,7 +3,7 @@
 Registry winit 0.30.13 copied to `target/minicon-memory-track/winit-lazy`.
 Only `src/platform_impl/macos/view.rs` differs; the installed registry,
 product sources, root manifests and shared checkout are untouched. No package
-AGENTS.md or Agents.md found. No build performed by this track.
+`AGENTS.md` under any spelling found. No build performed by this track.
 
 Changes:
 

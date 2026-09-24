@@ -393,8 +393,7 @@ mod tests {
         let json = String::from_utf8_lossy(&bytes).into_owned();
         let value: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON");
         assert_eq!(
-            value["backend_resize_error"],
-            "resize to 141x40 failed: bad rect",
+            value["backend_resize_error"], "resize to 141x40 failed: bad rect",
             "the refusal must survive the round trip: {json}"
         );
 

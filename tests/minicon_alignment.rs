@@ -569,12 +569,15 @@ fn referenced_repository_paths_exist() {
                 if !from_root && !from_file {
                     missing.insert(format!("{}: {}", source.display(), token));
                 } else if token.contains('/') {
-                    // A token with a separator is a path; a bare filename such as
-                    // `Agents.md` inside a sentence is prose, and the case check
-                    // would flag it for not matching a tracked file. Resolve the
-                    // token the way the OS would, then require the result to be
-                    // spelled as git tracks it, because this filesystem may be
-                    // case-insensitive while Linux CI is not.
+                    // A token with a separator is a path claim worth a case
+                    // check; a bare filename mentioned in prose with no
+                    // separator already had to resolve on this filesystem
+                    // above (`from_root`/`from_file`), on Linux where that
+                    // means matching case, so it needs no second check here.
+                    // Resolve the token the way the OS would, then require
+                    // the result to be spelled as git tracks it, because
+                    // this filesystem may be case-insensitive while Linux CI
+                    // is not.
                     let resolved = source.parent().map(|dir| normalize_path(&dir.join(token)));
                     let as_root = normalize_path(&root.join(token));
                     let candidate = resolved.filter(|path| path.exists()).unwrap_or(as_root);

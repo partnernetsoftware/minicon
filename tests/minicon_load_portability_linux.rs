@@ -7,7 +7,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const FORBIDDEN_LOAD_TIME_SONAMES: &[&str] = &[
@@ -38,7 +38,7 @@ fn shipped_binary() -> PathBuf {
     path
 }
 
-fn needed_libraries(path: &PathBuf) -> Vec<String> {
+fn needed_libraries(path: &Path) -> Vec<String> {
     let output = Command::new("readelf")
         .args(["-d", &path.display().to_string()])
         .output()
