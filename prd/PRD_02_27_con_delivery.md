@@ -186,6 +186,34 @@ flowchart LR
   before upgrading this line past `[ ]`. The end goal is running the recipe on
   the Linux build host itself, so `scripts/round.sh:10`'s
   `osx-* -> this Mac` routing can drop the Mac.
+  Planned follow-on (gated on the probe above landing `[x]`, not started):
+  **pre-bake the osxcross toolchain into a container image** instead of
+  running its from-source `build.sh` (cctools + ld64, ~10 minutes measured
+  above) on every use. Same pattern `.github/workflows/six-grid-cloud-build.yml`
+  already uses for the six-cell body: build the image once, publish it to
+  GHCR, and have every consumer pull the image instead of rebuilding the
+  toolchain.
+  - Image contents: the built `/tmp/osxcross/target` tree (wrappers + cctools
+    + ld64) plus the `MacOSX11.3.sdk` tarball already baked in, so a consumer
+    does nothing but `docker run` or extract and export `PATH`.
+    Build the image in its own manual-dispatch workflow (mirrors
+    `six-grid-cloud-build.yml`'s `workflow_dispatch` + GHCR publish shape),
+    not inside `osxcross-experiment.yml` or any routine round.
+  - Consumers become two, both skipping the 10-minute `build.sh` step:
+    (a) CI — `osxcross-experiment.yml`, and later a real macOS-cell job in
+    `six-grid-cloud-build.yml`, pull the image instead of the current
+    "Fetch macOS SDK" + "Build osxcross toolchain" steps;
+    (b) this cloud/Linux session, once the sandbox permission to run
+    fetched containers or their binaries is granted, extracts the same
+    image locally so `scripts/round.sh`'s `osx-* -> this Mac` line has a
+    non-Mac target to route to.
+  - Rebuild trigger: the image only needs rebuilding when osxcross's own
+    source or the pinned SDK version changes, not per round — this is the
+    whole point, matching this file's "CI does not do routine compiling"
+    rule and `AGENTS.md`'s cost-of-a-round accounting.
+  - Do not build this image before the `-sectcreate` probe above is `[x]`:
+    baking a toolchain that cannot actually link MiniCon's own linker flags
+    would be premature investment in an unproven path.
 
 - [ ] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
