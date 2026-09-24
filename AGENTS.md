@@ -35,59 +35,15 @@ Use both views for material product planning; neither replaces the other.
 
 ## Product boundary
 
-MiniCon is a one-file local terminal. Preserve these exclusions: no server,
-persistent workspace, Fleet, MCP, or a general plugin host. Its `--control`
-endpoint's lifetime is bound to the **process**, not to the window: it is
-bound before any window exists and dies with the process. That amendment
-(0.1.19) admits a GUI that can be detached and reattached; it does not admit
-a server, a daemon, a listening network interface, a persistent workspace,
-session sharing or discovery, or background auto-start. A MiniCon without a
-window is the same single process, minus its window.
+Product definition, invariants and non-goals are owned in
+`prd/PRD_02_23_minicon.md` ("Product boundary" / "Governing invariants"),
+narrowed for the 0.2.x `mux`/`harness` subcommands in
+`prd/PRD_02_31_v0_2_horizon.md`. Read those before changing scope — do not
+restate or re-derive the boundary here; this file only points at it.
 
-**Amendment (2026-09-24, owner decision):** the prior blanket exclusion of
-"mux" and "script runtime, plugin host or Agent permission policy" is
-narrowed, not removed, to admit exactly two 0.2.x subcommands. Anything
-broader than what is written here still needs its own owner decision before
-it lands.
-
-- `mux` exposes and operates on MiniCon's own existing tabs the way `tmux`
-  exposes panes/windows — list, select, split-view query, send/capture —
-  over the same process-lifetime `--control` endpoint `PRD_02_26` already
-  owns. It is a richer view onto tabs MiniCon already has, not a new
-  multiplexing daemon, a session store independent of the running process,
-  or a way to attach to another machine's MiniCon.
-- `harness` is a minimal agent subcommand with exactly two tools, `file` and
-  `exec`, and no plugin system: adding a third tool or a general tool-plugin
-  interface is out of scope for this amendment and needs its own decision.
-  It calls out to a model over HTTPS (DeepSeek's own API first, then an
-  opencode-go-compatible key) and does not host, serve, or accept inbound
-  connections. There is deliberately no separate "Agent permission policy"
-  layer: the two tools' own bounds (which files, which command) are the
-  entire policy, matching MiniCon's existing preference for a narrow bounded
-  surface over a general framework.
-
-Both stay subject to every other invariant in this section (no server, no
-persistent workspace, no Fleet, no MCP, no general plugin host) and to the
-one-file / no-bundled-runtime charter. Design and evidence detail:
-`prd/PRD_02_31_v0_2_horizon.md`.
-
-Preserve these invariants:
-
-- Child exit retains its tab, final screen and exit status until explicit close.
-- Closing a parent promotes direct children; parent cycles are rejected.
-- Closing the final tab leaves the window open on its greeting state.
-- Composer and terminal input have one focus owner; Enter inserts a newline and
-  Ctrl+O sends the complete draft.
-- Native callbacks never unwind across FFI; bounded failures remain local.
-- One platform's evidence never becomes a six-cell claim.
-
-Local UTM and optional Lima courts are not MiniCon product code. Lifecycle,
-guest adapters and image recipes live in sibling `utm-court`
-(`partnernetsoftware/utm-court`). MiniCon calls those CLIs from
-`scripts/*-utm-runner.sh` and `scripts/lima-court.sh`. AgenTerm has its own
-caller and must not be routed through MiniCon scripts. Missing court is a
-locator failure or `BLOCKED`, never a skipped PASS. Caller map:
-`~/repos/utm-court/CALLERS.md`. Sequencing: `plan/archive/plan-utm-court-extract.md`.
+Local UTM/Lima court calling conventions (never route AgenTerm through
+MiniCon's scripts; a missing court is `BLOCKED`, never a skipped pass) are
+detailed in `prd/PRD_02_27_con_delivery.md`'s "Delivery ownership" section.
 
 ## Skills: look them up BEFORE acting
 
@@ -158,113 +114,15 @@ Release is exact-source Candidate followed by no-rebuild Promotion. Signing is
 a `release-policy.json` choice, not a fallback inferred from credentials.
 Public Promotion always requires explicit human version and publish authority.
 
-## Where the bytes come from
+## Where the bytes come from, and what a test costs
 
-Owner decision, 2026-09-24. This is the division of labour; anything in a plan
-or a PRD that contradicts it is out of date, not an alternative.
-
-| stage | where | why |
-| --- | --- | --- |
-| six-cell cross-compile, every iteration | **this Mac** | APFS clone plus incremental rebuilds a cell in about 4 s; a CI job starts cold |
-| test execution | **GitHub hosted runners** | they have a real logged-in desktop; `minicon_control` runs 9/9 in 8.5 s |
-| fallback tests | `utm-court` | Defender scans, legacy images, offline, long debugging |
-| signing and stamping | **CI** | the only stage that must be there, because the keys are there |
-| cold-build verification | a GHCR image, weekly or before a release | proves the build does not depend on this machine's local state |
-
-Moving the whole build into CI was considered and rejected on 2026-09-24. The
-reasoning, so it is not re-litigated from scratch:
-
-- A GHCR image covers four cells, not six. Containers run on Linux runners
-  only, so the two macOS cells fall back to `macos-14`/`macos-13` -- and
-  `macos-13` is the queue that cost two rounds over an hour each.
-- The loop would lose incremental builds. GitHub's per-repository cache quota
-  does not hold six target trees, so restores evict and jobs go cold. That
-  trades a 4-second rebuild for a network round trip, which is the shape of
-  "CI as a debugger" this repository forbids.
-- Splitting the six cells across several images changes what the Candidate's
-  byte set attests. That is a deliberate piece of work, not a side effect.
-
-What the proposal was actually after -- proof that the build does not depend on
-one machine's accumulated state -- is a low-frequency cold-build job. That
-answers the question at the rate it is asked, instead of taxing every
-iteration.
-
-That 2026-09-24 rejection covered moving the *whole* build into CI as the
-routine loop, and still stands for that. A separate, narrower question --
-whether a Linux CI runner could ever produce the two macOS cells at all,
-as a low-frequency fallback rather than the routine path -- is still open
-and tracked as `[ ]` in `prd/PRD_02_27_con_delivery.md` under "BLOCKED --
-non-Mac macOS cross-compile from a Linux CI/cloud host", with what has and
-has not been verified so far. Do not read that entry as reversing this
-section's decision, and do not upgrade it past `[ ]` without a real
-Mach-O produced end to end and named evidence, per this file's own
-`[x]`-requires-evidence rule.
-
-## Where a test runs, and what that costs
-
-Measured 2026-09-23; the numbers are why, not decoration.
-
-**GitHub first, the local court as the fallback.** Cross-compile here, upload
-the test executables, let the runners execute them. CI builds nothing outside
-a release.
-
-| cell | host | measured |
-| --- | --- | --- |
-| lnx-x86_64, lnx-aarch64 | GitHub `ubuntu-24.04`, `ubuntu-24.04-arm` | 5 s per job |
-| win-x86_64, win-aarch64 | GitHub `windows-2025`, `windows-11-arm` | 9-10 s per job |
-| osx-aarch64 | this Mac, natively | under 1 s |
-| osx-x86_64 | this Mac, under Rosetta | 2 s. GitHub `macos-13` sat queued for 7 minutes; keep it out of the loop |
-| Defender scan, legacy images, offline, long debugging | utm-court | 20-26 s per round |
-
-A hosted Windows runner **has a real logged-in desktop** (`runneradmin`,
-session 2, Active, 1024x768) and MiniCon's GUI journeys run on it:
-`minicon_control` 9/9 in 8.5 s, `minicon_blackbox` 29 passed / 1 failed /
-1 ignored in 164 s. The local court used to be assumed necessary for those;
-it is not, and every routine round that stays off the Mac keeps it cool.
-
-`scripts/round.sh` is the one entry point: pre-flight, build, route, one
-receipt with per-stage timings. A cell whose backend cannot answer is
-BLOCKED, never a silent pass.
-
-Transport facts that cost a round each to learn. The first two are **already
-solved in code**, not open problems: `scripts/round.sh` uploads the locally
-built test executables to a throwaway tagged prerelease, dispatches
-`.github/workflows/local-artifact-probe.yml` with that `bundle_tag`, and
-deletes the prerelease when the round ends. Read those two files before
-redesigning the transport; the facts below are why they are shaped that way.
-
-- A **draft** release is not reachable from a job ("release not found"), and a
-  job that fetches a draft asset by id gets HTTP 403 "Resource not accessible
-  by integration". That is the design, not a misconfiguration: a draft is
-  visible only to an identity with push access. No `GITHUB_TOKEN` permission
-  set fixes it, and neither does a read-only fine-grained PAT -- seeing a draft
-  requires Contents: **write**, which is exactly what a Candidate must not
-  have. Do not spend a round retrying the download with another permission
-  combination. Use a tagged prerelease and delete it afterwards; when the bytes
-  must not be publicly usable, upload them encrypted and let the job decrypt
-  with a repository secret, so the read-only token stays sufficient.
-- The releases-by-tag endpoint can answer with an empty asset list while the
-  release's own assets endpoint reports the file as uploaded. Fetch by release
-  id inside a job.
-- `cargo xwin` only reaches the network when a proxy is configured; with the
-  CRT/SDK cache present it builds offline in seconds. Do not export a proxy
-  for builds -- a 503 through it failed two cells.
-- Bound every wait on something outside this machine. An unbounded
-  `gh run watch` on a queued `macos-13` held two rounds open for over an hour.
-- In the court, `MINICON_WINDOWS_ONE="<suite> <test>"` runs a single test
-  (~20 s per round), `MINICON_WINDOWS_UTM_DISPOSABLE=0` keeps the guest warm,
-  and an in-memory pause resumes to desktop-ready in 5-9 s against ~100 s
-  cold. Release the court when the sequence ends; it is shared with AgenTerm.
-
-Windows behaves differently from Unix in ways that are the platform's, not
-bugs to "fix" in the product:
-
-- A program that cannot start is not a spawn error: ConPTY creates the console
-  host first, so it arrives as a child that exited (code 251).
-- ConPTY forwards viewport changes, not bytes, so a PTY byte count can never
-  cover what a program wrote (1 MiB gave 6,628 bytes; 32 MiB gave 7,014).
-- Deleting a running image only marks it delete-pending, so the path still
-  resolves; deny execute instead when a spawn must fail.
+The build/test/sign/scan division of labour (this Mac vs. GitHub-hosted
+runners vs. `utm-court`), the rejected-and-why "whole build in CI" proposal,
+measured per-cell timings, and the Windows-vs-Unix platform quirks that cost a
+round each to learn are owned in `prd/PRD_02_27_con_delivery.md` under "Where
+the bytes come from" and "Where a test runs, and what that costs". Read them
+before redesigning any part of the pipeline or transport — they record why the
+current shape exists, not just what it is.
 
 ## Change and documentation rules
 

@@ -63,14 +63,23 @@ failure, resize storms, process exit, and interaction races.
 ### Explicit non-goals
 
 - [x] no background server, Fleet authority, persistent workspace, remote mux,
-  MCP, script runtime, task engine, plugin host, or Agent permission policy.
-  The no-script boundary is enforced in the binary rather than by convention:
-  `--script`, its JSON command decoder, command queue, wait scheduler, and
-  script-only screenshot state are absent from the product graph, and automation
-  uses the public control protocol exclusively.
-- No claim of tmux/RMUX compatibility.
+  MCP, script runtime, task engine, or general plugin host. The no-script
+  boundary is enforced in the binary rather than by convention: `--script`,
+  its JSON command decoder, command queue, wait scheduler, and script-only
+  screenshot state are absent from the product graph, and automation uses the
+  public control protocol exclusively.
+- No claim of tmux/RMUX compatibility beyond the narrowed exception below.
 - No product navigation or workbench policy shared with `agenterm` merely to
   reduce code size.
+- **Amendment (2026-09-24, owner decision):** the prior blanket exclusion of
+  "mux" and of a script runtime/plugin host/Agent permission policy is
+  narrowed, not removed, to admit exactly two 0.2.x subcommands: `mux`
+  (tmux-shaped control over MiniCon's own existing tabs, over this same
+  process-lifetime `--control` endpoint) and `harness` (a two-tool-only agent:
+  `file` and `exec`, no plugin interface, no separate permission-policy
+  layer). Every other exclusion above still holds, and anything broader than
+  these two subcommands needs its own owner decision. Full scope, non-goals
+  and open design questions: [`PRD_02_31_v0_2_horizon.md`](PRD_02_31_v0_2_horizon.md).
 
 ## Governing invariants
 
