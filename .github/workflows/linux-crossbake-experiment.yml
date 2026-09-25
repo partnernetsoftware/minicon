@@ -56,10 +56,21 @@ jobs:
           restore-keys: |
             linux-crossbake-buildx-v2-
 
+      - name: Create a buildx builder that supports cache export
+        run: |
+          set -euo pipefail
+          # The default `docker` buildx driver builds by calling the Docker
+          # daemon directly and can't export/import cache; only the
+          # `docker-container` driver (a throwaway BuildKit container this
+          # spins up) supports `--cache-to`/`--cache-from`, per the exact
+          # error the default driver gave: "Cache export is not supported
+          # for the docker driver."
+          docker buildx create --name crossbake --driver docker-container --use
+
       - name: Build the crossbake image
         run: |
           set -euo pipefail
-          docker buildx build --load \
+          docker buildx build --builder crossbake --load \
             -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe \
             --cache-from type=local,src=/tmp/buildx-cache \
             --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max \
