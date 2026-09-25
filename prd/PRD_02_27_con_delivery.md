@@ -1251,6 +1251,24 @@ flowchart LR
   explicitly not evidence for `*-unknown-linux-gnu`: the GNU artifact requires
   glibc loader semantics that compatibility shims did not supply.
 
+  The Apple cells acquired a C-toolchain prerequisite when the platform crate's
+  `network-http` feature entered MiniCon's feature set: that feature reaches
+  `ring`, which builds `curve25519.c` from source, so linking an Apple target
+  now needs a compiler that can emit darwin objects. On a macOS host the system
+  `clang` already is one and nothing changed. Off a macOS host the script reads
+  `MINICON_APPLE_SDK_ROOT`, and with a macOS SDK there plus `clang` and
+  `llvm-ar` it exports the per-target `CC_*_apple_darwin`, `CFLAGS_*` and
+  `AR_*` triples that `cc-rs` consumes. An absent or non-SDK path is BLOCKED
+  with the reason named, like every other optional court in that script — a
+  missing toolchain must never read as a skipped pass. Measured: before the
+  knob, all seven Apple stages FAILed identically on
+  `error: failed to run custom build command for ring`, and
+  `cargo tree --target aarch64-apple-darwin -i ring` proved `ring` enters the
+  graph only through `rustls <- ureq <- agenterm-platform`, while
+  `cargo check --target aarch64-apple-darwin -p minicon-core` still finished
+  clean — so the requirement is exactly the new C dependency's, not a
+  regression in the pure-Rust cross build.
+
   The x86_64 GNU artifact has two complementary local courts. Apple Rosetta for
   Linux in the ARM64 VZ guest, backed by Debian amd64 multiarch libraries, runs
   the complete functional suite and sustained-output gate (33,439,744 bytes at
