@@ -869,10 +869,11 @@ fn push_bounded(normalized: &mut String, character: char, limit: usize) -> bool 
 #[cfg(test)]
 mod tests {
     fn draft_at(text: &str, caret: usize) -> ComposerState {
-        let mut state = ComposerState::default();
-        state.text = text.to_owned();
-        state.caret = caret;
-        state
+        ComposerState {
+            text: text.to_owned(),
+            caret,
+            ..Default::default()
+        }
     }
 
     fn caret_after(text: &str, caret: usize, movement: Move) -> usize {
