@@ -63,33 +63,76 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   └── non-goal: [-] multi-pane enumeration (`split-window` not
 │   │         implemented; each tab always lists exactly one pane, index 0)
 │   ├── M3 window select/create/destroy (`select-window`, `new-window`,
-│   │   │     `kill-window`) ->m1 [ ]
+│   │   │     `kill-window`) ->m1 [~]
 │   │   ├── invariant: an invalid `@ID`/index, a nonzero pane, or a
 │   │   │     session-name mismatch is a bounded CLI error (exit code +
 │   │   │     message naming which tmux assumption is unsupported), never a
 │   │   │     crash or a silently created tab
-│   │   ├── evidence: black-box test drives each verb against a bogus target
-│   │   │     (bad handle, `pane=1`, wrong session name) and asserts the
-│   │   │     matching bounded-error exit code, then repeats each against a
-│   │   │     real target and asserts the real effect (tab switches/opens/
-│   │   │     closes)
+│   │   ├── implemented: `src/mux.rs` `run_select_window`/`run_new_window`/
+│   │   │     `run_kill_window` over `select-tab`/`new-tab`/`close-tab`, with
+│   │   │     `resolve_target` parsing `[session:]window[.pane]`; session is
+│   │   │     `minicon` or `0`, pane must be 0 or absent, window is an `@ID`
+│   │   │     (passed through so the server refuses a stale handle) or a tmux
+│   │   │     index (resolved via `list-tabs`). `kill-window` with no `-t`
+│   │   │     resolves the active tab, keeping tmux's default working
+│   │   ├── evidence: unit tests in `src/mux.rs` --
+│   │   │     `a_nonzero_pane_names_the_missing_split_window`,
+│   │   │     `a_foreign_session_name_is_refused_not_ignored`,
+│   │   │     `a_malformed_at_id_is_refused_before_any_connect`,
+│   │   │     `a_window_that_is_neither_handle_nor_index_is_refused`,
+│   │   │     `an_at_id_target_resolves_without_reaching_the_endpoint`,
+│   │   │     `new_window_refuses_to_silently_drop_a_window_name`,
+│   │   │     `an_unsupported_tmux_flag_names_the_implemented_subset`,
+│   │   │     `select_window_requires_a_target`. Each target case runs against
+│   │   │     a bogus endpoint on purpose: it proves the refusal happens on the
+│   │   │     target, before any connect
+│   │   ├── provable: removing the nonzero-pane refusal was confirmed to fail
+│   │   │     `a_nonzero_pane_names_the_missing_split_window` before the guard
+│   │   │     was restored
+│   │   ├── BLOCKED (evidence gap, same cause as M2): the "real target, real
+│   │   │     effect" half -- a tab actually switching/opening/closing -- needs
+│   │   │     the GUI black-box suite, which cannot run in an environment with
+│   │   │     no display server. Not a design gap; run before `[x]`
 │   │   ├── depends: M2 (must be able to enumerate a real handle to target)
 │   │   └── non-goal: [-] cross-machine attach; [-] persistent session
 │   │         outside the process; [-] multiple sessions (both already
 │   │         excluded by PRD_02_31)
-│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [ ]
+│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [~]
 │   │   ├── invariant: `send-keys` resolves tmux key names (`Enter`, `C-c`,
-│   │   │     ...) through `minicon_core::keymap`'s existing encoder, not a
-│   │   │     second key-name table; `-l` sends the argument literally with
-│   │   │     no key-name resolution
+│   │   │     ...) through the control CLI's existing key spec, not a second
+│   │   │     key-name table; `-l` sends the argument literally with no
+│   │   │     key-name resolution #correction the design said
+│   │   │     `minicon_core::keymap`; that module is the composer's editing
+│   │   │     chords, not terminal injection -- see PRD_02_31's corrected
+│   │   │     dependency line
 │   │   ├── invariant: `capture-pane -S`/`-E` (history range) is refused with
 │   │   │     a bounded error citing carried-debt item C1 -- MiniCon's
 │   │   │     scrollback semantics are undecided, so this flag is `BLOCKED`,
 │   │   │     never approximated
-│   │   ├── evidence: black-box test round-trips `send-keys -l <text>` and a
-│   │   │     named key (e.g. `Enter`) into a real tab and asserts the
-│   │   │     child process received them distinctly; `capture-pane -p`
-│   │   │     round-trips known output; `-S`/`-E` asserts the bounded refusal
+│   │   ├── invariant #decision: an unknown key name is a bounded error, not
+│   │   │     literal text. tmux types an unrecognized name as characters;
+│   │   │     MiniCon refuses it, same reasoning as `-F`'s unknown
+│   │   │     substitution -- a mistyped key name silently becoming keystrokes
+│   │   │     is the failure a script cannot see
+│   │   ├── implemented: `src/mux.rs` `tmux_key_to_spec`/`tmux_key_name`
+│   │   │     translate `C-`/`M-`/`S-` prefixes and tmux's own spellings
+│   │   │     (`BSpace`, `DC`, `IC`, `NPage`, `PPage`) into `ctrl+`/`alt+`/
+│   │   │     `shift+` specs whose base name still must satisfy
+│   │   │     `NamedKey::from_name`; the whole sequence is translated before
+│   │   │     any of it is sent, so a bad name late in the sequence cannot
+│   │   │     land after the earlier keys
+│   │   ├── evidence: unit tests in `src/mux.rs` --
+│   │   │     `tmux_modifier_prefixes_become_minicon_key_specs`,
+│   │   │     `tmux_only_key_spellings_are_translated`,
+│   │   │     `an_unknown_key_name_is_refused_rather_than_sent_as_text`,
+│   │   │     `capture_pane_history_range_is_blocked_on_carried_debt_c1`
+│   │   ├── provable: letting an unknown key name fall through as literal text
+│   │   │     (tmux's own behavior) was confirmed to fail
+│   │   │     `an_unknown_key_name_is_refused_rather_than_sent_as_text` before
+│   │   │     the guard was restored
+│   │   ├── BLOCKED (evidence gap, same cause as M2): the round-trip half --
+│   │   │     keys reaching a real child process, `capture-pane -p` returning
+│   │   │     known output -- needs the GUI black-box suite and a display
 │   │   └── depends: M3 (needs a real target to send/capture against)
 │   └── M4 upsert into PRD_02_31 ->m [ ]
 │         └── flip mux's `[ ]` lines to `[x]` only against the evidence named

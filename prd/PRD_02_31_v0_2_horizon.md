@@ -57,8 +57,15 @@ process, exactly like the existing `--control` endpoint.
 │   │   assumption MiniCon does not implement -- never a crash, a silently
 │   │   created tab, or a silently accepted no-op
 │   └── dependency: PRD_02_26_con_control_cli.md (protocol, tab addressing);
-│         `minicon_core::keymap` (send-keys' tmux key-name table, e.g.
-│         `Enter`/`C-c`, reuses the same key encoder v0.1.26 unified)
+│         `agenterm_platform::input::NamedKey` (send-keys' base key names)
+│         #correction 2026-09-25: this dependency was written as
+│         `minicon_core::keymap`, which is wrong -- that module encodes the
+│         *composer* text box's editing chords, not terminal key injection.
+│         The control CLI's `send-keys` resolves names through
+│         `NamedKey::from_name` plus a `ctrl+`/`alt+`/`shift+` spec
+│         (`main.rs`'s `parse_control_key`), so mux translates tmux's
+│         `C-`/`M-`/`S-` prefixes and its own spellings (`BSpace`, `DC`,
+│         `NPage`) into that spec instead of growing a second key table
 ├── harness {h}
 │   ├── outcome: minimal agent loop, two tools only
 │   ├── tools [ ]
@@ -114,7 +121,7 @@ Verb-to-primitive mapping (each verb is a thin translation over
 | `select-window` | `-t <target>` | switch focused tab |
 | `new-window` | `-t <target>` (name only; no `-c`/layout flags) | open a tab |
 | `kill-window` | `-t <target>` | close a tab |
-| `send-keys` | `-t <target>`, `-l` (literal), tmux key names (`Enter`, `C-c`, ...) | `send-text`/`send-paste`, keys resolved through `minicon_core::keymap`'s existing encoder |
+| `send-keys` | `-t <target>`, `-l` (literal), tmux key names (`Enter`, `C-c`, ...) | `send-keys` (or `send-text` under `-l`), tmux names translated into the control CLI's existing `ctrl+`/`alt+`/`shift+` spec |
 | `capture-pane` | `-t <target>`, `-p` (print to stdout) | `capture-pane`; `-S`/`-E` history range is `BLOCKED` on carried-debt item C1 (`plan/plan-carried-debt.md`) — MiniCon's scrollback semantics are not yet decided, so this flag is refused, not approximated |
 
 Target parsing: a `-t` value is `[session:]window[.pane]`. `session`, if
@@ -135,6 +142,28 @@ that one).
 Explicit non-goals this resolution does not reopen: no `split-window`/
 multi-pane-per-window verbs, no multiple sessions, no tmux control-mode
 (`-C`) protocol, no `tmux.conf` equivalent — see the tree above.
+
+**Settled during implementation, 2026-09-25.** Three points the resolution
+above left to whoever wrote the code, recorded here because each is a
+visible part of the compatibility surface:
+
+- **The session's name is `minicon`, and `0` is accepted as an alias.** A
+  `-t` target's session component must be one of those two or it is a bounded
+  error. `0` is accepted because that is what tmux calls its own first
+  session, so a script written against tmux's default keeps working; the
+  instance still IS the session, and neither name is looked up.
+- **An unknown key name is refused, not sent as text.** tmux sends a name it
+  does not recognize as literal characters (`send-keys foo` types `f`, `o`,
+  `o`). MiniCon refuses it instead, for the same reason `-F` refuses an
+  unknown substitution: a mistyped key name silently becoming keystrokes is
+  the failure a script cannot see. `-l` remains the way to send text
+  literally, and it routes to `send-text`, which resolves no names at all.
+  This is a deliberate divergence from tmux's own behavior, not an omission.
+- **`new-window -n NAME` is refused.** MiniCon's `new-tab` takes no name, and
+  accepting `-n` while dropping the name would leave a script believing it had
+  set one. `new-window -t TARGET` maps the target to the new tab's **parent**,
+  which is the only placement MiniCon's tab tree has; tmux's "insert at this
+  index" meaning has no equivalent and is not approximated.
 
 ## harness — detail
 
