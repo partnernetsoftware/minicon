@@ -148,6 +148,9 @@ jobs:
             # so it deliberately does not call that script. Wiring pack.sh onto
             # this cross layout is follow-on work once the six-cell claim itself
             # is confirmed; cosmocc availability is proven separately below.
+            df -h / /opt || true
+            ls -la /opt/cosmocc/bin/ || true
+            command -v cosmocc || true
             cosmocc --version
           '
 
