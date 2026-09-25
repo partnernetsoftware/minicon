@@ -1360,6 +1360,7 @@ const AGENTERM_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
             "ime",
             "input",
             "ipc",
+            "network-http",
             "parent-console",
             "pty",
             "runtime",

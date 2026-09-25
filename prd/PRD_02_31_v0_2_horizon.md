@@ -220,8 +220,9 @@ dependency line above ("none new") was wrong a second time.
 
 The owner chose option 1, the house route: **add the capability to
 `agenterm-platform`**, reviving the `ureq` dependency that crate already
-declared but no longer used, with `PRD_02_20_native_platform.md`'s
-target-specific TLS trees (Unix Rustls/WebPKI, Windows NativeTls). It ships as
+declared but no longer used, with the target-specific TLS trees that
+AgenTerm's own native-platform PRD module (`PRD_02_20`, in that repository,
+not this one) specifies (Unix Rustls/WebPKI, Windows NativeTls). It ships as
 that crate's `network-http` feature -- a neutral contract plus a validating
 facade, with no per-OS adapter, because `ureq` is portable and the only per-OS
 difference is the TLS provider, which those Cargo feature trees already
