@@ -13,36 +13,67 @@ see "Delivery note" at the end.
 
 ```text
 v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
-├── M mux: script-driven tab control {m}
-│   ├── M1 design close-out ->m [ ]
-│   │   ├── verb surface: reuse existing capture-pane/send-text/send-paste
-│   │   │     under `minicon mux <verb>` alias; no new tmux-flavored verbs
-│   │   │     unless a concrete script need shows the reuse insufficient
-│   │   │     @method=reuse-existing-verbs #decision
+├── M mux: tmux-CLI-compatible tab control {m}
+│   ├── M1 design close-out ->m [x] (2026-09-25, PRD_02_31 "mux -- detail")
+│   │   ├── verb surface: tmux verb/flag vocabulary, not MiniCon-native
+│   │   │     names -- `list-windows`, `select-window`, `new-window`,
+│   │   │     `kill-window`, `send-keys`, `capture-pane`
+│   │   │     @method=tmux-verb-compat #decision -- owner-directed: the
+│   │   │     concrete need is agent interop across minicon/tmux backends
+│   │   ├── model mapping: one implicit session per instance; tmux window =
+│   │   │     MiniCon tab (`@ID` canonical, integer index accepted as a
+│   │   │     tmux-numbering convenience); pane must be 0 or absent -- no
+│   │   │     pane splits exist to address @method=window-is-tab #decision
 │   │   └── surface shape: a mode of the existing --control CLI, not a new
 │   │         binary subcommand or endpoint @method=mode-not-new-endpoint
 │   │         #decision ->PRD_02_26_con_control_cli.md
-│   ├── M2 tab listing ->m1 [ ]
-│   │   ├── invariant: `list-tabs` enumerates only tabs of the calling
-│   │   │     process's own MiniCon instance; no cross-instance discovery
+│   ├── M2 tab listing (`list-windows`) ->m1 [ ]
+│   │   ├── invariant: enumerates only tabs of the calling process's own
+│   │   │     MiniCon instance; no cross-instance discovery
+│   │   ├── invariant: `-F <format>` supports only the substitution
+│   │   │     variables named in PRD_02_31's mapping table -- an
+│   │   │     unrecognized substitution is a bounded error, never silently
+│   │   │     rendered blank (tmux itself renders unknown ones blank; MiniCon
+│   │   │     deliberately does not, to avoid a script silently getting
+│   │   │     empty fields it thinks are real) #decision
 │   │   ├── evidence: black-box CLI test asserts listed handles match the
-│   │   │     tabs opened by the test harness, in a fresh MiniCon instance
+│   │   │     tabs opened by the test harness, in a fresh MiniCon instance,
+│   │   │     for both `@ID` and integer-index addressing
 │   │   ├── safe failure: zero tabs returns an empty list, not an error
-│   │   └── non-goal: [-] tab creation/close verbs (existing surface already
-│   │         covers lifecycle; mux only adds read/select)
-│   ├── M3 tab select + read/write ->m1 [ ]
-│   │   ├── invariant: an invalid `@ID` is a bounded CLI error (exit code +
-│   │   │     message), never a crash or a silently created tab (per
-│   │   │     PRD_02_31's own safe-failure line)
-│   │   ├── evidence: black-box test sends `mux select-tab @bogus` and
-│   │   │     asserts the bounded-error exit code, then repeats against a
-│   │   │     real handle and asserts the round-trip content matches
-│   │   ├── depends: M2 (must be able to enumerate a real handle to select)
+│   │   └── non-goal: [-] pane enumeration (no panes exist)
+│   ├── M3 window select/create/destroy (`select-window`, `new-window`,
+│   │   │     `kill-window`) ->m1 [ ]
+│   │   ├── invariant: an invalid `@ID`/index, a nonzero pane, or a
+│   │   │     session-name mismatch is a bounded CLI error (exit code +
+│   │   │     message naming which tmux assumption is unsupported), never a
+│   │   │     crash or a silently created tab
+│   │   ├── evidence: black-box test drives each verb against a bogus target
+│   │   │     (bad handle, `pane=1`, wrong session name) and asserts the
+│   │   │     matching bounded-error exit code, then repeats each against a
+│   │   │     real target and asserts the real effect (tab switches/opens/
+│   │   │     closes)
+│   │   ├── depends: M2 (must be able to enumerate a real handle to target)
 │   │   └── non-goal: [-] cross-machine attach; [-] persistent session
-│   │         outside the process (both already excluded by PRD_02_31)
+│   │         outside the process; [-] multiple sessions (both already
+│   │         excluded by PRD_02_31)
+│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [ ]
+│   │   ├── invariant: `send-keys` resolves tmux key names (`Enter`, `C-c`,
+│   │   │     ...) through `minicon_core::keymap`'s existing encoder, not a
+│   │   │     second key-name table; `-l` sends the argument literally with
+│   │   │     no key-name resolution
+│   │   ├── invariant: `capture-pane -S`/`-E` (history range) is refused with
+│   │   │     a bounded error citing carried-debt item C1 -- MiniCon's
+│   │   │     scrollback semantics are undecided, so this flag is `BLOCKED`,
+│   │   │     never approximated
+│   │   ├── evidence: black-box test round-trips `send-keys -l <text>` and a
+│   │   │     named key (e.g. `Enter`) into a real tab and asserts the
+│   │   │     child process received them distinctly; `capture-pane -p`
+│   │   │     round-trips known output; `-S`/`-E` asserts the bounded refusal
+│   │   └── depends: M3 (needs a real target to send/capture against)
 │   └── M4 upsert into PRD_02_31 ->m [ ]
 │         └── flip mux's `[ ]` lines to `[x]` only against the evidence named
-│               in M2/M3, per AGENTS.md's "[x] requires named evidence" rule
+│               in M2/M3/M3b, per AGENTS.md's "[x] requires named evidence"
+│               rule
 ├── H harness: minimal two-tool agent loop {h}
 │   ├── H1 design close-out ->h [ ]
 │   │   ├── bounded scope config: an explicit CLI flag (`--root`, one
@@ -106,7 +137,8 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 
 1. **M1/H1 design close-outs first** — both are pure decisions (no code),
    and H2/H3/M2/M3 all depend on their own branch's close-out. Do these
-   before writing any implementation.
+   before writing any implementation. M1 is resolved as of 2026-09-25 (see
+   `PRD_02_31_v0_2_horizon.md` "mux — detail"); H1 is still open.
 2. **mux (M2 → M3) and harness's two tools (H2, H3 in parallel)** can proceed
    independently — mux only touches `PRD_02_26`'s existing control-CLI code
    path; harness's file/exec tools are new, isolated modules with no shared
@@ -131,11 +163,12 @@ pattern proven once and reused, not re-derived.
 ```mermaid
 flowchart LR
     subgraph MUX["mux branch"]
-        M1["M1 design close-out<br/>reuse existing verbs · mode not endpoint"]
-        M2["M2 list-tabs"]
-        M3["M3 select + read/write"]
+        M1["M1 design close-out<br/>tmux verb/flag compat · window=tab · mode not endpoint"]
+        M2["M2 list-windows"]
+        M3["M3 select/new/kill-window"]
+        M3B["M3b send-keys/capture-pane"]
         M4["M4 upsert PRD_02_31"]
-        M1 --> M2 --> M3 --> M4
+        M1 --> M2 --> M3 --> M3B --> M4
     end
     subgraph HARNESS["harness branch"]
         H1["H1 design close-out<br/>explicit --root flag · env-var creds · bounded-task-then-exit"]
