@@ -2364,59 +2364,88 @@ legacy images, offline work and long interactive debugging.
 
 ### Release pipeline tree — CI-hosted Defender (default candidate, 2026-09-24)
 
-`[~]` until `defender-ci-scan.yml` has completed one real end-to-end run with
-a valid `reputation-qualification.json` accepted by `reputation.yml verify`;
-promotes to `[x]` default with that run's id named here as evidence.
+Every release from 0.1.14 through 0.1.24 bound its Defender evidence on a
+local UTM Windows guest (see the historical tree below). 0.1.25 is the first
+release to try binding it on a GitHub-hosted `windows-2025` runner instead,
+per the 2026-09-24 owner instruction to stop depending on UTM for the routine
+path. `[~]` until `defender-ci-scan.yml` has completed one real end-to-end run
+with a valid `reputation-qualification.json` accepted by `reputation.yml
+verify`; promotes to `[x]` default once that run's id is named here as
+evidence. Per-node timings below are this pipeline's own measured 0.1.25 runs
+where the node has executed, and the 0.1.24 runs otherwise (same workflows,
+unaffected by which Defender host is used).
 
 ```text
 0.1.25 release pipeline — CI-hosted Defender path
-├── minicon-com.yml {com}
-│   └── six-cell unsigned one-pack (macos-15 native pack)
-├── company-signing.yml ->com
-│   └── Windows Authenticode / Azure Artifact Signing
-├── macos-signing.yml ->com
-│   └── codesign + notarize + staple
-├── candidate.yml {cand} ->company-signing.yml ->macos-signing.yml
-│   └── exact-source bind + seal candidate-manifest.json
+├── minicon-com.yml {com} @time=~6.5min (run 36049001422)
+│   └── one macOS job cross-compiles and packs all six cells unsigned
+├── company-signing.yml ->com @time=~2.5min (run 36077887554)
+│   └── Windows Authenticode / Azure Artifact Signing court
+├── macos-signing.yml ->com @time=~1.7min (run 36077895826)
+│   └── codesign + notarize + staple for the macOS cells
+├── candidate.yml {cand} ->company-signing.yml ->macos-signing.yml @time=~1.5min
+│   └── binds exact source_sha, seals the signed bytes into
+│       candidate-manifest.json (the reputation_assets it names are what
+│       gets scanned next)
 ├── defender-ci-scan.yml {def} @host=windows-2025 ->cand #decision default path
+│   │   @time=unmeasured (first real run pending)
 │   ├── extract sha256-checked reputation_assets from the Candidate manifest
 │   ├── Update-MpSignature, then MpCmdRun.exe -Scan -ScanType 3 per asset
 │   └── reputation_court.py qualify/verify -> reputation-qualification.json/.b64
-├── reputation.yml ->def
-│   └── bind qualification to the exact Candidate, produce reputation_run_id
-└── release.yml ->cand ->reputation.yml
-    ├── dry_run=true verification pass
-    └── dry_run=false Promotion #decision owner-authorized timing, no rebuild
+├── reputation.yml ->def @time=~16s
+│   └── re-verifies the qualification binds to this exact Candidate,
+│       produces reputation_run_id
+└── release.yml ->cand ->reputation.yml @time=~1min
+    ├── dry_run=true verification pass — assembles the public Release
+    │   without publishing it
+    └── dry_run=false Promotion #decision owner-authorized timing, no
+        rebuild — publishes the exact sealed bytes as-is
 ```
 
 ### Release pipeline tree — local UTM Defender (historical reference)
 
-`[x]` shipped and used for every release from 0.1.14 through 0.1.24 (22
-successful `reputation.yml` runs). Kept as the documented fallback for
-offline work, legacy guest images and long interactive debugging — not
-deleted, demoted once the CI-hosted path above has its own passing evidence.
+The original path, before any GitHub-hosted Windows runner was known to carry
+a real Defender install: the release Mac's own UTM Windows guest was the only
+place a native scan could run. `[x]` shipped and used for every release from
+0.1.14 through 0.1.24 (22 successful `reputation.yml` runs) — kept here as
+the documented fallback for offline work, legacy guest images and long
+interactive debugging, not deleted. It is demoted from default to fallback
+once the CI-hosted tree above has its own passing evidence, not before.
 
 ```text
 0.1.x release pipeline — local UTM Defender path (0.1.14-0.1.24)
-├── minicon-com.yml {com}
-│   └── six-cell unsigned one-pack (macos-15 native pack)
-├── company-signing.yml ->com
-├── macos-signing.yml ->com
-├── candidate.yml {cand} ->company-signing.yml ->macos-signing.yml
-├── release/utm-win-defender-court.sh {def} @host=local-UTM-Windows-guest [-]superseded
+├── minicon-com.yml {com} @time=~5min
+│   └── one macOS job cross-compiles and packs all six cells unsigned
+├── company-signing.yml ->com @time=~2min
+│   └── Windows Authenticode / Azure Artifact Signing court
+├── macos-signing.yml ->com @time=~1.5min
+│   └── codesign + notarize + staple for the macOS cells
+├── candidate.yml {cand} ->company-signing.yml ->macos-signing.yml @time=~1.5min
+│   └── binds exact source_sha, seals the signed bytes into
+│       candidate-manifest.json
+├── release/utm-win-defender-court.sh {def} @host=local-UTM-Windows-guest
+│   │   [-]superseded @time=~20-26s per court round, plus guest boot
 │   ├── runs on the release Mac's own UTM Windows guest, not GitHub
 │   ├── release/utm-win-defender-scan.sh invokes Defender inside the guest
 │   └── reputation_court.py qualify/verify -> reputation-qualification.json/.b64
-│       (same schema as the CI path; only where the scan executes differs)
-├── reputation.yml ->def
-└── release.yml ->cand ->reputation.yml
+│       (identical schema to the CI path; only where the scan executes
+│       differs)
+├── reputation.yml ->def @time=~16s
+│   └── re-verifies the qualification binds to this exact Candidate,
+│       produces reputation_run_id
+└── release.yml ->cand ->reputation.yml @time=~1min
+    └── same dry_run=true/false Promotion step as the CI-hosted tree
 ```
 
-The two trees differ in exactly one node (`def`): the Defender scan's host.
-`release/utm-win-defender-scan.sh`'s own comment is the reason the swap is
-sound — "Defender scans files without executing them, so a native Windows
-court of any ISA yields an equivalent verdict" — and both paths feed the
-identical downstream `reputation.yml`/`release.yml` unchanged.
+The two trees differ in exactly one node (`def`): the Defender scan's host,
+and correspondingly whether a resident UTM guest must stay warm on the
+release Mac. `release/utm-win-defender-scan.sh`'s own comment is the reason
+the swap is sound — "Defender scans files without executing them, so a
+native Windows court of any ISA yields an equivalent verdict" — and both
+paths feed the identical downstream `reputation.yml`/`release.yml` unchanged.
+Once the CI-hosted tree has one named passing run, it becomes the default and
+this tree is retitled purely as fallback documentation; neither tree is
+deleted, per this repository's evidence and release-history discipline.
 
 ## Where a test runs, and what that costs
 
