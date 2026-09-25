@@ -161,10 +161,67 @@ flowchart LR
   file's evidence discipline requires for a release Candidate), from
   `.github/workflows/osxcross-experiment.yml`, which is still explicitly
   experimental/manual-dispatch-only, not wired into `six-grid-cloud-build.yml`
-  or any Candidate. `x86_64-apple-darwin` has not yet been run against SDK
-  15.5 — do that before claiming both osx cells. Not yet started: the
+  or any Candidate. Not yet started: the
   container pre-baking follow-on below, and wiring this path into
   `scripts/round.sh` or a release workflow.
+
+  **`x86_64-apple-darwin` closed too (2026-09-25, background research agent,
+  local Linux sandbox, nothing committed/dispatched by the agent itself):**
+  same recipe as `osxcross-experiment.yml`, reproduced entirely offline —
+  clone osxcross, fetch `MacOSX15.5.tar.xz` from alexey-lysiuk/macos-sdk,
+  `UNATTENDED=1 ./build.sh` (~9 min on 4 cores; missing host deps on this
+  sandbox's base image were `libxml2-dev`/`libssl-dev`/`uuid-dev`, not
+  present on the workflow's own `ubuntu-24.04` runner presumably because it
+  ships them already), then
+  `CC_x86_64_apple_darwin=x86_64-apple-darwin24.5-clang cargo build --locked
+  --release --target x86_64-apple-darwin -p minicon` (exit 0, 57.67s) against
+  the real workspace root, not a stripped crate. Verified as a real,
+  non-trivial Mach-O, not just "it compiled": `file` reports
+  `Mach-O 64-bit x86_64 executable`; `otool -h` cputype 16777223 (x86_64),
+  filetype EXECUTE; `nm` shows genuinely dynamically-linked
+  Cocoa/AppKit/CoreFoundation symbols (`_CFRelease`, `_objc_msgSend`,
+  `_objc_msgSend_stret`, `_pthread_main_np`); `otool -l` confirms the
+  `__TEXT,__info_plist` section (the `-sectcreate` plist embed) is present
+  and non-empty. Binary 1,564,720 bytes, sha256 `690705ea09b0...`. Also
+  re-verified `aarch64-apple-darwin` in the same toolchain instance as a
+  sanity check (same symbol/section evidence, `arm64`, 1,571,... bytes,
+  sha256 `33e08c534d38...`), and separately built x86_64 under the exact
+  `--profile release-fast` (not plain `release`) that
+  `loader/rebuild-payloads.sh`'s `build_one osx-x86_64 x86_64-apple-darwin
+  native` actually uses for the six-cell pack: exit 0, 22.24s, Mach-O x86_64
+  confirmed again, 1,773,736 bytes. **Both osx cells are now proven
+  buildable end to end from a Linux host with no macOS runner involved, for
+  both the plain and the `release-fast` profile.** Not covered by this:
+  signing/notarization/stapling (needs real Apple credentials regardless of
+  build host, per the `sign-macos-artifacts` skill; a bare cross-linked
+  Mach-O has never been claimed staplable), execution (can't run a macOS
+  binary on Linux — evidence here is static: file type, arch, symbols,
+  sections, not a passing test suite), and wiring this into
+  `loader/rebuild-payloads.sh`, `scripts/round.sh` or any workflow (not
+  attempted — a separate integration decision from the build-capability
+  question this closes).
+
+  **`minicon.com` pack step's Mac dependency is scoped down to this same
+  crux, nothing else** (same agent, read-only review of
+  `.github/workflows/minicon-com.yml` + `loader/rebuild-payloads.sh` +
+  `loader/pack.sh` + `install-cosmocc.sh`, no code changed): `cosmocc`
+  itself is already a cross-compiler with no macOS-specific step; `cargo-zigbuild`
+  and `cargo-xwin` (the four non-macOS cells) are already Linux-portable and
+  pinned. The **only** reason `minicon-com.yml` pins `runs-on: macos-15` is
+  `rebuild-payloads.sh`'s `build_one osx-aarch64/osx-x86_64 ... native` calls
+  — exactly the osxcross gap this entry tracks, not cosmocc or
+  zigbuild/xwin. (`llvm-rc` via `brew install llvm` is the only other
+  macOS-flavored step, solely for Windows resource compilation, with an
+  obvious `apt llvm` equivalent.) So closing this entry's remaining
+  integration step — swapping the two `native` `build_one` calls for the
+  osxcross recipe — is in principle sufficient to run the whole
+  `minicon.com` job on Linux too, but that swap itself is unattempted and is
+  its own decision, not re-litigated here.
+
+  Toolchain build time (~9-10 min from source) is unchanged and still the
+  named reason for the container pre-baking follow-on below — closing the
+  build-capability question does not by itself make this cheap to run
+  routinely.
   History that led here (kept for the next agent, not still open):
   Owner: this section; no dedicated skill or script yet. Motivation: reduce
   reliance on "this Mac" as the only host that can produce osx-aarch64/osx-x86_64
