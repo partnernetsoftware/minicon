@@ -25,7 +25,7 @@ process, exactly like the existing `--control` endpoint.
 │   │   @method=tmux-verb-compat #decision (owner, 2026-09-25: cross-tool
 │   │   agent interop is the concrete need the old "reuse existing verbs by
 │   │   default" ruling was waiting for)
-│   ├── surface ->m1 [ ]
+│   ├── surface ->m1 [x]
 │   │   ├── verb subset: `list-windows`, `select-window`, `new-window`,
 │   │   │     `kill-window`, `send-keys`, `capture-pane` -- named and flagged
 │   │   │     the way tmux names and flags them, not MiniCon-native verbs
@@ -172,6 +172,20 @@ visible part of the compatibility surface:
   set one. `new-window -t TARGET` maps the target to the new tab's **parent**,
   which is the only placement MiniCon's tab tree has; tmux's "insert at this
   index" meaning has no equivalent and is not approximated.
+- **The mutating verbs print JSON where tmux is silent.** `select-window`,
+  `new-window`, `kill-window` and `send-keys` print the control protocol's own
+  pretty-printed reply (`{"closed": "@2"}`, `{"sent_keys": 1}`); only
+  `capture-pane -p` prints plain text. A script that parses tmux's silence as
+  success still sees exit code 0, but a script that asserts empty stdout does
+  not. Kept deliberately: the reply names which handle was actually affected,
+  which is the one thing an agent driving tabs it did not open needs.
+- **A stale `@ID` is refused by the server, in the server's words.** Every
+  other bounded refusal names the tmux assumption MiniCon does not implement,
+  because `mux` resolves the target itself. `@ID` is deliberately passed
+  through instead, so the refusal is the control server's own
+  (`minicon mux: terminal @2 does not exist`) and names no tmux assumption.
+  The alternative -- pre-checking the handle against `list-tabs` -- would add
+  a second round trip and a race window for no gain.
 
 ## harness — detail
 
@@ -198,32 +212,33 @@ used to carry):
   `MINICON_OPENCODE_API_KEY` for `--backend opencode-go`. A config-file
   credential store is deferred so MiniCon does not grow a general
   secrets-management feature for this one CLI mode.
-**Open, and the owner's to decide (found 2026-09-25, during H4).** MiniCon has
-no way to make an HTTPS request, and neither does its platform crate: the
-`agenterm-platform` feature list carries `network-dns`, `network-interfaces`
-and `network-routes` and nothing else — no HTTP client, no TLS. The harness
-dependency line above ("none new") is wrong a second time. `harness` can talk
-to an endpoint on plain HTTP today (which an opencode-go-compatible server on
-localhost typically is), but the official DeepSeek API is HTTPS-only, so H4's
-live evidence cannot be produced until one of these is chosen:
+**Decided by the owner, 2026-09-25 (was open during H4).** MiniCon could not
+make an HTTPS request at all, and neither could its platform crate: the
+`agenterm-platform` features it enabled were `network-dns`,
+`network-interfaces` and `network-routes` and nothing more. The harness
+dependency line above ("none new") was wrong a second time.
 
-1. **Add the capability to `agenterm-platform`** using each OS's native stack.
-   Architecturally correct per AGENTS.md ("cross-platform mechanisms in the
-   shared platform crates"), and the frugal option for binary size since no
-   TLS library ships in the product. Costs work in the other repository and a
-   move of the pinned revision.
-2. **Add a Rust TLS/HTTP crate to MiniCon.** Fastest, but it puts a TLS stack
-   inside a product whose Windows binary is 1.1 MiB and whose size is a
-   reputation boundary (see `PRD_02_27_con_delivery.md` on the 360 QVM court),
-   so it is a product-shape decision, not an implementation detail.
-3. **Ship 0.2.0's harness against plain-HTTP endpoints only**, with the
-   official DeepSeek backend `BLOCKED` on the transport, and H5's local
-   opencode-go adapter as the one verified backend.
+The owner chose option 1, the house route: **add the capability to
+`agenterm-platform`**, reviving the `ureq` dependency that crate already
+declared but no longer used, with `PRD_02_20_native_platform.md`'s
+target-specific TLS trees (Unix Rustls/WebPKI, Windows NativeTls). It ships as
+that crate's `network-http` feature -- a neutral contract plus a validating
+facade, with no per-OS adapter, because `ureq` is portable and the only per-OS
+difference is the TLS provider, which those Cargo feature trees already
+express. MiniCon enables the feature and moved its pinned revision.
 
-Not decided here, and not decided by whoever writes the code: each option
-changes what MiniCon is. Shelling out to `curl` is rejected outright — it would
-put an unbounded external command inside the one feature whose whole point is
-bounded tools.
+Shelling out to `curl` was rejected outright: it would put an unbounded
+external command inside the one feature whose whole point is bounded tools.
+Adding a TLS crate to MiniCon itself was rejected in favour of the shared
+crate, per AGENTS.md's "cross-platform mechanisms in the shared platform
+crates".
+
+What this does NOT settle, and is recorded as `BLOCKED` rather than skipped:
+certificate verification has no end-to-end proof anywhere -- the capability's
+own courts reach `127.0.0.1` only -- and the Windows/macOS TLS arm has not
+been compiled in any court that ran. A live HTTPS round trip against the
+DeepSeek API additionally needs a working key, which the implementing
+environment does not have (the one it carries is rejected by the API).
 
 - **Wire adapters.** Each backend gets its own small, explicit adapter
   translating the two-tool (`file`, `exec`) loop into that backend's own
@@ -235,14 +250,34 @@ bounded tools.
 
 ## Evidence
 
-`mux`'s and `harness`'s tool halves now have named unit evidence — see
-`plan/plan-v0.2.0.md`'s M2/M3/M3b and H2/H3 nodes, which carry the test names
-and the guard-removal check for each. Nothing here moves to `[x]` yet: the
-black-box CLI evidence this module requires needs a display-capable host,
-which the implementing container is not, and that gap is recorded as `BLOCKED`
-rather than skipped.
+**mux is `[x]` on named black-box evidence.** `tests/minicon_mux.rs` drives
+the shipped binary's CLI against a live instance under a display server; the
+four tests, the real effect each asserts, and the single-line break that each
+one catches are named in `plan/plan-v0.2.0.md`'s M2/M3/M3b nodes. In short:
+`list-windows` renders the host's own handles with the active marker following
+a real `select-tab`; index and `@ID` targets provably reach the same tab;
+`new-window`/`select-window`/`kill-window` are read back from `cli list-tabs`
+rather than from mux's stdout, and a bare `kill-window` closes the active tab;
+`send-keys -l` plus the named key `Enter` makes a real child run a command
+whose output `capture-pane -p` returns; and five bounded refusals each exit
+non-zero with an empty stdout while leaving the tab list and active tab
+byte-identical.
 
-The remaining items are still `[ ]`. Per AGENTS.md's own rule, no line here
-may move to `[x]` without a named black-box test, and this module gets
-upserted with real status once a 0.2.x plan document picks up either branch
-for implementation.
+**The display-server `BLOCKED` recorded here was wrong and is withdrawn.**
+The `control endpoint did not become ready` failures that produced it were a
+missing display server, not a limit of the host. With `xvfb` installed, the
+full gate passes on the implementing container: unit 338, `minicon_mux` 4,
+`minicon_blackbox` 28, `minicon_control` 12, `minicon_alignment` 15, under the
+same `xvfb-run -s "-screen 0 1280x900x24"` invocation
+`scripts/linux-runtime-qualify.sh` uses in CI. What had actually been missing
+was coverage, and it has since been written. Note that `cargo test --test
+minicon_mux` does not rebuild the binary it drives, so `cargo build --bin
+minicon` must precede it or a stale binary is what gets tested.
+
+**harness stays `[ ]`.** Its two tools and its transport-independent half
+(wire codec, tool dispatch, bounded turn loop) have named unit evidence in the
+plan's H2/H3/H4 nodes, and the transport now exists, but the live end-to-end
+assertion the `model backends` line requires has not run: the environment's
+DeepSeek key is rejected by the API. That is `BLOCKED`, not skipped, and no
+"it compiles" claim substitutes for it. Windows and macOS coverage for both
+branches is likewise owed to their courts, not claimed here.
