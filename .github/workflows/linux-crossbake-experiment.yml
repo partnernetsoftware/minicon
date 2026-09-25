@@ -44,17 +44,20 @@ jobs:
       # cache: `docker build` on these runners uses the BuildKit backend,
       # which keeps its own cache separate from the classic image store that
       # `docker load` populates, so that approach silently rebuilt the whole
-      # ~14-minute image (osxcross included) on every run. `docker buildx`
-      # (bundled with Docker on these runners, no extra install) supports a
-      # `type=local` cache exported to/imported from a plain directory, which
-      # actions/cache CAN persist across runs -- this is the real fix.
-      - name: Restore BuildKit layer cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: /tmp/buildx-cache
-          key: linux-crossbake-buildx-v2-${{ hashFiles('scripts/crossbake.Dockerfile', 'loader/install-cosmocc.sh') }}
-          restore-keys: |
-            linux-crossbake-buildx-v2-
+      # ~14-minute image (osxcross included) on every run. A local
+      # `actions/cache`-backed buildx cache dir was the first fix, but it only
+      # accumulates once a full run succeeds -- every failed debugging
+      # iteration lost its partial progress. Push the cache to a GHCR
+      # `type=registry` ref instead: BuildKit commits cache layers per build
+      # stage as it goes, independent of whether a later step in the same run
+      # fails, so each iteration's completed layers (apt install, osxcross
+      # build, cosmocc install, ...) accumulate for real even while the
+      # six-cell cross-build is still being debugged -- exactly the
+      # incremental "don't wait for a finished base" path.
+      - name: Log in to GHCR for cache push/pull
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Create a buildx builder that supports cache export
         run: |
@@ -70,16 +73,12 @@ jobs:
       - name: Build the crossbake image
         run: |
           set -euo pipefail
+          cache_ref="ghcr.io/${{ github.repository }}/crossbake-cache:latest"
           docker buildx build --builder crossbake --load \
             -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe \
-            --cache-from type=local,src=/tmp/buildx-cache \
-            --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max \
+            --cache-from "type=registry,ref=$cache_ref" \
+            --cache-to "type=registry,ref=$cache_ref,mode=max" \
             .
-          # Local buildx cache only ever grows if reused in place, so swap in
-          # the freshly written cache rather than merging into the old one --
-          # the documented pattern for this backend.
-          rm -rf /tmp/buildx-cache
-          mv /tmp/buildx-cache-new /tmp/buildx-cache
 
       - name: Cross-build all six cells + minicon.com inside the image
         run: |
@@ -141,11 +140,11 @@ jobs:
 
       - name: Publish the crossbake image
         if: ${{ inputs.publish }}
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          # Already logged in to GHCR above (needed unconditionally, for the
+          # registry build cache). This step promotes a verified probe build
+          # to a real, pullable tag -- the "base" other images FROM later.
           tag="ghcr.io/${{ github.repository }}/crossbake:$(date +%Y%m%d)"
           docker tag minicon-crossbake:probe "$tag"
           docker push "$tag"
