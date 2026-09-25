@@ -37,12 +37,6 @@
 //! prove the remote server agrees with assumptions 1-4. Until that run exists
 //! this backend is `BLOCKED`, not `[x]`.
 
-// Reached today only by this file's tests: `harness.rs` is another worker's
-// file and does not call the adapter yet. Same scoped, non-test allowance and
-// same reason as `harness_wire` and the two tools carry -- faking a caller to
-// make it reachable would be worse than saying so.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use crate::harness_wire::Transport;
 
 // ---------------------------------------------------------------------------

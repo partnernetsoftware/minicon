@@ -58,25 +58,6 @@ pub const HARNESS_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NetworkHttp;
 
-/// Transitional shim for the old transport's name, for one module's tests only.
-///
-/// `harness_opencode`'s tests still name `PlainHttp`, and that file belongs to
-/// another worker in this change, so the name cannot be fixed there from here.
-/// This is not a second transport and not a plain-HTTP-only one: every call
-/// delegates to `NetworkHttp`, which speaks `http://` and `https://` alike.
-/// `#[cfg(test)]` because the shim exists for those tests and nothing else --
-/// no product path reaches it. Delete it once that module names `NetworkHttp`.
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PlainHttp;
-
-#[cfg(test)]
-impl Transport for PlainHttp {
-    fn post_json(&self, url: &str, bearer: &str, body: &str) -> Result<String, String> {
-        NetworkHttp.post_json(url, bearer, body)
-    }
-}
-
 impl Transport for NetworkHttp {
     fn post_json(&self, url: &str, bearer: &str, body: &str) -> Result<String, String> {
         use agenterm_platform::network_http;
