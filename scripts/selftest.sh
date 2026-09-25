@@ -33,6 +33,7 @@ OFFLINE=(
   scripts/six-grid-cloud-selftest.sh
   scripts/aggregate-six-grid-runtime-selftest.py
   scripts/cleanup-build-state-selftest.py
+  scripts/product-source-hash-selftest.sh
 )
 
 COURT=(

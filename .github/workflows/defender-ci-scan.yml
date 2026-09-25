@@ -58,7 +58,10 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
           [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
           git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
+          # Product source tree only, not raw HEAD equality -- see
+          # scripts/product-source-hash.sh. A workflow/doc-only fix landing on
+          # main after the Candidate sealed must not force a version bump.
+          [[ "$(scripts/product-source-hash.sh origin/main)" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]]
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
           [[ "$(jq -r .path <<<"$run")" == ".github/workflows/candidate.yml" ]]
           [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]

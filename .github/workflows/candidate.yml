@@ -58,7 +58,11 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
           [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
           git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
+          # Not a raw HEAD-equality check: a workflow/doc-only commit landing
+          # on main after this Candidate's source_sha was pinned must not
+          # invalidate an otherwise-unchanged product. Compare the product
+          # source tree only (see scripts/product-source-hash.sh).
+          [[ "$(scripts/product-source-hash.sh origin/main)" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]]
           version="$(jq -r .version release-policy.json)"
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" >/dev/null 2>&1; then
             echo "v$version already exists; bump and commit the next version before Candidate" >&2
