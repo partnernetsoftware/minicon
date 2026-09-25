@@ -68,13 +68,17 @@ process, exactly like the existing `--control` endpoint.
 │         `NPage`) into that spec instead of growing a second key table
 ├── harness {h}
 │   ├── outcome: minimal agent loop, two tools only
-│   ├── tools [ ]
+│   ├── tools [x]
 │   │   ├── file: read/write within a bounded root, no plugin interface
 │   │   ├── exec: run one command, capture output, no shell plugin chain
 │   │   └── #decision exactly these two; a third tool is a new decision
-│   ├── model backends [ ]
+│   ├── model backends [~]
 │   │   ├── DeepSeek official API + key, flash model first ->h1 @method=first
-│   │   └── opencode-go-compatible key as the second accepted credential
+│   │   ├── opencode-go-compatible key as the second accepted credential
+│   │   └── both adapters are built with their OWN codec and dispatched per
+│   │       backend; both are `[~]` not `[x]` because neither has run against
+│   │       its real endpoint -- see "harness — what is built and what is
+│   │       owed" below. #assumption
 │   ├── policy #decision
 │   │   ├── no separate "Agent permission policy" framework
 │   │   └── the two tools' own bounds (root path, command) are the policy
@@ -275,10 +279,61 @@ was coverage, and it has since been written. Note that `cargo test --test
 minicon_mux` does not rebuild the binary it drives, so `cargo build --bin
 minicon` must precede it or a stale binary is what gets tested.
 
-**harness stays `[ ]`.** Its two tools and its transport-independent half
-(wire codec, tool dispatch, bounded turn loop) have named unit evidence in the
-plan's H2/H3/H4 nodes, and the transport now exists, but the live end-to-end
-assertion the `model backends` line requires has not run: the environment's
-DeepSeek key is rejected by the API. That is `BLOCKED`, not skipped, and no
-"it compiles" claim substitutes for it. Windows and macOS coverage for both
-branches is likewise owed to their courts, not claimed here.
+### harness — what is built and what is owed
+
+**Built, with named evidence.** The two tools are `[x]`. Both backends are
+wired and dispatched from `run_harness` on `--backend`, each running its own
+codec: `harness_wire` speaks DeepSeek's wire format, `harness_opencode` the
+OpenAI-compatible shape an opencode-go server presents, and the only thing
+they share is the `Transport` seam. The DeepSeek codec is covered by
+`harness_wire`'s four transport tests, the opencode-go codec by twelve tests
+in `harness_opencode` — endpoint resolution, a real-socket round trip
+asserting the request line, bearer header, `stream:false`, both advertised
+tools and the model-commanded file landing under the task root, plus every
+bounded refusal (non-2xx carrying the server's own text, truncated JSON, the
+reply ceiling, named missing fields, the turn bound, the tool-call bound).
+Seventeen one-line breaks were each applied and restored byte-exact; each
+failed exactly the test(s) covering it. The whole gate is green under xvfb,
+exit 0: unit 352, mux 4, blackbox 28, control 12, alignment 15.
+
+That the wiring itself is real is falsifiable rather than asserted: reverting
+`run_harness`'s dispatch makes the entire opencode-go adapter dead code, which
+the gate's `dead_code` denial rejects with eight `never used` errors. No
+module in the harness carries a `cfg_attr(not(test), allow(dead_code))` any
+more; each allowance was removed as its stated reason expired.
+
+**Owed, and BLOCKED rather than skipped.** Three things, none of which "it
+compiles" substitutes for:
+
+1. **No live DeepSeek call.** The key this environment carries is rejected by
+   the API. Every DeepSeek-side test is loopback plain HTTP plus pure mapping
+   functions.
+2. **No live opencode-go call.** Nothing in this repository documents that
+   server's wire format, so the adapter implements the OpenAI-compatible shape
+   and states each assumption in its module header instead of inventing
+   fields. `OPENCODE_DEFAULT_MODEL` and the default port are unverified
+   placeholders.
+3. **TLS is proven by nothing here.** No test in either repository reaches a
+   host but `127.0.0.1`, and the Windows/macOS `native-tls` arm is not
+   compiled in any evidence on record. The TLS provider selection is proved
+   only by the feature graph compiling.
+
+Windows and macOS coverage for both branches is owed to their courts, not
+claimed here.
+
+Two process notes worth keeping, because each cost real time:
+
+- A guard test can pass with its guard removed and still look like evidence.
+  `harness_wire`'s Authorization-header assertion matched
+  `Authorization: Bearer secret` as a substring, which the broken version's
+  `x-not-authorization: Bearer secret` contains — so the break failed to fail.
+  It now matches the whole folded header line. A break that does not fail is
+  the finding, not a nuisance.
+- The opencode-go fixtures deadlocked two complete gate runs: a `Drop` joined
+  a listener thread parked in blocking `accept()`, so any test that finished
+  before consuming its scripted replies — including every refusal test, once
+  the transport validates client-side and never connects — hung forever. It
+  was diagnosed from the processes' kernel wait states
+  (2x `inet_csk_accept` plus `futex_do_wait`), not from the test output, which
+  showed nothing at all. Fixtures must terminate on their own merits; a
+  wrapper timeout would have hidden this.

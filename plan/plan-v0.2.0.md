@@ -272,7 +272,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     six-cell round that has a caller to exercise it
 │   │   └── black-box evidence: owed, not environment-blocked — same
 │   │         withdrawn display-server assumption as H2
-│   ├── H4 DeepSeek flash backend ->h1 [ ] @method=first
+│   ├── H4 DeepSeek flash backend ->h1 [~] @method=first
 │   │   ├── also closes out, as the first non-test caller of H2/H3: the
 │   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/
 │   │   │     `ExecTool` (carried only because the tools are complete while
@@ -297,35 +297,92 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     clippy clean, and one guard broken independently of the
 │   │   │     authoring session failed exactly
 │   │   │     `rejects_a_body_on_a_method_that_cannot_carry_one`
-│   │   ├── BLOCKED: MiniCon pins `agenterm-platform` by git `rev` against
-│   │   │     the public agenterm repository, so the capability cannot be
-│   │   │     consumed until that commit is pushed. This session is not
-│   │   │     authorized to push to agenterm, so the pin cannot move and
-│   │   │     harness's HTTPS transport stays unreachable from MiniCon. Not a
-│   │   │     code gap and not skipped: the code is written and tested, the
-│   │   │     authority to publish it is what is missing
-│   │   ├── shipping shape while the pin is stuck: `harness_wire`'s
-│   │   │     `PlainHttp` serves a plain-HTTP endpoint and refuses `https://`
-│   │   │     by name, citing the missing TLS capability -- a bounded refusal,
-│   │   │     never a silent downgrade
+│   │   ├── pin BLOCKER withdrawn 2026-09-25: the owner authorized attaching
+│   │   │     agenterm with push access, the capability is published as
+│   │   │     PR #119 (`fd0adcf`), and MiniCon's `Cargo.toml` pin moved to it
+│   │   │     with `network-http` enabled. #decision
+│   │   ├── `PlainHttp` DELETED, not kept beside the new transport: the
+│   │   │     capability's `validate` accepts `http://` and `https://` alike,
+│   │   │     so one `NetworkHttp` reaches both an https model API and the
+│   │   │     loopback plain-HTTP case `PlainHttp` was justified by. Keeping
+│   │   │     both would mean two clients for one job, one of them a private
+│   │   │     response parser with its own framing bugs. Nothing in MiniCon
+│   │   │     refuses `https://` any more. #decision
 │   │   ├── #rejected shelling out to `curl`: an unbounded external command
 │   │   │     inside the one feature whose point is bounded tools
-│   │   ├── BLOCKED on credentials too, separately: the key this environment
-│   │   │     carries is rejected by the API (`Authentication Fails ... is
-│   │   │     invalid`), so even over a working transport the live end-to-end
-│   │   │     assertion cannot run here
-│   │   └── #risk both blockers are recorded, neither is skipped, per AGENTS.md.
-│   │         The transport-independent half — wire codec, tool dispatch,
-│   │         bounded turn loop — does NOT wait on either and is being built
-│   │         behind `harness_wire`'s `Transport` seam, provable against a
-│   │         scripted fake transport with no network
-│   ├── H5 opencode-go-compatible backend ->h1 [ ]
+│   │   ├── #rejected a MiniCon-local TLS crate: cross-platform mechanism
+│   │   │     belongs in the shared platform crates, per AGENTS.md
+│   │   ├── blackbox: `harness_wire`'s four transport tests --
+│   │   │     `a_non_2xx_response_becomes_an_error_carrying_the_status_and_the_body`,
+│   │   │     `a_truncated_2xx_body_is_refused_rather_than_parsed_as_complete`,
+│   │   │     `the_transport_refuses_a_bad_url_before_opening_any_socket`,
+│   │   │     `the_transport_round_trips_against_a_loopback_listener`
+│   │   ├── provable: five one-line breaks, each failing exactly one test
+│   │   │     (`if !response.is_success()` -> `if false`; `: {text}` dropped
+│   │   │     from the non-2xx format string; the 2xx `if response.truncated`
+│   │   │     -> `if false`; `network_http::validate` -> `Ok(())`;
+│   │   │     `Authorization` -> `X-Not-Authorization`)
+│   │   ├── #divergence the Authorization break INITIALLY FAILED TO FAIL --
+│   │   │     the assertion matched `Authorization: Bearer secret` as a
+│   │   │     substring, which `x-not-authorization: Bearer secret` contains.
+│   │   │     The first version of that assertion was documentation, not
+│   │   │     evidence; it now matches the whole folded header line
+│   │   ├── BLOCKED on credentials, still: the key this environment carries is
+│   │   │     rejected by the API (`Authentication Fails ... is invalid`), so
+│   │   │     the live end-to-end assertion cannot run here. Every test above
+│   │   │     is loopback plain HTTP plus pure mapping functions
+│   │   └── #risk TLS itself is proven by NOTHING in either repository: no
+│   │         test reaches a host but `127.0.0.1`, and the Windows/macOS
+│   │         native-tls arm is not compiled in any evidence. The TLS provider
+│   │         selection is proved only by the feature graph compiling
+│   ├── H5 opencode-go-compatible backend ->h1 [~]
 │   │   ├── invariant: a second, independently verified adapter — H1's
-│   │   │     decision explicitly forbids assuming H4's adapter covers it
-│   │   ├── evidence: same shape as H4's, against the opencode-go endpoint
-│   │   ├── depends: H4 (adapter pattern proven once before a second is built)
-│   │   └── #risk same live-credential dependency as H4; `BLOCKED` if absent
-│   └── H6 upsert into PRD_02_31 ->h [ ]
+│   │   │     decision explicitly forbids assuming H4's adapter covers it.
+│   │   │     Held: `harness_opencode` owns its request body, its reply
+│   │   │     parsing and its own bounds, and shares only the `Transport`
+│   │   │     seam. `run_harness` dispatches per backend; the DeepSeek codec
+│   │   │     never serves this one
+│   │   ├── blackbox: twelve tests in `src/harness_opencode.rs`, covering the
+│   │   │     endpoint resolver (default, env, slash doubling, non-http and
+│   │   │     hostless refusals), a real-socket round trip that asserts the
+│   │   │     request line, bearer header, `stream:false`, both advertised
+│   │   │     tools, the assistant `tool_calls` echo matched by
+│   │   │     `tool_call_id`, and the model-commanded file landing under the
+│   │   │     task root; plus a tool refusal carried back as a result, non-2xx
+│   │   │     status, truncated JSON, the reply ceiling, named missing fields,
+│   │   │     the turn bound and the tool-call bound
+│   │   ├── provable: twelve one-line breaks, each failing exactly one test;
+│   │   │     one break (`opencode_dispatch(...)?` instead of
+│   │   │     `.unwrap_or_else(|refusal| refusal)`) failed TWO, because the
+│   │   │     turn-bound fixture also scripts a failing read -- recorded, not
+│   │   │     hidden
+│   │   ├── #divergence the endpoint resolver genuinely had the scheme-order
+│   │   │     bug the break table lists: `http://` alone resolved to
+│   │   │     `http://http:/v1/chat/completions`. The test caught it on first
+│   │   │     write; the fix carries a comment saying why the order matters
+│   │   ├── #divergence the fixtures DEADLOCKED two full runs: a `Drop` that
+│   │   │     joined a listener thread parked in blocking `accept()`, so any
+│   │   │     test panicking before the scripted replies ran out -- and, with
+│   │   │     client-side `validate`, any refusal test that never connects --
+│   │   │     hung forever. Diagnosed from kernel wait states
+│   │   │     (2x `inet_csk_accept` + `futex_do_wait`), deterministic, fixed
+│   │   │     in the fixture with a non-blocking accept loop, a stop flag set
+│   │   │     before the join and a read deadline. No `timeout` wrapper, no
+│   │   │     `#[ignore]`, no test deleted
+│   │   ├── provable: reverting `harness.rs`'s dispatch makes the whole
+│   │   │     adapter dead code -- eight `never used` errors under the gate's
+│   │   │     `dead_code` denial -- so the wiring is falsifiable, not claimed.
+│   │   │     The module's `cfg_attr(not(test), allow(dead_code))` is gone
+│   │   ├── BLOCKED: no live round trip against a real opencode-go server.
+│   │   │     Nothing in this clone documents that wire shape, so the adapter
+│   │   │     implements the OpenAI-compatible shape and STATES each
+│   │   │     assumption in its module header rather than inventing fields.
+│   │   │     `OPENCODE_DEFAULT_MODEL = "opencode"` and the default port are
+│   │   │     unverified. Stays `[~]`, never `[x]`, until that run exists
+│   │   └── #risk this module duplicates `harness_wire`'s tool dispatch and
+│   │         system prompt almost verbatim. Deliberate under H1; collapse it
+│   │         only against live evidence from BOTH backends, never before
+│   └── H6 upsert into PRD_02_31 ->h [✓]
 │         └── flip harness's `[ ]` lines to `[x]` only against H2-H5's named
 │               evidence
 └── Shared gates
