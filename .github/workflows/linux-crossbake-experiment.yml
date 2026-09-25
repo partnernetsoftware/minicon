@@ -107,6 +107,7 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work minicon-crossbake:probe bash -euo pipefail -c '
             set -x
             echo "PATH=$PATH"
+            ls -la /opt/ || true
             ls -la /opt/cosmocc/bin/ || true
             command -v cosmocc || true
             rustup target add \
@@ -115,9 +116,11 @@ jobs:
             # win-x86_64 / win-aarch64 via cargo-xwin
             cargo xwin build --locked --release --target x86_64-pc-windows-msvc -p minicon
             cargo xwin build --locked --release --target aarch64-pc-windows-msvc -p minicon
+            echo "--- after xwin ---"; ls -la /opt/cosmocc/bin/ || true
             # lnx-x86_64 / lnx-aarch64 via cargo-zigbuild
             cargo zigbuild --locked --release --target x86_64-unknown-linux-gnu -p minicon
             cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu -p minicon
+            echo "--- after zigbuild ---"; ls -la /opt/cosmocc/bin/ || true
             # osx-aarch64 / osx-x86_64 via osxcross. Wrapper naming
             # (<arch>-apple-darwin<ver>-clang) is not stable across osxcross
             # versions -- osxcross-experiment.yml hit both "aarch64-..." and
@@ -139,9 +142,11 @@ jobs:
             CC_aarch64_apple_darwin="$clang_arm64" \
               CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$clang_arm64" \
               cargo build --locked --release --target aarch64-apple-darwin -p minicon
+            echo "--- after osx aarch64 ---"; ls -la /opt/cosmocc/bin/ || true
             CC_x86_64_apple_darwin="$clang_x86_64" \
               CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="$clang_x86_64" \
               cargo build --locked --release --target x86_64-apple-darwin -p minicon
+            echo "--- after osx x86_64 ---"; ls -la /opt/cosmocc/bin/ || true
             # minicon.com packing (loader/pack.sh) reads loader/rebuild-payloads.sh's
             # per-cell layout, which assumes a real macOS host for the two native
             # osx-* builds -- this probe sets CC/linker explicitly instead (above),
