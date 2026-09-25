@@ -138,23 +138,36 @@ multi-pane-per-window verbs, no multiple sessions, no tmux control-mode
 
 ## harness — detail
 
-Design questions still open, to resolve before implementation starts:
+**Resolved, 2026-09-25** (supersedes the four open questions this section
+used to carry):
 
-- [ ] Exact request/response shape MiniCon sends to DeepSeek's flash model
-  and to an opencode-go-compatible endpoint — these may not share a wire
-  format, so the harness needs an explicit small adapter per backend, not a
-  generic "any OpenAI-compatible endpoint" claim until a second real backend
-  is verified end to end.
-- [ ] Where the bounded root for `file` and the allowed command shape for
-  `exec` are configured (CLI flag, `minicon.json`, or both) and what the
-  default is when neither is given — MiniCon's existing preference is an
-  explicit flag over a silent default that could widen scope unexpectedly.
-- [ ] Credential storage: how a DeepSeek or opencode-go key reaches the
-  harness (environment variable vs. a config file) without MiniCon
-  accumulating a general secrets-management feature.
-- [ ] Whether `harness` runs one bounded task and exits, or holds an
-  interactive loop inside a tab — the outcome statement above assumes the
-  former (a bounded task) unless a concrete use case requires the latter.
+- **Invocation and scope.** `minicon harness --root <path> --task "<text>"
+  [--backend deepseek|opencode-go] [--allow-cmd <name>]...`. `--root` and
+  `--task` are required with no default; a missing `--root` is a bounded CLI
+  error, never an implicit cwd, per MiniCon's existing "explicit flag over a
+  silent default that could widen scope" preference. `--allow-cmd` is
+  repeatable and names permitted executable basenames for the `exec` tool;
+  giving none does not disable the tool (a script must always see the same
+  two tools advertised) but makes every `exec` call refused with a bounded
+  error naming the missing allow-list, so a model cannot tell "not allowed
+  yet" apart from "tool absent" by probing.
+- **Run shape.** One invocation runs one bounded task to completion (or to a
+  bounded turn/tool-call limit) and exits, printing the result to stdout —
+  no interactive loop inside a tab, no conversation persisted across
+  invocations. A `--continue`-style resumed conversation is deliberately
+  out of scope for v0.2.0, not designed here.
+- **Credential storage.** Environment variable only:
+  `MINICON_DEEPSEEK_API_KEY` for `--backend deepseek`,
+  `MINICON_OPENCODE_API_KEY` for `--backend opencode-go`. A config-file
+  credential store is deferred so MiniCon does not grow a general
+  secrets-management feature for this one CLI mode.
+- **Wire adapters.** Each backend gets its own small, explicit adapter
+  translating the two-tool (`file`, `exec`) loop into that backend's own
+  tool-call wire shape. DeepSeek's flash model is wired first, verified end
+  to end (H4); the opencode-go-compatible adapter is built and verified
+  second (H5), independently — no "any OpenAI-compatible endpoint" claim is
+  made from DeepSeek's adapter alone, since the two may not actually share a
+  wire format and MiniCon does not assert compatibility it has not run.
 
 ## Evidence
 

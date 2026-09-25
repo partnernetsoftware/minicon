@@ -78,18 +78,25 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │               in M2/M3/M3b, per AGENTS.md's "[x] requires named evidence"
 │               rule
 ├── H harness: minimal two-tool agent loop {h}
-│   ├── H1 design close-out ->h [ ]
-│   │   ├── bounded scope config: an explicit CLI flag (`--root`, one
-│   │   │     command allow-shape) is required; no silent default that could
-│   │   │     widen scope unexpectedly @method=explicit-flag-required
-│   │   │     #decision
+│   ├── H1 design close-out ->h [x] (2026-09-25, PRD_02_31 "harness -- detail")
+│   │   ├── invocation: `minicon harness --root <path> --task "<text>"
+│   │   │     [--backend deepseek|opencode-go] [--allow-cmd <name>]...`;
+│   │   │     `--root`/`--task` required, no implicit-cwd default
+│   │   │     @method=explicit-flag-required #decision
+│   │   ├── exec allow-shape: `--allow-cmd` repeatable, names permitted
+│   │   │     executable basenames; zero given means the `exec` tool is
+│   │   │     still advertised but every call is refused with a bounded
+│   │   │     error -- a model must not be able to distinguish "not allowed
+│   │   │     yet" from "tool absent" by probing #decision
 │   │   ├── credential path: environment variable only for v0.2.0
 │   │   │     (`MINICON_DEEPSEEK_API_KEY` / `MINICON_OPENCODE_API_KEY`); a
 │   │   │     config-file credential store is deferred, not designed here,
 │   │   │     to avoid MiniCon growing a general secrets feature
 │   │   │     #decision @method=env-var-only
-│   │   └── run shape: one bounded task then exit, not an interactive loop
-│   │         inside a tab, per PRD_02_31's own default assumption
+│   │   └── run shape: one invocation runs one bounded task to completion
+│   │         (or a bounded turn/tool-call limit) and exits, printing to
+│   │         stdout; no interactive loop inside a tab, no conversation
+│   │         persisted across invocations (`--continue` is out of scope)
 │   │         @method=bounded-task-then-exit #decision
 │   ├── H2 file tool ->h1 [ ] @method=first ->h1
 │   │   ├── invariant: read/write confined to the `--root` bound; a path
@@ -140,8 +147,9 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 
 1. **M1/H1 design close-outs first** — both are pure decisions (no code),
    and H2/H3/M2/M3 all depend on their own branch's close-out. Do these
-   before writing any implementation. M1 is resolved as of 2026-09-25 (see
-   `PRD_02_31_v0_2_horizon.md` "mux — detail"); H1 is still open.
+   before writing any implementation. Both are resolved as of 2026-09-25 (see
+   `PRD_02_31_v0_2_horizon.md`'s "mux — detail" and "harness — detail");
+   implementation (M2/M3/M3b, H2-H5) can now start.
 2. **mux (M2 → M3) and harness's two tools (H2, H3 in parallel)** can proceed
    independently — mux only touches `PRD_02_26`'s existing control-CLI code
    path; harness's file/exec tools are new, isolated modules with no shared
