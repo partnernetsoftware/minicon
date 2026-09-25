@@ -453,6 +453,20 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             }
         });
     }
+    if args.first().is_some_and(|arg| arg == "mux") {
+        return Some(match crate::mux::run_mux(args) {
+            Ok(output) => {
+                if !output.is_empty() {
+                    write_offline_stdout(&output);
+                }
+                0
+            }
+            Err(error) => {
+                write_offline_stderr(&format!("minicon mux: {error}\n"));
+                2
+            }
+        });
+    }
     let alone = args.len() == 1;
     match args.first().map(String::as_str) {
         Some("--version" | "-V") if alone => {

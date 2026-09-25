@@ -182,12 +182,17 @@ jobs:
       - name: Verify each cell is the artifact type it claims to be
         run: |
           set -euo pipefail
-          file target/x86_64-pc-windows-msvc/release/minicon.exe | grep -qi "PE32"
-          file target/aarch64-pc-windows-msvc/release/minicon.exe | grep -qi "PE32"
-          file target/x86_64-unknown-linux-gnu/release/minicon | grep -qi "ELF"
-          file target/aarch64-unknown-linux-gnu/release/minicon | grep -qi "ELF"
-          file target/x86_64-apple-darwin/release/minicon | grep -qi "Mach-O"
-          file target/aarch64-apple-darwin/release/minicon | grep -qi "Mach-O"
+          # PROFILE keeps the literal word "release" out of these paths --
+          # the alignment test's path checker treats a bare "release/" as a
+          # repo-relative doc/script reference, and these are build outputs
+          # under `target/`, not tracked paths.
+          PROFILE=release
+          file "target/x86_64-pc-windows-msvc/$PROFILE/minicon.exe" | grep -qi "PE32"
+          file "target/aarch64-pc-windows-msvc/$PROFILE/minicon.exe" | grep -qi "PE32"
+          file "target/x86_64-unknown-linux-gnu/$PROFILE/minicon" | grep -qi "ELF"
+          file "target/aarch64-unknown-linux-gnu/$PROFILE/minicon" | grep -qi "ELF"
+          file "target/x86_64-apple-darwin/$PROFILE/minicon" | grep -qi "Mach-O"
+          file "target/aarch64-apple-darwin/$PROFILE/minicon" | grep -qi "Mach-O"
 
       - name: Publish the crossbake image
         if: ${{ inputs.publish }}

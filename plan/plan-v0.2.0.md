@@ -28,8 +28,8 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     implemented @method=window-is-tab #decision
 │   │   └── surface shape: a mode of the existing --control CLI, not a new
 │   │         binary subcommand or endpoint @method=mode-not-new-endpoint
-│   │         #decision ->PRD_02_26_con_control_cli.md
-│   ├── M2 tab listing (`list-windows`) ->m1 [ ]
+│   │         #decision ->prd/PRD_02_26_con_control_cli.md
+│   ├── M2 tab listing (`list-windows`) ->m1 [~]
 │   │   ├── invariant: enumerates only tabs of the calling process's own
 │   │   │     MiniCon instance; no cross-instance discovery
 │   │   ├── invariant: `-F <format>` supports only the substitution
@@ -38,9 +38,27 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     rendered blank (tmux itself renders unknown ones blank; MiniCon
 │   │   │     deliberately does not, to avoid a script silently getting
 │   │   │     empty fields it thinks are real) #decision
-│   │   ├── evidence: black-box CLI test asserts listed handles match the
-│   │   │     tabs opened by the test harness, in a fresh MiniCon instance,
-│   │   │     for both `@ID` and integer-index addressing
+│   │   ├── implemented: `src/mux.rs` `run_mux`/`run_list_windows` -- a thin
+│   │   │     translation of `mux list-windows [-F FORMAT]` into `control::
+│   │   │     run_cli`'s existing `list-tabs` wire call, parsed back with
+│   │   │     `serde_json` (moved to a real, non-dev dependency for this) and
+│   │   │     rendered through a `#{var}` substitution engine restricted to
+│   │   │     `window_id`/`window_index`/`window_name`/`window_active`
+│   │   ├── evidence: unit tests in `src/mux.rs` (`parse_tabs_reads_id_title_
+│   │   │     active`, `render_format_default_marks_active_window`,
+│   │   │     `unknown_substitution_is_bounded_error`) prove the translation
+│   │   │     and format engine against a fixed `list-tabs` JSON fixture
+│   │   ├── BLOCKED (evidence gap, not a design gap): the invariant's own
+│   │   │     black-box evidence -- a live MiniCon instance's real `list-tabs`
+│   │   │     response round-tripped through `mux list-windows` -- has not
+│   │   │     run, because this development environment has no window/display
+│   │   │     server and every existing `--control` black-box test
+│   │   │     (`tests/minicon_blackbox.rs`, `minicon_control.rs`) fails the
+│   │   │     same way here (`control endpoint did not become ready`) with no
+│   │   │     mux-specific code involved -- confirmed by running an existing,
+│   │   │     unmodified blackbox test before adding any mux code. Run the
+│   │   │     black-box suite in an environment with a real display (or a
+│   │   │     future headless-GUI mode) before moving this line to `[x]`
 │   │   ├── safe failure: zero tabs returns an empty list, not an error
 │   │   └── non-goal: [-] multi-pane enumeration (`split-window` not
 │   │         implemented; each tab always lists exactly one pane, index 0)
@@ -148,7 +166,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 1. **M1/H1 design close-outs first** — both are pure decisions (no code),
    and H2/H3/M2/M3 all depend on their own branch's close-out. Do these
    before writing any implementation. Both are resolved as of 2026-09-25 (see
-   `PRD_02_31_v0_2_horizon.md`'s "mux — detail" and "harness — detail");
+   `prd/PRD_02_31_v0_2_horizon.md`'s "mux — detail" and "harness — detail");
    implementation (M2/M3/M3b, H2-H5) can now start.
 2. **mux (M2 → M3) and harness's two tools (H2, H3 in parallel)** can proceed
    independently — mux only touches `PRD_02_26`'s existing control-CLI code

@@ -61,13 +61,13 @@ agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", re
 agenterm-ui-core = { git = "https://github.com/partnernetsoftware/agenterm", rev = "487b70a11", features = ["terminal-selection"] }
 itoa = "1"
 minicon-core = { path = "crates/minicon-core" }
+serde_json = "1"
 unicode-width = "0.2"
 vt100 = "0.16"
 
 [dev-dependencies]
 agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "487b70a11", default-features = false, features = ["input-inject"] }
 png = "0.17"
-serde_json = "1"
 
 
 [target.'cfg(windows)'.dependencies]

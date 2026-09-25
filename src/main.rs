@@ -41,6 +41,7 @@ mod font;
 mod ime_mode;
 #[cfg(target_os = "linux")]
 mod linux_startup;
+mod mux;
 mod palette;
 mod perf;
 mod raster_surface;
