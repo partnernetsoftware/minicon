@@ -208,9 +208,14 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     `..._refuses_an_unlisted_command_and_a_path_spelling_of_a_listed_one`,
 │   │   │     `..._runs_one_command_and_never_interprets_shell_metacharacters`
 │   │   ├── provable: disabling the basename-vs-path check failed exactly the
-│   │   │     allow-list test and no other; deleting the empty-allow-list
-│   │   │     refusal failed exactly its own test and leaked the generic
-│   │   │     message the distinction exists to prevent
+│   │   │     allow-list test and no other; disabling the empty-allow-list
+│   │   │     refusal failed exactly its own test and no other. Both
+│   │   │     re-verified independently 2026-09-25 by the integrating session.
+│   │   │     #risk the empty-allow-list guard is the fragile one of the set:
+│   │   │     with it gone the call still fails, just through the generic
+│   │   │     `not in the allow-list ()` path, so the test holds only because
+│   │   │     it asserts on the specific message. Re-check it whenever
+│   │   │     `ExecTool::admit` changes
 │   │   ├── carried debt: the spawn uses `std::process::Command`, not
 │   │   │     `agenterm_platform::contained_process::ContainedHeadlessCommand`
 │   │   │     as PRD_02_31 assumed — that module is gated behind the platform
