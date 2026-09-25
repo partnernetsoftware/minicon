@@ -77,3 +77,35 @@ Neither is this repository's current pain point, so this is intentionally
 left `BLOCKED` pending one of those two triggers rather than built on
 spec — per AGENTS.md, unavailable evidence for "this fixes our slow build"
 is `BLOCKED`, not asserted from a plausible-sounding design.
+
+## Update, 2026-09-25 — trigger (b) probed, with real evidence
+
+The "the two osx-* cells need a REAL macOS toolchain" line above was true for
+this repository's *local, Docker-Desktop-on-a-Mac* framing, but left an open
+question: does the same hold on a *Linux CI runner*, where osxcross already
+has an independent existence proof
+(`.github/workflows/osxcross-experiment.yml`, a real linkable Mach-O)?
+`.github/workflows/linux-crossbake-experiment.yml` answers that question —
+manual-dispatch only, never on push, never feeding a Candidate — by pre-baking
+one image (`scripts/crossbake-base.Dockerfile`: apt, rustup, cargo-xwin,
+cargo-zigbuild, zig, osxcross, cosmocc) and cross-building all six cells plus
+`minicon.com` inside it on one `ubuntu-24.04` runner.
+
+Result, run `36114279354` (2026-09-25): all six cells built and each passed
+its `file`-type check (PE32 x2, ELF x2, Mach-O x2) end to end. Base-image
+build ~13m23s (one-time, only when the pinned `BASE_VERSION` tag is missing
+from GHCR), thin image ~1m18s, six-cell cross-build ~4m41s. With the base tag
+already present the typical loop is thin-build-plus-cross-build only, well
+under the ~9-10 minute cost this plan file originally scoped around.
+
+This does **not** reverse the Decision above: `six-cell-qualify.sh` on the
+release Mac stays the routine local path (incremental rebuilds in seconds
+beat any container's cold six-cell run), and this experiment produces
+*unsigned* bytes only — no codesign/notarize/Authenticode stage, so it cannot
+itself feed a Candidate. What it does establish, as named evidence rather
+than a plausible-sounding design: trigger (b) — a Linux-hosted six-cell
+cross-compile with no bare-macOS cell required for the *build* step — is no
+longer `BLOCKED` for lack of evidence, should a future project (or a
+low-frequency cold-build/fallback role in this one) want it. See
+`prd/PRD_02_27_con_delivery.md` ("Where the bytes come from") for how this
+sits next to the production pipeline.

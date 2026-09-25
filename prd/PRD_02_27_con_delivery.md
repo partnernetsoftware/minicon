@@ -2411,6 +2411,38 @@ decision, and do not upgrade it past `[ ]` without a real Mach-O produced end
 to end and named evidence, per this repository's own `[x]`-requires-evidence
 rule.
 
+### Linux crossbake experiment (probe only, not adopted)
+
+`.github/workflows/linux-crossbake-experiment.yml`, manual-dispatch only,
+never on push, never feeding a Candidate. Probes whether one `ubuntu-24.04`
+host, pre-baked with osxcross/cargo-xwin/cargo-zigbuild/cosmocc
+(`scripts/crossbake-base.Dockerfile`, thin tail `scripts/crossbake.Dockerfile`),
+can cross-build all six cells plus `minicon.com` unsigned. See
+`plan/plan-ghcr-toolchain-prebake.md` ("Update, 2026-09-25") for the scoping
+history and why this does not change the "six-cell cross-compile, every
+iteration -> the release Mac" row above.
+
+`[x]` build-and-verify proven, run `36114279354` (2026-09-25): all six cells
+built and each passed its `file`-type check (PE32 x2, ELF x2, Mach-O x2).
+Base image (apt/rustup/xwin/zigbuild/zig/osxcross/cosmocc, `BASE_VERSION=v2`)
+built once and pushed to GHCR (~13m23s one-time cost, only paid again when
+`BASE_VERSION` bumps); the thin tail layer just pulls it (~1m18s); the
+six-cell cross-build itself took ~4m41s. Two real bugs found and fixed while
+getting this first green run, kept in the workflow's own comments so they are
+not re-derived: (1) `--load` importing straight from the buildx builder's
+content store, not an independent copy, was observed to lose an
+already-verified `/opt/cosmocc` after a successful six-cell build — fixed by
+`--output type=docker` to a tarball plus a separate `docker load`; (2) a
+possessive apostrophe inside a `bash -c '...'` single-quoted script closed
+that quote early, silently moving everything after it (a `cosmocc --version`
+assertion) onto the *host* runner instead of into the container — fixed by
+rewording the comment to drop the apostrophe.
+
+`[ ]` BLOCKED: unsigned only. No codesign/notarize/Authenticode stage runs
+inside this image, so its output cannot feed `candidate.yml` as-is; wiring
+signing onto this path, if ever wanted, is separate follow-on work, not
+implied by this probe passing.
+
 As of 2026-09-24, the Defender scan row above has itself moved off `utm-court`
 for the routine release path: `.github/workflows/defender-ci-scan.yml` scans
 the exact Candidate's reputation-scoped assets on a GitHub-hosted
