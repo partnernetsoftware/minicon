@@ -239,9 +239,41 @@ if [ "$LIMA_ACCELERATOR" = 1 ]; then
   lima_stop_if_running "$LNX_AARCH64_LIMA"
 fi
 
+# Apple cells need a C compiler that can target darwin: enabling the platform
+# crate's network-http feature pulls in ring, whose curve25519.c is built from
+# source. A macOS host already has one. Any other host must supply a macOS SDK
+# in MINICON_APPLE_SDK_ROOT alongside clang and llvm-ar; absence is BLOCKED,
+# never a skipped pass.
+APPLE_CROSS_READY=0
+APPLE_CROSS_BLOCK_REASON=""
+if [ "$(uname -s)" = Darwin ]; then
+  APPLE_CROSS_READY=1
+elif [ -z "${MINICON_APPLE_SDK_ROOT:-}" ]; then
+  APPLE_CROSS_BLOCK_REASON="MINICON_APPLE_SDK_ROOT is not configured"
+elif [ ! -d "${MINICON_APPLE_SDK_ROOT}/usr/include" ]; then
+  APPLE_CROSS_BLOCK_REASON="MINICON_APPLE_SDK_ROOT is not a macOS SDK root"
+elif ! command -v clang >/dev/null 2>&1 || ! command -v llvm-ar >/dev/null 2>&1; then
+  APPLE_CROSS_BLOCK_REASON="clang and llvm-ar are required to cross-compile Apple C dependencies"
+else
+  export CC_aarch64_apple_darwin="clang"
+  export CFLAGS_aarch64_apple_darwin="-target arm64-apple-macos11 -isysroot $MINICON_APPLE_SDK_ROOT"
+  export AR_aarch64_apple_darwin="llvm-ar"
+  export CC_x86_64_apple_darwin="clang"
+  export CFLAGS_x86_64_apple_darwin="-target x86_64-apple-macos10.12 -isysroot $MINICON_APPLE_SDK_ROOT"
+  export AR_x86_64_apple_darwin="llvm-ar"
+  APPLE_CROSS_READY=1
+fi
+
 run_stage common fmt cargo fmt --all -- --check
 
 build_osx_aarch64() {
+  if [ "$APPLE_CROSS_READY" != 1 ]; then
+    blocked osx-aarch64 clippy "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-aarch64 test "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-aarch64 throughput "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-aarch64 artifact "$APPLE_CROSS_BLOCK_REASON"
+    return 0
+  fi
   run_stage osx-aarch64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
     cargo clippy --locked --workspace --all-targets --target aarch64-apple-darwin -- -D warnings
   run_stage osx-aarch64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
@@ -253,6 +285,14 @@ build_osx_aarch64() {
 }
 
 build_osx_x86_64() {
+  if [ "$APPLE_CROSS_READY" != 1 ]; then
+    blocked osx-x86_64 clippy "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-x86_64 test-link "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-x86_64 artifact "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-x86_64 test "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-x86_64 throughput "$APPLE_CROSS_BLOCK_REASON"
+    return 0
+  fi
   run_stage osx-x86_64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
     cargo clippy --locked --workspace --all-targets --target x86_64-apple-darwin -- -D warnings
   run_stage osx-x86_64 test-link env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
