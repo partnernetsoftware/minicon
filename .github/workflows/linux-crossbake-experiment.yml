@@ -107,6 +107,8 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work minicon-crossbake:probe bash -euo pipefail -c '
             set -x
             echo "PATH=$PATH"
+            ls -la /opt/cosmocc/bin/ || true
+            command -v cosmocc || true
             rustup target add \
               x86_64-pc-windows-msvc aarch64-pc-windows-msvc \
               x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
