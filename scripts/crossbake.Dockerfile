@@ -32,9 +32,13 @@ RUN apt-get update -qq && apt-get install -y -qq \
 
 # winresource (cargo-xwin's Windows resource embedding, minicon's build.rs)
 # shells out to a bare `llvm-rc` on PATH; Ubuntu's llvm package only installs
-# the version-suffixed binary (e.g. llvm-rc-18), so point the unversioned
-# name at whatever version apt picked.
-RUN ln -sf "$(command -v llvm-rc-* | head -1)" /usr/local/bin/llvm-rc
+# the version-suffixed binary (e.g. /usr/lib/llvm-18/bin/llvm-rc), not
+# `llvm-rc-<ver>` on PATH -- `command -v llvm-rc-*` doesn't glob a PATH
+# lookup, it only glob-matches files in the current directory, so it always
+# failed. Find the real binary under /usr/lib instead.
+RUN llvm_rc="$(find /usr/lib -maxdepth 3 -type f -name llvm-rc | head -1)" \
+    && test -n "$llvm_rc" \
+    && ln -sf "$llvm_rc" /usr/local/bin/llvm-rc
 
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
     --default-toolchain "$RUST_VERSION" -c clippy,rustfmt,rust-src
