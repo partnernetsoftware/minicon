@@ -240,8 +240,9 @@ flowchart LR
 - [~] v0.2.0 is development-complete and not released. `mux` and `harness` are
   implemented with named black-box evidence; the version is bumped in
   `Cargo.toml` and `release-policy.json`. The test gate is green under a
-  display server and six-cell qualifies FAIL 0 / PASS 17 on the repinned
-  `agenterm`. Runtime courts and the public release chain are BLOCKED with
+  display server and six-cell qualifies FAIL 0 / PASS 23 / BLOCKED 18 on the
+  repinned `agenterm`, Apple cells included from a Linux host with a macOS 15.5
+  SDK. Runtime courts and the public release chain are BLOCKED with
   their prerequisites named, so this entry stays `[~]`, never `[x]`, until a
   Promotion exists. Owner:
   [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md), section "0.2.0 — what the

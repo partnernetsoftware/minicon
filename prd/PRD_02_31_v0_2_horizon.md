@@ -349,20 +349,25 @@ whose evidence reads:
   server is present, which is an environment report and not a product signal;
   they must be run under `xvfb-run -a -s "-screen 0 1280x900x24"`, the same
   invocation `scripts/linux-runtime-qualify.sh` uses.
-- `./scripts/six-cell-qualify.sh` with FAIL 0 / PASS 17 on the repinned
-  `agenterm`: `common` fmt, build-fanout and both Windows-cell boundary checks,
-  plus all-target-link, throughput-link and artifact inspection for
-  `win-x86_64`, `win-aarch64`, `lnx-x86_64` and `lnx-aarch64`. This is the only
-  evidence that the repin's Windows console-agent code and the `native-tls` arm
-  of `network-http` compile and link at all.
+- `./scripts/six-cell-qualify.sh` with FAIL 0 / PASS 23 / BLOCKED 18 on the
+  repinned `agenterm`: `common` fmt, build-fanout and both Windows-cell
+  boundary checks, plus all-target-link, throughput-link and artifact
+  inspection for `win-x86_64`, `win-aarch64`, `lnx-x86_64` and `lnx-aarch64`,
+  and — with `MINICON_APPLE_SDK_ROOT` set to a macOS 15.5 SDK — `clippy`,
+  `test-link` and artifact inspection for `osx-aarch64` and `osx-x86_64`. This
+  is the only evidence that the repin's Windows console-agent code, the
+  `native-tls` arm of `network-http` and the macOS process adapter compile and
+  link at all.
 
 Two whole classes of evidence are BLOCKED at this SHA, and the version number
 claims neither:
 
 - **No runtime evidence.** Six-cell on a non-macOS host links but never
   executes: all four runtime courts are BLOCKED on unconfigured runners, and
-  the Apple cells on an SDK older than 12.0. Nothing here has run a MiniCon
-  binary on Windows or macOS.
+  the Apple cells' `test` and `throughput` stages are BLOCKED because a Linux
+  kernel answers `Exec format error` to a Mach-O binary. Nothing here has run a
+  MiniCon binary on Windows or macOS. Cross-compilation is not execution, and
+  the eighteen BLOCKED stages say so by name rather than by omission.
 - **No public release.** The sealed Candidate to Promotion chain is owned by
   the `run-reputation-and-release` skill, with `sign-macos-artifacts` and
   `sign-windows-artifacts` for the signing courts. None of the three is

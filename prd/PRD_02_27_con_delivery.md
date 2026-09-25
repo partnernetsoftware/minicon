@@ -1280,14 +1280,33 @@ flowchart LR
   `cargo test -p minicon-core --target aarch64-apple-darwin --no-run`
   producing a runnable-shaped Mach-O test binary.
 
-  Third, that is where the honest ceiling sits: the full workspace link
-  resolves everything but one symbol, `_proc_signal_with_audittoken`, which
-  the platform crate's macOS process adapter references and which no SDK older
-  than 12.0 declares — no deployment target can conjure it. The script
-  therefore carries an explicit 12.0 SDK floor and BLOCKS the Apple cells by
-  version when the configured SDK is older, naming the symbol. On a host whose
-  newest available SDK is 11.3 the Apple cells are BLOCKED, not FAIL, and not
-  passed.
+  Third, the SDK version is a real floor, and it is satisfiable. The full
+  workspace link resolves everything but one symbol,
+  `_proc_signal_with_audittoken`, which the platform crate's macOS process
+  adapter references and which no SDK older than 12.0 declares — no deployment
+  target can conjure it. The script therefore carries an explicit 12.0 SDK
+  floor, reads the version from the SDK root's own `SDKSettings.json`, and
+  BLOCKS the Apple cells by version when the configured SDK is older, naming
+  the symbol. That floor was briefly mistaken for a permanent ceiling because
+  phracker/MacOSX-SDKs stops at 11.3; it is not one. The SDK source this repo
+  already names for its CI probe — `alexey-lysiuk/macos-sdk`, one GitHub
+  Release per version — reaches 15.5, and `MacOSX15.5.sdk` declares the symbol
+  in `usr/lib/system/libsystem_kernel.tbd`. With that SDK in
+  `MINICON_APPLE_SDK_ROOT`, both Apple cells' `clippy` and `test-link` stages
+  PASS from a Linux host for the first time.
+
+  Two further distinctions fell out of that first green Apple run, and both are
+  the script's business, not the product's. Executing an Apple binary is not
+  the same as linking one: a Linux kernel answers `Exec format error
+  (os error 8)`, so off a macOS host the suites are linked as `test-link` and
+  the `test` and `throughput` stages are BLOCKED with the host named — a
+  missing court, never a product failure. And the artifact check must not turn
+  on which host ran `file`: GNU `file` reports `Mach-O 64-bit arm64
+  executable` where macOS `file` reports `Mach-O 64-bit executable arm64` for
+  the same bytes, so `inspect_artifact` requires every token of its
+  expectation in any order rather than one fixed substring. With both fixed,
+  the local six-cell receipt reads `FAIL 0 / PASS 23 / BLOCKED 18`, the Apple
+  artifacts among the passes.
 
   The x86_64 GNU artifact has two complementary local courts. Apple Rosetta for
   Linux in the ARM64 VZ guest, backed by Debian amd64 multiarch libraries, runs
