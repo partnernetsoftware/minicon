@@ -15,6 +15,7 @@ ARG CARGO_ZIGBUILD_VERSION=0.23.2
 ARG CARGO_XWIN_VERSION=0.23.1
 ARG RUST_VERSION=1.97.0
 ARG MACOS_SDK_VERSION=15.5
+ARG ZIG_VERSION=0.16.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/opt/rustup \
@@ -45,6 +46,27 @@ RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
 
 RUN cargo install cargo-xwin --locked --version "$CARGO_XWIN_VERSION" \
     && cargo install cargo-zigbuild --locked --version "$CARGO_ZIGBUILD_VERSION"
+
+# cargo-zigbuild is only the cargo subcommand; it shells out to a real `zig`
+# binary on PATH at build time, which was never installed here (the gap that
+# made a probe run fail with "Failed to find zig / cannot find binary path").
+# loader/install-zig.sh pins zig by a macOS-only tarball + sha256, so it can't
+# be reused as-is for this Linux container; fetch the matching x86_64-linux
+# tarball instead and verify it against ziglang.org's own published shasum
+# for this exact ZIG_VERSION, same verify-before-trust standard.
+RUN python3 -c "\
+import hashlib, json, os, tarfile, urllib.request; \
+ver = '$ZIG_VERSION'; \
+idx = json.load(urllib.request.urlopen('https://ziglang.org/download/index.json')); \
+info = idx[ver]['x86_64-linux']; \
+urllib.request.urlretrieve(info['tarball'], '/tmp/zig.tar.xz'); \
+got = hashlib.sha256(open('/tmp/zig.tar.xz', 'rb').read()).hexdigest(); \
+assert got == info['shasum'], f'zig sha256 mismatch: got {got} want {info[\"shasum\"]}'; \
+tarfile.open('/tmp/zig.tar.xz').extractall('/opt'); \
+os.rename('/opt/zig-x86_64-linux-' + ver, '/opt/zig'); \
+os.remove('/tmp/zig.tar.xz')" \
+    && /opt/zig/zig version | grep -qx "$ZIG_VERSION"
+ENV PATH=/opt/zig:$PATH
 
 # osxcross, built once against the SDK version osxcross-experiment.yml
 # already proved produces a linkable Mach-O for this codebase (phracker's
