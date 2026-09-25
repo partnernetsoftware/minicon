@@ -223,13 +223,34 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   ├── provable: clamping `..` instead of refusing it, and disabling the
 │   │   │     symlink check, each failed exactly the matching test and no
 │   │   │     other (re-verified 2026-09-25 by the integrating session)
-│   │   └── black-box evidence: still owed, but no longer blocked on the
-│   │         environment. Installing `xvfb` made both GUI suites pass here
-│   │         (`minicon_blackbox` 28/28, `minicon_control` 12/12) under the
-│   │         same `xvfb-run -s "-screen 0 1280x900x24"` the CI gate uses in
-│   │         `scripts/linux-runtime-qualify.sh`. What is missing is a mux/
-│   │         harness black-box suite, which is M4's and H6's to write — see
-│   │         `#decision display-server BLOCKED withdrawn` below
+│   │   ├── black-box evidence: `tests/minicon_harness.rs`, nine cases driving
+│   │   │     the shipped binary's own `minicon harness` CLI. For H2 the bound
+│   │   │     is observed as a refusal before any task runs:
+│   │   │     `refuses_an_unresolvable_root_with_a_key_present`,
+│   │   │     `refuses_a_root_that_is_not_a_directory`,
+│   │   │     `requires_root_to_be_stated_explicitly`. The suite needs no
+│   │   │     display server and no network — every case lands before a
+│   │   │     transport opens — so it is not subject to the withdrawn
+│   │   │     display-server assumption at all
+│   │   ├── black-box evidence: the ordering invariant, which only an outside
+│   │   │     caller can see: a missing credential is refused BEFORE the
+│   │   │     file tool's bound is resolved, so no tool is constructed for a
+│   │   │     task that could not have reached a model
+│   │   │     (`refuses_a_missing_backend_key_before_resolving_the_root`,
+│   │   │     which asserts stderr does NOT contain `cannot be resolved`)
+│   │   ├── provable: five one-change breaks, each run against
+│   │   │     `cargo test --test minicon_harness` with `src/harness.rs`
+│   │   │     restored byte-exact afterwards. Resolving the root before the
+│   │   │     credential check failed TWO tests, not one — both of the
+│   │   │     ordering assertions, since each supplies an unresolvable root
+│   │   │     with no key; recorded, not hidden. Accepting an empty key,
+│   │   │     dropping the `is_dir` check, and defaulting `--root` to `.`
+│   │   │     each failed exactly their own test and no other
+│   │   └── BLOCKED: the file tool's behavior DURING a task is not in this
+│   │         suite, because a tool only runs when a model asks. H5's
+│   │         real-socket fixtures cover that round trip including a
+│   │         model-commanded write landing under the root, but a fixture is
+│   │         not a live endpoint
 │   ├── H3 exec tool ->h1 [~]
 │   │   ├── invariant: exactly one command per call, no shell metacharacter
 │   │   │     expansion (no `&&`, pipes, or subshell) — the command is
@@ -270,8 +291,16 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     one `Cargo.toml` feature plus one function body, and is deferred
 │   │   │     to H4 so the feature change is verified by a MiniCon build and a
 │   │   │     six-cell round that has a caller to exercise it
-│   │   └── black-box evidence: owed, not environment-blocked — same
-│   │         withdrawn display-server assumption as H2
+│   │   ├── black-box evidence: `tests/minicon_harness.rs` covers the CLI
+│   │   │     surface that bounds this tool before it can run at all —
+│   │   │     `refuses_an_unknown_backend_by_name` (an unknown `--backend`
+│   │   │     must not fall back to the default and send the task to an
+│   │   │     endpoint the caller did not choose) and `refuses_an_unknown_flag`
+│   │   ├── provable: making an unknown `--backend` fall back to the default
+│   │   │     failed exactly `refuses_an_unknown_backend_by_name` and no other
+│   │   └── BLOCKED: argv handling during a task is unit-tested and
+│   │         fixture-tested, not CLI-black-boxed, for the same reason as H2 —
+│   │         `ExecTool` runs only on a model's request
 │   ├── H4 DeepSeek flash backend ->h1 [~] @method=first
 │   │   ├── also closes out, as the first non-test caller of H2/H3: the
 │   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/
