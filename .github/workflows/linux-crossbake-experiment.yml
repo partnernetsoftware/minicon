@@ -34,31 +34,28 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Cache the baked image layers
+      # GitHub-hosted ubuntu-24.04 runners ship Docker preinstalled; use it
+      # directly rather than pulling in third-party marketplace actions this
+      # repo has no reviewed SHA pin for (its own convention pins every
+      # `uses:` to a commit, and docker/* actions are outside this session's
+      # repo scope to look up a real one for).
+      - name: BuildKit inline cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          path: /tmp/crossbake-cache
+          path: /tmp/crossbake-cache.tar
           key: linux-crossbake-v1-${{ hashFiles('scripts/crossbake.Dockerfile', 'loader/install-cosmocc.sh') }}
 
-      - uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.11.1
+      - name: Restore cached layers
+        run: |
+          if [ -f /tmp/crossbake-cache.tar ]; then
+            docker load -i /tmp/crossbake-cache.tar || true
+          fi
 
       - name: Build the crossbake image
-        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a4 # v6.18.0
-        with:
-          context: .
-          file: scripts/crossbake.Dockerfile
-          tags: minicon-crossbake:probe
-          load: true
-          cache-from: type=local,src=/tmp/crossbake-cache
-          cache-to: type=local,dest=/tmp/crossbake-cache-new,mode=max
-
-      # actions/cache can't overwrite a live cache entry; swap in the new
-      # layer cache so the next run gets today's layers instead of growing
-      # the cache dir unbounded (the documented buildx local-cache pattern).
-      - name: Swap in the new layer cache
         run: |
-          rm -rf /tmp/crossbake-cache
-          mv /tmp/crossbake-cache-new /tmp/crossbake-cache
+          set -euo pipefail
+          docker build -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe .
+          docker save minicon-crossbake:probe -o /tmp/crossbake-cache.tar
 
       - name: Cross-build all six cells + minicon.com inside the image
         run: |
@@ -115,18 +112,13 @@ jobs:
           file target/x86_64-apple-darwin/release/minicon | grep -qi "Mach-O"
           file target/aarch64-apple-darwin/release/minicon | grep -qi "Mach-O"
 
-      - name: Log in to GHCR
-        if: ${{ inputs.publish }}
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Publish the crossbake image
         if: ${{ inputs.publish }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           tag="ghcr.io/${{ github.repository }}/crossbake:$(date +%Y%m%d)"
           docker tag minicon-crossbake:probe "$tag"
           docker push "$tag"
