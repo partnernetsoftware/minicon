@@ -85,4 +85,13 @@ ARG COSMOCC_BIN_SHA256=eef9db8fabfc0c08f1930cbba87f60f69a1c49f28e4de006a1b0c6863
 ENV COSMOCC_DIR=/opt/cosmocc
 RUN COSMOCC_VERSION="$COSMOCC_VERSION" COSMOCC_SHA256="$COSMOCC_SHA256" \
     COSMOCC_BIN_SHA256="$COSMOCC_BIN_SHA256" bash /tmp/install-cosmocc.sh
-ENV PATH=/opt/cosmocc/bin:$PATH
+
+# A single absolute PATH for the final image, not another chained
+# `$PATH`-relative ENV -- a probe run got every one of the six cells built
+# (zig, xwin, osxcross all resolved fine) but then hit "cosmocc: command not
+# found" at the very last check despite `[cosmocc] cosmocc (GCC) 14.1.0`
+# printing successfully during this same RUN step above, i.e. the binary
+# exists but the runtime container's PATH didn't carry /opt/cosmocc/bin.
+# Spelling out the whole PATH once, instead of trusting N accumulated
+# `ENV PATH=X:$PATH` layers, removes that class of bug entirely.
+ENV PATH="/opt/cosmocc/bin:/opt/zig:/opt/cargo/bin:/opt/osxcross/target/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
