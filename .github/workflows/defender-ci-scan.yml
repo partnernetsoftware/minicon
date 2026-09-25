@@ -115,6 +115,11 @@ jobs:
             Format-List
 
       - name: Scan each reputation-scoped asset with Windows Defender
+        # Real MpCmdRun.exe -ScanType 3 clean output observed on windows-2025
+        # (run 36079454500, 2026-09-25): "Scanning <path> found no threats.",
+        # not the two guessed patterns this match started with. Keep those
+        # two too -- neither has been observed yet, but nothing rules out a
+        # different scan type or signature build emitting them instead.
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -129,7 +134,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Defender scan of $($row.key) exited $LASTEXITCODE"
             }
-            if ($output -notmatch "Threat(s)? detected:\s*0" -and $output -notmatch "No infections found") {
+            $clean = ($output -match "Threat(s)? detected:\s*0") -or
+                     ($output -match "No infections found") -or
+                     ($output -match "found no threats")
+            if (-not $clean) {
               throw "Defender scan of $($row.key) did not report a clean result: $output"
             }
             $assets[$row.key] = @{ sha256 = $row.sha256; post_scan_sha256 = $row.sha256 }
