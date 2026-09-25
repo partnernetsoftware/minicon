@@ -167,11 +167,14 @@ inspect_artifact() {
     status="FAIL"
   else
     file "$path" >"$log" 2>&1
-    if grep -F "$expected" "$log" >/dev/null 2>&1; then
-      status="PASS"
-    else
-      status="FAIL"
-    fi
+    # Require every token of the expectation, in any order: macOS `file` reports
+    # "Mach-O 64-bit executable arm64" where GNU `file` reports "Mach-O 64-bit
+    # arm64 executable" for the same bytes, and an artifact check must not turn
+    # on which host ran `file`.
+    status="PASS"
+    for token in $expected; do
+      grep -F "$token" "$log" >/dev/null 2>&1 || status="FAIL"
+    done
   fi
   printf '[six-cell] %-14s %-18s %s\n' "$cell" "artifact" "$status"
   record "$cell" "artifact" "$status" "0" "target-six/logs/${cell}-artifact.log" "$expected"
@@ -312,6 +315,7 @@ run_stage common fmt cargo fmt --all -- --check
 build_osx_aarch64() {
   if [ "$APPLE_CROSS_READY" != 1 ]; then
     blocked osx-aarch64 clippy "$APPLE_CROSS_BLOCK_REASON"
+    blocked osx-aarch64 test-link "$APPLE_CROSS_BLOCK_REASON"
     blocked osx-aarch64 test "$APPLE_CROSS_BLOCK_REASON"
     blocked osx-aarch64 throughput "$APPLE_CROSS_BLOCK_REASON"
     blocked osx-aarch64 artifact "$APPLE_CROSS_BLOCK_REASON"
@@ -319,11 +323,23 @@ build_osx_aarch64() {
   fi
   run_stage osx-aarch64 clippy env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
     cargo clippy --locked --workspace --all-targets --target aarch64-apple-darwin -- -D warnings
-  run_stage osx-aarch64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
-    cargo test --locked --workspace --all-targets --target aarch64-apple-darwin
-  run_stage osx-aarch64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
-    cargo test --locked --profile release-fast --target aarch64-apple-darwin \
-      --test minicon_throughput -- --ignored --nocapture
+  # Linking is host-neutral; executing a Mach-O binary is not. Off a macOS
+  # host the suites are linked and then BLOCKED, because a kernel that answers
+  # Exec format error is a missing court, not a product failure.
+  if [ "$(uname -s)" = Darwin ]; then
+    run_stage osx-aarch64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
+      cargo test --locked --workspace --all-targets --target aarch64-apple-darwin
+    run_stage osx-aarch64 throughput env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
+      cargo test --locked --profile release-fast --target aarch64-apple-darwin \
+        --test minicon_throughput -- --ignored --nocapture
+  else
+    run_stage osx-aarch64 test-link env CARGO_TARGET_DIR="$BUILD_DIR/osx-aarch64" \
+      cargo test --locked --workspace --all-targets --target aarch64-apple-darwin --no-run
+    blocked osx-aarch64 test \
+      "Apple binaries cannot be executed on a $(uname -s) host"
+    blocked osx-aarch64 throughput \
+      "Apple binaries cannot be executed on a $(uname -s) host"
+  fi
   inspect_artifact osx-aarch64 "$BUILD_DIR/osx-aarch64/aarch64-apple-darwin/debug/minicon" "Mach-O 64-bit executable arm64"
 }
 
@@ -341,7 +357,10 @@ build_osx_x86_64() {
   run_stage osx-x86_64 test-link env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
     cargo test --locked --workspace --all-targets --target x86_64-apple-darwin --no-run
   inspect_artifact osx-x86_64 "$BUILD_DIR/osx-x86_64/x86_64-apple-darwin/debug/minicon" "Mach-O 64-bit executable x86_64"
-  if arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+  if [ "$(uname -s)" != Darwin ]; then
+    blocked osx-x86_64 test "Apple binaries cannot be executed on a $(uname -s) host"
+    blocked osx-x86_64 throughput "Apple binaries cannot be executed on a $(uname -s) host"
+  elif arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
     run_stage osx-x86_64 rosetta-proof bash -c \
       '[ "$(arch -x86_64 /usr/bin/uname -m)" = x86_64 ] && [ "$(arch -x86_64 /usr/sbin/sysctl -n sysctl.proc_translated)" = 1 ]'
     run_stage osx-x86_64 test env CARGO_TARGET_DIR="$BUILD_DIR/osx-x86_64" \
