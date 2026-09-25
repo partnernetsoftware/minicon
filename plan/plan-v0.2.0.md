@@ -29,7 +29,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   └── surface shape: a mode of the existing --control CLI, not a new
 │   │         binary subcommand or endpoint @method=mode-not-new-endpoint
 │   │         #decision ->prd/PRD_02_26_con_control_cli.md
-│   ├── M2 tab listing (`list-windows`) ->m1 [~]
+│   ├── M2 tab listing (`list-windows`) ->m1 [✓]
 │   │   ├── invariant: enumerates only tabs of the calling process's own
 │   │   │     MiniCon instance; no cross-instance discovery
 │   │   ├── invariant: `-F <format>` supports only the substitution
@@ -48,22 +48,30 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     active`, `render_format_default_marks_active_window`,
 │   │   │     `unknown_substitution_is_bounded_error`) prove the translation
 │   │   │     and format engine against a fixed `list-tabs` JSON fixture
-│   │   ├── owed, no longer environment-blocked: the invariant's own
-│   │   │     black-box evidence -- a live MiniCon instance's real `list-tabs`
-│   │   │     response round-tripped through `mux list-windows` -- has still
-│   │   │     not run, but the reason recorded here was wrong. This
-│   │   │     environment CAN host the GUI suites: with `xvfb` installed,
-│   │   │     `minicon_blackbox` passes 28/28 and `minicon_control` 12/12
-│   │   │     under the same `xvfb-run -s "-screen 0 1280x900x24"` invocation
-│   │   │     `scripts/linux-runtime-qualify.sh` uses in the CI gate. The
+│   │   ├── blackbox: `tests/minicon_mux.rs`
+│   │   │     `mux_list_windows_renders_live_tabs_and_both_target_spellings_
+│   │   │     hit_one_tab` -- against a live instance with two tabs, the
+│   │   │     default format prints exactly one row per tab with `*` on the
+│   │   │     tab the control CLI reports active, the marker follows a real
+│   │   │     `select-tab`, `-F '#{window_index}|#{window_id}|#{window_
+│   │   │     active}'` returns the host's own handles (`0|@1|`, `1|@2|*`),
+│   │   │     and `capture-pane -t 1` and `-t @N` provably reach the same tab
+│   │   │     while `-t 0` does not
+│   │   ├── provable: inverting the `window_active` marker in `render_format`
+│   │   │     (`src/mux.rs:423`) failed exactly that one test, 3 others still
+│   │   │     passing; verified independently of the authoring session
+│   │   ├── #decision display-server BLOCKED withdrawn 2026-09-25 -- the
 │   │   │     earlier `control endpoint did not become ready` was a missing
-│   │   │     display server, and installing one removed it.
-│   │   │     #decision display-server BLOCKED withdrawn 2026-09-25 -- what
-│   │   │     remains is a real gap in coverage, not in the environment: no
-│   │   │     mux black-box suite exists yet. Writing `tests/minicon_mux.rs`
-│   │   │     is now the only thing between M2/M3/M3b and `[x]`
+│   │   │     display server; with `xvfb` installed this environment runs the
+│   │   │     GUI suites (`minicon_blackbox` 28/28, `minicon_control` 12/12,
+│   │   │     `minicon_mux` 4/4) under the same `xvfb-run -s "-screen 0
+│   │   │     1280x900x24"` invocation `scripts/linux-runtime-qualify.sh`
+│   │   │     uses in the CI gate
+│   │   ├── run: `cargo build --bin minicon` FIRST -- `cargo test --test
+│   │   │     minicon_mux` resolves the binary next to the test exe and does
+│   │   │     not rebuild it, so a stale binary is otherwise what gets tested
 │   ├── M3 window select/create/destroy (`select-window`, `new-window`,
-│   │   │     `kill-window`) ->m1 [~]
+│   │   │     `kill-window`) ->m1 [✓]
 │   │   ├── invariant: an invalid `@ID`/index, a nonzero pane, or a
 │   │   │     session-name mismatch is a bounded CLI error (exit code +
 │   │   │     message naming which tmux assumption is unsupported), never a
@@ -89,15 +97,40 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   ├── provable: removing the nonzero-pane refusal was confirmed to fail
 │   │   │     `a_nonzero_pane_names_the_missing_split_window` before the guard
 │   │   │     was restored
-│   │   ├── owed, same withdrawn cause as M2: the "real target, real effect"
-│   │   │     half -- a tab actually switching/opening/closing -- needs the
-│   │   │     mux black-box suite. The display server is available now, so
-│   │   │     this is coverage still to write, not an environment limit
+│   │   ├── blackbox: `tests/minicon_mux.rs`
+│   │   │     `mux_window_verbs_switch_open_and_close_real_tabs` -- every
+│   │   │     effect read back from `cli list-tabs`, never from mux's own
+│   │   │     stdout: `new-window` raises the tab count 1->2, `select-window
+│   │   │     -t 0` and `-t @N` each move the active tab, `kill-window -t @N`
+│   │   │     drops exactly that handle, and a bare `kill-window` closes the
+│   │   │     ACTIVE tab (deliberately the second one, so a wrong-tab
+│   │   │     implementation fails here)
+│   │   ├── blackbox: `mux_bounded_refusals_exit_nonzero_and_leave_the_
+│   │   │     workspace_untouched` -- five refusals (nonzero pane, foreign
+│   │   │     session, stale `@ID`, out-of-range index, `capture-pane -S`)
+│   │   │     each exit non-zero with empty stdout and a `minicon mux:`
+│   │   │     stderr, and afterwards the tab-id list and active tab are
+│   │   │     byte-identical: no refusal opened, closed or refocused anything
+│   │   ├── provable: `active_tab`'s `.find(|tab| tab.active)` inverted, and
+│   │   │     `resolve_target`'s nonzero-pane check inverted, each failed
+│   │   │     exactly one of these two tests and nothing else
+│   │   ├── #divergence the stale-`@ID` refusal is the control server's own
+│   │   │     (`terminal @2 does not exist`), not a tmux-assumption message:
+│   │   │     `resolve_target` passes `@ID` through by design, so it is the
+│   │   │     one bounded refusal that names no tmux assumption
+│   │   ├── #divergence `new-window` ignores tmux's index placement and reads
+│   │   │     `-t` as the PARENT tab (`new-tab --parent`); the new tab always
+│   │   │     lands last and becomes active, so a tmux script using
+│   │   │     `new-window -t 1` to insert at index 1 gets an appended child
+│   │   │     instead. Owned by M4 to state in PRD_02_31
+│   │   ├── #divergence the mutating verbs print the control protocol's JSON
+│   │   │     (`{"closed": "@2"}`, `{"sent_keys": 1}`) where tmux is silent;
+│   │   │     only `capture-pane -p` prints plain text. M4 to state it
 │   │   ├── depends: M2 (must be able to enumerate a real handle to target)
 │   │   └── non-goal: [-] cross-machine attach; [-] persistent session
 │   │         outside the process; [-] multiple sessions (both already
 │   │         excluded by PRD_02_31)
-│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [~]
+│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [✓]
 │   │   ├── invariant: `send-keys` resolves tmux key names (`Enter`, `C-c`,
 │   │   │     ...) through the control CLI's existing key spec, not a second
 │   │   │     key-name table; `-l` sends the argument literally with no
@@ -130,9 +163,18 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     (tmux's own behavior) was confirmed to fail
 │   │   │     `an_unknown_key_name_is_refused_rather_than_sent_as_text` before
 │   │   │     the guard was restored
-│   │   ├── owed, same withdrawn cause as M2: the round-trip half -- keys
-│   │   │     reaching a real child process, `capture-pane -p` returning known
-│   │   │     output -- needs the mux black-box suite, which can now run
+│   │   ├── blackbox: `tests/minicon_mux.rs`
+│   │   │     `mux_send_keys_reach_the_child_and_capture_pane_returns_its_
+│   │   │     output` -- `-l` types a command line (asserted not to itself
+│   │   │     contain the expected output), the named key `Enter` makes the
+│   │   │     real child run it, `cli wait-text` confirms the child produced
+│   │   │     output, and `capture-pane -p` returns both the produced line and
+│   │   │     the literal text `-l` typed
+│   │   ├── provable: mapping `enter` to `Tab` in `tmux_key_name` failed
+│   │   │     exactly that test (via the `wait-text` timeout) and no other
+│   │   ├── owed: modifier keys against a live child (`C-c`, `M-x`, `S-Tab`)
+│   │   │     stay unit-test-only; observing a real interrupt needs a
+│   │   │     foreground-process assertion the suite does not have yet
 │   │   └── depends: M3 (needs a real target to send/capture against)
 │   └── M4 upsert into PRD_02_31 ->m [ ]
 │         └── flip mux's `[ ]` lines to `[x]` only against the evidence named
