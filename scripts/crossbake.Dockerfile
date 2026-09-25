@@ -26,9 +26,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # specific -- xwin and zigbuild fetch their own SDKs into CARGO_HOME at
 # first use, same as they do on the macOS runner in minicon-com.yml.
 RUN apt-get update -qq && apt-get install -y -qq \
-    curl git clang cmake patch libssl-dev liblzma-dev zlib1g-dev \
+    curl git clang llvm cmake patch libssl-dev liblzma-dev zlib1g-dev \
     libxml2-dev bzip2 xz-utils python3 ca-certificates unzip perl \
     && rm -rf /var/lib/apt/lists/*
+
+# winresource (cargo-xwin's Windows resource embedding, minicon's build.rs)
+# shells out to a bare `llvm-rc` on PATH; Ubuntu's llvm package only installs
+# the version-suffixed binary (e.g. llvm-rc-18), so point the unversioned
+# name at whatever version apt picked.
+RUN ln -sf "$(command -v llvm-rc-* | head -1)" /usr/local/bin/llvm-rc
 
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal \
     --default-toolchain "$RUST_VERSION" -c clippy,rustfmt,rust-src

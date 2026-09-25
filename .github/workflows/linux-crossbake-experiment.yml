@@ -39,23 +39,36 @@ jobs:
       # repo has no reviewed SHA pin for (its own convention pins every
       # `uses:` to a commit, and docker/* actions are outside this session's
       # repo scope to look up a real one for).
-      - name: BuildKit inline cache
+      #
+      # A `docker save`/`docker load` image tarball is NOT a BuildKit layer
+      # cache: `docker build` on these runners uses the BuildKit backend,
+      # which keeps its own cache separate from the classic image store that
+      # `docker load` populates, so that approach silently rebuilt the whole
+      # ~14-minute image (osxcross included) on every run. `docker buildx`
+      # (bundled with Docker on these runners, no extra install) supports a
+      # `type=local` cache exported to/imported from a plain directory, which
+      # actions/cache CAN persist across runs -- this is the real fix.
+      - name: Restore BuildKit layer cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          path: /tmp/crossbake-cache.tar
-          key: linux-crossbake-v1-${{ hashFiles('scripts/crossbake.Dockerfile', 'loader/install-cosmocc.sh') }}
-
-      - name: Restore cached layers
-        run: |
-          if [ -f /tmp/crossbake-cache.tar ]; then
-            docker load -i /tmp/crossbake-cache.tar || true
-          fi
+          path: /tmp/buildx-cache
+          key: linux-crossbake-buildx-v2-${{ hashFiles('scripts/crossbake.Dockerfile', 'loader/install-cosmocc.sh') }}
+          restore-keys: |
+            linux-crossbake-buildx-v2-
 
       - name: Build the crossbake image
         run: |
           set -euo pipefail
-          docker build -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe .
-          docker save minicon-crossbake:probe -o /tmp/crossbake-cache.tar
+          docker buildx build --load \
+            -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe \
+            --cache-from type=local,src=/tmp/buildx-cache \
+            --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max \
+            .
+          # Local buildx cache only ever grows if reused in place, so swap in
+          # the freshly written cache rather than merging into the old one --
+          # the documented pattern for this backend.
+          rm -rf /tmp/buildx-cache
+          mv /tmp/buildx-cache-new /tmp/buildx-cache
 
       - name: Cross-build all six cells + minicon.com inside the image
         run: |
