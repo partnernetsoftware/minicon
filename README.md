@@ -347,8 +347,17 @@ would otherwise be unchecked:
 [AgenTerm](https://github.com/partnernetsoftware/agenterm) is the Agent-era
 workbench on the same platform layer (native rendering, dedicated input area).
 MiniCon is the one-file **local terminal**. AgenTerm adds what MiniCon refuses:
-a longer-lived server identity, Fleet, mux, persistence, and Agent permission
-policy.
+a longer-lived server identity, Fleet, cross-instance multiplexing,
+persistence, and Agent permission policy.
+
+Since 0.2.0 MiniCon does have a `minicon mux`, and it is not that. It speaks
+`tmux`'s own verbs and flag shapes against the tabs of **one** running
+instance, so a script that already drives tmux needs no second code path: the
+session is this process, a window is a tab, a pane is that tab's terminal
+area. `minicon harness` hands a model one narrowly scoped local task — read
+and write under a single `--root`, run one allow-listed command — without
+becoming a script runtime or a plugin host. Both live and die with the window,
+exactly like `--control`.
 
 MiniCon automation is `--control`: an explicit Unix socket or named pipe bound
 **inside that GUI process**. `minicon cli` is a short-lived client on that
@@ -382,8 +391,14 @@ August 2026.
 自己的区域,就能做更多:上下键回叫送出过的内容,标签上写着文字要送往哪个分页。
 
 **脚本能看进去。** 控制 CLI 驱动真正的界面并把窗口实际显示读回来。`--control` 是这一窗
-里的本机 Unix socket / 命名管道，不是守护进程；关窗即拆。需要 Fleet、mux、Agent 权限时
-用 [AgenTerm](https://github.com/partnernetsoftware/agenterm)。
+里的本机 Unix socket / 命名管道，不是守护进程；关窗即拆。需要 Fleet、跨实例复用、Agent
+权限策略时用 [AgenTerm](https://github.com/partnernetsoftware/agenterm)。
+
+**0.2.0 起多了两个子命令。** `minicon mux` 用 `tmux` 自己的动词和参数形状去操作**同一个**
+正在运行的实例的分页——session 就是这个进程，window 是一个分页，pane 是那个分页的终端
+区域——所以本来就在驱动 tmux 的脚本不需要第二套代码。`minicon harness` 把一件划定好的
+本地任务交给模型：只在一个 `--root` 之下读写，只运行许可名单里的命令。两者都跟窗口同生
+共死，和 `--control` 一样，都不是守护进程。
 
 出问题时请运行 `minicon --status` 并附上输出:它报告构建版本、这台机器选了哪个 PTY
 后端及原因、系统实际解析到哪个字体与实测字宽,以及失败写在哪个文件。这些都无法通过读
