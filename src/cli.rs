@@ -453,6 +453,20 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             }
         });
     }
+    if args.first().is_some_and(|arg| arg == "harness") {
+        return Some(match crate::harness::run_harness(args) {
+            Ok(output) => {
+                if !output.is_empty() {
+                    write_offline_stdout(&output);
+                }
+                0
+            }
+            Err(error) => {
+                write_offline_stderr(&format!("minicon harness: {error}\n"));
+                2
+            }
+        });
+    }
     if args.first().is_some_and(|arg| arg == "mux") {
         return Some(match crate::mux::run_mux(args) {
             Ok(output) => {

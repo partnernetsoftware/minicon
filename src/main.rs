@@ -38,6 +38,7 @@ mod control;
 mod control_dispatch;
 mod control_pending;
 mod font;
+mod harness;
 mod ime_mode;
 #[cfg(target_os = "linux")]
 mod linux_startup;
