@@ -115,7 +115,7 @@ MiniCon — one-file local terminal
 │   └── [ ] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
 │       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
 │       owner decision 2026-09-24
-│       └── prd/PRD_02_31_v0_2_horizon.md
+│       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.0.md
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence
     ├── evidence-registry.json — evidence identity → public test target
