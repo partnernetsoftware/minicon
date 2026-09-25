@@ -10,17 +10,12 @@
 //! live. Keeping them in separate files keeps a wire-format fix from touching
 //! a bound.
 
-// Every item below is reached only by the H5 adapter in `harness.rs`, which is
-// another worker's file and does not call it yet, plus by this file's own
-// tests. Same scoped, non-test allowance the two tools carry, for the same
-// reason: faking a caller to make it reachable would be worse than saying so.
-#![cfg_attr(not(test), allow(dead_code))]
-
 /// One HTTP round trip, so the turn loop can be tested without a network.
 ///
 /// Deliberately this small: `harness` posts one JSON body and reads one JSON
 /// body back. Anything richer would be a general HTTP client, which MiniCon
-/// does not have and does not want.
+/// does not want to own -- the one it uses is `agenterm-platform`'s
+/// `network-http` capability, behind this trait.
 pub trait Transport {
     /// POSTs `body` as `application/json` and returns the response body.
     ///
@@ -34,156 +29,133 @@ pub trait Transport {
 // H4 -- the transport
 // ---------------------------------------------------------------------------
 
-/// Largest response body `PlainHttp` will accumulate. A response body becomes
-/// a model reply that becomes a prompt, so the bound belongs to the read, for
-/// the same reason `FILE_TOOL_MAX_READ_BYTES` does.
-pub const PLAIN_HTTP_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+/// Largest response body this transport will accumulate. A response body
+/// becomes a model reply that becomes a prompt, so the bound belongs to the
+/// read, for the same reason `FILE_TOOL_MAX_READ_BYTES` does. Below the
+/// capability's own 8 MiB ceiling on purpose: this is MiniCon's product choice,
+/// not the platform's maximum.
+pub const HARNESS_HTTP_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
-/// How long one round trip may take before the socket is abandoned.
-pub const PLAIN_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+/// How long one round trip may take before the exchange is abandoned. Well
+/// under the capability's 600s ceiling, and well over the capability's 2s
+/// default, which would bound a reachability probe rather than a completion.
+pub const HARNESS_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// An ordinary HTTP/1.1 POST over `std::net::TcpStream`, and nothing more.
+/// One bounded POST through `agenterm_platform::network_http`.
 ///
-/// This is not a placeholder: an opencode-go-compatible endpoint normally
-/// listens on loopback over plain HTTP, which is exactly what this reaches.
-/// What it cannot reach is anything `https://`, because MiniCon has no TLS
-/// capability anywhere -- neither in this crate nor in `agenterm-platform`,
-/// whose network features are DNS, interfaces and routes only. An `https://`
-/// URL is therefore **refused by name** rather than silently downgraded to
-/// port 80 or wrapped in something that only looks encrypted.
+/// **What happened to `PlainHttp`, and why.** This file used to carry a
+/// hand-rolled HTTP/1.1 client over `std::net::TcpStream`, because MiniCon's
+/// pinned `agenterm-platform` had no outbound-HTTP capability and so no TLS;
+/// `https://` was refused by name rather than faked. That is no longer true:
+/// the pinned crate enables `network-http`, whose `validate` accepts **both**
+/// `http://` and `https://`, so this one transport reaches an `https://` model
+/// API *and* the loopback plain-HTTP case an opencode-go-compatible server
+/// presents. `PlainHttp` was therefore deleted rather than kept beside this:
+/// keeping it would mean two clients for one job, one of them a private
+/// response parser with its own framing bugs, and the plain-HTTP case it was
+/// justified by is covered here. Nothing in MiniCon refuses `https://` any
+/// more, and no comment in this file claims it does.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NetworkHttp;
+
+/// Transitional shim for the old transport's name, for one module's tests only.
+///
+/// `harness_opencode`'s tests still name `PlainHttp`, and that file belongs to
+/// another worker in this change, so the name cannot be fixed there from here.
+/// This is not a second transport and not a plain-HTTP-only one: every call
+/// delegates to `NetworkHttp`, which speaks `http://` and `https://` alike.
+/// `#[cfg(test)]` because the shim exists for those tests and nothing else --
+/// no product path reaches it. Delete it once that module names `NetworkHttp`.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PlainHttp;
 
+#[cfg(test)]
 impl Transport for PlainHttp {
     fn post_json(&self, url: &str, bearer: &str, body: &str) -> Result<String, String> {
-        use std::io::{Read as _, Write as _};
-
-        let (authority, path) = split_plain_http_url(url)?;
-        let host = authority
-            .rsplit_once(':')
-            .map_or(authority, |(host, _)| host)
-            .to_owned();
-        let address = if authority.contains(':') {
-            authority.to_owned()
-        } else {
-            format!("{authority}:80")
-        };
-
-        let mut stream = std::net::TcpStream::connect(&address)
-            .map_err(|error| format!("harness: cannot connect to {address}: {error}"))?;
-        stream
-            .set_read_timeout(Some(PLAIN_HTTP_TIMEOUT))
-            .and_then(|()| stream.set_write_timeout(Some(PLAIN_HTTP_TIMEOUT)))
-            .map_err(|error| format!("harness: cannot bound the socket's timeouts: {error}"))?;
-
-        // `Connection: close` on purpose: with no keep-alive there is no
-        // second response framing to get wrong, and end-of-stream is a valid
-        // end of body even if the endpoint omits Content-Length.
-        let request = format!(
-            "POST {path} HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {bearer}\r\n\
-             Content-Type: application/json\r\nAccept: application/json\r\n\
-             Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream
-            .write_all(request.as_bytes())
-            .and_then(|()| stream.flush())
-            .map_err(|error| {
-                format!("harness: writing the request to {address} failed: {error}")
-            })?;
-
-        let mut raw = Vec::new();
-        let mut chunk = [0u8; 8192];
-        loop {
-            let read = stream.read(&mut chunk).map_err(|error| {
-                format!("harness: reading the reply from {address} failed: {error}")
-            })?;
-            if read == 0 {
-                break;
-            }
-            raw.extend_from_slice(&chunk[..read]);
-            if raw.len() > PLAIN_HTTP_MAX_RESPONSE_BYTES {
-                return Err(format!(
-                    "harness: the reply from {address} exceeds {PLAIN_HTTP_MAX_RESPONSE_BYTES} \
-                     bytes and was abandoned"
-                ));
-            }
-        }
-        parse_plain_http_response(&raw)
+        NetworkHttp.post_json(url, bearer, body)
     }
 }
 
-/// Splits a plain-HTTP URL into its authority and its request target.
+impl Transport for NetworkHttp {
+    fn post_json(&self, url: &str, bearer: &str, body: &str) -> Result<String, String> {
+        use agenterm_platform::network_http;
+
+        let request =
+            network_http::NetworkHttpRequest::new(network_http::NetworkHttpMethod::Post, url)
+                .header("Authorization", format!("Bearer {bearer}"))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(body.as_bytes().to_vec())
+                .timeout(HARNESS_HTTP_TIMEOUT)
+                // No redirects at all. A redirected POST is either replayed without
+                // its body or replayed with the bearer token to a host the caller
+                // never named; both are worse than a named failure.
+                .max_redirects(0)
+                .max_response_bytes(HARNESS_HTTP_MAX_RESPONSE_BYTES);
+
+        // `validate` opens no socket, so an over-long body, a non-http scheme
+        // or a hostless URL is refused here with no connection attempted. The
+        // capability's `request` validates again; calling it first is how the
+        // refusal stays provable without a network.
+        network_http::validate(&request).map_err(|error| {
+            format!(
+                "harness: the request is refused before any socket is opened ({}): {}",
+                error.kind().as_str(),
+                error.detail()
+            )
+        })?;
+        let response = network_http::request(&request).map_err(|error| {
+            // The capability's own detail text, carried through rather than
+            // collapsed: "tls" alone does not say which certificate failed.
+            format!(
+                "harness: the request failed ({}): {}",
+                error.kind().as_str(),
+                error.detail()
+            )
+        })?;
+        interpret_http_response(&response)
+    }
+}
+
+/// Turns one delivered response into the body, or into an error that carries
+/// the diagnosis.
 ///
-/// Separate from the socket work so the `https://` refusal is testable without
-/// a network, which is the only way it can be tested at all.
-fn split_plain_http_url(url: &str) -> Result<(&str, &str), String> {
-    if url.starts_with("https://") {
+/// Separate from the socket work so every mapping decision is provable without
+/// a network. Three decisions live here:
+///
+/// * A non-2xx status is a *delivered* response in the capability's API. For
+///   the harness it is an error, and the error carries both the status and the
+///   body text, because an API's 400/401/429 body is the actual diagnosis.
+/// * A truncated body is never handed back as if complete: it would be parsed
+///   as JSON, fail somewhere arbitrary, and report a wire-format problem that
+///   is really a size problem.
+/// * A truncated *error* body is still reported, with the truncation named, so
+///   the status is not lost to a size complaint.
+fn interpret_http_response(
+    response: &agenterm_platform::network_http::NetworkHttpResponse,
+) -> Result<String, String> {
+    let text = String::from_utf8_lossy(&response.body).into_owned();
+    if !response.is_success() {
+        let cut = if response.truncated {
+            format!(" (body truncated at {HARNESS_HTTP_MAX_RESPONSE_BYTES} bytes)")
+        } else {
+            String::new()
+        };
         return Err(format!(
-            "harness: {url:?} is refused: MiniCon has no TLS capability yet, in this crate or in \
-             agenterm-platform, so an https:// endpoint cannot be reached and will not be \
-             downgraded to plain HTTP to pretend otherwise; tracked as the H4 transport item in \
-             plan/plan-v0.2.0.md. A plain http:// endpoint (an opencode-go-compatible server on \
-             loopback) works today."
+            "harness: the endpoint answered HTTP {}{cut}: {text}",
+            response.status
         ));
     }
-    let rest = url.strip_prefix("http://").ok_or_else(|| {
-        format!("harness: {url:?} is refused: the transport speaks only http:// URLs")
-    })?;
-    let (authority, path) = match rest.find('/') {
-        Some(index) => (&rest[..index], &rest[index..]),
-        None => (rest, "/"),
-    };
-    if authority.is_empty() {
-        return Err(format!("harness: {url:?} is refused: it names no host"));
+    if response.truncated {
+        return Err(format!(
+            "harness: the endpoint answered HTTP {} with a body cut off at \
+             {HARNESS_HTTP_MAX_RESPONSE_BYTES} bytes (HARNESS_HTTP_MAX_RESPONSE_BYTES); a \
+             truncated body is not parsed as if it were complete",
+            response.status
+        ));
     }
-    Ok((authority, path))
-}
-
-/// Turns raw response bytes into the body, or into an error naming the status.
-fn parse_plain_http_response(raw: &[u8]) -> Result<String, String> {
-    let split = raw
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .ok_or_else(|| "harness: the reply has no complete HTTP header block".to_owned())?;
-    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
-    let mut lines = head.split("\r\n");
-    let status_line = lines.next().unwrap_or_default();
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
-        .and_then(|code| code.parse::<u16>().ok())
-        .ok_or_else(|| format!("harness: the reply has no HTTP status: {status_line:?}"))?;
-
-    let mut body = raw[split + 4..].to_vec();
-    // Honour Content-Length when it is present and shorter than what arrived;
-    // otherwise end-of-stream is the end of the body (Connection: close).
-    for line in lines {
-        if let Some(value) = line
-            .split_once(':')
-            .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-            .and_then(|(_, value)| value.trim().parse::<usize>().ok())
-        {
-            if value < body.len() {
-                body.truncate(value);
-            } else if value > body.len() {
-                return Err(format!(
-                    "harness: the reply promised {value} body bytes but the connection ended \
-                     after {}",
-                    body.len()
-                ));
-            }
-            break;
-        }
-    }
-    let body = String::from_utf8_lossy(&body).into_owned();
-    if (200..300).contains(&status) {
-        Ok(body)
-    } else {
-        Err(format!(
-            "harness: the endpoint answered HTTP {status}: {body}"
-        ))
-    }
+    Ok(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -192,9 +164,9 @@ fn parse_plain_http_response(raw: &[u8]) -> Result<String, String> {
 
 /// DeepSeek's chat-completions endpoint and default model.
 ///
-/// Named here and nowhere else so there is one place to correct. Note the
-/// `https://`: reaching it needs the TLS capability MiniCon does not have yet,
-/// which `PlainHttp` refuses by name rather than faking.
+/// Named here and nowhere else so there is one place to correct. The
+/// `https://` is reachable: `NetworkHttp` speaks it through the pinned
+/// `agenterm-platform`'s `network-http` capability, which links rustls.
 pub const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEEPSEEK_MODEL: &str = "deepseek-chat";
 
@@ -537,6 +509,8 @@ fn dispatch_tool_call(
 
 #[cfg(test)]
 mod tests {
+    use agenterm_platform::network_http::NetworkHttpResponse;
+
     use super::*;
     use crate::harness::{ExecTool, FileTool};
 
@@ -793,39 +767,144 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[test]
-    fn plain_http_refuses_https_naming_the_missing_tls_capability() {
-        let error = PlainHttp
-            .post_json("https://api.deepseek.com/chat/completions", "key", "{}")
-            .expect_err("https must be refused, not attempted");
-        assert!(error.contains("no TLS capability"), "{error}");
-        assert!(error.contains("H4"), "{error}");
-        // The constant that needs it is the one named in the refusal's reason.
-        assert!(DEEPSEEK_CHAT_URL.starts_with("https://"));
+    /// One `NetworkHttpResponse`, as the capability hands it back.
+    fn delivered(status: u16, body: &str, truncated: bool) -> NetworkHttpResponse {
+        NetworkHttpResponse {
+            status,
+            headers: Vec::new(),
+            body: body.as_bytes().to_vec(),
+            truncated,
+        }
     }
 
     #[test]
-    fn plain_http_splits_a_url_and_reports_a_non_2xx_status_with_its_body() {
-        assert_eq!(
-            split_plain_http_url("http://localhost:4096/v1/chat").expect("a plain url"),
-            ("localhost:4096", "/v1/chat")
-        );
-        assert_eq!(
-            split_plain_http_url("http://localhost:4096").expect("no path"),
-            ("localhost:4096", "/")
-        );
-        let error = parse_plain_http_response(
-            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 15\r\n\r\n{\"error\":true}\n",
-        )
-        .expect_err("a non-2xx status is an error");
+    fn a_non_2xx_response_becomes_an_error_carrying_the_status_and_the_body() {
+        // The capability delivers this as `Ok`; the harness must not.
+        let error = interpret_http_response(&delivered(
+            401,
+            "{\"error\":{\"message\":\"Authentication Fails\"}}",
+            false,
+        ))
+        .expect_err("a non-2xx status is an error here");
+        assert!(error.contains("HTTP 401"), "{error}");
+        // The body is the diagnosis, so it must survive into the message.
+        assert!(error.contains("Authentication Fails"), "{error}");
+
+        // A truncated error body still reports the status, and names the cut.
+        let error = interpret_http_response(&delivered(429, "{\"error\":\"rate", true))
+            .expect_err("a non-2xx status is an error here");
         assert!(
-            error.contains("HTTP 401") && error.contains("\"error\":true"),
+            error.contains("HTTP 429") && error.contains("truncated"),
             "{error}"
         );
-        assert_eq!(
-            parse_plain_http_response(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}trailing")
-                .expect("a 2xx body"),
-            "{}"
+        assert!(error.contains("rate"), "{error}");
+    }
+
+    #[test]
+    fn a_truncated_2xx_body_is_refused_rather_than_parsed_as_complete() {
+        let error = interpret_http_response(&delivered(200, "{\"choices\":[{\"mess", true))
+            .expect_err("a truncated body must not be handed to the codec");
+        assert!(
+            error.contains("HARNESS_HTTP_MAX_RESPONSE_BYTES") && error.contains("truncated"),
+            "{error}"
         );
+        // A complete 2xx body is handed back verbatim, trailing bytes and all.
+        assert_eq!(
+            interpret_http_response(&delivered(200, "{\"ok\":true}", false)).expect("a 2xx body"),
+            "{\"ok\":true}"
+        );
+    }
+
+    #[test]
+    fn the_transport_refuses_a_bad_url_before_opening_any_socket() {
+        // A scheme the capability does not speak, and a URL with no host: both
+        // are pre-flight rejections, so neither can reach a socket. Proof that
+        // no connection is attempted: there is nothing listening anywhere in
+        // these URLs, and the error names the pre-socket stage and the kind.
+        for url in ["ftp://example.invalid/chat", "http:///chat", ""] {
+            let error = NetworkHttp
+                .post_json(url, "key", "{}")
+                .expect_err("an unusable URL must be refused");
+            assert!(
+                error.contains("before any socket is opened") && error.contains("invalid-url"),
+                "{url}: {error}"
+            );
+        }
+        // And the bounds this transport chooses are inside the capability's
+        // ceilings, so a well-formed request is never rejected by validation.
+        assert!(HARNESS_HTTP_TIMEOUT <= agenterm_platform::network_http::NETWORK_HTTP_MAX_TIMEOUT);
+        const {
+            assert!(
+                HARNESS_HTTP_MAX_RESPONSE_BYTES
+                    <= agenterm_platform::network_http::NETWORK_HTTP_MAX_RESPONSE_BYTES
+            );
+        }
+    }
+
+    #[test]
+    fn the_transport_round_trips_against_a_loopback_listener() {
+        // A real socket, in-process, on an ephemeral loopback port: no outside
+        // network and no hostname anywhere. This is the plain-HTTP case that
+        // used to justify `PlainHttp`, now served by the one transport.
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("an ephemeral loopback port");
+        let port = listener.local_addr().expect("the bound address").port();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read as _, Write as _};
+            let (mut stream, _) = listener.accept().expect("one connection");
+            let mut seen = Vec::new();
+            let mut chunk = [0u8; 4096];
+            // Read until the request body has arrived: the headers end at the
+            // blank line and the body is the remainder.
+            loop {
+                let read = stream.read(&mut chunk).expect("request bytes");
+                seen.extend_from_slice(&chunk[..read]);
+                if read == 0
+                    || seen
+                        .windows(4)
+                        .position(|window| window == b"\r\n\r\n")
+                        .is_some_and(|split| seen.len() > split + 4)
+                {
+                    break;
+                }
+            }
+            let body = "{\"choices\":[{\"message\":{\"content\":\"pong\"}}]}";
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                         {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .expect("the reply");
+            let _ = stream.flush();
+            String::from_utf8_lossy(&seen).into_owned()
+        });
+
+        let reply = NetworkHttp
+            .post_json(
+                &format!("http://127.0.0.1:{port}/chat"),
+                "secret",
+                "{\"ping\":1}",
+            )
+            .expect("the loopback round trip");
+        assert_eq!(
+            reply,
+            "{\"choices\":[{\"message\":{\"content\":\"pong\"}}]}"
+        );
+
+        let request = server.join().expect("the server thread");
+        assert!(request.starts_with("POST /chat "), "{request}");
+        // The credential travels as a bearer token in its own header field --
+        // matched as a whole folded line, so a differently named header whose
+        // name merely ends in "authorization" cannot satisfy this.
+        let lowered = request.to_ascii_lowercase();
+        assert!(
+            lowered.contains("\r\nauthorization: bearer secret\r\n"),
+            "{request}"
+        );
+        assert!(request.contains("{\"ping\":1}"), "{request}");
     }
 }

@@ -51,24 +51,48 @@ impl Backend {
 
 pub fn run_harness(args: &[String]) -> Result<String, String> {
     let request = parse_harness(args)?;
-    // Refuse a missing credential before anything else. Finding it here means
-    // no tool ever runs for a task that could not have reached a model anyway,
-    // and the refusal names the one variable the backend reads.
-    let key_var = request.backend.key_var();
-    if std::env::var_os(key_var).is_none_or(|value| value.is_empty()) {
+    // Refuse an unwired backend before anything else, including before the
+    // credential check: demanding a key for a backend that cannot run would
+    // name the wrong problem. `opencode-go` has its own codec, written
+    // separately; it is deliberately **not** served by the DeepSeek codec,
+    // because a wire format that merely resembles another one produces
+    // plausible wrong requests instead of a clear failure.
+    if request.backend == Backend::OpencodeGo {
         return Err(format!(
-            "harness: {key_var} is unset or empty; --backend {} reads its key from that \
-             environment variable only",
-            request.backend.flag_name()
+            "harness: --backend {} is not wired into this CLI yet: its own codec is a separate \
+             module still being written, and it will not be served by the deepseek codec, which \
+             speaks a different wire format. Use --backend {} today; tracked as H5 in \
+             plan/plan-v0.2.0.md.",
+            Backend::OpencodeGo.flag_name(),
+            Backend::DeepSeek.flag_name()
         ));
     }
+    // Refuse a missing credential next. Finding it here means no tool ever runs
+    // for a task that could not have reached a model anyway, and the refusal
+    // names the one variable the backend reads.
+    let key_var = request.backend.key_var();
+    let key = match std::env::var(key_var) {
+        Ok(key) if !key.is_empty() => key,
+        _ => {
+            return Err(format!(
+                "harness: {key_var} is unset or empty; --backend {} reads its key from that \
+                 environment variable only",
+                request.backend.flag_name()
+            ));
+        }
+    };
     // Resolve the file tool's bound now, so an unusable --root is a bounded
     // error up front rather than a surprise on the model's first tool call.
     let file_tool = FileTool::new(&request.root)?;
-    let _exec_tool = ExecTool::new(file_tool.root_path(), &request.allow_cmd);
-    Err(
-        "harness: the tool loop is not implemented yet (tracked in plan/plan-v0.2.0.md, H2-H5)"
-            .to_owned(),
+    let exec_tool = ExecTool::new(file_tool.root_path(), &request.allow_cmd);
+    crate::harness_wire::run_task(
+        &crate::harness_wire::NetworkHttp,
+        crate::harness_wire::DEEPSEEK_CHAT_URL,
+        &key,
+        crate::harness_wire::DEEPSEEK_MODEL,
+        &request.task,
+        &file_tool,
+        &exec_tool,
     )
 }
 
@@ -159,11 +183,6 @@ pub struct FileTool {
     root: std::path::PathBuf,
 }
 
-/// The `#[allow]` below is scoped to the non-test build and to these two impl
-/// blocks: both tools are complete and unit-tested, but their only caller is
-/// the H4/H5 wire adapter, which does not exist yet. Faking a model loop in
-/// `run_harness` to make them reachable would be worse than saying so here.
-#[cfg_attr(not(test), allow(dead_code))]
 impl FileTool {
     /// Canonicalizes the root once. A root that is missing or is not a
     /// directory is refused here, so no later call has to wonder whether its
@@ -311,7 +330,6 @@ pub struct ExecTool {
     allow_cmd: Vec<String>,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl ExecTool {
     pub fn new(root: &std::path::Path, allow_cmd: &[String]) -> Self {
         Self {
