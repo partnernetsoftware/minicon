@@ -284,16 +284,32 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   ├── evidence: black-box test runs one real bounded task (temp root,
 │   │   │     one file write commanded by the model) against DeepSeek flash,
 │   │   │     asserts the file lands with model-specified content
-│   │   ├── BLOCKED on transport, not on credentials: MiniCon cannot make an
-│   │   │     HTTPS request at all. Neither it nor `agenterm-platform` has an
-│   │   │     HTTP client or TLS (that crate's network features are
-│   │   │     `network-dns`, `network-interfaces`, `network-routes` and
-│   │   │     nothing more), and the official DeepSeek API is HTTPS-only. The
-│   │   │     three ways out, and why each is the owner's call not the
-│   │   │     implementer's, are written up in `prd/PRD_02_31_v0_2_horizon.md`
-│   │   │     ("Open, and the owner's to decide"). Shelling out to `curl` is
-│   │   │     rejected: an unbounded external command inside the one feature
-│   │   │     whose point is bounded tools
+│   │   ├── transport decided and built, BLOCKED on the pin: the owner chose
+│   │   │     the house route -- add the capability to `agenterm-platform`
+│   │   │     using the already-declared-but-dead `ureq` with
+│   │   │     `PRD_02_20`'s target-specific TLS trees (Unix Rustls/WebPKI,
+│   │   │     Windows NativeTls). That capability now exists as
+│   │   │     `network-http` (contract + facade, no per-OS adapter because
+│   │   │     `ureq` is portable and the only per-OS difference is the TLS
+│   │   │     provider, expressed as Cargo features), verified in the narrow
+│   │   │     graph: `cargo test -p agenterm-platform --no-default-features
+│   │   │     --features network-http` 113 passed against a 92-test baseline,
+│   │   │     clippy clean, and one guard broken independently of the
+│   │   │     authoring session failed exactly
+│   │   │     `rejects_a_body_on_a_method_that_cannot_carry_one`
+│   │   ├── BLOCKED: MiniCon pins `agenterm-platform` by git `rev` against
+│   │   │     the public agenterm repository, so the capability cannot be
+│   │   │     consumed until that commit is pushed. This session is not
+│   │   │     authorized to push to agenterm, so the pin cannot move and
+│   │   │     harness's HTTPS transport stays unreachable from MiniCon. Not a
+│   │   │     code gap and not skipped: the code is written and tested, the
+│   │   │     authority to publish it is what is missing
+│   │   ├── shipping shape while the pin is stuck: `harness_wire`'s
+│   │   │     `PlainHttp` serves a plain-HTTP endpoint and refuses `https://`
+│   │   │     by name, citing the missing TLS capability -- a bounded refusal,
+│   │   │     never a silent downgrade
+│   │   ├── #rejected shelling out to `curl`: an unbounded external command
+│   │   │     inside the one feature whose point is bounded tools
 │   │   ├── BLOCKED on credentials too, separately: the key this environment
 │   │   │     carries is rejected by the API (`Authentication Fails ... is
 │   │   │     invalid`), so even over a working transport the live end-to-end
