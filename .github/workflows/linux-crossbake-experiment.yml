@@ -70,14 +70,34 @@ jobs:
           # for the docker driver."
           docker buildx create --name crossbake --driver docker-container --use
 
-      - name: Build the crossbake image
+      - name: Build (or reuse) the crossbake-base image
+        env:
+          BASE_VERSION: v1
         run: |
           set -euo pipefail
-          cache_ref="ghcr.io/${{ github.repository }}/crossbake-cache:latest"
+          base_tag="ghcr.io/${{ github.repository }}/crossbake-base:${BASE_VERSION}"
+          echo "BASE_TAG=$base_tag" >> "$GITHUB_ENV"
+          # A real, pullable tag check -- not a BuildKit cache-key guess. If
+          # the tag already exists in GHCR, this is the whole "skip the slow
+          # half" path: no --cache-from heuristics, just don't rebuild.
+          if docker manifest inspect "$base_tag" >/dev/null 2>&1; then
+            echo "base image $base_tag already exists, skipping rebuild"
+          else
+            echo "base image $base_tag not found, building it"
+            docker buildx build --builder crossbake --push \
+              -f scripts/crossbake-base.Dockerfile -t "$base_tag" \
+              .
+          fi
+
+      - name: Build the crossbake image (thin, FROM the pushed base)
+        run: |
+          set -euo pipefail
+          # A plain FROM + `docker pull` of an already-pushed tag, not
+          # --cache-from/--cache-to type=registry -- see crossbake.Dockerfile
+          # for why that combination was dropped for this fast-changing layer.
           docker buildx build --builder crossbake --load \
             -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe \
-            --cache-from "type=registry,ref=$cache_ref" \
-            --cache-to "type=registry,ref=$cache_ref,mode=max" \
+            --build-arg "BASE_IMAGE=${BASE_TAG}" \
             .
 
       - name: Cross-build all six cells + minicon.com inside the image
