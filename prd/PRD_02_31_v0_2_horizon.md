@@ -337,3 +337,38 @@ Two process notes worth keeping, because each cost real time:
   (2x `inet_csk_accept` plus `futex_do_wait`), not from the test output, which
   showed nothing at all. Fixtures must terminate on their own merits; a
   wrapper timeout would have hidden this.
+
+### 0.2.0 — what the version number stands for, and what it does not
+
+The version is bumped in `Cargo.toml` and `release-policy.json` at the SHA
+whose evidence reads:
+
+- `./scripts/build.sh test` green under a display server: 517 tests, zero
+  failures, across the host unit suite, alignment, the mux black boxes, the
+  harness codecs and the 28 GUI black boxes. Those 28 fail as a block when no X
+  server is present, which is an environment report and not a product signal;
+  they must be run under `xvfb-run -a -s "-screen 0 1280x900x24"`, the same
+  invocation `scripts/linux-runtime-qualify.sh` uses.
+- `./scripts/six-cell-qualify.sh` with FAIL 0 / PASS 17 on the repinned
+  `agenterm`: `common` fmt, build-fanout and both Windows-cell boundary checks,
+  plus all-target-link, throughput-link and artifact inspection for
+  `win-x86_64`, `win-aarch64`, `lnx-x86_64` and `lnx-aarch64`. This is the only
+  evidence that the repin's Windows console-agent code and the `native-tls` arm
+  of `network-http` compile and link at all.
+
+Two whole classes of evidence are BLOCKED at this SHA, and the version number
+claims neither:
+
+- **No runtime evidence.** Six-cell on a non-macOS host links but never
+  executes: all four runtime courts are BLOCKED on unconfigured runners, and
+  the Apple cells on an SDK older than 12.0. Nothing here has run a MiniCon
+  binary on Windows or macOS.
+- **No public release.** The sealed Candidate to Promotion chain is owned by
+  the `run-reputation-and-release` skill, with `sign-macos-artifacts` and
+  `sign-windows-artifacts` for the signing courts. None of the three is
+  registered under `~/.claude/skills/` in the container this version was built
+  in, and `AGENTS.md` forbids reconstructing such a procedure from the
+  `.github/workflows/` files or hand-rolling a local equivalent. So 0.2.0 is a
+  development-complete version, not a released one; it becomes releasable when
+  those skills are registered, and public Promotion still needs explicit human
+  version and publish authority on top of that.
