@@ -25,6 +25,10 @@ name = "minicon_control"
 path = "tests/minicon_control.rs"
 
 [[test]]
+name = "minicon_mux"
+path = "tests/minicon_mux.rs"
+
+[[test]]
 name = "minicon_alignment"
 path = "tests/minicon_alignment.rs"
 

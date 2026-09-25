@@ -48,20 +48,20 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     active`, `render_format_default_marks_active_window`,
 │   │   │     `unknown_substitution_is_bounded_error`) prove the translation
 │   │   │     and format engine against a fixed `list-tabs` JSON fixture
-│   │   ├── BLOCKED (evidence gap, not a design gap): the invariant's own
+│   │   ├── owed, no longer environment-blocked: the invariant's own
 │   │   │     black-box evidence -- a live MiniCon instance's real `list-tabs`
-│   │   │     response round-tripped through `mux list-windows` -- has not
-│   │   │     run, because this development environment has no window/display
-│   │   │     server and every existing `--control` black-box test
-│   │   │     (`tests/minicon_blackbox.rs`, `minicon_control.rs`) fails the
-│   │   │     same way here (`control endpoint did not become ready`) with no
-│   │   │     mux-specific code involved -- confirmed by running an existing,
-│   │   │     unmodified blackbox test before adding any mux code. Run the
-│   │   │     black-box suite in an environment with a real display (or a
-│   │   │     future headless-GUI mode) before moving this line to `[x]`
-│   │   ├── safe failure: zero tabs returns an empty list, not an error
-│   │   └── non-goal: [-] multi-pane enumeration (`split-window` not
-│   │         implemented; each tab always lists exactly one pane, index 0)
+│   │   │     response round-tripped through `mux list-windows` -- has still
+│   │   │     not run, but the reason recorded here was wrong. This
+│   │   │     environment CAN host the GUI suites: with `xvfb` installed,
+│   │   │     `minicon_blackbox` passes 28/28 and `minicon_control` 12/12
+│   │   │     under the same `xvfb-run -s "-screen 0 1280x900x24"` invocation
+│   │   │     `scripts/linux-runtime-qualify.sh` uses in the CI gate. The
+│   │   │     earlier `control endpoint did not become ready` was a missing
+│   │   │     display server, and installing one removed it.
+│   │   │     #decision display-server BLOCKED withdrawn 2026-09-25 -- what
+│   │   │     remains is a real gap in coverage, not in the environment: no
+│   │   │     mux black-box suite exists yet. Writing `tests/minicon_mux.rs`
+│   │   │     is now the only thing between M2/M3/M3b and `[x]`
 │   ├── M3 window select/create/destroy (`select-window`, `new-window`,
 │   │   │     `kill-window`) ->m1 [~]
 │   │   ├── invariant: an invalid `@ID`/index, a nonzero pane, or a
@@ -89,10 +89,10 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   ├── provable: removing the nonzero-pane refusal was confirmed to fail
 │   │   │     `a_nonzero_pane_names_the_missing_split_window` before the guard
 │   │   │     was restored
-│   │   ├── BLOCKED (evidence gap, same cause as M2): the "real target, real
-│   │   │     effect" half -- a tab actually switching/opening/closing -- needs
-│   │   │     the GUI black-box suite, which cannot run in an environment with
-│   │   │     no display server. Not a design gap; run before `[x]`
+│   │   ├── owed, same withdrawn cause as M2: the "real target, real effect"
+│   │   │     half -- a tab actually switching/opening/closing -- needs the
+│   │   │     mux black-box suite. The display server is available now, so
+│   │   │     this is coverage still to write, not an environment limit
 │   │   ├── depends: M2 (must be able to enumerate a real handle to target)
 │   │   └── non-goal: [-] cross-machine attach; [-] persistent session
 │   │         outside the process; [-] multiple sessions (both already
@@ -130,9 +130,9 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     (tmux's own behavior) was confirmed to fail
 │   │   │     `an_unknown_key_name_is_refused_rather_than_sent_as_text` before
 │   │   │     the guard was restored
-│   │   ├── BLOCKED (evidence gap, same cause as M2): the round-trip half --
-│   │   │     keys reaching a real child process, `capture-pane -p` returning
-│   │   │     known output -- needs the GUI black-box suite and a display
+│   │   ├── owed, same withdrawn cause as M2: the round-trip half -- keys
+│   │   │     reaching a real child process, `capture-pane -p` returning known
+│   │   │     output -- needs the mux black-box suite, which can now run
 │   │   └── depends: M3 (needs a real target to send/capture against)
 │   └── M4 upsert into PRD_02_31 ->m [ ]
 │         └── flip mux's `[ ]` lines to `[x]` only against the evidence named
@@ -181,10 +181,13 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   ├── provable: clamping `..` instead of refusing it, and disabling the
 │   │   │     symlink check, each failed exactly the matching test and no
 │   │   │     other (re-verified 2026-09-25 by the integrating session)
-│   │   └── BLOCKED: no GUI/black-box CLI evidence yet — this container has no
-│   │         display server, so every `tests/minicon_blackbox.rs` case fails
-│   │         on `control endpoint did not become ready` against unmodified
-│   │         code too. `[x]` waits on a display-capable host
+│   │   └── black-box evidence: still owed, but no longer blocked on the
+│   │         environment. Installing `xvfb` made both GUI suites pass here
+│   │         (`minicon_blackbox` 28/28, `minicon_control` 12/12) under the
+│   │         same `xvfb-run -s "-screen 0 1280x900x24"` the CI gate uses in
+│   │         `scripts/linux-runtime-qualify.sh`. What is missing is a mux/
+│   │         harness black-box suite, which is M4's and H6's to write — see
+│   │         `#decision display-server BLOCKED withdrawn` below
 │   ├── H3 exec tool ->h1 [~]
 │   │   ├── invariant: exactly one command per call, no shell metacharacter
 │   │   │     expansion (no `&&`, pipes, or subshell) — the command is
@@ -225,8 +228,8 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     one `Cargo.toml` feature plus one function body, and is deferred
 │   │   │     to H4 so the feature change is verified by a MiniCon build and a
 │   │   │     six-cell round that has a caller to exercise it
-│   │   └── BLOCKED: same missing display server as H2 — no black-box CLI
-│   │         evidence yet
+│   │   └── black-box evidence: owed, not environment-blocked — same
+│   │         withdrawn display-server assumption as H2
 │   ├── H4 DeepSeek flash backend ->h1 [ ] @method=first
 │   │   ├── also closes out, as the first non-test caller of H2/H3: the
 │   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/
