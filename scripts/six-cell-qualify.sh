@@ -239,13 +239,38 @@ if [ "$LIMA_ACCELERATOR" = 1 ]; then
   lima_stop_if_running "$LNX_AARCH64_LIMA"
 fi
 
-# Apple cells need a C compiler that can target darwin: enabling the platform
+# Apple cells need a toolchain that can target darwin. Enabling the platform
 # crate's network-http feature pulls in ring, whose curve25519.c is built from
-# source. A macOS host already has one. Any other host must supply a macOS SDK
-# in MINICON_APPLE_SDK_ROOT alongside clang and llvm-ar; absence is BLOCKED,
-# never a skipped pass.
+# source, and the final link still wants a Mach-O linker. A macOS host already
+# has both. Any other host must supply a macOS SDK in MINICON_APPLE_SDK_ROOT
+# alongside clang, llvm-ar and lld's ld64 flavour; absence is BLOCKED, never a
+# skipped pass. The SDK floor is 12.0 because the platform crate's macOS
+# process adapter references _proc_signal_with_audittoken, which older SDKs do
+# not declare and no deployment target can conjure.
+APPLE_MIN_SDK_MAJOR=12
 APPLE_CROSS_READY=0
 APPLE_CROSS_BLOCK_REASON=""
+apple_sdk_version() {
+  python3 - "$1" <<'PYSDK'
+import json
+import sys
+
+try:
+    with open(sys.argv[1] + "/SDKSettings.json", encoding="utf-8") as handle:
+        print(json.load(handle).get("Version", ""))
+except OSError:
+    print("")
+PYSDK
+}
+apple_ld64() {
+  for candidate in ld64.lld ld64.lld-18 ld64.lld-17; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
 if [ "$(uname -s)" = Darwin ]; then
   APPLE_CROSS_READY=1
 elif [ -z "${MINICON_APPLE_SDK_ROOT:-}" ]; then
@@ -254,14 +279,32 @@ elif [ ! -d "${MINICON_APPLE_SDK_ROOT}/usr/include" ]; then
   APPLE_CROSS_BLOCK_REASON="MINICON_APPLE_SDK_ROOT is not a macOS SDK root"
 elif ! command -v clang >/dev/null 2>&1 || ! command -v llvm-ar >/dev/null 2>&1; then
   APPLE_CROSS_BLOCK_REASON="clang and llvm-ar are required to cross-compile Apple C dependencies"
+elif ! APPLE_LD64="$(apple_ld64)"; then
+  APPLE_CROSS_BLOCK_REASON="lld's ld64 flavour (ld64.lld) is required to link Mach-O off a macOS host"
 else
-  export CC_aarch64_apple_darwin="clang"
-  export CFLAGS_aarch64_apple_darwin="-target arm64-apple-macos11 -isysroot $MINICON_APPLE_SDK_ROOT"
-  export AR_aarch64_apple_darwin="llvm-ar"
-  export CC_x86_64_apple_darwin="clang"
-  export CFLAGS_x86_64_apple_darwin="-target x86_64-apple-macos10.12 -isysroot $MINICON_APPLE_SDK_ROOT"
-  export AR_x86_64_apple_darwin="llvm-ar"
-  APPLE_CROSS_READY=1
+  APPLE_SDK_VERSION="$(apple_sdk_version "$MINICON_APPLE_SDK_ROOT")"
+  case "$APPLE_SDK_VERSION" in
+    '' | *[!0-9.]* | .* )
+      APPLE_CROSS_BLOCK_REASON="MINICON_APPLE_SDK_ROOT has no readable SDKSettings.json version" ;;
+    *)
+      if [ "${APPLE_SDK_VERSION%%.*}" -lt "$APPLE_MIN_SDK_MAJOR" ]; then
+        APPLE_CROSS_BLOCK_REASON="MINICON_APPLE_SDK_ROOT is macOS $APPLE_SDK_VERSION; the platform crate's macOS process adapter needs $APPLE_MIN_SDK_MAJOR.0 or newer for _proc_signal_with_audittoken"
+      else
+        export SDKROOT="$MINICON_APPLE_SDK_ROOT"
+        export CC_aarch64_apple_darwin="clang"
+        export CFLAGS_aarch64_apple_darwin="-target arm64-apple-macos11 -isysroot $MINICON_APPLE_SDK_ROOT"
+        export AR_aarch64_apple_darwin="llvm-ar"
+        export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="clang"
+        export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS="-Clink-arg=-target -Clink-arg=arm64-apple-macos11 -Clink-arg=-isysroot -Clink-arg=$MINICON_APPLE_SDK_ROOT -Clink-arg=-fuse-ld=$APPLE_LD64 -Clink-arg=-Wl,-platform_version,macos,11.0,$APPLE_SDK_VERSION"
+        export CC_x86_64_apple_darwin="clang"
+        export CFLAGS_x86_64_apple_darwin="-target x86_64-apple-macos10.12 -isysroot $MINICON_APPLE_SDK_ROOT"
+        export AR_x86_64_apple_darwin="llvm-ar"
+        export CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="clang"
+        export CARGO_TARGET_X86_64_APPLE_DARWIN_RUSTFLAGS="-Clink-arg=-target -Clink-arg=x86_64-apple-macos10.12 -Clink-arg=-isysroot -Clink-arg=$MINICON_APPLE_SDK_ROOT -Clink-arg=-fuse-ld=$APPLE_LD64 -Clink-arg=-Wl,-platform_version,macos,10.12,$APPLE_SDK_VERSION"
+        APPLE_CROSS_READY=1
+      fi
+      ;;
+  esac
 fi
 
 run_stage common fmt cargo fmt --all -- --check

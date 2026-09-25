@@ -1251,23 +1251,43 @@ flowchart LR
   explicitly not evidence for `*-unknown-linux-gnu`: the GNU artifact requires
   glibc loader semantics that compatibility shims did not supply.
 
-  The Apple cells acquired a C-toolchain prerequisite when the platform crate's
+  The Apple cells acquired a toolchain prerequisite when the platform crate's
   `network-http` feature entered MiniCon's feature set: that feature reaches
-  `ring`, which builds `curve25519.c` from source, so linking an Apple target
-  now needs a compiler that can emit darwin objects. On a macOS host the system
-  `clang` already is one and nothing changed. Off a macOS host the script reads
-  `MINICON_APPLE_SDK_ROOT`, and with a macOS SDK there plus `clang` and
-  `llvm-ar` it exports the per-target `CC_*_apple_darwin`, `CFLAGS_*` and
-  `AR_*` triples that `cc-rs` consumes. An absent or non-SDK path is BLOCKED
-  with the reason named, like every other optional court in that script — a
-  missing toolchain must never read as a skipped pass. Measured: before the
-  knob, all seven Apple stages FAILed identically on
-  `error: failed to run custom build command for ring`, and
+  `ring`, which builds `curve25519.c` from source, so an Apple target can no
+  longer be produced by a pure-Rust cross build alone. On a macOS host the
+  system `clang` already compiles and links darwin and nothing changed. Off a
+  macOS host the script reads `MINICON_APPLE_SDK_ROOT` and, given a macOS SDK
+  there plus `clang`, `llvm-ar` and lld's `ld64` flavour, exports both halves:
+  the per-target `CC_*_apple_darwin`, `CFLAGS_*` and `AR_*` triples that
+  `cc-rs` consumes, and a `CARGO_TARGET_*_APPLE_DARWIN_LINKER` of `clang` with
+  link args carrying `-target`, `-isysroot`, `-fuse-ld=<ld64.lld>` and an
+  explicit `-Wl,-platform_version`. Every absent or inadequate prerequisite is
+  BLOCKED with the reason named, like every other optional court in that
+  script — a missing toolchain must never read as a skipped pass.
+
+  Three measurements shaped that shape. First, before any of it, all seven
+  Apple stages FAILed identically on
+  `error: failed to run custom build command for ring`;
   `cargo tree --target aarch64-apple-darwin -i ring` proved `ring` enters the
   graph only through `rustls <- ureq <- agenterm-platform`, while
   `cargo check --target aarch64-apple-darwin -p minicon-core` still finished
   clean — so the requirement is exactly the new C dependency's, not a
-  regression in the pure-Rust cross build.
+  regression in the pure-Rust cross build. Second, once the C half was
+  supplied, the link failed on a driver mismatch rather than on MiniCon:
+  `rustc` hands the linker `-arch arm64 -mmacosx-version-min=11.0.0`, which
+  GNU `cc` rejects outright; `clang` plus `ld64.lld` and an explicit
+  `-Wl,-platform_version` links a Mach-O arm64 binary from Linux, verified by
+  `cargo test -p minicon-core --target aarch64-apple-darwin --no-run`
+  producing a runnable-shaped Mach-O test binary.
+
+  Third, that is where the honest ceiling sits: the full workspace link
+  resolves everything but one symbol, `_proc_signal_with_audittoken`, which
+  the platform crate's macOS process adapter references and which no SDK older
+  than 12.0 declares — no deployment target can conjure it. The script
+  therefore carries an explicit 12.0 SDK floor and BLOCKS the Apple cells by
+  version when the configured SDK is older, naming the symbol. On a host whose
+  newest available SDK is 11.3 the Apple cells are BLOCKED, not FAIL, and not
+  passed.
 
   The x86_64 GNU artifact has two complementary local courts. Apple Rosetta for
   Linux in the ARM64 VZ guest, backed by Debian amd64 multiarch libraries, runs
