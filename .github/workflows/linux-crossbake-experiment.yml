@@ -1,0 +1,133 @@
+# EXPERIMENTAL -- not part of the release or test pipeline.
+#
+# Answers one question, complementary to (not replacing) six-grid-cloud-build.yml's
+# native-per-cell path: can ONE ubuntu-24.04 host, using an image pre-baked with
+# osxcross + cargo-xwin + cargo-zigbuild + cosmocc, produce all six MiniCon
+# target cells plus minicon.com, so build workload can eventually move off
+# GitHub-hosted macOS/Windows runners onto a dedicated Linux box? See
+# plan/plan-ghcr-toolchain-prebake.md for why this is the one shape actually
+# worth baking into an image (system toolchains, not just cargo state, which
+# actions/cache already covers for six-grid-cloud-build.yml).
+#
+# Manual trigger only; never runs on push; never feeds a Candidate.
+name: Linux crossbake experiment (6+1 from one host)
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Push the built image to GHCR after a successful probe build
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  bake-and-probe:
+    name: bake image, cross-build all six cells + minicon.com
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - name: Cache the baked image layers
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: /tmp/crossbake-cache
+          key: linux-crossbake-v1-${{ hashFiles('scripts/crossbake.Dockerfile', 'loader/install-cosmocc.sh') }}
+
+      - uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.11.1
+
+      - name: Build the crossbake image
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a4 # v6.18.0
+        with:
+          context: .
+          file: scripts/crossbake.Dockerfile
+          tags: minicon-crossbake:probe
+          load: true
+          cache-from: type=local,src=/tmp/crossbake-cache
+          cache-to: type=local,dest=/tmp/crossbake-cache-new,mode=max
+
+      # actions/cache can't overwrite a live cache entry; swap in the new
+      # layer cache so the next run gets today's layers instead of growing
+      # the cache dir unbounded (the documented buildx local-cache pattern).
+      - name: Swap in the new layer cache
+        run: |
+          rm -rf /tmp/crossbake-cache
+          mv /tmp/crossbake-cache-new /tmp/crossbake-cache
+
+      - name: Cross-build all six cells + minicon.com inside the image
+        run: |
+          set -euo pipefail
+          mkdir -p probe-out
+          docker run --rm -v "$PWD:/work" -w /work minicon-crossbake:probe bash -euo pipefail -c '
+            set -x
+            # win-x86_64 / win-aarch64 via cargo-xwin
+            cargo xwin build --locked --release --target x86_64-pc-windows-msvc -p minicon
+            cargo xwin build --locked --release --target aarch64-pc-windows-msvc -p minicon
+            # lnx-x86_64 / lnx-aarch64 via cargo-zigbuild
+            cargo zigbuild --locked --release --target x86_64-unknown-linux-gnu -p minicon
+            cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu -p minicon
+            # osx-aarch64 / osx-x86_64 via osxcross. Wrapper naming
+            # (<arch>-apple-darwin<ver>-clang) is not stable across osxcross
+            # versions -- osxcross-experiment.yml hit both "aarch64-..." and
+            # "arm64-..." on the arm64 side -- so glob and match either, same
+            # as that experiment does.
+            find_clang() {
+              for arch in "$@"; do
+                for candidate in /opt/osxcross/target/bin/"$arch"-apple-darwin*-clang; do
+                  [ -e "$candidate" ] || continue
+                  case "$(basename "$candidate")" in *-clang++*|*-cmake-clang*) continue ;; esac
+                  basename "$candidate"; return 0
+                done
+              done
+              return 1
+            }
+            rustup target add aarch64-apple-darwin x86_64-apple-darwin
+            clang_arm64=$(find_clang aarch64 arm64)
+            clang_x86_64=$(find_clang x86_64)
+            CC_aarch64_apple_darwin="$clang_arm64" \
+              CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$clang_arm64" \
+              cargo build --locked --release --target aarch64-apple-darwin -p minicon
+            CC_x86_64_apple_darwin="$clang_x86_64" \
+              CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="$clang_x86_64" \
+              cargo build --locked --release --target x86_64-apple-darwin -p minicon
+            # minicon.com packing (loader/pack.sh) reads loader/rebuild-payloads.sh's
+            # per-cell layout, which assumes a real macOS host for the two native
+            # osx-* builds -- this probe sets CC/linker explicitly instead (above),
+            # so it deliberately does not call that script. Wiring pack.sh onto
+            # this cross layout is follow-on work once the six-cell claim itself
+            # is confirmed; cosmocc availability is proven separately below.
+            cosmocc --version
+          '
+
+      - name: Verify each cell is the artifact type it claims to be
+        run: |
+          set -euo pipefail
+          file target/x86_64-pc-windows-msvc/release/minicon.exe | grep -qi "PE32"
+          file target/aarch64-pc-windows-msvc/release/minicon.exe | grep -qi "PE32"
+          file target/x86_64-unknown-linux-gnu/release/minicon | grep -qi "ELF"
+          file target/aarch64-unknown-linux-gnu/release/minicon | grep -qi "ELF"
+          file target/x86_64-apple-darwin/release/minicon | grep -qi "Mach-O"
+          file target/aarch64-apple-darwin/release/minicon | grep -qi "Mach-O"
+
+      - name: Log in to GHCR
+        if: ${{ inputs.publish }}
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the crossbake image
+        if: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          tag="ghcr.io/${{ github.repository }}/crossbake:$(date +%Y%m%d)"
+          docker tag minicon-crossbake:probe "$tag"
+          docker push "$tag"
+          echo "published $tag"
