@@ -95,10 +95,26 @@ jobs:
           # A plain FROM + `docker pull` of an already-pushed tag, not
           # --cache-from/--cache-to type=registry -- see crossbake.Dockerfile
           # for why that combination was dropped for this fast-changing layer.
-          docker buildx build --builder crossbake --load \
+          #
+          # NOT `--load`: that imports straight from the docker-container
+          # builder's own content store, and this repo measured (2026-09-25,
+          # run 36108211671) a live probe container losing an entire
+          # already-verified directory (/opt/cosmocc, present at every
+          # checkpoint through all six cells, gone two seconds after the
+          # last one, with no command in between that touched it) -- the
+          # signature of buildx's own post-build cache GC reclaiming a blob
+          # the loaded image still shares with it. `--output type=docker`
+          # to a tarball, then a separate `docker load` of that tarball,
+          # materializes the image into dockerd's own storage as an
+          # independent copy, decoupled from the builder's content store and
+          # whatever it prunes afterward.
+          docker buildx build --builder crossbake \
+            --output type=docker,dest=/tmp/crossbake-probe.tar \
             -f scripts/crossbake.Dockerfile -t minicon-crossbake:probe \
             --build-arg "BASE_IMAGE=${BASE_TAG}" \
             .
+          docker load -i /tmp/crossbake-probe.tar
+          rm -f /tmp/crossbake-probe.tar
 
       - name: Cross-build all six cells + minicon.com inside the image
         run: |
