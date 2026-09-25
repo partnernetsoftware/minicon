@@ -198,6 +198,33 @@ used to carry):
   `MINICON_OPENCODE_API_KEY` for `--backend opencode-go`. A config-file
   credential store is deferred so MiniCon does not grow a general
   secrets-management feature for this one CLI mode.
+**Open, and the owner's to decide (found 2026-09-25, during H4).** MiniCon has
+no way to make an HTTPS request, and neither does its platform crate: the
+`agenterm-platform` feature list carries `network-dns`, `network-interfaces`
+and `network-routes` and nothing else — no HTTP client, no TLS. The harness
+dependency line above ("none new") is wrong a second time. `harness` can talk
+to an endpoint on plain HTTP today (which an opencode-go-compatible server on
+localhost typically is), but the official DeepSeek API is HTTPS-only, so H4's
+live evidence cannot be produced until one of these is chosen:
+
+1. **Add the capability to `agenterm-platform`** using each OS's native stack.
+   Architecturally correct per AGENTS.md ("cross-platform mechanisms in the
+   shared platform crates"), and the frugal option for binary size since no
+   TLS library ships in the product. Costs work in the other repository and a
+   move of the pinned revision.
+2. **Add a Rust TLS/HTTP crate to MiniCon.** Fastest, but it puts a TLS stack
+   inside a product whose Windows binary is 1.1 MiB and whose size is a
+   reputation boundary (see `PRD_02_27_con_delivery.md` on the 360 QVM court),
+   so it is a product-shape decision, not an implementation detail.
+3. **Ship 0.2.0's harness against plain-HTTP endpoints only**, with the
+   official DeepSeek backend `BLOCKED` on the transport, and H5's local
+   opencode-go adapter as the one verified backend.
+
+Not decided here, and not decided by whoever writes the code: each option
+changes what MiniCon is. Shelling out to `curl` is rejected outright — it would
+put an unbounded external command inside the one feature whose whole point is
+bounded tools.
+
 - **Wire adapters.** Each backend gets its own small, explicit adapter
   translating the two-tool (`file`, `exec`) loop into that backend's own
   tool-call wire shape. DeepSeek's flash model is wired first, verified end

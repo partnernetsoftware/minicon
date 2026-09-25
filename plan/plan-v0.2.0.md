@@ -239,8 +239,25 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   ├── evidence: black-box test runs one real bounded task (temp root,
 │   │   │     one file write commanded by the model) against DeepSeek flash,
 │   │   │     asserts the file lands with model-specified content
-│   │   └── #risk requires a live API key in CI; if none is provisioned this
-│   │         evidence is `BLOCKED`, not silently skipped, per AGENTS.md
+│   │   ├── BLOCKED on transport, not on credentials: MiniCon cannot make an
+│   │   │     HTTPS request at all. Neither it nor `agenterm-platform` has an
+│   │   │     HTTP client or TLS (that crate's network features are
+│   │   │     `network-dns`, `network-interfaces`, `network-routes` and
+│   │   │     nothing more), and the official DeepSeek API is HTTPS-only. The
+│   │   │     three ways out, and why each is the owner's call not the
+│   │   │     implementer's, are written up in `prd/PRD_02_31_v0_2_horizon.md`
+│   │   │     ("Open, and the owner's to decide"). Shelling out to `curl` is
+│   │   │     rejected: an unbounded external command inside the one feature
+│   │   │     whose point is bounded tools
+│   │   ├── BLOCKED on credentials too, separately: the key this environment
+│   │   │     carries is rejected by the API (`Authentication Fails ... is
+│   │   │     invalid`), so even over a working transport the live end-to-end
+│   │   │     assertion cannot run here
+│   │   └── #risk both blockers are recorded, neither is skipped, per AGENTS.md.
+│   │         The transport-independent half — wire codec, tool dispatch,
+│   │         bounded turn loop — does NOT wait on either and is being built
+│   │         behind `harness_wire`'s `Transport` seam, provable against a
+│   │         scripted fake transport with no network
 │   ├── H5 opencode-go-compatible backend ->h1 [ ]
 │   │   ├── invariant: a second, independently verified adapter — H1's
 │   │   │     decision explicitly forbids assuming H4's adapter covers it
