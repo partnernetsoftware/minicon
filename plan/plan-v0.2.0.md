@@ -159,15 +159,33 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │         stdout; no interactive loop inside a tab, no conversation
 │   │         persisted across invocations (`--continue` is out of scope)
 │   │         @method=bounded-task-then-exit #decision
-│   ├── H2 file tool ->h1 [ ] @method=first ->h1
+│   ├── H2 file tool ->h1 [~] @method=first ->h1
 │   │   ├── invariant: read/write confined to the `--root` bound; a path
 │   │   │     that escapes it (symlink, `..`) is refused, not clamped
 │   │   ├── evidence: black-box test attempts a `../` escape and an absolute
 │   │   │     path outside root, asserts both refused; a same-root
 │   │   │     read/write round-trip asserts success
-│   │   └── safe failure: refusal is a bounded CLI error, never a partial
-│   │         write
-│   ├── H3 exec tool ->h1 [ ]
+│   │   ├── safe failure: refusal is a bounded CLI error, never a partial
+│   │   │     write
+│   │   ├── implemented: `src/harness.rs` `FileTool` (`new`, `resolve`,
+│   │   │     `read`, `write`). The bound is enforced by construction, not by
+│   │   │     resolve-then-compare-prefixes: a relative path of plain
+│   │   │     components with no existing symlink component provably cannot
+│   │   │     leave the canonical root, so `..`, `.`, absolute paths and
+│   │   │     symlinks are refusals with nothing left to clamp. Reads bounded
+│   │   │     at 256 KiB; writes go through `write_file_atomic` (a rewrite
+│   │   │     must be allowed, so not the no-clobber variant)
+│   │   ├── evidence: `harness::tests::file_tool_round_trips_inside_the_root`,
+│   │   │     `..._refuses_parent_and_absolute_escapes_without_clamping`,
+│   │   │     `..._refuses_a_symlink_at_the_leaf_and_at_an_intermediate_component`
+│   │   ├── provable: clamping `..` instead of refusing it, and disabling the
+│   │   │     symlink check, each failed exactly the matching test and no
+│   │   │     other (re-verified 2026-09-25 by the integrating session)
+│   │   └── BLOCKED: no GUI/black-box CLI evidence yet — this container has no
+│   │         display server, so every `tests/minicon_blackbox.rs` case fails
+│   │         on `control endpoint did not become ready` against unmodified
+│   │         code too. `[x]` waits on a display-capable host
+│   ├── H3 exec tool ->h1 [~]
 │   │   ├── invariant: exactly one command per call, no shell metacharacter
 │   │   │     expansion (no `&&`, pipes, or subshell) — the command is
 │   │   │     invoked directly (argv vector), not passed through `/bin/sh -c`
@@ -175,9 +193,41 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     as a single argv token and asserts it is NOT interpreted as
 │   │   │     two commands; a real single-command run asserts captured
 │   │   │     stdout/exit code
-│   │   └── depends: H1 (needs the allow-shape decision to bound which
-│   │         commands are runnable)
+│   │   ├── depends: H1 (needs the allow-shape decision to bound which
+│   │   │     commands are runnable)
+│   │   ├── implemented: `src/harness.rs` `ExecTool` (`new`, `admit`, `run`,
+│   │   │     `spawn_contained`). `admit` takes a bare basename only — a path
+│   │   │     spelling of an allowed basename (`/bin/echo`, `./echo`) is
+│   │   │     refused, since a matching basename can name a different
+│   │   │     executable. An empty allow-list gives its own dedicated refusal,
+│   │   │     so probing cannot separate "not allowed yet" from "tool absent".
+│   │   │     30s timeout with both pipes drained on threads so a full pipe
+│   │   │     cannot deadlock the bound
+│   │   ├── evidence:
+│   │   │     `harness::tests::exec_tool_refuses_every_call_when_the_allow_list_is_empty`,
+│   │   │     `..._refuses_an_unlisted_command_and_a_path_spelling_of_a_listed_one`,
+│   │   │     `..._runs_one_command_and_never_interprets_shell_metacharacters`
+│   │   ├── provable: disabling the basename-vs-path check failed exactly the
+│   │   │     allow-list test and no other; deleting the empty-allow-list
+│   │   │     refusal failed exactly its own test and leaked the generic
+│   │   │     message the distinction exists to prevent
+│   │   ├── carried debt: the spawn uses `std::process::Command`, not
+│   │   │     `agenterm_platform::contained_process::ContainedHeadlessCommand`
+│   │   │     as PRD_02_31 assumed — that module is gated behind the platform
+│   │   │     crate's `contained-process-spawn` feature, which MiniCon's
+│   │   │     dependency does not enable. The argv-vector/no-shell invariant
+│   │   │     H3 states is fully met; resource containment is not. The swap is
+│   │   │     one `Cargo.toml` feature plus one function body, and is deferred
+│   │   │     to H4 so the feature change is verified by a MiniCon build and a
+│   │   │     six-cell round that has a caller to exercise it
+│   │   └── BLOCKED: same missing display server as H2 — no black-box CLI
+│   │         evidence yet
 │   ├── H4 DeepSeek flash backend ->h1 [ ] @method=first
+│   │   ├── also closes out, as the first non-test caller of H2/H3: the
+│   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/
+│   │   │     `ExecTool` (carried only because the tools are complete while
+│   │   │     their adapter is not — faking a loop to make them reachable
+│   │   │     would be worse), and H3's `contained-process-spawn` debt
 │   │   ├── invariant: harness sends the two-tool loop over DeepSeek's own
 │   │   │     wire format; no generic "OpenAI-compatible" claim is made from
 │   │   │     this backend alone

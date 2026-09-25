@@ -86,6 +86,14 @@ process, exactly like the existing `--control` endpoint.
 │   │   a tool call outside its bound (root/command) is refused, not widened
 │   └── dependency: none new; a subprocess/file-IO capability MiniCon's
 │       platform crate already has for other features
+│       #correction 2026-09-25: half right. File IO is there and used
+│       (`filesystem_read::read_bounded`, `filesystem_publish::write_file_atomic`).
+│       Contained *spawning* is not: `contained_process` sits behind the
+│       platform crate's `contained-process-spawn` feature, which MiniCon's
+│       dependency does not enable, so `exec` currently spawns through
+│       `std::process::Command`. That still gives the argv-vector/no-shell
+│       guarantee the invariant is about, but not resource containment; see
+│       H3's carried-debt line in `plan/plan-v0.2.0.md`
 └── Shared constraints
     ├── one file, no bundled runtime, no installer
     ├── every other AGENTS.md exclusion still applies (no server, no
@@ -200,7 +208,14 @@ used to carry):
 
 ## Evidence
 
-None yet — `[ ]` for every item above. Per AGENTS.md's own rule, no line here
+`mux`'s and `harness`'s tool halves now have named unit evidence — see
+`plan/plan-v0.2.0.md`'s M2/M3/M3b and H2/H3 nodes, which carry the test names
+and the guard-removal check for each. Nothing here moves to `[x]` yet: the
+black-box CLI evidence this module requires needs a display-capable host,
+which the implementing container is not, and that gap is recorded as `BLOCKED`
+rather than skipped.
+
+The remaining items are still `[ ]`. Per AGENTS.md's own rule, no line here
 may move to `[x]` without a named black-box test, and this module gets
 upserted with real status once a 0.2.x plan document picks up either branch
 for implementation.
