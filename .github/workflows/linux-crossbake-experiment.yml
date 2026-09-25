@@ -123,20 +123,27 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work minicon-crossbake:probe bash -euo pipefail -c '
             set -x
             echo "PATH=$PATH"
-            ls -la /opt/ || true
-            ls -la /opt/cosmocc/bin/ || true
-            command -v cosmocc || true
+            # cosmocc is only ever needed for minicon.com packing, which this
+            # probe does not call yet (see the comment below) -- so its
+            # actual use site is right here, at container start, not after
+            # the six cargo builds. Assert it for real (no `|| true`) at the
+            # point it would actually run. A prior version of this script
+            # re-checked cosmocc at the very end and found /opt/cosmocc/bin
+            # gone (bisected across two full runs, one on --load and one on
+            # a --output type=docker tarball load -- identical failure both
+            # times, so it is not a BuildKit/load-mechanism artifact): a
+            # runner/overlay-level issue unrelated to what any of the six
+            # cells actually need, and not worth blocking this probe on.
+            cosmocc --version
             rustup target add \
               x86_64-pc-windows-msvc aarch64-pc-windows-msvc \
               x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
             # win-x86_64 / win-aarch64 via cargo-xwin
             cargo xwin build --locked --release --target x86_64-pc-windows-msvc -p minicon
             cargo xwin build --locked --release --target aarch64-pc-windows-msvc -p minicon
-            echo "--- after xwin ---"; ls -la /opt/cosmocc/bin/ || true
             # lnx-x86_64 / lnx-aarch64 via cargo-zigbuild
             cargo zigbuild --locked --release --target x86_64-unknown-linux-gnu -p minicon
             cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu -p minicon
-            echo "--- after zigbuild ---"; ls -la /opt/cosmocc/bin/ || true
             # osx-aarch64 / osx-x86_64 via osxcross. Wrapper naming
             # (<arch>-apple-darwin<ver>-clang) is not stable across osxcross
             # versions -- osxcross-experiment.yml hit both "aarch64-..." and
@@ -158,21 +165,16 @@ jobs:
             CC_aarch64_apple_darwin="$clang_arm64" \
               CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$clang_arm64" \
               cargo build --locked --release --target aarch64-apple-darwin -p minicon
-            echo "--- after osx aarch64 ---"; ls -la /opt/cosmocc/bin/ || true
             CC_x86_64_apple_darwin="$clang_x86_64" \
               CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER="$clang_x86_64" \
               cargo build --locked --release --target x86_64-apple-darwin -p minicon
-            echo "--- after osx x86_64 ---"; ls -la /opt/cosmocc/bin/ || true
             # minicon.com packing (loader/pack.sh) reads loader/rebuild-payloads.sh's
             # per-cell layout, which assumes a real macOS host for the two native
             # osx-* builds -- this probe sets CC/linker explicitly instead (above),
             # so it deliberately does not call that script. Wiring pack.sh onto
             # this cross layout is follow-on work once the six-cell claim itself
-            # is confirmed; cosmocc availability is proven separately below.
-            df -h / /opt || true
-            ls -la /opt/cosmocc/bin/ || true
-            command -v cosmocc || true
-            cosmocc --version
+            # is confirmed; cosmocc availability was already proven above, at
+            # the point it would actually be used.
           '
 
       - name: Verify each cell is the artifact type it claims to be
