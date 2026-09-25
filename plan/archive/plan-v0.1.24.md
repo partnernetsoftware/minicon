@@ -1,5 +1,13 @@
 # v0.1.24 — the input box, and the debts that outlived three releases
 
+**Archived 2026-09-25.** Branches A, B and D closed and shipped as
+`v0.1.26` (this plan's own version number was burned twice on CI-only
+Defender-scan bugs before the content shipped — see
+`prd/archive/v0.1.26-release-history.md` for why, and for the
+`product-source-hash` mechanism now meant to stop that recurring). Carried
+debt C1/C3/C4/D2 and the `(OWNERS)`-blocked E1/E2 move forward to
+`plan/plan-carried-debt.md` rather than being silently dropped.
+
 Owner's brief (2026-09-23, after 0.1.23 shipped): tidy the repository, then
 plan the next one. Two things earn this release: the composer is hard to edit
 in, which the owner hit while using 0.1.22, and a handful of debts have been

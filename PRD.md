@@ -92,7 +92,9 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.18-release-history.md
 │   ├── [x] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed
 │   │   └── prd/archive/v0.1.19-release-history.md
-│   ├── [x] v0.1.23 released — Windows: scrollback restored, Ctrl+V pastes, collapsed rail selects, --status names the real console; dual-signed (latest)
+│   ├── [x] v0.1.26 released — composer caret history/motion + word motion + Home/End unified in minicon_core::keymap; Windows zoom-to-blank root-caused; dual-signed (latest)
+│   │   └── prd/archive/v0.1.26-release-history.md
+│   ├── [x] v0.1.23 released — Windows: scrollback restored, Ctrl+V pastes, collapsed rail selects, --status names the real console; dual-signed
 │   │   └── prd/archive/v0.1.23-release-history.md
 │   ├── [x] v0.1.22 released — clarity release: attic archived, ConTerminal module, release tooling out of research/, shared scrollbar; dual-signed
 │   │   └── prd/archive/v0.1.22-release-history.md
@@ -171,7 +173,8 @@ flowchart LR
         R120["v0.1.20 released<br/>detachable + headless GUI · collapsible tab rail · app icon · dual-signed"]
         R121["v0.1.21 released<br/>Windows Latin face · DirectWrite-style text · copy-on-select in mouse apps · clipboard length · dual-signed"]
         R122["v0.1.22 released<br/>clarity release · shared scrollbar with agenterm · dual-signed"]
-        R123["v0.1.23 released<br/>Windows scrollback · Ctrl+V paste · collapsed rail · honest --status · dual-signed · latest"]
+        R123["v0.1.23 released<br/>Windows scrollback · Ctrl+V paste · collapsed rail · honest --status · dual-signed"]
+        R126["v0.1.26 released<br/>composer caret/word motion · keymap unified · Windows zoom-to-blank root-caused · dual-signed · latest"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -234,7 +237,16 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.1.23 is the latest public release. On Windows, scrolling back
+- [x] v0.1.26 is the latest public release: composer multi-line caret
+  history/motion, word motion and Home/End, unified in
+  `minicon_core::keymap`; Windows zoom-to-blank root-caused in AgenTerm's
+  `console_agent.rs`. No product behavior changed from what "v0.1.24"/
+  "v0.1.25" would have shipped — those two numbers were opened and
+  abandoned for CI-only bugs (see the history doc), which motivated
+  `scripts/product-source-hash.sh` so a workflow/doc-only fix no longer
+  forces a version bump mid-chain.
+  History: `prd/archive/v0.1.26-release-history.md`.
+- [x] v0.1.23. On Windows, scrolling back
   through shell output works again (the classic console path kept no
   history), `Ctrl+V` pastes in the terminal, a collapsed tab rail selects
   instead of closing, and `--status` names the console a run will really use.
