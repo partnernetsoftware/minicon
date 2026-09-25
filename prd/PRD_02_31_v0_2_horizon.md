@@ -29,10 +29,13 @@ process, exactly like the existing `--control` endpoint.
 │   │   ├── verb subset: `list-windows`, `select-window`, `new-window`,
 │   │   │     `kill-window`, `send-keys`, `capture-pane` -- named and flagged
 │   │   │     the way tmux names and flags them, not MiniCon-native verbs
-│   │   ├── model mapping: one implicit MiniCon session per running
-│   │   │     instance; a tmux "window" is a MiniCon tab; MiniCon has no
-│   │   │     pane splits, so only pane index 0 of a `session:window.pane`
-│   │   │     target is accepted
+│   │   ├── model mapping: the running MiniCon instance IS the one tmux
+│   │   │     session (a name to compare against, not a lookup -- there is
+│   │   │     exactly one, and it is this process); a tmux "window" is a
+│   │   │     MiniCon tab; a tmux "pane" is that tab's own terminal content
+│   │   │     area -- pane 0 always exists and IS the tab's PTY view, but
+│   │   │     `split-window` (a second pane inside one window) is not
+│   │   │     implemented, so addressing tops out at pane 0
 │   │   ├── reuses PRD_02_26's process-lifetime --control endpoint
 │   │   └── #decision not a new daemon; no session store outside the
 │   │         process; not a tmux control-mode (`-C`) server
@@ -41,8 +44,9 @@ process, exactly like the existing `--control` endpoint.
 │   │   ├── [-] persistent session independent of the MiniCon process
 │   │   ├── [-] a general multiplexing config language (tmux.conf-equivalent)
 │   │   ├── [-] pane splits/layout verbs (`split-window`, `select-pane`,
-│   │   │     resize) -- MiniCon tabs do not split; a target naming a
-│   │   │     nonzero pane is a bounded error, not silently remapped
+│   │   │     resize) -- each tab has exactly one pane (its own terminal
+│   │   │     area, index 0); a target naming a nonzero pane is a bounded
+│   │   │     error, not silently remapped
 │   │   ├── [-] multiple named sessions -- a `-t` target's session component
 │   │   │     must match the one implicit session name or is a bounded error
 │   │   └── [-] tmux's full `-F` format-string language -- only the
@@ -114,18 +118,23 @@ Verb-to-primitive mapping (each verb is a thin translation over
 | `capture-pane` | `-t <target>`, `-p` (print to stdout) | `capture-pane`; `-S`/`-E` history range is `BLOCKED` on carried-debt item C1 (`plan/plan-carried-debt.md`) — MiniCon's scrollback semantics are not yet decided, so this flag is refused, not approximated |
 
 Target parsing: a `-t` value is `[session:]window[.pane]`. `session`, if
-given, must equal the one fixed pseudo-name MiniCon reports for its own
-running instance (there is exactly one; naming a different session is a
-bounded error, not a lookup). `window` accepts either a MiniCon `@ID` handle
-or a plain integer treated as positional index into the current tab list, for
+given, must equal the name MiniCon reports for its own running instance —
+this is a comparison against the one real session (this process), not a
+lookup among several, since MiniCon runs as exactly one instance per
+`--control` endpoint. `window` accepts either a MiniCon `@ID` handle or a
+plain integer treated as positional index into the current tab list, for
 agents that expect tmux's own numeric window indexing — `@ID` stays the
 canonical form internally since tmux-style indices renumber on close and
-MiniCon's own addressing deliberately does not. `pane` must be `0` or absent;
-any other value is a bounded error naming that MiniCon has no pane splits.
+MiniCon's own addressing deliberately does not. `pane` accepts `0` or is
+omitted, and always resolves to that window's one terminal content area —
+pane 0 is not a placeholder or a stand-in, it IS the tab's PTY view; any
+other pane index is a bounded error naming that MiniCon has no
+`split-window` (a window still has at most one pane, it just always has
+that one).
 
-Explicit non-goals this resolution does not reopen: no pane/split verbs, no
-multiple sessions, no tmux control-mode (`-C`) protocol, no `tmux.conf`
-equivalent — see the tree above.
+Explicit non-goals this resolution does not reopen: no `split-window`/
+multi-pane-per-window verbs, no multiple sessions, no tmux control-mode
+(`-C`) protocol, no `tmux.conf` equivalent — see the tree above.
 
 ## harness — detail
 

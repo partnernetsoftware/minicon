@@ -20,10 +20,12 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     `kill-window`, `send-keys`, `capture-pane`
 │   │   │     @method=tmux-verb-compat #decision -- owner-directed: the
 │   │   │     concrete need is agent interop across minicon/tmux backends
-│   │   ├── model mapping: one implicit session per instance; tmux window =
-│   │   │     MiniCon tab (`@ID` canonical, integer index accepted as a
-│   │   │     tmux-numbering convenience); pane must be 0 or absent -- no
-│   │   │     pane splits exist to address @method=window-is-tab #decision
+│   │   ├── model mapping: the running instance IS the one session; tmux
+│   │   │     window = MiniCon tab (`@ID` canonical, integer index accepted
+│   │   │     as a tmux-numbering convenience); tmux pane = that tab's own
+│   │   │     terminal area -- pane 0 always exists and IS the tab's PTY
+│   │   │     view; `split-window` (a second pane per window) is not
+│   │   │     implemented @method=window-is-tab #decision
 │   │   └── surface shape: a mode of the existing --control CLI, not a new
 │   │         binary subcommand or endpoint @method=mode-not-new-endpoint
 │   │         #decision ->PRD_02_26_con_control_cli.md
@@ -40,7 +42,8 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     tabs opened by the test harness, in a fresh MiniCon instance,
 │   │   │     for both `@ID` and integer-index addressing
 │   │   ├── safe failure: zero tabs returns an empty list, not an error
-│   │   └── non-goal: [-] pane enumeration (no panes exist)
+│   │   └── non-goal: [-] multi-pane enumeration (`split-window` not
+│   │         implemented; each tab always lists exactly one pane, index 0)
 │   ├── M3 window select/create/destroy (`select-window`, `new-window`,
 │   │   │     `kill-window`) ->m1 [ ]
 │   │   ├── invariant: an invalid `@ID`/index, a nonzero pane, or a
