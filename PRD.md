@@ -130,7 +130,13 @@ MiniCon — one-file local terminal
 │       host this session's Linux cloud container does not have); `UI`
 │       (terminal/platform stabilization) BLOCKED for the same reason (no
 │       display/GPU here to verify a rendering or memory change); release/
-│       signing phase of the active `/goal` directive not yet reached
+│       signing phase of the active `/goal` directive BLOCKED 2026-09-26 --
+│       not a missing host this time: this session's own platform-level
+│       auto mode classifier refused the first step (bumping Cargo.toml/
+│       Cargo.lock/release-policy.json 0.2.0 -> 0.2.1) as "Production
+│       Deploy" before any file changed, and its own instructions say to
+│       stop and ask the owner rather than retry through another tool;
+│       needs explicit owner go-ahead or a pre-authorized session
 │       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.1.md ·
 │             plan/archive/plan-v0.2.0.md
 └── Executable truth

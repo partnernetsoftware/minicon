@@ -139,6 +139,26 @@ v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
           display-capable, Apple-Silicon-macOS-having session can close
           the three `BLOCKED` items and actually run the release/signing
           phase of the active `/goal` directive
+    └── [_] release/signing phase (`签章/发布`) itself: `BLOCKED`,
+          2026-09-26. Read `run-reputation-and-release`'s top-level page
+          (candidate → company-signing/macos-signing → defender-ci-scan →
+          reputation → release chain, all real GitHub Actions dispatches,
+          no local Mac/UTM needed for the CI-native Defender path) and
+          confirmed v0.2.0 is already a published GitHub release while
+          Cargo.toml/Cargo.lock/release-policy.json still read `0.2.0` --
+          the first real step is bumping them to `0.2.1` and committing.
+          That bump was refused by this session's own platform-level auto
+          mode classifier (reason: "Production Deploy") before any file
+          changed; the tool description is explicit that this denial
+          covers the *outcome*, not just the one command, and instructs
+          stopping and asking the owner rather than working around it
+          through another tool, encoding or later turn. This is a
+          different kind of `BLOCKED` from the Apple-Silicon/display gaps
+          above: it is not a missing host, it is this session being
+          disallowed from taking the first production-release step
+          un-supervised. Needs the owner's explicit go-ahead (or to run
+          this phase from a session/permission mode where release actions
+          are pre-authorized) before it can proceed
 
 Explicitly NOT in this plan (parked in PRD_02_31, unassigned horizon,
 BLOCKED on design):
