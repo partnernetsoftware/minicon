@@ -38,13 +38,16 @@ jobs:
           cd dl
           sha256sum -c ./*.tar.gz.sha256
           tar -xzf ./*.tar.gz
-          chmod +x ./minicon
+          BIN="$(find . -type f -name minicon | head -1)"
+          [ -n "$BIN" ] || { echo "no minicon binary found in archive"; exit 1; }
+          chmod +x "$BIN"
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
       - name: Smoke check
         run: |
           set -euo pipefail
           cd dl
-          ./minicon --status
-          ./minicon --version
+          "$BIN" --status
+          "$BIN" --version
 
   windows:
     name: smoke / windows-x86_64
@@ -94,12 +97,13 @@ jobs:
         run: |
           set -euo pipefail
           cd dl
+          DMG="$(ls ./*.dmg)"
           MOUNT_DIR="$(mktemp -d)"
-          hdiutil attach ./*.dmg -mountpoint "$MOUNT_DIR" -nobrowse -quiet
+          hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -quiet
           APP="$(find "$MOUNT_DIR" -maxdepth 1 -name '*.app' | head -1)"
           [ -n "$APP" ] || { echo "no .app found inside dmg"; exit 1; }
           codesign --verify --strict --deep --verbose=2 "$APP"
-          spctl -a -t open --context context:primary-signature -vv "$MOUNT_DIR"/*.dmg
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
           BIN="$APP/Contents/MacOS/minicon"
           "$BIN" --status
           "$BIN" --version
