@@ -115,7 +115,7 @@ MiniCon — one-file local terminal
 │   └── [_] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
 │       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
 │       owner decision 2026-09-24
-│       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.0.md
+│       └── prd/PRD_02_31_v0_2_horizon.md · plan/archive/plan-v0.2.0.md
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence
     ├── evidence-registry.json — evidence identity → public test target
@@ -260,10 +260,11 @@ flowchart LR
   model is literally named `"opencode"`). The adapter and the shared
   `Transport` seam were corrected to match, and
   `opencode_backend_runs_a_real_bounded_task_and_writes_the_file` drives the
-  same live-write proof against the real endpoint. `plan/plan-v0.2.0.md`'s
-  harness branch is now all `[v]`; archival into this PRD is pending the
-  `mux` branch closing too, per that plan's own "upsert once, after both
-  branches close" rule. Owner:
+  same live-write proof against the real endpoint. Both branches (`mux` and
+  `harness`) are now all `[v]`; its accepted scope and status were upserted
+  here and into `prd/PRD_02_31_v0_2_horizon.md`, then the plan itself was
+  archived to `plan/archive/plan-v0.2.0.md`, per that plan's own "upsert once,
+  after both branches close" rule. Owner:
   [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md), section "0.2.0 — what the
   version number stands for, and what it does not".
 - [v] v0.1.26 is the latest public release: composer multi-line caret

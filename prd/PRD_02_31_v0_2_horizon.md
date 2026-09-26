@@ -97,7 +97,7 @@ process, exactly like the existing `--control` endpoint.
 │       dependency does not enable, so `exec` currently spawns through
 │       `std::process::Command`. That still gives the argv-vector/no-shell
 │       guarantee the invariant is about, but not resource containment; see
-│       H3's carried-debt line in `plan/plan-v0.2.0.md`
+│       H3's carried-debt line in `plan/archive/plan-v0.2.0.md`
 └── Shared constraints
     ├── one file, no bundled runtime, no installer
     ├── every other AGENTS.md exclusion still applies (no server, no
@@ -258,7 +258,7 @@ environment does not have (the one it carries is rejected by the API).
 **mux is `[v]` on named black-box evidence.** `tests/minicon_mux.rs` drives
 the shipped binary's CLI against a live instance under a display server; the
 four tests, the real effect each asserts, and the single-line break that each
-one catches are named in `plan/plan-v0.2.0.md`'s M2/M3/M3b nodes. In short:
+one catches are named in `plan/archive/plan-v0.2.0.md`'s M2/M3/M3b nodes. In short:
 `list-windows` renders the host's own handles with the active marker following
 a real `select-tab`; index and `@ID` targets provably reach the same tab;
 `new-window`/`select-window`/`kill-window` are read back from `cli list-tabs`

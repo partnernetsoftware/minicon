@@ -2,7 +2,7 @@
 //! how that model's tool calls reach `harness`'s two tools.
 //!
 //! Design of record: `prd/PRD_02_31_v0_2_horizon.md` ("harness -- detail"),
-//! sequencing in `plan/plan-v0.2.0.md` (H4, H5).
+//! sequencing (closed out) in `plan/archive/plan-v0.2.0.md` (H4, H5).
 //!
 //! Split from `harness.rs` on purpose. The two tools' bounds (H2, H3) are the
 //! product's security surface and are complete; everything here is the

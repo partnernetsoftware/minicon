@@ -176,7 +176,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     stay unit-test-only; observing a real interrupt needs a
 │   │   │     foreground-process assertion the suite does not have yet
 │   │   └── depends: M3 (needs a real target to send/capture against)
-│   └── M4 upsert into PRD_02_31 ->m [_]
+│   └── M4 upsert into PRD_02_31 ->m [v]
 │         └── flip mux's `[_]` lines to `[v]` only against the evidence named
 │               in M2/M3/M3b, per AGENTS.md's "[v] requires named evidence"
 │               rule
