@@ -13,7 +13,7 @@ from pathlib import Path
 
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_RE = re.compile(r"^[0-9a-f]{40}$")
-CANDIDATE_CEILING_BYTES = 9_437_184
+CANDIDATE_CEILING_BYTES = 11_534_336  # 11 MiB, raised 2026-09-26 for 0.2.0 mux+harness; see PRD_02_27 "Artifact budget"
 
 
 def sha256(path: Path) -> str:
@@ -218,7 +218,7 @@ def seal(args: argparse.Namespace) -> None:
     if include_com:
         com = next(item for item in assets if item["name"] == "minicon.com")
         if com["bytes"] > CANDIDATE_CEILING_BYTES:
-            raise ValueError("minicon.com exceeds the stamped 9 MiB Candidate ceiling")
+            raise ValueError("minicon.com exceeds the stamped 11 MiB Candidate ceiling")
         if signing_mode == "required":
             signed_com = signing["assets"]["minicon.com"]
             if com["sha256"] != signed_com.get("after_sha256") or com["bytes"] != signed_com.get("after_bytes"):
@@ -368,7 +368,7 @@ def verify_manifest(manifest: dict, payload: Path, policy_path: Path | None = No
         if sha256(payload / "minicon.com") != after["minicon.com"]:
             raise ValueError("sealed minicon.com is not the signed after-SHA")
         if (payload / "minicon.com").stat().st_size > CANDIDATE_CEILING_BYTES:
-            raise ValueError("sealed minicon.com exceeds the stamped 9 MiB Candidate ceiling")
+            raise ValueError("sealed minicon.com exceeds the stamped 11 MiB Candidate ceiling")
         for cell, platform in (("win-x86_64", "windows-x86_64"), ("win-aarch64", "windows-arm64")):
             archive = payload / f"minicon-{version}-{platform}.zip"
             member = f"minicon-{version}-{platform}/minicon.exe"

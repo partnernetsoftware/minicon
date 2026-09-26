@@ -836,12 +836,26 @@ six-cell claim.
 
 ## Artifact budget
 
-- [x] **`minicon.com` Candidate hard ceiling is `9,437,184` bytes (9 MiB).**
-  Stamped 2026-08-29 (cdx) from rehearsal raw `8,880,268` (+556,916, ~6.27%).
-  Constant: `loader/write-size-report.py`
-  `CANDIDATE_CEILING_BYTES`. The 12 MiB (`12,582,912`) figure is a rehearsal
-  fail-closed guard only and must not decide a Candidate. A unique G7 pack
-  that exceeds 9 MiB fails; the ceiling must not be auto-raised.
+- [x] ~~`minicon.com` Candidate hard ceiling is `9,437,184` bytes (9 MiB).~~ —
+  **raised 2026-09-26 (owner) to `11,534,336` bytes (11 MiB)**; see the entry
+  below. Stamped 2026-08-29 (cdx) from rehearsal raw `8,880,268` (+556,916,
+  ~6.27%). The 12 MiB (`12,582,912`) figure is a rehearsal fail-closed guard
+  only and must not decide a Candidate; it stays above the new 11 MiB
+  Candidate ceiling.
+- [x] **`minicon.com` Candidate hard ceiling raised to `11,534,336` bytes
+  (11 MiB), 2026-09-26 (owner).** 0.2.0's `mux` + `harness` subcommands (network
+  transport, opencode-go codec) grew the sealed `minicon.com` to `10,746,681`
+  bytes, above the 9 MiB ceiling that had explicitly forbidden auto-raising
+  (candidate.yml run `36217456516` failed at `seal` on this). The owner judged
+  the growth a real feature cost, not slack, and raised the ceiling directly
+  rather than trimming 0.2.0's scope; the previous "must not auto-raise"
+  language governed that specific 9 MiB number, not future owner-directed
+  budget changes. Constant: `release/candidate_bundle.py` and
+  `loader/write-size-report.py` `CANDIDATE_CEILING_BYTES`, and
+  `release/self-sign-rehearsal.sh` `CEILING`/`candidate_ceiling_bytes` (kept in
+  sync — a static test should assert this). A unique G7 pack that exceeds
+  11 MiB fails; raising it again requires the same explicit owner decision,
+  not an automatic bump when a future version grows past it.
 - [x] the Windows resource retains the existing icon's 16/32/64 PNG frames while
   removing redundant mip sizes: `.rsrc` fell from 90,112 to 8,704 bytes, the
   source ICO is capped at 16 KiB by the build script, and Windows shell icon
@@ -890,7 +904,9 @@ six-cell claim.
   digest. Install is NEXT/PREV rename-swap under the same parent.
 - [x] one pack, six native execute-only courts. Guests do not compile. v0.1.2
   stays three archives; `minicon.com` is not mixed into that Release.
-  Promotion copies exact bytes. No auto-raise of the 9 MiB ceiling.
+  Promotion copies exact bytes. The 9 MiB ceiling was raised to 11 MiB by
+  explicit owner decision on 2026-09-26 (see "Artifact budget" above); that is
+  not the same as an automatic raise, which remains forbidden.
 
 ### Linux size attribution (LTO cells, 2026-08-29)
 
@@ -932,7 +948,8 @@ feature, so Cocoa bindings can be present **in addition to** winit.
 
 Linker knobs already spent on Linux: LTO, `opt-level=z`, `strip`,
 `--gc-sections`. Do not trade `panic = "unwind"` for `.eh_frame`. Do not
-auto-raise 9 MiB.
+auto-raise the Candidate ceiling (currently 11 MiB, see "Artifact budget")
+without an explicit owner decision.
 
 - [-] **Linux dual desktop stack is retained (2026-08-30, user).** Keep
   winit Wayland **and** X11 present, plus the independent `x11rb` side

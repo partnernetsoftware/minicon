@@ -100,7 +100,7 @@ v0.1.3 is released as five unsigned native archives covering all six cells;
 
 This directory now owns v0.1.4 APE research. G3/G4 remain
 `loader-lifecycle-tests.sh`, `install-cosmocc-swap-test.sh`, and
-`write-size-report.py` (`CANDIDATE_CEILING_BYTES=9437184`). G2 uses
+`write-size-report.py` (`CANDIDATE_CEILING_BYTES=11534336`). G2 uses
 `ci-control.sh` (`HOME` + unique `--control` + `list-tabs` polling).
 
 The delivery chain is policy-selected, not hard-coded by version:
@@ -139,7 +139,7 @@ bash release/self-sign-rehearsal.sh path/to/minicon.com
 The script requires `openssl` and `osslsigncode`, destroys its ephemeral key,
 and proves empty→populated Security Directory, signature verification against
 the ephemeral CA, tamper rejection, ZIP readability, Darwin execution and the
-final 9 MiB ceiling. Its receipt says `mechanism-only-not-g6`, `trusted=false`
+final 11 MiB ceiling. Its receipt says `mechanism-only-not-g6`, `trusted=false`
 and `timestamped=false`; it can never satisfy trusted publisher identity, Defender or
 Candidate qualification.
 

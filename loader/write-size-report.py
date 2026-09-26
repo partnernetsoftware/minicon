@@ -22,8 +22,9 @@ COM = DIST / "minicon.com"
 # Rehearsal-only. Never used as Candidate pass/fail.
 REHEARSAL_GUARD_BYTES = 12 * 1024 * 1024  # 12582912
 # cdx 2026-08-29: 9 MiB hard ceiling (rehearsal raw 8880268 + 556916).
-# Horizon qjswasm/TinyVM (PRD) must not change this constant or mix into Candidate.
-CANDIDATE_CEILING_BYTES = 9 * 1024 * 1024  # 9437184
+# Raised 2026-09-26 (owner) to 11 MiB for 0.2.0's mux+harness growth
+# (minicon.com measured 10,746,681 bytes); see PRD_02_27 "Artifact budget".
+CANDIDATE_CEILING_BYTES = 11 * 1024 * 1024  # 11534336
 
 
 def sha256(path: Path) -> str:
@@ -109,7 +110,7 @@ def self_test() -> int:
     if candidate_ok(CANDIDATE_CEILING_BYTES + 1):
         print("FAIL ceiling+1 should fail", file=sys.stderr)
         return 1
-    if CANDIDATE_CEILING_BYTES != 9437184:
+    if CANDIDATE_CEILING_BYTES != 11534336:
         print("FAIL stamped integer", file=sys.stderr)
         return 1
     if REHEARSAL_GUARD_BYTES != 12582912:

@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 INPUT=${1:?usage: self-sign-rehearsal.sh UNSIGNED_MINICON_COM [OUTPUT_DIR]}
 OUTPUT_DIR=${2:-"$ROOT/loader/dist/self-sign-rehearsal"}
-CEILING=9437184
+CEILING=11534336
 
 command -v openssl >/dev/null
 command -v osslsigncode >/dev/null
@@ -110,7 +110,7 @@ receipt = {
     "before_sha256": before,
     "after_sha256": after,
     "after_bytes": int(size),
-    "candidate_ceiling_bytes": 9437184,
+    "candidate_ceiling_bytes": 11534336,
     "product_version": version,
     "checks": [
         "empty-security-directory-before",
