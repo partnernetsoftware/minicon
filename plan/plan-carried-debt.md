@@ -13,11 +13,18 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      noted in v0.1.24's B3 decision first: `max_scrollback` in the snapshot
 │      reports parser capacity, not how much scrollback actually exists.
 ├── C3 box-drawing glyphs from cell geometry (Consolas, 1 px gap at 12 px)
-│      claimed by `plan/plan-v0.2.1.md`'s `UI` leaf, still `BLOCKED` there
-│      (needs a display-capable host); do not pick up again separately
+│      claimed by `plan/plan-v0.2.2.md`'s `{UI}` leaf, still `BLOCKED` there —
+│      needs a real Windows display host with Consolas installed (this is
+│      a font-specific rendering bug, not merely "no display"; a headless
+│      Xvfb container has neither Consolas nor a screen a human can look
+│      at); do not pick up again separately
 ├── C4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
-│      claimed by `plan/plan-v0.2.1.md`'s `UI` leaf, still `BLOCKED` there
-│      (needs a display-capable host); do not pick up again separately
+│      claimed by `plan/plan-v0.2.2.md`'s `{UI}` leaf. **Corrected 2026-09-26:**
+│      no longer BLOCKED on "no display" — a Linux cloud session with Xvfb
+│      measured real idle host RSS at 21.46 MiB (debug build); see
+│      `prd/PRD_02_27_con_delivery.md`'s "Runtime host memory". Still open:
+│      release-build measurement and a matching six-cell lnx-aarch64 receipt.
+│      Do not pick up again separately from `{UI}`.
 ├── D2 select cells from the change: wire the per-cell case, not just
 │      documents-only. Needs its own negative-control evidence (a change that
 │      should need `win-*` but doesn't touch an obviously Windows-named path)

@@ -725,6 +725,18 @@ six-cell claim.
   10 MiB intent, an order of magnitude below macOS, consistent with GDI not
   `Box::leak`ing whole TTC files. lnx-aarch64 UTM remains `BLOCKED` (QGA
   `file push` EXIT 124 / transfer timeout); that is not a MiniCon RSS PASS.
+  Separately, this is **not** the lnx-aarch64 UTM cell above, still BLOCKED:
+  a lnx-x86_64 cloud container (Xvfb virtual framebuffer, no real display/GPU,
+  `cargo test` debug build, not six-cell's cross-compiled artifact) ran the
+  same court directly, 2026-09-26 — idle **21.46 MiB** (22,507,520 B), load
+  27.03 MiB, extra-tab delta 1.38 MiB, four-cycle growth 2.03 MiB
+  (`MINICON_HOST_RSS_RECEIPT` in the test's own stdout). This corrects a
+  2026-09-06 assumption in `plan/plan-v0.2.1.md`/`plan/plan-carried-debt.md`
+  that this court "already fails here" for lack of a display: it runs and
+  passes cleanly under `xvfb-run`, and is close to but still above the
+  10 MiB intent (a debug build, not release-optimized). Still open: whether
+  a release build closes the remaining ~11 MiB, and this figure is a cloud
+  x86_64 container, not six-cell's lnx-aarch64 UTM cell.
   A separate **win-aarch64 release** court now names source `e6cd7b0`, shared
   pin `745f52b2`, and PE SHA-256
   `d2d08ce7600dfcc73b6b1002f73aef38bc9c4c28545198d403bafb96b4f47ecd`:

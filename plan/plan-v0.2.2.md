@@ -53,15 +53,30 @@ runtime evidence for two of them, not decisions.
 │        during 0.2.2 — never claim closed on cross-compile evidence alone
 │      dependency: a Windows or macOS host/court this session does not have
 │      non-goal: touching the proven Unix Rustls/WebPKI arm
-├── {UI} terminal/platform-foundation stabilization              [-] @host=display #risk
+├── {UI} terminal/platform-foundation stabilization           [-] @host=partial #risk
 │      invariant: C3 (box-drawing glyph gap, Consolas 1px at 12px) and C4
 │        (idle one-tab host RSS toward 10 MiB) close with observable evidence
+│      corrected 2026-09-26: 0.2.1's "no display/GPU" BLOCKED reason for
+│        *both* leaves was stale — this Linux cloud session has `Xvfb`, and
+│        the full black-box/control suite (28/28 `minicon_blackbox`,
+│        including a real `screenshot-pane` PNG capture) passes under
+│        `xvfb-run`. C4 is now genuinely unblocked here and measured: real
+│        idle-one-tab host RSS **21.46 MiB** (debug build), see
+│        `prd/PRD_02_27_con_delivery.md`'s "Runtime host memory" — closer to
+│        the 10 MiB intent than any prior macOS/Windows figure, still not
+│        closed (debug overhead, no release-build measurement yet, and this
+│        is one x86_64 cloud container, not six-cell's lnx-aarch64 cell).
 │      evidence: C3 — rendered glyph inspection on a real display; C4 —
 │        measured idle RSS under the 10 MiB target
-│      safe failure: BLOCKED (as in 0.2.1, see `plan/plan-carried-debt.md`) if no
-│        display-capable host becomes available — do not fake with headless
-│        rendering claims
-│      dependency: a display-capable host this session does not have
+│      safe failure: C3 stays `BLOCKED` here specifically — its bug is
+│        Consolas (a Windows-only font) rendering at 12px, and this container
+│        has no Consolas installed (`fc-list` confirms) and no way to view a
+│        frame even with Xvfb (no VNC/real screen a human can inspect), so it
+│        needs a real Windows display host regardless of Xvfb's availability.
+│        C4 keeps rolling forward to 0.2.4 if a release-build measurement or
+│        a matching six-cell lnx-aarch64 receipt doesn't land in 0.2.2.
+│      dependency: C3 needs a Windows display host this session does not
+│        have; C4 no longer needs one — only a release build + disk headroom
 │      non-goal: any new UI feature; this is stabilization only
 └── {OSX} small macOS-side fix (already submitted independently)  [~] ->verify
        not yet visible on origin/main as of this plan's drafting; pull in
