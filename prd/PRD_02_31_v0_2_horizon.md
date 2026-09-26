@@ -77,6 +77,20 @@ process, exactly like the existing `--control` endpoint.
 │         `C-`/`M-`/`S-` prefixes and its own spellings (`BSpace`, `DC`,
 │         `NPage`) into that spec instead of growing a second key table
 ├── harness {h}
+│   ├── #decision (owner, 2026-09-26, resolves {h-orch} below by splitting
+│   │   the role instead of growing this one): "harness" is two distinct
+│   │   capability owners, not one that grows a second job --
+│   │   ├── `harness` (this node, unchanged): a WORKER -- the same shape as
+│   │   │   Claude Code / grok-build / ChatGPT Codex's own harness, one
+│   │   │   bounded task, two tools, no orchestration, ever, as this node's
+│   │   │   own scope, not "not yet"
+│   │   └── `harness-manage` {hm} (new, separate, not started): a MANAGER --
+│   │         workflow/project-management role that dispatches across tabs
+│   │         via `mux`, in the shape moltbaby's `dfleet`/`drive`/`wait`
+│   │         already prove out in practice (see mux's #evidence node above)
+│   │   The owner named this split from real practice, not a clean-room
+│   │   design; treat both nodes as real requirements to detail, not a
+│   │   naming exercise.
 │   ├── outcome: minimal agent loop, two tools only
 │   ├── tools [v]
 │   │   ├── file: read/write within a bounded root, no plugin interface
@@ -92,31 +106,14 @@ process, exactly like the existing `--control` endpoint.
 │   ├── policy #decision
 │   │   ├── no separate "Agent permission policy" framework
 │   │   └── the two tools' own bounds (root path, command) are the policy
-│   ├── non-goals (0.2.x, this horizon's own two-tool loop)
+│   ├── non-goals (this node's own permanent scope, not a 0.2.x-only limit)
 │   │   ├── [-] a plugin/tool-registration system
 │   │   ├── [-] inbound network service or remote task queue
-│   │   └── [-] multi-agent orchestration or a scripting runtime, AS A
-│   │         BUILT-IN FEATURE OF THIS RELEASE -- narrowed 2026-09-26, see
-│   │         the open question directly below; this line no longer means
-│   │         "never", it means "not decided, not in 0.2.x"
-│   ├── {h-orch} open question, undecided (owner, 2026-09-26): where does
-│   │   "coordinate the agents in each tab" actually live?
-│   │   ├── owner's stated intent: NOT external-only composition (a user's
-│   │   │   own script calling mux then harness) -- the real want is
-│   │   │   `minicon-harness` itself using the `mux` verbs as a third
-│   │   │   tool/capability to dispatch across tabs, so the harness loop
-│   │   │   is the orchestrator, not just a per-tab worker ->m #assumption
-│   │   ├── owner's own caveat, unresolved: "coordinating many agents isn't
-│   │   │   easy -- needs a context concept and a workflow concept" -- i.e.
-│   │   │   this is not settled even as intent, only as direction #risk
-│   │   ├── #risk this reopens the "exactly these two tools" decision above
-│   │   │   and the "no plugin/scripting runtime" non-goals -- a `mux` tool
-│   │   │   inside harness's loop plus any workflow/context model is new
-│   │   │   surface, not a rewording of the existing two-tool policy
-│   │   └── #decision do not start implementation on this until context and
-│   │         workflow concepts are actually designed (tree DAG + memory
-│   │         palace per AGENTS.md) and the tool-count decision is revisited
-│   │         explicitly; this stays `BLOCKED` on design, not skipped
+│   │   └── [-] multi-agent orchestration or a scripting runtime -- owned by
+│   │         `harness-manage` {hm} instead, never grown here; see #decision
+│   │         above (this is the resolution of the 2026-09-26 open question
+│   │         this line used to carry, replaced by the role split, not by
+│   │         narrowing this node's own boundary)
 │   ├── safe failure: a bad key or unreachable model is a bounded CLI error;
 │   │   a tool call outside its bound (root/command) is refused, not widened
 │   └── dependency: none new; a subprocess/file-IO capability MiniCon's
@@ -129,6 +126,42 @@ process, exactly like the existing `--control` endpoint.
 │       `std::process::Command`. That still gives the argv-vector/no-shell
 │       guarantee the invariant is about, but not resource containment; see
 │       H3's carried-debt line in `plan/archive/plan-v0.2.0.md`
+├── harness-manage {hm} [_] not started -- horizon not assigned yet (not
+│   │ 0.2.x; likely 0.3.x alongside the GUI workbench, but not decided --
+│   │ see the harness GUI section below, which is a separate leaf: a
+│   │ renderer question, this is an orchestration-logic question, and the
+│   │ two need not land in the same release)
+│   ├── outcome: a workflow/project-management role that coordinates the
+│   │   agents already running in each MiniCon tab -- a "manager", not a
+│   │   "worker"; drafted from real practice, not speculative ->h ->m
+│   ├── real-world precedent, already running: moltbaby's
+│   │   `dfleet`/`dstatus` (busy/idle+model+ctx probing across tabs),
+│   │   `drive`/`wait` (send a task, block until real busy-then-idle,
+│   │   return result), `envelope` (identity-checked cross-agent messages) --
+│   │   this node's job is to decide MiniCon's own minimal version of that
+│   │   shape, not to import moltbaby's code (AGENTS.md: no dependency on
+│   │   another product's evidence)
+│   ├── open design questions, none answered yet #assumption
+│   │   ├── context concept: what does `harness-manage` track about each
+│   │   │   tab's agent between dispatches -- own words from this thread:
+│   │   │   "调度众多agents不是容易的事，要有上下文概念要有工作流概念"
+│   │   ├── workflow concept: a fixed verb set (moltbaby-style
+│   │   │   send/drive/wait) vs. a general scripting/workflow language --
+│   │   │   the latter re-collides with the plugin/scripting-runtime
+│   │   │   non-goal recorded for `harness` {h} above, so this choice needs
+│   │   │   its own explicit decision, not an accidental default
+│   │   ├── tool surface: does `harness-manage` reuse mux's CLI verbs as-is,
+│   │   │   or need its own -- `mux` {m} is scoped to tmux-verb-compat, so a
+│   │   │   MiniCon-native manager verb is new surface either way
+│   │   └── relationship to `harness` {h}: does `harness-manage` dispatch to
+│   │         a per-tab `minicon harness` worker specifically, or to
+│   │         whatever agent a tab happens to be running (any TUI, per
+│   │         moltbaby's comm-based detection) -- these are different scope
+│   │         sizes and the difference matters for what "coordinate" means
+│   └── #decision no implementation, no tool/verb naming, until the design
+│         questions above get an actual tree DAG + memory palace pass per
+│         AGENTS.md's planning method; this is `BLOCKED` on design work, not
+│         skipped, and is not part of 0.2.x's own closing scope
 └── Shared constraints
     ├── one file, no bundled runtime, no installer
     ├── every other AGENTS.md exclusion still applies (no server, no

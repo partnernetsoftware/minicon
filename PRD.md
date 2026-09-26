@@ -116,11 +116,17 @@ MiniCon — one-file local terminal
 │       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
 │       owner decision 2026-09-24; 0.2.x stays mux+harness hardening plus
 │       existing UI/UX and platform-foundation stability, no new features;
-│       GUI workbench over harness moved to 0.3.x by owner decision
-│       2026-09-26 (renderer = reuse agenterm-platform webview when it
-│       starts, not CDP/Electron/minicon-surf; real blocker = harness
-│       statefulness, not the renderer) — not started
-│       └── prd/PRD_02_31_v0_2_horizon.md · plan/archive/plan-v0.2.0.md
+│       `harness` split 2026-09-26 into two owners: `harness` (worker, this
+│       node, unchanged) and `harness-manage` (manager/orchestration role,
+│       new, parked in an unassigned — likely 0.3.x — horizon, BLOCKED on
+│       undesigned context/workflow concepts); GUI workbench over harness
+│       also moved to 0.3.x (renderer = reuse agenterm-platform webview when
+│       it starts, not CDP/Electron/minicon-surf; real blocker there is
+│       harness statefulness, not the renderer) — neither started;
+│       v0.2.1 plan covers harness statefulness + closing v0.2.0's own named
+│       BLOCKED debt + mux/UI hardening only
+│       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.1.md ·
+│             plan/archive/plan-v0.2.0.md
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence
     ├── evidence-registry.json — evidence identity → public test target
