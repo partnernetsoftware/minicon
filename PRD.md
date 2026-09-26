@@ -114,7 +114,10 @@ MiniCon — one-file local terminal
 │   ├── dedicated OS/HarmonyOS feasibility belongs to portfolio horizon
 │   └── [_] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
 │       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
-│       owner decision 2026-09-24
+│       owner decision 2026-09-24; harness GUI workbench direction (renderer
+│       = reuse agenterm-platform webview, not CDP/Electron; blocker =
+│       harness statefulness, not the renderer) recorded 2026-09-26, not
+│       started
 │       └── prd/PRD_02_31_v0_2_horizon.md · plan/archive/plan-v0.2.0.md
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence

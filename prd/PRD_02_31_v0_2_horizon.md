@@ -347,6 +347,58 @@ Two process notes worth keeping, because each cost real time:
   showed nothing at all. Fixtures must terminate on their own merits; a
   wrapper timeout would have hidden this.
 
+### harness GUI workbench — direction settled, work not started
+
+**Owner intent (2026-09-26).** The motivation is real and MiniCon-owned, not
+a re-run of AgenTerm's CC: a GUI shell over `harness` for e-commerce users who
+want a customized workbench, not a bare CLI. Recorded so this does not get
+re-argued from scratch later.
+
+**[_] Not started. Real blocker is statefulness, not the renderer.** `harness`
+today is single-shot per "Run shape" above — one bounded task, no `--continue`,
+no persisted conversation. A workbench needs multi-turn session persistence
+and streaming output; a window around a one-shot CLI call does not deliver
+that. This is the work to do first, independent of any GUI decision, and is
+its own leaf.
+
+**Renderer choice, decided in advance so it is not re-litigated per session:**
+
+- **[✓] If/when a renderer is built: reuse `agenterm-platform`'s webview
+  adapter and bridge-v1 security state machine (origin binding, 64 KiB
+  message cap, 8 concurrent requests, replay protection), per
+  `PRD_02_28_shared_core.md`'s "consume at the git pin, no mandatory
+  dependency inversion".** Do not pull `wry`/`tao` directly into MiniCon.
+  `/home/user/agenterm/research/agenterm-webview/` already ran the
+  direct-WRY-vs-Tauri comparison end to end (direct-WRY 520,704 B vs Tauri
+  8,763,392 B on Windows) and decided `prefer-direct-wry-if-webview`; MiniCon
+  gets that evidence for free by consuming the shared crate instead of
+  re-deriving it.
+- **Rejected: driving a user-downloaded portable Chrome via CDP.** Contradicts
+  this repo's own precedent twice over — the harness `exec` tool line rejected
+  shelling out to `curl` specifically because it "would put an unbounded
+  external command inside the one feature whose whole point is bounded tools"
+  (see "harness — detail" above), and the agenterm-webview experiment's own
+  design rule is "never downloads a runtime and the workspace contains no
+  fixed browser runtime". CDP control of an externally-sourced browser
+  process is a strictly larger, less bounded surface than either.
+- **Rejected: bundling Electron.** Electron ships Node.js plus a full Chromium
+  and a parallel Node/npm build toolchain. `mux`+`harness` are already at the
+  9 MiB Candidate ceiling and the Tauri reference (~8.4 MiB) was already ruled
+  out on size in the agenterm comparison; Electron is heavier than Tauri by a
+  further margin, and its own build toolchain is exactly what the direct-WRY
+  approach and this repo's asset model (`assets/`: static HTML/CSS/JS,
+  embedded with `include_bytes!`, no Node/npm required) were chosen to avoid.
+- **Size boundary, decided in advance:** any future GUI ships as a separate
+  subcommand/process (as AgenTerm's own plan keeps CC's webview dependency out
+  of `agenterm-cc`/`agenterm.exe`'s 4 MiB budget), never linked into the core
+  `minicon` binary, so a missing/broken WebView runtime on one platform cannot
+  take down the CLI.
+
+**Non-goal for now:** designing the workbench's actual screens or task
+vocabulary (which e-commerce tasks it surfaces) is out of scope until the
+statefulness leaf above is done and the concrete task set is written up
+separately. Do not start renderer code before that.
+
 ### 0.2.0 — what the version number stands for, and what it does not
 
 The version is bumped in `Cargo.toml` and `release-policy.json` at the SHA
