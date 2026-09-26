@@ -136,8 +136,10 @@ repeating gates. Finish version/docs edits and verify custom output directories
 are ignored before source-stability qualification; keep that source frozen
 through Promotion. Reuse matching evidence, never stale-source evidence. An
 explicit owner request to publish a named version already supplies the required
-authority. See the release skill's `references/troubleshooting.md`, "Release
-handoff and avoidable latency", for the 0.2.1 proxy and Defender-update lessons.
+authority. See the release skill's
+`.claude/skills/run-reputation-and-release/references/troubleshooting.md`,
+"Release handoff and avoidable latency", for the 0.2.1 proxy and
+Defender-update lessons.
 
 ## Where the bytes come from, and what a test costs
 
