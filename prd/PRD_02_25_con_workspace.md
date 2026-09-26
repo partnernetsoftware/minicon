@@ -417,6 +417,77 @@ the window rather than being hidden to save pixels.
   the HWND alive and visible and localized 5,921 of 6,049 changed pixels to the
   composer band.
 
+### Screenshot/image paste into the composer — design exploration, not scoped
+
+Owner request (2026-09-26): a long-standing want, not yet actionable because
+the owner does not know the UI/UX or implementation shape. Recorded here so
+it survives as a real backlog item rather than living only in chat; this is
+exploration, not an accepted plan leaf — no status marker, no version
+assigned.
+
+Current architecture (verified against source, not assumed):
+
+- The composer is a self-drawn text widget: state/editing logic in
+  `crates/minicon-core/src/composer.rs` (`ComposerState`, string-only
+  `insert`/`paste`/`selection_*`), painted by `src/host_paint.rs`, keyboard
+  routed by `handle_composer_key` in `src/main.rs`. There is no underlying
+  GUI toolkit (no winit/egui) — MiniCon paints its own pixels onto
+  `src/raster_surface.rs`.
+- Clipboard today is text-only end to end:
+  `agenterm_platform::clipboard::{get_text,set_text,read_text_async}` is the
+  entire API surface (`~/agenterm/crates/agenterm-platform/src/clipboard.rs`
+  and its Linux/macOS/Windows adapters). No image/bitmap clipboard type
+  exists at the platform layer.
+- Submission does not go through a structured message: `submit_composer` in
+  `src/main.rs` takes the composer's plain-text draft and writes it as raw
+  PTY bytes (`session.write_pty`), identically to keystrokes, then appends
+  Enter. `harness.rs`/`harness_opencode.rs`/`harness_wire.rs` have no
+  image/attachment field anywhere — DeepSeek and opencode-go are driven as
+  PTY-facing child processes, not as a JSON/wire protocol with a content
+  schema this layer could extend.
+
+What that means for scope, if this is picked up:
+
+1. **Platform gap.** `agenterm-platform::clipboard` needs a new image read
+   API (`get_image` or similar) implemented across the Linux/macOS/Windows
+   adapters before MiniCon can see clipboard image bytes at all. This is
+   the same shared-platform-crate boundary AGENTS.md already draws
+   ("cross-platform mechanisms in the shared platform crates, product
+   meaning in MiniCon-owned code") — the read API belongs in `agenterm`,
+   not duplicated per-OS inside MiniCon.
+2. **No text-equivalent transport.** The hardest part is not capture, it is
+   delivery: composer-to-PTY only knows how to type. An image cannot be
+   "typed." Two honest options, neither implemented, neither decided:
+   - (a) **File-path fallback (PTY-native, no protocol change):** save the
+     pasted image to a temp file and insert its path as text (optionally a
+     CLI flag the target harness recognizes, e.g. `--image <path>`). Works
+     immediately under the existing PTY-only design, degrades to "just a
+     path string" for any harness that doesn't understand the flag, and
+     needs the composer to render a thumbnail/chip in place of the path
+     text for the human to recognize what they attached (a new non-text
+     draft-segment type in `ComposerState`, not currently modeled at all).
+   - (b) **Structured attachment channel (protocol change):** give
+     `harness_wire.rs`/DeepSeek/opencode-go an explicit image/attachment
+     field and bypass the PTY-as-keystrokes path for image sends only.
+     Requires each harness's wire codec to actually support image content
+     (unverified — needs checking each target's real API, likely differs
+     per harness), and a second submission path parallel to
+     `submit_composer`'s existing PTY-write path. Larger, more correct for
+     harnesses that do support multimodal input, but does nothing for ones
+     that don't (would still need (a) as the fallback).
+3. **UX unknowns, not yet asked of the owner:** paste-only (Ctrl/Cmd+V with
+   image clipboard contents) vs. also a file-picker/drag-drop entry point;
+   whether multiple images per submission are needed; how a thumbnail
+   should size/scroll inside the composer's existing fixed-height,
+   horizontally-sliding viewport (`External composer input` above); what
+   happens on Send if the target harness has no image support at all
+   (silent path-string fallback, or a visible warning).
+
+Non-goal for now: choosing between (a) and (b), or picking any UX detail
+above. That needs an owner decision once the tradeoff (fast/degraded vs.
+correct/narrow) is understood — this section exists so the next session
+does not re-derive the same architecture survey.
+
 ## Scrollbar and divider
 
 - [v] a high-contrast vertical scrollbar stays visible at the right edge of
