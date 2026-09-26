@@ -96,25 +96,49 @@ v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
 │   │     evidence node, not a scope change -- the real gap found becomes
 │   │     its own named, `BLOCKED` decision, not folded in silently
 │   └── dependency: `prd/PRD_02_26_con_control_cli.md` (protocol surface)
-├── UI continued UI/UX and platform-foundation stabilization {ui} [_]
+├── UI continued UI/UX and platform-foundation stabilization {ui} [_] `BLOCKED`
 │   ├── outcome: no new features -- close existing rough edges in
 │   │     `terminal.rs`/`theme.rs`/`host_ui.rs`/`host_paint.rs`/
 │   │     `raster_surface.rs` and the consumed `agenterm-platform`/
 │   │     `agenterm-ui-core` pins, per the 2026-09-26 "0.2.x stays
 │   │     hardening" decision
-│   └── #decision scope for this leaf is picked from whatever open bugs/
-│         rough edges exist when this plan starts implementation, not
-│         pre-enumerated here -- keeps this plan from going stale before
-│         work begins
-└── GATE {g} shared release gate, run once after all leaves above close
-    ├── `cargo fmt` + `cargo clippy --all-targets -- -D warnings` (AGENTS.md:
-    │     six-cell gates on these, `cargo test` does not)
-    ├── `./scripts/build.sh test` (denies dead_code/unused_variables/
-    │     unused_must_use -- not bare `cargo test`)
-    ├── `./scripts/six-cell-qualify.sh` before pushing, not after CI fails
-    └── PRD upsert (this plan's leaves' `[_]`/`[-]` become `[v]` with named
-          evidence in `prd/PRD_02_31_v0_2_horizon.md`), then this plan archives
-          to `plan/archive/`, same discipline as `plan/archive/plan-v0.2.0.md`
+│   ├── candidates identified from `plan/plan-carried-debt.md`: C3
+│   │     (box-drawing glyphs from cell geometry, Consolas 1 px gap at
+│   │     12 px) and C4 (idle one-tab host RSS toward 10 MiB, paused since
+│   │     2026-09-06) -- both are exactly this leaf's shape
+│   ├── #decision scope for this leaf is picked from whatever open bugs/
+│   │     rough edges exist when this plan starts implementation, not
+│   │     pre-enumerated here -- keeps this plan from going stale before
+│   │     work begins
+│   └── `BLOCKED` 2026-09-26: this cloud container has no display/GPU --
+│         the existing blackbox/control test suites already fail here on
+│         unmodified `main` for exactly that reason (confirmed by stashing
+│         this round's own changes and re-running them). C3 is a rendering
+│         change verifiable only by looking at rendered glyphs; C4 is a
+│         memory measurement. Neither can be honestly verified from this
+│         session -- recorded `BLOCKED` on a display-capable host rather
+│         than changed blind or skipped silently
+└── GATE {g} shared release gate, run once all leaves above are closed or
+    │     honestly `BLOCKED` [-]
+    ├── [v] `cargo fmt` + `cargo clippy --all-targets -- -D warnings`, clean
+    │     on every leaf's commits (AGENTS.md: six-cell gates on these,
+    │     `cargo test` does not)
+    ├── [-] `./scripts/build.sh test`: the non-GUI suites (`harness` unit
+    │     tests, `minicon_alignment`) pass; `minicon_blackbox`/
+    │     `minicon_control` fail in this container for the same
+    │     no-display/GPU reason as `UI` above, confirmed pre-existing on
+    │     unmodified `main`, not a regression from this plan's changes
+    │     `BLOCKED` on a display-capable host
+    ├── [_] `./scripts/six-cell-qualify.sh`: requires an Apple Silicon
+    │     macOS host per the script itself; cannot run from this Linux
+    │     cloud container `BLOCKED`, same constraint as `HB`'s native-tls arm
+    └── [v] PRD upsert: `HS`/`HB`(contained-process-spawn half)/`MH` closed
+          with named evidence in `prd/PRD_02_31_v0_2_horizon.md`; `HB`'s
+          native-tls half and `UI` recorded `BLOCKED` there too rather than
+          silently dropped. This plan stays open (not archived) until a
+          display-capable, Apple-Silicon-macOS-having session can close
+          the three `BLOCKED` items and actually run the release/signing
+          phase of the active `/goal` directive
 
 Explicitly NOT in this plan (parked in PRD_02_31, unassigned horizon,
 BLOCKED on design):

@@ -112,7 +112,7 @@ MiniCon — one-file local terminal
 │   ├── foundry software production line (cross-product; not MiniCon scope)
 │   │   └── prd/PRD_02_30_foundry_horizon.md
 │   ├── dedicated OS/HarmonyOS feasibility belongs to portfolio horizon
-│   └── [_] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
+│   └── [-] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
 │       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
 │       owner decision 2026-09-24; 0.2.x stays mux+harness hardening plus
 │       existing UI/UX and platform-foundation stability, no new features;
@@ -121,10 +121,16 @@ MiniCon — one-file local terminal
 │       new, parked in an unassigned — likely 0.3.x — horizon, BLOCKED on
 │       undesigned context/workflow concepts); GUI workbench over harness
 │       also moved to 0.3.x (renderer = reuse agenterm-platform webview when
-│       it starts, not CDP/Electron/minicon-surf; real blocker there is
-│       harness statefulness, not the renderer) — neither started;
-│       v0.2.1 plan covers harness statefulness + closing v0.2.0's own named
-│       BLOCKED debt + mux/UI hardening only
+│       it starts, not CDP/Electron/minicon-surf; real blocker there is now
+│       only streaming, not the renderer or the rest of statefulness) —
+│       neither started; v0.2.1 plan's `HS` (harness statefulness) and `MH`
+│       (mux hardening) closed 2026-09-26 with named evidence; `HB`
+│       (v0.2.0's own named BLOCKED debt) half-closed (contained-process-spawn
+│       done, native-tls arm still BLOCKED — needs an Apple Silicon macOS
+│       host this session's Linux cloud container does not have); `UI`
+│       (terminal/platform stabilization) BLOCKED for the same reason (no
+│       display/GPU here to verify a rendering or memory change); release/
+│       signing phase of the active `/goal` directive not yet reached
 │       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.1.md ·
 │             plan/archive/plan-v0.2.0.md
 └── Executable truth
