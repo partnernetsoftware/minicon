@@ -7,6 +7,19 @@ boundary: `prd/PRD_02_23_minicon.md`. v0.2.0 is already released
 (`plan/archive/plan-v0.2.0.md`); this plan is the next code-bearing round on
 the same two subcommands, not a new capability.
 
+## Release handoff (2026-09-26)
+
+The owner authorized this agent to take over and publish 0.2.1. The earlier
+cloud-session approval blocker below is historical and no longer blocks this
+authorized release. On the local Mac, the inherited staged harness fix omits
+unsupported macOS memory limits while retaining other configured limits.
+The full build.sh test gate and script selftests passed with HTTP proxy
+variables unset for loopback fixtures. All six target builds and both local macOS test/throughput lanes passed.
+The first local receipt failed source stability because the temporary output
+directory was not ignored and handoff docs changed during the run; the frozen
+source is being requalified. No unavailable court is counted as passed. Signing and
+Promotion follow the registered skills and retain both required signatures.
+
 ## Why this plan exists, and what it deliberately does not contain
 
 The 2026-09-26 discussion (mux's moltbaby-evidenced tmux-verb-compat

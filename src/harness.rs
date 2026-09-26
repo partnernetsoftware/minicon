@@ -463,6 +463,7 @@ const EXEC_TOOL_KILL_GRACE: std::time::Duration = std::time::Duration::from_secs
 /// Hard native ceilings installed on every contained `exec` child, so a
 /// bounded local task cannot exhaust host memory, disk or process slots
 /// even if the allow-listed command itself is misbehaving.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 const EXEC_TOOL_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
 const EXEC_TOOL_FILE_SIZE_BYTES: u64 = 64 * 1024 * 1024;
 const EXEC_TOOL_OPEN_FILES: u64 = 256;
@@ -566,6 +567,14 @@ impl ExecTool {
             .capture_output()
             .limits(ContainedProcessLimits {
                 cpu_seconds: Some(EXEC_TOOL_TIMEOUT.as_secs()),
+                // agenterm_platform's macOS contained_process refuses any
+                // `memory_bytes` limit outright (RLIMIT_AS cannot be set
+                // below the process-wide dyld mapping there), so asking for
+                // one made every spawn fail on macOS. Other limits are still
+                // enforced there.
+                #[cfg(target_os = "macos")]
+                memory_bytes: None,
+                #[cfg(not(target_os = "macos"))]
                 memory_bytes: Some(EXEC_TOOL_MEMORY_BYTES),
                 file_size_bytes: Some(EXEC_TOOL_FILE_SIZE_BYTES),
                 open_files: Some(EXEC_TOOL_OPEN_FILES),

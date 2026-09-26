@@ -121,7 +121,7 @@ process, exactly like the existing `--control` endpoint.
 │       [v] closed 2026-09-26, plan/plan-v0.2.1.md leaf HB. `ExecTool::
 │       spawn_contained` now builds a `ContainedHeadlessCommand` (argv
 │       vector, no shell, same as before) with `capture_output()` and hard
-│       `ContainedProcessLimits` (512 MiB memory, 64 MiB file size, 256 open
+│       `ContainedProcessLimits` (512 MiB memory on Linux/Windows, 64 MiB file size, 256 open
 │       files, 32 active processes, cpu seconds = `EXEC_TOOL_TIMEOUT`); a
 │       timed-out child is reaped with `terminate_and_wait`, which owns the
 │       whole native containment group (Windows Job Object / Unix process
@@ -625,3 +625,16 @@ claims neither:
   BEFORE acting". **Still not resolved:** the "No runtime evidence" gap above
   is unchanged — 0.2.0 shipped on cross-compile + static-signing + static-scan
   evidence only, no real execution of the Windows/macOS bytes.
+
+### 0.2.1 local release handoff (2026-09-26)
+
+The owner explicitly authorized publication of 0.2.1 after the previous
+agent lost its network connection. macOS contained exec now omits the unsupported
+`memory_bytes` limit: the platform adapter rejects that limit before spawning,
+so requesting it made every exec fail. Other configured limits remain unchanged;
+this is not a claim of a macOS 512 MiB memory ceiling. The complete
+`scripts/build.sh test` gate and `scripts/selftest.sh` passed on the local
+macOS host. Loopback tests require this host's inherited HTTP proxy variables
+to be unset; the initial proxied attempt failed transport tests. Final six-cell
+qualification and the exact Candidate/signing/Defender/Promotion chain are in
+progress; unavailable runtime courts remain explicitly BLOCKED.
