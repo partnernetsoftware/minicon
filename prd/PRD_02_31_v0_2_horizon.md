@@ -116,16 +116,35 @@ process, exactly like the existing `--control` endpoint.
 │   │         narrowing this node's own boundary)
 │   ├── safe failure: a bad key or unreachable model is a bounded CLI error;
 │   │   a tool call outside its bound (root/command) is refused, not widened
-│   └── dependency: none new; a subprocess/file-IO capability MiniCon's
-│       platform crate already has for other features
-│       #correction 2026-09-25: half right. File IO is there and used
-│       (`filesystem_read::read_bounded`, `filesystem_publish::write_file_atomic`).
-│       Contained *spawning* is not: `contained_process` sits behind the
-│       platform crate's `contained-process-spawn` feature, which MiniCon's
-│       dependency does not enable, so `exec` currently spawns through
-│       `std::process::Command`. That still gives the argv-vector/no-shell
-│       guarantee the invariant is about, but not resource containment; see
-│       H3's carried-debt line in `plan/archive/plan-v0.2.0.md`
+│   └── dependency: `agenterm_platform::contained_process` (its
+│       `contained-process-spawn` feature, enabled in `Cargo.toml`)
+│       [v] closed 2026-09-26, plan/plan-v0.2.1.md leaf HB. `ExecTool::
+│       spawn_contained` now builds a `ContainedHeadlessCommand` (argv
+│       vector, no shell, same as before) with `capture_output()` and hard
+│       `ContainedProcessLimits` (512 MiB memory, 64 MiB file size, 256 open
+│       files, 32 active processes, cpu seconds = `EXEC_TOOL_TIMEOUT`); a
+│       timed-out child is reaped with `terminate_and_wait`, which owns the
+│       whole native containment group (Windows Job Object / Unix process
+│       group), not just the root pid. Evidence: `cargo build --bin
+│       minicon`, `cargo fmt`, `cargo clippy --all-targets -- -D warnings`
+│       and all 32 `harness`/`harness_wire`/`harness_opencode` unit tests
+│       pass unchanged against the new spawn path, including
+│       `exec_tool_runs_one_command_and_never_interprets_shell_metacharacters`
+│       (real process, not mocked). Not separately evidenced: a test that
+│       proves a grandchild process actually dies with its parent (the
+│       containment property this change exists for) -- existing coverage
+│       proves the argv/output/exit-code contract still holds through the
+│       new builder, not descendant-reaping under load; that gap is
+│       `BLOCKED` on writing such a test, not silently claimed. Also updated
+│       `tests/minicon_alignment.rs`'s `AGENTERM_PLATFORM_FEATURES` matrix to
+│       add `contained-process-spawn` (its own doc comment requires this);
+│       the matching AgenTerm-lane notification (`seam: platform/
+│       consumer-matrix`) has not been sent from this session -- `BLOCKED`
+│       on having that channel, recorded rather than skipped.
+│       #correction 2026-09-25 (superseded by the above): this used to read
+│       "half right -- file IO is there, contained spawning is not"; see
+│       H3's now-closed carried-debt line in `plan/archive/plan-v0.2.0.md`
+│       for that history
 ├── harness-manage {hm} [_] not started -- horizon not assigned yet (not
 │   │ 0.2.x; likely 0.3.x alongside the GUI workbench, but not decided --
 │   │ see the harness GUI section below, which is a separate leaf: a

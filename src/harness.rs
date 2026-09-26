@@ -314,6 +314,18 @@ impl FileTool {
 /// How long one `exec` call may run before it is terminated.
 pub const EXEC_TOOL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// How long a killed child is given to actually leave after
+/// `terminate_and_wait`, on top of `EXEC_TOOL_TIMEOUT` itself.
+const EXEC_TOOL_KILL_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Hard native ceilings installed on every contained `exec` child, so a
+/// bounded local task cannot exhaust host memory, disk or process slots
+/// even if the allow-listed command itself is misbehaving.
+const EXEC_TOOL_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
+const EXEC_TOOL_FILE_SIZE_BYTES: u64 = 64 * 1024 * 1024;
+const EXEC_TOOL_OPEN_FILES: u64 = 256;
+const EXEC_TOOL_ACTIVE_PROCESSES: u32 = 32;
+
 /// What one finished `exec` call produced.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecOutcome {
@@ -391,32 +403,41 @@ impl ExecTool {
 
     /// The one place a child process is created.
     ///
-    /// **Deviation, deliberate and reported:** the design of record names
-    /// `agenterm_platform::contained_process::ContainedHeadlessCommand`, but
-    /// that module is gated behind the crate's `contained-process-spawn`
-    /// feature, which MiniCon's dependency does not enable. Enabling it is a
-    /// one-line `Cargo.toml` change and it does compile, but that file is
-    /// outside this change's ownership. Until it is enabled this uses
-    /// `std::process::Command`, which gives the same argv-vector,
-    /// no-shell guarantee that H3's invariant is actually about; what it does
-    /// not give is the resource containment. Swapping the builder in is a
-    /// change to this function body alone.
+    /// Uses `agenterm_platform::contained_process::ContainedHeadlessCommand`
+    /// (the crate's `contained-process-spawn` feature, enabled in
+    /// `Cargo.toml`), not `std::process::Command`. This keeps the same
+    /// argv-vector, no-shell guarantee H3's invariant is about and adds the
+    /// resource containment the design of record actually asked for: a
+    /// Windows kill-on-close Job Object or a Unix process group owns the
+    /// child's whole descendant tree, so a runaway grandchild cannot outlive
+    /// this call's own timeout kill.
     fn spawn_contained(&self, program: &str, args: &[String]) -> Result<ExecOutcome, String> {
+        use agenterm_platform::contained_process::{
+            ContainedHeadlessCommand, ContainedProcessLimits,
+        };
         use std::io::Read as _;
 
-        let mut child = std::process::Command::new(program)
-            .args(args)
+        let mut command = ContainedHeadlessCommand::new(program);
+        command
+            .args(args.iter().cloned())
             .current_dir(&self.root)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .capture_output()
+            .limits(ContainedProcessLimits {
+                cpu_seconds: Some(EXEC_TOOL_TIMEOUT.as_secs()),
+                memory_bytes: Some(EXEC_TOOL_MEMORY_BYTES),
+                file_size_bytes: Some(EXEC_TOOL_FILE_SIZE_BYTES),
+                open_files: Some(EXEC_TOOL_OPEN_FILES),
+                active_processes: Some(EXEC_TOOL_ACTIVE_PROCESSES),
+            });
+
+        let mut child = command
             .spawn()
             .map_err(|error| format!("exec: {program:?} could not be started: {error}"))?;
 
-        // Drain both pipes on their own threads. Polling for the exit while a
-        // full pipe blocks the child would deadlock the timeout this bound
-        // exists to provide.
-        let drain = |stream: Option<std::process::ChildStdout>| {
+        // Drain both captured streams on their own threads. Polling for the
+        // exit while a full pipe blocks the child would deadlock the
+        // timeout this bound exists to provide.
+        let drain = |stream: Option<agenterm_platform::contained_process::ContainedChildOutput>| {
             std::thread::spawn(move || {
                 let mut buffer = Vec::new();
                 if let Some(mut stream) = stream {
@@ -425,17 +446,8 @@ impl ExecTool {
                 buffer
             })
         };
-        let stdout = drain(child.stdout.take());
-        let stderr = std::thread::spawn({
-            let stream = child.stderr.take();
-            move || {
-                let mut buffer = Vec::new();
-                if let Some(mut stream) = stream {
-                    let _ = stream.read_to_end(&mut buffer);
-                }
-                buffer
-            }
-        });
+        let stdout = drain(child.take_stdout());
+        let stderr = drain(child.take_stderr());
 
         let deadline = std::time::Instant::now() + EXEC_TOOL_TIMEOUT;
         let mut timed_out = false;
@@ -449,8 +461,7 @@ impl ExecTool {
             }
             if std::time::Instant::now() >= deadline {
                 timed_out = true;
-                let _ = child.kill();
-                let _ = child.wait();
+                let _ = child.terminate_and_wait(EXEC_TOOL_KILL_GRACE);
                 break None;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -460,7 +471,7 @@ impl ExecTool {
             String::from_utf8_lossy(&handle.join().unwrap_or_default()).into_owned()
         };
         Ok(ExecOutcome {
-            exit_code: status.and_then(|status| status.code()),
+            exit_code: status.and_then(|status| status.conventional_code().map(|code| code as i32)),
             stdout: collect(stdout),
             stderr: collect(stderr),
             timed_out,

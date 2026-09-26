@@ -1353,6 +1353,7 @@ const AGENTERM_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
         "dependencies",
         &[
             "clipboard",
+            "contained-process-spawn",
             "entropy",
             "filesystem-publish",
             "filesystem-read",

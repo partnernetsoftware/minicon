@@ -61,7 +61,7 @@ name = "signing_workflow_policy"
 path = "tests/signing_workflow_policy.rs"
 
 [dependencies]
-agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "cdb0ee67d", default-features = false, features = ["clipboard", "entropy", "filesystem-publish", "filesystem-read", "font", "ime", "input", "ipc", "network-http", "parent-console", "pty", "runtime", "screenshot", "window"] }
+agenterm-platform = { git = "https://github.com/partnernetsoftware/agenterm", rev = "cdb0ee67d", default-features = false, features = ["clipboard", "contained-process-spawn", "entropy", "filesystem-publish", "filesystem-read", "font", "ime", "input", "ipc", "network-http", "parent-console", "pty", "runtime", "screenshot", "window"] }
 agenterm-ui-core = { git = "https://github.com/partnernetsoftware/agenterm", rev = "cdb0ee67d", features = ["terminal-selection"] }
 itoa = "1"
 minicon-core = { path = "crates/minicon-core" }
