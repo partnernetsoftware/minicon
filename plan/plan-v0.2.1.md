@@ -48,17 +48,24 @@ v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
 │   └── safe failure: a resume request against a session that does not
 │         exist, or is corrupt, is a bounded CLI error, never a silent fresh
 │         start (that would look like continuity while quietly losing it)
-├── HB harness — close the BLOCKED items v0.2.0 already named {hb} [_]
+├── HB harness — close the BLOCKED items v0.2.0 already named {hb} [-]
 │   ├── Windows/macOS `native-tls` arm: compiled and proven in at least one
 │   │     court each, not just the feature graph compiling (PRD_02_31
 │   │     "Owed, and BLOCKED rather than skipped", item 1) ->hs (shares the
 │   │     wire transport being touched for statefulness -- do both in one
 │   │     pass over `harness_wire.rs`/`harness_opencode.rs`, not two)
-│   ├── contained-process spawn debt: `exec` still spawns via
-│   │     `std::process::Command`, not the platform crate's
-│   │     `contained-process-spawn` feature (PRD_02_31's dependency
-│   │     #correction) -- enable the feature or record why not, not leave
-│   │     it silent
+│   │     `BLOCKED` 2026-09-26: this cloud container is Linux-only and
+│   │     `scripts/six-cell-qualify.sh` itself requires an Apple Silicon
+│   │     macOS host for the cross-compile+runtime proof -- cannot be closed
+│   │     from here; needs a macOS/Windows court, not silently skipped
+│   ├── [v] closed 2026-09-26 contained-process spawn debt: `exec` now
+│   │     spawns via `agenterm_platform::contained_process::
+│   │     ContainedHeadlessCommand` with hard `ContainedProcessLimits`
+│   │     (memory/file-size/open-files/active-processes/cpu-seconds), not
+│   │     `std::process::Command`; `terminate_and_wait` on timeout reaps the
+│   │     whole native containment group. See PRD_02_31's harness dependency
+│   │     line for full evidence and the one honest gap (no test yet proves
+│   │     descendant-reaping under load)
 │   └── #decision these are debt closure, not new scope; each gets its own
 │         named evidence the same way H4/H5 did, per AGENTS.md's "every test
 │         must be provable" rule
