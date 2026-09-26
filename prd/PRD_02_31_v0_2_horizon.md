@@ -25,6 +25,16 @@ process, exactly like the existing `--control` endpoint.
 │   │   @method=tmux-verb-compat #decision (owner, 2026-09-25: cross-tool
 │   │   agent interop is the concrete need the old "reuse existing verbs by
 │   │   default" ruling was waiting for)
+│   │   #evidence (owner, 2026-09-26): a concrete external consumer of this
+│   │   pattern already exists and runs in production -- `mgttt/moltbaby`'s
+│   │   `skills/mux/` builds an agent bus (`register`/`send`/`envelope`/
+│   │   `inbox`/`drive`/`wait`/`dfleet` busy-idle+model probing) entirely on
+│   │   top of tmux verb semantics (session/window/pane, send-keys,
+│   │   capture-pane). Minicon-mux's tmux-verb compatibility is what would
+│   │   let that same agent-bus tooling address a MiniCon tab the way it
+│   │   already addresses a tmux pane, with no second code path in the
+│   │   consumer. Not a dependency (MiniCon does not consume moltbaby's
+│   │   code or evidence, per AGENTS.md); a design-intent reference only.
 │   ├── surface ->m1 [v]
 │   │   ├── verb subset: `list-windows`, `select-window`, `new-window`,
 │   │   │     `kill-window`, `send-keys`, `capture-pane` -- named and flagged
