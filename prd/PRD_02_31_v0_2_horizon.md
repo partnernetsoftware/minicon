@@ -273,6 +273,45 @@ visible part of the compatibility surface:
   (`minicon mux: terminal @2 does not exist`) and names no tmux assumption.
   The alternative -- pre-checking the handle against `list-tabs` -- would add
   a second round trip and a race window for no gain.
+### mux hardening against moltbaby-shaped real usage (plan-v0.2.1 leaf MH)
+
+**[v] verified 2026-09-26.** Re-checked this section's non-goals and
+verb/flag table against mgttt/moltbaby's mux skill documentation, a real,
+running tmux-based agent-bus (register/send/envelope/inbox/drive/wait/
+dfleet), as the concrete external-consumer evidence node above already
+names. Most of its usage is already covered: `send-keys`/`-l`, targets
+addressed as `session:window`, and its own documented tmux footguns (a
+window name containing `.` breaking `send-keys` target parsing; a bare
+`tmux send-keys` being unreliable for production messaging, hence its own
+`mux envelope` wrapper) are tmux-inherent, not gaps this table's design
+introduced or could close by imitating tmux harder.
+
+**One real gap found, recorded rather than folded in silently, per this
+leaf's own `#decision`:** moltbaby's `super-query` calls `tmux list-panes
+-t <target> -F '#{pane_id} #{pane_width} #{pane_height} #{pane_active}
+#{pane_dead}'`. This table has no `list-panes` verb at all -- only
+`list-windows` -- so that call would refuse outright today, not just
+mis-render a substitution. Two of the five fields it wants
+(`pane_width`/`pane_height`) are not available from `list-tabs`'s response
+either (only `id`/`title`/`active`/`child_exit_code` are); the other three
+(`pane_id`, `pane_active`, `pane_dead`) map cleanly onto data MiniCon
+already reports (`id`, `active`, `child_exit_code.is_some()`). Since a
+window always has exactly one pane here (see "Target parsing" above), a
+`list-panes` verb would report the same one row per tab as `list-windows`,
+under pane-shaped field names.
+
+**Not implemented this round.** Adding three of five fields now, silently
+short of what a real caller asked for, would be exactly the kind of
+approximation this table's own non-goals reject elsewhere (compare the
+`-F` unknown-substitution refusal and the `capture-pane -S/-E` BLOCKED
+line). `pane_width`/`pane_height` need their own decision -- most likely a
+second control-endpoint round trip per tab to read live `cols`/`rows`,
+which is a real design question (N+1 calls for N tabs), not a one-line
+addition -- so this is left `BLOCKED` for a future round rather than
+shipped partial. Tracked here, not folded into `list-windows` or `-F`'s
+existing `KNOWN_FORMAT_VARS` (`src/mux.rs`), so `list-panes` and
+`list-windows` do not silently share a format-var namespace when
+`pane_width`/`pane_height` do eventually land.
 
 ## harness — detail
 

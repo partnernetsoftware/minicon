@@ -76,15 +76,25 @@ v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
 │   └── #decision these are debt closure, not new scope; each gets its own
 │         named evidence the same way H4/H5 did, per AGENTS.md's "every test
 │         must be provable" rule
-├── MH mux — close what M's own non-goals left open {mh} [_]
-│   ├── re-check the five non-goals in PRD_02_31's mux section against real
-│   │     usage friction now that a concrete external consumer (moltbaby)
-│   │     is on record -- e.g. does `-F`'s substitution-variable subset
-│   │     still cover what a `dfleet`-style prober actually needs, or is a
-│   │     gap now visible that wasn't at design time
+├── MH mux — close what M's own non-goals left open {mh} [v] verified 2026-09-26
+│   ├── re-checked the mux verb/flag table against
+│   │     mgttt/moltbaby's mux skill documentation (real, running
+│   │     tmux-based agent-bus). Most usage already covered; tmux's own
+│   │     documented footguns (window names containing `.` breaking
+│   │     `send-keys` target parsing, bare `send-keys` being unreliable)
+│   │     are tmux-inherent, not this table's gap
+│   ├── one real gap found and recorded, not folded in silently: no
+│   │     `list-panes` verb at all, needed by moltbaby's `super-query`
+│   │     (`tmux list-panes -F '#{pane_id} #{pane_width} #{pane_height}
+│   │     #{pane_active} #{pane_dead}'`). Three of five fields map cleanly
+│   │     onto data MiniCon already has; `pane_width`/`pane_height` need a
+│   │     new per-tab round trip design this round does not make -- left
+│   │     `BLOCKED` for a future round rather than shipped partial. See
+│   │     `prd/PRD_02_31_v0_2_horizon.md`'s "mux hardening against
+│   │     moltbaby-shaped real usage" for full detail
 │   ├── #decision this is verification/hardening against the moltbaby
-│   │     evidence node, not a scope change -- if a real gap surfaces it
-│   │     becomes its own named decision, not folded in silently
+│   │     evidence node, not a scope change -- the real gap found becomes
+│   │     its own named, `BLOCKED` decision, not folded in silently
 │   └── dependency: `prd/PRD_02_26_con_control_cli.md` (protocol surface)
 ├── UI continued UI/UX and platform-foundation stabilization {ui} [_]
 │   ├── outcome: no new features -- close existing rough edges in
