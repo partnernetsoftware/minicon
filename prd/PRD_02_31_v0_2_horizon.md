@@ -393,6 +393,16 @@ its own leaf.
   of `agenterm-cc`/`agenterm.exe`'s 4 MiB budget), never linked into the core
   `minicon` binary, so a missing/broken WebView runtime on one platform cannot
   take down the CLI.
+- **Deferred, not rejected: a from-scratch `minicon-surf` browser engine.**
+  Raised in an earlier discussion, not previously written down anywhere in
+  this repository (checked: no `minicon-surf` hits before this entry). A
+  self-built rendering/network/HTML-CSS-JS stack is a different order of
+  scope than consuming an existing WebView (CDP and Electron at least reuse
+  someone else's engine) — it competes with browser vendors, not with a
+  packaging choice, and has no path back to MiniCon's current "file+exec
+  bounded tools + tmux-shaped mux" product boundary in this horizon. No work
+  starts on it until a materially broader product mandate exists; recorded
+  here only so it is not re-proposed from a blank slate.
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the
