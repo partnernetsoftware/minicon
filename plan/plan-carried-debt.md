@@ -36,8 +36,14 @@ doc when it is picked up; delete its line here once it ships or is decided
        chip in place of path text (new non-text draft-segment type needed in
        `ComposerState`); Send substitutes the file's absolute path and goes
        through the existing PTY-write path unchanged; single image per
-       submission; no per-harness support detection or warning. Needs a new
-       image-read API in `agenterm-platform::clipboard` first (currently
-       text-only across all three OS adapters) — that platform gap blocks
-       every option, not just this one, so land it once.
+       submission; no per-harness support detection or warning.
+       **Corrected 2026-09-26:** no platform-crate change needed after all —
+       `agenterm-platform::clipboard`'s existing `available_types()`/
+       `get_type()` pair already reads arbitrary clipboard types (images
+       included) on all three OS adapters; the earlier "needs a new
+       image-read API first" note was wrong on inspection (mirrors `{LP}`'s
+       own corrected N+1 assumption in `plan/plan-v0.2.2.md`). Remaining
+       work is MiniCon-owned: pick the right type name per OS, decode to a
+       temp file, and add the thumbnail-chip draft segment — self-contained
+       in this repo, no cross-repo dependency.
 ```

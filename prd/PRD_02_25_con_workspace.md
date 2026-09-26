@@ -433,11 +433,19 @@ Current architecture (verified against source, not assumed):
   routed by `handle_composer_key` in `src/main.rs`. There is no underlying
   GUI toolkit (no winit/egui) — MiniCon paints its own pixels onto
   `src/raster_surface.rs`.
-- Clipboard today is text-only end to end:
-  `agenterm_platform::clipboard::{get_text,set_text,read_text_async}` is the
-  entire API surface (`~/agenterm/crates/agenterm-platform/src/clipboard.rs`
-  and its Linux/macOS/Windows adapters). No image/bitmap clipboard type
-  exists at the platform layer.
+- **Corrected 2026-09-26** (was wrongly assumed text-only below): MiniCon's
+  own call sites (`src/main.rs`, `src/clipboard_status.rs`) only use the
+  text convenience functions, but the platform layer underneath is not
+  text-only — `agenterm-platform::clipboard` already exposes a generic
+  `available_types() -> Vec<String>` (host-native type names: macOS UTIs
+  e.g. `public.png`, Windows `CF_DIB`/`CF_DIBV5`, X11 TARGETS atoms) and
+  `get_type(type_name, max_bytes) -> Vec<u8>`, implemented across all three
+  adapters (`crates/agenterm-platform/src/adapters/{linux,macos,windows}/clipboard.rs`
+  in the `agenterm` repo, rev `fd0adcf4c`). `Cargo.toml` already enables the
+  `clipboard` feature. Reading a pasted image is therefore already possible
+  from MiniCon today via `available_types()` + `get_type("public.png", ...)`
+  (or the Windows/X11 equivalent) with **no platform-layer change needed** —
+  this replaces step 1 below, which was based on the wrong assumption.
 - Submission does not go through a structured message: `submit_composer` in
   `src/main.rs` takes the composer's plain-text draft and writes it as raw
   PTY bytes (`session.write_pty`), identically to keystrokes, then appends
@@ -458,13 +466,15 @@ per-harness verification up front.
 
 Concretely:
 
-1. **Platform gap first.** `agenterm-platform::clipboard` needs a new image
-   read API (`get_image` or similar) across the Linux/macOS/Windows
-   adapters before MiniCon can see clipboard image bytes at all — this
-   follows AGENTS.md's shared-platform-crate boundary ("cross-platform
-   mechanisms in the shared platform crates, product meaning in
-   MiniCon-owned code"). This blocks the feature regardless of transport
-   choice, so it lands once, first.
+1. **No platform gap, corrected 2026-09-26.** `agenterm-platform::clipboard`'s
+   existing `available_types()`/`get_type()` pair (see "Current
+   architecture" above) already covers reading a clipboard image on all
+   three OSes; no new platform-crate API is needed before this can start.
+   MiniCon-owned work is picking the right type name per OS (`public.png`
+   on macOS, `CF_DIB`/`CF_DIBV5` on Windows, an `image/*` X11 target on
+   Linux, trying each in `available_types()`'s order) and decoding/
+   re-encoding the bytes to a file — that logic belongs here, not in the
+   shared platform crate, per AGENTS.md's boundary rule.
 2. **Paste-only entry.** Ctrl/Cmd+V when the clipboard holds an image (no
    file-picker, no drag-drop for the first cut).
 3. **Temp file + thumbnail chip.** The pasted image is saved to a temp
