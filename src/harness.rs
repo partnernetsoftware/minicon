@@ -19,6 +19,15 @@ pub struct HarnessRequest {
     /// naming the missing allow-list, so a model cannot tell "not allowed yet"
     /// from "tool absent" by probing.
     pub allow_cmd: Vec<String>,
+    /// Names a **new** session to record this run's task/answer under.
+    /// Mutually exclusive with `continue_session`. Refused if a session by
+    /// this name already exists, so a typo cannot silently overwrite one.
+    pub new_session: Option<String>,
+    /// Resumes an existing session: its recorded turns are folded into this
+    /// run's task as prior context, and this turn is appended back. Refused
+    /// -- a bounded CLI error, never a silent fresh start -- if the named
+    /// session does not exist or its file is corrupt.
+    pub continue_session: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -69,17 +78,43 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
     // error up front rather than a surprise on the model's first tool call.
     let file_tool = FileTool::new(&request.root)?;
     let exec_tool = ExecTool::new(file_tool.root_path(), &request.allow_cmd);
+
+    let session_id = request
+        .new_session
+        .as_deref()
+        .or(request.continue_session.as_deref());
+    let is_continue = request.continue_session.is_some();
+    let mut history = Vec::new();
+    if let Some(id) = session_id {
+        validate_session_id(id)?;
+        let existing = load_session(&file_tool, id)?;
+        if is_continue && existing.is_none() {
+            return Err(format!(
+                "harness: --continue {id:?} refused: no session by that name exists under \
+                 --root; start one first with --session {id:?}"
+            ));
+        }
+        if !is_continue && existing.is_some() {
+            return Err(format!(
+                "harness: --session {id:?} refused: a session by that name already exists; \
+                 use --continue {id:?} to resume it instead of overwriting it"
+            ));
+        }
+        history = existing.unwrap_or_default();
+    }
+    let task = compose_resumed_task(&history, &request.task);
+
     // Each backend runs its OWN codec. `opencode-go` is deliberately not
     // served by the DeepSeek codec: a wire format that merely resembles
     // another one produces plausible wrong requests instead of a clear
     // failure. The `Transport` seam is the only thing the two share.
-    match request.backend {
+    let answer = match request.backend {
         Backend::DeepSeek => crate::harness_wire::run_task(
             &crate::harness_wire::NetworkHttp,
             crate::harness_wire::DEEPSEEK_CHAT_URL,
             &key,
             crate::harness_wire::DEEPSEEK_MODEL,
-            &request.task,
+            &task,
             &file_tool,
             &exec_tool,
         ),
@@ -94,12 +129,106 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
                 &url,
                 &key,
                 &model,
-                &request.task,
+                &task,
                 &file_tool,
                 &exec_tool,
             )
         }
+    }?;
+
+    // Only a turn that produced a final answer is remembered -- a refused or
+    // timed-out turn never reaches here, so a broken turn cannot pollute the
+    // resumed context with a partial exchange.
+    if let Some(id) = session_id {
+        history.push((request.task.clone(), answer.clone()));
+        save_session(&file_tool, id, &history)?;
     }
+    Ok(answer)
+}
+
+/// How many prior turns a resumed session carries forward. Bounded, like
+/// every other harness limit: an unbounded transcript would eventually make
+/// every resumed task prompt itself the thing that exhausts
+/// `HARNESS_MAX_TURNS`/`OPENCODE_MAX_TURNS`. Oldest turns are dropped first.
+const HARNESS_SESSION_MAX_TURNS: usize = 10;
+
+/// Where session files live, relative to `--root` -- inside the `file` tool's
+/// own bound, so session storage gets that tool's existing path-escape and
+/// symlink protection for free instead of a second copy of it.
+const HARNESS_SESSION_DIR: &str = ".minicon-harness-sessions";
+
+/// Refuses a session id that is not a safe, flat filename component: no
+/// separators, no `.`/`..`, nothing that could be read as a path.
+fn validate_session_id(id: &str) -> Result<(), String> {
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "harness: session id {id:?} is refused: use only ASCII letters, digits, `-` or \
+             `_`, up to 64 characters"
+        ))
+    }
+}
+
+/// Loads a session's recorded turns. `Ok(None)` means no session by this
+/// name exists yet -- distinct from a corrupt file, which is a hard error:
+/// per this leaf's safe-failure contract, a broken resume must never look
+/// like a fresh start.
+fn load_session(file_tool: &FileTool, id: &str) -> Result<Option<Vec<(String, String)>>, String> {
+    let relative = format!("{HARNESS_SESSION_DIR}/{id}.json");
+    match file_tool.read(&relative) {
+        Ok(contents) => {
+            let turns: Vec<(String, String)> =
+                serde_json::from_str(&contents).map_err(|error| {
+                    format!(
+                        "harness: session {id:?} is corrupt ({error}); refusing to fall back to a \
+                     silent fresh start -- move or delete {relative:?} under --root to abandon it"
+                    )
+                })?;
+            Ok(Some(turns))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
+/// Persists a session's turns, keeping only the most recent
+/// `HARNESS_SESSION_MAX_TURNS`.
+fn save_session(file_tool: &FileTool, id: &str, turns: &[(String, String)]) -> Result<(), String> {
+    let start = turns.len().saturating_sub(HARNESS_SESSION_MAX_TURNS);
+    let bounded = &turns[start..];
+    let relative = format!("{HARNESS_SESSION_DIR}/{id}.json");
+    let contents = serde_json::to_string(bounded)
+        .map_err(|error| format!("harness: could not serialize session {id:?}: {error}"))?;
+    file_tool.write(&relative, &contents)?;
+    Ok(())
+}
+
+/// Folds a session's prior turns into the text sent as this run's task, so
+/// neither backend codec (`harness_wire`/`harness_opencode`) needs to know
+/// sessions exist at all -- a plain composed string round-trips through both
+/// unchanged, which is the dependency this leaf's PRD entry named. Raw
+/// message-object replay was considered and rejected: it would couple the
+/// stored format to one backend's wire shape.
+fn compose_resumed_task(history: &[(String, String)], new_task: &str) -> String {
+    if history.is_empty() {
+        return new_task.to_owned();
+    }
+    let mut composed = String::from("Resumed session -- prior turns, oldest first:\n");
+    for (index, (task, answer)) in history.iter().enumerate() {
+        composed.push_str(&format!(
+            "[{}] user: {task}\n[{}] assistant: {answer}\n",
+            index + 1,
+            index + 1
+        ));
+    }
+    composed.push_str("\nNew task:\n");
+    composed.push_str(new_task);
+    composed
 }
 
 pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
@@ -112,6 +241,8 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
     let mut task: Option<String> = None;
     let mut backend: Option<Backend> = None;
     let mut allow_cmd = Vec::new();
+    let mut new_session: Option<String> = None;
+    let mut continue_session: Option<String> = None;
     while let Some(flag) = args.get(position).map(String::as_str) {
         position += 1;
         let mut value = || -> Result<String, String> {
@@ -137,6 +268,8 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
                 });
             }
             "--allow-cmd" => allow_cmd.push(value()?),
+            "--session" => new_session = Some(value()?),
+            "--continue" => continue_session = Some(value()?),
             other => {
                 return Err(format!(
                     "unexpected argument {other:?}\n{}",
@@ -144,6 +277,13 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
                 ));
             }
         }
+    }
+    if new_session.is_some() && continue_session.is_some() {
+        return Err(format!(
+            "--session and --continue are mutually exclusive: --session starts a new one, \
+             --continue resumes an existing one\n{}",
+            harness_usage()
+        ));
     }
     Ok(HarnessRequest {
         root: root.ok_or_else(|| {
@@ -157,12 +297,14 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
         task: task.ok_or_else(|| format!("harness requires --task TEXT\n{}", harness_usage()))?,
         backend: backend.unwrap_or_default(),
         allow_cmd,
+        new_session,
+        continue_session,
     })
 }
 
 fn harness_usage() -> String {
     "usage: minicon harness --root PATH --task TEXT [--backend deepseek|opencode-go] \
-     [--allow-cmd NAME]..."
+     [--allow-cmd NAME]... [--session ID | --continue ID]"
         .to_owned()
 }
 
@@ -680,5 +822,84 @@ mod tests {
         ])
         .unwrap_err();
         assert!(error.contains("not one of"), "{error}");
+    }
+
+    #[test]
+    fn session_and_continue_together_is_a_bounded_error() {
+        let error = parse_harness(&[
+            "harness".to_owned(),
+            "--root".to_owned(),
+            "/tmp".to_owned(),
+            "--task".to_owned(),
+            "x".to_owned(),
+            "--session".to_owned(),
+            "a".to_owned(),
+            "--continue".to_owned(),
+            "a".to_owned(),
+        ])
+        .unwrap_err();
+        assert!(error.contains("mutually exclusive"), "{error}");
+    }
+
+    #[test]
+    fn session_id_charset_is_bounded() {
+        validate_session_id("plan-021_HB").expect("plain id");
+        let error = validate_session_id("../escape").unwrap_err();
+        assert!(error.contains("refused"), "{error}");
+        let error = validate_session_id("").unwrap_err();
+        assert!(error.contains("refused"), "{error}");
+        let error = validate_session_id(&"x".repeat(65)).unwrap_err();
+        assert!(error.contains("64"), "{error}");
+    }
+
+    #[test]
+    fn compose_resumed_task_folds_prior_turns_ahead_of_the_new_one() {
+        assert_eq!(compose_resumed_task(&[], "first task"), "first task");
+        let history = vec![("earlier task".to_owned(), "earlier answer".to_owned())];
+        let composed = compose_resumed_task(&history, "new task");
+        assert!(composed.contains("earlier task"), "{composed}");
+        assert!(composed.contains("earlier answer"), "{composed}");
+        assert!(composed.ends_with("new task"), "{composed}");
+    }
+
+    #[test]
+    fn a_session_round_trips_through_load_and_save_and_stays_bounded() {
+        let root = fixture("session-round-trip");
+        let tool = FileTool::new(root.to_str().expect("utf-8 root")).expect("root exists");
+
+        assert_eq!(load_session(&tool, "s1").expect("no session yet"), None);
+
+        let mut turns = Vec::new();
+        for index in 0..(HARNESS_SESSION_MAX_TURNS + 3) {
+            turns.push((format!("task {index}"), format!("answer {index}")));
+        }
+        save_session(&tool, "s1", &turns).expect("save");
+
+        let loaded = load_session(&tool, "s1")
+            .expect("load")
+            .expect("session exists now");
+        assert_eq!(loaded.len(), HARNESS_SESSION_MAX_TURNS);
+        // Oldest turns are the ones dropped, not the newest.
+        assert_eq!(loaded.first().unwrap().0, "task 3");
+        assert_eq!(
+            loaded.last().unwrap().0,
+            format!("task {}", turns.len() - 1)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_corrupt_session_file_is_a_bounded_error_not_a_silent_fresh_start() {
+        let root = fixture("session-corrupt");
+        let tool = FileTool::new(root.to_str().expect("utf-8 root")).expect("root exists");
+        tool.write(
+            &format!("{HARNESS_SESSION_DIR}/broken.json"),
+            "not json at all",
+        )
+        .expect("write garbage");
+
+        let error = load_session(&tool, "broken").unwrap_err();
+        assert!(error.contains("corrupt"), "{error}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
