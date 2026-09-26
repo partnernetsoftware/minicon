@@ -18,6 +18,14 @@
 # Usage: scripts/product-source-hash.sh <git-ref>
 set -euo pipefail
 
+# On Git for Windows' MSYS bash (the shell windows-2025 runners use for a
+# `shell: bash` step), argument auto-path-conversion mistakes a `<ref>:<path>`
+# git revision spec for a POSIX path and mangles it (observed: minicon
+# defender-ci-scan.yml run 36217534830, "origin\main;.cargo\config.toml" —
+# `/` became `\` and `:` became `;`). MSYS_NO_PATHCONV=1 disables that
+# conversion; it is a no-op on every non-MSYS bash.
+export MSYS_NO_PATHCONV=1
+
 # Deliberately does NOT cd to this script's own repo: a caller (CI step, or
 # this script's own selftest) may be operating on a different working tree's
 # git history, and `git ls-tree`/`git rev-parse` below resolve against
