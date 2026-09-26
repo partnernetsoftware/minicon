@@ -1,0 +1,110 @@
+# Downloads a published Release's real assets (not a rebuild, not the
+# unsigned/candidate artifacts) and runs a black-box smoke check against the
+# exact bytes an end user would get, on each OS's own native GitHub-hosted
+# runner. This never touches signing, candidate, or release-policy state --
+# read-only against an already-published tag.
+name: Release smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to smoke-test, e.g. v0.2.1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minicon-release-smoke-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: smoke / linux-x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
+            --pattern 'minicon-*-linux-x86_64.tar.gz*' --dir dl
+      - name: Verify checksum and extract
+        run: |
+          set -euo pipefail
+          cd dl
+          sha256sum -c ./*.tar.gz.sha256
+          tar -xzf ./*.tar.gz
+          BIN="$(find . -type f -name minicon | head -1)"
+          [ -n "$BIN" ] || { echo "no minicon binary found in archive"; exit 1; }
+          chmod +x "$BIN"
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+      - name: Smoke check
+        run: |
+          set -euo pipefail
+          cd dl
+          "$BIN" --status
+          "$BIN" --version
+
+  windows:
+    name: smoke / windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" `
+            --pattern 'minicon-*-windows-x86_64.zip*' --dir dl
+      - name: Verify checksum and extract
+        run: |
+          Set-Location dl
+          $zip = Get-ChildItem -Filter *.zip | Select-Object -First 1
+          $hashFile = Get-ChildItem -Filter "$($zip.Name).sha256" | Select-Object -First 1
+          $expected = (Get-Content $hashFile.FullName -Raw).Split(" ")[0].Trim()
+          $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
+          if ($expected.ToLower() -ne $actual) {
+            throw "checksum mismatch for $($zip.Name): expected $expected got $actual"
+          }
+          Expand-Archive -Path $zip.FullName -DestinationPath . -Force
+      - name: Smoke check
+        run: |
+          Set-Location dl
+          $exe = Get-ChildItem -Recurse -Filter minicon.exe | Select-Object -First 1
+          & $exe.FullName --status
+          & $exe.FullName --version
+
+  macos:
+    name: smoke / macos-universal
+    runs-on: macos-latest
+    steps:
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
+            --pattern 'minicon-*-macos-universal.dmg*' --dir dl
+      - name: Verify checksum
+        run: |
+          set -euo pipefail
+          cd dl
+          shasum -a 256 -c ./*.dmg.sha256
+      - name: Mount, verify signing/notarization, and smoke check
+        run: |
+          set -euo pipefail
+          cd dl
+          DMG="$(ls ./*.dmg)"
+          MOUNT_DIR="$(mktemp -d)"
+          hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -quiet
+          APP="$(find "$MOUNT_DIR" -maxdepth 1 -name '*.app' | head -1)"
+          [ -n "$APP" ] || { echo "no .app found inside dmg"; exit 1; }
+          codesign --verify --strict --deep --verbose=2 "$APP"
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
+          BIN="$APP/Contents/MacOS/minicon"
+          "$BIN" --status
+          "$BIN" --version
+          hdiutil detach "$MOUNT_DIR" -quiet

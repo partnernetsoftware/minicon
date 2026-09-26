@@ -62,6 +62,40 @@ echo "hi" | utmctl file push <uuid> 'C:\probe.txt'
 utmctl file pull <uuid> 'C:\probe.txt'      # prints to stdout
 ```
 
+## Post-publish: verify the actual downloaded bytes, not just the chain's own receipts
+
+A green `release.yml` run proves the chain accepted its own artifacts; it does
+not prove a user's `tar -xzf`/`unzip`/mounted `.dmg` actually runs. After a
+publish, dispatch a read-only `workflow_dispatch` smoke test that does exactly
+what an end user does: `gh release download` the real tag's assets, verify
+their published checksum, extract/mount them, and run `--status`/`--version`
+(plus `codesign --verify`/`spctl` for macOS). Keep it separate from any CI that
+builds or signs — it must touch no signing/candidate/release-policy state, so
+it's safe to run on `main` without the "Modify Shared Resources" scope concerns
+that come with enabling a broad build-and-test workflow.
+
+Two path assumptions bit on the very first v0.2.1 run of exactly this kind of
+smoke test (repo: `.github/workflows/release-smoke-test.yml`), both fixed
+before they were mistaken for a product defect:
+
+- **Don't assume a tar/zip archive is flat.** `tar -xzf` extracting
+  `minicon-<version>-linux-x86_64.tar.gz` did not drop `minicon` at the
+  extraction root; `chmod +x ./minicon` failed with "No such file or
+  directory". Fix: `find . -type f -name minicon` after extracting, not a
+  hardcoded relative path.
+- **`hdiutil attach -mountpoint DIR` mounts the volume's contents into `DIR`,
+  not the `.dmg` file itself.** `spctl -a -t open ... "$MOUNT_DIR"/*.dmg`
+  always failed ("No such file or directory") because the `.dmg` never lived
+  inside its own mount point — it stayed wherever it was downloaded to. Fix:
+  keep a reference to the original `.dmg` path (`DMG="$(ls ./*.dmg)"`) and run
+  `spctl` against that, using `$MOUNT_DIR` only to find the `.app` bundle.
+
+Both failures looked, at a glance, like the published release was broken —
+codesign/checksum steps upstream of them had already passed, which is the
+tell that the bug is in the smoke-test script's path handling, not the
+shipped binary. Confirm which one it is (checksum + earlier steps green) before
+escalating a smoke-test failure as a real release defect.
+
 ## The real root cause: env/code coupling
 
 The whole delay in the 0.1.13 release traced to running a Win7 repro VM in the

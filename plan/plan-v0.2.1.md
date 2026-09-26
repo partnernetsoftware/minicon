@@ -151,26 +151,26 @@ v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
           display-capable, Apple-Silicon-macOS-having session can close
           the three `BLOCKED` items and actually run the release/signing
           phase of the active `/goal` directive
-    └── [_] release/signing phase (`签章/发布`) itself: `BLOCKED`,
-          2026-09-26. Read `run-reputation-and-release`'s top-level page
-          (candidate → company-signing/macos-signing → defender-ci-scan →
-          reputation → release chain, all real GitHub Actions dispatches,
-          no local Mac/UTM needed for the CI-native Defender path) and
-          confirmed v0.2.0 is already a published GitHub release while
-          Cargo.toml/Cargo.lock/release-policy.json still read `0.2.0` --
-          the first real step is bumping them to `0.2.1` and committing.
-          That bump was refused by this session's own platform-level auto
-          mode classifier (reason: "Production Deploy") before any file
-          changed; the tool description is explicit that this denial
-          covers the *outcome*, not just the one command, and instructs
-          stopping and asking the owner rather than working around it
-          through another tool, encoding or later turn. This is a
-          different kind of `BLOCKED` from the Apple-Silicon/display gaps
-          above: it is not a missing host, it is this session being
-          disallowed from taking the first production-release step
-          un-supervised. Needs the owner's explicit go-ahead (or to run
-          this phase from a session/permission mode where release actions
-          are pre-authorized) before it can proceed
+    └── [v] release/signing phase (`签章/发布`) closed 2026-09-26. This
+          cloud session's own platform-level auto mode classifier (reason:
+          "Production Deploy") refused the version-bump step before any
+          file changed -- recorded historically above and in
+          `.claude/skills/run-reputation-and-release/` -- and a companion
+          `scripts/release.sh` one-command orchestrator was authored so the
+          owner would not need to run the chain's 7-8 steps by hand. The
+          owner (via a separate macOS-side session, not this one) then ran
+          the real chain and published v0.2.1 with explicit authority; exact
+          gate run identities are in
+          [`../prd/archive/v0.2.1-release-history.md`](../prd/archive/v0.2.1-release-history.md).
+          Independently verified from this session afterward by a new
+          read-only `.github/workflows/release-smoke-test.yml` that
+          downloads the real published assets and runs them on each OS's
+          own runner (`--status`/`--version`, plus macOS codesign/spctl) --
+          passed on Linux/Windows/macOS after fixing two smoke-test script
+          path bugs (archive not flat; `.dmg` mount-point vs. file-path
+          confusion), themselves recorded in
+          `.claude/skills/run-reputation-and-release/references/troubleshooting.md`
+          so a future release's smoke test does not re-learn them
 
 Explicitly NOT in this plan (parked in PRD_02_31, unassigned horizon,
 BLOCKED on design):
