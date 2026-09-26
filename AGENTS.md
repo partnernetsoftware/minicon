@@ -57,9 +57,20 @@ workflow file, and do not hand-roll a local equivalent.
 | Windows Authenticode / Azure Artifact Signing / APE `.com` | `sign-windows-artifacts` |
 | sealed Candidate → Defender court → reputation → release publish | `run-reputation-and-release` |
 
-Skills are registered under `~/.claude/skills/`, which is also where to read
-them. **A skill's top-level page is only its index — the operational detail
-lives in its `references/`. Read those before you run anything.** Skipping them
+Skills are registered under `~/.claude/skills/`; read them there when that
+directory is populated (it symlinks into the canonical copy in the private
+`company-dev-hub` repo). A container that only has **this** repository
+checked out — no `~/.claude/skills/`, no `company-dev-hub` clone needed — still
+has them: this repo carries its own redacted copies under
+[`.claude/skills/`](.claude/skills/) (`sign-macos-artifacts`,
+`sign-windows-artifacts`, `run-reputation-and-release`), vendored 2026-09-26
+after a cloud agent building 0.2.0 got stuck not knowing how to sign/release.
+They are already redaction-clean (placeholders, no real tenant/subscription/
+account names — see each `SKILL.md`'s "Start with authority and state"); when
+the canonical skill in `company-dev-hub` changes, re-sync this copy in the same
+change, don't let it drift silently. **A skill's top-level page is only its
+index — the operational detail lives in its `references/`. Read those before
+you run anything.** Skipping them
 means re-deriving what is already written down, wrongly. Real instance
 (2026-09-17): a local `codesign` was run against the login keychain and hung
 forever on an authorization prompt, while

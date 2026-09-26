@@ -377,3 +377,21 @@ claims neither:
   development-complete version, not a released one; it becomes releasable when
   those skills are registered, and public Promotion still needs explicit human
   version and publish authority on top of that.
+
+  **Resolved 2026-09-26.** The owner ran the three skills locally (they were
+  registered in that container), and 0.2.0 published as `v0.2.0` (release.yml
+  run `36230348611`, Candidate run `36223506557`, source SHA
+  `c0b5ed7a2289cbe18c25f92dcae3769101424f7a`) — this repo's own
+  `six-grid-cloud-build`/`defender-ci-scan.yml` CI path, not `utm-court`. Two
+  real defects surfaced and were fixed on the way, not glossed over: (1)
+  `scripts/product-source-hash.sh` needed `MSYS_NO_PATHCONV=1` for the
+  `windows-2025` runner's bash step (see its own history); (2) `minicon.com`
+  outgrew the 9 MiB Candidate ceiling from `mux`+`harness`, and the owner
+  raised it to 11 MiB by explicit dated decision (see "Artifact budget" in
+  `PRD_02_27_con_delivery.md`) rather than trimming 0.2.0's scope. This repo
+  now also vendors redacted copies of the three skills under
+  [`.claude/skills/`](../.claude/skills/) so a future cloud/Linux-only agent
+  does not get stuck the same way — see `AGENTS.md`'s "Skills: look them up
+  BEFORE acting". **Still not resolved:** the "No runtime evidence" gap above
+  is unchanged — 0.2.0 shipped on cross-compile + static-signing + static-scan
+  evidence only, no real execution of the Windows/macOS bytes.

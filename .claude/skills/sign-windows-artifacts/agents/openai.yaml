@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sign Windows Artifacts"
+  short_description: "Company Authenticode signing through Azure Artifact Signing and GitHub OIDC"
+  default_prompt: "Use $sign-windows-artifacts to wire or diagnose company code signing for this product's Windows deliverables."
