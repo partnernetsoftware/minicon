@@ -354,6 +354,20 @@ a re-run of AgenTerm's CC: a GUI shell over `harness` for e-commerce users who
 want a customized workbench, not a bare CLI. Recorded so this does not get
 re-argued from scratch later.
 
+**Owner decision (2026-09-26): GUI mode is explicitly 0.3.x, not 0.2.x.**
+This horizon's own title and "Product outcome" above already scope 0.2.x to
+`mux` and `harness` only; this decision makes that boundary explicit for the
+workbench idea specifically, so it is not mistaken for open 0.2.x scope. What
+0.2.x does instead: deepen and harden `mux` + `harness` themselves (the
+statefulness leaf below, plus closing any other `[_]`/`[-]` items in the two
+subsections above) and continue stabilizing the existing terminal UI/UX and
+underlying platform foundation (`terminal.rs`, `theme.rs`, `host_ui.rs`,
+`host_paint.rs`, `raster_surface.rs` and the `agenterm-platform`/
+`agenterm-ui-core` pins they consume) — not new-feature work, hardening of
+what already ships. A `PRD_02_3x` module for the 0.3.x GUI horizon gets
+written when 0.2.x's own scope is closed, not before; this section is that
+horizon's placeholder, not its start.
+
 **[_] Not started. Real blocker is statefulness, not the renderer.** `harness`
 today is single-shot per "Run shape" above — one bounded task, no `--continue`,
 no persisted conversation. A workbench needs multi-turn session persistence
