@@ -291,9 +291,30 @@ used to carry):
   yet" apart from "tool absent" by probing.
 - **Run shape.** One invocation runs one bounded task to completion (or to a
   bounded turn/tool-call limit) and exits, printing the result to stdout —
-  no interactive loop inside a tab, no conversation persisted across
-  invocations. A `--continue`-style resumed conversation is deliberately
-  out of scope for v0.2.0, not designed here.
+  no interactive loop inside a tab, and no conversation persisted across
+  invocations by default.
+  **[v] closed 2026-09-26, plan/plan-v0.2.1.md leaf HS.** `--session ID`
+  starts a bounded multi-turn session, `--continue ID` resumes one; the two
+  are mutually exclusive. Recorded turns are folded into the next
+  invocation's task as plain composed text ahead of the new task, so
+  neither backend codec (`harness_wire.rs`/`harness_opencode.rs`) needs to
+  know sessions exist -- the composed string round-trips through both
+  unchanged. Design decisions: session state persists to a bounded on-disk
+  file under `--root/.minicon-harness-sessions/<id>.json` (reusing
+  `FileTool`'s own path-escape/symlink protection) rather than living only
+  in-process, because the process still exits each run either way and a
+  resumed session needs something to resume *from*; the turn/tool-call
+  bound stays per-invocation, not accumulated across resumes; streaming
+  output is explicitly deferred, no groundwork laid. Safe failure:
+  `--continue` against a missing or corrupt session is a bounded CLI
+  error, never a silent fresh start; `--session` against an existing id is
+  refused rather than overwritten; history itself is capped at
+  `HARNESS_SESSION_MAX_TURNS` (10), oldest dropped first. Evidence: 5 new
+  unit tests (37 total in `harness.rs`, up from 32) covering the
+  mutual-exclusion error, session-id charset validation, task composition,
+  a load/save round trip with bound eviction, and the corrupt-file safe
+  failure; `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, all
+  pass.
 - **Credential storage.** Environment variable only:
   `MINICON_DEEPSEEK_API_KEY` for `--backend deepseek`,
   `MINICON_OPENCODE_API_KEY` for `--backend opencode-go`. A config-file
@@ -451,12 +472,14 @@ what already ships. A `PRD_02_3x` module for the 0.3.x GUI horizon gets
 written when 0.2.x's own scope is closed, not before; this section is that
 horizon's placeholder, not its start.
 
-**[_] Not started. Real blocker is statefulness, not the renderer.** `harness`
-today is single-shot per "Run shape" above — one bounded task, no `--continue`,
-no persisted conversation. A workbench needs multi-turn session persistence
-and streaming output; a window around a one-shot CLI call does not deliver
-that. This is the work to do first, independent of any GUI decision, and is
-its own leaf.
+**[-] Half the blocker closed 2026-09-26; still not started overall.**
+`harness` now has bounded multi-turn session persistence (`--session`/
+`--continue`, per "Run shape" above, plan/plan-v0.2.1.md leaf HS). A
+workbench still needs streaming output -- HS explicitly deferred that,
+laying no groundwork -- so a window around today's print-once-at-exit CLI
+still would not deliver a live workbench. Streaming is the remaining
+blocker, not the renderer, and remains its own leaf, unassigned to any
+horizon yet.
 
 **Renderer choice, decided in advance so it is not re-litigated per session:**
 

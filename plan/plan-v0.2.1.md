@@ -25,29 +25,36 @@ up is the hardening debt v0.2.0 itself already named as owed.
 
 ```text
 v0.2.1 — harden mux + harness; no new role (owner decision 2026-09-26)
-├── HS harness statefulness {hs} [_] not started
-│   ├── outcome: a bounded multi-turn session, replacing "one task, exit" --
-│   │     `--continue`-style resumed conversation, scoped only to a single
-│   │     `harness` worker (not `harness-manage` orchestration)
+├── HS harness statefulness {hs} [v] closed 2026-09-26
+│   ├── outcome: `--session ID` / `--continue ID`, mutually exclusive,
+│   │     replace "one task, exit" with a bounded multi-turn session,
+│   │     scoped only to a single `harness` worker (not `harness-manage`
+│   │     orchestration)
 │   ├── #decision this is the harness {h} node's own worker capability, not
 │   │     the `harness-manage` {hm} question -- a worker that remembers its
 │   │     last turn is not a manager that dispatches across tabs
-│   ├── dependency: PRD_02_31 "Run shape" (the thing being replaced) and
-│   │     the existing DeepSeek/opencode-go wire codecs (the state must
-│   │     round-trip through both, not just one)
-│   ├── design questions, unresolved
-│   │   ├── where does session state live -- in-process only (process still
-│   │   │     dies with the session, per "MiniCon does not turn into a
-│   │   │     server") or a bounded on-disk resume file under `--root`
-│   │   ├── turn/tool-call bound: still a hard cap per invocation, or a cap
-│   │   │     per resumed session as a whole
-│   │   └── streaming output: stdout today is print-once-at-exit; a
-│   │         multi-turn workbench (0.3.x, later) will want streaming, so
-│   │         decide now whether 0.2.1 lays that groundwork or explicitly
-│   │         defers it too @method=TBD #risk
-│   └── safe failure: a resume request against a session that does not
-│         exist, or is corrupt, is a bounded CLI error, never a silent fresh
-│         start (that would look like continuity while quietly losing it)
+│   ├── dependency: PRD_02_31 "Run shape" (now closed there too) and the
+│   │     existing DeepSeek/opencode-go wire codecs -- resolved by composing
+│   │     prior turns into the plain task string, so neither
+│   │     `harness_wire.rs` nor `harness_opencode.rs` needed touching at
+│   │     all (simpler than this leaf's own forecast of a shared-hot-file
+│   │     pass over both)
+│   ├── design questions, resolved
+│   │   ├── session state: a bounded on-disk file under
+│   │   │     `--root/.minicon-harness-sessions/<id>.json` (reusing
+│   │   │     `FileTool`'s path-escape/symlink protection), because the
+│   │   │     process still exits each run either way and a resume needs
+│   │   │     something to resume from
+│   │   ├── turn/tool-call bound: stays a hard cap per invocation, not
+│   │   │     accumulated across resumes
+│   │   └── streaming output: explicitly deferred, no groundwork laid --
+│   │         still blocks the GUI workbench leaf, see PRD_02_31
+│   └── safe failure: `--continue` against a session that does not exist or
+│         is corrupt is a bounded CLI error, never a silent fresh start;
+│         `--session` against an existing id is refused, not overwritten.
+│         Evidence: 5 new unit tests (37 total in `harness.rs`), `cargo
+│         fmt`, `cargo clippy --all-targets -- -D warnings` all pass; see
+│         `prd/PRD_02_31_v0_2_horizon.md` "Run shape" for full detail
 ├── HB harness — close the BLOCKED items v0.2.0 already named {hb} [-]
 │   ├── Windows/macOS `native-tls` arm: compiled and proven in at least one
 │   │     court each, not just the feature graph compiling (PRD_02_31
