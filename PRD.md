@@ -237,14 +237,16 @@ flowchart LR
 
 ## Current frontier
 
-- [~] v0.2.0 is development-complete and not released. `mux` and `harness` are
-  implemented with named black-box evidence; the version is bumped in
-  `Cargo.toml` and `release-policy.json`. The test gate is green under a
-  display server and six-cell qualifies FAIL 0 / PASS 23 / BLOCKED 18 on the
-  repinned `agenterm`, Apple cells included from a Linux host with a macOS 15.5
-  SDK. Runtime courts and the public release chain are BLOCKED with
-  their prerequisites named, so this entry stays `[~]`, never `[x]`, until a
-  Promotion exists. Owner:
+- [x] v0.2.0 is the latest public release: `mux` and `harness`, published as
+  `v0.2.0` (2026-09-26; release.yml run `36230348611`, Candidate run
+  `36223506557`, source SHA `c0b5ed7a2289cbe18c25f92dcae3769101424f7a`). The
+  test gate was green under a display server and six-cell qualified
+  FAIL 0 / PASS 23 / BLOCKED 18 on the repinned `agenterm`, Apple cells
+  included from a Linux host with a macOS 15.5 SDK. Still BLOCKED and not
+  claimed by this release: no runtime execution of the Windows/macOS bytes
+  (cross-compile and static-signing/scan evidence only), and H2-H5's
+  during-task and live-backend evidence in `plan/plan-v0.2.0.md`, which stays
+  unarchived while those leaves are `[~]`. Owner:
   [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md), section "0.2.0 — what the
   version number stands for, and what it does not".
 - [x] v0.1.26 is the latest public release: composer multi-line caret
