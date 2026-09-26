@@ -1742,6 +1742,74 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
         );
     }
 }
+/// `F1` (`plan/plan-carried-debt.md`): Ctrl+V with an image on the X11
+/// clipboard (no text representation) saves it to a temp file and pastes the
+/// file's path into the composer, through the real `agenterm-platform`
+/// clipboard adapter -- not a mock. Linux/X11 only: this is the one
+/// clipboard backend this session can drive end to end under `Xvfb`; macOS
+/// (`public.png`) and Windows (`CF_DIB`/`CF_DIBV5`) use the same
+/// `src/clipboard_image.rs` code path but are unverified here.
+#[cfg(target_os = "linux")]
+#[test]
+fn composer_paste_of_a_clipboard_image_inserts_its_temp_file_path() {
+    if std::env::var_os("DISPLAY").is_none() {
+        eprintln!("DIAGNOSTIC: no DISPLAY; X11 clipboard image paste cannot be driven here");
+        return;
+    }
+    let png_bytes: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xde, 0xad];
+    // Same-process `set_type` alone only claims CLIPBOARD ownership; a
+    // foreign reader (the spawned `minicon` child below) needs the owning
+    // process to stay in an X11 event loop answering `SelectionRequest`,
+    // which the adapter only does when `PLATFORM_X11_CLIPBOARD_SERVE` is set
+    // -- and `set_type` then blocks for as long as it serves, so it runs on
+    // its own thread rather than the thread driving the CLI below.
+    // SAFETY: single-threaded at this point in the test (no other thread has
+    // been spawned yet), so setting this process-wide env var races nothing.
+    unsafe {
+        std::env::set_var("PLATFORM_X11_CLIPBOARD_SERVE", "1");
+    }
+    std::thread::spawn(move || {
+        let _ = agenterm_platform::clipboard::set_type("image/png", png_bytes);
+    });
+    std::thread::sleep(Duration::from_millis(200));
+
+    let binary = minicon_binary();
+    let endpoint = control_endpoint(&unique_suffix());
+    let child = Command::new(&binary)
+        .args(["--no-activate", "--control", &endpoint, "-e", "/bin/cat"])
+        .spawn()
+        .expect("start minicon GUI");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(unique_suffix()),
+    };
+    wait_until_ready_for(
+        &binary,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+Shift+I"]);
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+V"]);
+
+    let snapshot = cli_json(&binary, &endpoint, &["ui-snapshot"]);
+    let path = snapshot["composer_text"]
+        .as_str()
+        .expect("composer_text must hold the pasted path");
+    assert!(
+        path.ends_with(".png"),
+        "pasted text must be a .png temp file path, got {path:?}"
+    );
+    let saved = fs::read(path)
+        .unwrap_or_else(|error| panic!("pasted path {path:?} must be a readable file: {error}"));
+    assert_eq!(
+        saved, png_bytes,
+        "the temp file must hold the exact clipboard image bytes"
+    );
+    let _ = fs::remove_file(path);
+}
+
 /// The paste and its Enter must reach the child in two separate `read()`s.
 /// The raw-application test above reads fixed byte counts with `dd`, which
 /// pins the bytes but not the boundary; this one lets the child read as much

@@ -33,6 +33,7 @@ mod cli;
 use cli::{ConArgs, offline_cli_exit, parse_args};
 #[cfg(test)]
 use cli::{FEATURES, status_text, usage_text};
+mod clipboard_image;
 mod clipboard_status;
 mod control;
 mod control_dispatch;
@@ -723,6 +724,24 @@ fn composer_chord(key: &NormalizedKeyEvent) -> Option<keymap::Chord> {
             meta: key.modifiers.meta,
         },
     })
+}
+
+/// Composer paste content: clipboard text unchanged, or -- only when there is
+/// no text but the clipboard carries a recognized image type -- that image
+/// saved to a temp file and its path substituted as plain text (`F1`'s
+/// decided file-path fallback; see `src/clipboard_image.rs`). Text always
+/// wins so a copy that carries both text and an image representation (common
+/// on some hosts) keeps its existing paste behavior unchanged.
+fn composer_paste_text_or_image_path() -> Option<String> {
+    // A clipboard that holds only an image (no text representation) still
+    // answers a text read with `Ok("")` on some hosts rather than an error --
+    // an empty paste is indistinguishable from "no text", so it must not
+    // shadow the image fallback below.
+    match agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES) {
+        Ok(text) if !text.is_empty() => return Some(text),
+        _ => {}
+    }
+    clipboard_image::image_paste_as_temp_file_path()
 }
 
 /// Where the caret sits, which is what decides whether Up moves or recalls.
@@ -1819,7 +1838,7 @@ impl ConApp {
     /// selection), the mouse counterpart to Ctrl/Cmd+V. Used by right-click and
     /// the composer's Paste button so non-keyboard users can paste too.
     fn paste_clipboard_into_composer(&mut self, window: &PixelWindow) {
-        if let Ok(text) = agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES) {
+        if let Some(text) = composer_paste_text_or_image_path() {
             composer::paste(&mut self.composer, &text);
             let _ = self.update_composer_ime_anchor(window);
             self.mark_composer_dirty();
@@ -1863,9 +1882,7 @@ impl ConApp {
                 }
             }
             keymap::Action::Paste => {
-                if let Ok(text) =
-                    agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES)
-                {
+                if let Some(text) = composer_paste_text_or_image_path() {
                     composer::paste(&mut self.composer, &text);
                 }
             }

@@ -53,4 +53,19 @@ doc when it is picked up; delete its line here once it ships or is decided
        work is MiniCon-owned: pick the right type name per OS, decode to a
        temp file, and add the thumbnail-chip draft segment — self-contained
        in this repo, no cross-repo dependency.
+       **Progress 2026-09-26:** data-layer + paste-path landed —
+       `src/clipboard_image.rs` (type-name candidates, temp-file write, unit
+       tests) wired into both composer paste call sites in `src/main.rs`
+       via a shared `composer_paste_text_or_image_path()` helper (text wins
+       when present and non-empty; falls back to the image path only when
+       the clipboard has no text). Verified end to end on Linux/X11 under
+       `xvfb-run` with a real `minicon` GUI child and the real
+       `agenterm-platform` clipboard adapter (not a mock) —
+       `composer_paste_of_a_clipboard_image_inserts_its_temp_file_path` in
+       `tests/minicon_control.rs`; macOS/Windows share the same code path
+       but are unverified from this session. **Still open, not started:**
+       the thumbnail-chip UI — a new non-text draft-segment type in
+       `ComposerState` (`crates/minicon-core/src/composer.rs`) rendered in
+       `src/host_paint.rs`, so a pasted image shows as a chip instead of a
+       raw path string in the composer text. Pick this leaf up there next.
 ```
