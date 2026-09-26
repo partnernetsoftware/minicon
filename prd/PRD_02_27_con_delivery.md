@@ -2492,7 +2492,7 @@ never on push, never feeding a Candidate. Probes whether one `ubuntu-24.04`
 host, pre-baked with osxcross/cargo-xwin/cargo-zigbuild/cosmocc
 (`scripts/crossbake-base.Dockerfile`, thin tail `scripts/crossbake.Dockerfile`),
 can cross-build all six cells plus `minicon.com` unsigned. See
-`plan/plan-ghcr-toolchain-prebake.md` ("Update, 2026-09-25") for the scoping
+`plan/archive/plan-ghcr-toolchain-prebake.md` ("Update, 2026-09-25") for the scoping
 history and why this does not change the "six-cell cross-compile, every
 iteration -> the release Mac" row above.
 

@@ -5,7 +5,7 @@
 # osxcross + cargo-xwin + cargo-zigbuild + cosmocc, produce all six MiniCon
 # target cells plus minicon.com, so build workload can eventually move off
 # GitHub-hosted macOS/Windows runners onto a dedicated Linux box? See
-# plan/plan-ghcr-toolchain-prebake.md for why this is the one shape actually
+# plan/archive/plan-ghcr-toolchain-prebake.md for why this is the one shape actually
 # worth baking into an image (system toolchains, not just cargo state, which
 # actions/cache already covers for six-grid-cloud-build.yml).
 #

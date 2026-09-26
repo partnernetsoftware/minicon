@@ -10,7 +10,9 @@ Plans and release histories have their own archives: `plan/archive/` and
 ## `research/` — host memory track (paused 2026-09-06)
 
 The evidence behind the effort to bring idle one-tab host RSS toward 10 MiB.
-The target is still open (see `plan/plan-v0.1.22.md` §4); these are the
+The target is still open (see `plan/plan-carried-debt.md` C4, claimed but
+`BLOCKED` by `plan/plan-v0.2.1.md`'s `UI` leaf pending a display-capable
+host); these are the
 measurements and probes it was built on. Each has a written conclusion:
 
 | directory | question | conclusion |

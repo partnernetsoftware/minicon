@@ -13,7 +13,11 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      noted in v0.1.24's B3 decision first: `max_scrollback` in the snapshot
 │      reports parser capacity, not how much scrollback actually exists.
 ├── C3 box-drawing glyphs from cell geometry (Consolas, 1 px gap at 12 px)
+│      claimed by `plan/plan-v0.2.1.md`'s `UI` leaf, still `BLOCKED` there
+│      (needs a display-capable host); do not pick up again separately
 ├── C4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
+│      claimed by `plan/plan-v0.2.1.md`'s `UI` leaf, still `BLOCKED` there
+│      (needs a display-capable host); do not pick up again separately
 ├── D2 select cells from the change: wire the per-cell case, not just
 │      documents-only. Needs its own negative-control evidence (a change that
 │      should need `win-*` but doesn't touch an obviously Windows-named path)
