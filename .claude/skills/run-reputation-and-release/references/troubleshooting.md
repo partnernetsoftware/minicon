@@ -69,3 +69,35 @@ same UTM instance the release court used. **Never run exploratory VMs in the
 release UTM instance during a release.** Lease/reap courts cleanly. This is the
 strongest argument for a release environment provisioned separately from any
 product's code and from ad-hoc experimentation.
+
+## Release handoff and avoidable latency (MiniCon 0.2.1)
+
+- Establish one release owner before dispatch. Read the other agent's actual
+  pane/logs, source SHA, staged diff and running processes; stale messages are
+  not current state. An explicit owner instruction naming the version and
+  publication already supplies release authority. Do not ask for it again.
+- Inventory existing receipts before repeating gates. Reuse evidence only when
+  its source, configuration and artifact identity match. Resume a failed stage
+  where the gate supports it; source changes still require the applicable gates.
+  Report local qualification time separately from the actual release chain.
+- Finish version/docs edits before source-stability qualification. Use the
+  standard ignored output directory, or verify a custom directory with
+  `git check-ignore` before running. Generated output entering the source
+  fingerprint and edits during qualification invalidate the receipt even when
+  every build/test passes. Freeze source through sealing and Promotion; write
+  final release-history documentation afterward.
+- Diagnose inherited proxies before treating loopback transport failures as
+  product regressions. In this handoff, eight local HTTP fixture tests failed
+  with `Peer disconnected`, and cargo-xwin stalled downloading MSVC for over
+  an hour. Removing inherited HTTP/HTTPS/ALL proxy variables for those specific
+  commands restored both. Do not change the machine-wide proxy or assume
+  direct access works for every destination. Bound downloads and retain logs.
+- Distinguish Defender definition-update failure from a malware verdict. Run
+  36250938765 attempt 1 failed `Update-MpSignature` before scanning; attempt 2
+  scanned the same Candidate successfully. A transient setup failure permits a
+  bounded retry, never a skipped update/scan or a fabricated clean receipt.
+  Record the successful attempt as well as the failed one.
+- Avoid extra artifact downloads on the critical path when the official
+  Promotion workflow already downloads, rehashes and executes the public
+  assets. Additional local downloads are diagnostic, not a new release gate.
+  Preserve the existing parallel signing jobs and no-rebuild Promotion.

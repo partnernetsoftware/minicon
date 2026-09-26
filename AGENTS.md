@@ -131,6 +131,14 @@ Release is exact-source Candidate followed by no-rebuild Promotion. Signing is
 a `release-policy.json` choice, not a fallback inferred from credentials.
 Public Promotion always requires explicit human version and publish authority.
 
+For release handoffs, inventory exact-source receipts and running jobs before
+repeating gates. Finish version/docs edits and verify custom output directories
+are ignored before source-stability qualification; keep that source frozen
+through Promotion. Reuse matching evidence, never stale-source evidence. An
+explicit owner request to publish a named version already supplies the required
+authority. See the release skill's `references/troubleshooting.md`, "Release
+handoff and avoidable latency", for the 0.2.1 proxy and Defender-update lessons.
+
 ## Where the bytes come from, and what a test costs
 
 The build/test/sign/scan division of labour (this Mac vs. GitHub-hosted
