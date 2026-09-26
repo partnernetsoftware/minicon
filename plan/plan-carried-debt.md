@@ -21,10 +21,12 @@ doc when it is picked up; delete its line here once it ships or is decided
 ├── C4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
 │      claimed by `plan/plan-v0.2.2.md`'s `{UI}` leaf. **Corrected 2026-09-26:**
 │      no longer BLOCKED on "no display" — a Linux cloud session with Xvfb
-│      measured real idle host RSS at 21.46 MiB (debug build); see
+│      measured real idle host RSS at 21.46 MiB (debug build), then
+│      **12.01 MiB on a release build**, same container; see
 │      `prd/PRD_02_27_con_delivery.md`'s "Runtime host memory". Still open:
-│      release-build measurement and a matching six-cell lnx-aarch64 receipt.
-│      Do not pick up again separately from `{UI}`.
+│      a matching six-cell lnx-aarch64 receipt (this is one x86_64 cloud
+│      container, not that cell). Do not pick up again separately from
+│      `{UI}`.
 ├── D2 select cells from the change: wire the per-cell case, not just
 │      documents-only. Needs its own negative-control evidence (a change that
 │      should need `win-*` but doesn't touch an obviously Windows-named path)

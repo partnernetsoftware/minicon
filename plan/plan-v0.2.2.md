@@ -61,11 +61,12 @@ runtime evidence for two of them, not decisions.
 │        the full black-box/control suite (28/28 `minicon_blackbox`,
 │        including a real `screenshot-pane` PNG capture) passes under
 │        `xvfb-run`. C4 is now genuinely unblocked here and measured: real
-│        idle-one-tab host RSS **21.46 MiB** (debug build), see
+│        idle-one-tab host RSS **21.46 MiB** (debug build), **12.01 MiB**
+│        (release build, same container), see
 │        `prd/PRD_02_27_con_delivery.md`'s "Runtime host memory" — closer to
 │        the 10 MiB intent than any prior macOS/Windows figure, still not
-│        closed (debug overhead, no release-build measurement yet, and this
-│        is one x86_64 cloud container, not six-cell's lnx-aarch64 cell).
+│        closed (this is one x86_64 cloud container, not six-cell's
+│        lnx-aarch64 cell).
 │      evidence: C3 — rendered glyph inspection on a real display; C4 —
 │        measured idle RSS under the 10 MiB target
 │      safe failure: C3 stays `BLOCKED` here specifically — its bug is

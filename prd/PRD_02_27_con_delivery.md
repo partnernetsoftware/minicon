@@ -737,6 +737,15 @@ six-cell claim.
   10 MiB intent (a debug build, not release-optimized). Still open: whether
   a release build closes the remaining ~11 MiB, and this figure is a cloud
   x86_64 container, not six-cell's lnx-aarch64 UTM cell.
+  **Release-build measurement, same lnx-x86_64 cloud container, 2026-09-26:**
+  `cargo build --release --bin minicon` then the same court against that
+  binary (`MINICON_TEST_BINARY` pointed at `target/release/minicon`) under
+  `xvfb-run` — idle **12.01 MiB** (12,591,104 B), load 17.55 MiB, extra-tab
+  delta 0.68 MiB, four-cycle growth 1.96 MiB
+  (`MINICON_HOST_RSS_RECEIPT` in the test's own stdout). This is within
+  ~2 MiB of the 10 MiB intent on this cell — closer than any other named
+  cell's release figure above — but still not a six-cell lnx-aarch64 UTM
+  receipt, so `{UI}`'s C4 leaf stays open pending that cell specifically.
   A separate **win-aarch64 release** court now names source `e6cd7b0`, shared
   pin `745f52b2`, and PE SHA-256
   `d2d08ce7600dfcc73b6b1002f73aef38bc9c4c28545198d403bafb96b4f47ecd`:
