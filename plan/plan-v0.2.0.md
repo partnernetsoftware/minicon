@@ -201,7 +201,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │         stdout; no interactive loop inside a tab, no conversation
 │   │         persisted across invocations (`--continue` is out of scope)
 │   │         @method=bounded-task-then-exit #decision
-│   ├── H2 file tool ->h1 [-] @method=first ->h1
+│   ├── H2 file tool ->h1 [v] @method=first ->h1
 │   │   ├── invariant: read/write confined to the `--root` bound; a path
 │   │   │     that escapes it (symlink, `..`) is refused, not clamped
 │   │   ├── evidence: black-box test attempts a `../` escape and an absolute
@@ -246,12 +246,13 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     with no key; recorded, not hidden. Accepting an empty key,
 │   │   │     dropping the `is_dir` check, and defaulting `--root` to `.`
 │   │   │     each failed exactly their own test and no other
-│   │   └── BLOCKED: the file tool's behavior DURING a task is not in this
-│   │         suite, because a tool only runs when a model asks. H5's
-│   │         real-socket fixtures cover that round trip including a
-│   │         model-commanded write landing under the root, but a fixture is
-│   │         not a live endpoint
-│   ├── H3 exec tool ->h1 [-]
+│   │   └── DURING-task BLOCKER withdrawn 2026-09-26: H4's live evidence IS
+│   │         this tool exercised during a real task, not a fixture --
+│   │         `deepseek_backend_runs_a_real_bounded_task_and_writes_the_file`
+│   │         drives a real DeepSeek call whose model turn calls `file`
+│   │         write, and the test reads the real file the tool wrote under
+│   │         the task root
+│   ├── H3 exec tool ->h1 [v]
 │   │   ├── invariant: exactly one command per call, no shell metacharacter
 │   │   │     expansion (no `&&`, pipes, or subshell) — the command is
 │   │   │     invoked directly (argv vector), not passed through `/bin/sh -c`
@@ -298,9 +299,15 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     endpoint the caller did not choose) and `refuses_an_unknown_flag`
 │   │   ├── provable: making an unknown `--backend` fall back to the default
 │   │   │     failed exactly `refuses_an_unknown_backend_by_name` and no other
-│   │   └── BLOCKED: argv handling during a task is unit-tested and
-│   │         fixture-tested, not CLI-black-boxed, for the same reason as H2 —
-│   │         `ExecTool` runs only on a model's request
+│   │   └── DURING-task BLOCKER withdrawn 2026-09-26: live evidence in
+│   │         `tests/minicon_harness.rs`
+│   │         `deepseek_backend_runs_a_real_bounded_task_through_the_exec_tool`
+│   │         -- a real DeepSeek call is told to run `wc -c input.txt` via
+│   │         `ExecTool::run` and write the byte count it reads back into a
+│   │         file. The count is never shown to the model, so a written
+│   │         answer matching the real byte count is only possible if `exec`
+│   │         actually ran; provable by forcing the expected count to a wrong
+│   │         value, which failed exactly this test and no other
 │   ├── H4 DeepSeek flash backend ->h1 [v] @method=first
 │   │   ├── also closes out, as the first non-test caller of H2/H3: the
 │   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/

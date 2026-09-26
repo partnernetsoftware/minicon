@@ -280,3 +280,62 @@ fn deepseek_backend_runs_a_real_bounded_task_and_writes_the_file() {
 
     std::fs::remove_dir_all(&root).ok();
 }
+
+/// H3's during-task, live-backend evidence: a real bounded task that must
+/// call the exec tool, not just the file tool, to answer correctly. The
+/// model is never shown the input file's byte count, so it cannot fabricate
+/// the answer from the task text alone -- it has to actually run `wc -c`
+/// through `ExecTool::run` and read the real stdout back.
+#[test]
+fn deepseek_backend_runs_a_real_bounded_task_through_the_exec_tool() {
+    let Ok(key) = std::env::var("MINICON_DEEPSEEK_API_KEY") else {
+        eprintln!(
+            "BLOCKED: deepseek_backend_runs_a_real_bounded_task_through_the_exec_tool \
+             skipped -- MINICON_DEEPSEEK_API_KEY is not set in this environment"
+        );
+        return;
+    };
+
+    let root = std::env::temp_dir().join(format!(
+        "minicon-h3-live-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create live-task root");
+    // A byte count with nothing round about it: the model cannot guess this
+    // from the task text, so writing the right number back proves `wc -c`
+    // actually ran.
+    let input_bytes = "h3-exec-live-evidence-payload-oddball\n";
+    std::fs::write(root.join("input.txt"), input_bytes).expect("write input.txt");
+    let expected_count = input_bytes.len().to_string();
+
+    let output = harness(
+        &[
+            "--root",
+            root.to_str().expect("root is utf8"),
+            "--task",
+            "Run `wc -c input.txt` with the exec tool. Its stdout starts with a \
+             number followed by whitespace and the filename -- that number is a \
+             byte count. Write ONLY that number, with no other text, into a file \
+             named count.txt using the file tool.",
+            "--allow-cmd",
+            "wc",
+        ],
+        Some(("MINICON_DEEPSEEK_API_KEY", &key)),
+    );
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(0), "stderr={stderr}");
+
+    let written = std::fs::read_to_string(root.join("count.txt"))
+        .expect("the model-commanded write must land under the task root");
+    assert!(
+        written.trim() == expected_count,
+        "the live model's exec-tool-derived byte count is wrong: got {written:?}, \
+         wanted {expected_count:?}"
+    );
+
+    std::fs::remove_dir_all(&root).ok();
+}
