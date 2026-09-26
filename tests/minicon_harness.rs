@@ -228,3 +228,55 @@ fn refuses_an_unknown_flag() {
     assert_eq!(output.status.code(), Some(2), "stderr={stderr}");
     assert!(stderr.contains("--allow-everything"), "stderr={stderr}");
 }
+
+/// H4's during-task, live-backend evidence: a real bounded task against the
+/// actual DeepSeek endpoint, model-commanded write landing under the task
+/// root. Only runs when this environment carries a real
+/// `MINICON_DEEPSEEK_API_KEY`; a fixture (see `harness_wire`'s loopback
+/// tests) proves the wire mapping, but only a live call proves the key this
+/// environment holds is actually accepted end to end. When the key is
+/// absent the test prints why it did not run rather than silently vanishing
+/// -- per AGENTS.md, unavailable evidence is BLOCKED, never silently
+/// skipped.
+#[test]
+fn deepseek_backend_runs_a_real_bounded_task_and_writes_the_file() {
+    let Ok(key) = std::env::var("MINICON_DEEPSEEK_API_KEY") else {
+        eprintln!(
+            "BLOCKED: deepseek_backend_runs_a_real_bounded_task_and_writes_the_file \
+             skipped -- MINICON_DEEPSEEK_API_KEY is not set in this environment"
+        );
+        return;
+    };
+
+    let root = std::env::temp_dir().join(format!(
+        "minicon-h4-live-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create live-task root");
+
+    let output = harness(
+        &[
+            "--root",
+            root.to_str().expect("root is utf8"),
+            "--task",
+            "Write the exact text OK-H4-LIVE (no quotes, no extra text) into a \
+             file named result.txt using the file tool.",
+        ],
+        Some(("MINICON_DEEPSEEK_API_KEY", &key)),
+    );
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(0), "stderr={stderr}");
+
+    let written = std::fs::read_to_string(root.join("result.txt"))
+        .expect("the model-commanded write must land under the task root");
+    assert!(
+        written.contains("OK-H4-LIVE"),
+        "the live model's write did not carry the requested content: {written:?}"
+    );
+
+    std::fs::remove_dir_all(&root).ok();
+}

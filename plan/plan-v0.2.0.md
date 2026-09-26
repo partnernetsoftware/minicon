@@ -301,7 +301,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   └── BLOCKED: argv handling during a task is unit-tested and
 │   │         fixture-tested, not CLI-black-boxed, for the same reason as H2 —
 │   │         `ExecTool` runs only on a model's request
-│   ├── H4 DeepSeek flash backend ->h1 [~] @method=first
+│   ├── H4 DeepSeek flash backend ->h1 [x] @method=first
 │   │   ├── also closes out, as the first non-test caller of H2/H3: the
 │   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/
 │   │   │     `ExecTool` (carried only because the tools are complete while
@@ -356,14 +356,28 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     substring, which `x-not-authorization: Bearer secret` contains.
 │   │   │     The first version of that assertion was documentation, not
 │   │   │     evidence; it now matches the whole folded header line
-│   │   ├── BLOCKED on credentials, still: the key this environment carries is
-│   │   │     rejected by the API (`Authentication Fails ... is invalid`), so
-│   │   │     the live end-to-end assertion cannot run here. Every test above
-│   │   │     is loopback plain HTTP plus pure mapping functions
-│   │   └── #risk TLS itself is proven by NOTHING in either repository: no
-│   │         test reaches a host but `127.0.0.1`, and the Windows/macOS
-│   │         native-tls arm is not compiled in any evidence. The TLS provider
-│   │         selection is proved only by the feature graph compiling
+│   │   ├── credential BLOCKER withdrawn 2026-09-26: `MINICON_DEEPSEEK_API_KEY`
+│   │   │     was reconfigured in this environment and is accepted by the real
+│   │   │     DeepSeek endpoint. Live end-to-end evidence now exists:
+│   │   │     `tests/minicon_harness.rs`
+│   │   │     `deepseek_backend_runs_a_real_bounded_task_and_writes_the_file`
+│   │   │     runs `minicon harness` against a fresh temp root with a real task
+│   │   │     ("write OK-H4-LIVE into result.txt"), asserts exit code 0, and
+│   │   │     reads the file the live model's tool call wrote under the root
+│   │   ├── provable: forcing the written-content assertion to require a string
+│   │   │     the live model never wrote failed exactly that one test, the other
+│   │   │     nine in the suite still passing; reverted afterward
+│   │   ├── the test is env-gated, not silently skipped when the key is absent:
+│   │   │     it prints `BLOCKED: ... skipped -- MINICON_DEEPSEEK_API_KEY is not
+│   │   │     set` to stderr and returns, so a run without the key stays visible
+│   │   │     as a named gap rather than vanishing from the count. Test count
+│   │   │     went from 9 to 10 in `./scripts/build.sh test`'s gate
+│   │   └── #risk TLS itself is proven by NOTHING in either repository beyond
+│   │         this live call: no test reaches a host but `127.0.0.1` and
+│   │         `api.deepseek.com`, and the Windows/macOS native-tls arm is not
+│   │         compiled in any evidence -- only Unix Rustls/WebPKI has run a real
+│   │         handshake. The TLS provider selection on Windows/macOS is proved
+│   │         only by the feature graph compiling
 │   ├── H5 opencode-go-compatible backend ->h1 [~]
 │   │   ├── invariant: a second, independently verified adapter — H1's
 │   │   │     decision explicitly forbids assuming H4's adapter covers it.
