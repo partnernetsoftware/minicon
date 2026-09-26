@@ -22,9 +22,22 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      documents-only. Needs its own negative-control evidence (a change that
 │      should need `win-*` but doesn't touch an obviously Windows-named path)
 │      before it ships — an autonomous heuristic guess is not acceptable here.
-└── E1/E2 shared seam with AgenTerm                              (OWNERS)
-       ├── E1 click streak D1-D4: four behaviour divergences
-       └── E2 composer rules: survey before anything moves; A1-A3 landed in
-              MiniCon first (v0.1.24/v0.1.26), only a second consumer
-              justifies sharing them
+├── E1/E2 shared seam with AgenTerm                              (OWNERS)
+│      ├── E1 click streak D1-D4: four behaviour divergences
+│      └── E2 composer rules: survey before anything moves; A1-A3 landed in
+│             MiniCon first (v0.1.24/v0.1.26), only a second consumer
+│             justifies sharing them
+└── F1 composer image/screenshot paste, direction decided 2026-09-26, not
+       scheduled to a version. Survey and options are in
+       `prd/PRD_02_25_con_workspace.md` ("Screenshot/image paste into the
+       composer"). Decided shape (file-path fallback, not a structured
+       attachment channel): paste-only entry (Ctrl/Cmd+V with image
+       clipboard contents); save to a temp file; composer shows a thumbnail
+       chip in place of path text (new non-text draft-segment type needed in
+       `ComposerState`); Send substitutes the file's absolute path and goes
+       through the existing PTY-write path unchanged; single image per
+       submission; no per-harness support detection or warning. Needs a new
+       image-read API in `agenterm-platform::clipboard` first (currently
+       text-only across all three OS adapters) — that platform gap blocks
+       every option, not just this one, so land it once.
 ```

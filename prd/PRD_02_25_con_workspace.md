@@ -417,13 +417,13 @@ the window rather than being hidden to save pixels.
   the HWND alive and visible and localized 5,921 of 6,049 changed pixels to the
   composer band.
 
-### Screenshot/image paste into the composer — design exploration, not scoped
+### Screenshot/image paste into the composer — direction decided, not scheduled
 
-Owner request (2026-09-26): a long-standing want, not yet actionable because
-the owner does not know the UI/UX or implementation shape. Recorded here so
-it survives as a real backlog item rather than living only in chat; this is
-exploration, not an accepted plan leaf — no status marker, no version
-assigned.
+Owner request (2026-09-26): a long-standing want; the owner had no UI/UX or
+implementation direction, so this session proposed the tradeoff and the
+owner accepted it (2026-09-26). Direction is decided; it is not yet
+scheduled to a version — tracked as `F1` in `plan/plan-carried-debt.md`. No
+status marker here since no implementation has started.
 
 Current architecture (verified against source, not assumed):
 
@@ -446,47 +446,37 @@ Current architecture (verified against source, not assumed):
   PTY-facing child processes, not as a JSON/wire protocol with a content
   schema this layer could extend.
 
-What that means for scope, if this is picked up:
+Decided shape (2026-09-26): the file-path fallback, not a structured
+attachment channel. Reasoning: composer-to-PTY only knows how to type, and
+an image cannot be "typed" — a structured attachment channel would require
+verifying each harness's wire codec actually supports image content
+(unverified for DeepSeek/opencode-go today) and a second submission path
+parallel to `submit_composer`'s existing PTY-write path, for uncertain
+payoff. The path-fallback degrades to "just a path string" for a harness
+that doesn't understand it, but needs no protocol change and no
+per-harness verification up front.
 
-1. **Platform gap.** `agenterm-platform::clipboard` needs a new image read
-   API (`get_image` or similar) implemented across the Linux/macOS/Windows
-   adapters before MiniCon can see clipboard image bytes at all. This is
-   the same shared-platform-crate boundary AGENTS.md already draws
-   ("cross-platform mechanisms in the shared platform crates, product
-   meaning in MiniCon-owned code") — the read API belongs in `agenterm`,
-   not duplicated per-OS inside MiniCon.
-2. **No text-equivalent transport.** The hardest part is not capture, it is
-   delivery: composer-to-PTY only knows how to type. An image cannot be
-   "typed." Two honest options, neither implemented, neither decided:
-   - (a) **File-path fallback (PTY-native, no protocol change):** save the
-     pasted image to a temp file and insert its path as text (optionally a
-     CLI flag the target harness recognizes, e.g. `--image <path>`). Works
-     immediately under the existing PTY-only design, degrades to "just a
-     path string" for any harness that doesn't understand the flag, and
-     needs the composer to render a thumbnail/chip in place of the path
-     text for the human to recognize what they attached (a new non-text
-     draft-segment type in `ComposerState`, not currently modeled at all).
-   - (b) **Structured attachment channel (protocol change):** give
-     `harness_wire.rs`/DeepSeek/opencode-go an explicit image/attachment
-     field and bypass the PTY-as-keystrokes path for image sends only.
-     Requires each harness's wire codec to actually support image content
-     (unverified — needs checking each target's real API, likely differs
-     per harness), and a second submission path parallel to
-     `submit_composer`'s existing PTY-write path. Larger, more correct for
-     harnesses that do support multimodal input, but does nothing for ones
-     that don't (would still need (a) as the fallback).
-3. **UX unknowns, not yet asked of the owner:** paste-only (Ctrl/Cmd+V with
-   image clipboard contents) vs. also a file-picker/drag-drop entry point;
-   whether multiple images per submission are needed; how a thumbnail
-   should size/scroll inside the composer's existing fixed-height,
-   horizontally-sliding viewport (`External composer input` above); what
-   happens on Send if the target harness has no image support at all
-   (silent path-string fallback, or a visible warning).
+Concretely:
 
-Non-goal for now: choosing between (a) and (b), or picking any UX detail
-above. That needs an owner decision once the tradeoff (fast/degraded vs.
-correct/narrow) is understood — this section exists so the next session
-does not re-derive the same architecture survey.
+1. **Platform gap first.** `agenterm-platform::clipboard` needs a new image
+   read API (`get_image` or similar) across the Linux/macOS/Windows
+   adapters before MiniCon can see clipboard image bytes at all — this
+   follows AGENTS.md's shared-platform-crate boundary ("cross-platform
+   mechanisms in the shared platform crates, product meaning in
+   MiniCon-owned code"). This blocks the feature regardless of transport
+   choice, so it lands once, first.
+2. **Paste-only entry.** Ctrl/Cmd+V when the clipboard holds an image (no
+   file-picker, no drag-drop for the first cut).
+3. **Temp file + thumbnail chip.** The pasted image is saved to a temp
+   file; the composer shows a thumbnail chip in place of path text — a new
+   non-text draft-segment type in `ComposerState`, not modeled today.
+4. **Send substitutes the path, unchanged transport.** On Send the chip is
+   replaced by the file's absolute path and goes through the existing
+   PTY-write path exactly as any other composer text does.
+5. **Single image per submission.** No multi-image batching, no
+   per-harness support detection or warning if the target doesn't
+   understand the path — those are explicit non-goals for the first cut,
+   revisited only if real usage asks for them.
 
 ## Scrollbar and divider
 
