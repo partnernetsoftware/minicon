@@ -23,18 +23,24 @@ runtime evidence for two of them, not decisions.
 
 ```text
 0.2.2: close 0.2.1's BLOCKED leftovers, or re-BLOCK and roll forward
-├── {LP} mux list-panes gap                                    [-] @host=none-needed
+├── {LP} mux list-panes gap                                    [v] @host=none-needed
 │      invariant: `mux list-panes` returns pane_id/width/height/active/dead
 │        for every pane in a target's current layout, matching tmux's own
 │        `list-panes -F` field semantics closely enough for moltbaby's
 │        `super-query` to consume directly
-│      gap: pane_id/active/dead already map cleanly; pane_width/pane_height
-│        need a new per-tab round-trip design not done in 0.2.1
-│      evidence: black-box CLI test asserting all 5 fields against a known
-│        multi-pane layout, in `./scripts/build.sh test`
-│      safe failure: if the round-trip design can't land in 0.2.2, leave
-│        pane_width/pane_height BLOCKED explicitly (not silently narrowed)
-│        and re-carry to 0.2.4
+│      closed 2026-09-26: the assumed per-tab round-trip was unnecessary —
+│        `list-tabs`'s handler already iterates each tab's live `ConTerminal`
+│        in-process, so serving its existing `cols`/`rows` cost nothing extra.
+│        New `mux list-panes` verb in `src/mux.rs` with its own
+│        `KNOWN_PANE_FORMAT_VARS`, mirroring `list-windows`; default format is
+│        moltbaby's own `super-query` string verbatim.
+│      evidence: `src/mux.rs` unit tests (`parse_tabs_reads_id_title_active`,
+│        `render_pane_format_default_matches_tmux_field_order`,
+│        `list_panes_format_rejects_window_vars`) and black-box
+│        `mux_list_panes_renders_pane_geometry_and_active_dead_flags` in
+│        `tests/minicon_mux.rs`; full `./scripts/build.sh test` gate green.
+│        See `prd/PRD_02_31_v0_2_horizon.md`'s "mux hardening against
+│        moltbaby-shaped real usage" for the closure note.
 │      dependency: none — pure design+implementation, closeable from this
 │        Linux cloud session
 │      non-goal: any tmux verb beyond list-panes; no new mux subcommand

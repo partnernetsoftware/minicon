@@ -396,6 +396,87 @@ fn mux_list_windows_renders_live_tabs_and_both_target_spellings_hit_one_tab() {
     );
 }
 
+/// {LP}: `list-panes` reports `pane_id`/`pane_width`/`pane_height`/
+/// `pane_active`/`pane_dead` from the same live `list-tabs` response
+/// `list-windows` uses, with no per-tab round trip (each tab's own
+/// `ConTerminal` already tracks its live `cols`/`rows`; see
+/// `prd/PRD_02_31_v0_2_horizon.md`'s "mux hardening against
+/// moltbaby-shaped real usage").
+#[test]
+fn mux_list_panes_renders_pane_geometry_and_active_dead_flags() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let (_gui, endpoint, root) = start_host(exe);
+
+    let second = cli_json(exe, &endpoint, &["new-tab"])["id"]
+        .as_str()
+        .expect("new-tab must report the new tab's ID")
+        .to_owned();
+    assert_eq!(
+        active_tab(exe, &endpoint),
+        second,
+        "a newly opened tab is the active one"
+    );
+
+    let default = mux_ok(exe, &endpoint, &["list-panes"]);
+    let lines: Vec<&str> = default.lines().collect();
+    assert_eq!(lines.len(), 2, "one row per live tab: {lines:?}");
+    // The exact cell geometry is whatever the test host's window opened at
+    // (platform/font-dependent), not a fixed constant -- what this leaf must
+    // prove is that both tabs report the *same* live, non-zero size and the
+    // right active/dead flags, not a particular number of cells.
+    let mut fields = lines[0].split(' ');
+    let (id0, width, height, active0, dead0) = (
+        fields.next().unwrap(),
+        fields.next().unwrap(),
+        fields.next().unwrap(),
+        fields.next().unwrap(),
+        fields.next().unwrap(),
+    );
+    assert_eq!(id0, root);
+    assert_ne!(
+        width, "0",
+        "pane_width must be the live terminal size: {lines:?}"
+    );
+    assert_ne!(
+        height, "0",
+        "pane_height must be the live terminal size: {lines:?}"
+    );
+    assert_eq!((active0, dead0), ("0", "0"), "root tab: inactive, alive");
+    assert_eq!(
+        lines[1],
+        format!("{second} {width} {height} 1 0"),
+        "second tab: active, alive, same live terminal size as the root tab"
+    );
+
+    // The moltbaby `super-query` format string itself, verbatim, must resolve
+    // every field it names -- this is the exact call this leaf exists for.
+    let super_query = mux_ok(
+        exe,
+        &endpoint,
+        &[
+            "list-panes",
+            "-F",
+            "#{pane_id} #{pane_width} #{pane_height} #{pane_active} #{pane_dead}",
+        ],
+    );
+    assert_eq!(
+        super_query, default,
+        "the default format is exactly moltbaby's super-query format"
+    );
+
+    // Closing the (non-active) root tab drops its row entirely -- `close-tab`
+    // removes the tab from the workspace, unlike an exited-but-retained
+    // child, so only the remaining live tab is left to report.
+    cli_json(exe, &endpoint, &["close-tab", "--target", &root]);
+    let after_close = mux_ok(exe, &endpoint, &["list-panes"]);
+    assert_eq!(
+        after_close,
+        format!("{second} {width} {height} 1 0"),
+        "closing a tab removes its list-panes row: {after_close:?}"
+    );
+}
+
 /// M3: `select-window`, `new-window` and `kill-window` change the real
 /// workspace -- including tmux's default of killing the *active* window when
 /// no `-t` is given. Every effect is read back through the control CLI.

@@ -14,6 +14,20 @@ const KNOWN_FORMAT_VARS: &[&str] = &["window_id", "window_index", "window_name",
 
 const DEFAULT_FORMAT: &str = "#{window_index}: #{window_name}#{window_active}";
 
+/// Substitution variables `list-panes -F` accepts. MiniCon has exactly one
+/// pane per tab (`split-window` is not implemented), so `list-panes` reports
+/// the same tabs `list-windows` does, narrowed to tmux's pane-shaped fields.
+const KNOWN_PANE_FORMAT_VARS: &[&str] = &[
+    "pane_id",
+    "pane_width",
+    "pane_height",
+    "pane_active",
+    "pane_dead",
+];
+
+const DEFAULT_PANE_FORMAT: &str =
+    "#{pane_id} #{pane_width} #{pane_height} #{pane_active} #{pane_dead}";
+
 /// The session names a `-t` target may name. A MiniCon instance IS its one
 /// session, so this is a comparison against the one real session (this
 /// process), not a lookup among several. `0` is accepted because that is what
@@ -42,6 +56,7 @@ pub fn run_mux(args: &[String]) -> Result<String, String> {
 
     match verb.as_str() {
         "list-windows" => run_list_windows(&control, &mut cursor),
+        "list-panes" => run_list_panes(&control, &mut cursor),
         "select-window" => run_select_window(&control, &mut cursor),
         "new-window" => run_new_window(&control, &mut cursor),
         "kill-window" => run_kill_window(&control, &mut cursor),
@@ -57,20 +72,28 @@ fn run_list_windows(control: &str, cursor: &mut MuxCursor<'_>) -> Result<String,
         .map(str::to_owned)
         .unwrap_or_else(|| DEFAULT_FORMAT.to_owned());
     cursor.finish()?;
-    validate_format(&format)?;
+    validate_format(&format, KNOWN_FORMAT_VARS)?;
 
-    let cli_args = vec![
-        "cli".to_owned(),
-        "--control".to_owned(),
-        control.to_owned(),
-        "list-tabs".to_owned(),
-    ];
-    let response = crate::control::run_cli(&cli_args)?;
-    let tabs = parse_tabs(&response)?;
-
+    let tabs = fetch_tabs(control)?;
     let mut lines = Vec::with_capacity(tabs.len());
     for (index, tab) in tabs.iter().enumerate() {
-        lines.push(render_format(&format, index, tab));
+        lines.push(render_window_format(&format, index, tab));
+    }
+    Ok(lines.join("\n"))
+}
+
+fn run_list_panes(control: &str, cursor: &mut MuxCursor<'_>) -> Result<String, String> {
+    let format = cursor
+        .optional_value("-F")?
+        .map(str::to_owned)
+        .unwrap_or_else(|| DEFAULT_PANE_FORMAT.to_owned());
+    cursor.finish()?;
+    validate_format(&format, KNOWN_PANE_FORMAT_VARS)?;
+
+    let tabs = fetch_tabs(control)?;
+    let mut lines = Vec::with_capacity(tabs.len());
+    for tab in &tabs {
+        lines.push(render_pane_format(&format, tab));
     }
     Ok(lines.join("\n"))
 }
@@ -366,10 +389,15 @@ fn tmux_key_name(name: &str, whole: &str) -> Result<String, String> {
 }
 
 /// One tab as reported by `list-tabs`, narrowed to the fields `mux` exposes.
+/// `width`/`height` and `dead` back `list-panes`'s `pane_*` fields;
+/// `id`/`name`/`active` back `list-windows`'s `window_*` fields.
 struct TabRow {
     id: String,
     name: String,
     active: bool,
+    dead: bool,
+    width: u16,
+    height: u16,
 }
 
 fn parse_tabs(response: &str) -> Result<Vec<TabRow>, String> {
@@ -395,12 +423,30 @@ fn parse_tabs(response: &str) -> Result<Vec<TabRow>, String> {
                 .get("active")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
-            Ok(TabRow { id, name, active })
+            let dead = !tab
+                .get("child_exit_code")
+                .is_none_or(serde_json::Value::is_null);
+            let width = tab
+                .get("cols")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as u16;
+            let height = tab
+                .get("rows")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as u16;
+            Ok(TabRow {
+                id,
+                name,
+                active,
+                dead,
+                width,
+                height,
+            })
         })
         .collect()
 }
 
-fn validate_format(format: &str) -> Result<(), String> {
+fn validate_format(format: &str, known_vars: &[&str]) -> Result<(), String> {
     let mut rest = format;
     while let Some(start) = rest.find("#{") {
         let after = &rest[start + 2..];
@@ -408,10 +454,10 @@ fn validate_format(format: &str) -> Result<(), String> {
             .find('}')
             .ok_or_else(|| format!("-F {format:?}: unterminated #{{...}} substitution"))?;
         let var = &after[..end];
-        if !KNOWN_FORMAT_VARS.contains(&var) {
+        if !known_vars.contains(&var) {
             return Err(format!(
                 "-F {format:?}: unknown substitution #{{{var}}}; known: {}",
-                KNOWN_FORMAT_VARS.join(", ")
+                known_vars.join(", ")
             ));
         }
         rest = &after[end + 1..];
@@ -419,23 +465,39 @@ fn validate_format(format: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn render_format(format: &str, index: usize, tab: &TabRow) -> String {
+fn render_window_format(format: &str, index: usize, tab: &TabRow) -> String {
+    render_with(format, |var| match var {
+        "window_id" => tab.id.clone(),
+        "window_index" => index.to_string(),
+        "window_name" => tab.name.clone(),
+        "window_active" => (if tab.active { "*" } else { "" }).to_owned(),
+        other => unreachable!("validate_format admitted unknown var {other:?}"),
+    })
+}
+
+fn render_pane_format(format: &str, tab: &TabRow) -> String {
+    render_with(format, |var| match var {
+        "pane_id" => tab.id.clone(),
+        "pane_width" => tab.width.to_string(),
+        "pane_height" => tab.height.to_string(),
+        "pane_active" => (if tab.active { "1" } else { "0" }).to_owned(),
+        "pane_dead" => (if tab.dead { "1" } else { "0" }).to_owned(),
+        other => unreachable!("validate_format admitted unknown var {other:?}"),
+    })
+}
+
+/// Shared `#{var}` substitution walk; `validate_format` already proved every
+/// substitution in `format` is well-formed, so `resolve` need not handle an
+/// unknown or malformed one.
+fn render_with(format: &str, resolve: impl Fn(&str) -> String) -> String {
     let mut out = String::with_capacity(format.len());
     let mut rest = format;
     while let Some(start) = rest.find("#{") {
         out.push_str(&rest[..start]);
         let after = &rest[start + 2..];
-        // `validate_format` already proved every substitution is well-formed
-        // and known, so this unwrap and lookup cannot fail here.
         let end = after.find('}').expect("validated format");
         let var = &after[..end];
-        out.push_str(&match var {
-            "window_id" => tab.id.clone(),
-            "window_index" => index.to_string(),
-            "window_name" => tab.name.clone(),
-            "window_active" => (if tab.active { "*" } else { "" }).to_owned(),
-            other => unreachable!("validate_format admitted unknown var {other:?}"),
-        });
+        out.push_str(&resolve(var));
         rest = &after[end + 1..];
     }
     out.push_str(rest);
@@ -445,6 +507,7 @@ fn render_format(format: &str, index: usize, tab: &TabRow) -> String {
 fn mux_usage() -> String {
     "usage: minicon mux --control ENDPOINT <verb> [flags]\n\
      verbs: list-windows [-F FORMAT]\n\
+     \x20      list-panes [-F FORMAT]\n\
      \x20      select-window -t TARGET\n\
      \x20      new-window [-t TARGET]\n\
      \x20      kill-window [-t TARGET]\n\
@@ -531,28 +594,66 @@ mod tests {
 
     #[test]
     fn parse_tabs_reads_id_title_active() {
-        let response = r#"{"tabs":[{"id":"@1","parent":null,"title":"bash","active":true,"child_alive":true,"child_exit_code":null},{"id":"@2","parent":null,"title":"vim","active":false,"child_alive":true,"child_exit_code":null}]}"#;
+        let response = r#"{"tabs":[{"id":"@1","parent":null,"title":"bash","active":true,"child_alive":true,"child_exit_code":null,"cols":80,"rows":24},{"id":"@2","parent":null,"title":"vim","active":false,"child_alive":false,"child_exit_code":0,"cols":100,"rows":40}]}"#;
         let tabs = parse_tabs(response).expect("valid list-tabs response");
         assert_eq!(tabs.len(), 2);
         assert_eq!(tabs[0].id, "@1");
         assert_eq!(tabs[0].name, "bash");
         assert!(tabs[0].active);
+        assert!(!tabs[0].dead);
+        assert_eq!((tabs[0].width, tabs[0].height), (80, 24));
         assert!(!tabs[1].active);
+        assert!(tabs[1].dead);
+        assert_eq!((tabs[1].width, tabs[1].height), (100, 40));
     }
 
     #[test]
-    fn render_format_default_marks_active_window() {
+    fn render_window_format_default_marks_active_window() {
         let tab = TabRow {
             id: "@1".to_owned(),
             name: "bash".to_owned(),
             active: true,
+            dead: false,
+            width: 80,
+            height: 24,
         };
-        assert_eq!(render_format(DEFAULT_FORMAT, 0, &tab), "0: bash*");
+        assert_eq!(render_window_format(DEFAULT_FORMAT, 0, &tab), "0: bash*");
+    }
+
+    #[test]
+    fn render_pane_format_default_matches_tmux_field_order() {
+        let tab = TabRow {
+            id: "@1".to_owned(),
+            name: "bash".to_owned(),
+            active: true,
+            dead: false,
+            width: 80,
+            height: 24,
+        };
+        assert_eq!(
+            render_pane_format(DEFAULT_PANE_FORMAT, &tab),
+            "@1 80 24 1 0"
+        );
+        let dead_tab = TabRow {
+            active: false,
+            dead: true,
+            ..tab
+        };
+        assert_eq!(
+            render_pane_format(DEFAULT_PANE_FORMAT, &dead_tab),
+            "@1 80 24 0 1"
+        );
     }
 
     #[test]
     fn unknown_substitution_is_bounded_error() {
-        let error = validate_format("#{pane_id}").unwrap_err();
+        let error = validate_format("#{pane_id}", KNOWN_FORMAT_VARS).unwrap_err();
+        assert!(error.contains("unknown substitution"), "{error}");
+    }
+
+    #[test]
+    fn list_panes_format_rejects_window_vars() {
+        let error = validate_format("#{window_id}", KNOWN_PANE_FORMAT_VARS).unwrap_err();
         assert!(error.contains("unknown substitution"), "{error}");
     }
 

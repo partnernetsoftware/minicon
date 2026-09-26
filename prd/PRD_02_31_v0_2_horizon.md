@@ -300,18 +300,27 @@ window always has exactly one pane here (see "Target parsing" above), a
 `list-panes` verb would report the same one row per tab as `list-windows`,
 under pane-shaped field names.
 
-**Not implemented this round.** Adding three of five fields now, silently
-short of what a real caller asked for, would be exactly the kind of
-approximation this table's own non-goals reject elsewhere (compare the
-`-F` unknown-substitution refusal and the `capture-pane -S/-E` BLOCKED
-line). `pane_width`/`pane_height` need their own decision -- most likely a
-second control-endpoint round trip per tab to read live `cols`/`rows`,
-which is a real design question (N+1 calls for N tabs), not a one-line
-addition -- so this is left `BLOCKED` for a future round rather than
-shipped partial. Tracked here, not folded into `list-windows` or `-F`'s
-existing `KNOWN_FORMAT_VARS` (`src/mux.rs`), so `list-panes` and
-`list-windows` do not silently share a format-var namespace when
-`pane_width`/`pane_height` do eventually land.
+**[v] closed 2026-09-26, in plan-v0.2.2's `{LP}` leaf.** The assumed N+1
+round trip turned out unnecessary on inspection: `list-tabs`'s own handler
+(`CliCommand::ListTabs` in `src/control_dispatch.rs`) already iterates
+every tab's live `ConTerminal` session in-process to build its response, so
+adding that same session's `cols`/`rows` to the existing per-tab JSON
+object cost nothing extra -- no second control-endpoint call, no per-tab
+round trip, and no N+1 concern; `list-tabs` and `list-windows` still make
+exactly one call. `mux list-panes` is a new verb in `src/mux.rs` (mirroring
+`list-windows`'s `list-tabs`-then-render shape) with its own
+`KNOWN_PANE_FORMAT_VARS` (`pane_id`, `pane_width`, `pane_height`,
+`pane_active`, `pane_dead`) kept separate from `list-windows`'s
+`KNOWN_FORMAT_VARS`, exactly as this section originally required. Its
+default format is moltbaby's own `super-query` format string verbatim.
+Evidence: `src/mux.rs`'s unit tests (`parse_tabs_reads_id_title_active`,
+`render_pane_format_default_matches_tmux_field_order`,
+`list_panes_format_rejects_window_vars`) and the black-box
+`mux_list_panes_renders_pane_geometry_and_active_dead_flags` in
+`tests/minicon_mux.rs`, which drives a real host, asserts the live
+non-zero terminal size and active/dead flags across two tabs, proves the
+exact `super-query` format string resolves identically to the default, and
+proves closing a tab drops its row.
 
 ## harness — detail
 

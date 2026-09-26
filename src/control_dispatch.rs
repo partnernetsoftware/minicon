@@ -62,6 +62,14 @@ impl ConApp {
                                 "child_exit_code",
                                 exit_code_json(session.and_then(|session| session.child_exit_code)),
                             ),
+                            // Each tab owns its own `ConTerminal`, which already tracks its
+                            // live `cols`/`rows` -- serving them here costs nothing extra and
+                            // answers `mux list-panes`'s `pane_width`/`pane_height` from the
+                            // same response `list-tabs` already returns, with no per-tab
+                            // round trip (see prd/PRD_02_31_v0_2_horizon.md's "mux hardening
+                            // against moltbaby-shaped real usage" for why this was BLOCKED).
+                            ("cols", session.map_or(0, |session| session.cols).into()),
+                            ("rows", session.map_or(0, |session| session.rows).into()),
                         ])
                     })
                     .collect();
