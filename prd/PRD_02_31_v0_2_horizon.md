@@ -635,6 +635,7 @@ so requesting it made every exec fail. Other configured limits remain unchanged;
 this is not a claim of a macOS 512 MiB memory ceiling. The complete
 `scripts/build.sh test` gate and `scripts/selftest.sh` passed on the local
 macOS host. Loopback tests require this host's inherited HTTP proxy variables
-to be unset; the initial proxied attempt failed transport tests. Final six-cell
-qualification and the exact Candidate/signing/Defender/Promotion chain are in
-progress; unavailable runtime courts remain explicitly BLOCKED.
+to be unset; the initial proxied attempt failed transport tests. Frozen local qualification finished 27 PASS / 0 FAIL / 14 BLOCKED.
+The exact Candidate/signing/Defender/Promotion chain and public-download checks
+passed; v0.2.1 is published. See `archive/v0.2.1-release-history.md` for run
+identities. Unavailable local runtime courts remain explicitly BLOCKED.
