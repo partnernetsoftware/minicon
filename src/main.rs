@@ -842,7 +842,7 @@ impl ConApp {
             .add_root("terminal".to_owned())
             .expect("an empty workspace accepts its initial tab");
         let mut sessions = SessionStore::default();
-        let initial_session = ConTerminal::new(working_dir);
+        let initial_session = ConTerminal::new(working_dir, control_endpoint.clone());
         let session_seed = SessionSeed::from_session(&initial_session);
         assert!(
             sessions.insert(initial, initial_session).is_ok(),
@@ -4191,11 +4191,15 @@ mod tests {
         let parent = app.workspace.add_root("parent".to_owned()).unwrap();
         let child = app.workspace.add_child(parent, "child".to_owned()).unwrap();
         assert!(
-            app.sessions.insert(parent, ConTerminal::new(None)).is_ok(),
+            app.sessions
+                .insert(parent, ConTerminal::new(None, None))
+                .is_ok(),
             "a fresh store accepts the parent"
         );
         assert!(
-            app.sessions.insert(child, ConTerminal::new(None)).is_ok(),
+            app.sessions
+                .insert(child, ConTerminal::new(None, None))
+                .is_ok(),
             "a fresh store accepts the child"
         );
         assert!(app.workspace.set_active(child));
@@ -4238,7 +4242,9 @@ mod tests {
         let child = app.workspace.add_child(parent, "child".to_owned()).unwrap();
         for id in [parent, child] {
             assert!(
-                app.sessions.insert(id, ConTerminal::new(None)).is_ok(),
+                app.sessions
+                    .insert(id, ConTerminal::new(None, None))
+                    .is_ok(),
                 "a fresh store accepts @{}",
                 id.get()
             );
@@ -4349,7 +4355,9 @@ mod tests {
         let first = app.workspace.active().unwrap();
         let second = app.workspace.add_root("second".to_owned()).unwrap();
         assert!(
-            app.sessions.insert(second, ConTerminal::new(None)).is_ok(),
+            app.sessions
+                .insert(second, ConTerminal::new(None, None))
+                .is_ok(),
             "a fresh store accepts the second tab"
         );
         assert!(app.sessions.contains_key(&second));

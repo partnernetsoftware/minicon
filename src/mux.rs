@@ -24,7 +24,20 @@ const SESSION_NAMES: &[&str] = &["minicon", "0"];
 pub fn run_mux(args: &[String]) -> Result<String, String> {
     let mut cursor = MuxCursor::new(args);
     cursor.require("mux")?;
-    let control = cursor.required_value("--control")?.to_owned();
+    // `--control` may be omitted when this process was itself spawned inside
+    // a MiniCon instance started with `--control`: that instance exports its
+    // own endpoint as `MINICON_CONTROL`, the same role `$TMUX` plays for
+    // tmux, so a script does not need to be told the endpoint explicitly.
+    let control = match cursor.optional_value("--control")? {
+        Some(explicit) if !explicit.starts_with("--") => explicit.to_owned(),
+        Some(explicit) => return Err(format!("--control requires a value, got {explicit:?}")),
+        None => std::env::var("MINICON_CONTROL").map_err(|_| {
+            format!(
+                "mux: --control requires a value (or set MINICON_CONTROL)\n{}",
+                mux_usage()
+            )
+        })?,
+    };
     let verb = cursor.next().ok_or_else(mux_usage)?.to_owned();
 
     match verb.as_str() {
@@ -464,17 +477,6 @@ impl<'a> MuxCursor<'a> {
         match self.next() {
             Some(value) if value == expected => Ok(()),
             _ => Err(mux_usage()),
-        }
-    }
-
-    fn required_value(&mut self, flag: &str) -> Result<&'a str, String> {
-        match self.next() {
-            Some(value) if value == flag => self
-                .next()
-                .filter(|value| !value.starts_with("--"))
-                .ok_or_else(|| format!("{flag} requires a value")),
-            Some(value) => Err(format!("expected {flag}, got {value:?}")),
-            None => Err(format!("{flag} requires a value")),
         }
     }
 

@@ -557,3 +557,71 @@ fn mux_bounded_refusals_exit_nonzero_and_leave_the_workspace_untouched() {
         "a refused mux verb must not move the focus"
     );
 }
+
+/// A running instance exports its own `--control` endpoint into every shell
+/// it spawns as `MINICON_CONTROL` -- the same role `$TMUX` plays for tmux --
+/// so a script inside the pane can drive `minicon mux` against its own
+/// instance without being told the endpoint. This is the one assertion that
+/// distinguishes real injection from a no-op: it reads the value back out of
+/// the spawned child's own environment, not out of `mux`'s translation.
+#[test]
+fn spawned_shell_receives_its_own_control_endpoint_as_minicon_control() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let (_gui, endpoint, root) = start_host(exe);
+
+    let print_env = if cfg!(windows) {
+        "echo MUX_ENV_%MINICON_CONTROL%".to_owned()
+    } else {
+        "printf 'MUX_ENV_%s\\n' \"$MINICON_CONTROL\"".to_owned()
+    };
+    run_line_in_tab(
+        exe,
+        &endpoint,
+        &root,
+        &print_env,
+        &format!("MUX_ENV_{endpoint}"),
+    );
+}
+
+/// M2/M3: `mux` reads `MINICON_CONTROL` when `--control` is omitted, so a
+/// script started inside a MiniCon pane needs no argument to reach its own
+/// instance. Asserted by omitting `--control` from the client invocation
+/// entirely and observing the same live tab list `--control` would have
+/// produced.
+#[test]
+fn mux_falls_back_to_minicon_control_env_var_when_the_flag_is_omitted() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let (_gui, endpoint, root) = start_host(exe);
+
+    let mut command = Command::new(exe);
+    command.args(["mux", "list-windows", "-F", "#{window_id}"]);
+    command.env("MINICON_CONTROL", &endpoint);
+    let output = command.output().expect("minicon mux must start");
+    assert!(
+        output.status.success(),
+        "mux list-windows with MINICON_CONTROL set failed: {}",
+        error_text(&output)
+    );
+    let text = output_text(&output);
+    assert!(
+        text.contains(&root),
+        "the env-var-targeted call must list the same live tab: {text}"
+    );
+
+    // With neither the flag nor the env var, the refusal names the remedy.
+    let mut bare = Command::new(exe);
+    bare.args(["mux", "list-windows"]);
+    bare.env_remove("MINICON_CONTROL");
+    let bare_output = bare.output().expect("minicon mux must start");
+    assert!(
+        !bare_output.status.success(),
+        "mux with neither --control nor MINICON_CONTROL must be refused"
+    );
+    let stderr = String::from_utf8_lossy(&bare_output.stderr);
+    assert!(
+        stderr.contains("MINICON_CONTROL"),
+        "the refusal must name the remedy: {stderr}"
+    );
+}

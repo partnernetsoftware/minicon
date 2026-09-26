@@ -66,7 +66,8 @@ has them: this repo carries its own redacted copies under
 `sign-windows-artifacts`, `run-reputation-and-release`), vendored 2026-09-26
 after a cloud agent building 0.2.0 got stuck not knowing how to sign/release.
 They are already redaction-clean (placeholders, no real tenant/subscription/
-account names — see each `SKILL.md`'s "Start with authority and state"); when
+account names — see each skill's own top-level page, "Start with authority and
+state"); when
 the canonical skill in `company-dev-hub` changes, re-sync this copy in the same
 change, don't let it drift silently. **A skill's top-level page is only its
 index — the operational detail lives in its `references/`. Read those before

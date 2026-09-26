@@ -11,6 +11,16 @@ use super::*;
 pub(super) struct ConTerminal {
     working_dir: Option<String>,
 
+    /// This instance's `--control` endpoint, exactly as bound (e.g.
+    /// `"pipe:foo"` or `"unix:/path"`). Exported into every spawned shell as
+    /// `MINICON_CONTROL` so a script running inside a pane can drive `minicon
+    /// mux`/`minicon cli` against its own instance without being told the
+    /// endpoint -- the same role `$TMUX` plays for tmux. `None` when the
+    /// instance was not started with `--control`, in which case nothing is
+    /// exported and scripts must be told the endpoint explicitly, same as
+    /// today.
+    control_endpoint: Option<String>,
+
     /// Program to host, from `-e`. `None` runs the user's default shell.
     pub(super) command: Option<Vec<String>>,
 
@@ -218,11 +228,12 @@ impl ConTerminal {
         self.font_size_baseline = self.font_size_logical;
     }
 
-    pub(super) fn new(working_dir: Option<String>) -> Self {
+    pub(super) fn new(working_dir: Option<String>, control_endpoint: Option<String>) -> Self {
         let pty_output = Arc::new(BoundedOutputPipe::new(PTY_QUEUE_BYTES));
         pty_output.close();
         Self {
             working_dir,
+            control_endpoint,
             command: None,
             current_title: String::from("terminal"),
             program_path: String::new(),
@@ -553,6 +564,10 @@ impl ConTerminal {
             })
             .env("TERM", "xterm-256color")
             .env("COLORTERM", "truecolor");
+
+        if let Some(endpoint) = &self.control_endpoint {
+            command = command.env("MINICON_CONTROL", endpoint);
+        }
 
         if self.command.is_some() {
             for argument in extra_args {
@@ -2419,6 +2434,7 @@ impl ConTerminal {
 #[derive(Clone)]
 pub(super) struct SessionSeed {
     working_dir: Option<String>,
+    control_endpoint: Option<String>,
     command: Option<Vec<String>>,
     font_size_logical: f64,
     font_size_baseline: f64,
@@ -2430,6 +2446,7 @@ impl SessionSeed {
     pub(super) fn from_session(session: &ConTerminal) -> Self {
         Self {
             working_dir: session.working_dir.clone(),
+            control_endpoint: session.control_endpoint.clone(),
             command: session.command.clone(),
             font_size_logical: session.font_size_logical,
             font_size_baseline: session.font_size_baseline,
@@ -2444,7 +2461,7 @@ impl SessionSeed {
     }
 
     pub(super) fn create_session(&self) -> ConTerminal {
-        let mut session = ConTerminal::new(self.working_dir.clone());
+        let mut session = ConTerminal::new(self.working_dir.clone(), self.control_endpoint.clone());
         session.command = self.command.clone();
         session.font_size_logical = self.font_size_logical;
         session.font_size_baseline = self.font_size_baseline;
@@ -2495,7 +2512,7 @@ pub(crate) mod tests {
         (pixels, cell_w, cell_h)
     }
     pub(crate) fn prepared_pointer_terminal() -> ConTerminal {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.frame_width = 800;
         app.frame_height = 400;
         app.cell_w = 8;
@@ -2512,7 +2529,7 @@ pub(crate) mod tests {
     /// numbers. The bottom inset reserves composer + status, matching
     /// [`ui::bottom_inset`].
     pub(crate) fn pointer_terminal_at(scale: f64, frame_w: u32, frame_h: u32) -> ConTerminal {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.scale = scale;
         app.recompute_metrics(scale);
         let left = minicon_core::numeric::round_f64(ui::SIDEBAR_WIDTH_DIP * scale) as u32;
@@ -2541,7 +2558,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn vt_damage_rows_map_to_clamped_content_and_cursor_endpoints() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.dirty = DirtyRegion::empty();
         app.frame_width = 100;
         app.frame_height = 60;
@@ -2583,7 +2600,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn pty_drain_consumes_vt_damage_without_unconditional_full() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.pty_output = Arc::new(BoundedOutputPipe::new(1024));
         app.dirty = DirtyRegion::empty();
         app.frame_width = 640;
@@ -2603,7 +2620,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn full_vt_damage_is_the_explicit_safe_fallback() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.dirty = DirtyRegion::empty();
         app.frame_width = 640;
         app.frame_height = 400;
@@ -2615,7 +2632,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn scrollback_bounds_uses_read_only_vt_length() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.parser.screen_mut().set_size(3, 10);
         let _ = app.parser.take_damage();
         app.parser.process(b"a\r\nb\r\nc\r\nd");
@@ -2719,7 +2736,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn mouse_mode_maps_the_vt100_variants_a_tui_actually_requests() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         assert_eq!(
             app.mouse_mode(),
             (
@@ -2751,7 +2768,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn scrolling_clamps_to_available_scrollback() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         // Nothing scrolled off yet, so the viewport cannot move up...
         app.scroll_by(10);
         assert_eq!(app.scroll_offset, 0);
@@ -2761,7 +2778,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn queued_resize_coalesces_without_synchronously_mutating_the_grid() {
-        let mut terminal = ConTerminal::new(None);
+        let mut terminal = ConTerminal::new(None, None);
         let original_grid = (terminal.cols, terminal.rows);
         terminal.queue_resize(900, 600, 1.0);
         terminal.queue_resize(1200, 800, 1.25);
@@ -2783,7 +2800,7 @@ pub(crate) mod tests {
         // a black-box control `send-wheel` test against a real session with
         // actual scrolled-off lines; this pins the same fact as a fast unit
         // test so it can't regress silently again.
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.parser.screen_mut().set_size(4, 40);
         for line in 0..20 {
             app.parser.process(format!("line{line}\r\n").as_bytes());
@@ -2832,7 +2849,7 @@ pub(crate) mod tests {
         for &(phys_w, phys_h) in &[(960u32, 600u32), (1280, 400), (420, 900)] {
             for scale_tenths in [10u32, 15, 25] {
                 let scale = f64::from(scale_tenths) / 10.0;
-                let mut app = ConTerminal::new(None);
+                let mut app = ConTerminal::new(None, None);
                 app.apply_resize(phys_w, phys_h, scale);
                 // One notch per step across the whole clamp range, exactly
                 // as `zoom_font` walks it, with output in flight throughout.
@@ -2849,7 +2866,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn double_click_uses_shared_terminal_word_classes() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.parser.screen_mut().set_size(4, 40);
         app.parser.process(b"cd /usr/local/bin (note)");
 
@@ -2874,7 +2891,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn triple_click_selects_only_the_visible_row() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.parser.screen_mut().set_size(4, 10);
         // 15 characters over a 10-column grid soft-wraps onto row 1.
         app.parser.process(b"abcdefghijklmno");
@@ -2891,7 +2908,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn click_counting_requires_the_same_cell_within_the_window() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         let here = TerminalPoint { row: 1, col: 1 };
         let elsewhere = TerminalPoint { row: 5, col: 5 };
 
@@ -2913,7 +2930,7 @@ pub(crate) mod tests {
     /// and right-click stops pasting.
     #[test]
     fn a_click_without_a_drag_is_not_a_selection() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         let point = TerminalPoint { row: 2, col: 4 };
 
         app.selection = Some((point, point));
@@ -3017,7 +3034,7 @@ pub(crate) mod tests {
     /// success. The message answers "now"; only the count answers "ever".
     #[test]
     fn a_healed_resize_still_admits_that_one_was_refused() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         assert_eq!(app.backend_resize_failures, 0);
         assert!(app.backend_resize_error.is_none());
 
@@ -3053,7 +3070,7 @@ pub(crate) mod tests {
             let scale = f64::from(scale_tenths) / 10.0;
             for logical in [8.0, 20.0, 36.0] {
                 for &(w, h) in &[(1u32, 1u32), (50, 50), (960, 600), (3840, 2160)] {
-                    let mut app = ConTerminal::new(None);
+                    let mut app = ConTerminal::new(None, None);
                     app.font_size_logical = logical;
                     app.apply_resize(w, h, scale);
                     assert!(
@@ -3099,7 +3116,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn blink_toggles_on_the_configured_interval_and_resets_on_keystroke() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         assert!(app.blink_visible);
         let start = app.last_blink_at;
 
@@ -3337,7 +3354,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn hidden_or_scrolled_cursor_does_not_arm_the_blink_timer() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         assert!(app.cursor_blink_is_live());
         app.scroll_offset = 3;
         assert!(!app.cursor_blink_is_live());
@@ -3362,7 +3379,7 @@ pub(crate) mod tests {
         // Isolates the encoder from the ConPTY/cmd.exe environment: if this
         // passes but a real session's cursor still does not move, the bug is
         // downstream of write_pty, not in event construction or encoding.
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.master = None; // no real PTY; we only care what bytes WOULD be sent
         // Reconstruct exactly what inject_key builds, bypassing
         // forward_key's PTY write so we can inspect the encoder's output
@@ -3384,7 +3401,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn capture_loss_cancels_local_selection_and_pairs_raw_mouse_release() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.mouse_dragging = true;
         app.selecting = true;
         app.active_button = Some(2);
@@ -3401,7 +3418,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn application_mouse_failure_does_not_commit_reported_cell() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.parser.process(b"\x1b[?1000h");
         let point = TerminalPoint { row: 2, col: 3 };
 
@@ -3416,7 +3433,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn alternate_screen_wheel_propagates_closed_pty() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.parser.process(b"\x1b[?1049h");
 
         let error = app
@@ -3427,7 +3444,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn injected_terminal_key_propagates_closed_pty() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
 
         let error = app
             .inject_key(InjectedKey::Char('a'), false, false, false)
@@ -3438,7 +3455,7 @@ pub(crate) mod tests {
     }
     #[test]
     fn failed_terminal_paste_does_not_commit_live_view_scroll() {
-        let mut app = ConTerminal::new(None);
+        let mut app = ConTerminal::new(None, None);
         app.scroll_offset = 7;
 
         let error = app.paste_text("retry me").unwrap_err();
@@ -3451,7 +3468,7 @@ pub(crate) mod tests {
     /// window read differently depending on which had written it last.
     #[test]
     fn every_path_builds_the_same_window_title() {
-        let mut terminal = ConTerminal::new(None);
+        let mut terminal = ConTerminal::new(None, None);
         let product = product_window_title();
         assert_eq!(product, format!("MiniCon {}", env!("CARGO_PKG_VERSION")));
         terminal.current_title = "deploy".to_owned();
@@ -3473,7 +3490,7 @@ pub(crate) mod tests {
     /// fails this test instead of silently giving new tabs a different config.
     #[test]
     fn session_seed_round_trips_every_inherited_field() {
-        let mut source = ConTerminal::new(Some("C:\\work".to_owned()));
+        let mut source = ConTerminal::new(Some("C:\\work".to_owned()), None);
         source.command = Some(vec!["cmd.exe".to_owned(), "/K".to_owned()]);
         source.font_size_logical = 21.5;
         source.font_size_baseline = 18.0;
