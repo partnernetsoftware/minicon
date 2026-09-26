@@ -282,19 +282,13 @@ minicon` must precede it or a stale binary is what gets tested.
 ### harness — what is built and what is owed
 
 **Built, with named evidence.** The two tools are `[v]`. Both backends are
-wired and dispatched from `run_harness` on `--backend`, each running its own
-codec: `harness_wire` speaks DeepSeek's wire format, `harness_opencode` the
-OpenAI-compatible shape an opencode-go server presents, and the only thing
-they share is the `Transport` seam. The DeepSeek codec is covered by
-`harness_wire`'s four transport tests, the opencode-go codec by twelve tests
-in `harness_opencode` — endpoint resolution, a real-socket round trip
-asserting the request line, bearer header, `stream:false`, both advertised
-tools and the model-commanded file landing under the task root, plus every
-bounded refusal (non-2xx carrying the server's own text, truncated JSON, the
-reply ceiling, named missing fields, the turn bound, the tool-call bound).
-Seventeen one-line breaks were each applied and restored byte-exact; each
-failed exactly the test(s) covering it. The whole gate is green under xvfb,
-exit 0: unit 352, mux 4, blackbox 28, control 12, alignment 15.
+`[v]`, wired and dispatched from `run_harness` on `--backend`, each running
+its own codec: `harness_wire` speaks DeepSeek's wire format, `harness_opencode`
+the OpenAI-compatible shape opencode-go's real hosted service presents, and
+the only thing they share is the widened `Transport` seam (an
+`extra_headers` parameter, needed for opencode-go's mandatory
+`x-opencode-session`). Both codecs are covered by fixture tests plus, now,
+live black-box calls against the real endpoints (see below).
 
 That the wiring itself is real is falsifiable rather than asserted: reverting
 `run_harness`'s dispatch makes the entire opencode-go adapter dead code, which
@@ -302,21 +296,36 @@ the gate's `dead_code` denial rejects with eight `never used` errors. No
 module in the harness carries a `cfg_attr(not(test), allow(dead_code))` any
 more; each allowance was removed as its stated reason expired.
 
-**Owed, and BLOCKED rather than skipped.** Three things, none of which "it
-compiles" substitutes for:
+**No-live-call BLOCKERs withdrawn, 2026-09-26.** Both backends now have live
+evidence, each `BLOCKED` only when this environment lacks the credential
+(never silently skipped): `deepseek_backend_runs_a_real_bounded_task_and_
+writes_the_file` / `..._through_the_exec_tool` and
+`opencode_backend_runs_a_real_bounded_task_and_writes_the_file` in
+`tests/minicon_harness.rs`.
 
-1. **No live DeepSeek call.** The key this environment carries is rejected by
-   the API. Every DeepSeek-side test is loopback plain HTTP plus pure mapping
-   functions.
-2. **No live opencode-go call.** Nothing in this repository documents that
-   server's wire format, so the adapter implements the OpenAI-compatible shape
-   and states each assumption in its module header instead of inventing
-   fields. `OPENCODE_DEFAULT_MODEL` and the default port are unverified
-   placeholders.
-3. **TLS is proven by nothing here.** No test in either repository reaches a
-   host but `127.0.0.1`, and the Windows/macOS `native-tls` arm is not
-   compiled in any evidence on record. The TLS provider selection is proved
-   only by the feature graph compiling.
+opencode-go's wire shape was not documented anywhere in this repository, so
+rather than invent it, it was researched live (WebSearch/WebFetch plus direct
+`curl` against the real endpoint with the real credential) and the adapter
+was corrected to match what was found: the real service is a **hosted
+subscription API** (`https://opencode.ai/zen/go`), not a loopback local
+server; it is HTTPS-only; it requires a mandatory `x-opencode-session` header
+(`harness_opencode::OPENCODE_SESSION_ID`, sent unconditionally -- its absence
+is refused with `MissingSessionID` even with a valid bearer key, and a query
+parameter does not substitute); and it has no model named `"opencode"` -- its
+real catalog (`GET /v1/models`) includes `deepseek-flash`, `deepseek-v4-pro`,
+`glm-5.3`, `grok-4.7`, `kimi-k3` among others, selectable via the new
+`MINICON_OPENCODE_MODEL` (`harness_opencode::OPENCODE_MODEL_VAR`). The shared
+`Transport::post_json` seam was widened with an `extra_headers` parameter to
+carry this, proved by a new loopback test in `harness_wire.rs` asserting a
+real socket receives an arbitrary extra header.
+
+**Owed, and BLOCKED rather than skipped.**
+
+1. **TLS is proven only for Unix Rustls/WebPKI.** The live DeepSeek and
+   opencode-go calls above are real evidence for that provider, but the
+   Windows/macOS `native-tls` arm is not compiled in any evidence on record.
+   The TLS provider selection there is proved only by the feature graph
+   compiling.
 
 Windows and macOS coverage for both branches is owed to their courts, not
 claimed here.

@@ -385,7 +385,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │         compiled in any evidence -- only Unix Rustls/WebPKI has run a real
 │   │         handshake. The TLS provider selection on Windows/macOS is proved
 │   │         only by the feature graph compiling
-│   ├── H5 opencode-go-compatible backend ->h1 [-]
+│   ├── H5 opencode-go-compatible backend ->h1 [v]
 │   │   ├── invariant: a second, independently verified adapter — H1's
 │   │   │     decision explicitly forbids assuming H4's adapter covers it.
 │   │   │     Held: `harness_opencode` owns its request body, its reply
@@ -423,12 +423,49 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     adapter dead code -- eight `never used` errors under the gate's
 │   │   │     `dead_code` denial -- so the wiring is falsifiable, not claimed.
 │   │   │     The module's `cfg_attr(not(test), allow(dead_code))` is gone
-│   │   ├── BLOCKED: no live round trip against a real opencode-go server.
-│   │   │     Nothing in this clone documents that wire shape, so the adapter
-│   │   │     implements the OpenAI-compatible shape and STATES each
-│   │   │     assumption in its module header rather than inventing fields.
-│   │   │     `OPENCODE_DEFAULT_MODEL = "opencode"` and the default port are
-│   │   │     unverified. Stays `[-]`, never `[v]`, until that run exists
+│   │   ├── BLOCKED credential withdrawn, 2026-09-26: independent web/API
+│   │   │     research (WebSearch/WebFetch plus direct `curl` against the real
+│   │   │     endpoint with the real `MINICON_OPENCODE_API_KEY`) established
+│   │   │     that opencode-go is a **hosted subscription service**
+│   │   │     (`https://opencode.ai/zen/go`), not the loopback local server
+│   │   │     this module's header had assumed. Confirmed live: HTTPS-only;
+│   │   │     bearer key accepted; a mandatory `x-opencode-session` header
+│   │   │     (its absence gets `MissingSessionID`, even with a valid key --
+│   │   │     a session id as a query parameter does not satisfy this); no
+│   │   │     model literally named `"opencode"` (real catalog via
+│   │   │     `GET /v1/models` includes `deepseek-flash`, `deepseek-v4-pro`,
+│   │   │     `glm-5.3`, `grok-4.7`, `kimi-k3`, among others)
+│   │   ├── #divergence design vs. reality, recorded rather than silently
+│   │   │     patched: fixed by (1) widening `Transport::post_json` with an
+│   │   │     `extra_headers: &[(&str, &str)]` parameter (new test in
+│   │   │     `harness_wire.rs` proves a real loopback listener receives an
+│   │   │     arbitrary extra header); (2) `opencode_chat_url_from` now accepts
+│   │   │     `https://` too, correcting a doc comment that had claimed
+│   │   │     "MiniCon has no TLS capability" -- stale since H4's transport
+│   │   │     swap; (3) `OPENCODE_MODEL_VAR = MINICON_OPENCODE_MODEL`, mirroring
+│   │   │     `OPENCODE_BASE_URL_VAR`, so a caller can name a real catalog
+│   │   │     model instead of the placeholder; (4) a fixed
+│   │   │     `OPENCODE_SESSION_ID = "minicon-harness"` sent unconditionally --
+│   │   │     one CLI invocation is one bounded task, so no per-run session
+│   │   │     store is needed
+│   │   ├── live evidence: `opencode_backend_runs_a_real_bounded_task_and_
+│   │   │     writes_the_file` in `tests/minicon_harness.rs`, gated on
+│   │   │     `MINICON_OPENCODE_API_KEY` (BLOCKED, not silently skipped, when
+│   │   │     absent), driving the shipped binary with `--backend opencode-go`
+│   │   │     against the real `https://opencode.ai/zen/go` endpoint and model
+│   │   │     `deepseek-flash`, asserting the model-commanded write lands under
+│   │   │     the task root. Provability verified by deliberately requiring an
+│   │   │     absent string in the write and confirming the test fails with the
+│   │   │     real content on stderr, then reverting
+│   │   ├── #risk this run proves Unix Rustls/WebPKI reaches this HTTPS
+│   │   │     endpoint; it does not prove Windows/macOS native-tls does --
+│   │   │     same caveat H4 already carries, not newly introduced here
+│   │   ├── #risk the live test failed once with an upstream HTTP 400 on a
+│   │   │     later turn, then passed unmodified on immediate retry -- the
+│   │   │     real service's own transient behavior under a live model call,
+│   │   │     not a code defect (re-ran the same request by hand via `curl`
+│   │   │     and it succeeded). Recorded rather than papered over with a
+│   │   │     retry loop this repo's tests do not otherwise carry
 │   │   └── #risk this module duplicates `harness_wire`'s tool dispatch and
 │   │         system prompt almost verbatim. Deliberate under H1; collapse it
 │   │         only against live evidence from BOTH backends, never before

@@ -14,14 +14,12 @@
 //! are just early returns; from outside, the difference is which of two broken
 //! inputs gets named.
 //!
-//! Needs no display server and no network: every case here is a refusal that
-//! lands before any transport is opened. What these tests cannot supply is the
-//! file and exec tools' behavior *during* a task, because a tool only runs
-//! when a model asks it to. That is not unevidenced -- `harness_opencode`'s
-//! real-socket fixtures drive a scripted server through a full tool round trip,
-//! including a model-commanded file landing under the task root -- but a
-//! fixture is not a live endpoint, and that last step stays BLOCKED rather
-//! than claimed here.
+//! Most cases here are refusals that land before any transport is opened, so
+//! they need no display server and no network. The during-task behavior of
+//! the file and exec tools -- which only run when a model asks -- is instead
+//! evidenced by the live, env-gated tests below (`..._runs_a_real_bounded_task_
+//! ...`), each `BLOCKED` rather than silently skipped when its backend's API
+//! key is not set in this environment.
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -335,6 +333,66 @@ fn deepseek_backend_runs_a_real_bounded_task_through_the_exec_tool() {
         written.trim() == expected_count,
         "the live model's exec-tool-derived byte count is wrong: got {written:?}, \
          wanted {expected_count:?}"
+    );
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// H5's during-task, live-backend evidence: a real bounded task against the
+/// real hosted opencode-go service (`https://opencode.ai/zen/go`), model
+/// commanded write landing under the task root. Confirmed live (2026-09-26,
+/// direct `curl`) that this service: is HTTPS-only, requires a bearer key,
+/// requires the `x-opencode-session` header this backend now sends
+/// unconditionally, and has no model literally named `"opencode"` -- so this
+/// test also exercises `MINICON_OPENCODE_MODEL`, naming a real catalog model.
+/// When the key is absent the test prints why it did not run rather than
+/// silently vanishing -- per AGENTS.md, unavailable evidence is BLOCKED,
+/// never silently skipped.
+#[test]
+fn opencode_backend_runs_a_real_bounded_task_and_writes_the_file() {
+    let Ok(key) = std::env::var("MINICON_OPENCODE_API_KEY") else {
+        eprintln!(
+            "BLOCKED: opencode_backend_runs_a_real_bounded_task_and_writes_the_file \
+             skipped -- MINICON_OPENCODE_API_KEY is not set in this environment"
+        );
+        return;
+    };
+
+    let root = std::env::temp_dir().join(format!(
+        "minicon-h5-live-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create live-task root");
+
+    let mut command = Command::new(minicon_binary());
+    command
+        .arg("harness")
+        .args([
+            "--root",
+            root.to_str().expect("root is utf8"),
+            "--backend",
+            "opencode-go",
+            "--task",
+            "Write the exact text OK-H5-LIVE (no quotes, no extra text) into a \
+             file named result.txt using the file tool.",
+        ])
+        .env_remove("MINICON_DEEPSEEK_API_KEY")
+        .env("MINICON_OPENCODE_API_KEY", &key)
+        .env("MINICON_OPENCODE_BASE_URL", "https://opencode.ai/zen/go")
+        .env("MINICON_OPENCODE_MODEL", "deepseek-flash");
+    let output = command.output().expect("minicon harness runs");
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(0), "stderr={stderr}");
+
+    let written = std::fs::read_to_string(root.join("result.txt"))
+        .expect("the model-commanded write must land under the task root");
+    assert!(
+        written.contains("OK-H5-LIVE"),
+        "the live model's write did not carry the requested content: {written:?}"
     );
 
     std::fs::remove_dir_all(&root).ok();

@@ -7,12 +7,11 @@
 //!
 //! ## What is assumed about the wire shape, and what is still owed
 //!
-//! This repository documents no opencode-go wire format: `PRD_02_31` and
-//! `plan/plan-v0.2.0.md` say only that such a server "typically" listens on
-//! loopback over plain HTTP, and nothing about its JSON. Rather than invent
-//! undocumented fields, this adapter implements the **OpenAI-compatible
-//! `/v1/chat/completions` shape** that servers of this kind expose. Stated
-//! plainly, the assumptions are:
+//! Verified live against the real hosted opencode-go service on 2026-09-26
+//! (`https://opencode.ai/zen/go`, a paid subscription API, not a loopback
+//! local server as earlier drafts of this module assumed). Confirmed by
+//! direct `curl` against `/v1/chat/completions` and `/v1/models` with a real
+//! bearer key:
 //!
 //! 1. The endpoint is `POST <base>/v1/chat/completions`, `application/json`,
 //!    with an `Authorization: Bearer <key>` header.
@@ -23,19 +22,27 @@
 //!    `tool_calls` array whose entries carry `id` and
 //!    `function.{name,arguments}`, `arguments` being a JSON *string*.
 //! 4. A refusal states itself in a top-level `error.message`.
+//! 5. The request also needs an `x-opencode-session` header
+//!    (`OPENCODE_SESSION_ID`) -- its absence is refused with
+//!    `MissingSessionID`, even though the bearer key is otherwise accepted. A
+//!    session id passed as a query parameter instead does not satisfy this;
+//!    it must be a real header.
+//! 6. There is no model named `"opencode"`. The real catalog (`GET
+//!    <base>/v1/models`) includes `deepseek-flash`, `deepseek-v4-pro`,
+//!    `glm-5.3`, `grok-4.7`, `kimi-k3`, among others; `OPENCODE_MODEL_VAR`
+//!    lets a caller name a real one.
 //!
-//! These are assumptions, not verified facts. Being the same family of shape
-//! as DeepSeek's is why the *codec below is still written independently*: if
-//! the assumption turns out wrong, only this file changes, and no claim of
-//! "any OpenAI-compatible endpoint" is inherited from H4.
+//! Being the same family of shape as DeepSeek's is why the *codec below is
+//! still written independently*: no claim of "any OpenAI-compatible endpoint"
+//! is inherited from H4.
 //!
-//! **Evidence still owed:** one live round trip against a real running
-//! opencode-go server — the request accepted, a real `tool_calls` reply
-//! parsed, one file landing under the task root. The tests below prove the
-//! adapter over a *real socket* against a fake endpoint, which covers framing,
-//! headers, body fields, parsing and every bounded refusal, but it cannot
-//! prove the remote server agrees with assumptions 1-4. Until that run exists
-//! this backend is `BLOCKED`, not `[x]`.
+//! **Evidence:** a live round trip against the real service is in
+//! `tests/minicon_harness.rs`, gated on `MINICON_OPENCODE_API_KEY` (`BLOCKED`
+//! when unset, per this repo's evidence rule, never silently skipped). The
+//! tests below prove the adapter over a *real socket* against a fake
+//! endpoint, which covers framing, headers, body fields, parsing and every
+//! bounded refusal; the live test proves the real service agrees with facts
+//! 1-6 above.
 
 use crate::harness_wire::Transport;
 
@@ -75,8 +82,42 @@ pub const OPENCODE_MAX_REPLY_BYTES: usize = 1024 * 1024;
 ///
 /// A local server's model set is the user's own, so this is only a placeholder
 /// the caller is expected to override; it is named here so there is one place
-/// to correct.
+/// to correct. `OPENCODE_MODEL_VAR` is the override mechanism.
 pub const OPENCODE_DEFAULT_MODEL: &str = "opencode";
+
+/// The environment variable naming this backend's model, overriding
+/// `OPENCODE_DEFAULT_MODEL`.
+///
+/// Needed for real use: the hosted opencode-go service (see
+/// `OPENCODE_BASE_URL_VAR`'s doc) has no model named `"opencode"` -- its
+/// catalog is a fixed list (`deepseek-flash` among others) discoverable only
+/// by calling its own `/v1/models`, so this backend cannot guess a working
+/// default and must let the caller name one.
+pub const OPENCODE_MODEL_VAR: &str = "MINICON_OPENCODE_MODEL";
+
+/// Resolves the model name: `OPENCODE_MODEL_VAR` if set and non-empty, else
+/// `OPENCODE_DEFAULT_MODEL`. Takes the value rather than reading the
+/// environment for the same provability reason as `opencode_chat_url_from`.
+pub fn opencode_model_from(raw: Option<&str>) -> String {
+    match raw.map(str::trim) {
+        None | Some("") => OPENCODE_DEFAULT_MODEL.to_owned(),
+        Some(value) => value.to_owned(),
+    }
+}
+
+/// Resolves the model name from the process environment.
+pub fn opencode_model() -> String {
+    opencode_model_from(std::env::var(OPENCODE_MODEL_VAR).ok().as_deref())
+}
+
+/// The fixed session identifier this backend sends as `x-opencode-session`.
+///
+/// The real hosted service refuses any request missing this header
+/// (`MissingSessionID`), confirmed live. One CLI invocation is one bounded
+/// task, not a multi-process conversation needing cross-process session
+/// continuity, so a fixed constant is enough -- no session store, no
+/// generated id to persist or leak.
+pub const OPENCODE_SESSION_ID: &str = "minicon-harness";
 
 // ---------------------------------------------------------------------------
 // H5 -- endpoint resolution
@@ -95,11 +136,14 @@ pub const OPENCODE_BASE_URL_VAR: &str = "MINICON_OPENCODE_BASE_URL";
 ///
 /// Loopback by decision, not by convenience. A default that could be remote
 /// would send a task and a bearer token off the machine because a variable was
-/// forgotten; this default cannot leave the host, and the transport has no TLS
-/// to reach a remote endpoint with anyway.
+/// forgotten; this default cannot leave the host. The transport can reach an
+/// `https://` endpoint too (see `harness_wire.rs`'s `NetworkHttp`), which is
+/// how the real hosted service is reached -- by naming it explicitly through
+/// `OPENCODE_BASE_URL_VAR` (e.g. `https://opencode.ai/zen/go`), never by
+/// changing this default.
 pub const OPENCODE_DEFAULT_BASE_URL: &str = "http://127.0.0.1:4096";
 
-/// The path appended to the base URL. See assumption 1 in the module header.
+/// The path appended to the base URL. See fact 1 in the module header.
 pub const OPENCODE_CHAT_PATH: &str = "/v1/chat/completions";
 
 /// Resolves the chat URL from an already-read environment value.
@@ -115,27 +159,31 @@ pub fn opencode_chat_url_from(raw: Option<&str>) -> Result<String, String> {
         None | Some("") => OPENCODE_DEFAULT_BASE_URL,
         Some(value) => value,
     };
-    if !base.starts_with("http://") {
+    // `NetworkHttp` (see `harness_wire.rs`) reaches both schemes now, so this
+    // adapter no longer refuses `https://`: opencode-go's real hosted service
+    // (`https://opencode.ai/zen/go`) is reachable, alongside the loopback
+    // plain-HTTP default a local server presents.
+    let scheme = if base.starts_with("https://") {
+        "https://"
+    } else if base.starts_with("http://") {
+        "http://"
+    } else {
         return Err(format!(
-            "harness: {OPENCODE_BASE_URL_VAR}={base:?} is refused: it must be an http:// base \
-             URL. MiniCon has no TLS capability, so an https:// endpoint cannot be reached and \
-             will not be downgraded to pretend otherwise; the default when the variable is \
-             unset is {OPENCODE_DEFAULT_BASE_URL}"
+            "harness: {OPENCODE_BASE_URL_VAR}={base:?} is refused: it must be an http:// or \
+             https:// base URL; the default when the variable is unset is \
+             {OPENCODE_DEFAULT_BASE_URL}"
         ));
-    }
+    };
     // Strip the scheme first and only then the trailing slashes: doing it the
     // other way round turns the hostless "http://" into the non-empty "http:"
     // and lets it through.
-    let authority = base
-        .trim_start_matches("http://")
-        .trim_end_matches('/')
-        .trim();
+    let authority = base.trim_start_matches(scheme).trim_end_matches('/').trim();
     if authority.is_empty() || authority.starts_with('/') {
         return Err(format!(
             "harness: {OPENCODE_BASE_URL_VAR}={base:?} is refused: it names no host"
         ));
     }
-    Ok(format!("http://{authority}{OPENCODE_CHAT_PATH}"))
+    Ok(format!("{scheme}{authority}{OPENCODE_CHAT_PATH}"))
 }
 
 /// Resolves the chat URL from the process environment.
@@ -394,7 +442,12 @@ pub fn opencode_run_task(
 
     for _turn in 0..OPENCODE_MAX_TURNS {
         let body = opencode_request_body(model, &messages);
-        let reply = transport.post_json(url, bearer, &body)?;
+        let reply = transport.post_json(
+            url,
+            bearer,
+            &body,
+            &[("x-opencode-session", OPENCODE_SESSION_ID)],
+        )?;
         match opencode_parse_reply(&reply)? {
             OpencodeReply::Text(text) => return Ok(text),
             OpencodeReply::ToolCalls(calls) => {
@@ -703,14 +756,17 @@ mod tests {
     }
 
     #[test]
-    fn opencode_endpoint_refuses_a_non_http_or_hostless_base_url() {
-        let https = opencode_chat_url_from(Some("https://127.0.0.1:9911"))
-            .expect_err("https is refused, not downgraded");
-        assert!(https.contains("no TLS capability"), "{https}");
-        assert!(https.contains(OPENCODE_BASE_URL_VAR), "{https}");
-        // And it does not quietly become the default instead.
-        assert!(!https.starts_with("http://"), "{https}");
+    fn opencode_endpoint_accepts_https_for_the_real_hosted_service() {
+        // The real opencode-go service is https-only
+        // (`https://opencode.ai/zen/go`); this must resolve, not be refused.
+        assert_eq!(
+            opencode_chat_url_from(Some("https://opencode.ai/zen/go")).expect("https resolves"),
+            format!("https://opencode.ai/zen/go{OPENCODE_CHAT_PATH}")
+        );
+    }
 
+    #[test]
+    fn opencode_endpoint_refuses_a_non_http_or_hostless_base_url() {
         let hostless =
             opencode_chat_url_from(Some("http://")).expect_err("a hostless base is refused");
         assert!(hostless.contains("names no host"), "{hostless}");
@@ -718,6 +774,7 @@ mod tests {
         let nonsense =
             opencode_chat_url_from(Some("not a url")).expect_err("an unparseable base is refused");
         assert!(nonsense.contains("not a url"), "{nonsense}");
+        assert!(nonsense.contains(OPENCODE_BASE_URL_VAR), "{nonsense}");
     }
 
     // -- real round trip over a real socket ----------------------------------
@@ -785,6 +842,12 @@ mod tests {
                 .split("\r\n")
                 .any(|line| line.eq_ignore_ascii_case("Authorization: Bearer test-key")),
             "the bearer header reached the server: {:?}",
+            first.head
+        );
+        assert!(
+            first.head.split("\r\n").any(|line| line
+                .eq_ignore_ascii_case(&format!("x-opencode-session: {OPENCODE_SESSION_ID}"))),
+            "the mandatory session header reached the server: {:?}",
             first.head
         );
         let sent: serde_json::Value =

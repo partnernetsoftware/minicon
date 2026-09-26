@@ -244,19 +244,26 @@ flowchart LR
   FAIL 0 / PASS 23 / BLOCKED 18 on the repinned `agenterm`, Apple cells
   included from a Linux host with a macOS 15.5 SDK. Still BLOCKED and not
   claimed by this release: no runtime execution of the Windows/macOS bytes
-  (cross-compile and static-signing/scan evidence only), and H5's live-backend
-  evidence in `plan/plan-v0.2.0.md`, which stays unarchived while that leaf is
-  `[_]`. H2/H3/H4 flipped to `[v]` 2026-09-26: `MINICON_DEEPSEEK_API_KEY` was
-  reconfigured in this environment, the real DeepSeek endpoint accepts it,
-  and two live black-box tests in `tests/minicon_harness.rs`
+  (cross-compile and static-signing/scan evidence only), and the TLS
+  provider's Windows/macOS `native-tls` arm, unproven on any court that ran.
+  H2-H5 all flipped to `[v]` 2026-09-26. `MINICON_DEEPSEEK_API_KEY` was
+  reconfigured in this environment and the real DeepSeek endpoint accepts it;
+  two live black-box tests in `tests/minicon_harness.rs`
   (`deepseek_backend_runs_a_real_bounded_task_and_writes_the_file` for the
   file tool, `deepseek_backend_runs_a_real_bounded_task_through_the_exec_tool`
   for the exec tool) each drive one real bounded task end to end. H5
-  (opencode-go backend) is still BLOCKED: no local opencode-go server is
-  reachable, and the base URL for the hosted key this environment carries
-  (`MINICON_OPENCODE_API_KEY`) is not documented anywhere in this clone —
-  inventing one would violate the module's own stated policy of never
-  guessing an unverified endpoint. Owner:
+  (opencode-go backend) closed the same day: independent web/API research
+  (not invented) established that opencode-go, for the hosted key this
+  environment carries, is a **subscription service**
+  (`https://opencode.ai/zen/go`), not a local server — HTTPS-only, requiring
+  a mandatory `x-opencode-session` header and a real catalog model name (no
+  model is literally named `"opencode"`). The adapter and the shared
+  `Transport` seam were corrected to match, and
+  `opencode_backend_runs_a_real_bounded_task_and_writes_the_file` drives the
+  same live-write proof against the real endpoint. `plan/plan-v0.2.0.md`'s
+  harness branch is now all `[v]`; archival into this PRD is pending the
+  `mux` branch closing too, per that plan's own "upsert once, after both
+  branches close" rule. Owner:
   [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md), section "0.2.0 — what the
   version number stands for, and what it does not".
 - [v] v0.1.26 is the latest public release: composer multi-line caret

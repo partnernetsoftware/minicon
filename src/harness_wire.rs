@@ -22,7 +22,19 @@ pub trait Transport {
     /// A non-2xx status is an `Err` carrying the status and as much of the
     /// body as the endpoint sent, since that is where an API states why it
     /// refused (a bad key, a rejected model name).
-    fn post_json(&self, url: &str, bearer: &str, body: &str) -> Result<String, String>;
+    ///
+    /// `extra_headers` carries headers beyond `Authorization`/`Content-Type`/
+    /// `Accept` that a specific backend's wire shape requires (opencode-go's
+    /// mandatory `x-opencode-session`, for one). DeepSeek passes an empty
+    /// slice; this stays one method rather than growing a second so every
+    /// caller and test double keeps exactly one seam to implement.
+    fn post_json(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &str,
+        extra_headers: &[(&str, &str)],
+    ) -> Result<String, String>;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,21 +71,31 @@ pub const HARNESS_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_
 pub struct NetworkHttp;
 
 impl Transport for NetworkHttp {
-    fn post_json(&self, url: &str, bearer: &str, body: &str) -> Result<String, String> {
+    fn post_json(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &str,
+        extra_headers: &[(&str, &str)],
+    ) -> Result<String, String> {
         use agenterm_platform::network_http;
 
-        let request =
+        let mut request =
             network_http::NetworkHttpRequest::new(network_http::NetworkHttpMethod::Post, url)
                 .header("Authorization", format!("Bearer {bearer}"))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .body(body.as_bytes().to_vec())
-                .timeout(HARNESS_HTTP_TIMEOUT)
-                // No redirects at all. A redirected POST is either replayed without
-                // its body or replayed with the bearer token to a host the caller
-                // never named; both are worse than a named failure.
-                .max_redirects(0)
-                .max_response_bytes(HARNESS_HTTP_MAX_RESPONSE_BYTES);
+                .timeout(HARNESS_HTTP_TIMEOUT);
+        for (name, value) in extra_headers {
+            request = request.header(*name, *value);
+        }
+        let request = request
+            // No redirects at all. A redirected POST is either replayed without
+            // its body or replayed with the bearer token to a host the caller
+            // never named; both are worse than a named failure.
+            .max_redirects(0)
+            .max_response_bytes(HARNESS_HTTP_MAX_RESPONSE_BYTES);
 
         // `validate` opens no socket, so an over-long body, a non-http scheme
         // or a hostless URL is refused here with no connection attempted. The
@@ -369,7 +391,7 @@ pub fn run_task(
 
     for _turn in 0..HARNESS_MAX_TURNS {
         let body = deepseek_request_body(model, &messages);
-        let reply = transport.post_json(url, bearer, &body)?;
+        let reply = transport.post_json(url, bearer, &body, &[])?;
         match deepseek_parse_reply(&reply)? {
             ModelReply::Text(text) => return Ok(text),
             ModelReply::ToolCalls(calls) => {
@@ -530,7 +552,13 @@ mod tests {
     }
 
     impl Transport for ScriptedTransport {
-        fn post_json(&self, _url: &str, _bearer: &str, body: &str) -> Result<String, String> {
+        fn post_json(
+            &self,
+            _url: &str,
+            _bearer: &str,
+            body: &str,
+            _extra_headers: &[(&str, &str)],
+        ) -> Result<String, String> {
             self.sent.borrow_mut().push(body.to_owned());
             self.replies
                 .borrow_mut()
@@ -804,7 +832,7 @@ mod tests {
         // these URLs, and the error names the pre-socket stage and the kind.
         for url in ["ftp://example.invalid/chat", "http:///chat", ""] {
             let error = NetworkHttp
-                .post_json(url, "key", "{}")
+                .post_json(url, "key", "{}", &[])
                 .expect_err("an unusable URL must be refused");
             assert!(
                 error.contains("before any socket is opened") && error.contains("invalid-url"),
@@ -869,6 +897,7 @@ mod tests {
                 &format!("http://127.0.0.1:{port}/chat"),
                 "secret",
                 "{\"ping\":1}",
+                &[],
             )
             .expect("the loopback round trip");
         assert_eq!(
@@ -887,5 +916,62 @@ mod tests {
             "{request}"
         );
         assert!(request.contains("{\"ping\":1}"), "{request}");
+    }
+
+    #[test]
+    fn the_transport_sends_extra_headers_when_given_any() {
+        // opencode-go needs `x-opencode-session` on the wire; DeepSeek needs
+        // nothing extra. Proof this seam actually reaches the socket, not just
+        // that the call compiles: a real loopback listener sees the header.
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("an ephemeral loopback port");
+        let port = listener.local_addr().expect("the bound address").port();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read as _, Write as _};
+            let (mut stream, _) = listener.accept().expect("one connection");
+            let mut seen = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let read = stream.read(&mut chunk).expect("request bytes");
+                seen.extend_from_slice(&chunk[..read]);
+                if read == 0
+                    || seen
+                        .windows(4)
+                        .position(|window| window == b"\r\n\r\n")
+                        .is_some_and(|split| seen.len() > split + 4)
+                {
+                    break;
+                }
+            }
+            let body = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                         {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .expect("the reply");
+            let _ = stream.flush();
+            String::from_utf8_lossy(&seen).into_owned()
+        });
+
+        NetworkHttp
+            .post_json(
+                &format!("http://127.0.0.1:{port}/chat"),
+                "secret",
+                "{}",
+                &[("x-opencode-session", "minicon-harness")],
+            )
+            .expect("the loopback round trip");
+
+        let request = server.join().expect("the server thread");
+        let lowered = request.to_ascii_lowercase();
+        assert!(
+            lowered.contains("\r\nx-opencode-session: minicon-harness\r\n"),
+            "{request}"
+        );
     }
 }

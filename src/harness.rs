@@ -88,11 +88,12 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
             // environment, and a bad base URL should name itself as the
             // problem rather than surface as a transport failure later.
             let url = crate::harness_opencode::opencode_chat_url()?;
+            let model = crate::harness_opencode::opencode_model();
             crate::harness_opencode::opencode_run_task(
                 &crate::harness_wire::NetworkHttp,
                 &url,
                 &key,
-                crate::harness_opencode::OPENCODE_DEFAULT_MODEL,
+                &model,
                 &request.task,
                 &file_tool,
                 &exec_tool,
