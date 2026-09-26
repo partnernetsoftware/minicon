@@ -92,10 +92,31 @@ process, exactly like the existing `--control` endpoint.
 │   ├── policy #decision
 │   │   ├── no separate "Agent permission policy" framework
 │   │   └── the two tools' own bounds (root path, command) are the policy
-│   ├── non-goals
+│   ├── non-goals (0.2.x, this horizon's own two-tool loop)
 │   │   ├── [-] a plugin/tool-registration system
 │   │   ├── [-] inbound network service or remote task queue
-│   │   └── [-] multi-agent orchestration or a scripting runtime
+│   │   └── [-] multi-agent orchestration or a scripting runtime, AS A
+│   │         BUILT-IN FEATURE OF THIS RELEASE -- narrowed 2026-09-26, see
+│   │         the open question directly below; this line no longer means
+│   │         "never", it means "not decided, not in 0.2.x"
+│   ├── {h-orch} open question, undecided (owner, 2026-09-26): where does
+│   │   "coordinate the agents in each tab" actually live?
+│   │   ├── owner's stated intent: NOT external-only composition (a user's
+│   │   │   own script calling mux then harness) -- the real want is
+│   │   │   `minicon-harness` itself using the `mux` verbs as a third
+│   │   │   tool/capability to dispatch across tabs, so the harness loop
+│   │   │   is the orchestrator, not just a per-tab worker ->m #assumption
+│   │   ├── owner's own caveat, unresolved: "coordinating many agents isn't
+│   │   │   easy -- needs a context concept and a workflow concept" -- i.e.
+│   │   │   this is not settled even as intent, only as direction #risk
+│   │   ├── #risk this reopens the "exactly these two tools" decision above
+│   │   │   and the "no plugin/scripting runtime" non-goals -- a `mux` tool
+│   │   │   inside harness's loop plus any workflow/context model is new
+│   │   │   surface, not a rewording of the existing two-tool policy
+│   │   └── #decision do not start implementation on this until context and
+│   │         workflow concepts are actually designed (tree DAG + memory
+│   │         palace per AGENTS.md) and the tool-count decision is revisited
+│   │         explicitly; this stays `BLOCKED` on design, not skipped
 │   ├── safe failure: a bad key or unreachable model is a bounded CLI error;
 │   │   a tool call outside its bound (root/command) is refused, not widened
 │   └── dependency: none new; a subprocess/file-IO capability MiniCon's
