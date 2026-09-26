@@ -10,7 +10,7 @@ product definition, boundary, invariants, cross-cutting evidence, and the safe
 failure result. Its child modules own third-level requirements, status, and
 measured evidence; a requirement stated in a child is not restated here.
 
-Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
+Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Subtree index
 
@@ -24,7 +24,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
 
 ## Product outcome
 
-- [x] `minicon` is the lightweight, green, GUI replacement for a system
+- [v] `minicon` is the lightweight, green, GUI replacement for a system
   console host. AgenTerm is the Agent-era workbench on the same platform
   layer (rendering + dedicated input): it keeps a real terminal at the core
   and adds a longer-lived server identity, Fleet, mux, persistence, and Agent
@@ -62,7 +62,7 @@ failure, resize storms, process exit, and interaction races.
 
 ### Explicit non-goals
 
-- [x] no background server, Fleet authority, persistent workspace, remote mux,
+- [v] no background server, Fleet authority, persistent workspace, remote mux,
   MCP, script runtime, task engine, or general plugin host. The no-script
   boundary is enforced in the binary rather than by convention: `--script`,
   its JSON command decoder, command queue, wait scheduler, and script-only

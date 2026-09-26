@@ -171,19 +171,19 @@ fn machine_contract_matches_public_cli_and_registered_journeys() {
             .unwrap_or_else(|error| panic!("read PRD owner {prd}: {error}"));
         let anchor = required_str(capability, "prd_anchor");
         assert!(
-            anchor.starts_with("- [x] "),
+            anchor.starts_with("- [v] "),
             "non-shipped PRD anchor for {id}"
         );
         assert!(
             prd_text.contains(anchor),
             "missing exact PRD anchor for {id}"
         );
-        // A capability ships a `[x]` assertion. The same assertion text must not
-        // also appear as `[~]` (partial) or `[ ]` (planned) elsewhere in the
-        // PRD — a contradictory duplicate would let the contract claim shipped
-        // while the PRD still lists the work as outstanding.
-        let assertion = &anchor["- [x] ".len()..];
-        for state in ["- [~] ", "- [ ] "] {
+        // A capability ships a `[v]` assertion. The same assertion text must not
+        // also appear as `[-]` (in progress) or `[_]` (not started) elsewhere in
+        // the PRD — a contradictory duplicate would let the contract claim
+        // shipped while the PRD still lists the work as outstanding.
+        let assertion = &anchor["- [v] ".len()..];
+        for state in ["- [-] ", "- [_] "] {
             assert!(
                 !prd_text.contains(&format!("{state}{assertion}")),
                 "{id} claims the statement shipped, but {prd} also lists it as \

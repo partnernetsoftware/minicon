@@ -15,7 +15,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_24_con_terminal.md",
-      "prd_anchor": "- [x] each tree tab owns an independent PTY, parser, viewport and failure state",
+      "prd_anchor": "- [v] each tree tab owns an independent PTY, parser, viewport and failure state",
       "evidence": [
         "minicon_blackbox::cjk_output_from_a_real_child_process_appears_as_actual_characters",
         "minicon_blackbox::snapshot_reports_exit_code_and_retains_tab_until_explicit_close",
@@ -29,7 +29,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_24_con_terminal.md",
-      "prd_anchor": "- [x] con's dedicated public sustained-output qualification delivers a fixed",
+      "prd_anchor": "- [v] con's dedicated public sustained-output qualification delivers a fixed",
       "evidence": ["minicon_throughput::sustained_long_output_keeps_control_and_sibling_responsive"],
       "commands": []
     },
@@ -39,7 +39,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_25_con_workspace.md",
-      "prd_anchor": "- [x] `Workspace` is the sole authority for tree order, parentage and stable tab",
+      "prd_anchor": "- [v] `Workspace` is the sole authority for tree order, parentage and stable tab",
       "evidence": ["minicon_control::gui_control_surface_isolated_multitab_black_box"],
       "commands": ["close-tab", "list-tabs", "new-tab", "select-tab"]
     },
@@ -49,7 +49,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_25_con_workspace.md",
-      "prd_anchor": "- [x] a tab whose shell has exited stays in the tree (remain-on-exit) and is",
+      "prd_anchor": "- [v] a tab whose shell has exited stays in the tree (remain-on-exit) and is",
       "evidence": ["minicon_blackbox::an_exited_shell_repaints_its_tab_row"],
       "commands": []
     },
@@ -59,7 +59,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_25_con_workspace.md",
-      "prd_anchor": "- [x] composer focus isolation is owned by a Windows black-box journey: it",
+      "prd_anchor": "- [v] composer focus isolation is owned by a Windows black-box journey: it",
       "evidence": ["minicon_blackbox::native_composer_focus_keeps_editing_keys_local_until_ctrl_o"],
       "commands": ["send-ui-keys"]
     },
@@ -69,7 +69,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_25_con_workspace.md",
-      "prd_anchor": "- [x] `send-ui-ime` follows the current focus owner through the same product",
+      "prd_anchor": "- [v] `send-ui-ime` follows the current focus owner through the same product",
       "evidence": ["minicon_control::gui_control_surface_isolated_multitab_black_box"],
       "commands": ["send-ui-ime"]
     },
@@ -79,7 +79,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_25_con_workspace.md",
-      "prd_anchor": "- [x] `native_microsoft_pinyin_preedit_and_commit_reach_the_real_window` is the",
+      "prd_anchor": "- [v] `native_microsoft_pinyin_preedit_and_commit_reach_the_real_window` is the",
       "evidence": ["minicon_blackbox::native_microsoft_pinyin_preedit_and_commit_reach_the_real_window"],
       "commands": []
     },
@@ -89,7 +89,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_24_con_terminal.md",
-      "prd_anchor": "- [x] a public multi-tab journey uses `wait-tab-exit` to prove one child can",
+      "prd_anchor": "- [v] a public multi-tab journey uses `wait-tab-exit` to prove one child can",
       "evidence": [
         "minicon_blackbox::controlled_press_drag_release_extends_a_local_selection",
         "minicon_blackbox::controlled_wheel_moves_the_real_scrollback_offset_up_then_down"
@@ -102,7 +102,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_26_con_control_cli.md",
-      "prd_anchor": "- [x] the fixed process-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,",
+      "prd_anchor": "- [v] the fixed process-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,",
       "evidence": [
         "minicon_blackbox::controlled_screenshot_produces_a_valid_nonempty_png",
         "minicon_blackbox::the_two_snapshots_agree_on_title_and_child_life",
@@ -116,7 +116,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_24_con_terminal.md",
-      "prd_anchor": "- [x] the 16-step public resize journey dropped from 35 to 18 frames, 17 to 8",
+      "prd_anchor": "- [v] the 16-step public resize journey dropped from 35 to 18 frames, 17 to 8",
       "evidence": ["minicon_blackbox::controlled_resize_storm_reports_successful_frames_and_exits_cleanly"],
       "commands": ["resize-window"]
     },
@@ -126,7 +126,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_26_con_control_cli.md",
-      "prd_anchor": "- [x] closing a tab immediately cancels its pending text/exit waits and",
+      "prd_anchor": "- [v] closing a tab immediately cancels its pending text/exit waits and",
       "evidence": ["minicon_control::gui_control_surface_isolated_multitab_black_box"],
       "commands": ["close-window"]
     },
@@ -136,7 +136,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_26_con_control_cli.md",
-      "prd_anchor": "- [x] `detach-gui` releases the window while the process, its sessions and this",
+      "prd_anchor": "- [v] `detach-gui` releases the window while the process, its sessions and this",
       "evidence": ["minicon_control::detaching_the_gui_keeps_the_process_and_its_sessions"],
       "commands": ["detach-gui", "attach-gui"]
     },
@@ -146,7 +146,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_27_con_delivery.md",
-      "prd_anchor": "- [x] a public GUI black-box court measures MiniCon host RSS after one idle",
+      "prd_anchor": "- [v] a public GUI black-box court measures MiniCon host RSS after one idle",
       "evidence": ["minicon_control::host_process_rss_stays_within_named_budget"],
       "commands": []
     },
@@ -156,7 +156,7 @@
       "status": "shipped",
       "evidence_mode": "black-box",
       "prd": "prd/PRD_02_27_con_delivery.md",
-      "prd_anchor": "- [x] `alignment-contract.json` maps each gated MiniCon",
+      "prd_anchor": "- [v] `alignment-contract.json` maps each gated MiniCon",
       "evidence": ["minicon_alignment::machine_contract_matches_public_cli_and_registered_journeys"],
       "commands": ["list-commands"]
     }

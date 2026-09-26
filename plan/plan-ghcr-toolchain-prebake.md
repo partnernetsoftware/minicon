@@ -7,12 +7,12 @@ projects. `docker` is confirmed available locally.
 
 ```text
 where does the 9-10 min toolchain install actually happen?
-├── minicon-com.yml (macos-15, CI)                              [✓] already cached
+├── minicon-com.yml (macos-15, CI)                              [v] already cached
 │      zig/llvm/cargo-xwin/cargo-zigbuild/cosmocc installed once per
 │      Cargo.lock/rust-toolchain.toml hash via actions/cache (line ~38-51);
 │      a cache hit already skips the install. No GHCR win here — the cache
 │      key already does the job an image would do.
-├── six-grid-cloud-build.yml (per-cell CI)                      [✓] not needed
+├── six-grid-cloud-build.yml (per-cell CI)                      [v] not needed
 │      each of the six cells builds NATIVELY on its own runner
 │      (win-x86_64 on windows-2025, lnx-aarch64 on ubuntu-24.04-arm, ...).
 │      No cargo-xwin/cargo-zigbuild anywhere in this workflow — GHCR here is
@@ -40,7 +40,7 @@ can a GHCR image fix the local bottleneck? ->bottleneck
 │      A GHCR image adds a second cache mechanism on top of one cargo
 │      already has, for zero extra coverage on the two cells that actually
 │      dominate cold-start time (win-aarch64/win-x86_64 clang-cl fetch).
-└── verdict [✓] don't build a "run six-cell-qualify.sh inside a container"
+└── verdict [v] don't build a "run six-cell-qualify.sh inside a container"
        image — mixing a Linux container with two required bare-macOS cells
        doesn't fit the actual pipeline shape, and the win/lnx half is
        already a plain directory-cache problem solvable without Docker.

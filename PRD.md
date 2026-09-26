@@ -6,7 +6,7 @@ index and decision map. Details and history live in the owning `prd/PRD_*.md`;
 machine alignment is `alignment-contract.json`, and public evidence identities
 are in `evidence-registry.json`.
 
-Legend: `[x]` shipped, `[~]` partial, `[ ]` planned, `[-]` explicit non-goal.
+Legend: `[v]` shipped, `[-]` partial, `[_]` planned, `[-]` explicit non-goal.
 
 ## Product outcome
 
@@ -50,57 +50,57 @@ MiniCon — one-file local terminal
 │   ├── independent evidence lanes
 │   │   ├── GitHub native runners — fast regression and real ISA
 │   │   └── local UTM — partnernetsoftware/utm-court; MiniCon calls it at test time
-│   ├── [x] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
-│   ├── [x] v0.1.3 released — 5 native archives cover all 6 cells
+│   ├── [v] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
+│   ├── [v] v0.1.3 released — 5 native archives cover all 6 cells
 │   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
 │   │   ├── unsigned by explicit release-policy.json configuration
 │   │   ├── exact Candidate bytes + Defender on both Windows executables
 │   │   └── exact Candidate promoted without rebuild after gates + human authority
-│   ├── [x] v0.1.4 released — unsigned native six-cell + Linux X11 runtime fix
+│   ├── [v] v0.1.4 released — unsigned native six-cell + Linux X11 runtime fix
 │   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
 │   │   ├── SignPath not configured; signing.mode remained off
 │   │   ├── minicon.com remained excluded by policy
 │   │   └── prd/archive/v0.1.4-release-history.md
-│   ├── [x] v0.1.5 released — unsigned minicon.com + native six-cell set
+│   ├── [v] v0.1.5 released — unsigned minicon.com + native six-cell set
 │   │   ├── one build; six APE execute-only courts; exact three-PE Defender court
 │   │   ├── exact Candidate promoted without rebuild; public bytes re-executed
 │   │   └── prd/archive/v0.1.5-release-history.md
-│   ├── [x] v0.1.6 released — multiline paste + unsigned six-cell + minicon.com
+│   ├── [v] v0.1.6 released — multiline paste + unsigned six-cell + minicon.com
 │   │   └── prd/archive/v0.1.6-release-history.md
-│   ├── [x] v0.1.7 released — UI groundwork; last unsigned line
+│   ├── [v] v0.1.7 released — UI groundwork; last unsigned line
 │   │   └── prd/archive/v0.1.7-release-history.md
-│   ├── [x] v0.1.9 released — FIRST dual-signed (Windows Authenticode + macOS notarized)
+│   ├── [v] v0.1.9 released — FIRST dual-signed (Windows Authenticode + macOS notarized)
 │   │   ├── both signing switches required; PARTNERNET SOFTWARE PTY LTD
 │   │   └── prd/archive/v0.1.9-release-history.md
-│   ├── [x] v0.1.10 released — complete UI (settings panel, themes, crosshair); dual-signed + signed .dmg
+│   ├── [v] v0.1.10 released — complete UI (settings panel, themes, crosshair); dual-signed + signed .dmg
 │   │   └── prd/archive/v0.1.10-release-history.md
-│   ├── [x] v0.1.11 released — per-theme terminal colors; dual-signed
+│   ├── [v] v0.1.11 released — per-theme terminal colors; dual-signed
 │   │   └── prd/archive/v0.1.11-release-history.md
-│   ├── [x] v0.1.12 released — finish & polish (composer selection, UI); dual-signed
+│   ├── [v] v0.1.12 released — finish & polish (composer selection, UI); dual-signed
 │   │   └── prd/archive/v0.1.12-release-history.md
-│   ├── [x] v0.1.13 released — legacy-Windows CJK console rendering fix; dual-signed
+│   ├── [v] v0.1.13 released — legacy-Windows CJK console rendering fix; dual-signed
 │   │   └── prd/archive/v0.1.13-release-history.md
-│   ├── [x] v0.1.14 released — Windows per-monitor DPI awareness + mouse-wheel; dual-signed
+│   ├── [v] v0.1.14 released — Windows per-monitor DPI awareness + mouse-wheel; dual-signed
 │   │   └── prd/archive/v0.1.14-release-history.md
-│   ├── [x] v0.1.15 released — Windows terminal/composer overlap + bottom-row click fix; dual-signed
+│   ├── [v] v0.1.15 released — Windows terminal/composer overlap + bottom-row click fix; dual-signed
 │   │   └── prd/archive/v0.1.15-release-history.md
-│   ├── [x] v0.1.16 released — macOS MiniCon.app bundle + install-cli; dual-signed
+│   ├── [v] v0.1.16 released — macOS MiniCon.app bundle + install-cli; dual-signed
 │   │   └── prd/archive/v0.1.16-release-history.md
-│   ├── [x] v0.1.17 released — real Enter after Send; --file/--output cross-tab I/O; dual-signed
+│   ├── [v] v0.1.17 released — real Enter after Send; --file/--output cross-tab I/O; dual-signed
 │   │   └── prd/archive/v0.1.17-release-history.md
-│   ├── [x] v0.1.18 released — opt-in Windows console agent for mouse; greeting-page Quit; dual-signed
+│   ├── [v] v0.1.18 released — opt-in Windows console agent for mouse; greeting-page Quit; dual-signed
 │   │   └── prd/archive/v0.1.18-release-history.md
-│   ├── [x] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed
+│   ├── [v] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed
 │   │   └── prd/archive/v0.1.19-release-history.md
-│   ├── [x] v0.1.26 released — composer caret history/motion + word motion + Home/End unified in minicon_core::keymap; Windows zoom-to-blank root-caused; dual-signed (latest)
+│   ├── [v] v0.1.26 released — composer caret history/motion + word motion + Home/End unified in minicon_core::keymap; Windows zoom-to-blank root-caused; dual-signed (latest)
 │   │   └── prd/archive/v0.1.26-release-history.md
-│   ├── [x] v0.1.23 released — Windows: scrollback restored, Ctrl+V pastes, collapsed rail selects, --status names the real console; dual-signed
+│   ├── [v] v0.1.23 released — Windows: scrollback restored, Ctrl+V pastes, collapsed rail selects, --status names the real console; dual-signed
 │   │   └── prd/archive/v0.1.23-release-history.md
-│   ├── [x] v0.1.22 released — clarity release: attic archived, ConTerminal module, release tooling out of research/, shared scrollbar; dual-signed
+│   ├── [v] v0.1.22 released — clarity release: attic archived, ConTerminal module, release tooling out of research/, shared scrollbar; dual-signed
 │   │   └── prd/archive/v0.1.22-release-history.md
-│   ├── [x] v0.1.21 released — Windows Latin face + DirectWrite-style text; copy-on-select in mouse apps; clipboard length; dual-signed
+│   ├── [v] v0.1.21 released — Windows Latin face + DirectWrite-style text; copy-on-select in mouse apps; clipboard length; dual-signed
 │   │   └── prd/archive/v0.1.21-release-history.md
-│   ├── [x] v0.1.20 released — detachable/headless GUI; collapsible tab rail; MiniCon.app icon; dual-signed
+│   ├── [v] v0.1.20 released — detachable/headless GUI; collapsible tab rail; MiniCon.app icon; dual-signed
 │   │   └── prd/archive/v0.1.20-release-history.md
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
@@ -112,7 +112,7 @@ MiniCon — one-file local terminal
 │   ├── foundry software production line (cross-product; not MiniCon scope)
 │   │   └── prd/PRD_02_30_foundry_horizon.md
 │   ├── dedicated OS/HarmonyOS feasibility belongs to portfolio horizon
-│   └── [ ] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
+│   └── [_] 0.2.x: mux (tmux-shaped tab control) + harness (file+exec-only
 │       agent, DeepSeek flash first) — narrows AGENTS.md's product boundary,
 │       owner decision 2026-09-24
 │       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.0.md
@@ -237,7 +237,7 @@ flowchart LR
 
 ## Current frontier
 
-- [x] v0.2.0 is the latest public release: `mux` and `harness`, published as
+- [v] v0.2.0 is the latest public release: `mux` and `harness`, published as
   `v0.2.0` (2026-09-26; release.yml run `36230348611`, Candidate run
   `36223506557`, source SHA `c0b5ed7a2289cbe18c25f92dcae3769101424f7a`). The
   test gate was green under a display server and six-cell qualified
@@ -246,8 +246,8 @@ flowchart LR
   claimed by this release: no runtime execution of the Windows/macOS bytes
   (cross-compile and static-signing/scan evidence only), and H2/H3/H5's
   during-task and live-backend evidence in `plan/plan-v0.2.0.md`, which stays
-  unarchived while those leaves are `[~]`. H4 (DeepSeek flash backend) flipped
-  to `[x]` 2026-09-26: `MINICON_DEEPSEEK_API_KEY` was reconfigured in this
+  unarchived while those leaves are `[-]`. H4 (DeepSeek flash backend) flipped
+  to `[v]` 2026-09-26: `MINICON_DEEPSEEK_API_KEY` was reconfigured in this
   environment, the real endpoint accepts it, and
   `tests/minicon_harness.rs::deepseek_backend_runs_a_real_bounded_task_and_writes_the_file`
   runs one live bounded task end to end. H5 (opencode-go backend) is still
@@ -257,7 +257,7 @@ flowchart LR
   module's own stated policy of never guessing an unverified endpoint.
   Owner: [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md), section
   "0.2.0 — what the version number stands for, and what it does not".
-- [x] v0.1.26 is the latest public release: composer multi-line caret
+- [v] v0.1.26 is the latest public release: composer multi-line caret
   history/motion, word motion and Home/End, unified in
   `minicon_core::keymap`; Windows zoom-to-blank root-caused in AgenTerm's
   `console_agent.rs`. No product behavior changed from what "v0.1.24"/
@@ -266,23 +266,23 @@ flowchart LR
   `scripts/product-source-hash.sh` so a workflow/doc-only fix no longer
   forces a version bump mid-chain.
   History: `prd/archive/v0.1.26-release-history.md`.
-- [x] v0.1.23. On Windows, scrolling back
+- [v] v0.1.23. On Windows, scrolling back
   through shell output works again (the classic console path kept no
   history), `Ctrl+V` pastes in the terminal, a collapsed tab rail selects
   instead of closing, and `--status` names the console a run will really use.
   History: `prd/archive/v0.1.23-release-history.md`.
-- [x] v0.1.22. No user-facing change is meant:
+- [v] v0.1.22. No user-facing change is meant:
   finished research, labs and plans are archived, `ConTerminal` lives in its
   own module, the release tooling left `research/`, and the scrollbar geometry
   comes from `agenterm-ui-core` instead of a local copy. History:
   `prd/archive/v0.1.22-release-history.md`.
-- [x] v0.1.21. Windows text is drawn in a Latin
+- [v] v0.1.21. Windows text is drawn in a Latin
   terminal face (Consolas or Cascadia Mono) instead of NSimSun, blended the way
   DirectWrite blends it, with GDI or DirectWrite chosen per size by measuring
   against the outline; CJK still spans exactly two cells. Selecting inside a
   program that owns the mouse copies the dragged span, and the status bar shows
   the clipboard's length. History: `prd/archive/v0.1.21-release-history.md`.
-- [x] v0.1.20. The window became something the
+- [v] v0.1.20. The window became something the
   process can put down: `detach-gui` releases it while the sessions and the
   control endpoint keep running, `attach-gui` builds one again, and
   `--headless` starts with none at all. The product boundary was amended to
@@ -291,7 +291,7 @@ flowchart LR
   collapses to a rail of `@ID` handles, and `MiniCon.app` has an icon. The
   memory saving that partly motivated detaching was measured and withdrawn: it
   frees nothing on macOS. History: `prd/archive/v0.1.20-release-history.md`.
-- [x] v0.1.19. Pasting any non-ASCII text on macOS
+- [v] v0.1.19. Pasting any non-ASCII text on macOS
   failed outright — `pbpaste` encodes in the locale's text encoding and an app
   launched from Finder inherits almost no environment, so on a non-English
   system the bytes arrived in a legacy encoding; the helpers now pin a UTF-8
@@ -303,7 +303,7 @@ flowchart LR
   (Vim). Both halves are structural — see the 0.1.19 history, which also records
   why two earlier explanations were withdrawn.
   History: `prd/archive/v0.1.19-release-history.md`.
-- [x] v0.1.18. Mouse input first reached Windows terminal programs, by making
+- [v] v0.1.18. Mouse input first reached Windows terminal programs, by making
   the classic console-agent path reachable from the product as an opt-in
   `minicon.json` key. 0.1.19 removed that key and made the path the default;
   the mechanism this release gave for why ConPTY failed was withdrawn twice and
@@ -312,7 +312,7 @@ flowchart LR
   works again — with no tabs the window previously could not be closed at all.
   The Linux binary dropped an AT-SPI stack MiniCon never consumed (6.0 MB →
   4.5 MB). History: `prd/archive/v0.1.18-release-history.md`.
-- [x] v0.1.17. The composer's Send (`Ctrl+O`) now
+- [v] v0.1.17. The composer's Send (`Ctrl+O`) now
   delivers the Enter as its own key press: the paste and its committing CR used
   to reach the child in a single `read()`, so a TUI that applies pastes
   asynchronously handled the CR first — against an empty input box — and left
@@ -323,7 +323,7 @@ flowchart LR
   longer have to survive shell quoting, with paths staying client-side. The
   Windows startup diagnostic moved out of every archive into its own Release
   asset. History: `prd/archive/v0.1.17-release-history.md`.
-- [x] v0.1.16: the macOS download is a real
+- [v] v0.1.16: the macOS download is a real
   application bundle. A bare Mach-O cannot be stapled and Gatekeeper's
   GUI-launch path rejects it (`spctl -t exec` says "does not seem to be an
   app"), so a double-click warned that Apple could not verify it even though the
@@ -332,7 +332,7 @@ flowchart LR
   chain itself needed no edits. `minicon install-cli` links the bundle's
   executable onto `PATH`, refusing to touch anything that is not a symlink it
   owns. History: `prd/archive/v0.1.16-release-history.md`.
-- [x] v0.1.15 was a Windows bug-fix release on the
+- [v] v0.1.15 was a Windows bug-fix release on the
   dual-signed line. It fixes the terminal's bottom row overlapping the composer
   input, and clicks on a full-screen program's bottom input line being captured
   by the composer instead of forwarded — one root cause (`content_bottom_px`
@@ -341,12 +341,12 @@ flowchart LR
   Fixed via `ui::bottom_inset` and locked with a cross-scale layout/hit-test
   invariant suite plus a machine-verifiable `geometry` object in `ui-snapshot`.
   History: `prd/archive/v0.1.15-release-history.md`.
-- [x] v0.1.14: Windows per-monitor DPI awareness (crisp text on scaled displays,
+- [v] v0.1.14: Windows per-monitor DPI awareness (crisp text on scaled displays,
   with `GetProcAddress`-resolved modern APIs so it still loads on Server 2016 /
   1607) and mouse-wheel scrolling in Windows terminal programs (the wheel report
   now carries the hovered cell). History:
   `prd/archive/v0.1.14-release-history.md`.
-- [x] v0.1.13 was a bug-fix release on the dual-signed
+- [v] v0.1.13 was a bug-fix release on the dual-signed
   line. It fixes garbled CJK rendering on **legacy Windows without ConPTY**
   (build < 17763, e.g. Server 2016 / 14393): the pre-ConPTY console agent
   identified a double-width glyph's trailing cell only by the console's
@@ -356,54 +356,54 @@ flowchart LR
   the character's display width — the same oracle the vt100 parser uses — so
   console cells consumed equals parser columns advanced by construction. History:
   `prd/archive/v0.1.13-release-history.md`.
-- [x] v0.1.12: finish-and-polish (composer Shift+Arrow selection, theme-consistent
+- [v] v0.1.12: finish-and-polish (composer Shift+Arrow selection, theme-consistent
   crosshair/scrollbar, complete shortcut list, tab-title ellipsis, close-button
   exit coloring, header hover, live zoom %, Escape-to-close, macOS/Linux
   paste-review multiline fix). History: `prd/archive/v0.1.12-release-history.md`.
-- [x] Every release since **v0.1.9** is dual-signed: Windows executables and
+- [v] Every release since **v0.1.9** is dual-signed: Windows executables and
   `minicon.com` are Authenticode-signed via Azure Artifact Signing, and the
   macOS build is Developer ID-signed and Apple-notarized, as PARTNERNET
   SOFTWARE PTY LTD. `release-policy.json` keeps `signing.mode` and
   `signing.macos.mode` at `required`; missing credentials block a release
   rather than fall back to unsigned. Enrollment history:
   `prd/archive/azure-work-tenant-signing-enroll.md`.
-- [x] The QVM false-positive experiment selected the current Windows release
+- [v] The QVM false-positive experiment selected the current Windows release
   profile; do not reintroduce compacting changes without reputation evidence.
   Decision record: `plan/archive/design-qvm-false-positive-experiment.md`.
-- [x] Native window title is `<title> — MiniCon <version>` (empty workspace:
+- [v] Native window title is `<title> — MiniCon <version>` (empty workspace:
   `MiniCon <version>`). Owner: `prd/PRD_02_25_con_workspace.md`.
-- [~] Host process RSS intent is 10 MiB idle. Font leakage, duplicate Retina
+- [-] Host process RSS intent is 10 MiB idle. Font leakage, duplicate Retina
   canvas, old-frame retention and post-screenshot malloc caches are repaired.
   Named macOS aarch64 release
   idle observations are now about 78–87 MiB; the 10 MiB gap remains open.
   Native Hello/input/menu and terminal-increment investigations are recorded
   under `prd/PRD_02_27_con_delivery.md`.
-- [~] Host-UI readability is reopened: tab/header and composer-button
+- [-] Host-UI readability is reopened: tab/header and composer-button
   text remains too small on macOS. Make `z / 0 / Z` affect those roles, enlarge
   their nominal text, and reclaim padding/gaps/margins instead of growing empty
   toolbar space. Owner: `prd/PRD_02_25_con_workspace.md`.
-- [~] Run `33263135546` localized the remaining cloud pack latency: macOS cells
+- [-] Run `33263135546` localized the remaining cloud pack latency: macOS cells
   compiled in about 4s, Windows cells in 2.65s/1.27s, but Linux dual-LTO took
   about 2m51s and cargo-xwin re-downloaded the MSVC CRT for 1m56s because the
   workflow cached Linux's `~/.cache/cargo-xwin` path on a macOS builder. Cache
   the actual `~/Library/Caches/cargo-xwin` path, then remeasure before changing
   compilation semantics. The approximately one-minute target remains open.
   Owner: `prd/PRD_02_27_con_delivery.md`.
-- [~] Linux LTO already spent the remaining **linker** size knob. Linux
+- [-] Linux LTO already spent the remaining **linker** size knob. Linux
   dual desktop (winit Wayland+X11 + `x11rb`) is **retained** — not a size
   cut. Further APE shrink is still a product ruling (optional AT-SPI,
   Darwin native pixel host, or Darwin/Win LTO), not strip/RELR/
   `panic=abort`/ceiling raise. Owner: `prd/PRD_02_27_con_delivery.md`.
-- [~] GitHub-native and local-UTM lanes are independent. Neither inherits the
+- [-] GitHub-native and local-UTM lanes are independent. Neither inherits the
   other's verdict; unavailable runtime evidence is `BLOCKED`. Local UTM
   lifecycle is `partnernetsoftware/utm-court`; MiniCon keeps product runners
   only. Owner: `prd/PRD_02_27_con_delivery.md`,
   `plan/archive/plan-utm-court-extract.md`.
-- [~] Local courts are automation-capable but not sealed release baselines.
+- [-] Local courts are automation-capable but not sealed release baselines.
   Lima is optional acceleration; Rosetta is a provisional OSX x86_64 userspace
   court; real native runners retain claims translation cannot make.
-- [ ] Ordinary push/PR CI remains parked.
-- [ ] qjswasm portable logic waits for a stable AgenTerm engine and a decisive
+- [_] Ordinary push/PR CI remains parked.
+- [_] qjswasm portable logic waits for a stable AgenTerm engine and a decisive
   complete-product experiment; it is not current-version scope.
 
 Details and historical run records stay in the owning modules.

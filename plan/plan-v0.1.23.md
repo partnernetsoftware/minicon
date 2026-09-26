@@ -11,43 +11,43 @@ become something a user can notice.
 ```text
 [v0.1.23] a round costs seconds, and the old debt gets paid
 ├── A. One round, one command — the release's spine
-│   ├── [ ] A1 `scripts/round.sh <cells>`: build → route → run → one receipt
+│   ├── [_] A1 `scripts/round.sh <cells>`: build → route → run → one receipt
 │   │        invariant: one receipt per round, naming every cell and its host
 │   │        evidence: the receipt; failure: BLOCKED cell, never a silent skip
-│   ├── [ ] A2 routing table (§2) as data, one backend per cell
-│   ├── [ ] A3 pre-flight (15 s): free disk, Rosetta probe, court nonce
+│   ├── [_] A2 routing table (§2) as data, one backend per cell
+│   ├── [_] A3 pre-flight (15 s): free disk, Rosetta probe, court nonce
 │   │        why: a broken Rosetta cost 20 min on 2026-09-22
-│   └── [ ] A4 per-stage timings in every receipt, so §1 updates itself
+│   └── [_] A4 per-stage timings in every receipt, so §1 updates itself
 ├── B. Incremental local qualification            (depends on A1)
-│   ├── [ ] B1 seed a new fingerprint dir by APFS clone, then build incrementally
+│   ├── [_] B1 seed a new fingerprint dir by APFS clone, then build incrementally
 │   │        caveat: host-run integration tests bake CARGO_BIN_EXE paths
-│   ├── [ ] B2 select cells from what changed; the receipt names what was skipped
-│   ├── [ ] B3 a stage runs every suite; no stop at the first failure
+│   ├── [_] B2 select cells from what changed; the receipt names what was skipped
+│   ├── [_] B3 a stage runs every suite; no stop at the first failure
 │   │        why: minicon_blackbox has never run in the Windows court
-│   └── [ ] B4 push only binaries whose digest changed (utm-court ledger)
+│   └── [_] B4 push only binaries whose digest changed (utm-court ledger)
 ├── C. Windows court gaps, found by 0.1.22's first full run   (needs A1)
-│   ├── [x] C1 throughput: ConPTY forwards viewport changes, not bytes (§4)
-│   ├── [ ] C2 Windows throughput receipt: ordered marker + sustained rate
-│   ├── [x] C3 unspawnable `-e`: platform-shaped, test now asserts per platform
-│   ├── [x] C4 a tab that cannot start: same, plus the stub must really vanish
-│   └── [ ] C5 **product gap, not a test bug**: with ConPTY the host keeps no
+│   ├── [v] C1 throughput: ConPTY forwards viewport changes, not bytes (§4)
+│   ├── [_] C2 Windows throughput receipt: ordered marker + sustained rate
+│   ├── [v] C3 unspawnable `-e`: platform-shaped, test now asserts per platform
+│   ├── [v] C4 a tab that cannot start: same, plus the stub must really vanish
+│   └── [_] C5 **product gap, not a test bug**: with ConPTY the host keeps no
 │             scrollback, so the wheel delivers 0 notches (§6)
 ├── D. Carried product debt — what a user would actually notice
-│   ├── [ ] D1 `capture-pane --scrollback N`: decide semantics, then implement
+│   ├── [_] D1 `capture-pane --scrollback N`: decide semantics, then implement
 │   │        (cross-screen stitching, viewport restore; from 0.1.18 P1)
-│   ├── [ ] D2 black-box test: paste and Enter arrive in two `read()`s (0.1.18)
-│   ├── [ ] D3 box-drawing glyphs from cell geometry: Consolas 1 px gap at 12 px
-│   ├── [ ] D4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
-│   └── [ ] D5 the interactive court presents no frames, so real pointer events
+│   ├── [_] D2 black-box test: paste and Enter arrive in two `read()`s (0.1.18)
+│   ├── [_] D3 box-drawing glyphs from cell geometry: Consolas 1 px gap at 12 px
+│   ├── [_] D4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
+│   └── [_] D5 the interactive court presents no frames, so real pointer events
 │             and pixel comparison stay out of reach (0.1.18 P2)
 └── E. Shared seam with AgenTerm — plan-cross-project-reuse.md
-    ├── [x] E1 scrollbar geometry: one implementation, pinned by parity tests
-    ├── [x] E2 consumer feature matrix gated on both sides
-    ├── [ ] E3 click streak D1–D4: four behaviour divergences      (OWNERS)
-    └── [ ] E4 composer rules: survey before anything moves
+    ├── [v] E1 scrollbar geometry: one implementation, pinned by parity tests
+    ├── [v] E2 consumer feature matrix gated on both sides
+    ├── [_] E3 click streak D1–D4: four behaviour divergences      (OWNERS)
+    └── [_] E4 composer rules: survey before anything moves
 ```
 
-`[x]` landed in 0.1.22 and stays for the trail. `(OWNER)` waits on a decision,
+`[v]` landed in 0.1.22 and stays for the trail. `(OWNER)` waits on a decision,
 not on work. Non-goals for 0.1.23: no new product surface, no server, no
 rebuild-to-promote, no change to what a Candidate means.
 

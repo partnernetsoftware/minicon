@@ -4,7 +4,7 @@ Owner decision, 2026-09-24: `AGENTS.md`'s product-boundary exclusion of "mux"
 and "script runtime, plugin host or Agent permission policy" is narrowed (not
 removed) to admit exactly the two subcommands below. This module is their
 scope statement; it does not yet contain implementation evidence, because
-neither has shipped. Legend: `[x]` shipped, `[~]` partial, `[ ]` planned,
+neither has shipped. Legend: `[v]` shipped, `[-]` partial, `[_]` planned,
 `[-]` explicit non-goal.
 
 ## Product outcome
@@ -25,7 +25,7 @@ process, exactly like the existing `--control` endpoint.
 │   │   @method=tmux-verb-compat #decision (owner, 2026-09-25: cross-tool
 │   │   agent interop is the concrete need the old "reuse existing verbs by
 │   │   default" ruling was waiting for)
-│   ├── surface ->m1 [x]
+│   ├── surface ->m1 [v]
 │   │   ├── verb subset: `list-windows`, `select-window`, `new-window`,
 │   │   │     `kill-window`, `send-keys`, `capture-pane` -- named and flagged
 │   │   │     the way tmux names and flags them, not MiniCon-native verbs
@@ -68,15 +68,15 @@ process, exactly like the existing `--control` endpoint.
 │         `NPage`) into that spec instead of growing a second key table
 ├── harness {h}
 │   ├── outcome: minimal agent loop, two tools only
-│   ├── tools [x]
+│   ├── tools [v]
 │   │   ├── file: read/write within a bounded root, no plugin interface
 │   │   ├── exec: run one command, capture output, no shell plugin chain
 │   │   └── #decision exactly these two; a third tool is a new decision
-│   ├── model backends [~]
+│   ├── model backends [-]
 │   │   ├── DeepSeek official API + key, flash model first ->h1 @method=first
 │   │   ├── opencode-go-compatible key as the second accepted credential
 │   │   └── both adapters are built with their OWN codec and dispatched per
-│   │       backend; both are `[~]` not `[x]` because neither has run against
+│   │       backend; both are `[-]` not `[v]` because neither has run against
 │   │       its real endpoint -- see "harness — what is built and what is
 │   │       owed" below. #assumption
 │   ├── policy #decision
@@ -255,7 +255,7 @@ environment does not have (the one it carries is rejected by the API).
 
 ## Evidence
 
-**mux is `[x]` on named black-box evidence.** `tests/minicon_mux.rs` drives
+**mux is `[v]` on named black-box evidence.** `tests/minicon_mux.rs` drives
 the shipped binary's CLI against a live instance under a display server; the
 four tests, the real effect each asserts, and the single-line break that each
 one catches are named in `plan/plan-v0.2.0.md`'s M2/M3/M3b nodes. In short:
@@ -281,7 +281,7 @@ minicon` must precede it or a stale binary is what gets tested.
 
 ### harness — what is built and what is owed
 
-**Built, with named evidence.** The two tools are `[x]`. Both backends are
+**Built, with named evidence.** The two tools are `[v]`. Both backends are
 wired and dispatched from `run_harness` on `--backend`, each running its own
 codec: `harness_wire` speaks DeepSeek's wire format, `harness_opencode` the
 OpenAI-compatible shape an opencode-go server presents, and the only thing

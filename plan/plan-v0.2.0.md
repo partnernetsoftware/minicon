@@ -14,7 +14,7 @@ see "Delivery note" at the end.
 ```text
 v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 ├── M mux: tmux-CLI-compatible tab control {m}
-│   ├── M1 design close-out ->m [x] (2026-09-25, PRD_02_31 "mux -- detail")
+│   ├── M1 design close-out ->m [v] (2026-09-25, PRD_02_31 "mux -- detail")
 │   │   ├── verb surface: tmux verb/flag vocabulary, not MiniCon-native
 │   │   │     names -- `list-windows`, `select-window`, `new-window`,
 │   │   │     `kill-window`, `send-keys`, `capture-pane`
@@ -29,7 +29,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   └── surface shape: a mode of the existing --control CLI, not a new
 │   │         binary subcommand or endpoint @method=mode-not-new-endpoint
 │   │         #decision ->prd/PRD_02_26_con_control_cli.md
-│   ├── M2 tab listing (`list-windows`) ->m1 [✓]
+│   ├── M2 tab listing (`list-windows`) ->m1 [v]
 │   │   ├── invariant: enumerates only tabs of the calling process's own
 │   │   │     MiniCon instance; no cross-instance discovery
 │   │   ├── invariant: `-F <format>` supports only the substitution
@@ -71,7 +71,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     minicon_mux` resolves the binary next to the test exe and does
 │   │   │     not rebuild it, so a stale binary is otherwise what gets tested
 │   ├── M3 window select/create/destroy (`select-window`, `new-window`,
-│   │   │     `kill-window`) ->m1 [✓]
+│   │   │     `kill-window`) ->m1 [v]
 │   │   ├── invariant: an invalid `@ID`/index, a nonzero pane, or a
 │   │   │     session-name mismatch is a bounded CLI error (exit code +
 │   │   │     message naming which tmux assumption is unsupported), never a
@@ -130,7 +130,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   └── non-goal: [-] cross-machine attach; [-] persistent session
 │   │         outside the process; [-] multiple sessions (both already
 │   │         excluded by PRD_02_31)
-│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [✓]
+│   ├── M3b read/write (`send-keys`, `capture-pane`) ->m1 [v]
 │   │   ├── invariant: `send-keys` resolves tmux key names (`Enter`, `C-c`,
 │   │   │     ...) through the control CLI's existing key spec, not a second
 │   │   │     key-name table; `-l` sends the argument literally with no
@@ -176,12 +176,12 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     stay unit-test-only; observing a real interrupt needs a
 │   │   │     foreground-process assertion the suite does not have yet
 │   │   └── depends: M3 (needs a real target to send/capture against)
-│   └── M4 upsert into PRD_02_31 ->m [ ]
-│         └── flip mux's `[ ]` lines to `[x]` only against the evidence named
-│               in M2/M3/M3b, per AGENTS.md's "[x] requires named evidence"
+│   └── M4 upsert into PRD_02_31 ->m [_]
+│         └── flip mux's `[_]` lines to `[v]` only against the evidence named
+│               in M2/M3/M3b, per AGENTS.md's "[v] requires named evidence"
 │               rule
 ├── H harness: minimal two-tool agent loop {h}
-│   ├── H1 design close-out ->h [x] (2026-09-25, PRD_02_31 "harness -- detail")
+│   ├── H1 design close-out ->h [v] (2026-09-25, PRD_02_31 "harness -- detail")
 │   │   ├── invocation: `minicon harness --root <path> --task "<text>"
 │   │   │     [--backend deepseek|opencode-go] [--allow-cmd <name>]...`;
 │   │   │     `--root`/`--task` required, no implicit-cwd default
@@ -201,7 +201,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │         stdout; no interactive loop inside a tab, no conversation
 │   │         persisted across invocations (`--continue` is out of scope)
 │   │         @method=bounded-task-then-exit #decision
-│   ├── H2 file tool ->h1 [~] @method=first ->h1
+│   ├── H2 file tool ->h1 [-] @method=first ->h1
 │   │   ├── invariant: read/write confined to the `--root` bound; a path
 │   │   │     that escapes it (symlink, `..`) is refused, not clamped
 │   │   ├── evidence: black-box test attempts a `../` escape and an absolute
@@ -251,7 +251,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │         real-socket fixtures cover that round trip including a
 │   │         model-commanded write landing under the root, but a fixture is
 │   │         not a live endpoint
-│   ├── H3 exec tool ->h1 [~]
+│   ├── H3 exec tool ->h1 [-]
 │   │   ├── invariant: exactly one command per call, no shell metacharacter
 │   │   │     expansion (no `&&`, pipes, or subshell) — the command is
 │   │   │     invoked directly (argv vector), not passed through `/bin/sh -c`
@@ -301,7 +301,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   └── BLOCKED: argv handling during a task is unit-tested and
 │   │         fixture-tested, not CLI-black-boxed, for the same reason as H2 —
 │   │         `ExecTool` runs only on a model's request
-│   ├── H4 DeepSeek flash backend ->h1 [x] @method=first
+│   ├── H4 DeepSeek flash backend ->h1 [v] @method=first
 │   │   ├── also closes out, as the first non-test caller of H2/H3: the
 │   │   │     `#[cfg_attr(not(test), allow(dead_code))]` on `FileTool`/
 │   │   │     `ExecTool` (carried only because the tools are complete while
@@ -378,7 +378,7 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │         compiled in any evidence -- only Unix Rustls/WebPKI has run a real
 │   │         handshake. The TLS provider selection on Windows/macOS is proved
 │   │         only by the feature graph compiling
-│   ├── H5 opencode-go-compatible backend ->h1 [~]
+│   ├── H5 opencode-go-compatible backend ->h1 [-]
 │   │   ├── invariant: a second, independently verified adapter — H1's
 │   │   │     decision explicitly forbids assuming H4's adapter covers it.
 │   │   │     Held: `harness_opencode` owns its request body, its reply
@@ -421,18 +421,18 @@ v0.2.0 — mux + harness (owner decision 2026-09-24, narrows AGENTS.md boundary)
 │   │   │     implements the OpenAI-compatible shape and STATES each
 │   │   │     assumption in its module header rather than inventing fields.
 │   │   │     `OPENCODE_DEFAULT_MODEL = "opencode"` and the default port are
-│   │   │     unverified. Stays `[~]`, never `[x]`, until that run exists
+│   │   │     unverified. Stays `[-]`, never `[v]`, until that run exists
 │   │   └── #risk this module duplicates `harness_wire`'s tool dispatch and
 │   │         system prompt almost verbatim. Deliberate under H1; collapse it
 │   │         only against live evidence from BOTH backends, never before
-│   └── H6 upsert into PRD_02_31 ->h [✓]
-│         └── flip harness's `[ ]` lines to `[x]` only against H2-H5's named
+│   └── H6 upsert into PRD_02_31 ->h [v]
+│         └── flip harness's `[_]` lines to `[v]` only against H2-H5's named
 │               evidence
 └── Shared gates
       ├── every new subcommand ships behind the two AGENTS.md invariants
       │     already governing this module: one file, no bundled runtime
       ├── `./scripts/six-cell-qualify.sh` and `./scripts/build.sh test` gate
-      │     both mux and harness before any plan item is marked `[x]`
+      │     both mux and harness before any plan item is marked `[v]`
       └── final PRD_02_31 upsert (M4 + H6) happens once, after both branches
             close out — not per-item, to keep one coherent evidence pass
 ```

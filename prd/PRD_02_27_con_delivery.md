@@ -9,11 +9,11 @@ release context stays
 with AgenTerm; this repository's workflows and machine-readable contracts are
 authoritative for MiniCon delivery.
 
-Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
+Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Current release evolution
 
-- [x] **v0.1.2 is the stable release baseline.** Tag `v0.1.2` resolves to
+- [v] **v0.1.2 is the stable release baseline.** Tag `v0.1.2` resolves to
   source commit `e2ba35d05b1797cf770e954f35f757de327b3152`. The release owns a
   Windows x86_64 ZIP, Linux x86_64 tarball and macOS Universal tarball, each
   with a SHA-256 sidecar. Its formal workflow built all three packages, checked
@@ -24,7 +24,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   This is only **4/6 cell coverage**: macOS Universal contains arm64+x86_64,
   while Windows arm64 and Linux arm64 have no v0.1.2 archive. Never backfill
   that historical Release.
-- [x] **v0.1.3 released: five unsigned native archives cover all six cells.**
+- [v] **v0.1.3 released: five unsigned native archives cover all six cells.**
   Windows/Linux each publish x86_64+arm64; macOS Universal
   contains both slices. Every archive has a SHA-256 sidecar. The machine policy
   `release-policy.json` says `signing.mode=off` and `minicon_com=false`.
@@ -43,7 +43,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   source `39774ed`, and passed public-download hash plus native Linux/Windows
   execution. The Release is neither draft nor pre-release; `minicon.com` and
   signing remain excluded by policy.
-- [x] **v0.1.4 shipped unsigned native six-cell archives through the same
+- [v] **v0.1.4 shipped unsigned native six-cell archives through the same
   workflows.** It also proves Linux x86_64 and arm64 start in a minimal X11
   court with `libxkbcommon-x11-0` and without the `-dev` package. SignPath
   approval and release Environment variables were unavailable, so the
@@ -51,7 +51,7 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   Candidate selected the unsigned six-payload upstream; no missing credential
   silently chose a mode. Exact evidence is in
   `archive/v0.1.4-release-history.md`.
-- [x] **v0.1.5 released raw unsigned `minicon.com` beside the five native
+- [v] **v0.1.5 released raw unsigned `minicon.com` beside the five native
   archives.** One exact build supplied both representations;
   six execute-only APE GUI/control courts, native parity, a three-object
   Defender court (`minicon.com` plus both native Windows PEs), and no-rebuild
@@ -91,17 +91,17 @@ flowchart LR
     R112 --> R113["v0.1.13 released<br/>legacy-Windows CJK console fix · dual-signed"]
 ```
 
-- [x] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
+- [v] **v0.1.6 released.** Exact source `a000565`, unsigned native six-cell
   plus `minicon.com`, multiline paste fix. Ledger:
   `archive/v0.1.6-release-history.md`.
 
-- [x] **v0.1.7 released — last unsigned line.** Aligned toolbar, greeting page
+- [v] **v0.1.7 released — last unsigned line.** Aligned toolbar, greeting page
   after the final tab, explicit Linux X11 runtime boundary, screenshot-priority
   under sustained output, and replay-safe Windows control across named-pipe
   disconnects. Still unsigned (predates the signing switch-on). Ledger:
   `archive/v0.1.7-release-history.md`.
 
-- [x] **v0.1.9 released — first dual-signed release.** The Windows executables
+- [v] **v0.1.9 released — first dual-signed release.** The Windows executables
   and `minicon.com` are Authenticode-signed via Azure Artifact Signing, and the
   macOS build is Developer ID-signed and Apple-notarized — all as PARTNERNET
   SOFTWARE PTY LTD, with an RFC 3161 timestamp. `release-policy.json` sets both
@@ -110,7 +110,7 @@ flowchart LR
   wave (A+B+C+D): switchable locale, per-row close, theme engine + three themes,
   bottom status bar. Ledger: `archive/v0.1.9-release-history.md`.
 
-- [x] **v0.1.10 released — complete UI, dual-signed.** Both signing switches
+- [v] **v0.1.10 released — complete UI, dual-signed.** Both signing switches
   remain `required`, and a signed, notarized, stapled macOS `.dmg` joins the
   archives. Completes the UI: two-tool header + settings panel (interface
   language, font size, theme swatches, shortcut list; `Ctrl+Shift+,`), the
@@ -118,7 +118,7 @@ flowchart LR
   (`Ctrl+Shift+G`) reading into the status bar. Ledger:
   `archive/v0.1.10-release-history.md`.
 
-- [x] **v0.1.11 released — per-theme terminal colors, dual-signed.** Both
+- [v] **v0.1.11 released — per-theme terminal colors, dual-signed.** Both
   signing switches stay `required`. Each theme now recolors the terminal body
   (default background/foreground, cursor, 16 ANSI colors), not just the chrome;
   the 6x6x6 cube and grayscale stay standard and explicit program colors are
@@ -126,7 +126,7 @@ flowchart LR
   `archive/v0.1.11-release-history.md`. The stale `.github/release-notes.md`
   template was rewritten so future auto-notes state the signed, current product.
 
-- [x] **v0.1.12 released — finish & polish, dual-signed.** Both signing switches
+- [v] **v0.1.12 released — finish & polish, dual-signed.** Both signing switches
   stay `required`. No new surface: composer Shift+Arrow text selection, a
   theme-consistent crosshair/scrollbar, the complete/correct settings shortcut
   list, tab-title ellipsis, close-button hover + non-zero-exit coloring, header
@@ -134,7 +134,7 @@ flowchart LR
   paste-review multiline fix. From the post-0.1.11 review
   (`plan/archive/plan-0.1.12-review.md`). Ledger: `archive/v0.1.12-release-history.md`.
 
-- [x] **v0.1.13 released — legacy-Windows CJK console fix, dual-signed.** Both
+- [v] **v0.1.13 released — legacy-Windows CJK console fix, dual-signed.** Both
   signing switches stay `required`. Fixes garbled Chinese rendering on Windows
   without ConPTY (build < 17763, e.g. Server 2016 / 14393): the pre-ConPTY
   console agent in `agenterm-platform` keyed a double-width glyph's trailing cell
@@ -146,7 +146,7 @@ flowchart LR
   bumped to carry it. Diagnosed against a real build-14393 host and a UTM Win7
   test bed. Ledger: `archive/v0.1.13-release-history.md`.
 
-- [x] **non-Mac macOS cross-compile from a Linux CI/cloud host, SDK-15.5 probe
+- [v] **non-Mac macOS cross-compile from a Linux CI/cloud host, SDK-15.5 probe
   succeeded end to end.** Evidence: run
   [36024044608](https://github.com/partnernetsoftware/minicon/actions/runs/36024044608)
   (source `5c5541c`, `ubuntu-24.04`, `aarch64-apple-darwin`), every step green:
@@ -254,15 +254,15 @@ flowchart LR
     `basename`. Match `<arch>-apple-darwin<ver>-clang` exactly and map
     `aarch64-apple-darwin` -> `arm64` yourself.
   - No macOS binary has been produced end to end from a non-Mac host yet.
-    Nothing here is evidence of `[x]`.
+    Nothing here is evidence of `[v]`.
   Next step: the probe workflow
   `.github/workflows/osxcross-experiment.yml` (manual dispatch) carries the
   recipe; the remaining unknown is only whether the link step clears
   `-sectcreate` and yields a real Mach-O. Keep that receipt (`file` output)
-  before upgrading this line past `[ ]`. The end goal is running the recipe on
+  before upgrading this line past `[_]`. The end goal is running the recipe on
   the Linux build host itself, so `scripts/round.sh:10`'s
   `osx-* -> this Mac` routing can drop the Mac.
-  Planned follow-on (gated on the probe above landing `[x]`, not started):
+  Planned follow-on (gated on the probe above landing `[v]`, not started):
   **pre-bake the osxcross toolchain into a container image** instead of
   running its from-source `build.sh` (cctools + ld64, ~10 minutes measured
   above) on every use. Same pattern `.github/workflows/six-grid-cloud-build.yml`
@@ -287,7 +287,7 @@ flowchart LR
     source or the pinned SDK version changes, not per round — this is the
     whole point, matching this file's "CI does not do routine compiling"
     rule and `AGENTS.md`'s cost-of-a-round accounting.
-  - Do not build this image before the `-sectcreate` probe above is `[x]`:
+  - Do not build this image before the `-sectcreate` probe above is `[v]`:
     baking a toolchain that cannot actually link MiniCon's own linker flags
     would be premature investment in an unproven path.
   - **`-sectcreate` probe run (2026-09-24, run 36018434924, source `994c011`):
@@ -322,10 +322,10 @@ flowchart LR
     `.github/workflows/osxcross-experiment.yml` now fetches this SDK instead
     of phracker's 11.3. **Result (run 36024044608): SDK 15.5 resolves the
     missing-symbol failure and no new one appeared** -- the link, build, and
-    Mach-O verification steps all passed. See the `[x]` entry above for the
+    Mach-O verification steps all passed. See the `[v]` entry above for the
     full evidence and remaining scope.
 
-- [ ] **Practice run, from a cloud/Linux session (2026-09-24): `scripts/round.sh`'s
+- [_] **Practice run, from a cloud/Linux session (2026-09-24): `scripts/round.sh`'s
   own local test-transport (not the release pipeline -- see the correction
   below) is BLOCKED at its upload step, for this session specifically.**
   Ran `scripts/round.sh lnx-x86_64` end to end from a Linux cloud sandbox to
@@ -373,7 +373,7 @@ flowchart LR
     itself is not blocked from this cloud session -- only `round.sh`'s separate,
     smaller-scope local test-transport is.
 
-- [ ] **horizon / dependency not ready — qjswasm portable core.**
+- [_] **horizon / dependency not ready — qjswasm portable core.**
   Owner: `prd/PRD_02_29_qjswasm_horizon.md`. After agenterm qjswasm+TinyVM is
   mature, research may move portable logic out of six native payloads into
   qjswasm; six native thin shells keep window/PTY/font/input/IPC. Size cut is
@@ -392,18 +392,18 @@ flowchart LR
 
 ## Bounded build-state lifecycle
 
-- [x] `scripts/cleanup-build-state.py` is the single deletion authority for
+- [v] `scripts/cleanup-build-state.py` is the single deletion authority for
   regenerable repository-local build state. It defaults to dry-run, accepts
   explicit scopes, validates that it owns a MiniCon checkout, never follows a
   deletion target outside that checkout, serializes apply runs with
   `target-six/.cleanup.lock`, and writes an immutable GC receipt whenever it
   removes anything.
-- [x] ordinary `target/` expires only after 14 inactive days and with no active
+- [v] ordinary `target/` expires only after 14 inactive days and with no active
   build marker. `scripts/build.sh` is the documented release/dev/check/test
   wrapper: it runs bounded maintenance before Cargo and owns the active marker
   for the command lifetime. Direct Cargo remains available but does not pretend
   to own automatic cleanup.
-- [x] six-cell snapshots expire after seven days while retaining at least the
+- [v] six-cell snapshots expire after seven days while retaining at least the
   newest three. `target-six/builds/current`, the build root named by the latest
   receipt, and every fresh `.minicon-build-active` marker are protected.
   `scripts/six-cell-qualify.sh` invokes this scope and pins its selected build
@@ -413,15 +413,15 @@ flowchart LR
   two snapshots and expires other inactive snapshots after one hour. This
   converts disk pressure into bounded cache loss, never evidence or active-job
   loss.
-- [x] cloud runtime files are grouped by the complete source-tree identity.
+- [v] cloud runtime files are grouped by the complete source-tree identity.
   They are eligible only after 30 days, while retaining the newest three and
   the current receipt identity, and only when a matching archive receipt says
   that immutable remote preservation was verified. An incomplete or
   unpublished group fails closed and remains local.
-- [x] VM disks, ISO files, preparation receipts, court state, guest keys and
+- [v] VM disks, ISO files, preparation receipts, court state, guest keys and
   runtime evidence are outside automatic deletion. Their acquisition and
   authority costs are not equivalent to a Cargo cache.
-- [x] `scripts/install-macos-daily-cleanup.sh` installs the per-user
+- [v] `scripts/install-macos-daily-cleanup.sh` installs the per-user
   `com.partnernetsoftware.minicon.cleanup` LaunchAgent. It runs at 03:17 daily
   with background/low-I/O scheduling, uses the same shared cleaner, and logs to
   `~/Library/Logs/minicon-maintenance.log`. Reinstalling updates the job
@@ -429,24 +429,24 @@ flowchart LR
 
 ## Package identity
 
-- [x] `minicon` is an independently owned workspace package
+- [v] `minicon` is an independently owned workspace package
   (`crates/minicon`) with its own dependency graph, not a bin target of the
   workbench crate.
-- [x] the Windows production graph contains no winit or softbuffer: that cell
+- [v] the Windows production graph contains no winit or softbuffer: that cell
   uses `native-pixel-window` (Win32). Unix cells use `portable-pixel-window`
   and **do** link winit/softbuffer. No cell links Rhai, HTTP/TLS or a script
   engine. `serde_json`, `hashbrown`/`RandomState`, ab_glyph and ttf_parser are
   absent from the Windows production graph and survive only as dev-only
   oracles where noted. A size or graph claim must name the target.
-- [x] the platform `pty` feature declares its own `Win32_Security` dependency
+- [v] the platform `pty` feature declares its own `Win32_Security` dependency
   rather than relying on con's unrelated `ipc` feature to make `CreateProcessW`,
   pipes and Job APIs visible, so both the minimal capability graph and the full
   con graph are compile-owned.
-- [x] the binary source lives under `src`, and all four
+- [v] the binary source lives under `src`, and all four
   public/alignment/throughput tests live under `tests`.
   The package has no `../../` source or test path back into the workbench tree,
   so Cargo ownership and physical ownership now agree.
-- [x] official staging removes the obsolete experimental
+- [v] official staging removes the obsolete experimental
   `minicon-native.exe` alias both before and after publication, alongside
   earlier retired executable names. `dist/minicon.exe` is the sole Windows
   con artifact users can accidentally select after a successful build.
@@ -461,33 +461,33 @@ the user cannot act on. No panic hook, log or diagnostic sink can observe it,
 and no other gate in this repository can see it either, because they all run on
 machines new enough to satisfy the import.
 
-- [x] no static import locks the product out of a supported Windows. ConPTY's
+- [v] no static import locks the product out of a supported Windows. ConPTY's
   three entry points (build 17763) and `SetThreadDescription` are resolved at
   run time instead.
-- [x] a documented minimum version is treated as evidence, not proof.
+- [v] a documented minimum version is treated as evidence, not proof.
   `SetThreadDescription` is documented as available in 1607 — which *is* Server
   2016 — and is still absent there, because 1607 implements it only in
   `KernelBase.dll` and the `kernel32` forwarder arrived in 1703. SDK header
   guards do not catch this. Only the target machine settles it.
-- [x] **no Visual C++ redistributable.** The VC runtime is linked statically and
+- [v] **no Visual C++ redistributable.** The VC runtime is linked statically and
   every remaining module is a Windows component; the Universal CRT is an
   operating-system component, not a redistributable. `panic = "unwind"` is
   preserved — panic containment is not traded away for the dependency.
-- [x] a custom PE entry (`/ENTRY`) obliges the program to run the CRT
+- [v] a custom PE entry (`/ENTRY`) obliges the program to run the CRT
   initialization the MSVC startup object would have. `__vcrt_initialize` is
   required and is not reachable through the `.CRT$XI*` table this product walks;
   omitting it links cleanly and then dies on the first panic at
   `STATUS_STACK_BUFFER_OVERRUN`, which reads as stack corruption and is a
   missing constructor. `__security_init_cookie` is *not* required — measured,
   not assumed: the cookie is already random without it.
-- [x] a gate parses the shipped executable's import table with a pure-Rust
+- [v] a gate parses the shipped executable's import table with a pure-Rust
   parser (no `dumpbin` on PATH) and fails on any blocker symbol, or on any
   module that is neither a Server 2016 OS component nor a recorded exception.
   The exception list is empty, which is what makes a future redistributable
   dependency turn it red instead of quietly widening what a user must install.
   The gate was negative-controlled — adding an actually-imported symbol to the
   blocker list turns it red — so it is not a vacuous assertion.
-- [x] `scripts/diagnose-startup-windows.ps1`, published as a Release asset rather
+- [v] `scripts/diagnose-startup-windows.ps1`, published as a Release asset rather
   than bundled into any archive, answers the whole question from the target
   machine in one pass, because the loader names only one missing symbol at a
   time and iterating costs a round trip per symbol, paid by whoever owns that
@@ -505,12 +505,12 @@ correct half/full-width font measurement.
 本子树随代码从 agenterm 迁入独立仓 `partnernetsoftware/minicon`。以下三条是**迁出时确实
 发生变化**的事实，先记下来，不冒充仍然成立：
 
-- [x] **unwind profile 的机制变了，要求没变。** `con-dev` / `con-release` / `con-release-fast`
+- [v] **unwind profile 的机制变了，要求没变。** `con-dev` / `con-release` / `con-release-fast`
   存在的唯一理由是 agenterm 的 workspace profile 是 `panic = "abort"`，必须逃出去。独立仓
   没有要逃的 aborting workspace，Cargo 默认就是 unwind，所以本仓改为直接在
   `[profile.release]` 里显式写 `panic = "unwind"`，不再要那层间接。下方 `con-*` 条目描述的
   是 agenterm 时期的实现。
-- [ ] ~~**体积门已在本仓重建。**~~ **已撤除（2026-08-25）。** 该门自始至终只是
+- [_] ~~**体积门已在本仓重建。**~~ **已撤除（2026-08-25）。** 该门自始至终只是
   **Windows 承诺**：`tests/minicon_load_portability.rs` 整个文件是 `#![cfg(windows)]`，
   其 `shipped_binary()` 硬编码 `minicon.exe`，所以它从未在 Linux 或 macOS 上运行过一次，
   而 README 把「1 MiB 上限由测试强制」与「支持 Windows、Linux、macOS」并列，
@@ -529,7 +529,7 @@ correct half/full-width font measurement.
   所以撤门、改为在 README 直接写各平台实测字节数。
   上限若要回来，必须先明确它约束哪几个平台。
   它刻意不是警告阈值：这个数字是产品承诺，构建就应该在它上面失败。
-- [~] **独立 CI 已移植，但停放中。** `ci-agenterm-con.yml` 已从 agenterm 移到本仓
+- [-] **独立 CI 已移植，但停放中。** `ci-agenterm-con.yml` 已从 agenterm 移到本仓
   `.github/workflows/ci-minicon.yml.disabled`，`.disabled` 后缀期间不触发。重命名只能让
   GitHub 发现文件，不能自动把其中未验证的迁移命令变成发布证据；启用还要求 review 和
   首次成功运行。两处候选适配：`--profile con-release-fast` → `--profile release-fast`、
@@ -549,18 +549,18 @@ and proven here before becoming a current contract.
 
 ### Historical unwind profiles and panic containment
 
-- [x] con owns `con-dev`, `con-release-fast` and `con-release` unwind dependency
+- [v] con owns `con-dev`, `con-release-fast` and `con-release` unwind dependency
   graphs; only the resulting executable is merged into the ordinary staging
   directory, and the workbench profiles remain aborting. Staged source, merged
   profile and `dist` bytes are identical.
-- [x] this exists because native callbacks must not unwind across FFI while
+- [v] this exists because native callbacks must not unwind across FFI while
   panics must still be contained: an earlier aborting artifact could not satisfy
   the claimed containment contract, since Cargo test used unwind while every
   delivery profile inherited `panic = "abort"`. A release-profile synthetic
   panic-containment test is part of the ordinary gate.
-- [x] the official build pins `rust-src` and uses an explicit target plus a
+- [v] the official build pins `rust-src` and uses an explicit target plus a
   subprocess-scoped Rust 1.97 build-std boundary with `backtrace-trace-only`.
-- [x] Windows startup enters through a con-owned loader boundary instead of
+- [v] Windows startup enters through a con-owned loader boundary instead of
   `mainCRTStartup`. Rust executes XI/XC constructors, calls rustc's generated
   `main` through a one-instruction architecture trampoline, then executes XP/XT
   terminators; the PE loader remains the sole XL/TLS callback authority, so
@@ -577,7 +577,7 @@ slack. The number is the **MiniCon host process** RSS (working set). Child
 shells are the user's programs and sit outside it. One cell's number is not a
 six-cell claim.
 
-- [x] a public GUI black-box court measures MiniCon host RSS after one idle
+- [v] a public GUI black-box court measures MiniCon host RSS after one idle
   tab is ready, after a 2000-line PTY load, after a second tab, and after
   four extra-tab open/close cycles. It fails if idle RSS exceeds 384 MiB, a
   second tab adds more than 16 MiB, or four cycles grow the host by more than
@@ -587,12 +587,12 @@ six-cell claim.
   load ~333 MiB, extra tab ~1 MiB, four-cycle growth ~1.4 MiB. Release GUI on
   the same host was also ~315 MiB idle. Those idle figures are named host
   observations, not a universal product size.
-- [ ] intended idle one-tab host RSS is **10 MiB** on each named cell. A
+- [_] intended idle one-tab host RSS is **10 MiB** on each named cell. A
   terminal client that needs hundreds of megabytes, or even tens of megabytes,
   has lost the plot. Shrinking to 10 MiB is current-version work. Do not raise
   the 384 MiB regression ceiling to hide the gap, and do not treat 64 MiB as a
   compromise budget.
-- [x] `archive/lab/tinygui` is the Darwin empty-window floor, not a MiniCon cut.
+- [v] `archive/lab/tinygui` is the Darwin empty-window floor, not a MiniCon cut.
   2026-09-07 osx-aarch64, 960×600, no timer: ObjC AppKit **77.2–77.3 MiB**
   RSS, Rust AppKit **71.2–76.0 MiB** RSS (footprint **16 MiB**), empty
   winit+softbuffer **115.4 MiB** RSS. All three **0.0% CPU** and sleep in
@@ -600,7 +600,7 @@ six-cell claim.
   at **5.2% CPU**. The 10 MiB **RSS** intent sits below this AppKit RSS
   floor; CPU idle is available from the host. Evidence: `archive/lab/tinygui/RESULTS.md`.
   Linux/Windows tinygui courts are not this receipt.
-- [x] **macOS idle ~300 MiB is not the window stack and not per-tab PTY state.**
+- [v] **macOS idle ~300 MiB is not the window stack and not per-tab PTY state.**
   2026-09-06 `vmmap` + `heap -s` on an idle debug GUI (80×24): physical
   footprint ~243–252 MiB; `MALLOC_LARGE` dirty ~214 MiB. `heap` attributes
   that dirty heap to three `std::fs::read` allocations inside MiniCon's linked
@@ -619,7 +619,7 @@ six-cell claim.
   virtual size and mostly not dirty. Owner of the leak is the shared Unix
   font raster, not MiniCon tab state. One macOS heap is not a Linux or Windows
   claim (Windows GDI does not load whole TTC files this way).
-- [x] **Unix whole-font leak repaired**, shared revision
+- [v] **Unix whole-font leak repaired**, shared revision
   `bb309e79bc351b314cec65ec24ba1bab0e74c1f4` (branch
   `fix/lazy-font-mapping`). The raster owns read-only file mappings, borrows
   font views for each lookup, and opens fallback candidates only after a glyph
@@ -639,7 +639,7 @@ six-cell claim.
   The **384 MiB regression ceiling is unchanged; 10 MiB remains unmet**.
   These measurements supersede the macOS baseline above, not Windows/Linux
   measurements or runtime qualification of any other cell.
-- [x] **macOS frame duplication and allocator retention reduced**. Shared pin
+- [v] **macOS frame duplication and allocator retention reduced**. Shared pin
   `8d8de88c9ab62709327a6358609e9a09e8c363fd` owns anonymous mapped softbuffer
   frames, released by the final CoreGraphics provider callback. MiniCon
   rasterizes directly into transient frames, removing a second 8.79 MiB
@@ -662,7 +662,7 @@ six-cell claim.
   Exact artifacts, commands, caveats and experiments:
   `plan/archive/plan-runtime-memory-next.md`. The **10 MiB RSS target stays open**,
   with the 384 MiB regression ceiling unchanged.
-- [x] **Two independent baseline/increment investigations** explain the
+- [v] **Two independent baseline/increment investigations** explain the
   next owners. Native Cocoa-linked process 8.14 MiB, NSApplication init
   26.72 MiB, standard Hello window 49.53 MiB; editable control 83.22 MiB,
   Hello plus main menu 76.45 MiB, editable control plus menu 87.33 MiB
@@ -677,7 +677,7 @@ six-cell claim.
   Follow-up custom-input/pixel and shared-host checkerboards, including
   application-policy controls, narrow the remaining host attribution in
   `plan/archive/research-pixel-host.md`; these are research probes, not product gates.
-- [x] **Screenshot allocator-cache growth repaired**, shared main revision
+- [v] **Screenshot allocator-cache growth repaired**, shared main revision
   `745f52b2e169d5b41b51377a82cf8a93a9b00c8b`, now pinned by MiniCon.
   Real-product frame/provider tracing found bounded display-frame ownership,
   while screenshot preparation and Unix PNG conversion created two full-frame
@@ -695,7 +695,7 @@ six-cell claim.
   journey has no large malloc regions and decodes 1920×1200. Commands and
   exact receipts: `archive/research/screenshot-memory/`. This is not a startup or
   10 MiB PASS.
-- [x] **Remaining RSS accounting is measured, not discounted.** A frozen
+- [v] **Remaining RSS accounting is measured, not discounted.** A frozen
   macOS release receipt closes 79.265625 MiB resident = 18.046875 internal +
   60.718750 external + 0.5 reusable. External is a kernel pager classification,
   not proof that every page is a normal file or can be freed. Another run's
@@ -703,7 +703,7 @@ six-cell claim.
   optimization. Controls, native-stage comparisons and observer limitations:
   `plan/archive/research-rss-ledger.md`. All resident components remain in the product
   RSS criterion; OS initialization and display residency remain open owners.
-- [~] **AppKit Writing Tools startup load is causally identified, not yet a
+- [-] **AppKit Writing Tools startup load is causally identified, not yet a
   supported product repair.** Native `finishLaunching` probes Writing Tools
   support while customizing the main menu, then loads WritingToolsUI. Public
   context-menu and text-view opt-outs leave the 22.578 MiB external increment.
@@ -713,7 +713,7 @@ six-cell claim.
   is not enabled in production and still exceeds 10 MiB. The compatibility
   choice is pending while independent initialization/allocation work continues.
   Owner and exact receipts: `plan/archive/research-external-residency-next.md`.
-- [~] osx, lnx and win name host RSS through the same black-box court. Native
+- [-] osx, lnx and win name host RSS through the same black-box court. Native
   osx-aarch64 runs on the build host; Linux and Windows UTM guests execute the
   exact host-linked debug artifacts via `scripts/rss-os-court.sh` (`rss` mode
   on the existing `*-utm-runner.sh` / `*-runtime-qualify` pair). One platform's
@@ -836,13 +836,13 @@ six-cell claim.
 
 ## Artifact budget
 
-- [x] ~~`minicon.com` Candidate hard ceiling is `9,437,184` bytes (9 MiB).~~ —
+- [v] ~~`minicon.com` Candidate hard ceiling is `9,437,184` bytes (9 MiB).~~ —
   **raised 2026-09-26 (owner) to `11,534,336` bytes (11 MiB)**; see the entry
   below. Stamped 2026-08-29 (cdx) from rehearsal raw `8,880,268` (+556,916,
   ~6.27%). The 12 MiB (`12,582,912`) figure is a rehearsal fail-closed guard
   only and must not decide a Candidate; it stays above the new 11 MiB
   Candidate ceiling.
-- [x] **`minicon.com` Candidate hard ceiling raised to `11,534,336` bytes
+- [v] **`minicon.com` Candidate hard ceiling raised to `11,534,336` bytes
   (11 MiB), 2026-09-26 (owner).** 0.2.0's `mux` + `harness` subcommands (network
   transport, opencode-go codec) grew the sealed `minicon.com` to `10,746,681`
   bytes, above the 9 MiB ceiling that had explicitly forbidden auto-raising
@@ -856,11 +856,11 @@ six-cell claim.
   sync — a static test should assert this). A unique G7 pack that exceeds
   11 MiB fails; raising it again requires the same explicit owner decision,
   not an automatic bump when a future version grows past it.
-- [x] the Windows resource retains the existing icon's 16/32/64 PNG frames while
+- [v] the Windows resource retains the existing icon's 16/32/64 PNG frames while
   removing redundant mip sizes: `.rsrc` fell from 90,112 to 8,704 bytes, the
   source ICO is capped at 16 KiB by the build script, and Windows shell icon
   extraction still succeeds.
-- [ ] ~~Every released `minicon` artifact must be strictly below 1 MiB
+- [_] ~~Every released `minicon` artifact must be strictly below 1 MiB
   (`release_budget_bytes = 1,048,575`)~~ — **the ceiling was withdrawn on
   2026-08-25**; see the entry above. What survives it is the second half of the
   sentence, which was never platform-specific and still binds: a size statement
@@ -874,7 +874,7 @@ six-cell claim.
   bytes, 487,424 bytes below that current ceiling. This recovered budget does
   not permit reverting to abort or trading away backpressure, durability or
   clean shutdown.
-- [x] size claims require linked-symbol, disassembly or target-specific cold
+- [v] size claims require linked-symbol, disassembly or target-specific cold
   build evidence. An incremental 484,352-byte artifact that did not reproduce
   from the same HEAD after an explicit Windows-target package clean is recorded
   as non-evidence, and future assembly or native FFI work must start from the
@@ -882,27 +882,27 @@ six-cell claim.
 
 ### APE join (cosmocc over six native cells)
 
-- [x] `minicon.com` is a Cosmopolitan fat trampoline plus ZipOS overlay
+- [v] `minicon.com` is a Cosmopolitan fat trampoline plus ZipOS overlay
   (`/zip/cells/{os}-{isa}/`). It does **not** recompile MiniCon against
   cosmopolitan libc. GUI/PTY/Win32/Cocoa/Wayland stay in the already-qualified
   Rust cells. The trampoline selects `{os}-{isa}`, copies the blob out of
   ZipOS (or `MINICON_COM_CELLS`) into a per-invocation private directory, and
   `exec`s it. In-process mmap (rust-ape style) is the wrong join for a native
   GUI terminal.
-- [x] extract dirs are disposable: `mkdtemp` under `/tmp/minicon.com.<pid>.XXXXXX`
+- [v] extract dirs are disposable: `mkdtemp` under `/tmp/minicon.com.<pid>.XXXXXX`
   (Darwin `/tmp` may be `/private/tmp`), mode `0700`, marker file
   `.minicon-extract`. Reaper uses `lstat` / `O_NOFOLLOW` / uid / mode / marker.
   SIGKILL vs non-EINTR `waitpid` failure keeps the directory. There is no
   `MINICON_CONFIG` override. Windows config root remains
   `SHGetFolderPathW(CSIDL_APPDATA)` ([25](PRD_02_25_con_workspace.md)), not
   `~/AppData/Roaming` / the user-profile root.
-- [x] pack profiles are target-specific: Linux cells `cargo zigbuild --profile
+- [v] pack profiles are target-specific: Linux cells `cargo zigbuild --profile
   release` (thin LTO + `--gc-sections` / `--as-needed`); Darwin and Windows
   cells `release-fast`. Zig's lld rejects `-z pack-relative-relocs` (RELR);
   that path is closed. `cosmocc --version` prints a GCC id (14.1.0), not the
   Cosmopolitan release pin; the pin is the zip SHA-256 plus `bin/cosmocc`
   digest. Install is NEXT/PREV rename-swap under the same parent.
-- [x] one pack, six native execute-only courts. Guests do not compile. v0.1.2
+- [v] one pack, six native execute-only courts. Guests do not compile. v0.1.2
   stays three archives; `minicon.com` is not mixed into that Release.
   Promotion copies exact bytes. The 9 MiB ceiling was raised to 11 MiB by
   explicit owner decision on 2026-09-26 (see "Artifact budget" above); that is
@@ -958,7 +958,7 @@ without an explicit owner decision.
   is not CentOS-7 residue. Do not compile out either winit backend, do not
   drop `libxkbcommon-x11-0` from the runtime set, and do not treat a
   single-backend size cut as open work.
-- [x] **Linux X11 runtime boundary is versioned and product-owned.** The exact
+- [v] **Linux X11 runtime boundary is versioned and product-owned.** The exact
   v0.1.3 x86_64 Release ELF (`d5b15772…`) contains `xkbcommon-dl 0.4.2`, which
   already tries `libxkbcommon-x11.so.0` before the unversioned development
   name; its hard-coded panic nevertheless named only `.so`, leaked the CI Cargo
@@ -968,7 +968,7 @@ without an explicit owner decision.
   `apt-get install libxkbcommon-x11-0`; Wayland-only startup does not acquire a
   false X11 requirement. The native import table remains insufficient evidence
   because this edge is `dlopen`-owned.
-- [x] **Runtime-only court, not build-host luck.** A Debian x86_64 court with
+- [v] **Runtime-only court, not build-host luck.** A Debian x86_64 court with
   `libxkbcommon-x11-0` 1.7.0-2, no `libxkbcommon-x11-dev`, and no unversioned
   `.so` launched the already-linked ELF under Xvfb/DBus. Public control focused
   the composer, proved Enter retained a soft newline without PTY delivery,
@@ -976,7 +976,7 @@ without an explicit owner decision.
   `workspace_empty`, then closed the window cleanly. Removing only the runtime
   package produced the actionable MiniCon error with no panic/build-host path;
   the same court restored the package afterward.
-- [x] Candidate native package execution runs
+- [v] Candidate native package execution runs
   `scripts/linux-x11-package-smoke.sh` on each Linux artifact's matching ISA
   runner. An empty Ubuntu container owns the missing-library/error half; a
   second container installs runtime packages only, asserts the `-dev` package
@@ -1000,7 +1000,7 @@ qjswasm-as-size-cut remains a later hypothesis
 
 ## Delivery ownership
 
-- [x] **Runner guests are test targets, not build machines.** The Mac host owns
+- [v] **Runner guests are test targets, not build machines.** The Mac host owns
   compilation, linking, source identity, and artifact selection. Each guest
   receives only the exact already-linked artifact tree plus the bounded test
   harness needed for its runtime court; it does not require a compiler, Cargo,
@@ -1009,7 +1009,7 @@ qjswasm-as-size-cut remains a later hypothesis
   reproduce. A guest-side rebuild is excluded because it would test different
   bytes and duplicate host work.
 
-- [~] **Cloud six-grid runtime is the hosted execution court, not a second build
+- [-] **Cloud six-grid runtime is the hosted execution court, not a second build
   farm.** The Mac mini links all six targets once with native Cargo,
   `cargo-xwin`, and `cargo-zigbuild`. `scripts/package-six-grid-runtime.py`
   then selects only each cell's product, uniquely named owning Rust harnesses,
@@ -1235,7 +1235,7 @@ flowchart LR
     PF --> O
 ```
 
-- [x] `scripts/six-cell-qualify.sh` is the local Mac qualification owner. It
+- [v] `scripts/six-cell-qualify.sh` is the local Mac qualification owner. It
   gives every cell an isolated Cargo target directory, links all Cargo targets
   through native Cargo, cargo-xwin, or cargo-zigbuild, and fans the six
   dependency-independent build cells out concurrently. Measurement rejected
@@ -1391,7 +1391,7 @@ flowchart LR
   five seconds while 32 MiB is flowing, full drain within 30 seconds, at least
   2 MiB/s, responsive control observation, and zero present failures.
 
-- [x] `scripts/setup-linux-runners.sh` owns reproducible local Linux court
+- [v] `scripts/setup-linux-runners.sh` owns reproducible local Linux court
   provisioning: Debian/glibc, isolated ARM64 VZ + Rosetta and x86_64 QEMU
   instances, repo-root discovery rather than a recorded host path, Xvfb/D-Bus/
   AT-SPI dependencies, and amd64 multiarch libraries for translated x86_64
@@ -1402,7 +1402,7 @@ flowchart LR
 
 #### Agent-facing VM court lifecycle
 
-- [~] UTM automation is a reusable test-infrastructure capability, not a set of
+- [-] UTM automation is a reusable test-infrastructure capability, not a set of
   MiniCon-specific VM shell fragments. Phase 1 moved the facade into private
   `partnernetsoftware/utm-court` (`~/repos/utm-court`). MiniCon locates it
   through `scripts/lib/utm-court.sh` and a trampoline `scripts/utm-court.sh`;
@@ -1431,7 +1431,7 @@ flowchart LR
   An undeployed native-x86_64 desktop or an adapter without a generic operation
   exits as `BLOCKED` (code 3); it is never reported as a skipped success.
 
-- [~] Initial usability is reached only when all three guest adapters implement
+- [-] Initial usability is reached only when all three guest adapters implement
   the same black-box operation contract: `status`, `start`, `wait-ready`,
   `exec`, `push`, `pull`, and `idle`. QEMU Guest Agent owns Windows and QEMU
   Linux. The macOS VirtioFS login agent now implements product-neutral command
@@ -1556,7 +1556,7 @@ flowchart LR
   instance without an active lease is lifecycle leakage, never useful idle
   state.
 
-- [ ] A reusable image has two distinct identities. The immutable template
+- [_] A reusable image has two distinct identities. The immutable template
   records upstream media digest, provisioning-recipe digest, UTM configuration,
   guest OS build, installed automation-adapter version, and a content/config
   digest; it contains no seed disk, plaintext credential, product artifact,
@@ -1567,7 +1567,7 @@ flowchart LR
   archives store the stopped sealed template plus its manifest; live UTM disks
   and overlays never execute from cloud storage.
 
-- [~] The 24 GiB Mac mini is a single-heavy-court scheduler, not a VM farm.
+- [-] The 24 GiB Mac mini is a single-heavy-court scheduler, not a VM farm.
   Sealed templates and sparse disks may remain cold, but no UTM or optional Lima guest
   may reserve RAM merely because it could be useful later. A product runner
   obtains a bounded lease just before runtime evidence, starts at most one
@@ -1601,7 +1601,7 @@ flowchart LR
   and is never a disposable runtime peer. The fake backend keeps such a running
   VM untouched while admitting and releasing ready courts.
 
-- [ ] CLI lifecycle receipts must make reuse auditable across products. Every
+- [_] CLI lifecycle receipts must make reuse auditable across products. Every
   run identifies `court`, requested and effective ISA, native/translated
   execution, template digest/version, instance identity, adapter/version,
   payload digest, command deadline, exit status, evidence paths, and final idle
@@ -1609,15 +1609,15 @@ flowchart LR
   boundary; the initial facade intentionally exposes clone/disposable start but
   not an implicit delete command.
 
-- [x] A portable runner is identified by an upstream image/ISO digest, the
+- [v] A portable runner is identified by an upstream image/ISO digest, the
   UTM/firmware/device configuration, a declarative provisioning-recipe digest,
   and the resulting guest OS build identity. A downloaded third-party guest
   disk without those inputs is convenience media, not qualification evidence.
-- [x] Linux runners should start from the distribution's signed cloud image
+- [v] Linux runners should start from the distribution's signed cloud image
   for the matching architecture and apply the repository-owned cloud-init or
   setup recipe. Debian/Ubuntu glibc images own MiniCon's GNU and GUI/AT-SPI
   courts; a small Alpine/musl appliance cannot substitute for that ABI.
-- [x] Windows runners start from Microsoft installation media and a future
+- [v] Windows runners start from Microsoft installation media and a future
   repository-owned `Autounattend`/provisioning recipe. The locally installed
   guest disk may be sealed and reused on this machine, but must not be
   redistributed from the repository. Community preinstalled Windows `.utm` or
@@ -1642,12 +1642,12 @@ flowchart LR
   post-tools reboot is visibly proven. Network presence, dynamic resolution or
   mouse integration alone does not substitute for a successful QGA
   exec/push/pull receipt.
-- [~] After guest tools and qualification prerequisites are installed, shut
+- [-] After guest tools and qualification prerequisites are installed, shut
   down the clean Windows ARM64 guest, record its OS build and configuration
   identity, and preserve it as the local sealed baseline. Routine runs must use
   UTM disposable mode or an equivalent throwaway overlay so tests cannot mutate
   the next run's starting state.
-- [x] VM capacity follows its runtime-only role. Keep a sealed guest at a
+- [v] VM capacity follows its runtime-only role. Keep a sealed guest at a
   low-power baseline (normally 2–4 virtual CPUs and 4–6 GiB RAM), shut down
   when no court owns it. Raise CPU/RAM only for an identified GUI,
   throughput, or Prism-x64 test and record any configuration that affects the
@@ -1672,7 +1672,7 @@ flowchart LR
   13.58 MB/s respectively), so it is the proven default test-target baseline;
   raising it is an evidence-specific exception.
 
-- [~] Add a clean ARM64 macOS guest as a release/permission court, not as a
+- [-] Add a clean ARM64 macOS guest as a release/permission court, not as a
   seventh architecture cell. Host-native ARM64 and host Rosetta x86_64 remain
   the fast feedback courts. The Apple-Virtualization guest owns clean-user,
   first-launch, TCC, font/default-setting and packaging behavior; its Rosetta
@@ -1726,7 +1726,7 @@ flowchart LR
   authenticated interactive session survives between unattended qualification
   runs; an explicit stop remains available for baseline sealing or maintenance.
 
-- [~] Add a stable glibc Linux desktop UTM release court as the authoritative
+- [-] Add a stable glibc Linux desktop UTM release court as the authoritative
   local Linux lane; headless Lima remains an optional accelerator. The selected primary target is Ubuntu
   24.04 ARM64 Server plus `ubuntu-desktop-minimal`. The canonical ARM64 desktop
   target is a Linux guest with ARM64 ISA on QEMU+HVF, named
@@ -1890,7 +1890,7 @@ flowchart LR
   graphical login. This avoids guest-reboot ambiguity and makes seed removal
   an explicit credential-lifecycle boundary.
 
-- [x] Preserve expensive, reproducible test assets under `~/googleDrive/` once
+- [v] Preserve expensive, reproducible test assets under `~/googleDrive/` once
   that independently managed mount is ready. Archive signed upstream media,
   immutable checksums, provisioning recipes, UTM configuration manifests and
   sealed reusable baselines. Exclude passwords, tokens, user documents, live
@@ -1915,7 +1915,7 @@ flowchart LR
   `21cb21d6b98def5dfa6af34fd2a4105c0f41724d691185f7b05a88117814db0b`;
   rsync completion alone was not accepted as recovery evidence.
 
-- [ ] Make runner acquisition image-first rather than installer-first. Before
+- [_] Make runner acquisition image-first rather than installer-first. Before
   creating a VM interactively, the provisioning owner must query, in order:
   UTM's official Gallery, a reviewed/versioned community UTM or Vagrant box,
   an OS-vendor cloud image, and only then official installation media. An
@@ -2025,7 +2025,7 @@ desktop. It does not invalidate the already proven Ubuntu/Xubuntu court, but it
 must be evaluated as the preferred rebuild/recovery source before another
 interactive Linux x86 installation.
 
-- [x] `scripts/windows-runtime-qualify.ps1` owns the target-side Windows test
+- [v] `scripts/windows-runtime-qualify.ps1` owns the target-side Windows test
   sequence over already-linked PE artifacts. `scripts/six-cell-qualify.sh`
   accepts executable machine wrappers through `MINICON_WIN_X86_64_RUNNER` and
   `MINICON_WIN_AARCH64_RUNNER`; those wrappers must copy/mount the exact target
@@ -2036,7 +2036,7 @@ interactive Linux x86 installation.
   persistent Cargo target directories may retain older hashes, which must not
   silently become current-source evidence.
 
-- [x] `scripts/windows-utm-runner.sh` is MiniCon's Windows calling scene. It
+- [v] `scripts/windows-utm-runner.sh` is MiniCon's Windows calling scene. It
   selects a court ID per Windows cell, asks `utm-court` for the guest work
   root, replaces only that cell's dedicated guest staging directory, pushes
   the exact linked product plus only the hashed test PE files required by the
@@ -2135,7 +2135,7 @@ interactive Linux x86 installation.
   evidence. Remote GitHub runners and target-isolated local cross-builds remain
   independently parallelizable.
 
-- [x] **Cross-build target policy uses Cargo target identity, never build-script
+- [v] **Cross-build target policy uses Cargo target identity, never build-script
   host cfg.** Build scripts and build dependencies compile for the build host;
   guarding Windows resource or linker policy with `#[cfg(windows)]` or a
   target-scoped build-dependency silently removes it from macOS/Linux
@@ -2145,7 +2145,7 @@ interactive Linux x86 installation.
   cross-built PEs accidentally depended on that redistributable until the host
   cfg defect was fixed.
 
-- [~] **Antivirus reputation is a release evidence concern, not a reason to
+- [-] **Antivirus reputation is a release evidence concern, not a reason to
   amputate terminal capabilities.** v0.1.3's policy-selected court scanned both
   exact Windows executables extracted from the sealed archives. A later
   signed-APE release must scan `minicon.com`. The historical APE had a
@@ -2173,7 +2173,7 @@ interactive Linux x86 installation.
   or mismatched evidence fails closed. Raw screenshots remain operator-held and
   gitignored rather than leaking workstation context into repository history.
 
-- [x] **Company Artifact Signing live qualification green; no signed Release yet.**
+- [v] **Company Artifact Signing live qualification green; no signed Release yet.**
   The later trusted-signing court covers `minicon.com`,
   `minicon.exe`, and the other platform deliverables. The implementation must
   decide certificate procurement and hardware/managed key custody, Windows
@@ -2400,7 +2400,7 @@ interactive Linux x86 installation.
   the named unsigned bytes were clean. G6 must rerun on the eventual trusted
   signed after-SHA.
 
-- [~] **Ordinary CI is parked, not an active owner.** The only repository file
+- [-] **Ordinary CI is parked, not an active owner.** The only repository file
   is `.github/workflows/ci-minicon.yml.disabled`; GitHub does not load that
   suffix, and its own header records that it has never run in this repository.
   Therefore push/PR feedback, its custom-std cells, and any exact-SHA preflight
@@ -2411,7 +2411,7 @@ interactive Linux x86 installation.
   ordinary CI requires a reviewed rename, a successful
   first run, and PRD backfill from that run.
 
-- [~] **Warm `minicon.com` pack latency is a measured product constraint.** The
+- [-] **Warm `minicon.com` pack latency is a measured product constraint.** The
   v0.1.3 six-payload run `33247549065` measured 5m29s in the single macOS pack
   job even with a cache hit; the six execute-only cells then completed quickly.
   The target is approximately one minute for a warm, source-compatible pack.
@@ -2436,11 +2436,11 @@ interactive Linux x86 installation.
   discovered by the parallel Linux/macOS builds and reproduced `EEXIST`.
   Prefetch must therefore materialize the locked graph for each of the six
   target triples serially; compilation remains target-isolated and parallel.
-- [ ] Candidate preflight does **not currently** require an active MiniCon CI
+- [_] Candidate preflight does **not currently** require an active MiniCon CI
   workflow plus an agenterm workflow. MiniCon cannot inherit green status from
   agenterm, and the standalone release contract may name only workflows and
   evidence that exist and have run in this repository.
-- [ ] The parked workflow still contains migrated custom-std `release-fast`
+- [_] The parked workflow still contains migrated custom-std `release-fast`
   commands. Until they execute successfully here, they are migration candidates
   rather than proof of Windows x86_64 or the six compile cells. Historical
   `con-release-fast` commands belong only to the migration record above.
@@ -2479,10 +2479,10 @@ That 2026-09-24 rejection covered moving the *whole* build into CI as the
 routine loop, and still stands for that. A separate, narrower question --
 whether a Linux CI runner could ever produce the two macOS cells at all, as a
 low-frequency fallback rather than the routine path -- is still open and
-tracked as `[ ]` below under "BLOCKED -- non-Mac macOS cross-compile from a
+tracked as `[_]` below under "BLOCKED -- non-Mac macOS cross-compile from a
 Linux CI/cloud host". Do not read that entry as reversing this section's
-decision, and do not upgrade it past `[ ]` without a real Mach-O produced end
-to end and named evidence, per this repository's own `[x]`-requires-evidence
+decision, and do not upgrade it past `[_]` without a real Mach-O produced end
+to end and named evidence, per this repository's own `[v]`-requires-evidence
 rule.
 
 ### Linux crossbake experiment (probe only, not adopted)
@@ -2496,7 +2496,7 @@ can cross-build all six cells plus `minicon.com` unsigned. See
 history and why this does not change the "six-cell cross-compile, every
 iteration -> the release Mac" row above.
 
-`[x]` build-and-verify proven, run `36114279354` (2026-09-25): all six cells
+`[v]` build-and-verify proven, run `36114279354` (2026-09-25): all six cells
 built and each passed its `file`-type check (PE32 x2, ELF x2, Mach-O x2).
 Base image (apt/rustup/xwin/zigbuild/zig/osxcross/cosmocc, `BASE_VERSION=v2`)
 built once and pushed to GHCR (~13m23s one-time cost, only paid again when
@@ -2512,7 +2512,7 @@ that quote early, silently moving everything after it (a `cosmocc --version`
 assertion) onto the *host* runner instead of into the container — fixed by
 rewording the comment to drop the apostrophe.
 
-`[ ]` BLOCKED: unsigned only. No codesign/notarize/Authenticode stage runs
+`[_]` BLOCKED: unsigned only. No codesign/notarize/Authenticode stage runs
 inside this image, so its output cannot feed `candidate.yml` as-is; wiring
 signing onto this path, if ever wanted, is separate follow-on work, not
 implied by this probe passing.
@@ -2531,9 +2531,9 @@ Every release from 0.1.14 through 0.1.24 bound its Defender evidence on a
 local UTM Windows guest (see the historical tree below). 0.1.25 is the first
 release to try binding it on a GitHub-hosted `windows-2025` runner instead,
 per the 2026-09-24 owner instruction to stop depending on UTM for the routine
-path. `[~]` until `defender-ci-scan.yml` has completed one real end-to-end run
+path. `[-]` until `defender-ci-scan.yml` has completed one real end-to-end run
 with a valid `reputation-qualification.json` accepted by `reputation.yml
-verify`; promotes to `[x]` default once that run's id is named here as
+verify`; promotes to `[v]` default once that run's id is named here as
 evidence. Per-node timings below are this pipeline's own measured 0.1.25 runs
 where the node has executed, and the 0.1.24 runs otherwise (same workflows,
 unaffected by which Defender host is used).
@@ -2569,7 +2569,7 @@ unaffected by which Defender host is used).
 
 The original path, before any GitHub-hosted Windows runner was known to carry
 a real Defender install: the release Mac's own UTM Windows guest was the only
-place a native scan could run. `[x]` shipped and used for every release from
+place a native scan could run. `[v]` shipped and used for every release from
 0.1.14 through 0.1.24 (22 successful `reputation.yml` runs) — kept here as
 the documented fallback for offline work, legacy guest images and long
 interactive debugging, not deleted. It is demoted from default to fallback
@@ -2686,18 +2686,18 @@ locator failure or `BLOCKED`, never a skipped PASS. Caller map:
 
 ## Machine-readable alignment
 
-- [x] `alignment-contract.json` maps each gated MiniCon
+- [v] `alignment-contract.json` maps each gated MiniCon
   capability to its owning PRD, public command set and registered black-box
   evidence. `evidence-registry.json` owns those Cargo test
   identities independently from agenterm qualification.
-- [x] The standalone contract is self-owned. The former references to
+- [v] The standalone contract is self-owned. The former references to
   agenterm's `scripts/qualification-gates.json`,
   `scripts/host-native-evidence-gates.json`, and
   `dist/agenterm cli list-commands` are migration history: none is a current
   MiniCon gate or CLI. Current command-catalog evidence comes from
   `minicon cli list-commands`, and current evidence identifiers must resolve in
   this repository's own registry and tests.
-- [x] `minicon_alignment` rejects duplicate or orphan capabilities,
+- [v] `minicon_alignment` rejects duplicate or orphan capabilities,
   commands and evidence, missing PRD owners or registered test functions, and
   any difference between the contract command set and the running
   `minicon cli list-commands` catalog. `minicon_alignment` owns that check

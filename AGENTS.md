@@ -27,8 +27,13 @@ Use both views for material product planning; neither replaces the other.
    holds current product truth; `plan/` holds sequencing; `plan/archive/` and
    `prd/archive/` preserve superseded decisions and release history.
 4. Upsert accepted scope and status into the owning PRD before archiving a
-   completed plan. Link instead of copying. `[x]` requires named evidence;
-   unavailable evidence is `BLOCKED`, never silently skipped.
+   completed plan. Link instead of copying. Status markers: `[v]` done
+   (requires named evidence), `[-]` in progress, `[_]` not started. Do not
+   use `[x]` for done -- it reads as "abandoned/crossed out", not "complete"
+   (owner decision, 2026-09-26; the old `[x]`/`[~]`/`[ ]` spelling is retired
+   everywhere except frozen history under `plan/archive/` and `prd/archive/`,
+   which are not rewritten). Unavailable evidence is `BLOCKED`, never
+   silently skipped.
 5. Before implementation, identify shared prerequisites and hot files. Work
    independent leaves in parallel only when their file ownership and evidence
    are independent; integrate and run final gates serially.

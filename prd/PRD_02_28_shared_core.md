@@ -3,7 +3,7 @@
 Owner of the question "what can another product take from MiniCon, and what
 has to stay". Parent: [MiniCon product requirements](../PRD.md).
 
-Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
+Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Why this module exists
 
@@ -41,19 +41,19 @@ not a thing to duplicate; it is a thing to draw the line against.
 
 ## Stage 1 — shipped
 
-- [x] `crates/minicon-core` contains `composer` and `json`: multiline composer
+- [v] `crates/minicon-core` contains `composer` and `json`: multiline composer
   editing with a caret and wide-character measurement, and a bounded JSON codec.
   Both are ordinary data and arithmetic.
-- [x] the crate has **no platform, OS, window or terminal-backend dependency,
+- [v] the crate has **no platform, OS, window or terminal-backend dependency,
   and no `cfg` on architecture or operating system anywhere**. That is what
   makes it consumable without dragging a platform layer along.
-- [x] both halves of that rule are enforced by tests rather than by intent. One
+- [v] both halves of that rule are enforced by tests rather than by intent. One
   reads the manifest, because the property is about the dependency graph and no
   compiler error announces a new dependency; the other scans the modules,
   because a manifest can stay clean while the code stops behaving identically
   everywhere. The manifest test was negative-controlled: adding `vt100` turns it
   red.
-- [x] the dependency test is bounded to the production section. A
+- [v] the dependency test is bounded to the production section. A
   dev-dependency cannot reach a consumer, and failing on one would forbid the
   `serde_json` oracle that keeps the codec honest — the codec exists *because*
   `serde_json` is too large for this product's budget, so comparing against it
@@ -67,7 +67,7 @@ the dependency's `test` cfg — so a test-only helper simply disappears. Every
 
 ## Stage 2 — in progress
 
-- [x] move tree-depth computation out of `agenterm-ui-core` into this crate.
+- [v] move tree-depth computation out of `agenterm-ui-core` into this crate.
   `minicon-core::tree` now owns `TreeDepthNode`, `TreeDepthError`,
   `compute_tree_depths` and `compute_tree_depths_by`, and `src/workspace.rs`
   calls it there instead of reaching into the UI crate. The move is
@@ -77,7 +77,7 @@ the dependency's `test` cfg — so a test-only helper simply disappears. Every
   assert — the accessor form reading parentage from a caller's own node type,
   and depths resolving correctly across sparse, unordered ids — because those
   are the parts that make it reusable.
-- [x] move scrollbar geometry out of `agenterm-ui-core` into this crate.
+- [v] move scrollbar geometry out of `agenterm-ui-core` into this crate.
   `minicon-core::scrollbar` now owns `ScrollbarRect`, `ScrollbarGeometry`,
   `ScrollbarHit`, `ScrollbarThumbDrag`, `terminal_scrollbar_geometry`,
   `scrollback_for_thumb_top` and `scrollbar_hit_test`; `src/ui.rs` and
@@ -88,7 +88,7 @@ the dependency's `test` cfg — so a test-only helper simply disappears. Every
   negative, so callers cannot treat a non-negative height as free, and a thumb
   at the live end rests on the track's bottom edge, so there is deliberately no
   `TrackBelow` region to hit there. Both are now asserted.
-- [x] move the numeric rounding shims out of `agenterm-platform` into this
+- [v] move the numeric rounding shims out of `agenterm-platform` into this
   crate. `minicon-core::numeric` now owns `round_f32`, `round_f64`, `ceil_f32`
   and `trunc_f32`, and all twenty call sites in `font`, `main`, `palette`,
   `raster_surface` and `ui` use them from here. This one mattered more than the
@@ -97,10 +97,10 @@ the dependency's `test` cfg — so a test-only helper simply disappears. Every
   lived in `agenterm-platform` the product could not have dropped that dependency
   for geometry alone. The moved code is identical, verified by comparing the
   bodies rather than by reading them.
-- [ ] `workspace`, `session_store`, `ui` and `palette` then follow, because the
+- [_] `workspace`, `session_store`, `ui` and `palette` then follow, because the
   single helper each was waiting on is here: `workspace` needed tree depths,
   and `ui` and `palette` needed the rounding shims.
-- [ ] `agenterm` depends on `minicon-core` for those helpers. This is the
+- [_] `agenterm` depends on `minicon-core` for those helpers. This is the
   dependency inversion the README describes, proved on leaves rather than on
   the terminal engine.
 
@@ -113,7 +113,7 @@ every `cfg` and every `unsafe` in the product lives.
 
 ## Stage 3 — not scheduled
 
-- [ ] `terminal-core`: pty, vt100 wiring, raster, font, ime.
+- [_] `terminal-core`: pty, vt100 wiring, raster, font, ime.
 
 Deliberately unscheduled rather than merely future. Those adapters live in
 `agenterm-platform`, a crate serving process, ipc, webview, accessibility,

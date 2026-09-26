@@ -185,7 +185,7 @@ mechanisms rather than product state.
 Nothing here authorizes a `foundry` repository. Each item is a MiniCon-side
 step that pays off on its own and leaves the line better specified.
 
-- [ ] **Write down "build once, execute six times" as the line's first rule.**
+- [_] **Write down "build once, execute six times" as the line's first rule.**
   The rule is about *how many times* the bytes are produced, not about where.
   Where is settled separately, and the two answers differ (2026-09-24 owner
   decision, see AGENTS.md "Where the bytes come from"): the development loop
@@ -207,26 +207,26 @@ step that pays off on its own and leaves the line better specified.
   The developer machine's role is the whole development loop -- every
   iteration, all six cells -- and today it is not a source of *shipped* bytes;
   those come from the Candidate job above.
-- [ ] **Publish the local-gate invocation as part of the line's contract.** A
+- [_] **Publish the local-gate invocation as part of the line's contract.** A
   gate runnable only in CI is a gate nobody runs. The exact shape matters and
   was learned twice the hard way: `--max-operations 1000000000` (CI's own
   value) and a wall-clock budget sized for a debug build, or the gate reports
   `budget exhausted` and reads as broken.
-- [ ] **State the reachability requirement.** A consumer's gate set must be
+- [_] **State the reachability requirement.** A consumer's gate set must be
   provably reachable end to end at least once per release, because an
   unreachable gate reads exactly like a passing one. This is the cheapest rule
   on this page and it is the one whose absence cost the most.
-- [ ] **Extract the Defender-court rule set as a contract document**, not as
+- [_] **Extract the Defender-court rule set as a contract document**, not as
   code: lease → transport-ready → push exact manifest-selected assets →
   `MpCmdRun -DisableRemediation` → compare pre/post SHA-256 → typed receipt →
   release the lease, with the guest path named in the receipt. Two
   implementations already satisfy it; a third consumer should implement the
   contract, not inherit either script.
-- [ ] **Keep `utm-court` as the only shared executable.** It is already
+- [_] **Keep `utm-court` as the only shared executable.** It is already
   product-neutral, already consumed by both, and gained Windows
   `interactive-exec` from MiniCon's work. Growing it is cheaper and safer than
   starting a second shared binary.
-- [ ] **Treat an artifact size budget as a refactor signal, not a release
+- [_] **Treat an artifact size budget as a refactor signal, not a release
   gate to argue with.** AgenTerm 0.1.17 was stopped twice by one: first
   `agenterm-cu.exe` at 7,302,144 bytes against a 2 MiB "thin control CLI"
   budget, then `agenterm-cu-provider.dll` at 13,522,944 against 12 MiB. Both
@@ -240,7 +240,7 @@ step that pays off on its own and leaves the line better specified.
   pass and rebaseline once — never one CI round per over-budget file — and
   record the rebaselined value as a debt the refactor is expected to repay,
   not as the new intended size.
-- [ ] **Defer the driver.** Two consumers have now exercised the assembly
+- [_] **Defer the driver.** Two consumers have now exercised the assembly
   order; neither has exercised a shared driver. Deciding its shape before a
   third consumer would repeat the mistake this page was written to avoid.
 

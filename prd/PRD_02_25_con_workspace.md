@@ -7,71 +7,71 @@ input, scrollbar and divider interaction, selection and clipboard behavior, and
 focus ownership. Shared physical VT selection mechanism may remain upstream;
 this module owns MiniCon's interaction meaning and evidence.
 
-Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
+Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Tab and window naming
 
-- [x] a tab is named by what distinguishes it, not by what it runs. `cmd.exe`
+- [v] a tab is named by what distinguishes it, not by what it runs. `cmd.exe`
   reports its own full path as its window title, so taking a child's title
   literally made every tab in the tree read the shell's own full path: long,
   truncated in a narrow column, and identical across every tab, which
   defeats the tab tree this product is built around.
-- [x] a title that only repeats the program is treated as absent. It tells the
+- [v] a title that only repeats the program is treated as absent. It tells the
   user nothing they did not already know from opening it, so the short program
   name is used instead: `cmd`. A title the child genuinely sets — `title
   deploy`, or any shell's prompt escape — is information and wins.
-- [x] the window title is `<title> — MiniCon <version>`. Context first,
+- [v] the window title is `<title> — MiniCon <version>`. Context first,
   product last: a title is read left to right and the part that changes belongs
   in front. The package version from `CARGO_PKG_VERSION` sits with the product
   name so a taskbar or window list answers which MiniCon is running. With zero
   tabs the native title is `MiniCon <version>` alone.
-- [x] it carries no tab id. That is a machine identifier and it is already in
+- [v] it carries no tab id. That is a machine identifier and it is already in
   the tab column and in `list-tabs`; a taskbar entry is read by a person.
-- [x] it carries no font name either. The resolved face was in the window
+- [v] it carries no font name either. The resolved face was in the window
   title as a development diagnostic, in the native window title a user always
   sees; `--status` reports it now, which is where someone diagnosing a font
   actually looks.
-- [x] one function builds it. The OSC path and the activation path formatted it
+- [v] one function builds it. The OSC path and the activation path formatted it
   independently and drifted, so the same window read differently depending on
   which had written it last.
 
 ## Tab tree authority
 
-- [x] `Workspace` is the sole authority for tree order, parentage and stable tab
+- [v] `Workspace` is the sole authority for tree order, parentage and stable tab
   identity. Closing a parent promotes its direct children instead of terminating
   them; a parent cycle is rejected.
-- [x] local creation is capped at 256 live tabs. Capacity or stable-id
+- [v] local creation is capped at 256 live tabs. Capacity or stable-id
   exhaustion rejects the new tab before mutating tree order, parentage or active
   selection, and the release-build session store rejects duplicate ids rather
   than silently splitting tree and PTY ownership.
-- [x] session ownership is a product-specific compact store rather than a
+- [v] session ownership is a product-specific compact store rather than a
   general-purpose ordered map: it performs linear id routing over the small
   interactive tab set and may swap entries on removal because its physical order
   is unobservable.
-- [x] tree depth is a `Workspace`-owned derived cache aligned with node order.
+- [v] tree depth is a `Workspace`-owned derived cache aligned with node order.
   Root and child creation append their known depth in O(1); close and direct
   child promotion rebuild through the shared UI-core typed algorithm, which
   remains the sole authority for missing parents, duplicate ids, cycles and
   complete topology resolution. Host UI paint borrows the immutable depth slice
   instead of sorting, allocating and resolving every parent chain per frame.
-- [x] geometry, iterative typed tree-depth resolution, tree viewport bounds and
+- [v] geometry, iterative typed tree-depth resolution, tree viewport bounds and
   hit results are pure deterministic contracts covered independently of
   Win32/PTY state. An out-of-range hit or scroll safely becomes background or a
   bounded no-op, and a hit beyond the last row clamps rather than selecting or
   closing an unrelated terminal.
-- [x] host UI geometry treats NaN pointer/sidebar values as the minimum safe
+- [v] host UI geometry treats NaN pointer/sidebar values as the minimum safe
   bound and saturates extreme DPI padding and row-coordinate arithmetic.
   Untrusted/extreme dimensions cannot wrap a close target onto another row,
   overflow layout construction, or collapse the sidebar through an unordered
   floating-point comparison.
-- [x] the header keeps only tools that cannot live in the settings panel — New
+- [v] the header keeps only tools that cannot live in the settings panel — New
   (left) and Settings (right), joined later by the rail toggle at the column
   edge — so the row no longer overflows a narrow sidebar; help, language, font
   size and theme all moved into the settings panel. `ui.rs`'s
   `the_header_tools_are_ordered_and_disjoint` and
   `the_header_row_fits_and_the_frame_stays_partitioned` pin the layout across
   widths and DPI scales.
-- [x] the tab sidebar collapses to a 44dip rail and expands again, from
+- [v] the tab sidebar collapses to a 44dip rail and expands again, from
   `Ctrl+Shift+B` or a third header control placed at the column edge — which is
   why the header row above is now three controls in the expanded state and a
   vertical stack in the rail. Collapsed is a narrower sidebar, not a hidden one:
@@ -82,19 +82,19 @@ Legend: `[x]` shipped, `[~]` partial, `[ ]` planned.
   width and column count exactly. The collapsed layout joins `LAYOUT_SWEEP`, so
   both states are checked at all ten size/scale combinations rather than one
   state having no geometry to check. Unreleased on `main` as of v0.1.19.
-- [x] accessibility bounds use the same non-wrapping geometry policy: positive
+- [v] accessibility bounds use the same non-wrapping geometry policy: positive
   native coordinates and dimensions above `i32::MAX` saturate instead of
   collapsing to zero and making published controls disappear.
-- [x] terminal selection endpoints are normalized once per raster pass rather
+- [v] terminal selection endpoints are normalized once per raster pass rather
   than once per visible cell, and wide-cell/decoration geometry saturates at
   native numeric limits so malformed resize state cannot panic painting.
-- [x] shared iterative tree-depth resolution sorts `(id,index)` pairs and uses
+- [v] shared iterative tree-depth resolution sorts `(id,index)` pairs and uses
   binary lookup, preserving typed duplicate/missing/cycle failures and the
   20,000-node non-recursive test without randomized hashing. Its index replaces
   generic `slice::sort_unstable` with a shared no-allocation iterative heapsort
   that stays deterministic O(n log n) and preserves second-input duplicate
   diagnostics.
-- [x] closing the final tab leaves the native window and control endpoint alive
+- [v] closing the final tab leaves the native window and control endpoint alive
   with a valid zero-tab workspace. The terminal/composer disappear in favor of
   a translated greeting, primary New Terminal action and `Ctrl+Shift+T` hint;
   `list-tabs` reports an empty array and `ui-snapshot.active` is null. Creating
@@ -107,50 +107,50 @@ Host UI is MiniCon-drawn controls around the terminal grid: the tab tree, the
 header tools, and the composer. It is not the browser, and it is not layout.
 `Layout` is only the geometry of those regions.
 
-- [x] the host UI owns a vertically scrollable left tree with row-level
+- [v] the host UI owns a vertically scrollable left tree with row-level
   close targets and a two-tool header: a New root-terminal action and a
   Settings button that opens the settings panel. A distinct bottom composer
   owns input, Send and Newline, and a bottom status bar shows a fixed-width
   `L###:C###` readout that follows the grid crosshair (the hovered cell) and
   falls back to the text cursor.
-- [x] a tab whose shell has exited stays in the tree (remain-on-exit) and is
+- [v] a tab whose shell has exited stays in the tree (remain-on-exit) and is
   visibly inert: its label dims, and the change repaints the tab column
   immediately rather than waiting for unrelated host-UI damage. A pixel
   journey screenshots the window before and after the shell exits and asserts
   the tab column changed while the window kept its size.
-- [x] the tree header does not repeat the `MiniCon` product label already owned
+- [v] the tree header does not repeat the `MiniCon` product label already owned
   by the native window title. It spends that scarce row on two actions — New
   (left) and Settings (right) — with 24-DIP hit targets and no permanent button
   borders. High-contrast, minimal marks float on the shared toolbar; the open
   Settings button uses a quiet selected fill.
-- [x] the settings icon opens a lightweight in-app panel, anchored under the
+- [v] the settings icon opens a lightweight in-app panel, anchored under the
   header on the sidebar rather than a centered modal. It carries four sections:
   interface language (English / 简 / 繁, the active one filled with the accent),
   font size (−/100%/+), a theme picker of three swatches (Neutral / Docs Ink /
   Paper Ink, each showing its own canvas and accent, the active one outlined),
   and the keyboard shortcuts (the former help text). Escape or a click outside
   closes it; the panel is available with zero tabs.
-- [x] interface language is chosen from the panel (English / Simplified /
+- [v] interface language is chosen from the panel (English / Simplified /
   Traditional). Only host UI is translated; each option is written in the
   language it selects, and the active one is drawn in the accent colour, so the
   control reports state as well as offering a change.
-- [~] font size is adjusted from the panel (−/100%/+) and by Ctrl+wheel; the
+- [-] font size is adjusted from the panel (−/100%/+) and by Ctrl+wheel; the
   same zoom source sizes terminal content and every host UI label — tabs,
   header, composer, status bar. **Tracking from direct macOS use:** the default
   non-content type roles must be large enough to read; prove `z`/`0`/`Z`
   visibly resize them, not only terminal content.
-- [ ] larger host UI text must not make the toolbars wasteful. Reduce internal
+- [_] larger host UI text must not make the toolbars wasteful. Reduce internal
   button padding, sibling gaps, and outer header/composer margins to the minimum
   that preserves disjoint hit targets and glyph bounds. Success is paired PNG +
   structured geometry on macOS first, then Win/Lnx parity: larger legible text,
   no clipping/overlap, and no increase in total header/composer height unless
   the old height cannot contain the larger glyph bounds. Merely enlarging the
   terminal cell font, or enlarging empty padding with the label, fails.
-- [x] the theme picker switches three themes at runtime — Neutral
+- [v] the theme picker switches three themes at runtime — Neutral
   Ink (the historical monochrome default), Docs Ink (the website's blue palette)
   and Paper Ink (light) — from the panel swatches or `Ctrl+Shift+P`. The chosen
   theme is reported by `ui-snapshot` as `ui_theme`.
-- [x] each theme also carries a terminal color scheme (the conventional model:
+- [v] each theme also carries a terminal color scheme (the conventional model:
   default background/foreground, cursor, and the 16 ANSI colors — Windows
   Terminal / Alacritty / iTerm2 all define exactly these), so the terminal body
   recolors with the chrome: Neutral keeps the classic black console, Docs Ink a
@@ -159,18 +159,18 @@ header tools, and the composer. It is not the browser, and it is not layout.
   program's own explicit color requests are never overridden — the theme sets
   the terminal's *defaults and named colors*, not what an app paints. Colors are
   stored per `ConTerminal` and re-applied to every open tab on a theme change.
-- [x] a grid crosshair snaps to the hovered terminal cell: a translucent
+- [v] a grid crosshair snaps to the hovered terminal cell: a translucent
   row/column band (3.5%) plus 1px lines (28%) drawn over the content without
   erasing it, and the same 1-based cell written to the status bar. It redraws
   only when the hovered cell changes, and toggles with `Ctrl+Shift+G`.
-- [x] **only host UI is translated.** Everything a child process prints is
+- [v] **only host UI is translated.** Everything a child process prints is
   passed through untouched, and that line does not move: a terminal that
   rewrote program output would be lying about what ran. Host UI strings live in
   a struct rather than a keyed lookup, so a missing translation is a compile
   error and not a blank label found by a user.
-- [x] the language is reported by `ui-snapshot` as a stable tag, so automation
+- [v] the language is reported by `ui-snapshot` as a stable tag, so automation
   can read and assert it without matching a display label.
-- [~] **cross-platform sizing follows a logical-unit contract, not shared raw
+- [-] **cross-platform sizing follows a logical-unit contract, not shared raw
   pixels.** Layout, hit targets, and nominal type roles are expressed in DIPs;
   the host window supplies a possibly fractional display scale, and raster
   glyphs are produced at `logical size × product zoom × display scale`.
@@ -178,16 +178,16 @@ header tools, and the composer. It is not the browser, and it is not layout.
   units/surface scale are platform spellings of this same boundary. The Retina
   defect where terminal glyphs used backing scale but host UI glyphs did not is
   a regression class, not a platform-specific tuning preference.
-- [x] current host UI and composer painting, caret measurement, IME placement,
+- [v] current host UI and composer painting, caret measurement, IME placement,
   and pointer-to-text mapping consume the same scaled glyph metrics. A clamp is
   expressed in logical units and scaled afterward, so a 2× display does not
   silently halve the perceived maximum.
-- [ ] separate **display scale** from **system accessibility text scale** in
+- [_] separate **display scale** from **system accessibility text scale** in
   the public window metrics, following Chromium's distinct device/UI/text
   scale model. Until every host adapter can report text scale truthfully,
   MiniCon product zoom remains the explicit user override; no adapter may
   invent a constant and call accessibility honored.
-- [ ] qualify the same host UI roles at display scales 1.0, 1.25, 1.5, 2.0 and
+- [_] qualify the same host UI roles at display scales 1.0, 1.25, 1.5, 2.0 and
   product zoom minimum/default/maximum on Win/OSX/Lnx. Evidence pairs a PNG
   with structured geometry and asserts readable glyph bounds, no clipping,
   matching caret/hit coordinates, and relayout after a cross-monitor scale
@@ -222,7 +222,7 @@ are comparison contracts, not dependencies:
 - <https://learn.microsoft.com/windows/win32/hidpi/setting-the-default-dpi-awareness-for-a-process>
 - <https://docs.gtk.org/gtk4/coordinates.html>
 - <https://developer.gnome.org/hig/guidelines/typography.html>
-- [x] Linux `minicon` publishes that host UI as a real AT-SPI child tree
+- [v] Linux `minicon` publishes that host UI as a real AT-SPI child tree
   (`Tabs`, `Session`, `Command`, `SEND`, plus Session child `OffscreenField`)
   so `cu tree --window` is not the one-node X11 title frame. winit/softbuffer
   has no atk-bridge; the process registers itself. Inner
@@ -233,43 +233,43 @@ are comparison contracts, not dependencies:
   `SEND`, proves terminal output through the public con CLI, and reaps the host.
   Run `31692109556` at `007f36498502747a645e9ca5d44ddcd32870a314`
   supplies that native runtime evidence.
-- [x] Linux publish implements AT-SPI `Component.ScrollTo(TopEdge)` on the
+- [v] Linux publish implements AT-SPI `Component.ScrollTo(TopEdge)` on the
   named inner `OffscreenField` (and on `Session` as the scrollable pane that
   moves that child). Independent `Component.GetExtents(Screen)`
   (`cu get-extents --name OffscreenField`) is the proof (`|Δy|>=20`,
   `via=scroll-to`). Layout snapshots keep the unscrolled bounds; the
   publisher applies a persistent y offset. Never Action `scroll*`, XTest
   wheel, `--coords`, or screenshot.
-- [x] Linux publish implements AT-SPI `Text.SetSelection` /
+- [v] Linux publish implements AT-SPI `Text.SetSelection` /
   `GetNSelections` / `GetSelection` on the named composer `Command`
   field. Independent `cu get-selection --name Command` after
   `cu select --name Command --start N --end M` reports that range
   (`n=1`). Tree snapshots keep replacing node text; the publisher
   stores the range separately. Never XTest, mouse-drag, `--coords`,
   or screenshot. The `select` reply is not proof.
-- [x] Linux publish implements AT-SPI `Text.SetCaretOffset` /
+- [v] Linux publish implements AT-SPI `Text.SetCaretOffset` /
   `CaretOffset` (`GetCaretOffset`) on the named composer `Command`
   field. Independent `cu get-caret --name Command` after
   `cu set-caret --name Command --offset N` reports that offset.
   Tree snapshots keep replacing node text; the publisher stores the
   caret separately. Never XTest, `--coords`, or screenshot. The
   `set-caret` reply is not proof.
-- [x] AT-SPI actions cross into the GUI through a 64-entry FIFO and a 32-action
+- [v] AT-SPI actions cross into the GUI through a 64-entry FIFO and a 32-action
   per-turn drain budget, with a 64 KiB per-action and 256 KiB aggregate payload
   ceiling. Saturation drops only new actions, records a monotonic counter,
   coalesces producer wakes on the empty-to-nonempty transition, and self-wakes
   while backlog remains; `ui-snapshot` exposes pending item/byte and dropped
   counts so an accessibility flood cannot hide unbounded GUI work.
-- [x] publisher actions commit their AT-SPI text/focus mirror only after the
+- [v] publisher actions commit their AT-SPI text/focus mirror only after the
   product queue accepts ownership. Queue saturation returns `false` to the
   caller and leaves the mirror unchanged, preventing accessibility state from
   claiming an edit the composer never received.
-- [x] the default 15 logical-pixel terminal font corresponds to roughly 11.25 pt
+- [v] the default 15 logical-pixel terminal font corresponds to roughly 11.25 pt
   at 96 DPI and is no smaller than the tree labels.
-- [x] the host UI defaults to high-contrast black/white/gray and the
+- [v] the host UI defaults to high-contrast black/white/gray and the
   terminal default foreground is near-white on black; explicit ANSI application
   colors remain intact.
-- [x] host UI repaint allocates no joined strings for tree labels, composer
+- [v] host UI repaint allocates no joined strings for tree labels, composer
   destination, committed input, IME preedit and cursor. One product-local text
   raster pass consumes borrowed segments and stack-formatted tab digits under a
   shared clip limit, with a CJK/non-cell-aligned pixel oracle proving exact
@@ -287,53 +287,53 @@ actually typed. A separate area removes that collision entirely, which is why
 `agenterm` uses the same design, and why this band keeps its permanent share of
 the window rather than being hidden to save pixels.
 
-- [x] a sent line survives being sent. Up and Down walk previously submitted
+- [v] a sent line survives being sent. Up and Down walk previously submitted
   lines, so resending or amending one does not mean retyping it — this is what
   a dedicated area can do that a terminal region cannot, and without it the
   area is a box that forgets.
-- [x] entering recall keeps whatever was half-typed, and stepping forward past
+- [v] entering recall keeps whatever was half-typed, and stepping forward past
   the newest entry puts it back exactly. Losing an in-progress line to a
   stray arrow key would make the feature a trap.
-- [x] recall stops at the oldest entry rather than wrapping. Wrapping lands on
+- [v] recall stops at the oldest entry rather than wrapping. Wrapping lands on
   the newest and reads as an entry that vanished.
-- [x] a recalled line arrives with the caret at its end and no selection: it is
+- [v] a recalled line arrives with the caret at its end and no selection: it is
   a starting point to extend, and a leftover select-all would delete it on the
   next keystroke.
-- [x] adjacent duplicates are not stored, so sending the same command twice
+- [v] adjacent duplicates are not stored, so sending the same command twice
   does not cost two presses to step past. History is bounded at 64 entries and
   drops the oldest first, because recall reaches backwards from the present.
-- [x] sending ends the recall, so the next Up starts from the newest entry
+- [v] sending ends the recall, so the next Up starts from the newest entry
   rather than resuming wherever the last browse stopped.
-- [x] a line is remembered before delivery is attempted: one that failed to
+- [v] a line is remembered before delivery is attempted: one that failed to
   send is exactly the one worth recalling.
-- [x] the label names the target tab rather than only numbering it —
+- [v] the label names the target tab rather than only numbering it —
   `SEND TO  cmd`. Saying where text is going is the reason the band earns its
   space, and `` is only an answer to someone who already knows what `` is.
 
-- [x] the composer has a caret, as a byte offset into its text. Typing inserts
+- [v] the composer has a caret, as a byte offset into its text. Typing inserts
   there, Backspace deletes before it and Delete at it, Left/Right move by
   characters and Home/End to the ends, and a pointer click places it. Before
   this the widget had no caret at all — editing appended and deleted at the end,
   so text that scrolled out of view was not merely hidden but unreachable, there
   being nothing to move.
-- [x] a click resolves the pointer column against the **same window the painter
+- [v] a click resolves the pointer column against the **same window the painter
   drew**. For a scrolled line an offset into the full buffer is a different
   character than the one under the pointer. Clicking the right half of a
   double-width character puts the caret after it, which is where the pointer
   visually is.
-- [x] the painted window follows the caret, not the end of the line. Anchoring
+- [v] the painted window follows the caret, not the end of the line. Anchoring
   to the end was correct only while the caret could not move; a caret moved left
   must bring the view with it. A leading marker states that content is hidden,
   rather than letting the line appear to begin where it does not.
-- [x] the caret is drawn as a rule, not as a `|` character. A character occupies
+- [v] the caret is drawn as a rule, not as a `|` character. A character occupies
   a cell and pushes everything after it sideways, which would make the column a
   click lands on disagree with the column the text is painted at.
-- [x] every caret invariant exists because the offset is a byte index into
+- [v] every caret invariant exists because the offset is a byte index into
   UTF-8: it is clamped onto a character boundary, and the clamp is *stored*, so
   an edge case that returns early cannot leave a stale mid-character offset for
   the next slice to panic on. The caret can outlive the text it pointed into,
   because the accessibility bus can replace the contents underneath it.
-- [x] the composer supports keyboard text selection through an anchor/caret
+- [v] the composer supports keyboard text selection through an anchor/caret
   model. Shift+Left/Right extend by character and Shift+Up/Down by line
   (preserving the visual column, measured in cells so CJK stays aligned);
   Shift+Home/End reach the line ends, which are line-relative in a multiline
@@ -341,7 +341,7 @@ the window rather than being hidden to save pixels.
   Typing, Backspace/Delete, cut and copy act on the selection, and each row
   paints a highlight under the selected cells, integrated with the horizontal
   window so a scrolled line highlights the right characters.
-- [x] the composer is a bounded multiline editor. The explicit Newline button
+- [v] the composer is a bounded multiline editor. The explicit Newline button
   inserts a stored soft break and immediately paints the following text on a
   real new row; it never submits by itself. The fixed-height viewport follows
   the caret row and retains horizontal sliding for long commands. Send remains
@@ -361,16 +361,16 @@ the window rather than being hidden to save pixels.
   still the only submission, so a multiline paste does not execute until the
   human confirms. Accessibility `SetTextContents` remains single-line so a
   computed replacement cannot inject breaks the user did not see.
-- [x] keyboard submission is deliberate: bare Enter inserts the same visible
+- [v] keyboard submission is deliberate: bare Enter inserts the same visible
   soft newline as Newline, while `Ctrl+O` is the Send shortcut. Enter no longer
   executes a command merely because the composer is focused; the button and
   shortcut converge on the same transactional submission path.
-- [x] the two composer actions teach those bindings where they are used. The
+- [v] the two composer actions teach those bindings where they are used. The
   English buttons paint `Send` above `(ctrl-o)` and `New Line` above `(Enter)`;
   translated primary labels retain the same shortcut lines. Each two-line block
   is centred as a unit, each line is centred independently, and the smaller hint
   type fits the existing stacked controls without stealing draft width.
-- [x] a Copy / Paste / Cut button column sits just left of Send/New Line so a
+- [v] a Copy / Paste / Cut button column sits just left of Send/New Line so a
   mouse-only user (who may have no keymap awareness) can edit the draft without
   a shortcut. Copy and Cut act on the selection and dim to the muted tone when
   nothing is selected; Paste is always live. The column is reserved only when
@@ -378,7 +378,7 @@ the window rather than being hidden to save pixels.
   skipped by `composer_hit`) and keeps a typable input. Labels are translated in
   all three languages. Paired with the mouse selection below, this is the whole
   non-keyboard clipboard path.
-- [x] while focused, the composer owns Space and all keyboard events instead of
+- [v] while focused, the composer owns Space and all keyboard events instead of
   leaking ignored keys into the PTY, with one deliberate exception:
   Shift+PageUp/PageDown are declined so scrollback paging works identically
   whether the composer or the terminal has focus (they would otherwise be
@@ -390,19 +390,19 @@ the window rather than being hidden to save pixels.
   accessibility insertion shares a 64 KiB total-buffer ceiling and truncates
   only at UTF-8 boundaries. Its explicit send action is the only path that
   writes composed text to the active terminal.
-- [x] composer focus isolation is owned by a Windows black-box journey: it
+- [v] composer focus isolation is owned by a Windows black-box journey: it
   obtains the current input bounds from `ui-snapshot`, performs a native client
   click, routes Space and `Ctrl+A/C/X/V` through `send-ui-keys`, proves the
   terminal is unchanged before Send, then proves the composed command reaches
   the PTY through `Ctrl+O` or the Send button.
-- [x] `send-ui-ime` follows the current focus owner through the same product
+- [v] `send-ui-ime` follows the current focus owner through the same product
   `ImeEvent` path as the native host. Its bounded public journey proves terminal
   preedit visibility, CJK commit delivery to the PTY, composer-only
   preedit/commit, and an explicit exited-child failure that preserves the
   uncommitted preedit. This owns deterministic product routing; the separate
   native Microsoft Pinyin journey below owns the Windows message/input-method
   boundary and does not substitute synthetic `ImeEvent` delivery for it.
-- [x] composer submission is transactional: it clears text and snaps the live
+- [v] composer submission is transactional: it clears text and snaps the live
   viewport only after the active PTY accepts the complete text plus its
   terminal carriage return. An exited child or write failure restores the
   exact bounded text without the
@@ -410,7 +410,7 @@ the window rather than being hidden to save pixels.
   `ui-snapshot`, and paints the input/send affordance with a high-contrast error
   accent. The public multi-tab journey proves `RETRY` survives submission to a
   retained exited tab instead of disappearing.
-- [x] a physical composer click does not call native focus from inside its
+- [v] a physical composer click does not call native focus from inside its
   pointer callback: Win32 has already activated the receiving top-level window,
   and the redundant `SetForegroundWindow`/`SetFocus` chain could reenter dispatch
   and disturb presentation. A synchronous native-click plus character probe kept
@@ -419,15 +419,15 @@ the window rather than being hidden to save pixels.
 
 ## Scrollbar and divider
 
-- [x] a high-contrast vertical scrollbar stays visible at the right edge of
+- [v] a high-contrast vertical scrollbar stays visible at the right edge of
   every terminal viewport. Its column is excluded from PTY grid sizing; the
   thumb maps bottom to the live view and upward to older history. Track clicks
   move one visible page, thumb drags retain their grab offset, and capture loss
   cancels the drag without emitting terminal mouse input. Structured snapshots
   expose both current and maximum scrollback.
-- [x] the tab-tree divider exposes a horizontal-resize cursor on hover and a
+- [v] the tab-tree divider exposes a horizontal-resize cursor on hover and a
   bounded capture-safe drag that retains the terminal's minimum usable width.
-- [x] divider drag stays visually responsive without synchronously resizing the
+- [v] divider drag stays visually responsive without synchronously resizing the
   PTY for every pointer event: host UI follows the pointer immediately while the
   latest PTY/VT grid geometry is applied through the shared trailing-edge resize
   path.
@@ -438,7 +438,7 @@ the window rather than being hidden to save pixels.
   text, while a rangeless click, application-owned gesture, scrollbar drag or
   divider resize must not mutate the clipboard — is shared and owned by
   the selected platform terminal runtime.
-- [x] Terminal clipboard keys follow the platform, and never shadow a terminal
+- [v] Terminal clipboard keys follow the platform, and never shadow a terminal
   control key: on macOS **Cmd+C** copies the selection and **Cmd+V** pastes
   (Command never reaches the shell, so bare `Ctrl+C` stays SIGINT and `Ctrl+V`
   stays readline quoted-insert); on Windows/Linux the terminal uses
@@ -447,21 +447,21 @@ the window rather than being hidden to save pixels.
   are verified on real hardware by driving OS-level Cmd keys (System Events)
   into a control-socket session and reading `ui-snapshot` / `capture-pane` /
   the system clipboard back.
-- [x] Windows selection auto-copy counts UTF-16 units, performs one checked
+- [v] Windows selection auto-copy counts UTF-16 units, performs one checked
   movable `GlobalAlloc`, and encodes directly into the locked system allocation
   instead of first collecting a Rust vector and copying it. The caller frees
   every allocation before a successful `SetClipboardData`; only that call
   transfers ownership, and the final UTF-16 NUL is explicit.
-- [x] `send-paste` reaches the same bracketed-paste-aware path as clipboard
+- [v] `send-paste` reaches the same bracketed-paste-aware path as clipboard
   input, so scripted and human paste share one contract.
-- [x] terminal clipboard reads never block the GUI thread. One bounded platform
+- [v] terminal clipboard reads never block the GUI thread. One bounded platform
   worker owns the native read and wakes the event loop on every completion;
   frontend delivery requires the original stable tab to remain active and the
   composer to remain unfocused. Tab/window close safely drops pending ownership,
   while typed failure remains visible in host UI and `ui-snapshot`. The Windows
   public journey drives `send-ui-keys Ctrl+Shift+V` against the real clipboard
   and proves PTY delivery plus final idle state.
-- [x] Human terminal paste review shows visual line breaks. The native Win32
+- [v] Human terminal paste review shows visual line breaks. The native Win32
   editor paints a row only on CRLF, so review text is presented as CRLF after
   dropping unsafe controls; confirmation still normalizes to CR for PTY
   delivery. Pre-normalizing the review buffer to CR collapsed every paste
@@ -469,12 +469,12 @@ the window rather than being hidden to save pixels.
 
 ## Configuration
 
-- [x] the user configuration root is selected through the platform runtime
+- [v] the user configuration root is selected through the platform runtime
   facade: Windows calls `SHGetFolderPathW(CSIDL_APPDATA)` into caller-owned
   UTF-16 storage, avoiding both environment-path policy in the product and the
   COM allocation required by `SHGetKnownFolderPath`; Linux/macOS retain the
   documented `~/.config` location.
-- [x] configuration input does not construct the output-side `JsonValue` DOM.
+- [v] configuration input does not construct the output-side `JsonValue` DOM.
   One bounded single-pass scanner validates every unknown value, escape,
   surrogate pair, duplicate key and nesting budget while decoding only
   `font_size`, `cols` and `rows`; escaped spellings of known keys retain their
@@ -482,14 +482,14 @@ the window rather than being hidden to save pixels.
 
 ## Native adoption gate
 
-- [x] the feature-gated native Win32 pixel host proved the platform boundary can
+- [v] the feature-gated native Win32 pixel host proved the platform boundary can
   remove winit/softbuffer from the linked con path without changing product
   state, and is now the Windows default while Linux/macOS select the portable
   host. Native IME preedit/commit from IMM32, candidate anchoring in documented
   client coordinates, matched pointer capture/loss cancellation, and DPI
   suggested rectangles are wired. The shared platform capability truthfully
   reports this native mechanism as available only on a displayed Windows host.
-- [x] `native_microsoft_pinyin_preedit_and_commit_reach_the_real_window` is the
+- [v] `native_microsoft_pinyin_preedit_and_commit_reach_the_real_window` is the
   explicit interactive-desktop acceptance gate. It activates the real con HWND,
   requests installed Simplified Chinese layout `00000804`, opens native
   conversion, injects physical `VK_N/I/H/A/O` events through `SendInput`, then
@@ -504,7 +504,7 @@ the window rather than being hidden to save pixels.
   minicon_blackbox
   native_microsoft_pinyin_preedit_and_commit_reach_the_real_window -- --ignored
   --exact`.
-- [x] con caches the focused surface's platform `ImeStatus` on open,
+- [v] con caches the focused surface's platform `ImeStatus` on open,
   focus/keyboard/IME events and explicit snapshot observation. The external
   input header renders its bounded label (`off`, input-method name plus
   native/latin and full-width mode, or unknown), while `ui-snapshot` publishes
