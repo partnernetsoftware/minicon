@@ -447,4 +447,44 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      `dev-loop-crosscheck.yml` is the standing, credential-free mechanism
 │      for the next bug of this shape -- push to `main`, dispatch, read logs,
 │      no release/GHCR permission ever required.
+└── G2 Windows idle-prompt Ctrl+C is swallowed, confirmed on real hardware
+       2026-09-27
+       @motive: owner report -- in a `cmd.exe` pane, Ctrl+C does nothing at
+       an idle prompt, but does interrupt a CLI program running inside that
+       same cmd.exe. Not documented anywhere before this (checked prd/*.md
+       and this file itself).
+       **Confirmed real, not cosmetic, on a real `win-x86_64` GitHub-hosted
+       runner via `dev-loop-crosscheck.yml` (run `36317735429`).** New test
+       `ctrl_c_interrupts_an_idle_prompt_instead_of_being_swallowed` in
+       `tests/minicon_console_agent.rs`: type a half-terminated line, send
+       Ctrl+C, then type an independent marker command. Result: the pane
+       showed `this_is_not_a_real_command_zzzecho IDLE_CTRL_C_OK` as one
+       glued line, `'...zzzecho' is not recognized...` -- the pending
+       half-typed text was never discarded, so `IDLE_CTRL_C_OK` never ran
+       standalone. `ctrl_c_interrupts_a_running_child_instead_of_being_typed`
+       (a `ping -t` loop) passed in the same job, confirming the asymmetry is
+       real: a running child reacts, an idle shell prompt does not.
+       #risk root cause is upstream, in the `agenterm-platform` crate
+       (`src/adapters/windows/console_agent.rs`, pinned via git rev in this
+       repo's `Cargo.toml`, not vendored here) -- `write_records` sees the
+       `\x03` byte, flushes buffered key records, then calls
+       `raise_console_signal(CTRL_C_EVENT)` -> `GenerateConsoleCtrlEvent(CTRL_C_EVENT,
+       0)`. That call *does* deliver the `CTRL_C_EVENT` signal to every
+       process sharing the console -- which is why a child with no custom
+       handler (e.g. `ping`) dies from it -- but a real physical Ctrl+C
+       keypress does something `GenerateConsoleCtrlEvent` alone does not:
+       conhost's own low-level key handling aborts the process currently
+       blocked in a cooked-mode `ReadConsole` (the shell's line-input read)
+       as part of recognizing the keystroke, before any `CTRL_C_EVENT` is
+       even raised. Synthesizing only the signal, with no matching physical
+       keypress, plausibly reaches cmd.exe's Ctrl handler (which just marks
+       "interrupted" and does not exit -- correct, keeps the shell alive)
+       but never aborts its pending line read, so the half-typed buffer
+       survives untouched. #assumption not yet verified against
+       `agenterm-platform`'s actual source (only a stale local checkout at a
+       different commit than the pinned rev was available); needs either
+       adding that repo to this session's scope to inspect/patch the real
+       pinned revision, or an owner-side fix in `agenterm`. BLOCKED on
+       agenterm-platform access/owner decision for the fix itself; the
+       repro and regression test are done and merged here.
 ```
