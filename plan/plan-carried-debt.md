@@ -186,4 +186,20 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      pattern); needs owner sign-off before treating it as a standing
 │      pipeline capability
 │      non-goal: moving any compile step into CI; replacing utm-court outright
+│      **Pilot run 2026-09-27:** `local-artifact-probe.yml` against a round-*
+│      dev prerelease failed fast (`no assets match the file pattern` — that
+│      tag never carried osx-aarch64 test-suite binaries; not this leaf's
+│      bug), so re-ran the read-only path instead: `release-smoke-test.yml`
+│      (run 36294482962) against the real published `v0.2.1` asset, all
+│      three OS jobs green — linux 6s, windows 12s, **macos 22s** (including
+│      mount + Gatekeeper spctl + notarization verify, not just
+│      download+run). All three land well inside the owner's 5-minute bar,
+│      on real native hardware, no UTM. Added `timeout-minutes: 8` to both
+│      workflows first (neither had a cap; without compile, a hang was
+│      billing risk, not a build-time need). Reading: this validates the
+│      *download-published-asset-and-run* leg cheaply and fast; it does not
+│      yet validate the *interactive debug session* leg (no `action-tmate`
+│      tried) or the *dev-bundle single-cell* leg (round-* tags need a fresh
+│      bundle with the target cell's test binaries actually present before
+│      that path can be timed).
 ```
