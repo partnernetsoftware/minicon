@@ -284,6 +284,46 @@ fn ctrl_c_interrupts_a_running_child_instead_of_being_typed() {
     );
 }
 
+/// Ctrl+C must also interrupt an *idle* prompt, not only a running child.
+///
+/// The previous test only proves the "child running" half of the raise --
+/// `GenerateConsoleCtrlEvent` fans out to the whole console process group,
+/// which should reach cmd.exe's own line-input read too, but nothing in this
+/// repo exercised that path. If Ctrl+C were silently dropped at an idle
+/// prompt (arriving as neither a signal nor a literal byte -- reported by an
+/// owner as "看起来没反应"), a half-typed line would still be sitting in the
+/// input buffer and would get glued onto whatever is typed next, so the
+/// intended command would never run standalone. Interrupting cleanly means
+/// the half-typed text is discarded and the next line runs on its own.
+#[test]
+fn ctrl_c_interrupts_an_idle_prompt_instead_of_being_swallowed() {
+    let _guard = gui_guard();
+    let session = Session::start("interrupt-idle");
+    session.wait_for_pane("Microsoft Windows", Duration::from_secs(20));
+
+    // A half-typed line, deliberately never terminated with \r.
+    session.control(&["send-text", "this_is_not_a_real_command_zzz"]);
+    session.control(&["send-text", "\u{3}"]);
+
+    // If the interrupt discarded the half-typed text, this runs as its own
+    // command and prints cleanly. If it didn't, the shell instead tries to
+    // run "this_is_not_a_real_command_zzzecho IDLE_CTRL_C_OK" as one line
+    // and IDLE_CTRL_C_OK never appears.
+    session.control(&["send-text", "echo IDLE_CTRL_C_OK\r"]);
+    let pane = session.wait_for_pane("IDLE_CTRL_C_OK", Duration::from_secs(20));
+    assert!(
+        pane.contains("IDLE_CTRL_C_OK") && !pane.contains("this_is_not_a_real_command_zzzecho"),
+        "Ctrl+C at an idle prompt did not discard the pending line:\n{pane}"
+    );
+
+    let tabs = session.control(&["list-tabs"]);
+    assert!(
+        tabs.contains("\"child_alive\": true"),
+        "Ctrl+C at an idle prompt killed the shell.\ntabs: {tabs}\ndiagnostics:\n{}",
+        diagnostics()
+    );
+}
+
 /// A double-width character occupies two console cells carrying the same code
 /// unit. Emitting both is the doubled-CJK bug, and it is invisible in any
 /// ASCII-only test.
