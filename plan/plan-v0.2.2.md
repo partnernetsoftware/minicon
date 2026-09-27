@@ -79,11 +79,31 @@ runtime evidence for two of them, not decisions.
 │      dependency: C3 needs a Windows display host this session does not
 │        have; C4 no longer needs one — only a release build + disk headroom
 │      non-goal: any new UI feature; this is stabilization only
-└── {OSX} small macOS-side fix (already submitted independently)  [~] ->verify
-       not yet visible on origin/main as of this plan's drafting; pull in
-       via the normal fetch+rebase flow when it lands, verify alignment
-       tests + fmt, and note its content here once seen — do not guess its
-       shape in advance
+└── {OSX} small macOS-side fix (already submitted independently)  [v] closed
+       verified 2026-09-27: it landed as commit `1796876` ("fix(harness):
+       allow macOS contained exec and prepare v0.2.1") — earlier than this
+       plan expected, inside v0.2.1 itself rather than after it. Root cause:
+       `agenterm_platform::contained_process::validate_limits` refuses any
+       `ContainedProcessLimits.memory_bytes` on macOS unconditionally
+       (`RLIMIT_AS` cannot be imposed below the process-wide dyld mapping
+       there), so `ExecTool::spawn_contained` unconditionally requesting one
+       made every contained exec fail to start on macOS. Fixed by leaving
+       `memory_bytes: None` under `#[cfg(target_os = "macos")]` only; other
+       limits stay enforced there. Evidence: `./scripts/build.sh test` green
+       on macOS (previously `exec_tool_runs_one_command_and_never_
+       interprets_shell_metacharacters` failed 100% of the time on this
+       host), `cargo fmt`/`clippy -D warnings` clean.
+
+0.2.2 close-out decision (2026-09-27, mirrors plan-v0.2.1.md's own scope
+reasoning): {HB} and {UI}'s `C3` leaf never got a capable macOS/Windows
+display host during this round — that gap is structural (no such host
+existed in either the Linux cloud session or here), not unfinished work.
+Re-affirming both `BLOCKED` here rather than holding the release hostage to
+them, and carrying them forward to 0.2.4 per the owner's own "0.2.1 already
+shipped ... continue rolling forward" rule. 0.2.2 ships on {LP} + {OSX} +
+{UI}'s `C4` sub-leaf (idle RSS, closed with real Xvfb/release-build
+evidence), which is real, closeable progress and should not wait on the
+other two.
 
 Decision, mirrored from plan-v0.2.1.md's own scope reasoning:
 if HB/UI are still BLOCKED at 0.2.2's close (no capable host materialized),
