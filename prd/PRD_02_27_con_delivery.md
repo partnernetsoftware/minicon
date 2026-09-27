@@ -722,25 +722,40 @@ six-cell claim.
   explicit owner decision on 2026-09-26 (see "Artifact budget" above); that is
   not the same as an automatic raise, which remains forbidden.
 
-- [_] **Distributed zip size growth, flagged 2026-09-27 (owner, curiosity, not
-  a release blocker).** Owner-observed download zip roughly 400+ KB on 0.1.x
-  vs 900+ KB on 0.2.x — a bigger jump than the sealed Candidate's own
-  `8,880,268` → `10,746,681` (+21%) receipt above, not yet reconciled (zip
-  compresses differently than the raw Candidate payload; not verified which
-  number is the fairer comparison). Leading candidate, not yet confirmed:
-  `network-http` (`agenterm-platform`, enabled by `884a25c` "0.2.0 H4: pin
-  agenterm's network-http and enable it for MiniCon") pulls `ureq` + `rustls`
-  + `rustls-webpki` + `ring` on Unix; `ring`'s constant-time crypto tables
-  resist LTO/strip disproportionately. Not established: whether this is the
-  dominant contributor vs. `mux`/`harness`'s own ~4-4.6k new lines, or other
-  0.2.x additions. Any fix to the TLS/crypto dependency graph is
-  `agenterm-platform`'s `Cargo.toml`, outside this repo — MiniCon-side action
-  here is measurement only. Motive for revisiting: a future lightweight
-  web-GUI client front would make dependency-graph growth like this cost
-  more, not less. **Do not act on this without a real before/after size
-  measurement** (rebuild a 0.1.x tag and a 0.2.x build in the same
-  environment, same profile, diff `cargo tree`) — reasoning about feature
-  flags alone is not evidence of what dominates the delta.
+- [v] **Distributed zip size growth, flagged 2026-09-27 (owner, curiosity, not
+  a release blocker); confirmed 2026-09-27.** Owner-observed download zip
+  roughly 400+ KB on 0.1.x vs 900+ KB on 0.2.x — a bigger jump than the sealed
+  Candidate's own `8,880,268` → `10,746,681` (+21%) receipt above (zip
+  compresses differently than the raw Candidate payload, so the two numbers
+  are not directly comparable, but both move the same direction).
+  Real before/after measurement (`x86_64-unknown-linux-gnu`, `release`
+  profile, `strip`, same environment, same commit, only the
+  `agenterm-platform` feature list in `Cargo.toml` and one stubbed
+  `harness_wire.rs` transport method changed): with `network-http` enabled,
+  the stripped `minicon` binary is 5,534,288 bytes; with it removed (and
+  `HarnessWire::post_json` stubbed to isolate exactly this feature),
+  3,901,800 bytes. **Delta: 1,632,488 bytes, ~41.8% of the without-http size,
+  ~29.5% of the with-http size** — confirmed the dominant contributor, not
+  `mux`/`harness`'s own new lines. `cargo tree` confirms the graph is exactly
+  `ring <- rustls <- ureq <- agenterm-platform`, entering only through
+  `network-http`; `ring`'s constant-time crypto tables resist LTO/strip
+  disproportionately, as suspected. Any fix to the TLS/crypto dependency
+  graph itself (swapping `ring` for a smaller provider, or Unix `native-tls`)
+  is still `agenterm-platform`'s `Cargo.toml`, outside this repo, and both
+  read worse on inspection: `aws-lc-rs` is larger than `ring`, not smaller;
+  Unix `native-tls` trades static bytes for a runtime `libssl.so` dependency,
+  which conflicts with the single-static-executable invariant and needs an
+  owner call. The MiniCon-side lever that needs no cross-repo change and no
+  owner call: `network-http` has exactly one caller in this repo
+  (`harness_wire.rs`'s `NetworkHttp::post_json`, DeepSeek chat only) and is
+  enabled unconditionally at the workspace level, so every cell's GUI binary
+  pays this 1.6 MB whether or not `harness` is ever invoked. Gating it behind
+  a MiniCon-owned, default-on (so today's shipped behavior does not change)
+  Cargo feature would let a future lean/no-network build variant drop it
+  without touching `agenterm-platform` at all. Not yet done — recorded here
+  as the confirmed diagnosis and the next actionable step, since actually
+  introducing a new build variant is a scope decision under this file's
+  "Product boundary" section, not a size-measurement task.
 
 ### Linux size attribution (LTO cells, 2026-08-29)
 
