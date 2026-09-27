@@ -241,4 +241,50 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      dependency: none of the three above touch signing/candidate/
 │      release-policy state or require a live connection; #decision owner
 │      has not yet picked which (if any) to implement.
+│      **Real-run validation 2026-09-27 (first two survey findings implemented
+│      and tested against actual GitHub Actions, not just planned):**
+│      `local-artifact-probe.yml` gained the default-to-non-macOS-cells
+│      change, the `test_filter` input, and a generic (no OS-specific
+│      crash-dump) failure-log-capture step reusing the pinned
+│      `actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02`.
+│      Two real dispatches, not dry runs:
+│        - Run `36300379788` (bundle `round-20260924-135301`, four non-macOS
+│          cells): win-x86_64/win-aarch64 hit a genuine `minicon_blackbox`
+│          test failure and the upload step fired correctly on the first try
+│          (`failure()` matched). lnx-x86_64/lnx-aarch64 instead hung and hit
+│          the job's 8-minute cap -- reported as `cancelled`, not `failure`,
+│          so the upload step's `if: failure()` was skipped and the hang left
+│          zero evidence. #risk this is exactly the blind spot the capture
+│          step exists to remove.
+│        - Fix (commit `2802bd3`): `if: failure()` -> `if: failure() ||
+│          cancelled()`. Re-verified `cargo test --test minicon_alignment`
+│          (15/15) before pushing.
+│        - Run `36300888939` (same bundle, scoped to just `lnx-x86_64
+│          lnx-aarch64` to avoid re-billing the two cells already proven
+│          green): reproduced the same hang a second time, still `cancelled`
+│          at the 8-minute cap, but this time the upload step succeeded on
+│          both jobs. Downloaded and unzipped the artifact directly (not just
+│          trusted the green checkmark): it held real per-suite logs
+│          (`lnx-x86_64-minicon_blackbox.log`, `lnx-x86_64-minicon_control.log`)
+│          confirming the capture mechanism works end-to-end on a real
+│          timeout, not only on a real non-zero exit. #decision this closes
+│          out failure-evidence-capture and the test_filter/default-cells
+│          changes as implemented and validated, not merely proposed.
+│      **Byproduct finding 2026-09-27 (real bug, out of this thread's scope --
+│      reported here for the owner to triage, not fixed):** in both lnx-*
+│      hangs above, `minicon_blackbox` (28/28, 44.15s) and `minicon_control`
+│      (11/11, 6.39s) both completed and logged cleanly, then the loop
+│      produced zero further output -- no `minicon_core.log` was ever
+│      created, not even the loop's own `echo "== $exe"` line -- until the
+│      8-minute cap fired. The runner's own orphan-process cleanup at
+│      cancellation listed two leftover `lnx-x86_64-minicon` product-binary
+│      processes plus a `bash` process still running. #risk consistent with
+│      (not proven to be) a child process from an earlier black-box/control
+│      suite not being reaped before `minicon_core` starts, colliding on some
+│      shared resource (a control socket/port already held) and hanging
+│      that suite's setup indefinitely. Reproduced twice, same shape both
+│      times, on the real hosted `ubuntu-24.04`/`ubuntu-24.04-arm` images --
+│      not a probe-workflow artifact. This is a MiniCon test-harness/product
+│      finding, not a CI-pipeline-efficiency one; #decision left for the
+│      owner to decide whether/when to investigate, not actioned here.
 ```
