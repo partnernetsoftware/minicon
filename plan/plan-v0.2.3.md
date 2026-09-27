@@ -75,7 +75,7 @@ structurally-blocked leaves
 │      dependency: a Windows display host with Consolas this session does
 │        not have
 │      non-goal: any other UI feature; this is the one named glyph bug
-└── {RELTOOL} release-chain tooling hardening                    [_] @host=none
+└── {RELTOOL} release-chain tooling hardening                    [-] @host=none
        owner-requested 2026-09-27, from the Mac-side signer/publisher's own
        post-mortem on the real v0.2.2 dispatch (candidate 36327096656,
        defender-ci-scan 36327312549, reputation 36327475537, release
@@ -162,6 +162,53 @@ structurally-blocked leaves
          reason; for #3, the lock is checked by at least one real dispatch
          path; for #4/#5, before/after disk and six-cell timing numbers;
          for #6, `ci-release.sh --help` documents the new flag
+       progress 2026-09-27: #1/#2/#4/#5/#6 closed this round, #3 (release-
+         lock) carried -- no real dispatch path exists in this session to
+         wire a lock check into (no live GitHub Actions dispatch available
+         here), so it is left for a round with that access rather than
+         landing an unverified lock.
+         #1/#2: `company-signing.yml`, `macos-signing.yml` and
+         `defender-ci-scan.yml`'s preflight jobs now compare
+         `scripts/product-source-hash.sh origin/main` against
+         `scripts/product-source-hash.sh "$SOURCE_SHA"` (was raw
+         `git rev-parse origin/main == $SOURCE_SHA` in the two signing
+         workflows; defender-ci-scan.yml already had this right and served
+         as the model), and every `[[ cond ]]` preflight assertion in the
+         three now has an explicit `|| { echo "<reason>" >&2; exit 1; }`
+         naming what failed, matching the existing
+         "release-eligible signing requires an unpublished version" style.
+         #4: `scripts/cleanup-build-state.py` gained
+         `cleanup_stale_version_siblings` -- a `target-six-<version>/`
+         sibling next to the canonical `target-six/` (the whole stale
+         `target-six-0.2.1/` directory measured on the v0.2.2 signer host)
+         was never walked by the existing `builds/<hash>` TTL logic; it now
+         gets the same idle-mtime/TTL treatment, gated by the same
+         `.minicon-build-active` marker convention and the same
+         disk-pressure-aware default. `scripts/cleanup-build-state-
+         selftest.py` extended with a stale/active sibling pair; proved
+         provable (removing the new call makes the extended assertion
+         fail, restoring it passes).
+         #5: `scripts/six-cell-qualify.sh`'s `BUILD_JOBS` default is now
+         core-count-aware (`max(2, min(5, nproc/2))`) instead of a flat 5,
+         so a 14-core host no longer fully saturates every core with
+         `CARGO_JOBS_PER_CELL=2` and starves the RSS-budget test the way
+         the v0.2.2 post-mortem measured (17.70 MiB vs. 16 MiB ceiling
+         under contention, clean at `MINICON_BUILD_JOBS=2`).
+         `MINICON_BUILD_JOBS` still overrides it explicitly.
+         #6: `scripts/ci-release.sh` gained `signing` and `macos-signing`
+         subcommands (each with `--release`/`--qualification-only`,
+         defaulting to `--qualification-only` matching each workflow's own
+         input default) and every subcommand now honors `MINICON_CI_REF`
+         (default `main`) instead of hardcoding it, so a pinned
+         `candidate-src-<v>` branch can be dispatched against once `main`
+         has moved past the Candidate SHA. `ci-release.sh --help`/no-args
+         usage documents both.
+         Verified: `cargo fmt`, `cargo clippy --all-targets -- -D
+         warnings`, `bash scripts/selftest.sh` (all PASS/expected SKIPPED),
+         `cargo test --test minicon_alignment` (15/15, including the
+         `referenced_repository_paths_exist` fix below) and the harness/
+         non-GUI test suites all pass; `bash -n scripts/ci-release.sh`
+         clean.
        dependency: none of the six block on {PALACE}/{LOOP}/{HB}/{UI-C3};
          pure release-infrastructure work, independent of this version's
          product leaves

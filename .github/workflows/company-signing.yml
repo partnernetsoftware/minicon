@@ -48,28 +48,31 @@ jobs:
           QUALIFICATION_ONLY: ${{ inputs.qualification_only }}
         run: |
           set -euo pipefail
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$UPSTREAM_RUN_ID" =~ ^[1-9][0-9]*$ ]]
-          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-          [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha is not a 40-char sha: $SOURCE_SHA" >&2; exit 1; }
+          [[ "$UPSTREAM_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "minicon_com_run_id is not a positive integer: $UPSTREAM_RUN_ID" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo "checked-out HEAD does not match source_sha" >&2; exit 1; }
+          [[ "$GITHUB_SHA" == "$SOURCE_SHA" ]] || { echo "GITHUB_SHA does not match source_sha" >&2; exit 1; }
           git fetch --no-tags origin main
-          [[ "$(git rev-parse origin/main)" == "$SOURCE_SHA" ]]
+          # Product source tree only, not raw HEAD equality -- see
+          # scripts/product-source-hash.sh. A workflow/doc-only fix landing on
+          # main after the Candidate sealed must not force a version bump.
+          [[ "$(scripts/product-source-hash.sh origin/main)" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]] || { echo "product source tree at origin/main has drifted from source_sha" >&2; exit 1; }
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$UPSTREAM_RUN_ID")"
-          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/minicon-com.yml" ]]
-          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]]
-          [[ "$(jq -r .status <<<"$run")" == "completed" ]]
-          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]]
-          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]]
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/minicon-com.yml" ]] || { echo "minicon_com_run_id is not a minicon-com.yml run" >&2; exit 1; }
+          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]] || { echo "minicon_com_run_id was not triggered by workflow_dispatch" >&2; exit 1; }
+          [[ "$(jq -r .status <<<"$run")" == "completed" ]] || { echo "minicon_com_run_id has not completed" >&2; exit 1; }
+          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]] || { echo "minicon_com_run_id did not conclude successfully" >&2; exit 1; }
+          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]] || { echo "minicon_com_run_id's head_sha does not match source_sha" >&2; exit 1; }
           version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
-          [[ "$(jq -r .schema release-policy.json)" == 1 ]]
-          [[ "$(jq -r .version release-policy.json)" == "$version" ]]
-          [[ "$(jq -r .assets.minicon_com release-policy.json)" == true ]]
+          [[ "$(jq -r .schema release-policy.json)" == 1 ]] || { echo "release-policy.json schema is not 1" >&2; exit 1; }
+          [[ "$(jq -r .version release-policy.json)" == "$version" ]] || { echo "release-policy.json version does not match Cargo.toml" >&2; exit 1; }
+          [[ "$(jq -r .assets.minicon_com release-policy.json)" == true ]] || { echo "release-policy.json assets.minicon_com is not true" >&2; exit 1; }
           signing_mode="$(jq -r .signing.mode release-policy.json)"
-          [[ "$signing_mode" == off || "$signing_mode" == required ]]
+          [[ "$signing_mode" == off || "$signing_mode" == required ]] || { echo "release-policy.json signing.mode is neither off nor required: $signing_mode" >&2; exit 1; }
           if [[ "$QUALIFICATION_ONLY" == true ]]; then
             release_eligible=false
           else
-            [[ "$signing_mode" == required ]]
+            [[ "$signing_mode" == required ]] || { echo "release-eligible signing requires signing.mode == required" >&2; exit 1; }
             if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
               echo "v$version already exists; release-eligible signing requires an unpublished version" >&2
               exit 1

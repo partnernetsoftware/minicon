@@ -221,6 +221,27 @@ def cleanup_cloud_runtime(cleaner: Cleaner) -> None:
             cleaner.remove(path, f"stale cloud evidence group={identity} age_hours={int(age / 3600)}")
 
 
+def cleanup_stale_version_siblings(cleaner: Cleaner) -> None:
+    # A whole stale `target-six-<version>/` sibling next to the canonical
+    # `target-six/` (left over from an earlier release's own six-cell run,
+    # e.g. `target-six-0.2.1/`) is not a `builds/<hash>` snapshot and
+    # cleanup_build_snapshots never walks it -- measured directly: it was
+    # still there, untouched, after `--scope all` on the v0.2.2 signer host.
+    # Same idle-mtime/TTL posture as an ordinary Cargo target, never touched
+    # while any process still has it locked via its own `.minicon-build-
+    # active` marker.
+    default_ttl = 1 if cleaner.disk_pressure else 336
+    ttl = env_int("MINICON_VERSION_SIBLING_TTL_HOURS", default_ttl, 1) * 3600
+    for sibling in cleaner.repo.glob("target-six-*"):
+        if not sibling.is_dir() or sibling.is_symlink():
+            continue
+        if (sibling / ".minicon-build-active").exists():
+            continue
+        age = cleaner.now - newest_mtime(sibling)
+        if age >= ttl:
+            cleaner.remove(sibling, f"stale target-six-<version> sibling age_hours={int(age / 3600)}")
+
+
 def cleanup_routine(cleaner: Cleaner) -> None:
     pycache = cleaner.repo / "scripts" / "__pycache__"
     if pycache.is_dir():
@@ -261,6 +282,7 @@ def main() -> None:
             cleanup_routine(cleaner)
         if args.scope in ("six-cell", "all"):
             cleanup_build_snapshots(cleaner)
+            cleanup_stale_version_siblings(cleaner)
         if args.scope in ("cloud", "all", "six-cell"):
             cleanup_cloud_runtime(cleaner)
         write_gc_receipt(cleaner, args.scope)

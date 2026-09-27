@@ -197,7 +197,23 @@ case "$LIMA_ACCELERATOR" in
   *) printf 'MINICON_ENABLE_LIMA_ACCELERATOR must be 0 or 1\n' >&2; exit 2 ;;
 esac
 
-BUILD_JOBS="${MINICON_BUILD_JOBS:-5}"
+# Default BUILD_JOBS core-count-aware rather than a flat 5: on a 14-core host
+# BUILD_JOBS=5 * CARGO_JOBS_PER_CELL=2 saturates every core with no headroom
+# left for the host's own scheduler, which measurably pushed
+# host_process_rss_stays_within_named_budget over its ceiling under
+# contention (17.70 MiB vs. a 16 MiB ceiling) while isolated reruns held
+# ~9 MiB; MINICON_BUILD_JOBS=2 made the run clean. Half the core count (never
+# below 2, never above the old flat default of 5) keeps that headroom
+# without a caller having to know to override it.
+default_build_jobs() {
+  local cores
+  cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+  local half=$((cores / 2))
+  [ "$half" -lt 2 ] && half=2
+  [ "$half" -gt 5 ] && half=5
+  echo "$half"
+}
+BUILD_JOBS="${MINICON_BUILD_JOBS:-$(default_build_jobs)}"
 CARGO_JOBS_PER_CELL="${MINICON_CARGO_JOBS_PER_CELL:-2}"
 case "$BUILD_JOBS:$CARGO_JOBS_PER_CELL" in
   *[!0-9:]*|0:*|*:0) printf 'build concurrency must be positive integers\n' >&2; exit 2 ;;

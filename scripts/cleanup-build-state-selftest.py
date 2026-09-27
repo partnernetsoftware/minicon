@@ -47,6 +47,13 @@ def main() -> None:
             "build_root": f"target-six/builds/{receipt_id}",
         }
         (repo / "target-six" / "receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+        stale_sibling = repo / "target-six-0.2.1"
+        touch_tree(stale_sibling)
+        active_sibling = repo / "target-six-0.2.2"
+        touch_tree(active_sibling)
+        sibling_marker = active_sibling / ".minicon-build-active"
+        sibling_marker.write_text("1\n", encoding="utf-8")
+        os.utime(sibling_marker, (NOW, NOW))
         cloud = repo / "target-six" / "cloud-runtime"
         cloud.mkdir()
         # receipt_id must rank strictly newer than stale_id so the "keep
@@ -75,6 +82,7 @@ def main() -> None:
         command = ["python3", str(scripts / source.name), "--scope", "all", "--now-epoch", str(NOW)]
         dry = subprocess.run(command, cwd=repo, env=env, check=True, text=True, capture_output=True)
         assert "WOULD_REMOVE" in dry.stdout and (builds / stale_id).exists()
+        assert stale_sibling.exists()
         subprocess.run(command + ["--apply"], cwd=repo, env=env, check=True, text=True, capture_output=True)
         assert not (builds / stale_id).exists()
         assert (builds / current_id).exists()
@@ -82,6 +90,8 @@ def main() -> None:
         assert (builds / active_id).exists()
         assert list(cloud.glob(f"minicon-six-grid-{receipt_id}*"))
         assert not list(cloud.glob(f"minicon-six-grid-{stale_id}*"))
+        assert not stale_sibling.exists()
+        assert active_sibling.exists()
     print("cleanup-build-state-selftest: PASS")
 
 
