@@ -12,6 +12,24 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      stitching, viewport restore), then implement. Needs the instrument gap
 │      noted in v0.1.24's B3 decision first: `max_scrollback` in the snapshot
 │      reports parser capacity, not how much scrollback actually exists.
+│      **Scoped 2026-09-27, still not started:** the capacity vs. actual-depth
+│      gap is not fixable inside MiniCon alone. `src/terminal.rs:1109`
+│      (`scrollback_bounds`) calls vt100's `Screen::scrollback_len()`, which
+│      (confirmed by reading the vendored fork,
+│      `third_party/vt100/src/grid.rs:244-245`) returns the `Grid`'s
+│      constructor-supplied capacity field, not `self.scrollback.len()` (the
+│      `VecDeque`'s live length) — vt100 has no public getter for the latter,
+│      and its `Callbacks` trait (`third_party/vt100/src/callbacks.rs`) has no
+│      hook fired when a row is actually pushed into scrollback, so MiniCon
+│      cannot shadow-count it either. Closing the instrument gap needs a small
+│      API addition to the vendored vt100 fork itself — that crate lives in
+│      the `agenterm` repo, outside this session's attached repo scope
+│      (`partnernetsoftware/minicon` only), so it is not implementable from
+│      here. Do not attempt a same-repo workaround (e.g. reading scrollback
+│      length from private-cast internals) — the crate's public API is the
+│      only sanctioned surface. Once a vt100-side getter lands and MiniCon
+│      pins it, this leaf's semantics decision (cross-screen stitching,
+│      viewport restore) is still separate design work.
 ├── C3 box-drawing glyphs from cell geometry (Consolas, 1 px gap at 12 px)
 │      claimed by `plan/plan-v0.2.2.md`'s `{UI}` leaf, still `BLOCKED` there —
 │      needs a real Windows display host with Consolas installed (this is
@@ -31,6 +49,25 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      documents-only. Needs its own negative-control evidence (a change that
 │      should need `win-*` but doesn't touch an obviously Windows-named path)
 │      before it ships — an autonomous heuristic guess is not acceptable here.
+│      **Scoped 2026-09-27, still not started:** the mechanism is
+│      `select_cells()` in `scripts/round.sh:273-287` — today it is binary
+│      (`$ALL_CELLS` or none), gated on whether any changed tracked path
+│      falls outside a docs/plan allowlist. A per-path→per-cell heuristic
+│      is plausible bash/git work on its own, but the design doc that opened
+│      this leaf (`plan/archive/plan-v0.1.24.md`'s "D2 stays open on
+│      purpose") is explicit that shipping a wrong guess is a *silent skip*
+│      of a cell that needed testing — the exact failure this repo's rules
+│      forbid ("never fake a green gate") — and requires real negative-
+│      control evidence (a change that should need `win-*` but doesn't touch
+│      an obviously Windows-named path, actually run through the six cells
+│      to prove the heuristic wouldn't have skipped it) before it ships, not
+│      reasoning about paths alone. This session cannot produce that
+│      evidence responsibly: `round.sh`'s GitHub-backed cells (`win-*`,
+│      `osx-*`) drive real `gh` dispatches this session does not have
+│      standing `gh` CLI access to (GitHub access here is scoped to
+│      MCP tools), so a heuristic committed from here would be exactly the
+│      "autonomous guess" the design doc rules out. Left for a session that
+│      can actually dispatch and observe the six-cell round.
 ├── E1/E2 shared seam with AgenTerm                              (OWNERS)
 │      ├── E1 click streak D1-D4: four behaviour divergences
 │      └── E2 composer rules: survey before anything moves; A1-A3 landed in
