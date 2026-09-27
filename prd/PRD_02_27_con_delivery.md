@@ -2510,6 +2510,11 @@ bugs to "fix" in the product:
 - Deleting a running image only marks it delete-pending, so the path still
   resolves; deny execute instead when a spawn must fail.
 
+A separate, narrower mechanism covers an agent dev-test loop (push a fix,
+native per-cell build+test, `contents: read` only, no release/GHCR/tag) --
+owned in `prd/PRD_02_32_dev_loop_crosscheck.md`, not here, to keep it
+decoupled from this section's receipt/identity/publish semantics.
+
 Local UTM and optional Lima courts are not MiniCon product code. Lifecycle,
 guest adapters and image recipes live in sibling `utm-court`
 (`partnernetsoftware/utm-court`). MiniCon calls those CLIs from

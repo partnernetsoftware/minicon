@@ -52,6 +52,9 @@ MiniCon — one-file local terminal
 │   ├── independent evidence lanes
 │   │   ├── GitHub native runners — fast regression and real ISA
 │   │   └── local UTM — partnernetsoftware/utm-court; MiniCon calls it at test time
+│   ├── [v] agent dev-test loop — push a fix, native build+test per cell,
+│   │   `contents: read` only, no release/GHCR/tag needed
+│   │   └── prd/PRD_02_32_dev_loop_crosscheck.md
 │   ├── [v] v0.1.2 stable — 3 archives covering 4/6 cells + SHA-256 sidecars
 │   ├── [v] v0.1.3 released — 5 native archives cover all 6 cells
 │   │   ├── 5 archives: win/lnx × {x86_64,arm64} + macOS Universal
@@ -255,6 +258,7 @@ flowchart LR
 | Automate what the GUI really shows | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes | bounded typed error; cancel waits with their owner |
 | Ship portable exact artifacts | [Delivery](prd/PRD_02_27_con_delivery.md) | six-cell runtime and release receipts | block the artifact or claim; never weaken it silently |
 | Stay small in RAM | [Delivery](prd/PRD_02_27_con_delivery.md) | idle host RSS court; named regression ceiling | fail the claim; do not kill user sessions |
+| Agent-driven cross-arch dev/test loop | [Dev-loop crosscheck](prd/PRD_02_32_dev_loop_crosscheck.md) | native per-cell build+test on request, real logs | cell BLOCKED, never a silent skip; never a release/publish path |
 | Reuse host-neutral rules | [Shared core](prd/PRD_02_28_shared_core.md) | dependency and source-boundary tests | keep code product-local until proven neutral |
 
 ## Current frontier
@@ -434,6 +438,13 @@ flowchart LR
 - [-] Local courts are automation-capable but not sealed release baselines.
   Lima is optional acceleration; Rosetta is a provisional OSX x86_64 userspace
   court; real native runners retain claims translation cannot make.
+- [v] An agent session with no osx/win host of its own can still develop and
+  prove a cross-arch fix: push to `main`, dispatch
+  `dev-loop-crosscheck.yml`, read real per-cell logs — `contents: read`
+  only, decoupled from the release/GHCR path. Validated 2026-09-27 on real
+  hosted `lnx-x86_64`/`lnx-aarch64` runners (run `36313213803`), which also
+  closed the `minicon_core` process-group-teardown hang fix's real-CI
+  evidence. Owner: `prd/PRD_02_32_dev_loop_crosscheck.md`.
 - [_] Ordinary push/PR CI remains parked.
 - [_] qjswasm portable logic waits for a stable AgenTerm engine and a decisive
   complete-product experiment; it is not current-version scope.
