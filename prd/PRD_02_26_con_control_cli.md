@@ -231,6 +231,44 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
   detach answers a typed unsupported error rather than reporting success while
   the window is still on screen. This is the boundary amendment in practice: the
   endpoint's lifetime is the process, never the window.
+- [_] **F2, not started, 2026-09-27: true headless render — screenshot and UI
+  events without `attach-gui` at all.** Product motivation: MiniCon is built
+  for agents as much as for humans (owner's stated founding intent), and today
+  an agent under `--headless` cannot see or drive its own UI without first
+  paying for a real window (`attach-gui`, which even under `Xvfb` connects to
+  a display and creates a native surface). `windowless_command` in
+  `src/control_dispatch.rs` currently splits the public command set along an
+  implementation seam, not a product one: `list-tabs`, `capture-pane`,
+  `send-text` (and `mux send-keys -l`) work with zero window because they only
+  touch `ConTerminal`/PTY state; `screenshot-pane`, `send-ui-keys`,
+  `send-mouse`, `send-wheel`, non-literal `send-keys`, and the mux verbs that
+  create/select/close a window (`new-window`/`select-window`/`kill-window`)
+  all fail with `"the window is detached; attach-gui first"` because their
+  handlers in `dispatch_control` take `window: &PixelWindow` — a real winit
+  window, which on Unix means a real X11/Wayland connection
+  (`crates/agenterm-platform/src/adapters/unix/window_host.rs`'s
+  `run_pixel_window`), not a rendering-algorithm requirement. Evidence that
+  the seam is implementation, not product: `paint_host_ui` in
+  `src/host_paint.rs` already renders into a plain `pixels: &mut [u32]`
+  buffer with no window/surface type in its signature — the paint code itself
+  is already window-agnostic; what is coupled to a real window is (a) winit's
+  event loop being the only thing that currently drives a paint call at all,
+  and (b) `SendKeys`/`SendUiKeys`/`SendMouse`'s handlers being written to take
+  a live `&PixelWindow` even though the state they mutate is
+  `ConTerminal`/composer/workspace, not pixels.
+  **Shape, not yet owner-confirmed:** an offscreen render path for
+  `--headless` that allocates its own `Vec<u32>` frame buffer sized from
+  `--cols`/`--rows` (or a new explicit pixel-size flag) instead of a winit
+  `Window`, and routes `ScreenshotPane`/`SendUiKeys`/`SendMouse`/`SendWheel`
+  and the window-creating mux verbs against that virtual buffer and geometry
+  in `windowless_command` instead of refusing them. Scope this properly
+  before touching code — it spans `main.rs`'s window abstraction,
+  `control_dispatch.rs`'s dispatch split, and every `dispatch_control` arm
+  that currently assumes `window: &PixelWindow` is real; it is not a
+  drive-by addition. Do not conflate with `attach-gui`/`detach-gui` above,
+  which still needs its real winit window for an eventual human-visible
+  session — F2 is specifically for the case where no human will ever look
+  at this process's pixels.
 - [v] pending text/exit deadlines have a fixed ten-minute upper bound. A larger
   syntactically valid `u64` timeout fails only that request, preserves its reply
   owner for the normal dispatch error path, and registers no latent wait instead

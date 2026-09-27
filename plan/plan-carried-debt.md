@@ -36,7 +36,7 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      └── E2 composer rules: survey before anything moves; A1-A3 landed in
 │             MiniCon first (v0.1.24/v0.1.26), only a second consumer
 │             justifies sharing them
-└── F1 composer image/screenshot paste, direction decided 2026-09-26, not
+├── F1 composer image/screenshot paste, direction decided 2026-09-26, not
        scheduled to a version. Survey and options are in
        `prd/PRD_02_25_con_workspace.md` ("Screenshot/image paste into the
        composer"). Decided shape (file-path fallback, not a structured
@@ -98,4 +98,18 @@ doc when it is picked up; delete its line here once it ships or is decided
        likely the right first cut given this widget's invariant density and
        that no host in this session has a real screen a human can review the
        result on; do not attempt (b) without that kind of review available.
+└── F2 true headless render — screenshot/UI events with no window at all,
+       not started, not owner-scoped, 2026-09-27. Full writeup, evidence and
+       shape are owned in `prd/PRD_02_26_con_control_cli.md`'s "Transport and
+       bounds" section (search `F2`) — do not duplicate it here. One-line
+       summary: `--headless` today can only read/write PTY text
+       (`list-tabs`/`capture-pane`/`send-text`); `screenshot-pane`,
+       `send-ui-keys`/`send-mouse`/`send-wheel` and the window-creating mux
+       verbs all require `attach-gui` first, which is an implementation seam
+       (`dispatch_control`'s handlers take a real `&PixelWindow`), not a
+       rendering one (`host_paint.rs`'s `paint_host_ui` already renders into
+       a plain `&mut [u32]` buffer). Motivation: MiniCon is meant to be
+       agent-driven, not just human-driven, and a fully offscreen render
+       path would let an agent screenshot/drive its own UI without paying
+       for a real window or even `Xvfb`.
 ```
