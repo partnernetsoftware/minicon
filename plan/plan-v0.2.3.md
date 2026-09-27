@@ -217,7 +217,29 @@ structurally-blocked leaves
          (minicon-com -> signing -> candidate -> defender-ci-scan ->
          reputation -> release), not changing its shape
 
-0.2.3 close-out rule (mirrors `plan-v0.2.1.md`'s and `plan-v0.2.2.md`'s own scope
+## 0.2.3 GATE status (2026-09-27)
+
+fmt/clippy/`build.sh test`/`six-cell-qualify.sh` all pass on this round's
+`main` HEAD (`9b10fc1`): `{PALACE}` and `{LOOP}` closed with real evidence,
+`{RELTOOL}` closed #1/#2/#4/#5/#6 (#3 carried, no dispatch path to verify it
+against here), `{HB}`/`{UI-C3}` re-affirmed `BLOCKED` per the close-out rule
+below -- this session structurally lacks the macOS/Windows-display hosts
+either needs, same as 0.2.1/0.2.2.
+
+GATE is met. SHIP itself -- dispatching minicon-com -> signing -> candidate
+-> defender-ci-scan -> reputation -> release against a real Mac/Windows
+signer -- is a different kind of blocker than the technical leaves above:
+AGENTS.md's own release policy ("Public Promotion always requires explicit
+human version and publish authority... Signing is a `release-policy.json`
+choice, not a fallback inferred from credentials") and this session's own
+"Executing actions with care" instructions both require a human decision
+this session cannot substitute for -- a version number and confirmation
+string only the owner can supply, dispatched against release-signing
+credentials and a Mac-side signer host this session has never had. Every
+`BLOCKED` leaf elsewhere in this plan is `BLOCKED` on a *host*; this one
+step is `BLOCKED` on *authority*, which is not a gap more engineering here
+closes. Carrying this forward until the owner names a version and confirms
+publish. (mirrors `plan-v0.2.1.md`'s and `plan-v0.2.2.md`'s own scope
 reasoning): if {HB} or {UI-C3} are still BLOCKED at 0.2.3's close (no
 capable host materialized), that is not a planning failure -- re-affirm
 BLOCKED, carry both forward to 0.2.4, and ship 0.2.3 on {PALACE} (+{LOOP} if
