@@ -338,6 +338,75 @@ fn deepseek_backend_runs_a_real_bounded_task_through_the_exec_tool() {
     std::fs::remove_dir_all(&root).ok();
 }
 
+/// `{LOOP}`'s during-task, live-backend evidence: a real multi-step task that
+/// must actually jump (`decide-continue` sends it back to `categorize`) at
+/// least once before it ends on the literal stop phrase, rather than the
+/// model completing linearly on its very first answer. `run_loop`'s jump
+/// message carries the ORIGINAL task forward every iteration (not just the
+/// prior draft -- the backend closure itself is stateless across calls), so
+/// the model reads the same counter instructions each time; what actually
+/// carries state between iterations is the `file` tool's real file under
+/// `--root`, the same bound every iteration shares. A counter starting at 0
+/// and required to reach 2 before the model may say the stop phrase forces at
+/// least one real jump, proving `{LOOP}`'s state machine end to end -- the
+/// unit fixtures in `src/harness.rs` prove the bounded rules in isolation
+/// with a fake closure; this is the one live-model proof the context-
+/// engineering plan's `{LOOP}` leaf still needed. `BLOCKED`, not silently
+/// skipped, when no live key is set.
+#[test]
+fn deepseek_backend_loop_jumps_at_least_once_before_the_stop_phrase() {
+    let Ok(key) = std::env::var("MINICON_DEEPSEEK_API_KEY") else {
+        eprintln!(
+            "BLOCKED: deepseek_backend_loop_jumps_at_least_once_before_the_stop_phrase \
+             skipped -- MINICON_DEEPSEEK_API_KEY is not set in this environment"
+        );
+        return;
+    };
+
+    let root = std::env::temp_dir().join(format!(
+        "minicon-loop-live-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).expect("create live-task root");
+
+    let output = harness(
+        &[
+            "--root",
+            root.to_str().expect("root is utf8"),
+            "--task",
+            "Use the file tool to read counter.txt under the root; if it does not exist, \
+             treat its value as 0. Increment that number by 1 and write the new number back \
+             to counter.txt with the file tool (digits only, no other text). Then: if the new \
+             number is less than 2, end your reply with exactly the text CONTINUE-NOW and \
+             nothing after it. If the new number is 2 or more, end your reply with exactly the \
+             text TASK COMPLETE and nothing after it. Do this every time you are asked, even if \
+             asked again.",
+        ],
+        Some(("MINICON_DEEPSEEK_API_KEY", &key)),
+    );
+    let stderr = stderr_of(&output);
+    assert_eq!(output.status.code(), Some(0), "stderr={stderr}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("TASK COMPLETE"),
+        "the loop must end on the real stop phrase, not the iteration ceiling: {stdout}"
+    );
+
+    let counter = std::fs::read_to_string(root.join("counter.txt"))
+        .expect("the model-commanded counter write must land under the task root");
+    assert!(
+        counter.trim() == "2",
+        "the counter must have reached exactly 2 -- one jump, then stop: got {counter:?}"
+    );
+
+    std::fs::remove_dir_all(&root).ok();
+}
+
 /// H5's during-task, live-backend evidence: a real bounded task against the
 /// real hosted opencode-go service (`https://opencode.ai/zen/go`), model
 /// commanded write landing under the task root. Confirmed live (2026-09-26,

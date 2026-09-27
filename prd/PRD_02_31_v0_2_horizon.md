@@ -196,7 +196,7 @@ process, exactly like the existing `--control` endpoint.
 │         specifically), and it assumes a GUI dialog/canvas, which is the
 │         harness-GUI-workbench leaf below's territory, not this node's. Design
 │         only, no `src/` change; not filed as this node's own answer, and
-│         not 0.2.x scope. `plan-newagent-config.md`'s own "Scope decision"
+│         not 0.2.x scope. `plan/plan-newagent-config.md`'s own "Scope decision"
 │         states the same boundary from the other side.
 └── Shared constraints
     ├── one file, no bundled runtime, no installer

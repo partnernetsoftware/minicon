@@ -35,22 +35,24 @@ structurally-blocked leaves
 │      #decision this shipped additive-only, as planned: it renders only the
 │        tree's own hierarchy for now -- a palace with no jump target is
 │        documentation, per the context-engineering plan's rollout order
-├── {LOOP} micro-workflow state machine                         [_] @host=none
+├── {LOOP} micro-workflow state machine                         [v] @host=none
 │      invariant: every turn is exactly one of five states -- categorize,
 │        draft, decide-pick, execute, decide-continue -- with the two
 │        "decide" states as bounded code-side rules, never model whim,
 │        mirroring `exec`'s existing allow-list posture
-│      evidence needed: a fixture test per transition (5 minimum) plus one
-│        black-box test proving a real multi-step task actually jumps (not
-│        just linearly completes) and terminates on the bounded rule
+│      closed 2026-09-27: see `plan-harness-context-engineering.md`'s
+│        `{LOOP}` leaf for full evidence -- `run_loop` in `src/harness.rs`,
+│        5 fixture tests plus one live black-box test
+│        (`deepseek_backend_loop_jumps_at_least_once_before_the_stop_phrase`,
+│        ran live and passed, not `BLOCKED`), full harness unit suite
+│        (26/26), `six-cell-qualify.sh` 0 FAIL
 │      dependency: ->PALACE (a jump target may cross a shared prerequisite
 │        recorded only in the palace, not the tree alone) -- strict order,
-│        not parallel with {PALACE}
+│        satisfied since {PALACE} closed first
 │      safe failure: an unrecognized/missing state on resume is the same
 │        bounded CLI error as a corrupt tree, never a silent restart
-│      #risk highest-risk leaf of the three; may not close inside 0.2.3 --
-│        if so, re-BLOCK explicitly rather than claim partial completion,
-│        same posture as {HB}/{UI} below
+│      #risk was flagged highest-risk of the three; closed within 0.2.3
+│        without needing to re-BLOCK
 ├── {HB} native-tls live-call proof                              [-] @host=macOS/Windows #risk
 │      carried from plan-v0.2.2.md, unresolved there. invariant: the
 │        native-tls arm of `network-http` actually makes a live HTTPS call

@@ -300,7 +300,16 @@ fn run_loop(
             return Ok(draft);
         }
         log_transition(trace, iteration, LoopState::DecideContinue, "jump");
-        current_task = format!("Continue the task, building on this result:\n{draft}");
+        // Carries the ORIGINAL task forward every iteration, not just the
+        // latest draft: a jump that dropped the initial instructions would
+        // leave iteration 2+ with no idea what the task even is, since
+        // `call` (the backend codec) is stateless across these calls -- it
+        // is not the resumed-session fold (`compose_resumed_task`, a
+        // different seam) which only runs across separate invocations.
+        current_task = format!(
+            "Original task:\n{initial_task}\n\nYour prior step's result:\n{draft}\n\nContinue \
+             the task, building on that result."
+        );
     }
     unreachable!("the ceiling branch above always returns before this point")
 }
@@ -1589,6 +1598,11 @@ mod tests {
         assert!(
             calls[1].contains("first-step-result"),
             "the jump must fold the prior answer into the next task: {calls:?}"
+        );
+        assert!(
+            calls[1].contains("start"),
+            "the jump must also carry the ORIGINAL task forward, not just the prior draft \
+             (the backend closure is stateless across calls): {calls:?}"
         );
     }
 

@@ -66,7 +66,7 @@ structured working-memory the turn loop can reason over
 │        closed, satisfied by `{ROLLOUT}` (`85602f1`)
 │      non-goal: rendering the diagram as an image; text stays Mermaid
 │        source, same as this repo's own plan-writing convention
-├── {LOOP} micro-workflow state machine                         [-] @host=none
+├── {LOOP} micro-workflow state machine                         [v] @host=none
 │      invariant: every turn is exactly one of five states — categorize
 │        (task type + which backend/model fits it), draft (model proposes
 │        one plan step), decide-pick (accept/reject/request another draft),
@@ -103,11 +103,25 @@ structured working-memory the turn loop can reason over
 │        using a fake backend closure so the state machine is proven without
 │        a network. `cargo fmt`, `cargo clippy --all-targets -- -D
 │        warnings`, full harness unit suite (25/25, was 20/20) pass.
-│      evidence still needed: a black-box test proving a real multi-step
-│        task (through a live or recorded backend, not the fixture closure)
-│        actually jumps and terminates -- the fixture tests prove the state
-│        machine's own bounded rules, not that a real model transcript
-│        exercises them end to end. `{LOOP}` stays `[-]` until that lands.
+│      closed 2026-09-27: also fixed a real gap the black-box test below
+│        surfaced -- the jump message originally carried only the prior
+│        draft forward, dropping the ORIGINAL task text; since the backend
+│        closure is stateless across `run_loop`'s own calls (unlike
+│        `compose_resumed_task`'s cross-invocation session fold, a different
+│        seam), iteration 2+ would have had no idea what the task even was.
+│        Fixed to carry both the original task and the prior result every
+│        iteration.
+│      evidence: `tests/minicon_harness.rs`'s
+│        `deepseek_backend_loop_jumps_at_least_once_before_the_stop_phrase`
+│        -- a real live DeepSeek call, task text that increments a
+│        `counter.txt` through the (shared, persistent-across-iterations)
+│        `file` tool and only emits `TASK COMPLETE` once the counter reaches
+│        2, forcing a real jump before the real stop phrase ends it. Ran
+│        live in this environment (a real `MINICON_DEEPSEEK_API_KEY` is
+│        set) and passed in 7.69s -- not `BLOCKED`. `cargo fmt`, `cargo
+│        clippy --all-targets -- -D warnings`, full harness unit suite
+│        (26/26) and `six-cell-qualify.sh` (0 FAIL, rest expected `BLOCKED`
+│        for hosts this session lacks) all pass.
 │      safe failure: an unrecognized/missing state on resume is the same
 │        bounded CLI error as a corrupt tree, not a silent restart at
 │        categorize (unchanged by this leaf -- resume still replays `tree`
