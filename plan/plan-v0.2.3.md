@@ -61,17 +61,102 @@ structurally-blocked leaves
 │        evidence alone
 │      dependency: a Windows or macOS host/court this session does not have
 │      non-goal: touching the proven Unix Rustls/WebPKI arm
-└── {UI-C3} box-drawing glyph gap (Consolas, 1px at 12px)         [-] @host=Windows-display #risk
-       carried from plan-v0.2.2.md / plan-carried-debt.md's C3, unresolved
-       there. invariant: the rendered glyph closes the 1px gap on a real
-       Windows display with Consolas installed
-       safe failure: BLOCKED here specifically -- this container has no
-         Consolas (`fc-list` confirms, per plan-v0.2.2's own note) and no
-         screen a human can inspect even with Xvfb; needs a real Windows
-         display host regardless of Xvfb availability
-       dependency: a Windows display host with Consolas this session does
-         not have
-       non-goal: any other UI feature; this is the one named glyph bug
+├── {UI-C3} box-drawing glyph gap (Consolas, 1px at 12px)         [-] @host=Windows-display #risk
+│      carried from plan-v0.2.2.md / plan-carried-debt.md's C3, unresolved
+│        there. invariant: the rendered glyph closes the 1px gap on a real
+│        Windows display with Consolas installed
+│      safe failure: BLOCKED here specifically -- this container has no
+│        Consolas (`fc-list` confirms, per plan-v0.2.2's own note) and no
+│        screen a human can inspect even with Xvfb; needs a real Windows
+│        display host regardless of Xvfb availability
+│      dependency: a Windows display host with Consolas this session does
+│        not have
+│      non-goal: any other UI feature; this is the one named glyph bug
+└── {RELTOOL} release-chain tooling hardening                    [_] @host=none
+       owner-requested 2026-09-27, from the Mac-side signer/publisher's own
+       post-mortem on the real v0.2.2 dispatch (candidate 36327096656,
+       defender-ci-scan 36327312549, reputation 36327475537, release
+       36327567587) run concurrently with this same Linux session's
+       unrelated docs/plan pushes to `main`. Six concrete findings, in
+       impact order (highest first); each is independently closeable, no
+       forced sequencing between them:
+       1. `company-signing.yml`/`macos-signing.yml`'s preflight still binds
+          on raw `origin/main == source_sha` instead of the
+          `scripts/product-source-hash.sh` comparison
+          `defender-ci-scan.yml`/`release.yml` already use. A docs/plan-only
+          push landing on `main` mid-chain fails these two signing
+          dispatches outright (measured twice, live, during the v0.2.2
+          run) even though the same push would not fail candidate/
+          defender-ci-scan/reputation/release. Fix: port the
+          product-source-hash comparison into both signing workflows'
+          preflight, matching the comment already in
+          `defender-ci-scan.yml` ("Product source tree only, not raw HEAD
+          equality").
+       2. Every preflight `[[ cond ]]` assertion in these workflows fails
+          silent under `set -euo pipefail` -- the run just says "Process
+          completed with exit code 1" with no indication of which
+          condition tripped. Diagnosing the v0.2.2 failures required
+          replaying every check by hand in a local shell. Fix: give each
+          assertion an explicit `|| { echo "<reason>" >&2; exit 1; }`,
+          matching the style already used for the "release-eligible
+          signing requires an unpublished version" check later in the same
+          scripts.
+       3. No lock/lease signals a release chain is in flight on `main`.
+          Coordination during v0.2.2 was pure ad hoc mux chat ("please
+          stop pushing for 15 minutes"), and it was still violated once by
+          a different concurrent session pushing docs/plan commits,
+          costing a full minicon-com.yml rebuild and two re-dispatches.
+          Fix: a lightweight release-in-progress marker (a checked-in
+          `release-lock.json` with holder/source_sha/expiry, or a draft
+          GitHub Deployment) that dispatch scripts check before pushing to
+          `main` and clear on completion/timeout -- replacing verbal
+          coordination with something every session can check
+          mechanically.
+       4. `target-six/builds/` grew to 150 GB on the Mac signer's host
+          (duplicate hash-keyed cache directories plus a whole stale
+          `target-six-0.2.1/` sibling), and
+          `scripts/cleanup-build-state.py --scope all` freed almost
+          nothing (only `__pycache__`) -- `six-cell-qualify.sh` hit
+          `ENOSPC` and had to be rerun after ~70 GB of manual cleanup. Fix:
+          give `target-six/builds/<hash>` cache directories and
+          `target-six-<version>` siblings an actual staleness/TTL policy
+          inside `cleanup-build-state.py`'s `six-cell`/`all` scopes, not
+          just routine leftovers.
+       5. `six-cell-qualify.sh`'s default `BUILD_JOBS=5` fully saturates a
+          14-core host; under that contention,
+          `host_process_rss_stays_within_named_budget` (in
+          `tests/minicon_control.rs`) intermittently failed at 17.70 MiB
+          against its 16 MiB extra-tab ceiling, while isolated
+          `cargo test --release` reruns held steady at ~9 MiB (3/3), and
+          `MINICON_BUILD_JOBS=2` made the full six-cell run clean
+          (FAIL=0 PASS=27). This is measurement noise, not a product
+          regression, but it cost a full extra six-cell round to prove.
+          Fix: either default `BUILD_JOBS` to something core-count-aware,
+          or move RSS-budget tests out of the concurrent build-fanout
+          window (run them serially, after the fan-out settles).
+       6. `scripts/ci-release.sh` passes through `company-signing.yml`/
+          `macos-signing.yml`'s `qualification_only` input, which defaults
+          `true` -- a caller who doesn't know that default gets a
+          same-second preflight failure ("release-eligible signing
+          requires an unpublished version" is not what fires; it's the
+          silent early exit from finding #2) instead of a
+          release-eligible signature. Fix: add an explicit
+          `--qualification-only`/`--release` flag to `ci-release.sh`'s
+          signing subcommands so the caller states intent instead of
+          inheriting the workflow's own default.
+       evidence needed: for #1/#2, a modified preflight script plus a
+         fixture dispatch (or a documented dry run) proving a docs-only
+         push no longer breaks signing and a failing assertion prints its
+         reason; for #3, the lock is checked by at least one real dispatch
+         path; for #4/#5, before/after disk and six-cell timing numbers;
+         for #6, `ci-release.sh --help` documents the new flag
+       dependency: none of the six block on {PALACE}/{LOOP}/{HB}/{UI-C3};
+         pure release-infrastructure work, independent of this version's
+         product leaves
+       non-goal: redesigning the release chain's stage order or adding new
+         gates; this is hardening the existing five-stage chain
+         (minicon-com -> signing -> candidate -> defender-ci-scan ->
+         reputation -> release), not changing its shape
 
 0.2.3 close-out rule (mirrors plan-v0.2.1.md/plan-v0.2.2.md's own scope
 reasoning): if {HB} or {UI-C3} are still BLOCKED at 0.2.3's close (no
@@ -79,8 +164,11 @@ capable host materialized), that is not a planning failure -- re-affirm
 BLOCKED, carry both forward to 0.2.4, and ship 0.2.3 on {PALACE} (+{LOOP} if
 it closes cleanly; if {LOOP} alone is still open, it rolls forward too,
 since {PALACE}→{LOOP} is a strict dependency chain, not two independent
-leaves). A release is not held hostage by leaves this environment
-structurally cannot prove.
+leaves). {RELTOOL}'s six sub-items are each independently closeable and
+should ship as far as they get -- a partial {RELTOOL} (e.g. #1/#2/#6 closed,
+#3/#4/#5 carried) is still real progress, not a BLOCKED leaf; only carry
+forward the sub-items that didn't get done. A release is not held hostage
+by leaves this environment structurally cannot prove.
 ```
 
 ## Memory palace
@@ -92,13 +180,16 @@ flowchart TD
     PALACE --> LOOP[LOOP: 5-state machine + 2 bounded gates]
     B -->|needs macOS/Windows| HB[native-tls live-call proof]
     B -->|needs Windows display + Consolas| UI[UI-C3: box-drawing glyph gap]
+    B -->|no host needed| RELTOOL[RELTOOL: six release-tooling fixes]
     LOOP --> GATE[0.2.3 GATE: fmt + clippy + build.sh test + six-cell-qualify.sh]
+    RELTOOL --> GATE
     HB -->|host found| GATE
     HB -->|no host| REBLOCK1[re-affirm BLOCKED, carry to 0.2.4]
     UI -->|host found| GATE
     UI -->|no host| REBLOCK2[re-affirm BLOCKED, carry to 0.2.4]
     GATE --> SHIP[0.2.3 release: PALACE closed (+LOOP if clean),
-                   HB/UI-C3 re-BLOCKED items explicit in release history]
+                   RELTOOL's closed sub-items, HB/UI-C3 re-BLOCKED items
+                   explicit in release history]
     REBLOCK1 --> SHIP
     REBLOCK2 --> SHIP
 ```
