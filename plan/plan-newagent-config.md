@@ -24,6 +24,19 @@ are `plan-harness-context-engineering.md`'s territory; NewAgent templates
 configure *what* runs, not the turn-loop rules of *how* a single harness
 invocation decides.
 
+**PRD placement (2026-09-27, upserted the other direction too):** this whole
+plan, its accepted-but-unfiled `AgentProfile`/`Step` data model, and the two
+visual mockups under `ui/ui-design/` are the "harness GUI workbench" leaf's
+and `harness-manage {hm}`'s territory in `prd/PRD_02_31_v0_2_horizon.md`,
+both explicitly `[_]` not-started / 0.3.x-horizon / BLOCKED on their own
+design passes. This plan is recorded there as early design input, not as
+those leaves' answer and not as accepted 0.2.x scope — see the pointers
+added under `harness-manage {hm}` and under "harness GUI workbench" in that
+module. Do not treat anything in this document as authority to start `src/`
+work under the 0.2.x horizon; the PRD's own non-goal for the GUI workbench
+(no renderer code before the statefulness/streaming blocker closes, and no
+screen design before this leaf is unblocked) still governs.
+
 ## Left-brain vs. right-brain convergence (method note)
 
 Per this task's instruction, the design below is the *converged* (round 3)

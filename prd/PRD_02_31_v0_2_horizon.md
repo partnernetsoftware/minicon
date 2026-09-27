@@ -177,10 +177,27 @@ process, exactly like the existing `--control` endpoint.
 │   │         whatever agent a tab happens to be running (any TUI, per
 │   │         moltbaby's comm-based detection) -- these are different scope
 │   │         sizes and the difference matters for what "coordinate" means
-│   └── #decision no implementation, no tool/verb naming, until the design
-│         questions above get an actual tree DAG + memory palace pass per
-│         AGENTS.md's planning method; this is `BLOCKED` on design work, not
-│         skipped, and is not part of 0.2.x's own closing scope
+│   ├── #decision no implementation, no tool/verb naming, until the design
+│   │     questions above get an actual tree DAG + memory palace pass per
+│   │     AGENTS.md's planning method; this is `BLOCKED` on design work, not
+│   │     skipped, and is not part of 0.2.x's own closing scope
+│   └── early design input, not an answer to the open questions above
+│         (2026-09-27): `plan/plan-newagent-config.md` (template layer for a
+│         "NewAgent" configuration flow) plus its accepted-but-unfiled
+│         `AgentProfile{name,steps:[Step],topology}`/`Step{harness,provider,
+│         model,params:{effort}}` data model and two visual mockups
+│         (`ui/ui-design/NewAgent Create.dc.html`,
+│         `ui/ui-design/NewAgent Running.dc.html`) explore a multi-step,
+│         topology-shaped agent config surface that touches this node's
+│         "workflow concept" and "tool surface" questions, but does not
+│         resolve them: it was drafted from the "0.2.x/minicon 是 agent 的
+│         入口" framing, not from this node's own moltbaby-precedent design
+│         method (tree DAG + memory palace on THIS node's questions
+│         specifically), and it assumes a GUI dialog/canvas, which is the
+│         harness-GUI-workbench leaf below's territory, not this node's. Design
+│         only, no `src/` change; not filed as this node's own answer, and
+│         not 0.2.x scope. `plan-newagent-config.md`'s own "Scope decision"
+│         states the same boundary from the other side.
 └── Shared constraints
     ├── one file, no bundled runtime, no installer
     ├── every other AGENTS.md exclusion still applies (no server, no
@@ -576,6 +593,20 @@ horizon yet.
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the
 statefulness leaf above is done and the concrete task set is written up
 separately. Do not start renderer code before that.
+
+**Early screen-level design exploration exists, ahead of this leaf being
+unblocked (2026-09-27).** `plan/plan-newagent-config.md` and its two visual
+mockups (`ui/ui-design/NewAgent Create.dc.html`, `ui/ui-design/NewAgent
+Running.dc.html`) sketch a concrete "NewAgent" dialog/canvas — multi-step
+`AgentProfile`/`Step` configuration, a template chooser, and a running-state
+canvas with human-arbitration — grounded in MiniCon's real self-drawn UI
+(sidebar session tree, flat/bordered rects, no modal overlay). This is
+recorded as design input for whenever this leaf and `harness-manage {hm}`
+above are actually unblocked and get their own `PRD_02_3x` 0.3.x module; it
+does **not** lift the "streaming is the remaining blocker" statement above,
+does not make GUI mode 0.2.x scope, and is not itself the tree-DAG+
+memory-palace design pass this leaf's own non-goal requires before renderer
+code starts. Treat it as a draft to revisit, not a decision.
 
 ### 0.2.0 — what the version number stands for, and what it does not
 
