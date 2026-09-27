@@ -66,7 +66,7 @@ structured working-memory the turn loop can reason over
 │        closed, satisfied by `{ROLLOUT}` (`85602f1`)
 │      non-goal: rendering the diagram as an image; text stays Mermaid
 │        source, same as this repo's own plan-writing convention
-├── {LOOP} micro-workflow state machine                         [_] @host=none
+├── {LOOP} micro-workflow state machine                         [-] @host=none
 │      invariant: every turn is exactly one of five states — categorize
 │        (task type + which backend/model fits it), draft (model proposes
 │        one plan step), decide-pick (accept/reject/request another draft),
@@ -81,13 +81,38 @@ structured working-memory the turn loop can reason over
 │      ->CTX (state transitions are tree mutations) ->PALACE (a jump target
 │        is a palace edge, not a bare tree edge, when it crosses a shared
 │        prerequisite)
-│      evidence needed: a fixture test per transition (5 minimum) plus one
-│        black-box test proving a real multi-step task actually jumps
-│        (not just linearly completes) and terminates on the bounded rule,
-│        not a live-model whim
+│      landed 2026-09-27 (in progress): `run_loop` (src/harness.rs) drives
+│        the five states as a fixed loop around the existing backend
+│        closure -- `{Draft}`/`{Execute}` both call it, since the backend
+│        codec's own turn loop already performs tool-calling end to end in
+│        one round trip (`{WIRE}`'s "dumb transport" contract is unchanged,
+│        never reimplemented here); every transition is logged into a
+│        `trace: Vec<TreeNode>` that `turn_node` now places ahead of the
+│        turn's final-answer child. `decide-pick` rejects only on the
+│        literal `LOOP_REDRAFT_MARKER`, bounded by
+│        `LOOP_MAX_PLAN_REVISIONS` (force-accept past it); `decide-continue`
+│        jumps back to `categorize` unless the literal `LOOP_STOP_PHRASE`
+│        appears or `LOOP_MAX_ITERATIONS` is reached (force-end past it) --
+│        both are fixed-string/counter checks in MiniCon's own code, never
+│        the model's free judgement alone.
+│      evidence: five fixture tests (`run_loop_ends_on_the_explicit_stop_
+│        phrase_after_all_five_states`, `..._jumps_...then_ends_on_the_
+│        iteration_ceiling`, `..._bounds_redrafts_then_force_accepts`,
+│        `..._jump_carries_the_prior_answer_into_the_next_call`,
+│        `turn_node_places_the_loop_trace_ahead_of_the_final_answer`), all
+│        using a fake backend closure so the state machine is proven without
+│        a network. `cargo fmt`, `cargo clippy --all-targets -- -D
+│        warnings`, full harness unit suite (25/25, was 20/20) pass.
+│      evidence still needed: a black-box test proving a real multi-step
+│        task (through a live or recorded backend, not the fixture closure)
+│        actually jumps and terminates -- the fixture tests prove the state
+│        machine's own bounded rules, not that a real model transcript
+│        exercises them end to end. `{LOOP}` stays `[-]` until that lands.
 │      safe failure: an unrecognized/missing state on resume is the same
 │        bounded CLI error as a corrupt tree, not a silent restart at
-│        categorize
+│        categorize (unchanged by this leaf -- resume still replays `tree`
+│        as plain Markdown context, `{LOOP}`'s states are not themselves
+│        persisted as a resumable position yet)
 ├── {WIRE} codec neutrality preserved                            [v] @host=none
 │      invariant: `harness_wire`/`harness_opencode` still only see one
 │        composed string in, one reply string out — CTX/PALACE/LOOP compose

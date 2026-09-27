@@ -115,34 +115,39 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
     // Each backend runs its OWN codec. `opencode-go` is deliberately not
     // served by the DeepSeek codec: a wire format that merely resembles
     // another one produces plausible wrong requests instead of a clear
-    // failure. The `Transport` seam is the only thing the two share.
-    let answer = match request.backend {
-        Backend::DeepSeek => crate::harness_wire::run_task(
-            &crate::harness_wire::NetworkHttp,
-            crate::harness_wire::DEEPSEEK_CHAT_URL,
-            &key,
-            crate::harness_wire::DEEPSEEK_MODEL,
-            &task,
-            &file_tool,
-            &exec_tool,
-        ),
-        Backend::OpencodeGo => {
-            // Resolved here rather than at parse time because it reads the
-            // environment, and a bad base URL should name itself as the
-            // problem rather than surface as a transport failure later.
-            let url = crate::harness_opencode::opencode_chat_url()?;
-            let model = crate::harness_opencode::opencode_model();
-            crate::harness_opencode::opencode_run_task(
+    // failure. The `Transport` seam is the only thing the two share, wrapped
+    // here as a single `&str -> Result<String, String>` closure so `{LOOP}`
+    // (below) can drive it through several state-machine turns without
+    // knowing which backend it is -- the same "dumb transport" contract
+    // `{WIRE}` already guards.
+    let mut call = |task: &str| -> Result<String, String> {
+        match request.backend {
+            Backend::DeepSeek => crate::harness_wire::run_task(
                 &crate::harness_wire::NetworkHttp,
-                &url,
+                crate::harness_wire::DEEPSEEK_CHAT_URL,
                 &key,
-                &model,
-                &task,
+                crate::harness_wire::DEEPSEEK_MODEL,
+                task,
                 &file_tool,
                 &exec_tool,
-            )
+            ),
+            Backend::OpencodeGo => {
+                let url = crate::harness_opencode::opencode_chat_url()?;
+                let model = crate::harness_opencode::opencode_model();
+                crate::harness_opencode::opencode_run_task(
+                    &crate::harness_wire::NetworkHttp,
+                    &url,
+                    &key,
+                    &model,
+                    task,
+                    &file_tool,
+                    &exec_tool,
+                )
+            }
         }
-    }?;
+    };
+    let mut trace = Vec::new();
+    let answer = run_loop(&mut call, &task, &mut trace)?;
 
     // Only a turn that produced a final answer is remembered -- a refused or
     // timed-out turn never reaches here, so a broken turn cannot pollute the
@@ -150,10 +155,154 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
     if let Some(id) = session_id {
         let index = state.turns.len();
         state.turns.push((request.task.clone(), answer.clone()));
-        state.tree.push(turn_node(index, &request.task, &answer));
+        state
+            .tree
+            .push(turn_node(index, &request.task, trace, &answer));
         save_session(&file_tool, id, &state)?;
     }
     Ok(answer)
+}
+
+// ---------------------------------------------------------------------------
+// {LOOP} -- the bounded five-state micro-workflow
+// (plan/plan-harness-context-engineering.md)
+// ---------------------------------------------------------------------------
+
+/// Ceiling on how many times `{LOOP}` may jump back to `categorize` within
+/// one invocation. A live model is never trusted to end a loop on its own
+/// judgement alone (mirrors `exec`'s allow-list posture): once this many
+/// draft/execute rounds have run, `decide-continue` force-ends regardless of
+/// what the latest answer says.
+const LOOP_MAX_ITERATIONS: usize = 5;
+
+/// Ceiling on how many times `decide-pick` may send a draft back for a
+/// redraft within one iteration, before it force-accepts the latest draft
+/// rather than looping forever on a model that keeps asking to redo its own
+/// work.
+const LOOP_MAX_PLAN_REVISIONS: usize = 3;
+
+/// The one literal marker `decide-pick`'s bounded rule checks for. This is a
+/// fixed string comparison in MiniCon's own code, not model judgement --
+/// finding the marker in a draft is a fact `decide-pick` reacts to
+/// mechanically, same as `exec`'s allow-list checking a fixed name rather
+/// than reasoning about intent.
+const LOOP_REDRAFT_MARKER: &str = "PLAN: REDRAFT";
+
+/// The one literal marker `decide-continue`'s bounded rule checks for. A
+/// model that believes the task is done must say so with this exact phrase;
+/// anything else is read as "not yet", bounded by `LOOP_MAX_ITERATIONS` so a
+/// model that never says it is never trusted to loop forever either.
+const LOOP_STOP_PHRASE: &str = "TASK COMPLETE";
+
+/// One of `{LOOP}`'s five states. Every transition between them is logged as
+/// a tree node (`run_loop`'s `trace`), so a session replay shows *why* the
+/// loop moved on, not just what it did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LoopState {
+    Categorize,
+    Draft,
+    DecidePick,
+    Execute,
+    DecideContinue,
+}
+
+impl LoopState {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Categorize => "categorize",
+            Self::Draft => "draft",
+            Self::DecidePick => "decide-pick",
+            Self::Execute => "execute",
+            Self::DecideContinue => "decide-continue",
+        }
+    }
+}
+
+/// Appends one transition node to `trace`, named so ids never collide across
+/// iterations or states within one invocation.
+fn log_transition(trace: &mut Vec<TreeNode>, iteration: usize, state: LoopState, note: &str) {
+    trace.push(TreeNode {
+        id: format!("loop-{iteration}-{}", state.label()),
+        label: format!("state: {} -- {note}", state.label()),
+        evidence: None,
+        failure: None,
+        children: Vec::new(),
+    });
+}
+
+/// Drives `categorize -> draft -> decide-pick -> execute -> decide-continue`,
+/// jumping back to `categorize` until `decide-continue`'s bounded rule ends
+/// it. `call` is the backend closure `run_harness` builds; `{Draft}` and
+/// `{Execute}` both go through it because the backend codec's own turn loop
+/// (`harness_wire::run_task`/`harness_opencode::opencode_run_task`) already
+/// performs tool-calling end to end in one round trip -- `{LOOP}` does not
+/// reimplement that, it only decides when to call it again and with what
+/// task text, per `{WIRE}`'s "both codecs stay dumb transports" rule.
+fn run_loop(
+    call: &mut dyn FnMut(&str) -> Result<String, String>,
+    initial_task: &str,
+    trace: &mut Vec<TreeNode>,
+) -> Result<String, String> {
+    let mut current_task = initial_task.to_owned();
+    for iteration in 0..LOOP_MAX_ITERATIONS {
+        log_transition(
+            trace,
+            iteration,
+            LoopState::Categorize,
+            "routed to the invocation's fixed --backend",
+        );
+
+        let mut revisions = 0usize;
+        let mut draft = call(&current_task)?;
+        log_transition(trace, iteration, LoopState::Draft, "model drafted a step");
+
+        while draft.contains(LOOP_REDRAFT_MARKER) && revisions < LOOP_MAX_PLAN_REVISIONS {
+            log_transition(
+                trace,
+                iteration,
+                LoopState::DecidePick,
+                &format!(
+                    "reject, redraft {}/{LOOP_MAX_PLAN_REVISIONS}",
+                    revisions + 1
+                ),
+            );
+            revisions += 1;
+            draft = call(&format!(
+                "Your previous draft asked for a redraft. Try again for task:\n{current_task}"
+            ))?;
+        }
+        log_transition(trace, iteration, LoopState::DecidePick, "accept");
+
+        // Execution already happened inside `call` (the backend codec's own
+        // tool loop); this state exists to log that fact as its own node,
+        // not to run the tools a second time.
+        log_transition(
+            trace,
+            iteration,
+            LoopState::Execute,
+            "ran via the backend's own file/exec tool loop",
+        );
+
+        let at_ceiling = iteration + 1 >= LOOP_MAX_ITERATIONS;
+        let stopped = draft.contains(LOOP_STOP_PHRASE);
+        if stopped || at_ceiling {
+            let reason = if stopped {
+                "stop phrase"
+            } else {
+                "iteration ceiling"
+            };
+            log_transition(
+                trace,
+                iteration,
+                LoopState::DecideContinue,
+                &format!("end ({reason})"),
+            );
+            return Ok(draft);
+        }
+        log_transition(trace, iteration, LoopState::DecideContinue, "jump");
+        current_task = format!("Continue the task, building on this result:\n{draft}");
+    }
+    unreachable!("the ceiling branch above always returns before this point")
 }
 
 /// How many prior turns a resumed session carries forward. Bounded, like
@@ -281,22 +430,26 @@ fn save_session(file_tool: &FileTool, id: &str, state: &SessionState) -> Result<
     Ok(())
 }
 
-/// Builds this turn's two tree nodes (task, and its answer as a child),
-/// named so `turn-{index}`/`turn-{index}-answer` never collides with a
-/// different turn's ids within one session.
-fn turn_node(index: usize, task: &str, answer: &str) -> TreeNode {
+/// Builds this turn's tree node: the task, `{LOOP}`'s own state-transition
+/// trace as children (empty for a session upgraded from before `{LOOP}`
+/// existed), then the final answer as the last child -- named so
+/// `turn-{index}`/`turn-{index}-answer` never collides with a different
+/// turn's ids within one session.
+fn turn_node(index: usize, task: &str, trace: Vec<TreeNode>, answer: &str) -> TreeNode {
+    let mut children = trace;
+    children.push(TreeNode {
+        id: format!("turn-{index}-answer"),
+        label: format!("assistant: {answer}"),
+        evidence: None,
+        failure: None,
+        children: Vec::new(),
+    });
     TreeNode {
         id: format!("turn-{index}"),
         label: format!("task: {task}"),
         evidence: None,
         failure: None,
-        children: vec![TreeNode {
-            id: format!("turn-{index}-answer"),
-            label: format!("assistant: {answer}"),
-            evidence: None,
-            failure: None,
-            children: Vec::new(),
-        }],
+        children,
     }
 }
 
@@ -307,7 +460,7 @@ fn tree_from_turns(turns: &[(String, String)]) -> Vec<TreeNode> {
     turns
         .iter()
         .enumerate()
-        .map(|(index, (task, answer))| turn_node(index, task, answer))
+        .map(|(index, (task, answer))| turn_node(index, task, Vec::new(), answer))
         .collect()
 }
 
@@ -1359,6 +1512,102 @@ mod tests {
 
         let error = parse_tree("  - {a} orphaned child").unwrap_err();
         assert!(error.contains("no parent line above it"), "{error}");
+    }
+
+    #[test]
+    fn run_loop_ends_on_the_explicit_stop_phrase_after_all_five_states() {
+        let mut trace = Vec::new();
+        let mut call = |_task: &str| Ok(format!("done, {LOOP_STOP_PHRASE}"));
+        let answer = run_loop(&mut call, "task", &mut trace).expect("loop ends");
+        assert!(answer.contains(LOOP_STOP_PHRASE), "{answer}");
+        let labels: Vec<&str> = trace.iter().map(|node| node.label.as_str()).collect();
+        assert!(labels.iter().any(|l| l.starts_with("state: categorize")));
+        assert!(labels.iter().any(|l| l.starts_with("state: draft")));
+        assert!(labels.iter().any(|l| l.starts_with("state: decide-pick")));
+        assert!(labels.iter().any(|l| l.starts_with("state: execute")));
+        assert!(
+            labels
+                .iter()
+                .any(|l| l.starts_with("state: decide-continue") && l.contains("end"))
+        );
+        // Exactly one iteration: the stop phrase was on the first answer.
+        assert_eq!(trace.len(), 5, "{trace:?}");
+    }
+
+    #[test]
+    fn run_loop_jumps_when_no_stop_phrase_then_ends_on_the_iteration_ceiling() {
+        let mut trace = Vec::new();
+        let mut call = |_task: &str| Ok("still working, no stop phrase yet".to_owned());
+        let answer = run_loop(&mut call, "task", &mut trace).expect("loop ends on ceiling");
+        assert!(!answer.contains(LOOP_STOP_PHRASE));
+        let jumps = trace
+            .iter()
+            .filter(|node| node.label.contains("decide-continue") && node.label.contains("jump"))
+            .count();
+        assert_eq!(jumps, LOOP_MAX_ITERATIONS - 1, "{trace:?}");
+        let ends = trace
+            .iter()
+            .filter(|node| {
+                node.label.contains("decide-continue") && node.label.contains("iteration ceiling")
+            })
+            .count();
+        assert_eq!(ends, 1, "{trace:?}");
+    }
+
+    #[test]
+    fn run_loop_bounds_redrafts_then_force_accepts() {
+        let mut trace = Vec::new();
+        let mut call = |_task: &str| Ok(format!("{LOOP_REDRAFT_MARKER}, {LOOP_STOP_PHRASE}"));
+        run_loop(&mut call, "task", &mut trace).expect("loop ends despite redraft marker");
+        let rejects = trace
+            .iter()
+            .filter(|node| node.label.contains("decide-pick") && node.label.contains("reject"))
+            .count();
+        assert_eq!(rejects, LOOP_MAX_PLAN_REVISIONS, "{trace:?}");
+        let accepts = trace
+            .iter()
+            .filter(|node| node.label.contains("decide-pick") && node.label.contains("accept"))
+            .count();
+        assert_eq!(accepts, 1, "{trace:?}");
+    }
+
+    #[test]
+    fn run_loop_jump_carries_the_prior_answer_into_the_next_call() {
+        let mut trace = Vec::new();
+        let mut calls: Vec<String> = Vec::new();
+        let mut call = |task: &str| {
+            calls.push(task.to_owned());
+            if calls.len() == 1 {
+                Ok("first-step-result".to_owned())
+            } else {
+                Ok(format!("built on it, {LOOP_STOP_PHRASE}"))
+            }
+        };
+        let answer = run_loop(&mut call, "start", &mut trace).expect("loop ends");
+        assert!(answer.contains(LOOP_STOP_PHRASE));
+        assert_eq!(calls[0], "start");
+        assert!(
+            calls[1].contains("first-step-result"),
+            "the jump must fold the prior answer into the next task: {calls:?}"
+        );
+    }
+
+    #[test]
+    fn turn_node_places_the_loop_trace_ahead_of_the_final_answer() {
+        let mut trace = Vec::new();
+        log_transition(&mut trace, 0, LoopState::Categorize, "routed");
+        log_transition(
+            &mut trace,
+            0,
+            LoopState::DecideContinue,
+            "end (stop phrase)",
+        );
+        let node = turn_node(0, "task text", trace, "final answer");
+        assert_eq!(node.children.len(), 3, "{node:?}");
+        assert_eq!(node.children[0].id, "loop-0-categorize");
+        assert_eq!(node.children[1].id, "loop-0-decide-continue");
+        assert_eq!(node.children[2].id, "turn-0-answer");
+        assert!(node.children[2].label.contains("final answer"));
     }
 
     #[test]
