@@ -722,6 +722,26 @@ six-cell claim.
   explicit owner decision on 2026-09-26 (see "Artifact budget" above); that is
   not the same as an automatic raise, which remains forbidden.
 
+- [_] **Distributed zip size growth, flagged 2026-09-27 (owner, curiosity, not
+  a release blocker).** Owner-observed download zip roughly 400+ KB on 0.1.x
+  vs 900+ KB on 0.2.x — a bigger jump than the sealed Candidate's own
+  `8,880,268` → `10,746,681` (+21%) receipt above, not yet reconciled (zip
+  compresses differently than the raw Candidate payload; not verified which
+  number is the fairer comparison). Leading candidate, not yet confirmed:
+  `network-http` (`agenterm-platform`, enabled by `884a25c` "0.2.0 H4: pin
+  agenterm's network-http and enable it for MiniCon") pulls `ureq` + `rustls`
+  + `rustls-webpki` + `ring` on Unix; `ring`'s constant-time crypto tables
+  resist LTO/strip disproportionately. Not established: whether this is the
+  dominant contributor vs. `mux`/`harness`'s own ~4-4.6k new lines, or other
+  0.2.x additions. Any fix to the TLS/crypto dependency graph is
+  `agenterm-platform`'s `Cargo.toml`, outside this repo — MiniCon-side action
+  here is measurement only. Motive for revisiting: a future lightweight
+  web-GUI client front would make dependency-graph growth like this cost
+  more, not less. **Do not act on this without a real before/after size
+  measurement** (rebuild a 0.1.x tag and a 0.2.x build in the same
+  environment, same profile, diff `cargo tree`) — reasoning about feature
+  flags alone is not evidence of what dominates the delta.
+
 ### Linux size attribution (LTO cells, 2026-08-29)
 
 Payload bytes after Linux `profile.release` (same numbers as the 迁出差异
