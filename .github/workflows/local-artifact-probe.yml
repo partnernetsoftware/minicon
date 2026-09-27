@@ -172,9 +172,13 @@ jobs:
       # Without a live shell into the runner, a red suite otherwise leaves
       # only the log lines above. Upload whatever landed in LOG_DIR so a
       # follow-up session can `gh run download` and read it after the fact --
-      # see plan/plan-carried-debt.md's G1 leaf.
+      # see plan/plan-carried-debt.md's G1 leaf. `failure()` alone misses a
+      # timeout: that shows up as `cancelled`, not `failure`, and a hang is
+      # exactly the case this upload exists for (measured run 36300379788:
+      # two lnx-* jobs hung inside minicon_core and hit the 8-minute cap,
+      # then skipped this step because it only checked `failure()`).
       - name: Upload failure logs
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: probe-logs-${{ matrix.cell }}
