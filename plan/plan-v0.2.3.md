@@ -135,16 +135,25 @@ structurally-blocked leaves
           Fix: either default `BUILD_JOBS` to something core-count-aware,
           or move RSS-budget tests out of the concurrent build-fanout
           window (run them serially, after the fan-out settles).
-       6. `scripts/ci-release.sh` passes through `company-signing.yml`/
-          `macos-signing.yml`'s `qualification_only` input, which defaults
-          `true` -- a caller who doesn't know that default gets a
-          same-second preflight failure ("release-eligible signing
-          requires an unpublished version" is not what fires; it's the
-          silent early exit from finding #2) instead of a
-          release-eligible signature. Fix: add an explicit
-          `--qualification-only`/`--release` flag to `ci-release.sh`'s
-          signing subcommands so the caller states intent instead of
-          inheriting the workflow's own default.
+       6. Corrected 2026-09-27 (the first write-up of this item named the
+          wrong script): `scripts/ci-release.sh` covers only
+          candidate/reputation/release -- it has no signing subcommand at
+          all, so `company-signing.yml`/`macos-signing.yml` still get
+          dispatched by hand every time, `qualification_only` default
+          (`true`) included; a caller who forgets `-f
+          qualification_only=false` gets an instant, silent preflight
+          failure (see #2) instead of a release-eligible signature (hit
+          live during the v0.2.2 signing dispatch). Separately,
+          `ci-release.sh`'s three subcommands each hardcode
+          `minicon_ci_dispatch_and_wait <workflow>.yml main ...` -- there is
+          no way to pass a pinned `candidate-src-<v>` branch instead of
+          `main`, so the script cannot be used at all once `main` has moved
+          past the Candidate SHA (exactly the situation `{RELTOOL}`#3's
+          lock is meant to prevent, and what actually happened twice during
+          v0.2.2). Fix: add a `candidate`/`macos-signing` subcommand (with
+          an explicit `--release`/`--qualification-only` flag, mirroring
+          the workflow's own boolean) and an optional ref override (e.g. a
+          fourth positional arg or `MINICON_CI_REF`) to all subcommands.
        evidence needed: for #1/#2, a modified preflight script plus a
          fixture dispatch (or a documented dry run) proving a docs-only
          push no longer breaks signing and a failing assertion prints its
