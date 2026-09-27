@@ -1,0 +1,158 @@
+name: dev-loop-crosscheck
+
+# A dev-loop validation court for an agent that cross-compiles nothing itself:
+# push a fix to `main`, dispatch this, and each requested cell builds and
+# tests *natively* on its own runner -- the same "compile on the cell that
+# will run it" pattern `six-grid-cloud-build.yml` already uses for the
+# release-evidence path, minus that path's GHCR publish and receipt/identity
+# bookkeeping (which ties into release evidence and is out of scope here).
+# No GHCR token, no release, no new tag: `contents: read` is enough, because
+# the result an agent needs is pass/fail plus logs, not a redistributable
+# body. See plan/plan-carried-debt.md's G1 leaf for why this exists --
+# local-artifact-probe.yml needs a pre-built bundle behind a release asset,
+# and creating or updating a release is blocked for this kind of session.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref/SHA to check out; empty uses the default branch"
+        required: false
+        default: ""
+      cells:
+        description: >-
+          Space-separated cells to build+test; empty runs the four
+          non-macOS cells (macOS runners bill ~10x Linux and queue longest --
+          opt in with "all" or the osx-* names when a macOS-specific
+          question needs it)
+        required: false
+        default: ""
+      test_filter:
+        description: "Optional Rust test-name substring filter, applied to every suite"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          CELLS: ${{ inputs.cells }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          runners = {
+              "lnx-x86_64": {"runner": "ubuntu-24.04", "triple": "x86_64-unknown-linux-gnu"},
+              "lnx-aarch64": {"runner": "ubuntu-24.04-arm", "triple": "aarch64-unknown-linux-gnu"},
+              "win-x86_64": {"runner": "windows-2025", "triple": "x86_64-pc-windows-msvc"},
+              "win-aarch64": {"runner": "windows-11-arm", "triple": "aarch64-pc-windows-msvc"},
+              "osx-aarch64": {"runner": "macos-15", "triple": "aarch64-apple-darwin"},
+              "osx-x86_64": {"runner": "macos-15-intel", "triple": "x86_64-apple-darwin"},
+          }
+          raw = os.environ.get("CELLS", "").split()
+          non_macos = [c for c in runners if not c.startswith("osx-")]
+          if not raw:
+              wanted = non_macos
+          elif raw == ["all"]:
+              wanted = list(runners)
+          else:
+              wanted = raw
+          unknown = [c for c in wanted if c not in runners]
+          if unknown:
+              raise SystemExit(f"unknown cells: {unknown}")
+          include = [{"cell": c, **runners[c]} for c in wanted]
+          print("matrix=" + json.dumps({"include": include}))
+          PY
+
+  build-and-test:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    # Compile plus test, on one runner, natively -- no cross toolchain, no
+    # transfer step to go wrong. 20 minutes covers a cold `cargo build` for
+    # this workspace's size with slack for the run loop below; a genuine
+    # hang (the class of bug this court exists to reproduce) still hits this
+    # cap and reports as `cancelled`, which the log-upload step below also
+    # covers.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # Same rationale as local-artifact-probe.yml: a hosted Linux runner has
+      # no display, and MiniCon is a windowed terminal.
+      - name: Give Linux a display to draw on
+        if: startsWith(matrix.cell, 'lnx-')
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb
+          Xvfb :99 -screen 0 1280x1024x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          for _ in $(seq 20); do
+            if DISPLAY=:99 xdpyinfo >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          DISPLAY=:99 xdpyinfo | head -3
+
+      - name: Build the cell's product and harnesses
+        shell: bash
+        run: cargo build --locked --workspace --all-targets --target "${{ matrix.triple }}"
+
+      - name: Run each suite, capturing every result before failing the job
+        shell: bash
+        env:
+          LOG_DIR: probe-logs
+        run: |
+          set -eu
+          mkdir -p "$LOG_DIR"
+          triple='${{ matrix.triple }}'
+          debug_dir="target/$triple/debug"
+          product="$debug_dir/minicon"
+          [ -f "$product.exe" ] && product="$product.exe"
+          if [ -f "$product" ]; then
+            if command -v cygpath >/dev/null; then
+              MINICON_TEST_BINARY="$(cygpath -w "$PWD/$product")"
+            else
+              MINICON_TEST_BINARY="$PWD/$product"
+            fi
+            export MINICON_TEST_BINARY
+            echo "product binary: $MINICON_TEST_BINARY"
+          fi
+          failed=""
+          for exe in "$debug_dir"/minicon_blackbox "$debug_dir"/minicon_control \
+                     "$debug_dir"/minicon_core "$debug_dir"/minicon_throughput; do
+            [ -f "$exe" ] || exe="$exe.exe"
+            [ -f "$exe" ] || continue
+            case "$exe" in
+              *minicon_throughput*) extra="--include-ignored --nocapture" ;;
+              *) extra= ;;
+            esac
+            echo "== $exe $extra ${{ inputs.test_filter }}"
+            if "$exe" --test-threads 2 $extra ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/$(basename "$exe").log"; then :; else failed="$failed $exe"; fi
+          done
+          if [ -n "$failed" ]; then
+            echo "CROSSCHECK failed suites:$failed" | tee -a "$LOG_DIR/summary.log"
+            exit 1
+          fi
+
+      # Same rationale as local-artifact-probe.yml: a hang shows up as
+      # `cancelled`, not `failure`, and `failure()` alone misses it.
+      - name: Upload failure logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crosscheck-logs-${{ matrix.cell }}
+          path: probe-logs
+          if-no-files-found: ignore
+          retention-days: 7
