@@ -202,4 +202,43 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      tried) or the *dev-bundle single-cell* leg (round-* tags need a fresh
 │      bundle with the target cell's test binaries actually present before
 │      that path can be timed).
+│      **Interactive-debug leg abandoned 2026-09-27:** an `action-tmate`
+│      workflow (SSH into a real macOS/Windows runner) was drafted and passed
+│      this repo's own `workflow_references_are_pinned_and_exist` alignment
+│      test, but committing it was denied twice, identically, by a
+│      platform-level `[External Ingress Tunnel]` safety classifier outside
+│      MiniCon's own rules — not retried further per that denial's own
+│      instructions. This capability (a live shell into a real osx/win
+│      runner) is not available from this kind of session; do not re-propose
+│      SSH/tmate/reverse-shell/tunnel approaches here.
+│      **Follow-up survey 2026-09-27 (subagent, read-only, not yet run):**
+│      GitHub bills each job at a minimum of one whole minute, so shaving
+│      seconds off a step buys almost nothing — what moves cost/latency is
+│      job *count*, which OS a job runs on, and how much a red job tells you
+│      without a live shell. Findings, none yet implemented:
+│        - **Failure-evidence capture (replaces the abandoned tmate leg):**
+│          `local-artifact-probe.yml` uploads nothing when a test fails, so a
+│          red run leaves only log lines. Add an on-failure-only
+│          `actions/upload-artifact` step (already pinned at
+│          `ea165f8d65b6e75b540449e92b4886f43607fa02` in
+│          `six-grid-runtime.yml`) plus an env var naming a log/screenshot
+│          dir; Windows WER LocalDumps + `cdb -z ... "!analyze -v; kb"`
+│          batch-mode; macOS `~/Library/Logs/DiagnosticReports` upload; Linux
+│          `gdb -batch` backtrace from the core dump. ~25-40 lines of YAML +
+│          a small harness hook; near-zero cost on green runs. #assumption
+│          `cdb.exe`/`screencapture`/Xvfb-on-image and hosted-Mac screen-
+│          capture permission are unverified, not confirmed against a real
+│          runner.
+│        - **Single-test `filter` input** for the probe workflow (mirrors
+│          `MINICON_WINDOWS_ONE` in utm-court): ~4 lines of YAML, turns a
+│          164s full black-box round into a ~10s single-test round.
+│        - **Drop macOS cells from routine (non-release) probe rounds by
+│          default:** ~1 line; rough estimate (Windows 2x, macOS 10x Linux,
+│          *not checked against GitHub's current price list*) says the two
+│          macOS cells are ~74% of a routine round's billed cost, plus
+│          `macos-13`'s multi-minute runner queue. Keep macOS cells for
+│          release rounds.
+│      dependency: none of the three above touch signing/candidate/
+│      release-policy state or require a live connection; #decision owner
+│      has not yet picked which (if any) to implement.
 ```
