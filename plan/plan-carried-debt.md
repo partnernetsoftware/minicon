@@ -70,4 +70,32 @@ doc when it is picked up; delete its line here once it ships or is decided
        `ComposerState` (`crates/minicon-core/src/composer.rs`) rendered in
        `src/host_paint.rs`, so a pasted image shows as a chip instead of a
        raw path string in the composer text. Pick this leaf up there next.
+       **Visual verification 2026-09-26:** the shipped file-path fallback
+       was checked with a real rendered frame, not just JSON assertions —
+       `screenshot-pane` against a real `minicon` GUI under `xvfb-run` after
+       seeding the X11 clipboard and sending Ctrl+V, PNG inspected directly.
+       The composer correctly shows the pasted temp file's path as plain
+       text; this is exactly the still-open gap the chip UI below replaces.
+       **Scoping note for whoever picks up the chip UI, 2026-09-26:**
+       surveyed both files enough to flag why this is a real redesign, not
+       a drive-by add. `ComposerState` (`crates/minicon-core/src/composer.rs`)
+       is a flat `text: String` plus a byte-offset `caret`/`anchor`; nearly
+       every method (`clamped_caret`, `selection_bounds`, `insert`, `paste`,
+       history recall) assumes byte-offset arithmetic into that one string,
+       and `host_paint.rs`'s composer block (~line 359 on) paints it by
+       slicing `self.composer.text` into a visible line window and walking
+       it cell-by-cell for caret/selection geometry (`composer::cells`,
+       `visible_line_window`, `line_range`). A "new non-text draft-segment
+       type" has to either (a) keep `text` as the single source of truth for
+       submit/PTY-write and layer a *display-only* lookup that recognizes
+       this module's own `minicon-paste-<pid>-<nanos>.<ext>` temp-path
+       pattern and paints a chip in place of that literal substring (no
+       caret-math or selection changes, lowest risk, but the chip is not a
+       real atomic edit unit — backspace/left-right still walk it character
+       by character), or (b) a real mixed-segment model, which touches
+       caret clamping, selection bounds, insert/paste, submit serialization
+       and every host_paint.rs measurement in the same change. Option (a) is
+       likely the right first cut given this widget's invariant density and
+       that no host in this session has a real screen a human can review the
+       result on; do not attempt (b) without that kind of review available.
 ```
