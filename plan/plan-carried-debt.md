@@ -149,4 +149,41 @@ doc when it is picked up; delete its line here once it ships or is decided
        agent-driven, not just human-driven, and a fully offscreen render
        path would let an agent screenshot/drive its own UI without paying
        for a real window or even `Xvfb`.
+├── G1 CI-as-debug-court for osx/win, not started, owner-flagged 2026-09-27
+│      @motive: owner's macOS-side agents currently rely on UTM VMs to reach
+│      other architectures for debugging — nested virtualization is slow and
+│      hardware-heavy; a Linux cloud session cannot touch osx/win at all
+│      today. Wanted: let a Linux agent (this kind of session) drive
+│      interactive debugging on real osx/win hosts via GitHub-hosted runners,
+│      as a faster/cheaper substitute for utm-court, **without** routing full
+│      compiles through CI (compiling stays on-host per the existing
+│      2026-09-24 owner decision — GHCR only covers 4 cells, loses
+│      incremental cache, macos-13 queues).
+│      **Surveyed 2026-09-27 (subagent, not yet owner-confirmed):** the
+│      "download existing six-cell artifact, run only, no rebuild" pattern
+│      already exists in `local-artifact-probe.yml`, `release-smoke-test.yml`
+│      and `candidate.yml`'s verify-packages job — this is not a new
+│      mechanism, just not yet exposed as an on-demand single-cell debug
+│      entry point. Missing: (a) a `workflow_dispatch` entry that takes one
+│      cell + one test/repro command and skips the other five; (b) an
+│      interactive SSH-into-runner option (e.g. `mxschmitt/action-tmate`) for
+│      hands-on debugging, not used anywhere in this repo yet. No self-hosted
+│      runner exists; osx/win debug time is GitHub-hosted-only alongside
+│      utm-court, not a replacement architecture.
+│      #risk cost: GitHub-hosted macOS/Windows runner-minutes bill roughly an
+│      order of magnitude higher than Linux; any tmate/interactive session
+│      must carry a hard `timeout-minutes` and target a single matrix cell,
+│      never the full six-cell matrix, or the "cheaper than UTM" premise
+│      inverts.
+│      **Pilot proposed, not yet run:** add one `workflow_dispatch` job
+│      (single osx or win cell, downloads that cell's existing artifact,
+│      runs one targeted test/repro, hard timeout, no rebuild) and measure
+│      wall-clock + billed minutes against a comparable UTM session before
+│      deciding whether to generalize. Do not add `action-tmate` in the same
+│      pilot — prove the zero-rebuild single-cell path first, interactive SSH
+│      is a separate increment.
+│      dependency: none to prototype (uses existing artifact-download
+│      pattern); needs owner sign-off before treating it as a standing
+│      pipeline capability
+│      non-goal: moving any compile step into CI; replacing utm-court outright
 ```
