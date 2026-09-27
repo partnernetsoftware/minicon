@@ -779,6 +779,7 @@ dependencies = [
  "minicon-core",
  "object",
  "png 0.17.16",
+ "serde",
  "serde_json",
  "unicode-width",
  "vt100",

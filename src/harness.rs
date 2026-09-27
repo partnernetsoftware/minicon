@@ -84,7 +84,7 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
         .as_deref()
         .or(request.continue_session.as_deref());
     let is_continue = request.continue_session.is_some();
-    let mut history = Vec::new();
+    let mut state = SessionState::default();
     if let Some(id) = session_id {
         validate_session_id(id)?;
         let existing = load_session(&file_tool, id)?;
@@ -100,9 +100,17 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
                  use --continue {id:?} to resume it instead of overwriting it"
             ));
         }
-        history = existing.unwrap_or_default();
+        state = existing.unwrap_or_default();
     }
-    let task = compose_resumed_task(&history, &request.task);
+    // A session saved before the tree working memory existed carries `turns`
+    // but no `tree`: rebuild it deterministically from `turns` rather than
+    // starting the tree over -- lossless, so this is not the silent-fresh-
+    // start this leaf's safe-failure rule forbids (that rule is about a
+    // *corrupt* file, not an older-format one).
+    if state.tree.is_empty() && !state.turns.is_empty() {
+        state.tree = tree_from_turns(&state.turns);
+    }
+    let task = compose_resumed_task(&state.tree, &request.task);
 
     // Each backend runs its OWN codec. `opencode-go` is deliberately not
     // served by the DeepSeek codec: a wire format that merely resembles
@@ -140,8 +148,10 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
     // timed-out turn never reaches here, so a broken turn cannot pollute the
     // resumed context with a partial exchange.
     if let Some(id) = session_id {
-        history.push((request.task.clone(), answer.clone()));
-        save_session(&file_tool, id, &history)?;
+        let index = state.turns.len();
+        state.turns.push((request.task.clone(), answer.clone()));
+        state.tree.push(turn_node(index, &request.task, &answer));
+        save_session(&file_tool, id, &state)?;
     }
     Ok(answer)
 }
@@ -175,57 +185,261 @@ fn validate_session_id(id: &str) -> Result<(), String> {
     }
 }
 
-/// Loads a session's recorded turns. `Ok(None)` means no session by this
-/// name exists yet -- distinct from a corrupt file, which is a hard error:
-/// per this leaf's safe-failure contract, a broken resume must never look
-/// like a fresh start.
-fn load_session(file_tool: &FileTool, id: &str) -> Result<Option<Vec<(String, String)>>, String> {
+/// One node of the session's tree-DAG working memory
+/// (`plan/plan-harness-context-engineering.md`, leaf `{CTX}`). Rendered as an
+/// indented Markdown bullet list -- the same shape this repo's own planning
+/// method uses -- so it is both what gets sent to the model and what a human
+/// reading a session file sees, with no second representation to keep in
+/// sync.
+///
+/// `evidence`/`failure` are optional single-token annotations (no spaces),
+/// carried as trailing `@evidence=...`/`#failure=...` markers on the node's
+/// line; either, both or neither may be present. There is no third "status"
+/// field yet -- `{LOOP}`'s decision states will need one, deliberately left
+/// for that leaf rather than guessed at here.
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TreeNode {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
+    #[serde(default)]
+    pub children: Vec<TreeNode>,
+}
+
+/// A session's on-disk contents: `turns` is the flat history HS originally
+/// shipped (kept so an existing 0.2.x session file still parses), `tree` is
+/// the working memory this leaf adds. A file with no `tree` key at all --
+/// every session saved before this leaf existed -- deserializes with
+/// `tree: Vec::new()` via `#[serde(default)]`, never an error.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct SessionState {
+    turns: Vec<(String, String)>,
+    #[serde(default)]
+    tree: Vec<TreeNode>,
+}
+
+/// Loads a session's state. `Ok(None)` means no session by this name exists
+/// yet -- distinct from a corrupt file, which is a hard error: per this
+/// leaf's safe-failure contract, a broken resume must never look like a
+/// fresh start. A file written by HS before this leaf existed is a bare
+/// `[[task, answer], ...]` JSON array rather than `{"turns": [...]}`; that
+/// shape is tried second, not treated as corrupt.
+fn load_session(file_tool: &FileTool, id: &str) -> Result<Option<SessionState>, String> {
     let relative = format!("{HARNESS_SESSION_DIR}/{id}.json");
     match file_tool.read(&relative) {
         Ok(contents) => {
-            let turns: Vec<(String, String)> =
-                serde_json::from_str(&contents).map_err(|error| {
+            let state = serde_json::from_str::<SessionState>(&contents)
+                .or_else(|_| {
+                    serde_json::from_str::<Vec<(String, String)>>(&contents).map(|turns| {
+                        SessionState {
+                            turns,
+                            tree: Vec::new(),
+                        }
+                    })
+                })
+                .map_err(|error| {
                     format!(
                         "harness: session {id:?} is corrupt ({error}); refusing to fall back to a \
                      silent fresh start -- move or delete {relative:?} under --root to abandon it"
                     )
                 })?;
-            Ok(Some(turns))
+            Ok(Some(state))
         }
         Err(_) => Ok(None),
     }
 }
 
-/// Persists a session's turns, keeping only the most recent
-/// `HARNESS_SESSION_MAX_TURNS`.
-fn save_session(file_tool: &FileTool, id: &str, turns: &[(String, String)]) -> Result<(), String> {
-    let start = turns.len().saturating_sub(HARNESS_SESSION_MAX_TURNS);
-    let bounded = &turns[start..];
+/// Persists a session's state, keeping only the most recent
+/// `HARNESS_SESSION_MAX_TURNS` of both `turns` and top-level `tree` nodes --
+/// the two stay the same length by construction (`run_harness` appends one of
+/// each per turn), so this bounds them identically rather than risking them
+/// drifting apart.
+fn save_session(file_tool: &FileTool, id: &str, state: &SessionState) -> Result<(), String> {
+    let turns_start = state.turns.len().saturating_sub(HARNESS_SESSION_MAX_TURNS);
+    let tree_start = state.tree.len().saturating_sub(HARNESS_SESSION_MAX_TURNS);
+    let bounded = SessionState {
+        turns: state.turns[turns_start..].to_vec(),
+        tree: state.tree[tree_start..].to_vec(),
+    };
     let relative = format!("{HARNESS_SESSION_DIR}/{id}.json");
-    let contents = serde_json::to_string(bounded)
+    let contents = serde_json::to_string(&bounded)
         .map_err(|error| format!("harness: could not serialize session {id:?}: {error}"))?;
     file_tool.write(&relative, &contents)?;
     Ok(())
 }
 
-/// Folds a session's prior turns into the text sent as this run's task, so
-/// neither backend codec (`harness_wire`/`harness_opencode`) needs to know
-/// sessions exist at all -- a plain composed string round-trips through both
-/// unchanged, which is the dependency this leaf's PRD entry named. Raw
-/// message-object replay was considered and rejected: it would couple the
-/// stored format to one backend's wire shape.
-fn compose_resumed_task(history: &[(String, String)], new_task: &str) -> String {
-    if history.is_empty() {
-        return new_task.to_owned();
+/// Builds this turn's two tree nodes (task, and its answer as a child),
+/// named so `turn-{index}`/`turn-{index}-answer` never collides with a
+/// different turn's ids within one session.
+fn turn_node(index: usize, task: &str, answer: &str) -> TreeNode {
+    TreeNode {
+        id: format!("turn-{index}"),
+        label: format!("task: {task}"),
+        evidence: None,
+        failure: None,
+        children: vec![TreeNode {
+            id: format!("turn-{index}-answer"),
+            label: format!("assistant: {answer}"),
+            evidence: None,
+            failure: None,
+            children: Vec::new(),
+        }],
     }
-    let mut composed = String::from("Resumed session -- prior turns, oldest first:\n");
-    for (index, (task, answer)) in history.iter().enumerate() {
-        composed.push_str(&format!(
-            "[{}] user: {task}\n[{}] assistant: {answer}\n",
-            index + 1,
-            index + 1
+}
+
+/// Rebuilds a tree from a pre-`{CTX}` session's flat turns, so an older
+/// session file upgrades deterministically instead of losing its history the
+/// first time it is resumed after this leaf landed.
+fn tree_from_turns(turns: &[(String, String)]) -> Vec<TreeNode> {
+    turns
+        .iter()
+        .enumerate()
+        .map(|(index, (task, answer))| turn_node(index, task, answer))
+        .collect()
+}
+
+/// Renders a tree as the indented Markdown bullet list `parse_tree` reads
+/// back. Two spaces per depth level, an `{id}` tag right after the bullet so
+/// a node's identity survives the round trip, then its label, then any
+/// `evidence`/`failure` annotation as a trailing token.
+fn render_tree(nodes: &[TreeNode]) -> String {
+    let mut out = String::new();
+    render_tree_at(nodes, 0, &mut out);
+    out
+}
+
+fn render_tree_at(nodes: &[TreeNode], depth: usize, out: &mut String) {
+    for node in nodes {
+        out.push_str(&"  ".repeat(depth));
+        out.push_str("- {");
+        out.push_str(&node.id);
+        out.push_str("} ");
+        out.push_str(&node.label);
+        if let Some(evidence) = &node.evidence {
+            out.push_str(" @evidence=");
+            out.push_str(evidence);
+        }
+        if let Some(failure) = &node.failure {
+            out.push_str(" #failure=");
+            out.push_str(failure);
+        }
+        out.push('\n');
+        render_tree_at(&node.children, depth + 1, out);
+    }
+}
+
+/// Parses `render_tree`'s own output back into a tree. Indentation must be a
+/// whole number of 2-space levels and a child's depth must have a parent
+/// already open above it -- both violations are named, bounded errors, never
+/// a best-effort guess at the intended shape, since this is working memory a
+/// resumed task's next turn reasons over: a silently misparsed tree is a
+/// silently wrong task, not merely a cosmetic one.
+///
+/// Not yet called from `run_harness` -- the tree is stored and reloaded as
+/// JSON, never as this Markdown rendering, so nothing needs to parse it back
+/// today. It exists now because `{CTX}`'s own evidence contract is the
+/// render/parse round trip itself (`plan/plan-harness-context-engineering.md`),
+/// and `{LOOP}` will need this exact parser to read a model's tree edits back
+/// off the wire.
+#[allow(dead_code)]
+fn parse_tree(text: &str) -> Result<Vec<TreeNode>, String> {
+    let mut roots: Vec<TreeNode> = Vec::new();
+    let mut stack: Vec<(usize, TreeNode)> = Vec::new();
+    for raw_line in text.lines() {
+        if raw_line.trim().is_empty() {
+            continue;
+        }
+        let indent = raw_line.chars().take_while(|c| *c == ' ').count();
+        if indent % 2 != 0 {
+            return Err(format!(
+                "harness: tree line has odd indentation ({indent} spaces), expected a multiple \
+                 of 2: {raw_line:?}"
+            ));
+        }
+        let depth = indent / 2;
+        let node = parse_tree_line(raw_line.trim_start())?;
+
+        while let Some(&(top_depth, _)) = stack.last() {
+            if top_depth < depth {
+                break;
+            }
+            let (_, finished) = stack.pop().expect("just peeked");
+            match stack.last_mut() {
+                Some((_, parent)) => parent.children.push(finished),
+                None => roots.push(finished),
+            }
+        }
+        if depth > 0 && stack.is_empty() {
+            return Err(format!(
+                "harness: tree line is indented with no parent line above it: {raw_line:?}"
+            ));
+        }
+        stack.push((depth, node));
+    }
+    while let Some((_, finished)) = stack.pop() {
+        match stack.last_mut() {
+            Some((_, parent)) => parent.children.push(finished),
+            None => roots.push(finished),
+        }
+    }
+    Ok(roots)
+}
+
+/// Parses one already-trimmed tree line's `- {id} label [@evidence=x] [#failure=y]`.
+fn parse_tree_line(line: &str) -> Result<TreeNode, String> {
+    let rest = line
+        .strip_prefix("- ")
+        .ok_or_else(|| format!("harness: tree line is not a `- ` bullet: {line:?}"))?;
+    let rest = rest
+        .strip_prefix('{')
+        .ok_or_else(|| format!("harness: tree line has no {{id}} tag: {line:?}"))?;
+    let (id, rest) = rest
+        .split_once('}')
+        .ok_or_else(|| format!("harness: tree line's {{id}} tag is never closed: {line:?}"))?;
+    if id.is_empty() {
+        return Err(format!(
+            "harness: tree line has an empty {{id}} tag: {line:?}"
         ));
     }
+    let mut tokens: Vec<&str> = rest.split(' ').filter(|token| !token.is_empty()).collect();
+    let mut evidence = None;
+    let mut failure = None;
+    while let Some(&last) = tokens.last() {
+        if let Some(value) = last.strip_prefix("@evidence=") {
+            evidence = Some(value.to_owned());
+            tokens.pop();
+        } else if let Some(value) = last.strip_prefix("#failure=") {
+            failure = Some(value.to_owned());
+            tokens.pop();
+        } else {
+            break;
+        }
+    }
+    Ok(TreeNode {
+        id: id.to_owned(),
+        label: tokens.join(" "),
+        evidence,
+        failure,
+        children: Vec::new(),
+    })
+}
+
+/// Folds a session's tree working memory into the text sent as this run's
+/// task, so neither backend codec (`harness_wire`/`harness_opencode`) needs
+/// to know sessions or trees exist at all -- a plain composed string
+/// round-trips through both unchanged, which is the dependency this leaf's
+/// PRD entry named (`{WIRE}` in the context-engineering plan). Raw
+/// message-object replay was considered and rejected: it would couple the
+/// stored format to one backend's wire shape.
+fn compose_resumed_task(tree: &[TreeNode], new_task: &str) -> String {
+    if tree.is_empty() {
+        return new_task.to_owned();
+    }
+    let mut composed = String::from("Resumed session -- working memory as a tree, oldest first:\n");
+    composed.push_str(&render_tree(tree));
     composed.push_str("\nNew task:\n");
     composed.push_str(new_task);
     composed
@@ -864,8 +1078,8 @@ mod tests {
     #[test]
     fn compose_resumed_task_folds_prior_turns_ahead_of_the_new_one() {
         assert_eq!(compose_resumed_task(&[], "first task"), "first task");
-        let history = vec![("earlier task".to_owned(), "earlier answer".to_owned())];
-        let composed = compose_resumed_task(&history, "new task");
+        let tree = tree_from_turns(&[("earlier task".to_owned(), "earlier answer".to_owned())]);
+        let composed = compose_resumed_task(&tree, "new task");
         assert!(composed.contains("earlier task"), "{composed}");
         assert!(composed.contains("earlier answer"), "{composed}");
         assert!(composed.ends_with("new task"), "{composed}");
@@ -882,17 +1096,20 @@ mod tests {
         for index in 0..(HARNESS_SESSION_MAX_TURNS + 3) {
             turns.push((format!("task {index}"), format!("answer {index}")));
         }
-        save_session(&tool, "s1", &turns).expect("save");
+        let tree = tree_from_turns(&turns);
+        save_session(&tool, "s1", &SessionState { turns, tree }).expect("save");
 
         let loaded = load_session(&tool, "s1")
             .expect("load")
             .expect("session exists now");
-        assert_eq!(loaded.len(), HARNESS_SESSION_MAX_TURNS);
+        assert_eq!(loaded.turns.len(), HARNESS_SESSION_MAX_TURNS);
+        assert_eq!(loaded.tree.len(), HARNESS_SESSION_MAX_TURNS);
         // Oldest turns are the ones dropped, not the newest.
-        assert_eq!(loaded.first().unwrap().0, "task 3");
+        assert_eq!(loaded.turns.first().unwrap().0, "task 3");
+        assert_eq!(loaded.tree.first().unwrap().label, "task: task 3");
         assert_eq!(
-            loaded.last().unwrap().0,
-            format!("task {}", turns.len() - 1)
+            loaded.turns.last().unwrap().0,
+            format!("task {}", HARNESS_SESSION_MAX_TURNS + 2)
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -910,5 +1127,96 @@ mod tests {
         let error = load_session(&tool, "broken").unwrap_err();
         assert!(error.contains("corrupt"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_pre_ctx_bare_array_session_upgrades_to_a_tree_on_load() {
+        let root = fixture("session-upgrade");
+        let tool = FileTool::new(root.to_str().expect("utf-8 root")).expect("root exists");
+        let bare = serde_json::to_string(&vec![("old task".to_owned(), "old answer".to_owned())])
+            .expect("serialize bare array");
+        tool.write(&format!("{HARNESS_SESSION_DIR}/legacy.json"), &bare)
+            .expect("write legacy session");
+
+        let loaded = load_session(&tool, "legacy")
+            .expect("load")
+            .expect("session exists");
+        assert_eq!(
+            loaded.turns,
+            vec![("old task".to_owned(), "old answer".to_owned())]
+        );
+        assert!(
+            loaded.tree.is_empty(),
+            "upgrade happens at use, not at load"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_tree_round_trips_through_render_and_parse_preserving_order_and_annotations() {
+        let tree = vec![
+            TreeNode {
+                id: "a".to_owned(),
+                label: "first subgoal".to_owned(),
+                evidence: Some("test-x".to_owned()),
+                failure: None,
+                children: vec![TreeNode {
+                    id: "a-1".to_owned(),
+                    label: "a detail".to_owned(),
+                    evidence: None,
+                    failure: Some("timeout".to_owned()),
+                    children: Vec::new(),
+                }],
+            },
+            TreeNode {
+                id: "b".to_owned(),
+                label: "second subgoal".to_owned(),
+                evidence: None,
+                failure: None,
+                children: Vec::new(),
+            },
+        ];
+
+        let rendered = render_tree(&tree);
+        let parsed = parse_tree(&rendered).expect("parse own output");
+        assert_eq!(
+            parsed, tree,
+            "round trip must preserve order and annotations"
+        );
+
+        // Mutate one node and confirm the mutation alone survives a second round trip.
+        let mut mutated = parsed;
+        mutated[0].children[0].failure = None;
+        mutated[0].children[0].evidence = Some("retried-ok".to_owned());
+        let rendered_again = render_tree(&mutated);
+        let parsed_again = parse_tree(&rendered_again).expect("parse mutated output");
+        assert_eq!(parsed_again, mutated);
+        assert_eq!(parsed_again[1].id, "b", "sibling order preserved");
+    }
+
+    #[test]
+    fn parse_tree_rejects_odd_indentation_and_orphaned_children() {
+        let error = parse_tree(" - {a} bad indent").unwrap_err();
+        assert!(error.contains("odd indentation"), "{error}");
+
+        let error = parse_tree("  - {a} orphaned child").unwrap_err();
+        assert!(error.contains("no parent line above it"), "{error}");
+    }
+
+    #[test]
+    fn composed_prompt_carries_the_trees_markdown_verbatim_to_the_wire_seam() {
+        // {WIRE} regression guard: CTX/PALACE/LOOP must still hand the backend
+        // codec one plain string containing the tree's own Markdown, never a
+        // reformatted summary -- this is what makes both `harness_wire` and
+        // `harness_opencode` stay dumb transports.
+        let tree = tree_from_turns(&[("earlier task".to_owned(), "earlier answer".to_owned())]);
+        let expected_markdown = render_tree(&tree);
+        let composed = compose_resumed_task(&tree, "new task");
+
+        assert!(
+            composed.contains(&expected_markdown),
+            "composed prompt must contain the tree's rendered Markdown verbatim: {composed}"
+        );
+        assert!(composed.contains("- {turn-0}"), "{composed}");
     }
 }
