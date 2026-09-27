@@ -110,6 +110,13 @@ jobs:
         run: cargo build --locked --workspace --all-targets --target "${{ matrix.triple }}"
 
       - name: Run each suite, capturing every result before failing the job
+        # These are Cargo integration/unit tests, not standalone binaries --
+        # their real names on disk are hashed (target/<triple>/debug/deps/
+        # minicon_core-<hash>). Let `cargo test` locate and run each one
+        # itself rather than guessing a path; a guessed path that never
+        # matches silently skips the suite and reports a false pass (found
+        # 2026-09-27: run 36312887935 "succeeded" without executing a single
+        # test, for exactly this reason).
         shell: bash
         env:
           LOG_DIR: probe-logs
@@ -117,30 +124,15 @@ jobs:
           set -eu
           mkdir -p "$LOG_DIR"
           triple='${{ matrix.triple }}'
-          debug_dir="target/$triple/debug"
-          product="$debug_dir/minicon"
-          [ -f "$product.exe" ] && product="$product.exe"
-          if [ -f "$product" ]; then
-            if command -v cygpath >/dev/null; then
-              MINICON_TEST_BINARY="$(cygpath -w "$PWD/$product")"
-            else
-              MINICON_TEST_BINARY="$PWD/$product"
-            fi
-            export MINICON_TEST_BINARY
-            echo "product binary: $MINICON_TEST_BINARY"
-          fi
           failed=""
-          for exe in "$debug_dir"/minicon_blackbox "$debug_dir"/minicon_control \
-                     "$debug_dir"/minicon_core "$debug_dir"/minicon_throughput; do
-            [ -f "$exe" ] || exe="$exe.exe"
-            [ -f "$exe" ] || continue
-            case "$exe" in
-              *minicon_throughput*) extra="--include-ignored --nocapture" ;;
-              *) extra= ;;
-            esac
-            echo "== $exe $extra ${{ inputs.test_filter }}"
-            if "$exe" --test-threads 2 $extra ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/$(basename "$exe").log"; then :; else failed="$failed $exe"; fi
+          echo "== minicon-core (lib unit tests) ${{ inputs.test_filter }}"
+          if cargo test --locked --target "$triple" -p minicon-core -- --test-threads 2 ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_core.log"; then :; else failed="$failed minicon-core"; fi
+          for suite in minicon_blackbox minicon_control; do
+            echo "== $suite ${{ inputs.test_filter }}"
+            if cargo test --locked --target "$triple" --test "$suite" -- --test-threads 2 ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/$suite.log"; then :; else failed="$failed $suite"; fi
           done
+          echo "== minicon_throughput --include-ignored --nocapture ${{ inputs.test_filter }}"
+          if cargo test --locked --target "$triple" --test minicon_throughput -- --test-threads 2 --include-ignored --nocapture ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_throughput.log"; then :; else failed="$failed minicon_throughput"; fi
           if [ -n "$failed" ]; then
             echo "CROSSCHECK failed suites:$failed" | tee -a "$LOG_DIR/summary.log"
             exit 1
