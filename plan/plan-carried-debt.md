@@ -382,4 +382,69 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      binaries in the tree) and is not reachable after this session ends;
 │      whoever picks this up next should expect to rebuild it, which per this
 │      note takes about 2 build cells x 1 minute each, disk permitting.
+│      **Reframed and closed 2026-09-27 (owner correction: this thread had
+│      conflated release-permission gaps with the actual, unrelated need):**
+│      owner clarified the real ask is durable and narrower than anything
+│      above -- a way for an agent like this one to develop cross-arch
+│      software and test it, using GitHub Actions (already proven reachable)
+│      without needing release/tag/GHCR-publish permissions at all, since
+│      testing was never supposed to require them.
+│      **Permission walls disambiguated (three distinct things, previously
+│      conflated in this thread's own framing):**
+│        (a) `workflow_dispatch` on an existing workflow, and reading/
+│            downloading existing release assets -- never blocked, proven
+│            repeatedly (runs `36300379788`, `36300888939`, and this leaf's
+│            own `36312887935`/`36313213803` below).
+│        (b) creating a release, uploading to one, or pushing a new tag --
+│            blocked by a Claude-Code client-side `[Auto-Mode Bypass]`
+│            classifier, a session-type policy, not a GitHub permission.
+│        (c) direct `ghcr.io` push using this sandbox's own token via `oras` --
+│            a genuine GitHub-side 401 (token lacks `packages:write`),
+│            confirmed distinct from (b) (network reachability to `ghcr.io`
+│            itself is fine; the challenge is a normal unauthenticated 401,
+│            not a proxy/network block).
+│      None of the three actually gate cross-arch *testing* -- only
+│      cross-arch *publishing*, which this need never required.
+│      **New mechanism added: `.github/workflows/dev-loop-crosscheck.yml`**
+│      (commit `38ddba2`). Mirrors `six-grid-cloud-build.yml`'s already-
+│      working "compile natively on the cell that will run it" pattern,
+│      minus that workflow's GHCR publish and receipt/identity bookkeeping
+│      (release-evidence state this leaf must not touch). Only
+│      `permissions: contents: read`; no GHCR token, no release, no new tag,
+│      no local cross-compile or transfer step -- push a fix to `main`,
+│      dispatch this, each requested cell (default the four non-macOS ones;
+│      `all`/`osx-*` opts in) builds and runs the real suites on its own
+│      runner and reports pass/fail plus logs. This is the durable answer to
+│      the owner's reframed ask, deliberately narrower than
+│      `six-grid-cloud-build.yml` and decoupled from release semantics.
+│      **First dispatch was a false pass (caught, not shipped as green):**
+│      run `36312887935` (`lnx-x86_64 lnx-aarch64`) reported `success` in
+│      ~107s, but its job logs showed the test-run step never executed a
+│      single test -- `minicon_core`/`minicon_blackbox`/`minicon_control`/
+│      `minicon_throughput` are Cargo integration/unit tests, not standalone
+│      binaries at `target/<triple>/debug/<name>`; their real binaries are
+│      hashed under `target/<triple>/debug/deps/`, so every
+│      `[ -f "$exe" ] || continue` guard skipped silently and an empty
+│      `failed=""` made the job "pass" having run nothing. #risk this is
+│      exactly the class of false-green this leaf's earlier
+│      failure-evidence-capture work exists to prevent, and it slipped
+│      through because that step never fires on a job that never fails.
+│      Fixed (commit `da29abf`): use `cargo test --target <triple> --test
+│      <name>` (and `-p minicon-core` for the crate's own unit tests) so
+│      Cargo locates each real binary itself instead of a guessed path.
+│      **Re-run closes the loop for real, 2026-09-27:** run `36313213803`
+│      (same two cells, commit `da29abf`) -- both jobs green in ~3 minutes
+│      each, and this time the logs prove real execution: `minicon-core`
+│      95/95, `minicon_blackbox` 28/28 (including
+│      `nonexistent_program_via_dash_e_exits_cleanly_instead_of_hanging`),
+│      `minicon_control` 14/14 (including the process-group regression test
+│      `killing_a_process_group_also_kills_what_it_forked` added by the
+│      earlier subagent fix in commit `2e789c4`), `minicon_throughput` 1/1,
+│      on both `ubuntu-24.04` and `ubuntu-24.04-arm`, no hang, no
+│      `cancelled`. #decision this closes the cross-arch dev-test loop this
+│      whole leaf was chasing: the process-group-teardown hang fix is now
+│      validated on real hosted runners (not just locally), and
+│      `dev-loop-crosscheck.yml` is the standing, credential-free mechanism
+│      for the next bug of this shape -- push to `main`, dispatch, read logs,
+│      no release/GHCR permission ever required.
 ```
