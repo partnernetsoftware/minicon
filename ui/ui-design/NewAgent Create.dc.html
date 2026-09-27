@@ -35,7 +35,15 @@
       <!-- 顶部图标行：New Tab 图标旁并列一个 New Agent 图标，同级并列，非菜单 -->
       <div style="height:56px;flex-shrink:0;display:flex;align-items:center;padding:0 16px;gap:10px">
         <div class="mono" title="New Tab" style="font-size:18px;color:#F5F5F5;cursor:pointer">⌐</div>
-        <div title="New Agent" style="width:20px;height:20px;border:1px solid #F5F5F5;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;color:#F5F5F5;cursor:pointer;background:#141414">&#129302;</div>
+        <!-- New Agent 图标：与 New Root(⌐ 托盘+加号)/Settings(三滑轨) 同一套几何矢量语言——
+             三个实心方块节点 + 直角连接线，读作"多步 agent 拓扑"，非表情符号、非圆角、单色 -->
+        <div title="New Agent" style="width:20px;height:20px;position:relative;cursor:pointer">
+          <div style="position:absolute;left:2px;top:2px;width:4px;height:4px;background:#F5F5F5"></div>
+          <div style="position:absolute;right:2px;top:2px;width:4px;height:4px;background:#F5F5F5"></div>
+          <div style="position:absolute;left:8px;bottom:2px;width:4px;height:4px;background:#F5F5F5"></div>
+          <div style="position:absolute;left:6px;top:4px;width:8px;height:1px;background:#F5F5F5"></div>
+          <div style="position:absolute;left:9px;top:4px;width:1px;height:11px;background:#F5F5F5"></div>
+        </div>
         <div style="flex-grow:1"></div>
         <div style="font-size:16px;color:#F5F5F5;cursor:pointer">▤</div>
       </div>
