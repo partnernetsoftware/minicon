@@ -745,17 +745,19 @@ six-cell claim.
   read worse on inspection: `aws-lc-rs` is larger than `ring`, not smaller;
   Unix `native-tls` trades static bytes for a runtime `libssl.so` dependency,
   which conflicts with the single-static-executable invariant and needs an
-  owner call. The MiniCon-side lever that needs no cross-repo change and no
-  owner call: `network-http` has exactly one caller in this repo
-  (`harness_wire.rs`'s `NetworkHttp::post_json`, DeepSeek chat only) and is
-  enabled unconditionally at the workspace level, so every cell's GUI binary
-  pays this 1.6 MB whether or not `harness` is ever invoked. Gating it behind
-  a MiniCon-owned, default-on (so today's shipped behavior does not change)
-  Cargo feature would let a future lean/no-network build variant drop it
-  without touching `agenterm-platform` at all. Not yet done — recorded here
-  as the confirmed diagnosis and the next actionable step, since actually
-  introducing a new build variant is a scope decision under this file's
-  "Product boundary" section, not a size-measurement task.
+  owner call. A MiniCon-side "lean/no-network build variant" gating
+  `network-http` behind a default-on feature was floated here and then
+  retracted by the owner the same day: `harness_wire.rs`'s
+  `NetworkHttp::post_json` (DeepSeek chat) is not incidental load, it is
+  `harness` calling out to a model provider's HTTPS API, which is the whole
+  point of `harness` as a default 0.2.x capability
+  ([31](PRD_02_31_v0_2_horizon.md)) -- a build without it is a build without
+  `harness`, not a leaner build of the same product. There is no variant
+  where `harness` ships and this 1.6 MB does not. **Conclusion: this is not
+  overhead to remove, it is the measured, confirmed cost of the capability
+  the product ships.** No MiniCon-side or `agenterm-platform`-side action
+  follows from this item; it stays `[v]` as a closed measurement, not as an
+  open lever.
 
 ### Linux size attribution (LTO cells, 2026-08-29)
 
