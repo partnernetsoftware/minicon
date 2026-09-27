@@ -133,6 +133,14 @@ jobs:
           done
           echo "== minicon_throughput --include-ignored --nocapture ${{ inputs.test_filter }}"
           if cargo test --locked --target "$triple" --test minicon_throughput -- --test-threads 2 --include-ignored --nocapture ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_throughput.log"; then :; else failed="$failed minicon_throughput"; fi
+          case "${{ matrix.cell }}" in
+            win-*)
+              # This suite is `#![cfg(windows)]` -- the pre-ConPTY console-agent
+              # backend, only reachable on Windows.
+              echo "== minicon_console_agent ${{ inputs.test_filter }}"
+              if cargo test --locked --target "$triple" --test minicon_console_agent -- --test-threads 1 ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_console_agent.log"; then :; else failed="$failed minicon_console_agent"; fi
+              ;;
+          esac
           if [ -n "$failed" ]; then
             echo "CROSSCHECK failed suites:$failed" | tee -a "$LOG_DIR/summary.log"
             exit 1
