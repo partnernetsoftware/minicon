@@ -227,7 +227,14 @@ def cleanup_routine(cleaner: Cleaner) -> None:
         cleaner.remove(pycache, "regenerable Python bytecode")
     target = cleaner.repo / "target"
     marker = target / ".minicon-build-active"
-    ttl = env_int("MINICON_TARGET_TTL_HOURS", 336, 1) * 3600
+    # Mirrors cleanup_build_snapshots'/cleanup_cloud_runtime's disk_pressure
+    # gate: a plain `cargo build` target is exactly as reclaimable as a
+    # six-cell snapshot once nothing has touched it in an hour, and under
+    # pressure that hour matters more than the generous 14-day idle default.
+    # newest_mtime is the root's own mtime, which cargo keeps bumping while a
+    # build is live, so this is "idle for", not "created before".
+    default_ttl = 1 if cleaner.disk_pressure else 336
+    ttl = env_int("MINICON_TARGET_TTL_HOURS", default_ttl, 1) * 3600
     if target.is_dir() and not marker.exists():
         age = cleaner.now - newest_mtime(target)
         if age >= ttl:

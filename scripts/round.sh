@@ -27,6 +27,14 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Opportunistic, not event-driven: reclaims a `target/` idle for an hour
+# under disk pressure (cleanup-build-state.py's own gate), or leaves a live
+# one alone. A round that starts while disk is already tight is exactly the
+# round most likely to need the space this frees.
+if command -v python3 >/dev/null 2>&1; then
+  python3 scripts/cleanup-build-state.py --apply --scope routine || true
+fi
+
 ALL_CELLS="osx-aarch64 osx-x86_64 lnx-x86_64 lnx-aarch64 win-x86_64 win-aarch64"
 CELLS="${*:-$ALL_CELLS}"
 # minicon_core is host-neutral and safe to run bare on any cell. The binary's
