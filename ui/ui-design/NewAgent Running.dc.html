@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>运行态 v2 — 基于真实minicon布局</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  body{margin:0;font-family:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;background:#000;color:#F5F5F5}
+  .lbl{font-size:11px;letter-spacing:.04em;color:#C0C0C0;text-transform:uppercase}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</helmet>
+
+<div style="width:1440px;height:900px;box-sizing:border-box;background:#000;display:flex;flex-direction:column;border:1px solid #303030">
+
+  <div style="height:30px;flex-shrink:0;background:#1c1c1c;border-bottom:1px solid #303030;display:flex;align-items:center;padding:0 12px;position:relative">
+    <div style="display:flex;gap:7px">
+      <div style="width:11px;height:11px;border-radius:50%;background:#ff5f57"></div>
+      <div style="width:11px;height:11px;border-radius:50%;background:#febc2e"></div>
+      <div style="width:11px;height:11px;border-radius:50%;background:#28c840"></div>
+    </div>
+    <div style="position:absolute;left:0;right:0;text-align:center;font-size:12.5px;color:#d0d0d0">deploy-review — MiniCon 0.2.3</div>
+  </div>
+
+  <div style="flex-grow:1;display:flex;min-height:0">
+
+    <!-- Sidebar：运行中的 agent 就是普通一行，无新概念 -->
+    <div style="width:266px;flex-shrink:0;background:#080808;display:flex;flex-direction:column;border-right:1px solid #484848">
+      <div style="height:56px;flex-shrink:0;display:flex;align-items:center;padding:0 16px;gap:10px">
+        <div style="font-size:18px;color:#F5F5F5">⌐</div>
+        <div title="New Agent" style="width:20px;height:20px;border:1px solid #F5F5F5;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;color:#F5F5F5;background:#141414">&#129302;</div>
+        <div style="flex-grow:1"></div>
+        <div style="font-size:16px;color:#F5F5F5">▤</div>
+      </div>
+
+      <div style="padding:10px 16px;font-size:13px;color:#C0C0C0;display:flex;align-items:center;gap:10px">
+        <span style="opacity:.7">@1</span><span>zsh</span>
+      </div>
+      <div style="padding:10px 16px;font-size:13px;color:#C0C0C0;display:flex;align-items:center;gap:10px">
+        <span style="opacity:.7">@2</span><span>zsh</span>
+      </div>
+
+      <!-- 运行中的 agent 行：3px accent 竖条 + 呼吸小圆点 -->
+      <div style="position:relative;padding:10px 16px 10px 13px;background:#141414;border-left:3px solid #F5F5F5;display:flex;align-items:center;gap:10px">
+        <span style="width:6px;height:6px;background:#F5F5F5;animation:blink 1.4s infinite"></span>
+        <span style="opacity:.7;font-size:13px;color:#F5F5F5">@4</span>
+        <span style="font-size:13px;color:#F5F5F5;font-weight:600">deploy-review</span>
+      </div>
+
+      <div style="padding:10px 16px;font-size:13px;color:#C0C0C0;display:flex;align-items:center;gap:10px">
+        <span style="opacity:.7">@5</span><span>zsh</span>
+      </div>
+      <div style="flex-grow:1"></div>
+    </div>
+
+    <!-- 主区：状态细条 + 拓扑(运行态着色) + 右侧日志/裁决 -->
+    <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
+
+      <!-- 状态细条，复用 composer bar 位置，含暂停/裁决按钮 -->
+      <div style="height:34px;flex-shrink:0;background:#141414;border-bottom:1px solid #484848;display:flex;align-items:center;padding:0 16px;gap:14px">
+        <span style="width:6px;height:6px;background:#F5F5F5;animation:blink 1.4s infinite"></span>
+        <span class="lbl" style="color:#F5F5F5">AGENT · DEPLOY-REVIEW · STEP 2/3</span>
+        <div style="flex-grow:1"></div>
+        <span style="border:1px solid #484848;font-size:11px;color:#C0C0C0;padding:3px 10px;cursor:pointer">⏸ PAUSE</span>
+        <span style="border:1px solid #F5F5F5;font-size:11px;color:#F5F5F5;padding:3px 10px;cursor:pointer">✋ DECIDE</span>
+      </div>
+
+      <div style="flex-grow:1;display:flex;min-height:0">
+
+        <!-- 拓扑画布：运行态着色 -->
+        <div style="flex-grow:1;display:flex;flex-direction:column;min-width:0">
+          <div style="height:28px;flex-shrink:0;border-bottom:1px solid #303030;display:flex;align-items:center;padding:0 16px">
+            <span class="lbl">Progress · 00:42</span>
+          </div>
+          <div style="flex-grow:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+
+            <div style="width:220px;border:1px solid #303030;padding:10px 14px;display:flex;align-items:center;gap:8px;opacity:.5">
+              <div style="width:16px;text-align:center;font-size:11px;color:#808080">✓</div>
+              <div style="font-size:12px;color:#808080;text-decoration:line-through">minicon · deepseek</div>
+            </div>
+            <div style="width:1px;height:24px;background:#303030"></div>
+
+            <div style="width:240px;border:2px solid #F5F5F5;padding:11px 16px;display:flex;align-items:center;gap:10px;background:#141414;animation:blink 2s infinite">
+              <div style="width:16px;text-align:center;font-size:12px;color:#F5F5F5">◐</div>
+              <div>
+                <div style="font-size:12.5px;color:#F5F5F5;font-weight:700">codex-cli · openrouter</div>
+                <div style="font-size:10px;color:#C0C0C0">draft: generating plan v2…</div>
+              </div>
+            </div>
+            <div style="width:1px;height:24px;background:repeating-linear-gradient(#484848 0 4px,transparent 4px 8px)"></div>
+
+            <div style="width:210px;border:1px dashed #484848;padding:10px 14px;display:flex;align-items:center;gap:8px;opacity:.6">
+              <div style="width:16px;text-align:center;font-size:11px;color:#808080">3</div>
+              <div style="font-size:12px;color:#808080">minicon · opencode-go — waiting</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：日志 + 裁决 -->
+        <div style="width:340px;flex-shrink:0;border-left:1px solid #484848;display:flex;flex-direction:column">
+          <div style="padding:14px;border-bottom:1px solid #303030">
+            <div class="lbl" style="margin-bottom:8px">Step 2 · Log</div>
+            <div style="border:1px solid #303030;padding:10px;font-size:11px;line-height:1.8;color:#808080">
+              <div>[12:04:21] categorize → codex-cli</div>
+              <div>[12:04:22] draft: plan v1 rejected</div>
+              <div style="color:#F5F5F5">[12:04:24] draft: plan v2 generating...</div>
+            </div>
+          </div>
+
+          <div style="padding:14px">
+            <div class="lbl" style="margin-bottom:8px;color:#FF5C5C">Awaiting Decision</div>
+            <div style="border:1px solid #484848;padding:10px">
+              <div style="font-size:11.5px;color:#C0C0C0;line-height:1.6;margin-bottom:10px">decide-pick 未能自动收敛，两个候选相似度过高，需要人工选择：</div>
+              <div style="border:1px solid #303030;padding:7px 9px;font-size:11px;color:#C0C0C0;margin-bottom:5px">方案 A：修改 3 个文件</div>
+              <div style="border:1px solid #F5F5F5;padding:7px 9px;font-size:11px;color:#F5F5F5;background:#1a1a1a;margin-bottom:10px">方案 B：修改 1 个文件 + 新增测试</div>
+              <div style="background:#2a2a2a;color:#F5F5F5;font-size:11.5px;padding:9px;text-align:center">ADOPT B &amp; CONTINUE</div>
+            </div>
+          </div>
+
+          <div style="margin-top:auto;border-top:1px solid #303030;display:flex">
+            <div style="flex-grow:1;padding:12px;text-align:center;font-size:11.5px;color:#C0C0C0;border-right:1px solid #303030">TERMINATE</div>
+            <div style="flex-grow:1;padding:12px;text-align:center;font-size:11.5px;color:#C0C0C0">SAVE AS TEMPLATE</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 状态栏 -->
+      <div style="height:22px;flex-shrink:0;background:#141414;border-top:1px solid #303030;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:11px;color:#808080">
+        <span>deploy-review · step 2/3 · running</span>
+        <span>L009:C021</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

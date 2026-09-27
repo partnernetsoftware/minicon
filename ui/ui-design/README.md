@@ -1,5 +1,7 @@
 # minicon UI 设计稿
 
+`NewAgent Create.dc.html` / `NewAgent Running.dc.html` — NewAgent 功能的创建态/运行态设计稿，基于真实布局（sidebar 会话树、composer 底栏、settings 面板同款视觉）绘制，非独立弹窗。顶部图标行为 New Tab（`⌐`）旁并列一个 New Agent 图标（机器人 emoji，同级并列、常驻可见，不用长按/右键菜单）。对应产品设计见 `plan/plan-newagent-config.md`。
+
 `Terminal Styles.dc.html` — 用浏览器打开即可，画布可平移缩放。四轮内容自上而下：
 
 - **Turn 4 工具条归位** — 头部 7 个工具减到 2 个（新建 + 设置），其余进设置面板；4a/4b/4c 三种放置方案与设置面板内容。
