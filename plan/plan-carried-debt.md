@@ -480,11 +480,37 @@ doc when it is picked up; delete its line here once it ships or is decided
        keypress, plausibly reaches cmd.exe's Ctrl handler (which just marks
        "interrupted" and does not exit -- correct, keeps the shell alive)
        but never aborts its pending line read, so the half-typed buffer
-       survives untouched. #assumption not yet verified against
-       `agenterm-platform`'s actual source (only a stale local checkout at a
-       different commit than the pinned rev was available); needs either
-       adding that repo to this session's scope to inspect/patch the real
-       pinned revision, or an owner-side fix in `agenterm`. BLOCKED on
-       agenterm-platform access/owner decision for the fix itself; the
-       repro and regression test are done and merged here.
+       survives untouched.
+       @status [v] fixed and confirmed on real `win-x86_64` hardware, three
+       attempts against the actual pinned `agenterm-platform` source
+       (`crates/agenterm-platform/src/adapters/windows/console_agent.rs`,
+       repo `partnernetsoftware/agenterm`, branch `feat/network-http-capability`):
+       1. `49669c1f` -- one synthetic key record, `wVirtualKeyCode =
+          VK_CANCEL`, before the signal. **Failed** on run `36318959185`:
+          `WriteConsoleInputW` never gets conhost's special hardware-Ctrl+C
+          handling, so the record was just literal input -- echoed as a
+          literal `^C` glued into the pending line
+          (`this_is_not_a_real_command_zzz^Cecho IDLE_CTRL_C_OK`).
+       2. `87c6ef35` -- tried the real `VK_CONTROL`+`'C'` key-down/up pair a
+          physical keyboard reports, reasoning conhost's detection keyed off
+          that specific virtual-key pair rather than the character value.
+          **Failed identically** on run `36319273414` -- same literal `^C`,
+          confirming the pair-vs-character distinction was never the
+          mechanism: `WriteConsoleInputW` simply never receives that
+          hardware-level special case at all, whatever virtual key is used.
+       3. `29003fc8` -- abandoned trying to synthesize the interrupt
+          keystroke itself. Tracks how many keys this agent has forwarded
+          since the last Enter (`PENDING_LINE_KEYS`) and, on Ctrl+C/Break,
+          erases exactly that many with real Backspace key records (which
+          *do* get normal cooked-mode line-editing treatment) before still
+          raising `GenerateConsoleCtrlEvent` for a child not reading cooked
+          line input at all. **Passed** on run `36319622164`: both
+          `ctrl_c_interrupts_a_running_child_instead_of_being_typed` and
+          `ctrl_c_interrupts_an_idle_prompt_instead_of_being_swallowed ...
+          ok`. #decision Backspace-erasure, not signal/keystroke
+          synthesis, is the mechanism that actually resets a shell's
+          pending cooked-mode line from outside the console's own input
+          pipeline.
+       Pinned in this repo's `Cargo.toml`/`Cargo.lock` at `29003fc8`
+       (commit `f48aa39`).
 ```
