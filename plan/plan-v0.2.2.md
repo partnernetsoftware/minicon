@@ -122,6 +122,25 @@ them in without confirmation:
 
 - workflow gh-download/verify/extract duplication across release-related
   `.yml` files — candidate for a composite action.
+  **Scoped 2026-09-27, not resolved:** surveyed all five sites
+  (`release-smoke-test.yml`'s three OS jobs, `release.yml`'s
+  `post-publish-posix`/`post-publish-windows`, `candidate.yml`'s
+  packaged-binary verify step, `local-artifact-probe.yml`'s test-bundle
+  download). The duplication is only superficial: `release-smoke-test.yml`/
+  `local-artifact-probe.yml` verify against a downloaded `.sha256` sidecar
+  asset, while `release.yml`/`candidate.yml` verify against a digest already
+  embedded in `candidate-manifest.json`/`release-policy.json` — different
+  trust sources, not interchangeable checks. The extract step also differs
+  by OS in ways that aren't just style (bash tar/PowerShell `Expand-Archive`/
+  macOS `hdiutil attach` + `codesign --verify` + `spctl`, no extraction at
+  all on macOS). Unifying all five as one composite action would need
+  OS/trust-source-conditional internals — more indirection than the lines it
+  saves, and risk to security-relevant steps during "mechanical" relocation.
+  If picked up again, narrow it first: only the sidecar-checksum pattern
+  (`release-smoke-test.yml`'s three jobs, and `local-artifact-probe.yml` if
+  it ever adds checksum verification) shares one real trust model and is a
+  genuine composite-action candidate; leave the manifest-based verification
+  in `release.yml`/`candidate.yml` separate.
 - `src/main.rs` size (4564 lines) — candidate for its own hardening leaf
   with a dedicated scoping pass, not a drive-by refactor inside 0.2.2.
 - `scripts/release.sh` vs. the `run-reputation-and-release` skill's top-level
