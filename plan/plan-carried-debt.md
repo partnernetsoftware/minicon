@@ -287,4 +287,54 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      not a probe-workflow artifact. This is a MiniCon test-harness/product
 │      finding, not a CI-pipeline-efficiency one; #decision left for the
 │      owner to decide whether/when to investigate, not actioned here.
+│      **Follow-up 2026-09-27 (root-caused and fixed in test code):** root
+│      cause found by reading the actual spawn/teardown code, not by theory.
+│      `minicon_control.rs`'s host-spawn sites left stdout/stderr unset on
+│      their `Command`s, which on Unix means the child inherits the parent's
+│      own fds -- in this CI shell loop, the write end of the `tee` pipe.
+│      MiniCon spawns an interactive PTY shell as a grandchild of its own host
+│      process; `OwnedGui::drop`/`ConSession::drop` only called `child.kill()`,
+│      which sends `SIGKILL` to exactly the one tracked PID and does not
+│      cascade to anything that PID forked. So a PTY-shell grandchild could
+│      outlive the intended teardown, still holding the inherited `tee` pipe
+│      fd open, and `tee` (and the shell loop's `for` reading its output)
+│      blocks forever waiting for EOF on that fd -- explaining both symptoms
+│      exactly: zero output (not even the next suite's own `echo` line, since
+│      the shell is blocked mid-pipeline) and the runner's orphan cleanup
+│      finding a leftover `minicon` plus a leftover `bash`. Fix (in test code,
+│      not the workflow): every host-spawn site in `tests/minicon_control.rs`
+│      now sets `.stdout(Stdio::piped()).stderr(Stdio::piped())` so the host
+│      never inherits the CI pipe fd, and every host is put in its own process
+│      group via `.process_group(0)` before spawning; `OwnedGui::drop` (same
+│      file) and `ConSession::drop` (`tests/minicon_blackbox.rs`) now kill that
+│      whole process group (`kill -KILL -- -<pid>`) before the existing
+│      single-PID `child.kill()`/`child.wait()`, so a leaked PTY grandchild is
+│      reliably reaped too. Added a new regression test,
+│      `killing_a_process_group_also_kills_what_it_forked` in
+│      `tests/minicon_control.rs`, that spawns a shell which forks a `sleep`
+│      grandchild and proves the grandchild survives a naive single-PID kill
+│      but dies when the whole group is killed; deliberately broke it (removed
+│      `.process_group(0)`) and watched it fail before restoring it, per this
+│      file's "every test must be provable" rule. Local proof: `cargo fmt` and
+│      `cargo clippy --all-targets -- -D warnings` clean, two full green
+│      `./scripts/build.sh test` runs (before and after adding the regression
+│      test, test count up 13->14 in `minicon_control`'s suite) under a
+│      self-started Xvfb, no hangs, no failures. #risk real-CI validation
+│      (a fresh cross-arch bundle dispatched at `local-artifact-probe.yml`
+│      scoped to `lnx-x86_64 lnx-aarch64`) was **not completed**: this sandbox
+│      ran out of disk mid-build (`df -h /` showed `757M` free after cleanup,
+│      not enough to cross-compile the `aarch64-unknown-linux-gnu` target
+│      alongside the already-built `x86_64-unknown-linux-gnu` one, and even
+│      copying the already-built x86_64 binaries to a scratch bundle directory
+│      failed with "No space left on device" partway through). `cargo-zigbuild`
+│      (this repo's usual cross-compiler for `lnx-*`, see `scripts/round.sh`)
+│      has no working `zig` underneath in this sandbox either; a native
+│      `aarch64-linux-gnu-gcc` linker was configured as a workaround but the
+│      disk ran out before that mattered. #decision fix is committed on the
+│      strength of local proof alone, exactly as this file's task instructions
+│      allow when real-CI validation is blocked by sandbox limits rather than
+│      by the fix itself; the owner should run a real `local-artifact-probe.yml`
+│      round (via `scripts/round.sh` from a machine with disk headroom, or a
+│      cloud agent with more local disk) against `lnx-x86_64`/`lnx-aarch64` to
+│      close this out with a real-CI green, not only a local one.
 ```

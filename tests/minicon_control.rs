@@ -16,9 +16,124 @@ struct OwnedGui {
 
 impl Drop for OwnedGui {
     fn drop(&mut self) {
+        // `Child::kill()` sends a single signal to exactly the PID this
+        // struct tracks -- the top-level `minicon` process. On Unix that does
+        // *not* cascade to anything `minicon` itself has forked (its PTY
+        // shell, or whatever that shell spawned). Every host spawn site sets
+        // `.process_group(0)` on its `Command` before spawning, precisely so
+        // teardown can kill that whole group, not just its leader: a leaked
+        // PTY child (observed directly as a leftover `bash` process alongside
+        // leftover `minicon` processes when a CI job hit its hard timeout;
+        // see plan/plan-carried-debt.md's G1 leaf, "Byproduct finding
+        // 2026-09-27") would otherwise keep running, holding whatever file
+        // descriptors it inherited (in CI, the pipe into `tee`) open
+        // indefinitely and hanging the very shell loop that is supposed to
+        // move on to the next test suite.
+        #[cfg(unix)]
+        kill_process_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = fs::remove_file(&self.screenshot);
+    }
+}
+
+/// Sends `SIGKILL` to the process group led by `pid`. A raw `kill(2)` syscall
+/// would need a new `libc` dependency this test crate does not otherwise
+/// carry, so this shells out to the `kill` utility instead -- present on
+/// every Unix CI image this suite runs on, and this is teardown, not a hot
+/// path. Best-effort: swallow any error, since the group may already be gone
+/// (the common case, when the host exited on its own).
+#[cfg(unix)]
+fn kill_process_group(pid: u32) {
+    let _ = Command::new("kill")
+        .args(["-KILL", "--", &format!("-{pid}")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Proves the mechanism `OwnedGui::drop` and `ConSession::drop` (in
+/// `minicon_blackbox.rs`) both depend on: putting a spawned process in its
+/// own group with `.process_group(0)` and then killing that group also kills
+/// whatever the process itself forked, not just the process the `Child`
+/// handle names. Without `.process_group(0)` the grandchild this test spawns
+/// (a background `sleep`, standing in for a leaked PTY shell) survives
+/// `kill_process_group`, since a plain `SIGKILL` to one PID never cascades to
+/// its children on Unix -- which is exactly the gap that let a real PTY
+/// shell outlive its `minicon` host and hold a CI pipe open indefinitely
+/// (plan/plan-carried-debt.md's G1 leaf, "Byproduct finding 2026-09-27").
+/// Break the fix by dropping `.process_group(0)` below (or by calling
+/// `child.kill()` alone, as the code used to) and this test fails: the
+/// grandchild is still alive after teardown.
+#[cfg(unix)]
+#[test]
+fn killing_a_process_group_also_kills_what_it_forked() {
+    use std::os::unix::process::CommandExt as _;
+
+    let marker = std::env::temp_dir().join(format!("minicon-pgroup-test-{}", unique_suffix()));
+    let marker_path = marker.to_str().expect("marker path is UTF-8").to_owned();
+    // The shell backgrounds a long sleep, writes its PID (the grandchild we
+    // actually care about) to the marker file, then blocks in `wait` so the
+    // shell itself -- the direct child -- stays alive until it is killed too.
+    let script = format!("sleep 60 & echo $! > {marker_path}; wait");
+    let mut command = Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg(&script)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0);
+    let mut child = command.spawn().expect("spawn the grandchild-forking shell");
+
+    let grandchild_pid: u32 = {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(text) = fs::read_to_string(&marker) {
+                let text = text.trim();
+                if let Ok(pid) = text.parse() {
+                    break pid;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the shell never published its grandchild's pid"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let _ = fs::remove_file(&marker);
+
+    // Confirm the grandchild is really running before teardown, or a false
+    // pass ("it's dead") could mean "it never started" instead of "we killed
+    // it."
+    assert!(
+        Command::new("kill")
+            .args(["-0", "--", &grandchild_pid.to_string()])
+            .status()
+            .expect("probe the grandchild with kill -0")
+            .success(),
+        "the grandchild sleep must be alive before teardown proves anything"
+    );
+
+    kill_process_group(child.id());
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let alive = Command::new("kill")
+            .args(["-0", "--", &grandchild_pid.to_string()])
+            .status()
+            .expect("probe the grandchild with kill -0")
+            .success();
+        if !alive {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "process-group teardown left the grandchild running (pid {grandchild_pid})"
+        );
+        thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -169,14 +284,21 @@ fn a_host_whose_program_cannot_be_spawned_dies_and_says_why() {
     let exe = exe.as_path();
     let suffix = unique_suffix();
     let endpoint = control_endpoint(&suffix);
-    let child = Command::new(exe)
+    let mut command = Command::new(exe);
+    command
         .arg("--no-activate")
         .arg("--control")
         .arg(&endpoint)
         .arg("-e")
         .arg("minicon-no-such-program-for-this-test")
-        .spawn()
-        .expect("spawn minicon with a bad program");
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.process_group(0);
+    }
+    let child = command.spawn().expect("spawn minicon with a bad program");
     let mut gui = OwnedGui {
         child,
         screenshot: std::env::temp_dir().join(format!("minicon-{suffix}.png")),
@@ -353,6 +475,11 @@ fn gui_control_surface_isolated_multitab_black_box() {
         agenterm_platform::ipc::native_runtime_directory().join(format!("shot-{suffix}.png"))
     };
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--control")
         .arg(&endpoint)
@@ -361,6 +488,8 @@ fn gui_control_surface_isolated_multitab_black_box() {
         host.arg(arg);
     }
     // Launch with an interactive shell; inject ROOT_READY after control is up.
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
@@ -1541,6 +1670,11 @@ fn host_process_rss_stays_within_named_budget() {
         agenterm_platform::ipc::native_runtime_directory().join(format!("rss-{suffix}.png"))
     };
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--cols")
         .arg("80")
@@ -1552,6 +1686,8 @@ fn host_process_rss_stays_within_named_budget() {
     for arg in host_shell_args() {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
@@ -1698,7 +1834,8 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
     let binary = minicon_binary();
     let endpoint = control_endpoint(&unique_suffix());
     let script = r"stty raw -echo; printf '\033[?2004hCOMPOSER_READY\r\n'; for n in 18 25; do dd bs=1 count=$n 2>/dev/null | od -An -tx1 | tr -d ' \n'; printf '\r\n'; done; sleep 10";
-    let child = Command::new(&binary)
+    let mut command = Command::new(&binary);
+    command
         .args([
             "--no-activate",
             "--control",
@@ -1708,8 +1845,14 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
             "-c",
             script,
         ])
-        .spawn()
-        .expect("raw PTY GUI");
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command.process_group(0);
+    }
+    let child = command.spawn().expect("raw PTY GUI");
     let mut gui = OwnedGui {
         child,
         screenshot: std::env::temp_dir().join(unique_suffix()),
@@ -1775,10 +1918,16 @@ fn composer_paste_of_a_clipboard_image_inserts_its_temp_file_path() {
 
     let binary = minicon_binary();
     let endpoint = control_endpoint(&unique_suffix());
-    let child = Command::new(&binary)
-        .args(["--no-activate", "--control", &endpoint, "-e", "/bin/cat"])
-        .spawn()
-        .expect("start minicon GUI");
+    let child = {
+        use std::os::unix::process::CommandExt as _;
+        Command::new(&binary)
+            .args(["--no-activate", "--control", &endpoint, "-e", "/bin/cat"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .expect("start minicon GUI")
+    };
     let mut gui = OwnedGui {
         child,
         screenshot: std::env::temp_dir().join(unique_suffix()),
@@ -1835,12 +1984,18 @@ fn composer_send_reaches_the_child_in_two_reads() {
                  \x20   chunk = os.read(0, 65536)\n\
                  \x20   sys.stdout.write('CHUNK%d %s\\r\\n' % (n, chunk.hex())); sys.stdout.flush()\n\
                  time.sleep(10)\n";
-    let child = Command::new(&binary)
-        .args(["--no-activate", "--control", &endpoint, "-e"])
-        .arg(&python)
-        .args(["-c", probe])
-        .spawn()
-        .expect("read probe GUI");
+    let child = {
+        use std::os::unix::process::CommandExt as _;
+        Command::new(&binary)
+            .args(["--no-activate", "--control", &endpoint, "-e"])
+            .arg(&python)
+            .args(["-c", probe])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .expect("read probe GUI")
+    };
     let mut gui = OwnedGui {
         child,
         screenshot: std::env::temp_dir().join(unique_suffix()),
@@ -1940,6 +2095,11 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     };
 
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--control")
         .arg(&endpoint)
@@ -1948,6 +2108,8 @@ fn a_new_tab_that_cannot_start_is_a_notice_not_an_exit() {
     for arg in &shell_args {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
@@ -2158,6 +2320,11 @@ fn a_headless_start_runs_a_session_and_can_grow_a_window_later() {
         agenterm_platform::ipc::native_runtime_directory().join(format!("headless-{suffix}.png"))
     };
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--headless")
         .arg("--no-activate")
         .arg("--cols")
@@ -2170,6 +2337,8 @@ fn a_headless_start_runs_a_session_and_can_grow_a_window_later() {
     for arg in host_shell_args() {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon must start headless");
     let mut gui = OwnedGui { child, screenshot };
     let listed = wait_until_ready_for(
@@ -2246,6 +2415,11 @@ fn detaching_the_gui_keeps_the_process_and_its_sessions() {
         agenterm_platform::ipc::native_runtime_directory().join(format!("detach-{suffix}.png"))
     };
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--cols")
         .arg("80")
@@ -2257,6 +2431,8 @@ fn detaching_the_gui_keeps_the_process_and_its_sessions() {
     for arg in host_shell_args() {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
     let listed = wait_until_ready_for(
@@ -2358,6 +2534,11 @@ fn collapsing_the_sidebar_widens_the_terminal_and_expanding_restores_it_exactly(
         agenterm_platform::ipc::native_runtime_directory().join(format!("rail-{suffix}.png"))
     };
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--cols")
         .arg("80")
@@ -2369,6 +2550,8 @@ fn collapsing_the_sidebar_widens_the_terminal_and_expanding_restores_it_exactly(
     for arg in host_shell_args() {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
     let _ = wait_until_ready_for(
@@ -2431,6 +2614,11 @@ fn the_control_endpoint_answers_a_client_that_races_the_window() {
     let suffix = unique_suffix();
     let endpoint = control_endpoint(&suffix);
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--control")
         .arg(&endpoint)
@@ -2438,6 +2626,8 @@ fn the_control_endpoint_answers_a_client_that_races_the_window() {
     for arg in host_shell_args() {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui {
         child,
@@ -2482,6 +2672,11 @@ fn a_taken_endpoint_fails_at_startup_instead_of_opening_a_window() {
     let suffix = unique_suffix();
     let endpoint = control_endpoint(&suffix);
     let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
     host.arg("--no-activate")
         .arg("--control")
         .arg(&endpoint)
@@ -2489,6 +2684,8 @@ fn a_taken_endpoint_fails_at_startup_instead_of_opening_a_window() {
     for arg in host_shell_args() {
         host.arg(arg);
     }
+    host.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui {
         child,

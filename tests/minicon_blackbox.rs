@@ -776,6 +776,19 @@ impl ConSession {
         }
         command.arg("--emit-snapshot").arg(&snapshot_path);
         command.arg("--control").arg(&endpoint);
+        // Put the host in its own process group so teardown (see
+        // `ConSession::drop`) can kill everything it forked (its PTY shell,
+        // and whatever that shell spawned), not just the single PID this
+        // struct tracks. `Child::kill()` alone only signals that one PID; on
+        // Unix that does not cascade to children, and a leaked descendant
+        // holding a CI pipe fd open is exactly what stalled the
+        // `local-artifact-probe.yml` shell loop indefinitely after
+        // `minicon_control` (see plan/plan-carried-debt.md's G1 leaf).
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt as _;
+            command.process_group(0);
+        }
         let child = command
             .args(&child_args)
             .stdout(Stdio::piped())
@@ -955,12 +968,29 @@ impl Drop for ConSession {
         // kill does not run this process's own Drop chain for its PTY child,
         // an accepted caveat — acceptable for a test
         // teardown, not for a real session.
+        #[cfg(unix)]
+        kill_process_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
         if let Some(driver) = self.driver.take() {
             let _ = driver.join();
         }
     }
+}
+
+/// Sends `SIGKILL` to the process group led by `pid`, cleaning up whatever
+/// the host itself forked (its PTY shell, and anything that shell spawned)
+/// and not just the single host PID `Child::kill()` targets. Shells out to
+/// the `kill` utility rather than adding a `libc` dependency to this test
+/// crate purely for teardown. Best-effort: the group is usually already gone
+/// by the time this runs.
+#[cfg(unix)]
+fn kill_process_group(pid: u32) {
+    let _ = Command::new("kill")
+        .args(["-KILL", "--", &format!("-{pid}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 #[test]
