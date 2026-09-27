@@ -27,7 +27,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 [[package]]
 name = "agenterm-platform"
 version = "0.1.19"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=cdb0ee67d#cdb0ee67db01b4a8f3cebb88edb472d9411ae898"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=49669c1f#49669c1f0706271e56a6472e56e25b61907012f1"
 dependencies = [
  "ab_glyph",
  "cc",
@@ -48,7 +48,7 @@ dependencies = [
 [[package]]
 name = "agenterm-ui-core"
 version = "0.1.19"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=cdb0ee67d#cdb0ee67db01b4a8f3cebb88edb472d9411ae898"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=49669c1f#49669c1f0706271e56a6472e56e25b61907012f1"
 dependencies = [
  "vt100",
 ]
@@ -1679,7 +1679,7 @@ dependencies = [
 [[package]]
 name = "softbuffer"
 version = "0.4.8"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=cdb0ee67d#cdb0ee67db01b4a8f3cebb88edb472d9411ae898"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=49669c1f#49669c1f0706271e56a6472e56e25b61907012f1"
 dependencies = [
  "as-raw-xcb-connection",
  "bytemuck",
@@ -1748,10 +1748,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1981,7 +1981,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/partnernetsoftware/agenterm?rev=cdb0ee67d#cdb0ee67db01b4a8f3cebb88edb472d9411ae898"
+source = "git+https://github.com/partnernetsoftware/agenterm?rev=49669c1f#49669c1f0706271e56a6472e56e25b61907012f1"
 dependencies = [
  "itoa",
  "unicode-width",
