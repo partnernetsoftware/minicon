@@ -21,18 +21,19 @@ start.
 ```text
 0.2.3: harness context engineering ({PALACE}, {LOOP}) + roll forward 0.2.2's
 structurally-blocked leaves
-├── {PALACE} mermaid memory palace                              [_] @host=none
+├── {PALACE} mermaid memory palace                              [v] @host=none
 │      invariant: one Mermaid flowchart per session, capturing shared
 │        prerequisites, exact-artifact flow and kill paths the tree cannot
 │        show well; node ids share the tree's `{id}` namespace
-│      evidence needed: a fixture test that a rendered flowchart's node ids
-│        match the tree's `{id}`-tagged nodes 1:1 (no orphan references
-│        either direction)
+│      closed 2026-09-27: see `plan-harness-context-engineering.md`'s
+│        `{PALACE}` leaf for full evidence -- `render_palace` in
+│        `src/harness.rs`, persisted into `SessionState.palace`, 3 new
+│        fixture tests, full harness unit suite (20/20) green
 │      dependency: ->CTX (closed, `{ROLLOUT}` in `85602f1`)
 │      non-goal: rendering the diagram as an image; text stays Mermaid
 │        source, same as this repo's own plan-writing convention
-│      #decision this is additive-only until there is more than one subgoal
-│        worth cross-referencing -- a palace with no jump target is
+│      #decision this shipped additive-only, as planned: it renders only the
+│        tree's own hierarchy for now -- a palace with no jump target is
 │        documentation, per the context-engineering plan's rollout order
 ├── {LOOP} micro-workflow state machine                         [_] @host=none
 │      invariant: every turn is exactly one of five states -- categorize,
@@ -158,7 +159,7 @@ structurally-blocked leaves
          (minicon-com -> signing -> candidate -> defender-ci-scan ->
          reputation -> release), not changing its shape
 
-0.2.3 close-out rule (mirrors plan-v0.2.1.md/plan-v0.2.2.md's own scope
+0.2.3 close-out rule (mirrors `plan-v0.2.1.md`'s and `plan-v0.2.2.md`'s own scope
 reasoning): if {HB} or {UI-C3} are still BLOCKED at 0.2.3's close (no
 capable host materialized), that is not a planning failure -- re-affirm
 BLOCKED, carry both forward to 0.2.4, and ship 0.2.3 on {PALACE} (+{LOOP} if

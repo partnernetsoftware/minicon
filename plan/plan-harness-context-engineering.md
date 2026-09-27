@@ -38,16 +38,32 @@ structured working-memory the turn loop can reason over
 │        <id>.json` file (HS, closed) rather than a new store
 │      non-goal: rendering the tree as anything but Markdown; no TUI tree
 │        widget
-├── {PALACE} mermaid memory palace                              [_] @host=none
+├── {PALACE} mermaid memory palace                              [v] @host=none
 │      invariant: one Mermaid flowchart per session, capturing what the tree
 │        can't — shared prerequisites between subgoals, which file a
 │        decision's evidence lives in, kill paths (a subgoal marked
 │        abandoned, not deleted, so the model doesn't re-attempt it blind)
-│      evidence needed: a fixture test that a rendered flowchart's node ids
-│        match the tree's `{id}`-tagged nodes 1:1 (no orphan references
-│        either direction)
+│      closed 2026-09-27: `render_palace` (src/harness.rs) renders one
+│        Mermaid node per `TreeNode` in the tree's own `{id}` namespace plus
+│        one edge per tree parent/child relationship; recomputed and
+│        persisted into `SessionState.palace` on every `save_session` call,
+│        never hand-edited, never read back into `tree` — derived-only, so
+│        it cannot drift out of sync with the tree it renders. Shared-
+│        prerequisite/kill-path edges beyond the tree's own hierarchy are
+│        deliberately not added yet: `{LOOP}` needs a decision state that
+│        can mark one before there is any such fact to render.
+│      evidence: `palace_node_ids_match_the_trees_id_tagged_nodes_one_to_one`
+│        (fixture, asserts no orphan node either direction plus the exact
+│        parent-->child edges), `a_session_round_trips_...` extended to
+│        assert `save_session` always recomputes `palace` from the bounded
+│        tree rather than trusting a caller-supplied one, and
+│        `a_pre_palace_session_with_no_palace_key_still_deserializes` (an
+│        older session file with no `palace` key must not error). `cargo
+│        fmt`, `cargo clippy --all-targets -- -D warnings`, full harness
+│        unit suite (20/20) all pass.
 │      dependency: ->CTX (same node-id namespace, so a tree leaf and its
-│        palace node are the same identity, never two names for one fact)
+│        palace node are the same identity, never two names for one fact) —
+│        closed, satisfied by `{ROLLOUT}` (`85602f1`)
 │      non-goal: rendering the diagram as an image; text stays Mermaid
 │        source, same as this repo's own plan-writing convention
 ├── {LOOP} micro-workflow state machine                         [_] @host=none
@@ -132,15 +148,16 @@ without either backend codec knowing any of this exists.
 
 ## Rollout order
 
-1. `{ROLLOUT}` first: land the tree format alone, still linear (no jump),
-   proving CTX round-trips before LOOP exists. Extends HS's session file
-   with a `tree` field; `turns` stays for backward-compat read of existing
-   session files (a v0.2.x session predates this feature).
-2. `{PALACE}` second, additive: only meaningful once there's more than one
-   subgoal worth cross-referencing; can ship without LOOP's jump logic since
-   a palace with no jump target is just documentation.
-3. `{LOOP}` last, highest risk: the state machine and its two bounded gates.
-   Needs `{ROLLOUT}` and `{PALACE}` both in place since a jump target is a
+1. **`{ROLLOUT}` — closed (`85602f1`).** Landed the tree format alone, still
+   linear (no jump), proving CTX round-trips before LOOP exists. Extends
+   HS's session file with a `tree` field; `turns` stays for backward-compat
+   read of existing session files (a v0.2.x session predates this feature).
+2. **`{PALACE}` — closed 2026-09-27.** Additive, as planned: it only
+   documents the tree's own hierarchy for now, since there was no cross-
+   subgoal fact yet worth a shared-prerequisite/kill-path edge; shipped
+   without LOOP's jump logic, exactly as this section anticipated.
+3. `{LOOP}` last, highest risk, not yet started. Needs `{ROLLOUT}` and
+   `{PALACE}` both in place since a jump target is a
    tree node possibly reached through a palace edge.
 
 Each step lands with its own named evidence (fixture tests first, one

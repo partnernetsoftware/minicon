@@ -219,6 +219,14 @@ struct SessionState {
     turns: Vec<(String, String)>,
     #[serde(default)]
     tree: Vec<TreeNode>,
+    /// `{PALACE}`'s Mermaid flowchart, recomputed and persisted alongside
+    /// `tree` on every save -- never hand-edited, never read back into
+    /// `tree` -- so a session file always carries a palace matching its own
+    /// tree rather than one that can silently drift out of sync with it.
+    /// `#[serde(default)]` so a pre-`{PALACE}` session file (no `tree`
+    /// either, or `tree` without a `palace`) still deserializes.
+    #[serde(default)]
+    palace: String,
 }
 
 /// Loads a session's state. `Ok(None)` means no session by this name exists
@@ -236,7 +244,7 @@ fn load_session(file_tool: &FileTool, id: &str) -> Result<Option<SessionState>, 
                     serde_json::from_str::<Vec<(String, String)>>(&contents).map(|turns| {
                         SessionState {
                             turns,
-                            tree: Vec::new(),
+                            ..Default::default()
                         }
                     })
                 })
@@ -260,9 +268,11 @@ fn load_session(file_tool: &FileTool, id: &str) -> Result<Option<SessionState>, 
 fn save_session(file_tool: &FileTool, id: &str, state: &SessionState) -> Result<(), String> {
     let turns_start = state.turns.len().saturating_sub(HARNESS_SESSION_MAX_TURNS);
     let tree_start = state.tree.len().saturating_sub(HARNESS_SESSION_MAX_TURNS);
+    let bounded_tree = state.tree[tree_start..].to_vec();
     let bounded = SessionState {
         turns: state.turns[turns_start..].to_vec(),
-        tree: state.tree[tree_start..].to_vec(),
+        palace: render_palace(&bounded_tree),
+        tree: bounded_tree,
     };
     let relative = format!("{HARNESS_SESSION_DIR}/{id}.json");
     let contents = serde_json::to_string(&bounded)
@@ -425,6 +435,75 @@ fn parse_tree_line(line: &str) -> Result<TreeNode, String> {
         failure,
         children: Vec::new(),
     })
+}
+
+/// Renders `{PALACE}`'s Mermaid flowchart for a tree: one node per
+/// `TreeNode`, in the tree's own `{id}` namespace (so a tree leaf and its
+/// palace node are the same identity, never two names for one fact, per
+/// `plan/plan-harness-context-engineering.md`'s `{PALACE}` dependency on
+/// `{CTX}`), plus one edge per tree parent/child relationship. This is the
+/// whole palace for now -- shared-prerequisite and kill-path edges beyond
+/// the tree's own hierarchy are `{LOOP}`'s job to add once there is a
+/// decision state that can mark one, not invented here ahead of that
+/// dependency.
+fn render_palace(tree: &[TreeNode]) -> String {
+    let mut out = String::from("flowchart TD\n");
+    render_palace_nodes(tree, &mut out);
+    render_palace_edges(tree, &mut out);
+    out
+}
+
+fn render_palace_nodes(nodes: &[TreeNode], out: &mut String) {
+    for node in nodes {
+        out.push_str("    ");
+        out.push_str(&node.id);
+        out.push_str("[\"");
+        out.push_str(&node.label.replace('"', "'"));
+        out.push_str("\"]\n");
+        render_palace_nodes(&node.children, out);
+    }
+}
+
+fn render_palace_edges(nodes: &[TreeNode], out: &mut String) {
+    for node in nodes {
+        for child in &node.children {
+            out.push_str("    ");
+            out.push_str(&node.id);
+            out.push_str(" --> ");
+            out.push_str(&child.id);
+            out.push('\n');
+        }
+        render_palace_edges(&node.children, out);
+    }
+}
+
+/// Extracts every node id `render_palace` declared, in declaration order --
+/// the counterpart evidence needs to assert the palace's node ids match the
+/// tree's `{id}`-tagged nodes 1:1 in both directions, without re-parsing
+/// Mermaid syntax generally (this repo's palace is one fixed shape it wrote
+/// itself, not an arbitrary diagram to interpret).
+#[cfg(test)]
+fn palace_node_ids(rendered: &str) -> Vec<String> {
+    rendered
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let (id, _) = trimmed.split_once('[')?;
+            if id.is_empty() || id.contains("-->") {
+                None
+            } else {
+                Some(id.to_owned())
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn tree_ids(nodes: &[TreeNode], out: &mut Vec<String>) {
+    for node in nodes {
+        out.push(node.id.clone());
+        tree_ids(&node.children, out);
+    }
 }
 
 /// Folds a session's tree working memory into the text sent as this run's
@@ -1097,7 +1176,16 @@ mod tests {
             turns.push((format!("task {index}"), format!("answer {index}")));
         }
         let tree = tree_from_turns(&turns);
-        save_session(&tool, "s1", &SessionState { turns, tree }).expect("save");
+        save_session(
+            &tool,
+            "s1",
+            &SessionState {
+                turns,
+                tree,
+                palace: String::new(),
+            },
+        )
+        .expect("save");
 
         let loaded = load_session(&tool, "s1")
             .expect("load")
@@ -1111,7 +1199,77 @@ mod tests {
             loaded.turns.last().unwrap().0,
             format!("task {}", HARNESS_SESSION_MAX_TURNS + 2)
         );
+        // save_session always recomputes palace from the bounded tree, never
+        // trusts whatever palace the caller passed in.
+        assert!(
+            loaded.palace.starts_with("flowchart TD"),
+            "{}",
+            loaded.palace
+        );
+        assert!(loaded.palace.contains("turn-3"), "{}", loaded.palace);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_pre_palace_session_with_no_palace_key_still_deserializes() {
+        let root = fixture("session-pre-palace");
+        let tool = FileTool::new(root.to_str().expect("utf-8 root")).expect("root exists");
+        let pre_palace = serde_json::json!({
+            "turns": [["old task", "old answer"]],
+            "tree": [],
+        })
+        .to_string();
+        tool.write(&format!("{HARNESS_SESSION_DIR}/old.json"), &pre_palace)
+            .expect("write pre-palace session");
+
+        let loaded = load_session(&tool, "old")
+            .expect("load")
+            .expect("session exists");
+        assert_eq!(
+            loaded.palace, "",
+            "missing key defaults to empty, not an error"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn palace_node_ids_match_the_trees_id_tagged_nodes_one_to_one() {
+        let tree = vec![TreeNode {
+            id: "root".to_owned(),
+            label: "root task".to_owned(),
+            evidence: None,
+            failure: None,
+            children: vec![
+                TreeNode {
+                    id: "root-answer".to_owned(),
+                    label: "root answer".to_owned(),
+                    evidence: None,
+                    failure: None,
+                    children: Vec::new(),
+                },
+                TreeNode {
+                    id: "sibling".to_owned(),
+                    label: "a second subgoal".to_owned(),
+                    evidence: None,
+                    failure: None,
+                    children: Vec::new(),
+                },
+            ],
+        }];
+
+        let rendered = render_palace(&tree);
+        let mut expected_ids = Vec::new();
+        tree_ids(&tree, &mut expected_ids);
+        let mut palace_ids = palace_node_ids(&rendered);
+        let mut expected_sorted = expected_ids.clone();
+        expected_sorted.sort();
+        palace_ids.sort();
+        assert_eq!(
+            palace_ids, expected_sorted,
+            "no orphan node either direction: {rendered}"
+        );
+        assert!(rendered.contains("root --> root-answer"), "{rendered}");
+        assert!(rendered.contains("root --> sibling"), "{rendered}");
     }
 
     #[test]
