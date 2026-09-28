@@ -513,12 +513,23 @@ doc when it is picked up; delete its line here once it ships or is decided
           pipeline.
        Pinned in this repo's `Cargo.toml`/`Cargo.lock` at `29003fc8`
        (commit `f48aa39`).
-       @status **reopened 2026-09-28** -- owner report on real v0.2.2, real
-        Windows hardware, the live GUI terminal: `cmd.exe`'s pane still does
-        not react to Ctrl+C at an idle prompt (no pending typed text),
-        while a `cmd.exe` opened standalone (not through MiniCon) does react
-        at its own idle prompt. The `[v]` above was wrong to call this
-        closed -- traced why: the fix and its passing test
+       @status **2026-09-28, owner re-tested and accepted.** Initial report
+        on real v0.2.2, real Windows hardware said the live GUI terminal's
+        `cmd.exe` pane did not react to Ctrl+C at an idle prompt at all,
+        unlike a standalone `cmd.exe`. On a second look the owner confirmed
+        it does react -- it clears the current (empty) input line, which is
+        different from standalone `cmd.exe`'s own visible feedback (it
+        echoes `^C` and reprints the prompt) but is an accepted difference,
+        not a bug to keep chasing. This matches the shipped fix's actual
+        mechanism (see below): Backspace-erasure of `PENDING_LINE_KEYS`
+        naturally has no `^C`-echo step, since it never synthesizes the
+        keystroke itself. Leaving the code-path analysis below as-is -- it
+        is still the accurate map of why the automation-harness fix and the
+        live GUI path are two different mechanisms -- but this leaf is not
+        reopened as broken; it is closed on the owner's own acceptance of
+        the live behavior. The `[v]` above was still wrong in one respect:
+        it should never have cited the automation-harness test as evidence
+        for the live GUI path -- the fix and its passing test
         (`tests/minicon_console_agent.rs`) both live in
         `agenterm-platform`'s **`console_agent`** helper, entered only via
         `run_if_console_agent` in `src/main.rs:374` -- a separate
@@ -541,11 +552,37 @@ doc when it is picked up; delete its line here once it ships or is decided
         limitation the console_agent investigation already found for
         `GenerateConsoleCtrlEvent`), or MiniCon's PTY write for this
         keystroke isn't reaching the console the way assumed.
-       @safe-failure BLOCKED -- needs a real interactive Windows GUI session
-        (physical or a real display host, not the console_agent CI harness)
-        to instrument: does the live terminal's `0x03` write even arrive at
-        conhost, and if so does conhost's cooked-mode `ReadConsole` abort on
-        it the way it does for a hardware keystroke. Do not re-close this on
-        `console_agent` test evidence again -- that evidence answers a
-        different code path.
+       @status [v] closed 2026-09-28 on owner acceptance of the live
+        behavior (clears the pending line; no `^C` echo). The mechanism
+        question below (whether ConPTY's `0x03` reaches conhost's cooked-mode
+        `ReadConsole` the way a hardware keypress does, or whether something
+        else explains the clear-on-Ctrl+C behavior actually observed) is
+        demoted from a release blocker to unowned curiosity -- worth an
+        instrumented answer some day, on a real interactive Windows GUI
+        session, but not gating anything. Do not treat `console_agent` test
+        evidence as proof for the live GUI path either way -- that evidence
+        answers a different code path, confirmed separately below.
+       @attempt 2026-09-28, this Mac's local UTM `win-aarch64-desktop` court
+        (native `minicon-win-arm-64`), the exact published `v0.2.2`
+        `minicon-0.2.2-windows-arm64.zip` binary, no rebuild. Result:
+        **could not reach a live-GUI repro here either** -- a different,
+        prior blocker. Launched via the court's `interactive-exec` (real
+        Session 1, `windows-session-agent` confirmed `session_id:1`, not the
+        Session-0 guest-agent `exec` used for the automation harness);
+        `minicon-v022.exe` ran for as long as it was left running,
+        `Responding=True`, no crash, but `Get-Process`'s
+        `MainWindowHandle` stayed `0` on every PID the whole time (checked
+        repeatedly), and no window ever appeared in a `screencapture` of the
+        UTM display. No `agenterm-diagnostics.log` exists anywhere under
+        `C:\Users` on that guest (searched recursively) -- ruling out a
+        panic; the process runs but never creates a top-level window in
+        this specific VM at all. This blocks even reaching the Ctrl+C
+        question here: something about this VM's display/graphics stack
+        (no GPU passthrough verified, unlike the native-window six-cell
+        `test`/`throughput` modes which don't render a frame) keeps the
+        window from ever materializing, independent of input handling.
+        Not investigated further this round (out of scope for a Ctrl+C
+        repro) -- if picked up, check whether this VM's `win-aarch64-desktop`
+        image has ever hosted a *visibly rendered* MiniCon window before, or
+        whether that's itself new/unverified territory.
 ```
