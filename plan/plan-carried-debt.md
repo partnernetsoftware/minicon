@@ -513,4 +513,39 @@ doc when it is picked up; delete its line here once it ships or is decided
           pipeline.
        Pinned in this repo's `Cargo.toml`/`Cargo.lock` at `29003fc8`
        (commit `f48aa39`).
+       @status **reopened 2026-09-28** -- owner report on real v0.2.2, real
+        Windows hardware, the live GUI terminal: `cmd.exe`'s pane still does
+        not react to Ctrl+C at an idle prompt (no pending typed text),
+        while a `cmd.exe` opened standalone (not through MiniCon) does react
+        at its own idle prompt. The `[v]` above was wrong to call this
+        closed -- traced why: the fix and its passing test
+        (`tests/minicon_console_agent.rs`) both live in
+        `agenterm-platform`'s **`console_agent`** helper, entered only via
+        `run_if_console_agent` in `src/main.rs:374` -- a separate
+        automation/test binary mode, not the live interactive GUI path. The
+        live GUI path is `src/terminal.rs`'s key handler: on a bare Ctrl+C
+        with no active selection it falls through to writing the raw `0x03`
+        byte straight into the PTY (see the comment at
+        `src/terminal.rs:1001-1002`, "falls through to SIGINT (0x03)"),
+        relying entirely on ConPTY's own translation of that byte back into
+        a console Ctrl+C signal -- it never calls `console_agent`'s
+        `PENDING_LINE_KEYS`-tracking/Backspace-erasure mechanism at all.
+        These are two different code paths reacting to the same keystroke;
+        closing the automation-harness one never had a mechanism to fix the
+        live-GUI one, and no test exercises the live-GUI path against a real
+        interactive Windows session (this repository's black-box tests drive
+        the CLI/control surface, not physical Windows keyboard-through-PTY
+        input). #risk root cause for *this* path is still unknown -- either
+        ConPTY's `0x03`-to-signal translation itself doesn't reach a cooked-
+        mode idle `ReadConsole` the way a hardware keypress does (the same
+        limitation the console_agent investigation already found for
+        `GenerateConsoleCtrlEvent`), or MiniCon's PTY write for this
+        keystroke isn't reaching the console the way assumed.
+       @safe-failure BLOCKED -- needs a real interactive Windows GUI session
+        (physical or a real display host, not the console_agent CI harness)
+        to instrument: does the live terminal's `0x03` write even arrive at
+        conhost, and if so does conhost's cooked-mode `ReadConsole` abort on
+        it the way it does for a hardware keystroke. Do not re-close this on
+        `console_agent` test evidence again -- that evidence answers a
+        different code path.
 ```
