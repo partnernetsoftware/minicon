@@ -252,6 +252,32 @@ forward the sub-items that didn't get done. A release is not held hostage
 by leaves this environment structurally cannot prove.
 ```
 
+## SHIP: done (2026-09-28)
+
+Owner authorized publish via `AskUserQuestion` ("授权发布 v0.2.3"). The full
+chain ran CI-native (no local UTM court): minicon-com `36399157828` ->
+company-signing `36400001379` + macos-signing `36400004061` (parallel) ->
+candidate `36400246174` -> defender-ci-scan `36400447096` (verdict clean) ->
+reputation `36400745867` -> release dry-run `36400888061` -> release publish
+`36401100397`. Public release:
+https://github.com/partnernetsoftware/minicon/releases/tag/v0.2.3. Full
+receipts and evidence in `prd/archive/v0.2.3-release-history.md`.
+
+`{HB}` and `{UI-C3}` remain `BLOCKED` (no macOS/Windows-display host this
+round either) and carry forward to 0.2.4, per this plan's own close-out rule
+above. `{RELTOOL}#3` (release-in-progress lock/lease) also carries forward,
+motivated by an observed live collision with another automated session's
+concurrent push to `main` during this exact release attempt.
+
+Two throwaway branches from the chain (`candidate-src-0.2.3`, pinned at the
+Candidate SHA per the release skill's requirement, and an accidental
+`__delete_probe_unused__` probe branch) are still on `origin` pending
+cleanup -- this session's proxy denies raw `git push --delete` / GitHub ref
+DELETE (`Write access to this GitHub API path is not permitted through this
+proxy`), and no MCP tool here deletes a branch. Neither affects the shipped
+release; delete both next time a session with branch-delete access touches
+this repo.
+
 ## Memory palace
 
 ```mermaid
