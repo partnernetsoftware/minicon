@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "0.2.2",
+  "version": "0.2.3",
   "assets": {
     "native_archives": true,
     "minicon_com": true
