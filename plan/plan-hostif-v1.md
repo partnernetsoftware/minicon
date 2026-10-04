@@ -14,7 +14,7 @@ already handles bare `--version`/`--help`/`--status` — see
 
 ```
 minicon --version --json
-{"version":"0.2.4","hostif":"1.0","os":"windows","arch":"arm64"}
+{"version":"0.2.4","hostif":"1.0","os":"windows","arch":"aarch64","asset":"windows-arm64"}
 ```
 
 - `version`: `env!("CARGO_PKG_VERSION")`, same string `product_window_title()`
@@ -23,20 +23,43 @@ minicon --version --json
   of `version`. Starts at `"1.0"`. Bumped minor for additive capability,
   major for breaking change — this is the number a plugin/launcher actually
   checks, not `version`.
-- `os`/`arch`: `std::env::consts::OS`/`ARCH`, Rust's own normalized strings
-  (`"windows"`/`"linux"`/`"macos"`, `"x86_64"`/`"aarch64"`) — matches the
-  asset-naming convention already used in `candidate-manifest.json` (see
-  below) once `aarch64`→`arm64` is aliased for the asset-name match.
+- `os`/`arch`: **raw** `std::env::consts::OS`/`ARCH` (`"windows"`/`"aarch64"`,
+  etc.) — no renaming, per cc-agenterm review (2026-10-04): a launcher-side
+  alias table is an extra place to drift, macOS universal already breaks the
+  naive 1:1 mapping.
+- `asset`: minicon's own asset-name suffix for this build — `"windows-arm64"`,
+  `"macos-universal"`, etc. — exactly the substring used in
+  `candidate-manifest.json`'s `assets[].name`
+  (`minicon-<version>-<asset>.<ext>`). minicon computes this once, so the
+  launcher never maps `os`/`arch` to an asset suffix itself.
 
 Plain `--version` (no `--json`) keeps today's human-readable output
 unchanged — this is additive, not a breaking change to existing scripts.
+
+### Old-version safety (reviewed 2026-10-04)
+
+Confirmed by reading `src/main.rs:377-386` + `src/cli.rs`'s `parse_args`: on
+a pre-`{HOSTIF}` build (0.2.3 and earlier), `--version --json` and
+`--hostif-handshake` are unrecognized by `offline_cli_exit` (returns `None`),
+then fall into `parse_args`, whose catch-all arm
+(`src/cli.rs:164-170`, `unknown => Err(...)`) rejects any unrecognized `--`
+argument and exits **2**, writing to stderr — this happens before any
+window, PTY, or GUI setup code runs. So an old binary never opens a window
+when probed this way; a launcher can safely treat "non-JSON output or
+non-zero exit" as `hostif=0` (pre-dates this contract, needs upgrade) with
+no risk of an unexpected window popping up during version probing.
 
 ## 2. Minimal handshake call
 
 ```
 minicon --hostif-handshake
-{"hostif":"1.0","capabilities":["exec","mux","pty"]}
+{"hostif":"1.0","version":"0.2.4","capabilities":["exec","mux","pty"]}
 ```
+
+Includes `version` alongside `hostif` (per cc-agenterm review) so a launcher
+needs exactly one call, not two — `--version --json` remains available
+separately for scripts that only want version info without the handshake
+semantics.
 
 Same offline/no-window tier as `--version`/`--status` — must not spawn a
 GUI window or touch a PTY to answer. `capabilities` is a flat string list;
@@ -69,6 +92,18 @@ existing shape as frozen, not proposing a new one:
 No field renames planned. If a future release needs a new field, it is
 additive under the same `schema`; a rename or removal requires a `schema`
 bump, same rule as `hostif`.
+
+### Known limitation (recorded 2026-10-04, accepted for v1)
+
+The "latest version" discovery address is a hardcoded GitHub Releases URL:
+`https://github.com/<org>/minicon/releases/latest/download/candidate-manifest.json`.
+The manifest itself is **not signed** — its trust root for v1 is: TLS to
+GitHub + each asset's `sha256` inside the manifest + the asset's own
+platform signature (Authenticode on Windows, notarization on macOS). A
+launcher must still verify the downloaded asset's signature/notarization
+independently; the manifest's sha256 only proves "this is the byte-exact
+file GitHub served," not "this file is trustworthy." Revisit if/when the
+manifest itself needs a signature (v2+).
 
 ## Non-goals of this draft
 
