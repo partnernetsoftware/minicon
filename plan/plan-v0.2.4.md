@@ -25,7 +25,7 @@ Non-goal: 0.3.x's `harness-manage`/GUI workbench — still out of scope per
 │        either — never claim closed on cross-compile evidence alone
 │      dependency: a Windows or macOS host/court this session does not have
 ├── {UI-C3} box-drawing glyph gap (Consolas, 1px at 12px)         [-] @host=Windows-display #risk
-│      carried unchanged from 0.2.3/plan-carried-debt.md's C3. invariant:
+│      carried unchanged from 0.2.3 and `plan/plan-carried-debt.md`'s C3. invariant:
 │        the rendered glyph closes the 1px gap on a real Windows display
 │        with Consolas installed
 │      safe failure: BLOCKED here specifically — no Consolas, no screen a
@@ -44,7 +44,7 @@ Non-goal: 0.3.x's `harness-manage`/GUI workbench — still out of scope per
 │        Actions dispatch path to exercise a real lock check against —
 │        do not land an unverified lock a second time
 │      dependency: a round with real dispatch access (same gap 0.2.3 hit)
-├── {HOSTIF} minicon host-interface draft for agenterm plugin market [ ] @host=none #priority
+├── {HOSTIF} minicon host-interface draft for agenterm plugin market [v] @host=none
 │      owner-decided 2026-10-04: agenterm restarts as 0.2.0.0 on top of
 │        minicon as a "plugin & app market" launcher (agenterm.com fetches
 │        minicon.com as the underlying vehicle, cu/script engines become
@@ -73,6 +73,19 @@ Non-goal: 0.3.x's `harness-manage`/GUI workbench — still out of scope per
 │        minicon's job here is the interface surface only
 │      dependency: none — pure design document, cross-repo alignment via
 │        mux with cc-agenterm
+│      closed 2026-10-04: spec reviewed and approved by cc-agenterm in two
+│        rounds (`plan/plan-hostif-v1.md`, v1 then v2 after 4 review points),
+│        then implemented in `src/cli.rs`: `minicon --version --json` and
+│        `minicon --hostif-handshake`, both on the existing offline/no-window
+│        tier (`offline_cli_exit`), plus `hostif_asset_suffix()` giving the
+│        launcher the exact `candidate-manifest.json` asset-name suffix
+│        without its own os/arch alias table. 5 new tests in
+│        `cli::hostif_tests` (JSON-parseable via `serde_json`, both version
+│        strings present, capability list present, asset-suffix naming,
+│        and the old-version-safety claim itself: a malformed combination
+│        exits `2`, never falls through toward window startup). `cargo fmt`,
+│        `cargo clippy --all-targets -- -D warnings`, `./scripts/build.sh
+│        test` (including `minicon_alignment`'s 15/15) all green.
 ├── {DECIDE} decision-contract for {LOOP}'s decide-states           [ ] @host=none
 │      owner-raised 2026-10-04 while reviewing harness context-engineering
 │        shape (tree+palace, decision-model/work-model split loop).

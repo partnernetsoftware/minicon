@@ -258,6 +258,64 @@ pub(crate) fn offline_status_text_for_test() -> String {
     status_text()
 }
 
+/// The host-interface contract version this binary speaks. Independent of
+/// `CARGO_PKG_VERSION` -- bumped minor for an additive capability, major for
+/// a breaking change. See `plan/plan-hostif-v1.md`.
+const HOSTIF_VERSION: &str = "1.0";
+
+/// This build's asset-name suffix, exactly the substring
+/// `candidate-manifest.json`'s `assets[].name` uses
+/// (`minicon-<version>-<suffix>.<ext>`). Computed once here so a launcher
+/// never has to map `os`/`arch` to it itself -- macOS ships one universal
+/// asset regardless of the running arch, which breaks any naive 1:1 mapping.
+fn hostif_asset_suffix() -> String {
+    match std::env::consts::OS {
+        "macos" => "macos-universal".to_owned(),
+        "windows" => format!(
+            "windows-{}",
+            match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                other => other,
+            }
+        ),
+        "linux" => format!("linux-{}", std::env::consts::ARCH),
+        other => format!("{other}-{}", std::env::consts::ARCH),
+    }
+}
+
+/// `minicon --version --json` body. Raw `std::env::consts::OS`/`ARCH`, no
+/// renaming -- a launcher-side alias table is one more place to drift.
+fn hostif_version_json() -> String {
+    let value = json::object(vec![
+        ("version", env!("CARGO_PKG_VERSION").into()),
+        ("hostif", HOSTIF_VERSION.into()),
+        ("os", std::env::consts::OS.into()),
+        ("arch", std::env::consts::ARCH.into()),
+        ("asset", hostif_asset_suffix().into()),
+    ]);
+    String::from_utf8(json::to_vec(&value)).unwrap_or_default()
+}
+
+/// `minicon --hostif-handshake` body. Includes `version` so a launcher needs
+/// exactly one call; `capabilities` is a flat list a launcher only checks
+/// membership against, never parses as a version string.
+fn hostif_handshake_json() -> String {
+    let value = json::object(vec![
+        ("hostif", HOSTIF_VERSION.into()),
+        ("version", env!("CARGO_PKG_VERSION").into()),
+        (
+            "capabilities",
+            json::JsonValue::Array(
+                ["exec", "mux", "pty"]
+                    .into_iter()
+                    .map(json::JsonValue::from)
+                    .collect(),
+            ),
+        ),
+    ]);
+    String::from_utf8(json::to_vec(&value)).unwrap_or_default()
+}
+
 /// The feature names beside a `--status`, or `None` when the arguments are
 /// anything else.
 ///
@@ -354,6 +412,8 @@ Usage: minicon [--no-activate] [--headless] [--working-dir DIR]
                    [--control ENDPOINT] [--emit-snapshot PATH]
                    [--feature NAME[,NAME...]] [-e PROGRAM [ARGS...]]
        minicon --version
+       minicon --version --json
+       minicon --hostif-handshake
        minicon --status
        minicon --help
        minicon cli --control ENDPOINT COMMAND [ARGS...]
@@ -488,6 +548,14 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
                 "minicon {}",
                 env!("CARGO_PKG_VERSION")
             ));
+            Some(0)
+        }
+        Some("--version" | "-V") if args.len() == 2 && args[1] == "--json" => {
+            let _ = agenterm_platform::parent_console::write_stdout(&hostif_version_json());
+            Some(0)
+        }
+        Some("--hostif-handshake") if alone => {
+            let _ = agenterm_platform::parent_console::write_stdout(&hostif_handshake_json());
             Some(0)
         }
         Some("--status") if status_feature_request(args).is_some() => {
@@ -701,4 +769,80 @@ fn composer_key_help() -> String {
     minicon_core::keymap::help_lines()
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod hostif_tests {
+    use super::*;
+
+    /// Both bodies must be object literals a launcher can actually parse,
+    /// not just human-readable text that happens to look JSON-ish.
+    fn assert_is_json_object(body: &str) {
+        let trimmed = body.trim();
+        assert!(
+            trimmed.starts_with('{') && trimmed.ends_with('}'),
+            "not a JSON object: {body:?}"
+        );
+        assert!(
+            serde_json::from_str::<serde_json::Value>(trimmed).is_ok(),
+            "serde_json rejected: {body:?}"
+        );
+    }
+
+    #[test]
+    fn version_json_is_parseable_and_carries_both_versions() {
+        let body = hostif_version_json();
+        assert_is_json_object(&body);
+        assert!(body.contains(&format!("\"version\":\"{}\"", env!("CARGO_PKG_VERSION"))));
+        assert!(body.contains("\"hostif\":\"1.0\""));
+        assert!(body.contains(&format!("\"os\":\"{}\"", std::env::consts::OS)));
+        assert!(body.contains(&format!("\"arch\":\"{}\"", std::env::consts::ARCH)));
+    }
+
+    #[test]
+    fn handshake_json_is_parseable_and_carries_capabilities() {
+        let body = hostif_handshake_json();
+        assert_is_json_object(&body);
+        assert!(body.contains("\"hostif\":\"1.0\""));
+        assert!(body.contains(&format!("\"version\":\"{}\"", env!("CARGO_PKG_VERSION"))));
+        assert!(body.contains("\"exec\""));
+        assert!(body.contains("\"mux\""));
+        assert!(body.contains("\"pty\""));
+    }
+
+    #[test]
+    fn asset_suffix_matches_candidate_manifest_naming() {
+        let suffix = hostif_asset_suffix();
+        match std::env::consts::OS {
+            "macos" => assert_eq!(suffix, "macos-universal"),
+            "windows" => assert!(suffix == "windows-x86_64" || suffix == "windows-arm64"),
+            "linux" => assert!(suffix.starts_with("linux-")),
+            _ => {}
+        }
+    }
+
+    /// `offline_cli_exit` must never fall into `parse_args`/window startup
+    /// for these two verbs -- both branches must be reached and exit 0 with
+    /// no ambiguity about whether an old binary would have opened a window.
+    #[test]
+    fn offline_cli_exit_handles_hostif_verbs_without_opening_a_window() {
+        assert_eq!(
+            offline_cli_exit(&["--version".to_owned(), "--json".to_owned()]),
+            Some(0)
+        );
+        assert_eq!(
+            offline_cli_exit(&["--hostif-handshake".to_owned()]),
+            Some(0)
+        );
+        // A malformed combination still exits 2, not None (which would fall
+        // through into parse_args and, on an older build, GUI startup).
+        assert_eq!(
+            offline_cli_exit(&[
+                "--version".to_owned(),
+                "--json".to_owned(),
+                "extra".to_owned()
+            ]),
+            Some(2)
+        );
+    }
 }
