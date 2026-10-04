@@ -44,6 +44,35 @@ Non-goal: 0.3.x's `harness-manage`/GUI workbench — still out of scope per
 │        Actions dispatch path to exercise a real lock check against —
 │        do not land an unverified lock a second time
 │      dependency: a round with real dispatch access (same gap 0.2.3 hit)
+├── {HOSTIF} minicon host-interface draft for agenterm plugin market [ ] @host=none #priority
+│      owner-decided 2026-10-04: agenterm restarts as 0.2.0.0 on top of
+│        minicon as a "plugin & app market" launcher (agenterm.com fetches
+│        minicon.com as the underlying vehicle, cu/script engines become
+│        official plugins). Division of labor confirmed with cc-agenterm
+│        over mux: minicon drafts the host-interface, agenterm drafts the
+│        plugin manifest/market format; draft independently first, align
+│        once both exist. agenterm's own 0.1.x paused, 0.2.0.0 is a fresh
+│        design, so this is now live cross-repo scope, not speculative.
+│      invariant: a versioned (semver-style) host-interface contract minicon
+│        exposes to plugin runtimes — major bump = breaking, minor = new
+│        capability added; a plugin declares its minimum required version;
+│        the launcher negotiates/probes capability, never pins an exact
+│        minicon build
+│      agreed shape (via cc-agenterm, 2026-10-04): wasm+gl is the default
+│        plugin sandbox format; webui (wry/tao) is the plugin UI surface;
+│        native POSIX-C dynamic loading is a later, signed-allowlist-only
+│        escape hatch — none of these are minicon-core scope, they are
+│        agenterm-side runtime concerns that only need minicon's exposed
+│        interface to exist
+│      evidence needed: a draft host-interface document (capability list +
+│        version negotiation shape), reviewed with cc-agenterm before any
+│        code; no minicon source changes required to produce the draft
+│        itself
+│      non-goal: implementing the plugin runtime, the wasm sandbox, or
+│        webui integration inside minicon itself — those live in agenterm;
+│        minicon's job here is the interface surface only
+│      dependency: none — pure design document, cross-repo alignment via
+│        mux with cc-agenterm
 ├── {DECIDE} decision-contract for {LOOP}'s decide-states           [ ] @host=none
 │      owner-raised 2026-10-04 while reviewing harness context-engineering
 │        shape (tree+palace, decision-model/work-model split loop).
