@@ -585,4 +585,41 @@ doc when it is picked up; delete its line here once it ships or is decided
         repro) -- if picked up, check whether this VM's `win-aarch64-desktop`
         image has ever hosted a *visibly rendered* MiniCon window before, or
         whether that's itself new/unverified territory.
+├── G3 Windows new-tab layout garbled (reported 2026-10-05, real hardware,
+│      v0.2.3)
+│      owner report: opening a new tab on real Windows shows the cmd.exe
+│        banner/prompt badly misaligned -- text wraps mid-word ("(c" / ")
+│        Microsoft Corporation") and each prompt line is preceded by a huge
+│        run of blank padding before `D:\>` appears far to the right, not at
+│        column 0.
+│      investigated 2026-10-05 (code reading only, no Windows host
+│        available this round): ruled out the obvious hypothesis --
+│        `open_session`'s new-tab path (`src/main.rs:1393-1426`) calls
+│        `SessionSeed::create_session()` then `session.opened(window)`, and
+│        `ConTerminal::opened` (`src/terminal.rs:1997-2029`) recomputes
+│        `cols`/`rows` from the *real* window metrics and calls
+│        `self.parser.screen_mut().set_size(rows, cols)` **before**
+│        `spawn_pty` -- so vt100's screen and the PTY are sized from the same
+│        source at spawn time, not a stale-then-corrected race the way the
+│        seed's manually-copied `cols`/`rows` fields first suggested.
+│      #risk real suspect is one layer down, in the pinned `agenterm-platform`
+│        crate's Windows PTY/console code (`adapters/windows/pty.rs`'s
+│        `ResizePseudoConsole` call, `adapters/windows/console_agent.rs`'s
+│        `SetConsoleScreenBufferSize`) -- a known general class of ConPTY bug
+│        is the console host's internal buffer width not actually matching
+│        the size handed to `ChildCommand::size()` at spawn, so cmd.exe wraps
+│        against a different width than vt100 renders at. Not confirmed --
+│        this needs a live repro, not a guess-fix in a crate this session
+│        cannot run interactively.
+│      safe failure: BLOCKED on a live interactive Windows GUI session --
+│        same blocker as `plan-carried-debt.md`'s G2 `@attempt` note: the
+│        local UTM `win-aarch64-desktop` court could not get a MiniCon window
+│        to render at all (`MainWindowHandle` stayed 0) the last time this
+│        was tried, so even the known tool for this can't yet reach a repro
+│      dependency: a Windows GUI host where a window actually renders (real
+│        hardware, as the owner's report came from, or a UTM/court image
+│        proven to render a window first)
+│      non-goal: patching agenterm-platform's Windows PTY code speculatively
+│        without a confirmed repro -- see `measurement-discipline` /
+│        `make-the-failure-speak-first` project memory
 ```
