@@ -2,21 +2,87 @@
 
 ## Scope decision
 
-Owner (2026-09-27 pre-scope, filled in 2026-10-04 now that 0.2.3 shipped):
-0.2.3 closed on `{PALACE}`+`{LOOP}`+`{RELTOOL}`#1/#2/#4/#5/#6
-(`prd/archive/v0.2.3-release-history.md`). Per `plan-v0.2.3.md`'s own
-close-out rule, 0.2.4 pulls forward every leaf 0.2.3 could not close for a
-structural (not design) reason, plus one new leaf: a concrete decision-
-contract design for `{LOOP}`'s decide-states, raised by the owner directly
-(not carried-debt) while reviewing the harness's context-engineering shape.
+Owner (2026-10-07): **retracts minicon's harness/agent-management ambition.**
+Following the agenterm-as-plugin-market direction already agreed with
+cc-agenterm (`{HOSTIF}`, closed below), the owner now draws the product
+boundary explicitly: **agenterm owns downloading/installing/updating minicon
+and the plugin & app market built on top of it; minicon owns the underlying
+service and the interface agenterm/plugins consume.** Multi-agent
+orchestration, workflow management, and any GUI "harness workbench" are
+agenterm's territory, not minicon's, full stop — not "not yet," which is how
+`harness-manage` {hm} was carried in `prd/PRD_02_31_v0_2_horizon.md` until
+now.
 
-Non-goal: 0.3.x's `harness-manage`/GUI workbench — still out of scope per
-`prd/PRD_02_31_v0_2_horizon.md`.
+Consequences, decided this round:
+
+1. **`{DECIDE}`, the decision-contract leaf added 2026-10-04, is cancelled.**
+   It was design work on `{LOOP}`'s decide-states — a step toward exactly the
+   agent-orchestration sophistication now explicitly out of scope. No code
+   was written for it; nothing to revert.
+2. **`harness-manage` {hm}** in `prd/PRD_02_31_v0_2_horizon.md` moves from
+   "not started, horizon not assigned" to **retracted from minicon
+   permanently** — it is agenterm's to build, consuming `{HOSTIF}`, not a
+   future minicon version's scope.
+3. **The already-shipped `harness` {h} worker** (`minicon harness`, two
+   tools, DeepSeek/opencode backends, closed in 0.1.x/0.2.2/0.2.3 — see
+   `prd/PRD_02_31_v0_2_horizon.md`'s "harness — detail") is **not touched
+   this round.** It already satisfies the narrower framing ("a WORKER... one
+   bounded task, two tools, no orchestration, ever" — that line was written
+   2026-09-26 and already forbade exactly the growth direction now
+   retracted). Whether it eventually migrates out of minicon entirely is a
+   separate, larger decision this plan does not make — flagged as an open
+   question below, not acted on.
+4. 0.2.4's real work becomes: carry the three structurally `BLOCKED` leaves
+   forward (unchanged from the pre-retraction draft), and use the freed
+   scope to look for concrete next steps on `{HOSTIF}` now that it has
+   landed — the actual "focus on underlying service + interface" work.
 
 ## Tree DAG
 
 ```text
-0.2.4: carry HB/UI-C3/RELTOOL#3 forward + new {DECIDE} contract leaf
+0.2.4: retract harness-manage, carry HB/UI-C3/RELTOOL-3, grow {HOSTIF}
+├── {HARNESS-RETRACT} scope boundary decision                        [v] @host=none
+│      owner-decided 2026-10-07: minicon = underlying service + interface;
+│        agenterm = download/install/update + plugin & app market + agent
+│        management, built on minicon. `{DECIDE}` (2026-10-04 leaf)
+│        cancelled unstarted. `harness-manage` {hm} in
+│        `prd/PRD_02_31_v0_2_horizon.md` retracted from minicon's own
+│        horizon entirely, not merely deferred past 0.2.x.
+│      invariant: no further minicon-side work grows `harness` {h} toward
+│        orchestration, workflow management, or a GUI workbench — that
+│        line was already drawn 2026-09-26 ("a WORKER... no orchestration,
+│        ever") and is now reaffirmed as permanent, not reviewed per-version
+│      evidence: this plan file + `prd/PRD_02_31_v0_2_horizon.md`'s
+│        `harness-manage` {hm} node updated to read "retracted 2026-10-07,
+│        owned by agenterm" instead of "not started, horizon not assigned"
+│      open question (not decided here): whether the already-shipped
+│        `harness` {h} worker subcommand should eventually migrate out of
+│        minicon into agenterm too, now that agenterm is the agent-facing
+│        product. Leaving it in place for now — it is small, bounded, and
+│        already non-orchestrating, so it does not conflict with "minicon =
+│        thin service" today. Revisit only if it starts asking for
+│        maintenance minicon's own scope would otherwise refuse
+│      non-goal: deleting or restructuring any shipped `harness.rs` code
+│        this round; that is a separate, larger decision
+├── {HOSTIF-NEXT} host-interface growth, now the primary 0.2.x direction  [ ] @host=none
+│      with harness-manage off minicon's plate, `{HOSTIF}` (closed
+│        2026-10-04, `src/cli.rs`'s `--version --json`/`--hostif-handshake`)
+│        is the actual shape of "minicon as underlying service" — this leaf
+│        is where to grow it, not yet scoped in detail
+│      candidates to evaluate with cc-agenterm before committing code:
+│        (a) a capability beyond `exec`/`mux`/`pty` the launcher's first
+│        real plugin needs and `--hostif-handshake` does not yet list; (b)
+│        whether `candidate-manifest.json` needs an update-check-friendly
+│        companion (e.g. a stable "latest" redirect) now that agenterm.com
+│        is a real consumer, not a hypothetical one; (c) anything
+│        `{RELTOOL-3}`'s release-lock would also protect agenterm's
+│        automated minicon-fetch from (a concurrent in-flight release)
+│      evidence needed: a concrete ask from cc-agenterm's own
+│        implementation (not speculative minicon-side design) before
+│        writing code — same discipline `{HOSTIF}` v1/v2 already followed
+│      dependency: cc-agenterm actually starting agenterm 0.2.0.0's
+│        launcher implementation and hitting a real gap
+│      non-goal: inventing host-interface surface agenterm has not asked for
 ├── {HB} native-tls live-call proof                              [-] @host=macOS/Windows #risk
 │      carried unchanged from 0.2.3 (itself carried from 0.2.1/0.2.2).
 │      invariant: the native-tls arm of `network-http` makes a live HTTPS
@@ -32,116 +98,50 @@ Non-goal: 0.3.x's `harness-manage`/GUI workbench — still out of scope per
 │        human can inspect even with Xvfb
 │      dependency: a Windows display host with Consolas this session does
 │        not have
-├── {RELTOOL-3} release-in-progress lock/lease                    [-] @host=none #risk
-│      carried from 0.2.3's `{RELTOOL}`, the one sub-item of six not closed
-│        there. invariant: a lightweight marker (checked-in
-│        `release-lock.json` with holder/source_sha/expiry, or a draft
-│        GitHub Deployment) that dispatch scripts check before pushing to
-│        `main` and clear on completion/timeout, replacing the verbal
-│        mux-chat coordination that was violated twice during v0.2.2 and
-│        once during v0.2.3's own SHIP
-│      safe failure: BLOCKED if this session again has no live GitHub
-│        Actions dispatch path to exercise a real lock check against —
-│        do not land an unverified lock a second time
-│      dependency: a round with real dispatch access (same gap 0.2.3 hit)
-├── {HOSTIF} minicon host-interface draft for agenterm plugin market [v] @host=none
-│      owner-decided 2026-10-04: agenterm restarts as 0.2.0.0 on top of
-│        minicon as a "plugin & app market" launcher (agenterm.com fetches
-│        minicon.com as the underlying vehicle, cu/script engines become
-│        official plugins). Division of labor confirmed with cc-agenterm
-│        over mux: minicon drafts the host-interface, agenterm drafts the
-│        plugin manifest/market format; draft independently first, align
-│        once both exist. agenterm's own 0.1.x paused, 0.2.0.0 is a fresh
-│        design, so this is now live cross-repo scope, not speculative.
-│      invariant: a versioned (semver-style) host-interface contract minicon
-│        exposes to plugin runtimes — major bump = breaking, minor = new
-│        capability added; a plugin declares its minimum required version;
-│        the launcher negotiates/probes capability, never pins an exact
-│        minicon build
-│      agreed shape (via cc-agenterm, 2026-10-04): wasm+gl is the default
-│        plugin sandbox format; webui (wry/tao) is the plugin UI surface;
-│        native POSIX-C dynamic loading is a later, signed-allowlist-only
-│        escape hatch — none of these are minicon-core scope, they are
-│        agenterm-side runtime concerns that only need minicon's exposed
-│        interface to exist
-│      evidence needed: a draft host-interface document (capability list +
-│        version negotiation shape), reviewed with cc-agenterm before any
-│        code; no minicon source changes required to produce the draft
-│        itself
-│      non-goal: implementing the plugin runtime, the wasm sandbox, or
-│        webui integration inside minicon itself — those live in agenterm;
-│        minicon's job here is the interface surface only
-│      dependency: none — pure design document, cross-repo alignment via
-│        mux with cc-agenterm
-│      closed 2026-10-04: spec reviewed and approved by cc-agenterm in two
-│        rounds (`plan/plan-hostif-v1.md`, v1 then v2 after 4 review points),
-│        then implemented in `src/cli.rs`: `minicon --version --json` and
-│        `minicon --hostif-handshake`, both on the existing offline/no-window
-│        tier (`offline_cli_exit`), plus `hostif_asset_suffix()` giving the
-│        launcher the exact `candidate-manifest.json` asset-name suffix
-│        without its own os/arch alias table. 5 new tests in
-│        `cli::hostif_tests` (JSON-parseable via `serde_json`, both version
-│        strings present, capability list present, asset-suffix naming,
-│        and the old-version-safety claim itself: a malformed combination
-│        exits `2`, never falls through toward window startup). `cargo fmt`,
-│        `cargo clippy --all-targets -- -D warnings`, `./scripts/build.sh
-│        test` (including `minicon_alignment`'s 15/15) all green.
-├── {DECIDE} decision-contract for {LOOP}'s decide-states           [ ] @host=none
-│      owner-raised 2026-10-04 while reviewing harness context-engineering
-│        shape (tree+palace, decision-model/work-model split loop).
-│        invariant: decide-pick/decide-continue stay governed by bounded,
-│        cheap rules — never a second free-form model round-trip — but gain
-│        a path for genuine semantic judgement (is this draft actually
-│        good?) that a string/counter match cannot express
-│      #decision (2026-10-04): do NOT add a separate "decision model" API
-│        call. `run_loop`'s decide-states are currently zero-cost (pure
-│        code: stop-phrase/counter checks in `src/harness.rs`) — that is
-│        strictly better than a cheap-model call, not a gap to fill.
-│        Instead, have the SAME work-model turn that produces a draft also
-│        emit a small structured self-verdict field in its one response
-│        (draft + verdict, one round-trip); decide-pick reads that field
-│        through the existing bounded-rule path, and only escalates to a
-│        genuinely separate adjudicator call when the self-verdict is
-│        low-confidence/ambiguous (expected rare). Precedent: this very
-│        session's own Stop-hook contract (`output-form-gate.py` forcing a
-│        `const 决策 = {...}` JS block) is a real, working example of "one
-│        model turn, two output modes, no extra round-trip" already in
-│        daily use
-│      evidence needed: `TreeNode`/`log_transition` schema extended with an
-│        optional verdict field (append-only, no in-place mutation of past
-│        nodes — confirmed 2026-10-04 that today's tree writes are already
-│        append-only, so this preserves cache-hit-friendly
-│        `compose_resumed_task` ordering), a fixture test where a
-│        low-confidence verdict triggers the escalation path and a
-│        high-confidence one does not, full harness unit suite green
-│      non-goal: touching the already-closed `{PALACE}`/`{LOOP}` evidence
-│        or their existing passing tests; this is new scope layered on top,
-│        not a reopening
-│      dependency: none — pure `src/harness.rs` design work, no host needed
-└── (pull from plan/plan-carried-debt.md at pickup time if the owner wants
-       a specific item folded in as a sibling leaf — not pre-selected here)
+└── {RELTOOL-3} release-in-progress lock/lease                    [-] @host=none #risk
+       carried from 0.2.3's `{RELTOOL}`, the one sub-item of six not closed
+         there. invariant: a lightweight marker (checked-in
+         `release-lock.json` with holder/source_sha/expiry, or a draft
+         GitHub Deployment) that dispatch scripts check before pushing to
+         `main` and clear on completion/timeout, replacing the verbal
+         mux-chat coordination that was violated twice during v0.2.2 and
+         once during v0.2.3's own SHIP
+       safe failure: BLOCKED if this session again has no live GitHub
+         Actions dispatch path to exercise a real lock check against —
+         do not land an unverified lock a second time
+       dependency: a round with real dispatch access (same gap 0.2.3 hit)
+
+{HOSTIF} itself (minicon --version --json / --hostif-handshake /
+candidate-manifest.json contract) is already closed, landed and pushed
+2026-10-04 (`fb40827`) — not re-listed here as a leaf; `{HOSTIF-NEXT}`
+above is strictly its sequel.
 
 ## 0.2.4 GATE status
 
-Not yet met. `{DECIDE}` is the only leaf with no host blocker — start there.
-`{HB}`/`{UI-C3}`/`{RELTOOL-3}` re-affirm `BLOCKED` exactly as in 0.2.3 unless
-a capable host/dispatch-path becomes available this round.
+Not yet met. `{HARNESS-RETRACT}` is a documentation-only decision, closeable
+immediately. `{HOSTIF-NEXT}` is blocked on cc-agenterm's own implementation
+reaching a real gap, not on this session. `{HB}`/`{UI-C3}`/`{RELTOOL-3}`
+re-affirm `BLOCKED` exactly as in 0.2.3 unless a capable host/dispatch-path
+becomes available this round.
 
 ## Memory palace
 
 ```mermaid
 flowchart TD
-    A[0.2.3 shipped: PALACE+LOOP+RELTOOL 1/2/4/5/6 closed] --> B{host available this round?}
+    A[owner retracts harness-manage from minicon, 2026-10-07] --> RETRACT[HARNESS-RETRACT: update PRD_02_31, cancel DECIDE]
+    RETRACT --> B{host available this round?}
     B -->|needs macOS/Windows| HB[native-tls live-call proof]
     B -->|needs Windows display + Consolas| UI[UI-C3: box-drawing glyph gap]
     B -->|needs live dispatch path| RT3[RELTOOL-3: release lock/lease]
-    B -->|no host needed| DECIDE[DECIDE: draft+verdict one-round-trip contract]
+    B -->|no host needed, needs agenterm gap| HOSTIFNEXT[HOSTIF-NEXT: grow host-interface on real ask]
     HB -->|no host| REBLOCK1[re-affirm BLOCKED, carry to 0.2.5]
     UI -->|no host| REBLOCK2[re-affirm BLOCKED, carry to 0.2.5]
     RT3 -->|no dispatch path| REBLOCK3[re-affirm BLOCKED, carry to 0.2.5]
-    DECIDE --> GATE[0.2.4 GATE: fmt + clippy + build.sh test + six-cell-qualify.sh]
+    HOSTIFNEXT -->|no ask yet| REBLOCK4[carry to 0.2.5, nothing to build yet]
+    RETRACT --> GATE[0.2.4 GATE: fmt + clippy + build.sh test + six-cell-qualify.sh]
     REBLOCK1 --> GATE
     REBLOCK2 --> GATE
     REBLOCK3 --> GATE
+    REBLOCK4 --> GATE
     GATE --> SHIP[0.2.4 release]
 ```

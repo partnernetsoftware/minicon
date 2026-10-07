@@ -145,11 +145,19 @@ process, exactly like the existing `--control` endpoint.
 │       "half right -- file IO is there, contained spawning is not"; see
 │       H3's now-closed carried-debt line in `plan/archive/plan-v0.2.0.md`
 │       for that history
-├── harness-manage {hm} [_] not started -- horizon not assigned yet (not
-│   │ 0.2.x; likely 0.3.x alongside the GUI workbench, but not decided --
-│   │ see the harness GUI section below, which is a separate leaf: a
-│   │ renderer question, this is an orchestration-logic question, and the
-│   │ two need not land in the same release)
+├── harness-manage {hm} [_] RETRACTED from minicon 2026-10-07 -- not a
+│   │ minicon horizon item at any future version. Owner decision: agenterm
+│   │ owns multi-agent orchestration/management (and downloading,
+│   │ installing and updating minicon itself, plus the plugin & app
+│   │ market), built on minicon's `{HOSTIF}` host-interface
+│   │ (`plan/plan-hostif-v1.md`, `plan/plan-v0.2.4.md`'s
+│   │ `{HARNESS-RETRACT}`). minicon stays the underlying service + interface
+│   │ provider; it does not grow a manager role itself, ever -- this
+│   │ supersedes "not started, horizon not assigned yet" below, which is
+│   │ kept as frozen history, not a live question.
+│   │ ----- everything below this line is frozen 2026-09-27 design history,
+│   │ kept for context on why {hm} was shaped this way before the
+│   │ 2026-10-07 retraction moved the whole role to agenterm -----
 │   ├── outcome: a workflow/project-management role that coordinates the
 │   │   agents already running in each MiniCon tab -- a "manager", not a
 │   │   "worker"; drafted from real practice, not speculative ->h ->m
@@ -516,7 +524,15 @@ Two process notes worth keeping, because each cost real time:
   showed nothing at all. Fixtures must terminate on their own merits; a
   wrapper timeout would have hidden this.
 
-### harness GUI workbench — direction settled, work not started
+### harness GUI workbench — RETRACTED 2026-10-07, frozen history below
+
+**Superseding decision (owner, 2026-10-07):** this entire section is
+retracted along with `harness-manage` {hm} above, for the same reason —
+minicon does not grow a management/workbench surface for agents; that is
+agenterm's role, built on minicon's `{HOSTIF}` host-interface. If a GUI for
+coordinating agents is ever built, it is agenterm's product, not a future
+minicon 0.3.x. Everything below this line is kept as frozen design history
+(what was considered and why), not a live plan.
 
 **Owner intent (2026-09-26).** The motivation is real and MiniCon-owned, not
 a re-run of AgenTerm's CC: a GUI shell over `harness` for e-commerce users who
