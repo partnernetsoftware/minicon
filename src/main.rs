@@ -220,7 +220,15 @@ const RESIZE_DEBOUNCE: Duration = Duration::from_millis(60);
 /// *single* `read()`. Only an actual gap lets the child consume the paste first
 /// and then see the commit as its own key press. See
 /// [`composer_submission_parts`].
-const COMPOSER_ENTER_DELAY: Duration = Duration::from_millis(12);
+///
+/// The gap is deliberately long (owner report, 2026-10-10): an agent TUI such
+/// as codebuddy applies a bracketed paste asynchronously and does not treat it
+/// as committed the instant the bytes land. A 12 ms gap was still short enough
+/// that the commit Enter won the race — it submitted whatever the agent itself
+/// had already drafted in its input box, and the pasted content arrived after
+/// that, unsent. Half a second is long enough for the agent to finish
+/// ingesting the paste before the Enter is treated as its own key press.
+const COMPOSER_ENTER_DELAY: Duration = Duration::from_millis(500);
 
 /// Read buffer for the PTY pump thread.
 const READ_BUF: usize = 8192;
@@ -516,6 +524,32 @@ fn session_label(reported: &str, program_path: &str, program_label: &str) -> Str
     trimmed.to_owned()
 }
 
+/// Which region the pointer last worked, and therefore which one owns the
+/// clipboard-paste shortcuts.
+///
+/// Keyboard input reaches the terminal whenever the composer is unfocused, but
+/// paste is pointer-scoped: a person who was just clicking around the tab
+/// sidebar must not get a terminal paste review because they reflexively hit
+/// Ctrl+V. The composer owns paste itself while it has focus, so this only ever
+/// distinguishes the terminal content area from the sidebar. See
+/// [`terminal_paste_allowed`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum InputSurface {
+    #[default]
+    Terminal,
+    Sidebar,
+}
+
+/// Whether the terminal's clipboard-paste shortcuts may act right now.
+///
+/// Paste belongs to the terminal content area; the tab sidebar owns tab
+/// navigation, not clipboard. The composer is not consulted here because a
+/// focused composer never routes keys to the terminal in the first place —
+/// this gate is only reached with the terminal as the keyboard sink.
+fn terminal_paste_allowed(surface: InputSurface) -> bool {
+    surface == InputSurface::Terminal
+}
+
 /// One lightweight GUI process containing several isolated terminal sessions.
 ///
 /// The wrapper owns tree identity and routing only. A `ConTerminal` still owns
@@ -530,6 +564,10 @@ struct ConApp {
     /// the greeting page is a lifecycle boundary rather than a settings reset.
     session_seed: SessionSeed,
     composer: composer::ComposerState,
+    /// Which region the pointer last worked; scopes the terminal paste
+    /// shortcuts (see [`InputSurface`]). Defaults to the terminal so a fresh
+    /// window pastes without a prior click.
+    input_surface: InputSurface,
     /// The clipboard length the status bar shows.
     clipboard_status: clipboard_status::ClipboardStatus,
     /// True while the left button is held after pressing inside the composer,
@@ -744,6 +782,35 @@ fn composer_paste_text_or_image_path() -> Option<String> {
     clipboard_image::image_paste_as_temp_file_path()
 }
 
+/// The review dialog's prompt, extended with a compact preview of what is about
+/// to be sent.
+///
+/// The dialog already shows the full text in its editable box; this adds an
+/// at-a-glance summary — which line it starts with and how big it is — so a
+/// human can confirm a large paste without scrolling the box itself. It is
+/// presentation only: the review's meaning, its editable body and its delivery
+/// are unchanged.
+fn paste_review_prompt(text: &str) -> String {
+    const PREVIEW_CHARS: usize = 80;
+    let lines = text.lines().count().max(1);
+    let bytes = text.len();
+    let first_line = text.lines().next().unwrap_or("");
+    let mut preview: String = first_line.chars().take(PREVIEW_CHARS).collect();
+    if first_line.chars().count() > PREVIEW_CHARS {
+        preview.push('…');
+    }
+    // A paste can begin with a blank line; name that rather than showing
+    // nothing where a preview is promised.
+    if preview.trim().is_empty() {
+        preview = "(blank first line)".to_owned();
+    }
+    format!(
+        "Review or edit the text before it is sent to the active terminal.\n\
+         {lines} line(s), {bytes} bytes\n\
+         starts: {preview}"
+    )
+}
+
 /// Where the caret sits, which is what decides whether Up moves or recalls.
 fn composer_draft_shape(state: &composer::ComposerState) -> keymap::Draft {
     let caret = state.caret.min(state.text.len());
@@ -873,6 +940,7 @@ impl ConApp {
             sessions,
             session_seed,
             composer: composer::ComposerState::default(),
+            input_surface: InputSurface::default(),
             composer_selecting: false,
             clipboard_status: clipboard_status::ClipboardStatus::new(),
             composer_clicks: Default::default(),
@@ -1648,6 +1716,36 @@ impl ConApp {
         Ok(true)
     }
 
+    /// Records which region the pointer just acted on, so paste is scoped to
+    /// the terminal content area rather than the tab sidebar.
+    ///
+    /// Uses the same sidebar rectangle the tree hit test does, so the two
+    /// cannot disagree about where the sidebar ends, and it is keyed on the
+    /// press position rather than on which branch consumed the click — a right
+    /// press in the sidebar is not consumed by the tree today and must still
+    /// read as the sidebar here.
+    fn note_pointer_surface(
+        &mut self,
+        window: &PixelWindow,
+        position: &LogicalPoint,
+    ) -> Result<(), PixelWindowError> {
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let layout = self.layout(
+            metrics.physical_width,
+            metrics.physical_height,
+            metrics.scale_factor,
+        );
+        let x = (position.x * scale).max(0.0) as u32;
+        let y = (position.y * scale).max(0.0) as u32;
+        self.input_surface = if layout.sidebar.contains(x, y) {
+            InputSurface::Sidebar
+        } else {
+            InputSurface::Terminal
+        };
+        Ok(())
+    }
+
     fn composer_hit(
         &self,
         window: &PixelWindow,
@@ -2219,7 +2317,7 @@ impl ConApp {
         let review = agenterm_platform::text_review::open_review(
             window.native_identity(),
             "Review terminal paste",
-            "Review or edit the text before it is sent to the active terminal.",
+            &paste_review_prompt(text),
             text,
             move || {
                 let _ = waker.wake();
@@ -2440,8 +2538,15 @@ fn product_window_title() -> String {
 /// it and appending a second Enter would submit twice — harmless in a shell
 /// (one blank prompt) but actively wrong in an agent TUI, where it sends an
 /// extra empty message.
+///
+/// The draft is trimmed of leading/trailing whitespace (owner request,
+/// 2026-10-10). A clipboard paste routinely carries a trailing newline, and a
+/// draft recalled from history can carry leading indentation; either would be
+/// delivered verbatim as a blank first/last line inside the paste. The commit
+/// Enter is still a separate key press (see [`COMPOSER_ENTER_DELAY`]), so a
+/// whitespace-only draft still submits one empty line rather than nothing.
 fn composer_submission_payload(submission: &str, bracketed: bool) -> Vec<u8> {
-    let draft = submission.strip_suffix('\r').unwrap_or(submission);
+    let draft = submission.strip_suffix('\r').unwrap_or(submission).trim();
     if !bracketed {
         // Without bracketed paste the draft is ordinary typed input.
         return draft.as_bytes().to_vec();
@@ -2517,6 +2622,20 @@ impl PixelWindowApplication for ConApp {
     ) -> Result<PixelWindowDirective, PixelWindowError> {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
+        }
+        // The pointer decides which region owns paste; the keyboard must not,
+        // or the paste chord would re-enable itself on the way in. A focus
+        // change back to the window restores the terminal as the working area.
+        match &event {
+            PixelWindowEvent::FocusChanged(true) => {
+                self.input_surface = InputSurface::Terminal;
+            }
+            PixelWindowEvent::PointerButton {
+                state: PointerButtonState::Pressed,
+                position: Some(position),
+                ..
+            } => self.note_pointer_surface(window, position)?,
+            _ => {}
         }
         if self.settings_open
             && matches!(
@@ -2957,6 +3076,16 @@ impl PixelWindowApplication for ConApp {
         let active = self.workspace.active().ok_or_else(|| {
             PixelWindowError::failed("con_session_missing", "no active terminal session")
         })?;
+        // Paste is scoped to the terminal content area: a person who was just
+        // working the tab sidebar gets no terminal paste review from a stray
+        // Ctrl+V. The chord is recognized by the exact rule the terminal acts
+        // on, so the two cannot disagree about what is a paste.
+        if !terminal_paste_allowed(self.input_surface)
+            && let PixelWindowEvent::Keyboard(key) = &event
+            && terminal::is_clipboard_paste_chord(key)
+        {
+            return Ok(PixelWindowDirective::Continue);
+        }
         let directive = self.active_session_mut()?.event(window, event)?;
         let requested = self
             .sessions
@@ -3771,15 +3900,17 @@ mod tests {
             let mut composer = composer::ComposerState::default();
             composer::insert(&mut composer, draft);
             let submission = composer.take_submission().unwrap();
-            let plain = submission.strip_suffix('\r').unwrap_or(&submission);
+            // The payload trims leading/trailing whitespace; the draft's own
+            // embedded soft breaks stay. See `composer_submission_payload`.
+            let trimmed = submission.strip_suffix('\r').unwrap_or(&submission).trim();
 
             let payload = composer_submission_payload(&submission, false);
-            assert_eq!(payload, plain.as_bytes());
+            assert_eq!(payload, trimmed.as_bytes());
 
             parser.process(b"\x1b[?2004h");
             let payload =
                 composer_submission_payload(&submission, parser.screen().bracketed_paste());
-            let expected = format!("\x1b[200~{}\x1b[201~", draft.replace('\n', "\r"));
+            let expected = format!("\x1b[200~{}\x1b[201~", draft.replace('\n', "\r").trim());
             assert_eq!(payload, expected.as_bytes());
             // The commit must not ride inside or immediately behind the paste:
             // a child reading the payload sees no CR at all, so it cannot
@@ -3792,8 +3923,79 @@ mod tests {
             parser.process(b"\x1b[?2004l");
             let payload =
                 composer_submission_payload(&submission, parser.screen().bracketed_paste());
-            assert_eq!(payload, plain.as_bytes());
+            assert_eq!(payload, trimmed.as_bytes());
         }
+    }
+
+    /// A Send carries a clipboard paste's trailing newline and any recalled
+    /// leading indentation straight into the child unless they are trimmed.
+    /// Both the plain and the bracketed payload drop them; embedded breaks and
+    /// interior spaces are untouched.
+    #[test]
+    fn composer_submission_payload_trims_surrounding_whitespace() {
+        let report = |draft: &str, bracketed: bool| {
+            let mut composer = composer::ComposerState::default();
+            composer::insert(&mut composer, draft);
+            let submission = composer.take_submission().unwrap();
+            composer_submission_payload(&submission, bracketed)
+        };
+        assert_eq!(report("\n  hello  \r\n", false), b"hello".to_vec());
+        assert_eq!(report("\t\n\n", false), Vec::<u8>::new());
+        // Interior breaks (the draft's soft newlines) survive as CR.
+        assert_eq!(
+            report("  first\nsecond  \n", false),
+            b"first\rsecond".to_vec()
+        );
+        assert_eq!(
+            report("\n hello \n", true),
+            b"\x1b[200~hello\x1b[201~".to_vec()
+        );
+        let empty = report("\n   \n", true);
+        assert!(
+            !empty.ends_with(b"\r"),
+            "an empty trimmed paste still carries no commit"
+        );
+    }
+
+    /// Paste is scoped to the terminal content area; the tab sidebar owns tab
+    /// navigation, not the clipboard. A fresh window defaults to the terminal,
+    /// so paste works before any click.
+    #[test]
+    fn terminal_paste_gate_scopes_paste_to_the_content_area() {
+        assert_eq!(InputSurface::default(), InputSurface::Terminal);
+        assert!(terminal_paste_allowed(InputSurface::Terminal));
+        assert!(!terminal_paste_allowed(InputSurface::Sidebar));
+    }
+
+    /// The review prompt carries a compact summary of the paste so a human can
+    /// confirm a large one without scrolling the dialog's own edit box.
+    #[test]
+    fn paste_review_prompt_summarizes_the_content() {
+        let single = paste_review_prompt("hello");
+        assert!(single.contains("1 line(s), 5 bytes"), "{single}");
+        assert!(single.contains("starts: hello"), "{single}");
+
+        // A Windows review body is CRLF; both breaks and the trailing newline
+        // must count the way a person reads them.
+        let multi = paste_review_prompt("first\r\nsecond\r\n");
+        assert!(multi.contains("2 line(s)"), "{multi}");
+        assert!(multi.contains("starts: first"), "{multi}");
+
+        // A leading blank line is named rather than shown as nothing.
+        assert!(paste_review_prompt("\r\nsecond").contains("(blank first line)"));
+
+        // A long first line is truncated instead of flooding the prompt.
+        let long = "x".repeat(200);
+        let prompt = paste_review_prompt(&long);
+        assert!(prompt.contains("200 bytes"), "{prompt}");
+        assert!(prompt.contains('…'), "{prompt}");
+        assert!(
+            !prompt.contains(&long),
+            "the prompt must not carry the whole line"
+        );
+
+        // Empty input still yields a well-formed summary.
+        assert!(paste_review_prompt("").contains("1 line(s), 0 bytes"));
     }
 
     /// Committing a composer draft must send the *same* bytes a physical Enter

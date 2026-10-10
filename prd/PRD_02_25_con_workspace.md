@@ -352,6 +352,12 @@ the window rather than being hidden to save pixels.
   from being interpreted together as unframed pasted text. Without that
   negotiated mode, legacy text-plus-CR delivery remains. The button and
   Ctrl+O use this same path; embedded breaks remain inside the paste.
+  The draft is trimmed of leading and trailing whitespace (a pasted block's
+  trailing newline, a recalled draft's indentation) before it is framed, and
+  the final Enter is held half a second — not the earlier 12 ms — past the
+  paste payload, because an agent TUI (codebuddy) applies a bracketed paste
+  asynchronously and a short gap let the commit Enter win the race and submit
+  the agent's own in-progress draft instead of the pasted text.
   The raw-PTY black-box `composer_send_delivers_paste_then_submit_to_raw_application`
   verifies single- and multiline drafts with exactly one final Enter outside
   the paste markers, without a second user action. This protocol check is
@@ -537,6 +543,21 @@ Concretely:
   dropping unsafe controls; confirmation still normalizes to CR for PTY
   delivery. Pre-normalizing the review buffer to CR collapsed every paste
   onto one painted line.
+- [v] the terminal paste shortcuts are scoped to the terminal content area.
+  Ctrl+V / Ctrl+Shift+V / Command+V are recognized by the one predicate the
+  terminal itself acts on (`is_clipboard_paste_chord`), and the host suppresses
+  them when the tab sidebar — not the content area — is the region the pointer
+  last pressed. A person who was just working the sidebar no longer gets a
+  terminal paste review from a stray Ctrl+V; the suppression swallows the chord
+  rather than forwarding a literal `0x16`. Keyboard input is otherwise unchanged
+  (the composer still owns its own paste while focused), so the "exactly one
+  focus owner" invariant holds. A fresh window defaults to the content area, so
+  paste works before any click.
+- [v] the terminal paste review's prompt carries a compact summary of the
+  content — the count of lines and bytes and a truncated first-line preview —
+  so a human can confirm a large paste without scrolling the edit box. This is
+  presentation only; the review body, its editability and PTY delivery are
+  unchanged.
 
 ## Configuration
 

@@ -957,45 +957,27 @@ impl ConTerminal {
         // Host shortcuts are resolved before the application sees the key.
         if let LogicalKey::Character(text) = &event.logical {
             let control = event.modifiers.control;
+            // Paste is resolved first, through the one predicate the host also
+            // reads to scope paste to the terminal content area.
+            if is_clipboard_paste_chord(event) {
+                self.request_clipboard_paste();
+                return Ok(());
+            }
             // macOS: Command is the clipboard modifier (a Mac keyboard has no
             // Insert key and Ctrl+C stays SIGINT). Command never reaches the
             // shell, so it cannot shadow a terminal control key — Cmd+C copies
-            // any selection, Cmd+V pastes, matching every native macOS terminal.
+            // any selection, matching every native macOS terminal.
             #[cfg(target_os = "macos")]
-            if event.modifiers.meta && !control && !event.modifiers.alt {
-                if text.eq_ignore_ascii_case("c") {
-                    self.copy_selection();
-                    return Ok(());
-                }
-                if text.eq_ignore_ascii_case("v") {
-                    self.request_clipboard_paste();
-                    return Ok(());
-                }
-            }
-            if control && event.modifiers.shift {
-                if text.eq_ignore_ascii_case("c") {
-                    self.copy_selection();
-                    return Ok(());
-                }
-                if text.eq_ignore_ascii_case("v") {
-                    self.request_clipboard_paste();
-                    return Ok(());
-                }
-            }
-            // Windows binds Ctrl+V to paste everywhere, including its own
-            // terminals, and a shell there has no readline quoted-insert to
-            // shadow: before this, Ctrl+V reached cmd.exe as 0x16 and printed
-            // "^V" (measured in the ARM court, 2026-09-23), which is what a
-            // user reads as "paste does not work". Ctrl+Shift+V keeps working
-            // for anyone with the habit, and a program that wants a literal
-            // 0x16 can still receive it through the control CLI.
-            #[cfg(windows)]
-            if control
+            if event.modifiers.meta
+                && !control
                 && !event.modifiers.alt
-                && !event.modifiers.shift
-                && text.eq_ignore_ascii_case("v")
+                && text.eq_ignore_ascii_case("c")
             {
-                self.request_clipboard_paste();
+                self.copy_selection();
+                return Ok(());
+            }
+            if control && event.modifiers.shift && text.eq_ignore_ascii_case("c") {
+                self.copy_selection();
                 return Ok(());
             }
             // Bare Ctrl+C copies when there is a selection, matching conhost;
@@ -1992,6 +1974,40 @@ impl ConTerminal {
         self.selecting = false;
         release
     }
+}
+
+/// The clipboard-paste chords a key event can raise, independent of where the
+/// key came from: macOS Command+V and Ctrl+Shift+V on every host, plus bare
+/// Ctrl+V on Windows.
+///
+/// Windows binds Ctrl+V to paste everywhere, including its own terminals, and a
+/// shell there has no readline quoted-insert to shadow: before this, Ctrl+V
+/// reached cmd.exe as 0x16 and printed "^V" (measured in the ARM court,
+/// 2026-09-23), which is what a user reads as "paste does not work". Ctrl+Shift+V
+/// keeps working for anyone with the habit, and a program that wants a literal
+/// 0x16 can still receive it through the control CLI.
+///
+/// Extracted from [`ConTerminal::forward_key_checked`] so the host can scope
+/// paste to the terminal content area (see `ConApp::input_surface`) with the
+/// *same* rule the terminal uses to act on it, instead of a second copy that
+/// can drift out of step.
+pub(super) fn is_clipboard_paste_chord(event: &NormalizedKeyEvent) -> bool {
+    let LogicalKey::Character(text) = &event.logical else {
+        return false;
+    };
+    let control = event.modifiers.control;
+    if control && event.modifiers.shift && text.eq_ignore_ascii_case("v") {
+        return true;
+    }
+    #[cfg(windows)]
+    if control && !event.modifiers.alt && !event.modifiers.shift && text.eq_ignore_ascii_case("v") {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    if event.modifiers.meta && !control && !event.modifiers.alt && text.eq_ignore_ascii_case("v") {
+        return true;
+    }
+    false
 }
 
 impl ConTerminal {
@@ -3190,6 +3206,60 @@ pub(crate) mod tests {
             forwarded.is_err(),
             "Ctrl+Alt+V must reach the program's PTY"
         );
+    }
+
+    /// The paste predicate is the single rule the terminal acts on and the host
+    /// scopes with, so it must classify exactly the paste chords and nothing
+    /// else. Getting this wrong in one place is how "Ctrl+V does nothing in the
+    /// sidebar" could become "Ctrl+V never pastes".
+    #[test]
+    fn the_paste_predicate_matches_only_the_paste_chords() {
+        let key =
+            |text: &str, control: bool, shift: bool, alt: bool, meta: bool| NormalizedKeyEvent {
+                logical: LogicalKey::Character(text.to_owned()),
+                physical: agenterm_platform::input::PhysicalKeyCode::Other,
+                text: Some(text.to_owned()),
+                state: KeyPressState::Pressed,
+                repeat: false,
+                modifiers: ModifierState {
+                    control,
+                    shift,
+                    alt,
+                    meta,
+                },
+            };
+        // Ctrl+Shift+V pastes on every host, and case does not matter.
+        assert!(is_clipboard_paste_chord(&key(
+            "v", true, true, false, false
+        )));
+        assert!(is_clipboard_paste_chord(&key(
+            "V", true, true, false, false
+        )));
+        // Ctrl+Shift+C is copy, and a bare Ctrl+C is SIGINT: neither is paste.
+        assert!(!is_clipboard_paste_chord(&key(
+            "c", true, true, false, false
+        )));
+        assert!(!is_clipboard_paste_chord(&key(
+            "c", true, false, false, false
+        )));
+        // A plain "v" is the letter, not a paste.
+        assert!(!is_clipboard_paste_chord(&key(
+            "v", false, false, false, false
+        )));
+        if cfg!(windows) {
+            assert!(is_clipboard_paste_chord(&key(
+                "v", true, false, false, false
+            )));
+            // Ctrl+Alt+V belongs to the program, not the host.
+            assert!(!is_clipboard_paste_chord(&key(
+                "v", true, false, true, false
+            )));
+        }
+        if cfg!(target_os = "macos") {
+            assert!(is_clipboard_paste_chord(&key(
+                "v", false, false, false, true
+            )));
+        }
     }
 
     /// A pointer or control coordinate past the grid's right/bottom edge must
