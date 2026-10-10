@@ -152,6 +152,43 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
   Output latency has a floor set by the polling interval, and a program driving
   the console API in ways a screen buffer cannot express will not round-trip
   perfectly. Both are accepted costs of running where no pseudoconsole exists.
+- [_] **known defect, registered 2026-10-10 (v0.2.4):** a hosted TUI's status
+  line can render **duplicated** in the MiniCon window on Windows, while the
+  same program is correct in other terminals (owner report, real hardware; not
+  tied to a version bump). Reproduced in isolation rather than only reported: a
+  synthetic cursor-addressed full-frame redraw (absolute `CSI <row>;1H` plus
+  `CSI 2K` on every row, emitted as raw bytes) deterministically corrupts the
+  screen-buffer mirror path. The synthesized stream carries a literal escape
+  fragment — e.g. `\x1b[K` immediately followed by `Htick`, where the child
+  wrote `\x1b[1;1Htick`, i.e. the `\x1b[1;1` was consumed/dropped and the
+  sequence-final `H` became text — rows land at the wrong position, and a
+  written row is lost. Captured with `--emit-snapshot`/`capture-pane` on a
+  `--headless --control` session; deterministic across repeated runs.
+  Isolation: the child's own bytes are clean, and this repo's pinned vendored
+  `vt100` parses exactly those bytes correctly (no leak, correct rows), so the
+  corruption is **upstream of the parser**, in the Windows console-agent host
+  path (hidden-console scrape) that this repo selects by default on Windows and
+  that other terminals never use. The exact "two identical status rows" symptom
+  was not captured (the real TUI would not start in the headless pane); what is
+  proven is same-path escape-stream corruption under bursty redraw.
+  This is **not** the "carriage return rendered as line feed" hypothesis: the
+  console's `CSI K`/`CSI H` handling is correct in isolation (single, spaced
+  writes round-trip perfectly) and only a rapid burst corrupts — consistent with
+  a scrape read racing the child (or the agent's concurrent console resize)
+  rather than a static console mode.
+  Separate unconfirmed observation: `--feature conpty` under `--headless` did
+  not change the backend — the fed byte stream still carried the console agent's
+  mouse-announce and `\r\n` scroll feed — so that flag may be inert on the
+  headless path.
+  safe failure / status: **BLOCKED** on a live interactive Windows GUI repro
+  (same class as `plan/plan-carried-debt.md`'s G3); the root cause plausibly
+  lives in the pinned `agenterm-platform` console agent
+  (`adapters/windows/console_agent.rs`), outside this repository.
+  dependency: a Windows GUI host where a window renders and the real TUI can be
+  driven; a stable regression, once one exists, belongs beside the existing
+  console-agent journeys in `tests/minicon_console_agent.rs`.
+  non-goal: speculatively patching `agenterm-platform`'s Windows console code
+  without a confirmed live repro.
 
 Evidence: seven journeys against a real forced-backend session — a shell starts
 and paints, typed input reaches the child and its *computed* output returns, a
