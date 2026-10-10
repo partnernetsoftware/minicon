@@ -1,0 +1,14 @@
+# Normalize line endings on every checkout: text files are stored and checked
+# out with LF, on every host. Two real reasons, not tidiness:
+#
+#   - crates/minicon-core/src/lib.rs's `no_platform_dependency_creeps_in` test
+#     embeds its own Cargo.toml with `include_str!` and matches LF-delimited
+#     `\n[section]\n` headers. A CRLF checkout (Git-for-Windows' default
+#     `core.autocrlf=true`, which is what GitHub's windows runners use) made it
+#     panic in CI while passing on LF hosts -- a Windows-only red that the
+#     release chain never ran, so it shipped unnoticed through 0.2.4.
+#   - the shell scripts under scripts/ and the workflows under .github/ are
+#     LF-sensitive.
+#
+# `text=auto` leaves binary files (assets, the six native payloads) untouched.
+* text=auto eol=lf

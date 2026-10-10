@@ -42,7 +42,14 @@ mod boundary_tests {
     /// is about the dependency graph rather than about any line of code.
     #[test]
     fn no_platform_dependency_creeps_in() {
-        let manifest = include_str!("../Cargo.toml");
+        // Normalize line endings first. `include_str!` embeds whatever the
+        // checkout produced, and a CRLF checkout (Git-for-Windows'
+        // `core.autocrlf=true`, the default on GitHub's windows runners) turns
+        // `\n[dependencies]\n` into `\r\n[dependencies]\r\n`, failing this on
+        // line endings instead of on the dependency graph it exists to check.
+        // `.gitattributes` pins checkout to LF; this stays robust anyway,
+        // because the assertion is about dependencies, not about EOL bytes.
+        let manifest = include_str!("../Cargo.toml").replace("\r\n", "\n");
         // Bounded at the next section header, so this checks the production
         // graph only. A dev-dependency cannot reach a consumer, and failing on
         // one would forbid the very oracles that keep this code honest.
