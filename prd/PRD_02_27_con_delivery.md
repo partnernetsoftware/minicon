@@ -2361,7 +2361,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 | `.github/workflows/six-grid-cloud-build.yml` + `scripts/publish-six-grid-runtime.sh`/`package-six-grid-runtime.py`/`aggregate-six-grid-runtime.py`/`write-six-grid-receipt.py`/`source-fingerprint.py` | cloud alternative to `six-cell-qualify.sh` + `publish-six-grid-runtime.sh`: builds six cells on native runners, assembles a GHCR OCI body |
 | `.github/workflows/linux-crossbake-experiment.yml` + `scripts/crossbake-base.Dockerfile`/`crossbake.Dockerfile` | **experimental, not adopted** -- probes one `ubuntu-24.04` host cross-building all six cells unsigned; does not change the table above |
 | `.github/workflows/osxcross-experiment.yml` | **experimental, not adopted** -- non-Mac macOS cross-compile probe, tracked `[_]` BLOCKED |
-| `scripts/product-source-hash.sh` | not a build step; computes the tolerant source-tree hash every downstream stage (candidate/defender-ci-scan/reputation/release, not yet company-signing/macos-signing -- see `plan/plan-v0.2.3.md`'s `{RELTOOL}`#1) binds against, so a docs/workflow-only push doesn't force a rebuild |
+| `scripts/product-source-hash.sh` | not a build step; computes the tolerant source-tree hash every downstream stage (candidate/defender-ci-scan/reputation/release, not yet company-signing/macos-signing -- see `plan/archive/plan-v0.2.3.md`'s `{RELTOOL}`#1) binds against, so a docs/workflow-only push doesn't force a rebuild |
 
 **github ci 测试 / test execution on hosted runners**
 
@@ -2382,7 +2382,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 | `scripts/linux-utm-runner.sh` / `macos-utm-runner.sh` / `windows-utm-runner.sh` | bridge exact host-linked artifacts into the matching UTM guest |
 | `scripts/macos-runtime-qualify.sh` / `linux-runtime-qualify.sh` / `windows-runtime-qualify.ps1` | target-side runners: execute already-linked artifacts inside the guest/host, never invoke Cargo or read a source checkout |
 | `scripts/setup-linux-runners.sh` | one-time provisioning of the two local Lima Debian courts |
-| `scripts/rss-os-court.sh` | names MiniCon host RSS on osx/lnx/win from one Apple Silicon host (the local counterpart to the RSS budget test that flaked under six-cell contention, `plan/plan-v0.2.3.md`'s `{RELTOOL}`#5) |
+| `scripts/rss-os-court.sh` | names MiniCon host RSS on osx/lnx/win from one Apple Silicon host (the local counterpart to the RSS budget test that flaked under six-cell contention, `plan/archive/plan-v0.2.3.md`'s `{RELTOOL}`#5) |
 | `scripts/linux-x11-package-smoke.sh` | qualifies a linked Linux binary on a slim X11 desktop (has `libxkbcommon0`, not `libxkbcommon-x11-0`) |
 | `release/utm-win-defender-court.sh` / `release/utm-win-defender-scan.sh` / `release/defender-court.ps1` | the **historical fallback** Defender path (superseded by `defender-ci-scan.yml` below, kept for offline/legacy/interactive debugging -- see "Release pipeline tree — local UTM Defender" below) |
 | `scripts/lib/utm-court.sh` / `lib/lima-court.sh` + the `*-selftest.sh` scripts in `scripts/` | shared court-calling helpers and the selftests that guard *them*, not the product |
@@ -2394,7 +2394,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 | `.github/workflows/company-signing.yml` | Windows Authenticode via Azure Artifact Signing (Trusted Signing), OIDC-federated, non-exportable key |
 | `.github/workflows/macos-signing.yml` | codesign + notarize + staple for the macOS universal binary, company Developer ID |
 | `scripts/inspect-authenticode.sh`/`.ps1`, `scripts/fetch-microsoft-trust-bundle.sh` | local inspection/verification tooling for a signed artifact, not a dispatcher -- see the `sign-windows-artifacts` skill |
-| *(no wrapper script)* | neither signing workflow has a `ci-*.sh`/`ci-release.sh` wrapper today; both are dispatched by hand with `gh workflow run`, `qualification_only` default included -- named as `{RELTOOL}`#6 in `plan/plan-v0.2.3.md` |
+| *(no wrapper script)* | neither signing workflow has a `ci-*.sh`/`ci-release.sh` wrapper today; both are dispatched by hand with `gh workflow run`, `qualification_only` default included -- named as `{RELTOOL}`#6 in `plan/archive/plan-v0.2.3.md` |
 
 **github ci 发布 / candidate, reputation, release**
 
@@ -2404,7 +2404,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 | `.github/workflows/defender-ci-scan.yml` | CI-native Defender scan on a `windows-2025` runner, default reputation path (see the pipeline tree below) |
 | `.github/workflows/reputation.yml` | re-verifies the qualification against the exact Candidate, produces `reputation_run_id` |
 | `.github/workflows/release.yml` | dry-run verification, then human-authorized Promotion of the sealed bytes -- no rebuild |
-| `scripts/ci-release.sh` | thin `gh workflow run` wrappers for candidate/reputation/release only (not signing); every subcommand hardcodes `--ref main`, so it cannot target a pinned `candidate-src-<v>` branch -- named as `{RELTOOL}`#6 in `plan/plan-v0.2.3.md` |
+| `scripts/ci-release.sh` | thin `gh workflow run` wrappers for candidate/reputation/release only (not signing); every subcommand hardcodes `--ref main`, so it cannot target a pinned `candidate-src-<v>` branch -- named as `{RELTOOL}`#6 in `plan/archive/plan-v0.2.3.md` |
 | `scripts/release.sh` | drives the whole candidate→signing→Defender→release chain end to end per the `run-reputation-and-release` skill; the closest thing to a single "just release it" entry point today |
 | `.claude/skills/run-reputation-and-release/`, `sign-windows-artifacts/`, `sign-macos-artifacts/` | the actual procedural authority all of the above scripts point back to -- read these first, per `AGENTS.md`'s "Skills: look them up BEFORE acting" |
 

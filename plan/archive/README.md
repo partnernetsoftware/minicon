@@ -33,7 +33,7 @@ Archived with v0.1.22's clean-up (2026-09-22):
 - `plan-runtime-memory-next.md` and the seven `research-*.md` — the host memory
   track, paused since 2026-09-06. The 10 MiB target is carried in
   `plan/plan-carried-debt.md` C4 (claimed but `BLOCKED` by
-  `plan/plan-v0.2.1.md`'s `UI` leaf pending a display-capable host); the
+  `plan/archive/plan-v0.2.1.md`'s `UI` leaf pending a display-capable host); the
   evidence is in `archive/research/`.
 
 Archived with the pre-0.2.2-planning clean-up (2026-09-26):
@@ -48,5 +48,16 @@ Archived with the pre-0.2.2-planning clean-up (2026-09-26):
   does not replace the release Mac's local `six-cell-qualify.sh` as the
   routine path. See `prd/PRD_02_27_con_delivery.md` ("Where the bytes come
   from") for how this sits next to the production pipeline.
+
+Archived after the 0.2.4 release (2026-10-10):
+
+- `plan-v0.2.1.md` — shipped v0.2.1. Its remaining `UI` leaf is carried by
+  `plan/plan-carried-debt.md` (C3/C4); still cited as evidence history by
+  `prd/PRD_02_31_v0_2_horizon.md` and
+  `prd/archive/v0.2.1-release-history.md`.
+- `plan-v0.2.3.md` — shipped v0.2.3. Its remaining `{HB}`/`{UI-C3}`/`{RELTOOL}`
+  leaves were carried into `plan-v0.2.4.md` and onward; still cited by
+  `prd/PRD_02_27_con_delivery.md` and
+  `prd/archive/v0.2.3-release-history.md`.
 
 Never reuse an archived run as evidence for newer source bytes.

@@ -118,7 +118,7 @@ process, exactly like the existing `--control` endpoint.
 │   │   a tool call outside its bound (root/command) is refused, not widened
 │   └── dependency: `agenterm_platform::contained_process` (its
 │       `contained-process-spawn` feature, enabled in `Cargo.toml`)
-│       [v] closed 2026-09-26, plan/plan-v0.2.1.md leaf HB. `ExecTool::
+│       [v] closed 2026-09-26, plan/archive/plan-v0.2.1.md leaf HB. `ExecTool::
 │       spawn_contained` now builds a `ContainedHeadlessCommand` (argv
 │       vector, no shell, same as before) with `capture_output()` and hard
 │       `ContainedProcessLimits` (512 MiB memory on Linux/Windows, 64 MiB file size, 256 open
@@ -366,7 +366,7 @@ used to carry):
   bounded turn/tool-call limit) and exits, printing the result to stdout —
   no interactive loop inside a tab, and no conversation persisted across
   invocations by default.
-  **[v] closed 2026-09-26, plan/plan-v0.2.1.md leaf HS.** `--session ID`
+  **[v] closed 2026-09-26, plan/archive/plan-v0.2.1.md leaf HS.** `--session ID`
   starts a bounded multi-turn session, `--continue ID` resumes one; the two
   are mutually exclusive. Recorded turns are folded into the next
   invocation's task as plain composed text ahead of the new task, so
@@ -555,7 +555,7 @@ horizon's placeholder, not its start.
 
 **[-] Half the blocker closed 2026-09-26; still not started overall.**
 `harness` now has bounded multi-turn session persistence (`--session`/
-`--continue`, per "Run shape" above, plan/plan-v0.2.1.md leaf HS). A
+`--continue`, per "Run shape" above, plan/archive/plan-v0.2.1.md leaf HS). A
 workbench still needs streaming output -- HS explicitly deferred that,
 laying no groundwork -- so a window around today's print-once-at-exit CLI
 still would not deliver a live workbench. Streaming is the remaining

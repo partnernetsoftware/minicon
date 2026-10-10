@@ -160,7 +160,7 @@ lnx-x86_64 cloud container (Xvfb virtual framebuffer, no real display/GPU,
 same court directly, 2026-09-26 — idle **21.46 MiB** (22,507,520 B), load
 27.03 MiB, extra-tab delta 1.38 MiB, four-cycle growth 2.03 MiB
 (`MINICON_HOST_RSS_RECEIPT` in the test's own stdout). This corrects a
-2026-09-06 assumption in `plan/plan-v0.2.1.md`/`plan/plan-carried-debt.md`
+2026-09-06 assumption in `plan/archive/plan-v0.2.1.md`/`plan/plan-carried-debt.md`
 that this court "already fails here" for lack of a display: it runs and
 passes cleanly under `xvfb-run`, and is close to but still above the
 10 MiB intent (a debug build, not release-optimized).

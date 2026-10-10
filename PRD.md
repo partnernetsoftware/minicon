@@ -139,7 +139,7 @@ MiniCon — one-file local terminal
 │       published; exact Candidate, signatures, Defender and public-download
 │       checks PASS. See prd/archive/v0.2.1-release-history.md. Earlier cloud
 │       environment gaps above remain separate from the new release receipts.
-│       └── prd/PRD_02_31_v0_2_horizon.md · plan/plan-v0.2.1.md ·
+│       └── prd/PRD_02_31_v0_2_horizon.md · plan/archive/plan-v0.2.1.md ·
 │             plan/archive/plan-v0.2.0.md
 └── Executable truth
     ├── alignment-contract.json — capability → owner → command → evidence

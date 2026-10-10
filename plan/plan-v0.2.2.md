@@ -5,7 +5,7 @@
 Owner (2026-09-26): "0.2.1已经发布了，所以没做的就尝试在0.2.2解决，到时不行就继续顺推到0.2.4" —
 0.2.1 already shipped; whatever it left undone should be attempted in 0.2.2,
 and if still blocked then, roll forward again rather than let it block a
-release. This closes the fork `plan/plan-v0.2.1.md` itself left open ("if
+release. This closes the fork `plan/archive/plan-v0.2.1.md` itself left open ("if
 0.2.1 closes its own leaves cleanly, the next horizon is 0.3.x; if not, the
 next real horizon is a 0.2.2 patch") in favor of the patch path.
 
