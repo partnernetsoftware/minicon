@@ -169,8 +169,13 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
   corruption is **upstream of the parser**, in the Windows console-agent host
   path (hidden-console scrape) that this repo selects by default on Windows and
   that other terminals never use. The exact "two identical status rows" symptom
-  was not captured (the real TUI would not start in the headless pane); what is
-  proven is same-path escape-stream corruption under bursty redraw.
+  was not captured in the headless harness (the real TUI would not start there);
+  what is proven there is same-path escape-stream corruption under bursty redraw.
+  The symptom itself was then confirmed **live** on 2026-10-10: hosting a real
+  interactive TUI (the CodeBuddy CLI) inside the MiniCon window on Windows
+  reproduced it visibly — duplicated / mis-ordered text rows in the status
+  area, absent in other terminals on the same machine. This closes the
+  previously-missing live GUI evidence; the root cause is still unlocated.
   This is **not** the "carriage return rendered as line feed" hypothesis: the
   console's `CSI K`/`CSI H` handling is correct in isolation (single, spaced
   writes round-trip perfectly) and only a rapid burst corrupts — consistent with
@@ -180,12 +185,14 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
   not change the backend — the fed byte stream still carried the console agent's
   mouse-announce and `\r\n` scroll feed — so that flag may be inert on the
   headless path.
-  safe failure / status: **BLOCKED** on a live interactive Windows GUI repro
-  (same class as `plan/plan-carried-debt.md`'s G3); the root cause plausibly
-  lives in the pinned `agenterm-platform` console agent
+  safe failure / status: **OPEN** — a live interactive Windows GUI repro now
+  exists (2026-10-10), so the earlier blocker (no live repro) is cleared, but the
+  root cause is still unlocated; the same class as `plan/plan-carried-debt.md`'s
+  G3. Root cause plausibly lives in the pinned `agenterm-platform` console agent
   (`adapters/windows/console_agent.rs`), outside this repository.
-  dependency: a Windows GUI host where a window renders and the real TUI can be
-  driven; a stable regression, once one exists, belongs beside the existing
+  dependency: capturing the child-vs-synthesized byte streams at the moment of a
+  live GUI corruption (a raw-agent dump switch) so the leaking step can be
+  pinned; a stable regression, once one exists, belongs beside the existing
   console-agent journeys in `tests/minicon_console_agent.rs`.
   non-goal: speculatively patching `agenterm-platform`'s Windows console code
   without a confirmed live repro.
