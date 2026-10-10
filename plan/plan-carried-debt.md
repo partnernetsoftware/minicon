@@ -619,6 +619,24 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      dependency: a Windows GUI host where a window actually renders (real
 │        hardware, as the owner's report came from, or a UTM/court image
 │        proven to render a window first)
+│      @attempt 2026-10-10, real Windows host (this dev box, Server 2022,
+│        Consolas present), minicon 0.2.4 debug build, agenterm 29003fc8.
+│        Two independent new-tab paths via the control CLI -- `new-tab` and
+│        `send-ui-keys Ctrl+Shift+T` -- both rendered the new cmd.exe tab
+│        correctly: banner and `D:\...>` prompt start at column 0, no leading
+│        padding, no mid-word wrap, in **both** the vt100 logical screen
+│        (`capture-pane`) and the real pixels (`screenshot-pane`, PNG
+│        inspected). **Not reproduced.** Either the 2026-09-28 agenterm
+│        console_agent change (29003fc8) also removed the width-sync window
+│        this leaf suspected, or the report needs a trigger this attempt did
+│        not hit (different DPI/monitor, first resize after spawn, or an
+│        interleaved cargo run during spawn). Do not claim fixed on a
+│        non-repro, but the live-repro dependency this leaf has been BLOCKED
+│        on is now satisfied -- it moves from "no Windows host" to "repro
+│        attempted and failed; needs a sharper trigger". Side finding, not
+│        G3: `screenshot-pane` intermittently wrote its PNG and then never
+│        returned (exit 124 under a 25 s cap), twice in a row -- tracked
+│        separately as `{SCRSHOT-HANG}`.
 │      non-goal: patching agenterm-platform's Windows PTY code speculatively
 │        without a confirmed repro -- see `measurement-discipline` /
 │        `make-the-failure-speak-first` project memory
