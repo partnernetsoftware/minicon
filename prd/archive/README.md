@@ -30,3 +30,8 @@ Entries:
 - `v0.2.1-release-history.md` — harness statefulness/containment hardening;
   independently smoke-tested post-publish (see its own "Independent
   post-publish smoke test" section).
+- `v0.2.3-release-history.md` — multi-line composer editing, Authenticode +
+  notarization signing, header settings panel, three themes, grid crosshair.
+- `v0.2.4-release-history.md` — composer Send timing (trim + held Enter),
+  terminal-scoped Ctrl+V paste review, paste-review content preview; first
+  release whose chain was driven from a Windows host.
