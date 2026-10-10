@@ -9,7 +9,15 @@ use serde_json::Value;
 const OUTPUT_ITERATIONS: usize = 8192;
 const OUTPUT_CHUNK_BYTES: usize = 16 * 255 + 2;
 const OUTPUT_BYTES: u64 = (OUTPUT_ITERATIONS * OUTPUT_CHUNK_BYTES) as u64;
-const MIN_BYTES_PER_SECOND: u64 = 2 * 1024 * 1024;
+// The guard against a catastrophic throughput collapse, not a performance
+// target. Lowered from 2 MiB/s on 2026-10-10: GitHub's `macos-15-intel`
+// runner measured 1,584,578 B/s in a full cargo-test round (run 38042744704),
+// so the old 2 MiB/s floor failed a runner that is simply slower, not a
+// regression. 1.25 MiB/s keeps ~21% headroom above that measurement while
+// still catching a real collapse. The absolute wall-clock deadline below is
+// unchanged.
+const MIN_BYTES_PER_SECOND: u64 = 5 * 1024 * 1024 / 4; // 1.25 MiB/s
+
 const OUTPUT_DEADLINE: Duration = Duration::from_secs(30);
 const SIBLING_DEADLINE: Duration = Duration::from_secs(5);
 
