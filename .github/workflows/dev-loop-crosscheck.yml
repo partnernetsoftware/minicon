@@ -120,27 +120,64 @@ jobs:
         shell: bash
         env:
           LOG_DIR: probe-logs
+          JOB_STATUS: ${{ job.status }}
+          CELL: ${{ matrix.cell }}
         run: |
           set -eu
           mkdir -p "$LOG_DIR"
           triple='${{ matrix.triple }}'
           failed=""
+          # Per-suite name/status/seconds, so a green run still leaves a
+          # structured result. The log-upload step below fires only on
+          # failure/cancel, so before this a passing run left nothing behind
+          # to read a per-suite outcome or a per-cell cost from (2026-10-10).
+          results="$LOG_DIR/results.tsv"
+          : > "$results"
+          run_suite() {
+            local name="$1"; shift
+            local t0 t1 st
+            t0=$(date +%s)
+            if "$@" 2>&1 | tee -a "$LOG_DIR/$name.log"; then st=ok; else st=failed; failed="$failed $name"; fi
+            t1=$(date +%s)
+            printf '%s\t%s\t%s\n' "$name" "$st" "$((t1 - t0))" >> "$results"
+          }
           echo "== minicon-core (lib unit tests) ${{ inputs.test_filter }}"
-          if cargo test --locked --target "$triple" -p minicon-core -- --test-threads 2 ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_core.log"; then :; else failed="$failed minicon-core"; fi
+          run_suite minicon-core cargo test --locked --target "$triple" -p minicon-core -- --test-threads 2 ${{ inputs.test_filter }}
           for suite in minicon_blackbox minicon_control; do
             echo "== $suite ${{ inputs.test_filter }}"
-            if cargo test --locked --target "$triple" --test "$suite" -- --test-threads 2 ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/$suite.log"; then :; else failed="$failed $suite"; fi
+            run_suite "$suite" cargo test --locked --target "$triple" --test "$suite" -- --test-threads 2 ${{ inputs.test_filter }}
           done
           echo "== minicon_throughput --include-ignored --nocapture ${{ inputs.test_filter }}"
-          if cargo test --locked --target "$triple" --test minicon_throughput -- --test-threads 2 --include-ignored --nocapture ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_throughput.log"; then :; else failed="$failed minicon_throughput"; fi
-          case "${{ matrix.cell }}" in
+          run_suite minicon_throughput cargo test --locked --target "$triple" --test minicon_throughput -- --test-threads 2 --include-ignored --nocapture ${{ inputs.test_filter }}
+          case "$CELL" in
             win-*)
               # This suite is `#![cfg(windows)]` -- the pre-ConPTY console-agent
               # backend, only reachable on Windows.
               echo "== minicon_console_agent ${{ inputs.test_filter }}"
-              if cargo test --locked --target "$triple" --test minicon_console_agent -- --test-threads 1 ${{ inputs.test_filter }} 2>&1 | tee -a "$LOG_DIR/minicon_console_agent.log"; then :; else failed="$failed minicon_console_agent"; fi
+              run_suite minicon_console_agent cargo test --locked --target "$triple" --test minicon_console_agent -- --test-threads 1 ${{ inputs.test_filter }}
               ;;
           esac
+          # Written before the failure exit below, so a red run still ships a
+          # receipt naming which suites failed and how long each took.
+          {
+            printf '{\n'
+            printf '  "schema": 1,\n'
+            printf '  "cell": "%s",\n' "$CELL"
+            printf '  "triple": "%s",\n' "$triple"
+            printf '  "source_sha": "%s",\n' "${GITHUB_SHA:-unknown}"
+            printf '  "job_status": "%s",\n' "${JOB_STATUS:-unknown}"
+            printf '  "suites": [\n'
+            first=1
+            while IFS=$'\t' read -r name status secs; do
+              [ -n "$name" ] || continue
+              if [ "$first" = 1 ]; then first=0; else printf ',\n'; fi
+              printf '    {"name": "%s", "status": "%s", "seconds": %s}' "$name" "$status" "$secs"
+            done < "$results"
+            printf '\n  ],\n'
+            printf '  "suites_total_seconds": %s\n' "$(awk -F'\t' '{s += $3} END {print s + 0}' "$results")"
+            printf '}\n'
+          } > "$LOG_DIR/test-receipt.json"
+          cat "$LOG_DIR/test-receipt.json"
           if [ -n "$failed" ]; then
             echo "CROSSCHECK failed suites:$failed" | tee -a "$LOG_DIR/summary.log"
             exit 1
@@ -156,3 +193,16 @@ jobs:
           path: probe-logs
           if-no-files-found: ignore
           retention-days: 7
+
+      # Runs on every outcome, including success: the receipt is the point.
+      # A green run's per-suite results and per-cell timings are exactly what
+      # a cost or gate analysis needs, and the failure-log step above never
+      # produces them (that gap is why a passing run used to leave nothing).
+      - name: Upload test receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: crosscheck-receipt-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
+          path: probe-logs/test-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
