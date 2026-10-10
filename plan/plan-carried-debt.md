@@ -622,4 +622,17 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      non-goal: patching agenterm-platform's Windows PTY code speculatively
 │        without a confirmed repro -- see `measurement-discipline` /
 │        `make-the-failure-speak-first` project memory
+└── R1 CI action/runner migration debt (observed 2026-10-10, v0.2.4 chain)
+      #risk warnings on every release-chain run, not yet failures:
+      (a) several actions still target Node.js 20, which GitHub now forces
+          onto Node 24 (`actions/checkout`, `upload-artifact`,
+          `download-artifact`, `setup-python` at their pinned SHAs) -- they
+          break when the compatibility shim is removed;
+      (b) `ubuntu-latest` migrates to Ubuntu 26 beginning 2026-10-19.
+      Fix: a bounded workflow-hygiene pass -- re-pin each action's SHA/
+      version and prefer an explicit `ubuntu-24.04`/`windows-2025` tag over
+      `-latest` where the release chain's reproducibility matters, then
+      re-run the chain. No release is blocked before the migration date;
+      do not bump to `latest` labels blindly.
+      dependency: none
 ```

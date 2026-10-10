@@ -2309,6 +2309,41 @@ in this repository that contradicts it is out of date, not an alternative.
 | signing and stamping | **CI** | the only stage that must be there, because the keys are there |
 | cold-build verification | a GHCR image, weekly or before a release | proves the build does not depend on this machine's local state |
 
+### What runs where, in one look (0.2.x routine release)
+
+Added 2026-10-10 after the first release driven end to end from a Windows
+host, because the mental model "build locally, upload a draft, then let CI
+sign and publish" is wrong for this repository and cost a round of confusion.
+
+One owner-confirmed entry point drives the whole chain —
+`scripts/release.sh <version>` — and **nothing in it builds or uploads from
+the local host.** The local host only bumps the version, commits, pushes
+`main`, and dispatches workflows; every byte is produced in CI:
+
+| step | where | what it does |
+| --- | --- | --- |
+| 0. bump + push | **the local host** | sets `Cargo.toml`/`Cargo.lock`/`release-policy.json` to `<version>`, commits, pushes `main` |
+| 1. `minicon-com.yml` `{com}` | CI (one `macos-15` job, then six native runners) | cross-compiles and packs all six cells unsigned |
+| 2. `company-signing.yml` + `macos-signing.yml` | CI, in parallel | Authenticode, and Developer ID/notarize/staple |
+| 3. `candidate.yml` `{cand}` | CI | seals the exact signed bytes into an immutable Candidate, binds `source_sha` |
+| 4. `defender-ci-scan.yml` | CI `windows-2025` | real Defender scan of the Candidate-manifest bytes |
+| 5. `reputation.yml` | CI | re-verifies the qualification against the exact Candidate |
+| 6. `release.yml` | CI | dry-run, then human-authorized Promotion — no rebuild |
+
+There is **no local build and no manual draft upload.** The draft Release is
+created by `release.yml` inside CI (`gh release create --draft ...`), all
+assets are uploaded to it, and in the same job it is immediately promoted
+with `gh release edit --draft=false` — a user never sees the draft, and the
+final public Release is neither draft nor prerelease. The Promotion is the
+one interactive step: `release.sh` stops after the dry run for a typed
+version confirmation, and an operator (or an agent, non-interactively) can
+instead dispatch the `release.yml` Promotion directly with
+`confirmation=publish-v<version>`.
+
+`scripts/ci-release.sh` is the per-stage counterpart: it dispatches one stage
+at a time so a caller reads each stage's output before starting the next,
+which is how a non-interactive driver resumes from the dry-run stop.
+
 ### Script/workflow inventory by pipeline stage (2026-09-27)
 
 The table above names five stages; this is which files actually implement
@@ -2446,12 +2481,13 @@ Every release from 0.1.14 through 0.1.24 bound its Defender evidence on a
 local UTM Windows guest (see the historical tree below). 0.1.25 is the first
 release to try binding it on a GitHub-hosted `windows-2025` runner instead,
 per the 2026-09-24 owner instruction to stop depending on UTM for the routine
-path. `[-]` until `defender-ci-scan.yml` has completed one real end-to-end run
-with a valid `reputation-qualification.json` accepted by `reputation.yml
-verify`; promotes to `[v]` default once that run's id is named here as
-evidence. Per-node timings below are this pipeline's own measured 0.1.25 runs
-where the node has executed, and the 0.1.24 runs otherwise (same workflows,
-unaffected by which Defender host is used).
+path. `[v]` since 0.2.3: `defender-ci-scan.yml` has run end to end with a valid
+`reputation-qualification.json` accepted by `reputation.yml verify` — 0.2.3
+(run 36400447096) and 0.2.4 (run 38029966037, the first such chain driven from
+a Windows host). It is now the default routine path. Per-node timings below
+are this pipeline's own measured 0.1.25 runs where the node has executed, and
+the 0.1.24 runs otherwise (same workflows, unaffected by which Defender host is
+used).
 
 ```text
 0.1.25 release pipeline — CI-hosted Defender path
@@ -2466,7 +2502,7 @@ unaffected by which Defender host is used).
 │       candidate-manifest.json (the reputation_assets it names are what
 │       gets scanned next)
 ├── defender-ci-scan.yml {def} @host=windows-2025 ->cand #decision default path
-│   │   @time=unmeasured (first real run pending)
+│   │   @time=~1min (0.2.3 run 36400447096; 0.2.4 run 38029966037)
 │   ├── extract sha256-checked reputation_assets from the Candidate manifest
 │   ├── Update-MpSignature, then MpCmdRun.exe -Scan -ScanType 3 per asset
 │   └── reputation_court.py qualify/verify -> reputation-qualification.json/.b64

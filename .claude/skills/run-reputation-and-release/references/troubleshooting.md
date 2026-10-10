@@ -135,3 +135,42 @@ product's code and from ad-hoc experimentation.
   Promotion workflow already downloads, rehashes and executes the public
   assets. Additional local downloads are diagnostic, not a new release gate.
   Preserve the existing parallel signing jobs and no-rebuild Promotion.
+
+## Driving the chain from a Windows host (minicon 0.2.4, first time)
+
+Recorded 2026-10-10 after the first minicon release whose entire chain was
+driven from Windows, so the next Windows operator does not re-derive it.
+
+- **`scripts/release.sh <version>` runs unchanged under Windows Git Bash**
+  (GNU bash 5.2.15, MSYS). The repository uses LF with `core.autocrlf=false`,
+  so the scripts are not CRLF-mangled; `sed -i`, `date -f -`, `awk`, `mktemp`
+  and `find` all behave as on Unix. The chain reached the `release.yml` dry
+  run green with no platform obstruction.
+- **The one stop is the same stop as on any non-tty host:** the final
+  `read -r -p "... confirm"` before the real publish. A non-interactive
+  session (agent, CI, redirected stdin) reads EOF, which under `set -e` exits
+  the script right after the dry run — the safe outcome, but it presents as a
+  failure exit even though nothing published. To publish from there, dispatch
+  the Promotion explicitly:
+  ```sh
+  gh workflow run release.yml --repo partnernetsoftware/minicon \
+    --ref candidate-src-<v> \
+    -f candidate_run_id=<cand> -f source_sha=<sha> \
+    -f reputation_run_id=<rep> -f version=<v> \
+    -f confirmation=publish-v<v> -f dry_run=false
+  ```
+  or, equivalently,
+  `MINICON_CI_REF=candidate-src-<v> scripts/ci-release.sh release <cand> <sha> <rep> <v> publish-v<v> false`.
+  Then delete the pinned branch.
+- **Credentials:** `gh` auth with `repo` + `workflow` scopes is sufficient
+  (dispatch + read run artifacts). No local signing credentials are involved —
+  the signing keys live only in the CI Environment.
+- **A bumped version does not refresh the local dev binary.** `release.sh`
+  edits `Cargo.toml` in source and pushes; `target/debug/minicon.exe` (and the
+  version string in its window title) stays at the old version until you run
+  `scripts/build.sh dev`. That is not a release defect — the published bytes
+  are built in CI from the bumped source — but it reads as one if unnoticed.
+- **A stale `candidate-src-<v>` branch can outlive a release.** Only the
+  branch for the version being published should exist; `v0.2.3`'s lingered
+  until the 0.2.4 run noticed it. Check `git ls-remote --heads origin
+  'candidate-src-*'` after a publish and delete anything but the live one.

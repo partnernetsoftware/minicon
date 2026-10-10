@@ -59,7 +59,42 @@ minicon_ci_dispatch_and_wait() {
   fi
 
   echo "== run $run_id: https://github.com/$repo/actions/runs/$run_id" >&2
-  gh run watch "$run_id" --repo "$repo" --exit-status
+  minicon_ci_wait_run "$run_id"
+}
+
+# minicon_ci_wait_run <run-id>
+#
+# Waits for a run to finish, with the same 0-only-on-success semantics as
+# `gh run watch --exit-status`. On a terminal it uses gh's live view; off a
+# terminal (captured logs, an agent session, CI) it polls `gh run view`
+# instead, because `gh run watch` reprints the run's whole job list every few
+# seconds -- measured at ~317 KB of captured output for one six-cell run,
+# mostly repeated snapshots, which buries the one line that matters. The
+# poll interval is deliberately coarse; nothing here is latency-critical.
+minicon_ci_wait_run() {
+  local run_id="$1" repo
+  repo=$(_ci_dispatch_repo)
+  if [ -t 1 ]; then
+    gh run watch "$run_id" --repo "$repo" --exit-status
+    return
+  fi
+  local status conclusion last_status=""
+  while :; do
+    if ! IFS=$'\t' read -r status conclusion < <(
+      gh run view "$run_id" --repo "$repo" --json status,conclusion \
+        --jq '[.status, (.conclusion // "-")] | @tsv'
+    ); then
+      echo "== run $run_id: could not read status (gh failed?)" >&2
+      return 1
+    fi
+    if [ "$status" != "$last_status" ]; then
+      echo "== run $run_id: ${status}${conclusion:+ ($conclusion)}" >&2
+      last_status="$status"
+    fi
+    [ "$status" = "completed" ] && break
+    sleep 15
+  done
+  [ "$conclusion" = "success" ]
 }
 
 # minicon_ci_dump_failed_logs <run-id>

@@ -14,7 +14,17 @@
 # The final publish step is interactive: the script runs release.yml as a
 # dry run first, then asks you to type the version again before dispatching
 # the real, irreversible publish. Nothing publishes without that.
+#
+# Exit codes: 0 = published; 1 = a gate failed; 3 = stopped after the dry run
+# without publishing (non-interactive stdin, or the typed confirmation did
+# not match). On 3 the candidate-src-<version> branch is left in place, so the
+# Promotion can be dispatched directly.
 set -euo pipefail
+
+# Shared wait helper (minicon_ci_wait_run): on a non-tty it polls instead of
+# letting `gh run watch` reprint the whole job list every few seconds.
+# shellcheck source=lib/ci-dispatch.sh
+source "$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/lib/ci-dispatch.sh"
 
 VERSION="${1:?usage: $0 <version>, e.g. $0 0.2.1}"
 REPO="partnernetsoftware/minicon"
@@ -52,10 +62,9 @@ wait_for_run() {
     exit 1
   fi
   echo "tracking run $run_id" >&2
-  gh run watch "$run_id" --repo "$REPO" --exit-status >&2
-  status="$(gh run view "$run_id" --repo "$REPO" --json status --jq '.status')"
-  conclusion="$(gh run view "$run_id" --repo "$REPO" --json conclusion --jq '.conclusion')"
-  if [ "$status" != "completed" ] || [ "$conclusion" != "success" ]; then
+  if ! minicon_ci_wait_run "$run_id" >&2; then
+    status="$(gh run view "$run_id" --repo "$REPO" --json status --jq '.status')"
+    conclusion="$(gh run view "$run_id" --repo "$REPO" --json conclusion --jq '.conclusion')"
     echo "release.sh: $workflow run $run_id finished status=$status conclusion=$conclusion" >&2
     exit 1
   fi
@@ -97,6 +106,12 @@ git commit -m "release: bump minicon to ${VERSION}"
 git push origin main
 SHA="$(git rev-parse HEAD)"
 echo "source_sha=${SHA}"
+# The bump edits source and pushes; it does not rebuild the local binary, so
+# target/debug/minicon.exe (and the version in its window title) stays on the
+# old version until refreshed. Harmless for the release -- CI builds from the
+# pushed source -- but it reads as a failed bump when testing locally.
+echo "note: local target/debug/minicon.exe still reports the previous version;" >&2
+echo "      run ./scripts/build.sh dev to refresh it if you are testing locally." >&2
 
 T0="$(now_epoch)"
 log "2/8 minicon-com.yml (unsigned one-pack/six-cell)"
@@ -160,12 +175,26 @@ wait_for_run release.yml "$BRANCH" "$T5" >/dev/null
 echo "dry run succeeded."
 
 echo
+if [ ! -t 0 ]; then
+  # No terminal to confirm on (agent session, CI, redirected stdin). Stop
+  # after the dry run rather than publishing, and print the exact command to
+  # resume. Exit 3 means "dry run passed, nothing published" -- deliberately
+  # distinct from exit 1, a real gate failure.
+  echo "release.sh: non-interactive stdin; stopping after the dry run (nothing published)." >&2
+  echo "To publish minicon v${VERSION}, dispatch the Promotion, then delete the branch:" >&2
+  echo "  gh workflow run release.yml --repo ${REPO} --ref ${BRANCH} \\" >&2
+  echo "    -f candidate_run_id=${CAND_RUN} -f source_sha=${SHA} \\" >&2
+  echo "    -f reputation_run_id=${REP_RUN} -f version=${VERSION} \\" >&2
+  echo "    -f confirmation=publish-v${VERSION} -f dry_run=false" >&2
+  echo "  git push origin --delete ${BRANCH}" >&2
+  exit 3
+fi
 echo "About to PUBLISH minicon v${VERSION} for real. This is irreversible."
-read -r -p "Type the version (${VERSION}) to confirm, anything else to abort: " CONFIRM
+read -r -p "Type the version (${VERSION}) to confirm, anything else to abort: " CONFIRM || CONFIRM=""
 if [ "$CONFIRM" != "$VERSION" ]; then
   echo "release.sh: publish not confirmed; stopping after the dry run." >&2
   echo "The ${BRANCH} branch was left in place -- rerun the release.yml publish step manually, then delete it." >&2
-  exit 1
+  exit 3
 fi
 
 log "8/8 release.yml publish"
@@ -176,6 +205,16 @@ gh workflow run release.yml --repo "$REPO" --ref "$BRANCH" \
 wait_for_run release.yml "$BRANCH" "$T6" >/dev/null
 
 git push origin --delete "$BRANCH"
+# A candidate-src-<v> branch is throwaway and must not outlive its release: a
+# stale one from 0.2.3 was still on origin during the 0.2.4 run, so check for
+# leftovers instead of trusting that the delete above covered them all.
+stale_branches="$(git ls-remote --heads origin 'refs/heads/candidate-src-*' \
+  | awk '{print $2}' | sed 's#refs/heads/##')"
+if [ -n "$stale_branches" ]; then
+  echo "release.sh: WARNING stale candidate branch(es) still on origin:" >&2
+  printf '  %s\n' $stale_branches >&2
+  echo "  delete with: git push origin --delete <name>" >&2
+fi
 log "done"
 echo "minicon v${VERSION} published. Verify the GitHub Release and record the run ids"
 echo "(minicon-com=${COM_RUN} company-signing=${WIN_RUN} macos-signing=${MAC_RUN}"
