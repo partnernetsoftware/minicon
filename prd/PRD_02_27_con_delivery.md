@@ -2577,6 +2577,46 @@ builds nothing outside a release.
 | osx-x86_64 | the release Mac, under Rosetta | 2 s. GitHub `macos-13` sat queued for 7 minutes; keep it out of the loop |
 | Defender scan, legacy images, offline, long debugging | utm-court | 20-26 s per round |
 
+### Measured cost of a full `cargo test` round (2026-10-10)
+
+The table above is the 2026-09-23 early-round figure (route pre-built
+binaries to a runner and execute). This subsection is a different mechanism
+and a heavier one: `dev-loop-crosscheck.yml` builds each cell **natively** and
+runs the whole suite (core + blackbox + control + mux + throughput +
+console_agent). Numbers are from run `38042405313` (four grids, all green,
+`main`@`c071f27`), timing each job's own `started_at`→`completed_at`.
+
+| cell | runner | build | test | job total | bill factor | weighted min |
+| --- | --- | --- | --- | --- | --- | --- |
+| lnx-x86_64 | `ubuntu-24.04` | 71 s | 70 s | 2m46s | 1x | 2.77 |
+| lnx-aarch64 | `ubuntu-24.04-arm` | 57 s | 70 s | 2m31s | 1x | 2.52 |
+| win-x86_64 | `windows-2025` | 88 s | 132 s | 3m56s | 2x | 7.87 |
+| win-aarch64 | `windows-11-arm` | 77 s | 188 s | 4m42s | 2x | 9.40 |
+| (plan) | `ubuntu-24.04` | — | — | 2 s | 1x | 0.03 |
+
+- **run wall-clock 4m49s** (289 s) — the grids run in parallel, so this is
+  ≈ the slowest grid (`win-aarch64`), not the sum.
+- weighted total ≈ **22.6 min**; under private per-job-ceiling billing it is
+  **24 billed-minutes** (3+3+8+10).
+- **This repository is public, so GitHub-hosted runner minutes are free** —
+  the factor above is a relative resource weight, not a dollar amount. It
+  matters because the whole point of the "four grids first, macOS only when
+  warranted" rule below is resource/queue cost, which is real even when the
+  bill is zero.
+- **Windows is ~77% of the weighted cost, and its slowness is in the *test*
+  step** (132 s / 188 s vs 70 s on Linux), not the build (57–88 s everywhere).
+  `win-aarch64`'s test step is the single largest item and sets the
+  wall-clock ceiling.
+- macOS cells are **10x** and cost ~27–50 weighted minutes *each* — one mac
+  grid is roughly the whole four-grid round. That is the quantitative reason
+  macOS is opt-in (name `osx-*` explicitly, or `--with-tests=all`), never the
+  default. Measured: `osx-aarch64` 2m43s; `osx-x86_64` 5m03s in the round that
+  tripped the 2 MiB/s single-runner throughput floor (lowered to 1.25 MiB/s,
+  `tests/minicon_throughput.rs`).
+- A passing run uploads **no** artifact (`Upload failure logs` is skipped, 0 s)
+  — which is exactly why a cost/result receipt needs an always-run upload step
+  before it can be collected from green runs.
+
 A hosted Windows runner **has a real logged-in desktop** (`runneradmin`,
 session 2, Active, 1024x768) and MiniCon's GUI journeys run on it:
 `minicon_control` 9/9 in 8.5 s, `minicon_blackbox` 29 passed / 1 failed /
