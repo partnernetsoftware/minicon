@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "agenterm-platform",
  "agenterm-ui-core",
