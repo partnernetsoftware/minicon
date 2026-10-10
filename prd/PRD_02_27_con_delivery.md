@@ -2610,9 +2610,12 @@ console_agent). Numbers are from run `38042405313` (four grids, all green,
 - macOS cells are **10x** and cost ~27–50 weighted minutes *each* — one mac
   grid is roughly the whole four-grid round. That is the quantitative reason
   macOS is opt-in (name `osx-*` explicitly, or `--with-tests=all`), never the
-  default. Measured: `osx-aarch64` 2m43s; `osx-x86_64` 5m03s in the round that
-  tripped the 2 MiB/s single-runner throughput floor (lowered to 1.25 MiB/s,
-  `tests/minicon_throughput.rs`).
+  default. Measured: `osx-aarch64` 2m43s; `osx-x86_64` 3m35s (run
+  `38044132411`). The Intel mac grid's sustained throughput is noisy on the
+  hosted runner — **1.58 MiB/s** in one round (run `38042744704`) and
+  **1.98 MiB/s** in the next, same code — so the 2 MiB/s floor was lowered to
+  1.25 MiB/s (`tests/minicon_throughput.rs`) to keep real headroom over the
+  low sample without hiding an actual collapse.
 - A passing run uploads **no** artifact (`Upload failure logs` is skipped, 0 s)
   — which is exactly why a cost/result receipt needs an always-run upload step
   before it can be collected from green runs.
