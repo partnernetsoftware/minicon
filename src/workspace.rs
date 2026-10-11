@@ -24,6 +24,14 @@ pub struct TabNode {
     pub id: TabId,
     pub parent: Option<TabId>,
     pub title: String,
+    /// A name the user typed for this tab, if any.
+    ///
+    /// Distinct from the terminal's own title: a shell drives that one over
+    /// OSC and it is what other surfaces (window title, status bar,
+    /// `list-tabs`) report. This is the tree's own label and only overrides
+    /// the default the row would otherwise show; `None` means "no custom name,
+    /// fall back to the session title then `title`".
+    pub custom_title: Option<String>,
 }
 
 /// The lightweight host's complete tab tree.
@@ -72,6 +80,24 @@ impl Workspace {
             return false;
         }
         self.active = Some(id);
+        true
+    }
+
+    /// Sets (or clears) the tree label for a tab.
+    ///
+    /// `name` is trimmed; an all-whitespace name clears any custom label and
+    /// restores the default the row derives from the session. Returns `false`
+    /// for an unknown id (a click racing `close`), leaving the tree untouched.
+    pub fn rename(&mut self, id: TabId, name: &str) -> bool {
+        let Some(node) = self.nodes.iter_mut().find(|node| node.id == id) else {
+            return false;
+        };
+        let trimmed = name.trim();
+        node.custom_title = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
         true
     }
 
@@ -137,7 +163,12 @@ impl Workspace {
         }
         let id = TabId(self.next_id);
         self.next_id = self.next_id.checked_add(1)?;
-        self.nodes.push(TabNode { id, parent, title });
+        self.nodes.push(TabNode {
+            id,
+            parent,
+            title,
+            custom_title: None,
+        });
         self.depths.push(depth);
         self.active = Some(id);
         Some(id)
@@ -383,6 +414,7 @@ mod tests {
             id: TabId::new(500),
             parent: Some(TabId::new(999)),
             title: "orphan".into(),
+            custom_title: None,
         });
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -433,5 +465,36 @@ mod tests {
         assert_eq!(workspace.nodes().len(), 1);
         assert_eq!(workspace.active(), Some(root));
         assert!(workspace.node(unknown).is_none());
+
+        assert!(
+            !workspace.rename(unknown, "renamed"),
+            "renaming an unknown id is a no-op"
+        );
+        assert!(workspace.node(root).unwrap().custom_title.is_none());
+    }
+
+    /// The tree label is the user's to set and clear: a non-empty name sticks,
+    /// surrounding whitespace is trimmed, and an all-whitespace name clears it
+    /// so the row falls back to the session title again.
+    #[test]
+    fn rename_sets_and_clears_the_custom_label() {
+        let mut workspace = Workspace::default();
+        let root = workspace.add_root("terminal".into()).unwrap();
+        assert!(workspace.node(root).unwrap().custom_title.is_none());
+
+        assert!(workspace.rename(root, "  deploy  "));
+        assert_eq!(
+            workspace.node(root).unwrap().custom_title.as_deref(),
+            Some("deploy"),
+            "a custom name is trimmed and stored"
+        );
+        // The original fallback title is left untouched.
+        assert_eq!(workspace.node(root).unwrap().title, "terminal");
+
+        assert!(workspace.rename(root, "   "));
+        assert!(
+            workspace.node(root).unwrap().custom_title.is_none(),
+            "a blank name clears the override"
+        );
     }
 }

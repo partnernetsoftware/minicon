@@ -4,7 +4,7 @@
 //! terminal attributes, grid semantics, and cursor overlays, but not frame
 //! allocation, native presentation, IME composition, or surrounding host UI.
 
-use agenterm_ui_core::terminal_selection::{TerminalPoint, normalize_endpoints};
+use minicon_ui_core::terminal_selection::{TerminalPoint, normalize_endpoints};
 
 use crate::font;
 use crate::palette::{self, Rgb};

@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, mpsc};
 use std::time::Instant;
 
-use agenterm_platform::{
+use minicon_platform::{
     contract::ui_screenshot::UiScreenshotError,
     filesystem_publish::{write_file_atomic, write_path_atomic},
     screenshot::{OwnedXrgbPixels, XrgbFrame, write_xrgb_png},
@@ -263,7 +263,7 @@ fn png_worker() -> std::io::Result<&'static mpsc::SyncSender<PngJob>> {
     static WORKER: OnceLock<PngWorkerInit> = OnceLock::new();
     match WORKER.get_or_init(|| {
         let (sender, receiver) = mpsc::sync_channel::<PngJob>(1);
-        agenterm_platform::threading::spawn_named_detached(
+        minicon_platform::threading::spawn_named_detached(
             "minicon-png",
             Box::new(move || {
                 while let Ok(job) = receiver.recv() {

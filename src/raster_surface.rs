@@ -3,7 +3,7 @@
 //! Product paint policy stays in the caller; this leaf owns only pixel bounds,
 //! rectangle fill, and glyph-mask blending.
 
-use agenterm_ui_core::PixelRect;
+use minicon_ui_core::PixelRect;
 
 use crate::font;
 use crate::palette::Rgb;
@@ -70,7 +70,7 @@ impl<'a> Surface<'a> {
         if rect.is_empty() {
             return;
         }
-        agenterm_ui_core::pixel::fill_xrgb_rect(
+        minicon_ui_core::pixel::fill_xrgb_rect(
             self.pixels,
             self.width,
             rect.left,
@@ -209,7 +209,7 @@ impl<'a> Surface<'a> {
             if correct_coverage {
                 blend_corrected(destination, source, fg.to_xrgb());
             } else {
-                agenterm_ui_core::pixel::blend_mask_xrgb(destination, source, fg.to_xrgb());
+                minicon_ui_core::pixel::blend_mask_xrgb(destination, source, fg.to_xrgb());
             }
         }
     }
@@ -233,7 +233,7 @@ fn blend_corrected(destination: &mut [u32], source: &[u8], foreground: u32) {
             for (out, coverage) in corrected.iter_mut().zip(source) {
                 *out = table[usize::from(*coverage)];
             }
-            agenterm_ui_core::pixel::blend_mask_xrgb(destination, corrected, foreground);
+            minicon_ui_core::pixel::blend_mask_xrgb(destination, corrected, foreground);
         }
     });
 }

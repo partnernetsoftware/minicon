@@ -111,16 +111,38 @@ The value is not line count. It is that the inversion gets tested on code where
 being wrong is cheap, before it is attempted on `pty` / `font` / `ime`, where
 every `cfg` and every `unsafe` in the product lives.
 
-## Stage 3 — not scheduled
+## Stage 3 — shipped (2026-10-11), shape changed by an owner decision
 
-- [_] `terminal-core`: pty, vt100 wiring, raster, font, ime.
+- [v] The shared platform layer now lives **here**, not in `agenterm`:
+  `crates/minicon-platform` (was `agenterm-platform`), `crates/minicon-ui-core`
+  (was `agenterm-ui-core`), and the two forks `third_party/vt100` and
+  `third_party/softbuffer`. They are ordinary in-repo path members of this
+  workspace, and `src/` plus the test suites use them as `minicon_platform` /
+  `minicon_ui_core`. Plan and evidence: [`plan/plan-v0.2.5.md`](../plan/plan-v0.2.5.md)
+  leaf `{PLATFORM-MOVE}`.
 
-Deliberately unscheduled rather than merely future. Those adapters live in
-`agenterm-platform`, a crate serving process, ipc, webview, accessibility,
-screenshot and virtualization as well as the terminal. Extracting only the
-terminal-relevant adapters means splitting that crate along a seam that does
-not currently exist, and the cost is not the move — it is owning two platform
-layers while the split is in flight. Stage 2 has to have paid off first.
+The original plan here was to *extract a `terminal-core`* out of
+`agenterm-platform` by splitting that crate along a terminal seam, in one
+repository that both products still depended on. The owner changed the shape on
+2026-10-10 after `agenterm` retargeted itself to a MiniCon extension
+(llm/agent/harness plugins, an app market) rather than a second terminal
+product: the two products no longer share a terminal by reuse, so the crate
+that serves the terminal now belongs to **MiniCon**, and `agenterm` depends on
+MiniCon. Moving the whole crate — rather than carving a terminal seam out of it
+and leaving the rest behind — is *less* work and has one owner for the bytes,
+which is the property Stage 1 and Stage 2 were building toward. It does mean
+MiniCon carries platform adapters it does not itself call (accessibility trees,
+input injection, device capture, contained-process spawning); they are vendored
+as-is under `crates/minicon-platform`, and the CU-only tests among them were
+brought green in the same round (`{CU-TESTFIX}` in the plan).
+
+Naming across this PRD corpus: prose written before 2026-10-10 that says
+`agenterm-platform` / `agenterm-ui-core` names the same code that now lives at
+`crates/minicon-platform` / `crates/minicon-ui-core` here, and prose that says
+"the pinned `agenterm-platform`" describes the git-pin dependency that this
+round removed. Internal `AGENTERM_*` C macros and env vars inside the copied
+sources were deliberately **not** renamed (recorded in the plan, not silently
+skipped). New writing uses the `minicon-*` names.
 
 ## Non-goals
 
@@ -128,9 +150,11 @@ layers while the split is in flight. Stage 2 has to have paid off first.
   products need the same *rule*, not because it happens to be generic.
 - Not a reason to make MiniCon's own code more abstract than its use demands.
   The boundary exists to keep a dependency out, not to invite indirection.
-- **No mandatory dependency inversion.** Keep extracting host-neutral rules
-  into `minicon-core` and keep consuming `agenterm-platform` /
-  `agenterm-ui-core` at the git pin in `Cargo.toml`. AgenTerm depending on
-  `minicon-core` is a later optional payoff (Stage 2), not a prerequisite for
-  MiniCon shipping, for continued reuse, or for platform-feature work. Do not
-  split `agenterm-platform` solely to invert the arrow.
+- **No mandatory dependency inversion for its own sake.** Keep extracting
+  host-neutral rules into `minicon-core`. This non-goal was what Stage 3's
+  *shape* was originally restrained by ("do not split `agenterm-platform`
+  solely to invert the arrow"), and it still holds: the inversion landed
+  because the owner re-scoped `agenterm` on 2026-10-10, not to satisfy the
+  arrow. Absent that product change, consuming a shared crate at a git pin
+  would remain a legitimate alternative. See "Stage 3" above for how it
+  actually landed.

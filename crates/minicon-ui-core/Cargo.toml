@@ -1,0 +1,18 @@
+[package]
+name = "minicon-ui-core"
+version = "0.1.19"
+edition = "2024"
+rust-version = "1.97"
+description = "Host-neutral MiniCon interaction geometry"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/partnernetsoftware/minicon"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+terminal-selection = ["dep:vt100"]
+
+[dependencies]
+vt100 = { version = "0.16", optional = true }

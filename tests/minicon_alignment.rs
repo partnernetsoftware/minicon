@@ -548,7 +548,7 @@ fn referenced_repository_paths_exist() {
                 if token.contains("/dist/") || token.contains("dist/") {
                     continue;
                 }
-                // `crates/agenterm-platform/.../windows/runtime.rs` elides the
+                // `crates/minicon-platform/.../windows/runtime.rs` elides the
                 // middle on purpose; only a path that names one file is a claim.
                 if token.contains("...") {
                     continue;
@@ -1100,7 +1100,15 @@ fn manifest_and_build_asset_paths_exist_with_the_tracked_spelling() {
     for manifest in manifests {
         let text = fs::read_to_string(&manifest).expect("read manifest");
         let base = manifest.parent().expect("a manifest has a directory");
-        let mut found = 0usize;
+        // A leaf manifest legitimately declares no `path = "…"` entries — the
+        // vendored platform crates have no in-repo path dependencies — so an
+        // empty scan is a pass, not a failure. Only a manifest that failed to
+        // read would leave nothing to check.
+        assert!(
+            !text.trim().is_empty(),
+            "{} is empty; the scan found nothing to check",
+            manifest.display()
+        );
         for line in text.lines() {
             let line = line.trim();
             let Some(rest) = line.strip_prefix("path = \"") else {
@@ -1109,14 +1117,8 @@ fn manifest_and_build_asset_paths_exist_with_the_tracked_spelling() {
             let Some((token, _)) = rest.split_once('"') else {
                 continue;
             };
-            found += 1;
             check(base, token, &mut broken);
         }
-        assert!(
-            found > 0,
-            "{} declares no `path =` entries; the scan found nothing to check",
-            manifest.display()
-        );
     }
 
     // Build assets: the quoted relative paths `build.rs` reads.
@@ -1341,14 +1343,14 @@ fn regex_lite_paths() -> impl Fn(&str) -> Vec<String> {
     }
 }
 
-/// The `agenterm-platform` features MiniCon enables, by dependency block.
+/// The `minicon-platform` features MiniCon enables, by dependency block.
 ///
-/// AgenTerm's consumer gate builds its platform crate with exactly these
-/// combinations, because Cargo merges them per target and a default-feature
-/// check upstream proves nothing about this product's build. Changing a block
-/// here is a change to AgenTerm's gate too: tell the AgenTerm lane by
-/// envelope (`seam: platform/consumer-matrix`) in the same step.
-const AGENTERM_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
+/// Cargo merges features per target, so a default-feature check proves nothing
+/// about this product's build; pinning each block here keeps a block from
+/// silently gaining or losing a feature. `minicon-platform` now lives in this
+/// repository, so a change here is a change to the crate's own consumers —
+/// keep the vendored crate's feature set and this matrix in step.
+const MINICON_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
     (
         "dependencies",
         &[
@@ -1382,30 +1384,26 @@ const AGENTERM_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
 ];
 
 #[test]
-fn agenterm_platform_features_match_the_consumer_matrix() {
+fn minicon_platform_features_match_the_consumer_matrix() {
     let manifest = fs::read_to_string(repo_root().join("Cargo.toml")).unwrap();
     let mut section = String::new();
     let mut found: Vec<(String, Vec<String>)> = Vec::new();
-    let mut revs = BTreeSet::new();
     for line in manifest.lines() {
         let line = line.trim();
         if line.starts_with('[') && line.ends_with(']') {
             section = line.trim_matches(['[', ']']).to_string();
             continue;
         }
-        if line.contains("github.com/partnernetsoftware/agenterm") {
-            let rev = line
-                .split("rev = \"")
-                .nth(1)
-                .and_then(|r| r.split('"').next());
-            revs.insert(rev.unwrap_or("<none>").to_string());
-        }
-        if !line.starts_with("agenterm-platform ") {
+        if !line.starts_with("minicon-platform ") {
             continue;
         }
         assert!(
+            line.contains("path = \"crates/minicon-platform\""),
+            "[{section}] minicon-platform must be the in-repo path dependency: {line}"
+        );
+        assert!(
             line.contains("default-features = false"),
-            "[{section}] agenterm-platform must opt out of default features: {line}"
+            "[{section}] minicon-platform must opt out of default features: {line}"
         );
         let features = line
             .split("features = [")
@@ -1418,12 +1416,12 @@ fn agenterm_platform_features_match_the_consumer_matrix() {
             .collect();
         found.push((section.clone(), features));
     }
-    let expected: Vec<(String, Vec<String>)> = AGENTERM_PLATFORM_FEATURES
+    let expected: Vec<(String, Vec<String>)> = MINICON_PLATFORM_FEATURES
         .iter()
         .map(|(s, f)| (s.to_string(), f.iter().map(|f| f.to_string()).collect()))
         .collect();
     let effective = |target: &str| -> BTreeSet<&str> {
-        AGENTERM_PLATFORM_FEATURES
+        MINICON_PLATFORM_FEATURES
             .iter()
             .filter(|(s, _)| !s.starts_with("target.") || s.contains(target))
             .flat_map(|(_, f)| f.iter().copied())
@@ -1432,17 +1430,25 @@ fn agenterm_platform_features_match_the_consumer_matrix() {
     assert_eq!(
         found,
         expected,
-        "agenterm-platform features changed. Update AGENTERM_PLATFORM_FEATURES and \
-         tell the AgenTerm lane (`seam: platform/consumer-matrix`) so its consumer \
-         gate builds the same sets. Pinned effective sets, dev included: \
-         windows {:?}, unix {:?}",
+        "minicon-platform features changed. Update MINICON_PLATFORM_FEATURES so the \
+         crate's feature set and this matrix stay in step. Pinned effective sets, \
+         dev included: windows {:?}, unix {:?}",
         effective("windows"),
         effective("unix"),
     );
-    assert_eq!(
-        revs.len(),
-        1,
-        "every AgenTerm git dependency (platform blocks, ui-core, vt100 and \
-         softbuffer forks) must pin one rev: {revs:?}"
+    // The terminal stack is owned by this repository now: the renames live in
+    // `crates/` as path dependencies and the vendored vt100/softbuffer forks in
+    // `third_party/`. Nothing may quietly drift back to the external AgenTerm
+    // git dependency, and the forks must stay resolved by path, not by rev.
+    assert!(
+        !manifest.contains("github.com/partnernetsoftware/agenterm"),
+        "Cargo.toml still depends on the external AgenTerm repository; the \
+         terminal stack is meant to be owned in-repo"
     );
+    for fork in ["vt100", "softbuffer"] {
+        assert!(
+            manifest.contains(&format!("{fork} = {{ path = \"third_party/{fork}\" }}")),
+            "the {fork} fork must be patched by path into third_party/"
+        );
+    }
 }

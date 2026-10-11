@@ -168,7 +168,7 @@ impl Drop for Session {
 /// Reads whatever the host recorded about its own failures, so a broken
 /// backend reports why instead of only that.
 fn diagnostics() -> String {
-    let Some(path) = agenterm_platform::diagnostics::log_path() else {
+    let Some(path) = minicon_platform::diagnostics::log_path() else {
         return String::new();
     };
     std::fs::read_to_string(path).unwrap_or_default()
@@ -395,7 +395,7 @@ fn minicon_process_ids() -> std::collections::BTreeSet<u32> {
 /// literal text, so a rename on one side alone is a silent product that spawns
 /// a second copy of itself as a terminal.
 ///
-/// Referred to through `agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT` and
+/// Referred to through `minicon_platform::pty::CONSOLE_AGENT_ARGUMENT` and
 /// never spelled out here. A copy of the text is what a blanket product
 /// rename can rewrite on one side only — which is exactly what happened, and
 /// what silently switched these journeys off.
@@ -404,7 +404,7 @@ fn the_agent_argument_is_the_one_both_sides_agree_on() {
     let path: &Path = &binary();
     assert!(path.is_file());
     let agent_argument =
-        agenterm_platform::pty::CONSOLE_AGENT_ARGUMENT.expect("this platform has a console agent");
+        minicon_platform::pty::CONSOLE_AGENT_ARGUMENT.expect("this platform has a console agent");
     let output = Command::new(path)
         .arg(agent_argument)
         .arg("not-a-handle")

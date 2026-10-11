@@ -197,6 +197,16 @@ impl ConTerminal {
         format!("{} — {}", self.current_title, product_window_title())
     }
 
+    /// The stable name of the program this session runs (`cmd`, `pwsh`, ...).
+    ///
+    /// Distinct from `current_title`, which a shell overwrites over OSC: this is
+    /// what a tab row falls back to when the user has not named the tab, so the
+    /// name line shows the program while the title line below shows whatever the
+    /// shell last reported.
+    pub(super) fn program_label(&self) -> &str {
+        &self.program_label
+    }
+
     fn shutdown_pty(&mut self) {
         // First release product backpressure, then transfer both ownership
         // halves. ClosePseudoConsole may block while a flooded client drains,
@@ -204,7 +214,7 @@ impl ConTerminal {
         self.pty_output.close();
         let master = self.master.take();
         let child = self.child.take();
-        let _ = agenterm_platform::pty::shutdown_session_detached(master, child);
+        let _ = minicon_platform::pty::shutdown_session_detached(master, child);
     }
 
     /// Apply startup sizes in rising priority (config, then CLI flags); the
@@ -544,7 +554,7 @@ impl ConTerminal {
 
     /// Spawns the shell PTY and the reader thread. Called once from `opened`.
     fn spawn_pty(&mut self, waker: &WindowWaker) -> Result<(), PixelWindowError> {
-        agenterm_platform::pty::initialize_shutdown_reaper().map_err(|error| {
+        minicon_platform::pty::initialize_shutdown_reaper().map_err(|error| {
             PixelWindowError::failed("pty_reaper_init_failed", format!("{error}"))
         })?;
         // `-e` hosts a chosen program; otherwise fall back to the user's shell.
@@ -552,7 +562,7 @@ impl ConTerminal {
         {
             Some((program, args)) => (program.clone(), args.to_vec()),
             None => (
-                agenterm_platform::runtime::default_terminal_shell(),
+                minicon_platform::runtime::default_terminal_shell(),
                 Vec::new(),
             ),
         };
@@ -578,7 +588,7 @@ impl ConTerminal {
             // None on Windows or when the shell already has explicit args.
             // Only meaningful for the default-shell path — a program given
             // via -e must receive exactly the arguments the user wrote.
-            agenterm_platform::pty::login_shell_argument(
+            minicon_platform::pty::login_shell_argument(
                 std::path::Path::new(&program),
                 0,
             )
@@ -612,7 +622,7 @@ impl ConTerminal {
         let reader_waker = waker.clone();
         let wake_pending = Arc::new(AtomicBool::new(false));
         let reader_wake_pending = Arc::clone(&wake_pending);
-        agenterm_platform::threading::spawn_named_detached(
+        minicon_platform::threading::spawn_named_detached(
             "minicon-reader",
             Box::new(move || {
                 let mut buf = [0u8; READ_BUF];
@@ -659,7 +669,7 @@ impl ConTerminal {
         let child_exit_code_encoded = Arc::new(AtomicU64::new(0));
         let waiter_exit_code = Arc::clone(&child_exit_code_encoded);
         let exit_waker = waker.clone();
-        agenterm_platform::threading::spawn_named_detached(
+        minicon_platform::threading::spawn_named_detached(
             "minicon-waiter",
             Box::new(move || {
                 let wait_result = waiter.wait();
@@ -803,22 +813,22 @@ impl ConTerminal {
     /// candidate window but the result never reaches the shell — which is what
     /// made "IME enabled" look like "keyboard broken" and led to IME being
     /// switched off entirely.
-    fn handle_ime(&mut self, window: &PixelWindow, event: agenterm_platform::ime::ImeEvent) {
+    fn handle_ime(&mut self, window: &PixelWindow, event: minicon_platform::ime::ImeEvent) {
         let _ = self.handle_ime_checked(window, event);
     }
 
     pub(super) fn handle_ime_checked(
         &mut self,
         window: &PixelWindow,
-        event: agenterm_platform::ime::ImeEvent,
+        event: minicon_platform::ime::ImeEvent,
     ) -> Result<(), String> {
-        use agenterm_platform::ime::{ImeAction, classify_event};
+        use minicon_platform::ime::{ImeAction, classify_event};
 
         // The terminal grid is always a valid composition anchor: we place the
         // candidate window at the cursor cell below.
         match &event {
-            agenterm_platform::ime::ImeEvent::Enabled => self.ime_attached = true,
-            agenterm_platform::ime::ImeEvent::Disabled => self.ime_attached = false,
+            minicon_platform::ime::ImeEvent::Enabled => self.ime_attached = true,
+            minicon_platform::ime::ImeEvent::Disabled => self.ime_attached = false,
             _ => {}
         }
 
@@ -924,7 +934,7 @@ impl ConTerminal {
         let scale = if self.scale > 0.0 { self.scale } else { 1.0 };
         let x = f64::from(self.content_left_px + u32::from(col) * self.cell_w) / scale;
         let y = f64::from(self.content_top_px + u32::from(row) * self.cell_h) / scale;
-        let _ = window.set_ime_cursor_area(agenterm_platform::window_host::LogicalRect::new(
+        let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
             x,
             y,
             f64::from(self.cell_w) / scale,
@@ -1120,7 +1130,7 @@ impl ConTerminal {
         &mut self,
         width: u32,
         height: u32,
-    ) -> (agenterm_ui_core::ScrollbarGeometry, usize, usize) {
+    ) -> (minicon_ui_core::ScrollbarGeometry, usize, usize) {
         let (offset, maximum) = self.scrollback_bounds();
         (
             ui::terminal_scrollbar_geometry(
@@ -1552,7 +1562,7 @@ impl ConTerminal {
         point: TerminalPoint,
         pressed: bool,
         motion: bool,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) -> std::io::Result<MouseReportOutcome> {
         let (mode, encoding) = self.mouse_mode();
         let delivery = terminal_input::mouse_delivery(
@@ -1599,7 +1609,7 @@ impl ConTerminal {
         point: TerminalPoint,
         pressed: bool,
         motion: bool,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) -> bool {
         // Physical input is best-effort across a concurrent child exit, but
         // application ownership must remain stable so a failed write does not
@@ -1670,7 +1680,7 @@ impl ConTerminal {
     fn handle_wheel(
         &mut self,
         notches: f32,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
         position: Option<LogicalPoint>,
     ) -> std::io::Result<WheelOutcome> {
         let up = notches > 0.0;
@@ -1746,7 +1756,7 @@ impl ConTerminal {
         button: PointerButton,
         state: PointerButtonState,
         position: Option<LogicalPoint>,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) -> std::io::Result<MouseOutcome> {
         let old_selection = self.selection;
         let pressed = state == PointerButtonState::Pressed;
@@ -1873,7 +1883,7 @@ impl ConTerminal {
         button: PointerButton,
         state: PointerButtonState,
         position: Option<LogicalPoint>,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) {
         let _ = self.handle_pointer_button_checked(window, button, state, position, modifiers);
     }
@@ -1888,7 +1898,7 @@ impl ConTerminal {
         &mut self,
         window: &PixelWindow,
         position: LogicalPoint,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) -> std::io::Result<MouseOutcome> {
         let (outcome, needs_redraw) = self.pointer_moved_outcome(position, modifiers)?;
         if needs_redraw {
@@ -1907,7 +1917,7 @@ impl ConTerminal {
     fn pointer_moved_outcome(
         &mut self,
         position: LogicalPoint,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) -> std::io::Result<(MouseOutcome, bool)> {
         let old_selection = self.selection;
         let pt = self.hit_test(&position);
@@ -1942,7 +1952,7 @@ impl ConTerminal {
         &mut self,
         window: &PixelWindow,
         position: LogicalPoint,
-        modifiers: &agenterm_platform::input::ModifierState,
+        modifiers: &minicon_platform::input::ModifierState,
     ) {
         let _ = self.handle_pointer_moved_checked(window, position, modifiers);
     }
@@ -1950,7 +1960,7 @@ impl ConTerminal {
     pub(super) fn cancel_pointer_gesture(&mut self, window: &PixelWindow) {
         let _ = window.set_pointer_capture(false);
         if let Some((button, point)) = self.take_cancelled_pointer_release() {
-            let modifiers = agenterm_platform::input::ModifierState {
+            let modifiers = minicon_platform::input::ModifierState {
                 control: false,
                 shift: false,
                 alt: false,
@@ -2695,7 +2705,7 @@ pub(crate) mod tests {
         assert!(parser.callbacks().pending_replies.is_empty());
     }
     /// The escape-sequence tables are covered exhaustively in
-    /// `agenterm_platform::contract::terminal_input`. What matters here is this
+    /// `minicon_platform::contract::terminal_input`. What matters here is this
     /// host's own policy: that it reads the modes the application negotiated
     /// and hands the shared encoder the right ones.
     #[test]
@@ -2703,7 +2713,7 @@ pub(crate) mod tests {
         let mut parser = parser();
         let up = NormalizedKeyEvent {
             logical: LogicalKey::Named(NamedKey::ArrowUp),
-            physical: agenterm_platform::input::PhysicalKeyCode::Other,
+            physical: minicon_platform::input::PhysicalKeyCode::Other,
             text: None,
             state: KeyPressState::Pressed,
             repeat: false,
@@ -3149,7 +3159,7 @@ pub(crate) mod tests {
         app.blink_visible = false;
         let key = NormalizedKeyEvent {
             logical: LogicalKey::Character("a".to_owned()),
-            physical: agenterm_platform::input::PhysicalKeyCode::Other,
+            physical: minicon_platform::input::PhysicalKeyCode::Other,
             text: Some("a".to_owned()),
             state: KeyPressState::Pressed,
             repeat: false,
@@ -3168,7 +3178,7 @@ pub(crate) mod tests {
         let mut app = prepared_pointer_terminal();
         let press = |text: &str, control: bool, shift: bool, alt: bool| NormalizedKeyEvent {
             logical: LogicalKey::Character(text.to_owned()),
-            physical: agenterm_platform::input::PhysicalKeyCode::Other,
+            physical: minicon_platform::input::PhysicalKeyCode::Other,
             text: Some(text.to_owned()),
             state: KeyPressState::Pressed,
             repeat: false,
@@ -3217,7 +3227,7 @@ pub(crate) mod tests {
         let key =
             |text: &str, control: bool, shift: bool, alt: bool, meta: bool| NormalizedKeyEvent {
                 logical: LogicalKey::Character(text.to_owned()),
-                physical: agenterm_platform::input::PhysicalKeyCode::Other,
+                physical: minicon_platform::input::PhysicalKeyCode::Other,
                 text: Some(text.to_owned()),
                 state: KeyPressState::Pressed,
                 repeat: false,

@@ -5,7 +5,7 @@
 //!
 //! Design of record: `prd/PRD_02_31_v0_2_horizon.md` ("mux -- detail").
 
-use agenterm_platform::input::NamedKey;
+use minicon_platform::input::NamedKey;
 
 /// Substitution variables `list-windows -F` accepts. Unlike tmux, an unknown
 /// substitution is a bounded error rather than a blank field, so a script

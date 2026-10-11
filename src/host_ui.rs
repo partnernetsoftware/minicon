@@ -557,6 +557,60 @@ pub(crate) fn paint_header_icon_button(
     }
 }
 
+/// A pencil glyph for a tab row's edit button.
+///
+/// Drawn from axis-aligned `fill_rect` squares rather than a glyph, so it never
+/// depends on a symbol font (the same rule the header icons follow). The body
+/// is a diagonal run from the lower-left to the upper-right; a flat cap closes
+/// the top end and a thin base marks the writing end, so it reads as a pencil
+/// rather than a bare slash.
+pub(crate) fn paint_edit_glyph(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    color: Rgb,
+    scale: f64,
+) {
+    let stroke = minicon_core::numeric::round_f64(scale.clamp(1.0, 4.0)).clamp(1.0, 4.0) as u32;
+    let inset = stroke.saturating_mul(3);
+    let inner = ui::Rect {
+        x: button.x.saturating_add(inset),
+        y: button.y.saturating_add(inset),
+        width: button.width.saturating_sub(inset.saturating_mul(2)),
+        height: button.height.saturating_sub(inset.saturating_mul(2)),
+    };
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let body = stroke.saturating_mul(2);
+    let steps = inner.width.min(inner.height);
+    // The pencil body: a thick diagonal from bottom-left to top-right.
+    for step in 0..steps {
+        let x = inner.x.saturating_add(step);
+        let y = inner
+            .y
+            .saturating_add(inner.height)
+            .saturating_sub(stroke)
+            .saturating_sub(step);
+        surface.fill_rect(x, y.saturating_sub(body), stroke, body, color.to_xrgb());
+    }
+    // A flat cap at the top-right end.
+    surface.fill_rect(
+        inner.x.saturating_add(steps.saturating_sub(body)),
+        inner.y,
+        body,
+        stroke,
+        color.to_xrgb(),
+    );
+    // A thin base at the bottom-left end, reading as the writing tip.
+    surface.fill_rect(
+        inner.x,
+        inner.y.saturating_add(inner.height).saturating_sub(stroke),
+        body,
+        stroke,
+        color.to_xrgb(),
+    );
+}
+
 /// Width in pixels the host UI font needs for `text`.
 ///
 /// The host UI paints on the same monospace cell grid the terminal uses, so a

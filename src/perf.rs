@@ -5,8 +5,8 @@
 
 use std::time::Duration;
 
-use agenterm_platform::contract::pixel_present::PixelPresentStats;
-use agenterm_ui_core::DirtyRegion;
+use minicon_platform::contract::pixel_present::PixelPresentStats;
+use minicon_ui_core::DirtyRegion;
 
 use crate::json;
 
@@ -177,7 +177,7 @@ mod perf_stats_tests {
         CandidateRedrawRequest, HostPixelRect, PixelBackingRetention, PixelFrameWrite,
         candidate_redraw_request, frame_write_for_candidate,
     };
-    use agenterm_ui_core::PixelRect;
+    use minicon_ui_core::PixelRect;
 
     /// The candidate ledger has two identities that must hold after any mix of
     /// idle and burst frames: every candidate observation is either full or

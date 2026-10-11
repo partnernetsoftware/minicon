@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use agenterm_platform::accessibility_publish::{
+use minicon_platform::accessibility_publish::{
     AccessibilityBounds, NODE_APPLICATION, NODE_COMMAND, NODE_FRAME, NODE_OFFSCREEN_FIELD,
     NODE_SEND, NODE_SESSION, NODE_TABS, PublishedAction, PublishedNode, PublishedRole,
     PublishedTree,
@@ -21,7 +21,7 @@ pub const NEWLINE_NAME: &str = "NEWLINE";
 
 /// Published id for the newline button.
 ///
-/// Defined here rather than in `agenterm-platform` because that crate is
+/// Defined here rather than in `minicon-platform` because that crate is
 /// pinned by revision and its ids stop at 6; 7 is the next free value and the
 /// adapter only needs the number to be stable, which a constant in one place
 /// makes it. Move it upstream when the pin next moves.
@@ -596,7 +596,7 @@ mod tests {
         let inbox = ActionInbox::default();
         let set_text = |bytes: usize| PublishedAction::SetText("t".repeat(bytes));
         let key = |event: &str| {
-            PublishedAction::Key(agenterm_platform::accessibility_publish::PublishedKey {
+            PublishedAction::Key(minicon_platform::accessibility_publish::PublishedKey {
                 keysym: 0,
                 event_string: event.to_owned(),
                 is_text: true,
@@ -671,7 +671,7 @@ mod tests {
         );
         assert_eq!(
             at(PublishedAction::Key(
-                agenterm_platform::accessibility_publish::PublishedKey {
+                minicon_platform::accessibility_publish::PublishedKey {
                     keysym: 0,
                     event_string: "Ctrl+Shift+P".to_owned(),
                     is_text: false,

@@ -11,7 +11,7 @@ next real horizon is a 0.2.2 patch") in favor of the patch path.
 
 0.2.2 is **not** a 0.3.x design start. `harness-manage`/GUI workbench stay
 scoped to 0.3.x per the owner's 2026-09-26 decision already recorded in
-`prd/PRD_02_31_v0_2_horizon.md`; 0.2.2 only carries `plan-v0.2.1.md`'s own
+`prd/PRD_02_31_v0_2_horizon.md`; 0.2.2 only carries `plan/archive/plan-v0.2.1.md`'s own
 three leftover leaves forward, plus one small macOS-side fix already
 submitted independently of this plan.
 
@@ -94,7 +94,7 @@ runtime evidence for two of them, not decisions.
        interprets_shell_metacharacters` failed 100% of the time on this
        host), `cargo fmt`/`clippy -D warnings` clean.
 
-0.2.2 close-out decision (2026-09-27, mirrors plan-v0.2.1.md's own scope
+0.2.2 close-out decision (2026-09-27, mirrors plan/archive/plan-v0.2.1.md's own scope
 reasoning): {HB} and {UI}'s `C3` leaf never got a capable macOS/Windows
 display host during this round — that gap is structural (no such host
 existed in either the Linux cloud session or here), not unfinished work.
@@ -105,7 +105,7 @@ shipped ... continue rolling forward" rule. 0.2.2 ships on {LP} + {OSX} +
 evidence), which is real, closeable progress and should not wait on the
 other two.
 
-Decision, mirrored from plan-v0.2.1.md's own scope reasoning:
+Decision, mirrored from plan/archive/plan-v0.2.1.md's own scope reasoning:
 if HB/UI are still BLOCKED at 0.2.2's close (no capable host materialized),
 that is not a planning failure — re-affirm BLOCKED, carry both forward to
 the next version (owner named 0.2.4 as illustrative "keep pushing until it

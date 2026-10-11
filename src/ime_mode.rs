@@ -21,7 +21,7 @@
 //! Changing the input source forgets the inference; until a keystroke is
 //! observed the platform's own answer stands.
 
-use agenterm_platform::{
+use minicon_platform::{
     ime::ImeEvent,
     input::{KeyPressState, NormalizedKeyEvent, PhysicalKeyCode},
 };
@@ -103,7 +103,7 @@ impl ImeModeInference {
 
 #[cfg(test)]
 mod tests {
-    use agenterm_platform::input::{LogicalKey, ModifierState};
+    use minicon_platform::input::{LogicalKey, ModifierState};
 
     use super::*;
 

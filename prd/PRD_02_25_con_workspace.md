@@ -442,12 +442,13 @@ Current architecture (verified against source, not assumed):
 - **Corrected 2026-09-26** (was wrongly assumed text-only below): MiniCon's
   own call sites (`src/main.rs`, `src/clipboard_status.rs`) only use the
   text convenience functions, but the platform layer underneath is not
-  text-only — `agenterm-platform::clipboard` already exposes a generic
+  text-only — `minicon_platform::clipboard` already exposes a generic
   `available_types() -> Vec<String>` (host-native type names: macOS UTIs
   e.g. `public.png`, Windows `CF_DIB`/`CF_DIBV5`, X11 TARGETS atoms) and
   `get_type(type_name, max_bytes) -> Vec<u8>`, implemented across all three
-  adapters (`crates/agenterm-platform/src/adapters/{linux,macos,windows}/clipboard.rs`
-  in the `agenterm` repo, rev `fd0adcf4c`). `Cargo.toml` already enables the
+  adapters (`crates/minicon-platform/src/adapters/{linux,macos,windows}/clipboard.rs`,
+  the `agenterm-platform` copy at rev `fd0adcf4c` before it moved here on
+  2026-10-10). `Cargo.toml` already enables the
   `clipboard` feature. Reading a pasted image is therefore already possible
   from MiniCon today via `available_types()` + `get_type("public.png", ...)`
   (or the Windows/X11 equivalent) with **no platform-layer change needed** —

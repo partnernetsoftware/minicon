@@ -61,8 +61,8 @@ mod boundary_tests {
             .next()
             .expect("a bounded section");
         for forbidden in [
-            "agenterm-platform",
-            "agenterm-ui-core",
+            "minicon-platform",
+            "minicon-ui-core",
             "windows-sys",
             "winit",
             "softbuffer",

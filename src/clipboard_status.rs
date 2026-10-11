@@ -17,7 +17,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use agenterm_platform::{
+use minicon_platform::{
     clipboard::{self, ClipboardTextRead, ClipboardTextReadPoll},
     contract::clipboard::{ClipboardError, ClipboardResult},
 };

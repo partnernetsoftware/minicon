@@ -346,7 +346,7 @@ pub(crate) fn status_text() -> String {
     let _ = writeln!(text, "minicon {}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(text);
 
-    let backend = agenterm_platform::pty::backend_report();
+    let backend = minicon_platform::pty::backend_report();
     let _ = writeln!(text, "  pty backend    {}", backend.kind);
     if !backend.detail.is_empty() {
         let _ = writeln!(text, "                 {}", backend.detail);
@@ -363,7 +363,7 @@ pub(crate) fn status_text() -> String {
         );
     }
 
-    match agenterm_platform::font::primary_face_report(DEFAULT_FONT_PX as u16) {
+    match minicon_platform::font::primary_face_report(DEFAULT_FONT_PX as u16) {
         Ok(report) => {
             let _ = writeln!(
                 text,
@@ -391,7 +391,7 @@ pub(crate) fn status_text() -> String {
     let _ = writeln!(
         text,
         "  diagnostics    {}",
-        agenterm_platform::diagnostics::log_path().map_or_else(
+        minicon_platform::diagnostics::log_path().map_or_else(
             || "unavailable".to_owned(),
             |path| path.display().to_string()
         )
@@ -490,11 +490,11 @@ and grow the whole interface.",
 }
 
 fn write_offline_stdout(text: &str) {
-    let _ = agenterm_platform::parent_console::write_stdout(text);
+    let _ = minicon_platform::parent_console::write_stdout(text);
 }
 
 fn write_offline_stderr(text: &str) {
-    let _ = agenterm_platform::parent_console::write_stderr(text);
+    let _ = minicon_platform::parent_console::write_stderr(text);
 }
 
 /// Flags that must not open a window. Returns `Some(exit_code)` when handled.
@@ -544,18 +544,18 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
     let alone = args.len() == 1;
     match args.first().map(String::as_str) {
         Some("--version" | "-V") if alone => {
-            let _ = agenterm_platform::parent_console::write_stdout(&format!(
+            let _ = minicon_platform::parent_console::write_stdout(&format!(
                 "minicon {}",
                 env!("CARGO_PKG_VERSION")
             ));
             Some(0)
         }
         Some("--version" | "-V") if args.len() == 2 && args[1] == "--json" => {
-            let _ = agenterm_platform::parent_console::write_stdout(&hostif_version_json());
+            let _ = minicon_platform::parent_console::write_stdout(&hostif_version_json());
             Some(0)
         }
         Some("--hostif-handshake") if alone => {
-            let _ = agenterm_platform::parent_console::write_stdout(&hostif_handshake_json());
+            let _ = minicon_platform::parent_console::write_stdout(&hostif_handshake_json());
             Some(0)
         }
         Some("--status") if status_feature_request(args).is_some() => {
@@ -589,17 +589,17 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             }
             #[cfg(not(windows))]
             let _ = features;
-            let _ = agenterm_platform::parent_console::write_stdout(&status_text());
+            let _ = minicon_platform::parent_console::write_stdout(&status_text());
             Some(0)
         }
         Some("--help" | "-h") if alone => {
-            let _ = agenterm_platform::parent_console::write_stdout(&usage_text());
+            let _ = minicon_platform::parent_console::write_stdout(&usage_text());
             Some(0)
         }
         Some("install-cli") => Some(install_cli(&args[1..], true)),
         Some("uninstall-cli") => Some(install_cli(&args[1..], false)),
         Some("--version" | "-V" | "--help" | "-h" | "--status") => {
-            let _ = agenterm_platform::parent_console::write_stderr(
+            let _ = minicon_platform::parent_console::write_stderr(
                 "error: --version/--help must be used alone; --status takes only --feature",
             );
             Some(2)
@@ -626,7 +626,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
             "--prefix" => match rest.next() {
                 Some(dir) => prefix = PathBuf::from(dir),
                 None => {
-                    let _ = agenterm_platform::parent_console::write_stderr(
+                    let _ = minicon_platform::parent_console::write_stderr(
                         "error: --prefix requires a directory\n",
                     );
                     return 2;
@@ -636,7 +636,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
                 prefix = PathBuf::from(&other["--prefix=".len()..]);
             }
             unknown => {
-                let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                let _ = minicon_platform::parent_console::write_stderr(&format!(
                     "error: unknown argument '{unknown}'\n"
                 ));
                 return 2;
@@ -650,7 +650,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
     if !install {
         return match existing {
             None => {
-                let _ = agenterm_platform::parent_console::write_stdout(&format!(
+                let _ = minicon_platform::parent_console::write_stdout(&format!(
                     "nothing to remove: {} does not exist\n",
                     link.display()
                 ));
@@ -661,14 +661,14 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
             // not this command's business.
             Some(meta) if meta.file_type().is_symlink() => match std::fs::remove_file(&link) {
                 Ok(()) => {
-                    let _ = agenterm_platform::parent_console::write_stdout(&format!(
+                    let _ = minicon_platform::parent_console::write_stdout(&format!(
                         "removed {}\n",
                         link.display()
                     ));
                     0
                 }
                 Err(error) => {
-                    let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                    let _ = minicon_platform::parent_console::write_stderr(&format!(
                         "error: cannot remove {}: {error}\n{}",
                         link.display(),
                         install_cli_permission_hint(&prefix)
@@ -677,7 +677,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
                 }
             },
             Some(_) => {
-                let _ = agenterm_platform::parent_console::write_stderr(&format!(
+                let _ = minicon_platform::parent_console::write_stderr(&format!(
                     "error: {} exists and is not a symlink; refusing to delete a real file\n",
                     link.display()
                 ));
@@ -689,14 +689,14 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
     let target = match std::env::current_exe().and_then(|path| path.canonicalize()) {
         Ok(path) => path,
         Err(error) => {
-            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            let _ = minicon_platform::parent_console::write_stderr(&format!(
                 "error: cannot resolve this executable: {error}\n"
             ));
             return 1;
         }
     };
     if !prefix.is_dir() {
-        let _ = agenterm_platform::parent_console::write_stderr(&format!(
+        let _ = minicon_platform::parent_console::write_stderr(&format!(
             "error: {} is not a directory\ntry: minicon install-cli --prefix ~/.local/bin\n",
             prefix.display()
         ));
@@ -704,14 +704,14 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
     }
     if let Some(meta) = existing {
         if !meta.file_type().is_symlink() {
-            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            let _ = minicon_platform::parent_console::write_stderr(&format!(
                 "error: {} already exists and is not a symlink; refusing to replace it\n",
                 link.display()
             ));
             return 1;
         }
         if let Err(error) = std::fs::remove_file(&link) {
-            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            let _ = minicon_platform::parent_console::write_stderr(&format!(
                 "error: cannot replace {}: {error}\n{}",
                 link.display(),
                 install_cli_permission_hint(&prefix)
@@ -721,7 +721,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
     }
     match symlink(&target, &link) {
         Ok(()) => {
-            let _ = agenterm_platform::parent_console::write_stdout(&format!(
+            let _ = minicon_platform::parent_console::write_stdout(&format!(
                 "linked {} -> {}\nopen a new shell, then `minicon --version`\n",
                 link.display(),
                 target.display()
@@ -729,7 +729,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
             0
         }
         Err(error) => {
-            let _ = agenterm_platform::parent_console::write_stderr(&format!(
+            let _ = minicon_platform::parent_console::write_stderr(&format!(
                 "error: cannot create {}: {error}\n{}",
                 link.display(),
                 install_cli_permission_hint(&prefix)
@@ -750,7 +750,7 @@ fn install_cli_permission_hint(prefix: &std::path::Path) -> String {
 
 #[cfg(not(unix))]
 fn install_cli(_rest: &[String], _install: bool) -> i32 {
-    let _ = agenterm_platform::parent_console::write_stderr(
+    let _ = minicon_platform::parent_console::write_stderr(
         "error: install-cli is a Unix convenience; on Windows add the folder \
          holding minicon.exe to PATH instead\n",
     );

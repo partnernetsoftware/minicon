@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1016">
   <title>MiniCon™ — A terminal that is one file</title>
-  <meta name="description" content="MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.">
+  <meta name="description" content="A fast single-file terminal for Windows, Linux, and macOS — no installer, no bundled runtime, nothing left running. Copy one file and run it; every part can be driven from a script.">
   <link rel="canonical" href="https://minicon.agenterm.work/">
   <link rel="alternate" hreflang="en" href="https://minicon.agenterm.work/?lang=en">
   <link rel="alternate" hreflang="zh-CN" href="https://minicon.agenterm.work/?lang=zh-CN">
@@ -16,11 +16,11 @@
   <meta property="og:locale" content="en_US">
   <meta property="og:locale:alternate" content="zh_CN">
   <meta property="og:title" content="MiniCon™ — A terminal that is one file">
-  <meta property="og:description" content="MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.">
+  <meta property="og:description" content="A fast single-file terminal for Windows, Linux, and macOS — no installer, no bundled runtime, nothing left running. Copy one file and run it; every part can be driven from a script.">
   <meta property="og:image" content="https://minicon.agenterm.work/assets/minicon-neutral.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="MiniCon™ — A terminal that is one file">
-  <meta name="twitter:description" content="MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.">
+  <meta name="twitter:description" content="A fast single-file terminal for Windows, Linux, and macOS — no installer, no bundled runtime, nothing left running. Copy one file and run it; every part can be driven from a script.">
   <meta name="twitter:image" content="https://minicon.agenterm.work/assets/minicon-neutral.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b1016'/%3E%3Cpath d='M3.5 5 6.5 8l-3 3M8.5 11H12.5' stroke='%237ee787' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <style>
@@ -406,7 +406,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
           </div>
         </div>
         <p class="hero-cta-hint" data-i18n="dlAdvanced">Advanced: one signed minicon.com launcher bundles every platform in a single file.</p>
-        <p class="honest" data-i18n="dlTrust">About 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux — measured, not estimated. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.</p>
+        <p class="honest" data-i18n="dlTrust">Measured, not estimated: ~660 KB Windows, 1.4 MB macOS, 5 MB Linux. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.</p>
         <pre class="code"><span class="c"># or build it yourself</span>
 git clone https://github.com/partnernetsoftware/minicon
 cd minicon
@@ -456,7 +456,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
       const copy = {
         en: {
           title: "MiniCon™ — A terminal that is one file",
-          description: "MiniCon is a fast, single-file terminal for Windows, Linux, and macOS — Intel and Apple Silicon. No installer, no bundled runtime, nothing left running in the background: copy one file and run it. Signed and notarized, and every part can be driven from a script.",
+          description: "A fast single-file terminal for Windows, Linux, and macOS — no installer, no bundled runtime, nothing left running. Copy one file and run it; every part can be driven from a script.",
           skip: "Skip to content",
           navLabel: "Primary navigation",
           languageLabel: "Language",
@@ -470,13 +470,13 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           ctaSource: "Source on GitHub",
           pillarsTitle: "Open, safe, and small — on purpose.",
           pillarOpenRule: "Permanently open source",
-          pillarOpenBody: "MIT OR Apache-2.0, and it stays that way. Read every line, build it yourself, fork it. No telemetry, no account, no auto-updater, no phone-home — the source is the product.",
+          pillarOpenBody: "MIT OR Apache-2.0, and it stays that way. No telemetry, no account, no auto-updater — the source is the product.",
           pillarSafeRule: "Signed and notarized",
-          pillarSafeBody: "The Windows and macOS downloads are code-signed, and the macOS build is notarized by Apple, as PARTNERNET SOFTWARE PTY LTD — so your system trusts them out of the box. Nothing runs in the background, and it uses only the libraries your OS already ships.",
+          pillarSafeBody: "Windows and macOS downloads are code-signed, and macOS is notarized by Apple, as PARTNERNET SOFTWARE PTY LTD. Nothing runs in the background; it uses only the libraries your OS ships.",
           pillarSmallRule: "Genuinely mini",
-          pillarSmallBody: "One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux (real measured sizes, not estimates). No installer, no bundled language runtime.",
+          pillarSmallBody: "One file — about 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux (measured, not estimated). No installer, no bundled runtime.",
           pillarLeanRule: "Minimal resources",
-          pillarLeanBody: "It starts instantly, uses little memory, and runs no background service. Keep a real shell session with full scrollback while it is open; close the window and nothing is left behind.",
+          pillarLeanBody: "Starts instantly and runs no background service. Close the window and nothing is left behind.",
           shotThemesLead: "Three built-in themes — chrome and terminal recolor together. Switch in Settings, or cycle with Ctrl+Shift+P.",
           shotDocsAlt: "The same MiniCon window in the Docs Ink theme: a deep-navy tab column, header, composer, and terminal, with cyan accents.",
           shotDocsCaption: "Docs Ink — a deep-navy console with cyan accents.",
@@ -485,40 +485,40 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           shotSettingsAlt: "MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.",
           shotSettingsCaption: "The settings panel: interface language, font size, three theme swatches, and the shortcut reference.",
           oldTitle: "Works on older Windows, too.",
-          oldLead: "Newer terminals need a recent Windows build and simply will not start on older machines. MiniCon runs all the way back to Windows Server 2016: it uses the modern console when it is there, and quietly runs your shell itself when it is not — so the same download just works.",
+          oldLead: "Newer terminals need a recent Windows build and will not start on older machines. MiniCon runs back to Windows Server 2016: the modern console when it is there, its own hidden console when it is not.",
           inputTitle: "A place to type that is not the output.",
-          inputLead: "In most terminals you type into the same area a program is printing into, so a long command and a burst of output get tangled together. MiniCon gives your input its own line.",
+          inputLead: "Most terminals make you type into the region a program is printing into, so a command and a burst of output get tangled. MiniCon gives your input its own line.",
           input1Index: "01 / NO COLLISION",
           input1Title: "Compose while it scrolls",
-          input1Body: "Write a long command while output keeps arriving. Nothing you type interleaves with anything a program prints.",
+          input1Body: "Write a long command while output keeps arriving. Nothing you type interleaves with what a program prints.",
           input2Index: "02 / RECALL",
           input2Title: "A sent line survives being sent",
-          input2Body: "Up and Down walk what you sent before. Half-typed text is kept while you browse.",
+          input2Body: "Up and Down walk what you sent before; half-typed text is kept while you browse.",
           input3Index: "03 / IT SAYS WHERE",
           input3Title: "Named, not numbered",
-          input3Body: "The label shows the name of the tab your text will go to — so in a tree of tabs you always know where a command is headed.",
+          input3Body: "The label names the tab your text will go to, so in a tree of tabs you always know where a command is headed.",
           scriptTitle: "A terminal your scripts can see into.",
-          scriptLead: "Sending a keystroke is easy — but blind. MiniCon's control command reads back what the window actually shows — text, screenshots, focus, tabs — so your automation waits for a real result instead of guessing with a sleep. It is all local: no server, no network, no cloud.",
+          scriptLead: "Sending a keystroke is easy — but blind. MiniCon's control command reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits for a real result instead of guessing with a sleep. All local: no server, no network.",
           scriptSnapshot: "Focus, input-method state, pending work, and layout — as JSON.",
           scriptWait: "Block until the condition holds or the timeout expires, and tell you which.",
           scriptInput: "Type keys, click and scroll, even compose CJK text — through the very same paths a person's input takes.",
           installRelease: "Latest release",
           installBuild: "Build from source",
           docsTitle: "Documentation",
-          docsLead: "Written to be checked. Every number here came from a real measurement.",
+          docsLead: "Written to be checked — every number here came from a real measurement.",
           docsOldTitle: "Running on old Windows",
-          docsOldBody: "Why other terminals stop at recent Windows builds, what MiniCon does instead, and how to diagnose a machine that still will not start it.",
+          docsOldBody: "Why other terminals stop at recent Windows builds, what MiniCon does instead, and how to diagnose a machine that will not start it.",
           docsCliTitle: "Driving MiniCon from a script",
           docsCliBody: "The full control surface: read state, wait on conditions, send input, manage tabs, run one command.",
           docsRepoTitle: "Source and tests",
-          docsRepoBody: "Everything claimed here is pinned by the test suite — the download sizes, the Windows dependency check, and the control command's own behavior.",
+          docsRepoBody: "Everything claimed here is pinned by the test suite — the download sizes, the Windows dependency check, and the control command's behavior.",
           footerRepo: "GitHub",
           footerReleases: "Releases",
           footerOld: "Old Windows",
           footerCli: "Control CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT OR Apache-2.0. MiniCon™ is a trademark of PartnerNet Software.",
-          footerOrigin: "MiniCon is the one-file local terminal. AgenTerm is the Agent-era workbench on the same platform. MiniCon began as AgenTerm's console host and became its own product in August 2026.",
+          footerOrigin: "MiniCon is the one-file local terminal; AgenTerm is the Agent-era workbench on the same platform. MiniCon began as its console host and became its own product in August 2026.",
           navInput: "Input",
           navThemes: "Themes",
           navDownload: "Download",
@@ -540,11 +540,11 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           dlLinuxNote: "x64 or ARM64 · no extra system packages",
           dlGet: "Get it",
           dlAdvanced: "Advanced: one signed minicon.com launcher bundles every platform in a single file.",
-          dlTrust: "About 660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux — measured, not estimated. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.",
+          dlTrust: "Measured, not estimated: ~660 KB Windows, 1.4 MB macOS, 5 MB Linux. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.",
         },
         "zh-CN": {
           title: "MiniCon™ —— 一个文件就是一个终端",
-          description: "MiniCon 是一个面向 Windows、Linux、macOS(Intel 与 Apple Silicon)的单文件终端。免安装、免捆绑运行时、后台零常驻——拷一个文件就能跑。已签名并公证,每个部分都能用脚本驱动。",
+          description: "面向 Windows、Linux、macOS 的单文件终端(Intel 与 Apple Silicon)。免安装、免捆绑运行时、后台零常驻——拷一个文件就能跑,每个部分都能用脚本驱动。",
           skip: "跳到正文",
           navLabel: "主导航",
           languageLabel: "语言",
@@ -558,13 +558,13 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           ctaSource: "GitHub 源码",
           pillarsTitle: "开源、安全、迷你——都是刻意为之。",
           pillarOpenRule: "永久开源",
-          pillarOpenBody: "MIT 或 Apache-2.0,而且永远如此。每一行都能读、能自己编译、能 fork。无遥测、无账号、无自动更新、不回传——源码就是产品。",
+          pillarOpenBody: "MIT 或 Apache-2.0,而且永远如此。无遥测、无账号、无自动更新、不回传——源码就是产品。",
           pillarSafeRule: "已签名并公证",
-          pillarSafeBody: "Windows 与 macOS 的下载都经过代码签名,macOS 版还通过 Apple 公证(主体:PARTNERNET SOFTWARE PTY LTD),系统开箱即信任。后台什么都不跑,只用系统自带的库。",
+          pillarSafeBody: "Windows 与 macOS 的下载都经过代码签名,macOS 版还通过 Apple 公证(主体:PARTNERNET SOFTWARE PTY LTD)。后台什么都不跑,只用系统自带的库。",
           pillarSmallRule: "真的迷你",
-          pillarSmallBody: "一个文件——Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB,都是实测,不是估算。免安装,不捆绑语言运行时。",
+          pillarSmallBody: "一个文件——Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB,都是实测。免安装,不捆绑语言运行时。",
           pillarLeanRule: "极省资源",
-          pillarLeanBody: "启动飞快、占用极小、没有后台服务。开着时保留真实 shell 会话与完整回滚;关窗后什么都不留。",
+          pillarLeanBody: "启动飞快,没有后台服务;关窗后什么都不留。",
           shotThemesLead: "三款内置主题——窗框与终端一起换色。在设置里切换，或用 Ctrl+Shift+P 循环。",
           shotDocsAlt: "同一个 MiniCon 窗口在 Docs Ink 主题下：深蓝墨色的标签列、头部、输入区与终端，配青色高亮。",
           shotDocsCaption: "Docs Ink——深蓝墨色终端，青色高亮。",
@@ -573,20 +573,20 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           shotSettingsAlt: "在终端上方打开的设置面板：界面语言按钮(English、简、繁)、字号加减、三个主题色板，以及快捷键列表。",
           shotSettingsCaption: "设置面板：界面语言、字号、三个主题色板，以及快捷键速查。",
           oldTitle: "在旧版 Windows 上照样跑。",
-          oldLead: "新一点的终端需要较新的 Windows 版本,在老机器上根本装不上。MiniCon 一路支持到 Windows Server 2016:有新式控制台就用,没有就自己把 shell 跑起来——同一个文件,直接就能用。",
+          oldLead: "新一点的终端需要较新的 Windows 版本,在老机器上根本装不上。MiniCon 一路支持到 Windows Server 2016:有新式控制台就用,没有就自己把 shell 跑起来。",
           inputTitle: "一个不跟输出混在一起的输入区。",
           inputLead: "多数终端让你在「程序正在输出的那块区域」里打字,长命令和一屏输出容易搅成一团。MiniCon 给输入单独一行。",
           input1Index: "01 / 互不干扰",
           input1Title: "一边滚动一边写",
-          input1Body: "输出不断刷新，照样写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起。",
+          input1Body: "输出不断刷新,照样写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起。",
           input2Index: "02 / 历史回看",
           input2Title: "发出去的命令不会消失",
-          input2Body: "上下键翻回之前发过的内容，重发或改改都不用重敲。翻历史时敲到一半的字会被保留。",
+          input2Body: "上下键翻回之前发过的内容,重发或改改都不用重敲;翻历史时敲到一半的字会被保留。",
           input3Index: "03 / 明确去向",
           input3Title: "叫名字，不叫编号",
           input3Body: "标签上写着文字将发往哪个标签页的名字——在标签页树里,你始终清楚命令会去哪。",
           scriptTitle: "一个脚本能「看进去」的终端。",
-          scriptLead: "发一个按键很简单,但那是「瞎发」。MiniCon 的控制命令能把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实结果,而不是靠 sleep 瞎猜。而且全程本地:没有服务、没有网络、没有云。",
+          scriptLead: "发一个按键很简单,但那是「瞎发」。MiniCon 的控制命令能把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实结果,而不是靠 sleep 瞎猜。全程本地,无服务、无网络。",
           scriptSnapshot: "焦点、输入法状态、待处理工作、布局——以 JSON 返回。",
           scriptWait: "阻塞到条件成立或超时,并告诉你是哪一种。",
           scriptInput: "敲键、点击与滚动,甚至中日韩组字——走的都是真人输入的同一条路径。",
@@ -606,7 +606,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerCli: "控制 CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 是 PartnerNet Software 的商标。",
-          footerOrigin: "MiniCon 是一文件本机终端。AgenTerm 是同一平台上的 Agent 时代工作台。MiniCon 源自 AgenTerm 的最小控制台宿主，2026 年 8 月独立成产品。",
+          footerOrigin: "MiniCon 是一文件本机终端;AgenTerm 是同一平台上的 Agent 时代工作台。MiniCon 源自它的最小控制台宿主,2026 年 8 月独立成产品。",
           navInput: "独立输入",
           navThemes: "主题",
           navDownload: "下载",
@@ -628,11 +628,11 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           dlLinuxNote: "x64 或 ARM64 · 无需额外系统软件包",
           dlGet: "获取",
           dlAdvanced: "进阶:一个已签名的 minicon.com 启动器把所有平台打包进单个文件。",
-          dlTrust: "Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB——实测,不是估算。开源(MIT 或 Apache-2.0);无遥测、无账号、无自动更新。",
+          dlTrust: "实测,非估算:Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB。开源(MIT 或 Apache-2.0);无遥测、无账号、无自动更新。",
         },
         "zh-Hant": {
           title: "MiniCon™ — 一個檔案就是一個終端機",
-          description: "MiniCon 是一個面向 Windows、Linux、macOS(Intel 與 Apple Silicon)的單檔終端機。免安裝、免捆綁執行環境、背景零常駐——複製一個檔案就能跑。已簽署並公證,每個部分都能用腳本驅動。",
+          description: "面向 Windows、Linux、macOS 的單檔終端機(Intel 與 Apple Silicon)。免安裝、免捆綁執行環境、背景零常駐——複製一個檔案就能跑,每個部分都能用腳本驅動。",
           skip: "跳到內容",
           navLabel: "主導覽",
           languageLabel: "語言",
@@ -646,13 +646,13 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           ctaSource: "GitHub 原始碼",
           pillarsTitle: "開源、安全、迷你——都是刻意為之。",
           pillarOpenRule: "永久開源",
-          pillarOpenBody: "MIT 或 Apache-2.0,而且永遠如此。每一行都能讀、能自己編譯、能 fork。無遙測、無帳號、無自動更新、不回傳——原始碼就是產品。",
+          pillarOpenBody: "MIT 或 Apache-2.0,而且永遠如此。無遙測、無帳號、無自動更新、不回傳——原始碼就是產品。",
           pillarSafeRule: "已簽署並公證",
-          pillarSafeBody: "Windows 與 macOS 的下載都經過程式碼簽署,macOS 版還通過 Apple 公證(主體:PARTNERNET SOFTWARE PTY LTD),系統開箱即信任。背景什麼都不跑,只用系統自帶的程式庫。",
+          pillarSafeBody: "Windows 與 macOS 的下載都經過程式碼簽署,macOS 版還通過 Apple 公證(主體:PARTNERNET SOFTWARE PTY LTD)。背景什麼都不跑,只用系統自帶的程式庫。",
           pillarSmallRule: "真的迷你",
-          pillarSmallBody: "一個檔案——Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB,都是實測,不是估算。免安裝,不捆綁語言執行環境。",
+          pillarSmallBody: "一個檔案——Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB,都是實測。免安裝,不捆綁語言執行環境。",
           pillarLeanRule: "極省資源",
-          pillarLeanBody: "啟動飛快、占用極小、沒有背景服務。開著時保留真實 shell 工作階段與完整回捲;關窗後什麼都不留。",
+          pillarLeanBody: "啟動飛快,沒有背景服務;關窗後什麼都不留。",
           shotThemesLead: "三款內建主題——外框與終端一起換色。在設定裡切換,或以 Ctrl+Shift+P 循環。",
           shotDocsAlt: "同一個 MiniCon 視窗在 Docs Ink 主題下:深藍墨色的分頁欄、頭部、輸入區與終端機,配青色強調色。",
           shotDocsCaption: "Docs Ink——深藍墨色終端機,青色強調。",
@@ -661,20 +661,20 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           shotSettingsAlt: "在終端機上方開啟的設定面板:介面語言按鈕(English、簡、繁)、字級加減、三個主題色板,以及快捷鍵清單。",
           shotSettingsCaption: "設定面板:介面語言、字級、三個主題色板,以及快捷鍵速查。",
           oldTitle: "在舊版 Windows 上照樣跑。",
-          oldLead: "新一點的終端機需要較新的 Windows 版本,在老機器上根本裝不上。MiniCon 一路支援到 Windows Server 2016:有新式主控台就用,沒有就自己把 shell 跑起來——同一個檔案,直接就能用。",
+          oldLead: "新一點的終端機需要較新的 Windows 版本,在老機器上根本裝不上。MiniCon 一路支援到 Windows Server 2016:有新式主控台就用,沒有就自己把 shell 跑起來。",
           inputTitle: "一個不與輸出混在一起的輸入區。",
           inputLead: "多數終端機要你在「程式正在輸出的同一塊區域」裡打字,一長串指令和一波輸出容易攪成一團。MiniCon 給輸入單獨一行。",
           input1Index: "01 / 不互相干擾",
           input1Title: "一邊滾一邊寫",
-          input1Body: "輸出持續進來的同時，照樣書寫並檢查一長串指令。你打的字不會和程式印的東西交錯，清畫面也帶不走你寫到一半的那行。",
+          input1Body: "輸出持續進來的同時,照樣書寫並檢查一長串指令;你打的字不會和程式印的東西交錯。",
           input2Index: "02 / 歷史回叫",
           input2Title: "送出去的那行不會就此消失",
-          input2Body: "上下鍵走訪先前送出的內容，重送或改一改都不必重打。開始翻閱時你打到一半的字會被保留，往前翻過最新一筆會原樣放回。",
+          input2Body: "上下鍵走訪先前送出的內容,重送或改一改都不必重打;開始翻閱時打到一半的字會被保留。",
           input3Index: "03 / 它會說送去哪",
           input3Title: "叫名字，不是叫號碼",
           input3Body: "標籤上寫著文字將送往哪個分頁的名字——在分頁樹裡,你始終清楚指令會去哪。",
           scriptTitle: "一個腳本看得進去的終端機。",
-          scriptLead: "送一個按鍵很簡單,但那是「盲送」。MiniCon 的控制指令能把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等一個真實結果,而不是靠 sleep 瞎猜。而且全程本機:沒有伺服器、沒有網路、沒有雲。",
+          scriptLead: "送一個按鍵很簡單,但那是「盲送」。MiniCon 的控制指令能把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等一個真實結果,而不是靠 sleep 瞎猜。全程本機,無伺服器、無網路。",
           scriptSnapshot: "焦點、輸入法狀態、待處理工作與版面——以 JSON 回傳。",
           scriptWait: "阻塞到條件成立或逾時,並回報是哪一種。",
           scriptInput: "敲鍵、點擊與捲動,甚至中日韓組字——走的都是真人輸入的同一條路徑。",
@@ -694,7 +694,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           footerCli: "控制 CLI",
           footerAgenterm: "AgenTerm",
           footerLicense: "MIT 或 Apache-2.0。MiniCon™ 為 PartnerNet Software 之商標。",
-          footerOrigin: "MiniCon 是一檔案本機終端。AgenTerm 是同一平台上的 Agent 時代工作臺。MiniCon 源自 AgenTerm 的最小主控台宿主，於 2026 年 8 月獨立成產品。",
+          footerOrigin: "MiniCon 是一檔案本機終端;AgenTerm 是同一平台上的 Agent 時代工作臺。MiniCon 源自它的最小主控台宿主,於 2026 年 8 月獨立成產品。",
           navInput: "獨立輸入",
           navThemes: "主題",
           navDownload: "下載",
@@ -716,7 +716,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           dlLinuxNote: "x64 或 ARM64 · 無需額外系統套件",
           dlGet: "取得",
           dlAdvanced: "進階:一個已簽署的 minicon.com 啟動器把所有平台打包進單一檔案。",
-          dlTrust: "Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB——實測,不是估算。開源(MIT 或 Apache-2.0);無遙測、無帳號、無自動更新。",
+          dlTrust: "實測,非估算:Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB。開源(MIT 或 Apache-2.0);無遙測、無帳號、無自動更新。",
         }
       };
 

@@ -54,7 +54,7 @@ fn control_endpoint(suffix: &str) -> String {
     if cfg!(windows) {
         format!(r"pipe:\\.\pipe\minicon-mux-{suffix}")
     } else {
-        let base = agenterm_platform::ipc::native_runtime_directory();
+        let base = minicon_platform::ipc::native_runtime_directory();
         let _ = fs::create_dir_all(&base);
         let dir = base.join(format!("mx-{suffix}"));
         let _ = fs::create_dir_all(&dir);
@@ -251,7 +251,7 @@ fn start_host(exe: &Path) -> (OwnedGui, String, String) {
     let screenshot = if cfg!(windows) {
         std::env::temp_dir().join(format!("minicon-mux-{suffix}.png"))
     } else {
-        agenterm_platform::ipc::native_runtime_directory().join(format!("mux-shot-{suffix}.png"))
+        minicon_platform::ipc::native_runtime_directory().join(format!("mux-shot-{suffix}.png"))
     };
     let mut host = Command::new(exe);
     host.arg("--no-activate")

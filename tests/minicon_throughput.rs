@@ -49,7 +49,7 @@ fn control_endpoint(suffix: &str) -> String {
     if cfg!(windows) {
         format!(r"pipe:\\.\pipe\minicon-throughput-{suffix}")
     } else {
-        let base = agenterm_platform::ipc::native_runtime_directory();
+        let base = minicon_platform::ipc::native_runtime_directory();
         let _ = std::fs::create_dir_all(&base);
         let dir = base.join(format!("tp-{suffix}"));
         let _ = std::fs::create_dir_all(&dir);

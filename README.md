@@ -1,135 +1,51 @@
 # MiniCon
 
-**A terminal that is one file.** Choose a native executable for your platform,
-or the experimental six-cell `minicon.com`; there is no installer or bundled
-language runtime. It opens a real PTY,
-renders a real terminal, and a script can drive and read every part of it on
-Windows, Linux, and macOS.
+**A terminal that is one file.** One native executable per platform — no
+installer, no bundled runtime, only the operating system's own libraries. It
+opens a real PTY and renders a real terminal on Windows, Linux and macOS, and
+every part of it can be driven and read by a script.
 
 ![MiniCon](docs/assets/minicon-neutral.png)
 
 | | |
 | --- | --- |
-| Executable | six-cell `strip=true` measurements are roughly Windows ~660 KB, macOS ~1.4 MB, and Linux ~4.5 MB. Exact measurements: Windows aarch64 677,376 bytes / x86_64 731,136; macOS aarch64 1,413,408 / x86_64 1,455,424; Linux aarch64 4,200,480 / x86_64 4,519,696 (0.1.18, after the AT-SPI stack was removed). They are target-qualified evidence, not a universal product limit; see [Delivery](prd/PRD_02_27_con_delivery.md) for context. |
-| Dependencies | operating-system libraries only |
-| Supported | Windows, Linux, and macOS on x86_64 and aarch64; Windows reaches back to Server 2016 / Windows 10 1607 |
+| Runs on | Windows, Linux, macOS — x86_64 and aarch64 (Windows back to Server 2016) |
+| Size | one file: ~0.7 MB (Windows), ~1.4 MB (macOS), ~4.5 MB (Linux) |
+| Depends on | operating-system libraries only |
 | Licence | MIT OR Apache-2.0 |
 
 ## Why it exists
 
 Most small terminals are small by leaving things out. MiniCon is small by not
-adding a runtime: it is Rust with platform-native rendering, one executable,
-and nothing installed. Deleting the file removes it completely.
+adding a runtime: Rust, platform-native rendering, one file. Delete the file and
+it is gone. Three things it does that terminals this size usually do not:
 
-Three things it does that terminals this size usually do not:
-
-**It runs where modern terminals cannot.** Windows gained a pseudoconsole in
-build 17763 (version 1809), and terminals built on it stop there. Microsoft's
-ConPTY redistributable does not lower that floor — it supports the same version
-as the in-box API. MiniCon resolves the pseudoconsole at run time and falls
-back to hosting the shell in a hidden console, so it runs on Windows Server
-2016. See [docs/old-windows.html](docs/old-windows.html).
-
-**Input has its own area.** Most terminals make you type into the same region a
-running program is printing into, so a long command and a burst of output
-interleave and you lose track of what you typed. MiniCon gives input its own
-band — and once input has its own area it can do more: Up and Down recall lines
-you already sent, and the label names the tab the text is going to.
-
-**A script can see into it.** The control CLI drives the real UI and reads back
-what the window is actually showing — text, screenshots, focus, tab state — so
-automation can wait on a condition instead of guessing with a timer. See
-[docs/control-cli.html](docs/control-cli.html).
+- **It runs where modern terminals cannot.** Windows only gained a pseudoconsole
+  in build 17763, and terminals built on it stop there — Microsoft's ConPTY
+  redistributable does not lower that floor either. MiniCon resolves the
+  pseudoconsole at run time and falls back to a hidden console, so it runs on
+  Windows Server 2016. → [docs/old-windows.html](docs/old-windows.html)
+- **Input has its own area.** Most terminals make you type into the region a
+  program is printing into, so a command and a burst of output interleave. The
+  input band is separate — and once it is, Up/Down recall what you sent before.
+- **A script can see into it.** The control CLI drives the real UI and reads
+  back what the window is actually showing — text, screenshots, focus, tab
+  state — so automation waits on a condition instead of guessing with a timer.
+  → [docs/control-cli.html](docs/control-cli.html)
 
 ## Install
 
 Download the executable for your platform from
-[Releases](https://github.com/partnernetsoftware/minicon/releases), and run it.
-There is no separate installer or bundled language runtime. Linux uses the
-normal desktop runtime libraries documented under [Build](#build); development
-packages are not required. Each archive ships a SHA-256 beside it:
+[Releases](https://github.com/partnernetsoftware/minicon/releases) and run it.
+Every archive ships a SHA-256 beside it; the macOS `.dmg` is a signed,
+notarized universal binary.
 
 ```bash
-sha256sum -c minicon-0.1.19-linux-x86_64.tar.gz.sha256
+sha256sum -c minicon-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-The macOS build is a signed, notarized universal binary — the same `.dmg` runs
-on Apple Silicon and Intel. `minicon.com` is a signed one-file launcher that
-carries all six OS/ISA payloads; the native per-platform archives remain the
-conventional choice, and every distributable has its own checksum.
-
-### macOS: the app, and the `minicon` command
-
-The `.dmg` carries **`MiniCon.app`** — a signed, notarized and *stapled* bundle.
-Drag it to Applications and double-click it; Gatekeeper raises no prompt, online
-or offline.
-
-MiniCon is also a control CLI, and a bundle keeps its executable at
-`Contents/MacOS/minicon`, which is not on `PATH`. One command fixes that:
-
-```bash
-/Applications/MiniCon.app/Contents/MacOS/minicon install-cli
-# ...or into a directory you own, needing no sudo:
-/Applications/MiniCon.app/Contents/MacOS/minicon install-cli --prefix ~/.local/bin
-```
-
-`minicon uninstall-cli` removes the link again. Both only ever create or remove
-a *symlink*: a real file of that name is refused and left untouched.
-
-The `.tar.gz` still ships the bare signed binary for command-line-only use. A
-bare Mach-O cannot carry a stapled ticket, so Gatekeeper may warn the first time
-it runs even though it is genuinely Developer ID-signed and notarized. Open it
-once with right-click → **Open**, or **System Settings → Privacy & Security** →
-**Open Anyway**, or clear the quarantine flag with
-`xattr -d com.apple.quarantine /path/to/minicon`.
-
-## Code signing policy
-
-MiniCon v0.1.4–v0.1.7 published unsigned artifacts. Since **v0.1.9**, every
-public release is dual-signed: the Windows executables and `minicon.com` are
-Authenticode-signed via Azure Artifact Signing, and the macOS build is
-Developer ID-signed and Apple-notarized — all as PARTNERNET SOFTWARE PTY LTD,
-with an RFC 3161 timestamp. Checksums and exact build/runtime receipts remain
-mandatory. SignPath Foundation declined the open-source application, so the
-company publisher path is the only signing route. The
-committed `release-policy.json` selects whether the same
-Candidate/Release workflows require signing; missing credentials never
-silently turn it off. A test certificate, application or repository statement
-never counts as a signed release. See the
-[Code signing policy](CODE_SIGNING_POLICY.md) for publisher identity, privacy,
-team roles, exact-build provenance and verification rules.
-
-Maintainers may run the Trusted Signing Court with `qualification_only=true`
-while policy remains `off`. That court signs and executes exact bytes to prove
-OIDC/provider integration, but its receipt is explicitly ineligible for a
-Candidate or Release. Azure account, profile, tenant and subscription
-coordinates remain protected Environment configuration and never enter its
-public evidence receipt.
-
-Inspect a downloaded Windows/APE file on Windows with the authoritative OS
-trust check:
-
-For a quick visual check, right-click the file and open **Properties → Digital
-Signatures → Details → View Certificate**. If the **Digital Signatures** tab is
-absent, the file has no embedded Authenticode signature. Use the command below
-for the machine-readable release verdict:
-
-```powershell
-.\scripts\inspect-authenticode.ps1 .\minicon.com `
-  -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
-```
-
-The command emits JSON and returns `0` only for a valid company signature with
-a timestamp. Exit `2` means unsigned. On macOS/Linux, install `osslsigncode`
-and run `scripts/inspect-authenticode.sh ./minicon.com` for a portable
-certificate/timestamp report. Exit `2` means no extractable signature; exit `3`
-means a signature exists but portable verification failed, including a possible
-local CA-chain gap. An independently verified PEM bundle containing Microsoft
-Artifact Signing's root plus timestamp CA may be supplied as
-`--ca-file ./trust.pem`; create it with
-`scripts/fetch-microsoft-trust-bundle.sh ./trust.pem`. This does not modify
-system trust.
-Windows remains the final trust verdict.
+macOS only: to put `minicon` on `PATH` (the bundle keeps it off by design):
+`/Applications/MiniCon.app/Contents/MacOS/minicon install-cli`.
 
 ## Use
 
@@ -159,278 +75,88 @@ minicon --help                   # everything else
 | `Ctrl+Home` / `End` | in the input area, move the caret to the start or end of the draft |
 | `Ctrl+Backspace` / `Delete` | in the input area, delete the word before or after the caret |
 
-The sidebar header keeps only what a panel cannot hold. **New** (＋, left) opens
-a terminal; **Settings** (⚙) opens a panel with the interface language
-(English / 简 / 繁), font size, a theme picker (Neutral / Docs Ink / Paper Ink),
-and the keyboard shortcuts — `Ctrl+Shift+P` also cycles the theme; the third
-control, at the column edge, collapses the sidebar to a rail and expands it
-again. That short row never overflows a narrow sidebar. Collapsed, each tab
-still shows the `@ID` the control CLI uses and hovering floats its full title.
-Closing the final tab leaves a greeting page
-so you can start another terminal; it does not quit the window.
-
-### Reporting a problem
-
-Run `minicon --status` and include its output. It reports the build, the PTY
-backend this machine selected and why, the font face the system actually
-resolved to with its measured cell width, and where MiniCon writes when
-something fails. None of that can be answered by reading the source, because
-all of it depends on the machine.
-
 ## Configuration
 
-MiniCon reads an optional `minicon.json` from your user config directory. Every
-key is optional.
+Optional `minicon.json` in your user config directory; every key is optional:
+`font_size`, `cols`, `rows`.
 
-| Key | Meaning |
-| --- | --- |
-| `font_size` | Starting font size in logical pixels |
-| `cols`, `rows` | Starting grid size |
+**Windows mouse:** works out of the box for the programs most people run.
+MiniCon uses the classic console host by default because the ConPTY copy
+Windows ships turns a click into stray keystrokes for console-event readers
+(most agent CLIs). `--feature conpty` selects it anyway, which is what
+Vim-style programs want:
 
-### Mouse in Windows terminal programs
-
-Nothing to configure: the mouse works out of the box for the programs most
-people run in MiniCon.
-
-Windows ships two ways to host a console program, and MiniCon uses the classic
-one by default because the newer one — ConPTY — has a bug in the copy that comes
-with Windows: it turns a mouse click into a burst of meaningless keystrokes for
-programs that read console events, which is most agent CLIs. `--feature conpty`
-selects it anyway, which is what Vim-style programs want.
-
-    minicon                    # default: clicks reach agent CLIs
-    minicon --feature conpty   # instead: clicks reach Vim-style programs
-
-**Microsoft has already fixed that bug** — just not in the copy Windows ships.
-Windows Terminal carries its own newer console host, which is why a program can
-answer the mouse there and not here on the same machine. If you put `conpty.dll`
-and `OpenConsole.exe` (matching your architecture) from Microsoft's
-[`Microsoft.Windows.Console.ConPTY`](https://www.nuget.org/packages/Microsoft.Windows.Console.ConPTY)
-package beside `minicon.exe`, MiniCon uses them. `minicon --status` says which
-console host actually served the session, so you can check rather than assume —
-and the DLL without its companion silently does nothing, which is exactly the
-case that status line exists to catch.
-
-**What that does not do yet:** on our measurements it does not restore the mouse
-for console-event readers inside MiniCon, even though the fixed host is
-demonstrably in use. A test program driving the same layer, in the same
-directory, with the same bytes, does get its mouse. That discrepancy is
-unexplained and being tracked; until it is resolved, treat the files as a
-diagnostic aid rather than a fix, and use the default path for mouse support.
-
-They are not bundled: about 1.2 MB against MiniCon's own 660 KB, for something
-that does not yet buy a user anything the default path does not already give.
+```
+minicon                    # default: clicks reach agent CLIs
+minicon --feature conpty   # instead: clicks reach Vim-style programs
+```
 
 ## Build
 
 ```bash
-./scripts/build.sh release  # target/release/minicon; bounded local cache lifecycle
-./scripts/build.sh test     # unit, GUI black-box, and gates
-./scripts/six-cell-qualify.sh # one Mac: link all six cells, run available tests
+./scripts/build.sh release     # target/release/minicon
+./scripts/build.sh test        # unit + GUI black-box + gates
+./scripts/six-cell-qualify.sh  # all six OS/ISA binaries
 ```
 
-### Which local artifact should I run?
-
-Do not choose a binary by searching `target/` or comparing modification times:
-Cargo dependency executables and an older six-cell snapshot can look newer than
-the product you meant to test. Run the owning command, then use its canonical
-output:
-
-| What you want to test | Build command | Canonical output |
-| --- | --- | --- |
-| Fastest current-host development build | `./scripts/build.sh dev` | `target/debug/minicon` (`.exe` on Windows) |
-| Optimized current-host build | `./scripts/build.sh release` | `target/release/minicon` (`.exe` on Windows) |
-| All six ordinary OS/ISA binaries | `./scripts/six-cell-qualify.sh` | paths listed under `artifacts` in `target-six/receipt.json` |
-| Experimental one-file six-cell launcher | `./loader/local-accelerated.sh` | `loader/dist/minicon.com`, its `.sha256`, and `build-receipt.json` |
-| A published, user-facing build | no local build | archive and matching `.sha256` from GitHub Releases |
-
-For an ordinary local UI check on macOS or Linux:
-
-```bash
-./scripts/build.sh dev
-./target/debug/minicon --status
-./target/debug/minicon
-```
-
-For the optimized local binary, replace both `debug` occurrences with
-`release`. On Windows, run `target/debug/minicon.exe` or
-`target/release/minicon.exe` after the corresponding command.
-On Apple Silicon, `target/x86_64-apple-darwin/debug/minicon` is the separate
-Rosetta court and may be an older build; it is never the default UI-development
-artifact. Rebuild that target explicitly only when testing the Intel slice.
-
-`target-six/receipt.json` is the index for a six-cell run: its `artifacts`
-entries name the exact binaries and record byte sizes, formats, and SHA-256
-digests. Treat that receipt—not similarly named files elsewhere under
-`target-six/`—as the answer to “which six binaries belong together?” The
-receipt also records a source-tree fingerprint. If the source has changed
-since the run, rebuild instead of testing a mixed snapshot:
-
-```bash
-python3 scripts/source-fingerprint.py
-jq '{source_tree_sha256, artifacts}' target-six/receipt.json
-```
-
-The `loader/dist/cells/` files are payload copies used to
-assemble the adjacent `minicon.com`; they are not an additional release set.
-`minicon.com` is a signed launcher; the release publishes its exact bytes and
-checksum beside the native archives. Its receipt and checksum must travel with
-it when testing it on another machine.
-Directories such as `target/*/deps/`, old top-level `target-six/<cell>/`
-folders, logs, and cache snapshots are implementation state, not handoff
-artifacts.
-
-The six-cell gate writes `target-six/receipt.json`. A missing runtime runner is
-reported as `BLOCKED`; a successful cross-link is not mislabeled as a runtime
-test pass. Local UTM qualification needs sibling `utm-court` and the
-`MINICON_*_RUNNER` environment variables; MiniCon only packs exact artifacts
-and calls that CLI. The optional
-`MINICON_ENABLE_LIMA_ACCELERATOR=1` path uses Debian/glibc Lima courts for
-faster headless Linux feedback; `scripts/setup-linux-runners.sh` provisions
-them, but ordinary qualification does not require them. The gate transfers the
-exact PE/test tree before a configured Windows runner executes.
-
-`scripts/cleanup-build-state.py` is dry-run by default. Build/package owners
-invoke it with narrow scopes and protect current, receipt-owned and active
-state. Below 64 GiB free space it enters disk-pressure mode, retaining the
-protected roots plus the newest two snapshots while expiring other inactive
-snapshots after one hour. On macOS, `scripts/install-macos-daily-cleanup.sh` installs a per-user
-LaunchAgent for 03:17 daily maintenance. VM images and cloud bodies without an
-explicit verified archive receipt are never automatically deleted.
-
-Rust 1.97. The Linux build needs the ordinary desktop runtime libraries
-`libxkbcommon.so.0` and `libwayland-client.so.0`; no `-dev` package is required.
-The release binary embeds `libxkbcommon-x11.so.0` and its small XCB-XKB runtime
-dependency, so a slim X11 desktop does not need separate
-`libxkbcommon-x11-0` or `libxcb-xkb1` installations.
+Rust 1.97. Linux needs the desktop runtime libraries `libxkbcommon.so.0` and
+`libwayland-client.so.0` (no `-dev` packages). See
+[PRD.md](PRD.md) and the `plan/` notes for the full build, packaging and
+qualification process.
 
 ## Repository
 
 | | |
 | --- | --- |
 | `src/` | the binary: terminal, host UI, control protocol |
-| `crates/minicon-core/` | host-neutral logic — no platform, OS, or `cfg` on architecture |
-| [`PRD.md`](PRD.md) | product tree, decision map, and links to owning module PRDs |
+| `crates/minicon-core/` | host-neutral logic — no platform, OS, or architecture `cfg` |
+| `PRD.md` | product tree, decision map, links to owning module PRDs |
 | `docs/` | the website at `minicon.agenterm.work` |
-| `tests/` | black-box journeys and the gates below |
-
-`minicon-core` is not a dumping ground for anything that happens to be in the
-binary; it holds logic whose *correctness* is independent of the host, which is
-why it can be reasoned about and tested without a window:
-
-| module | what it owns |
-| --- | --- |
-| `composer` | the input-composition rules — the text buffer, caret, recall history and cell accounting |
-| `json` | the bounded codec for the fixed control schemas |
-| `numeric` | float rounding that does not depend on a platform C math runtime |
-| `scrollbar` | scrollbar geometry and the two-way map between offset and thumb |
-| `tree` | tab-tree depth derivation from parentage |
-
-Each of these was previously reached for through a rendering or platform crate.
-The crate's own `no_platform_dependency_creeps_in` test keeps that boundary
-enforced rather than intended, because it is the kind of line that erodes one
-convenient import at a time.
-
-Two gates are worth knowing about, because each one exists where a claim
-would otherwise be unchecked:
-
-- **Platform dependencies** — all six artifacts are checked as target-native
-  executables. On Windows, the shipped PE's import table must contain only
-  operating-system modules; the exception list is empty, so a future VC++ or
-  other redistributable dependency turns the gate red instead of silently
-  widening what a user has to install.
-- **Alignment** — the public CLI must match the machine-readable contract in
-  `alignment-contract.json`, which is in turn pinned to the PRDs.
 
 ## Relationship to AgenTerm
 
 [AgenTerm](https://github.com/partnernetsoftware/agenterm) is the Agent-era
-workbench on the same platform layer (native rendering, dedicated input area).
-MiniCon is the one-file **local terminal**. AgenTerm adds what MiniCon refuses:
-a longer-lived server identity, Fleet, cross-instance multiplexing,
-persistence, and Agent permission policy.
+workbench on the same platform layer. MiniCon is the one-file **local
+terminal**; AgenTerm adds the longer-lived server identity, Fleet, cross-instance
+multiplexing, persistence and agent permission policy. `minicon mux` speaks
+`tmux`'s verbs against the tabs of **one** running instance, and `minicon
+harness` hands a model one narrowly scoped local task — both live and die with
+the window, exactly like `--control`. MiniCon began as AgenTerm's minimal
+console host and became its own product in August 2026.
 
-Since 0.2.0 MiniCon does have a `minicon mux`, and it is not that. It speaks
-`tmux`'s own verbs and flag shapes against the tabs of **one** running
-instance, so a script that already drives tmux needs no second code path: the
-session is this process, a window is a tab, a pane is that tab's terminal
-area. `minicon harness` hands a model one narrowly scoped local task — read
-and write under a single `--root`, run one allow-listed command — without
-becoming a script runtime or a plugin host. Both live and die with the window,
-exactly like `--control`.
+## Code signing
 
-MiniCon automation is `--control`: an explicit Unix socket or named pipe bound
-**inside that GUI process**. `minicon cli` is a short-lived client on that
-socket. Close the window and the endpoint is gone. That is not AgenTerm's
-server. Verb spellings may match; the wire and lifetime do not.
-
-MiniCon began as AgenTerm's minimal console host and became its own product in
-August 2026.
+Since v0.1.9 every public release is dual-signed — Windows Authenticode and
+macOS Developer ID + notarization, as PARTNERNET SOFTWARE PTY LTD, with an
+RFC 3161 timestamp. Verify a Windows download with
+`scripts/inspect-authenticode.ps1`. Details in
+[CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
 
 ---
 
 # MiniCon（中文）
 
-**一个文件就是一个终端。** 每个平台一个可执行文件，免安装、免捆绑运行时，只依赖操作
-系统库。它在 Windows、Linux 和 macOS 上开真正的 PTY、画真正的终端，而且每一部分都能
-被脚本驱动和读取。
+**一个文件就是一个终端。** 每个平台一个原生可执行文件，免安装、免捆绑运行时，只依赖
+操作系统库。它在 Windows、Linux、macOS 上开真正的 PTY、画真正的终端，每一部分都能被
+脚本驱动和读取。
 
-- 六格 `strip=true` 实测约为：Windows ~660 KB、macOS ~1.4 MB、Linux ~4.5 MB。精确值：Windows aarch64 677,376 bytes / x86_64 731,136；macOS aarch64 1,413,408 / x86_64 1,455,424；Linux aarch64 4,200,480 / x86_64 4,519,696（0.1.18 移除 AT-SPI 栈之后）。它们是按目标验证的证据，不是全产品统一上限；测量语境见[交付](prd/PRD_02_27_con_delivery.md)。
-- 只依赖操作系统库
-- 支持 Windows、Linux、macOS × x86_64、aarch64 六格；Windows 最低覆盖 Server 2016 / Windows 10 1607
-- MIT 或 Apache-2.0
+| | |
+| --- | --- |
+| 支持 | Windows、Linux、macOS × x86_64、aarch64（Windows 最低到 Server 2016） |
+| 体积 | 单文件：Windows ~0.7 MB、macOS ~1.4 MB、Linux ~4.5 MB |
+| 依赖 | 仅操作系统库 |
+| 许可 | MIT 或 Apache-2.0 |
 
-三件同体量终端通常做不到的事:
+它的核心就三点：
 
-**能在现代终端跑不动的地方跑。** Windows 到 build 17763(1809)才有伪终端,建立在它
-之上的终端就停在那里;微软的 ConPTY 可再发行包并不能往下兼容,它支持的版本和系统内建
-的一样。MiniCon 在运行期解析伪终端,没有就退回到把 shell 放进隐藏控制台。
+- **能在现代终端跑不动的地方跑。** Windows 到 build 17763 才有伪终端，基于它的终端就
+  停在那里；MiniCon 运行期解析伪终端，没有就退回隐藏控制台，因此支持 Server 2016。
+- **输入有自己的区域。** 不再和程序输出挤在同一块地方；输入独立成条，上下键还能回叫
+  送出过的内容。
+- **脚本能看进去。** 控制 CLI 驱动真正的界面并把窗口实际显示读回来，自动化可以等条件
+  而不是靠定时器猜。
 
-**输入有自己的区域。** 多数终端要你在"程序正在输出的同一块区域"里打字,一长串指令和
-一波输出交错,你会弄不清自己打了什么。MiniCon 给输入一块自己的地方——而输入一旦有了
-自己的区域,就能做更多:上下键回叫送出过的内容,标签上写着文字要送往哪个分页。
-
-**脚本能看进去。** 控制 CLI 驱动真正的界面并把窗口实际显示读回来。`--control` 是这一窗
-里的本机 Unix socket / 命名管道，不是守护进程；关窗即拆。需要 Fleet、跨实例复用、Agent
-权限策略时用 [AgenTerm](https://github.com/partnernetsoftware/agenterm)。
-
-**0.2.0 起多了两个子命令。** `minicon mux` 用 `tmux` 自己的动词和参数形状去操作**同一个**
-正在运行的实例的分页——session 就是这个进程，window 是一个分页，pane 是那个分页的终端
-区域——所以本来就在驱动 tmux 的脚本不需要第二套代码。`minicon harness` 把一件划定好的
-本地任务交给模型：只在一个 `--root` 之下读写，只运行许可名单里的命令。两者都跟窗口同生
-共死，和 `--control` 一样，都不是守护进程。
-
-出问题时请运行 `minicon --status` 并附上输出:它报告构建版本、这台机器选了哪个 PTY
-后端及原因、系统实际解析到哪个字体与实测字宽,以及失败写在哪个文件。这些都无法通过读
-源码回答,因为它们取决于机器。
-
-## Code signing policy / 代码签名政策
-
-v0.1.4–v0.1.7 发布的是未签名产物。自 **v0.1.9** 起，每个公开版本都双签名：Windows 可执行文件
-与 `minicon.com` 经 Azure Artifact Signing 做 Authenticode 签名，macOS 版经 Developer ID 签名
-并通过 Apple 公证——主体均为 PARTNERNET SOFTWARE PTY LTD，并带 RFC 3161 时间戳。校验和与
-精确的构建/运行时回执仍是强制项。SignPath Foundation 已拒绝开源申请，公司发布者路线是唯一签名路径。
-同一套发布流程由 `release-policy.json` 选择签名开关，缺少凭据绝不会静默关闭签名。
-测试证书、申请状态或仓库文字都不等于已签名版本。发布者身份、隐私、团队角色、
-exact-build 来源和验证规则见 [Code signing policy](CODE_SIGNING_POLICY.md)。
-
-在 Windows 上用系统权威信任检查查看下载文件：
-
-快速目测可右键文件，打开**属性 → 数字签名 → 详细信息 → 查看证书**；若完全没有
-“数字签名”标签页，说明文件没有嵌入 Authenticode 签名。发布验收仍应使用下面的
-机器可读命令：
-
-```powershell
-.\scripts\inspect-authenticode.ps1 .\minicon.com `
-  -ExpectedProductName MiniCon -ExpectedProductVersion '<VERSION>'
-```
-
-它输出包含 VERSIONINFO 的 JSON；只有公司发布者签名、时间戳和指定产品信息都有效时
-才返回 `0`，返回 `2` 表示未签名，返回 `6` 表示产品名或版本不符。
-macOS/Linux 可安装 `osslsigncode` 后运行
-`scripts/inspect-authenticode.sh ./minicon.com` 查看证书与时间戳。返回 `2` 表示无法
-提取嵌入签名；返回 `3` 表示签名存在但便携式验证失败（可能只是本机 CA 链不全）。
-若已从 Microsoft 官方 PKI 仓独立取得并核对由签名根证书和时间戳 CA 组成的 PEM
-bundle，可运行 `scripts/fetch-microsoft-trust-bundle.sh ./trust.pem` 后增加
-`--ca-file ./trust.pem`；该选项不会修改系统信任库。
-最终信任结论仍以 Windows 为准。
+安装：从 [Releases](https://github.com/partnernetsoftware/minicon/releases) 下载对应平台
+的可执行文件直接运行即可。Windows 鼠标开箱即用；默认用经典控制台宿主，`--feature conpty`
+可切到 ConPTY（Vim 类程序需要）。构建：`./scripts/build.sh release`。
+AgenTerm 关系、签名政策与更多细节见上文英文部分与 [PRD.md](PRD.md)。

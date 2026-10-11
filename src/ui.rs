@@ -6,7 +6,7 @@
 
 pub const SIDEBAR_WIDTH_DIP: f64 = 224.0;
 pub const TREE_HEADER_HEIGHT_DIP: f64 = 32.0;
-pub const TREE_ROW_HEIGHT_DIP: f64 = 30.0;
+pub const TREE_ROW_HEIGHT_DIP: f64 = 40.0;
 pub const COMPOSER_HEIGHT_DIP: f64 = 96.0;
 pub const STATUS_HEIGHT_DIP: f64 = 24.0;
 pub const SIDEBAR_MIN_WIDTH_DIP: f64 = 224.0;
@@ -25,6 +25,13 @@ pub const TOOLTIP_GAP_DIP: f64 = 6.0;
 pub const TOOLTIP_PADDING_DIP: f64 = 8.0;
 pub const TOOLTIP_HEIGHT_DIP: f64 = 26.0;
 pub const TERMINAL_SCROLLBAR_WIDTH_DIP: f64 = 12.0;
+/// Size of the per-row icon buttons (close, edit) and the margin from the
+/// sidebar's right edge to the outermost one. Shared by both `tree_*_rect`
+/// helpers so the pair stays aligned.
+const TREE_BUTTON_SIZE_DIP: f64 = 20.0;
+const TREE_BUTTON_RIGHT_MARGIN_DIP: f64 = 8.0;
+/// Gap between the edit and close buttons, so their hit boxes never overlap.
+const TREE_BUTTON_GAP_DIP: f64 = 4.0;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Rect {
@@ -348,12 +355,12 @@ impl Layout {
     }
 
     pub fn tree_close_rect(self, visible_row: usize, scale: f64) -> Rect {
-        let size = dip(20.0, scale).min(self.tree_row_height);
+        let size = dip(TREE_BUTTON_SIZE_DIP, scale).min(self.tree_row_height);
         Rect {
             x: self
                 .sidebar
                 .width
-                .saturating_sub(dip(8.0, scale))
+                .saturating_sub(dip(TREE_BUTTON_RIGHT_MARGIN_DIP, scale))
                 .saturating_sub(size),
             y: self
                 .tree_header_height
@@ -367,6 +374,21 @@ impl Layout {
             height: size,
         }
     }
+
+    /// The per-row edit button, one gap to the left of the close button.
+    ///
+    /// Shares the close button's size and vertical centring so the two read as
+    /// one aligned pair; only `x` differs.
+    pub fn tree_edit_rect(self, visible_row: usize, scale: f64) -> Rect {
+        let close = self.tree_close_rect(visible_row, scale);
+        let gap = dip(TREE_BUTTON_GAP_DIP, scale);
+        Rect {
+            x: close.x.saturating_sub(gap).saturating_sub(close.width),
+            y: close.y,
+            width: close.width,
+            height: close.height,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -378,6 +400,7 @@ pub enum TreeHit {
     SidebarToggle,
     Select(usize),
     Close(usize),
+    Edit(usize),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -628,9 +651,14 @@ pub fn tree_hit(
     }
     // A collapsed rail is one icon wide, so the close box covers most of the
     // row and selecting a tab keeps closing it by accident (user report
-    // against 0.1.22). While collapsed the whole row selects; closing needs
-    // the rail expanded, where the box is a small target beside the title.
-    if !layout.sidebar_collapsed && layout.tree_close_rect(visible_row, scale).contains(x, y) {
+    // against 0.1.22). While collapsed the whole row selects; the row buttons
+    // need the rail expanded, where each box is a small target beside the
+    // title. Edit and close do not overlap (a gap separates them), but the
+    // edit box is tested first so a click there never reads as a close.
+    if !layout.sidebar_collapsed && layout.tree_edit_rect(visible_row, scale).contains(x, y) {
+        TreeHit::Edit(index)
+    } else if !layout.sidebar_collapsed && layout.tree_close_rect(visible_row, scale).contains(x, y)
+    {
         TreeHit::Close(index)
     } else {
         TreeHit::Select(index)
@@ -931,9 +959,9 @@ pub fn terminal_scrollbar_geometry(
     viewport: TerminalViewport,
     offset: usize,
     maximum: usize,
-) -> agenterm_ui_core::ScrollbarGeometry {
-    agenterm_ui_core::terminal_scrollbar_geometry(
-        agenterm_ui_core::Rect {
+) -> minicon_ui_core::ScrollbarGeometry {
+    minicon_ui_core::terminal_scrollbar_geometry(
+        minicon_ui_core::Rect {
             left: viewport.left.min(i32::MAX as u32) as i32,
             top: viewport.top.min(i32::MAX as u32) as i32,
             right: viewport.width.min(i32::MAX as u32) as i32,
@@ -1563,9 +1591,9 @@ mod tests {
         assert_eq!(UiLanguage::default().tag(), "en");
     }
 
-    /// The collapsed rail is one icon wide: the close box then covers most of
-    /// a row, so a click meant to select a tab closed it instead. Collapsed,
-    /// every row selects; the close target comes back with the rail.
+    /// The collapsed rail is one icon wide: the row buttons then cover most of
+    /// a row, so a click meant to select a tab acted on a button instead.
+    /// Collapsed, every row selects; the buttons come back with the rail.
     #[test]
     fn a_collapsed_rail_never_closes_a_tab_by_a_row_click() {
         let layout = Layout::collapsed(400, 300, 1.0);
@@ -1576,6 +1604,12 @@ mod tests {
             TreeHit::Select(0),
             "a collapsed row selects wherever it is clicked"
         );
+        let edit = layout.tree_edit_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(layout, edit.x + 1, edit.y + 1, 0, 4, 1.0),
+            TreeHit::Select(0),
+            "the edit box is inert on a collapsed rail too"
+        );
 
         let expanded = Layout::new(400, 300, 1.0);
         assert!(!expanded.sidebar_collapsed);
@@ -1584,6 +1618,12 @@ mod tests {
             tree_hit(expanded, close.x + 1, close.y + 1, 0, 4, 1.0),
             TreeHit::Close(0),
             "an expanded rail keeps its close box"
+        );
+        let edit = expanded.tree_edit_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(expanded, edit.x + 1, edit.y + 1, 0, 4, 1.0),
+            TreeHit::Edit(0),
+            "and gains an edit box"
         );
     }
 
@@ -1608,8 +1648,31 @@ mod tests {
             tree_hit(layout, close.x + 1, close.y + 1, 1, 4, 1.0),
             TreeHit::Close(1)
         );
+        let edit = layout.tree_edit_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(layout, edit.x + 1, edit.y + 1, 1, 4, 1.0),
+            TreeHit::Edit(1)
+        );
         assert_eq!(tree_hit(layout, 20, 490, 0, 1, 1.0), TreeHit::Background);
         assert_eq!(tree_hit(layout, 500, 40, 0, 4, 1.0), TreeHit::Outside);
+    }
+
+    /// The edit box sits entirely to the left of the close box, at the same
+    /// vertical band, and the two never overlap — otherwise a click could mean
+    /// two different things depending on which box is tested first.
+    #[test]
+    fn the_edit_box_is_left_of_the_close_box_and_does_not_overlap_it() {
+        let layout = Layout::new(1000, 500, 1.0);
+        for row in 0..4 {
+            let edit = layout.tree_edit_rect(row, 1.0);
+            let close = layout.tree_close_rect(row, 1.0);
+            assert_eq!(edit.y, close.y, "row {row}: same vertical band");
+            assert_eq!(edit.height, close.height, "row {row}: same height");
+            assert!(
+                edit.x.saturating_add(edit.width) <= close.x,
+                "row {row}: the edit box must not reach into the close box"
+            );
+        }
     }
 
     /// The header tools each own their hit before the tree rows are considered,
@@ -2154,7 +2217,7 @@ mod tests {
     /// has to survive a change of scale, and the track must stay ordered.
     #[test]
     fn dragging_reaches_the_ends_at_every_display_scale() {
-        use agenterm_ui_core::scrollback_for_thumb_top;
+        use minicon_ui_core::scrollback_for_thumb_top;
         for scale in [1.0, 1.25, 1.5, 2.0, 3.0] {
             let geometry = terminal_scrollbar_geometry(viewport(scale, 24, 96), 0, 100);
             assert!(
@@ -2230,7 +2293,7 @@ mod tests {
     /// require the same offset within the rounding the geometry implies.
     #[test]
     fn dragging_a_thumb_round_trips_to_the_offset_it_was_drawn_from() {
-        use agenterm_ui_core::{ScrollbarGeometry, scrollback_for_thumb_top};
+        use minicon_ui_core::{ScrollbarGeometry, scrollback_for_thumb_top};
         let view = viewport(1.0, 24, 96);
         for maximum in [0usize, 1, 7, 100, 5000] {
             let geometry: ScrollbarGeometry = terminal_scrollbar_geometry(view, 0, maximum);
@@ -2278,7 +2341,7 @@ mod tests {
     /// instead of producing an out-of-range scrollback.
     #[test]
     fn dragging_to_the_ends_reaches_the_extremes_and_clamps() {
-        use agenterm_ui_core::scrollback_for_thumb_top;
+        use minicon_ui_core::scrollback_for_thumb_top;
         let view = viewport(1.0, 24, 96);
         let geometry = terminal_scrollbar_geometry(view, 0, 100);
         assert_eq!(

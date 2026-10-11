@@ -3,7 +3,7 @@
 //! `prd/PRD_02_25_con_workspace.md`'s "Screenshot/image paste into the
 //! composer").
 //!
-//! `agenterm_platform::clipboard` already exposes a generic
+//! `minicon_platform::clipboard` already exposes a generic
 //! `available_types()`/`get_type()` pair across every OS adapter; no new
 //! platform-crate API is needed. What's MiniCon-owned is picking the right
 //! host type name and turning the bytes into a temp file whose path the
@@ -15,12 +15,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use agenterm_platform::contract::clipboard::MAX_CLIPBOARD_TYPE_BYTES;
+use minicon_platform::contract::clipboard::MAX_CLIPBOARD_TYPE_BYTES;
 
 /// Host-native clipboard type names that carry image bytes, tried in order
 /// against whatever `available_types()` actually reports. Names are the
 /// host's own spelling (macOS UTIs, Windows registered formats, X11/Wayland
-/// MIME types) -- see `crates/agenterm-platform/src/adapters/*/clipboard.rs`
+/// MIME types) -- see `crates/minicon-platform/src/adapters/*/clipboard.rs`
 /// in the `agenterm` repo.
 const IMAGE_TYPE_CANDIDATES: &[(&str, &str)] = &[
     ("public.png", "png"),
@@ -53,9 +53,9 @@ fn matching_image_type(available: &[String]) -> Option<(&'static str, &'static s
 /// none of those are errors worth surfacing to the composer; the caller falls
 /// back to a normal text paste.
 pub fn image_paste_as_temp_file_path() -> Option<String> {
-    let available = agenterm_platform::clipboard::available_types().ok()?;
+    let available = minicon_platform::clipboard::available_types().ok()?;
     let (type_name, extension) = matching_image_type(&available)?;
-    let bytes = agenterm_platform::clipboard::get_type(type_name, MAX_CLIPBOARD_TYPE_BYTES).ok()?;
+    let bytes = minicon_platform::clipboard::get_type(type_name, MAX_CLIPBOARD_TYPE_BYTES).ok()?;
     write_temp_image_file(&bytes, extension).ok()
 }
 

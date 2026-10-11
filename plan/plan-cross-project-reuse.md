@@ -1,5 +1,14 @@
 # MiniCon ↔ AgenTerm: evolving together without stepping on each other
 
+> **Superseded 2026-10-11 by [`plan-v0.2.5.md`](plan-v0.2.5.md).** This
+> document's premise — two products each *pinning the other's* shared crates by
+> git rev — no longer holds. After `agenterm` retargeted itself to a MiniCon
+> extension, the owner moved the shared platform crates **into** MiniCon
+> (`minicon-platform`, `minicon-ui-core`, `third_party/{vt100,softbuffer}`) and
+> made `agenterm` depend on MiniCon. The analysis below is kept as the record of
+> *why* the pin-drift problem existed; §1's "shared by construction" list now
+> reads "owned by MiniCon here". See `prd/PRD_02_28_shared_core.md` "Stage 3".
+
 Owner's framing (2026-09-22): the two products now evolve jointly. AgenTerm is
 driven by cdx-agenterm, cc-agenterm and bdy-ds4flash; MiniCon by cc-minicon.
 Raising abstraction and reuse *across* the two is an important and difficult

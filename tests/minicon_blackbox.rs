@@ -258,7 +258,7 @@ fn short_token(label: &str) -> u32 {
 /// collide on the same script/snapshot file.
 ///
 /// Unix places scratch under the platform IPC runtime directory (short real
-/// path such as `/private/tmp/agenterm-platform-<uid>`). macOS process temps
+/// path such as `/private/tmp/minicon-platform-<uid>`). macOS process temps
 /// under `/var/folders/...` are too long for Unix control sockets and made
 /// OSX journeys look unstable vs Windows named pipes.
 fn scratch_dir(label: &str) -> PathBuf {
@@ -268,7 +268,7 @@ fn scratch_dir(label: &str) -> PathBuf {
         .unwrap_or(0);
     #[cfg(unix)]
     let base = {
-        let base = agenterm_platform::ipc::native_runtime_directory();
+        let base = minicon_platform::ipc::native_runtime_directory();
         let _ = std::fs::create_dir_all(&base);
         base
     };
@@ -550,7 +550,7 @@ fn find_process_window(host_pid: u32) -> Result<TestHwnd, String> {
 
 #[cfg(windows)]
 fn capture_native_window(host_pid: u32, path: &Path) -> Result<(), String> {
-    use agenterm_platform::screenshot::{
+    use minicon_platform::screenshot::{
         NativeCaptureArea, ScreenshotWindowHandle, capture_native_window_png,
     };
 
@@ -587,7 +587,7 @@ fn send_native_click(host_pid: u32, x: u64, y: u64) -> Result<(), String> {
 
 #[cfg(windows)]
 fn activate_native_simplified_chinese_ime(host_pid: u32) -> Result<(), String> {
-    use agenterm_platform::input_inject::{PointerButton, PointerPosition, pointer_click};
+    use minicon_platform::input_inject::{PointerButton, PointerPosition, pointer_click};
 
     let hwnd = find_process_window(host_pid)?;
     if unsafe { SetForegroundWindow(hwnd) } == 0 || unsafe { GetForegroundWindow() } != hwnd {
@@ -914,7 +914,7 @@ impl ConSession {
 #[test]
 #[ignore = "requires an interactive Windows desktop and installed Microsoft Pinyin"]
 fn native_microsoft_pinyin_preedit_and_commit_reach_the_real_window() {
-    use agenterm_platform::input_inject::send_keys;
+    use minicon_platform::input_inject::send_keys;
 
     let _guard = gui_test_guard();
     let dir = scratch_dir("native-pinyin");
@@ -2460,7 +2460,7 @@ fn status_reports_the_machine_without_opening_a_window() {
         .map(str::trim)
         .expect("a diagnostics line");
     let expected =
-        agenterm_platform::diagnostics::log_path().expect("this host has a diagnostics path");
+        minicon_platform::diagnostics::log_path().expect("this host has a diagnostics path");
     assert_eq!(
         reported,
         expected.display().to_string(),

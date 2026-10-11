@@ -246,7 +246,7 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
   all fail with `"the window is detached; attach-gui first"` because their
   handlers in `dispatch_control` take `window: &PixelWindow` — a real winit
   window, which on Unix means a real X11/Wayland connection
-  (`crates/agenterm-platform/src/adapters/unix/window_host.rs`'s
+  (`crates/minicon-platform/src/adapters/unix/window_host.rs`'s
   `run_pixel_window`), not a rendering-algorithm requirement. Evidence that
   the seam is implementation, not product: `paint_host_ui` in
   `src/host_paint.rs` already renders into a plain `pixels: &mut [u32]`

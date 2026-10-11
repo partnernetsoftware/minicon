@@ -873,7 +873,7 @@ impl FileTool {
     pub fn read(&self, relative: &str) -> Result<String, String> {
         let path = self.resolve(relative)?;
         let bytes =
-            agenterm_platform::filesystem_read::read_bounded(&path, FILE_TOOL_MAX_READ_BYTES)
+            minicon_platform::filesystem_read::read_bounded(&path, FILE_TOOL_MAX_READ_BYTES)
                 .map_err(|error| format!("file: read {relative:?} failed: {error}"))?;
         String::from_utf8(bytes)
             .map_err(|_| format!("file: read {relative:?} failed: file is not valid UTF-8"))
@@ -896,7 +896,7 @@ impl FileTool {
             std::fs::create_dir_all(parent)
                 .map_err(|error| format!("file: write {relative:?} failed: {error}"))?;
         }
-        agenterm_platform::filesystem_publish::write_file_atomic(&path, |file| {
+        minicon_platform::filesystem_publish::write_file_atomic(&path, |file| {
             file.write_all(contents.as_bytes())
         })
         .map_err(|error| format!("file: write {relative:?} failed: {}", error.detail()))?;
@@ -1001,7 +1001,7 @@ impl ExecTool {
 
     /// The one place a child process is created.
     ///
-    /// Uses `agenterm_platform::contained_process::ContainedHeadlessCommand`
+    /// Uses `minicon_platform::contained_process::ContainedHeadlessCommand`
     /// (the crate's `contained-process-spawn` feature, enabled in
     /// `Cargo.toml`), not `std::process::Command`. This keeps the same
     /// argv-vector, no-shell guarantee H3's invariant is about and adds the
@@ -1010,7 +1010,7 @@ impl ExecTool {
     /// child's whole descendant tree, so a runaway grandchild cannot outlive
     /// this call's own timeout kill.
     fn spawn_contained(&self, program: &str, args: &[String]) -> Result<ExecOutcome, String> {
-        use agenterm_platform::contained_process::{
+        use minicon_platform::contained_process::{
             ContainedHeadlessCommand, ContainedProcessLimits,
         };
         use std::io::Read as _;
@@ -1022,7 +1022,7 @@ impl ExecTool {
             .capture_output()
             .limits(ContainedProcessLimits {
                 cpu_seconds: Some(EXEC_TOOL_TIMEOUT.as_secs()),
-                // agenterm_platform's macOS contained_process refuses any
+                // minicon_platform's macOS contained_process refuses any
                 // `memory_bytes` limit outright (RLIMIT_AS cannot be set
                 // below the process-wide dyld mapping there), so asking for
                 // one made every spawn fail on macOS. Other limits are still
@@ -1043,7 +1043,7 @@ impl ExecTool {
         // Drain both captured streams on their own threads. Polling for the
         // exit while a full pipe blocks the child would deadlock the
         // timeout this bound exists to provide.
-        let drain = |stream: Option<agenterm_platform::contained_process::ContainedChildOutput>| {
+        let drain = |stream: Option<minicon_platform::contained_process::ContainedChildOutput>| {
             std::thread::spawn(move || {
                 let mut buffer = Vec::new();
                 if let Some(mut stream) = stream {

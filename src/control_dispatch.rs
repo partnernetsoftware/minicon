@@ -421,10 +421,10 @@ impl ConApp {
             })(),
             CliCommand::SendUiIme { event } => (|| {
                 let action = match &event {
-                    agenterm_platform::ime::ImeEvent::Enabled => "enabled",
-                    agenterm_platform::ime::ImeEvent::Preedit { .. } => "preedit",
-                    agenterm_platform::ime::ImeEvent::Commit(_) => "commit",
-                    agenterm_platform::ime::ImeEvent::Disabled => "disabled",
+                    minicon_platform::ime::ImeEvent::Enabled => "enabled",
+                    minicon_platform::ime::ImeEvent::Preedit { .. } => "preedit",
+                    minicon_platform::ime::ImeEvent::Commit(_) => "commit",
+                    minicon_platform::ime::ImeEvent::Disabled => "disabled",
                     _ => "unknown",
                 };
                 let route = if self.composer.focused {

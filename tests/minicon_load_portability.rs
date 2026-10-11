@@ -79,6 +79,12 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     // is an OS component from Windows Vista / Server 2008 onward, so Server
     // 2016 does not need a redistributable for it.
     "bcrypt.dll",
+    // Windows CNG's primitive library, pulled in by the TLS stack
+    // (`network-http` → native-tls → schannel). An OS component since
+    // Windows 7 / Server 2008 R2, well under the Server 2016 floor.
+    "bcryptprimitives.dll",
+    // CryptoAPI, the same schannel TLS chain. Present since Windows 2000.
+    "crypt32.dll",
     "gdi32.dll",
     // Production pin 745f52b2 still imports this at load time. The Windows
     // RSS research copy delay-loads it via LoadLibraryW on screenshot encode
@@ -88,8 +94,14 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     "imm32.dll",
     "kernel32.dll",
     "ntdll.dll",
+    // Security Support Provider interface, again the schannel TLS chain.
+    // Present since Windows NT 4.
+    "secur32.dll",
     "shell32.dll",
     "user32.dll",
+    // Winsock 2, needed by the same TLS/network stack. An OS component since
+    // Windows 95 / NT 4.
+    "ws2_32.dll",
 ];
 
 /// Modules that are *not* OS components and must be installed or shipped

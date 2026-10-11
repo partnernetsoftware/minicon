@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use agenterm_platform::ime::ImeEvent;
-use agenterm_platform::ipc::{IpcEndpoint, IpcTransportErrorCode, NativeListener, NativeStream};
+use minicon_platform::ime::ImeEvent;
+use minicon_platform::ipc::{IpcEndpoint, IpcTransportErrorCode, NativeListener, NativeStream};
 
 use super::{
     json::{self, JsonValue},
@@ -38,7 +38,7 @@ struct RequestId(u128);
 
 impl RequestId {
     fn fresh() -> Result<Self, String> {
-        agenterm_platform::entropy::secure_random_array::<16>()
+        minicon_platform::entropy::secure_random_array::<16>()
             .map(u128::from_le_bytes)
             .map(Self)
             .map_err(|error| format!("control request id: {error}"))
@@ -50,10 +50,10 @@ pub(crate) fn contains_utf8(haystack: &str, needle: &str) -> bool {
 }
 
 fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    // The architecture-specialized kernel lives in agenterm-platform: a binary
+    // The architecture-specialized kernel lives in minicon-platform: a binary
     // under src/** may select a subsystem but not carry machine-level
     // implementations, which both source-boundary suites enforce.
-    agenterm_platform::byte_search::contains(haystack, needle)
+    minicon_platform::byte_search::contains(haystack, needle)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -345,7 +345,7 @@ const MAX_SEND_FILE_BYTES: usize = 1 << 20;
 /// another tab practical.
 fn text_payload(cursor: &mut Cursor<'_>, verb: &str) -> Result<String, String> {
     if let Some(path) = cursor.optional_value("--file")? {
-        let bytes = agenterm_platform::filesystem_read::read_bounded(
+        let bytes = minicon_platform::filesystem_read::read_bounded(
             std::path::Path::new(path),
             MAX_SEND_FILE_BYTES,
         )
@@ -1156,7 +1156,7 @@ impl ControlServer {
             let request_tx = Arc::clone(&requests);
             let worker_wake = Arc::clone(&wake);
             let worker_replay_cache = Arc::clone(&replay_cache);
-            if let Err(error) = agenterm_platform::threading::spawn_named_detached(
+            if let Err(error) = minicon_platform::threading::spawn_named_detached(
                 "minicon-control-worker",
                 Box::new(move || {
                     while let Some(stream) = worker_connections.pop() {
@@ -1170,12 +1170,12 @@ impl ControlServer {
                         }));
                         match result {
                             Ok(Ok(())) => {}
-                            Ok(Err(error)) => agenterm_platform::diagnostics::record(
+                            Ok(Err(error)) => minicon_platform::diagnostics::record(
                                 "minicon-control",
                                 "response_write_failed",
                                 &error,
                             ),
-                            Err(payload) => agenterm_platform::diagnostics::record(
+                            Err(payload) => minicon_platform::diagnostics::record(
                                 "minicon-control",
                                 "worker_panic",
                                 panic_payload(&payload),
@@ -1191,7 +1191,7 @@ impl ControlServer {
         }
         let listener_alive = Arc::clone(&alive);
         let listener_connections = Arc::clone(&connections);
-        if let Err(error) = agenterm_platform::threading::spawn_named_detached(
+        if let Err(error) = minicon_platform::threading::spawn_named_detached(
             "minicon-control",
             Box::new(move || {
                 while listener_alive.load(Ordering::Acquire) {
@@ -1201,7 +1201,7 @@ impl ControlServer {
                             continue;
                         }
                         Err(error) => {
-                            agenterm_platform::diagnostics::record(
+                            minicon_platform::diagnostics::record(
                                 "minicon-control",
                                 "listener_accept_failed",
                                 &error.to_string(),

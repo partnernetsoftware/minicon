@@ -14,7 +14,7 @@
 ///
 /// Deliberately this small: `harness` posts one JSON body and reads one JSON
 /// body back. Anything richer would be a general HTTP client, which MiniCon
-/// does not want to own -- the one it uses is `agenterm-platform`'s
+/// does not want to own -- the one it uses is `minicon-platform`'s
 /// `network-http` capability, behind this trait.
 pub trait Transport {
     /// POSTs `body` as `application/json` and returns the response body.
@@ -53,11 +53,11 @@ pub const HARNESS_HTTP_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 /// default, which would bound a reachability probe rather than a completion.
 pub const HARNESS_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// One bounded POST through `agenterm_platform::network_http`.
+/// One bounded POST through `minicon_platform::network_http`.
 ///
 /// **What happened to `PlainHttp`, and why.** This file used to carry a
 /// hand-rolled HTTP/1.1 client over `std::net::TcpStream`, because MiniCon's
-/// pinned `agenterm-platform` had no outbound-HTTP capability and so no TLS;
+/// pinned `minicon-platform` had no outbound-HTTP capability and so no TLS;
 /// `https://` was refused by name rather than faked. That is no longer true:
 /// the pinned crate enables `network-http`, whose `validate` accepts **both**
 /// `http://` and `https://`, so this one transport reaches an `https://` model
@@ -78,7 +78,7 @@ impl Transport for NetworkHttp {
         body: &str,
         extra_headers: &[(&str, &str)],
     ) -> Result<String, String> {
-        use agenterm_platform::network_http;
+        use minicon_platform::network_http;
 
         let mut request =
             network_http::NetworkHttpRequest::new(network_http::NetworkHttpMethod::Post, url)
@@ -136,7 +136,7 @@ impl Transport for NetworkHttp {
 /// * A truncated *error* body is still reported, with the truncation named, so
 ///   the status is not lost to a size complaint.
 fn interpret_http_response(
-    response: &agenterm_platform::network_http::NetworkHttpResponse,
+    response: &minicon_platform::network_http::NetworkHttpResponse,
 ) -> Result<String, String> {
     let text = String::from_utf8_lossy(&response.body).into_owned();
     if !response.is_success() {
@@ -169,7 +169,7 @@ fn interpret_http_response(
 ///
 /// Named here and nowhere else so there is one place to correct. The
 /// `https://` is reachable: `NetworkHttp` speaks it through the pinned
-/// `agenterm-platform`'s `network-http` capability, which links rustls.
+/// `minicon-platform`'s `network-http` capability, which links rustls.
 pub const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEEPSEEK_MODEL: &str = "deepseek-chat";
 
@@ -512,7 +512,7 @@ fn dispatch_tool_call(
 
 #[cfg(test)]
 mod tests {
-    use agenterm_platform::network_http::NetworkHttpResponse;
+    use minicon_platform::network_http::NetworkHttpResponse;
 
     use super::*;
     use crate::harness::{ExecTool, FileTool};
@@ -841,11 +841,11 @@ mod tests {
         }
         // And the bounds this transport chooses are inside the capability's
         // ceilings, so a well-formed request is never rejected by validation.
-        assert!(HARNESS_HTTP_TIMEOUT <= agenterm_platform::network_http::NETWORK_HTTP_MAX_TIMEOUT);
+        assert!(HARNESS_HTTP_TIMEOUT <= minicon_platform::network_http::NETWORK_HTTP_MAX_TIMEOUT);
         const {
             assert!(
                 HARNESS_HTTP_MAX_RESPONSE_BYTES
-                    <= agenterm_platform::network_http::NETWORK_HTTP_MAX_RESPONSE_BYTES
+                    <= minicon_platform::network_http::NETWORK_HTTP_MAX_RESPONSE_BYTES
             );
         }
     }

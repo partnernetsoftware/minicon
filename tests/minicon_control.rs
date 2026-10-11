@@ -143,7 +143,7 @@ struct ClipboardRestore(Option<String>);
 #[cfg(windows)]
 impl Drop for ClipboardRestore {
     fn drop(&mut self) {
-        let _ = agenterm_platform::clipboard::set_text(self.0.as_deref().unwrap_or_default());
+        let _ = minicon_platform::clipboard::set_text(self.0.as_deref().unwrap_or_default());
     }
 }
 
@@ -164,7 +164,7 @@ fn control_endpoint(suffix: &str) -> String {
     if cfg!(windows) {
         format!(r"pipe:\\.\pipe\minicon-test-{suffix}")
     } else {
-        let base = agenterm_platform::ipc::native_runtime_directory();
+        let base = minicon_platform::ipc::native_runtime_directory();
         let _ = fs::create_dir_all(&base);
         let dir = base.join(format!("ct-{suffix}"));
         let _ = fs::create_dir_all(&dir);
@@ -472,7 +472,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
     let screenshot = if cfg!(windows) {
         std::env::temp_dir().join(format!("minicon-{suffix}.png"))
     } else {
-        agenterm_platform::ipc::native_runtime_directory().join(format!("shot-{suffix}.png"))
+        minicon_platform::ipc::native_runtime_directory().join(format!("shot-{suffix}.png"))
     };
     let mut host = Command::new(exe);
     #[cfg(unix)]
@@ -630,8 +630,8 @@ fn gui_control_surface_isolated_multitab_black_box() {
 
     #[cfg(windows)]
     {
-        let _restore = ClipboardRestore(agenterm_platform::clipboard::get_text(1024 * 1024).ok());
-        agenterm_platform::clipboard::set_text("echo ASYNC_CLIPBOARD_OK\r")
+        let _restore = ClipboardRestore(minicon_platform::clipboard::get_text(1024 * 1024).ok());
+        minicon_platform::clipboard::set_text("echo ASYNC_CLIPBOARD_OK\r")
             .expect("test clipboard text must be published");
         cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+Shift+V"]);
         cli_json(
@@ -1667,7 +1667,7 @@ fn host_process_rss_stays_within_named_budget() {
     let screenshot = if cfg!(windows) {
         std::env::temp_dir().join(format!("minicon-rss-{suffix}.png"))
     } else {
-        agenterm_platform::ipc::native_runtime_directory().join(format!("rss-{suffix}.png"))
+        minicon_platform::ipc::native_runtime_directory().join(format!("rss-{suffix}.png"))
     };
     let mut host = Command::new(exe);
     #[cfg(unix)]
@@ -1887,7 +1887,7 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
 }
 /// `F1` (`plan/plan-carried-debt.md`): Ctrl+V with an image on the X11
 /// clipboard (no text representation) saves it to a temp file and pastes the
-/// file's path into the composer, through the real `agenterm-platform`
+/// file's path into the composer, through the real `minicon-platform`
 /// clipboard adapter -- not a mock. Linux/X11 only: this is the one
 /// clipboard backend this session can drive end to end under `Xvfb`; macOS
 /// (`public.png`) and Windows (`CF_DIB`/`CF_DIBV5`) use the same
@@ -1912,7 +1912,7 @@ fn composer_paste_of_a_clipboard_image_inserts_its_temp_file_path() {
         std::env::set_var("PLATFORM_X11_CLIPBOARD_SERVE", "1");
     }
     std::thread::spawn(move || {
-        let _ = agenterm_platform::clipboard::set_type("image/png", png_bytes);
+        let _ = minicon_platform::clipboard::set_type("image/png", png_bytes);
     });
     std::thread::sleep(Duration::from_millis(200));
 
@@ -2317,7 +2317,7 @@ fn a_headless_start_runs_a_session_and_can_grow_a_window_later() {
     let screenshot = if cfg!(windows) {
         std::env::temp_dir().join(format!("minicon-headless-{suffix}.png"))
     } else {
-        agenterm_platform::ipc::native_runtime_directory().join(format!("headless-{suffix}.png"))
+        minicon_platform::ipc::native_runtime_directory().join(format!("headless-{suffix}.png"))
     };
     let mut host = Command::new(exe);
     #[cfg(unix)]
@@ -2412,7 +2412,7 @@ fn detaching_the_gui_keeps_the_process_and_its_sessions() {
     let screenshot = if cfg!(windows) {
         std::env::temp_dir().join(format!("minicon-detach-{suffix}.png"))
     } else {
-        agenterm_platform::ipc::native_runtime_directory().join(format!("detach-{suffix}.png"))
+        minicon_platform::ipc::native_runtime_directory().join(format!("detach-{suffix}.png"))
     };
     let mut host = Command::new(exe);
     #[cfg(unix)]
@@ -2531,7 +2531,7 @@ fn collapsing_the_sidebar_widens_the_terminal_and_expanding_restores_it_exactly(
     let screenshot = if cfg!(windows) {
         std::env::temp_dir().join(format!("minicon-rail-{suffix}.png"))
     } else {
-        agenterm_platform::ipc::native_runtime_directory().join(format!("rail-{suffix}.png"))
+        minicon_platform::ipc::native_runtime_directory().join(format!("rail-{suffix}.png"))
     };
     let mut host = Command::new(exe);
     #[cfg(unix)]

@@ -177,14 +177,19 @@ context only; this repository's delivery PRD and workflows are authoritative.
 
 ## Shared improvement boundary
 
-Stable, product-neutral lessons should move into `agenterm-platform`,
-`agenterm-ui-core`, or shared frontend contracts only after both consumers and
+Stable, product-neutral lessons should move into the shared crates MiniCon
+**owns** — `minicon-core`, `crates/minicon-platform`, `crates/minicon-ui-core`,
+and the forked `third_party/{vt100,softbuffer}` — only after both consumers and
 their evidence agree. UI composition may differ. PTY lifecycle, VT/CJK rules,
 font rasterization, retained frame mechanics, input normalization, clipboard,
 IME, native window contracts, and bounded failure types should converge rather
 than fork.
 
-Shared kernels consumed by both products keep their requirement in their
-owning source repository. Within MiniCon, [shared core](PRD_02_28_shared_core.md)
-owns the dependency direction and extraction stages; historical agenterm PRD
-numbers are not local authorities.
+The platform and UI crates were `agenterm`'s until 2026-10-10, when the owner
+moved them here and inverted the arrow (`agenterm` now depends on MiniCon); see
+[shared core](PRD_02_28_shared_core.md) "Stage 3" and
+[`plan/plan-v0.2.5.md`](../plan/plan-v0.2.5.md). Shared kernels consumed by both
+products keep their requirement in their owning source repository — which is now
+this one. Within MiniCon, [shared core](PRD_02_28_shared_core.md) owns the
+dependency direction and extraction stages; historical agenterm PRD numbers are
+not local authorities.

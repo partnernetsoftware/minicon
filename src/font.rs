@@ -1,14 +1,14 @@
 //! Product-side glyph cache over the platform font raster contract.
 //!
-//! Native/file font APIs stop in `agenterm-platform`. This module owns only
+//! Native/file font APIs stop in `minicon-platform`. This module owns only
 //! terminal cache policy and the embedded ASCII disaster fallback, keeping the
 //! product state machine independent of GDI, CoreText, fontconfig, and parsers.
 
 use std::sync::{Arc, OnceLock};
 
-use agenterm_ui_core::{GlyphCache, GlyphCacheKey};
+use minicon_ui_core::{GlyphCache, GlyphCacheKey};
 
-pub use agenterm_platform::font::RasterGlyph;
+pub use minicon_platform::font::RasterGlyph;
 
 const BITMAP_W: u32 = 8;
 const BITMAP_H: u32 = 8;
@@ -35,7 +35,7 @@ impl Renderer {
         if let Some(cached) = cache.get_cloned(&key) {
             return cached;
         }
-        let produced = agenterm_platform::font::rasterize(ch, size)
+        let produced = minicon_platform::font::rasterize(ch, size)
             .ok()
             .flatten()
             .or_else(|| bitmap_glyph(ch, size))
@@ -54,7 +54,7 @@ fn renderer() -> &'static Renderer {
 
 pub fn cell_metrics(size_px: u16) -> CellMetrics {
     let size = size_px.clamp(8, 72);
-    agenterm_platform::font::primary_metrics(size)
+    minicon_platform::font::primary_metrics(size)
         .map(|metrics| CellMetrics {
             width: minicon_core::numeric::ceil_f32(metrics.cell_width).max(1.0) as u32,
             height: minicon_core::numeric::ceil_f32(metrics.cell_height).max(1.0) as u32,

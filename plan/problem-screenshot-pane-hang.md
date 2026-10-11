@@ -37,7 +37,7 @@ so the failure looked intermittent.
    usable as a read-only probe for a stuck request.
 4. Platform layer: when the window is minimized or its client area is not drawable,
    `paint()` returns early without calling `application.render()`
-   (`agenterm-platform/.../native_pixel_window.rs`; `paint_should_skip` defined
+   (`crates/minicon-platform/.../native_pixel_window.rs`; `paint_should_skip` defined
    2161-2163, call sites 1877-1879). `render()` is where the screenshot queue is
    consumed and replied to (`src/main.rs:3213/3221`). **Whether this relates to the
    observed symptom is unverified** — that path does not write a file.

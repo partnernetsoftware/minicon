@@ -25,7 +25,7 @@ mod host_paint;
 mod host_ui;
 use host_ui::{
     BUTTON_HINT_SIZE_PX, BUTTON_LABEL_SIZE_PX, HeaderIcon, host_ui_text_width, paint_button_label,
-    paint_header_icon_button, paint_host_ui_text, paint_host_ui_text_parts,
+    paint_edit_glyph, paint_header_icon_button, paint_host_ui_text, paint_host_ui_text_parts,
     paint_host_ui_text_parts_clipped, paint_settings_panel, paint_status_bar,
     paint_two_line_button_label, scaled_host_ui_font, stroke_rect,
 };
@@ -66,19 +66,19 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use agent_interface::ScreenSnapshot;
-use agenterm_platform::input::{
+use minicon_platform::input::{
     KeyPressState, LogicalKey, ModifierState, NamedKey, NormalizedKeyEvent, PhysicalKeyCode,
 };
-use agenterm_platform::pty::{BoundedOutputPipe, ChildCommand, PtyChild, PtyMaster, TerminalSize};
-use agenterm_platform::terminal_input::{self, TerminalKeyMode};
-use agenterm_platform::window_host::{
+use minicon_platform::pty::{BoundedOutputPipe, ChildCommand, PtyChild, PtyMaster, TerminalSize};
+use minicon_platform::terminal_input::{self, TerminalKeyMode};
+use minicon_platform::window_host::{
     GeometryChange, LogicalPoint, LogicalSize, PixelBackingRetention, PixelFrameWrite,
     PixelPointerCursor, PixelRect as HostPixelRect, PixelWindow, PixelWindowApplication,
     PixelWindowDirective, PixelWindowError, PixelWindowEvent, PixelWindowOptions, PointerButton,
     PointerButtonState, WheelDelta, WindowWaker, XrgbPixelFrame, run_pixel_window,
 };
-use agenterm_ui_core::{DirtyRegion, DirtyRows, PixelRect};
-use agenterm_ui_core::{
+use minicon_ui_core::{DirtyRegion, DirtyRows, PixelRect};
+use minicon_ui_core::{
     ScrollbarHit, ScrollbarThumbDrag, scrollback_for_thumb_top, scrollbar_hit_test,
 };
 
@@ -171,7 +171,7 @@ impl vt100::Callbacks for ConCallbacks {
     }
 }
 
-use agenterm_ui_core::terminal_selection::{
+use minicon_ui_core::terminal_selection::{
     TerminalPoint, normalize_endpoints, terminal_selection_text, visible_row_selection,
     word_selection,
 };
@@ -276,6 +276,9 @@ const COMPOSER_TEXT_SIZE_PX: u16 = 15;
 const COMPOSER_TEXT_INSET: u32 = 10;
 const HOST_UI_HEADER_SIZE_PX: u16 = 14;
 const HOST_UI_TAB_SIZE_PX: u16 = 16;
+/// The second line of a tab row: the terminal's OSC title, set one step down so
+/// the row reads as name-over-title rather than two equal lines.
+const HOST_UI_SUBTITLE_SIZE_PX: u16 = 11;
 const HOST_UI_CLOSE_SIZE_PX: u16 = 13;
 const HOST_UI_STATUS_SIZE_PX: u16 = 14;
 
@@ -303,7 +306,7 @@ struct ConConfig {
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
-    agenterm_platform::runtime::user_config_directory()
+    minicon_platform::runtime::user_config_directory()
         .ok()
         .map(|directory| directory.join("minicon.json"))
 }
@@ -313,7 +316,7 @@ fn load_config() -> ConConfig {
     let Some(path) = config_path() else {
         return ConConfig::default();
     };
-    let Ok(bytes) = agenterm_platform::filesystem_read::read_bounded(&path, json::MAX_INPUT_BYTES)
+    let Ok(bytes) = minicon_platform::filesystem_read::read_bounded(&path, json::MAX_INPUT_BYTES)
     else {
         return ConConfig::default();
     };
@@ -349,7 +352,7 @@ fn install_panic_diagnostics() {
         let thread = std::thread::current();
         let thread_name = thread.name().unwrap_or("unnamed");
         let detail = format!("thread={thread_name} at={location} panic={payload}");
-        agenterm_platform::diagnostics::record("panic", "unhandled_panic", &detail);
+        minicon_platform::diagnostics::record("panic", "unhandled_panic", &detail);
         // No `parent_console` write here: attaching the parent console from a
         // crash path is the one moment a windowed host must not touch the
         // console that launched it. The log line above is the durable record.
@@ -365,11 +368,11 @@ fn main() {
     // the default handler runs, so the next "闪退" leaves a line that names
     // itself. The hook must never panic; `record` is written for a failure path.
     install_panic_diagnostics();
-    let args = match agenterm_platform::runtime::application_arguments() {
+    let args = match minicon_platform::runtime::application_arguments() {
         Ok(args) => args,
         Err(error) => {
             let message = format!("error: cannot read process arguments: {error}\n");
-            let _ = agenterm_platform::parent_console::write_stderr(&message);
+            let _ = minicon_platform::parent_console::write_stderr(&message);
             std::process::exit(2);
         }
     };
@@ -379,7 +382,7 @@ fn main() {
     // child's hidden console; in that mode the process is not the terminal,
     // it only shares the file, and must not open a window or a control
     // endpoint.
-    if let Some(code) = agenterm_platform::pty::run_if_console_agent(&args) {
+    if let Some(code) = minicon_platform::pty::run_if_console_agent(&args) {
         std::process::exit(code);
     }
 
@@ -390,13 +393,13 @@ fn main() {
     let parsed = match parse_args(&args) {
         Ok(parsed) => parsed,
         Err(message) => {
-            let _ = agenterm_platform::parent_console::write_stderr(&message);
+            let _ = minicon_platform::parent_console::write_stderr(&message);
             std::process::exit(2);
         }
     };
     #[cfg(target_os = "linux")]
     if let Err(message) = linux_startup::preflight() {
-        let _ = agenterm_platform::parent_console::write_stderr(&format!("minicon: {message}\n"));
+        let _ = minicon_platform::parent_console::write_stderr(&format!("minicon: {message}\n"));
         std::process::exit(1);
     }
     let ConArgs {
@@ -429,7 +432,7 @@ fn main() {
     #[cfg(not(windows))]
     let _ = features;
     no_activate |=
-        agenterm_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
+        minicon_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
 
     // Load config file: CLI flags override config, config overrides defaults.
     let config = load_config();
@@ -439,7 +442,7 @@ fn main() {
     // is a startup failure with no window to close, and a client racing startup
     // finds a listener rather than a refused connection.
     if let Err(error) = app.bind_control_endpoint() {
-        let _ = agenterm_platform::parent_console::write_stderr(&format!(
+        let _ = minicon_platform::parent_console::write_stderr(&format!(
             "minicon: control endpoint unavailable: {error}\n"
         ));
         std::process::exit(1);
@@ -466,7 +469,7 @@ fn main() {
         .with_start_detached(headless);
 
     if let Err(error) = run_pixel_window(options, Box::new(app)) {
-        let _ = agenterm_platform::parent_console::write_stderr(&format!("minicon: {error}"));
+        let _ = minicon_platform::parent_console::write_stderr(&format!("minicon: {error}"));
         std::process::exit(1);
     }
 }
@@ -611,7 +614,7 @@ struct ConApp {
     /// Reattaches a window after `detach-gui`. Deliberately not a `PixelWindow`:
     /// holding one of those across a detach would keep the native window alive
     /// and defeat the detach.
-    attachment: Option<agenterm_platform::window_host::WindowAttachment>,
+    attachment: Option<minicon_platform::window_host::WindowAttachment>,
     /// `--headless`: the first session has not been started yet, because there
     /// was no window whose `opened` would have started it.
     pending_headless_session: bool,
@@ -627,7 +630,7 @@ struct ConApp {
     /// `ui-snapshot` like it. A per-tab failure must never end the process:
     /// the tab is rolled back and the host says why.
     host_notice: Option<String>,
-    ime_status: Option<agenterm_platform::ime::ImeStatus>,
+    ime_status: Option<minicon_platform::ime::ImeStatus>,
     ime_status_label: String,
     /// macOS cannot report an input method's internal latin/native toggle;
     /// this infers it from keystrokes (see `ime_mode`).
@@ -640,10 +643,24 @@ struct ConApp {
     frame_scale: f64,
     // `None` on hosts whose accessibility backend discards snapshots, so the
     // publish path costs nothing there. The platform crate owns that choice.
-    a11y: Option<agenterm_platform::accessibility_publish::AccessibilityPublisher>,
+    a11y: Option<minicon_platform::accessibility_publish::AccessibilityPublisher>,
     a11y_inbox: Arc<a11y::ActionInbox>,
     a11y_dirty: bool,
     current_window_title: String,
+    /// An in-progress inline rename of a tab-tree label; `None` when not
+    /// renaming. While set, keyboard and IME input edit `editor` instead of
+    /// reaching the terminal (see the key routing in `event`).
+    rename: Option<RenameState>,
+}
+
+/// An in-progress inline tab rename.
+///
+/// The editor reuses the composer's text state (caret, selection, IME preedit)
+/// as a single-line buffer: the key handler never lets a newline into it. It is
+/// a scratch copy — the tree changes only on commit, so Escape can discard it.
+struct RenameState {
+    target: workspace::TabId,
+    editor: composer::ComposerState,
 }
 
 impl Drop for ConApp {
@@ -696,7 +713,7 @@ struct MouseReportOutcome {
 
 struct PendingClipboardPaste {
     target: workspace::TabId,
-    read: agenterm_platform::clipboard::ClipboardTextRead,
+    read: minicon_platform::clipboard::ClipboardTextRead,
     review: bool,
 }
 
@@ -775,7 +792,7 @@ fn composer_paste_text_or_image_path() -> Option<String> {
     // answers a text read with `Ok("")` on some hosts rather than an error --
     // an empty paste is indistinguishable from "no text", so it must not
     // shadow the image fallback below.
-    match agenterm_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES) {
+    match minicon_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES) {
         Ok(text) if !text.is_empty() => return Some(text),
         _ => {}
     }
@@ -821,6 +838,21 @@ fn composer_draft_shape(state: &composer::ComposerState) -> keymap::Draft {
     }
 }
 
+/// Flattens pasted or IME text to a single line for a rename buffer: a tab label
+/// has no room for a line break, so carriage returns and newlines become
+/// spaces rather than being dropped (the words stay separated).
+fn single_line_label(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if character == '\r' || character == '\n' {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
 /// Why a paste could not enter review. `Unsupported` has a defined fallback —
 /// the platform never offered a review and the unreviewed path is what shipped
 /// there — while `Failed` is a real failure the human must be shown.
@@ -835,7 +867,7 @@ enum PasteReviewRefusal {
 /// stay safe without a separate cancel path.
 struct PendingPasteReview {
     target: workspace::TabId,
-    review: agenterm_platform::text_review::TextReview,
+    review: minicon_platform::text_review::TextReview,
 }
 
 fn mouse_outcome_json(outcome: MouseOutcome) -> json::JsonValue {
@@ -895,7 +927,7 @@ fn status_strip_notice<'a>(
     host_notice.or(clipboard_error)
 }
 
-fn ime_status_json(status: Option<&agenterm_platform::ime::ImeStatus>) -> json::JsonValue {
+fn ime_status_json(status: Option<&minicon_platform::ime::ImeStatus>) -> json::JsonValue {
     let (known, name, available, open, native_mode, full_shape, label) = status.map_or_else(
         || (false, "", false, false, false, false, "IME: ?".to_owned()),
         |status| {
@@ -979,6 +1011,7 @@ impl ConApp {
             a11y_inbox: Arc::new(a11y::ActionInbox::default()),
             a11y_dirty: false,
             current_window_title: product_window_title(),
+            rename: None,
         }
     }
 
@@ -995,7 +1028,7 @@ impl ConApp {
     }
 
     fn refresh_ime_status(&mut self) -> bool {
-        let mut next = agenterm_platform::ime::status();
+        let mut next = minicon_platform::ime::status();
         // macOS reports "an input method is selected" as native whatever its
         // internal Shift toggle says; apply the mode its keystrokes showed.
         if cfg!(target_os = "macos")
@@ -1013,7 +1046,7 @@ impl ConApp {
         }
         self.ime_status_label = next.as_ref().map_or_else(
             || "IME: ?".to_owned(),
-            agenterm_platform::ime::ImeStatus::label,
+            minicon_platform::ime::ImeStatus::label,
         );
         self.ime_status = next;
         self.mark_composer_dirty();
@@ -1165,7 +1198,7 @@ impl ConApp {
     /// path.
     fn apply_active_geometry(
         &mut self,
-        metrics: agenterm_platform::window_host::PixelWindowMetrics,
+        metrics: minicon_platform::window_host::PixelWindowMetrics,
     ) -> Result<(), PixelWindowError> {
         let sidebar_width = self.sidebar_width_logical;
         let session = self.active_session_mut()?;
@@ -1272,8 +1305,8 @@ impl ConApp {
         for request in requests {
             match (request.node, request.action) {
                 (
-                    agenterm_platform::accessibility_publish::NODE_COMMAND,
-                    agenterm_platform::accessibility_publish::PublishedAction::SetText(text),
+                    minicon_platform::accessibility_publish::NODE_COMMAND,
+                    minicon_platform::accessibility_publish::PublishedAction::SetText(text),
                 ) => {
                     self.composer.focused = true;
                     self.composer.submit_error = None;
@@ -1283,54 +1316,54 @@ impl ConApp {
                     self.mark_composer_dirty();
                 }
                 (
-                    agenterm_platform::accessibility_publish::NODE_COMMAND,
-                    agenterm_platform::accessibility_publish::PublishedAction::Key(key),
+                    minicon_platform::accessibility_publish::NODE_COMMAND,
+                    minicon_platform::accessibility_publish::PublishedAction::Key(key),
                 ) => {
                     self.composer.focused = true;
-                    match agenterm_platform::accessibility_publish::published_key_effect(&key) {
-                        agenterm_platform::accessibility_publish::KeyEffect::Insert(text) => {
+                    match minicon_platform::accessibility_publish::published_key_effect(&key) {
+                        minicon_platform::accessibility_publish::KeyEffect::Insert(text) => {
                             self.composer.submit_error = None;
                             composer::insert(&mut self.composer, &text);
                         }
-                        agenterm_platform::accessibility_publish::KeyEffect::Backspace => {
+                        minicon_platform::accessibility_publish::KeyEffect::Backspace => {
                             self.composer.submit_error = None;
                             composer::backspace(&mut self.composer);
                         }
-                        agenterm_platform::accessibility_publish::KeyEffect::SelectAll => {
+                        minicon_platform::accessibility_publish::KeyEffect::SelectAll => {
                             composer::select_all(&mut self.composer);
                         }
-                        agenterm_platform::accessibility_publish::KeyEffect::Submit => {
+                        minicon_platform::accessibility_publish::KeyEffect::Submit => {
                             self.submit_composer();
                         }
-                        agenterm_platform::accessibility_publish::KeyEffect::Cancel => {
+                        minicon_platform::accessibility_publish::KeyEffect::Cancel => {
                             self.composer.cancel_focus();
                         }
-                        agenterm_platform::accessibility_publish::KeyEffect::Ignore => {}
+                        minicon_platform::accessibility_publish::KeyEffect::Ignore => {}
                     }
                     self.composer.preedit.clear();
                     let _ = self.update_composer_ime_anchor(window);
                     self.mark_composer_dirty();
                 }
-                (agenterm_platform::accessibility_publish::NODE_COMMAND, _) => {
+                (minicon_platform::accessibility_publish::NODE_COMMAND, _) => {
                     self.composer.focused = true;
                     let _ = self.update_composer_ime_anchor(window);
                     self.mark_composer_dirty();
                 }
                 (
-                    agenterm_platform::accessibility_publish::NODE_SEND,
-                    agenterm_platform::accessibility_publish::PublishedAction::Click,
+                    minicon_platform::accessibility_publish::NODE_SEND,
+                    minicon_platform::accessibility_publish::PublishedAction::Click,
                 ) => {
                     self.submit_composer();
                 }
                 (
-                    agenterm_platform::accessibility_publish::NODE_SEND,
-                    agenterm_platform::accessibility_publish::PublishedAction::Focus,
+                    minicon_platform::accessibility_publish::NODE_SEND,
+                    minicon_platform::accessibility_publish::PublishedAction::Focus,
                 )
-                | (agenterm_platform::accessibility_publish::NODE_SESSION, _) => {
+                | (minicon_platform::accessibility_publish::NODE_SESSION, _) => {
                     self.composer.focused = false;
                     self.mark_composer_dirty();
                 }
-                (agenterm_platform::accessibility_publish::NODE_FRAME, _) => {
+                (minicon_platform::accessibility_publish::NODE_FRAME, _) => {
                     window.focus();
                 }
                 _ => {}
@@ -1702,6 +1735,21 @@ impl ConApp {
                 self.reveal_active_tree_row(window)?;
                 self.mark_host_ui_full();
             }
+            ui::TreeHit::Edit(index) => {
+                // The edit button shows only for the active or hovered row, so
+                // a click on its region only starts an edit when it was
+                // actually visible; otherwise it selects the row like any
+                // other click.
+                let edit_visible = self.hovered_tree_row == Some(index)
+                    || self.workspace.active() == Some(ids[index]);
+                if edit_visible {
+                    self.begin_rename(window, ids[index]);
+                    return Ok(true);
+                }
+                self.activate_session(window, ids[index]);
+                self.reveal_active_tree_row(window)?;
+                self.mark_host_ui_full();
+            }
             ui::TreeHit::Select(index) => {
                 self.activate_session(window, ids[index]);
                 self.reveal_active_tree_row(window)?;
@@ -1827,7 +1875,7 @@ impl ConApp {
                 .saturating_add(4)
                 .saturating_add(line_height.saturating_mul(lines.caret_row as u32)),
         ) / scale;
-        let _ = window.set_ime_cursor_area(agenterm_platform::window_host::LogicalRect::new(
+        let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
             x, y, 2.0, 20.0,
         ));
         Ok(())
@@ -2049,9 +2097,9 @@ impl ConApp {
     fn handle_composer_ime(
         &mut self,
         window: &PixelWindow,
-        event: agenterm_platform::ime::ImeEvent,
+        event: minicon_platform::ime::ImeEvent,
     ) {
-        use agenterm_platform::ime::{ImeAction, classify_event};
+        use minicon_platform::ime::{ImeAction, classify_event};
         match classify_event(event, true) {
             ImeAction::UpdatePreedit { text, .. } => self.composer.preedit = text,
             ImeAction::ClearPreedit => self.composer.preedit.clear(),
@@ -2064,6 +2112,221 @@ impl ConApp {
             _ => self.composer.preedit.clear(),
         }
         let _ = self.update_composer_ime_anchor(window);
+    }
+
+    /// Starts an inline rename of a tab-tree label.
+    ///
+    /// Seeds the editor with the label the row currently shows, so the user
+    /// edits what they can see rather than a hidden default. Keyboard input is
+    /// diverted to the editor (see the routing in `event`) until the rename
+    /// commits or is cancelled.
+    fn begin_rename(&mut self, window: &PixelWindow, id: workspace::TabId) {
+        let Some(node) = self.workspace.node(id) else {
+            return;
+        };
+        let session = self.session_for(id);
+        // Seed with the name line — what the row shows as the tab name — not
+        // the terminal title, which lives on its own line and is not editable
+        // here.
+        let label = host_paint::tree_row_name(
+            node.custom_title.as_deref(),
+            session.map(|terminal| terminal.program_label()),
+            node.title.as_str(),
+        );
+        let mut editor = composer::ComposerState::default();
+        editor.text = label.to_owned();
+        editor.caret = editor.text.len();
+        // Start fully selected so the first keystroke replaces the old name —
+        // the common case is "type the new name", not "append to the old one".
+        composer::select_all(&mut editor);
+        self.rename = Some(RenameState { target: id, editor });
+        self.composer.focused = false;
+        let _ = self.update_rename_ime_anchor(window);
+        self.mark_host_ui_full_and_repaint(window);
+    }
+
+    /// Commits the in-progress rename into the workspace, then clears it.
+    ///
+    /// A no-op when nothing is being renamed; a target tab that closed mid-edit
+    /// makes the workspace rename refuse, which is likewise ignored.
+    fn commit_rename(&mut self, window: &PixelWindow) {
+        if let Some(rename) = self.rename.take() {
+            self.workspace.rename(rename.target, &rename.editor.text);
+            self.mark_host_ui_full_and_repaint(window);
+        }
+    }
+
+    /// Discards the in-progress rename, leaving the tree unchanged.
+    fn cancel_rename(&mut self, window: &PixelWindow) {
+        if self.rename.take().is_some() {
+            self.mark_host_ui_full_and_repaint(window);
+        }
+    }
+
+    /// Routes a key press to the inline rename editor.
+    ///
+    /// Enter (soft newline) and Ctrl+O (send) commit, Escape cancels; everything
+    /// else edits the buffer. Enter cannot insert a newline because the buffer
+    /// is single-line — the key is the commit affordance here, not a line break.
+    fn handle_rename_key(&mut self, window: &PixelWindow, key: &NormalizedKeyEvent) {
+        if key.state != KeyPressState::Pressed {
+            return;
+        }
+        let Some(chord) = composer_chord(key) else {
+            return;
+        };
+        let Some(action) = keymap::action(chord, CLIPBOARD_MODIFIER, keymap::Draft::single_line())
+        else {
+            return;
+        };
+        match action {
+            // Scrollback paging is not a thing while renaming; swallow it.
+            keymap::Action::Decline => return,
+            keymap::Action::SoftNewline | keymap::Action::Send => {
+                self.commit_rename(window);
+                return;
+            }
+            keymap::Action::CancelFocus => {
+                self.cancel_rename(window);
+                return;
+            }
+            _ => {}
+        }
+        let Some(editor) = self.rename.as_mut().map(|rename| &mut rename.editor) else {
+            return;
+        };
+        match action {
+            keymap::Action::SelectAll => composer::select_all(editor),
+            keymap::Action::Copy => {
+                if let Some(text) = composer::selection_text(editor) {
+                    let _ = clipboard_status::set_text(text);
+                }
+            }
+            keymap::Action::Cut => {
+                if let Some(text) = composer::cut(editor) {
+                    let _ = clipboard_status::set_text(&text);
+                }
+            }
+            keymap::Action::Paste => {
+                if let Some(text) = composer_paste_text_or_image_path() {
+                    composer::insert(editor, &single_line_label(&text));
+                }
+            }
+            keymap::Action::Backspace => composer::backspace(editor),
+            keymap::Action::DeleteForward => composer::delete_forward(editor),
+            keymap::Action::DeleteWordBack => composer::delete_word_back(editor),
+            keymap::Action::DeleteWordForward => composer::delete_word_forward(editor),
+            keymap::Action::Move(movement) => composer::move_caret(editor, movement),
+            keymap::Action::Extend(movement) => composer::extend_selection(editor, movement),
+            keymap::Action::Insert => match &key.logical {
+                LogicalKey::Named(NamedKey::Space) => composer::insert(editor, " "),
+                LogicalKey::Character(text) => composer::insert(editor, text),
+                _ => {}
+            },
+            // Commit / cancel / decline returned above; recall has no history to
+            // step through while renaming.
+            keymap::Action::SoftNewline
+            | keymap::Action::Send
+            | keymap::Action::CancelFocus
+            | keymap::Action::Decline
+            | keymap::Action::RecallPrevious
+            | keymap::Action::RecallNext => {}
+        }
+        let _ = self.update_rename_ime_anchor(window);
+        window.request_redraw();
+    }
+
+    fn handle_rename_ime(&mut self, window: &PixelWindow, event: minicon_platform::ime::ImeEvent) {
+        use minicon_platform::ime::{ImeAction, classify_event};
+        let Some(rename) = self.rename.as_mut() else {
+            return;
+        };
+        match classify_event(event, true) {
+            ImeAction::UpdatePreedit { text, .. } => rename.editor.preedit = text,
+            ImeAction::ClearPreedit => rename.editor.preedit.clear(),
+            ImeAction::CommitText(text) => {
+                rename.editor.preedit.clear();
+                composer::insert(&mut rename.editor, &single_line_label(&text));
+            }
+            ImeAction::None => {}
+            _ => rename.editor.preedit.clear(),
+        }
+        let _ = self.update_rename_ime_anchor(window);
+        window.request_redraw();
+    }
+
+    /// Anchors the IME candidate window at the inline rename editor's caret.
+    ///
+    /// Mirrors [`ConApp::update_composer_ime_anchor`], but on a tab row instead
+    /// of the composer: the row's indent sets the text origin and the caret's
+    /// visible cell sets the horizontal offset.
+    fn update_rename_ime_anchor(&self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        let Some(rename) = self.rename.as_ref() else {
+            return Ok(());
+        };
+        let Some(node_index) = self
+            .workspace
+            .nodes()
+            .iter()
+            .position(|node| node.id == rename.target)
+        else {
+            return Ok(());
+        };
+        let Some(visible_row) = node_index.checked_sub(self.tree_scroll_offset) else {
+            return Ok(());
+        };
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let layout = self.layout(
+            metrics.physical_width,
+            metrics.physical_height,
+            metrics.scale_factor,
+        );
+        let font_size = scaled_host_ui_font(
+            HOST_UI_TAB_SIZE_PX,
+            self.active_session()?.font_size_logical,
+            scale,
+        );
+        let cell_w = font::cell_metrics(font_size).width.max(1);
+        let depth = self
+            .workspace
+            .depths()
+            .get(node_index)
+            .copied()
+            .unwrap_or(0)
+            .min(8);
+        let indent = 14 + depth * 18;
+        let avail = layout
+            .sidebar
+            .width
+            .saturating_sub(8)
+            .saturating_sub(indent);
+        let cells = (avail / cell_w).max(1) as usize;
+        let window_text = composer::visible_window(
+            &rename.editor.text,
+            &rename.editor.preedit,
+            rename.editor.caret,
+            1,
+            cells,
+        );
+        let caret = rename
+            .editor
+            .caret
+            .clamp(window_text.text, rename.editor.text.len());
+        let caret_cells = usize::from(window_text.truncated)
+            + composer::cells(&rename.editor.text[window_text.text..caret])
+            + composer::cells(&rename.editor.preedit[window_text.preedit..]);
+        let row_y = layout.tree_header_height.saturating_add(
+            u32::try_from(visible_row)
+                .unwrap_or(u32::MAX)
+                .saturating_mul(layout.tree_row_height),
+        );
+        let x = f64::from(indent.saturating_add(cell_w.saturating_mul(caret_cells as u32))) / scale;
+        let y = f64::from(row_y.saturating_add(7)) / scale;
+        let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
+            x, y, 2.0, 20.0,
+        ));
+        Ok(())
     }
 
     fn control_target(&self, target: Option<workspace::TabId>) -> Result<workspace::TabId, String> {
@@ -2193,7 +2456,7 @@ impl ConApp {
             .ok_or_else(|| format!("terminal @{} is unavailable", target.get()))?
             .ensure_pty_input_open()?;
         let waker = window.waker();
-        let read = agenterm_platform::clipboard::read_text_async(
+        let read = minicon_platform::clipboard::read_text_async(
             terminal_input::TERMINAL_PASTE_LIMIT_BYTES,
             move || {
                 let _ = waker.wake();
@@ -2253,7 +2516,7 @@ impl ConApp {
             Some(pending) => pending.read.try_poll(),
             None => return,
         };
-        let agenterm_platform::clipboard::ClipboardTextReadPoll::Ready(result) = poll else {
+        let minicon_platform::clipboard::ClipboardTextReadPoll::Ready(result) = poll else {
             return;
         };
         let pending = self
@@ -2314,7 +2577,7 @@ impl ConApp {
             ));
         }
         let waker = window.waker();
-        let review = agenterm_platform::text_review::open_review(
+        let review = minicon_platform::text_review::open_review(
             window.native_identity(),
             "Review terminal paste",
             &paste_review_prompt(text),
@@ -2324,7 +2587,7 @@ impl ConApp {
             },
         )
         .map_err(|error| match error {
-            agenterm_platform::text_review::TextReviewError::Unsupported { .. } => {
+            minicon_platform::text_review::TextReviewError::Unsupported { .. } => {
                 PasteReviewRefusal::Unsupported
             }
             error => PasteReviewRefusal::Failed(format!("paste review failed: {error}")),
@@ -2339,7 +2602,7 @@ impl ConApp {
             Some(pending) => pending.review.try_poll(),
             None => return,
         };
-        let agenterm_platform::text_review::TextReviewPoll::Ready(edited) = poll else {
+        let minicon_platform::text_review::TextReviewPoll::Ready(edited) = poll else {
             return;
         };
         let pending = self
@@ -2449,7 +2712,9 @@ impl ConApp {
                 let count = self.workspace.nodes().len();
                 let hit = ui::tree_hit(layout, x, y, self.tree_scroll_offset, count, scale);
                 let hovered = match hit {
-                    ui::TreeHit::Select(index) | ui::TreeHit::Close(index) => Some(index),
+                    ui::TreeHit::Select(index)
+                    | ui::TreeHit::Close(index)
+                    | ui::TreeHit::Edit(index) => Some(index),
                     _ => None,
                 };
                 let hovered_header = match hit {
@@ -2580,7 +2845,7 @@ impl PixelWindowApplication for ConApp {
         self.attachment = window.attachment();
         let _ = window.waker().wake();
         self.refresh_title(window)?;
-        match agenterm_platform::accessibility_publish::start("minicon", window.native_identity()) {
+        match minicon_platform::accessibility_publish::start("minicon", window.native_identity()) {
             // Keep a reconnectable publisher even if the first bus connect
             // failed. Snapshots stay in the store and go out on reconnect.
             // A no-op backend reports retains_snapshots() == false.
@@ -2605,7 +2870,7 @@ impl PixelWindowApplication for ConApp {
                 // `parent_console` attaches the parent console for the duration,
                 // and a windowed host should not couple its lifecycle to the
                 // console that happens to have launched it.
-                agenterm_platform::diagnostics::record(
+                minicon_platform::diagnostics::record(
                     "a11y",
                     "publish_setup_failed",
                     &error.to_string(),
@@ -2851,6 +3116,11 @@ impl PixelWindowApplication for ConApp {
             ..
         } = &event
         {
+            // Any left press finishes an in-progress rename. The click itself
+            // still does whatever it would have (select, close, start another
+            // edit, focus the terminal); committing here keeps the rename from
+            // outliving the click that ended it.
+            self.commit_rename(window);
             if self.settings_open {
                 let metrics = window.metrics()?;
                 let scale = metrics.scale_factor.max(1.0);
@@ -3045,6 +3315,23 @@ impl PixelWindowApplication for ConApp {
             self.composer.focused = false;
             self.mark_composer_dirty();
             self.request_dirty_redraw(window);
+        }
+        if self.rename.is_some() {
+            // While a rename is live it owns the keyboard and IME entirely, so a
+            // keystroke edits the label instead of reaching the terminal. A left
+            // press already committed the rename above; other events fall
+            // through so window-level handling still works.
+            match event {
+                PixelWindowEvent::Keyboard(key) => {
+                    self.handle_rename_key(window, &key);
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                PixelWindowEvent::Ime(ime) => {
+                    self.handle_rename_ime(window, ime);
+                    return Ok(PixelWindowDirective::Continue);
+                }
+                _ => {}
+            }
         }
         if self.composer.focused {
             match event {
@@ -3306,7 +3593,7 @@ impl PixelWindowApplication for ConApp {
     fn detached(
         &mut self,
         waker: &WindowWaker,
-        attachment: &agenterm_platform::window_host::WindowAttachment,
+        attachment: &minicon_platform::window_host::WindowAttachment,
     ) -> Result<PixelWindowDirective, PixelWindowError> {
         // A headless process never ran `opened`, so this is where it learns how
         // to ask for its first window.
@@ -3349,7 +3636,7 @@ impl PixelWindowApplication for ConApp {
         // only starts a (background) read when the clipboard really changed.
         let waker = window.waker();
         if self.clipboard_status.poll(|limit| {
-            agenterm_platform::clipboard::read_text_async(limit, move || {
+            minicon_platform::clipboard::read_text_async(limit, move || {
                 let _ = waker.wake();
             })
             .ok()
@@ -3555,7 +3842,7 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 // Keyboard → PTY byte encoding
 // ---------------------------------------------------------------------------
 //
-// The encoding tables themselves live in `agenterm_platform::terminal_input`
+// The encoding tables themselves live in `minicon_platform::terminal_input`
 // so the GUI terminal and this console host cannot drift apart again. Only the
 // host-specific policy (what counts as a local shortcut) stays here.
 
@@ -3771,7 +4058,7 @@ mod tests {
                 ("label", "IME: ?".into()),
             ])
         );
-        let mut status = agenterm_platform::ime::ImeStatus::default();
+        let mut status = minicon_platform::ime::ImeStatus::default();
         status.name = "Pinyin".to_owned();
         status.available = true;
         status.open = true;

@@ -116,7 +116,7 @@ process, exactly like the existing `--control` endpoint.
 │   │         narrowing this node's own boundary)
 │   ├── safe failure: a bad key or unreachable model is a bounded CLI error;
 │   │   a tool call outside its bound (root/command) is refused, not widened
-│   └── dependency: `agenterm_platform::contained_process` (its
+│   └── dependency: `minicon_platform::contained_process` (its
 │       `contained-process-spawn` feature, enabled in `Cargo.toml`)
 │       [v] closed 2026-09-26, plan/archive/plan-v0.2.1.md leaf HB. `ExecTool::
 │       spawn_contained` now builds a `ContainedHeadlessCommand` (argv
@@ -136,7 +136,7 @@ process, exactly like the existing `--control` endpoint.
 │       proves the argv/output/exit-code contract still holds through the
 │       new builder, not descendant-reaping under load; that gap is
 │       `BLOCKED` on writing such a test, not silently claimed. Also updated
-│       `tests/minicon_alignment.rs`'s `AGENTERM_PLATFORM_FEATURES` matrix to
+│       `tests/minicon_alignment.rs`'s `MINICON_PLATFORM_FEATURES` matrix to
 │       add `contained-process-spawn` (its own doc comment requires this);
 │       the matching AgenTerm-lane notification (`seam: platform/
 │       consumer-matrix`) has not been sent from this session -- `BLOCKED`
