@@ -263,6 +263,13 @@ flowchart LR
 
 ## Current frontier
 
+- [v] v0.2.5 is the latest public release: inline tab rename from a per-row
+  pencil affordance, a second tab-row line showing the content terminal's OSC
+  title, the Windows console-title gap fixed at the platform layer, and the
+  shared platform crates moved into MiniCon (`crates/minicon-platform`,
+  `crates/minicon-ui-core`, `third_party/{vt100,softbuffer}`) so `agenterm`
+  depends on MiniCon. Source `0326e2a`, published 2026-10-11 (chain run ids in
+  `prd/archive/v0.2.5-release-history.md`; record `plan/plan-v0.2.5.md`).
 - [v] v0.2.0 is the latest public release: `mux` and `harness`, published as
   `v0.2.0` (2026-09-26; release.yml run `36230348611`, Candidate run
   `36223506557`, source SHA `c0b5ed7a2289cbe18c25f92dcae3769101424f7a`). The
