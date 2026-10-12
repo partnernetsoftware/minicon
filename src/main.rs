@@ -4804,6 +4804,72 @@ mod tests {
         assert!(app.workspace.active().is_none());
     }
 
+    /// Q1 of `plan/design-frame-channel-experiment.md`: a complete host-UI
+    /// frame must render into a caller-provided `&mut [u32]` **with no window
+    /// created** — no winit window, no `present`.
+    ///
+    /// The proof is structural: `ConApp::new` spawns no PTY and no window, no
+    /// `PixelWindow` appears anywhere on this path, yet `paint_host_ui` fills
+    /// a plain slice with real chrome. The assertions below are the
+    /// non-vacuity guard from that spec's §3: a frame that came out flat would
+    /// satisfy "no window" while proving nothing, so the frame must carry more
+    /// than one colour and a real share of painted pixels. The frame is dumped
+    /// as PNG evidence.
+    #[test]
+    fn a_host_ui_frame_renders_without_a_window() {
+        let app = ConApp::new(None, None);
+        let width = 960u32;
+        let height = 600u32;
+        let mut pixels = vec![0u32; (width * height) as usize];
+        app.paint_host_ui(&mut pixels, width, height, DirtyRegion::full())
+            .expect("the host UI paints into a plain slice");
+
+        // §3②: non-trivial — more than one colour, and a real share of pixels
+        // differing from the frame's own top-left pixel (which is the sidebar
+        // background the painter lays down first).
+        let first = pixels[0];
+        let distinct = pixels
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<u32>>()
+            .len();
+        let differing = pixels.iter().filter(|&&pixel| pixel != first).count();
+        assert!(
+            distinct >= 3,
+            "a host-UI frame must use at least 3 colours, saw {distinct}"
+        );
+        assert!(
+            differing * 10 >= pixels.len(),
+            "at least 10% of the frame must differ from the top-left pixel, saw \
+             {differing}/{}",
+            pixels.len()
+        );
+
+        // Supporting check (spec §2): the terminal *body* is also
+        // windowless-capable today — `render_to_buffer` rasterizes a screen
+        // into a plain `Vec<u32>` with no window, so Q1 is not silently
+        // conflating chrome with content.
+        let (cells, cell_w, cell_h) =
+            crate::terminal::tests::render_to_buffer(b"hello frame", 20, 4);
+        assert_eq!(
+            cells.len(),
+            (20u32 * cell_w * 4u32 * cell_h) as usize,
+            "terminal cells raster into a plain buffer with no window"
+        );
+
+        // §3④: named evidence — dump the frame so a reviewer can see it.
+        let dir = std::path::Path::new("research/frame-channel");
+        std::fs::create_dir_all(dir).expect("create the evidence directory");
+        let path = dir.join("q1-host-ui-frame.png");
+        agent_interface::write_png_atomic(&path, &pixels, width, height)
+            .expect("write the Q1 frame as PNG");
+        assert!(
+            path.exists(),
+            "evidence frame {} must exist",
+            path.display()
+        );
+    }
+
     #[test]
     fn selecting_a_tab_reports_whether_the_active_tab_changed() {
         let mut app = ConApp::new(None, None);
