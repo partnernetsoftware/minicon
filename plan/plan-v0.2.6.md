@@ -10,15 +10,14 @@ this plan is archived.
 
 Candidate threads, in the order the owner raised them:
 
-1. Three owner issues (2026-10-12):
-   - **#3** sent-history region — a region above the composer showing the
-     active terminal's recent sends, click-to-refill, with blank room reserved
-     for future loop/goal controls.
-   - **#4** settings "Check for updates" — the product's **first outbound
-     network call** and **first self-modifying behaviour**; needs an owner
-     boundary-wording decision before implementation (§Open decisions).
+1. Two owner issues (2026-10-12):
+   - **#3** sent-history region — a host-UI region showing the active
+     terminal's recent sends, click-to-refill, with blank room reserved for
+     future loop/goal controls.
    - **#5** user notes — a per-context scratchpad (global-first), never sent to
      the PTY; phase 1 session-scoped only, persistence gated.
+   **#4** ("Check for updates") was moved to **0.2.7** by the owner
+   (2026-10-12) — see `plan/plan-v0.2.7.md`.
 2. **Repo hygiene (三理)** — tracked in `plan/plan-repo-hygiene.md` (batch B,
    not yet written). Batches B–E only; no feature-level refactors.
 3. Carried debt pulled in **only if the owner accepts** — see "Carried, not
@@ -27,72 +26,60 @@ Candidate threads, in the order the owner raised them:
    the Node-20 action shims are removed. That leaf does not need to ride a
    version at all; flag it for a bounded pass regardless of 0.2.6's final scope.
 
+### Placement decision for {SENTHIST} / {NOTES} (owner delegated, 2026-10-12)
+
+The owner asked me to decide and review the result later. Decision: both live in
+**one right-side, collapsible interaction panel**.
+
+- It survives the sidebar rail collapsing (a sidebar-bottom home would vanish
+  at 44 dip), and it fits a document-like notes editor (a thin band above the
+  composer cannot).
+- Precedent: iTerm2's right-side Toolbelt hosts per-session Notes.
+- Toggle from a header control or a composer affordance; open/closed is
+  session-scoped view state, like `sidebar_collapsed` (`src/main.rs:600`).
+- Two hard constraints: (1) the panel takes a **real column** and the terminal
+  is re-inset — never an overlay covering content (the product has no centered
+  modals; the settings panel is anchored, not floating); (2) this is the
+  **second** collapsible region (sidebar rail + this) and is the cap — do not
+  add a third chrome state.
+- Rejected: a band above the composer (cramps notes; second-best for history
+  alone, kept as the fallback if the panel reads badly in use) and a
+  sidebar-bottom home (dies on collapse, competes with the tab tree).
+
 ## Tree DAG
 
 ```text
-0.2.6: owner-issues + hygiene; scope PENDING owner confirmation
+0.2.6: owner-issues #3/#5 + hygiene; scope PENDING owner confirmation
 ├── {SENTHIST} sent-history region in the host UI                    [_] @host=none
 │      source: GitHub #3 (owner, 2026-10-12); owns `prd/PRD_02_25_con_workspace.md`
+│      placement: the right-side collapsible interaction panel (§Scope decision)
 │      invariant: the region is a VIEW over the one existing sent-history
 │        store (`ComposerState.history`, 64 entries, `crates/minicon-core/src/
 │        composer.rs:52`) — never a second store, or the region and Up/Down
 │        recall disagree about "what I sent"; it shows the newest ~20, one row
 │        per entry with the destination tab, newest first; a reserved blank
 │        sub-area below it belongs to future loop/goal work (placeholder only)
-│      evidence: `ui-snapshot` publishes the region (rows + hit rects +
-│        reserved rect); a black-box journey clicks a row through the real
-│        pointer path and reads the composer back (== clicked entry, caret at
-│        end, draft preserved); the region's geometry joins LAYOUT_SWEEP;
-│        screenshot pair proves the band changed, window size unchanged
+│      evidence: `ui-snapshot` publishes the panel (rows + hit rects +
+│        reserved rect + open/closed); a black-box journey clicks a row through
+│        the real pointer path and reads the composer back (== clicked entry,
+│        caret at end, draft preserved); the panel's geometry joins
+│        LAYOUT_SWEEP at every size/scale, expanded and collapsed; a screenshot
+│        pair proves the terminal re-insets (no dead strip, no overlap)
 │      safe failure: clicking never sends; a click during recall is just a new
 │        jump; sending still ends recall
 │      dependency: none
 │      non-goal: pinning/search/filter/edit/delete of entries; changing the
 │        64 bound or duplicate suppression; persistence across restarts
 │      open: per-active-terminal view vs app-global (the composer is one
-│        app-wide widget today, `src/main.rs:569`); placement; default open/closed
-├── {UPDATE} settings "Check for updates" → verify → swap → restart  [_] @host=none
-│      source: GitHub #4 (owner, 2026-10-12); owns `prd/PRD_02_23_minicon.md`
-│        boundary + `prd/PRD_02_26_con_control_cli.md` observation
-│      mechanism already present, reuse — do NOT add a stack:
-│        `minicon_platform::network_http` (bounded outbound client, feature
-│        already enabled) for the GitHub `releases/latest` GET + the asset
-│        download; `filesystem_publish::publish_file`/`write_file_atomic`
-│        (staging sibling + atomic replace, retained backup) for the swap;
-│        `src/cli.rs` `current_exe` + the `install-cli` permission-hint for
-│        resolving/refusing the destination
-│      invariant: a manual, per-click check only — never background, never
-│        silent; version compare is SEMANTIC (0.2.10 > 0.2.9), not lexical;
-│        the region is a state machine (idle/checking/up-to-date/available/
-│        downloading/failed/ready) that survives the panel being closed; the
-│        network work and the swap run OFF the paint thread (clipboard-worker
-│        pattern); a restart is always an explicit user action (it drops every
-│        terminal and ends the `--control` endpoint)
-│      integrity: verify the SHA-256 sidecar AND the code signature of the new
-│        binary before swapping; refuse on any mismatch, old binary untouched
-│      safe failure: network/DNS/proxy/rate-limit/truncation, sha or signature
-│        mismatch, missing archive entry, disk full, permission denied,
-│        rename-aside-succeeded-but-place-failed (roll the backup back) — each
-│        leaves the running instance working with a specific message
-│      #risk macOS cannot swap a single Mach-O (breaks signature/notarization):
-│        a `.app`/`.dmg` path, a platform split in the flow; Windows can
-│        rename a running exe but not overwrite it (hence rename-aside→restart)
-│      #risk no archive decoder exists in the tree (no zip/tar/gz dep); pick
-│        (a) a minimal pure-Rust decoder or (b) an extra uncompressed release
-│        asset — a gating decision (§Open)
-│      dependency: owner boundary-wording edit in `README*.md` + `prd/PRD_02_23`;
-│        release assets/SHA sidecars per the release skill
-│      non-goal: auto/background update; delta patches; rollback UI; updating
-│        anything but the product binary; any telemetry
-│      open: archive-decode approach; backup retention (one successful launch?);
-│        remote-differs-but-older behaviour; macOS path
+│        app-wide widget today, `src/main.rs:569`); default open/closed
 ├── {NOTES} user notes — per-context scratchpad, never sent to PTY      [_] @host=none
 │      source: GitHub #5 (owner, 2026-10-12); owns `prd/PRD_02_25_con_workspace.md`
-│      phase 1 (session-scoped, no charter change): a notes section in the
-│        {SENTHIST} region; context = {active tab} ∪ {Global}; global-first;
-│        its own editor with focus/IME plumbing (this is the real cost — the
-│        product has exactly one text input surface today and an "exactly one
-│        focus owner" a11y contract); `ui-snapshot` exposes it
+│      placement: the same right-side panel, as a second section
+│      phase 1 (session-scoped, no charter change): context = {active tab} ∪
+│        {Global}; global-first; its own editor with focus/IME plumbing (this
+│        is the real cost — the product has exactly one text input surface
+│        today and an "exactly one focus owner" a11y contract); `ui-snapshot`
+│        exposes it
 │      hard boundary: a note is NEVER written to the PTY; clicking a note edits
 │        the note, it does not fill the composer
 │      #risk phase 1 must be described as a scratchpad, not memory — it does
@@ -118,6 +105,8 @@ Candidate threads, in the order the owner raised them:
        `Cargo.toml` version 0.2.6; `release-policy.json` is bumped by the
        release step, not here
 
+Moved to 0.2.7: {UPDATE} GitHub #4 "Check for updates" — see `plan/plan-v0.2.7.md`.
+
 Carried, not pulled in (unchanged unless the owner says otherwise):
 - C1 `capture-pane --scrollback N` — BLOCKED on a vendored-vt100 API addition
   (cross-repo), see `plan/plan-carried-debt.md`
@@ -141,12 +130,10 @@ Carried, not pulled in (unchanged unless the owner says otherwise):
 
 ## Dependencies and shared prerequisites
 
-- `{SENTHIST}` and `{NOTES}` both live in the same host-UI region and both touch
-  `src/ui.rs` layout, `src/host_paint.rs`, and `ui-snapshot`. Sequence them:
-  region geometry first, then the notes section — and keep `{NOTES}`'s reserved
+- `{SENTHIST}` and `{NOTES}` share one panel and both touch `src/ui.rs` layout,
+  `src/host_paint.rs`, and `ui-snapshot`. Sequence them: panel geometry +
+  collapse first, then history, then the notes section — and keep the notes
   area distinct from the loop/goal placeholder.
-- `{UPDATE}` alone introduces the product's first network + self-modify paths;
-  it should not be bundled with a region/layout change.
 - `{HYGIENE}`'s batch D is the only code-touching hygiene batch; it needs
   `cargo fmt` + `clippy -D warnings` + `./scripts/build.sh test`.
 
@@ -154,31 +141,24 @@ Carried, not pulled in (unchanged unless the owner says otherwise):
 
 Not started. Version-gate (six-cell, exact-source Candidate, no-rebuild
 Promotion, dual signing) is run per the `run-reputation-and-release` skill when
-a Candidate is cut; not pre-claimed here. If `{UPDATE}` ships, its whole state
-machine must be provable against a loopback server, with real-GitHub as a
-separate opt-in (`--ignored`) test — not part of the default gate.
+a Candidate is cut; not pre-claimed here.
 
 ## Memory palace
 
 ```mermaid
 flowchart TD
     OWNER[owner issues 2026-10-12] --> SENT[#3 sent-history region]
-    OWNER --> UPD[#4 check for updates]
     OWNER --> NOTE[#5 user notes]
     OWNER --> HYG[hygiene 三理]
-    SENT --> REGION[region above the composer]
-    REGION --> NOTE
-    REGION --> RESV[reserved: loop/goal]
+    OWNER -.->|moved out| UPD[#4 check for updates -> 0.2.7]
+    SENT --> PANEL[right-side collapsible panel]
+    NOTE --> PANEL
+    PANEL --> RESV[reserved: loop/goal]
     SENT --> STORE[(one sent-history store)]
     STORE --> RECALL[Up/Down recall]
-    UPD --> HTTP[network_http capability]
-    UPD --> PUB[filesystem_publish swap + backup]
-    UPD --> RESTART[restart self, explicit]
-    UPD -.->|gated| BOUND[owner boundary wording + PRD edit]
     NOTE -.->|phase 2 gated| PERSIST[persistence: charter + tab-id + privacy]
     HYG --> GATE
     SENT --> GATE
-    UPD --> GATE
     NOTE --> GATE
     GATE[GATE per cell: fmt + clippy + build.sh test] --> SHIP[0.2.6 Candidate -> Promotion]
 ```
@@ -187,14 +167,13 @@ flowchart TD
 
 0.2.6 scope itself: which of the candidate threads are in, and is the version
 cut for all of them or a subset?
-1. `{UPDATE}` boundary wording (`README*.md`, `prd/PRD_02_23`) and the
-   archive-decode approach; backup retention policy; older-remote behaviour;
-   macOS path.
-2. `{SENTHIST}` per-terminal vs app-global; placement; default open/closed.
-3. `{NOTES}` confirm notes (never sent) vs templates/sendable snippets (a
+1. `{SENTHIST}` per-terminal vs app-global; default open/closed. (Placement is
+   decided — right-side collapsible panel; review it in use and revert to the
+   composer-band fallback if it reads badly.)
+2. `{NOTES}` confirm notes (never sent) vs templates/sendable snippets (a
    different model); whether to expose it on `--control` at all.
-4. `{HYGIENE}` C/E confirms: `external-results.json` (864K) keep? remote stale
+3. `{HYGIENE}` C/E confirms: `external-results.json` (864K) keep? remote stale
    branches delete? `cargo clean` now? `research/` ignore granularity?
-5. Pull-ins: `{F1}` chip UI and/or `{SCRSHOT-HANG}` into 0.2.6?
-6. `{R1}` (Ubuntu 26 migration, starts 2026-10-19): fix now in a bounded pass,
+4. Pull-ins: `{F1}` chip UI and/or `{SCRSHOT-HANG}` into 0.2.6?
+5. `{R1}` (Ubuntu 26 migration, starts 2026-10-19): fix now in a bounded pass,
    independent of the version?
