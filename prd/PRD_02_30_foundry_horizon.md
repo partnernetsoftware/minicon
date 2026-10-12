@@ -171,7 +171,7 @@ Three properties of that failure mode are what the line has to answer:
 
 ### The code half, for contrast
 
-Both products consume the same `agenterm-platform`. MiniCon enables **13**
+Both products consume the same `minicon-platform`. MiniCon enables **13**
 features; `agenterm-cu` enables **42**, and ships a 7,302,144-byte control CLI
 against a PRD-stated 2 MiB ceiling that was set when the same binary measured
 1,420,800 bytes. The crate is not the problem and neither is the ceiling: a

@@ -547,8 +547,8 @@ workbench idea specifically, so it is not mistaken for open 0.2.x scope. What
 statefulness leaf below, plus closing any other `[_]`/`[-]` items in the two
 subsections above) and continue stabilizing the existing terminal UI/UX and
 underlying platform foundation (`terminal.rs`, `theme.rs`, `host_ui.rs`,
-`host_paint.rs`, `raster_surface.rs` and the `agenterm-platform`/
-`agenterm-ui-core` pins they consume) — not new-feature work, hardening of
+`host_paint.rs`, `raster_surface.rs` and the `minicon-platform`/
+`minicon-ui-core` crates they consume) — not new-feature work, hardening of
 what already ships. A `PRD_02_3x` module for the 0.3.x GUI horizon gets
 written when 0.2.x's own scope is closed, not before; this section is that
 horizon's placeholder, not its start.

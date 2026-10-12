@@ -188,8 +188,9 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
   safe failure / status: **OPEN** — a live interactive Windows GUI repro now
   exists (2026-10-10), so the earlier blocker (no live repro) is cleared, but the
   root cause is still unlocated; the same class as `plan/plan-carried-debt.md`'s
-  G3. Root cause plausibly lives in the pinned `agenterm-platform` console agent
-  (`adapters/windows/console_agent.rs`), outside this repository.
+  G3. Root cause plausibly lives in the `minicon-platform` console agent
+  (`crates/minicon-platform/src/adapters/windows/console_agent.rs`), which
+  this repository owns.
   dependency: capturing the child-vs-synthesized byte streams at the moment of a
   live GUI corruption (a raw-agent dump switch) so the leaking step can be
   pinned; a stable regression, once one exists, belongs beside the existing

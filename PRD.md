@@ -97,7 +97,7 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.18-release-history.md
 │   ├── [v] v0.1.19 released — non-ASCII paste fix; classic console by default + --feature; dual-signed
 │   │   └── prd/archive/v0.1.19-release-history.md
-│   ├── [v] v0.1.26 released — composer caret history/motion + word motion + Home/End unified in minicon_core::keymap; Windows zoom-to-blank root-caused; dual-signed (latest)
+│   ├── [v] v0.1.26 released — composer caret history/motion + word motion + Home/End unified in minicon_core::keymap; Windows zoom-to-blank root-caused; dual-signed
 │   │   └── prd/archive/v0.1.26-release-history.md
 │   ├── [v] v0.1.23 released — Windows: scrollback restored, Ctrl+V pastes, collapsed rail selects, --status names the real console; dual-signed
 │   │   └── prd/archive/v0.1.23-release-history.md
@@ -203,7 +203,7 @@ flowchart LR
         R121["v0.1.21 released<br/>Windows Latin face · DirectWrite-style text · copy-on-select in mouse apps · clipboard length · dual-signed"]
         R122["v0.1.22 released<br/>clarity release · shared scrollbar with agenterm · dual-signed"]
         R123["v0.1.23 released<br/>Windows scrollback · Ctrl+V paste · collapsed rail · honest --status · dual-signed"]
-        R126["v0.1.26 released<br/>composer caret/word motion · keymap unified · Windows zoom-to-blank root-caused · dual-signed · latest"]
+        R126["v0.1.26 released<br/>composer caret/word motion · keymap unified · Windows zoom-to-blank root-caused · dual-signed"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -274,7 +274,7 @@ flowchart LR
   `crates/minicon-ui-core`, `third_party/{vt100,softbuffer}`) so `agenterm`
   depends on MiniCon. Source `0326e2a`, published 2026-10-11 (chain run ids in
   `prd/archive/v0.2.5-release-history.md`; record `plan/plan-v0.2.5.md`).
-- [v] v0.2.0 is the latest public release: `mux` and `harness`, published as
+- [v] v0.2.0 released: `mux` and `harness`, published as
   `v0.2.0` (2026-09-26; release.yml run `36230348611`, Candidate run
   `36223506557`, source SHA `c0b5ed7a2289cbe18c25f92dcae3769101424f7a`). The
   test gate was green under a display server and six-cell qualified
@@ -304,7 +304,7 @@ flowchart LR
   after both branches close" rule. Owner:
   [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md), section "0.2.0 — what the
   version number stands for, and what it does not".
-- [v] v0.1.26 is the latest public release: composer multi-line caret
+- [v] v0.1.26 released: composer multi-line caret
   history/motion, word motion and Home/End, unified in
   `minicon_core::keymap`; Windows zoom-to-blank root-caused in AgenTerm's
   `console_agent.rs`. No product behavior changed from what "v0.1.24"/
