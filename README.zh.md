@@ -122,6 +122,12 @@ minicon --help                   # 其余全部
 Windows 自带的 ConPTY 会把一次点击变成游离按键，打扰读控制台事件的程序（大多数
 agent CLI）；`--feature conpty` 可切到它，供 Vim 类程序使用。
 
+**备用屏与缩放：** 在 Windows 上，使用备用屏的全屏 TUI 无法跟随窗口缩放；缩放
+后程序仍按旧尺寸重绘，界面会错位。原因是系统控制台在备用屏激活时改不动子进程
+的可见尺寸（与 MiniCon 无关，经典控制台与 ConPTY 后端都一样）。让程序不要用备用
+屏即可避免，例如 `grok --no-alt-screen`（或其配置里的 `[terminal] alt_screen`）；
+这样 MiniCon 能正确重排界面。
+
 ## 构建
 
 ```bash

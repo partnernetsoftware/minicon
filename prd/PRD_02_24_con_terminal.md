@@ -210,6 +210,36 @@ and the variable remains the way a test reaches it without a command line.
 
 Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
 
+- [_] **known limitation, registered 2026-10-12 (v0.2.5):** a hosted
+  full-screen TUI that uses the **alternate screen** (`ESC[?1049h`) does not
+  follow a window resize on this Windows (measured on Server 2022, build 20348).
+  After a resize the child keeps drawing at its old size while the host grid has
+  changed, so the frame is drawn in the wrong place (scattered borders). The
+  in-box console cannot change the child's **visible** size while the alternate
+  screen is active: `SetConsoleWindowInfo` to a smaller window returns TRUE but
+  is a no-op; to a larger window it returns FALSE with
+  `ERROR_INVALID_PARAMETER` (87); only `SetConsoleScreenBufferSize` succeeds, so
+  columns follow the buffer and rows stay frozen (target 118x33, the child
+  reports 118x24 — rows are exactly what a TUI needs).
+  Measured with a P/Invoke probe attached to the agent's console (calling the API
+  directly) and reproduced by a real grok TUI; the **same** result on the in-box
+  ConPTY backend, so the cause is the console host, not
+  `crates/minicon-platform/src/adapters/windows/console_agent.rs`. Control: the
+  same child **without** the alternate screen resizes correctly (88x24 to
+  118x33) on both backends — the alternate screen is the only variable.
+  safe failure / status: **OPEN** — a platform limitation this repo cannot fix
+  with the standard console API on this build.
+  workaround (verified): run the program off the alternate screen, e.g.
+  `grok --no-alt-screen` (or its `[terminal] alt_screen` setting); MiniCon then
+  reflows the interface correctly. Documented in `README.md` (Configuration).
+  open options: load a newer console host from beside the executable
+  (`conpty.dll` with `OpenConsole.exe` next to it — this repo already looks for
+  that pair) — **unverified**, no Microsoft-signed pair was available on the
+  measuring machine; routing full-screen TUIs to ConPTY does **not** help, the
+  limitation is inherited.
+  non-goal: patching the console-agent for a resize the console itself refuses.
+  record: `plan/plan-alt-screen-resize.md`.
+
 ## Scheduling
 
 - [v] a native Wake services the bounded control queue first and shares one

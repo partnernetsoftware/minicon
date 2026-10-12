@@ -449,6 +449,15 @@ flowchart LR
 - [-] Local courts are automation-capable but not sealed release baselines.
   Lima is optional acceleration; Rosetta is a provisional OSX x86_64 userspace
   court; real native runners retain claims translation cannot make.
+- [-] A hosted full-screen TUI that uses the alternate screen does not follow a
+  window resize on Windows (measured on build 20348): after a resize the child
+  keeps drawing at its old size while the host grid has changed, so the frame is
+  misplaced. The in-box console cannot change the child's visible size while the
+  alternate screen is active, and the in-box ConPTY backend behaves the same, so
+  it is the console host rather than this repo. Verified workaround: run the
+  program off the alternate screen (e.g. `grok --no-alt-screen`). Record:
+  `plan/plan-alt-screen-resize.md`. Owner:
+  `prd/PRD_02_24_con_terminal.md`.
 - [v] An agent session with no osx/win host of its own can still develop and
   prove a cross-arch fix: push to `main`, dispatch
   `dev-loop-crosscheck.yml`, read real per-cell logs — `contents: read`

@@ -64,11 +64,6 @@ use windows_sys::Win32::System::Threading::{
 /// implausible.
 pub const AGENT_ARGUMENT: &str = "--internal-console-agent";
 
-/// Rows the screen buffer keeps above the window, so Windows scrolls the
-/// window through the buffer instead of dropping the rows that leave the
-/// screen. Each of those scrolls is mirrored into the host's scrollback.
-const BUFFER_SCROLL_ROOM_ROWS: u32 = 500;
-
 /// How often the screen buffer is polled when the child is producing output.
 /// The console API offers no change notification, so this is the floor on
 /// output latency; 8 ms is under a frame and well below the cost of the
@@ -611,19 +606,20 @@ impl ConsoleHandles {
         Ok(info)
     }
 
-    /// Sizes the window to the terminal and gives the buffer room above it.
+    /// Sizes the console so the window *is* the buffer.
     ///
-    /// The buffer used to be exactly the window's height so that the host
-    /// owned all scrollback. In practice that lost it: with nowhere to
-    /// scroll into, Windows shifted the buffer's own contents and the vacated
-    /// rows were gone before the next scrape, so a program writing faster
-    /// than the poll left the host with almost no history (measured on
-    /// Windows 11 ARM, 2026-09-23: 200 lines of shell output produced one
-    /// scrollable row). With room above the window, Windows keeps those rows
-    /// and moves the window instead, which `render` already mirrors into the
-    /// host's scrollback one `\r\n` at a time. The host still owns what the
-    /// user scrolls through; this only stops the console from dropping rows
-    /// between two scrapes.
+    /// The child owns a fixed viewport: what it sees is exactly what it has,
+    /// with no taller buffer for the window to slide through. A full-screen
+    /// TUI draws with absolute coordinates and assumes its viewport never
+    /// moves, so a window that re-anchors on the cursor after a resize lands
+    /// those coordinates in the wrong place — the input-box-border-scattered
+    /// bug. A fixed window can never move, so the child's coordinates stay
+    /// correct across every resize.
+    ///
+    /// Scrollback is then the host's business: when a shell fills the last
+    /// row, Windows shifts the buffer's own contents, and the mirror recovers
+    /// that shift from the frames themselves (`scrolled_rows`) rather than
+    /// from a moving window rectangle.
     ///
     /// Shrinking has to move the window first and growing has to move it
     /// last, because neither may ever exceed the buffer.
@@ -638,7 +634,7 @@ impl ConsoleHandles {
             // SAFETY: handle is a live console output handle.
             GetLargestConsoleWindowSize(handle)
         };
-        let plan = plan_resize(cols, rows, entry.dwCursorPosition.Y, (largest.X, largest.Y));
+        let plan = plan_resize(cols, rows, (largest.X, largest.Y));
         let target = COORD {
             X: plan.buffer.0,
             Y: plan.buffer.1,
@@ -661,11 +657,7 @@ impl ConsoleHandles {
                 let Ok(current) = self.info() else { break };
                 let rectangle = match candidate {
                     Some(previous) => previous,
-                    None => fitted_window(
-                        current.dwSize,
-                        current.dwCursorPosition.Y,
-                        (largest.X, largest.Y),
-                    ),
+                    None => fitted_window(current.dwSize, (largest.X, largest.Y)),
                 };
                 unsafe {
                     // SAFETY: handle is live and the rectangle is an
@@ -706,51 +698,24 @@ impl ConsoleHandles {
                 return Err(restore(io::Error::last_os_error()));
             }
         }
-        // The console can move its cursor while the buffer is resized, and a
-        // window that no longer contains it scrapes blank rows: zooming out
-        // (more rows) blanked the terminal until the next zoom in, measured
-        // in the ARM court on 2026-09-23. Re-read and correct once.
-        if let Ok(info) = self.info() {
-            let cursor = info.dwCursorPosition.Y;
-            if cursor < info.srWindow.Top || cursor > info.srWindow.Bottom {
-                let corrected = plan_resize(cols, rows, cursor, (largest.X, largest.Y)).window;
-                let moved = unsafe {
-                    // SAFETY: handle is a live console output handle and the
-                    // rectangle is an initialized local within the buffer.
-                    SetConsoleWindowInfo(handle, 1, &corrected)
-                };
-                // The size did apply; only this cursor correction did not. Say
-                // so instead of returning as though the window followed.
-                if moved == 0 {
-                    #[cfg(feature = "runtime")]
-                    crate::diagnostics::record(
-                        "console_agent",
-                        "resize_cursor_not_followed",
-                        &io::Error::last_os_error().to_string(),
-                    );
-                }
-            }
-        }
         Ok(())
     }
 }
 
-/// A rectangle that fits the buffer a console actually has, anchored on the
-/// cursor. The last-resort restore: whatever else failed, the window must not
-/// be left at one cell, because every later poll scrapes exactly that.
-fn fitted_window(buffer: COORD, cursor_row: i16, largest: (i16, i16)) -> SMALL_RECT {
-    // Both bounds apply: a window may exceed neither its buffer nor the screen.
-    // Using the buffer alone would ask for the whole scroll room -- 540 rows on
-    // a screen that holds 43 -- and be refused exactly like the window this
-    // restore exists to replace.
+/// A rectangle that fills the buffer a console actually has, from its origin.
+/// The last-resort restore: whatever else failed, the window must not be left
+/// at one cell, because every later poll scrapes exactly that.
+fn fitted_window(buffer: COORD, largest: (i16, i16)) -> SMALL_RECT {
+    // The window may exceed neither its buffer nor the screen, so both bounds
+    // apply. Anchored at the origin: the window is the buffer, not a viewport
+    // that slides through it.
     let cols = buffer.X.max(1).min(largest.0.max(1));
     let rows = buffer.Y.max(1).min(largest.1.max(1));
-    let top = (cursor_row - rows + 1).clamp(0, (buffer.Y.max(1) - rows).max(0));
     SMALL_RECT {
         Left: 0,
-        Top: top,
+        Top: 0,
         Right: cols - 1,
-        Bottom: top + rows - 1,
+        Bottom: rows - 1,
     }
 }
 
@@ -761,45 +726,39 @@ fn fitted_window(buffer: COORD, cursor_row: i16, largest: (i16, i16)) -> SMALL_R
 /// unreachable by any test. `SMALL_RECT` carries no derives of its own, so
 /// tests compare its fields.
 struct ResizePlan {
-    /// Columns and rows for the screen buffer, scroll room included.
+    /// Columns and rows for the screen buffer, which equals the window.
     buffer: (i16, i16),
     /// The window, never wider or taller than the host can display.
     window: SMALL_RECT,
 }
 
 /// `largest` is `GetLargestConsoleWindowSize`: what this screen can show at the
-/// current font. The buffer may exceed it -- that is what scrollback is -- but
-/// the window may not, and `SetConsoleWindowInfo` refuses a window that does
-/// with `ERROR_INVALID_PARAMETER`. Before this clamp existed, a zoom-out asked
-/// for 141 columns on a host whose largest window was 128, the refusal left the
-/// console at the one-cell rectangle Windows had collapsed it to when the
-/// buffer grew, and every later poll scraped that one cell: a blank terminal
-/// with a live child behind it. Measured on a hosted Windows x86_64 runner and
-/// in the aarch64 court on 2026-09-24.
-fn plan_resize(cols: u16, rows: u16, cursor_row: i16, largest: (i16, i16)) -> ResizePlan {
+/// current font. The window may not exceed it, and `SetConsoleWindowInfo`
+/// refuses a window that does with `ERROR_INVALID_PARAMETER`. Before this clamp
+/// existed, a zoom-out asked for 141 columns on a host whose largest window was
+/// 128, the refusal left the console at the one-cell rectangle Windows had
+/// collapsed it to when the buffer grew, and every later poll scraped that one
+/// cell: a blank terminal with a live child behind it. Measured on a hosted
+/// Windows x86_64 runner and in the aarch64 court on 2026-09-24.
+///
+/// The buffer equals the window: the child owns a fixed viewport anchored at
+/// the origin, never a window sliding through a taller buffer. Both are clamped
+/// together so they stay equal even when the host cannot show the requested
+/// size — a full-screen TUI depends on that equality across every resize.
+fn plan_resize(cols: u16, rows: u16, largest: (i16, i16)) -> ResizePlan {
     let buffer_cols = cols.max(1).min(i16::MAX as u16) as i16;
-    let buffer_rows = u32::from(rows.max(1))
-        .saturating_add(BUFFER_SCROLL_ROOM_ROWS)
-        .min(i16::MAX as u32) as i16;
+    let buffer_rows = rows.max(1).min(i16::MAX as u16) as i16;
     // A host that reports no largest window at all still gets a usable
     // rectangle: clamping to zero would recreate the defect being fixed.
     let window_cols = buffer_cols.min(largest.0.max(1));
-    let window_rows = (rows.max(1).min(i16::MAX as u16) as i16)
-        .min(largest.1.max(1))
-        .min(buffer_rows);
-    // Anchor on the cursor. The console writes at its cursor and this buffer is
-    // taller than the window, so a window left where it happened to be -- at
-    // the buffer's top, at its bottom, or where the previous size put it -- can
-    // show rows the program is not writing to.
-    let highest_top = (buffer_rows - window_rows).max(0);
-    let top = (cursor_row - window_rows + 1).clamp(0, highest_top);
+    let window_rows = buffer_rows.min(largest.1.max(1));
     ResizePlan {
-        buffer: (buffer_cols, buffer_rows),
+        buffer: (window_cols, window_rows),
         window: SMALL_RECT {
             Left: 0,
-            Top: top,
+            Top: 0,
             Right: window_cols - 1,
-            Bottom: top + window_rows - 1,
+            Bottom: window_rows - 1,
         },
     }
 }
@@ -891,10 +850,6 @@ struct ScreenMirror {
     cells: Vec<Cell>,
     cursor: (u16, u16),
     attributes: u16,
-    /// The absolute buffer row the window started at last time. When the
-    /// console scrolls, this is how the agent knows to push lines into the
-    /// host's scrollback rather than silently overwrite them.
-    window_top: i16,
     started: bool,
 }
 
@@ -906,7 +861,6 @@ impl ScreenMirror {
             cells: vec![Cell::default(); usize::from(cols) * usize::from(rows)],
             cursor: (0, 0),
             attributes: DEFAULT_ATTRIBUTES,
-            window_top: 0,
             started: false,
         }
     }
@@ -925,20 +879,13 @@ impl ScreenMirror {
             *self = Self::new(cols, rows);
         }
 
-        let window_scrolled = (info.srWindow.Top - self.window_top).max(0) as usize;
-        self.window_top = info.srWindow.Top;
-
         let read = read_window(console, &info, cols, rows)?;
         // The buffer is exactly the window's size (see `resize`), so a program
         // that fills the last row scrolls the buffer's own contents and
         // `srWindow.Top` never moves. Recover the shift from the frames
-        // themselves; the window rectangle still speaks for the cases where it
-        // does move.
-        let scrolled = if window_scrolled > 0 {
-            window_scrolled
-        } else {
-            crate::adapters::console_row_emit::scrolled_rows(&self.cells, &read, cols, rows)
-        };
+        // themselves; a fixed window can never report a scroll.
+        let scrolled =
+            crate::adapters::console_row_emit::scrolled_rows(&self.cells, &read, cols, rows);
 
         if !self.started {
             self.started = true;
@@ -2035,13 +1982,17 @@ mod tests {
     /// The blank terminal, as geometry. On a hosted Windows x86_64 runner the
     /// zoom-out asked for 141 columns while `GetLargestConsoleWindowSize`
     /// answered 128x43; the unclamped window was refused and the console stayed
-    /// at the one cell Windows had collapsed it to. The buffer still holds the
-    /// scrollback, so only the window is bound.
+    /// at the one cell Windows had collapsed it to. The buffer and window are
+    /// clamped together so the child's fixed viewport is never wider than the
+    /// host can display.
     #[test]
     fn a_window_never_exceeds_what_the_host_can_display() {
-        let plan = plan_resize(141, 40, 3, (128, 43));
-        assert_eq!(plan.buffer.0, 141, "the buffer may exceed the window");
-        assert_eq!(plan.buffer.1, 540, "40 rows plus the scroll room");
+        let plan = plan_resize(141, 40, (128, 43));
+        assert_eq!(plan.buffer.0, 128, "the buffer equals the clamped window");
+        assert_eq!(
+            plan.buffer.1, 40,
+            "the buffer equals the window, no scroll room"
+        );
         assert_eq!(plan.window.Left, 0);
         assert_eq!(plan.window.Right, 127, "the window may not exceed 128");
         assert_eq!(plan.window.Bottom - plan.window.Top + 1, 40);
@@ -2052,21 +2003,27 @@ mod tests {
     /// returned the window {0,0,140,39}.
     #[test]
     fn a_request_within_the_bound_is_left_alone() {
-        let plan = plan_resize(141, 40, 0, (170, 62));
+        let plan = plan_resize(141, 40, (170, 62));
+        assert_eq!(plan.buffer.0, 141);
+        assert_eq!(plan.buffer.1, 40);
         assert_eq!(plan.window.Left, 0);
         assert_eq!(plan.window.Right, 140);
         assert_eq!(plan.window.Top, 0);
         assert_eq!(plan.window.Bottom, 39);
     }
 
-    /// The window follows the cursor without leaving the buffer, which is what
-    /// keeps a taller-than-window buffer showing the rows being written.
+    /// The window is always anchored at the buffer's origin: the child owns a
+    /// fixed viewport, never one that slides through a taller buffer after a
+    /// resize. That stability is what keeps a full-screen TUI's absolute
+    /// coordinates landing where it drew them.
     #[test]
-    fn the_window_holds_the_cursor_without_leaving_the_buffer() {
-        let deep = plan_resize(80, 24, 500, (200, 60));
-        assert!(deep.window.Top <= 500 && 500 <= deep.window.Bottom);
-        let past_the_end = plan_resize(80, 24, i16::MAX, (200, 60));
-        assert_eq!(past_the_end.window.Bottom, past_the_end.buffer.1 - 1);
+    fn the_window_is_anchored_at_the_origin_regardless_of_size() {
+        let wide = plan_resize(200, 60, (300, 100));
+        assert_eq!(wide.window.Top, 0);
+        assert_eq!(wide.window.Left, 0);
+        let clamped = plan_resize(200, 60, (128, 43));
+        assert_eq!(clamped.window.Top, 0);
+        assert_eq!(clamped.window.Bottom, clamped.buffer.1 - 1);
     }
 
     /// No plan is ever the one-cell rectangle the blank screen came from, and a
@@ -2074,13 +2031,13 @@ mod tests {
     /// clamp to zero.
     #[test]
     fn no_plan_collapses_the_window() {
-        for (cols, rows, cursor, largest) in [
-            (141_u16, 40_u16, 3_i16, (128_i16, 43_i16)),
-            (1, 1, 0, (200, 60)),
-            (141, 40, 0, (0, 0)),
-            (u16::MAX, u16::MAX, 0, (128, 43)),
+        for (cols, rows, largest) in [
+            (141_u16, 40_u16, (128_i16, 43_i16)),
+            (1, 1, (200, 60)),
+            (141, 40, (0, 0)),
+            (u16::MAX, u16::MAX, (128, 43)),
         ] {
-            let plan = plan_resize(cols, rows, cursor, largest);
+            let plan = plan_resize(cols, rows, largest);
             assert!(
                 plan.window.Right >= plan.window.Left && plan.window.Bottom >= plan.window.Top,
                 "{cols}x{rows} at {largest:?} produced {},{} {},{}",
@@ -2089,37 +2046,38 @@ mod tests {
                 plan.window.Right,
                 plan.window.Bottom
             );
-            assert!(
-                plan.window.Right - plan.window.Left < plan.buffer.0
-                    && plan.window.Bottom - plan.window.Top < plan.buffer.1,
-                "the window must fit its buffer: {}x{} in {}x{}",
+            // The buffer equals the window, so the window exactly fills it.
+            assert_eq!(
                 plan.window.Right - plan.window.Left + 1,
-                plan.window.Bottom - plan.window.Top + 1,
                 plan.buffer.0,
-                plan.buffer.1
+                "the window width must equal the buffer columns"
+            );
+            assert_eq!(
+                plan.window.Bottom - plan.window.Top + 1,
+                plan.buffer.1,
+                "the window height must equal the buffer rows"
             );
         }
     }
 
     /// The last-resort restore. The rectangle a console had on entry can stop
     /// fitting once the buffer is resized, so the fallback is built from the
-    /// buffer the console actually has -- and it is bound by the screen too.
-    /// Taking the buffer alone would ask for the whole 540-row scroll room on a
-    /// screen holding 43 rows and be refused just like the window it replaces.
+    /// buffer the console actually has -- and it is bound by the screen too,
+    /// anchored at the origin rather than sliding.
     #[test]
     fn the_fallback_window_fits_both_the_buffer_and_the_screen() {
         let buffer = COORD { X: 141, Y: 540 };
-        let window = fitted_window(buffer, 3, (128, 43));
+        let window = fitted_window(buffer, (128, 43));
         assert_eq!(window.Left, 0);
         assert_eq!(window.Right, 127, "bounded by the screen, not the buffer");
         assert_eq!(window.Bottom - window.Top + 1, 43);
         assert!(window.Bottom < buffer.Y, "and it stays inside the buffer");
 
         // A narrow buffer bounds it instead, and neither bound may collapse it.
-        let narrow = fitted_window(COORD { X: 10, Y: 4 }, 0, (128, 43));
+        let narrow = fitted_window(COORD { X: 10, Y: 4 }, (128, 43));
         assert_eq!(narrow.Right, 9);
         assert_eq!(narrow.Bottom - narrow.Top + 1, 4);
-        let nothing = fitted_window(COORD { X: 0, Y: 0 }, 0, (0, 0));
+        let nothing = fitted_window(COORD { X: 0, Y: 0 }, (0, 0));
         assert!(nothing.Right >= nothing.Left && nothing.Bottom >= nothing.Top);
     }
 

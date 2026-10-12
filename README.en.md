@@ -132,6 +132,14 @@ classic console host by default because the ConPTY copy Windows ships turns a
 click into stray keystrokes for console-event readers (most agent CLIs);
 `--feature conpty` selects it for Vim-style programs.
 
+**Alternate screen and resize:** full-screen TUIs that use the alternate screen
+do not follow a window resize on Windows. After a resize they redraw at the old
+size and the layout is misplaced. The system console cannot change a child's
+visible size while the alternate screen is active (unrelated to MiniCon; the
+classic console and ConPTY backends behave the same). Keep the program off the
+alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
+`[terminal] alt_screen` setting); MiniCon then reflows the interface correctly.
+
 ## Build
 
 ```bash
