@@ -13,3 +13,4 @@ target-six
 # Intermediate PNG faces that assets/icon/generate_icons.py feeds to iconutil.
 # assets/minicon.icns is the committed deliverable.
 /assets/minicon.iconset/
+.mcfix/

@@ -14,6 +14,7 @@
 | --- | --- |
 | 支持 | Windows、Linux、macOS × x86_64、aarch64（Windows 最低到 Server 2016） |
 | 体积 | 单文件：Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB——实测 |
+| 内存 | 单个空闲标签页的宿主内存（实测）：Linux 约 12 MB、Windows 约 21 MB——我们守着的预算是 10 MB |
 | 依赖 | 仅操作系统库 |
 | 许可 | MIT 或 Apache-2.0 |
 
@@ -61,7 +62,9 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
 - **永久开源。** MIT 或 Apache-2.0。无遥测、无账号、无自动更新——源码就是产品。
 - **已签名并公证。** Windows 与 macOS，主体 PARTNERNET SOFTWARE PTY LTD。只用
   系统自带的库。
-- **极省资源。** 启动飞快，没有后台服务；关窗后什么都不留。
+- **极省资源。** 只有一个进程，没有后台服务；关窗后什么都不再运行。低内存是目标，不是
+  副产品：单个空闲标签页的宿主内存预算为 10 MB，实测 Linux 约 12 MB、Windows 约
+  21 MB。（macOS 的下限更高，来自系统自身的窗口栈。）
 
 三款内置主题——Neutral、Docs Ink、Paper Ink——窗框与终端一起换色，`Ctrl+Shift+P`
 循环。

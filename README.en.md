@@ -15,6 +15,7 @@ behind.
 | --- | --- |
 | Runs on | Windows, Linux, macOS — x86_64 and aarch64 (Windows back to Server 2016) |
 | Size | one file: ~660 KB (Windows), 1.4 MB (macOS), 5 MB (Linux) — measured |
+| Memory | one idle tab, host RSS (measured): ~12 MB (Linux), ~21 MB (Windows) — the budget we hold is 10 MB |
 | Depends on | operating-system libraries only |
 | Licence | MIT OR Apache-2.0 |
 
@@ -66,8 +67,10 @@ compose CJK through the same paths a person's input takes.
   auto-updater — the source is the product.
 - **Signed and notarized.** Windows and macOS, as PARTNERNET SOFTWARE PTY LTD.
   It uses only the libraries your OS already ships.
-- **Minimal resources.** Starts instantly and runs no background service; close
-  the window and nothing is left behind.
+- **Low on purpose.** One process, no background service; close the window and
+  nothing keeps running. Low memory is a target, not a side effect: one idle tab
+  is budgeted 10 MB of host memory, and measures about 12 MB on Linux and 21 MB
+  on Windows. (macOS carries a higher floor from the OS's own window stack.)
 
 Three built-in themes — Neutral, Docs Ink and Paper Ink — recolour chrome and
 terminal together; cycle with `Ctrl+Shift+P`.
