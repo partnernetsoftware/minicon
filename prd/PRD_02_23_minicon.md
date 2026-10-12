@@ -193,3 +193,59 @@ products keep their requirement in their owning source repository — which is n
 this one. Within MiniCon, [shared core](PRD_02_28_shared_core.md) owns the
 dependency direction and extraction stages; historical agenterm PRD numbers are
 not local authorities.
+
+## Capability and plugin boundary, with agenterm (2026-10-11)
+
+Owner's framing, adopted as the standing rule: **capabilities sink into MiniCon;
+plugins and applications gather in agenterm.** MiniCon owns the *capabilities*
+(the host mechanisms) **and the contract that exposes them**; agenterm owns the
+*plugins, applications, orchestration, identity, permissions, workflow and
+market* built on them. The only seam between the two layers is the **capability
+contract** — names, versions and compatibility rules — not a binary and not a
+source dependency. This is the product-level statement of the mechanism/policy
+split, and the rule every later "where does this live?" question is decided
+against.
+
+### The placement test
+
+Something is a **capability → MiniCon** when either holds:
+
+- it holds a host/OS authority (a window, a PTY, a handle, the accessibility
+  tree, input injection, the clipboard, a permission); or
+- it must keep working with no plugin or application installed.
+
+Something is a **plugin/application → agenterm** when either holds:
+
+- it is dead code unless someone installs or uses it; or
+- its value is composing other capabilities into a user-visible outcome.
+
+Applied to the cases that actually come up:
+
+| Item | Layer | Why |
+|---|---|---|
+| terminal, PTY, rendering, IME, selection, scale | MiniCon | authority test; already here |
+| computer-use **mechanisms** (a11y read, input injection, screenshot, process, clipboard) | MiniCon | authority test; already vendored in `crates/minicon-platform` |
+| computer-use **policy** (grants, receipts, audit, destructive-action safety, browser *flows*, targets) | agenterm | composition test |
+| a wasm/script **execution kernel** | MiniCon, once the engine is stable | authority test |
+| a **plugin or app written in wasm** | agenterm | dead-code test |
+| the plugin/app **discovery index** | the family's `unisa` release/index repo; agenterm consumes it | an index is not a product |
+| the agent-use **browser** | `minicon-surf`, its own product | it is a base, not a plugin |
+
+### Guardrails
+
+1. **Sinking a capability is not growing the base binary.** MiniCon's identity
+   is one file. A capability MiniCon owns but that is too large for the base
+   (for example a computer-use mechanism set) is a **capability provider**
+   loaded on demand; MiniCon owns the *contract* and the loading, not
+   necessarily the bytes. Numeric ceilings stay in
+   [27](PRD_02_27_con_delivery.md).
+2. **The contract is the seam, and it is not optional.** A plugin must be able
+   to depend on MiniCon's capabilities without being pinned to a MiniCon build;
+   that requires the versioned capability contract, whose current narrow form is
+   the `--hostif-handshake` capability list
+   ([`plan/plan-hostif-v1.md`](../plan/plan-hostif-v1.md)). Without it the
+   boundary collapses back into a version pin.
+
+Non-goal: this principle does not give MiniCon a plugin host, a market,
+orchestration or agent permission policy; those are agenterm's and stay there,
+consistent with "Explicit non-goals" above.

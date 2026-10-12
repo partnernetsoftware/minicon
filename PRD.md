@@ -111,6 +111,10 @@ MiniCon — one-file local terminal
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
 │   └── prd/PRD_02_28_shared_core.md
+├── Capability vs plugin boundary (with agenterm)
+│   ├── capabilities sink into MiniCon; plugins/apps gather in agenterm;
+│   │   the only seam is the versioned capability contract
+│   └── prd/PRD_02_23_minicon.md · "Capability and plugin boundary"
 ├── Future experiments — not current-version scope
 │   ├── qjswasm + TinyVM portable logic; six native OS shells remain
 │   │   └── prd/PRD_02_29_qjswasm_horizon.md
