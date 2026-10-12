@@ -5,7 +5,7 @@ and "script runtime, plugin host or Agent permission policy" is narrowed (not
 removed) to admit exactly the two subcommands below. This module is their
 scope statement; it does not yet contain implementation evidence, because
 neither has shipped. Legend: `[v]` shipped, `[-]` partial, `[_]` planned,
-`[-]` explicit non-goal.
+`[no]` explicit non-goal.
 
 ## Product outcome
 
@@ -50,16 +50,16 @@ process, exactly like the existing `--control` endpoint.
 │   │   └── #decision not a new daemon; no session store outside the
 │   │         process; not a tmux control-mode (`-C`) server
 │   ├── non-goals
-│   │   ├── [-] attach across machines / network transport
-│   │   ├── [-] persistent session independent of the MiniCon process
-│   │   ├── [-] a general multiplexing config language (tmux.conf-equivalent)
-│   │   ├── [-] pane splits/layout verbs (`split-window`, `select-pane`,
+│   │   ├── [no] attach across machines / network transport
+│   │   ├── [no] persistent session independent of the MiniCon process
+│   │   ├── [no] a general multiplexing config language (tmux.conf-equivalent)
+│   │   ├── [no] pane splits/layout verbs (`split-window`, `select-pane`,
 │   │   │     resize) -- each tab has exactly one pane (its own terminal
 │   │   │     area, index 0); a target naming a nonzero pane is a bounded
 │   │   │     error, not silently remapped
-│   │   ├── [-] multiple named sessions -- a `-t` target's session component
+│   │   ├── [no] multiple named sessions -- a `-t` target's session component
 │   │   │     must match the one implicit session name or is a bounded error
-│   │   └── [-] tmux's full `-F` format-string language -- only the
+│   │   └── [no] tmux's full `-F` format-string language -- only the
 │   │         substitution variables a concrete script need names get
 │   │         implemented, same discipline as the verb subset itself
 │   ├── safe failure: an invalid tab handle, a nonzero pane index, or a
@@ -107,9 +107,9 @@ process, exactly like the existing `--control` endpoint.
 │   │   ├── no separate "Agent permission policy" framework
 │   │   └── the two tools' own bounds (root path, command) are the policy
 │   ├── non-goals (this node's own permanent scope, not a 0.2.x-only limit)
-│   │   ├── [-] a plugin/tool-registration system
-│   │   ├── [-] inbound network service or remote task queue
-│   │   └── [-] multi-agent orchestration or a scripting runtime -- owned by
+│   │   ├── [no] a plugin/tool-registration system
+│   │   ├── [no] inbound network service or remote task queue
+│   │   └── [no] multi-agent orchestration or a scripting runtime -- owned by
 │   │         `harness-manage` {hm} instead, never grown here; see #decision
 │   │         above (this is the resolution of the 2026-09-26 open question
 │   │         this line used to carry, replaced by the role split, not by
@@ -150,7 +150,7 @@ process, exactly like the existing `--control` endpoint.
 │   │ owns multi-agent orchestration/management (and downloading,
 │   │ installing and updating minicon itself, plus the plugin & app
 │   │ market), built on minicon's `{HOSTIF}` host-interface
-│   │ (`plan/plan-hostif-v1.md`, `plan/plan-v0.2.4.md`'s
+│   │ (`plan/archive/plan-hostif-v1.md`, `plan/archive/plan-v0.2.4.md`'s
 │   │ `{HARNESS-RETRACT}`). minicon stays the underlying service + interface
 │   │ provider; it does not grow a manager role itself, ever -- this
 │   │ supersedes "not started, horizon not assigned yet" below, which is
@@ -325,7 +325,7 @@ window always has exactly one pane here (see "Target parsing" above), a
 `list-panes` verb would report the same one row per tab as `list-windows`,
 under pane-shaped field names.
 
-**[v] closed 2026-09-26, in plan-v0.2.2's `{LP}` leaf.** The assumed N+1
+**[v] closed 2026-09-26, in `plan/archive/plan-v0.2.2.md`'s `{LP}` leaf.** The assumed N+1
 round trip turned out unnecessary on inspection: `list-tabs`'s own handler
 (`CliCommand::ListTabs` in `src/control_dispatch.rs`) already iterates
 every tab's live `ConTerminal` session in-process to build its response, so
@@ -564,12 +564,12 @@ horizon yet.
 
 **Renderer choice, decided in advance so it is not re-litigated per session:**
 
-- **[✓] If/when a renderer is built: reuse `agenterm-platform`'s webview
+- **[v] If/when a renderer is built: reuse `agenterm-platform`'s webview
   adapter and bridge-v1 security state machine (origin binding, 64 KiB
   message cap, 8 concurrent requests, replay protection), per
   `PRD_02_28_shared_core.md`'s "consume at the git pin, no mandatory
   dependency inversion".** Do not pull `wry`/`tao` directly into MiniCon.
-  `/home/user/agenterm/research/agenterm-webview/` already ran the
+  `~/agenterm/research/agenterm-webview/` already ran the
   direct-WRY-vs-Tauri comparison end to end (direct-WRY 520,704 B vs Tauri
   8,763,392 B on Windows) and decided `prefer-direct-wry-if-webview`; MiniCon
   gets that evidence for free by consuming the shared crate instead of

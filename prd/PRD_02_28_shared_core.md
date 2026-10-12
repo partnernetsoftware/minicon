@@ -118,7 +118,7 @@ every `cfg` and every `unsafe` in the product lives.
   (was `agenterm-ui-core`), and the two forks `third_party/vt100` and
   `third_party/softbuffer`. They are ordinary in-repo path members of this
   workspace, and `src/` plus the test suites use them as `minicon_platform` /
-  `minicon_ui_core`. Plan and evidence: [`plan/plan-v0.2.5.md`](../plan/plan-v0.2.5.md)
+  `minicon_ui_core`. Plan and evidence: [`plan/archive/plan-v0.2.5.md`](../plan/archive/plan-v0.2.5.md)
   leaf `{PLATFORM-MOVE}`.
 
 The original plan here was to *extract a `terminal-core`* out of

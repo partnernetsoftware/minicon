@@ -31,13 +31,13 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      pins it, this leaf's semantics decision (cross-screen stitching,
 │      viewport restore) is still separate design work.
 ├── C3 box-drawing glyphs from cell geometry (Consolas, 1 px gap at 12 px)
-│      claimed by `plan/plan-v0.2.2.md`'s `{UI}` leaf, still `BLOCKED` there —
+│      claimed by `plan/archive/plan-v0.2.2.md`'s `{UI}` leaf, still `BLOCKED` there —
 │      needs a real Windows display host with Consolas installed (this is
 │      a font-specific rendering bug, not merely "no display"; a headless
 │      Xvfb container has neither Consolas nor a screen a human can look
 │      at); do not pick up again separately
 ├── C4 idle one-tab host RSS toward 10 MiB (paused since 2026-09-06)
-│      claimed by `plan/plan-v0.2.2.md`'s `{UI}` leaf. **Corrected 2026-09-26:**
+│      claimed by `plan/archive/plan-v0.2.2.md`'s `{UI}` leaf. **Corrected 2026-09-26:**
 │      no longer BLOCKED on "no display" — a Linux cloud session with Xvfb
 │      measured real idle host RSS at 21.46 MiB (debug build), then
 │      **12.01 MiB on a release build**, same container; see
@@ -88,7 +88,7 @@ doc when it is picked up; delete its line here once it ships or is decided
        `get_type()` pair already reads arbitrary clipboard types (images
        included) on all three OS adapters; the earlier "needs a new
        image-read API first" note was wrong on inspection (mirrors `{LP}`'s
-       own corrected N+1 assumption in `plan/plan-v0.2.2.md`). Remaining
+       own corrected N+1 assumption in `plan/archive/plan-v0.2.2.md`). Remaining
        work is MiniCon-owned: pick the right type name per OS, decode to a
        temp file, and add the thumbnail-chip draft segment — self-contained
        in this repo, no cross-repo dependency.

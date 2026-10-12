@@ -60,4 +60,25 @@ Archived after the 0.2.4 release (2026-10-10):
   `prd/PRD_02_27_con_delivery.md` and
   `prd/archive/v0.2.3-release-history.md`.
 
+Archived with the repo-hygiene pass (2026-10-12):
+
+- `plan-v0.2.5.md` — shipped v0.2.5 (inline tab rename + per-row title line;
+  the shared platform crates moved into MiniCon). See
+  `prd/archive/v0.2.5-release-history.md`.
+- `plan-v0.2.4.md` — shipped v0.2.4. See `prd/archive/v0.2.4-release-history.md`.
+- `plan-cross-project-reuse.md` — superseded 2026-10-11 by `plan-v0.2.5.md`
+  (the "two products pin each other's crates" premise ended when the platform
+  crates moved into MiniCon). Kept as the record of *why* the pin-drift problem
+  existed.
+- `plan-v0.2.2.md` — the 0.2.2 patch path; `{LP}` closed 2026-09-26 and its
+  scope rolled forward to 0.2.4. No release exists at 0.2.2, so there is no
+  `v0.2.2-release-history.md`.
+- `plan-hostif-v1.md` — the `{HOSTIF}` v1 host-interface. Shipped: the coding
+  asks (`minicon --version --json`, `minicon --hostif-handshake`) are
+  implemented in `src/cli.rs`; §3 is a release-process contract. Cited by
+  `prd/PRD_02_23_minicon.md` and `prd/PRD_02_31_v0_2_horizon.md`.
+- `design-frame-channel-experiment.md` — completed decision: the Q1 host-UI
+  frame needs no channel (the painter was already a pure slice painter);
+  findings for the complete live frame are recorded, not built.
+
 Never reuse an archived run as evidence for newer source bytes.

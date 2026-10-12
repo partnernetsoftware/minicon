@@ -188,7 +188,7 @@ than fork.
 The platform and UI crates were `agenterm`'s until 2026-10-10, when the owner
 moved them here and inverted the arrow (`agenterm` now depends on MiniCon); see
 [shared core](PRD_02_28_shared_core.md) "Stage 3" and
-[`plan/plan-v0.2.5.md`](../plan/plan-v0.2.5.md). Shared kernels consumed by both
+[`plan/archive/plan-v0.2.5.md`](../plan/archive/plan-v0.2.5.md). Shared kernels consumed by both
 products keep their requirement in their owning source repository — which is now
 this one. Within MiniCon, [shared core](PRD_02_28_shared_core.md) owns the
 dependency direction and extraction stages; historical agenterm PRD numbers are
@@ -243,7 +243,7 @@ Applied to the cases that actually come up:
    to depend on MiniCon's capabilities without being pinned to a MiniCon build;
    that requires the versioned capability contract, whose current narrow form is
    the `--hostif-handshake` capability list
-   ([`plan/plan-hostif-v1.md`](../plan/plan-hostif-v1.md)). Without it the
+   ([`plan/archive/plan-hostif-v1.md`](../plan/archive/plan-hostif-v1.md)). Without it the
    boundary collapses back into a version pin.
 
 Non-goal: this principle does not give MiniCon a plugin host, a market,

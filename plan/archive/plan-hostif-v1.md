@@ -3,8 +3,10 @@
 Owner-decided 2026-10-04: agenterm restarts at 0.2.0.0 as a launcher +
 plugin/app market built on minicon. This is minicon's half of the draft
 (`plan/plan-v0.2.4.md`'s `{HOSTIF}` leaf), answering cc-agenterm's three
-concrete asks over mux the same day. Not yet implemented — this is the spec
-to implement against, reviewed with agenterm before code.
+concrete asks over mux the same day. Shipped: the coding asks are implemented
+(`minicon --version --json` and `minicon --hostif-handshake` in `src/cli.rs`),
+so this is the record, not a spec to build against. §3
+(`candidate-manifest.json` stability) is a release-process contract.
 
 ## 1. `minicon --version --json`
 

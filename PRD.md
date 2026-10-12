@@ -6,7 +6,7 @@ index and decision map. Details and history live in the owning `prd/PRD_*.md`;
 machine alignment is `alignment-contract.json`, and public evidence identities
 are in `evidence-registry.json`.
 
-Legend: `[v]` shipped, `[-]` partial, `[_]` planned, `[-]` explicit non-goal.
+Legend: `[v]` shipped, `[-]` partial, `[_]` planned, `[no]` explicit non-goal.
 
 ## Product outcome
 
@@ -32,7 +32,7 @@ MiniCon — one-file local terminal
 ├── Charter and authority
 │   ├── local terminal host; one executable; operating-system libraries only
 │   ├── host process RSS is scarce; idle one-tab intent is 10 MiB; child shells excluded
-│   ├── [-] no server, persistence, Fleet, mux, MCP, scripts or Agent policy
+│   ├── [no] no server, persistence, Fleet, mux, MCP, scripts or Agent policy
 │   └── prd/PRD_02_23_minicon.md
 ├── User capabilities
 │   ├── Terminal runtime and rendering
@@ -273,7 +273,7 @@ flowchart LR
   shared platform crates moved into MiniCon (`crates/minicon-platform`,
   `crates/minicon-ui-core`, `third_party/{vt100,softbuffer}`) so `agenterm`
   depends on MiniCon. Source `0326e2a`, published 2026-10-11 (chain run ids in
-  `prd/archive/v0.2.5-release-history.md`; record `plan/plan-v0.2.5.md`).
+  `prd/archive/v0.2.5-release-history.md`; record `plan/archive/plan-v0.2.5.md`).
 - [v] v0.2.0 released: `mux` and `harness`, published as
   `v0.2.0` (2026-09-26; release.yml run `36230348611`, Candidate run
   `36223506557`, source SHA `c0b5ed7a2289cbe18c25f92dcae3769101424f7a`). The
