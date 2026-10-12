@@ -25,6 +25,18 @@ pub const TOOLTIP_GAP_DIP: f64 = 6.0;
 pub const TOOLTIP_PADDING_DIP: f64 = 8.0;
 pub const TOOLTIP_HEIGHT_DIP: f64 = 26.0;
 pub const TERMINAL_SCROLLBAR_WIDTH_DIP: f64 = 12.0;
+/// Width of the right-side history/notes panel when it is open. Closing it
+/// hands the terminal back the whole column, the way the sidebar rail does.
+pub const HISTORY_PANEL_WIDTH_DIP: f64 = 260.0;
+pub const HISTORY_PANEL_MIN_WIDTH_DIP: f64 = 180.0;
+pub const HISTORY_PANEL_MAX_WIDTH_DIP: f64 = 340.0;
+/// Height of one sent-history row in the panel.
+pub const HISTORY_ROW_HEIGHT_DIP: f64 = 22.0;
+/// Size of the panel's own close control, seated at its top-right corner.
+pub const HISTORY_CLOSE_SIZE_DIP: f64 = 20.0;
+/// Height reserved at the bottom of the panel for future loop/goal controls.
+/// It is blank on purpose — the owner asked for the room to be kept free.
+pub const HISTORY_RESERVED_HEIGHT_DIP: f64 = 96.0;
 /// Size of the per-row icon buttons (close, edit) and the margin from the
 /// sidebar's right edge to the outermost one. Shared by both `tree_*_rect`
 /// helpers so the pair stays aligned.
@@ -90,6 +102,13 @@ pub struct Layout {
     pub sidebar_toggle: Rect,
     /// True when the sidebar is showing as a rail.
     pub sidebar_collapsed: bool,
+    /// The right-side history/notes panel. Zero-width when closed, so the
+    /// terminal column reclaims the space instead of leaving a gap where the
+    /// panel used to be.
+    pub panel: Rect,
+    /// Whether the panel is open. Mirrors `panel.width != 0`; published so
+    /// callers and `ui-snapshot` read one fact instead of re-deriving it.
+    pub panel_open: bool,
 }
 
 impl Layout {
@@ -103,12 +122,36 @@ impl Layout {
         Self::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, true)
     }
 
+    /// The historical constructor: the panel is closed. Now test-only — the
+    /// product builds its layout through [`Self::with_chrome`].
+    #[cfg(test)]
     pub fn with_sidebar(
         width: u32,
         height: u32,
         scale: f64,
         sidebar_dip: f64,
         collapsed: bool,
+    ) -> Self {
+        Self::with_chrome(
+            width,
+            height,
+            scale,
+            sidebar_dip,
+            collapsed,
+            false,
+            HISTORY_PANEL_WIDTH_DIP,
+        )
+    }
+
+    /// Full constructor including the right-side history/notes panel.
+    pub fn with_chrome(
+        width: u32,
+        height: u32,
+        scale: f64,
+        sidebar_dip: f64,
+        collapsed: bool,
+        panel_open: bool,
+        panel_dip: f64,
     ) -> Self {
         let scale = scale.max(1.0);
         let maximum = clamp_f64(
@@ -128,6 +171,24 @@ impl Layout {
             )
             .min(width)
         };
+        // The right-side panel. Closed is zero width, and the terminal column
+        // then ends at the window edge exactly as before.
+        let panel_width = if panel_open {
+            dip(
+                clamp_f64(
+                    panel_dip,
+                    HISTORY_PANEL_MIN_WIDTH_DIP,
+                    HISTORY_PANEL_MAX_WIDTH_DIP,
+                ),
+                scale,
+            )
+            .min(width.saturating_sub(sidebar_width))
+        } else {
+            0
+        };
+        // Right edge of the terminal column: the window's, less the panel. The
+        // composer and status bars stop here, so neither slides under the panel.
+        let column_right = width.saturating_sub(panel_width);
         let status_height = dip(STATUS_HEIGHT_DIP, scale).min(height);
         let composer_height =
             dip(COMPOSER_HEIGHT_DIP, scale).min(height.saturating_sub(status_height));
@@ -136,13 +197,13 @@ impl Layout {
             y: height
                 .saturating_sub(status_height)
                 .saturating_sub(composer_height),
-            width: width.saturating_sub(sidebar_width),
+            width: column_right.saturating_sub(sidebar_width),
             height: composer_height,
         };
         let status = Rect {
             x: sidebar_width,
             y: height.saturating_sub(status_height),
-            width: width.saturating_sub(sidebar_width),
+            width: column_right.saturating_sub(sidebar_width),
             height: status_height,
         };
         let padding = dip(12.0, scale);
@@ -154,7 +215,9 @@ impl Layout {
             .height
             .saturating_sub(label_height)
             .saturating_sub(padding);
-        let button_x = width.saturating_sub(padding).saturating_sub(send_width);
+        let button_x = column_right
+            .saturating_sub(padding)
+            .saturating_sub(send_width);
         let button_gap = dip(6.0, scale);
         let send_height = control_height.saturating_sub(button_gap) / 2;
         let send = Rect {
@@ -297,6 +360,13 @@ impl Layout {
             settings,
             sidebar_toggle,
             sidebar_collapsed: collapsed,
+            panel: Rect {
+                x: width.saturating_sub(panel_width),
+                y: 0,
+                width: panel_width,
+                height,
+            },
+            panel_open: panel_width != 0,
         }
     }
 
@@ -483,6 +553,8 @@ impl UiLanguage {
                 settings_font: "Font size",
                 settings_theme: "Theme",
                 settings_shortcuts: "Shortcuts",
+                history_title: "HISTORY",
+                history_empty: "(nothing sent yet)",
             },
             Self::ChineseSimplified => HostUiStrings {
                 paste_failed: "粘贴失败",
@@ -503,6 +575,8 @@ impl UiLanguage {
                 settings_font: "字号",
                 settings_theme: "主题",
                 settings_shortcuts: "快捷键",
+                history_title: "历史发送",
+                history_empty: "（还没有发送过内容）",
             },
             Self::ChineseTraditional => HostUiStrings {
                 paste_failed: "貼上失敗",
@@ -523,6 +597,8 @@ impl UiLanguage {
                 settings_font: "字級",
                 settings_theme: "佈景主題",
                 settings_shortcuts: "快捷鍵",
+                history_title: "歷史發送",
+                history_empty: "（還沒有送出過內容）",
             },
         }
     }
@@ -619,6 +695,8 @@ pub struct HostUiStrings {
     pub settings_font: &'static str,
     pub settings_theme: &'static str,
     pub settings_shortcuts: &'static str,
+    pub history_title: &'static str,
+    pub history_empty: &'static str,
 }
 
 pub fn tree_hit(
@@ -839,6 +917,94 @@ impl Layout {
             shortcut_line_height: line_h,
         }
     }
+
+    /// Geometry of the right-side history/notes panel. Call only while it is
+    /// open (`panel_open`).
+    ///
+    /// The panel is a column of stacked sections: a title row, the
+    /// sent-history list, and — at the bottom — a blank area deliberately
+    /// reserved for future loop/goal controls. That reservation is what the
+    /// owner asked to keep free, so it is computed here rather than left to the
+    /// painter, and the history list fills only the space above it.
+    pub fn history_panel(self, scale: f64) -> HistoryPanelLayout {
+        let scale = scale.max(1.0);
+        let pad = dip(12.0, scale);
+        let title_h = dip(20.0, scale);
+        let row_height = dip(HISTORY_ROW_HEIGHT_DIP, scale).max(1);
+        let close_size = dip(HISTORY_CLOSE_SIZE_DIP, scale);
+        let close = Rect {
+            x: self
+                .panel
+                .x
+                .saturating_add(self.panel.width)
+                .saturating_sub(pad)
+                .saturating_sub(close_size),
+            y: self.panel.y.saturating_add(pad / 2),
+            width: close_size,
+            height: close_size,
+        };
+        let title_y = self.panel.y.saturating_add(pad);
+        let list_top = title_y.saturating_add(title_h);
+        let reserved_top = self
+            .panel
+            .y
+            .saturating_add(self.panel.height)
+            .saturating_sub(pad)
+            .saturating_sub(dip(HISTORY_RESERVED_HEIGHT_DIP, scale))
+            .max(list_top);
+        let row_capacity = reserved_top.saturating_sub(list_top) / row_height;
+        HistoryPanelLayout {
+            panel: self.panel,
+            close,
+            title_y,
+            list_top,
+            row_height,
+            row_capacity: row_capacity as usize,
+            reserved_top,
+        }
+    }
+}
+
+/// Geometry of the open history/notes panel, in panel coordinates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HistoryPanelLayout {
+    pub panel: Rect,
+    pub close: Rect,
+    pub title_y: u32,
+    pub list_top: u32,
+    pub row_height: u32,
+    /// How many history rows fit above the reserved area at this size.
+    pub row_capacity: usize,
+    /// Top of the blank area reserved for future loop/goal controls. The
+    /// history list never paints below this line.
+    pub reserved_top: u32,
+}
+
+/// Where a pointer landed on the open history panel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HistoryHit {
+    Outside,
+    Panel,
+    Close,
+    /// Row index counting from the top of the list (`0` = newest shown). May
+    /// exceed the entry count; the caller ignores an index with no entry.
+    Row(usize),
+}
+
+/// Hit-test the open history/notes panel. Call only while [`Layout::panel_open`].
+#[must_use]
+pub fn history_hit(layout: Layout, x: u32, y: u32, scale: f64) -> HistoryHit {
+    if !layout.panel_open || !layout.panel.contains(x, y) {
+        return HistoryHit::Outside;
+    }
+    let p = layout.history_panel(scale);
+    if p.close.contains(x, y) {
+        return HistoryHit::Close;
+    }
+    if y >= p.list_top && y < p.reserved_top {
+        return HistoryHit::Row(((y - p.list_top) / p.row_height.max(1)) as usize);
+    }
+    HistoryHit::Panel
 }
 
 /// Hit-test the open settings panel. Call only while the panel is open.
@@ -951,6 +1117,9 @@ pub struct TerminalViewport {
     pub left: u32,
     pub top: u32,
     pub bottom_inset: u32,
+    /// Width reserved on the right by the history/notes panel, so the terminal
+    /// column's scrollbar stops at the panel's edge instead of sliding under it.
+    pub right_inset: u32,
     pub scale: f64,
     pub rows: usize,
 }
@@ -964,7 +1133,10 @@ pub fn terminal_scrollbar_geometry(
         minicon_ui_core::Rect {
             left: viewport.left.min(i32::MAX as u32) as i32,
             top: viewport.top.min(i32::MAX as u32) as i32,
-            right: viewport.width.min(i32::MAX as u32) as i32,
+            right: viewport
+                .width
+                .saturating_sub(viewport.right_inset)
+                .min(i32::MAX as u32) as i32,
             bottom: viewport
                 .height
                 .saturating_sub(viewport.bottom_inset)
@@ -2065,6 +2237,7 @@ mod tests {
                 left: 224,
                 top: 0,
                 bottom_inset: 96,
+                right_inset: 0,
                 scale: 1.0,
                 rows: 24,
             },
@@ -2077,6 +2250,79 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_closed_history_panel_leaves_the_terminal_its_column() {
+        let closed = Layout::with_chrome(1200, 800, 1.0, SIDEBAR_WIDTH_DIP, false, false, 260.0);
+        assert!(!closed.panel_open);
+        assert_eq!(closed.panel.width, 0, "a closed panel takes no column");
+
+        let open = Layout::with_chrome(1200, 800, 1.0, SIDEBAR_WIDTH_DIP, false, true, 260.0);
+        assert!(open.panel_open);
+        assert!(open.panel.width > 0);
+        // The composer and status bands stop at the panel's left edge; neither
+        // slides under it, and the panel reaches the window's right edge.
+        assert_eq!(open.composer.x + open.composer.width, open.panel.x);
+        assert_eq!(open.status.x + open.status.width, open.panel.x);
+        assert_eq!(open.panel.x + open.panel.width, 1200);
+        assert!(open.composer.x < open.panel.x);
+    }
+
+    #[test]
+    fn the_open_history_panel_never_covers_the_bottom_bands() {
+        for &(w, h, scale) in LAYOUT_SWEEP {
+            let l = Layout::with_chrome(
+                w,
+                h,
+                scale,
+                SIDEBAR_WIDTH_DIP,
+                false,
+                true,
+                HISTORY_PANEL_WIDTH_DIP,
+            );
+            assert!(l.panel_open, "{w}x{h}@{scale} keeps a usable panel");
+            assert!(
+                l.composer.x + l.composer.width <= l.panel.x,
+                "composer under the panel at {w}x{h}@{scale}"
+            );
+            assert!(
+                l.status.x + l.status.width <= l.panel.x,
+                "status under the panel at {w}x{h}@{scale}"
+            );
+            // The list always leaves room for at least one row above the
+            // reserved area, so the panel is never all padding.
+            let p = l.history_panel(scale);
+            assert!(p.row_capacity >= 1, "{w}x{h}@{scale}");
+            assert!(p.reserved_top > p.list_top, "{w}x{h}@{scale}");
+        }
+    }
+
+    #[test]
+    fn history_hit_tells_rows_close_and_background_apart() {
+        let l = Layout::with_chrome(1200, 800, 1.0, SIDEBAR_WIDTH_DIP, false, true, 260.0);
+        let p = l.history_panel(1.0);
+        assert_eq!(
+            history_hit(l, p.close.x + 1, p.close.y + 1, 1.0),
+            HistoryHit::Close
+        );
+        let x = p.panel.x + p.panel.width / 2;
+        assert_eq!(history_hit(l, x, p.list_top + 1, 1.0), HistoryHit::Row(0));
+        assert_eq!(
+            history_hit(l, x, p.list_top + p.row_height + 1, 1.0),
+            HistoryHit::Row(1)
+        );
+        // Below the list, the reserved band is panel, not a row.
+        assert_eq!(
+            history_hit(l, x, p.reserved_top + 1, 1.0),
+            HistoryHit::Panel
+        );
+        // With the panel closed there is nothing to hit.
+        let closed = Layout::with_chrome(1200, 800, 1.0, SIDEBAR_WIDTH_DIP, false, false, 260.0);
+        assert_eq!(
+            history_hit(closed, x, p.list_top + 1, 1.0),
+            HistoryHit::Outside
+        );
+    }
+
     fn viewport(scale: f64, rows: usize, bottom_inset: u32) -> TerminalViewport {
         TerminalViewport {
             width: 1200,
@@ -2084,6 +2330,7 @@ mod tests {
             left: 224,
             top: 0,
             bottom_inset,
+            right_inset: 0,
             scale,
             rows,
         }

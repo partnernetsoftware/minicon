@@ -260,7 +260,7 @@ pub(crate) fn offline_status_text_for_test() -> String {
 
 /// The host-interface contract version this binary speaks. Independent of
 /// `CARGO_PKG_VERSION` -- bumped minor for an additive capability, major for
-/// a breaking change. See `plan/plan-hostif-v1.md`.
+/// a breaking change. See `plan/archive/plan-hostif-v1.md`.
 const HOSTIF_VERSION: &str = "1.0";
 
 /// This build's asset-name suffix, exactly the substring

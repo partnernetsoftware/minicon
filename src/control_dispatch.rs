@@ -181,7 +181,8 @@ impl ConApp {
                                 y: session.content_top_px,
                                 width: frame_w
                                     .saturating_sub(session.content_left_px)
-                                    .saturating_sub(scrollbar),
+                                    .saturating_sub(scrollbar)
+                                    .saturating_sub(session.content_right_px),
                                 height: frame_h
                                     .saturating_sub(session.content_top_px)
                                     .saturating_sub(session.content_bottom_px),
@@ -206,6 +207,7 @@ impl ConApp {
                                 ("terminal_viewport", rect_obj(viewport)),
                                 ("composer_band", rect_obj(layout.composer)),
                                 ("status_band", rect_obj(layout.status)),
+                                ("history_panel_band", rect_obj(layout.panel)),
                                 (
                                     "grid",
                                     json::object(vec![
@@ -221,6 +223,13 @@ impl ConApp {
                             ("active", tab_id_json(self.workspace.active())),
                             ("workspace_empty", self.workspace.active().is_none().into()),
                             ("settings_open", self.settings_open.into()),
+                            (
+                                "history_panel",
+                                json::object(vec![
+                                    ("open", self.history_panel_open.into()),
+                                    ("entries", self.composer.history().len().into()),
+                                ]),
+                            ),
                             ("geometry", geometry.unwrap_or(json::JsonValue::Null)),
                             (
                                 "host_notice",

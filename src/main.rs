@@ -598,6 +598,10 @@ struct ConApp {
     /// view state, not a preference, and a restart should not strand a user in
     /// a collapsed sidebar they do not remember choosing.
     sidebar_collapsed: bool,
+    /// The right-side history/notes panel is open. Session-scoped view state
+    /// like `sidebar_collapsed`: a restart should not strand the user in a
+    /// layout they do not remember choosing.
+    history_panel_open: bool,
     sidebar_resizing: bool,
     exit: bool,
     control_endpoint: Option<String>,
@@ -984,6 +988,7 @@ impl ConApp {
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_collapsed: false,
+            history_panel_open: false,
             sidebar_resizing: false,
             exit: false,
             control_endpoint,
@@ -1168,8 +1173,9 @@ impl ConApp {
         self.mark_host_ui_full();
         let metrics = window.metrics()?;
         let sidebar_width = self.effective_sidebar_dip();
+        let panel_width = self.effective_panel_dip();
         let session = self.active_session_mut()?;
-        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
         session.apply_resize(
             metrics.physical_width,
             metrics.physical_height,
@@ -1181,12 +1187,18 @@ impl ConApp {
         Ok(())
     }
 
-    fn configure_host_ui(session: &mut ConTerminal, scale: f64, sidebar_width_logical: f64) {
+    fn configure_host_ui(
+        session: &mut ConTerminal,
+        scale: f64,
+        sidebar_width_logical: f64,
+        panel_width_logical: f64,
+    ) {
         let scale = scale.max(1.0);
         session.set_content_insets(
             minicon_core::numeric::round_f64(sidebar_width_logical * scale) as u32,
             0,
             ui::bottom_inset(scale),
+            minicon_core::numeric::round_f64(panel_width_logical * scale) as u32,
         );
     }
 
@@ -1201,8 +1213,9 @@ impl ConApp {
         metrics: minicon_platform::window_host::PixelWindowMetrics,
     ) -> Result<(), PixelWindowError> {
         let sidebar_width = self.sidebar_width_logical;
+        let panel_width = self.effective_panel_dip();
         let session = self.active_session_mut()?;
-        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+        Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
         session.apply_resize(
             metrics.physical_width,
             metrics.physical_height,
@@ -1212,12 +1225,14 @@ impl ConApp {
     }
 
     fn layout(&self, width: u32, height: u32, scale: f64) -> ui::Layout {
-        ui::Layout::with_sidebar(
+        ui::Layout::with_chrome(
             width,
             height,
             scale,
             self.sidebar_width_logical,
             self.sidebar_collapsed,
+            self.history_panel_open,
+            ui::HISTORY_PANEL_WIDTH_DIP,
         )
     }
 
@@ -1232,13 +1247,42 @@ impl ConApp {
         }
     }
 
+    /// The width the terminal must be inset by on the right for the history
+    /// panel — zero while it is closed, so the terminal reclaims the column
+    /// instead of leaving a gap where the panel used to be.
+    fn effective_panel_dip(&self) -> f64 {
+        if self.history_panel_open {
+            ui::HISTORY_PANEL_WIDTH_DIP
+        } else {
+            0.0
+        }
+    }
+
     /// Re-applies the terminal inset after the sidebar's width changed, so the
     /// terminal reclaims (or yields) the column in the same frame as the rail.
     fn apply_sidebar_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         let metrics = window.metrics()?;
         let sidebar_width = self.effective_sidebar_dip();
+        let panel_width = self.effective_panel_dip();
         if let Ok(session) = self.active_session_mut() {
-            Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+            Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
+            session.queue_resize(
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            );
+        }
+        Ok(())
+    }
+
+    /// Re-applies the terminal inset after the history panel opened or closed,
+    /// so the terminal reclaims (or yields) the column in the same frame.
+    fn apply_panel_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        let metrics = window.metrics()?;
+        let sidebar_width = self.effective_sidebar_dip();
+        let panel_width = self.effective_panel_dip();
+        if let Ok(session) = self.active_session_mut() {
+            Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
             session.queue_resize(
                 metrics.physical_width,
                 metrics.physical_height,
@@ -1512,6 +1556,7 @@ impl ConApp {
             &mut session,
             window.metrics()?.scale_factor,
             self.effective_sidebar_dip(),
+            self.effective_panel_dip(),
         );
         if let Err(error) = session.opened(window) {
             self.workspace.close(id);
@@ -1633,6 +1678,15 @@ impl ConApp {
             self.update_composer_ime_anchor(window)?;
             self.mark_composer_dirty();
             self.request_dirty_redraw(window);
+            return Ok(true);
+        }
+        // Toggle the right-side history panel. This is its only entry point for
+        // now (a header control is a follow-up), and it is what lets the control
+        // CLI reach the panel for machine verification.
+        if text.eq_ignore_ascii_case("h") {
+            self.history_panel_open = !self.history_panel_open;
+            self.apply_panel_width(window)?;
+            self.mark_host_ui_full_and_repaint(window);
             return Ok(true);
         }
         if text == "[" {
@@ -2685,8 +2739,14 @@ impl ConApp {
                 self.sidebar_width_logical =
                     ui::sidebar_width_from_pointer(position.x, metrics.logical_size.width);
                 let sidebar_width = self.effective_sidebar_dip();
+                let panel_width = self.effective_panel_dip();
                 if let Ok(session) = self.active_session_mut() {
-                    Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+                    Self::configure_host_ui(
+                        session,
+                        metrics.scale_factor,
+                        sidebar_width,
+                        panel_width,
+                    );
                     session.queue_resize(
                         metrics.physical_width,
                         metrics.physical_height,
@@ -2824,10 +2884,12 @@ impl PixelWindowApplication for ConApp {
     fn opened(&mut self, window: &PixelWindow) -> Result<PixelWindowDirective, PixelWindowError> {
         let metrics = window.metrics()?;
         let sidebar_width = self.effective_sidebar_dip();
+        let panel_width = self.effective_panel_dip();
         Self::configure_host_ui(
             self.active_session_mut()?,
             metrics.scale_factor,
             sidebar_width,
+            panel_width,
         );
         let directive = self.active_session_mut()?.opened(window)?;
         // Background startup must not override the host no-activate option.
@@ -3010,8 +3072,9 @@ impl PixelWindowApplication for ConApp {
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
             self.mark_host_ui_full();
             let sidebar_width = self.effective_sidebar_dip();
+            let panel_width = self.effective_panel_dip();
             if let Ok(session) = self.active_session_mut() {
-                Self::configure_host_ui(session, metrics.scale_factor, sidebar_width);
+                Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
             }
         }
         if let PixelWindowEvent::Keyboard(key) = &event
@@ -3121,6 +3184,36 @@ impl PixelWindowApplication for ConApp {
             // edit, focus the terminal); committing here keeps the rename from
             // outliving the click that ended it.
             self.commit_rename(window);
+            if self.history_panel_open {
+                let metrics = window.metrics()?;
+                let scale = metrics.scale_factor.max(1.0);
+                let layout = self.layout(
+                    metrics.physical_width,
+                    metrics.physical_height,
+                    metrics.scale_factor,
+                );
+                let x = (position.x * scale).max(0.0) as u32;
+                let y = (position.y * scale).max(0.0) as u32;
+                match ui::history_hit(layout, x, y, scale) {
+                    ui::HistoryHit::Close => {
+                        self.history_panel_open = false;
+                        self.apply_panel_width(window)?;
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
+                    ui::HistoryHit::Row(row) => {
+                        let count = self.composer.history().len();
+                        if row < count {
+                            // Newest is shown first; the store is oldest-first,
+                            // so the row index counts back from the end.
+                            let index = count - 1 - row;
+                            self.composer.recall_entry(index);
+                            self.composer.focused = false;
+                            self.mark_host_ui_full_and_repaint(window);
+                        }
+                    }
+                    ui::HistoryHit::Panel | ui::HistoryHit::Outside => {}
+                }
+            }
             if self.settings_open {
                 let metrics = window.metrics()?;
                 let scale = metrics.scale_factor.max(1.0);
@@ -4804,7 +4897,7 @@ mod tests {
         assert!(app.workspace.active().is_none());
     }
 
-    /// Q1 of `plan/design-frame-channel-experiment.md`: a complete host-UI
+    /// Q1 of `plan/archive/design-frame-channel-experiment.md`: a complete host-UI
     /// frame must render into a caller-provided `&mut [u32]` **with no window
     /// created** — no winit window, no `present`.
     ///

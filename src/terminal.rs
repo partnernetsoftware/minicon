@@ -150,6 +150,10 @@ pub(super) struct ConTerminal {
     pub(super) content_left_px: u32,
     pub(super) content_top_px: u32,
     pub(super) content_bottom_px: u32,
+    /// Width reserved on the right by the history/notes panel. Zero when the
+    /// panel is closed, so the terminal column then runs to the window edge
+    /// exactly as before.
+    pub(super) content_right_px: u32,
 
     /// Conservative raster-candidate evidence for retained pixels and native
     /// redraw requests. Unknown damage remains full rather than guessed.
@@ -294,6 +298,7 @@ impl ConTerminal {
             content_left_px: 0,
             content_top_px: 0,
             content_bottom_px: 0,
+            content_right_px: 0,
             dirty: DirtyRegion::full(),
             last_cursor: None,
             crosshair_cell: None,
@@ -304,16 +309,18 @@ impl ConTerminal {
         }
     }
 
-    pub(super) fn set_content_insets(&mut self, left: u32, top: u32, bottom: u32) {
+    pub(super) fn set_content_insets(&mut self, left: u32, top: u32, bottom: u32, right: u32) {
         if self.content_left_px != left
             || self.content_top_px != top
             || self.content_bottom_px != bottom
+            || self.content_right_px != right
         {
             self.dirty.mark_full();
         }
         self.content_left_px = left;
         self.content_top_px = top;
         self.content_bottom_px = bottom;
+        self.content_right_px = right;
     }
 
     pub(super) fn take_dirty(&mut self) -> DirtyRegion {
@@ -350,7 +357,8 @@ impl ConTerminal {
         }
         let viewport_right = self
             .frame_width
-            .saturating_sub(ui::terminal_scrollbar_width(self.scale));
+            .saturating_sub(ui::terminal_scrollbar_width(self.scale))
+            .saturating_sub(self.content_right_px);
         let viewport_bottom = self.frame_height.saturating_sub(self.content_bottom_px);
         let row = position.0.min(self.rows.saturating_sub(1));
         let col = position.1.min(self.cols.saturating_sub(1));
@@ -387,7 +395,8 @@ impl ConTerminal {
         }
         let viewport_right = self
             .frame_width
-            .saturating_sub(ui::terminal_scrollbar_width(self.scale));
+            .saturating_sub(ui::terminal_scrollbar_width(self.scale))
+            .saturating_sub(self.content_right_px);
         let viewport_bottom = self.frame_height.saturating_sub(self.content_bottom_px);
         let terminal_right = self
             .content_left_px
@@ -759,7 +768,8 @@ impl ConTerminal {
         self.recompute_metrics(scale);
         let usable_w = phys_w
             .saturating_sub(self.content_left_px)
-            .saturating_sub(ui::terminal_scrollbar_width(scale));
+            .saturating_sub(ui::terminal_scrollbar_width(scale))
+            .saturating_sub(self.content_right_px);
         let usable_h = phys_h
             .saturating_sub(self.content_top_px)
             .saturating_sub(self.content_bottom_px);
@@ -1140,6 +1150,7 @@ impl ConTerminal {
                     left: self.content_left_px,
                     top: self.content_top_px,
                     bottom_inset: self.content_bottom_px,
+                    right_inset: self.content_right_px,
                     scale: self.scale,
                     rows: usize::from(self.rows),
                 },
@@ -2560,7 +2571,7 @@ pub(crate) mod tests {
         app.recompute_metrics(scale);
         let left = minicon_core::numeric::round_f64(ui::SIDEBAR_WIDTH_DIP * scale) as u32;
         let bottom = ui::bottom_inset(scale);
-        app.set_content_insets(left, 0, bottom);
+        app.set_content_insets(left, 0, bottom, 0);
         app.frame_width = frame_w;
         app.frame_height = frame_h;
         let usable_w = frame_w

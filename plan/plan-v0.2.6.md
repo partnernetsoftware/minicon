@@ -50,7 +50,12 @@ The owner asked me to decide and review the result later. Decision: both live in
 
 ```text
 0.2.6: owner-issues #3/#5 + hygiene; scope PENDING owner confirmation
-├── {SENTHIST} sent-history region in the host UI                    [_] @host=none
+├── {SENTHIST} sent-history region in the host UI                    [-] @host=none
+│      landed (2026-10-12): the right-side collapsible panel, the newest
+│        sent lines as clickable rows (click refills the composer via the
+│        recall path), the reserved loop/goal area, and `ui-snapshot`
+│        `history_panel`; toggled by Ctrl+Shift+H. Follow-ups: a header
+│        toggle control, per-row destination label, scrolling past capacity.
 │      source: GitHub #3 (owner, 2026-10-12); owns `prd/PRD_02_25_con_workspace.md`
 │      placement: the right-side collapsible interaction panel (§Scope decision)
 │      invariant: the region is a VIEW over the one existing sent-history

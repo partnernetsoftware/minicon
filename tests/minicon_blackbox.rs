@@ -2617,6 +2617,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "control_pointer_owner",
         "geometry",
         "settings_open",
+        "history_panel",
         "host_notice",
         "ime_status",
         "pending_control_screenshots",

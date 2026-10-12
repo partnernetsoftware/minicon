@@ -54,6 +54,14 @@ impl ConApp {
         let composer_bg = t.composer_bg;
         let text = t.text;
         let muted = t.muted;
+        // The terminal column's right edge: the window's, less the history
+        // panel. The composer and status bands stop here so neither slides under
+        // the panel.
+        let column_right = if layout.panel_open {
+            layout.panel.x
+        } else {
+            width
+        };
         surface.fill_rect(0, 0, tree_width, height, tree_bg.to_xrgb());
         surface.fill_rect(
             tree_width.saturating_sub(1),
@@ -65,14 +73,14 @@ impl ConApp {
         surface.fill_rect(
             tree_width,
             height.saturating_sub(session.content_bottom_px),
-            width.saturating_sub(tree_width),
+            column_right.saturating_sub(tree_width),
             session.content_bottom_px,
             composer_bg.to_xrgb(),
         );
         surface.fill_rect(
             tree_width,
             height.saturating_sub(session.content_bottom_px),
-            width.saturating_sub(tree_width),
+            column_right.saturating_sub(tree_width),
             1,
             tree_rule.to_xrgb(),
         );
@@ -111,6 +119,15 @@ impl ConApp {
             header_icon_size,
             scale,
         );
+        if layout.panel_open {
+            self.paint_history_panel(
+                &mut surface,
+                layout,
+                scale,
+                t,
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
+            );
+        }
         // A rail row shows `@N` and nothing else, so the hovered row's full
         // label has to be drawn somewhere; collected here and painted after the
         // rows so it floats above them.
@@ -730,6 +747,92 @@ impl ConApp {
             );
         }
         Ok(())
+    }
+
+    /// Paints the right-side history panel: a title, the newest sent lines as
+    /// clickable rows, and a blank area reserved for future loop/goal controls.
+    ///
+    /// The list is a VIEW over the composer's own sent-history store — the same
+    /// entries Up/Down recall — so a row here and a recall at the same offset
+    /// are the same line.
+    fn paint_history_panel(
+        &self,
+        surface: &mut Surface<'_>,
+        layout: ui::Layout,
+        scale: f64,
+        t: theme::Theme,
+        font_size_px: u16,
+    ) {
+        let p = layout.history_panel(scale);
+        let strings = self.ui_language.strings();
+        let pad = minicon_core::numeric::round_f64(12.0 * scale.max(1.0)).max(0.0) as u32;
+        let inner_w = p.panel.width.saturating_sub(pad.saturating_mul(2));
+        surface.fill_rect(
+            p.panel.x,
+            0,
+            p.panel.width,
+            p.panel.height,
+            t.sidebar_bg.to_xrgb(),
+        );
+        surface.fill_rect(p.panel.x, 0, 1, p.panel.height, t.border.to_xrgb());
+        paint_host_ui_text(
+            surface,
+            p.panel.x.saturating_add(pad),
+            p.title_y,
+            strings.history_title,
+            t.muted,
+            font_size_px,
+            inner_w,
+        );
+        // A quiet close mark in the panel's top-right corner.
+        paint_host_ui_text(
+            surface,
+            p.close.x,
+            p.title_y,
+            "x",
+            t.muted,
+            font_size_px,
+            p.close.width,
+        );
+        let history = self.composer.history();
+        let visible = history.len().min(p.row_capacity);
+        if visible == 0 {
+            paint_host_ui_text(
+                surface,
+                p.panel.x.saturating_add(pad),
+                p.list_top,
+                strings.history_empty,
+                t.muted,
+                font_size_px,
+                inner_w,
+            );
+        } else {
+            for index in 0..visible {
+                let entry = &history[history.len() - 1 - index];
+                let first_line = entry.lines().next().unwrap_or("");
+                let y = p
+                    .list_top
+                    .saturating_add((index as u32).saturating_mul(p.row_height));
+                paint_host_ui_text(
+                    surface,
+                    p.panel.x.saturating_add(pad),
+                    y,
+                    first_line,
+                    t.text,
+                    font_size_px,
+                    inner_w,
+                );
+            }
+        }
+        // The reserved area is marked off so it reads as deliberate room rather
+        // than the panel having run out of content.
+        surface.fill_rect(
+            p.panel.x.saturating_add(pad),
+            p.reserved_top,
+            inner_w,
+            1,
+            t.border.to_xrgb(),
+        );
     }
 
     pub(crate) fn paint_empty_workspace(

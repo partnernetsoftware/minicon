@@ -135,6 +135,31 @@ impl ComposerState {
         self.set_recalled_text(text);
     }
 
+    /// The sent-line store, oldest first. A visible history region is a VIEW
+    /// over this same store, never a second copy: a row the region shows and a
+    /// line Up/Down reaches at the same offset must be the same text.
+    #[must_use]
+    pub fn history(&self) -> &[String] {
+        &self.history
+    }
+
+    /// Jumps straight to one stored line, for the visible history region.
+    ///
+    /// It is entering recall by another gesture, so it keeps the same contract
+    /// as Up: a half-typed draft is preserved and stepping forward past the
+    /// newest entry puts it back exactly. Returns whether the composer changed
+    /// (an out-of-range index is a no-op).
+    pub fn recall_entry(&mut self, index: usize) -> bool {
+        if index >= self.history.len() {
+            return false;
+        }
+        if self.recall.is_none() {
+            self.draft = std::mem::take(&mut self.text);
+        }
+        self.apply_recall(Some(index));
+        true
+    }
+
     /// A recalled line arrives ready to run or to amend, so the caret goes to
     /// the end and any selection is dropped — the next keystroke should extend
     /// the line, not replace it.
@@ -1381,6 +1406,36 @@ mod tests {
         assert!(composer.recall_previous());
         assert_eq!(composer.text, "build");
         assert_eq!(composer.caret, composer.text.len(), "ready to amend or run");
+    }
+
+    /// A click in the visible history region is entering recall by another
+    /// gesture, so it keeps the same draft-preserving contract as Up.
+    #[test]
+    fn a_history_entry_can_be_jumped_to_directly_and_keeps_the_draft() {
+        let mut composer = state("");
+        for line in ["build", "test", "deploy"] {
+            composer.remember(line);
+        }
+        let labels: Vec<&str> = composer.history().iter().map(String::as_str).collect();
+        assert_eq!(labels, ["build", "test", "deploy"]);
+
+        composer.text = "half-typed".to_owned();
+        composer.caret = composer.text.len();
+        assert!(composer.recall_entry(0), "jump to the oldest");
+        assert_eq!(composer.text, "build");
+        assert_eq!(composer.caret, composer.text.len(), "ready to amend or run");
+        // Stepping forward past the newest restores the draft, as Up/Down would.
+        assert!(composer.recall_next());
+        assert_eq!(composer.text, "test");
+        assert!(composer.recall_next());
+        assert_eq!(composer.text, "deploy");
+        assert!(composer.recall_next());
+        assert_eq!(composer.text, "half-typed");
+
+        assert!(
+            !composer.recall_entry(9),
+            "an out-of-range index is a no-op"
+        );
     }
 
     /// Recall must not lose what you were in the middle of typing — that is
