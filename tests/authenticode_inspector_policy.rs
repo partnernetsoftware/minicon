@@ -1,7 +1,7 @@
 const POWERSHELL: &str = include_str!("../scripts/inspect-authenticode.ps1");
 const PORTABLE: &str = include_str!("../scripts/inspect-authenticode.sh");
 const TRUST_BUNDLE: &str = include_str!("../scripts/fetch-microsoft-trust-bundle.sh");
-const README: &str = include_str!("../README.md");
+const README: &str = include_str!("../README.en.md");
 const POLICY: &str = include_str!("../CODE_SIGNING_POLICY.md");
 
 #[test]

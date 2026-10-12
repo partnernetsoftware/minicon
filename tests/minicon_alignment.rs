@@ -477,7 +477,11 @@ fn referenced_repository_paths_exist() {
             }
         }
     }
+    // The README is split by language: `README.md` is the shared entry, and the
+    // two language files carry the prose whose links must still resolve.
     sources.push(root.join("README.md"));
+    sources.push(root.join("README.en.md"));
+    sources.push(root.join("README.zh.md"));
     // `AGENTS.md` names the same scripts and paths and is not prose the
     // referenced-path gate used to read; include it so its commands stay real.
     sources.push(root.join("AGENTS.md"));
@@ -833,7 +837,7 @@ fn the_help_and_readme_list_the_same_shortcuts() {
         .expect("run minicon --help");
     assert!(output.status.success(), "minicon --help failed");
     let source = String::from_utf8(output.stdout).expect("help output is UTF-8");
-    let readme = fs::read_to_string(root.join("README.md")).expect("read README");
+    let readme = fs::read_to_string(root.join("README.en.md")).expect("read README");
 
     // The help block: lines shaped `<chord>  <description>` between the
     // "Keys use names such as" paragraph and the trailing click sentence.

@@ -236,7 +236,6 @@
         <a href="#script" data-i18n="navScript">Scripting</a>
         <a href="#themes" data-i18n="navThemes">Themes</a>
         <a href="#download" data-i18n="navDownload">Download</a>
-        <a href="#docs" data-i18n="navDocs">Docs</a>
       </nav>
       <div class="header-tail">
         <span class="language-switch" role="group" aria-label="Language" data-i18n-aria-label="languageLabel">
@@ -269,7 +268,7 @@
     <section id="input">
       <div class="wrap">
         <h2 data-i18n="inputTitle">A place to type that is not the output.</h2>
-        <p class="section-lead" data-i18n="inputLead">In most terminals you type into the same area a program is printing into, so a long command and a burst of output get tangled together. MiniCon gives your input its own line.</p>
+        <p class="section-lead" data-i18n="inputLead">Most terminals make you type where the program is printing, so a command and a burst of output tangle together. MiniCon gives your input its own line.</p>
         <figure class="shot">
           <img src="assets/minicon-input.png" width="1200" height="748" loading="lazy"
                data-i18n-alt="inputShotAlt" alt="Hundreds of build lines stream through the terminal while a long, unsent command sits in the separate input line below.">
@@ -298,7 +297,7 @@
     <section id="script">
       <div class="wrap">
         <h2 data-i18n="scriptTitle">A terminal your scripts can see into.</h2>
-        <p class="section-lead" data-i18n="scriptLead">Sending a keystroke is easy — but blind. MiniCon's control command reads back what the window actually shows — text, screenshots, focus, tabs — so your automation waits for a real result instead of guessing with a sleep. It is all local: no server, no network, no cloud.</p>
+        <p class="section-lead" data-i18n="scriptLead">Sending a keystroke is easy — but blind. The control command reads back what the window actually shows — text, screenshots, focus, tabs — so automation waits for a real result instead of guessing with a sleep. All local: no server, no network.</p>
         <pre class="code"><span class="c"># start a session with a local control endpoint</span>
 minicon --control unix:/tmp/minicon-build/control.sock
 <span class="c"># Windows: minicon --control pipe:\\.\pipe\build</span>
@@ -379,7 +378,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
     <section id="old">
       <div class="wrap">
         <h2 data-i18n="oldTitle">Works on older Windows, too.</h2>
-        <p class="section-lead" data-i18n="oldLead">Newer terminals need a recent Windows build and simply will not start on older machines. MiniCon runs all the way back to Windows Server 2016: it uses the modern console when it is there, and quietly runs your shell itself when it is not — so the same download just works.</p>
+        <p class="section-lead" data-i18n="oldLead">Newer terminals need a recent Windows build and will not start on older machines. MiniCon runs back to Windows Server 2016 — the modern console when it is there, its own hidden console when it is not.</p>
         <p class="honest"><span data-i18n="oldNote">It runs on Windows Server 2016 and up. Everything it needs is in the one file — nothing extra to install.</span> <a href="old-windows.html" data-i18n="oldLink">How it works</a> →</p>
       </div>
     </section>
@@ -405,7 +404,6 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
             <a class="button" href="https://github.com/partnernetsoftware/minicon/releases/latest" data-i18n="dlGet">Get it</a>
           </div>
         </div>
-        <p class="hero-cta-hint" data-i18n="dlAdvanced">Advanced: one signed minicon.com launcher bundles every platform in a single file.</p>
         <p class="honest" data-i18n="dlTrust">Measured, not estimated: ~660 KB Windows, 1.4 MB macOS, 5 MB Linux. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.</p>
         <pre class="code"><span class="c"># or build it yourself</span>
 git clone https://github.com/partnernetsoftware/minicon
@@ -414,26 +412,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
       </div>
     </section>
 
-    <section id="docs">
-      <div class="wrap">
-        <h2 data-i18n="docsTitle">Documentation</h2>
-        <p class="section-lead" data-i18n="docsLead">Written to be checked. Every number here came from a real measurement.</p>
-        <div class="cards">
-          <div class="card">
-            <h3><a href="old-windows.html" data-i18n="docsOldTitle">Running on old Windows</a></h3>
-            <p data-i18n="docsOldBody">Why other terminals stop at recent Windows builds, what MiniCon does instead, and how to diagnose a machine that still will not start it.</p>
-          </div>
-          <div class="card">
-            <h3><a href="control-cli.html" data-i18n="docsCliTitle">Driving MiniCon from a script</a></h3>
-            <p data-i18n="docsCliBody">The full control surface: read state, wait on conditions, send input, manage tabs, run one command.</p>
-          </div>
-          <div class="card">
-            <h3><a href="https://github.com/partnernetsoftware/minicon" data-i18n="docsRepoTitle">Source and tests</a></h3>
-            <p data-i18n="docsRepoBody">Everything claimed here is pinned by the test suite — the download sizes, the Windows dependency check, and the control command's own behavior.</p>
-          </div>
-        </div>
-      </div>
-    </section>
   </main>
 
   <footer class="site">
@@ -461,7 +439,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navLabel: "Primary navigation",
           languageLabel: "Language",
           navScript: "Scripting",
-          navDocs: "Docs",
           heroEyebrow: "one file · no install · nothing left behind",
           heroTitle: "A terminal that is <em>one file</em>.",
           heroEmotion: "Copy it over. Run it on a normal desktop.",
@@ -485,7 +462,7 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           shotSettingsAlt: "MiniCon's settings panel open over the terminal, showing interface-language buttons (English, 简, 繁), a font-size stepper, three theme swatches, and a keyboard-shortcut list.",
           shotSettingsCaption: "The settings panel: interface language, font size, three theme swatches, and the shortcut reference.",
           oldTitle: "Works on older Windows, too.",
-          oldLead: "Newer terminals need a recent Windows build and will not start on older machines. MiniCon runs back to Windows Server 2016: the modern console when it is there, its own hidden console when it is not.",
+          oldLead: "Newer terminals need a recent Windows build and will not start on older machines. MiniCon runs back to Windows Server 2016 — the modern console when it is there, its own hidden console when it is not.",
           inputTitle: "A place to type that is not the output.",
           inputLead: "Most terminals make you type into the region a program is printing into, so a command and a burst of output get tangled. MiniCon gives your input its own line.",
           input1Index: "01 / NO COLLISION",
@@ -502,16 +479,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           scriptSnapshot: "Focus, input-method state, pending work, and layout — as JSON.",
           scriptWait: "Block until the condition holds or the timeout expires, and tell you which.",
           scriptInput: "Type keys, click and scroll, even compose CJK text — through the very same paths a person's input takes.",
-          installRelease: "Latest release",
-          installBuild: "Build from source",
-          docsTitle: "Documentation",
-          docsLead: "Written to be checked — every number here came from a real measurement.",
-          docsOldTitle: "Running on old Windows",
-          docsOldBody: "Why other terminals stop at recent Windows builds, what MiniCon does instead, and how to diagnose a machine that will not start it.",
-          docsCliTitle: "Driving MiniCon from a script",
-          docsCliBody: "The full control surface: read state, wait on conditions, send input, manage tabs, run one command.",
-          docsRepoTitle: "Source and tests",
-          docsRepoBody: "Everything claimed here is pinned by the test suite — the download sizes, the Windows dependency check, and the control command's behavior.",
           footerRepo: "GitHub",
           footerReleases: "Releases",
           footerOld: "Old Windows",
@@ -539,7 +506,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           dlLinuxTitle: "Linux",
           dlLinuxNote: "x64 or ARM64 · no extra system packages",
           dlGet: "Get it",
-          dlAdvanced: "Advanced: one signed minicon.com launcher bundles every platform in a single file.",
           dlTrust: "Measured, not estimated: ~660 KB Windows, 1.4 MB macOS, 5 MB Linux. Open source (MIT OR Apache-2.0); no telemetry, no account, no auto-updater.",
         },
         "zh-CN": {
@@ -549,7 +515,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navLabel: "主导航",
           languageLabel: "语言",
           navScript: "脚本控制",
-          navDocs: "文档",
           heroEyebrow: "一个文件 · 免安装 · 删掉不留痕",
           heroTitle: "一个<em>文件</em>就是一个终端。",
           heroEmotion: "拷过去,在普通电脑上直接运行。",
@@ -573,9 +538,9 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           shotSettingsAlt: "在终端上方打开的设置面板：界面语言按钮(English、简、繁)、字号加减、三个主题色板，以及快捷键列表。",
           shotSettingsCaption: "设置面板：界面语言、字号、三个主题色板，以及快捷键速查。",
           oldTitle: "在旧版 Windows 上照样跑。",
-          oldLead: "新一点的终端需要较新的 Windows 版本,在老机器上根本装不上。MiniCon 一路支持到 Windows Server 2016:有新式控制台就用,没有就自己把 shell 跑起来。",
+          oldLead: "新一点的终端需要较新的 Windows 版本,在老机器上起不来。MiniCon 一路支持到 Windows Server 2016——有新式控制台就用,没有就自己把 shell 跑起来。",
           inputTitle: "一个不跟输出混在一起的输入区。",
-          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字,长命令和一屏输出容易搅成一团。MiniCon 给输入单独一行。",
+          inputLead: "多数终端让你在「程序正在输出的那块区域」里打字,命令和一屏输出容易搅成一团。MiniCon 给输入单独一行。",
           input1Index: "01 / 互不干扰",
           input1Title: "一边滚动一边写",
           input1Body: "输出不断刷新,照样写好、检查完一条长命令。你敲的字不会和程序打印的内容搅在一起。",
@@ -586,20 +551,10 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input3Title: "叫名字，不叫编号",
           input3Body: "标签上写着文字将发往哪个标签页的名字——在标签页树里,你始终清楚命令会去哪。",
           scriptTitle: "一个脚本能「看进去」的终端。",
-          scriptLead: "发一个按键很简单,但那是「瞎发」。MiniCon 的控制命令能把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实结果,而不是靠 sleep 瞎猜。全程本地,无服务、无网络。",
+          scriptLead: "发一个按键很简单,但那是「瞎发」。控制命令能把窗口实际显示的内容读回来——文字、截图、焦点、标签页——让自动化等一个真实结果,而不是靠 sleep 瞎猜。全程本地,无服务、无网络。",
           scriptSnapshot: "焦点、输入法状态、待处理工作、布局——以 JSON 返回。",
           scriptWait: "阻塞到条件成立或超时,并告诉你是哪一种。",
           scriptInput: "敲键、点击与滚动,甚至中日韩组字——走的都是真人输入的同一条路径。",
-          installRelease: "最新版本",
-          installBuild: "从源码构建",
-          docsTitle: "文档",
-          docsLead: "写得可核查:凡有数字,都是量出来的。",
-          docsOldTitle: "在旧版 Windows 上运行",
-          docsOldBody: "为什么别的终端停在较新的 Windows 版本、MiniCon 改用了什么做法,以及机器仍然起不来时怎么排查。",
-          docsCliTitle: "用脚本驱动 MiniCon",
-          docsCliBody: "完整控制接口:读状态、等条件、发输入、管理标签页、跑一条命令。",
-          docsRepoTitle: "源码与测试",
-          docsRepoBody: "这里宣称的行为都由测试钉住——下载体积、Windows 依赖检查,以及控制命令自身的行为。",
           footerRepo: "GitHub",
           footerReleases: "版本发布",
           footerOld: "旧版 Windows",
@@ -627,7 +582,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           dlLinuxTitle: "Linux",
           dlLinuxNote: "x64 或 ARM64 · 无需额外系统软件包",
           dlGet: "获取",
-          dlAdvanced: "进阶:一个已签名的 minicon.com 启动器把所有平台打包进单个文件。",
           dlTrust: "实测,非估算:Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB。开源(MIT 或 Apache-2.0);无遥测、无账号、无自动更新。",
         },
         "zh-Hant": {
@@ -637,7 +591,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           navLabel: "主導覽",
           languageLabel: "語言",
           navScript: "腳本操控",
-          navDocs: "文件",
           heroEyebrow: "一個檔案 · 免安裝 · 刪掉不留痕",
           heroTitle: "一個<em>檔案</em>就是一個終端機。",
           heroEmotion: "複製過去,在一般電腦上直接執行。",
@@ -661,9 +614,9 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           shotSettingsAlt: "在終端機上方開啟的設定面板:介面語言按鈕(English、簡、繁)、字級加減、三個主題色板,以及快捷鍵清單。",
           shotSettingsCaption: "設定面板:介面語言、字級、三個主題色板,以及快捷鍵速查。",
           oldTitle: "在舊版 Windows 上照樣跑。",
-          oldLead: "新一點的終端機需要較新的 Windows 版本,在老機器上根本裝不上。MiniCon 一路支援到 Windows Server 2016:有新式主控台就用,沒有就自己把 shell 跑起來。",
+          oldLead: "新一點的終端機需要較新的 Windows 版本,在老機器上起不來。MiniCon 一路支援到 Windows Server 2016——有新式主控台就用,沒有就自己把 shell 跑起來。",
           inputTitle: "一個不與輸出混在一起的輸入區。",
-          inputLead: "多數終端機要你在「程式正在輸出的同一塊區域」裡打字,一長串指令和一波輸出容易攪成一團。MiniCon 給輸入單獨一行。",
+          inputLead: "多數終端機要你在「程式正在輸出的同一塊區域」裡打字,指令和一波輸出容易攪成一團。MiniCon 給輸入單獨一行。",
           input1Index: "01 / 不互相干擾",
           input1Title: "一邊滾一邊寫",
           input1Body: "輸出持續進來的同時,照樣書寫並檢查一長串指令;你打的字不會和程式印的東西交錯。",
@@ -674,20 +627,10 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           input3Title: "叫名字，不是叫號碼",
           input3Body: "標籤上寫著文字將送往哪個分頁的名字——在分頁樹裡,你始終清楚指令會去哪。",
           scriptTitle: "一個腳本看得進去的終端機。",
-          scriptLead: "送一個按鍵很簡單,但那是「盲送」。MiniCon 的控制指令能把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等一個真實結果,而不是靠 sleep 瞎猜。全程本機,無伺服器、無網路。",
+          scriptLead: "送一個按鍵很簡單,但那是「盲送」。控制指令能把視窗實際顯示的內容讀回來——文字、截圖、焦點、分頁——讓自動化等一個真實結果,而不是靠 sleep 瞎猜。全程本機,無伺服器、無網路。",
           scriptSnapshot: "焦點、輸入法狀態、待處理工作與版面——以 JSON 回傳。",
           scriptWait: "阻塞到條件成立或逾時,並回報是哪一種。",
           scriptInput: "敲鍵、點擊與捲動,甚至中日韓組字——走的都是真人輸入的同一條路徑。",
-          installRelease: "最新發行版",
-          installBuild: "自行建置",
-          docsTitle: "文件",
-          docsLead: "寫成可查核的樣子:凡是數字,都是量出來的。",
-          docsOldTitle: "在舊版 Windows 上執行",
-          docsOldBody: "為什麼別的終端機停在較新的 Windows 版本、MiniCon 改用什麼做法,以及機器仍然啟動失敗時該怎麼診斷。",
-          docsCliTitle: "用腳本驅動 MiniCon",
-          docsCliBody: "完整控制介面:讀取狀態、等待條件、送出輸入、管理分頁,以及用單一指令取代 shell。",
-          docsRepoTitle: "原始碼與測試",
-          docsRepoBody: "這裡宣稱的行為都由測試套件釘住——下載體積、Windows 相依檢查,以及控制指令自身的行為。",
           footerRepo: "GitHub",
           footerReleases: "發行版",
           footerOld: "舊版 Windows",
@@ -715,7 +658,6 @@ cargo build --release   <span class="c"># target/release/minicon[.exe]</span></p
           dlLinuxTitle: "Linux",
           dlLinuxNote: "x64 或 ARM64 · 無需額外系統套件",
           dlGet: "取得",
-          dlAdvanced: "進階:一個已簽署的 minicon.com 啟動器把所有平台打包進單一檔案。",
           dlTrust: "實測,非估算:Windows 約 660 KB、macOS 約 1.4 MB、Linux 約 5 MB。開源(MIT 或 Apache-2.0);無遙測、無帳號、無自動更新。",
         }
       };
