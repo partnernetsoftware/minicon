@@ -109,9 +109,10 @@ The owner asked me to decide and review the result later. Decision: both live in
 │      dependency: owner answers for C/E (see §Open)
 │      non-goal: feature-level refactors (main.rs split, 90-feature convergence,
 │        pinned-crate drift) — recorded in the ledger, not done here
-└── {VERSION} 0.2.6                                                 [_] @host=none
-       `Cargo.toml` version 0.2.6; `release-policy.json` is bumped by the
-       release step, not here
+└── {VERSION} 0.2.6                                                 [v] @host=none
+       `Cargo.toml` and `release-policy.json` both read 0.2.6 (`Cargo.lock`'s
+       root entry follows). 0.2.5 is the released line, so the source tree moved
+       off it ahead of the release; the release step still signs/tags.
 
 Moved to 0.2.7: {UPDATE} GitHub #4 "Check for updates" — see `plan/plan-v0.2.7.md`.
 
