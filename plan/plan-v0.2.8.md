@@ -42,7 +42,7 @@ Two findings from that read that change the leaves:
 
 ## Collision boundary while 0.2.7 closes
 
-`src/ui.rs`, `src/host_ui.rs` and `plan/plan-v0.2.7.md` were still being edited
+`src/ui.rs`, `src/host_ui.rs` and `plan/archive/plan-v0.2.7.md` were still being edited
 by the other session when this file was written. `{PREF}`, `{RESTART}` and
 `{HIST}` all land in those two source files; do not start them until that
 session's work is committed and the 0.2.7 release object exists. `{SIGV}`
@@ -107,7 +107,7 @@ replace itself must be more careful than one that cannot, not less.
 │      invariant: the sentence a user reads and the files an update leaves are
 │        the same claim. `update::commit_swap` renames the replaced executable
 │        to `<name>.backup` and **keeps it** (deliberate, so a failed launch
-│        can be rolled back by hand — `plan/plan-v0.2.7.md` records the choice)
+│        can be rolled back by hand — `plan/archive/plan-v0.2.7.md` records the choice)
 │      evidence: the shipped sentence and the on-disk result after one update
 │        agree; whichever side changes, the other is changed with it
 │      safe failure: none — a stale sentence is the defect this leaf removes
@@ -216,4 +216,4 @@ answer). `{PREF}` is ready to start the moment the 0.2.7 files above are free.
    versions, what does the product do when `releases/latest` is *older* than
    the running build (a rollback release, or a `latest` that was unpublished)?
    This was one of 0.2.7's six open owner gates; if it is still open when 0.2.8
-   starts, it lands here rather than staying in `plan/plan-v0.2.7.md`.
+   starts, it lands here rather than staying in `plan/archive/plan-v0.2.7.md`.

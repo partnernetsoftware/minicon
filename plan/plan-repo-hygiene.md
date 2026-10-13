@@ -22,7 +22,7 @@ release plan; version sequencing lives in `plan/archive/plan-v0.2.6.md`.
   2026-10-13** by the second pass below: the tree carries v0.2.2–v0.2.6 with
   history pointers, `{SCRSHOT-HANG}` is registered in `prd/PRD_02_26_con_control_cli.md`,
   and #3/#4/#5 are owned by `prd/PRD_02_25_con_workspace.md` and
-  `plan/plan-v0.2.7.md`.
+  `plan/archive/plan-v0.2.7.md`.
 - `[_]` **C — `.gitignore` real gaps**: the audit's "ignore six directories" was
   **wrong** — `vendor/`, `third_party/`, `prd/`, `release/`, `archive/` are
   deliberately tracked (vendored deps, docs, signing scripts). The only real
@@ -88,7 +88,7 @@ it; nothing here was moved or deleted by this pass.
   `build.rs`; X11/macOS fed the decoded `.ico` pixels) is product behaviour. It
   was re-checked after commit `aeb1a37` ("give the window the product icon on
   every host") landed its own edits here plus owner and scope registration
-  (`prd/PRD_02_25_con_workspace.md` "Host UI", `plan/plan-v0.2.7.md`), so the
+  (`prd/PRD_02_25_con_workspace.md` "Host UI", `plan/archive/plan-v0.2.7.md`), so the
   remaining question is only the standing one: is this file the operator note
   with PRD_02_25 owning the mechanism, or does a fact here have no owner?
   No action needed beyond that answer.

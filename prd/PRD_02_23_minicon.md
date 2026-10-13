@@ -111,7 +111,7 @@ failure, resize storms, process exit, and interaction races.
   **One consequence that qualification does not absorb (registered
   2026-10-13):** an update leaves a **second file behind** — the replaced
   executable is renamed to `<name>.backup` and kept, deliberately, so a failed
-  launch can be rolled back by hand (see `plan/plan-v0.2.7.md`). That is the
+  launch can be rolled back by hand (see `plan/archive/plan-v0.2.7.md`). That is the
   right default, but the product's own line is `one file · no install · nothing
   left behind`, and after one update the directory holds two. The behaviour is
   not in question; the sentence is, and it is the sentence a user decides to

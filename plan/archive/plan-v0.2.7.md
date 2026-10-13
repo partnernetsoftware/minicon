@@ -1,5 +1,11 @@
 # plan-v0.2.7
 
+**Shipped 2026-10-13** as [v0.2.7](https://github.com/partnernetsoftware/minicon/releases/tag/v0.2.7)
+from `f52662a`; the exact-artifact chain is in
+`prd/archive/v0.2.7-release-history.md`. This file is evidence history, not
+current scope. The one leftover it names — the notes scratchpad (GitHub #5) —
+is carried in `PRD.md`'s v0.2.6 entry.
+
 ## Scope decision
 
 Owner (2026-10-12): the **"Check for updates"** requirement (GitHub #4, opened
@@ -158,19 +164,18 @@ can execute a Linux/macOS binary, so the `Rustls` arm rests on the manifest's
 feature tree (`rustls` = `rustls-no-provider` + `_ring` + `rustls-webpki-roots`,
 verified by reading `ureq`'s own `Cargo.toml`) rather than on a live call.
 
-## Open decisions (owner)
+## Open decisions (owner) — all closed except one
 
-_(the five gating decisions above are taken; what remains)_
+The six items below were the live list while 0.2.7 was in flight. Items 1-5 are
+answered by "Decisions taken" above and shipped; item 6 was answered by the
+icon-parity scope. Kept in place rather than deleted so the reasoning is
+auditable. **Still open: the notes scratchpad (GitHub #5)**, which 0.2.6
+deferred into 0.2.7 and 0.2.7 did not pick up; it is carried in `PRD.md`'s
+v0.2.6 entry, not here.
 
-1. **Boundary wording** (gate): acceptance of the line "「不留痕」constrains the
-   product's own residue, not a user-authored data file", and the edit to
-   `README.zh.md`/`README.en.md` ("no auto-update" stays true because the check
-   is manual/per-click) plus `prd/PRD_02_23_minicon.md`.
-2. **Archive decode** (gate): minimal pure-Rust decoder vs an extra uncompressed
-   release asset.
-3. Backup retention: remove the previous binary after one successful launch, or
-   keep it?
-4. Behaviour when the remote version **differs but is older** than the local
-   build (owner said "不一致", not "newer").
-5. macOS path: whole-bundle update vs hand off to the `.dmg`/Releases page.
-6. 0.2.7's other scope beyond `{UPDATE}`.
+1. **Boundary wording** — accepted and landed (see "Decisions taken" #1).
+2. **Archive decode** — option (a), the in-product reader (see #2).
+3. **Backup retention** — kept as `<name>.backup` (see #3).
+4. **A strictly older remote** — "you are ahead", no downgrade offered (see #4).
+5. **macOS path** — hand off to the `.dmg` (see #5).
+6. **0.2.7's other scope** — window-icon parity on Windows and X11.

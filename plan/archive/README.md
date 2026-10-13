@@ -87,4 +87,12 @@ Archived with the 0.2.6 release (2026-10-13):
   header toggle pair, the settings shortcut entry, a repo-hygiene docs pass and a
   Linux test compile fix). See `prd/archive/v0.2.6-release-history.md`.
 
+Archived with the 0.2.7 release (2026-10-13):
+
+- `plan-v0.2.7.md` — shipped v0.2.7 (manual check-for-updates, window-icon
+  parity on Windows/X11, `Shift+Enter` sends, and a TLS-provider fix to the
+  outbound client that no offline gate could catch). See
+  `prd/archive/v0.2.7-release-history.md`. The notes scratchpad (GitHub #5) it
+  inherited from 0.2.6 stayed open; it is carried in `PRD.md`, not here.
+
 Never reuse an archived run as evidence for newer source bytes.

@@ -47,8 +47,8 @@ MiniCon — one-file local terminal
 ├── Delivery and portability
 │   ├── [-] v0.2.8 planned — trust the self-updating product, then close the cheap gaps
 │   │   └── plan/plan-v0.2.8.md
-│   ├── [-] v0.2.7 in flight — manual check-for-updates (#4) + window-icon parity on Windows/X11
-│   │   └── plan/plan-v0.2.7.md
+│   ├── [v] v0.2.7 released — manual check-for-updates (#4) + window-icon parity on Windows/X11
+│   │   └── prd/archive/v0.2.7-release-history.md
 │   ├── [v] v0.2.6 released — right-side collapsible sent-history panel (#3) + paired header toggles
 │   │   └── prd/archive/v0.2.6-release-history.md
 │   ├── [v] v0.2.5 released — inline tab rename + OSC-title row; the platform layer moves into MiniCon
@@ -222,6 +222,14 @@ flowchart LR
         R122["v0.1.22 released<br/>clarity release · shared scrollbar with agenterm · dual-signed"]
         R123["v0.1.23 released<br/>Windows scrollback · Ctrl+V paste · collapsed rail · honest --status · dual-signed"]
         R126["v0.1.26 released<br/>composer caret/word motion · keymap unified · Windows zoom-to-blank root-caused · dual-signed"]
+        R020["v0.2.0 released<br/>mux + harness · dual-signed"]
+        R021["v0.2.1 released<br/>harness statefulness/containment · macOS exec fix · dual-signed"]
+        R022["v0.2.2 released<br/>0.2.1's remaining leaves · mux list-panes gap"]
+        R023["v0.2.3 released<br/>multi-line composer · settings panel · three themes · crosshair + status bar"]
+        R024["v0.2.4 released<br/>composer Send timing · Ctrl+V paste review · preview counts"]
+        R025["v0.2.5 released<br/>inline tab rename · OSC-title row · platform layer moves into MiniCon"]
+        R026["v0.2.6 released<br/>right-side collapsible sent-history panel + header toggles"]
+        R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -245,6 +253,7 @@ flowchart LR
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
     C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117 --> R118 --> R119
+    R119 --> R120 --> R121 --> R122 --> R123 --> R126 --> R020 --> R021 --> R022 --> R023 --> R024 --> R025 --> R026 --> R027
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -285,13 +294,16 @@ flowchart LR
 
 ## Current frontier
 
-- [-] **v0.2.7 is in flight, not released.** Manual check-for-updates (GitHub
-  #4) — the product's first outbound network call and first self-modifying
-  behaviour — plus window-icon parity on Windows and X11. macOS keeps the icon
-  its `.app` carries; the runtime path for the bare CLI binary needs `objc2` as
-  a direct platform dependency and is a named gap, not a claim. Owner:
-  `plan/plan-v0.2.7.md`; behaviour `prd/PRD_02_25_con_workspace.md`, boundary
-  amendment `prd/PRD_02_23_minicon.md`.
+- [v] **v0.2.7 is the latest public release (2026-10-13).** Manual
+  check-for-updates (GitHub #4) — the product's first outbound network call and
+  first self-modifying behaviour — plus window-icon parity on Windows and X11.
+  macOS keeps the icon its `.app` carries; the runtime path for the bare CLI
+  binary needs `objc2` as a direct platform dependency and is a named gap, not
+  a claim. Also landed: `Shift+Enter` sends alongside `Ctrl+O`, and the
+  `--help`/README shortcut gate 0.2.6 had left broken. Source `f52662a`, chain
+  run ids in `prd/archive/v0.2.7-release-history.md`. Behaviour
+  `prd/PRD_02_25_con_workspace.md`, boundary amendment
+  `prd/PRD_02_23_minicon.md`.
 - [_] **v0.2.8 is planned: `plan/plan-v0.2.8.md`.** Its premise is that 0.2.7
   moved the product's *identity*, not only its feature list, and three
   consequences were not carried into the story: the new binary is checked
@@ -303,14 +315,15 @@ flowchart LR
   launch: the theme and language chosen in the settings panel are not
   persisted (`{PREF}`), and a terminal has no way to search what it already
   printed (`{FIND}`, blocked on C1 in `plan/plan-carried-debt.md`).
-- [v] v0.2.6 is the latest public release (2026-10-13): the first cut of the
+- [v] v0.2.6 released (2026-10-13): the first cut of the
   right-side collapsible sent-history panel (GitHub #3) — newest sent lines,
   click a row to refill the composer through the recall path, a reserved area
   for future `{LOOP}`/goal controls, and a header toggle pair for the sidebar
   and the panel — plus a repo-hygiene documentation pass and a Linux-only test
   compile fix. Source `c8d70a5`, chain run ids in
-  `prd/archive/v0.2.6-release-history.md`. Deferred to `plan/plan-v0.2.7.md`:
-  the notes scratchpad (#5) and check-for-updates (#4). Owner:
+  `prd/archive/v0.2.6-release-history.md`. Its two deferrals to 0.2.7 are now
+  settled: check-for-updates (#4) shipped in v0.2.7; the notes scratchpad (#5)
+  is still open (`plan/archive/plan-v0.2.7.md`, "Open decisions"). Owner:
   `prd/PRD_02_25_con_workspace.md`, section "Host UI".
 - [v] v0.2.5 released: inline tab rename from a per-row
   pencil affordance, a second tab-row line showing the content terminal's OSC

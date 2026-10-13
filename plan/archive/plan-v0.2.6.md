@@ -17,7 +17,7 @@ Candidate threads, in the order the owner raised them:
    - **#5** user notes — a per-context scratchpad (global-first), never sent to
      the PTY; phase 1 session-scoped only, persistence gated.
    **#4** ("Check for updates") was moved to **0.2.7** by the owner
-   (2026-10-12) — see `plan/plan-v0.2.7.md`.
+   (2026-10-12) — see `plan/archive/plan-v0.2.7.md`.
 2. **Repo hygiene (三理)** — tracked in `plan/plan-repo-hygiene.md` (batch B,
    not yet written). Batches B–E only; no feature-level refactors.
 3. Carried debt pulled in **only if the owner accepts** — see "Carried, not
@@ -115,7 +115,7 @@ The owner asked me to decide and review the result later. Decision: both live in
        root entry follows). 0.2.5 is the released line, so the source tree moved
        off it ahead of the release; the release step still signs/tags.
 
-Moved to 0.2.7: {UPDATE} GitHub #4 "Check for updates" — see `plan/plan-v0.2.7.md`.
+Moved to 0.2.7: {UPDATE} GitHub #4 "Check for updates" — see `plan/archive/plan-v0.2.7.md`.
 
 Carried, not pulled in (unchanged unless the owner says otherwise):
 - C1 `capture-pane --scrollback N` — BLOCKED on a vendored-vt100 API addition

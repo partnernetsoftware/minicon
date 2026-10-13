@@ -121,12 +121,12 @@ suite can be green while `https://` panics. That is exactly what happened:
 `ureq` picks its TLS provider at runtime and defaults to Rustls, the Windows
 manifest enables only `native-tls`, and the product's first `https` call (the
 new update check) died inside `ureq`. The fix pins the provider per host; the
-finding is recorded in `plan/plan-v0.2.7.md` and
+finding is recorded in `plan/archive/plan-v0.2.7.md` and
 `prd/PRD_02_25_con_workspace.md`.
 
 The lesson is a category, not one bug: **an opt-in real-endpoint test is the
 only gate for a network path whose default tests are loopback-only.** It must
-be run by hand before a release, from `plan/plan-v0.2.7.md`:
+be run by hand before a release, from `plan/archive/plan-v0.2.7.md`:
 
 ```sh
 cargo test --bin minicon -- --ignored update::tests::the_real_release_api_still_parses
