@@ -22,6 +22,37 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 | 27 | [Package, budget and delivery](PRD_02_27_con_delivery.md) | 独立 package、unwind profile、APE join、按平台/目标陈述体积与宿主 RSS、独立 CI、加载期可移植性 |
 | 28 | [Shared core and reuse boundary](PRD_02_28_shared_core.md) | `minicon-core`、跨产品复用的可测边界、与 agenterm 的依赖方向分期 |
 
+## Map
+
+```text
+minicon — one-file local terminal (product root)
+├── Product outcome — independent local terminals, dedicated input, bounded CLI
+├── Product boundary
+│   ├── Shipped and owned here
+│   └── Explicit non-goals (no server, persistence, Fleet, mux, MCP, scripts, Agent policy)
+├── Governing invariants
+├── Observable success evidence
+├── Safe failure result
+├── Delivery ownership → prd/PRD_02_27_con_delivery.md
+├── Shared improvement boundary → prd/PRD_02_28_shared_core.md
+└── Capability and plugin boundary, with agenterm
+    ├── The placement test
+    └── Guardrails
+```
+
+```mermaid
+flowchart TB
+    ROOT["minicon root<br/>definition · boundary · invariants · safe failure"]
+    ROOT --> T["[24] Terminal and rendering"]
+    ROOT --> W["[25] Workspace and input"]
+    ROOT --> C["[26] Control protocol and public CLI"]
+    ROOT --> D["[27] Package, budget and delivery"]
+    ROOT --> S["[28] Shared core and reuse boundary"]
+    ROOT -. "capability sinks into" .-> MC["MiniCon"]
+    ROOT -. "plugin / app gathers in" .-> AG["agenterm (workbench)"]
+    MC -. "versioned capability contract" .- AG
+```
+
 ## Product outcome
 
 - [v] `minicon` is the lightweight, green, GUI replacement for a system

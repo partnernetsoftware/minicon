@@ -81,4 +81,10 @@ Archived with the repo-hygiene pass (2026-10-12):
   frame needs no channel (the painter was already a pure slice painter);
   findings for the complete live frame are recorded, not built.
 
+Archived with the 0.2.6 release (2026-10-13):
+
+- `plan-v0.2.6.md` — shipped v0.2.6 (the right-side sent-history panel, its
+  header toggle pair, the settings shortcut entry, a repo-hygiene docs pass and a
+  Linux test compile fix). See `prd/archive/v0.2.6-release-history.md`.
+
 Never reuse an archived run as evidence for newer source bytes.

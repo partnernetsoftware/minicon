@@ -10,6 +10,27 @@ are deliberately not the same surface.
 
 Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
+## Map
+
+```text
+minicon control protocol and public CLI
+├── Boundary against `agenterm cli` (separate contract; shared verb spellings only)
+├── Self-description
+├── Public command set
+├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
+├── JSON contract
+└── Evidence publication (snapshots, screenshots)
+```
+
+```mermaid
+flowchart LR
+    S["script / harness"] -->|"minicon cli --control …"| C["ATC1 client<br/>short-lived"]
+    C -->|local pipe / socket| H["minicon GUI process<br/>bound before the window, dies with it"]
+    H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
+    H -. omitted verbs .-> X["no workbench server,<br/>no default port, no remote"]
+    AW["agenterm cli<br/>separate contract"] -. shares verb spellings only .-> H
+```
+
 ## Boundary against `agenterm cli`
 
 - [v] `minicon cli` is a process-lifetime local control surface, not a client

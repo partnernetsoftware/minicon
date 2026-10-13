@@ -69,6 +69,20 @@ foundry software production line
     └── no weakening of any existing MiniCon gate or red line to fit the line
 ```
 
+```mermaid
+flowchart TB
+    P["problem: every product re-implements build/test/sign/release"]
+    P --> O["outcome: one reusable line, trustworthy releases"]
+    O --> L1["github-ci executors<br/>generic capability"]
+    O --> L2["utm-court test-environment engine<br/>generic capability"]
+    O --> L3["assembly craft (order + gates + red lines)<br/>the reusable asset"]
+    O --> L4["AI-friendly driver (one-command + receipts)<br/>the reusable asset"]
+    O --> EG{"entry gate:<br/>≥ 2 real consumers · stable chain · parameterised"}
+    EG -->|holds| BUILD["build the repository"]
+    EG -->|not yet| PARK["stay paper (MiniCon alone is one sample)"]
+    BUILD -. red line .-> NG["no weakening of any MiniCon gate"]
+```
+
 ## Parts inventory — the MiniCon release chain, marked for reuse
 
 The order below is the real assembly order; each step's genericness is marked.

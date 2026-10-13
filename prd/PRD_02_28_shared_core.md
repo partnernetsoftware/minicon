@@ -5,6 +5,29 @@ has to stay". Parent: [MiniCon product requirements](../PRD.md).
 
 Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
+## Map
+
+```text
+minicon-core — shared, host-neutral rules
+├── Why: MiniCon and agenterm share a terminal; the terminal half sinks here
+├── The constraint that decides the shape
+│   ├── agenterm must not depend on a crate that depends on agenterm (double resolve)
+│   └── so reusable == "needs nothing from agenterm" (measured table)
+├── Stage 1 — shipped: composer + json
+├── Stage 2 — in progress
+├── Stage 3 — shipped (2026-10-11): shape changed by an owner decision
+└── Non-goals
+```
+
+```mermaid
+flowchart LR
+    MC["minicon (product)"] --> CORE["minicon-core<br/>host-neutral rules<br/>composer · json"]
+    MC --> PLAT["minicon-platform<br/>native adapters<br/>window · PTY · input · IPC"]
+    AG["agenterm (workbench)"] -. "reuse, staged" .-> CORE
+    CORE -. "no product policy, no host cfg" .-> NP["stays product-local"]
+    CORE -. "must not pull in" .-> AG
+```
+
 ## Why this module exists
 
 MiniCon and `agenterm` are separate products that share a terminal. The

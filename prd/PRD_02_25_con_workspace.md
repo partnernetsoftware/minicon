@@ -9,6 +9,23 @@ this module owns MiniCon's interaction meaning and evidence.
 
 Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
+## Map
+
+```text
+minicon workspace and input
+├── Tab and window naming (user name vs derived label vs OSC title)
+├── Tab tree authority (stable ids, parent/child, close, remain-on-exit)
+├── Host UI
+│   ├── header tools: New · Settings · sidebar toggle · panel toggle
+│   ├── sent-history panel (0.2.6)
+│   └── composer + status bar
+├── External composer input (exactly one focus owner)
+├── Scrollbar and divider
+├── Selection and clipboard
+├── Configuration (minicon.json; themes; language; font size)
+└── Native adoption gate
+```
+
 ## Tab and window naming
 
 - [v] a tab is named by what distinguishes it, not by what it runs. `cmd.exe`

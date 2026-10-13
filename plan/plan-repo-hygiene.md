@@ -3,7 +3,7 @@
 Owner-ordered 2026-10-12. This is the durable ledger for the repo-wide
 "梳理 / 整理 / 清理" pass: it records what was done, what remains, and what was
 deliberately **not** done (so a later session does not re-derive it). It is not a
-release plan; version sequencing lives in `plan/plan-v0.2.6.md`.
+release plan; version sequencing lives in `plan/archive/plan-v0.2.6.md`.
 
 ## Batches
 

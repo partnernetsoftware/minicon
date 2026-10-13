@@ -10,6 +10,32 @@ stages are owned by [shared core](PRD_02_28_shared_core.md).
 
 Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
+## Map
+
+```text
+minicon terminal and rendering
+├── Session ownership — one independent PTY/parser/viewport/failure per tab
+├── PTY backend selection
+├── Scheduling (bounded 128 KiB per GUI turn; input yields)
+├── Input delivery to the child
+├── Damage, raster and present
+├── Fonts and glyphs (CJK, native faces)
+├── Architecture kernels (SIMD behind scalar fallbacks)
+└── Rendering performance evidence
+```
+
+```mermaid
+flowchart LR
+    K["keyboard / paste"] --> IN["input delivery to the child"]
+    IN --> PTY["per-tab PTY<br/>1 MiB byte ring"]
+    PTY --> VT["bounded VT parse<br/>128 KiB per turn"]
+    VT --> DMG["damage"]
+    DMG --> RAS["raster<br/>font · CJK"]
+    RAS --> PRES["native present"]
+    PRES --> WIN["visible window"]
+    DMG -. "no pixel change ⇒ no present" .-> PRES
+```
+
 ## Session ownership
 
 - [v] each tree tab owns an independent PTY, parser, viewport and failure state

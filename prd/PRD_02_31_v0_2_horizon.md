@@ -213,6 +213,16 @@ process, exactly like the existing `--control` endpoint.
     └── black-box CLI evidence only, per AGENTS.md's test discipline
 ```
 
+```mermaid
+flowchart TB
+    U["user / script / agent"] --> MUX["mux {m}<br/>tmux-CLI-compatible tab control"]
+    U --> HAR["harness<br/>file + exec agent, DeepSeek flash first"]
+    MUX --> PROC["one MiniCon process<br/>same lifetime as --control"]
+    HAR --> PROC
+    HAR --> BE["model backends [-] <br/>DeepSeek API · opencode-go"]
+    PROC -. "no server, no persistence, no plugin host" .-> X["excluded"]
+```
+
 ## mux — detail
 
 `PRD_02_26_con_control_cli.md` already owns the bounded local control

@@ -8,6 +8,29 @@ recurring dev-loop need: an agent session (typically Linux-only, with no
 osx/win host of its own) that must develop a cross-arch fix and prove it
 against a real runtime, using nothing beyond default GitHub Actions access.
 
+## Map
+
+```text
+dev-loop-crosscheck — agent cross-arch dev/test loop
+├── Problem: a cloud session can reach only its own host's architecture
+├── Non-goal: never a release-evidence path, never publishes, never needs write
+├── Mechanism: GitHub-hosted native per-cell build + test on request
+│   ├── inputs: ref, cells, test_filter
+│   └── permissions: contents: read only
+├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
+└── Validation record (real hosted runners, run 36313213803)
+```
+
+```mermaid
+flowchart LR
+    A["agent session<br/>one host arch"] -->|push fix + dispatch| W["dev-loop-crosscheck.yml<br/>contents: read"]
+    W --> C1["lnx-x86_64 runner<br/>native build + test"]
+    W --> C2["lnx-aarch64 runner"]
+    W --> C3["win / osx cells<br/>when requested"]
+    C1 --> L["real per-cell logs"]
+    W -. never .-> R["release / GHCR / tag / version"]
+```
+
 ## Problem and non-goal
 
 A cloud coding session can reach only its own host's architecture directly.
