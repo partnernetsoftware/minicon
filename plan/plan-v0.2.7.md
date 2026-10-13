@@ -38,7 +38,7 @@ change, so it cannot be re-cut into the already-published 0.2.6.
 │        strongest evidence available without a display or an Apple host
 │      non-goal: shipping a second icon, a `.desktop` file, or a macOS `.icns`
 │        runtime path
-├── {UPDATE} settings "Check for updates" → verify → swap → restart  [_] @host=none
+├── {UPDATE} settings "Check for updates" → verify → swap → restart  [v] @host=none
 │      source: GitHub #4 (owner, 2026-10-12, moved here 2026-10-12); owns
 │        `prd/PRD_02_23_minicon.md` boundary + `prd/PRD_02_26_con_control_cli.md`
 │      mechanism already present, reuse — do NOT add a stack:
@@ -83,12 +83,45 @@ change, so it cannot be re-cut into the already-published 0.2.6.
 
 ## GATE status
 
-Not started. If `{UPDATE}` ships, its whole state machine must be provable
-against a loopback server, with real-GitHub as a separate opt-in (`--ignored`)
-test — not part of the default gate. Version-gate runs per the
-`run-reputation-and-release` skill when a Candidate is cut.
+The `{UPDATE}` state machine is proved against a loopback server, with real
+GitHub as a separate opt-in path — not part of the default gate. Version-gate
+runs per the `run-reputation-and-release` skill when a Candidate is cut.
+
+### Decisions taken (were §Open, now recorded)
+
+1. **Boundary wording** — accepted as written: the update check is manual and
+   per-press, so the README's "no auto-update" line stays true with a
+   qualifier. Landed in `README.zh.md`, `README.en.md`,
+   `prd/PRD_02_23_minicon.md` "Explicit non-goals".
+2. **Archive decode** — option **(a)**, a small in-product reader for the two
+   shapes shipped (deflated `.zip` entry, gzipped tar member). Chosen over
+   publishing an extra uncompressed asset because it needs **no change to the
+   release chain**, which is the part of this system whose correctness the
+   whole no-rebuild discipline depends on. `flate2` (already in the graph as
+   `png`'s pure-Rust backend) and `sha2` are named directly instead of pulling
+   an archive crate.
+3. **Backup retention** — the replaced executable stays beside the new one as
+   `<name>.backup`. Kept, not removed after a launch: a file the user can see
+   is a file the user can roll back to, and the "不留痕" rule is about the
+   product's own residue, not an update's two files.
+4. **A strictly older remote** — shown as "you are ahead of the latest
+   release", and the Update control is not offered: a `main` build must never
+   be nudged to downgrade silently.
+5. **macOS path** — no in-process swap. The Update control opens the release's
+   own `.dmg`; replacing one file inside a signed, notarized `.app` breaks the
+   signature and Gatekeeper refuses the result.
+
+### Known gap (named, not claimed)
+
+Code-signature verification of the new binary is **not** implemented. The
+in-tree inspectors sit behind `minicon-platform`'s `app-facts` feature, whose
+app inventory the product does not otherwise carry; enabling it for one boolean
+is a size decision. The checksum gate is in place. Recorded in
+`prd/PRD_02_25_con_workspace.md` "Host UI".
 
 ## Open decisions (owner)
+
+_(the five gating decisions above are taken; what remains)_
 
 1. **Boundary wording** (gate): acceptance of the line "「不留痕」constrains the
    product's own residue, not a user-authored data file", and the edit to

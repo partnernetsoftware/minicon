@@ -30,6 +30,7 @@ pub mod json;
 pub mod keymap;
 pub mod numeric;
 pub mod tree;
+pub mod version;
 
 #[cfg(test)]
 mod boundary_tests {

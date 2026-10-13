@@ -230,6 +230,7 @@ pub(crate) fn paint_settings_panel(
     shortcuts: [&str; 16],
     font_size_px: u16,
     font_percent: u16,
+    update: &crate::update::State,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
     let s = layout.settings_panel(scale);
@@ -355,6 +356,91 @@ pub(crate) fn paint_settings_panel(
         );
         y = y.saturating_add(s.shortcut_line_height);
     }
+
+    // Updates. Three controls whose availability is the phase, and one line
+    // the phase is written into, so the section is readable without the panel
+    // knowing anything about the worker.
+    section_label(
+        surface,
+        ui::Rect {
+            x: inner_x,
+            y: s.updates_label_y,
+            width: inner_w,
+            height: metrics.height,
+        },
+        strings.settings_updates,
+    );
+    let action = |surface: &mut Surface<'_>, rect: ui::Rect, label: &str, enabled: bool| {
+        surface.fill_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            theme.surface.to_xrgb(),
+        );
+        paint_host_ui_text(
+            surface,
+            rect.x.saturating_add(dip(8.0)),
+            text_dy(rect),
+            label,
+            if enabled { theme.text } else { theme.muted },
+            font_size_px,
+            rect.width,
+        );
+    };
+    use crate::update::Phase;
+    let can_check = matches!(
+        update.phase,
+        Phase::Idle
+            | Phase::UpToDate
+            | Phase::Available { .. }
+            | Phase::Ahead { .. }
+            | Phase::Failed { .. }
+    );
+    let can_install = matches!(update.phase, Phase::Available { .. });
+    let can_restart = matches!(
+        update.phase,
+        Phase::Ready {
+            opens_dmg: false,
+            ..
+        }
+    );
+    action(surface, s.update[0], strings.update_check, can_check);
+    action(surface, s.update[1], strings.update_install, can_install);
+    action(surface, s.update[2], strings.update_restart, can_restart);
+    let status = if update.phase == Phase::Idle {
+        format!("v{}", update.current)
+    } else if update.phase == Phase::Checking {
+        strings.update_checking.to_owned()
+    } else if let Phase::UpToDate = update.phase {
+        format!("v{} — {}", update.current, strings.update_latest)
+    } else if let Phase::Available { remote } = &update.phase {
+        format!("v{remote} {}", strings.update_available)
+    } else if let Phase::Ahead { remote } = &update.phase {
+        format!("v{remote} — {}", strings.update_ahead)
+    } else if let Phase::Ready { remote, opens_dmg } = &update.phase {
+        format!(
+            "v{remote} — {}",
+            if *opens_dmg {
+                strings.update_staged_open
+            } else {
+                strings.update_ready
+            }
+        )
+    } else if let Phase::Failed { message } = &update.phase {
+        message.clone()
+    } else {
+        String::new()
+    };
+    paint_host_ui_text(
+        surface,
+        inner_x,
+        s.updates_status_y,
+        &status,
+        theme.muted,
+        font_size_px,
+        inner_w,
+    );
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

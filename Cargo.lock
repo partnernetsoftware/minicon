@@ -1070,8 +1070,9 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
+ "flate2",
  "itoa",
  "minicon-core",
  "minicon-platform",
@@ -1080,6 +1081,7 @@ dependencies = [
  "png 0.17.16",
  "serde",
  "serde_json",
+ "sha2",
  "unicode-width",
  "vt100",
  "winresource",

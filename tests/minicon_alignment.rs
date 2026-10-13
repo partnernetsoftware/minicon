@@ -1364,6 +1364,7 @@ const MINICON_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
             "filesystem-publish",
             "filesystem-read",
             "font",
+            "host-open",
             "ime",
             "input",
             "ipc",

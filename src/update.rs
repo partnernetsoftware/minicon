@@ -1,0 +1,959 @@
+//! Check for updates, download, verify, swap, restart.
+//!
+//! This is the product's first outbound network call and its first
+//! self-modifying behaviour, so the shape is deliberately narrow:
+//!
+//! * **Manual and per-click.** Nothing here runs on a timer, at startup, or in
+//!   the background. The user presses a button and this module answers.
+//! * **Nothing blocking on the paint thread.** The whole exchange and the swap
+//!   run on a worker thread; the panel only reads a state value and drains a
+//!   channel, in the same pattern the terminal clipboard read uses.
+//! * **Bytes are refused unless the release vouches for them.** The archive is
+//!   checked against the SHA-256 sidecar the release publishes before anything
+//!   is staged, and every failure leaves the running executable untouched.
+//! * **A restart is never a side effect.** Replacing the file and running the
+//!   new one are separate, explicit actions: a restart drops every open
+//!   terminal and ends the `--control` endpoint.
+//!
+//! Mechanism lives where the issue put it: the HTTP exchange is
+//! `minicon_platform::network_http`, the atomic write is
+//! `minicon_platform::filesystem_publish`, and the version comparator is
+//! `minicon_core::version`. What lives here is product meaning — which repo,
+//! what counts as an update, and what the panel says.
+
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::time::Duration;
+
+pub use minicon_core::version::Version;
+
+use crate::update_archive;
+
+/// Where the latest release is read from.
+///
+/// Overridable so the whole state machine — including a SHA mismatch, a
+/// truncated body and a rate-limit response — is provable against a loopback
+/// server instead of depending on GitHub being reachable in CI.
+pub const RELEASE_API_ENV: &str = "MINICON_UPDATE_API";
+pub const RELEASE_API_DEFAULT: &str =
+    "https://api.github.com/repos/partnernetsoftware/minicon/releases/latest";
+
+/// GitHub rejects a request without one, and identifies the caller by it.
+const USER_AGENT: &str = concat!("minicon/", env!("CARGO_PKG_VERSION"));
+const RELEASE_BODY_LIMIT: usize = 512 * 1024;
+/// The archive ceiling. The network module caps a response at
+/// `NETWORK_HTTP_MAX_RESPONSE_BYTES` and the product's own archives are a few
+/// megabytes, so that ceiling is the bound rather than a second number that
+/// could drift past it.
+const ARCHIVE_BODY_LIMIT: usize = minicon_platform::network_http::NETWORK_HTTP_MAX_RESPONSE_BYTES;
+const CHECK_TIMEOUT: Duration = Duration::from_secs(20);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
+/// The name a release asset's checksum sidecar carries, appended to it.
+const SIDECAR_SUFFIX: &str = ".sha256";
+
+/// Where this build's archive comes from, and how it can be installed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Target {
+    /// The `-<os>-<arch>` token the release names this platform's archive with.
+    pub suffix: &'static str,
+    /// The archive extension, which also selects the reader.
+    pub extension: &'static str,
+    /// The member the archive must contain.
+    pub executable: &'static str,
+    /// Whether this platform can be updated by replacing one file.
+    ///
+    /// macOS cannot: the product ships as a signed, notarized `.app`, and
+    /// swapping only the inner Mach-O breaks the signature and Gatekeeper
+    /// refuses the result. The macOS flow hands off to the `.dmg` instead.
+    pub in_place: bool,
+}
+
+/// The target for the running binary, or `None` for a platform the release does
+/// not publish a one-file archive for. `None` is a safe failure with a link to
+/// the Releases page, never a wrong-architecture download.
+pub fn current_target() -> Option<Target> {
+    let target = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => Target {
+            suffix: "windows-x86_64",
+            extension: ".zip",
+            executable: "minicon.exe",
+            in_place: true,
+        },
+        ("windows", "aarch64") => Target {
+            suffix: "windows-aarch64",
+            extension: ".zip",
+            executable: "minicon.exe",
+            in_place: true,
+        },
+        ("linux", "x86_64") => Target {
+            suffix: "linux-x86_64",
+            extension: ".tar.gz",
+            executable: "minicon",
+            in_place: true,
+        },
+        ("linux", "aarch64") => Target {
+            suffix: "linux-aarch64",
+            extension: ".tar.gz",
+            executable: "minicon",
+            in_place: true,
+        },
+        ("macos", _) => Target {
+            suffix: "macos-universal",
+            extension: ".dmg",
+            executable: "minicon",
+            in_place: false,
+        },
+        _ => return None,
+    };
+    Some(target)
+}
+
+/// One downloadable file on a release.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Asset {
+    pub name: String,
+    pub url: String,
+}
+
+/// The part of a release this product reads.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Release {
+    pub version: Version,
+    pub assets: Vec<Asset>,
+}
+
+impl Release {
+    /// The archive for this target, and the sidecar that vouches for it.
+    ///
+    /// Selection is by the archive's own naming pattern rather than by an
+    /// index, so a release that grows an extra asset (the `.com` payload, an
+    /// aarch64 sibling) cannot shift this onto the wrong file.
+    pub fn archive_for(&self, target: Target) -> Option<(&Asset, Option<&Asset>)> {
+        let wanted = format!("-{}{}", target.suffix, target.extension);
+        let archive = self
+            .assets
+            .iter()
+            .find(|asset| asset.name.ends_with(&wanted))?;
+        let sidecar = self
+            .assets
+            .iter()
+            .find(|asset| asset.name == format!("{}{SIDECAR_SUFFIX}", archive.name));
+        Some((archive, sidecar))
+    }
+}
+
+/// Parses the `releases/latest` body.
+///
+/// `serde_json` is already a product dependency; only the two fields this
+/// product acts on are read, and a tag that is not a stable version is refused
+/// here rather than compared later.
+pub fn parse_release(body: &[u8]) -> Result<Release, String> {
+    let document: serde_json::Value =
+        serde_json::from_slice(body).map_err(|error| format!("release is not JSON: {error}"))?;
+    let tag = document
+        .get("tag_name")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "release has no tag_name".to_owned())?;
+    let version =
+        Version::parse(tag).ok_or_else(|| format!("tag {tag:?} is not a stable version"))?;
+    let mut assets = Vec::new();
+    for asset in document
+        .get("assets")
+        .and_then(|value| value.as_array())
+        .unwrap_or(&Vec::new())
+    {
+        let (Some(name), Some(url)) = (
+            asset.get("name").and_then(|value| value.as_str()),
+            asset
+                .get("browser_download_url")
+                .and_then(|value| value.as_str()),
+        ) else {
+            continue;
+        };
+        assets.push(Asset {
+            name: name.to_owned(),
+            url: url.to_owned(),
+        });
+    }
+    Ok(Release { version, assets })
+}
+
+/// The first whitespace-delimited token of a `sha256sum` sidecar.
+///
+/// Only the digest is read: the file name in the sidecar is a second claim
+/// about a name this caller already chose, and trusting two sources for one
+/// fact is how a mismatch hides.
+pub fn parse_sidecar(body: &[u8]) -> Result<String, String> {
+    let text = std::str::from_utf8(body).map_err(|_| "checksum sidecar is not text".to_owned())?;
+    let digest = text.split_whitespace().next().unwrap_or("");
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("checksum sidecar is not a SHA-256 digest".to_owned());
+    }
+    Ok(digest.to_ascii_lowercase())
+}
+
+/// The hex SHA-256 of `bytes`.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest as _, Sha256};
+
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(bytes);
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+/// What the panel shows. Product state, not panel-local: the phase outlives the
+/// settings panel being closed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Phase {
+    /// Nothing asked yet.
+    Idle,
+    /// A check is in flight.
+    Checking,
+    /// The running build is the latest release.
+    UpToDate,
+    /// A newer release exists.
+    Available { remote: Version },
+    /// The running build is ahead of the latest release, as a `main` build is.
+    Ahead { remote: Version },
+    /// The verified archive is staged and waiting for a restart.
+    Ready { remote: Version, opens_dmg: bool },
+    /// The last action failed. The running executable is untouched.
+    Failed { message: String },
+}
+
+/// The update state the product owns and the panel renders.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct State {
+    pub current: Version,
+    pub phase: Phase,
+    /// The asset chosen for this platform, once a release has been read.
+    pub asset: Option<String>,
+}
+
+impl State {
+    /// The state a fresh process starts in.
+    pub fn new(current: Version) -> Self {
+        Self {
+            current,
+            phase: Phase::Idle,
+            asset: None,
+        }
+    }
+
+    /// Whether a `Check for updates` press is meaningful right now.
+    pub const fn can_check(&self) -> bool {
+        matches!(
+            self.phase,
+            Phase::Idle
+                | Phase::UpToDate
+                | Phase::Available { .. }
+                | Phase::Ahead { .. }
+                | Phase::Failed { .. }
+        )
+    }
+
+    /// Folds one event into the state. Pure, so the whole machine is provable
+    /// without a network or a file system.
+    pub fn apply(&mut self, event: Event) {
+        match event {
+            Event::Checked(release) => {
+                self.asset = None;
+                if release.version > self.current {
+                    self.phase = Phase::Available {
+                        remote: release.version,
+                    };
+                } else if release.version < self.current {
+                    self.phase = Phase::Ahead {
+                        remote: release.version,
+                    };
+                } else {
+                    self.phase = Phase::UpToDate;
+                }
+            }
+            Event::AssetChosen(name) => self.asset = Some(name),
+            Event::Staged { remote, opens_dmg } => self.phase = Phase::Ready { remote, opens_dmg },
+            Event::Failed(message) => self.phase = Phase::Failed { message },
+        }
+    }
+}
+
+/// A command for the worker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Command {
+    Check,
+    /// Download, verify and stage the chosen asset.
+    Install,
+}
+
+/// A result from the worker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Event {
+    Checked(Release),
+    AssetChosen(String),
+    Staged { remote: Version, opens_dmg: bool },
+    Failed(String),
+}
+
+/// Where the worker is in the download, for a progress line.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Progress {
+    Downloading,
+    Verifying,
+    Staging,
+    Opening,
+}
+
+/// The update state as `ui-snapshot` publishes it.
+///
+/// A stable phase tag plus the two versions and the failure text, so automation
+/// asserts the state without matching painted strings — the same pattern as the
+/// other host UI facts. The tag is spelled once, here, and the panel's own
+/// labels stay free to be translated.
+pub fn snapshot(state: &State) -> (&'static str, Option<String>, Option<String>, bool) {
+    match &state.phase {
+        Phase::Idle => ("idle", None, None, false),
+        Phase::Checking => ("checking", None, None, false),
+        Phase::UpToDate => ("up-to-date", None, None, false),
+        Phase::Available { remote } => ("available", Some(remote.to_string()), None, false),
+        Phase::Ahead { remote } => ("ahead", Some(remote.to_string()), None, false),
+        Phase::Ready { remote, opens_dmg } => ("ready", Some(remote.to_string()), None, *opens_dmg),
+        Phase::Failed { message } => ("failed", None, Some(message.clone()), false),
+    }
+}
+
+/// The worker's side of one install, so the file work is testable on its own.
+///
+/// `archive` is the downloaded archive, `sidecar` the release's checksum body.
+pub struct InstallInput<'a> {
+    pub archive: &'a [u8],
+    pub sidecar: &'a [u8],
+    pub target: Target,
+    pub destination: PathBuf,
+}
+
+/// Verifies and stages the new executable beside `destination`.
+///
+/// Returns the staged path. Nothing here touches `destination`: staging is a
+/// write to a sibling name, so a failure at any point leaves the running
+/// executable exactly as it was. The caller performs the rename-aside and the
+/// place, which is the only part that must be atomic.
+pub fn verify_and_stage(input: InstallInput<'_>) -> Result<PathBuf, String> {
+    let expected = parse_sidecar(input.sidecar)?;
+    let actual = sha256_hex(input.archive);
+    if actual != expected {
+        return Err("downloaded archive does not match the release checksum".to_owned());
+    }
+    let executable = match input.target.extension {
+        ".zip" => update_archive::read_zip(input.archive, input.target.executable),
+        ".tar.gz" => update_archive::read_tar_gz(input.archive, input.target.executable),
+        other => return Err(format!("no reader for {other} archives")),
+    }
+    .map_err(|error| error.to_string())?;
+    if executable.is_empty() {
+        return Err("the archive's executable is empty".to_owned());
+    }
+    let staged = staged_path(&input.destination);
+    minicon_platform::filesystem_publish::write_file_atomic(&staged, |file| {
+        use std::io::Write as _;
+        file.write_all(&executable)
+    })
+    .map_err(|error| format!("could not stage the new executable: {error}"))?;
+    Ok(staged)
+}
+
+/// The sibling the new executable is staged as.
+pub fn staged_path(destination: &Path) -> PathBuf {
+    let mut name = destination.file_name().unwrap_or_default().to_os_string();
+    name.push(".update");
+    destination.with_file_name(name)
+}
+
+/// The backup the replaced executable is moved aside to.
+pub fn backup_path(destination: &Path) -> PathBuf {
+    let mut name = destination.file_name().unwrap_or_default().to_os_string();
+    name.push(".backup");
+    destination.with_file_name(name)
+}
+
+/// Replaces `destination` with the staged executable, keeping the old one.
+///
+/// The order is the one Windows allows: the running executable can be renamed
+/// but not overwritten or deleted, so it is moved aside first and the staged
+/// file takes its name. If the second rename fails the first is rolled back, so
+/// the caller is never left with no executable at the destination.
+pub fn commit_swap(staged: &Path, destination: &Path) -> Result<PathBuf, String> {
+    let backup = backup_path(destination);
+    remove_if_present(&backup)?;
+    std::fs::rename(destination, &backup)
+        .map_err(|error| format!("could not move the current executable aside: {error}"))?;
+    if let Err(error) = std::fs::rename(staged, destination) {
+        // Roll the backup back so the product is still launchable.
+        let _ = std::fs::rename(&backup, destination);
+        return Err(format!("could not place the new executable: {error}"));
+    }
+    Ok(backup)
+}
+
+/// Deletes a file the backup replaced, tolerating its absence.
+pub fn remove_if_present(path: &Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("could not remove {}: {error}", path.display())),
+    }
+}
+
+/// The release endpoint, with the test override applied.
+pub fn release_api() -> String {
+    std::env::var(RELEASE_API_ENV).unwrap_or_else(|_| RELEASE_API_DEFAULT.to_owned())
+}
+
+/// Runs the blocking half of an update on a worker thread.
+///
+/// One exchange, one download and one staging operation per command, each with
+/// a caller-supplied ceiling. Every failure is an `Event::Failed` carrying a
+/// specific cause; the worker never panics the caller and never touches the
+/// running executable.
+pub fn worker(
+    commands: Receiver<Command>,
+    events: Sender<Event>,
+    destination: PathBuf,
+    endpoint: String,
+    progress: impl Fn(Progress) + Send + 'static,
+) {
+    let Some(target) = current_target() else {
+        while let Ok(Command::Check) = commands.recv() {
+            let _ = events.send(Event::Failed(
+                "no release archive is published for this platform".to_owned(),
+            ));
+        }
+        return;
+    };
+    while let Ok(command) = commands.recv() {
+        let outcome = match command {
+            Command::Check => check(&events, &endpoint),
+            Command::Install => install(&events, &progress, target, &destination, &endpoint),
+        };
+        if let Err(message) = outcome {
+            let _ = events.send(Event::Failed(message));
+        }
+    }
+}
+
+/// Reads the latest release and reports its version.
+fn check(events: &Sender<Event>, endpoint: &str) -> Result<(), String> {
+    let body = fetch(endpoint, RELEASE_BODY_LIMIT, CHECK_TIMEOUT)?;
+    let release = parse_release(&body)?;
+    let _ = events.send(Event::Checked(release));
+    Ok(())
+}
+
+/// Downloads the chosen archive, verifies it and stages the executable.
+fn install(
+    events: &Sender<Event>,
+    progress: &impl Fn(Progress),
+    target: Target,
+    destination: &Path,
+    endpoint: &str,
+) -> Result<(), String> {
+    progress(Progress::Downloading);
+    let body = fetch(endpoint, RELEASE_BODY_LIMIT, CHECK_TIMEOUT)?;
+    let release = parse_release(&body)?;
+    let (archive, sidecar) = release.archive_for(target).ok_or_else(|| {
+        format!(
+            "release {} publishes no archive for this platform",
+            release.version
+        )
+    })?;
+    let sidecar = sidecar.ok_or_else(|| "the release has no checksum sidecar".to_owned())?;
+    let _ = events.send(Event::AssetChosen(archive.name.clone()));
+    // macOS cannot replace one file: the product ships as a signed, notarized
+    // `.app`, and swapping only the inner Mach-O breaks the signature. Hand the
+    // release's own download over instead of pretending to install it.
+    if !target.in_place {
+        progress(Progress::Opening);
+        minicon_platform::host_open::open(&archive.url, Default::default())
+            .map_err(|error| format!("could not open the download page: {error}"))?;
+        let _ = events.send(Event::Staged {
+            remote: release.version,
+            opens_dmg: true,
+        });
+        return Ok(());
+    }
+    let bytes = fetch(&archive.url, ARCHIVE_BODY_LIMIT, DOWNLOAD_TIMEOUT)?;
+    progress(Progress::Verifying);
+    let checksum = fetch(&sidecar.url, RELEASE_BODY_LIMIT, CHECK_TIMEOUT)?;
+    progress(Progress::Staging);
+    verify_and_stage(InstallInput {
+        archive: &bytes,
+        sidecar: &checksum,
+        target,
+        destination: destination.to_path_buf(),
+    })?;
+    let _ = events.send(Event::Staged {
+        remote: release.version,
+        opens_dmg: !target.in_place,
+    });
+    Ok(())
+}
+
+/// One bounded `GET`, with non-2xx and truncation surfaced as failures.
+fn fetch(url: &str, limit: usize, timeout: Duration) -> Result<Vec<u8>, String> {
+    use minicon_platform::network_http::{
+        NetworkHttpMethod, NetworkHttpRequest, request, validate,
+    };
+
+    let http = NetworkHttpRequest::new(NetworkHttpMethod::Get, url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/vnd.github+json")
+        .timeout(timeout)
+        .max_response_bytes(limit);
+    validate(&http).map_err(|error| error.to_string())?;
+    let response = request(&http).map_err(|error| error.to_string())?;
+    if !response.is_success() {
+        return Err(format!("the release server answered {}", response.status));
+    }
+    if response.truncated {
+        return Err("the release response was cut short".to_owned());
+    }
+    Ok(response.body)
+}
+
+/// Drains the worker's channel into the state, calling `progress` per event.
+///
+/// Returns `true` when something changed, so the caller knows to repaint.
+pub fn drain(
+    state: &mut State,
+    events: &Receiver<Event>,
+    mut report: impl FnMut(Progress),
+) -> bool {
+    let mut changed = false;
+    loop {
+        match events.try_recv() {
+            Ok(Event::Checked(release)) => {
+                state.apply(Event::Checked(release));
+                changed = true;
+            }
+            Ok(Event::AssetChosen(name)) => {
+                state.apply(Event::AssetChosen(name));
+                changed = true;
+            }
+            Ok(Event::Staged { remote, opens_dmg }) => {
+                state.apply(Event::Staged { remote, opens_dmg });
+                changed = true;
+            }
+            Ok(Event::Failed(message)) => {
+                state.apply(Event::Failed(message));
+                changed = true;
+            }
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => break,
+        }
+    }
+    if changed {
+        report(Progress::Downloading);
+    }
+    changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::io::Write as _;
+    use std::net::TcpListener;
+
+    /// One served response.
+    struct Served {
+        status: u16,
+        body: Vec<u8>,
+        /// Advertise more bytes than are sent, so the client sees a cut-short
+        /// body rather than a complete one.
+        short: bool,
+    }
+
+    impl Served {
+        fn ok(body: impl Into<Vec<u8>>) -> Self {
+            Self {
+                status: 200,
+                body: body.into(),
+                short: false,
+            }
+        }
+
+        fn coded(status: u16, body: &str) -> Self {
+            Self {
+                status,
+                body: body.as_bytes().to_vec(),
+                short: false,
+            }
+        }
+    }
+
+    /// A loopback host, and the base URL its paths hang off.
+    fn loopback() -> (TcpListener, String) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let address = listener.local_addr().expect("loopback address");
+        (listener, format!("http://{address}"))
+    }
+
+    /// Answers each route once, in the order given.
+    fn serve(listener: TcpListener, routes: Vec<(&'static str, Served)>) {
+        std::thread::spawn(move || {
+            for (_path, served) in routes {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut buffer = [0u8; 2048];
+                let _ = std::io::Read::read(&mut stream, &mut buffer);
+                let length = if served.short {
+                    served.body.len() + 64
+                } else {
+                    served.body.len()
+                };
+                let _ = stream.write_all(
+                    format!(
+                        "HTTP/1.1 {} X\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n",
+                        served.status
+                    )
+                    .as_bytes(),
+                );
+                let _ = stream.write_all(&served.body);
+                let _ = stream.flush();
+            }
+        });
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!("minicon-update-{name}"));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+
+    fn fixture_archive() -> Vec<u8> {
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/assets/update-archive.zip"
+        ))
+        .unwrap()
+    }
+
+    /// The release document, `latest` and nothing else.
+    fn latest_for(base: &str, tag: &str) -> Vec<u8> {
+        format!(
+            r#"{{"tag_name":"{tag}","assets":[
+                {{"name":"minicon-9.9.9-windows-x86_64.zip","browser_download_url":"{base}/archive"}},
+                {{"name":"minicon-9.9.9-windows-x86_64.zip.sha256","browser_download_url":"{base}/archive.sha256"}}
+            ]}}"#
+        )
+        .into_bytes()
+    }
+
+    /// The target the loopback release advertises, independent of the host
+    /// running the suite, so the same test works on every cell.
+    fn loopback_target() -> Target {
+        Target {
+            suffix: "windows-x86_64",
+            extension: ".zip",
+            executable: "minicon.exe",
+            in_place: true,
+        }
+    }
+
+    #[test]
+    fn a_check_against_loopback_reads_the_release_version() {
+        let (listener, base) = loopback();
+        serve(
+            listener,
+            vec![("latest", Served::ok(latest_for(&base, "v9.9.9")))],
+        );
+        let (events, received) = std::sync::mpsc::channel();
+        check(&events, &format!("{base}/releases/latest")).unwrap();
+        let Event::Checked(release) = received.recv().unwrap() else {
+            panic!("a check reports the release");
+        };
+        assert_eq!(release.version, Version::parse("9.9.9").unwrap());
+        assert!(release.archive_for(loopback_target()).is_some());
+    }
+
+    #[test]
+    fn a_rate_limited_answer_is_a_failure_not_a_partial_success() {
+        let (listener, base) = loopback();
+        serve(
+            listener,
+            vec![("latest", Served::coded(403, "rate limited"))],
+        );
+        let (events, _received) = std::sync::mpsc::channel();
+        let error = check(&events, &format!("{base}/releases/latest")).unwrap_err();
+        assert!(error.contains("403"), "{error}");
+    }
+
+    #[test]
+    fn a_truncated_answer_is_a_failure() {
+        let (listener, base) = loopback();
+        let mut short = Served::ok(latest_for(&base, "v9.9.9"));
+        short.short = true;
+        serve(listener, vec![("latest", short)]);
+        let (events, _received) = std::sync::mpsc::channel();
+        let error = check(&events, &format!("{base}/releases/latest")).unwrap_err();
+        assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn an_install_from_loopback_stages_a_verified_executable() {
+        let directory = scratch("loopback-install");
+        let destination = directory.join("minicon.exe");
+        let archive = fixture_archive();
+        let (listener, base) = loopback();
+        serve(
+            listener,
+            vec![
+                ("latest", Served::ok(latest_for(&base, "v9.9.9"))),
+                ("archive", Served::ok(archive.clone())),
+                (
+                    "archive.sha256",
+                    Served::ok(format!("{}  archive\n", sha256_hex(&archive)).into_bytes()),
+                ),
+            ],
+        );
+        let (events, received) = std::sync::mpsc::channel();
+        install(
+            &events,
+            &|_| {},
+            loopback_target(),
+            &destination,
+            &format!("{base}/releases/latest"),
+        )
+        .unwrap();
+        let mut staged = false;
+        while let Ok(event) = received.try_recv() {
+            if let Event::Staged { remote, opens_dmg } = event {
+                assert_eq!(remote, Version::parse("9.9.9").unwrap());
+                assert!(!opens_dmg);
+                staged = true;
+            }
+        }
+        assert!(staged, "a verified install reports the staged version");
+        assert_eq!(
+            std::fs::read(staged_path(&destination)).unwrap(),
+            b"minicon-update-fixture-payload\n"
+        );
+        assert!(!destination.exists(), "the destination is untouched");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn an_install_whose_checksum_disagrees_stages_nothing() {
+        let directory = scratch("loopback-mismatch");
+        let destination = directory.join("minicon.exe");
+        let (listener, base) = loopback();
+        serve(
+            listener,
+            vec![
+                ("latest", Served::ok(latest_for(&base, "v9.9.9"))),
+                ("archive", Served::ok(fixture_archive())),
+                (
+                    "archive.sha256",
+                    Served::ok(format!("{}  archive\n", "b".repeat(64)).into_bytes()),
+                ),
+            ],
+        );
+        let (events, _received) = std::sync::mpsc::channel();
+        let error = install(
+            &events,
+            &|_| {},
+            loopback_target(),
+            &destination,
+            &format!("{base}/releases/latest"),
+        )
+        .unwrap_err();
+        assert!(error.contains("checksum"), "{error}");
+        assert!(!staged_path(&destination).exists());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    fn release_json(tag: &str, names: &[&str]) -> Vec<u8> {
+        let assets: Vec<String> = names
+            .iter()
+            .map(|name| {
+                format!(
+                    r#"{{"name":"{name}","browser_download_url":"https://example.test/{name}"}}"#
+                )
+            })
+            .collect();
+        format!(r#"{{"tag_name":"{tag}","assets":[{}]}}"#, assets.join(",")).into_bytes()
+    }
+
+    #[test]
+    fn the_newest_release_wins_by_semantics() {
+        let mut state = State::new(Version::parse("0.2.9").unwrap());
+        state.apply(Event::Checked(
+            parse_release(&release_json("v0.2.10", &[])).unwrap(),
+        ));
+        assert_eq!(
+            state.phase,
+            Phase::Available {
+                remote: Version::parse("0.2.10").unwrap()
+            }
+        );
+        let (phase, remote, error, handoff) = snapshot(&state);
+        assert_eq!(
+            (phase, remote.as_deref(), error, handoff),
+            ("available", Some("0.2.10"), None, false)
+        );
+    }
+
+    #[test]
+    fn a_build_ahead_of_the_release_is_not_nudged_to_downgrade() {
+        let mut state = State::new(Version::parse("0.2.8").unwrap());
+        state.apply(Event::Checked(
+            parse_release(&release_json("v0.2.7", &[])).unwrap(),
+        ));
+        assert_eq!(
+            state.phase,
+            Phase::Ahead {
+                remote: Version::parse("0.2.7").unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn the_same_version_is_up_to_date() {
+        let mut state = State::new(Version::parse("0.2.7").unwrap());
+        state.apply(Event::Checked(
+            parse_release(&release_json("0.2.7", &[])).unwrap(),
+        ));
+        assert_eq!(state.phase, Phase::UpToDate);
+    }
+
+    #[test]
+    fn a_tag_that_is_not_a_stable_version_is_refused() {
+        let error = parse_release(&release_json("v0.2.7-rc1", &[])).unwrap_err();
+        assert!(error.contains("stable version"), "{error}");
+    }
+
+    #[test]
+    fn the_archive_is_chosen_by_pattern_not_by_index() {
+        let release = parse_release(&release_json(
+            "v0.2.7",
+            &[
+                "minicon-0.2.7-windows-x86_64.zip.sha256",
+                "minicon-0.2.7-windows-aarch64.zip",
+                "minicon-0.2.7-windows-x86_64.zip",
+                "minicon-0.2.7-linux-x86_64.tar.gz",
+            ],
+        ))
+        .unwrap();
+        let target = Target {
+            suffix: "windows-x86_64",
+            extension: ".zip",
+            executable: "minicon.exe",
+            in_place: true,
+        };
+        let (archive, sidecar) = release.archive_for(target).unwrap();
+        assert_eq!(archive.name, "minicon-0.2.7-windows-x86_64.zip");
+        assert_eq!(
+            sidecar.map(|asset| asset.name.as_str()),
+            Some("minicon-0.2.7-windows-x86_64.zip.sha256")
+        );
+        assert!(
+            release
+                .archive_for(Target {
+                    suffix: "solaris-sparc",
+                    ..target
+                })
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_sidecar_keeps_only_the_digest() {
+        let digest = "0".repeat(64);
+        assert_eq!(
+            parse_sidecar(format!("{digest}  minicon-0.2.7.zip\n").as_bytes()),
+            Ok(digest.clone())
+        );
+        assert!(parse_sidecar(b"not a digest  file.zip").is_err());
+        assert!(parse_sidecar(format!("{digest}\n").as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn a_sha_mismatch_refuses_before_anything_is_staged() {
+        let directory = std::env::temp_dir().join("minicon-update-mismatch");
+        let _ = std::fs::create_dir_all(&directory);
+        let destination = directory.join("minicon.exe");
+        let error = verify_and_stage(InstallInput {
+            archive: b"not the archive the sidecar describes",
+            sidecar: format!("{}  x\n", "a".repeat(64)).as_bytes(),
+            target: Target {
+                suffix: "windows-x86_64",
+                extension: ".zip",
+                executable: "minicon.exe",
+                in_place: true,
+            },
+            destination: destination.clone(),
+        })
+        .unwrap_err();
+        assert!(error.contains("checksum"), "{error}");
+        assert!(!staged_path(&destination).exists(), "nothing may be staged");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_verified_archive_stages_beside_the_destination() {
+        let directory = std::env::temp_dir().join("minicon-update-stage");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("minicon.exe");
+        let archive = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/assets/update-archive.zip"
+        ))
+        .unwrap();
+        let sidecar = format!("{}  fixture\n", sha256_hex(&archive));
+        let staged = verify_and_stage(InstallInput {
+            archive: &archive,
+            sidecar: sidecar.as_bytes(),
+            target: Target {
+                suffix: "windows-x86_64",
+                extension: ".zip",
+                executable: "minicon.exe",
+                in_place: true,
+            },
+            destination: destination.clone(),
+        })
+        .unwrap();
+        assert_eq!(staged, staged_path(&destination));
+        assert_eq!(
+            std::fs::read(&staged).unwrap(),
+            b"minicon-update-fixture-payload\n"
+        );
+        assert!(!destination.exists(), "the destination is untouched");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn the_swap_keeps_the_old_executable_and_rolls_back_on_failure() {
+        let directory = std::env::temp_dir().join("minicon-update-swap");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("minicon.exe");
+        std::fs::write(&destination, b"old").unwrap();
+        let staged = staged_path(&destination);
+        std::fs::write(&staged, b"new").unwrap();
+        let backup = commit_swap(&staged, &destination).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"new");
+        assert_eq!(std::fs::read(&backup).unwrap(), b"old");
+        // Placing a staged file that is not there must leave the old one alone.
+        let missing = directory.join("absent.exe");
+        assert!(commit_swap(&missing, &destination).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"new");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+}

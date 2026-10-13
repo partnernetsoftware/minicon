@@ -40,7 +40,8 @@ burst of output tangle together. MiniCon gives input a line of its own.
 
 Sending a keystroke is easy — but blind. The control command reads back what the
 window actually shows — text, screenshots, focus, tabs — so automation waits for
-a real result instead of guessing with a sleep. All local: no server, no network.
+a real result instead of guessing with a sleep. All local: no server, and no
+network traffic unless you press the update check yourself.
 
 ```
 # start a session with a local control endpoint
@@ -67,7 +68,8 @@ compose CJK through the same paths a person's input takes.
 - **Genuinely mini.** ~660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux —
   measured, not estimated. No installer, no bundled runtime.
 - **Permanently open source.** MIT OR Apache-2.0. No telemetry, no account, no
-  auto-updater — the source is the product.
+  auto-updater — the settings panel's update check is manual, per-press, and
+  never runs on its own. The source is the product.
 - **Signed and notarized.** Windows and macOS, as PARTNERNET SOFTWARE PTY LTD.
   It uses only the libraries your OS already ships.
 - **Low on purpose.** One process, no background service, no daemon; close the

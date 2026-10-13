@@ -170,6 +170,33 @@ header tools, and the composer. It is not the browser, and it is not layout.
   Paper Ink, each showing its own canvas and accent, the active one outlined),
   and the keyboard shortcuts (the former help text). Escape or a click outside
   closes it; the panel is available with zero tabs.
+- [v] the settings panel carries an **Updates** section (0.2.7): the running
+  version, and three controls whose availability is the update phase — Check,
+  Update, Restart. The phase is product state, not panel-local, so it survives
+  the panel being closed and re-entered. Nothing blocking runs on the paint
+  thread: one worker owns the HTTP exchange, the download and the staging, and
+  wakes the event loop through the same slot the control endpoint uses.
+  `ui-snapshot` publishes `update` — a stable phase tag, the two versions, the
+  failure text and whether macOS handed off. The check is manual and per-press
+  and never runs on its own: `prd/PRD_02_23_minicon.md`, "Explicit non-goals".
+- [v] the update download is verified before anything is staged. The archive is
+  checked against its published SHA-256 sidecar, and the executable is pulled
+  out by name with a small in-product reader for the two shapes the release
+  ships (a deflated `.zip` entry and a gzipped tar member), so no general
+  archive crate enters the graph. The swap is rename-aside then place-new,
+  keeping the replaced executable beside the new one and rolling it back if the
+  place fails; the restart is a separate, explicit press because it drops every
+  terminal and ends the `--control` endpoint. macOS never swaps in place — one
+  file inside a signed, notarized `.app` cannot be replaced without breaking
+  the signature — so its Update control opens the release's own `.dmg`.
+- [-] the update flow verifies the release's checksum but not yet the **code
+  signature** of the new binary. The in-tree inspectors
+  (`adapters/{windows,macos}/app_facts.rs`: `WinVerifyTrust` /
+  `SecStaticCodeCheckValidity`) sit behind the `app-facts` feature, whose app
+  inventory the product does not otherwise carry, and enabling it for one
+  boolean is a size decision not yet taken. Recorded as a named gap rather than
+  a claim: the checksum proves the bytes are the ones the release published,
+  and the publisher's Authenticode/notarization stamps the artifact as before.
 - [v] interface language is chosen from the panel (English / Simplified /
   Traditional). Only host UI is translated; each option is written in the
   language it selects, and the active one is drawn in the accent colour, so the

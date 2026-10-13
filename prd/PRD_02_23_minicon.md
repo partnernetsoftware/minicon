@@ -99,6 +99,15 @@ failure, resize storms, process exit, and interaction races.
   its JSON command decoder, command queue, wait scheduler, and script-only
   screenshot state are absent from the product graph, and automation uses the
   public control protocol exclusively.
+- [v] **no background network, and no auto-update.** The product makes exactly
+  one outbound request, and only when the user presses the settings panel's
+  update check: a `GET` of the GitHub `releases/latest` document over the same
+  bounded `minicon_platform::network_http` client the harness uses, and — on a
+  Windows or Linux host — the matching archive plus its published SHA-256
+  sidecar. Nothing runs at startup, on a timer, or in the background, and
+  nothing about the running product changes without the user asking; the
+  README's "no auto-update" line stays true under that qualification. Owner:
+  `prd/PRD_02_25_con_workspace.md`, section "Host UI".
 - No claim of tmux/RMUX compatibility beyond the narrowed exception below.
 - No product navigation or workbench policy shared with `agenterm` merely to
   reduce code size.

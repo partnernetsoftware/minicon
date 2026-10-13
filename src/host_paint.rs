@@ -757,6 +757,7 @@ impl ConApp {
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
                 self.font_zoom_percent(),
+                &self.update,
             );
         }
         Ok(())
@@ -1001,6 +1002,7 @@ impl ConApp {
                 self.ui_language.help_lines(),
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
                 self.font_zoom_percent(),
+                &self.update,
             );
         }
     }

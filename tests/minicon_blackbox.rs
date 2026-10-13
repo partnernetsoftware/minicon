@@ -2645,6 +2645,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "geometry",
         "settings_open",
         "history_panel",
+        "update",
         "host_notice",
         "ime_status",
         "pending_control_screenshots",

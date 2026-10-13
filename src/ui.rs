@@ -577,6 +577,16 @@ impl UiLanguage {
                 settings_shortcuts: "Shortcuts",
                 history_title: "HISTORY",
                 history_empty: "(nothing sent yet)",
+                settings_updates: "Updates",
+                update_check: "Check",
+                update_install: "Update",
+                update_restart: "Restart",
+                update_checking: "checking…",
+                update_latest: "on the latest release",
+                update_available: "available",
+                update_ahead: "you are ahead of the latest release",
+                update_ready: "ready — restart to finish",
+                update_staged_open: "download page opened — install from there",
             },
             Self::ChineseSimplified => HostUiStrings {
                 paste_failed: "粘贴失败",
@@ -599,6 +609,16 @@ impl UiLanguage {
                 settings_shortcuts: "快捷键",
                 history_title: "历史发送",
                 history_empty: "（还没有发送过内容）",
+                settings_updates: "更新",
+                update_check: "检查",
+                update_install: "更新",
+                update_restart: "重启",
+                update_checking: "检查中…",
+                update_latest: "已是最新版本",
+                update_available: "可更新",
+                update_ahead: "比最新发布版本更新",
+                update_ready: "已就绪——重启以完成",
+                update_staged_open: "已打开下载页——请在那里安装",
             },
             Self::ChineseTraditional => HostUiStrings {
                 paste_failed: "貼上失敗",
@@ -621,6 +641,16 @@ impl UiLanguage {
                 settings_shortcuts: "快捷鍵",
                 history_title: "歷史發送",
                 history_empty: "（還沒有送出過內容）",
+                settings_updates: "更新",
+                update_check: "檢查",
+                update_install: "更新",
+                update_restart: "重啟",
+                update_checking: "檢查中…",
+                update_latest: "已是最新版本",
+                update_available: "可更新",
+                update_ahead: "比最新發布版本更新",
+                update_ready: "已就緒——重啟以完成",
+                update_staged_open: "已開啟下載頁——請在那裡安裝",
             },
         }
     }
@@ -725,6 +755,20 @@ pub struct HostUiStrings {
     pub settings_shortcuts: &'static str,
     pub history_title: &'static str,
     pub history_empty: &'static str,
+    /// The Updates section: its label, its three controls and the phase line.
+    ///
+    /// The detailed cause a failure carries is diagnostic text from the worker
+    /// and stays in one language; these are the labels the user acts on.
+    pub settings_updates: &'static str,
+    pub update_check: &'static str,
+    pub update_install: &'static str,
+    pub update_restart: &'static str,
+    pub update_checking: &'static str,
+    pub update_latest: &'static str,
+    pub update_available: &'static str,
+    pub update_ahead: &'static str,
+    pub update_ready: &'static str,
+    pub update_staged_open: &'static str,
 }
 
 pub fn tree_hit(
@@ -866,6 +910,10 @@ pub struct SettingsLayout {
     /// Where the shortcut lines begin (the reused help text).
     pub shortcuts_y: u32,
     pub shortcut_line_height: u32,
+    /// The Updates section: its label, its three controls and its status line.
+    pub updates_label_y: u32,
+    pub update: [Rect; 3],
+    pub updates_status_y: u32,
 }
 
 /// Where a pointer landed inside the settings panel. Theme is an index (0=Neutral
@@ -879,6 +927,12 @@ pub enum SettingsHit {
     FontReset,
     FontUp,
     Theme(usize),
+    /// Check for updates.
+    UpdateCheck,
+    /// Download and stage the available update.
+    UpdateInstall,
+    /// Replace the running executable and start the staged one.
+    UpdateRestart,
 }
 
 impl Layout {
@@ -928,9 +982,19 @@ impl Layout {
 
         let shortcuts_label_y = theme_row.saturating_add(row_h).saturating_add(gap);
         let shortcuts_y = shortcuts_label_y.saturating_add(label_h);
-        let panel_bottom = shortcuts_y
-            .saturating_add(line_h.saturating_mul(SETTINGS_SHORTCUT_LINES))
-            .saturating_add(pad);
+        let shortcuts_bottom =
+            shortcuts_y.saturating_add(line_h.saturating_mul(SETTINGS_SHORTCUT_LINES));
+        // The Updates section sits under the shortcuts: a label, one row of
+        // three controls, and a status line the phase is written into.
+        let updates_label_y = shortcuts_bottom.saturating_add(gap);
+        let updates_row = updates_label_y.saturating_add(label_h);
+        let update = [
+            cell(0, updates_row),
+            cell(1, updates_row),
+            cell(2, updates_row),
+        ];
+        let updates_status_y = updates_row.saturating_add(row_h).saturating_add(gap);
+        let panel_bottom = updates_status_y.saturating_add(line_h).saturating_add(pad);
         let panel = Rect {
             x: self.sidebar.x,
             y: self.tree_header_height,
@@ -946,6 +1010,9 @@ impl Layout {
             theme,
             shortcuts_y,
             shortcut_line_height: line_h,
+            updates_label_y,
+            update,
+            updates_status_y,
         }
     }
 
@@ -1068,6 +1135,15 @@ pub fn settings_hit(layout: Layout, x: u32, y: u32, scale: f64) -> SettingsHit {
         if rect.contains(x, y) {
             return SettingsHit::Theme(i);
         }
+    }
+    if s.update[0].contains(x, y) {
+        return SettingsHit::UpdateCheck;
+    }
+    if s.update[1].contains(x, y) {
+        return SettingsHit::UpdateInstall;
+    }
+    if s.update[2].contains(x, y) {
+        return SettingsHit::UpdateRestart;
     }
     SettingsHit::Panel
 }

@@ -231,6 +231,17 @@ impl ConApp {
                                     ("entries", self.composer.history().len().into()),
                                 ]),
                             ),
+                            ("update", {
+                                let (phase, remote, error, handoff) =
+                                    crate::update::snapshot(&self.update);
+                                json::object(vec![
+                                    ("phase", phase.into()),
+                                    ("current", self.update.current.to_string().into()),
+                                    ("remote", remote.map_or(json::JsonValue::Null, Into::into)),
+                                    ("error", error.map_or(json::JsonValue::Null, Into::into)),
+                                    ("handoff", handoff.into()),
+                                ])
+                            }),
                             ("geometry", geometry.unwrap_or(json::JsonValue::Null)),
                             (
                                 "host_notice",
