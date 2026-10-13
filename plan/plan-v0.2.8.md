@@ -20,6 +20,86 @@ independent of `src/update.rs` is withdrawn: three of these leaves edit it, and
 they take priority over everything else in this file. A product that can
 replace itself must be correct before it gains features.
 
+## Handoff: read this first
+
+**Status: not started, and this file is the entrypoint.** v0.2.7 is published;
+`main` is clean at `3570d77` (product code == `f52662a`). Nothing here is
+in flight. Read `AGENTS.md` first for the dev loop, `cargo fmt`/`clippy` gate,
+six-cell rule and the release boundary — this section does **not** repeat those;
+it adds only what is specific to this version.
+
+Read next, in order: `PRD.md` (frontier), `prd/PRD_02_25_con_workspace.md`
+"Host UI" (the owner of every leaf below), `prd/PRD_02_32_dev_loop_crosscheck.md`
+"Local per-host gates" (which local command actually compiles what),
+`prd/PRD_02_27_con_delivery.md` (the delivery boundary `{SIGV}` depends on).
+
+### Order, and why
+
+1. `{ROLLBACK}` **and** `{EXECBIT}` together, in one change. They are a chain:
+   `{EXECBIT}` is what makes the `{ROLLBACK}` path reachable on Linux. Fixing
+   either alone leaves the Linux install still destroyable.
+2. `{BOMB}`, then `{SCHEME}` — independent, small, both provable offline.
+3. Then the planned leaves, `{PREF}` first (cheapest, felt every launch).
+
+Do not start `{FIND}` (blocked on C1) or `{SIGV}` (a PRD_02_27 size decision)
+until their gates clear. Do not add a new capability before step 1 is done.
+
+### Where each leaf can be verified — the handoff risk
+
+`{EXECBIT}` is **Unix-only** and the extraction/staging path it lives in cannot
+be *executed* on a Windows host. A Windows-only developer will otherwise "verify"
+it by a green local test that never touches the defect. Plan the verification
+per leaf before writing code:
+
+| Leaf | Runs on Windows? | How to prove it |
+|---|---|---|
+| `{ROLLBACK}` | yes | unit test: stage a deliberately non-launchable file, swap, assert the destination still holds the old bytes and the rollback error is surfaced |
+| `{EXECBIT}` | **no** | unit test asserting the staged file's mode is 0755 (a `cfg(unix)` test or a pure function returning the mode); then `cargo zigbuild --target x86_64-unknown-linux-gnu` per PRD_02_32, and the CI Linux cells |
+| `{BOMB}` | yes | unit test with a crafted archive (tiny compressed / huge declared output) asserting a typed refusal, not an abort |
+| `{SCHEME}` | yes | unit test: an `http://` URL is refused with no request sent (the loopback server can assert it saw nothing) |
+| `{SIGV}` | yes (Windows PE) | needs a real signed/unsigned fixture; the macOS bundle case cannot be proven here — PRD_02_32's macOS gate compiles it only |
+
+### Testing notes specific to this version
+
+- The update tests already live in `src/update.rs`'s `mod tests` and prove the
+  state machine against a **loopback HTTP server** (`a_check_against_loopback…`,
+  `an_install_from_loopback…`, `a_truncated_answer_is_a_failure`,
+  `a_rate_limited_answer…`, `the_swap_keeps_the_old_executable_and_rolls_back_on_failure`).
+  Follow that pattern; do not introduce a live network dependency into the
+  default gate.
+- `src/update.rs`'s `Target::in_place` is `true` for Windows and Linux, `false`
+  for macOS (`.dmg`). Linux is the only `in_place` host whose archive is a
+  `.tar.gz`, which is why `{EXECBIT}` is Linux-only — the `.zip` path is
+  Windows-only, where a file mode is meaningless.
+- **The real-GitHub smoke is `#[ignore]`d and nothing runs it for us.** Run it by
+  hand before any release, because it is the only test that exercises the TLS
+  layer and it is what caught 0.2.7's shipped TLS panic:
+  `cargo test --bin minicon -- --ignored update::tests::the_real_release_api_still_parses`
+
+### Design notes that save a round
+
+- `{EXECBIT}`: the tar header's mode is 8 octal bytes at offset 100; a zip entry's
+  Unix mode is the high 16 bits of the "external file attributes" at offset 38 of
+  the central-directory record. `read_tar_gz` currently returns `Vec<u8>` and
+  drops it. Either return the mode alongside the bytes, or (simpler, and it also
+  covers a container that records nothing) copy the running executable's own mode
+  onto the staged file before the rename. Prefer copying the destination's mode —
+  the product's binary is always executable, so this cannot install a non-runnable
+  file, and it preserves whatever the user had.
+- `{BOMB}`: derive the output ceiling from `ARCHIVE_BODY_LIMIT`
+  (`src/update.rs:48`), which is already the download bound, so there is one
+  number rather than two that can drift. Refuse as a typed error, never a panic.
+
+### Releasing 0.2.8
+
+Any product change here needs a new version and the CI chain — a public Release
+is immutable (that is why these defects could not be patched into 0.2.7). Bump
+`Cargo.toml`/`release-policy.json` and drive `scripts/release.sh <version>`; if
+the version is already bumped it exits before its first dispatch, and the
+dispatches must then be driven by hand — see
+`prd/archive/v0.2.7-release-history.md` "Notes for the next chain" for the
+`source_sha`/`--ref` trap it cost a round to learn.
+
 ## Verified against the landed 0.2.7 code (commit `417f595`)
 
 Checked on 2026-10-13 against the committed 0.2.7 feature, so this version is
@@ -31,7 +111,7 @@ numbers below were re-checked against `f52662a` and still hold.
 |---|---|---|
 | `{SIGV}` | verifies only the release's own `.sha256` sidecar; no signature call anywhere in the update path | `src/update.rs:52` `SIDECAR_SUFFIX`, `:345` `verify_and_stage` |
 | `{RESTART}` | spawns the new executable and sets `self.exit`; no session count, no confirmation | `src/main.rs:2157` `restart_into_staged` |
-| `{SLOGAN}` | renames the replaced executable to `<name>.backup` and keeps it | `src/update.rs:377` `backup_path`, `:390` `commit_swap` |
+| `{SLOGAN}` | renames the replaced executable to `<name>.backup` and keeps it | `src/update.rs:377` `backup_path`, `:389` `commit_swap` |
 | `{PREF}` | decodes only `font_size`, `cols`, `rows` | `src/main.rs:316` `struct ConConfig` |
 
 Two findings from that read that change the leaves:
@@ -113,11 +193,11 @@ by the other session when this file was written. `{PREF}`, `{RESTART}` and
 session's work is committed and the 0.2.7 release object exists. `{SIGV}`
 (`src/update.rs` + a platform feature) and `{FIND}` (terminal/mux) are clear.
 
-## GATE status
+## Ordering principle
 
-Ordering principle for this version: **cheap, high-perception fixes first, and
-no new capability until the update path is trustworthy.** A product that can
-replace itself must be more careful than one that cannot, not less.
+**Cheap, high-perception fixes first, and no new capability until the update
+path is trustworthy.** A product that can replace itself must be more careful
+than one that cannot, not less.
 
 ## Tree DAG
 

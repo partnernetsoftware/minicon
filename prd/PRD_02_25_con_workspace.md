@@ -18,6 +18,7 @@ minicon workspace and input
 ├── Host UI
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   ├── sent-history panel (0.2.6)
+│   ├── Updates section (0.2.7 check-for-updates; 0.2.8 correctness leaves)
 │   └── composer + status bar
 ├── External composer input (exactly one focus owner)
 ├── Scrollbar and divider
@@ -249,6 +250,29 @@ header tools, and the composer. It is not the browser, and it is not layout.
   **size, not mechanism** (enable `app-facts`, or expose one verify-only entry
   point behind `network-http`), and it belongs to
   [27](PRD_02_27_con_delivery.md)'s budget, not to whoever writes the code.
+- [_] four defects the shipped 0.2.7 update path was found to carry, filed by an
+  independent security review and confirmed line-by-line (2026-10-13). All four
+  are in code that is **already public**, so they cannot be patched into 0.2.7;
+  each is a leaf in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) and is the
+  reason that version leads with correctness rather than features.
+  - `{EXECBIT}` — a Unix in-place update installs a **non-executable** binary:
+    staging sets no file mode and the tar reader discards the header's mode
+    field, so `spawn` fails EACCES. Linux-only (it is the only `in_place` host
+    whose archive is a `.tar.gz`; the `.zip` path is Windows-only).
+  - `{ROLLBACK}` — the failed-launch rollback deletes the last good copy:
+    `main.rs` re-enters `commit_swap`, which recomputes and `remove_if_present`s
+    the same `.backup` path, emptying the destination. `{EXECBIT}` is what makes
+    this reachable in normal Linux use. The two must be fixed together.
+  - `{BOMB}` — the archive decode is unbounded on its **output**: the download
+    ceiling bounds the compressed input only, and the zip path pre-allocates the
+    declared uncompressed size, so a crafted or tampered release aborts the
+    process by exhausting memory instead of refusing it.
+  - `{SCHEME}` — `validate_url` admits `http://`, and the download URL is taken
+    verbatim from the release document, so a plaintext downgrade is not refused.
+  The review found the verification order and every network bound sound, and no
+  path traversal, panic or integer overflow in the reader (the extraction path
+  comes from `current_exe`, never from the entry name); that is recorded so it is
+  not re-litigated.
 - [v] interface language is chosen from the panel (English / Simplified /
   Traditional). Only host UI is translated; each option is written in the
   language it selects, and the active one is drawn in the accent colour, so the
