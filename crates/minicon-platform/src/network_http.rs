@@ -198,6 +198,21 @@ fn validate_headers(headers: &[(String, String)]) -> Result<(), NetworkHttpError
     Ok(())
 }
 
+/// The TLS provider this build actually enables, named so the runtime choice
+/// matches the manifest's target-specific `ureq` features.
+///
+/// `ureq`'s own default is [`TlsProvider::Rustls`] ("the highest chance of
+/// being enabled"), but this crate enables exactly one provider per host: Unix
+/// `rustls`, Windows `native-tls`. Left at the default, a Windows build — where
+/// the `rustls` feature is *off* — picks Rustls for a `https://` URI and panics
+/// in `ureq`'s transport ("provider is Rustls but feature is not enabled"). The
+/// pinned provider below is what the manifest already promised; the panic was
+/// the manifest and the runtime disagreeing.
+#[cfg(windows)]
+const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::NativeTls;
+#[cfg(unix)]
+const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::Rustls;
+
 /// Perform one bounded exchange.
 ///
 /// Validation runs first and completely; nothing below is reached by an invalid
@@ -206,6 +221,11 @@ pub fn request(request: &NetworkHttpRequest) -> Result<NetworkHttpResponse, Netw
     validate(request)?;
 
     let config = ureq::Agent::config_builder()
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .provider(TLS_PROVIDER)
+                .build(),
+        )
         .timeout_global(Some(request.timeout))
         .max_redirects(request.max_redirects)
         .max_redirects_will_error(true)

@@ -778,6 +778,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
     }
 
+    /// The real endpoint, opt-in: `cargo test -- --ignored`.
+    ///
+    /// Proves the document GitHub actually serves still parses into the two
+    /// fields this product reads. Deliberately not part of the default gate:
+    /// CI has no reason to depend on GitHub being reachable, and a rate-limited
+    /// runner would fail for a reason that is not this product's.
+    #[test]
+    #[ignore = "hits the live GitHub release API"]
+    fn the_real_release_api_still_parses() {
+        let (events, received) = std::sync::mpsc::channel();
+        check(&events, RELEASE_API_DEFAULT).unwrap();
+        let Event::Checked(release) = received.recv().unwrap() else {
+            panic!("a check reports the release");
+        };
+        assert!(
+            release.version >= Version::parse("0.1.0").unwrap(),
+            "the release version parsed to {}",
+            release.version
+        );
+        assert!(
+            !release.assets.is_empty(),
+            "a released version publishes assets"
+        );
+    }
+
     fn release_json(tag: &str, names: &[&str]) -> Vec<u8> {
         let assets: Vec<String> = names
             .iter()
