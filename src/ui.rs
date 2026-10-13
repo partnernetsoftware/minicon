@@ -626,7 +626,7 @@ impl UiLanguage {
     }
 
     #[must_use]
-    pub const fn help_lines(self) -> [&'static str; 14] {
+    pub const fn help_lines(self) -> [&'static str; 15] {
         // The clipboard keys are the only platform-native ones: Cmd on macOS,
         // Ctrl elsewhere. The workspace shortcuts stay Ctrl+Shift on every
         // platform, so only the clipboard line switches via `cfg`. Exactly one
@@ -643,6 +643,7 @@ impl UiLanguage {
                 "Ctrl+Shift+,   Settings",
                 "Ctrl+Shift+G   Crosshair",
                 "Ctrl+Shift+B   Collapse tabs",
+                "Ctrl+Shift+H   History panel",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      Copy/Paste/Cut",
                 #[cfg(not(target_os = "macos"))]
@@ -662,6 +663,7 @@ impl UiLanguage {
                 "Ctrl+Shift+,   设置",
                 "Ctrl+Shift+G   十字线",
                 "Ctrl+Shift+B   收起标签",
+                "Ctrl+Shift+H   历史面板",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      复制/粘贴/剪切",
                 #[cfg(not(target_os = "macos"))]
@@ -681,6 +683,7 @@ impl UiLanguage {
                 "Ctrl+Shift+,   設定",
                 "Ctrl+Shift+G   十字線",
                 "Ctrl+Shift+B   收起分頁",
+                "Ctrl+Shift+H   歷史面板",
                 #[cfg(target_os = "macos")]
                 "Cmd+C/V/X      複製/貼上/剪下",
                 #[cfg(not(target_os = "macos"))]
@@ -843,7 +846,7 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
 }
 
 /// Number of settings-panel shortcut lines (mirrors `UiLanguage::help_lines`).
-pub const SETTINGS_SHORTCUT_LINES: u32 = 13;
+pub const SETTINGS_SHORTCUT_LINES: u32 = 14;
 
 /// Geometry of the settings panel and its interactive controls. Computed on
 /// demand from the `Layout` + scale so paint and hit-testing agree exactly.
