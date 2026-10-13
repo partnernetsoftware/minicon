@@ -79,7 +79,16 @@ change, so it cannot be re-cut into the already-published 0.2.6.
 │        (sha-mismatch, truncated response, rate-limit, permission-denied), the
 │        swap tested against a temporary copy of the binary (never the running
 │        one), `ui-snapshot` publishes the update state; a real-GitHub smoke is
-│        a separate opt-in (`--ignored`) test, not part of the default gate
+│        a separate opt-in (`--ignored`) test, not part of the default gate —
+│        and that opt-in test is what caught the one defect the loopback gate
+│        could not (see below)
+│      fixed during 0.2.7: `ureq`'s runtime default TLS provider is Rustls, but
+│        the Windows manifest enables only `native-tls`, so the first real
+│        `https://` call panicked in `ureq`'s transport ("provider is Rustls
+│        but feature is not enabled: rustls"). The updater is this product's
+│        first `https` caller, so it shipped broken. `network_http` now names
+│        its provider per host (Windows `NativeTls`, Unix `Rustls`), matching
+│        the manifest feature tree exactly
 └── {VERSION} 0.2.7                                                 [v] @host=none
        `Cargo.toml` version 0.2.7; `release-policy.json` is bumped by the
        release step, not here
@@ -126,6 +135,28 @@ in-tree inspectors sit behind `minicon-platform`'s `app-facts` feature, whose
 app inventory the product does not otherwise carry; enabling it for one boolean
 is a size decision. The checksum gate is in place. Recorded in
 `prd/PRD_02_25_con_workspace.md` "Host UI".
+
+### A defect the offline gate cannot see (fixed in 0.2.7)
+
+The loopback tests all speak `http://`, so none of them touches the TLS layer.
+The opt-in real-GitHub smoke ran for the first time while driving this release
+and instantly panicked: `ureq` picks its TLS provider at *runtime* and defaults
+to Rustls ("the highest chance of being enabled"), while the Windows manifest
+enables only `native-tls`. On Windows — the one host we can actually run — the
+shipped check-for-updates would have panicked on its first press.
+
+`network_http::request` now pins the provider to the one the build enables
+(`#[cfg(windows)] NativeTls`, `#[cfg(unix)] Rustls`), so the runtime choice and
+the manifest's target-specific features can no longer disagree.
+
+Consequence for the gate: the default suite can never prove an `https` path,
+because it has no server. The real-GitHub opt-in is not a nice-to-have — it is
+the only check that exercises the TLS provider selection, on any host. It stays
+`#[ignore]`d (CI must not depend on GitHub being reachable), so it has to be run
+by hand before a release. **The Unix half is still unexercised**: nothing here
+can execute a Linux/macOS binary, so the `Rustls` arm rests on the manifest's
+feature tree (`rustls` = `rustls-no-provider` + `_ring` + `rustls-webpki-roots`,
+verified by reading `ureq`'s own `Cargo.toml`) rather than on a live call.
 
 ## Open decisions (owner)
 

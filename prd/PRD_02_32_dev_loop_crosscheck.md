@@ -109,6 +109,34 @@ that actually compiles the code:
   toolchain. The platform-side gate above plus the CI macOS cells are the
   evidence; that is a limit to state, not a gap to paper over.
 
+### Gates that compile a path but cannot exercise it
+
+A compiled path is not a working path. The same 0.2.7 release produced the
+opposite failure from the ones above: a path that *did* compile on the one host
+we can run, and still failed the moment it ran.
+
+`minicon_platform::network_http`'s TLS layer is exercised by **nothing** in the
+default suite — every test in it speaks `http://` to a loopback server — so the
+suite can be green while `https://` panics. That is exactly what happened:
+`ureq` picks its TLS provider at runtime and defaults to Rustls, the Windows
+manifest enables only `native-tls`, and the product's first `https` call (the
+new update check) died inside `ureq`. The fix pins the provider per host; the
+finding is recorded in `plan/plan-v0.2.7.md` and
+`prd/PRD_02_25_con_workspace.md`.
+
+The lesson is a category, not one bug: **an opt-in real-endpoint test is the
+only gate for a network path whose default tests are loopback-only.** It must
+be run by hand before a release, from `plan/plan-v0.2.7.md`:
+
+```sh
+cargo test --bin minicon -- --ignored update::tests::the_real_release_api_still_parses
+```
+
+It stays `#[ignore]`d on purpose — CI must not depend on GitHub being reachable
+— so nothing will ever run it for us. The Unix arm of the same fix is still
+unexercised: no host here can execute a Linux/macOS binary, so it rests on
+reading `ureq`'s own feature tree rather than a live call.
+
 ## Permission walls, disambiguated
 
 Found and confirmed distinct while building this (2026-09-27); recorded here

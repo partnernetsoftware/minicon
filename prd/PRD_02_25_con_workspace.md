@@ -220,6 +220,17 @@ header tools, and the composer. It is not the browser, and it is not layout.
   persistent workspace and is not getting one. macOS never swaps in place — one
   file inside a signed, notarized `.app` cannot be replaced without breaking
   the signature — so its Update control opens the release's own `.dmg`.
+- [v] the update check names its **TLS provider** explicitly (0.2.7). `ureq`
+  chooses its provider at *runtime* and defaults to Rustls ("the highest chance
+  of being enabled"), while this crate enables exactly one per host (Unix
+  `rustls`, Windows `native-tls`). Left at the default, the first `https://`
+  request panicked inside `ureq`'s transport on Windows — the update check is
+  this product's first `https` caller, so it shipped broken until
+  `network_http` pinned the provider to the feature the build actually enables.
+  The manifest's target-specific tree and the runtime can no longer disagree.
+  **Found only by the opt-in real-GitHub smoke:** every default test speaks
+  `http://` to a loopback server and never enters the TLS layer, so no offline
+  gate on any host can see this class of defect.
 - [-] the update flow verifies the release's checksum but not yet the **code
   signature** of the new binary. The in-tree inspectors
   (`adapters/{windows,macos}/app_facts.rs`: `WinVerifyTrust` /
