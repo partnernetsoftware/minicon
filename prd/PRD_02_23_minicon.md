@@ -108,6 +108,17 @@ failure, resize storms, process exit, and interaction races.
   nothing about the running product changes without the user asking; the
   README's "no auto-update" line stays true under that qualification. Owner:
   `prd/PRD_02_25_con_workspace.md`, section "Host UI".
+  **One consequence that qualification does not absorb (registered
+  2026-10-13):** an update leaves a **second file behind** — the replaced
+  executable is renamed to `<name>.backup` and kept, deliberately, so a failed
+  launch can be rolled back by hand (see `plan/plan-v0.2.7.md`). That is the
+  right default, but the product's own line is `one file · no install · nothing
+  left behind`, and after one update the directory holds two. The behaviour is
+  not in question; the sentence is, and it is the sentence a user decides to
+  trust this product on. Leaf `{SLOGAN}` in
+  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) owns reconciling the two,
+  with the non-goal that deleting the backup automatically is **not** what this
+  asks for.
 - No claim of tmux/RMUX compatibility beyond the narrowed exception below.
 - No product navigation or workbench policy shared with `agenterm` merely to
   reduce code size.

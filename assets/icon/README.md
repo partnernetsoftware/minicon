@@ -11,15 +11,18 @@ on the Launchpad tile instead of the generic blank document.
 ## The window icon
 
 `assets/minicon.ico` is the single source of truth for the **window** icon on
-every host, not just Windows. Windows reads it from the PE resource `build.rs`
-embeds with `winresource`; X11 and macOS cannot read a PE resource, so `build.rs`
-decodes the largest face of the same file into RGBA and the product hands those
-pixels to the window host — X11 as the window icon, macOS as the application
-icon (`winit`'s window icon is a no-op there). Nothing derived is committed, so
-the pixels cannot drift from the `.ico`, and no platform carries a PNG decoder
-in the shipped binary. The macOS `.app` in the `.dmg` gets its Dock icon from
-`CFBundleIconFile` and needs none of this; the runtime path covers the bare
-binary the `.tar.gz` ships for command-line use.
+Windows and X11, not just Windows the executable. Windows reads it from the PE
+resource `build.rs` embeds with `winresource`; X11 cannot read a PE resource, so
+`build.rs` decodes the largest face of the same file into RGBA and the product
+hands those pixels to `winit`. Nothing derived is committed, so the pixels
+cannot drift from the `.ico`, and no platform carries a PNG decoder in the
+shipped binary.
+
+macOS is separate: the `.dmg` ships a `MiniCon.app` whose `CFBundleIconFile`
+names the `.icns` below, and that is what the Dock shows. The bare signed binary
+the macOS `.tar.gz` ships for command-line use still shows the system default —
+setting its Dock icon needs `objc2` as a direct platform dependency, which is a
+manifest decision of its own (see `prd/PRD_02_25_con_workspace.md`, "Host UI").
 
 ## The artwork
 

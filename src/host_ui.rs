@@ -344,7 +344,11 @@ pub(crate) fn paint_settings_panel(
         strings.settings_shortcuts,
     );
     let mut y = s.shortcuts_y;
-    for (index, line) in shortcuts.into_iter().enumerate() {
+    for (index, line) in shortcuts
+        .into_iter()
+        .take(s.shortcut_lines as usize)
+        .enumerate()
+    {
         paint_host_ui_text(
             surface,
             inner_x,
@@ -364,7 +368,7 @@ pub(crate) fn paint_settings_panel(
         surface,
         ui::Rect {
             x: inner_x,
-            y: s.updates_label_y,
+            y: s.updates_row,
             width: inner_w,
             height: metrics.height,
         },

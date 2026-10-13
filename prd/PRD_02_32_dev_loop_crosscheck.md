@@ -80,6 +80,35 @@ Failure or a hang (`cancelled`, not just `failure` — the same gap fixed in
 `probe-logs/*.log` via the same pinned `actions/upload-artifact` SHA used
 elsewhere in this repo's workflows.
 
+## Local per-host gates, and the ones that are not gates
+
+A local check that compiles nothing is worse than no check, because it reads as
+green. Two were found by a release chain failing on code a local gate had
+"passed" (0.2.7, 2026-10-13), so each is written down with the exact command
+that actually compiles the code:
+
+- **macOS platform code.** `adapters/macos/window.rs` includes the unix window
+  host as `#[path = "../unix/window_host.rs"] mod window_host;` under
+  `#[cfg(all(feature = "input", feature = "ime"))]`. A check that omits those
+  features compiles no macOS window code and reports success. The working
+  command, which the host can run without an Apple SDK because `cargo check`
+  does not link:
+
+  ```sh
+  cargo check --target x86_64-apple-darwin -p minicon-platform \
+    --features 'portable-pixel-window,input,ime'
+  ```
+
+  A `compile_error!` probe dropped into a macOS-only function is the way to
+  prove the gate still reaches it.
+- **Linux product code.** `cargo check --target x86_64-unknown-linux-gnu` stops
+  in `ring`'s build script (no C compiler for the target). `cargo zigbuild
+  --target x86_64-unknown-linux-gnu` with zig on `PATH` does compile and link
+  the product, so it is the gate that covers `#[cfg(unix)]` product code.
+- **The whole macOS product** cannot be compiled here: `ring` needs an Apple C
+  toolchain. The platform-side gate above plus the CI macOS cells are the
+  evidence; that is a limit to state, not a gap to paper over.
+
 ## Permission walls, disambiguated
 
 Found and confirmed distinct while building this (2026-09-27); recorded here

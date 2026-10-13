@@ -45,6 +45,10 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
+│   ├── [-] v0.2.8 planned — trust the self-updating product, then close the cheap gaps
+│   │   └── plan/plan-v0.2.8.md
+│   ├── [-] v0.2.7 in flight — manual check-for-updates (#4) + window-icon parity; not yet public
+│   │   └── plan/plan-v0.2.7.md
 │   ├── [v] v0.2.6 released — right-side collapsible sent-history panel (#3) + paired header toggles
 │   │   └── prd/archive/v0.2.6-release-history.md
 │   ├── [v] v0.2.5 released — inline tab rename + OSC-title row; the platform layer moves into MiniCon
@@ -281,6 +285,22 @@ flowchart LR
 
 ## Current frontier
 
+- [-] **v0.2.7 is in flight, not released.** Manual check-for-updates (GitHub
+  #4) — the product's first outbound network call and first self-modifying
+  behaviour — plus window-icon parity on X11/macOS. Owner:
+  `plan/plan-v0.2.7.md`; behaviour `prd/PRD_02_25_con_workspace.md`, boundary
+  amendment `prd/PRD_02_23_minicon.md`.
+- [_] **v0.2.8 is planned: `plan/plan-v0.2.8.md`.** Its premise is that 0.2.7
+  moved the product's *identity*, not only its feature list, and three
+  consequences were not carried into the story: the new binary is checked
+  against a checksum whose sidecar comes from the same release (`{SIGV}` —
+  verify the signature too, a size decision owned by PRD_02_27); a Restart
+  press is the first moment a user learns it ends every tab (`{RESTART}`);
+  and an update leaves a `.backup` file next to a product whose line is
+  "nothing left behind" (`{SLOGAN}`). Alongside them, cheap and felt at every
+  launch: the theme and language chosen in the settings panel are not
+  persisted (`{PREF}`), and a terminal has no way to search what it already
+  printed (`{FIND}`, blocked on C1 in `plan/plan-carried-debt.md`).
 - [v] v0.2.6 is the latest public release (2026-10-13): the first cut of the
   right-side collapsible sent-history panel (GitHub #3) — newest sent lines,
   click a row to refill the composer through the recall path, a reserved area

@@ -100,9 +100,18 @@ process, exactly like the existing `--control` endpoint.
 │   │   ├── DeepSeek official API + key, flash model first ->h1 @method=first
 │   │   ├── opencode-go-compatible key as the second accepted credential
 │   │   └── both adapters are built with their OWN codec and dispatched per
-│   │       backend; both are `[-]` not `[v]` because neither has run against
-│   │       its real endpoint -- see "harness — what is built and what is
-│   │       owed" below. #assumption
+│   │       backend. **Marker re-stated 2026-10-13.** This node was `[-]`
+│   │       because "neither has run against its real endpoint"; that reason
+│   │       expired on 2026-09-26, when both backends got live black-box calls
+│   │       against their real endpoints (see "harness — what is built and
+│   │       what is owed"), and the marker was never updated with it. A `[-]`
+│   │       whose stated reason no longer holds is the same drift as a `[v]`
+│   │       with no evidence, so the reason is corrected here rather than the
+│   │       marker quietly left behind: **the remaining gap is the TLS arm,
+│   │       not the wire** — the live calls prove Unix Rustls/WebPKI only, and
+│   │       the Windows/macOS `native-tls` branch is still not compiled into
+│   │       any evidence on record. Each live test stays `BLOCKED` when this
+│   │       environment lacks the credential, never silently skipped.
 │   ├── policy #decision
 │   │   ├── no separate "Agent permission policy" framework
 │   │   └── the two tools' own bounds (root path, command) are the policy

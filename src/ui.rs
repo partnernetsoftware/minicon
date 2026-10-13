@@ -892,8 +892,12 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
     }
 }
 
-/// Number of settings-panel shortcut lines (mirrors `UiLanguage::help_lines`).
-pub const SETTINGS_SHORTCUT_LINES: u32 = 15;
+/// Number of settings-panel shortcut lines.
+///
+/// The painter draws every entry of `UiLanguage::help_lines` — including its
+/// leading all-caps section row — so the reserved height is the array's own
+/// length. Reserving one less let the final line spill into whatever followed.
+pub const SETTINGS_SHORTCUT_LINES: u32 = 16;
 
 /// Geometry of the settings panel and its interactive controls. Computed on
 /// demand from the `Layout` + scale so paint and hit-testing agree exactly.
@@ -910,8 +914,15 @@ pub struct SettingsLayout {
     /// Where the shortcut lines begin (the reused help text).
     pub shortcuts_y: u32,
     pub shortcut_line_height: u32,
-    /// The Updates section: its label, its three controls and its status line.
-    pub updates_label_y: u32,
+    /// How many shortcut lines actually fit above the Updates section.
+    ///
+    /// A short window truncates the help list rather than pushing the Updates
+    /// controls past the bottom edge, because the list is readable from
+    /// `--help` and the Update / Restart controls are not.
+    pub shortcut_lines: u32,
+    /// The Updates section: the row its label is anchored above, its three
+    /// controls, and its status line.
+    pub updates_row: u32,
     pub update: [Rect; 3],
     pub updates_status_y: u32,
 }
@@ -980,21 +991,37 @@ impl Layout {
             .saturating_add(label_h);
         let theme = [cell(0, theme_row), cell(1, theme_row), cell(2, theme_row)];
 
-        let shortcuts_label_y = theme_row.saturating_add(row_h).saturating_add(gap);
-        let shortcuts_y = shortcuts_label_y.saturating_add(label_h);
-        let shortcuts_bottom =
-            shortcuts_y.saturating_add(line_h.saturating_mul(SETTINGS_SHORTCUT_LINES));
-        // The Updates section sits under the shortcuts: a label, one row of
-        // three controls, and a status line the phase is written into.
-        let updates_label_y = shortcuts_bottom.saturating_add(gap);
-        let updates_row = updates_label_y.saturating_add(label_h);
+        // The Updates section comes before the shortcut list: a short window
+        // truncates the help text, which `--help` also carries, rather than
+        // pushing the Update / Restart controls off the bottom edge.
+        //
+        // `section_label` draws a label a line-height above the row it is
+        // anchored to, so the row leaves it that line.
+        let updates_row = theme_row
+            .saturating_add(row_h)
+            .saturating_add(gap)
+            .saturating_add(label_h);
         let update = [
             cell(0, updates_row),
             cell(1, updates_row),
             cell(2, updates_row),
         ];
         let updates_status_y = updates_row.saturating_add(row_h).saturating_add(gap);
-        let panel_bottom = updates_status_y.saturating_add(line_h).saturating_add(pad);
+
+        let shortcuts_label_y = updates_status_y.saturating_add(line_h);
+        let shortcuts_y = shortcuts_label_y.saturating_add(label_h);
+        // The panel is anchored under the header and may not spill past the
+        // composer band, so the list takes what is left.
+        let room = self
+            .composer
+            .y
+            .saturating_sub(shortcuts_y)
+            .saturating_sub(pad);
+        let shortcut_lines = (room / line_h.max(1)).min(SETTINGS_SHORTCUT_LINES);
+        let panel_bottom = shortcuts_y
+            .saturating_add(line_h.saturating_mul(shortcut_lines))
+            .saturating_add(pad)
+            .min(self.composer.y);
         let panel = Rect {
             x: self.sidebar.x,
             y: self.tree_header_height,
@@ -1010,7 +1037,8 @@ impl Layout {
             theme,
             shortcuts_y,
             shortcut_line_height: line_h,
-            updates_label_y,
+            shortcut_lines,
+            updates_row,
             update,
             updates_status_y,
         }
@@ -1806,6 +1834,65 @@ mod tests {
             ),
             TreeHit::Settings
         );
+    }
+
+    /// Everything the panel paints must fit inside the panel it computed, and
+    /// Everything the panel paints must fit inside the panel it computed, the
+    /// Updates controls must sit above the shortcut list, and the panel must
+    /// never spill past the composer band. This is the invariant a spilled
+    /// line or a mis-anchored section breaks, and it is the only thing that
+    /// catches it without a screenshot.
+    #[test]
+    fn the_settings_panel_contains_every_section() {
+        for (width, height) in [(1200, 800), (960, 600), (640, 480)] {
+            for scale in [1.0, 1.25, 1.5, 1.7675, 2.0] {
+                let layout = Layout::new(width, height, scale);
+                let s = layout.settings_panel(scale);
+                let line = s.shortcut_line_height;
+                let bottom = s.panel.y.saturating_add(s.panel.height);
+                // The panel never spills past the band it is anchored above.
+                assert!(bottom <= layout.composer.y);
+                assert!(
+                    s.shortcut_lines <= SETTINGS_SHORTCUT_LINES,
+                    "the painter cannot draw more lines than the list has"
+                );
+                // The list begins below the Updates status line, never over it.
+                assert!(
+                    s.shortcuts_y >= s.updates_status_y.saturating_add(line),
+                    "the shortcut list overlaps the Updates section at scale {scale}"
+                );
+                // The Updates row leaves a full line above for its label, so
+                // the label cannot land on the theme swatches.
+                let swatches = s.theme[0];
+                assert!(
+                    s.update[0].y
+                        >= swatches
+                            .y
+                            .saturating_add(swatches.height)
+                            .saturating_add(s.update[0].height),
+                    "the Updates label has no room above its row at scale {scale}"
+                );
+                // A window too short for even the fixed sections truncates the
+                // list to nothing and clamps the panel; that is honest, so the
+                // containment claims below only apply when the sections fit.
+                if s.updates_status_y.saturating_add(line) > layout.composer.y.saturating_sub(0) {
+                    continue;
+                }
+                for rect in s.update {
+                    assert!(
+                        rect.y.saturating_add(rect.height) <= bottom,
+                        "an Updates control falls outside the panel at scale {scale}"
+                    );
+                }
+                assert!(
+                    s.updates_status_y.saturating_add(line) <= bottom,
+                    "the Updates status line falls outside the panel at scale {scale}"
+                );
+                for rect in s.language {
+                    assert!(rect.y.saturating_add(rect.height) <= bottom);
+                }
+            }
+        }
     }
 
     #[test]

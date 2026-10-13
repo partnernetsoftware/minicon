@@ -21,21 +21,25 @@ change, so it cannot be re-cut into the already-published 0.2.6.
 
 ```text
 0.2.7: check-for-updates + window-icon parity; other scope open
-├── {ICON} window icon on all three hosts                              [v] @host=all
+├── {ICON} window icon on Windows and X11                          [v] @host=win,x11
 │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
 │      Windows: load the PE icon group (`winresource` id 1) into the
 │        window class `hIcon` and pin it with `WM_SETICON` (big + small)
-│      X11/macOS: `build.rs` decodes the largest face of the same
+│      X11: `build.rs` decodes the largest face of the same
 │        `assets/minicon.ico` into RGBA; the product passes it through
-│        `PixelWindowOptions::window_icon_rgba`; X11 uses it as the window
-│        icon, macOS builds an `NSImage` and calls
-│        `setApplicationIconImage:` (winit's icon is a no-op on macOS)
+│        `PixelWindowOptions::window_icon_rgba` and winit sets the window icon
 │      invariant: one committed icon (`assets/minicon.ico`) is the source for
 │        every host; no derived blob is committed, no PNG decoder ships
 │      evidence: Windows verified against the live window (`WM_GETICON` and the
-│        class icon non-null, dumped icon matches the artwork); X11/macOS are
-│        typechecked per target here and compiled by the CI cells, which is the
-│        strongest evidence available without a display or an Apple host
+│        class icon non-null, dumped icon matches the artwork); X11 is
+│        typechecked by `cargo zigbuild --target x86_64-unknown-linux-gnu` and
+│        compiled by the CI cells, the strongest evidence available without a
+│        display
+│      #deferred macOS runtime icon — the shipped `.app` already carries
+│        `CFBundleIconFile`; the bare `.tar.gz` binary still shows the system
+│        default. Setting it needs `objc2` as a direct platform dependency,
+│        which would also pull it into Linux builds. Named gap in
+│        `prd/PRD_02_25_con_workspace.md`, not claimed here.
 │      non-goal: shipping a second icon, a `.desktop` file, or a macOS `.icns`
 │        runtime path
 ├── {UPDATE} settings "Check for updates" → verify → swap → restart  [v] @host=none
@@ -76,7 +80,7 @@ change, so it cannot be re-cut into the already-published 0.2.6.
 │        swap tested against a temporary copy of the binary (never the running
 │        one), `ui-snapshot` publishes the update state; a real-GitHub smoke is
 │        a separate opt-in (`--ignored`) test, not part of the default gate
-└── {VERSION} 0.2.7                                                 [_] @host=none
+└── {VERSION} 0.2.7                                                 [v] @host=none
        `Cargo.toml` version 0.2.7; `release-policy.json` is bumped by the
        release step, not here
 ```
@@ -99,7 +103,11 @@ runs per the `run-reputation-and-release` skill when a Candidate is cut.
    release chain**, which is the part of this system whose correctness the
    whole no-rebuild discipline depends on. `flate2` (already in the graph as
    `png`'s pure-Rust backend) and `sha2` are named directly instead of pulling
-   an archive crate.
+   an archive crate. **Measured cost**: the local `release` build grew
+   1,713,152 → 1,868,800 bytes (+152 KB, +9%) for the two named crates plus the
+   reader, the state machine and the panel section. Recorded as a considered
+   price rather than hidden; the Windows release profile applies its own size
+   settings on top.
 3. **Backup retention** — the replaced executable stays beside the new one as
    `<name>.backup`. Kept, not removed after a launch: a file the user can see
    is a file the user can roll back to, and the "不留痕" rule is about the

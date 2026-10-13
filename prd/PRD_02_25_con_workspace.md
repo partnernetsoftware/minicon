@@ -51,6 +51,25 @@ minicon workspace and input
 - [v] one function builds it. The OSC path and the activation path formatted it
   independently and drifted, so the same window read differently depending on
   which had written it last.
+- [v] a user can name a tab themselves, and that name wins. Each tree row
+  carries a pencil affordance that opens an inline editor over the row's own
+  label (shipped in v0.2.5); the edit reuses the composer's bounded editor, so
+  a rename has the same caret, selection and 64 KiB ceiling as a draft rather
+  than a second text widget. A custom name overrides the derived one; clearing
+  it returns the row to what the session reports, so the fallback is reachable
+  rather than one-way. **A tab is created without a name and named afterwards**
+  — `new-tab` takes no name argument on purpose, which is why
+  [31](PRD_02_31_v0_2_horizon.md)'s `mux new-window -n` is refused instead of
+  accepted-and-dropped: the tree's naming authority is this row editor, not the
+  creation call, and a verb that named a tab at birth would be a second owner
+  of the same fact.
+  Owner note: this behaviour has no other statement in the PRD series — it was
+  shipped in v0.2.5 without a requirement line here, and this entry is its
+  registration, written 2026-10-13 from the source of record
+  (`crates/minicon-core` workspace `custom_title`, `src/host_paint.rs`'s row
+  painting). It carries no `[v]`-grade named evidence of its own yet; treat the
+  claim as "shipped and described", and add the black-box journey when this
+  line next gets worked on.
 
 ## Tab tree authority
 
@@ -140,18 +159,25 @@ header tools, and the composer. It is not the browser, and it is not layout.
   (left), then Settings and the two chrome toggles (right) — with 24-DIP hit
   targets and no permanent button borders. High-contrast, minimal marks float on
   the shared toolbar; the open Settings button uses a quiet selected fill.
-- [v] the window carries the product's own icon on every host. Windows reads
-  it from the PE resource `build.rs` embeds with `winresource`; X11 and macOS
-  cannot read a PE resource, so `build.rs` decodes the same committed
-  `assets/minicon.ico` into RGBA once and the product hands those pixels to the
-  window host — X11 as the window icon, macOS as the application icon (winit's
-  window icon is a no-op there). No platform ships a second icon or a PNG
-  decoder in the binary. A window class registered with a null `hIcon` — the
-  pre-0.2.7 state — shows the generic system default, not the executable's
-  icon, so the caption and the taskbar are wrong together. The macOS `.app` in
-  the `.dmg` carries `CFBundleIconFile` and needs none of this; the runtime
-  icon exists for the bare binary the `.tar.gz` ships for command-line use,
-  which has no bundle to read it from.
+- [v] the window carries the product's own icon on Windows and X11. Windows
+  reads it from the PE resource `build.rs` embeds with `winresource` and sets
+  it on the window class (plus `WM_SETICON` for the taskbar); X11 cannot read a
+  PE resource, so `build.rs` decodes the same committed `assets/minicon.ico`
+  into RGBA once and the product hands those pixels to winit. No platform ships
+  a second icon or a PNG decoder in the binary. A window class registered with
+  a null `hIcon` — the pre-0.2.7 state — shows the generic system default, not
+  the executable's icon, so the caption and the taskbar were wrong together.
+- [-] macOS shows the product icon for the shipped `.app` (the `.dmg` carries
+  `CFBundleIconFile` and the packaging court proves it before sealing), but the
+  **bare signed binary** the macOS `.tar.gz` ships for command-line use still
+  shows the generic blank-document tile in the Dock. Setting it needs
+  `NSApplication.setApplicationIconImage:`, whose only constructors
+  (`NSImage::alloc` / `NSBitmapImageRep::alloc`) require `objc2::ClassType` in
+  scope — i.e. `objc2` as a direct dependency of the platform crate's unix
+  feature, which today is enabled only by `privilege-service-lifecycle`.
+  Turning `objc2` on for the unix pixel-window feature would drag it into Linux
+  builds, so it is a manifest-and-size decision for its own change, not a
+  rider on this one. Recorded as a named gap, not a claim.
 - [v] a collapsible right-side **sent-history panel** (0.2.6) lists the newest
   lines the composer has sent and refills the composer when a row is clicked.
   The list is a view over the composer's one sent-history store — a row and an
@@ -186,7 +212,12 @@ header tools, and the composer. It is not the browser, and it is not layout.
   archive crate enters the graph. The swap is rename-aside then place-new,
   keeping the replaced executable beside the new one and rolling it back if the
   place fails; the restart is a separate, explicit press because it drops every
-  terminal and ends the `--control` endpoint. macOS never swaps in place — one
+  terminal and ends the `--control` endpoint. **Saying so is owed, not
+  optional:** that press is currently the first moment a user learns what it
+  costs, and the tab count is already known to the host. Leaf `{RESTART}` in
+  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) owns naming the loss before
+  the button; its non-goal is preserving the sessions, because MiniCon has no
+  persistent workspace and is not getting one. macOS never swaps in place — one
   file inside a signed, notarized `.app` cannot be replaced without breaking
   the signature — so its Update control opens the release's own `.dmg`.
 - [-] the update flow verifies the release's checksum but not yet the **code
@@ -197,15 +228,31 @@ header tools, and the composer. It is not the browser, and it is not layout.
   boolean is a size decision not yet taken. Recorded as a named gap rather than
   a claim: the checksum proves the bytes are the ones the release published,
   and the publisher's Authenticode/notarization stamps the artifact as before.
+  **Why the gap matters more than it reads:** the sidecar and the archive come
+  from the same release, so a checksum can only ever answer "are these the
+  bytes that release published". For an ordinary download that is the usual
+  guarantee; for a product that replaces **its own executable** it is the
+  weaker half, because the thing doing the verifying is the thing being
+  replaced. Planned as leaf `{SIGV}` in
+  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md); the open question there is
+  **size, not mechanism** (enable `app-facts`, or expose one verify-only entry
+  point behind `network-http`), and it belongs to
+  [27](PRD_02_27_con_delivery.md)'s budget, not to whoever writes the code.
 - [v] interface language is chosen from the panel (English / Simplified /
   Traditional). Only host UI is translated; each option is written in the
   language it selects, and the active one is drawn in the accent colour, so the
   control reports state as well as offering a change.
-- [-] font size is adjusted from the panel (−/100%/+) and by Ctrl+wheel; the
-  same zoom source sizes terminal content and every host UI label — tabs,
-  header, composer, status bar. **Tracking from direct macOS use:** the default
-  non-content type roles must be large enough to read; prove `z`/`0`/`Z`
-  visibly resize them, not only terminal content.
+- [-] font size is adjusted from the panel (−/100%/+) and the same zoom source
+  sizes terminal content and every host UI label — tabs, header, composer,
+  status bar. **Corrected 2026-10-13:** `Ctrl+wheel` is **not** a zoom entry
+  point any more — the wheel handler has no Ctrl exemption and a Ctrl modifier
+  no longer steals the sidebar's own scrolling — so the panel's three controls
+  are the only zoom surface. The `z` / `0` / `Z` bindings this line used to
+  ask for were also never wired: `Ctrl+Z` in the composer is undo
+  (`minicon_core::keymap`), and no zoom chord is bound. What remains open is
+  the original tracking point and nothing else: prove the default non-content
+  type roles are large enough to read, from direct macOS use — the legibility
+  question, not a new binding.
 - [_] larger host UI text must not make the toolbars wasteful. Reduce internal
   button padding, sibling gaps, and outer header/composer margins to the minimum
   that preserves disjoint hit targets and glyph bounds. Success is paired PNG +
@@ -667,6 +714,21 @@ Concretely:
   surrogate pair, duplicate key and nesting budget while decoding only
   `font_size`, `cols` and `rows`; escaped spellings of known keys retain their
   JSON meaning.
+- [_] **only geometry and font size are remembered, so a preference set in the
+  panel is lost on exit.** `minicon.json` decodes exactly the three keys above
+  and the product never writes the file back, so the interface language and
+  the theme chosen in the settings panel return to their defaults at every
+  launch — a user who picks 繁體 and Paper Ink re-picks them each time. This is
+  the wrong way round from what the host UI already argues elsewhere:
+  `sidebar_collapsed` and `history_panel_open` are session-scoped **on
+  purpose**, with the stated reason that a restart must not strand a user in a
+  layout they do not remember choosing. A view state has a reason not to
+  persist; a preference does not have a reason not to. Registered 2026-10-13;
+  planned in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) leaf `{PREF}`,
+  which keeps the safe-failure rule that a missing, unknown or malformed key
+  falls back to that key's default instead of refusing to launch.
+  Non-goal of that leaf: persisting view state, or the update phase (`update`
+  is a fact about this process, not a preference).
 
 ## Native adoption gate
 
