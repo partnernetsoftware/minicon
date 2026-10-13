@@ -56,6 +56,15 @@ Windows host **on the pristine tree** (verified by stashing this pass's changes
 and re-running): five wheel-up notches move one line, not five. It is
 pre-existing, not caused by this pass, and is recorded here rather than fixed.
 
+Found while cross-checking the right-side panel on Linux (`cargo zigbuild
+--workspace --all-targets --target x86_64-unknown-linux-gnu`): the `mod tests` in
+`crates/minicon-platform/src/adapters/linux/x11_clipboard.rs` used bare
+`PLAIN_UTF8_TYPE` and `Duration` without importing them, so the Linux `lib test`
+target never compiled. Windows-only development never reached the file. Fixed in
+this pass (added the two imports); the Linux workspace now compiles clean.
+macOS was not runtime-checked here — it needs the osxcross + Apple SDK toolchain
+`scripts/six-cell-qualify.sh` uses, which this Windows host lacks.
+
 ## Pending owner answers
 
 1. `archive/research/frame-lifetime/external-results.json` (864K, the largest

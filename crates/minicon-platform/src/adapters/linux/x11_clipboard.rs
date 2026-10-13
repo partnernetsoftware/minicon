@@ -690,6 +690,10 @@ pub(super) fn has_unicode_text() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use super::PLAIN_UTF8_TYPE;
+
     #[test]
     fn property_atom_is_product_neutral() {
         assert_eq!(
