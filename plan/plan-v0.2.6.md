@@ -35,8 +35,10 @@ The owner asked me to decide and review the result later. Decision: both live in
   at 44 dip), and it fits a document-like notes editor (a thin band above the
   composer cannot).
 - Precedent: iTerm2's right-side Toolbelt hosts per-session Notes.
-- Toggle from a header control or a composer affordance; open/closed is
-  session-scoped view state, like `sidebar_collapsed` (`src/main.rs:600`).
+- Toggle: a visible header control (the panel toggle, seated next to the
+  sidebar toggle so the two chrome toggles read left-to-right as the columns
+  they control) plus `Ctrl+Shift+H`; open/closed is session-scoped view state,
+  like `sidebar_collapsed` (`src/main.rs:600`).
 - Two hard constraints: (1) the panel takes a **real column** and the terminal
   is re-inset — never an overlay covering content (the product has no centered
   modals; the settings panel is anchored, not floating); (2) this is the
@@ -54,8 +56,9 @@ The owner asked me to decide and review the result later. Decision: both live in
 │      landed (2026-10-12): the right-side collapsible panel, the newest
 │        sent lines as clickable rows (click refills the composer via the
 │        recall path), the reserved loop/goal area, and `ui-snapshot`
-│        `history_panel`; toggled by Ctrl+Shift+H. Follow-ups: a header
-│        toggle control, per-row destination label, scrolling past capacity.
+│        `history_panel`; toggled by a header control (paired with the sidebar
+│        toggle) and Ctrl+Shift+H. Follow-ups: per-row destination label,
+│        scrolling past capacity.
 │      source: GitHub #3 (owner, 2026-10-12); owns `prd/PRD_02_25_con_workspace.md`
 │      placement: the right-side collapsible interaction panel (§Scope decision)
 │      invariant: the region is a VIEW over the one existing sent-history

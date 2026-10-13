@@ -208,6 +208,7 @@ impl ConApp {
                                 ("composer_band", rect_obj(layout.composer)),
                                 ("status_band", rect_obj(layout.status)),
                                 ("history_panel_band", rect_obj(layout.panel)),
+                                ("panel_toggle", rect_obj(layout.panel_toggle)),
                                 (
                                     "grid",
                                     json::object(vec![

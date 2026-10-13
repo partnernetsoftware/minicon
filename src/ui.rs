@@ -96,10 +96,15 @@ pub struct Layout {
     /// rightmost edge is where a panel's own collapse affordance belongs — the
     /// control that takes the column away is the one nearest the column edge.
     ///
-    /// While collapsed the three header controls stack vertically instead,
-    /// since the rail cannot seat them side by side; every one of them stays
-    /// reachable, which is the point of a rail rather than a hidden sidebar.
+    /// While collapsed the header controls stack vertically instead, since the
+    /// rail cannot seat them side by side; every one of them stays reachable,
+    /// which is the point of a rail rather than a hidden sidebar.
     pub sidebar_toggle: Rect,
+    /// Toggles the right-side history/interaction panel. It takes the header's
+    /// true rightmost edge — the two chrome toggles then read left to right as
+    /// the columns they control (the tab sidebar, then the panel), and the one
+    /// that takes the right column away sits nearest that column's edge.
+    pub panel_toggle: Rect,
     /// True when the sidebar is showing as a rail.
     pub sidebar_collapsed: bool,
     /// The right-side history/notes panel. Zero-width when closed, so the
@@ -283,10 +288,13 @@ impl Layout {
         };
         let pad = dip(4.0, scale);
         let tool_y = pad;
-        // Three tools now: New (left), Settings, and the collapse toggle at the
-        // far right. Expanded they share one row; the row is sized so the pair
-        // on the right cannot run into New on a narrow sidebar.
-        let expanded_tool_size = dip(24.0, scale).min(sidebar_width / 3);
+        // Four tools: New (left), then Settings and the two chrome toggles on
+        // the right. Expanded they share one row; the size is capped so four
+        // controls plus their gaps still fit a narrow sidebar without New and
+        // Settings meeting (`tool <= (sidebar - 4*pad) / 4`).
+        let expanded_tool_size = dip(24.0, scale)
+            .min(sidebar_width.saturating_sub(pad.saturating_mul(4)) / 4)
+            .max(1);
         let rail_tool_size =
             dip(24.0, scale).min(sidebar_width.saturating_sub(pad.saturating_mul(2)));
         let tool_size = if collapsed {
@@ -294,9 +302,9 @@ impl Layout {
         } else {
             expanded_tool_size
         };
-        let (new_root, settings, sidebar_toggle) = if collapsed {
-            // The rail seats one control per row. Stacking keeps New and
-            // Settings reachable instead of trading them away for the rail.
+        let (new_root, settings, sidebar_toggle, panel_toggle) = if collapsed {
+            // The rail seats one control per row. Stacking keeps every tool
+            // reachable instead of trading them away for the rail.
             let column = sidebar_width.saturating_sub(tool_size) / 2;
             let step = tool_size.saturating_add(pad);
             let stacked = |slot: u32| Rect {
@@ -305,16 +313,27 @@ impl Layout {
                 width: tool_size,
                 height: tool_size,
             };
-            (stacked(1), stacked(2), stacked(0))
+            (stacked(1), stacked(2), stacked(0), stacked(3))
         } else {
-            let toggle = Rect {
+            // Right-to-left: the panel toggle takes the outermost edge, then
+            // the sidebar toggle, then Settings, with New anchored left.
+            let panel_toggle = Rect {
                 x: sidebar_width.saturating_sub(pad).saturating_sub(tool_size),
                 y: tool_y,
                 width: tool_size,
                 height: tool_size,
             };
+            let sidebar_toggle = Rect {
+                x: panel_toggle.x.saturating_sub(pad).saturating_sub(tool_size),
+                y: tool_y,
+                width: tool_size,
+                height: tool_size,
+            };
             let settings = Rect {
-                x: toggle.x.saturating_sub(pad).saturating_sub(tool_size),
+                x: sidebar_toggle
+                    .x
+                    .saturating_sub(pad)
+                    .saturating_sub(tool_size),
                 y: tool_y,
                 width: tool_size,
                 height: tool_size,
@@ -327,7 +346,8 @@ impl Layout {
                     height: tool_size,
                 },
                 settings,
-                toggle,
+                sidebar_toggle,
+                panel_toggle,
             )
         };
         Self {
@@ -340,9 +360,9 @@ impl Layout {
             // The rail stacks its controls, so rows begin under the last one
             // rather than under a single header row.
             tree_header_height: if collapsed {
-                settings
+                panel_toggle
                     .y
-                    .saturating_add(settings.height)
+                    .saturating_add(panel_toggle.height)
                     .saturating_add(pad)
             } else {
                 dip(TREE_HEADER_HEIGHT_DIP, scale)
@@ -359,6 +379,7 @@ impl Layout {
             new_root,
             settings,
             sidebar_toggle,
+            panel_toggle,
             sidebar_collapsed: collapsed,
             panel: Rect {
                 x: width.saturating_sub(panel_width),
@@ -468,6 +489,7 @@ pub enum TreeHit {
     NewRoot,
     Settings,
     SidebarToggle,
+    PanelToggle,
     Select(usize),
     Close(usize),
     Edit(usize),
@@ -718,6 +740,9 @@ pub fn tree_hit(
     }
     if layout.sidebar_toggle.contains(x, y) {
         return TreeHit::SidebarToggle;
+    }
+    if layout.panel_toggle.contains(x, y) {
+        return TreeHit::PanelToggle;
     }
     if y < layout.tree_header_height {
         return TreeHit::Background;
@@ -1182,6 +1207,7 @@ mod tests {
                 ("toggle", rail.sidebar_toggle),
                 ("new", rail.new_root),
                 ("settings", rail.settings),
+                ("panel", rail.panel_toggle),
             ];
             for (name, control) in controls {
                 assert!(
@@ -1209,6 +1235,7 @@ mod tests {
                 let expected = match name {
                     "toggle" => TreeHit::SidebarToggle,
                     "new" => TreeHit::NewRoot,
+                    "panel" => TreeHit::PanelToggle,
                     _ => TreeHit::Settings,
                 };
                 assert_eq!(hit, expected, "{name} is not clickable at {w}x{h}@{scale}");
@@ -1228,7 +1255,8 @@ mod tests {
             }
             // Rows begin below the stack, never under it.
             assert!(
-                rail.tree_header_height >= rail.settings.y.saturating_add(rail.settings.height),
+                rail.tree_header_height
+                    >= rail.panel_toggle.y.saturating_add(rail.panel_toggle.height),
                 "rail rows would start inside the controls at {w}x{h}@{scale}"
             );
         }
@@ -1253,19 +1281,32 @@ mod tests {
     }
 
     #[test]
-    fn the_expanded_header_seats_settings_and_the_toggle_without_collision() {
+    fn the_expanded_header_seats_the_tools_without_collision() {
         for &(w, h, scale) in LAYOUT_SWEEP {
             let layout = Layout::new(w, h, scale);
             assert!(!layout.sidebar_collapsed);
-            // The toggle is the rightmost control: it takes the column away, so
-            // it sits nearest the column edge.
+            // Left to right: New, Settings, the sidebar toggle, the panel
+            // toggle. Each chrome toggle takes the column it controls, and the
+            // panel toggle holds the rightmost edge nearest the panel.
+            assert!(
+                layout.panel_toggle.x > layout.sidebar_toggle.x,
+                "the panel toggle must sit right of the sidebar toggle at {w}x{h}@{scale}"
+            );
             assert!(
                 layout.sidebar_toggle.x > layout.settings.x,
-                "the toggle must sit right of settings at {w}x{h}@{scale}"
+                "the sidebar toggle must sit right of settings at {w}x{h}@{scale}"
             );
             assert!(
                 layout.settings.x.saturating_add(layout.settings.width) <= layout.sidebar_toggle.x,
-                "settings and the toggle overlap at {w}x{h}@{scale}"
+                "settings and the sidebar toggle overlap at {w}x{h}@{scale}"
+            );
+            assert!(
+                layout
+                    .sidebar_toggle
+                    .x
+                    .saturating_add(layout.sidebar_toggle.width)
+                    <= layout.panel_toggle.x,
+                "the two toggles overlap at {w}x{h}@{scale}"
             );
             assert!(
                 layout.new_root.x.saturating_add(layout.new_root.width) <= layout.settings.x,
@@ -1273,11 +1314,11 @@ mod tests {
             );
             assert!(
                 layout
-                    .sidebar_toggle
+                    .panel_toggle
                     .x
-                    .saturating_add(layout.sidebar_toggle.width)
+                    .saturating_add(layout.panel_toggle.width)
                     <= layout.sidebar.width,
-                "the toggle overflows the sidebar at {w}x{h}@{scale}"
+                "the panel toggle overflows the sidebar at {w}x{h}@{scale}"
             );
         }
     }
@@ -1856,6 +1897,8 @@ mod tests {
         for (rect, expected) in [
             (layout.new_root, TreeHit::NewRoot),
             (layout.settings, TreeHit::Settings),
+            (layout.sidebar_toggle, TreeHit::SidebarToggle),
+            (layout.panel_toggle, TreeHit::PanelToggle),
         ] {
             let hit = tree_hit(layout, rect.x, rect.y, 0, 4, 1.0);
             assert_eq!(hit, expected, "corner of {expected:?} must hit it");

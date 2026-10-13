@@ -119,6 +119,19 @@ impl ConApp {
             header_icon_size,
             scale,
         );
+        let panel_icon = HeaderIcon::PanelToggle {
+            open: layout.panel_open,
+        };
+        paint_header_icon_button(
+            &mut surface,
+            layout.panel_toggle,
+            panel_icon,
+            accent,
+            self.hovered_header == Some(panel_icon),
+            t.surface,
+            header_icon_size,
+            scale,
+        );
         if layout.panel_open {
             self.paint_history_panel(
                 &mut surface,

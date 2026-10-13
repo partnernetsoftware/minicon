@@ -897,6 +897,33 @@ impl ConSession {
         }
     }
 
+    /// Polls the live `ui-snapshot` control command until `predicate` accepts
+    /// it or `timeout` elapses. The emitted snapshot file and the `ui-snapshot`
+    /// command are different documents — the file lacks host-UI state such as
+    /// the history panel — so a predicate about the host UI has to read the
+    /// command, not the file `wait_for` watches.
+    fn wait_for_ui_snapshot(
+        &self,
+        timeout: Duration,
+        predicate: impl Fn(&serde_json::Value) -> bool,
+    ) -> serde_json::Value {
+        let deadline = Instant::now() + timeout * test_slowdown();
+        let mut last_seen = self.control_json(&["ui-snapshot"]);
+        loop {
+            if predicate(&last_seen) {
+                return last_seen;
+            }
+            if Instant::now() >= deadline {
+                panic!(
+                    "timed out waiting for ui-snapshot condition; last seen: {}",
+                    serde_json::to_string_pretty(&last_seen).unwrap_or_default()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(30));
+            last_seen = self.control_json(&["ui-snapshot"]);
+        }
+    }
+
     /// Joined text of every visible row, for a simple substring assertion
     /// without the caller needing to know which row something landed on.
     fn screen_text(value: &serde_json::Value) -> String {
@@ -2640,6 +2667,65 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         added.is_empty(),
         "ui-snapshot gained keys; if they are public, add them here: {added:?}"
     );
+}
+
+/// The right-side history panel is a real toggle, not a one-way door: opening
+/// it re-insets the terminal column (the panel takes a column of width rather
+/// than overlaying content), and closing restores the exact geometry it started
+/// from. The visible header control and `Ctrl+Shift+H` flip the same state, so
+/// this exercises the flip the icon's click shares.
+#[test]
+fn the_history_panel_toggle_reinsets_the_terminal_and_closes_back() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("history-panel-toggle");
+    let script = write_journey(&dir, &format!(r#"[{{"wait_ms":{}}}]"#, 50));
+    let args = interactive_shell_args(&script);
+    let mut session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+
+    let before = session.control_json(&["ui-snapshot"]);
+    assert_eq!(
+        before["history_panel"]["open"], false,
+        "the panel must start closed: {before}"
+    );
+    let closed_width = before["geometry"]["terminal_viewport"]["width"]
+        .as_u64()
+        .expect("terminal viewport width");
+
+    session.control_json(&["send-ui-keys", "Ctrl+Shift+H"]);
+    let opened = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["history_panel"]["open"] == true
+    });
+    let open_width = opened["geometry"]["terminal_viewport"]["width"]
+        .as_u64()
+        .expect("terminal viewport width");
+    assert!(
+        open_width < closed_width,
+        "opening the panel must give it real width instead of overlaying the \
+         terminal: {closed_width} -> {open_width}"
+    );
+    assert_eq!(
+        opened["geometry"]["history_panel_band"]["width"]
+            .as_u64()
+            .expect("panel band width"),
+        closed_width - open_width,
+        "the panel band must be exactly the width the terminal gave up: {opened}"
+    );
+
+    session.control_json(&["send-ui-keys", "Ctrl+Shift+H"]);
+    let closed = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["history_panel"]["open"] == false
+    });
+    assert_eq!(
+        closed["geometry"]["terminal_viewport"]["width"]
+            .as_u64()
+            .expect("terminal viewport width"),
+        closed_width,
+        "closing must restore the exact geometry: {closed}"
+    );
+    let _ = session.child.kill();
 }
 
 /// Zoom out to the smallest font and the terminal must still show its text.

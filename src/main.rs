@@ -1763,6 +1763,12 @@ impl ConApp {
                 self.mark_host_ui_full_and_repaint(window);
                 return Ok(true);
             }
+            ui::TreeHit::PanelToggle => {
+                self.history_panel_open = !self.history_panel_open;
+                self.apply_panel_width(window)?;
+                self.mark_host_ui_full_and_repaint(window);
+                return Ok(true);
+            }
             ui::TreeHit::Settings => {
                 self.settings_open = !self.settings_open;
                 self.mark_host_ui_full_and_repaint(window);
@@ -2782,6 +2788,9 @@ impl ConApp {
                     ui::TreeHit::Settings => Some(HeaderIcon::Settings),
                     ui::TreeHit::SidebarToggle => Some(HeaderIcon::SidebarToggle {
                         collapsed: layout.sidebar_collapsed,
+                    }),
+                    ui::TreeHit::PanelToggle => Some(HeaderIcon::PanelToggle {
+                        open: layout.panel_open,
                     }),
                     _ => None,
                 };
