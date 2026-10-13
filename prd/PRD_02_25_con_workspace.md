@@ -140,6 +140,18 @@ header tools, and the composer. It is not the browser, and it is not layout.
   (left), then Settings and the two chrome toggles (right) — with 24-DIP hit
   targets and no permanent button borders. High-contrast, minimal marks float on
   the shared toolbar; the open Settings button uses a quiet selected fill.
+- [v] the window carries the product's own icon on every host. Windows reads
+  it from the PE resource `build.rs` embeds with `winresource`; X11 and macOS
+  cannot read a PE resource, so `build.rs` decodes the same committed
+  `assets/minicon.ico` into RGBA once and the product hands those pixels to the
+  window host — X11 as the window icon, macOS as the application icon (winit's
+  window icon is a no-op there). No platform ships a second icon or a PNG
+  decoder in the binary. A window class registered with a null `hIcon` — the
+  pre-0.2.7 state — shows the generic system default, not the executable's
+  icon, so the caption and the taskbar are wrong together. The macOS `.app` in
+  the `.dmg` carries `CFBundleIconFile` and needs none of this; the runtime
+  icon exists for the bare binary the `.tar.gz` ships for command-line use,
+  which has no bundle to read it from.
 - [v] a collapsible right-side **sent-history panel** (0.2.6) lists the newest
   lines the composer has sent and refills the composer when a row is clicked.
   The list is a view over the composer's one sent-history store — a row and an

@@ -388,6 +388,12 @@ impl PixelWindowRunner {
         } else {
             attributes
         };
+        // winit's window icon is a no-op on macOS, where the Dock reads the
+        // application icon instead; set that from the same pixels.
+        #[cfg(target_os = "macos")]
+        if let Some(icon) = &self.options.window_icon_rgba {
+            macos_set_application_icon(icon);
+        }
         let attributes = configure_window_attributes(attributes, self.options.no_activate);
         let native_window = match event_loop.create_window(attributes) {
             Ok(window) => Rc::new(window),
@@ -885,6 +891,61 @@ fn macos_application_is_hidden() -> bool {
         let application = NSApplication::sharedApplication(marker);
         unsafe { application.isHidden() }
     })
+}
+
+/// Sets the Dock icon from the product's own pixels.
+///
+/// macOS takes a bundled application's icon from `CFBundleIconFile`, which the
+/// packaging court puts inside `MiniCon.app`. The bare signed binary the macOS
+/// `.tar.gz` ships for command-line use has no bundle, so a process that opens
+/// a window there would otherwise show the generic blank-document tile; this
+/// re-applies the same artwork at runtime, which for the bundle is a no-op.
+#[cfg(target_os = "macos")]
+fn macos_set_application_icon(icon: &(u32, u32, Vec<u8>)) {
+    use objc2_app_kit::{NSApplication, NSBitmapImageRep, NSDeviceRGBColorSpace, NSImage};
+    use objc2_foundation::{MainThreadMarker, NSSize};
+
+    let (edge_x, edge_y, rgba) = icon;
+    let (Ok(width), Ok(height)) = (isize::try_from(*edge_x), isize::try_from(*edge_y)) else {
+        return;
+    };
+    if rgba.len() != (width as usize) * (height as usize) * 4 {
+        return;
+    }
+    let Some(marker) = MainThreadMarker::new() else {
+        return;
+    };
+    // SAFETY: `planes` is null, so `NSBitmapImageRep` allocates a buffer of
+    // exactly `width * height * 4` bytes for the row/bit geometry given, and
+    // the copy fills all of it. The rep and the image outlive the call.
+    unsafe {
+        let Some(rep) = NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            width,
+            height,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            width * 4,
+            32,
+        ) else {
+            return;
+        };
+        let pixels = rep.bitmapData();
+        if pixels.is_null() {
+            return;
+        }
+        std::ptr::copy_nonoverlapping(rgba.as_ptr(), pixels, rgba.len());
+        let image = NSImage::initWithSize(
+            NSImage::alloc(),
+            NSSize::new(f64::from(*edge_x), f64::from(*edge_y)),
+        );
+        image.addRepresentation(&rep);
+        NSApplication::sharedApplication(marker).setApplicationIconImage(Some(&image));
+    }
 }
 
 impl Drop for PixelWindowRunner {

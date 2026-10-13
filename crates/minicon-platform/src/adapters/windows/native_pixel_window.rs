@@ -22,7 +22,7 @@ use crate::selected::reentrant_dispatch::{BoundedQueue, QueueError};
 
 use windows_sys::Win32::Graphics::Gdi::ValidateRect;
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+    Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BeginPaint, DIB_RGB_COLORS, EndPaint, HDC,
         InvalidateRect, PAINTSTRUCT, SRCCOPY, ScreenToClient, StretchDIBits,
@@ -40,19 +40,20 @@ use windows_sys::Win32::{
         },
         WindowsAndMessaging::{
             CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
-            DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW,
-            GetWindowRect, IDC_ARROW, IDC_SIZEWE, IsIconic, IsWindowVisible, IsZoomed, KillTimer,
-            LoadCursorW, MSG, PM_REMOVE, PeekMessageW, PostMessageW, RegisterClassW, SW_HIDE,
-            SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-            SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-            SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_APP, WM_CANCELMODE,
-            WM_CAPTURECHANGED, WM_CHAR, WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE,
-            WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_IME_CHAR, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
-            WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS,
-            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE,
-            WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WM_QUIT, WM_RBUTTONDOWN,
-            WM_RBUTTONUP, WM_SETFOCUS, WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW,
-            WS_OVERLAPPEDWINDOW,
+            DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetSystemMetrics,
+            GetWindowLongPtrW, GetWindowRect, HICON, ICON_BIG, ICON_SMALL, IDC_ARROW, IDC_SIZEWE,
+            IMAGE_ICON, IsIconic, IsWindowVisible, IsZoomed, KillTimer, LR_DEFAULTSIZE, LR_SHARED,
+            LoadCursorW, LoadImageW, MSG, PM_REMOVE, PeekMessageW, PostMessageW, RegisterClassW,
+            SM_CXSMICON, SM_CYSMICON, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+            SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor,
+            SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW,
+            ShowWindow, TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CHAR,
+            WM_CLOSE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
+            WM_IME_CHAR, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
+            WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN,
+            WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+            WM_NCDESTROY, WM_PAINT, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETFOCUS, WM_SETICON,
+            WM_SIZE, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
         },
     },
 };
@@ -86,6 +87,13 @@ const IME_ALLOWED_MESSAGE: u32 = WM_APP + 0x43;
 const MOUSE_LEAVE_MESSAGE: u32 = 0x02a3;
 const WAIT_TIMER_ID: usize = 0x41;
 const CLASS_NAME: &str = "AgenTermNativePixelWindow";
+/// The icon group `build.rs` embeds into `minicon.exe` with `winresource`.
+///
+/// `winresource` numbers its first icon group 1, and that is the group the
+/// shell would pick for the executable anyway. Naming it here lets the window
+/// ask for this product's own mark instead of the generic system default that
+/// a window class with no icon gets.
+const WINDOW_ICON_RESOURCE_ID: usize = 1;
 const WIN32_MAX_COORD: u32 = i32::MAX as u32;
 const ERROR_CLASS_ALREADY_EXISTS_CODE: i32 = 1410;
 const MAX_NATIVE_DEFERRED: usize = 256;
@@ -619,6 +627,18 @@ fn initial_window_style() -> u32 {
     WS_OVERLAPPEDWINDOW
 }
 
+/// Loads one of this executable's own icon faces for the caption and taskbar.
+///
+/// `MAKEINTRESOURCEW` is just the numeric id reinterpreted as a pointer, which
+/// is why the resource id is an integer. `LR_SHARED` keeps the handle alive for
+/// the process and out of the caller's cleanup burden. A missing resource
+/// returns null, and the window then keeps Windows' own default icon — the
+/// behaviour before any window icon was set — rather than failing to open.
+fn load_window_icon(instance: HINSTANCE, width: i32, height: i32, flags: u32) -> HICON {
+    let id = WINDOW_ICON_RESOURCE_ID as *const u16;
+    unsafe { LoadImageW(instance, id, IMAGE_ICON, width, height, flags) }
+}
+
 impl Backend {
     fn submit_command(&self, command: NativeCommand) -> Result<(), PixelWindowError> {
         if self.control.closed.get() {
@@ -891,6 +911,14 @@ pub(crate) fn run_pixel_window(
         return Err(last_error("pixel_window_module_handle_failed"));
     }
     let class_name = wide_null(CLASS_NAME);
+    // The executable carries its own icon group; give the window class that
+    // mark so the caption shows the product icon rather than the generic
+    // default a null `hIcon` produces. The small face is the caption/Alt-Tab
+    // size, the big one the taskbar size.
+    let small_icon_edge = unsafe { GetSystemMetrics(SM_CXSMICON) };
+    let small_icon_height = unsafe { GetSystemMetrics(SM_CYSMICON) };
+    let big_icon = load_window_icon(instance, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    let small_icon = load_window_icon(instance, small_icon_edge, small_icon_height, LR_SHARED);
     let window_class = WNDCLASSW {
         // Pixel backing and explicit invalidation own redraw. CS_HREDRAW /
         // CS_VREDRAW would make User32 invalidate the complete client on every
@@ -898,6 +926,7 @@ pub(crate) fn run_pixel_window(
         style: 0,
         lpfnWndProc: Some(window_proc),
         hInstance: instance,
+        hIcon: big_icon,
         hCursor: unsafe { LoadCursorW(ptr::null_mut(), IDC_ARROW) },
         lpszClassName: class_name.as_ptr(),
         ..unsafe { mem::zeroed() }
@@ -1005,6 +1034,15 @@ pub(crate) fn run_pixel_window(
     let user_data = unsafe { Box::from_raw(user_data_ptr) };
     backend.hwnd.set(hwnd);
     backend.wake_hwnd.store(hwnd as isize, Ordering::Release);
+    // The class icon covers the caption. `WM_SETICON` also pins the icon the
+    // taskbar and Alt-Tab read, so a shell that does not fall back to the
+    // class icon still shows the product mark rather than the default.
+    if !big_icon.is_null() {
+        unsafe { SendMessageW(hwnd, WM_SETICON, ICON_BIG as WPARAM, big_icon as LPARAM) };
+    }
+    if !small_icon.is_null() {
+        unsafe { SendMessageW(hwnd, WM_SETICON, ICON_SMALL as WPARAM, small_icon as LPARAM) };
+    }
     apply_ime_allowed(hwnd, options.ime_allowed);
     {
         let Ok(mut state) = user_data.host.try_borrow_mut() else {

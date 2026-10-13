@@ -97,6 +97,10 @@ minicon-platform = { path = "crates/minicon-platform", default-features = false,
 # Build scripts compile for the host; target-gating this dependency makes
 # macOS/Linux cross-builds lose the Windows resource/link owner.
 winresource = "0.1"
+# Decodes the committed `assets/minicon.ico` faces into the RGBA the X11 and
+# macOS hosts need. Already in the tree as a dev-dependency, so it adds no new
+# crate; a build-time decoder keeps it out of the shipped binary.
+png = "0.17"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("default"))'] }

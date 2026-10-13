@@ -11,10 +11,33 @@ region work, and its boundary wording needs an owner decision first.
 0.2.7's **other** scope is open. This leaf is carried here so the requirement has
 one owner rather than dangling.
 
+Owner (2026-10-13): the **window-icon parity** fix rides in 0.2.7. 0.2.6 shipped
+a Windows window class registered with a null `hIcon`, so the caption and the
+taskbar showed the generic system default instead of the executable's icon; the
+same host-neutral gap left X11 with no `_NET_WM_ICON`. Fixing it is a platform
+change, so it cannot be re-cut into the already-published 0.2.6.
+
 ## Tree DAG
 
 ```text
-0.2.7: check-for-updates; other scope open
+0.2.7: check-for-updates + window-icon parity; other scope open
+├── {ICON} window icon on all three hosts                              [v] @host=all
+│      owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
+│      Windows: load the PE icon group (`winresource` id 1) into the
+│        window class `hIcon` and pin it with `WM_SETICON` (big + small)
+│      X11/macOS: `build.rs` decodes the largest face of the same
+│        `assets/minicon.ico` into RGBA; the product passes it through
+│        `PixelWindowOptions::window_icon_rgba`; X11 uses it as the window
+│        icon, macOS builds an `NSImage` and calls
+│        `setApplicationIconImage:` (winit's icon is a no-op on macOS)
+│      invariant: one committed icon (`assets/minicon.ico`) is the source for
+│        every host; no derived blob is committed, no PNG decoder ships
+│      evidence: Windows verified against the live window (`WM_GETICON` and the
+│        class icon non-null, dumped icon matches the artwork); X11/macOS are
+│        typechecked per target here and compiled by the CI cells, which is the
+│        strongest evidence available without a display or an Apple host
+│      non-goal: shipping a second icon, a `.desktop` file, or a macOS `.icns`
+│        runtime path
 ├── {UPDATE} settings "Check for updates" → verify → swap → restart  [_] @host=none
 │      source: GitHub #4 (owner, 2026-10-12, moved here 2026-10-12); owns
 │        `prd/PRD_02_23_minicon.md` boundary + `prd/PRD_02_26_con_control_cli.md`
