@@ -1,7 +1,13 @@
 # minicon.com — cosmocc launcher over six-cell payloads
 
-Exploration only. Does **not** recompile MiniCon with cosmopolitan libc.
-GUI/PTY/Win32/Cocoa/Wayland stay in the already-qualified Rust cells.
+This directory packs and dispatches the optional `minicon.com` release asset and
+is **not** a building step of the product: it does not recompile MiniCon with
+cosmopolitan libc. GUI/PTY/Win32/Cocoa/Wayland stay in the already-qualified Rust
+cells, and the six native archives remain the release's real payloads.
+
+Delivery facts — when the asset ships, what gates it, the size ceiling and the
+exact-bytes chain — are owned by `../prd/PRD_02_27_con_delivery.md`; this file
+keeps only the commands an operator runs to rebuild and pack.
 
 ```
 minicon.com          ← cosmocc fat APE (ISAx2 host trampoline)

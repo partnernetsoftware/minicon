@@ -464,6 +464,7 @@ Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll u
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
   Ctrl+Shift+,       Open or close the settings panel
   Ctrl+Shift+G       Toggle the grid crosshair
+  Ctrl+Shift+H       Open or close the sent-history panel
 {composer_keys}
   Click a tab to select it. Closing the final tab leaves the greeting page.
 

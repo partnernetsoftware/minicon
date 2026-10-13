@@ -27,10 +27,14 @@ burst of output tangle together. MiniCon gives input a line of its own.
   program prints.
 - **Recall what you sent.** Up and Down walk your sent lines; half-typed text is
   kept while you browse.
+- **A panel lists what you sent.** The right-side panel — the header's panel
+  toggle or `Ctrl+Shift+H` — shows the newest sent lines; clicking one puts it
+  back in the input area through that same recall, so a half-typed draft
+  survives.
 - **It names the target tab.** In a tree of tabs you always know where a command
   is headed.
 
-`Enter` makes a new line; `Ctrl+O` sends the draft.
+`Enter` makes a new line; `Shift+Enter` or `Ctrl+O` sends the draft.
 
 ## Your scripts can see into it.
 
@@ -114,7 +118,9 @@ minicon --help                   # everything else
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |
 | `Ctrl+Shift+,` | open or close the settings panel |
 | `Ctrl+Shift+G` | toggle the grid crosshair |
+| `Ctrl+Shift+H` | open or close the sent-history panel |
 | `Enter` | in the input area, insert a soft newline without sending |
+| `Shift+Enter` | send the complete input-area draft |
 | `Ctrl+O` | send the complete input-area draft |
 | `Up` / `Down` | in the input area, move between lines; at the first or last line, recall what you sent before |
 | `Alt+Up` / `Down` | in the input area, recall what you sent before from any line |

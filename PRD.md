@@ -45,6 +45,16 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
+│   ├── [v] v0.2.6 released — right-side collapsible sent-history panel (#3) + paired header toggles
+│   │   └── prd/archive/v0.2.6-release-history.md
+│   ├── [v] v0.2.5 released — inline tab rename + OSC-title row; the platform layer moves into MiniCon
+│   │   └── prd/archive/v0.2.5-release-history.md
+│   ├── [v] v0.2.4 released — composer Send timing (held Enter), Ctrl+V paste review, content preview counts
+│   │   └── prd/archive/v0.2.4-release-history.md
+│   ├── [v] v0.2.3 released — multi-line composer editing, settings panel, three themes, crosshair + status bar
+│   │   └── prd/archive/v0.2.3-release-history.md
+│   ├── [v] v0.2.2 released — 0.2.1's remaining leaves (mux `list-panes` gap, one macOS fix); no separate release-history doc
+│   │   └── prd/PRD_02_31_v0_2_horizon.md · plan/archive/plan-v0.2.2.md
 │   ├── [v] v0.2.1 released — harness statefulness/containment and macOS exec fix; dual-signed
 │   │   └── prd/archive/v0.2.1-release-history.md
 │   ├── six cells: {win,lnx,osx} × {x86_64,aarch64}

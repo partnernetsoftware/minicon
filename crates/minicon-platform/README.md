@@ -1,39 +1,46 @@
 # minicon-platform
 
-`minicon-platform` is AgenTerm's reusable Rust boundary for typed operating-
-system capabilities. It contains platform-neutral contracts, capability
-facades, one private target selector, and Windows/Linux/macOS adapters. Product
-policy, UI state, Fleet behavior, and AgenTerm executable naming stay in the
-embedding application.
+`minicon-platform` is **MiniCon's own** platform layer: typed operating-system
+capabilities — platform-neutral contracts, capability facades, one private
+target selector, and Windows/Linux/macOS adapters. It lives in this repository
+as an ordinary workspace member (`crates/minicon-platform`); the sibling product
+`agenterm` consumes it from here, not the other way round. Product policy, UI
+state and executable naming stay in the embedding application.
+
+Ownership: the boundary, its history and the rules that decide what belongs in
+this crate are owned by [`prd/PRD_02_28_shared_core.md`](../../prd/PRD_02_28_shared_core.md)
+("Stage 3" records how the crate moved here on 2026-10-11). Prose older than
+2026-10-10 that says `agenterm-platform` / `agenterm-ui-core` names this same
+code under its former name and repository.
 
 ## Scope (cross-platform encapsulation)
 
 | | |
 |--|--|
 | **In scope** | Typed OS contracts and adapters: window, input, IME, activation, clipboard, screenshot, font, webview probe, IPC, PTY, process/spawn/containment, filesystem, locking, shared memory, entropy, host facts, … — `Available` / `Unsupported` / `Failed` only. |
-| **Out of scope** | Product UI state, `ui-action` workbench scripts, tab/server-strip/instance-picker policy, Fleet, AgenTerm binary names, workspace/path product layout. Those live in the embedding app (`agenterm` uses `src/frontend/*` + host present adapters). |
-| **Consumers** | **agenterm** (workspace `path` dependency). **wbox** and other apps: `git` + **immutable full commit SHA** pin, `default-features = false`, enable only needed features. |
+| **Out of scope** | Product UI state, `ui-action` workbench scripts, tab/server-strip/instance-picker policy, Fleet, executable naming, workspace/path product layout — those are embedding-application concerns. |
+| **Consumers** | `agenterm` (pinned to a MiniCon commit). Any other app: `git` + an **immutable full commit SHA** of `partnernetsoftware/minicon`, `default-features = false`, enable only the features it needs. |
 
-Cross-platform encapsulation means: **OS differences stop inside this crate**. Cross-product workbench parity is the embedding app's job and must not drag AgenTerm product names into this library.
-
-The crate is under active development. Pin an exact Git revision when consuming
-it from another repository.
+Cross-platform encapsulation means: **OS differences stop inside this crate**.
+Cross-product workbench parity is the embedding application's job and must not
+drag a product's names into this library. The authoritative feature list is this
+crate's `Cargo.toml`; it is deliberately not duplicated here.
 
 ## Dependency
 
 ```toml
 [dependencies]
 minicon-platform = {
-  git = "https://github.com/partnernetsoftware/agenterm.git",
-  rev = "7245b60c4e6f1ee201eb9f5c5a8c156985845bd3",
+  git = "https://github.com/partnernetsoftware/minicon.git",
+  rev = "<full commit SHA of a MiniCon release or validated increment>",
   default-features = false,
   features = ["process", "filesystem"]
 }
 ```
 
-Use an immutable full commit SHA in production. The revision above names a
-validated extraction increment; advance it deliberately when adopting newer
-capabilities.
+Use an immutable full commit SHA in production. Advance the revision
+deliberately when adopting newer capabilities.
+
 
 ## Features
 
@@ -277,7 +284,8 @@ capture_native_window_png(window, std::path::Path::new("window.png"), NativeCapt
 ```
 
 Product applications supply names, paths, policy limits and protocol framing.
-The crate does not know AgenTerm workspaces, Control Center, Fleet, themes,
+The crate does not know the embedding product's workspaces, Control Center,
+Fleet, themes,
 commands, or UI snapshots.
 
 Console applications can enable `console-interrupt` and install either one

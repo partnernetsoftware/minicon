@@ -705,3 +705,17 @@ to be unset; the initial proxied attempt failed transport tests. Frozen local qu
 The exact Candidate/signing/Defender/Promotion chain and public-download checks
 passed; v0.2.1 is published. See `archive/v0.2.1-release-history.md` for run
 identities. Unavailable local runtime courts remain explicitly BLOCKED.
+
+**Re-checked 2026-10-13 (record vs public state, unresolved):** the tag
+`v0.2.1` still exists and points at the recorded source
+(`1796876f76ffabb74426d95a7dcbe826a8db41b7`), but **no public Release object
+resolves for it today** — `gh release view v0.2.1` and
+`repos/…/releases/tags/v0.2.1` both return "not found", and it is absent from
+the release listing that contains v0.2.0 and v0.2.2. The chain above may have
+ended with the Release left as a draft (the workflow creates it with
+`--draft`, then publishes with `gh release edit --draft=false`), or it was
+removed afterwards; the record here and the live repository disagree and this
+session cannot tell which happened. Owner decision needed: re-publish v0.2.1's
+Release from its existing Candidate bytes, or amend this history so it does not
+claim a public release that does not resolve. Do not edit the archived history
+doc to match until that is decided — `prd/archive/` is frozen record.

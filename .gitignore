@@ -14,3 +14,4 @@ target-six
 # assets/minicon.icns is the committed deliverable.
 /assets/minicon.iconset/
 .mcfix/
+.workbuddy/

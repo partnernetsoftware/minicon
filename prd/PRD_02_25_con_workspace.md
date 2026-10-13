@@ -433,14 +433,17 @@ the window rather than being hidden to save pixels.
   human confirms. Accessibility `SetTextContents` remains single-line so a
   computed replacement cannot inject breaks the user did not see.
 - [v] keyboard submission is deliberate: bare Enter inserts the same visible
-  soft newline as Newline, while `Ctrl+O` is the Send shortcut. Enter no longer
+  soft newline as Newline, while `Shift+Enter` (0.2.7) and `Ctrl+O` are the Send
+  shortcuts. Enter no longer
   executes a command merely because the composer is focused; the button and
-  shortcut converge on the same transactional submission path.
+  both shortcuts converge on the same transactional submission path.
 - [v] the two composer actions teach those bindings where they are used. The
   English buttons paint `Send` above `(ctrl-o)` and `New Line` above `(Enter)`;
   translated primary labels retain the same shortcut lines. Each two-line block
   is centred as a unit, each line is centred independently, and the smaller hint
-  type fits the existing stacked controls without stealing draft width.
+  type fits the existing stacked controls without stealing draft width. The
+  button hint names only the primary chord; the second Send chord is listed with
+  the others in `--help`, the settings panel and the README.
 - [v] a Copy / Paste / Cut button column sits just left of Send/New Line so a
   mouse-only user (who may have no keymap awareness) can edit the draft without
   a shortcut. Copy and Cut act on the selection and dim to the muted tone when

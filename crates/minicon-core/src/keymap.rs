@@ -157,7 +157,14 @@ pub fn action(chord: Chord, clipboard: ClipboardModifier, draft: Draft) -> Optio
     // Commit actions outrank everything else, and neither takes Alt or Meta.
     if !modifiers.alt && !modifiers.meta {
         if !modifiers.control && chord.key == Key::Enter {
-            return Some(Action::SoftNewline);
+            // Shift is the second commit affordance, so the hand reaches the
+            // same gesture every chat box trained it on. A bare Enter stays the
+            // line break, which is what a multi-line draft is typed with.
+            return Some(if modifiers.shift {
+                Action::Send
+            } else {
+                Action::SoftNewline
+            });
         }
         if modifiers.control
             && !modifiers.shift
@@ -278,6 +285,10 @@ pub const HELP: &[Binding] = &[
     Binding {
         chord: "Enter",
         description: "Insert a soft newline in the input area",
+    },
+    Binding {
+        chord: "Shift+Enter",
+        description: "Send the complete input-area draft",
     },
     Binding {
         chord: "Ctrl+O",
@@ -476,10 +487,19 @@ mod tests {
     }
 
     #[test]
-    fn enter_is_a_newline_and_ctrl_o_sends() {
+    fn enter_is_a_newline_and_shift_enter_or_ctrl_o_sends() {
         assert_eq!(
             action(Chord::plain(Key::Enter), PC, Draft::single_line()),
             Some(Action::SoftNewline)
+        );
+        // Shift turns the same key into the commit affordance.
+        assert_eq!(
+            action(chord(Key::Enter, shift()), PC, Draft::single_line()),
+            Some(Action::Send)
+        );
+        assert_eq!(
+            action(chord(Key::Enter, shift()), PC, multiline_middle()),
+            Some(Action::Send)
         );
         assert_eq!(
             action(chord(Key::Character('o'), ctrl()), PC, Draft::single_line()),
@@ -634,6 +654,7 @@ mod tests {
         // Each documented chord, spelled as the resolver sees it.
         let documented = [
             (Chord::plain(Key::Enter), Draft::single_line()),
+            (chord(Key::Enter, shift()), Draft::single_line()),
             (chord(Key::Character('o'), ctrl()), Draft::single_line()),
             (Chord::plain(Key::Up), multiline_middle()),
             (chord(Key::Up, alt()), multiline_middle()),

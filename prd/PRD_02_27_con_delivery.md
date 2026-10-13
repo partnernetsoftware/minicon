@@ -390,6 +390,36 @@ flowchart LR
     QV -->|kill: no shrink / budget fail / parity fail| QK["keep native six-payload architecture"]
 ```
 
+### The public Release body is a template, not a changelog
+
+- [-] `.github/release-notes.md` is published **verbatim** as the GitHub Release
+  body (`release.yml`, the `gh release create --notes-file` step, which also
+  substitutes the version string and keeps or drops the optional-APE row from
+  `release-policy.json`). Its per-version Highlight list had drifted **seven
+  releases behind**: v0.2.0–v0.2.6 each published with a body whose Highlights
+  stopped at v0.1.26 and still described the pre-0.2.6 two-tool header — the
+  sent-history panel, tab rename and mux/harness were absent from every one of
+  them. Verified against the published `v0.2.6` body, not inferred.
+- [v] Reduced to a template on 2026-10-13: product blurb, a pointer to the
+  release histories, Downloads, verification, older-Windows and reporting
+  sections, and one signing-pointer paragraph. Per-version facts stay owned by
+  `prd/archive/` release histories; this file must not restate them. If a
+  cumulative public changelog is wanted again it needs a named owner and a
+  release-step update trigger, not a hand-kept list that silently rots.
+
+### The public site had no owner
+
+- [-] the published site under `docs/` (`index.html`'s download page and
+  `old-windows.html`) referenced **no** PRD or plan before 2026-10-13, so its
+  facts had no owner in this series. Owned here from now on for the
+  download/release surface; `docs/control-cli.html` is owned by
+  [26](PRD_02_26_con_control_cli.md) for the command set it mirrors. Update
+  trigger: any release that changes an asset name, an archive's contents or the
+  supported-OS list. `old-windows.html` has not changed since 2026-09-29 and its
+  sample output still reads `minicon 0.1.2` — refresh it or date the sample. The
+  pages have no generator; that gap is already recorded as deliberately not done
+  in `plan/plan-repo-hygiene.md`.
+
 ## Bounded build-state lifecycle
 
 - [v] `scripts/cleanup-build-state.py` is the single deletion authority for

@@ -78,6 +78,11 @@ flowchart LR
 
 ## Public command set
 
+- [-] `docs/control-cli.html` is the public mirror of this section's command set
+  and was owned by nothing until 2026-10-13; it is owned here now. It is not a
+  second source: when a verb, a flag or a bound changes in this PRD, that page
+  is part of the same change. Its download/release facts stay with
+  [27](PRD_02_27_con_delivery.md).
 - [v] `minicon cli list-commands` is an offline, no-window and no-endpoint
   discovery surface. Its exact command set is owned by con's machine-readable
   capability contract and checked against the running executable in CI. The
@@ -290,6 +295,16 @@ flowchart LR
   which still needs its real winit window for an eventual human-visible
   session — F2 is specifically for the case where no human will ever look
   at this process's pixels.
+- [-] **`{SCRSHOT-HANG}` — an intermittent `screenshot-pane` that writes its PNG
+  and never returns, owned here.** Reported 2026-10-10 during the G3 new-tab
+  attempt (twice in a row, exit 124 under a 25 s cap, PNG written). It has no
+  home in this PRD and no plan entry of its own — the only notes are the
+  problem file `plan/problem-screenshot-pane-hang.md` — so this line is its
+  owner registration, not a fix. Not reproduced since; a repro needs a real
+  GUI host and the same pressure that produced it. Do not fold it into F2
+  (that is about running with *no* window; this is a hang *with* one) and do
+  not treat the 2026-10-10 occurrence as closed by the later screenshot
+  ownership work above.
 - [v] pending text/exit deadlines have a fixed ten-minute upper bound. A larger
   syntactically valid `u64` timeout fails only that request, preserves its reply
   owner for the normal dispatch error path, and registers no latent wait instead
