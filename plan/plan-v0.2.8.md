@@ -13,13 +13,19 @@ written, but three consequences were not carried into the product story, and
 they are what this version is for. Alongside them sit the user-visible gaps
 that are cheap to close and expensive to keep explaining.
 
-Nothing here touches 0.2.7's release path. Every leaf is independent of
-`src/update.rs`'s state machine and of the release chain's gates.
+Nothing here touches 0.2.7's *release chain* (which is finished). But the
+security review below found four defects **inside** `src/update.rs` and the
+platform primitives it calls, so the earlier claim that every leaf is
+independent of `src/update.rs` is withdrawn: three of these leaves edit it, and
+they take priority over everything else in this file. A product that can
+replace itself must be correct before it gains features.
 
 ## Verified against the landed 0.2.7 code (commit `417f595`)
 
 Checked on 2026-10-13 against the committed 0.2.7 feature, so this version is
-not planned on stale assumptions:
+not planned on stale assumptions. The shipped commit is `f52662a` (the only
+change after `417f595` was the TLS-provider pin in `network_http.rs`); the line
+numbers below were re-checked against `f52662a` and still hold.
 
 | Leaf | What the shipped code does | Line |
 |---|---|---|
@@ -40,7 +46,66 @@ Two findings from that read that change the leaves:
   a *downgrade* is refused is now decidable and is not covered by any leaf
   here. Filed below as open decision 4.
 
+## Security review of the shipped update path (2026-10-13)
+
+An independent adversarial read of the 0.2.7 update path (network fetch →
+checksum → archive decode → swap) found two things sound and four defects. I
+re-read each against the shipped `f52662a` and confirmed all four before filing
+them; the line numbers are verified, not reported.
+
+**Sound, so it is not re-litigated:** the verification order (the sidecar is
+parsed and the SHA-256 compared *before* the archive is read or any byte is
+written — `src/update.rs:345`), and every network bound (size ceiling, timeouts,
+redirect limit, truncation surfaced as an error). No path traversal, panic or
+integer overflow in the archive reader: the extraction path comes from
+`current_exe`, never from the entry name, so matching by base name is sufficient
+for this trust boundary.
+
+**Four defects, in priority order.** The first two chain: on Linux the second
+is *caused* by the first, so `{EXECBIT}` is not exotic.
+
+1. **`{EXECBIT}` — a Unix in-place update installs a non-executable binary.**
+   The staged file is written by `filesystem_publish::write_file_atomic`, which
+   sets no mode (`crates/minicon-platform/src/filesystem_publish.rs`; the Unix
+   replace is a bare rename), and `read_tar_gz` reads only the member *bytes*,
+   discarding the tar header's mode field (`src/update_archive.rs:94-105`).
+   `inflate`/`write_all` therefore produce a 0644 `minicon`, `spawn` fails
+   EACCES, and the only `in_place: true` targets are Windows (no such concept)
+   and Linux — so the Unix path is broken end to end.
+2. **`{ROLLBACK}` — the failed-launch rollback deletes the last good copy.**
+   `src/main.rs:2166` calls `commit_swap(&backup, &destination)` to put the old
+   executable back. `commit_swap` starts by computing `backup_path(destination)`
+   (`src/update.rs:390`) — the *same* path `backup` points at — and
+   `remove_if_present` deletes it (`:391`), then renames the new file onto it and
+   renames the now-deleted `staged` into place, which fails. The `let _ =`
+   swallows that error. Net effect: destination empty, old binary gone, new
+   binary at `.backup`. The code comment says "so the product is still
+   launchable"; it does the opposite. Fix: roll back with a plain
+   `fs::rename(backup, destination)`, not by re-entering `commit_swap`.
+3. **`{BOMB}` — archive decode has no output ceiling.** `read_tar_gz`
+   `read_to_end`s the whole inflated stream (`src/update_archive.rs:83-86`) with
+   no bound: the 8 MiB download ceiling bounds the *compressed* input, not the
+   output, and gzip reaches ~1000:1, so a crafted archive yields gigabytes and
+   the process aborts. `inflate` also pre-allocates the *declared* uncompressed
+   size (`:112`), so a tiny zip entry declaring ~4 GiB aborts on `with_capacity`
+   even though only 8 MiB of compressed data exists. Both are reachable from a
+   release whose archive and sidecar were published together (the checksum
+   passes) as well as from a hostile server.
+4. **`{SCHEME}` — `http://` is accepted and the asset URL is unpinned.**
+   `validate_url` admits both schemes (`crates/minicon-platform/src/network_http.rs:123`),
+   and the download URL is taken verbatim from the release JSON. Low severity (a
+   release document arrives over TLS first), but it is a plaintext-downgrade
+   door and one line to close: require `https` for the update path.
+
+The pre-existing gaps this review confirms rather than widens — no signature
+check (`{SIGV}`) and the "sidecar travels with the archive" weakness — are
+already leaves above; nothing here duplicates them.
+
 ## Collision boundary while 0.2.7 closes
+
+**Resolved 2026-10-13: v0.2.7 is published and `src/ui.rs`, `src/host_ui.rs`
+and `plan/archive/plan-v0.2.7.md` are committed and free.** The paragraph below
+is kept only as the record of why this file waited.
 
 `src/ui.rs`, `src/host_ui.rs` and `plan/archive/plan-v0.2.7.md` were still being edited
 by the other session when this file was written. `{PREF}`, `{RESTART}` and
@@ -58,6 +123,51 @@ replace itself must be more careful than one that cannot, not less.
 
 ```text
 0.2.8: make the self-updating product trustworthy, then close cheap gaps
+├── FIRST: make the shipped update path correct (see the security review above)
+│   ├── {ROLLBACK} the failed-launch rollback must not delete the last good copy
+│   │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI" (the update bullets)
+│   │      defect: `src/main.rs:2166` re-enters `commit_swap`, which computes the
+│   │        same `.backup` path and `remove_if_present`s it (`src/update.rs:390-391`)
+│   │        — old binary deleted, destination emptied, error swallowed
+│   │      invariant: after a swap whose new binary will not launch, exactly one
+│   │        launchable `minicon` exists at the destination, or the previous one
+│   │        is restored; never neither
+│   │      evidence: a loopback test that swaps in a deliberately non-launchable
+│   │        staged file and asserts the destination still exists and is the old
+│   │        bytes; and an assertion that the rollback's own failure is surfaced
+│   │      fix shape: roll back with `fs::rename(backup, destination)`, not by
+│   │        re-entering `commit_swap`
+│   ├── {EXECBIT} a Unix in-place update must install an executable
+│   │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
+│   │      defect: staging sets no mode and `read_tar_gz` drops the tar header's
+│   │        mode field, so Linux gets a 0644 `minicon` and `spawn` fails EACCES
+│   │        — which is what makes `{ROLLBACK}` reachable in normal use
+│   │      invariant: the staged file is executable before it is renamed into
+│   │        place; the mode comes from the archive's declared mode, or a sane
+│   │        default when the container records none
+│   │      evidence: a Unix-target test whose staged artifact has mode 0755 and,
+│   │        separately, an archive that declares 0644 and must be refused or
+│   │        corrected rather than installed non-executable
+│   │      non-goal: preserving setuid/setgid bits or any mode wider than the user
+│   ├── {BOMB} archive decode must be bounded on its output
+│   │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
+│   │      defect: `read_tar_gz` inflates with `read_to_end` and no ceiling, and
+│   │        `inflate` pre-allocates the declared uncompressed size (both
+│   │        `src/update_archive.rs`) — a crafted or tampered release aborts the
+│   │        process by exhausting memory
+│   │      invariant: decoding refuses once the output passes a ceiling derived
+│   │        from the download bound, as a bounded panel error and never an abort
+│   │      evidence: a loopback-served bomb (tiny compressed, huge declared or
+│   │        actual output) is refused with an error naming the ceiling; and a
+│   │        zip entry declaring ~4 GiB does not allocate on the declaration
+│   └── {SCHEME} the update path speaks https only
+│          owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
+│          defect: `validate_url` admits both schemes and the asset URL is taken
+│            verbatim from the release JSON (`network_http.rs:123`)
+│          invariant: the release fetch and the asset download refuse any scheme
+│            other than https
+│          evidence: a loopback `http://` URL is refused with a typed error, with
+│            no request sent
 ├── {SIGV} verify the code signature of the new binary, not only its checksum
 │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI" (already carries the
 │        `[-]` line this closes)
@@ -181,7 +291,13 @@ replace itself must be more careful than one that cannot, not less.
 
 ```mermaid
 flowchart TB
-    U["0.2.7 shipped: the product can replace itself"] --> T["trust the new bytes"]
+    U["0.2.7 shipped: the product can replace itself"] --> F["FIRST: the update path must be correct<br/>(security review, 2026-10-13)"]
+    F --> ROLL["{ROLLBACK} rollback must not<br/>delete the last good copy"]
+    F --> EXEC["{EXECBIT} Unix stage must<br/>install executable"]
+    F --> BOMB["{BOMB} bound the decode output"]
+    F --> SCH["{SCHEME} https only"]
+    EXEC -. "is what makes it reachable" .-> ROLL
+    U --> T["trust the new bytes"]
     T --> SIGV["{SIGV} verify signature,<br/>not only the sidecar"]
     SIGV --> SIZE{"app-facts feature<br/>size decision<br/>owner: PRD_02_27"}
     U --> C["tell the user what it costs"]
@@ -197,10 +313,19 @@ flowchart TB
 
 ## GATE status
 
-Not started. Every leaf above is `[_]`. The two leaves that must be measured
-before any code moves are `{SIGV}` (a size decision owned by PRD_02_27, not a
-mechanism problem) and `{FIND}` (blocked on C1, which is somebody else's
-answer). `{PREF}` is ready to start the moment the 0.2.7 files above are free.
+Not started. Every leaf above is `[_]`, with one ordering change since this file
+was opened: the four `FIRST` leaves from the security review
+(`{ROLLBACK}`, `{EXECBIT}`, `{BOMB}`, `{SCHEME}`) are defects in code that
+**already shipped in 0.2.7**, so they go before the planned work and before
+anything new. `{EXECBIT}` and `{ROLLBACK}` are a chain — fixing one without the
+other leaves Linux still able to destroy a user's install. None of the four
+needs a live GitHub call or a size decision; all four are provable against a
+loopback server and a temporary directory.
+
+The two leaves that must be measured before any code moves are `{SIGV}` (a size
+decision owned by PRD_02_27, not a mechanism problem) and `{FIND}` (blocked on
+C1, which is somebody else's answer). `{PREF}` is ready to start the moment the
+0.2.7 files above are free — they are free now (v0.2.7 is published).
 
 ## Open decisions (owner)
 

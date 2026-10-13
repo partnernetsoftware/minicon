@@ -45,7 +45,7 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
-│   ├── [-] v0.2.8 planned — trust the self-updating product, then close the cheap gaps
+│   ├── [-] v0.2.8 planned — fix the shipped update path, then trust it, then close the cheap gaps
 │   │   └── plan/plan-v0.2.8.md
 │   ├── [v] v0.2.7 released — manual check-for-updates (#4) + window-icon parity on Windows/X11
 │   │   └── prd/archive/v0.2.7-release-history.md
@@ -304,9 +304,15 @@ flowchart LR
   run ids in `prd/archive/v0.2.7-release-history.md`. Behaviour
   `prd/PRD_02_25_con_workspace.md`, boundary amendment
   `prd/PRD_02_23_minicon.md`.
-- [_] **v0.2.8 is planned: `plan/plan-v0.2.8.md`.** Its premise is that 0.2.7
-  moved the product's *identity*, not only its feature list, and three
-  consequences were not carried into the story: the new binary is checked
+- [_] **v0.2.8 is planned: `plan/plan-v0.2.8.md`.** It now leads with four
+  defects an independent security review found **inside the 0.2.7 update path
+  already shipped to users**: a Unix in-place update installs a non-executable
+  binary (`{EXECBIT}`), the failed-launch rollback deletes the last good copy
+  (`{ROLLBACK}` — and the first defect is what makes it reachable on Linux), the
+  archive decode is unbounded on its output (`{BOMB}`), and `http://` is
+  accepted for the download (`{SCHEME}`). Its premise is unchanged underneath:
+  that 0.2.7 moved the product's *identity*, not only its feature list, and
+  three consequences were not carried into the story — the new binary is checked
   against a checksum whose sidecar comes from the same release (`{SIGV}` —
   verify the signature too, a size decision owned by PRD_02_27); a Restart
   press is the first moment a user learns it ends every tab (`{RESTART}`);
