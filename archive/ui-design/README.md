@@ -1,4 +1,10 @@
-# minicon UI 设计稿
+# minicon UI 设计稿（已归档）
+
+Archived design material. Nothing here is built, run or referenced by a
+workflow, test or script. The durable outcome is the `[v]` items in
+`prd/PRD_02_25_con_workspace.md` "Design study" and "Host UI"; the parked
+NewAgent exploration is owned by `prd/PRD_02_31_v0_2_horizon.md`. Literal
+theme hex values live in the code (`src/palette.rs`, `src/main.rs`), not here.
 
 `NewAgent Create.dc.html` / `NewAgent Running.dc.html` — NewAgent 功能的创建态/运行态设计稿，基于真实布局（sidebar 会话树、composer 底栏、settings 面板同款视觉）绘制，非独立弹窗。顶部图标行为 New Tab（`⌐`）旁并列一个 New Agent 图标（机器人 emoji，同级并列、常驻可见，不用长按/右键菜单）。对应产品设计见 `plan/plan-newagent-config.md`。
 

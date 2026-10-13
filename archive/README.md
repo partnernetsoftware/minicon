@@ -48,3 +48,26 @@ Files from the live `research/minicon-com-loader/` that nothing uses any more:
   `plan/archive/design-qvm-false-positive-experiment.md`.
 - `tinygui/` — MiniCon's own window stack with nothing drawn, to measure the
   host floor for RSS and CPU. Results in `tinygui/RESULTS.md`.
+
+## `ui-design/`
+
+The raw mockups behind the current host-UI chrome — a four-turn visual study
+(structure, themes, a button/geometry audit, and the toolbar reduction) plus
+the parked NewAgent create/running exploration. HTML mockups with their own
+`support.js` runtime; open them in a browser, nothing here is built. The
+durable conclusions are in `prd/PRD_02_25_con_workspace.md` "Design study",
+and the NewAgent exploration is owned by `prd/PRD_02_31_v0_2_horizon.md`.
+
+## `reference/`
+
+Background knowledge that was never product truth — the directory's own README
+labelled it "非产品承诺、非 PRD", and nothing linked to it. Kept for the concepts,
+not as requirements:
+
+- `virtualization-emulation-sandbox.md` — emulation / simulation /
+  virtualization / sandbox boundaries, container-and-image internals
+  (Docker/Podman/OCI/runc, image vs container, layered filesystems), a
+  tool-placement table (VMware / QEMU / VirtualBox / UTM), VirtualBox↔UTM and
+  the 0x7B pitfall, and a "how to place a new tool" four-question method.
+  Gathered while reproducing the console-agent CJK rendering bug in an emulated
+  x86 Windows guest under UTM on Apple Silicon.

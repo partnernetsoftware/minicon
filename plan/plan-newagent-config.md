@@ -12,7 +12,8 @@ which are already accepted (this session's earlier, un-filed alignment: an
 `AgentProfile { name, steps: [Step], topology }` data model, `Step { harness,
 provider, model, params:{effort} }`, four-way harness registry, three-way
 provider registry, and the two published visual Artifacts — creation-state
-`Main.dc.html`, running-state `Running.dc.html`). This plan's job is to
+`NewAgent Create.dc.html`, running-state `NewAgent Running.dc.html`, archived
+under `archive/ui-design/`). This plan's job is to
 upsert that missing template layer without re-deriving the accepted parts.
 
 Non-goal: any Rust implementation. This is a design-only plan; no
@@ -26,7 +27,7 @@ invocation decides.
 
 **PRD placement (2026-09-27, upserted the other direction too):** this whole
 plan, its accepted-but-unfiled `AgentProfile`/`Step` data model, and the two
-visual mockups under `ui/ui-design/` are the "harness GUI workbench" leaf's
+visual mockups under `archive/ui-design/` are the "harness GUI workbench" leaf's
 and `harness-manage {hm}`'s territory in `prd/PRD_02_31_v0_2_horizon.md`,
 both explicitly `[_]` not-started / 0.3.x-horizon / BLOCKED on their own
 design passes. This plan is recorded there as early design input, not as

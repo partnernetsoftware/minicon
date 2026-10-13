@@ -306,6 +306,31 @@ are comparison contracts, not dependencies:
   terminal, interaction and robustness mechanisms are promoted to shared typed
   layers instead of copying server, Fleet or script policy into this binary.
 
+## Design study (material archived)
+
+The host-UI shape above came from a four-turn visual study; the raw mockups
+now live under `archive/ui-design/`, and the shipped conclusions are the `[v]`
+items in "Host UI". The mockups are working material, not product truth.
+
+- **Turn 1 — structure.** Hard-border, whitespace-pane and machine-chassis
+  frames, each in light and dark. Chosen: the current framed chrome.
+- **Turn 2 — themes.** Neutral Ink (the then-default gray), Docs Ink (the
+  website's blue) and Paper Ink (light). Shipped as the three runtime themes;
+  the literal hex values live in the code (`src/palette.rs`, `src/main.rs`)
+  and are not duplicated here.
+- **Turn 3 — audit.** A button/geometry pass against `src/ui.rs` flagged the
+  status bar, the per-row close target and a Traditional-Chinese empty state
+  leaking into the Simplified variant; all three were fixed.
+- **Turn 4 — toolbar reduction.** The header's seven tools collapsed to New +
+  Settings, the rest folded into the settings panel. The two chrome toggles
+  were added later, in 0.2.6, bringing the header to its current four.
+
+`Minicon Prototype.dc.html` and `Terminal Styles.dc.html` record turns 1–4.
+`NewAgent Create.dc.html` / `NewAgent Running.dc.html` are the parked
+GUI-workbench exploration owned by `prd/PRD_02_31_v0_2_horizon.md` and
+`plan/plan-newagent-config.md`; `support.js` is the mockups' runtime. Nothing
+in `archive/ui-design/` is built or run.
+
 ## External composer input
 
 The input area is a deliberate feature, not a leftover. Most terminals make you

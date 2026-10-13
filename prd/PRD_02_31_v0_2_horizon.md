@@ -194,8 +194,8 @@ process, exactly like the existing `--control` endpoint.
 │         "NewAgent" configuration flow) plus its accepted-but-unfiled
 │         `AgentProfile{name,steps:[Step],topology}`/`Step{harness,provider,
 │         model,params:{effort}}` data model and two visual mockups
-│         (`ui/ui-design/NewAgent Create.dc.html`,
-│         `ui/ui-design/NewAgent Running.dc.html`) explore a multi-step,
+│         (`archive/ui-design/NewAgent Create.dc.html`,
+│         `archive/ui-design/NewAgent Running.dc.html`) explore a multi-step,
 │         topology-shaped agent config surface that touches this node's
 │         "workflow concept" and "tool surface" questions, but does not
 │         resolve them: it was drafted from the "0.2.x/minicon 是 agent 的
@@ -622,7 +622,7 @@ separately. Do not start renderer code before that.
 
 **Early screen-level design exploration exists, ahead of this leaf being
 unblocked (2026-09-27).** `plan/plan-newagent-config.md` and its two visual
-mockups (`ui/ui-design/NewAgent Create.dc.html`, `ui/ui-design/NewAgent
+mockups (`archive/ui-design/NewAgent Create.dc.html`, `archive/ui-design/NewAgent
 Running.dc.html`) sketch a concrete "NewAgent" dialog/canvas — multi-step
 `AgentProfile`/`Step` configuration, a template chooser, and a running-state
 canvas with human-arbitration — grounded in MiniCon's real self-drawn UI
