@@ -100,12 +100,13 @@ dispatches must then be driven by hand — see
 `prd/archive/v0.2.7-release-history.md` "Notes for the next chain" for the
 `source_sha`/`--ref` trap it cost a round to learn.
 
-## Verified against the landed 0.2.7 code (commit `417f595`)
+## Verified against the landed 0.2.7 code
 
 Checked on 2026-10-13 against the committed 0.2.7 feature, so this version is
-not planned on stale assumptions. The shipped commit is `f52662a` (the only
-change after `417f595` was the TLS-provider pin in `network_http.rs`); the line
-numbers below were re-checked against `f52662a` and still hold.
+not planned on stale assumptions. First read against `417f595`; the shipped
+commit is `f52662a` (the only change after `417f595` was the TLS-provider pin in
+`network_http.rs`), and every line number below was re-verified against
+`f52662a`.
 
 | Leaf | What the shipped code does | Line |
 |---|---|---|
