@@ -143,6 +143,13 @@ jobs:
           }
           echo "== minicon-core (lib unit tests) ${{ inputs.test_filter }}"
           run_suite minicon-core cargo test --locked --target "$triple" -p minicon-core -- --test-threads 2 ${{ inputs.test_filter }}
+          # The alignment suite reads the repository and the built binary, and
+          # no other workflow runs it: 0.2.6 shipped with
+          # `the_help_and_readme_list_the_same_shortcuts` failing because the
+          # only gate that would have caught it lived in `scripts/build.sh test`
+          # and never ran here.
+          echo "== minicon_alignment ${{ inputs.test_filter }}"
+          run_suite minicon_alignment cargo test --locked --target "$triple" --test minicon_alignment -- --test-threads 2 ${{ inputs.test_filter }}
           for suite in minicon_blackbox minicon_control; do
             echo "== $suite ${{ inputs.test_filter }}"
             run_suite "$suite" cargo test --locked --target "$triple" --test "$suite" -- --test-threads 2 ${{ inputs.test_filter }}
