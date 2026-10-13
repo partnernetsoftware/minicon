@@ -108,21 +108,32 @@ header tools, and the composer. It is not the browser, and it is not layout.
 `Layout` is only the geometry of those regions.
 
 - [v] the host UI owns a vertically scrollable left tree with row-level
-  close targets and a two-tool header: a New root-terminal action and a
-  Settings button that opens the settings panel. A distinct bottom composer
-  owns input, Send and Newline, and a bottom status bar shows a fixed-width
-  `L###:C###` readout that follows the grid crosshair (the hovered cell) and
-  falls back to the text cursor.
+  close targets and a header of four tools: New, Settings, and the pair of
+  chrome toggles for the left sidebar and the right panel. A distinct bottom
+  composer owns input, Send and Newline, and a bottom status bar shows a
+  fixed-width `L###:C###` readout that follows the grid crosshair (the hovered
+  cell) and falls back to the text cursor.
 - [v] a tab whose shell has exited stays in the tree (remain-on-exit) and is
   visibly inert: its label dims, and the change repaints the tab column
   immediately rather than waiting for unrelated host-UI damage. A pixel
   journey screenshots the window before and after the shell exits and asserts
   the tab column changed while the window kept its size.
 - [v] the tree header does not repeat the `MiniCon` product label already owned
-  by the native window title. It spends that scarce row on two actions — New
-  (left) and Settings (right) — with 24-DIP hit targets and no permanent button
-  borders. High-contrast, minimal marks float on the shared toolbar; the open
-  Settings button uses a quiet selected fill.
+  by the native window title. It spends that scarce row on four tools — New
+  (left), then Settings and the two chrome toggles (right) — with 24-DIP hit
+  targets and no permanent button borders. High-contrast, minimal marks float on
+  the shared toolbar; the open Settings button uses a quiet selected fill.
+- [v] a collapsible right-side **sent-history panel** (0.2.6) lists the newest
+  lines the composer has sent and refills the composer when a row is clicked.
+  The list is a view over the composer's one sent-history store — a row and an
+  Up/Down recall at the same offset are the same line — and a click uses that
+  same recall contract (keeps a half-typed draft). It toggles from the header's
+  panel control or `Ctrl+Shift+H`; both toggles read left-to-right as the
+  columns they control. The panel takes a real column and the terminal is
+  re-inset, never overlaid; a blank area below the list is reserved for future
+  `{LOOP}`/goal controls. `ui-snapshot` publishes `history_panel` and the
+  `panel_toggle` rect. Follow-ups: a per-row destination label, and scrolling
+  past capacity.
 - [v] the settings icon opens a lightweight in-app panel, anchored under the
   header on the sidebar rather than a centered modal. It carries four sections:
   interface language (English / 简 / 繁, the active one filled with the accent),

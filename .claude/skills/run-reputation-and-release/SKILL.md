@@ -14,6 +14,35 @@ is everything after those receipts exist.
 The Candidate is immutable — publishing PROMOTES it with no rebuild and no
 re-sign. Never rebuild to "fix" a gate.
 
+## Fast path: the whole chain is one command
+
+`scripts/release.sh <version>` drives every stage below end to end — the version
+bump, the `minicon-com` six-cell pack, dual signing, the Candidate, the Defender
+court, reputation, the dry run and (only after a typed confirmation) the
+publish. Prefer it over retyping the dispatches; the sections that follow are the
+reference for the manual path and for resuming a chain that stopped partway.
+
+- It runs unchanged under **Windows Git Bash** (LF tree, `core.autocrlf=false`).
+- **No local signing credentials are needed.** The signing keys live only in the
+  CI `release-signing` environment; the dispatcher needs just `gh` authenticated
+  with `repo` + `workflow` scopes (dispatch + read run artifacts). There is
+  nothing to provision on the host — do not go looking for local certs.
+- **Non-interactive stdin (an agent, CI, redirected stdin) stops safely after
+  the dry run** — exit 3, nothing published — and prints the exact Promotion
+  command. Dispatch that to finish, then delete the pinned branch.
+- **If `Cargo.toml` and `release-policy.json` already read `<version>`** (the
+  version was bumped in an earlier commit), the `1/8 bump` step has nothing to
+  commit and the script exits before the first dispatch. Drive steps 2–8 with the
+  same dispatches it encodes (the "Gate 0" chain and "The four gates" below),
+  pinning
+  `source_sha` to the current `main` HEAD, whose `Cargo.toml` already equals
+  `<version>`. Both 0.2.5 and 0.2.6 hit this.
+
+The chain's shape, per-node timings and history are owned by the target repo's
+delivery PRD — for MiniCon, `prd/PRD_02_27_con_delivery.md` (§ "Driving the
+chain" and the two release-pipeline trees). This skill names the driver and the
+boundary; the PRD is the single source for the rest.
+
 ## Start with authority and state
 
 1. Read the target repo's `AGENTS.md`, its `release-policy.json`
@@ -23,8 +52,11 @@ re-sign. Never rebuild to "fix" a gate.
    against the workflow file — do not trust memory.
 2. Identify the sealed Candidate run id and the source SHA it is bound to. Every
    downstream gate binds to that exact SHA.
-3. The publish dispatch is outward-facing and irreversible — confirm the
-   owner's release decision before firing `confirmation=publish-v<version>`.
+3. The publish dispatch is outward-facing and irreversible, so it needs the
+   owner's release decision — but an explicit owner instruction naming the
+   version and asking to publish **already supplies that decision** (this repo's
+   `AGENTS.md`); do not re-ask. What must not be skipped is the evidence: the dry
+   run has to be green first.
 
 ## Gate 0: the upstream chain that produces the Candidate
 

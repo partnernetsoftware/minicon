@@ -107,6 +107,10 @@ MiniCon — one-file local terminal
 │   │   └── prd/archive/v0.1.21-release-history.md
 │   ├── [v] v0.1.20 released — detachable/headless GUI; collapsible tab rail; MiniCon.app icon; dual-signed
 │   │   └── prd/archive/v0.1.20-release-history.md
+│   ├── release chain — one command `scripts/release.sh <version>`: six-cell
+│   │   pack, dual signing, Candidate, Defender court, reputation, no-rebuild
+│   │   Promotion (CI-native throughout; no local credentials)
+│   │   └── prd/PRD_02_27_con_delivery.md · "Driving the chain"
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
 │   ├── host-neutral shared rules only
@@ -267,7 +271,16 @@ flowchart LR
 
 ## Current frontier
 
-- [v] v0.2.5 is the latest public release: inline tab rename from a per-row
+- [v] v0.2.6 is the latest public release (2026-10-13): the first cut of the
+  right-side collapsible sent-history panel (GitHub #3) — newest sent lines,
+  click a row to refill the composer through the recall path, a reserved area
+  for future `{LOOP}`/goal controls, and a header toggle pair for the sidebar
+  and the panel — plus a repo-hygiene documentation pass and a Linux-only test
+  compile fix. Source `c8d70a5`, chain run ids in
+  `prd/archive/v0.2.6-release-history.md`. Deferred to `plan/plan-v0.2.7.md`:
+  the notes scratchpad (#5) and check-for-updates (#4). Owner:
+  `prd/PRD_02_25_con_workspace.md`, section "Host UI".
+- [v] v0.2.5 released: inline tab rename from a per-row
   pencil affordance, a second tab-row line showing the content terminal's OSC
   title, the Windows console-title gap fixed at the platform layer, and the
   shared platform crates moved into MiniCon (`crates/minicon-platform`,

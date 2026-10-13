@@ -2490,7 +2490,7 @@ the 0.1.24 runs otherwise (same workflows, unaffected by which Defender host is
 used).
 
 ```text
-0.1.25 release pipeline — CI-hosted Defender path
+0.2.x release pipeline — CI-hosted Defender path (default since 0.2.3)
 ├── minicon-com.yml {com} @time=~6.5min (run 36049001422)
 │   └── one macOS job cross-compiles and packs all six cells unsigned
 ├── company-signing.yml ->com @time=~2.5min (run 36077887554)
@@ -2551,15 +2551,56 @@ once the CI-hosted tree above has its own passing evidence, not before.
     └── same dry_run=true/false Promotion step as the CI-hosted tree
 ```
 
-The two trees differ in exactly one node (`def`): the Defender scan's host,
-and correspondingly whether a resident UTM guest must stay warm on the
-release Mac. `release/utm-win-defender-scan.sh`'s own comment is the reason
-the swap is sound — "Defender scans files without executing them, so a
-native Windows court of any ISA yields an equivalent verdict" — and both
-paths feed the identical downstream `reputation.yml`/`release.yml` unchanged.
-Once the CI-hosted tree has one named passing run, it becomes the default and
-this tree is retitled purely as fallback documentation; neither tree is
-deleted, per this repository's evidence and release-history discipline.
+The two trees differ in exactly one node (`def`): the Defender scan's host.
+`release/utm-win-defender-scan.sh`'s own comment is the reason the swap is
+sound — "Defender scans files without executing them, so a native Windows court
+of any ISA yields an equivalent verdict" — and both paths feed the identical
+downstream `reputation.yml`/`release.yml` unchanged. The CI-hosted tree became
+the default once it had its own passing evidence; that happened by 0.2.3
+(`[v]` above), and every release since — 0.2.3, 0.2.4, 0.2.5 — bound its
+Defender verdict on `windows-2025`. The local UTM tree is kept as the documented
+fallback, not deleted, per this repository's evidence and release-history
+discipline.
+
+### Driving the chain
+
+`scripts/release.sh <version>` drives the whole tree above end to end — the
+version bump, `minicon-com`, both signing courts, the Candidate, the Defender
+scan, reputation, the dry run and (only after a typed confirmation) the
+Promotion. It runs unchanged under Windows Git Bash. Operational facts that are
+easy to get wrong:
+
+- **No local signing credentials.** The signing keys live only in the CI
+  `release-signing` environment; a dispatcher needs just `gh` authenticated with
+  `repo` + `workflow` scopes (dispatch + read run artifacts). Nothing is
+  provisioned on the host.
+- **A non-interactive stdin stops safely after the dry run** (exit 3, nothing
+  published) and prints the exact `release.yml` Promotion command. Dispatch that
+  to finish, then delete the pinned `candidate-src-<v>` branch.
+- **`source_sha` is frozen through the chain.** Every gate asserts
+  `source_sha == GITHUB_SHA`, so `main` must not move between the first dispatch
+  and the Promotion; once it has moved, pin a throwaway `candidate-src-<v>`
+  branch at the Candidate SHA and dispatch reputation/release on that ref.
+- **If `Cargo.toml` and `release-policy.json` already read `<version>`** (the
+  version was bumped in an earlier commit), the script's `1/8 bump` step has
+  nothing to commit and it exits before the first dispatch. Drive steps 2–8 by
+  hand with the same dispatches it encodes, pinning `source_sha` to the current
+  `main` HEAD (whose `Cargo.toml` already equals `<version>`). 0.2.5 and 0.2.6
+  both hit this.
+
+```mermaid
+flowchart LR
+    S["source frozen<br/>source_sha = main HEAD"] --> COM["minicon-com.yml<br/>pack once · six native cells execute"]
+    COM --> WIN["company-signing.yml<br/>Azure Trusted Signing"]
+    COM --> MAC["macos-signing.yml<br/>codesign · notarize · staple"]
+    WIN --> CAND["candidate.yml<br/>seal exact source + signed bytes"]
+    MAC --> CAND
+    CAND --> DEF["defender-ci-scan.yml<br/>windows-2025 · real MpCmdRun"]
+    DEF --> REP["reputation.yml<br/>qualification binds to the Candidate"]
+    REP --> DRY["release.yml dry_run=true<br/>assemble; publish nothing"]
+    DRY -. owner decision .-> PUB["release.yml dry_run=false<br/>promote sealed bytes; no rebuild"]
+    PUB --> DEL["delete candidate-src-&lt;v&gt;"]
+```
 
 ## Where a test runs, and what that costs
 

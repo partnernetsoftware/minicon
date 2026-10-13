@@ -133,7 +133,7 @@ agent CLI）；`--feature conpty` 可切到它，供 Vim 类程序使用。
 ```bash
 ./scripts/build.sh release     # target/release/minicon
 ./scripts/build.sh test        # 单元 + GUI 黑盒 + 各道门禁
-./scripts/six-cell-qualify.sh  # 六种 OS/ISA 二进制
+./scripts/six-cell-qualify.sh  # 六种 OS/ISA 二进制（需 macOS 主机；CI 里由 .github/workflows/minicon-com.yml 跑）
 ```
 
 Rust 1.97。Linux 需要 `libxkbcommon.so.0` 和 `libwayland-client.so.0`（无需

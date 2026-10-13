@@ -13,9 +13,11 @@ commit messages, and file/doc content stay in their existing language (mostly
 English); only the assistant's own thinking and conversational replies default
 to Chinese unless the user asks otherwise.
 
-## Planning method: tree DAG + memory palace
+## Planning and documentation: the PRD series, tree DAG + memory palace
 
-Use both views for material product planning; neither replaces the other.
+Use both views for material product planning; neither replaces the other. The
+same shape is the repository's documentation method — the PRD md series is the
+backbone, and everything else points into it.
 
 1. Write a Markdown tree DAG first. Begin with one user outcome, split it into
    capability owners, and give every delivery leaf its invariant, observable
@@ -23,9 +25,21 @@ Use both views for material product planning; neither replaces the other.
 2. Draw one Mermaid flowchart memory palace for relationships that the tree
    cannot show well: shared prerequisites, exact-artifact flow, parallel
    courts, authority boundaries, decision gates and kill paths.
-3. Keep one owner per fact. `PRD.md` is the compact index; an owning PRD module
-   holds current product truth; `plan/` holds sequencing; `plan/archive/` and
-   `prd/archive/` preserve superseded decisions and release history.
+3. **The PRD md series owns the documentation. Keep one owner per fact.**
+   - `PRD.md` is the compact index: a Markdown tree DAG, one Mermaid memory
+     palace, the governing invariants, the capability-ownership table and the
+     current frontier.
+   - A **material branch gets its own** module (a `PRD_{tree_path}` file under
+     `prd/`), indexed from `PRD.md`; the root stays an index, not a duplicate.
+   - **Every** `prd/PRD_*.md` module carries its own tree DAG and a Mermaid
+     memory palace for the part it owns.
+   - `plan/` holds sequencing; `plan/archive/` and `prd/archive/` preserve
+     superseded decisions and release history.
+   - **Everything else folds into the series.** A skill, `AGENTS.md`, a README
+     or a script comment keeps only what an operator must act on plus a pointer
+     to the owning module — never a second copy of the fact. Documented facts
+     drifting across scattered files is the failure mode this prevents; when you
+     find one, move it to its owner and leave a pointer.
 4. Upsert accepted scope and status into the owning PRD before archiving a
    completed plan. Link instead of copying. Status markers: `[v]` done
    (requires named evidence), `[-]` in progress, `[_]` not started. Do not
@@ -103,7 +117,9 @@ From the repository root:
 Run `six-cell` **before** pushing, not after CI fails. It is the only thing that
 cross-compiles, and 0.1.20 lost three build rounds to changes that a macOS build
 accepts and Linux does not — a `Cell` imported under a macOS `cfg`, among
-others.
+others. `six-cell-qualify.sh` itself needs a macOS host (clang/llvm-ar/zig); from
+a Windows or Linux host the same six cells run in CI as `minicon-com.yml`, the
+first stage of the release chain.
 
 Work directly on `main`. Do not create worktrees or side branches for MiniCon
 work — the owner has ruled that out after it cost real time. The one exception
@@ -124,12 +140,20 @@ the release gate and cost a whole round. Painting helpers with many parameters
 carry `#[allow(clippy::too_many_arguments)]` (precedent in `terminal_paint.rs`).
 
 Do not pick a product binary by modification time. Canonical local outputs are
-documented in `README.md`. Do not commit generated binaries; local outputs stay
-under ignored `target*/`, `dist/` or research output directories.
+documented in `README.en.md` / `README.zh.md`. Do not commit generated binaries;
+local outputs stay under ignored `target*/`, `dist/` or research output
+directories.
 
-Release is exact-source Candidate followed by no-rebuild Promotion. Signing is
-a `release-policy.json` choice, not a fallback inferred from credentials.
-Public Promotion always requires explicit human version and publish authority.
+Release is exact-source Candidate followed by no-rebuild Promotion.
+`scripts/release.sh <version>` drives the whole chain on CI — the `minicon-com`
+six-cell pack, dual signing, Candidate, Defender court, reputation and the
+publish — and the signing keys live only in the CI `release-signing`
+environment, so dispatching needs no local credentials, just `gh` with `repo` +
+`workflow` scopes. Signing is a `release-policy.json` choice, not a fallback
+inferred from credentials. Public Promotion always requires explicit human
+version and publish authority. The chain's shape, per-node timings and
+operational traps are owned by `prd/PRD_02_27_con_delivery.md` (§ "Driving the
+chain"); this section only names the driver and the boundary.
 
 For release handoffs, inventory exact-source receipts and running jobs before
 repeating gates. Finish version/docs edits and verify custom output directories
@@ -165,7 +189,8 @@ current shape exists, not just what it is.
   that loses its `#[test]` attribute compiles as dead code and silently runs
   nothing, and an unused `Result` hides a setup that failed. Add a test and
   confirm the gate's test count went up.
-- Keep `README.md` brief and human-facing; keep operational agent rules here.
+- Keep the READMEs (`README.md` index, `README.en.md` / `README.zh.md`) brief and
+  human-facing; keep operational agent rules here.
 - Preserve user changes in a dirty tree and stage only exact reviewed paths.
 - In public documents use repo-relative paths for this clone and `~/...` for
   locations below a user home. Never write real emails, hostnames, IPs,

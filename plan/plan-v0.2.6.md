@@ -51,9 +51,10 @@ The owner asked me to decide and review the result later. Decision: both live in
 ## Tree DAG
 
 ```text
-0.2.6: owner-issues #3/#5 + hygiene; scope PENDING owner confirmation
-├── {SENTHIST} sent-history region in the host UI                    [-] @host=none
-│      landed (2026-10-12): the right-side collapsible panel, the newest
+0.2.6: shipped 2026-10-13 — {SENTHIST} + hygiene; {NOTES}/{UPDATE} deferred to 0.2.7
+├── {SENTHIST} sent-history region in the host UI                    [v] @host=none
+│      landed (2026-10-12), released in 0.2.6 (2026-10-13): the right-side
+│        collapsible panel, the newest
 │        sent lines as clickable rows (click refills the composer via the
 │        recall path), the reserved loop/goal area, and `ui-snapshot`
 │        `history_panel`; toggled by a header control (paired with the sidebar

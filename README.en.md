@@ -145,7 +145,7 @@ alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
 ```bash
 ./scripts/build.sh release     # target/release/minicon
 ./scripts/build.sh test        # unit + GUI black-box + gates
-./scripts/six-cell-qualify.sh  # all six OS/ISA binaries
+./scripts/six-cell-qualify.sh  # all six OS/ISA binaries (needs a macOS host; CI runs these as .github/workflows/minicon-com.yml)
 ```
 
 Rust 1.97. Linux needs `libxkbcommon.so.0` and `libwayland-client.so.0` (no

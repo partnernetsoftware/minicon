@@ -2,6 +2,15 @@
 
 Field-tested on an Apple-Silicon Mac driving UTM 4.7 for a minicon-style release.
 
+> **Status (2026-10-13).** The release chain is CI-native end to end and is
+> driven by `scripts/release.sh <version>` — no local credentials, no Mac, no
+> UTM (see the SKILL's "Fast path" and the "Driving the chain from a Windows
+> host" section below). `defender-ci-scan.yml` on a GitHub-hosted `windows-2025`
+> runner is the default Defender court; the local UTM court in the next sections
+> is the fallback only for a target ISA with no GitHub-hosted native runner, or
+> while diagnosing a `defender-ci-scan.yml` failure. The chain's shape, timings
+> and history are owned by `prd/PRD_02_27_con_delivery.md`.
+
 ## Court selection: native ARM Windows, not emulated x86
 
 `release/utm-win-defender-scan.sh` supports

@@ -10,6 +10,16 @@
 #   - A clean working tree on `main`, already up to date with origin/main.
 #   - This script bumps the version, commits, and pushes to `main` itself --
 #     do not run it with uncommitted changes you want to keep separate.
+#   - Signing keys are NOT a prerequisite: they live only in the CI
+#     `release-signing` environment; dispatching needs no local credentials.
+#   - If Cargo.toml and release-policy.json already read <version> (the version
+#     was bumped in an earlier commit), step 1/8 has nothing to commit and the
+#     script exits before dispatching. Drive steps 2-8 by hand with the same
+#     dispatches this script encodes, pinning source_sha to the current `main`
+#     HEAD (whose Cargo.toml already equals <version>). 0.2.5 and 0.2.6 hit this.
+#   - The chain's shape, per-node timings and history are owned by
+#     prd/PRD_02_27_con_delivery.md (section "Driving the chain"); this script
+#     and the skill only name the driver and the boundary.
 #
 # The final publish step is interactive: the script runs release.yml as a
 # dry run first, then asks you to type the version again before dispatching
