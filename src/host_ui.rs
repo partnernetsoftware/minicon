@@ -516,98 +516,90 @@ pub(crate) fn paint_header_icon_button(
             }
         }
         HeaderIcon::SidebarToggle { collapsed } => {
-            let panel = ui::Rect {
-                x: button.x.saturating_add(inset),
-                y: button.y.saturating_add(inset),
-                width: button.width.saturating_sub(inset.saturating_mul(2)),
-                height: button.height.saturating_sub(inset.saturating_mul(2)),
-            };
-            stroke_rect(surface, panel, stroke, color);
-            // The divider sits where the sidebar's edge is: on the left of the
-            // frame when collapsed (a thin rail), further in when expanded.
-            let divider_x = if collapsed {
-                panel.x.saturating_add(panel.width / 4)
-            } else {
-                panel.x.saturating_add(panel.width / 2)
-            };
-            surface.fill_rect(divider_x, panel.y, stroke, panel.height, color.to_xrgb());
-            // A chevron in the larger half, pointing the direction the edge
-            // will travel when clicked.
-            let mid_y = panel.y.saturating_add(panel.height / 2);
-            let arm_len = (panel.height / 4).max(stroke);
-            for step in 0..arm_len {
-                let dx = if collapsed {
-                    divider_x
-                        .saturating_add(stroke)
-                        .saturating_add(arm_len.saturating_sub(step))
-                } else {
-                    divider_x
-                        .saturating_sub(stroke)
-                        .saturating_sub(arm_len.saturating_sub(step))
-                };
-                surface.fill_rect(
-                    dx,
-                    mid_y.saturating_sub(step),
-                    stroke,
-                    stroke,
-                    color.to_xrgb(),
-                );
-                surface.fill_rect(
-                    dx,
-                    mid_y.saturating_add(step),
-                    stroke,
-                    stroke,
-                    color.to_xrgb(),
-                );
-            }
+            paint_column_toggle(surface, button, stroke, color, true, collapsed);
         }
         HeaderIcon::PanelToggle { open } => {
-            let panel = ui::Rect {
-                x: button.x.saturating_add(inset),
-                y: button.y.saturating_add(inset),
-                width: button.width.saturating_sub(inset.saturating_mul(2)),
-                height: button.height.saturating_sub(inset.saturating_mul(2)),
-            };
-            stroke_rect(surface, panel, stroke, color);
-            // The divider is the panel's inner edge: at the middle while the
-            // panel is open (a wide column), pulled toward the right edge while
-            // it is closed (the column has collapsed away).
-            let divider_x = if open {
-                panel.x.saturating_add(panel.width / 2)
-            } else {
-                panel.x.saturating_add(panel.width.saturating_mul(3) / 4)
-            };
-            surface.fill_rect(divider_x, panel.y, stroke, panel.height, color.to_xrgb());
-            // A chevron pointing the way the inner edge travels: right to
-            // collapse, left to expand.
-            let mid_y = panel.y.saturating_add(panel.height / 2);
-            let arm_len = (panel.height / 4).max(stroke);
-            for step in 0..arm_len {
-                let dx = if open {
-                    divider_x
-                        .saturating_add(stroke)
-                        .saturating_add(arm_len.saturating_sub(step))
-                } else {
-                    divider_x
-                        .saturating_sub(stroke)
-                        .saturating_sub(arm_len.saturating_sub(step))
-                };
-                surface.fill_rect(
-                    dx,
-                    mid_y.saturating_sub(step),
-                    stroke,
-                    stroke,
-                    color.to_xrgb(),
-                );
-                surface.fill_rect(
-                    dx,
-                    mid_y.saturating_add(step),
-                    stroke,
-                    stroke,
-                    color.to_xrgb(),
-                );
-            }
+            paint_column_toggle(surface, button, stroke, color, false, !open);
         }
+    }
+}
+
+/// Draws a "column" toggle: a window frame with a solid bar marking which
+/// column the control governs — left for the sidebar, right for the panel —
+/// and a chevron stating the outcome, the way that column's edge will travel.
+///
+/// The bar is the pair's identity and never moves with state, so the two
+/// toggles never read as the same control; the chevron alone carries the state,
+/// keeping the family rule that a glyph shows what a click will do rather than
+/// where things already are. `expand` is true when a click widens the column.
+fn paint_column_toggle(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    stroke: u32,
+    color: Rgb,
+    bar_on_left: bool,
+    expand: bool,
+) {
+    let inset = stroke.saturating_mul(3);
+    let panel = ui::Rect {
+        x: button.x.saturating_add(inset),
+        y: button.y.saturating_add(inset),
+        width: button.width.saturating_sub(inset.saturating_mul(2)),
+        height: button.height.saturating_sub(inset.saturating_mul(2)),
+    };
+    stroke_rect(surface, panel, stroke, color);
+    let bar_w = (panel.width / 3).max(stroke);
+    let bar_x = if bar_on_left {
+        panel.x
+    } else {
+        panel.x.saturating_add(panel.width.saturating_sub(bar_w))
+    };
+    surface.fill_rect(bar_x, panel.y, bar_w, panel.height, color.to_xrgb());
+    // The chevron lives in the open area beside the bar, so the bar and the
+    // arrow never overlap.
+    let (region_left, region_right) = if bar_on_left {
+        (
+            bar_x
+                .saturating_add(bar_w)
+                .saturating_add(stroke.saturating_mul(2)),
+            panel.x.saturating_add(panel.width).saturating_sub(stroke),
+        )
+    } else {
+        (
+            panel.x.saturating_add(stroke),
+            bar_x.saturating_sub(stroke.saturating_mul(2)),
+        )
+    };
+    if region_right <= region_left {
+        return;
+    }
+    let cx = region_left.saturating_add(region_right.saturating_sub(region_left) / 2);
+    let mid_y = panel.y.saturating_add(panel.height / 2);
+    let arm_len = (panel.height / 4)
+        .max(stroke)
+        .min(region_right.saturating_sub(region_left) / 2)
+        .max(stroke);
+    for step in 0..arm_len {
+        let reach = arm_len.saturating_sub(step);
+        let dx = if expand {
+            cx.saturating_add(reach)
+        } else {
+            cx.saturating_sub(reach)
+        };
+        surface.fill_rect(
+            dx,
+            mid_y.saturating_sub(step),
+            stroke,
+            stroke,
+            color.to_xrgb(),
+        );
+        surface.fill_rect(
+            dx,
+            mid_y.saturating_add(step),
+            stroke,
+            stroke,
+            color.to_xrgb(),
+        );
     }
 }
 
