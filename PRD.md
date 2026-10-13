@@ -47,7 +47,7 @@ MiniCon — one-file local terminal
 ├── Delivery and portability
 │   ├── [-] v0.2.8 planned — trust the self-updating product, then close the cheap gaps
 │   │   └── plan/plan-v0.2.8.md
-│   ├── [-] v0.2.7 in flight — manual check-for-updates (#4) + window-icon parity; not yet public
+│   ├── [-] v0.2.7 in flight — manual check-for-updates (#4) + window-icon parity on Windows/X11
 │   │   └── plan/plan-v0.2.7.md
 │   ├── [v] v0.2.6 released — right-side collapsible sent-history panel (#3) + paired header toggles
 │   │   └── prd/archive/v0.2.6-release-history.md
@@ -287,7 +287,9 @@ flowchart LR
 
 - [-] **v0.2.7 is in flight, not released.** Manual check-for-updates (GitHub
   #4) — the product's first outbound network call and first self-modifying
-  behaviour — plus window-icon parity on X11/macOS. Owner:
+  behaviour — plus window-icon parity on Windows and X11. macOS keeps the icon
+  its `.app` carries; the runtime path for the bare CLI binary needs `objc2` as
+  a direct platform dependency and is a named gap, not a claim. Owner:
   `plan/plan-v0.2.7.md`; behaviour `prd/PRD_02_25_con_workspace.md`, boundary
   amendment `prd/PRD_02_23_minicon.md`.
 - [_] **v0.2.8 is planned: `plan/plan-v0.2.8.md`.** Its premise is that 0.2.7
