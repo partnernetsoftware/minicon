@@ -143,5 +143,62 @@ flowchart TB
 
 ## GATE status
 
-Nothing implemented; no gate run for this version. The local gate and the
-`CARGO_TARGET_DIR` rule are unchanged from `plan/archive/plan-v0.2.9.md`.
+- **{GATE-FORK} [v]** — landed `e566635`; fork suite 11/0 measured on the
+  Windows host from a cold external target dir before any contract change.
+- **{SCROLL-DAMAGE} [-]** — code landed `7f21e48` (fork contract + grid
+  producers + `src/terminal.rs` consumer + fork tests rewritten for the new
+  contract, incl. an extended oracle that captures `scrollback_depth`); fork
+  suite **12 passed / 0 failed**. The minicon bin test leg — which contains
+  the new consumer test `scroll_damage_marks_rows_and_scrollbar_track_not_full`
+  in `src/terminal.rs` — is **written but unrun**: see the handoff below.
+- **{AMPLIFIER-W} [-]** — code landed `ad00f39`; acceptance journey not run.
+- **{AMPLIFIER-T} [-]** — deferred to 0.2.11, design note above.
+
+## Handoff 2026-10-14
+
+The handing-off agent's session hit a host-environment wall: the WorkBuddy
+harness's own Security Center → Command Security → **program blacklist**
+blocked `reg.exe` (both the Bash and PowerShell tool channels), which
+`winresource`'s resource embed in `build.rs` needs on Windows. Every
+`cargo build`/`cargo test` touching the `minicon` bin therefore failed at
+the build script. This is a property of that agent session's sandbox, not
+of the repository, and it is invisible to CI. A successor agent (or the
+owner's own shell) is expected to build normally.
+
+State at handoff:
+
+1. `main` = `ad00f39`, clean tree, **not pushed** — push is the successor's
+   first gate decision (local gate first, per AGENTS.md).
+2. What has run green, and where:
+   - fork suite (standalone, `--manifest-path third_party/vt100/Cargo.toml
+     --lib`, cold external `CARGO_TARGET_DIR=D:/tmp/mc-target`): **12/0**
+     after the contract change, 11/0 before it.
+   - Everything else in the plan's gate table: **not run this session**.
+     No fmt, no clippy, no bin/core suites, no alignment, no six-cell.
+3. What the successor must run before any release chain (in order):
+   `cargo fmt --check`; `cargo clippy --locked --all-targets -- -D warnings`;
+   `./scripts/build.sh test` (now includes the fork leg by construction);
+   then the six-cell qualification or its CI equivalent (`minicon-com.yml`).
+   Watch the bin test count go up (AGENTS.md) — the new consumer test must
+   appear and pass.
+4. {AMPLIFIER-W}'s acceptance evidence is still owed: before/after frames on
+   a real Windows display across pointer and composer updates — the exact
+   proof obligation the removed guard named. The old binary for the "before"
+   side can be the 0.2.9 Release's `minicon.com`. Any divergence found is a
+   painter bug to fix narrowly; the blanket full-frame upgrade stays out.
+5. Known unrelated breakage seen this session: `scripts/selftest.sh` fails
+   in `publish-six-grid-runtime-selftest.sh` and `six-grid-cloud-selftest.sh`
+   with `[safe-delete][SAFE_DELETE_INVALID_PATH] embedded drive prefix is
+   not allowed` — a pre-existing Windows-path-policy issue in those
+   selftests, untouched by 0.2.10 work. Do not mistake it for new damage;
+   it needs its own hygiene leaf.
+6. Release steps after the gates: version bump (three places:
+   `Cargo.toml`, `Cargo.lock`, `release-policy.json`) → push →
+   `scripts/release.sh 0.2.10` → hand-drive steps 5–8 per the
+   `run-reputation-and-release` skill (read its `references/` first) →
+   owner's-view verification (release view + real download + SHA256
+   three-way match). The 0.2.9 chain's incident record
+   (`prd/archive/v0.2.9-release-history.md`) carries the two traps that
+   will bite again if ignored: **push nothing to `main` mid-chain**, and
+   platform-outage failures are recovered by rerunning the frozen-context
+   run, never by fresh dispatches.

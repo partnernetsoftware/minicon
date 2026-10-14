@@ -298,27 +298,36 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   invalidation, so ordinary output requests only the affected terminal rows and
   the old/new cursor overlays instead of invalidating the complete client.
 - [-] the row-damage claim directly above is **wider than the code it describes**,
-  and this row records the gap rather than restating it. The two scroll producers
-  still demand a full raster — `Grid::scroll_up` and `Grid::scroll_down` call
-  `mark_full()` unconditionally (`third_party/vt100/src/grid.rs:654` and `:679`)
-  — so any line of output at the bottom of a full screen, which is to say
-  *ordinary* output, invalidates the complete client after all; this is the
-  reported "flashing" (`总是感觉闪屏`). The claim's own collision-free oracle
-  (exact visible-cell comparison against `assert_damage_covers` in
-  `third_party/vt100/src/damage.rs`) **does not run**: the vendored crate is a
-  `[patch.crates-io]` path and not a workspace member, so `cargo test
-  --locked --workspace` never reaches it. And a correct parser range alone
-  cannot change what a user sees: both shipped hosts upgrade every frame to full
-  (`src/main.rs:3923` transient host, `:3971` Windows `con`), which the ledger's
-  retained-versus-transient row above does not mention. The `{SCROLL-DAMAGE}`
-  leaf's spec — `plan/plan-scroll-damage.md` — decides the primitive (damage
-  `[scroll_top, scroll_bottom]` plus a `scrollback_changed` flag, because the
-  scrollbar thumb is drawn outside the row band and today is repainted by
-  accident) and then records both blockers. Its code is held until the owner
-  answers two questions: which leaf owns the two host amplifiers, and whether the
-  fork joins the workspace or gains a gate script that runs its oracle. The
-  flashing survives until then; the parser narrowing is a prerequisite, not the
-  fix.
+  and this row records the gap rather than restating it. **2026-10-14 status:
+  the parser half of the gap is closed on `main` (0.2.10 development, commits
+  `e566635`/`7f21e48`/`ad00f39`), the host half is closed on Windows only, and
+  the acceptance journey is not yet run.** The two scroll producers no longer
+  demand a full raster: `Grid::scroll_up`/`scroll_down` mark the provable region
+  band `[scroll_top, scroll_bottom]` and `scroll_up` raises a new
+  `scrollback_changed` flag where it pushes a row into history (the scrollbar
+  thumb is drawn outside the row band), consumed by
+  `src/terminal.rs::mark_vt_damage` via `mark_scrollbar_bounds`. The oracle now
+  runs: `scripts/build.sh test` executes the fork's own suite
+  (`--manifest-path third_party/vt100/Cargo.toml --lib`), and its
+  exact-visible-cell oracle gained `scrollback_depth` in the snapshot, so a
+  depth change outside a full raster must be reported
+  (`12 passed / 0 failed` on the Windows host, cold external target dir). The
+  Windows host no longer upgrades a partial candidate to a full frame
+  (`{AMPLIFIER-W}`, `src/main.rs`): the guard's justification did not survive
+  a static audit — every raster write in both painters goes through a
+  `Surface` clipped to the candidate bounds and the present copies exactly
+  the WM_PAINT update region — so the guard's own exit condition (native
+  before/after screenshots on a real Windows display) is now the leaf's
+  outstanding acceptance evidence, **not yet produced**. Two gaps remain
+  open and are 0.2.10's unfinished work: the minicon bin test suite (which
+  includes the new consumer test `scroll_damage_marks_rows_and_scrollbar_
+  track_not_full`) is **unrun on any host** — the development agent's sandbox
+  blacklisted `reg.exe`, which `winresource`'s resource embed needs, blocking
+  every cargo build — and the Unix transient host still forces a full frame
+  by frame-contract design (`TransientRequiresFull`); narrowing it needs a
+  retained second canvas and is deferred to 0.2.11 with its design note in
+  `plan/plan-v0.2.10.md` {AMPLIFIER-T}. The flashing claim stays `[-]` until
+  the journey runs.
 - [v] the pixel-window contract identifies retained versus transient host
   backing and requires each frame to commit `None`, `Full`, or a bounded partial
   rectangle. Windows rasterizes directly into the retained native XRGB buffer,

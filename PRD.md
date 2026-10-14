@@ -45,7 +45,10 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
-│   ├── [_] v0.2.10 planned — ordinary output stops re-rasterising the whole window
+│   ├── [-] v0.2.10 in development — ordinary output stops re-rasterising the whole window
+│   │      code landed on main 2026-10-14 (e566635 gate · 7f21e48 scroll damage ·
+│   │      ad00f39 Windows amplifier); bin suite + native display journey unrun —
+│   │      handoff record in plan/plan-v0.2.10.md §"Handoff 2026-10-14"
 │   │   ├── plan/plan-v0.2.10.md
 │   │   └── plan/plan-scroll-damage.md
 │   ├── [v] v0.2.9 released — settings that survive a restart (first write path) +
@@ -241,7 +244,7 @@ flowchart LR
         R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
         R028["v0.2.8 released<br/>update path can no longer brick an install · clipboard image paste · scrollbar scale"]
         R029["v0.2.9 released<br/>settings that survive a restart (first write path) · restart cost · history label+scroll · flashing fix spec'd, deferred"]
-        R030["v0.2.10 planned<br/>ordinary output invalidates rows, not the window: gate the fork's oracle · scroll band damage · stop both hosts forcing full"]
+        R030["v0.2.10 in development<br/>parser band damage + oracle gated (12/0) · Windows full-frame upgrade removed · bin suite & display journey unrun (handoff 2026-10-14)"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -308,6 +311,25 @@ flowchart LR
 
 ## Current frontier
 
+- [-] **v0.2.10 in development (handed off 2026-10-14).** Ordinary output
+  stops re-rasterising the whole window. Three leaves landed on `main`
+  2026-10-14: {GATE-FORK} (`e566635`) — the vendored `vt100` fork's
+  exact-visible-cell damage oracle now runs from `scripts/build.sh test`
+  (measured 11/0 before any contract change); {SCROLL-DAMAGE} (`7f21e48`) —
+  a scroll damages its provable region band plus a new `scrollback_changed`
+  flag for the scrollbar thumb, fork suite 12/0; {AMPLIFIER-W} (`ad00f39`) —
+  the Windows `con` path's blanket upgrade of a partial candidate to a full
+  frame is removed after a static audit showed every raster write clipped to
+  the candidate. **Not done, blocking release**: the minicon bin test suite
+  (incl. the new consumer test) is unrun on any host — the handing-off
+  agent's sandbox blacklisted `reg.exe` (needed by `winresource`'s resource
+  embed), blocking every cargo build in that session, an environment limit
+  not a repo fact — and the native before/after Windows display journey that
+  {AMPLIFIER-W}'s removed guard named as its own proof obligation. {AMPLIFIER-T}
+  (Unix transient host) is deferred to 0.2.11 with a design note: the frame
+  contract rejects partial commits on transient backing; narrowing it means a
+  retained second canvas, evidence via CI `xvfb-run`. Full handoff state:
+  `plan/plan-v0.2.10.md` §"Handoff 2026-10-14".
 - [v] **v0.2.7 released (2026-10-13).** Manual
   check-for-updates (GitHub #4) — the product's first outbound network call and
   first self-modifying behaviour — plus window-icon parity on Windows and X11.
