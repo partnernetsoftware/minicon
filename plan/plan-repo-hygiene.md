@@ -361,3 +361,33 @@ and `src/main.rs`, and this ledger's own path before the file existed. Re-run
 Docs/ignore: `git revert` / `git checkout -- <path>`. `git rm --cached`:
 `git reset <path>` (the file stays in the working tree). `cargo clean` is
 regenerable. Record branch SHAs before deleting them.
+
+## Fourth pass: runner-label hygiene, R1 closed (2026-10-14)
+
+Audited by the 0.2.9 chain's post-release pass, after the PRD frontier had
+flagged the 2026-10-19 GitHub migration of `ubuntu-latest` to Ubuntu 26 as a
+hard deadline. All floating `-latest` runner labels are now pinned to the
+versions they resolve to today, so the 10-19 migration changes nothing for
+this repository (11 sites, 6 workflows):
+
+- `ubuntu-latest` → `ubuntu-24.04`: `candidate.yml` ×2, `company-signing.yml`,
+  `macos-signing.yml`, `release.yml` ×3, `reputation.yml`,
+  `release-smoke-test.yml`
+- `windows-latest` → `windows-2025`: `release-smoke-test.yml`
+- `macos-latest` → `macos-15`: `release-smoke-test.yml` (matching the
+  `macos-15` the release chain already pins in `minicon-com.yml` and
+  `macos-signing.yml`)
+
+Pinned earlier the same day, for a different reason (the 2025 image's Defender
+signature-update path broke mid-chain — `prd/archive/v0.2.9-release-history.md`):
+`defender-ci-scan.yml` → `windows-2022`.
+
+Left open for the owner: the three `ubuntu-slim` sites
+(`minicon-com.yml:315`, `company-signing.yml:432`, `six-grid-runtime.yml:242`)
+are org-owned custom labels that ran green the same day, so they are not
+touched; and the per-cell `matrix.runner` labels are pinned inside each
+workflow's matrix and were left as each workflow owns them.
+
+`scripts/product-source-hash.sh` excludes `.github/workflows/`, so this pass
+touches no release evidence. All 39 workflow files re-parse as YAML after the
+edit.

@@ -45,6 +45,9 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
+│   ├── [_] v0.2.10 planned — ordinary output stops re-rasterising the whole window
+│   │   ├── plan/plan-v0.2.10.md
+│   │   └── plan/plan-scroll-damage.md
 │   ├── [v] v0.2.9 released — settings that survive a restart (first write path) +
 │   │   restart cost + history label and scroll
 │   │   ├── plan/archive/plan-v0.2.9.md
@@ -238,6 +241,7 @@ flowchart LR
         R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
         R028["v0.2.8 released<br/>update path can no longer brick an install · clipboard image paste · scrollbar scale"]
         R029["v0.2.9 released<br/>settings that survive a restart (first write path) · restart cost · history label+scroll · flashing fix spec'd, deferred"]
+        R030["v0.2.10 planned<br/>ordinary output invalidates rows, not the window: gate the fork's oracle · scroll band damage · stop both hosts forcing full"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -263,6 +267,7 @@ flowchart LR
     C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117 --> R118 --> R119
     R119 --> R120 --> R121 --> R122 --> R123 --> R126 --> R020 --> R021 --> R022 --> R023 --> R024 --> R025 --> R026 --> R027 --> R028
     R028 --> R029
+    R029 -. planned .-> R030
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -357,9 +362,9 @@ flowchart LR
   not started: `{SIGV}`
   (a PRD_02_27 size decision; the `.sha256` sidecar proves integrity, not
   origin) and `{FIND}` (blocked on C1 in `plan/plan-carried-debt.md`).
-  Separately and urgently, **R1**: several workflow actions still target Node 20
-  and `ubuntu-latest` migrates to Ubuntu 26 beginning 2026-10-19 — a bounded
-  workflow-hygiene pass, outside the version number.
+  Separately, **R1 is closed (2026-10-14)**: every floating `-latest` runner
+  label is pinned (`plan/plan-repo-hygiene.md` "Fourth pass"), so GitHub's
+  2026-10-19 migration of `ubuntu-latest` to Ubuntu 26 changes nothing here.
 - [v] v0.2.6 released (2026-10-13): the first cut of the
   right-side collapsible sent-history panel (GitHub #3) — newest sent lines,
   click a row to refill the composer through the recall path, a reserved area

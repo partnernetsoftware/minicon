@@ -23,7 +23,7 @@ concurrency:
 jobs:
   linux:
     name: smoke / linux-x86_64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Read-only against an already-published tag, no compile: a hang means a
     # stuck download or a wedged binary, not a slow build.
     timeout-minutes: 8
@@ -54,7 +54,7 @@ jobs:
 
   windows:
     name: smoke / windows-x86_64
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 8
     steps:
       - name: Download release asset
@@ -83,7 +83,7 @@ jobs:
 
   macos:
     name: smoke / macos-universal
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 8
     steps:
       - name: Download release asset

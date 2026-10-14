@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       upstream_attempt: ${{ steps.identity.outputs.upstream_attempt }}
@@ -337,7 +337,7 @@ jobs:
 
   seal:
     needs: [preflight, packages, verify-packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
