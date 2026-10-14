@@ -3963,14 +3963,16 @@ impl PixelWindowApplication for ConApp {
         // rasterizing. A late dirty state is therefore a programming error,
         // not an excuse to label a partial frame after the fact.
         let mut candidate = self.take_dirty_candidate(width, height);
-        #[cfg(windows)]
-        if !candidate.is_empty() && !candidate.is_full() {
-            // The optimized clipped raster path can currently erase retained
-            // pixels outside its dirty bounds after pointer/composer updates.
-            // Correctness wins until that path is proven by native before/after
-            // screenshots; Windows con redraws a complete frame meanwhile.
-            candidate = DirtyRegion::full_frame(width, height);
-        }
+        // Both product painters (session render and host UI) raster through a
+        // Surface whose every write — fill, glyph blit, blend — is clipped to
+        // the candidate bounds, so a partial frame cannot touch retained
+        // pixels outside them; the present copies exactly the WM_PAINT update
+        // region. The historical blanket upgrade to a full frame is therefore
+        // gone ({AMPLIFIER-W}, 0.2.10); the proof obligation it named —
+        // native before/after screenshots on a real Windows display, across
+        // pointer and composer updates — is recorded with this version's
+        // evidence. If a diverged-retained-buffer case is ever proven, the
+        // honest fix narrows the offending painter, not the whole frame.
         if host_retains_pixels && !frame_info.content_valid {
             candidate = DirtyRegion::full_frame(width, height);
         }

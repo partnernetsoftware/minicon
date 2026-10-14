@@ -36,7 +36,7 @@ Two facts the 0.2.9 spec established, both still true:
 ```text
 0.2.10: ordinary output stops re-rasterising the whole window
 ├── Product track
-│   ├── {GATE-FORK} the vendored fork's damage oracle becomes runnable   [_]
+│   ├── {GATE-FORK} the vendored fork's damage oracle becomes runnable   [v]
 │   │      problem: `third_party/vt100` is a `[patch.crates-io]` path with an
 │   │        empty `[workspace]` table (deliberately standalone), so its
 │   │        `assert_damage_covers` oracle is executed by no gate; changing
@@ -56,7 +56,7 @@ Two facts the 0.2.9 spec established, both still true:
 │   │        say so. The path needs no new machinery, only an entry in the
 │   │        gate that refuses to be skipped
 │   │      this resolves owner question 2 from 0.2.9 with the smaller change
-│   ├── {SCROLL-DAMAGE} the parser primitive                            [_]
+│   ├── {SCROLL-DAMAGE} the parser primitive                            [-]
 │   │      problem / invariant / safe failure: as already specified in
 │   │        `plan/plan-scroll-damage.md` — do not re-derive it
 │   │      shape: `scroll_up`/`scroll_down` mark `[scroll_top, scroll_bottom]`
@@ -67,16 +67,20 @@ Two facts the 0.2.9 spec established, both still true:
 │   │        paths are not narrowed
 │   │      evidence: a cfg-free unit test on the damage a scroll returns, plus
 │   │        the fork oracle extended for the scrollbar cases
-│   ├── {AMPLIFIER-T} the transient host stops forcing a full frame     [_]
-│   │      problem: `!host_retains_pixels` marks both the host UI and the
-│   │        session full on every frame (`src/main.rs` transient-host path)
-│   │      invariant: a transient host still presents a complete, correct
-│   │        frame; only the *invalidation* narrows to what changed
-│   │      evidence: the Linux `xvfb-run` journey — before/after frames under
-│   │        a real (virtual) display, partial present observable
-│   │      dependency: `{SCROLL-DAMAGE}` (otherwise there is nothing partial
-│   │        to present)
-│   ├── {AMPLIFIER-W} the Windows `con` path stops forcing a full frame [_]
+│   ├── {AMPLIFIER-T} the transient host stops forcing a full frame     [-]
+│   │      DEFERRED to 0.2.11 (scoping decision 2026-10-14, recorded for
+│   │        the owner): on a Transient-retention host the frame contract
+│   │        itself rejects a partial commit (`TransientRequiresFull`), and
+│   │        a fresh buffer needs every pixel written — so "narrow the
+│   │        invalidation" there means retaining a second canvas and
+│   │        blitting it, the exact design `src/main.rs`'s transient comment
+│   │        rejected when every frame was full anyway. That is a design
+│   │        leaf with its own evidence (the Linux `xvfb-run` journey in
+│   │        CI), not a deletion. The reported flashing is a Windows-host
+│   │        report, so {AMPLIFIER-W} below delivers this version's outcome;
+│   │        Linux transient hosts keep today's full-frame behaviour,
+│   │        unchanged by this version.
+│   ├── {AMPLIFIER-W} the Windows `con` path stops forcing a full frame [-]
 │   │      problem: any non-empty, non-full candidate becomes a whole frame
 │   │        (`src/main.rs` Windows path)
 │   │      evidence: a real Windows display journey, before/after; this is the
