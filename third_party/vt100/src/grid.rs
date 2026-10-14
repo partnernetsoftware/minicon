@@ -16,6 +16,7 @@ pub struct Grid {
     dirty_rows: crate::damage::RowRange,
     full_damage: bool,
     viewport_changed: bool,
+    scrollback_changed: bool,
 }
 
 impl Grid {
@@ -35,6 +36,7 @@ impl Grid {
             dirty_rows: crate::damage::RowRange::empty(),
             full_damage: false,
             viewport_changed: false,
+            scrollback_changed: false,
         }
     }
 
@@ -54,14 +56,20 @@ impl Grid {
         self.viewport_changed = true;
     }
 
+    fn mark_scrollback(&mut self) {
+        self.scrollback_changed = true;
+    }
+
     pub(crate) fn take_damage(&mut self) -> crate::damage::GridDamage {
         let rows = std::mem::take(&mut self.dirty_rows);
         let full = std::mem::replace(&mut self.full_damage, false);
         let viewport_changed = std::mem::replace(&mut self.viewport_changed, false);
+        let scrollback_changed = std::mem::replace(&mut self.scrollback_changed, false);
         crate::damage::GridDamage {
             rows,
             full,
             viewport_changed,
+            scrollback_changed,
         }
     }
 
@@ -655,7 +663,13 @@ impl Grid {
         if count == 0 {
             return;
         }
-        self.mark_full();
+        // The scroll provably changes exactly the rows of the scroll region:
+        // the insert below the region and the remove at its top cancel out
+        // for every row outside it, every row inside it shifts, and the row
+        // entering at `scroll_bottom` is blank. Rows outside the band keep a
+        // full-raster escalation for viewport moves (below) and anything the
+        // caller could not prove.
+        self.mark_rows(self.scroll_top, u32::from(self.scroll_bottom) + 1);
         if self.scrollback_offset > 0 {
             self.mark_viewport();
         }
@@ -672,6 +686,10 @@ impl Grid {
                     self.scrollback_offset =
                         self.scrollback.len().min(self.scrollback_offset + 1);
                 }
+                // The retained depth changed even at offset 0, where the
+                // viewport flag stays off: a scrollbar thumb drawn outside the
+                // row band depends on it.
+                self.mark_scrollback();
             }
         }
     }
@@ -680,7 +698,11 @@ impl Grid {
         if count == 0 {
             return;
         }
-        self.mark_full();
+        // Same band argument as `scroll_up`: the remove at `scroll_bottom`
+        // discards the region's last row and the insert at its top moves the
+        // rest down; rows outside the region cancel out. No scrollback is
+        // touched, so no scrollback flag here.
+        self.mark_rows(self.scroll_top, u32::from(self.scroll_bottom) + 1);
         for _ in 0..count {
             self.rows.remove(usize::from(self.scroll_bottom));
             self.rows

@@ -94,6 +94,10 @@ impl RowRange {
 /// repaint both endpoints without keeping a second terminal snapshot.
 /// `model_changed` is true for non-pixel state changes such as SGR or
 /// input-mode changes, so callers can still produce a fresh snapshot.
+/// `scrollback_changed` means the retained scrollback depth changed (a line
+/// left the visible grid into history): the visible rows it moved are already
+/// in `rows`, but a scrollbar drawn outside the row band must repaint its
+/// thumb, so it is reported separately instead of demanding a full raster.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ScreenDamage {
     rows: RowRange,
@@ -102,6 +106,7 @@ pub struct ScreenDamage {
     cursor_before: Option<(u16, u16)>,
     cursor_after: Option<(u16, u16)>,
     viewport_changed: bool,
+    scrollback_changed: bool,
     model_changed: bool,
 }
 
@@ -115,6 +120,7 @@ impl ScreenDamage {
             cursor_before: None,
             cursor_after: None,
             viewport_changed: false,
+            scrollback_changed: false,
             model_changed: false,
         }
     }
@@ -124,6 +130,7 @@ impl ScreenDamage {
         !self.full
             && !self.cursor_changed
             && !self.viewport_changed
+            && !self.scrollback_changed
             && !self.model_changed
             && self.rows.is_empty()
     }
@@ -156,6 +163,11 @@ impl ScreenDamage {
     /// Returns whether visible-row mapping changed.
     pub const fn viewport_changed(self) -> bool {
         self.viewport_changed
+    }
+
+    /// Returns whether the retained scrollback depth changed.
+    pub const fn scrollback_changed(self) -> bool {
+        self.scrollback_changed
     }
 
     /// Returns whether any terminal model state changed.
@@ -196,6 +208,11 @@ impl ScreenDamage {
         self.model_changed = true;
     }
 
+    pub(crate) fn mark_scrollback(&mut self) {
+        self.scrollback_changed = true;
+        self.model_changed = true;
+    }
+
     pub(crate) fn mark_full(&mut self) {
         self.full = true;
         self.model_changed = true;
@@ -208,6 +225,9 @@ impl ScreenDamage {
         if damage.viewport_changed {
             self.mark_viewport();
         }
+        if damage.scrollback_changed {
+            self.mark_scrollback();
+        }
         if !damage.rows.is_empty() {
             self.mark_rows(damage.rows);
         }
@@ -219,6 +239,7 @@ pub(crate) struct GridDamage {
     pub(crate) rows: RowRange,
     pub(crate) full: bool,
     pub(crate) viewport_changed: bool,
+    pub(crate) scrollback_changed: bool,
 }
 
 #[cfg(test)]
@@ -240,6 +261,7 @@ mod tests {
         hidden: bool,
         alternate: bool,
         scrollback: usize,
+        scrollback_depth: usize,
         application_keypad: bool,
         application_cursor: bool,
         bracketed_paste: bool,
@@ -276,6 +298,7 @@ mod tests {
                 hidden: screen.hide_cursor(),
                 alternate: screen.alternate_screen(),
                 scrollback: screen.scrollback(),
+                scrollback_depth: screen.scrollback_depth(),
                 application_keypad: screen.application_keypad(),
                 application_cursor: screen.application_cursor(),
                 bracketed_paste: screen.bracketed_paste(),
@@ -333,6 +356,20 @@ mod tests {
         }
         if before.scrollback != after.scrollback {
             assert!(damage.viewport_changed());
+        }
+        // A scrollbar thumb depends on the retained depth as well as the view
+        // offset, and is drawn outside the row band. Outside a full raster a
+        // depth change must therefore be reported by `scrollback_changed`
+        // (push at offset 0) or `viewport_changed` (offset moves) — never by
+        // neither. A full raster (resize, alternate-screen switch, erase)
+        // repaints the thumb anyway, and `Screen::take_damage` merges only
+        // the active grid, so an inactive grid's flag may legitimately be
+        // dropped behind that escalation.
+        if before.scrollback_depth != after.scrollback_depth && !damage.needs_full_raster() {
+            assert!(
+                damage.scrollback_changed(),
+                "scrollback depth changed without scrollback damage"
+            );
         }
         if before.cursor_changed(after) {
             assert!(damage.cursor_changed());
@@ -499,9 +536,16 @@ mod tests {
 
     #[test]
     fn scroll_alternate_and_inactive_grid_consumption_are_conservative() {
+        // A linefeed scroll at the bottom of a full screen used to demand a
+        // full raster ({SCROLL-DAMAGE}); it must now report the scroll
+        // region's rows plus `scrollback_changed`, and nothing more.
         let mut parser = Parser::new(2, 4, 8);
         let damage = process_and_assert(&mut parser, b"1\n2\n3");
-        assert!(damage.needs_full_raster());
+        assert!(!damage.needs_full_raster());
+        assert!(damage.rows().contains(0));
+        assert!(damage.rows().contains(1));
+        assert!(damage.scrollback_changed());
+        assert!(damage.model_changed());
 
         let before = VisibleSnapshot::capture(parser.screen());
         parser.process(b"primary");
@@ -514,6 +558,36 @@ mod tests {
         let damage = process_and_assert(&mut parser, b"\x1b[?1049l");
         assert!(damage.needs_full_raster());
         assert!(parser.take_damage().is_empty());
+    }
+
+    #[test]
+    fn scroll_up_and_down_report_region_rows_without_full_raster() {
+        let mut parser = Parser::new(4, 8, 16);
+        process_and_assert(&mut parser, b"r0\r\nr1\r\nr2\r\nr3");
+
+        // SD inside the full region: rows move down, nothing enters history.
+        let damage = process_and_assert(&mut parser, b"\x1b[T");
+        assert!(!damage.needs_full_raster());
+        assert!(damage.rows().contains(0));
+        assert!(damage.rows().contains(3));
+        assert!(!damage.scrollback_changed());
+
+        // SU inside the full region: rows move up, one row enters history.
+        let damage = process_and_assert(&mut parser, b"\x1b[S");
+        assert!(!damage.needs_full_raster());
+        assert!(damage.rows().contains(0));
+        assert!(damage.rows().contains(3));
+        assert!(damage.scrollback_changed());
+
+        // Inside a partial scroll region the band is the region, not the
+        // screen, and a region-bounded SU enters no history.
+        process_and_assert(&mut parser, b"\x1b[2;3r");
+        let damage = process_and_assert(&mut parser, b"\x1b[1;2H\x1b[S");
+        assert!(!damage.needs_full_raster());
+        assert!(damage.rows().contains(1));
+        assert!(damage.rows().contains(2));
+        assert!(!damage.scrollback_changed());
+        process_and_assert(&mut parser, b"\x1b[r");
     }
 
     #[test]

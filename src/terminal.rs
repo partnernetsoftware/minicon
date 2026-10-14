@@ -428,6 +428,13 @@ impl ConTerminal {
         if !damage.rows().is_empty() && !self.mark_terminal_rows(damage.rows()) {
             needs_full = true;
         }
+        // A scroll that entered history moves the scrollbar thumb, which is
+        // drawn outside the row band `mark_terminal_rows` covers. The parser
+        // reports it as `scrollback_changed` instead of demanding a full
+        // raster, so repaint exactly the scrollbar track.
+        if damage.scrollback_changed() {
+            self.mark_scrollbar_bounds();
+        }
         if damage.cursor_changed() {
             match (damage.cursor_before(), damage.cursor_after()) {
                 (Some(before), Some(after)) => {
@@ -2630,6 +2637,47 @@ pub(crate) mod tests {
         assert_eq!(cursor.top, 8);
         assert_eq!(cursor.bottom, 18);
         assert!(!app.dirty.is_full());
+    }
+    #[test]
+    fn scroll_damage_marks_rows_and_scrollbar_track_not_full() {
+        let mut app = ConTerminal::new(None, None);
+        app.dirty = DirtyRegion::empty();
+        app.frame_width = 100;
+        app.frame_height = 60;
+        app.content_left_px = 10;
+        app.content_top_px = 8;
+        app.content_bottom_px = 12;
+        app.cell_w = 8;
+        app.cell_h = 10;
+        app.cols = 8;
+        app.rows = 4;
+        app.parser.screen_mut().set_size(4, 8);
+        let _ = app.parser.take_damage();
+
+        // Fill the screen first so the next linefeed scrolls a full screen.
+        app.parser.process(b"r0\r\nr1\r\nr2\r\nr3");
+        let _ = app.parser.take_damage();
+        // {SCROLL-DAMAGE}: a linefeed scroll at the bottom reports the moved
+        // rows plus the scrollback flag — never a full raster — and the
+        // consumer marks the scrollbar track, which the row band cannot
+        // reach.
+        app.parser.process(b"\r\nr4");
+        let damage = app.parser.take_damage();
+        assert!(!damage.needs_full_raster());
+        assert!(damage.scrollback_changed());
+        app.mark_vt_damage(damage);
+        assert!(!app.dirty.is_full());
+        let bounds = app.dirty.bounds().expect("scroll damage has pixel bounds");
+        let terminal_right = 10 + u32::from(app.cols) * 8;
+        assert!(
+            bounds.right >= terminal_right,
+            "scrollbar track left unmarked: {bounds:?}"
+        );
+        let band_bottom = 8 + 4 * 10;
+        assert!(
+            bounds.bottom >= band_bottom,
+            "scrolled rows left unmarked: {bounds:?}"
+        );
     }
     #[test]
     fn pty_drain_consumes_vt_damage_without_unconditional_full() {
