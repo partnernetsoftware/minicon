@@ -298,10 +298,25 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   invalidation, so ordinary output requests only the affected terminal rows and
   the old/new cursor overlays instead of invalidating the complete client.
 - [-] the row-damage claim directly above is **wider than the code it describes**,
-  and this row records the gap rather than restating it. **2026-10-14 status:
-  the parser half of the gap is closed on `main` (0.2.10 development, commits
-  `e566635`/`7f21e48`/`ad00f39`), the host half is closed on Windows only, and
-  the acceptance journey is not yet run.** The two scroll producers no longer
+  and this row records the gap rather than restating it. **2026-10-14 evening
+  status: the parser half is closed (`e566635`/`7f21e48`), the Windows host half
+  is closed (`ad00f39` plus `9892242`, which fixed the real blocker — see
+  below), and the acceptance journey has run red and then green as an automated
+  black-box test.** The guard removal's first full-gate run failed
+  `controlled_terminal_click_keeps_native_pixels_stable_outside_local_feedback`
+  (before=15425, after=13541 visible native pixels): the guard had been masking
+  a genuine GDI defect, not a painter defect. `StretchDIBits` on this host
+  mishandles a sub-rect source whose top is not row 0 — it returns the full DIB
+  height and blits DIB-origin rows over the exposed band — so every partial
+  present with a nonzero source top corrupted the screen and then failed
+  `validate_stretch_copy`, forcing a full-frame repair present: the
+  corrupt-partial/repair-full cycle the owner reported as flashing
+  (总是感觉闪屏). `9892242` gives GDI a self-consistent sub-DIB (bit pointer at
+  the exposed origin, header describing the exposed extent); measured 345/345
+  where the old form returned 0 (and closed the window via apply_directive's
+  error-exit policy), and zero Failed outcomes across a full present run. The
+  journey is green with the guard still out; gate: bin 451/0, alignment 15/15,
+  blackbox 32/0, console agent 8/0, core 105/0, fork 12/0, real-API 1/1. The two scroll producers no longer
   demand a full raster: `Grid::scroll_up`/`scroll_down` mark the provable region
   band `[scroll_top, scroll_bottom]` and `scroll_up` raises a new
   `scrollback_changed` flag where it pushes a row into history (the scrollbar

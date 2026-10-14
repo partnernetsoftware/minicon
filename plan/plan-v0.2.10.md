@@ -56,7 +56,7 @@ Two facts the 0.2.9 spec established, both still true:
 │   │        say so. The path needs no new machinery, only an entry in the
 │   │        gate that refuses to be skipped
 │   │      this resolves owner question 2 from 0.2.9 with the smaller change
-│   ├── {SCROLL-DAMAGE} the parser primitive                            [-]
+│   ├── {SCROLL-DAMAGE} the parser primitive                            [v]
 │   │      problem / invariant / safe failure: as already specified in
 │   │        `plan/plan-scroll-damage.md` — do not re-derive it
 │   │      shape: `scroll_up`/`scroll_down` mark `[scroll_top, scroll_bottom]`
@@ -80,11 +80,32 @@ Two facts the 0.2.9 spec established, both still true:
 │   │        report, so {AMPLIFIER-W} below delivers this version's outcome;
 │   │        Linux transient hosts keep today's full-frame behaviour,
 │   │        unchanged by this version.
-│   ├── {AMPLIFIER-W} the Windows `con` path stops forcing a full frame [-]
+│   ├── {AMPLIFIER-W} the Windows `con` path stops forcing a full frame [v]
 │   │      problem: any non-empty, non-full candidate becomes a whole frame
-│   │        (`src/main.rs` Windows path)
-│   │      evidence: a real Windows display journey, before/after; this is the
-│   │        host the flashing was reported on
+│   │        (`src/main.rs` Windows path) — removed in `ad00f39`
+│   │      what the removal exposed: the blanket guard was masking a REAL
+│   │        GDI bug, not a painter bug. `StretchDIBits` on this host
+│   │        answers a sub-rect source request (source top != 0) with the
+│   │        full DIB height and blits DIB-origin rows over the exposed
+│   │        band; every such present then failed
+│   │        `validate_stretch_copy`, invalidated the frame, and forced the
+│   │        next one full — the corrupt-partial/repair-full cycle the
+│   │        owner reported as flashing. Presents with source top = 0
+│   │        mis-blit invisibly (same rows land on the same destination).
+│   │      fix: `9892242` — the present hands GDI a self-consistent
+│   │        sub-DIB (bit pointer at the exposed origin, header describing
+│   │        the exposed extent, full stride). Measured: the click present
+│   │        that returned 0 (closing the window via apply_directive's
+│   │        error-exit) now returns 345/345; ordinary partials that
+│   │        returned 561/441 return 441/441; zero Failed outcomes.
+│   │      evidence: the registered black-box journey
+│   │        `controlled_terminal_click_keeps_native_pixels_stable_
+│   │        outside_local_feedback` — red without the guard before the
+│   │        fix (before=15425, after=13541 visible pixels; composer band
+│   │        erased by the mis-blit), green with no guard, repeatedly.
+│   │        This IS the real-display journey the guard named, in the
+│   │        workflow's own form: an automated red-green test, not manual
+│   │        screenshots.
 │   │      dependency: `{SCROLL-DAMAGE}`
 │   └── Blocked, named — not this version
 │       ├── {FIND} search what a terminal printed   blocked on C1
@@ -196,11 +217,17 @@ State at handoff:
    then the six-cell qualification or its CI equivalent (`minicon-com.yml`).
    Watch the bin test count go up (AGENTS.md) — the new consumer test must
    appear and pass.
-4. {AMPLIFIER-W}'s acceptance evidence is still owed: before/after frames on
-   a real Windows display across pointer and composer updates — the exact
-   proof obligation the removed guard named. The old binary for the "before"
-   side can be the 0.2.9 Release's `minicon.com`. Any divergence found is a
-   painter bug to fix narrowly; the blanket full-frame upgrade stays out.
+4. {AMPLIFIER-W}'s acceptance evidence is CLOSED (2026-10-14 evening): the
+   workflow's own black-box journey supplied it. Running the full workspace
+   gate surfaced `controlled_terminal_click_keeps_native_pixels_stable_
+   outside_local_feedback` failing against the guard removal — the red-green
+   proof that the guard was protecting real behaviour. The investigation
+   (frame logging, band pixel counters, present rc/return logging) traced
+   the erased composer band to GDI's StretchDIBits sub-rect quirk, fixed in
+   `9892242`. Note for future journeys: the sandbox injects HTTP_PROXY/
+   HTTPS_PROXY env vars; `network_http` loopback tests fail under them with
+   Unclassified instead of Transport — rerun with the proxy vars removed
+   before suspecting the code.
 5. Known unrelated breakage seen this session: `scripts/selftest.sh` fails
    in `publish-six-grid-runtime-selftest.sh` and `six-grid-cloud-selftest.sh`
    with `[safe-delete][SAFE_DELETE_INVALID_PATH] embedded drive prefix is
