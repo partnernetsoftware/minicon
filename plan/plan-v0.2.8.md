@@ -419,20 +419,29 @@ the `{ROLLBACK}`+`{EXECBIT}` change first — it is a defect in code that
 panel offers. `{RECOVER}` second. `{BOMB}` and `{SCHEME}` independent and
 offline-provable. `{SLOGAN}` copy, plus one real defect it turned up.
 
-Local gate, Windows host: `cargo fmt --check` clean; `cargo check --locked
---all-targets` clean; `cargo test --locked --bin minicon` **441 passed / 0
-failed / 1 ignored** (the ignored one is the real-GitHub smoke, run by hand
-before release). Two gates this host **could not** run, recorded rather than
-glossed:
+Local gate, Windows host, all run in a separate `CARGO_TARGET_DIR`: `cargo fmt
+--check` clean; `cargo check --locked --all-targets` clean; `cargo test --locked
+--bin minicon` **441 passed / 0 failed / 1 ignored** (the ignored one is the
+real-GitHub smoke, run by hand before release); `cargo test --locked --test
+minicon_alignment` **15 passed**; `cargo clippy --locked --all-targets -- -D
+warnings` clean.
 
-- `cargo clippy --all-targets` — the sandbox blacklists `reg.exe`, which
-  `build.rs`'s `winresource` call needs to write the manifest, so any run that
-  invalidates the build-script fingerprint (clippy's wrapper; `--all-targets`'
-  feature set) dies in the build script with `Os { code: 3 }`. This is
-  environmental, not a code finding: CI runs clippy on the six cells.
-- `{EXECBIT}`'s test is `#[cfg(unix)]` and compiles out here. It has **not been
-  executed** by this run — the Linux CI cells are its first real execution. Do
-  not read "441 passed" as covering it.
+One host hazard, recorded so it is not mistaken for a code finding: **Windows
+does not let cargo delete a running executable.** `tests/minicon_alignment.rs`
+reads `option_env!("CARGO_BIN_EXE_minicon")`, so cargo builds the `minicon` bin
+as a dependency of that test; if a MiniCon built from this tree is left running
+it holds `target\debug\minicon.exe`, and the run dies at `failed to remove file
+target\debug\minicon.exe — 拒绝访问 (os error 5)` before a single test starts.
+Renaming a running image is permitted, deleting it is not, so the answer is a
+separate target directory — **not** a workaround in the code, and **not** a
+toolchain problem: `reg query …Windows Kits\Installed Roots` and the SDK's
+`rc.exe` (10.0.22000.0/x64) both work here, which is why `build.rs`'s
+`winresource` step compiles the bin in a cold tree without complaint.
+
+The one gate this host genuinely cannot execute: `{EXECBIT}`'s test is
+`#[cfg(unix)]` and compiles out on Windows. It has **not been run** by this
+change — the Linux CI cells are its first real execution. Do not read the counts
+above as covering it.
 
 None of the five needs a live GitHub call, a size decision or a new feature. The
 one gate outside this file is `{SIGV}`, now 0.2.9 and still owned by
