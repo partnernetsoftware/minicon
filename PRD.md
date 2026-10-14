@@ -45,8 +45,11 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
+│   ├── [_] v0.2.9 planned — settings that survive a restart +
+│   │   a behaviour-preserving consolidation of the largest modules
+│   │   └── plan/plan-v0.2.9.md
 │   ├── [v] v0.2.8 released — an update can no longer brick an install + clipboard image paste + scrollbar scale
-│   │   ├── plan/plan-v0.2.8.md
+│   │   ├── plan/archive/plan-v0.2.8.md
 │   │   └── prd/archive/v0.2.8-release-history.md
 │   ├── [v] v0.2.7 released — manual check-for-updates (#4) + window-icon parity on Windows/X11
 │   │   └── prd/archive/v0.2.7-release-history.md
@@ -232,6 +235,7 @@ flowchart LR
         R026["v0.2.6 released<br/>right-side collapsible sent-history panel + header toggles"]
         R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
         R028["v0.2.8 released<br/>update path can no longer brick an install · clipboard image paste · scrollbar scale"]
+        R029["v0.2.9 planned<br/>preferences that survive a restart · behaviour-preserving consolidation"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -256,6 +260,7 @@ flowchart LR
     C15 -. rejected precursor .-> KEEP
     C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117 --> R118 --> R119
     R119 --> R120 --> R121 --> R122 --> R123 --> R126 --> R020 --> R021 --> R022 --> R023 --> R024 --> R025 --> R026 --> R027 --> R028
+    R028 -. planned .-> R029
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -296,7 +301,7 @@ flowchart LR
 
 ## Current frontier
 
-- [v] **v0.2.7 is the latest public release (2026-10-13).** Manual
+- [v] **v0.2.7 was the previous public release (2026-10-13).** Manual
   check-for-updates (GitHub #4) — the product's first outbound network call and
   first self-modifying behaviour — plus window-icon parity on Windows and X11.
   macOS keeps the icon its `.app` carries; the runtime path for the bare CLI
@@ -323,19 +328,25 @@ flowchart LR
   `prd/archive/v0.2.8-release-history.md`. Behaviour
   `prd/PRD_02_25_con_workspace.md`, budget record
   `prd/PRD_02_27_con_delivery.md` "Artifact budget".
-- [_] **v0.2.9 is the next frontier — no plan file yet.** Named, not scheduled,
-  in `plan/plan-v0.2.8.md` "Deferred to 0.2.9": code-signature verification of
-  the downloaded binary (`{SIGV}` — the `.sha256` sidecar still comes from the
-  same release, so it proves integrity, not origin; a size decision owned by
-  PRD_02_27); stating what a Restart press costs before it is pressed
-  (`{RESTART}`); persisting the theme and language chosen in the settings panel
-  (`{PREF}`); the sent-history follow-ups (`{HIST}`); and searching what a
-  terminal already printed (`{FIND}`, blocked on C1 in
-  `plan/plan-carried-debt.md`). One finding not yet in any plan: the reported
-  "flashing" is ordinary output re-rasterising the whole window, because
-  `vt100` marks the entire grid damaged on every scroll — a root-cause fix needs
-  a viewport-scroll damage primitive, i.e. a parser-contract change that wants
-  its own spec.
+- [_] **v0.2.9 is the next frontier — planned in `plan/plan-v0.2.9.md`.** Its
+  outcome: a choice made in the settings panel (theme, language, text size) is
+  still in force at the next launch, kept in the same hand-editable
+  `minicon.json` the product already reads — `{PREF}`, the first write path the
+  product has ever had. `{RESTART}` (say what a Restart costs before it is
+  pressed) and `{HIST}` (sent-history follow-ups) hang off that configuration
+  layer and land after it. The reported "flashing" is filed as
+  `{SCROLL-DAMAGE}`: `vt100` marks the entire grid damaged on every scroll, so
+  ordinary output re-rasterises the whole window — a fix needs a viewport-scroll
+  damage primitive and **its own spec before any code**. The version carries a
+  second, deliberately behaviour-preserving consolidation track
+  (`{SPLIT}`/`{SEAM}`/`{ENCAP}`/`{FEAT}`/`{NAME}`/`{DOC-OWNER}`) so the
+  engineering debt this repo's hygiene ledger has been deferring has a home with
+  evidence and an order. Still blocked, still not started: `{SIGV}`
+  (a PRD_02_27 size decision; the `.sha256` sidecar proves integrity, not
+  origin) and `{FIND}` (blocked on C1 in `plan/plan-carried-debt.md`).
+  Separately and urgently, **R1**: several workflow actions still target Node 20
+  and `ubuntu-latest` migrates to Ubuntu 26 beginning 2026-10-19 — a bounded
+  workflow-hygiene pass, outside the version number.
 - [v] v0.2.6 released (2026-10-13): the first cut of the
   right-side collapsible sent-history panel (GitHub #3) — newest sent lines,
   click a row to refill the composer through the recall path, a reserved area

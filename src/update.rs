@@ -670,7 +670,7 @@ pub fn commit_swap(staged: &Path, destination: &Path) -> Result<PathBuf, Failure
 /// path, so re-entering it deleted the only good copy, moved the new file into
 /// its place and then renamed it back — reporting success while leaving the
 /// non-launchable file installed and the previous one gone
-/// (`plan/plan-v0.2.8.md`, `{ROLLBACK}`). One `rename` is the whole operation.
+/// (`plan/archive/plan-v0.2.8.md`, `{ROLLBACK}`). One `rename` is the whole operation.
 pub fn rollback_swap(backup: &Path, destination: &Path) -> Result<(), String> {
     std::fs::rename(backup, destination).map_err(|error| {
         format!(

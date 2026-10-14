@@ -2160,7 +2160,7 @@ impl ConApp {
                     // state the install is in either way: re-entering
                     // `commit_swap` here used to delete the backup, install the
                     // non-launchable file for good and report nothing
-                    // (`plan/plan-v0.2.8.md`, `{ROLLBACK}`).
+                    // (`plan/archive/plan-v0.2.8.md`, `{ROLLBACK}`).
                     let failure = match update::rollback_swap(&backup, &destination) {
                         Ok(()) => update::Failure::new(
                             update::FailureKind::Launch,

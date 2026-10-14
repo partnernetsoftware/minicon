@@ -125,7 +125,7 @@ that actually compiles the code:
   Installed Roots` answers normally and the SDK `rc.exe` that `build.rs`'s
   `winresource` step needs is present, so `cargo check/test/clippy
   --all-targets` all compile and run on this host from a cold tree. An earlier
-  revision of `plan/plan-v0.2.8.md` mis-attributed this failure to a sandbox
+  revision of `plan/archive/plan-v0.2.8.md` mis-attributed this failure to a sandbox
   `reg.exe` blacklist; that cause was wrong and is withdrawn.
 
 ### One black-box gate that holds on a POSIX PTY, not on this host

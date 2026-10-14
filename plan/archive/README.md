@@ -95,4 +95,36 @@ Archived with the 0.2.7 release (2026-10-13):
   `prd/archive/v0.2.7-release-history.md`. The notes scratchpad (GitHub #5) it
   inherited from 0.2.6 stayed open; it is carried in `PRD.md`, not here.
 
+Archived with the 0.2.8 release (2026-10-14):
+
+- `plan-v0.2.8.md` — shipped v0.2.8: an update can no longer brick an install
+  (`{EXECBIT}`/`{ROLLBACK}`/`{BOMB}`/`{SCHEME}` plus `{RECOVER}`/`{SLOGAN}`),
+  clipboard image paste on both paste surfaces, and a scrollbar scaled to the
+  live scrollback depth. See `prd/archive/v0.2.8-release-history.md`. Its
+  "Deferred to 0.2.9" table is what seeded `plan/plan-v0.2.9.md`; read it here
+  for the reasoning, not for open scope.
+
+Complete file index, so a reader can tell "listed" from "missing" at a glance —
+the per-file text above is the authority, this list is only a map:
+
+- `design-frame-channel-experiment` · `design-osx-x86-64-court-experiment`
+  · `design-qvm-false-positive-experiment` · `plan-0.1.9-dual-signed-release`
+  · `plan-0.1.10-ui` · `plan-0.1.12-review` · `plan-0.1.13-release-resume`
+  · `plan-0.1.16` · `plan-0.1.18`
+  · `plan-0120-detachable-gui-and-display-backends` · `plan-cross-project-reuse`
+  · `plan-ghcr-toolchain-prebake` · `plan-hostif-v1` · `plan-lazy-font-memory`
+  · `plan-macos-developer-id-signing` · `plan-runtime-memory-next`
+  · `plan-utm-court-extract` · `plan-v0.1.5` · `plan-v0.1.6`
+  · `plan-v0.1.20-windows-font-rendering` · `plan-v0.1.22` · `plan-v0.1.23`
+  · `plan-v0.1.24` · `plan-v0.2.0` · `plan-v0.2.1` · `plan-v0.2.2` · `plan-v0.2.3`
+  · `plan-v0.2.4` · `plan-v0.2.5` · `plan-v0.2.6` · `plan-v0.2.7` · `plan-v0.2.8`
+  · `research-external-residency-next` · `research-frame-lifetime`
+  · `research-hello-memory` · `research-minicon-memory` · `research-pixel-host`
+  · `research-rss-ledger` · `research-windows-memory`
+- Five of those have no per-file entry above — `plan-0.1.10-ui`,
+  `plan-0.1.13-release-resume`, `plan-lazy-font-memory`, `plan-v0.1.24` and
+  `plan-v0.2.0`. Recorded as a backlog gap rather than left as a silent
+  omission; `plan-v0.2.0`'s narrative is owned by
+  `prd/PRD_02_31_v0_2_horizon.md`.
+
 Never reuse an archived run as evidence for newer source bytes.

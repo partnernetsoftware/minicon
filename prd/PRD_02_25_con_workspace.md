@@ -220,7 +220,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   optional:** that press is currently the first moment a user learns what it
   costs, and the tab count is already known to the host. Leaf `{RESTART}`
   (now "Deferred to 0.2.9" in
-  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md)) owns naming the loss before
+  [`plan/archive/plan-v0.2.8.md`](../plan/archive/plan-v0.2.8.md)) owns naming the loss before
   the button; its non-goal is preserving the sessions, because MiniCon has no
   persistent workspace and is not getting one. macOS never swaps in place — one
   file inside a signed, notarized `.app` cannot be replaced without breaking
@@ -250,7 +250,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   guarantee; for a product that replaces **its own executable** it is the
   weaker half, because the thing doing the verifying is the thing being
   replaced. Carried as leaf `{SIGV}`, now **deferred to 0.2.9** (the "Deferred to
-  0.2.9" table in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md)) because the
+  0.2.9" table in [`plan/archive/plan-v0.2.8.md`](../plan/archive/plan-v0.2.8.md)) because the
   fix must not wait behind a size decision; the open question there is
   **size, not mechanism** (enable `app-facts`, or expose one verify-only entry
   point behind `network-http`), and it belongs to
@@ -259,7 +259,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   independent security review, confirmed line-by-line (2026-10-13) and **fixed
   in 0.2.8** (2026-10-14). All four were in code that is **already public**, so
   they could not be patched into 0.2.7; each was a leaf in
-  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) and is the reason that version
+  [`plan/archive/plan-v0.2.8.md`](../plan/archive/plan-v0.2.8.md) and is the reason that version
   led with correctness rather than features. Each is marked with the test that
   holds it, since the defect in this area is always "the local gate never
   reached the line".
@@ -834,7 +834,7 @@ Concretely:
   purpose**, with the stated reason that a restart must not strand a user in a
   layout they do not remember choosing. A view state has a reason not to
   persist; a preference does not have a reason not to. Registered 2026-10-13;
-  planned in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) leaf `{PREF}`,
+  planned in [`plan/archive/plan-v0.2.8.md`](../plan/archive/plan-v0.2.8.md) leaf `{PREF}`,
   which keeps the safe-failure rule that a missing, unknown or malformed key
   falls back to that key's default instead of refusing to launch.
   Non-goal of that leaf: persisting view state, or the update phase (`update`

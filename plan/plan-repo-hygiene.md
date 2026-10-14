@@ -28,22 +28,35 @@ release plan; version sequencing lives in `plan/archive/plan-v0.2.6.md`.
   deliberately tracked (vendored deps, docs, signing scripts). The only real
   gaps are research output (`research/**/*.png`) and `cargo vendor` residue
   (`third_party/*/Cargo.toml.orig`). Needs owner answers (see §Pending).
-- `[_]` **D — dead code**: `src/terminal.rs:2167-2173` is a commented-out block
-  whose own comment says it was driven by `send-wheel --ctrl` — judge whether it
-  is a stale reference or a deliberately disabled path before touching it; and
-  converge the bare `#[allow(dead_code)]` sites (`src/harness.rs:519`,
-  `crates/minicon-platform/src/console_line_editor.rs:214,225`,
-  `…/windows/process_spawn.rs:64,113,119`,
-  `…/linux/accessibility_tree.rs:3875,3893,3910`,
-  `…/macos/accessibility_tree.rs:2991`, `…/macos/foreign_windows.rs:697`).
-  Needs `cargo fmt` + `clippy -D warnings` + `./scripts/build.sh test`.
+  **Re-checked 2026-10-14:** `git check-ignore` still returns nothing for both.
+  `research/frame-channel/q1-host-ui-frame.png` is **committed evidence** (a
+  tracked deliverable, not build output), so an ignore rule would not untrack it
+  — the open question is whether it stays tracked at all. Still §Pending 4.
+- `[-]` **D — dead code**: the `src/terminal.rs` commented-out Ctrl+wheel block
+  was **judged and deleted 2026-10-14** (it had drifted to `:2184-2192`); the
+  comment above it already carries the fact, so nothing was lost and the
+  `send-wheel --ctrl` test path never went through the disabled branch. The bare
+  `#[allow(dead_code)]` convergence is **not** a hygiene edit and moved to
+  `plan/plan-v0.2.9.md`: the 2026-10-14 audit counted **56** sites (not the 47
+  this ledger first recorded), most are `crates/minicon-platform` per-target
+  adapters and `contract/*` fields one OS adapter reads, and turning each into a
+  `cfg_attr` is a per-site judgement with a six-cell build behind it.
 - `[_]` **E — local / remote hygiene**: local `cargo clean` of `target/debug`
-  (≈4.6G, regenerable; keep `target-six/`); `.github/workflows/ci-minicon.yml.disabled`;
-  the `scripts/lima-court.sh` vs `scripts/lib/lima-court.sh` (and the `utm-court`
-  pair) — read before merging, they may be a library plus a thin wrapper, not a
-  duplicate; and the three stale remote branches
+  (≈4.6G, regenerable; keep `target-six/`); the `scripts/lima-court.sh` vs
+  `scripts/lib/lima-court.sh` (and the `utm-court` pair) — read before merging,
+  they may be a library plus a thin wrapper, not a duplicate; and the three
+  stale remote branches
   (`origin/__delete_probe_unused__`, `origin/claude/cloud-vm-mechanism-svppqp`,
   `origin/core/no-unreachable-expect`).
+  **Re-checked 2026-10-14:** `.github/workflows/ci-minicon.yml.disabled` is
+  **not** stale — it is the documented *parked* workflow (its own header says
+  the `.disabled` suffix is what keeps GitHub from loading it, and four PRD/plan
+  files cite it as parked), so it stays. The branch deletion is still an owner
+  answer (§Pending 2) and was not taken.
+- `[_]` **G — third pass, the 0.2.9 planning sweep** (owner-ordered 2026-10-14):
+  archived the shipped 0.2.8 plan, closed two stale-information contradictions
+  the second pass left, and turned the whole audit into the consolidation track
+  of `plan/plan-v0.2.9.md`. See §Third pass below.
 - `[-]` **F — second pass, after the PRD-series fold** (2026-10-13, owner-ordered
   re-review): audit the remaining non-PRD markdown for (a) facts that belong to a
   `prd/PRD_*.md` owner and are therefore a second copy, and (b) stale or dead
@@ -196,13 +209,105 @@ it; nothing here was moved or deleted by this pass.
   — vendored copies; their drift against the canonical skill copy is already
   recorded under "Recorded, deliberately NOT done".
 
+## Third pass — the 0.2.9 planning sweep (2026-10-14)
+
+Owner-ordered, phrased as *"go through the tidy-up flow … then make the 0.2.9
+plan."* Two read-only audits (one on code structure, one on document staleness)
+ran first; every line below cites the command or file that shows it. Nothing was
+moved or deleted except where it says so.
+
+### Executed
+
+- **Archived the shipped 0.2.8 plan** — the 0.2.8 plan moved into
+  `plan/archive/` as `plan/archive/plan-v0.2.8.md`, with all ten live references
+  repointed
+  (`PRD.md` ×2, `prd/PRD_02_23` ×1, `prd/PRD_02_25` ×4, `prd/PRD_02_32` ×1,
+  `src/main.rs` ×1, `src/update.rs` ×1). The `src/main.rs` comment naming the
+  old path was why this could not be left to the next reader: the alignment gate
+  `referenced_repository_paths_exist` scans `src/*.rs`. `plan/archive/README.md`
+  gained the 0.2.8 entry **and** a complete file index (the
+  `prd/archive/README.md` pattern), so "listed" and "missing" are now
+  distinguishable at a glance; five files with no per-file entry are named as a
+  backlog gap rather than left silent.
+- **Deleted the retired Ctrl+wheel comment block** in `src/terminal.rs` (batch
+  D's first half).
+- **Fixed the `Cargo.toml` comment that disagreed with the manifest**: it
+  claimed "`autotests` is off, so cargo never built or ran them", but only
+  `autobins = false` is set. Corrected to say what is true.
+- **`PRD.md`'s two "latest release" claims** — v0.2.7's entry said "is the
+  latest public release" while v0.2.8's said the same; v0.2.7 is now "the
+  previous public release". The delivery tree and the Mermaid palace gained the
+  planned v0.2.9 node.
+- **`docs/old-windows.html`**'s `--status` sample is still a real 0.1.2 capture;
+  it now says so in a sentence above it rather than being silently read as
+  today's output (`prd/PRD_02_27_con_delivery.md` had authorised exactly this).
+
+### Found and re-homed into `plan/plan-v0.2.9.md`
+
+The measured findings that needed more than a hygiene edit. Each is now a leaf
+with an invariant, evidence and an order — they are **not** done here:
+
+- **Big modules.** `impl ConApp` is 2037 lines (`src/main.rs:985-3021`),
+  `impl ConTerminal` 1861 (`src/terminal.rs:179-2039`), and `src/control.rs` has
+  a 338-line `mod native_endpoint_tests` at `:1398-1736`, between live code.
+  `src/main.rs` is 5390 lines, not the 5136 this ledger recorded.
+- **One fact, several copies.** The shortcut list is hand-written in both
+  `src/cli.rs:458-467` and `src/ui.rs:665-727` (three languages) while the
+  composer's already lives in one place (`minicon_core::keymap`); the CLI
+  command list appears in `control.rs`'s `usage()`, its catalogue and its enum,
+  plus an unguarded copy in `src/cli.rs:440-452`.
+- **Encapsulation.** `update::State.phase` is written directly from `main.rs`
+  (`:2125`) around its own pure `apply()`; `TabNode`'s fields are all `pub`; a
+  script found ~73 `pub` items referenced nowhere outside their own file.
+- **The platform crate.** 90 declared features, 19 enabled directly, 36 reached
+  transitively, **54 with no consumer in this tree**.
+- **Naming.** ~200 `agenterm` occurrences remain; some are comments naming the
+  wrong repository, some are load-bearing (`AGENTERM_*` env vars, a D-Bus name,
+  the diagnostics filename) and must not be renamed blind.
+- **Two silent `let _` worth a second look** rather than a comment:
+  `terminal.rs:1543` (`--emit-snapshot` write failure) and `terminal.rs:734`
+  (the DA1/CPR reply write) — the caller cannot learn either failed.
+- **`{SCROLL-DAMAGE}`.** `third_party/vt100`'s `scroll_up`/`scroll_down`
+  (`grid.rs:658`, `:683`) call `mark_full()` unconditionally, so every scroll
+  damages the whole grid — the reported "flashing". The fix is a parser-contract
+  change, and the 0.2.9 plan gates it on its own spec.
+- **R1 has a date.** `ubuntu-latest` → Ubuntu 26 begins 2026-10-19. Filed as an
+  outside-the-version-number workflow pass in the 0.2.9 plan.
+
+### Checked and correctly placed (2026-10-14)
+
+- `docs/*.html`, `CODE_SIGNING_POLICY.md`, `loader/README.md`,
+  `crates/minicon-platform/README.md` and `assets/icon/README.md` still hold
+  mechanism a PRD owner also holds, but each has a reason to (a public page, a
+  test input pinned by `include_str!`, a published crate `readme`). They are
+  §Pending 5-8, not hygiene edits.
+- `plan/problem-screenshot-pane-hang.md` stays: its owner is registered
+  (`{SCRSHOT-HANG}` in `prd/PRD_02_26_con_control_cli.md`) and its content is
+  still-live evidence for an open defect, so archiving it would bury detail, not
+  tidy anything.
+- `plan/plan-harness-context-engineering.md` (`{CTX}` `[_]`) and
+  `plan/plan-newagent-config.md` (owner registered, 0.3.x) stay in `plan/`: both
+  are current-horizon registrations, not superseded decisions.
+- `.github/release-notes.md`'s template and `release.yml`'s rendering agree on
+  the `VERSION` and `OPTIONAL_APE` markers and on the asset names.
+- No dangling repository-path link exists in live documents. Four archived files
+  have no inbound reference, but two are inside an already-indexed directory
+  (`archive/research/*`) and two are named in the new archive index above.
+
 ## Recorded, deliberately NOT done (feature-level, not hygiene)
 
-`src/main.rs` (5136 lines) and the other large modules' splits; the platform
-crate's 90 features; the pinned `agenterm` crate drift and its stale comments;
-the `Cargo.toml` comment that disagrees with `autotests`; harness/mux gating
-gaps; `docs/*.html` having no generator; `.claude/skills/` drifting from the
-canonical copy (last synced 2026-09-26); performance/memory quantification.
+**Re-homed 2026-10-14:** the big-module splits, the platform crate's 90
+features and the stale naming are no longer "not done" — they are scoped,
+evidenced and ordered in `plan/plan-v0.2.9.md`'s consolidation track
+(`{SPLIT}`/`{SEAM}`/`{ENCAP}`/`{FEAT}`/`{NAME}`). The `Cargo.toml` comment that
+disagreed with `autotests` **was fixed 2026-10-14** (it claimed `autotests` was
+off; only `autobins = false` is set).
+
+Still deliberately not done, and not this ledger's job: harness/mux feature
+gating (it changes what the handshake advertises — a product decision, see
+`{FEAT}`'s non-goal); `docs/*.html` having no generator; `.claude/skills/`
+drifting from the canonical copy (last synced 2026-09-26); performance/memory
+quantification.
 
 ## Observed during this pass
 
@@ -228,6 +333,20 @@ macOS was not runtime-checked here — it needs the osxcross + Apple SDK toolcha
 2. The three stale remote branches — delete?
 3. Is `cargo clean` wanted now (it forces a full recompile)?
 4. `research/` ignore granularity: outputs only, or the whole tree?
+5. `crates/minicon-platform/README.md` — its technical body is published as the
+   crate's own `readme` (`Cargo.toml:9`), so it cannot simply be deleted.
+   Migrate the platform-support matrix and public-API examples into
+   `prd/PRD_02_28_shared_core.md` and leave a pointer, or register the README
+   itself as the owner of that reference material?
+6. `loader/README.md` — drop the delivery/signing/Defender narrative (owned by
+   `prd/PRD_02_27_con_delivery.md`) and keep only the pack/rebuild operator
+   steps plus a pointer?
+7. `CODE_SIGNING_POLICY.md` — remove the mechanism narrative PRD_02_27 owns,
+   keeping the five strings `tests/authenticode_inspector_policy.rs:61-73`
+   asserts and the five public links? (The path cannot move — the test reads it
+   with `include_str!`.)
+8. `assets/icon/README.md` — collapse the window-icon mechanism into
+   `prd/PRD_02_25_con_workspace.md` "Host UI", keeping the regenerate steps?
 
 ## Guard
 

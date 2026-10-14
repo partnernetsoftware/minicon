@@ -120,7 +120,7 @@ failure, resize storms, process exit, and interaction races.
   that was staged and never swapped (press Update, then close the window) used
   to leave `<name>.update` beside the executable forever, because `Ready` is a
   session-scoped phase; `update::clear_stale_staged` now removes it at startup.
-  Closed as leaf `{SLOGAN}` in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md),
+  Closed as leaf `{SLOGAN}` in [`plan/archive/plan-v0.2.8.md`](../plan/archive/plan-v0.2.8.md),
   whose non-goal was that deleting the backup automatically is **not** what this
   asks for.
 - No claim of tmux/RMUX compatibility beyond the narrowed exception below.

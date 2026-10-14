@@ -54,8 +54,9 @@ name = "minicon_console_agent"
 path = "tests/minicon_console_agent.rs"
 
 # These two policy suites test the code-signing inspector and the signing
-# workflow by reading the scripts and workflow sources. They were present but
-# not listed here, and `autotests` is off, so cargo never built or ran them.
+# workflow by reading the scripts and workflow sources. Like every other test
+# target they are listed explicitly; `autobins = false` above turns off only the
+# implicit discovery of `src/bin/*` binaries, not of `tests/*`.
 [[test]]
 name = "authenticode_inspector_policy"
 path = "tests/authenticode_inspector_policy.rs"

@@ -2180,16 +2180,6 @@ impl ConTerminal {
                 // Every wheel notch scrolls, Ctrl held or not. `zoom_font` stays
                 // reachable through the z/Z hit targets and through
                 // `send-wheel --ctrl`, which the zoom soak tests drive.
-                //
-                // if modifiers.control {
-                //     let dir = match delta {
-                //         WheelDelta::Lines { y, .. } => y,
-                //         _ => 0.0,
-                //     };
-                //     if dir.abs() > 0.0 {
-                //         self.zoom_font(window, dir > 0.0);
-                //     }
-                // } else { ... }
                 {
                     let lines = match delta {
                         WheelDelta::Lines { y, .. } => y,
