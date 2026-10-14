@@ -700,6 +700,20 @@ six-cell claim.
   sync — a static test should assert this). A unique G7 pack that exceeds
   11 MiB fails; raising it again requires the same explicit owner decision,
   not an automatic bump when a future version grows past it.
+- [v] **`minicon.com` Candidate hard ceiling raised to `12,320,768` bytes
+  (11.75 MiB), 2026-10-14 (owner).** 0.2.8's update-path hardening (`{EXECBIT}`,
+  `{ROLLBACK}`, `{BOMB}`, `{SCHEME}`, `{RECOVER}`) plus the clipboard-image
+  paste fallback grew the sealed `minicon.com` to `11,622,574` bytes, above the
+  11 MiB ceiling that had explicitly forbidden auto-raising (candidate.yml run
+  `38508933615` failed at `seal` on this). The owner judged the growth a real
+  feature cost — trimming it would ship the 0.2.7 update-path defect again —
+  and raised the ceiling directly, as an explicit, dated, recorded change, not
+  a silent or automatic bump. New value sits `262,144` bytes below the
+  unchanged 12 MiB rehearsal guard (`12,582,912`), which still must not decide
+  a Candidate. Same four constant sites as the 2026-09-26 raise. The 0.2.7
+  `minicon.com` was already only `124,472` bytes under the old ceiling, so the
+  budget was due for review regardless. Raising it again requires the same
+  explicit owner decision.
 - [v] the Windows resource retains the existing icon's 16/32/64 PNG frames while
   removing redundant mip sizes: `.rsrc` fell from 90,112 to 8,704 bytes, the
   source ICO is capped at 16 KiB by the build script, and Windows shell icon
@@ -829,7 +843,7 @@ feature, so Cocoa bindings can be present **in addition to** winit.
 
 Linker knobs already spent on Linux: LTO, `opt-level=z`, `strip`,
 `--gc-sections`. Do not trade `panic = "unwind"` for `.eh_frame`. Do not
-auto-raise the Candidate ceiling (currently 11 MiB, see "Artifact budget")
+auto-raise the Candidate ceiling (currently 11.75 MiB, see "Artifact budget")
 without an explicit owner decision.
 
 - [-] **Linux dual desktop stack is retained (2026-08-30, user).** Keep

@@ -23,8 +23,10 @@ COM = DIST / "minicon.com"
 REHEARSAL_GUARD_BYTES = 12 * 1024 * 1024  # 12582912
 # cdx 2026-08-29: 9 MiB hard ceiling (rehearsal raw 8880268 + 556916).
 # Raised 2026-09-26 (owner) to 11 MiB for 0.2.0's mux+harness growth
-# (minicon.com measured 10,746,681 bytes); see PRD_02_27 "Artifact budget".
-CANDIDATE_CEILING_BYTES = 11 * 1024 * 1024  # 11534336
+# (minicon.com measured 10,746,681 bytes). Raised again 2026-10-14 (owner) to
+# 11.75 MiB for 0.2.8 (minicon.com measured 11,622,574 bytes), still below the
+# 12 MiB rehearsal guard; see PRD_02_27 "Artifact budget".
+CANDIDATE_CEILING_BYTES = 12_320_768  # 11.75 MiB
 
 
 def sha256(path: Path) -> str:
@@ -110,7 +112,7 @@ def self_test() -> int:
     if candidate_ok(CANDIDATE_CEILING_BYTES + 1):
         print("FAIL ceiling+1 should fail", file=sys.stderr)
         return 1
-    if CANDIDATE_CEILING_BYTES != 11534336:
+    if CANDIDATE_CEILING_BYTES != 12_320_768:
         print("FAIL stamped integer", file=sys.stderr)
         return 1
     if REHEARSAL_GUARD_BYTES != 12582912:
