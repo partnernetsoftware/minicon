@@ -35,6 +35,11 @@ Entries:
 - `v0.2.4-release-history.md` — composer Send timing (trim + held Enter),
   terminal-scoped Ctrl+V paste review, paste-review content preview; first
   release whose chain was driven from a Windows host.
+- `v0.2.8-release-history.md` — the update path can no longer brick an install
+  (`{EXECBIT}`/`{ROLLBACK}`/`{BOMB}`/`{SCHEME}` + `{RECOVER}`/`{SLOGAN}`),
+  clipboard image paste on both surfaces, scrollbar scaled to live scrollback;
+  includes the owner's dated `minicon.com` ceiling raise (11 → 11.75 MiB) and
+  the second recorded macOS `stapler`/CloudKit flake.
 
 Complete file index (added 2026-10-10), so a reader can tell "listed" from
 "missing" at a glance — the per-file text is the authority, this is only a map:
@@ -43,6 +48,7 @@ Complete file index (added 2026-10-10), so a reader can tell "listed" from
   · `v0.1.11` · `v0.1.12` · `v0.1.13` · `v0.1.14` · `v0.1.15` · `v0.1.16`
   · `v0.1.17` · `v0.1.18` · `v0.1.19` · `v0.1.20` · `v0.1.21` · `v0.1.22`
   · `v0.1.23` · `v0.1.26` · `v0.2.0` · `v0.2.1` · `v0.2.3` · `v0.2.4`
+  · `v0.2.5` · `v0.2.6` · `v0.2.7` · `v0.2.8`
 - Also in this directory: `v0.1.7-mac-handoff.md` (§ handoff, not a release),
   `azure-work-tenant-signing-enroll.md`.
 - No ledger exists for `v0.1.8`, `v0.1.24`, `v0.1.25` or `v0.2.2` — recorded

@@ -45,8 +45,9 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
-│   ├── [-] v0.2.8 planned — fix the shipped update path, then trust it, then close the cheap gaps
-│   │   └── plan/plan-v0.2.8.md
+│   ├── [v] v0.2.8 released — an update can no longer brick an install + clipboard image paste + scrollbar scale
+│   │   ├── plan/plan-v0.2.8.md
+│   │   └── prd/archive/v0.2.8-release-history.md
 │   ├── [v] v0.2.7 released — manual check-for-updates (#4) + window-icon parity on Windows/X11
 │   │   └── prd/archive/v0.2.7-release-history.md
 │   ├── [v] v0.2.6 released — right-side collapsible sent-history panel (#3) + paired header toggles
@@ -230,6 +231,7 @@ flowchart LR
         R025["v0.2.5 released<br/>inline tab rename · OSC-title row · platform layer moves into MiniCon"]
         R026["v0.2.6 released<br/>right-side collapsible sent-history panel + header toggles"]
         R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
+        R028["v0.2.8 released<br/>update path can no longer brick an install · clipboard image paste · scrollbar scale"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -253,7 +255,7 @@ flowchart LR
     C13 --> G13 --> V13 --> C14 --> C15 --> C16
     C15 -. rejected precursor .-> KEEP
     C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117 --> R118 --> R119
-    R119 --> R120 --> R121 --> R122 --> R123 --> R126 --> R020 --> R021 --> R022 --> R023 --> R024 --> R025 --> R026 --> R027
+    R119 --> R120 --> R121 --> R122 --> R123 --> R126 --> R020 --> R021 --> R022 --> R023 --> R024 --> R025 --> R026 --> R027 --> R028
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -304,23 +306,36 @@ flowchart LR
   run ids in `prd/archive/v0.2.7-release-history.md`. Behaviour
   `prd/PRD_02_25_con_workspace.md`, boundary amendment
   `prd/PRD_02_23_minicon.md`.
-- [_] **v0.2.8 is planned: `plan/plan-v0.2.8.md`.** It now leads with four
+- [v] **v0.2.8 is the latest public release (2026-10-14).** It closes the four
   defects an independent security review found **inside the 0.2.7 update path
-  already shipped to users**: a Unix in-place update installs a non-executable
-  binary (`{EXECBIT}`), the failed-launch rollback deletes the last good copy
-  (`{ROLLBACK}` — and the first defect is what makes it reachable on Linux), the
-  archive decode is unbounded on its output (`{BOMB}`), and `http://` is
-  accepted for the download (`{SCHEME}`). Its premise is unchanged underneath:
-  that 0.2.7 moved the product's *identity*, not only its feature list, and
-  three consequences were not carried into the story — the new binary is checked
-  against a checksum whose sidecar comes from the same release (`{SIGV}` —
-  verify the signature too, a size decision owned by PRD_02_27); a Restart
-  press is the first moment a user learns it ends every tab (`{RESTART}`);
-  and an update leaves a `.backup` file next to a product whose line is
-  "nothing left behind" (`{SLOGAN}`). Alongside them, cheap and felt at every
-  launch: the theme and language chosen in the settings panel are not
-  persisted (`{PREF}`), and a terminal has no way to search what it already
-  printed (`{FIND}`, blocked on C1 in `plan/plan-carried-debt.md`).
+  already shipped to users** — a Unix in-place update installing a
+  non-executable binary (`{EXECBIT}`), the failed-launch rollback deleting the
+  last good copy (`{ROLLBACK}`, reachable on Linux only because of the first),
+  an archive decode unbounded on its output (`{BOMB}`), and `http://` accepted
+  for the download (`{SCHEME}`) — and with them the two leaves that make a
+  failure survivable rather than silent: `{RECOVER}` (a typed failure state and
+  a localised sentence naming the retained backup and the next step) and
+  `{SLOGAN}` (the README sentence now names that backup file). Also in the
+  release, both user-reported: a clipboard image pastes as a temp-file path on
+  **both** paste surfaces, not only the composer; and the scrollbar scales
+  against the scrollback that exists rather than the parser's configured
+  capacity. Source `dd5ddff`, chain run ids in
+  `prd/archive/v0.2.8-release-history.md`. Behaviour
+  `prd/PRD_02_25_con_workspace.md`, budget record
+  `prd/PRD_02_27_con_delivery.md` "Artifact budget".
+- [_] **v0.2.9 is the next frontier — no plan file yet.** Named, not scheduled,
+  in `plan/plan-v0.2.8.md` "Deferred to 0.2.9": code-signature verification of
+  the downloaded binary (`{SIGV}` — the `.sha256` sidecar still comes from the
+  same release, so it proves integrity, not origin; a size decision owned by
+  PRD_02_27); stating what a Restart press costs before it is pressed
+  (`{RESTART}`); persisting the theme and language chosen in the settings panel
+  (`{PREF}`); the sent-history follow-ups (`{HIST}`); and searching what a
+  terminal already printed (`{FIND}`, blocked on C1 in
+  `plan/plan-carried-debt.md`). One finding not yet in any plan: the reported
+  "flashing" is ordinary output re-rasterising the whole window, because
+  `vt100` marks the entire grid damaged on every scroll — a root-cause fix needs
+  a viewport-scroll damage primitive, i.e. a parser-contract change that wants
+  its own spec.
 - [v] v0.2.6 released (2026-10-13): the first cut of the
   right-side collapsible sent-history panel (GitHub #3) — newest sent lines,
   click a row to refill the composer through the recall path, a reserved area

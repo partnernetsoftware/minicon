@@ -26,10 +26,10 @@ either alone is not enough; they ship as one change.
 
 ## Handoff: read this first
 
-**Status: all five leaves landed 2026-10-14 and the version is releasing.** This
-file is still the entrypoint for *why* 0.2.8 exists; the *state* is now the tree
-below, whose every leaf is `[v]` with the test that holds it. v0.2.7 is
-published; the 0.2.8 product change is one commit on `main`. Read `AGENTS.md`
+**Status: released 2026-10-14 as v0.2.8; all five leaves landed, every one `[v]`
+below with the test that holds it.** This file remains the entrypoint for *why*
+0.2.8 exists; the *record* is now `prd/archive/v0.2.8-release-history.md` (source
+`dd5ddff`, the seven gate run ids, and the ceiling decision). Read `AGENTS.md`
 first for the dev loop, `cargo fmt`/`clippy` gate, six-cell rule and the release
 boundary — this section does **not** repeat those; it adds only what is specific
 to this version.
@@ -413,7 +413,7 @@ flowchart TB
 
 ## GATE status
 
-**All five leaves `[v]`, landed 2026-10-14, releasing as 0.2.8.** The order held:
+**All five leaves `[v]`, landed 2026-10-14, released as 0.2.8.** The order held:
 the `{ROLLBACK}`+`{EXECBIT}` change first — it is a defect in code that
 **already shipped in 0.2.7**, on a path a user reaches by pressing the button the
 panel offers. `{RECOVER}` second. `{BOMB}` and `{SCHEME}` independent and
