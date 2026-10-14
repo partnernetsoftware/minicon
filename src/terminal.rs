@@ -1113,7 +1113,13 @@ impl ConTerminal {
             return (0, 0);
         }
         let offset = self.parser.screen().scrollback();
-        let maximum = self.parser.screen().scrollback_len();
+        // The scrollbar scales and positions its thumb against this, and the
+        // snapshot reports it as `max_scrollback`, so it must be how much
+        // scrollback actually exists -- not the parser's configured capacity
+        // (thousands of rows on a fresh session), which would draw a thumb that
+        // barely moves and a bar that looks scrollable when there is nothing to
+        // scroll (`plan/plan-carried-debt.md`, C1).
+        let maximum = self.parser.screen().scrollback_depth();
         self.scroll_offset = offset;
         (offset, maximum)
     }
@@ -2668,7 +2674,7 @@ pub(crate) mod tests {
         assert!(app.dirty.is_full());
     }
     #[test]
-    fn scrollback_bounds_uses_read_only_vt_length() {
+    fn scrollback_bounds_reports_the_real_depth_not_the_capacity() {
         let mut app = ConTerminal::new(None, None);
         app.parser.screen_mut().set_size(3, 10);
         let _ = app.parser.take_damage();
@@ -2676,10 +2682,23 @@ pub(crate) mod tests {
         let _ = app.parser.take_damage();
 
         let before = app.parser.screen().scrollback();
-        let expected = app.parser.screen().scrollback_len();
+        let capacity = app.parser.screen().scrollback_len();
         let (offset, maximum) = app.scrollback_bounds();
         assert_eq!(offset, before);
-        assert_eq!(maximum, expected);
+        assert!(
+            capacity > 1,
+            "the parser capacity is thousands of rows, not the real depth"
+        );
+        assert_eq!(
+            maximum,
+            app.parser.screen().scrollback_depth(),
+            "the scrollbar must bound against the depth that actually exists"
+        );
+        assert_eq!(
+            maximum, 1,
+            "one line (a) scrolled off a 3-row screen, so exactly one row exists"
+        );
+        // A bounds query must not move the viewport it is measuring.
         assert_eq!(app.parser.screen().scrollback(), before);
     }
     #[test]

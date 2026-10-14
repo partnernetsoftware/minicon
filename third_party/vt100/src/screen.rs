@@ -196,6 +196,13 @@ impl Screen {
         self.grid().scrollback_len()
     }
 
+    /// Rows of scrollback actually retained for the active screen, as opposed
+    /// to [`Self::scrollback_len`], which is the configured capacity.
+    #[must_use]
+    pub fn scrollback_depth(&self) -> usize {
+        self.grid().scrollback_depth()
+    }
+
     /// Takes and clears conservative damage accumulated by this screen.
     ///
     /// The returned row range covers visible cell mutations. Full and

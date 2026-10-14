@@ -245,6 +245,15 @@ impl Grid {
         self.scrollback_len
     }
 
+    /// Rows of scrollback actually retained, as opposed to
+    /// [`Self::scrollback_len`], which is the configured capacity. A product
+    /// that draws a scrollbar must scale and position it against what exists,
+    /// not against the cap.
+    #[must_use]
+    pub fn scrollback_depth(&self) -> usize {
+        self.scrollback.len()
+    }
+
     pub fn scrollback(&self) -> usize {
         self.scrollback_offset
     }
