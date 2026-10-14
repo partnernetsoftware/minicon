@@ -747,6 +747,7 @@ impl ConApp {
             scale,
         );
         if self.settings_open {
+            let restart_cost = self.ui_language.restart_cost(self.workspace.nodes().len());
             paint_settings_panel(
                 &mut surface,
                 layout,
@@ -758,6 +759,7 @@ impl ConApp {
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
                 self.font_zoom_percent(),
                 &self.update,
+                &restart_cost,
             );
         }
         Ok(())
@@ -809,7 +811,12 @@ impl ConApp {
             p.close.width,
         );
         let history = self.composer.history();
-        let visible = history.len().min(p.row_capacity);
+        // One clamped offset for paint, hit test and snapshot — see
+        // `history_visible_offset`. Read here rather than trusting the stored
+        // one: a resize can shrink the capacity under it, and a paint whose row
+        // indexing rested on a stale offset would read past the list.
+        let offset = self.history_visible_offset(p.row_capacity);
+        let visible = history.len().saturating_sub(offset).min(p.row_capacity);
         if visible == 0 {
             paint_host_ui_text(
                 surface,
@@ -821,12 +828,27 @@ impl ConApp {
                 inner_w,
             );
         } else {
+            let cell_w = font::cell_metrics(font_size_px).width.max(1);
+            let gap = cell_w.saturating_mul(2);
             for index in 0..visible {
-                let entry = &history[history.len() - 1 - index];
-                let first_line = entry.lines().next().unwrap_or("");
+                let entry = &history[history.len() - 1 - offset - index];
+                let first_line = entry.text.lines().next().unwrap_or("");
                 let y = p
                     .list_top
                     .saturating_add((index as u32).saturating_mul(p.row_height));
+                // The destination is right-aligned in muted ink and the line
+                // keeps the rest, so a row says which tab it came from without
+                // spending its leading cells on it. A label wide enough to
+                // crowd the line yields the whole row instead of eating it.
+                let label_width = u32::try_from(entry.destination.chars().count())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(cell_w);
+                let show_label = !entry.destination.is_empty() && label_width < inner_w;
+                let text_width = if show_label {
+                    inner_w.saturating_sub(label_width).saturating_sub(gap)
+                } else {
+                    inner_w
+                };
                 paint_host_ui_text(
                     surface,
                     p.panel.x.saturating_add(pad),
@@ -834,8 +856,23 @@ impl ConApp {
                     first_line,
                     t.text,
                     font_size_px,
-                    inner_w,
+                    text_width,
                 );
+                if show_label {
+                    paint_host_ui_text(
+                        surface,
+                        p.panel
+                            .x
+                            .saturating_add(pad)
+                            .saturating_add(text_width)
+                            .saturating_add(gap),
+                        y,
+                        &entry.destination,
+                        t.muted,
+                        font_size_px,
+                        inner_w.saturating_sub(text_width).saturating_sub(gap),
+                    );
+                }
             }
         }
         // The reserved area is marked off so it reads as deliberate room rather
@@ -992,6 +1029,7 @@ impl ConApp {
             scale,
         );
         if self.settings_open {
+            let restart_cost = self.ui_language.restart_cost(self.workspace.nodes().len());
             paint_settings_panel(
                 &mut surface,
                 layout,
@@ -1003,6 +1041,7 @@ impl ConApp {
                 host_ui_size(HOST_UI_STATUS_SIZE_PX),
                 self.font_zoom_percent(),
                 &self.update,
+                &restart_cost,
             );
         }
     }

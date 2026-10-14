@@ -13,9 +13,12 @@ pub enum JsonValue {
     Unsigned(u64),
     Signed(i64),
     TabId(u64),
-    #[cfg(test)]
-    RawNumber(String),
     String(String),
+    /// A pre-formatted JSON number literal, for the one key in this schema
+    /// that is not an integer. `font_size` is an `f64`; every other numeric
+    /// variant here would silently round it, so the writer emits the decimal
+    /// through [`decimal`], which is the only producer.
+    RawNumber(String),
     Array(Vec<JsonValue>),
     Object(Vec<(&'static str, JsonValue)>),
 }
@@ -65,11 +68,18 @@ pub fn object(fields: Vec<(&'static str, JsonValue)>) -> JsonValue {
     JsonValue::Object(fields)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ConfigValues {
     pub font_size: Option<f64>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    /// The interface language / theme ids, as written. Kept as the decoded
+    /// string rather than a validated enum because the tag set belongs to the
+    /// binary that owns `UiLanguage`/`ThemeChoice`: this codec validates JSON
+    /// shape, the caller gives the value meaning, and an id this build does not
+    /// know falls back to that caller's default instead of failing the parse.
+    pub theme: Option<String>,
+    pub language: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -77,7 +87,7 @@ enum ValueKind {
     Null,
     Bool,
     Number { start: usize, end: usize },
-    String,
+    String { start: usize, end: usize },
     Array,
     Object,
 }
@@ -93,6 +103,8 @@ enum ConfigField {
     FontSize,
     Cols,
     Rows,
+    Theme,
+    Language,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -109,6 +121,8 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         font_size: None,
         cols: None,
         rows: None,
+        theme: None,
+        language: None,
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -155,8 +169,11 @@ impl ConfigParser<'_> {
                 Ok(ValueKind::Bool)
             }
             Some(b'"') => {
-                self.skip_string()?;
-                Ok(ValueKind::String)
+                let span = self.skip_string()?;
+                Ok(ValueKind::String {
+                    start: span.start,
+                    end: span.end,
+                })
             }
             Some(b'[') => {
                 self.array(depth + 1)?;
@@ -213,6 +230,12 @@ impl ConfigParser<'_> {
                     }
                     ConfigField::Rows => {
                         config.rows = self.u16_value(value, "rows")?;
+                    }
+                    ConfigField::Theme => {
+                        config.theme = self.string_value(value, "theme")?;
+                    }
+                    ConfigField::Language => {
+                        config.language = self.string_value(value, "language")?;
                     }
                 }
             }
@@ -273,6 +296,20 @@ impl ConfigParser<'_> {
         }
     }
 
+    /// A string-valued key. `null` and an absent key are the same thing (the
+    /// caller's default); a value of any other type is a defect in the file and
+    /// is reported rather than guessed at. Whether the *string* names something
+    /// this build knows is the caller's question, not the codec's.
+    fn string_value(&self, value: ValueKind, key: &str) -> Result<Option<String>, String> {
+        match value {
+            ValueKind::Null => Ok(None),
+            ValueKind::String { start, end } => {
+                self.decode_string(KeySpan { start, end }).map(Some)
+            }
+            _ => Err(format!("{key} must be a string")),
+        }
+    }
+
     fn config_field(&self, key: KeySpan) -> Option<ConfigField> {
         if self.key_equals(key, "font_size") {
             Some(ConfigField::FontSize)
@@ -280,6 +317,10 @@ impl ConfigParser<'_> {
             Some(ConfigField::Cols)
         } else if self.key_equals(key, "rows") {
             Some(ConfigField::Rows)
+        } else if self.key_equals(key, "theme") {
+            Some(ConfigField::Theme)
+        } else if self.key_equals(key, "language") {
+            Some(ConfigField::Language)
         } else {
             None
         }
@@ -550,6 +591,19 @@ pub fn to_vec_pretty(value: &JsonValue) -> Vec<u8> {
     output
 }
 
+/// The writer's only fractional-number form.
+///
+/// `font_size` is the single non-integer key in every schema this module
+/// encodes. The integer variants would round it, and a caller-supplied string
+/// would be an injection point, so the literal is this module's own `format!`
+/// of a finite `f64` — which never uses exponent notation, and is therefore
+/// always a shape [`parse_finite_decimal`] reads back.
+#[must_use]
+pub fn decimal(value: f64) -> JsonValue {
+    debug_assert!(value.is_finite(), "a JSON number cannot be non-finite");
+    JsonValue::RawNumber(format!("{value}"))
+}
+
 fn write_value(value: &JsonValue, output: &mut Vec<u8>, indent: Option<usize>, depth: usize) {
     match value {
         JsonValue::Null => output.extend_from_slice(b"null"),
@@ -565,7 +619,6 @@ fn write_value(value: &JsonValue, output: &mut Vec<u8>, indent: Option<usize>, d
             output.extend_from_slice(itoa::Buffer::new().format(*value).as_bytes());
             output.push(b'"');
         }
-        #[cfg(test)]
         JsonValue::RawNumber(value) => output.extend_from_slice(value.as_bytes()),
         JsonValue::String(value) => write_string(value, output),
         JsonValue::Array(values) => {
@@ -774,13 +827,65 @@ mod tests {
     #[test]
     fn config_parser_extracts_known_fields_and_skips_unknown_values() {
         let config = parse_config(
-            r#"{"font\u005fsize":11.25,"cols":132,"rows":null,"future":{"items":[true,"中文",{"x":1}]}}"#
+            r#"{"font\u005fsize":11.25,"cols":132,"rows":null,"theme":"paper","language":"zh-hant","future":{"items":[true,"中文",{"x":1}]}}"#
                 .as_bytes(),
         )
         .expect("parse config");
         assert_eq!(config.font_size, Some(11.25));
         assert_eq!(config.cols, Some(132));
         assert_eq!(config.rows, None);
+        assert_eq!(config.theme.as_deref(), Some("paper"));
+        assert_eq!(config.language.as_deref(), Some("zh-hant"));
+    }
+
+    /// The codec reports JSON *shape*; it does not know the tag vocabulary. An
+    /// id no build has heard of is a well-formed string and therefore parses —
+    /// the caller is the one that falls back to its default, and it must be
+    /// able to tell "the file said nothing" from "the file said something I
+    /// cannot use" only if it wants to. Both arrive as a value here.
+    #[test]
+    fn an_unknown_theme_id_parses_because_the_codec_does_not_own_the_vocabulary() {
+        let config = parse_config(br#"{"theme":"chartreuse"}"#).expect("a string is a string");
+        assert_eq!(config.theme.as_deref(), Some("chartreuse"));
+    }
+
+    /// A preference of the wrong type is a defect in the file, reported the
+    /// same way a wrong-typed `font_size` is, rather than silently ignored.
+    #[test]
+    fn a_preference_of_the_wrong_type_is_reported() {
+        for input in [
+            br#"{"theme":3}"#.as_slice(),
+            br#"{"theme":true}"#,
+            br#"{"language":["en"]}"#,
+            br#"{"language":{}}"#,
+        ] {
+            assert!(parse_config(input).is_err(), "accepted {input:?}");
+        }
+    }
+
+    /// `null`, and an absent key, both mean "the caller's default" — a hand
+    /// edit that blanks a preference must not refuse the whole file.
+    #[test]
+    fn a_null_preference_reads_as_absent_and_the_rest_of_the_file_survives() {
+        let config = parse_config(br#"{"theme":null,"font_size":18}"#).expect("parse config");
+        assert_eq!(config.theme, None);
+        assert_eq!(config.font_size, Some(18.0));
+    }
+
+    /// The writer's one non-integer form must round-trip through this module's
+    /// own reader, or a saved font size would be unreadable at the next launch.
+    #[test]
+    fn the_decimal_writer_emits_what_the_reader_accepts() {
+        for value in [8.0, 11.25, 15.0, 18.5, 36.0, 0.1, 33.333] {
+            let encoded = to_vec(&object(vec![("font_size", decimal(value))]));
+            let decoded = parse_config(&encoded)
+                .unwrap_or_else(|error| panic!("{value} encoded as {encoded:?}: {error}"));
+            let read = decoded.font_size.expect("font_size survived");
+            assert!(
+                (read - value).abs() <= value.abs().max(1.0) * 1e-12,
+                "{value} read back as {read}"
+            );
+        }
     }
 
     #[test]

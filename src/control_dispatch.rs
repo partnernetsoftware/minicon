@@ -229,6 +229,17 @@ impl ConApp {
                                 json::object(vec![
                                     ("open", self.history_panel_open.into()),
                                     ("entries", self.composer.history().len().into()),
+                                    // Rows back from the newest entry, so the
+                                    // one gesture a list owes the reader —
+                                    // reaching past its own height — is
+                                    // observable from the control plane.
+                                    (
+                                        "scroll",
+                                        self.history_visible_offset(
+                                            layout.history_panel(metrics.scale_factor).row_capacity,
+                                        )
+                                        .into(),
+                                    ),
                                 ]),
                             ),
                             ("update", {
@@ -260,6 +271,17 @@ impl ConApp {
                                         self.ui_language.update_status(&self.update).into(),
                                     ),
                                     ("handoff", published.handoff.into()),
+                                    // What the Restart press costs, rendered in
+                                    // the panel's language. Published even when
+                                    // no update is staged so the sentence can be
+                                    // asserted on its own, from any number of
+                                    // open tabs, without staging a release.
+                                    (
+                                        "restart_cost",
+                                        self.ui_language
+                                            .restart_cost(self.workspace.nodes().len())
+                                            .into(),
+                                    ),
                                 ])
                             }),
                             ("geometry", geometry.unwrap_or(json::JsonValue::Null)),

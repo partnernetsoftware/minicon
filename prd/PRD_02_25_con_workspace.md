@@ -188,8 +188,18 @@ header tools, and the composer. It is not the browser, and it is not layout.
   columns they control. The panel takes a real column and the terminal is
   re-inset, never overlaid; a blank area below the list is reserved for future
   `{LOOP}`/goal controls. `ui-snapshot` publishes `history_panel` and the
-  `panel_toggle` rect. Follow-ups: a per-row destination label, and scrolling
-  past capacity.
+  `panel_toggle` rect.
+- [v] the sent-history panel's two follow-ups landed in 0.2.9. A row now carries
+  the **destination** it was sent to: the composer records the tab's tree label
+  with each line (`ComposerState::remember(entry, destination)`), so the row says
+  which tab a command came from even after that tab is gone; the label is painted
+  right-aligned in muted ink so a row reads as a command first. And the list
+  **scrolls past its capacity**: the wheel over the panel moves an offset that
+  counts back from the newest entry, clamped at both ends, and a click resolves
+  against the same clamped window the paint used — `ui-snapshot` publishes the
+  effective offset as `history_panel.scroll`. Still open and still its own item:
+  GitHub #5, the notes scratchpad, which is a notes surface rather than a
+  sent-history follow-up.
 - [v] the settings icon opens a lightweight in-app panel, anchored under the
   header on the sidebar rather than a centered modal. It carries four sections:
   interface language (English / 简 / 繁, the active one filled with the accent),
@@ -225,6 +235,17 @@ header tools, and the composer. It is not the browser, and it is not layout.
   persistent workspace and is not getting one. macOS never swaps in place — one
   file inside a signed, notarized `.app` cannot be replaced without breaking
   the signature — so its Update control opens the release's own `.dmg`.
+- [v] **the Restart press now states what it costs (0.2.9).** The Updates section
+  paints one line under its status line while a Restart is actually available,
+  naming the host's real tab count and saying that the running commands in those
+  tabs stop. It is one owner for both readers, like the status line above it:
+  `UiLanguage::restart_cost(tabs)` renders it and `ui-snapshot` publishes the
+  same string as `update.restart_cost`, in the panel's language. Three arms
+  rather than a template, because zero tabs is a sentence a person reads as a bug
+  ("closes 0 tabs"), one tab is the case they actually meet, and N is the general
+  form — all three differ, in all three languages. Non-goal, unchanged: making
+  Restart preserve sessions, a grace period, or a "save your work" dialog. See
+  [`plan/plan-v0.2.9.md`](../plan/plan-v0.2.9.md) leaf `{RESTART}`.
 - [v] the update check names its **TLS provider** explicitly (0.2.7). `ureq`
   chooses its provider at *runtime* and defaults to Rustls ("the highest chance
   of being enabled"), while this crate enables exactly one per host (Unix
@@ -824,21 +845,27 @@ Concretely:
   surrogate pair, duplicate key and nesting budget while decoding only
   `font_size`, `cols` and `rows`; escaped spellings of known keys retain their
   JSON meaning.
-- [_] **only geometry and font size are remembered, so a preference set in the
-  panel is lost on exit.** `minicon.json` decodes exactly the three keys above
-  and the product never writes the file back, so the interface language and
-  the theme chosen in the settings panel return to their defaults at every
-  launch — a user who picks 繁體 and Paper Ink re-picks them each time. This is
-  the wrong way round from what the host UI already argues elsewhere:
-  `sidebar_collapsed` and `history_panel_open` are session-scoped **on
-  purpose**, with the stated reason that a restart must not strand a user in a
-  layout they do not remember choosing. A view state has a reason not to
-  persist; a preference does not have a reason not to. Registered 2026-10-13;
-  planned in [`plan/archive/plan-v0.2.8.md`](../plan/archive/plan-v0.2.8.md) leaf `{PREF}`,
-  which keeps the safe-failure rule that a missing, unknown or malformed key
-  falls back to that key's default instead of refusing to launch.
-  Non-goal of that leaf: persisting view state, or the update phase (`update`
-  is a fact about this process, not a preference).
+- [v] **a preference set in the panel now survives the process (0.2.9).**
+  `minicon.json` decodes `font_size`/`cols`/`rows` plus two id-valued keys —
+  `theme` (a `ThemeChoice` tag) and `language` (a `UiLanguage` tag) — and the
+  product writes the file back for the first time when the panel's theme,
+  language or font controls change. The write is the platform's atomic
+  sibling-and-rename (`minicon_platform::filesystem_publish::write_file_atomic`,
+  the same primitive the update path uses), so a failure at any point leaves the
+  previous file exactly as it was; the document is built from the values in
+  memory, so a key the panel does not set (`cols`, `rows`) is carried through
+  rather than dropped. An absent, unknown or malformed value falls back to that
+  key's default and never refuses to launch — an id a newer build wrote is an
+  unreadable id, not an error. Values are stored **by id, never by display
+  label**, which is why `ThemeChoice::from_tag`/`UiLanguage::from_tag` exist as
+  the inverse of the `tag` the control surface already published.
+  Still true, and deliberately so: `sidebar_collapsed` and `history_panel_open`
+  are session-scoped **on purpose**, with the stated reason that a restart must
+  not strand a user in a layout they do not remember choosing. A view state has a
+  reason not to persist; a preference does not have a reason not to. Also
+  deliberately unchanged: the update phase (`update` is a fact about this process,
+  not a preference), and any key the panel does not set.
+  See [`plan/plan-v0.2.9.md`](../plan/plan-v0.2.9.md) leaf `{PREF}`.
 
 ## Native adoption gate
 

@@ -45,9 +45,10 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
-│   ├── [_] v0.2.9 planned — settings that survive a restart +
+│   ├── [-] v0.2.9 in progress — settings that survive a restart +
 │   │   a behaviour-preserving consolidation of the largest modules
-│   │   └── plan/plan-v0.2.9.md
+│   │   ├── plan/plan-v0.2.9.md
+│   │   └── plan/plan-scroll-damage.md
 │   ├── [v] v0.2.8 released — an update can no longer brick an install + clipboard image paste + scrollbar scale
 │   │   ├── plan/archive/plan-v0.2.8.md
 │   │   └── prd/archive/v0.2.8-release-history.md
@@ -235,7 +236,7 @@ flowchart LR
         R026["v0.2.6 released<br/>right-side collapsible sent-history panel + header toggles"]
         R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
         R028["v0.2.8 released<br/>update path can no longer brick an install · clipboard image paste · scrollbar scale"]
-        R029["v0.2.9 planned<br/>preferences that survive a restart · behaviour-preserving consolidation"]
+        R029["v0.2.9 in progress<br/>settings that survive a restart · landed: preferences, restart cost, history label+scroll · flashing fix spec'd, blocked"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -328,20 +329,27 @@ flowchart LR
   `prd/archive/v0.2.8-release-history.md`. Behaviour
   `prd/PRD_02_25_con_workspace.md`, budget record
   `prd/PRD_02_27_con_delivery.md` "Artifact budget".
-- [_] **v0.2.9 is the next frontier — planned in `plan/plan-v0.2.9.md`.** Its
+- [-] **v0.2.9 is in progress — planned in `plan/plan-v0.2.9.md`.** Its
   outcome: a choice made in the settings panel (theme, language, text size) is
   still in force at the next launch, kept in the same hand-editable
   `minicon.json` the product already reads — `{PREF}`, the first write path the
-  product has ever had. `{RESTART}` (say what a Restart costs before it is
-  pressed) and `{HIST}` (sent-history follow-ups) hang off that configuration
-  layer and land after it. The reported "flashing" is filed as
-  `{SCROLL-DAMAGE}`: `vt100` marks the entire grid damaged on every scroll, so
-  ordinary output re-rasterises the whole window — a fix needs a viewport-scroll
-  damage primitive and **its own spec before any code**. The version carries a
-  second, deliberately behaviour-preserving consolidation track
+  product has ever had. **Landed 2026-10-14, with `{RESTART}` (the panel states
+  the tab count a Restart costs, in three languages, published as
+  `update.restart_cost`) and `{HIST}` (each history row carries the tab it was
+  sent to, and the list scrolls past its own height).** The reported "flashing"
+  is filed as `{SCROLL-DAMAGE}`, and its spec —
+  `plan/plan-scroll-damage.md`, written 2026-10-14 — found that the leaf as
+  scoped **cannot** deliver the reported outcome: the vendored `vt100`'s damage
+  oracle is not executed by any gate, and the Windows host and the Unix
+  transient host each upgrade every frame to a full one regardless. The spec
+  decides the primitive (a scroll damages its own row band plus a new
+  `scrollback_changed` flag for the scrollbar) and returns two questions to the
+  owner; the code is not written. The version also carries a second,
+  deliberately behaviour-preserving consolidation track
   (`{SPLIT}`/`{SEAM}`/`{ENCAP}`/`{FEAT}`/`{NAME}`/`{DOC-OWNER}`) so the
   engineering debt this repo's hygiene ledger has been deferring has a home with
-  evidence and an order. Still blocked, still not started: `{SIGV}`
+  evidence and an order; **none of it has been started**. Still blocked, still
+  not started: `{SIGV}`
   (a PRD_02_27 size decision; the `.sha256` sidecar proves integrity, not
   origin) and `{FIND}` (blocked on C1 in `plan/plan-carried-debt.md`).
   Separately and urgently, **R1**: several workflow actions still target Node 20

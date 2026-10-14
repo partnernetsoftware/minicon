@@ -42,6 +42,25 @@ impl ThemeChoice {
             Self::Paper => Self::Neutral,
         }
     }
+
+    /// The choice a stored [`Self::tag`] names, or `None` for an id this build
+    /// does not know.
+    ///
+    /// The inverse of `tag`, and the whole reason a preference can be stored by
+    /// id: a saved value that names nothing this build ships — a hand edited
+    /// file, a config written by a newer version — is an unreadable id, not an
+    /// error, so the caller falls back to its default and the product still
+    /// starts. Written as a `match` so a new variant is a compile error here
+    /// rather than a tag that quietly stops loading.
+    #[must_use]
+    pub fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "neutral" => Some(Self::Neutral),
+            "docs" => Some(Self::Docs),
+            "paper" => Some(Self::Paper),
+            _ => None,
+        }
+    }
 }
 
 /// Concrete host-UI colors for one theme. Field names are semantic roles, not
@@ -213,6 +232,21 @@ mod tests {
             c = c.next();
         }
         assert_eq!(c, ThemeChoice::Neutral, "three steps return to the start");
+    }
+
+    /// A stored theme id must name exactly the choice it was written from, and
+    /// an id no choice owns must not resolve to one. This is what keeps the
+    /// saved value and the enum from drifting: the tag table and the `from_tag`
+    /// table are two spellings of one fact, and this is the invariant that
+    /// binds them.
+    #[test]
+    fn from_tag_is_the_inverse_of_each_choices_tag() {
+        for choice in [ThemeChoice::Neutral, ThemeChoice::Docs, ThemeChoice::Paper] {
+            assert_eq!(ThemeChoice::from_tag(choice.tag()), Some(choice));
+        }
+        for unknown in ["", "Neutral", "neutral ", "ink", "chartreuse"] {
+            assert_eq!(ThemeChoice::from_tag(unknown), None, "accepted {unknown:?}");
+        }
     }
 
     #[test]

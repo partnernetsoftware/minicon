@@ -46,9 +46,14 @@ owner of the platform-crate boundary the consolidation track touches).
 
 ## Handoff: read this first
 
-**Status: `[_]` not started.** No leaf below has been implemented. This file is
-the entrypoint; it is written so a session with none of this context can start
-from it and `PRD.md`.
+**Status: `[-]` the product track is landed except `{SCROLL-DAMAGE}`, which is
+blocked on its spec's own findings; the consolidation track has not started.**
+
+Landed 2026-10-14 (see "Landed" below): `{PREF}`, `{RESTART}`, `{HIST}`.
+`{SCROLL-DAMAGE}`'s spec is written — `plan/plan-scroll-damage.md` — and it found
+that the leaf cannot deliver its own outcome as scoped; what it changes and what
+blocks it is recorded there and in "GATE status". Nothing on the consolidation
+track has been started.
 
 ### Order, and why
 
@@ -108,6 +113,26 @@ about it. Plan the verification per leaf before writing code.
   by hand before any release (`cargo test --bin minicon -- --ignored
   update::tests::the_real_release_api_still_parses`).
 
+## Landed (2026-10-14)
+
+What is actually in the tree, and what proves it. Line numbers are the landed
+code, not the plan's earlier read of it.
+
+| Leaf | What landed | Evidence |
+|---|---|---|
+| `{PREF}` | the product's **first write path** to `minicon.json`: `ConfigValues` gains two string-valued keys (`crates/minicon-core/src/json.rs`), `ConConfig` gains typed `theme`/`language` (`src/main.rs`), `write_config_to` publishes through `minicon-platform::filesystem_publish::write_file_atomic`, and the panel's language / theme / font gestures call `persist_config`. The document is built from the values in memory, so the keys the panel does not set (`cols`/`rows`) are carried over rather than dropped | 5 tests in `src/main.rs`: the round trip through write-then-read by id, a hand-edited key surviving a change, an unknown id falling back per-key, a malformed file falling back entirely, and a write that cannot be published leaving the previous file alone; plus the codec tests in `json.rs` (unknown id parses, wrong type is reported, `decimal` round-trips through the reader) and the `from_tag`/`tag` inverse test in `theme.rs` and `ui.rs` |
+| `{PREF}` (non-goal honoured) | no general preferences framework: only the three keys the panel sets, plus the two geometry keys it already read | the leaf's `non-goal` line above |
+| `{RESTART}` | `UiLanguage::restart_cost(tabs)` states the count and that running commands stop, in all three languages; the panel paints it under the Updates status line exactly while a Restart is possible; `ui-snapshot` publishes `update.restart_cost` unconditionally so it can be asserted without staging a release | `ui.rs`: `the_restart_sentence_states_the_real_count_and_never_zero_tabs` (three languages, zero/one/N all differ, no "0 tabs"); `ui.rs`: `the_settings_panel_contains_every_section` extended for the new line's position |
+| `{HIST}` | the owner's own follow-up list, both items: each sent line now carries the **destination label** it was sent to (captured from the tab tree at send time), and the panel **scrolls past its capacity** by wheel, clamped at both ends | `crates/minicon-core/src/composer.rs`: `HistoryEntry`, and `a_stored_line_keeps_the_destination_it_was_sent_to`; `ui.rs`: `the_history_scroll_stops_at_the_ends_and_never_lists_past_the_start`; `ui-snapshot`'s `history_panel.scroll` |
+| `{SCROLL-DAMAGE}` | **spec only** — `plan/plan-scroll-damage.md` | the spec's own two blockers |
+
+### What `{PREF}` deliberately does not do
+
+The panel's font controls persist; **Ctrl+wheel zoom is gone** (0.2.8 removed the
+Ctrl+wheel branch), so there is no high-frequency path that would write the file
+on every wheel notch. A press at either font clamp writes nothing: `persist_config`
+is called from `with_font_gesture`, which compares the size before and after.
+
 ## Verified against the landed 0.2.8 code
 
 Read against the tree at `3f81f92` (the state 0.2.9 starts from), so this
@@ -131,7 +156,7 @@ missing key, it is a missing *write path*. Adding `theme`/`language` to
 ```text
 0.2.9: a choice made in the settings panel is still in force at the next launch
 ├── Product track — the version's outcome and what hangs off it
-│   ├── {PREF} persist theme, language and text size                      [_]
+│   ├── {PREF} persist theme, language and text size                      [v]
 │   │      owner: `prd/PRD_02_25_con_workspace.md` "Configuration"
 │   │      problem: the panel changes theme, language and text size; none
 │   │        survives the process, and the panel does not say so
@@ -148,7 +173,7 @@ missing key, it is a missing *write path*. Adding `theme`/`language` to
 │   │      dependency: none — it is the precondition for the two below
 │   │      non-goal: a general preferences framework, per-tab settings, a
 │   │        settings UI redesign, or writing any key the panel does not set
-│   ├── {RESTART} say what a Restart costs before it is pressed            [_]
+│   ├── {RESTART} say what a Restart costs before it is pressed            [v]
 │   │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
 │   │      problem: Restart spawns the new binary and exits; it never says
 │   │        that the open tabs and their children go with it
@@ -161,7 +186,7 @@ missing key, it is a missing *write path*. Adding `theme`/`language` to
 │   │        fight over the panel's string tables in the same change
 │   │      non-goal: making Restart preserve sessions, a grace period, or a
 │   │        "save your work" dialog
-│   ├── {HIST} sent-history follow-ups                                    [_]
+│   ├── {HIST} sent-history follow-ups                                    [v]
 │   │      owner: `prd/PRD_02_25_con_workspace.md` "Host UI"
 │   │      problem: the 0.2.6 panel is a session-scoped view; 0.2.8's deferred
 │   │        list names "sent-history follow-ups" without fixing the scope,
@@ -175,7 +200,7 @@ missing key, it is a missing *write path*. Adding `theme`/`language` to
 │   │      dependency: `{PREF}` if any part of the history is to persist
 │   │      non-goal: a cross-tab scriptable history, or a search over it —
 │   │        that is `{FIND}`
-│   ├── {SCROLL-DAMAGE} a scroll damages a viewport, not the whole grid    [_]
+│   ├── {SCROLL-DAMAGE} a scroll damages a viewport, not the whole grid    [-]
 │   │      owner: `prd/PRD_02_24_con_terminal.md`
 │   │      problem: the reported "flashing" — ordinary output re-rasterises
 │   │        the whole window, because the vendored parser marks the entire
@@ -191,7 +216,11 @@ missing key, it is a missing *write path*. Adding `theme`/`language` to
 │   │        narrow what is repainted
 │   │      dependency: **its own spec first** — it changes the vendored
 │   │        `vt100` damage contract (`take_damage`/`GridDamage`), and that
-│   │        contract is consumed by `src/terminal.rs`
+│   │        contract is consumed by `src/terminal.rs`. **Spec written:
+│   │        `plan/plan-scroll-damage.md`.** It found that the leaf cannot
+│   │        deliver its own outcome as scoped: the vendored crate's damage
+│   │        oracle is not run by any gate, and two host-side decisions upgrade
+│   │        every frame to full regardless. Code blocked on both; see the spec
 │   │      non-goal: rewriting the parser's damage model wholesale, touching
 │   │        the alternate screen, or changing `mark_full` callers other than
 │   │        the two scroll functions
@@ -337,23 +366,34 @@ local gate this host can run, and the command for each, is unchanged from
 - `{PREF}` and the consolidation track are Linux/Windows-neutral except where
   noted; `{SCROLL-DAMAGE}`'s on-screen proof needs a display.
 
+### Run for the landed leaves (2026-10-14, this Windows host)
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo test --locked -p minicon-core` | 105 passed / 0 failed |
+| `cargo test --locked --bin minicon` | 450 passed / 0 failed / 1 ignored |
+| `cargo test --locked --test minicon_alignment` | 15 passed / 0 failed |
+| `cargo clippy --locked --all-targets -- -D warnings` | clean |
+
+Not run, and therefore not claimed: any display-gated journey, and the vendored
+`vt100` crate's own suite — which `cargo test --workspace` does not reach, a fact
+`plan/plan-scroll-damage.md` records as a blocker rather than a footnote.
+
 The one gate outside this file is `{SIGV}`'s size decision, owned by
 `prd/PRD_02_27_con_delivery.md`; it is not part of this version's scope.
 
 ## Open decisions (owner)
 
-1. **`{PREF}` scope — how far does "remember my choices" go?** The panel sets
-   theme, language and text size. Text size already has a `minicon.json` key
-   (`font_size`); theme and language have none. Recommendation: persist exactly
-   those three, by stable id, and leave window geometry (`cols`/`rows`) to the
-   existing keys. Anything wider is a different leaf.
-2. **`{HIST}` scope — what is a "sent-history follow-up"?**
-   `plan/archive/plan-v0.2.8.md`'s
-   deferred list names the leaf but fixes no scope; `prd/PRD_02_25_con_workspace.md`
-   describes only the shipped 0.2.6 panel. The owner must write the list before
-   this leaf can state its invariant. GitHub #5 (notes scratchpad), deferred by
-   0.2.6 and again by 0.2.7, is the obvious first candidate — confirm whether it
-   belongs here or stays its own leaf.
+1. **`{PREF}` scope — RESOLVED, implemented as recommended:** exactly the three
+   values the panel sets (theme, language, text size), by stable id, with
+   `cols`/`rows` left to their existing keys and carried through a rewrite rather
+   than dropped. Nothing wider was built.
+2. **`{HIST}` scope — RESOLVED from the owner's own text.** The scope did exist:
+   `prd/PRD_02_25_con_workspace.md` "Host UI" states the panel's follow-ups as "a
+   per-row destination label, and scrolling past capacity". Both are implemented.
+   GitHub #5 (the notes scratchpad) is **not** in this leaf and remains its own
+   open item — it is a notes surface, not a sent-history follow-up.
 3. **`{FEAT}` — which of the 54 unconsumed features are "future route" and which
    are residue?** Deleting a route another product will want is not
    consolidation. Recommendation: mark the route candidates (`a11y-*`,
@@ -365,9 +405,14 @@ The one gate outside this file is `{SIGV}`'s size decision, owned by
    pointer. The platform README is the hardest: its body is published as the
    crate's `readme`, so "delete it" is not an option and "move it" needs the
    content to live somewhere a `cargo doc` reader still finds it.
-5. **`{SCROLL-DAMAGE}` — write the spec first, and decide the primitive.** A
-   viewport-scroll damage range, a `ScreenDamage` that can express "k rows
-   moved", and whether the alternate screen keeps `mark_full` are all design
-   questions. Recommendation: its own short spec file, reviewed before code,
-   because it changes a vendored crate's contract that `src/terminal.rs`
-   consumes.
+5. **`{SCROLL-DAMAGE}` — SPEC WRITTEN, code blocked.**
+   `plan/plan-scroll-damage.md` decides the primitive (a scroll damages
+   `[scroll_top, scroll_bottom]` plus a new `scrollback_changed` flag for the
+   scrollbar) and then records two findings that stop the code: (a) the vendored
+   crate's damage oracle is not executed by any gate, so the one test that would
+   catch an under-reporting range does not run, and (b) the Windows host and the
+   Unix transient host each upgrade **every** frame to full, so the leaf as
+   scoped cannot change what a user sees. Two questions are back with the owner:
+   which leaf owns the amplifiers, and whether the fork becomes a workspace
+   member or gains a gate script.
+

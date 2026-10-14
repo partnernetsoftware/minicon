@@ -7,6 +7,21 @@
 pub const PASTE_LIMIT_BYTES: usize = 64 * 1024;
 const COMPOSER_LIMIT_BYTES: usize = PASTE_LIMIT_BYTES;
 
+/// One stored line, and where it was sent.
+///
+/// The destination is captured at send time, as the host's label for the tab,
+/// rather than resolved when a row is read: the tab may be closed by then, and
+/// a row that named a tab which no longer exists would be worse than one that
+/// names what the user called it when they sent the line.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct HistoryEntry {
+    /// The line as it was sent, without the trailing Enter.
+    pub text: String,
+    /// The host's label for the destination. Empty means the host recorded
+    /// none, which a row paints as nothing rather than as a blank chip.
+    pub destination: String,
+}
+
 /// Complete state of the external multiline input surface.
 ///
 /// Host adapters may inspect these fields for rendering and routing, while
@@ -38,7 +53,7 @@ pub struct ComposerState {
     /// it can do something the terminal cannot. Recall is that thing: a
     /// submitted line survives being sent, so resending or amending it does
     /// not mean retyping it. Without this the area is a box that forgets.
-    history: Vec<String>,
+    history: Vec<HistoryEntry>,
     /// Position in `history` while recalling; `None` while editing your own
     /// text. The distinction is what lets returning past the newest entry put
     /// back exactly what you were typing.
@@ -78,15 +93,33 @@ impl ComposerState {
     /// not make you press Up twice to get past it. Older entries are dropped
     /// first when the bound is reached, because recall reaches backwards from
     /// the present.
-    pub fn remember(&mut self, entry: &str) {
+    ///
+    /// `destination` is the host's label for where the line went, carried
+    /// alongside it so the visible history region can say which tab a row came
+    /// from. It is not part of the duplicate rule: the same line sent to two
+    /// tabs is one entry, and the latest destination is the one shown.
+    pub fn remember(&mut self, entry: &str, destination: &str) {
         let entry = entry.trim_end_matches(['\r', '\n']);
-        if entry.is_empty() || self.history.last().is_some_and(|last| last == entry) {
+        if entry.is_empty() {
+            return;
+        }
+        if let Some(last) = self.history.last_mut()
+            && last.text == entry
+        {
+            // An adjacent repeat is still one entry, but the label follows the
+            // most recent send: the line is shown as coming from the tab it
+            // last went to, not the first one it ever went to.
+            last.destination.clear();
+            last.destination.push_str(destination);
             return;
         }
         if self.history.len() == MAX_HISTORY {
             self.history.remove(0);
         }
-        self.history.push(entry.to_owned());
+        self.history.push(HistoryEntry {
+            text: entry.to_owned(),
+            destination: destination.to_owned(),
+        });
     }
 
     /// Steps back through history. Returns whether anything changed, so a
@@ -130,7 +163,7 @@ impl ComposerState {
         self.recall = index;
         let text = index
             .and_then(|index| self.history.get(index))
-            .cloned()
+            .map(|entry| entry.text.clone())
             .unwrap_or_default();
         self.set_recalled_text(text);
     }
@@ -139,7 +172,7 @@ impl ComposerState {
     /// over this same store, never a second copy: a row the region shows and a
     /// line Up/Down reaches at the same offset must be the same text.
     #[must_use]
-    pub fn history(&self) -> &[String] {
+    pub fn history(&self) -> &[HistoryEntry] {
         &self.history
     }
 
@@ -1397,7 +1430,7 @@ mod tests {
             composer.text = line.to_owned();
             composer.caret = line.len();
             let sent = composer.take_submission().expect("a submission");
-            composer.remember(&sent);
+            composer.remember(&sent, "t1");
         }
         assert!(composer.recall_previous());
         assert_eq!(composer.text, "deploy", "newest first");
@@ -1414,9 +1447,13 @@ mod tests {
     fn a_history_entry_can_be_jumped_to_directly_and_keeps_the_draft() {
         let mut composer = state("");
         for line in ["build", "test", "deploy"] {
-            composer.remember(line);
+            composer.remember(line, "t1");
         }
-        let labels: Vec<&str> = composer.history().iter().map(String::as_str).collect();
+        let labels: Vec<&str> = composer
+            .history()
+            .iter()
+            .map(|entry| entry.text.as_str())
+            .collect();
         assert_eq!(labels, ["build", "test", "deploy"]);
 
         composer.text = "half-typed".to_owned();
@@ -1438,12 +1475,36 @@ mod tests {
         );
     }
 
+    /// The row's destination is captured with the line, so a visible history
+    /// region can say which tab a row came from after that tab is gone. The
+    /// duplicate rule is about the *line*: sending the same command to two tabs
+    /// is one entry, and the destination the row shows is the latest one.
+    #[test]
+    fn a_stored_line_keeps_the_destination_it_was_sent_to() {
+        let mut composer = state("");
+        composer.remember("cargo test", "build tab");
+        composer.remember("cargo test", "docs tab");
+        assert_eq!(composer.history().len(), 1, "the same line is one entry");
+        assert_eq!(composer.history()[0].destination, "docs tab");
+
+        composer.remember("git status", "docs tab");
+        let destinations: Vec<&str> = composer
+            .history()
+            .iter()
+            .map(|entry| entry.destination.as_str())
+            .collect();
+        assert_eq!(destinations, ["docs tab", "docs tab"]);
+        // A host that records no destination stores nothing, not a placeholder.
+        composer.remember("ls", "");
+        assert!(composer.history()[2].destination.is_empty());
+    }
+
     /// Recall must not lose what you were in the middle of typing — that is
     /// the difference between a convenience and a trap.
     #[test]
     fn returning_past_the_newest_entry_restores_the_draft() {
         let mut composer = state("");
-        composer.remember("build");
+        composer.remember("build", "t1");
         composer.text = "half-typed".to_owned();
         composer.caret = composer.text.len();
 
@@ -1461,7 +1522,7 @@ mod tests {
     #[test]
     fn recall_stops_at_the_ends_instead_of_wrapping() {
         let mut composer = state("");
-        composer.remember("only");
+        composer.remember("only", "t1");
         assert!(composer.recall_previous());
         assert!(!composer.recall_previous(), "oldest is a floor, not a loop");
         assert_eq!(composer.text, "only");
@@ -1478,7 +1539,7 @@ mod tests {
     #[test]
     fn editing_a_recalled_line_is_discarded_when_the_draft_returns() {
         let mut composer = state("my draft");
-        composer.remember("git status");
+        composer.remember("git status", "t1");
 
         assert!(composer.recall_previous());
         assert_eq!(composer.text, "git status");
@@ -1505,9 +1566,9 @@ mod tests {
     #[test]
     fn repeating_a_command_does_not_repeat_it_in_history() {
         let mut composer = state("");
-        composer.remember("status");
-        composer.remember("status");
-        composer.remember("status\r");
+        composer.remember("status", "t1");
+        composer.remember("status", "t1");
+        composer.remember("status\r", "t1");
         composer.recall_previous();
         assert_eq!(composer.text, "status");
         assert!(
@@ -1520,11 +1581,11 @@ mod tests {
     fn history_is_bounded_and_drops_the_oldest_first() {
         let mut composer = state("");
         for index in 0..MAX_HISTORY + 10 {
-            composer.remember(&format!("line {index}"));
+            composer.remember(&format!("line {index}"), "t1");
         }
         assert_eq!(composer.history.len(), MAX_HISTORY);
         assert_eq!(
-            composer.history.first().map(String::as_str),
+            composer.history.first().map(|entry| entry.text.as_str()),
             Some("line 10"),
             "recall reaches backwards, so the oldest is what goes"
         );
@@ -1535,14 +1596,14 @@ mod tests {
     #[test]
     fn sending_ends_the_recall() {
         let mut composer = state("");
-        composer.remember("first");
-        composer.remember("second");
+        composer.remember("first", "t1");
+        composer.remember("second", "t1");
         composer.recall_previous();
         composer.recall_previous();
         assert_eq!(composer.text, "first");
 
         let sent = composer.take_submission().expect("a submission");
-        composer.remember(&sent);
+        composer.remember(&sent, "t1");
         assert!(composer.recall_previous());
         assert_eq!(
             composer.text, "first",
@@ -1555,7 +1616,7 @@ mod tests {
     #[test]
     fn a_recalled_line_is_not_left_selected() {
         let mut composer = state("");
-        composer.remember("cargo test");
+        composer.remember("cargo test", "t1");
         select_all(&mut composer);
         composer.recall_previous();
         assert!(!composer.select_all);
@@ -1917,7 +1978,7 @@ mod tests {
 
         // Submit clears the recall and draft too, so the next Up starts fresh.
         let mut composer = state("echo one");
-        composer.remember("echo one");
+        composer.remember("echo one", "t1");
         composer.recall_previous();
         composer.draft = "half typed".to_owned();
         let _ = composer.take_submission();

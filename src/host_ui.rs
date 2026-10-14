@@ -231,6 +231,10 @@ pub(crate) fn paint_settings_panel(
     font_size_px: u16,
     font_percent: u16,
     update: &crate::update::State,
+    // What a Restart press costs, already rendered in `ui_language`, so the
+    // painter states the loss without knowing the tab count itself. Empty when
+    // there is nothing to state.
+    restart_cost: &str,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
     let s = layout.settings_panel(scale);
@@ -422,6 +426,20 @@ pub(crate) fn paint_settings_panel(
         font_size_px,
         inner_w,
     );
+    // The cost of the press, stated only while the press is the one that is
+    // available: it belongs to the Restart control, and a window that cannot
+    // restart has nothing to warn about.
+    if can_restart && !restart_cost.is_empty() {
+        paint_host_ui_text(
+            surface,
+            inner_x,
+            s.updates_cost_y,
+            restart_cost,
+            theme.text,
+            font_size_px,
+            inner_w,
+        );
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

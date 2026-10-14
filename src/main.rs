@@ -313,11 +313,19 @@ fn clamp_font_size(value: f64) -> f64 {
 ///
 /// Location: platform user-config directory + `minicon.json`
 /// (Windows Roaming AppData, Unix `~/.config`, see `runtime::user_config_directory`).
-#[derive(Default)]
+///
+/// Since 0.2.9 the product also **writes** this file: the settings panel's
+/// choices are remembered here, in the same hand-editable document, by id
+/// rather than by display label. `theme`/`language` are typed choices so a
+/// value this build cannot read is `None` (the caller's default) instead of a
+/// string that leaks into the UI.
+#[derive(Default, Clone)]
 struct ConConfig {
     font_size: Option<f64>,
     cols: Option<u16>,
     rows: Option<u16>,
+    theme: Option<theme::ThemeChoice>,
+    language: Option<ui::UiLanguage>,
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
@@ -335,14 +343,78 @@ fn load_config() -> ConConfig {
     else {
         return ConConfig::default();
     };
-    let Ok(config) = json::parse_config(&bytes) else {
+    config_from_bytes(&bytes)
+}
+
+/// Decode a config document. Any malformed input is the built-in defaults —
+/// never a refusal and never a panic, because this runs before the window
+/// exists and a preference is not worth a startup failure.
+fn config_from_bytes(bytes: &[u8]) -> ConConfig {
+    let Ok(config) = json::parse_config(bytes) else {
         return ConConfig::default();
     };
     ConConfig {
         font_size: config.font_size,
         cols: config.cols,
         rows: config.rows,
+        // An id this build does not ship is not an error: it falls back to the
+        // default, which is what keeps a config written by a newer version (or
+        // edited by hand) from refusing to start the product.
+        theme: config
+            .theme
+            .as_deref()
+            .and_then(theme::ThemeChoice::from_tag),
+        language: config
+            .language
+            .as_deref()
+            .and_then(ui::UiLanguage::from_tag),
     }
+}
+
+/// The keys as the product writes them: exactly the ones it reads.
+///
+/// A key with no value is omitted rather than written as `null`, so the file
+/// stays the shortest thing that says what was chosen. `cols`/`rows` are
+/// carried through because they were read: a preference rewrite must not drop
+/// a key the panel does not set.
+fn config_document(config: &ConConfig) -> json::JsonValue {
+    let mut fields: Vec<(&'static str, json::JsonValue)> = Vec::new();
+    if let Some(size) = config.font_size {
+        fields.push(("font_size", json::decimal(size)));
+    }
+    if let Some(cols) = config.cols {
+        fields.push(("cols", cols.into()));
+    }
+    if let Some(rows) = config.rows {
+        fields.push(("rows", rows.into()));
+    }
+    if let Some(choice) = config.theme {
+        fields.push(("theme", choice.tag().into()));
+    }
+    if let Some(language) = config.language {
+        fields.push(("language", language.tag().into()));
+    }
+    json::object(fields)
+}
+
+/// Publish the preferences to `minicon.json`.
+///
+/// The write is the platform's atomic sibling-and-rename, the same primitive
+/// the update path uses, so a failure at any point leaves the previous file
+/// exactly as it was rather than a half-written one. The containing directory
+/// is created first if it is missing — the Unix root is `~/.config`, which a
+/// bare container user may not have — but a failure there is the caller's
+/// notice, not a panic.
+fn write_config_to(path: &std::path::Path, config: &ConConfig) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    let bytes = json::to_vec_pretty(&config_document(config));
+    minicon_platform::filesystem_publish::write_file_atomic(path, |file| {
+        std::io::Write::write_all(file, &bytes)
+    })
+    .map_err(|error| error.to_string())
 }
 
 /// Record a panic to the diagnostics log (and the parent console when one is
@@ -472,6 +544,10 @@ fn main() {
         [config.cols, initial_cols],
         [config.rows, initial_rows],
     );
+    // The saved theme and language, now that there is a session to colour. The
+    // choices the panel writes are read back here, which is what makes them
+    // survive the process.
+    app.adopt_config(config);
     // IME must stay on: without it CJK cannot be typed at all, which no
     // console host on Windows gets to call acceptable. An earlier fix disabled
     // it to recover keyboard input, but the actual cause was the missing
@@ -611,6 +687,13 @@ struct ConApp {
     /// touched by this.
     ui_language: ui::UiLanguage,
     ui_theme: theme::ThemeChoice,
+    /// The preferences as loaded, and as they are written back.
+    ///
+    /// The in-memory mirror of `minicon.json`, held so a change can be written
+    /// without re-reading the file and without dropping the keys the panel does
+    /// not set (`cols`/`rows`). `font_size` is refreshed from the active session
+    /// at write time, because that is where the panel's font controls act.
+    config: ConConfig,
     /// Absolute node index the pointer is hovering in the tree, or None.
     /// The per-row close button shows only for the active or hovered row.
     hovered_tree_row: Option<usize>,
@@ -628,6 +711,11 @@ struct ConApp {
     /// like `sidebar_collapsed`: a restart should not strand the user in a
     /// layout they do not remember choosing.
     history_panel_open: bool,
+    /// How many rows the open history panel is scrolled back from its newest
+    /// entry. Session-scoped view state too, and for the same reason; it is
+    /// clamped against the entry count wherever it is read, so a list that
+    /// shrank cannot leave the panel pointing past its own end.
+    history_panel_scroll: usize,
     /// The update check's product state.
     ///
     /// Session-scoped and deliberately not panel-local: it survives the
@@ -1012,6 +1100,7 @@ impl ConApp {
             composer_clicks: Default::default(),
             ui_language: ui::UiLanguage::default(),
             ui_theme: theme::ThemeChoice::default(),
+            config: ConConfig::default(),
             hovered_tree_row: None,
             hovered_header: None,
             settings_open: false,
@@ -1019,6 +1108,7 @@ impl ConApp {
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_collapsed: false,
             history_panel_open: false,
+            history_panel_scroll: 0,
             update: update::State::new(
                 update::Version::parse(env!("CARGO_PKG_VERSION"))
                     .expect("CARGO_PKG_VERSION is a stable version"),
@@ -1669,6 +1759,108 @@ impl ConApp {
         }
     }
 
+    /// Adopt the loaded configuration: the startup theme and language, and the
+    /// mirror the writer keeps.
+    ///
+    /// Called once, after the initial session exists, because the theme has to
+    /// reach the terminals that are already open — a theme applied only to
+    /// sessions opened later would leave the first tab in the default colours.
+    fn adopt_config(&mut self, config: ConConfig) {
+        self.ui_theme = config.theme.unwrap_or_default();
+        self.ui_language = config.language.unwrap_or_default();
+        self.apply_theme_to_all_sessions();
+        self.config = config;
+    }
+
+    /// Open or close the right-side history panel.
+    ///
+    /// The list always opens at its newest entry. A scroll position is not a
+    /// view state worth restoring across a close: reopening half way down a
+    /// list is exactly what "where did my entries go" looks like.
+    fn set_history_panel(&mut self, open: bool) {
+        if self.history_panel_open != open {
+            self.history_panel_open = open;
+            self.history_panel_scroll = 0;
+        }
+    }
+
+    /// The clamped history-panel offset for a given row capacity.
+    ///
+    /// One definition for the three readers — the paint, the hit test and
+    /// `ui-snapshot` — so the row the panel drew, the line a click recalls and
+    /// the offset automation reads are the same number. A stale offset cannot
+    /// survive a resize because every reader clamps through here.
+    fn history_visible_offset(&self, capacity: usize) -> usize {
+        self.history_panel_scroll
+            .min(self.composer.history().len().saturating_sub(capacity))
+    }
+
+    /// Scroll the open history panel by `delta` rows, clamped to the list.
+    ///
+    /// The offset counts back from the newest entry, so it stays meaningful
+    /// while lines keep arriving: the panel keeps showing the rows the user
+    /// scrolled to rather than sliding under them.
+    fn scroll_history_panel(&mut self, delta: isize, capacity: usize) {
+        self.history_panel_scroll = ui::clamp_history_scroll(
+            self.history_panel_scroll,
+            delta,
+            self.composer.history().len(),
+            capacity,
+        );
+    }
+
+    /// Write the panel's choices back to `minicon.json`.
+    ///
+    /// Called from the panel's own gestures, so the file changes exactly when
+    /// the user changed something and never at startup. The font size is read
+    /// back from the active session because that is where the panel's font
+    /// controls act; the theme and language come from the fields they always
+    /// did. A failed write is a notice, not a crash: the old file is still
+    /// there and the running preference still applies.
+    fn persist_config(&mut self, window: &PixelWindow) {
+        if let Ok(session) = self.active_session() {
+            self.config.font_size = Some(session.font_size_logical);
+        }
+        self.config.theme = Some(self.ui_theme);
+        self.config.language = Some(self.ui_language);
+        let Some(path) = config_path() else {
+            self.note_host_notice(
+                "could not save settings: no configuration directory".to_owned(),
+                window,
+            );
+            return;
+        };
+        if let Err(error) = write_config_to(&path, &self.config) {
+            self.note_host_notice(format!("could not save settings: {error}"), window);
+        }
+    }
+
+    /// Run a font gesture and persist the result only if it moved the size.
+    ///
+    /// A press at either clamp is not a new preference, and neither is a
+    /// Reset that is already at the baseline, so the file is not rewritten for
+    /// a press that changed nothing.
+    fn with_font_gesture(
+        &mut self,
+        window: &PixelWindow,
+        gesture: impl FnOnce(&mut ConTerminal, &PixelWindow),
+    ) {
+        let before = self
+            .active_session()
+            .ok()
+            .map(|session| session.font_size_logical);
+        if let Ok(session) = self.active_session_mut() {
+            gesture(session, window);
+        }
+        let after = self
+            .active_session()
+            .ok()
+            .map(|session| session.font_size_logical);
+        if before != after {
+            self.persist_config(window);
+        }
+    }
+
     fn handle_workspace_shortcut(
         &mut self,
         window: &PixelWindow,
@@ -1720,7 +1912,7 @@ impl ConApp {
         // now (a header control is a follow-up), and it is what lets the control
         // CLI reach the panel for machine verification.
         if text.eq_ignore_ascii_case("h") {
-            self.history_panel_open = !self.history_panel_open;
+            self.set_history_panel(!self.history_panel_open);
             self.apply_panel_width(window)?;
             self.mark_host_ui_full_and_repaint(window);
             return Ok(true);
@@ -1800,7 +1992,7 @@ impl ConApp {
                 return Ok(true);
             }
             ui::TreeHit::PanelToggle => {
-                self.history_panel_open = !self.history_panel_open;
+                self.set_history_panel(!self.history_panel_open);
                 self.apply_panel_width(window)?;
                 self.mark_host_ui_full_and_repaint(window);
                 return Ok(true);
@@ -2249,13 +2441,37 @@ impl ConApp {
         true
     }
 
+    /// The label of the tab the composer would send to, as the tab tree names
+    /// it — the node's own name, not the shell's changing OSC title.
+    ///
+    /// Recorded with each sent line so the history panel's rows can say which
+    /// tab they came from. Empty when no tab is open, which a row paints as
+    /// nothing rather than as a blank chip.
+    fn active_destination_label(&self) -> String {
+        let Some(id) = self.workspace.active() else {
+            return String::new();
+        };
+        let Some(node) = self.workspace.node(id) else {
+            return String::new();
+        };
+        let session = self.session_for(id);
+        host_paint::tree_row_name(
+            node.custom_title.as_deref(),
+            session.map(|terminal| terminal.program_label()),
+            node.title.as_str(),
+        )
+        .to_owned()
+    }
+
     fn submit_composer(&mut self) {
         let Some(input) = self.composer.take_submission() else {
             return;
         };
         // Remembered before delivery is attempted: a line that failed to send
-        // is exactly the one worth recalling.
-        self.composer.remember(&input);
+        // is exactly the one worth recalling. The destination travels with it
+        // so the history panel can label the row even after the tab is gone.
+        let destination = self.active_destination_label();
+        self.composer.remember(&input, &destination);
         let result = (|| {
             let session = self
                 .active_session_mut()
@@ -3270,6 +3486,27 @@ impl PixelWindowApplication for ConApp {
                 self.request_dirty_redraw(window);
                 return Ok(PixelWindowDirective::Continue);
             }
+            // The history panel owns the wheel while the pointer is over it,
+            // exactly as the sidebar does: a list that could not be scrolled
+            // would hide everything older than its own height.
+            if self.history_panel_open
+                && layout.panel.contains(
+                    (position.x * scale).max(0.0) as u32,
+                    (position.y * scale).max(0.0) as u32,
+                )
+            {
+                let rows = match delta {
+                    WheelDelta::Lines { y, .. } => minicon_core::numeric::round_f32(*y) as isize,
+                    WheelDelta::LogicalPixels { y, .. } => {
+                        minicon_core::numeric::round_f64(*y / ui::HISTORY_ROW_HEIGHT_DIP) as isize
+                    }
+                    _ => 0,
+                };
+                let capacity = layout.history_panel(scale).row_capacity;
+                self.scroll_history_panel(rows, capacity);
+                self.mark_host_ui_full_and_repaint(window);
+                return Ok(PixelWindowDirective::Continue);
+            }
         }
         // A composer mouse selection in progress owns pointer motion and the
         // left release, so a drag extends the selection instead of reaching the
@@ -3335,16 +3572,19 @@ impl PixelWindowApplication for ConApp {
                 let y = (position.y * scale).max(0.0) as u32;
                 match ui::history_hit(layout, x, y, scale) {
                     ui::HistoryHit::Close => {
-                        self.history_panel_open = false;
+                        self.set_history_panel(false);
                         self.apply_panel_width(window)?;
                         self.mark_host_ui_full_and_repaint(window);
                     }
                     ui::HistoryHit::Row(row) => {
                         let count = self.composer.history().len();
-                        if row < count {
-                            // Newest is shown first; the store is oldest-first,
-                            // so the row index counts back from the end.
-                            let index = count - 1 - row;
+                        // Newest is shown first and the store is oldest-first,
+                        // so the row index counts back from the end — and past
+                        // the scroll offset, or a click would recall a
+                        // different line than the one under the pointer.
+                        let offset =
+                            self.history_visible_offset(layout.history_panel(scale).row_capacity);
+                        if let Some(index) = count.checked_sub(1 + offset + row) {
                             self.composer.recall_entry(index);
                             self.composer.focused = false;
                             self.mark_host_ui_full_and_repaint(window);
@@ -3367,25 +3607,26 @@ impl PixelWindowApplication for ConApp {
                     ui::SettingsHit::Language(lang) => {
                         if self.ui_language != lang {
                             self.ui_language = lang;
+                            self.persist_config(window);
                             self.mark_host_ui_full_and_repaint(window);
                         }
                     }
                     ui::SettingsHit::FontDown => {
-                        if let Ok(session) = self.active_session_mut() {
+                        self.with_font_gesture(window, |session, window| {
                             session.zoom_font(window, false);
-                        }
+                        });
                         self.mark_host_ui_full_and_repaint(window);
                     }
                     ui::SettingsHit::FontReset => {
-                        if let Ok(session) = self.active_session_mut() {
+                        self.with_font_gesture(window, |session, window| {
                             session.reset_font(window);
-                        }
+                        });
                         self.mark_host_ui_full_and_repaint(window);
                     }
                     ui::SettingsHit::FontUp => {
-                        if let Ok(session) = self.active_session_mut() {
+                        self.with_font_gesture(window, |session, window| {
                             session.zoom_font(window, true);
-                        }
+                        });
                         self.mark_host_ui_full_and_repaint(window);
                     }
                     ui::SettingsHit::Theme(index) => {
@@ -3397,6 +3638,7 @@ impl PixelWindowApplication for ConApp {
                         if self.ui_theme != choice {
                             self.ui_theme = choice;
                             self.apply_theme_to_all_sessions();
+                            self.persist_config(window);
                             self.mark_host_ui_full_and_repaint(window);
                         }
                     }
@@ -5386,5 +5628,137 @@ mod tests {
         ] {
             assert_eq!(decode_child_exit_code(encode_child_exit_code(code)), code);
         }
+    }
+
+    // --- the preference file ({PREF}) -------------------------------------
+    //
+    // The product's first write path. These exercise the file, not the panel:
+    // the round trip through `write_config_to` and `config_from_bytes` is what
+    // makes "a choice is still in force at the next launch" a fact rather than
+    // an intention, and a fresh process reading the same bytes is exactly what
+    // the second half models.
+
+    /// A scratch directory unique to one test. `cargo test` runs these in
+    /// parallel threads, so a shared name would have them reading each other's
+    /// files.
+    fn preference_scratch(label: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("minicon-pref-{}-{label}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a scratch directory");
+        path
+    }
+
+    /// The outcome this version exists for: a choice written through the
+    /// writer comes back through the reader, by id, and the keys the panel does
+    /// not set are carried over rather than dropped.
+    #[test]
+    fn a_saved_choice_is_read_back_by_id_with_the_other_keys_intact() {
+        let directory = preference_scratch("round-trip");
+        let path = directory.join("minicon.json");
+        let saved = ConConfig {
+            font_size: Some(18.5),
+            cols: Some(120),
+            rows: Some(40),
+            theme: Some(theme::ThemeChoice::Paper),
+            language: Some(ui::UiLanguage::ChineseTraditional),
+        };
+        write_config_to(&path, &saved).expect("the preference is published");
+
+        // What a *fresh process* sees: the bytes on disk, decoded by the same
+        // reader startup uses — not the value we still hold in memory.
+        let bytes = minicon_platform::filesystem_read::read_bounded(&path, json::MAX_INPUT_BYTES)
+            .expect("the file exists");
+        let reloaded = config_from_bytes(&bytes);
+        assert_eq!(reloaded.font_size, Some(18.5));
+        assert_eq!(reloaded.cols, Some(120));
+        assert_eq!(reloaded.rows, Some(40));
+        assert_eq!(reloaded.theme, Some(theme::ThemeChoice::Paper));
+        assert_eq!(reloaded.language, Some(ui::UiLanguage::ChineseTraditional));
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A rewrite carries the keys the panel does not set. Reading the old file
+    /// and merging — rather than writing a fresh one — is what stops a theme
+    /// change from silently discarding the user's window geometry.
+    #[test]
+    fn a_hand_edited_key_survives_a_preference_change() {
+        let directory = preference_scratch("preserve");
+        let path = directory.join("minicon.json");
+        std::fs::write(&path, br#"{"font_size":20,"cols":132,"rows":50}"#).expect("seed the file");
+
+        let mut config = config_from_bytes(&std::fs::read(&path).expect("read"));
+        assert_eq!(config.cols, Some(132), "the hand edited geometry loaded");
+        config.theme = Some(theme::ThemeChoice::Docs);
+        write_config_to(&path, &config).expect("rewrite");
+
+        let reloaded = config_from_bytes(&std::fs::read(&path).expect("read"));
+        assert_eq!(reloaded.theme, Some(theme::ThemeChoice::Docs));
+        assert_eq!(reloaded.font_size, Some(20.0), "font_size was not dropped");
+        assert_eq!(reloaded.cols, Some(132), "geometry was not dropped");
+        assert_eq!(reloaded.rows, Some(50), "geometry was not dropped");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The safe-failure rule from the owner's own leaf text: an id this build
+    /// cannot read falls back to the default and must not cost the rest of the
+    /// file. A *malformed* file is the defaults entire, which is also a launch
+    /// rather than a refusal.
+    #[test]
+    fn an_unknown_id_falls_back_to_the_default_and_a_malformed_file_to_all_defaults() {
+        let unknown =
+            config_from_bytes(br#"{"theme":"chartreuse","language":"fr","font_size":18}"#);
+        assert_eq!(unknown.theme, None, "an id we do not ship is the default");
+        assert_eq!(unknown.language, None);
+        assert_eq!(
+            unknown.font_size,
+            Some(18.0),
+            "one unreadable id must not discard the rest of the file"
+        );
+
+        let malformed = config_from_bytes(br#"{"theme":3,"font_size":18}"#);
+        assert_eq!(malformed.font_size, None);
+        assert_eq!(malformed.theme, None);
+    }
+
+    /// The document is the shortest thing that says what was chosen: a key with
+    /// no value is absent, not `null`.
+    #[test]
+    fn the_written_document_omits_keys_that_were_never_set() {
+        let document = config_document(&ConConfig {
+            theme: Some(theme::ThemeChoice::Docs),
+            ..ConConfig::default()
+        });
+        let json::JsonValue::Object(fields) = document else {
+            panic!("the config document is an object");
+        };
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].0, "theme");
+    }
+
+    /// A write that cannot be published must leave the file it could not
+    /// replace untouched. Making the destination's parent a *file* is a failure
+    /// the atomic writer cannot rename around, and the pre-existing entry must
+    /// still be there afterwards.
+    #[test]
+    fn a_write_that_cannot_be_published_leaves_the_previous_file_alone() {
+        let directory = preference_scratch("failed-write");
+        let blocker = directory.join("not-a-directory");
+        std::fs::write(&blocker, b"occupied").expect("seed the blocker");
+        let path = blocker.join("minicon.json");
+
+        let result = write_config_to(
+            &path,
+            &ConConfig {
+                theme: Some(theme::ThemeChoice::Paper),
+                ..ConConfig::default()
+            },
+        );
+        assert!(result.is_err(), "the write was expected to fail");
+        assert_eq!(
+            std::fs::read(&blocker).expect("the blocker is still there"),
+            b"occupied"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }

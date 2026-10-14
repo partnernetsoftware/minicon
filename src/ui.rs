@@ -541,6 +541,24 @@ impl UiLanguage {
         }
     }
 
+    /// The language a stored [`Self::tag`] names, or `None` for an id this
+    /// build does not know.
+    ///
+    /// The inverse of `tag`, and what lets the chosen language be a stored id
+    /// rather than a display label: an id from a hand-edited file or a newer
+    /// build resolves to nothing, so the caller keeps its default and the
+    /// product still starts. A `match` rather than a table so adding a language
+    /// without teaching it here is a compile error, not a silent regression.
+    #[must_use]
+    pub fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "en" => Some(Self::English),
+            "zh-hans" => Some(Self::ChineseSimplified),
+            "zh-hant" => Some(Self::ChineseTraditional),
+            _ => None,
+        }
+    }
+
     /// The label painted on this language's own entry. Each is written in the
     /// language it selects: a switch labelled in the language you are leaving
     /// is unreadable to the person who needs it.
@@ -899,6 +917,41 @@ impl UiLanguage {
             Phase::Failed(failure) => self.update_failure_sentence(failure),
         }
     }
+
+    /// What pressing Restart costs, in this language.
+    ///
+    /// The Restart control is the first moment a user learns that taking the
+    /// new version costs them every open terminal, and the host already knows
+    /// the count, so the sentence names it rather than warning in the abstract.
+    /// One tab and N tabs read differently because a count of one is the case a
+    /// person actually sees, and the empty case is its own arm so nobody is
+    /// told "0 tabs are open" — a sentence that reads as a bug.
+    #[must_use]
+    pub fn restart_cost(self, tabs: usize) -> String {
+        match (self, tabs) {
+            (Self::English, 0) => "Restarting closes this window; no tabs are open.".to_owned(),
+            (Self::English, 1) => {
+                "Restarting closes 1 tab and stops its running command.".to_owned()
+            }
+            (Self::English, count) => {
+                format!("Restarting closes {count} tabs and stops their running commands.")
+            }
+            (Self::ChineseSimplified, 0) => "重启会关闭这个窗口；当前没有打开的标签页。".to_owned(),
+            (Self::ChineseSimplified, 1) => {
+                "重启会关闭 1 个标签页，并终止其中正在运行的命令。".to_owned()
+            }
+            (Self::ChineseSimplified, count) => {
+                format!("重启会关闭 {count} 个标签页，并终止其中正在运行的命令。")
+            }
+            (Self::ChineseTraditional, 0) => "重啟會關閉這個視窗；目前沒有開啟的分頁。".to_owned(),
+            (Self::ChineseTraditional, 1) => {
+                "重啟會關閉 1 個分頁，並終止其中正在執行的命令。".to_owned()
+            }
+            (Self::ChineseTraditional, count) => {
+                format!("重啟會關閉 {count} 個分頁，並終止其中正在執行的命令。")
+            }
+        }
+    }
 }
 
 pub fn tree_hit(
@@ -1051,10 +1104,12 @@ pub struct SettingsLayout {
     /// `--help` and the Update / Restart controls are not.
     pub shortcut_lines: u32,
     /// The Updates section: the row its label is anchored above, its three
-    /// controls, and its status line.
+    /// controls, its status line, and the line that states what a Restart
+    /// costs.
     pub updates_row: u32,
     pub update: [Rect; 3],
     pub updates_status_y: u32,
+    pub updates_cost_y: u32,
 }
 
 /// Where a pointer landed inside the settings panel. Theme is an index (0=Neutral
@@ -1137,8 +1192,12 @@ impl Layout {
             cell(2, updates_row),
         ];
         let updates_status_y = updates_row.saturating_add(row_h).saturating_add(gap);
+        // The cost line sits under the status line and above the shortcut list:
+        // it belongs to the Restart control, so it is read before the list that
+        // truncates on a short window.
+        let updates_cost_y = updates_status_y.saturating_add(line_h);
 
-        let shortcuts_label_y = updates_status_y.saturating_add(line_h);
+        let shortcuts_label_y = updates_cost_y.saturating_add(line_h);
         let shortcuts_y = shortcuts_label_y.saturating_add(label_h);
         // The panel is anchored under the header and may not spill past the
         // composer band, so the list takes what is left.
@@ -1171,6 +1230,7 @@ impl Layout {
             updates_row,
             update,
             updates_status_y,
+            updates_cost_y,
         }
     }
 
@@ -1308,6 +1368,21 @@ pub fn settings_hit(layout: Layout, x: u32, y: u32, scale: f64) -> SettingsHit {
 
 pub fn clamp_tree_scroll(offset: usize, item_count: usize, capacity: usize) -> usize {
     offset.min(item_count.saturating_sub(capacity.max(1)))
+}
+
+/// Clamp a history-panel scroll offset.
+///
+/// The offset counts rows **back from the newest entry**, so `0` shows the
+/// newest rows and the maximum is whatever leaves the oldest entry on the last
+/// visible row. A positive `delta` moves toward older entries, which is the
+/// direction a wheel-up reports; a delta that would run off either end stops
+/// there instead of wrapping, because a list that silently jumped would read as
+/// entries that went missing.
+#[must_use]
+pub fn clamp_history_scroll(offset: usize, delta: isize, entries: usize, capacity: usize) -> usize {
+    offset
+        .saturating_add_signed(delta)
+        .min(entries.saturating_sub(capacity))
 }
 
 pub fn scroll_tree(offset: usize, delta_rows: isize, item_count: usize, capacity: usize) -> usize {
@@ -1991,6 +2066,16 @@ mod tests {
                     s.shortcuts_y >= s.updates_status_y.saturating_add(line),
                     "the shortcut list overlaps the Updates section at scale {scale}"
                 );
+                // The cost line is the next line down, so it reads as the
+                // status line's continuation and never lands on the list.
+                assert!(
+                    s.updates_cost_y >= s.updates_status_y.saturating_add(line),
+                    "the Restart-cost line overlaps the status line at scale {scale}"
+                );
+                assert!(
+                    s.shortcuts_y >= s.updates_cost_y.saturating_add(line),
+                    "the shortcut list overlaps the Restart-cost line at scale {scale}"
+                );
                 // The Updates row leaves a full line above for its label, so
                 // the label cannot land on the theme swatches.
                 let swatches = s.theme[0];
@@ -2018,11 +2103,49 @@ mod tests {
                     s.updates_status_y.saturating_add(line) <= bottom,
                     "the Updates status line falls outside the panel at scale {scale}"
                 );
+                assert!(
+                    s.updates_cost_y.saturating_add(line) <= bottom,
+                    "the Restart-cost line falls outside the panel at scale {scale}"
+                );
                 for rect in s.language {
                     assert!(rect.y.saturating_add(rect.height) <= bottom);
                 }
             }
         }
+    }
+
+    /// The history panel's offset counts back from the newest entry, so zero is
+    /// the top of the list and the maximum leaves the oldest entry on the last
+    /// visible row. A list shorter than its capacity has nowhere to scroll, and
+    /// the ends are floors rather than loops: a list that jumped would read as
+    /// entries that went missing.
+    #[test]
+    fn the_history_scroll_stops_at_the_ends_and_never_lists_past_the_start() {
+        // Twelve entries in a five-row panel: seven rows of travel.
+        assert_eq!(clamp_history_scroll(0, 3, 12, 5), 3);
+        assert_eq!(clamp_history_scroll(3, -1, 12, 5), 2);
+        assert_eq!(
+            clamp_history_scroll(0, -1, 12, 5),
+            0,
+            "the newest is a floor"
+        );
+        assert_eq!(
+            clamp_history_scroll(7, 4, 12, 5),
+            7,
+            "the oldest is a floor"
+        );
+        assert_eq!(
+            clamp_history_scroll(99, 0, 12, 5),
+            7,
+            "a stale offset is clamped"
+        );
+        // A list that fits has no travel at all.
+        assert_eq!(clamp_history_scroll(0, 5, 3, 5), 0);
+        assert_eq!(
+            clamp_history_scroll(0, 5, 0, 5),
+            0,
+            "an empty list cannot scroll"
+        );
     }
 
     #[test]
@@ -3021,6 +3144,63 @@ mod tests {
         assert!(
             failed.contains("下载未能完成") && failed.contains("当前安装未受影响"),
             "the status is the failure sentence, in the panel's language: {failed}"
+        );
+    }
+
+    /// A stored language id must name exactly the language it was written from,
+    /// and an id this build does not ship must resolve to nothing rather than
+    /// to some other language. This is the invariant that keeps the tag table
+    /// and the `from_tag` table from drifting apart.
+    #[test]
+    fn from_tag_is_the_inverse_of_each_languages_tag() {
+        for language in [
+            UiLanguage::English,
+            UiLanguage::ChineseSimplified,
+            UiLanguage::ChineseTraditional,
+        ] {
+            assert_eq!(UiLanguage::from_tag(language.tag()), Some(language));
+        }
+        for unknown in ["", "EN", "en-US", "zh", "zh-hans ", "fr"] {
+            assert_eq!(UiLanguage::from_tag(unknown), None, "accepted {unknown:?}");
+        }
+    }
+
+    /// The Restart sentence names the real count and never a count that cannot
+    /// happen. Zero tabs is the case a person would read as a bug ("closes 0
+    /// tabs"), one tab is the case they actually meet, and both must differ
+    /// from the general form. Every language covers all three:
+    /// a language that dropped the zero arm would read as a machine.
+    #[test]
+    fn the_restart_sentence_states_the_real_count_and_never_zero_tabs() {
+        for language in [
+            UiLanguage::English,
+            UiLanguage::ChineseSimplified,
+            UiLanguage::ChineseTraditional,
+        ] {
+            let none = language.restart_cost(0);
+            let one = language.restart_cost(1);
+            let many = language.restart_cost(7);
+            assert!(
+                !none.contains('0'),
+                "a closed window must not say \"0 tabs\": {none}"
+            );
+            assert!(one.contains('1'), "one tab names its count: {one}");
+            assert!(many.contains('7'), "N tabs names its count: {many}");
+            assert_ne!(none, one);
+            assert_ne!(one, many);
+            assert_ne!(none, many);
+        }
+        assert!(
+            UiLanguage::English
+                .restart_cost(3)
+                .contains("running commands"),
+            "the sentence says a running command is stopped"
+        );
+        assert!(
+            UiLanguage::ChineseSimplified
+                .restart_cost(3)
+                .contains("正在运行"),
+            "the Chinese sentence says the same thing"
         );
     }
 }
