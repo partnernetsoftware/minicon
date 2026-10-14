@@ -108,9 +108,52 @@ that actually compiles the code:
 - **The whole macOS product** cannot be compiled here: `ring` needs an Apple C
   toolchain. The platform-side gate above plus the CI macOS cells are the
   evidence; that is a limit to state, not a gap to paper over.
+- **On Windows, building while a build of this tree is running** (recorded
+  2026-10-14). Cargo builds the `minicon` bin as a dependency of any integration
+  test that reads `CARGO_BIN_EXE_minicon` — `tests/minicon_alignment.rs` does —
+  and Windows refuses to *delete* a running executable, so a MiniCon left
+  running from `target\debug` makes the next `cargo test` die at `failed to
+  remove file target\debug\minicon.exe — 拒绝访问 (os error 5)` before a single
+  test starts. Renaming a running image is permitted, deleting it is not. The
+  gate is a target directory outside the clone:
+
+  ```sh
+  CARGO_TARGET_DIR=<dir outside the clone> cargo test --locked --test <name>
+  ```
+
+  This is **not** a toolchain or registry wall: `reg query …\Windows Kits\
+  Installed Roots` answers normally and the SDK `rc.exe` that `build.rs`'s
+  `winresource` step needs is present, so `cargo check/test/clippy
+  --all-targets` all compile and run on this host from a cold tree. An earlier
+  revision of `plan/plan-v0.2.8.md` mis-attributed this failure to a sandbox
+  `reg.exe` blacklist; that cause was wrong and is withdrawn.
+
+### One black-box gate that holds on a POSIX PTY, not on this host
+
+`minicon_blackbox::controlled_wheel_moves_the_real_scrollback_offset_up_then_down`
+fails on this Windows host and has failed on it for at least three releases:
+`plan/plan-repo-hygiene.md` records it against the pristine tree, and
+`prd/archive/v0.2.6-release-history.md` lists it as that release's one
+pre-existing local-gate failure. Re-checked 2026-10-14 by A/B — it fails both at
+the pre-0.2.8 commit `486cdd9` (viewport moves 2 lines) and on `main` (0–2), so
+it is **not** a property of the 0.2.8 scrollback change.
+
+What it actually is, measured rather than guessed: the journey prints 120 lines
+and then sends `send-wheel … --notches 5`; `scroll_by` clamps with
+`min(5, grid.scrollback.len())`, and on this host the live grid holds only 1–2
+rows of scrollback at that moment even though the configured capacity
+(`scrollback_len`) is 4000. 0.2.8 made this visible for the first time, because
+`max_scrollback` in the snapshot now reports the real depth; before that change
+it always read 4000 and so hid a wheel that had nothing to move.
+
+Why the live grid retains so little is **not established**. The leading
+hypothesis is that ConPTY repaints with absolute cursor addressing instead of
+emitting the linear newline stream a POSIX PTY produces, so far fewer rows pass
+through `Grid::scroll_up` and reach the scrollback — a hypothesis, not a
+finding. The test is left as-is: it is green on the Linux cells, where a real
+POSIX PTY drives it.
 
 ### Gates that compile a path but cannot exercise it
-
 A compiled path is not a working path. The same 0.2.7 release produced the
 opposite failure from the ones above: a path that *did* compile on the one host
 we can run, and still failed the moment it ran.
