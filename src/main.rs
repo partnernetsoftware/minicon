@@ -34,6 +34,7 @@ use cli::{ConArgs, offline_cli_exit, parse_args};
 #[cfg(test)]
 use cli::{FEATURES, status_text, usage_text};
 mod clipboard_image;
+mod clipboard_paste;
 mod clipboard_status;
 mod control;
 mod control_dispatch;
@@ -752,7 +753,7 @@ struct MouseReportOutcome {
 
 struct PendingClipboardPaste {
     target: workspace::TabId,
-    read: minicon_platform::clipboard::ClipboardTextRead,
+    read: clipboard_paste::PayloadRead,
     review: bool,
 }
 
@@ -820,22 +821,11 @@ fn composer_chord(key: &NormalizedKeyEvent) -> Option<keymap::Chord> {
     })
 }
 
-/// Composer paste content: clipboard text unchanged, or -- only when there is
-/// no text but the clipboard carries a recognized image type -- that image
-/// saved to a temp file and its path substituted as plain text (`F1`'s
-/// decided file-path fallback; see `src/clipboard_image.rs`). Text always
-/// wins so a copy that carries both text and an image representation (common
-/// on some hosts) keeps its existing paste behavior unchanged.
+/// Composer paste content, from the one owner the terminal content area also
+/// reads: clipboard text unchanged, else a clipboard image's temp-file
+/// absolute path, else nothing. See `src/clipboard_paste.rs`.
 fn composer_paste_text_or_image_path() -> Option<String> {
-    // A clipboard that holds only an image (no text representation) still
-    // answers a text read with `Ok("")` on some hosts rather than an error --
-    // an empty paste is indistinguishable from "no text", so it must not
-    // shadow the image fallback below.
-    match minicon_platform::clipboard::get_text(composer::PASTE_LIMIT_BYTES) {
-        Ok(text) if !text.is_empty() => return Some(text),
-        _ => {}
-    }
-    clipboard_image::image_paste_as_temp_file_path()
+    clipboard_paste::text_or_image_path(composer::PASTE_LIMIT_BYTES)
 }
 
 /// The review dialog's prompt, extended with a compact preview of what is about
@@ -994,6 +984,11 @@ fn ime_status_json(status: Option<&minicon_platform::ime::ImeStatus>) -> json::J
 
 impl ConApp {
     fn new(working_dir: Option<String>, control_endpoint: Option<String>) -> Self {
+        // A staged update is a session-scoped state, so anything named
+        // `*.update` beside the executable now is residue from a session that
+        // staged one and never swapped it. Clear it before anything else, so
+        // the README's "nothing left behind" holds one file later too.
+        update::clear_stale_staged(&std::env::current_exe().unwrap_or_default());
         let mut workspace = workspace::Workspace::default();
         let initial = workspace
             .add_root("terminal".to_owned())
@@ -2153,27 +2148,37 @@ impl ConApp {
     /// Never automatic. A restart drops every open terminal and ends the
     /// GUI-lifetime control endpoint, so it only ever happens because a user
     /// pressed Restart. The replaced executable is kept beside the new one so a
-    /// failed launch can be rolled back to by hand.
+    /// failed launch can be rolled back to.
     fn restart_into_staged(&mut self, window: &PixelWindow) {
         let destination = std::env::current_exe().unwrap_or_default();
         let staged = update::staged_path(&destination);
         match update::commit_swap(&staged, &destination) {
             Ok(backup) => {
                 if let Err(error) = std::process::Command::new(&destination).spawn() {
-                    // The new file is in place but would not launch; put the
-                    // old one back rather than leaving a product that starts
-                    // from nothing.
-                    let _ = update::commit_swap(&backup, &destination);
-                    self.update.apply(update::Event::Failed(format!(
-                        "the new copy would not start: {error}"
-                    )));
+                    // The new file is in place but would not launch. Put the old
+                    // one back with the one rename that does it, and say which
+                    // state the install is in either way: re-entering
+                    // `commit_swap` here used to delete the backup, install the
+                    // non-launchable file for good and report nothing
+                    // (`plan/plan-v0.2.8.md`, `{ROLLBACK}`).
+                    let failure = match update::rollback_swap(&backup, &destination) {
+                        Ok(()) => update::Failure::new(
+                            update::FailureKind::Launch,
+                            format!("the new copy would not start: {error}"),
+                        ),
+                        Err(rollback) => update::Failure::new(
+                            update::FailureKind::LaunchUnrestored,
+                            format!("the new copy would not start: {error}; and {rollback}"),
+                        ),
+                    };
+                    self.update.apply(update::Event::Failed(failure));
                     self.mark_host_ui_full_and_repaint(window);
                     return;
                 }
                 self.exit = true;
             }
-            Err(message) => {
-                self.update.apply(update::Event::Failed(message));
+            Err(failure) => {
+                self.update.apply(update::Event::Failed(failure));
                 self.mark_host_ui_full_and_repaint(window);
             }
         }
@@ -2643,13 +2648,11 @@ impl ConApp {
             .ok_or_else(|| format!("terminal @{} is unavailable", target.get()))?
             .ensure_pty_input_open()?;
         let waker = window.waker();
-        let read = minicon_platform::clipboard::read_text_async(
-            terminal_input::TERMINAL_PASTE_LIMIT_BYTES,
-            move || {
+        let read =
+            clipboard_paste::read_async(terminal_input::TERMINAL_PASTE_LIMIT_BYTES, move || {
                 let _ = waker.wake();
-            },
-        )
-        .map_err(|error| format!("clipboard read failed: {error}"))?;
+            })
+            .map_err(|error| format!("clipboard read failed: {error}"))?;
         self.pending_clipboard_paste = Some(PendingClipboardPaste {
             target,
             read,
@@ -2703,7 +2706,7 @@ impl ConApp {
             Some(pending) => pending.read.try_poll(),
             None => return,
         };
-        let minicon_platform::clipboard::ClipboardTextReadPoll::Ready(result) = poll else {
+        let clipboard_paste::PayloadPoll::Ready(result) = poll else {
             return;
         };
         let pending = self

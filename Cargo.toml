@@ -82,6 +82,11 @@ flate2 = "1"
 # that do not match what the release published. `sha2` is already in the graph
 # through `minicon-platform`.
 sha2 = { version = "0.11", default-features = false }
+# PNG encode for a pasted clipboard image. A Windows clipboard screenshot is a
+# DIB; writing it as a raw BMP is both huge (the model must read the file) and
+# headerless, so `src/clipboard_image.rs` re-encodes it to PNG. `png` is
+# already in the graph as the build script's icon decoder.
+png = "0.17"
 
 [dev-dependencies]
 minicon-platform = { path = "crates/minicon-platform", default-features = false, features = ["input-inject"] }

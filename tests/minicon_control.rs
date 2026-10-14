@@ -1959,6 +1959,152 @@ fn composer_paste_of_a_clipboard_image_inserts_its_temp_file_path() {
     let _ = fs::remove_file(path);
 }
 
+/// Windows counterpart to the X11 test above: an image on the clipboard,
+/// pasted into the composer, becomes the temp file's absolute path. It drives
+/// the same shared decision through the real Windows clipboard adapter (no X11
+/// server to stand up), and pins the two things this change is about: the
+/// pasted file is a **PNG** (not the headerless raw-DIB-BMP that used to be
+/// written), and the terminal surface no longer surfaces the old
+/// `clipboard unsupported: clipboard-unavailable` error for an image-only
+/// clipboard.
+#[cfg(windows)]
+#[test]
+fn composer_paste_of_a_clipboard_image_inserts_a_png_temp_path() {
+    /// A minimal 24bpp `BITMAPINFOHEADER` DIB, the shape a screenshot tool
+    /// leaves on the clipboard (rows padded to 4 bytes, bottom-up).
+    fn make_24bpp_dib(width: i32, height: i32) -> Vec<u8> {
+        let stride = (width as usize * 3).div_ceil(4) * 4;
+        let mut dib = vec![0u8; 40 + stride * height as usize];
+        dib[0..4].copy_from_slice(&40u32.to_le_bytes());
+        dib[4..8].copy_from_slice(&width.to_le_bytes());
+        dib[8..12].copy_from_slice(&height.to_le_bytes()); // bottom-up
+        dib[12..14].copy_from_slice(&1u16.to_le_bytes()); // planes
+        dib[14..16].copy_from_slice(&24u16.to_le_bytes()); // bpp
+        dib
+    }
+
+    minicon_platform::clipboard::set_type("CF_DIB", &make_24bpp_dib(2, 2))
+        .expect("seed the Windows clipboard with a DIB");
+
+    let binary = minicon_binary();
+    let endpoint = control_endpoint(&unique_suffix());
+    let child = Command::new(&binary)
+        .args(["--no-activate", "--control", &endpoint, "-e"])
+        .args(host_shell_args())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("start minicon GUI");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(unique_suffix()),
+    };
+    wait_until_ready_for(
+        &binary,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+
+    // Composer paste: focus the external input area, then Ctrl+V.
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+Shift+I"]);
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+V"]);
+
+    let snapshot = cli_json(&binary, &endpoint, &["ui-snapshot"]);
+    let path = snapshot["composer_text"]
+        .as_str()
+        .expect("composer_text must hold the pasted image path");
+    assert!(
+        path.ends_with(".png"),
+        "a pasted clipboard image must become a .png temp path, got {path:?}"
+    );
+    let bytes = fs::read(path)
+        .unwrap_or_else(|error| panic!("pasted path {path:?} must be readable: {error}"));
+    assert_eq!(
+        &bytes[..8],
+        b"\x89PNG\r\n\x1a\n",
+        "the temp file must be a real PNG, not a raw-DIB BMP"
+    );
+    let _ = fs::remove_file(path);
+
+    // Terminal paste: leave the composer, paste with the terminal focused. The
+    // reviewer opens (native, not drivable from the CLI), but the point is that
+    // the read no longer fails -- the old build surfaced
+    // `clipboard read failed: clipboard unsupported: clipboard-unavailable`.
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Escape"]);
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Ctrl+V"]);
+    let snapshot = cli_json(&binary, &endpoint, &["ui-snapshot"]);
+    assert!(
+        snapshot["terminal_clipboard_paste"]["error"].is_null(),
+        "an image-only clipboard must not error on terminal paste: {}",
+        snapshot["terminal_clipboard_paste"]
+    );
+}
+
+/// The content area's own scroll shortcut (`Shift+PageUp`) must page MiniCon's
+/// history. This is MiniCon's affordance, not the inner program's: whatever the
+/// tab runs, scrolling back is the host's job. Driven over the real UI key path
+/// (`send-ui-keys`), not the terminal-targeted control commands.
+#[cfg(windows)]
+#[test]
+fn scroll_shortcut_pages_minicon_history() {
+    let binary = minicon_binary();
+    let endpoint = control_endpoint(&unique_suffix());
+    let child = Command::new(&binary)
+        .args(["--no-activate", "--control", &endpoint, "-e"])
+        .args(host_shell_args())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("start minicon GUI");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(unique_suffix()),
+    };
+    let listed = wait_until_ready_for(
+        &binary,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+    let root = tab_id(&listed["tabs"][0]["id"]).to_owned();
+
+    cli_json(
+        &binary,
+        &endpoint,
+        &[
+            "send-text",
+            "--target",
+            root.as_str(),
+            "for /l %i in (1,1,120) do @echo PAGE_LINE_%i\r",
+        ],
+    );
+    cli_json(
+        &binary,
+        &endpoint,
+        &[
+            "wait-text",
+            "--target",
+            root.as_str(),
+            "--timeout-ms",
+            "20000",
+            "PAGE_LINE_120",
+        ],
+    );
+
+    cli_json(&binary, &endpoint, &["send-ui-keys", "Shift+PageUp"]);
+    let pane = cli_text(
+        &binary,
+        &endpoint,
+        &["capture-pane", "--target", root.as_str()],
+    );
+    let top = pane.lines().next().unwrap_or("").to_owned();
+    assert!(
+        top.contains("PAGE_LINE_") && !top.contains("PAGE_LINE_120"),
+        "Shift+PageUp must page the terminal's own history, top line was {top:?}"
+    );
+}
+
 /// The paste and its Enter must reach the child in two separate `read()`s.
 /// The raw-application test above reads fixed byte counts with `dd`, which
 /// pins the bytes but not the boundary; this one lets the child read as much

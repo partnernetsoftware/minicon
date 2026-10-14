@@ -30,6 +30,29 @@ doc when it is picked up; delete its line here once it ships or is decided
 │      only sanctioned surface. Once a vt100-side getter lands and MiniCon
 │      pins it, this leaf's semantics decision (cross-screen stitching,
 │      viewport restore) is still separate design work.
+│      **Progress 2026-10-14: the accessor landed, and the premise above is
+│      wrong on inspection.** The fork is *in* this checkout:
+│      `Cargo.toml` pins it with `[patch.crates-io] vt100 = { path =
+│      "third_party/vt100" }`, so editing it is the sanctioned surface, not an
+│      out-of-scope repo. Added `Grid::scrollback_depth()` /
+│      `Screen::scrollback_depth()` (the `VecDeque`'s live length) beside the
+│      capacity-returning `scrollback_len()`, and `ConTerminal::scrollback_bounds`
+│      (`src/terminal.rs`) now bounds the scrollbar and reports
+│      `max_scrollback` from the **depth**. That is what the tab's own scroll
+│      affordance needed: bounding against capacity drew a thumb over
+│      thousands of phantom rows, so dragging it looked inert. `scrollback_len()`
+│      keeps its capacity meaning for its other caller (`Screen::ris`).
+│      Evidence: `scrollback_bounds_reports_the_real_depth_not_the_capacity`
+│      (`src/terminal.rs`) and the GUI test `scroll_shortcut_pages_minicon_history`
+│      in `tests/minicon_control.rs`, which drives the real UI key path.
+│      **Still open in this leaf:** the semantics decision above, and the one
+│      place MiniCon still yields its scroll affordances to the app -- the
+│      alternate screen, where `scrollback_bounds` returns `(0, 0)` and
+│      `set_scrollback` is a no-op, so the tab's scrollbar and scroll keys do
+│      nothing while a full-screen TUI owns the screen. On Windows that branch
+│      is effectively unreachable, because ConPTY's console layer consumes the
+│      private mode itself (a real program's `\x1b[?1049h` was never observed
+│      by the parser in a headless probe), so a Windows tab keeps its history.
 ├── C3 box-drawing glyphs from cell geometry (Consolas, 1 px gap at 12 px)
 │      claimed by `plan/archive/plan-v0.2.2.md`'s `{UI}` leaf, still `BLOCKED` there —
 │      needs a real Windows display host with Consolas installed (this is
@@ -102,7 +125,11 @@ doc when it is picked up; delete its line here once it ships or is decided
        `agenterm-platform` clipboard adapter (not a mock) —
        `composer_paste_of_a_clipboard_image_inserts_its_temp_file_path` in
        `tests/minicon_control.rs`; macOS/Windows share the same code path
-       but are unverified from this session. **Still open, not started:**
+       but were unverified from that session — **and this is the sentence that
+       hid the Windows DIB defect:** a shared code path is not a valid file on
+       Windows, and the raw-DIB write went unnoticed behind it. Windows is now
+       covered by a real GUI end-to-end test, not only format-layer units (see
+       **Progress 2026-10-13** below). **Still open, not started:**
        the thumbnail-chip UI — a new non-text draft-segment type in
        `ComposerState` (`crates/minicon-core/src/composer.rs`) rendered in
        `src/host_paint.rs`, so a pasted image shows as a chip instead of a
@@ -135,6 +162,53 @@ doc when it is picked up; delete its line here once it ships or is decided
        likely the right first cut given this widget's invariant density and
        that no host in this session has a real screen a human can review the
        result on; do not attempt (b) without that kind of review available.
+       **Progress 2026-10-13:** two gaps closed, both MiniCon-owned; no
+       platform-crate change. (1) **The terminal content area now falls back
+       to an image path the same way the composer does.** Before this, only
+       the composer had the fallback; a paste in a terminal pane whose
+       clipboard held an image and no text hit the terminal's text-only read
+       and surfaced `clipboard read failed: clipboard unsupported:
+       clipboard-unavailable` (the Windows path when the terminal had focus;
+       Ctrl+V on a focused terminal triggers it). Both surfaces now share
+       **one decision**, owned solely by the new module `src/clipboard_paste.rs`
+       (`text_or_image_path`): text wins when the clipboard holds non-empty
+       text, otherwise a clipboard image's temp-file absolute path, otherwise
+       nothing. The composer's call sites route through it
+       (`composer_paste_text_or_image_path` in `src/main.rs`) and the terminal
+       reads through its named background thread, never the GUI event loop —
+       `read_async`/`PayloadRead::try_poll`, drained by
+       `request_terminal_clipboard_paste`/`drain_terminal_clipboard_paste`
+       (`src/main.rs`) — preserving the constraint
+       `prd/PRD_02_25_con_workspace.md`'s "Selection and clipboard" already
+       states ("terminal clipboard reads never block the GUI thread"). Keeping
+       the decision in one module is what stops the two call sites from
+       drifting apart again, which is how the terminal came to lack the
+       composer's fallback in the first place. (2) **A pasted image is now
+       saved as PNG, not BMP.** The clipboard's `CF_DIB`/`CF_DIBV5` are bare
+       DIBs with no 14-byte `BITMAPFILEHEADER`, and `src/clipboard_image.rs`
+       used to write those raw bytes straight to a `.bmp` -- an unopenable
+       file, and even once header-wrapped a BMP far too large for the
+       downstream model to read. It now prefers a clipboard's own registered
+       `PNG` format when one is present (snipping tools, browsers and Office
+       register it), and otherwise decodes the DIB and re-encodes PNG
+       (8/24/32bpp `BI_RGB`, palette, either row order); only if that decode
+       fails does it fall back to the wrapped BMP. Self-contained types (macOS
+       `public.png`, X11/Linux `image/png`, `public.jpeg`) are written
+       unchanged.
+       **Evidence, 2026-10-13 -- two layers, both real.** Format layer: unit
+       tests in `src/clipboard_image.rs` (the DIB->PNG output is decoded back
+       with `png` and its pixels asserted). GUI layer, and this is the one the
+       "shared code path" sentence above used to lack:
+       `composer_paste_of_a_clipboard_image_inserts_a_png_temp_path` in
+       `tests/minicon_control.rs` (`#[cfg(windows)]`) seeds the real Windows
+       clipboard with a DIB, drives a real `minicon` GUI child over the
+       control CLI (`send-ui-keys Ctrl+Shift+I`, then `Ctrl+V`) and asserts
+       `ui-snapshot`'s `composer_text` is a `.png` temp path whose bytes carry
+       the PNG signature; it also asserts a terminal paste of the same
+       image-only clipboard leaves `terminal_clipboard_paste.error` null,
+       where the old build showed the red `clipboard unsupported:
+       clipboard-unavailable`. The thumbnail-chip UI (the scoping note above)
+       remains the open part of F1.
 └── F2 true headless render — screenshot/UI events with no window at all,
        not started, not owner-scoped, 2026-09-27. Full writeup, evidence and
        shape are owned in `prd/PRD_02_26_con_control_cli.md`'s "Transport and
