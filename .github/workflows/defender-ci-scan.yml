@@ -35,7 +35,18 @@ concurrency:
 
 jobs:
   scan:
-    runs-on: windows-2025
+    # 2026-10-14 (0.2.9 chain): four consecutive fresh windows-2025 VMs all
+    # failed `Update-MpSignature` with "The remote procedure call failed"
+    # (runs 38542540642 attempts 1-4, 09:27-09:56 UTC) while the same image
+    # had succeeded at 04:36 UTC for the 0.2.8 scan -- the Defender update
+    # path on that image became deterministically broken mid-day. windows-2022
+    # is the same kind of GitHub-hosted Windows court (the reputation skill's
+    # "any ISA is an equivalent court" rule; same MpCmdRun.exe -ScanType 3
+    # static scan, bytes and assertions unchanged). Infra-only edit: the
+    # exact-source bind deliberately tolerates workflow-only drift
+    # (scripts/product-source-hash.sh EXCLUDE_RE), so the sealed 0.2.9
+    # Candidate and its source_sha stay valid without a re-run upstream.
+    runs-on: windows-2022
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
