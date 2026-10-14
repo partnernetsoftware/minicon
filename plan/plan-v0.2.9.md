@@ -49,11 +49,12 @@ owner of the platform-crate boundary the consolidation track touches).
 **Status: `[-]` the product track is landed except `{SCROLL-DAMAGE}`, which is
 blocked on its spec's own findings; the consolidation track has not started.**
 
-Landed 2026-10-14 (see "Landed" below): `{PREF}`, `{RESTART}`, `{HIST}`.
+Landed 2026-10-14 (see "Landed" below): `{PREF}`, `{RESTART}`, `{HIST}` —
+committed as `bd14eec` on `main` and pushed.
 `{SCROLL-DAMAGE}`'s spec is written — `plan/plan-scroll-damage.md` — and it found
 that the leaf cannot deliver its own outcome as scoped; what it changes and what
-blocks it is recorded there and in "GATE status". Nothing on the consolidation
-track has been started.
+blocks it is recorded there and in "GATE status", and its two owner questions are
+open decision 5. Nothing on the consolidation track has been started.
 
 ### Order, and why
 
@@ -354,8 +355,9 @@ flowchart TB
 
 ## GATE status
 
-**Nothing has been implemented; no gate has been run for this version.** The
-local gate this host can run, and the command for each, is unchanged from
+**The product track is landed and gated; the run is below. The consolidation
+track has run no gate, because none of it is written.** The local gate this host
+can run, and the command for each, is unchanged from
 `plan/archive/plan-v0.2.8.md` and `prd/PRD_02_32_dev_loop_crosscheck.md`:
 
 - `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`,
@@ -367,6 +369,9 @@ local gate this host can run, and the command for each, is unchanged from
   noted; `{SCROLL-DAMAGE}`'s on-screen proof needs a display.
 
 ### Run for the landed leaves (2026-10-14, this Windows host)
+
+Committed as `bd14eec` on `main` (13 files, +1170/-108), pushed. Every row below
+is that commit's tree, not a working copy.
 
 | Command | Result |
 |---|---|
