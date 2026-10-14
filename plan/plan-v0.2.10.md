@@ -143,18 +143,33 @@ flowchart TB
 
 ## GATE status
 
-- **{GATE-FORK} [v]** — landed `e566635`; fork suite 11/0 measured on the
-  Windows host from a cold external target dir before any contract change.
-- **{SCROLL-DAMAGE} [-]** — code landed `7f21e48` (fork contract + grid
-  producers + `src/terminal.rs` consumer + fork tests rewritten for the new
-  contract, incl. an extended oracle that captures `scrollback_depth`); fork
-  suite **12 passed / 0 failed**. The minicon bin test leg — which contains
-  the new consumer test `scroll_damage_marks_rows_and_scrollbar_track_not_full`
-  in `src/terminal.rs` — is **written but unrun**: see the handoff below.
-- **{AMPLIFIER-W} [-]** — code landed `ad00f39`; acceptance journey not run.
-- **{AMPLIFIER-T} [-]** — deferred to 0.2.11, design note above.
+Local gate on the Windows development host, run in a `CARGO_TARGET_DIR`
+outside the clone (`D:/tmp/mc-target`), 2026-10-14 after the owner lifted
+the harness's `reg.exe` blacklist that had blocked the bin build:
 
-## Handoff 2026-10-14
+| Command | Result |
+| --- | --- |
+| `cargo fmt --check` | clean |
+| `cargo clippy --locked --all-targets -- -D warnings` | clean (exit 0; pre-existing crate warnings only in stdout, none denied) |
+| `cargo test --locked -p minicon-core` | 105 passed / 0 failed |
+| `cargo test --locked --bin minicon` | **451 passed / 0 failed / 1 ignored** (was 450; the new consumer test is in) |
+| `cargo test --locked --test minicon_alignment` | 15 passed / 0 failed (after 1cdd7b1 restored the lint-guard anchor) |
+| fork suite (`--manifest-path third_party/vt100/Cargo.toml --lib`) | 12 passed / 0 failed |
+| `cargo test --locked --bin minicon -- --ignored update::tests::the_real_release_api_still_parses` | 1 passed |
+| `./scripts/selftest.sh` | **2 FAIL, pre-existing, unrelated**: six-grid cloud publish selftests reject Windows drive prefixes in safe-delete; filed below |
+
+Not run, and not claimed: six-cell qualification (needs a macOS host or
+CI `minicon-com.yml`), and the {AMPLIFIER-W} display journey (below).
+
+## Handoff 2026-10-14 (superseded the same evening)
+
+> **Status: superseded.** The owner lifted the harness blacklist (removed
+> `reg.exe` from Security Center → Command Security) minutes after the
+> handoff was written; the same session then ran the full local gate
+> (table above) and continues to the display journey. The record below is
+> kept verbatim for the incident's lessons: an agent-session sandbox limit
+> presented as a hard wall is a question for the owner, not a stopping
+> point, and the handoff doc itself became obsolete within the hour.
 
 The handing-off agent's session hit a host-environment wall: the WorkBuddy
 harness's own Security Center → Command Security → **program blacklist**
