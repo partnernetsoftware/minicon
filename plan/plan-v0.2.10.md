@@ -162,6 +162,13 @@ flowchart TB
     R1["R1 runs-on re-pin<br/>deadline 2026-10-19"] -. outside the version .-> OUT
 ```
 
+## Outcome
+
+**[v] Delivered — v0.2.10 published 2026-10-14 16:19:42 UTC** (source
+`a6032a7`, chain and verification in `prd/archive/v0.2.10-release-history.md`).
+All four leaves closed or explicitly deferred with owner-visible notes;
+{AMPLIFIER-T} carries to 0.2.11 per its design note above.
+
 ## GATE status
 
 Local gate on the Windows development host, run in a `CARGO_TARGET_DIR`
