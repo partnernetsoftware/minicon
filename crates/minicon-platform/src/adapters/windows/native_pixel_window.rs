@@ -1974,19 +1974,6 @@ fn paint(state: &mut HostState, hwnd: HWND) -> Result<(), PixelWindowError> {
         else {
             return Ok(());
         };
-        let info = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: metrics.physical_width as i32,
-                // Negative height means top-down DIB: source Y equals client Y.
-                biHeight: -(metrics.physical_height as i32),
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB,
-                ..unsafe { mem::zeroed() }
-            },
-            ..unsafe { mem::zeroed() }
-        };
         let source = geometry.source;
         let destination = geometry.destination;
         let (region, requested_pixels, _) = present_pixels_for_geometry(
@@ -1995,6 +1982,49 @@ fn paint(state: &mut HostState, hwnd: HWND) -> Result<(), PixelWindowError> {
             metrics.physical_height,
             0,
         );
+        // GDI's StretchDIBits cannot be trusted with a source rectangle whose
+        // top is not the DIB's first scanline. Measured on this host
+        // (windows-10, 0.2.9-era driver): a request for the 345-row sub-rect
+        // starting at y=216 returned 561 — the full DIB height — and the
+        // screen received DIB rows counted from the origin, so every partial
+        // present whose update region started below y=0 blotted the window
+        // and then failed `validate_stretch_copy`. The Failed outcome
+        // invalidated the frame and forced the next one full: the
+        // corrupt-partial, repair-full cycle the owner reported as flashing
+        // (总是感觉闪屏). Presents whose source started at y=0 survived by
+        // coincidence — the mis-read rows land on the same destination rows,
+        // so the corruption is invisible. The documented-safe form offsets
+        // the bit pointer to the source origin and asks for a zero-origin
+        // source rect; the DIB stride (biWidth) is unchanged, so GDI still
+        // walks full-width rows from the offset start.
+        // The header describes the sub-DIB GDI is asked to read: full stride
+        // (biWidth) but only the exposed rows (biHeight), with the bit pointer
+        // advanced to the first exposed row and column. GDI therefore sees a
+        // self-consistent top-down DIB whose full extent is exactly the
+        // request — the shape it handles correctly — instead of a sub-rect
+        // request against the whole-window header, which is where the quirk
+        // above lives.
+        let stride = metrics.physical_width as usize;
+        let exposed_height = source.bottom - source.top;
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: metrics.physical_width as i32,
+                biHeight: -exposed_height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                ..unsafe { mem::zeroed() }
+            },
+            ..unsafe { mem::zeroed() }
+        };
+        let source_bits = unsafe {
+            state
+                .pixels
+                .as_ptr()
+                .add(source.top as usize * stride + source.left as usize)
+                .cast()
+        };
         let started = Instant::now();
         let copied = unsafe {
             StretchDIBits(
@@ -2003,11 +2033,11 @@ fn paint(state: &mut HostState, hwnd: HWND) -> Result<(), PixelWindowError> {
                 destination.top,
                 destination.right - destination.left,
                 destination.bottom - destination.top,
-                source.left,
-                source.top,
+                0,
+                0,
                 source.right - source.left,
                 source.bottom - source.top,
-                state.pixels.as_ptr().cast(),
+                source_bits,
                 &info,
                 DIB_RGB_COLORS,
                 SRCCOPY,
