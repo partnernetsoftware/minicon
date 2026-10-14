@@ -40,8 +40,18 @@ case "$mode" in
   # test module compiles and runs nothing, and an unused `Result` hides a
   # failing setup, so the test gate treats both as errors. Passed per
   # invocation rather than through `RUSTFLAGS` so the build cache stays valid.
-  test) cargo test --locked --workspace \
-    --config 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]' \
-    "$@" ;;
+  #
+  # The vendored vt100 fork is a `[patch.crates-io]` path, deliberately not a
+  # workspace member, so `--workspace` never reaches its damage oracle
+  # (`assert_damage_covers`). The gate therefore also runs the fork's own
+  # suite from its own manifest and lock, scoped to `--lib`: the doctest step
+  # needs a rustc-spawning environment the gate does not require, and the
+  # oracle under guard lives in the library. plan-v0.2.10 {GATE-FORK}.
+  test)
+    cargo test --locked --workspace \
+      --config 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]' \
+      "$@"
+    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --lib "$@"
+    ;;
   *) echo "usage: scripts/build.sh [release|dev|check|test] [cargo arguments...]" >&2; exit 2 ;;
 esac
