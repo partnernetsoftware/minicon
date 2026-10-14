@@ -2370,7 +2370,7 @@ the local host.** The local host only bumps the version, commits, pushes
 | 1. `minicon-com.yml` `{com}` | CI (one `macos-15` job, then six native runners) | cross-compiles and packs all six cells unsigned |
 | 2. `company-signing.yml` + `macos-signing.yml` | CI, in parallel | Authenticode, and Developer ID/notarize/staple |
 | 3. `candidate.yml` `{cand}` | CI | seals the exact signed bytes into an immutable Candidate, binds `source_sha` |
-| 4. `defender-ci-scan.yml` | CI `windows-2025` | real Defender scan of the Candidate-manifest bytes |
+| 4. `defender-ci-scan.yml` | CI, host pinned by the workflow (`windows-2022` since 2026-10-14; `windows-2025` before) | real Defender scan of the Candidate-manifest bytes |
 | 5. `reputation.yml` | CI | re-verifies the qualification against the exact Candidate |
 | 6. `release.yml` | CI | dry-run, then human-authorized Promotion — no rebuild |
 
@@ -2445,7 +2445,7 @@ file below is on the routine v0.2.x path -- that's noted per row.
 | file | role |
 | --- | --- |
 | `.github/workflows/candidate.yml` | seals the exact signed bytes into an immutable Candidate, binds `source_sha` |
-| `.github/workflows/defender-ci-scan.yml` | CI-native Defender scan on a `windows-2025` runner, default reputation path (see the pipeline tree below) |
+| `.github/workflows/defender-ci-scan.yml` | CI-native Defender scan on a GitHub-hosted Windows runner (host pinned by the workflow file itself — the single authority; `windows-2022` since 2026-10-14), default reputation path (see the pipeline tree below) |
 | `.github/workflows/reputation.yml` | re-verifies the qualification against the exact Candidate, produces `reputation_run_id` |
 | `.github/workflows/release.yml` | dry-run verification, then human-authorized Promotion of the sealed bytes -- no rebuild |
 | `scripts/ci-release.sh` | thin `gh workflow run` wrappers for candidate/reputation/release only (not signing); every subcommand hardcodes `--ref main`, so it cannot target a pinned `candidate-src-<v>` branch -- named as `{RELTOOL}`#6 in `plan/archive/plan-v0.2.3.md` |
@@ -2513,10 +2513,14 @@ implied by this probe passing.
 
 As of 2026-09-24, the Defender scan row above has itself moved off `utm-court`
 for the routine release path: `.github/workflows/defender-ci-scan.yml` scans
-the exact Candidate's reputation-scoped assets on a GitHub-hosted
-`windows-2025` runner's own built-in Defender and produces the same
+the exact Candidate's reputation-scoped assets on a GitHub-hosted Windows
+runner's own built-in Defender and produces the same
 `minicon-reputation-qualification.json` that `reputation.yml`'s
-`qualification_base64` input expects. `utm-court` remains the fallback for
+`qualification_base64` input expects. The host label is owned by the workflow
+file, not here: `windows-2025` from 0.1.25 through 0.2.9, `windows-2022` from
+2026-10-14 (`7f14757`) after the 2025 image's Defender signature-update path
+broke mid-day — the incident and its recovery are recorded in
+`prd/archive/v0.2.9-release-history.md`. `utm-court` remains the fallback for
 legacy images, offline work and long interactive debugging.
 
 ### Release pipeline tree — CI-hosted Defender (default candidate, 2026-09-24)
@@ -2545,7 +2549,7 @@ used).
 │   └── binds exact source_sha, seals the signed bytes into
 │       candidate-manifest.json (the reputation_assets it names are what
 │       gets scanned next)
-├── defender-ci-scan.yml {def} @host=windows-2025 ->cand #decision default path
+├── defender-ci-scan.yml {def} @host=workflow-pinned ->cand #decision default path; windows-2022 since 2026-10-14 (7f14757)
 │   │   @time=~1min (0.2.3 run 36400447096; 0.2.4 run 38029966037)
 │   ├── extract sha256-checked reputation_assets from the Candidate manifest
 │   ├── Update-MpSignature, then MpCmdRun.exe -Scan -ScanType 3 per asset

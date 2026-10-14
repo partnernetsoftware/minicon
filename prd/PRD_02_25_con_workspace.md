@@ -245,7 +245,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   ("closes 0 tabs"), one tab is the case they actually meet, and N is the general
   form — all three differ, in all three languages. Non-goal, unchanged: making
   Restart preserve sessions, a grace period, or a "save your work" dialog. See
-  [`plan/plan-v0.2.9.md`](../plan/plan-v0.2.9.md) leaf `{RESTART}`.
+  [`plan/archive/plan-v0.2.9.md`](../plan/archive/plan-v0.2.9.md) leaf `{RESTART}`.
 - [v] the update check names its **TLS provider** explicitly (0.2.7). `ureq`
   chooses its provider at *runtime* and defaults to Rustls ("the highest chance
   of being enabled"), while this crate enables exactly one per host (Unix
@@ -865,7 +865,7 @@ Concretely:
   reason not to persist; a preference does not have a reason not to. Also
   deliberately unchanged: the update phase (`update` is a fact about this process,
   not a preference), and any key the panel does not set.
-  See [`plan/plan-v0.2.9.md`](../plan/plan-v0.2.9.md) leaf `{PREF}`.
+  See [`plan/archive/plan-v0.2.9.md`](../plan/archive/plan-v0.2.9.md) leaf `{PREF}`.
 
 ## Native adoption gate
 

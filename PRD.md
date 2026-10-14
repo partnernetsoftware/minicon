@@ -45,9 +45,10 @@ MiniCon — one-file local terminal
 │       ├── GUI-lifetime endpoint, bounded protocol, waits, snapshots and PNG
 │       └── prd/PRD_02_26_con_control_cli.md
 ├── Delivery and portability
-│   ├── [-] v0.2.9 in progress — settings that survive a restart +
-│   │   a behaviour-preserving consolidation of the largest modules
-│   │   ├── plan/plan-v0.2.9.md
+│   ├── [v] v0.2.9 released — settings that survive a restart (first write path) +
+│   │   restart cost + history label and scroll
+│   │   ├── plan/archive/plan-v0.2.9.md
+│   │   ├── prd/archive/v0.2.9-release-history.md
 │   │   └── plan/plan-scroll-damage.md
 │   ├── [v] v0.2.8 released — an update can no longer brick an install + clipboard image paste + scrollbar scale
 │   │   ├── plan/archive/plan-v0.2.8.md
@@ -236,7 +237,7 @@ flowchart LR
         R026["v0.2.6 released<br/>right-side collapsible sent-history panel + header toggles"]
         R027["v0.2.7 released<br/>manual check-for-updates (#4) · window-icon parity on Windows/X11"]
         R028["v0.2.8 released<br/>update path can no longer brick an install · clipboard image paste · scrollbar scale"]
-        R029["v0.2.9 in progress<br/>settings that survive a restart · landed: preferences, restart cost, history label+scroll · flashing fix spec'd, blocked"]
+        R029["v0.2.9 released<br/>settings that survive a restart (first write path) · restart cost · history label+scroll · flashing fix spec'd, deferred"]
         KEEP["rejected Linux Candidate<br/>repair transitive runtime"]
     end
     subgraph F["Future, dependency-gated"]
@@ -261,7 +262,7 @@ flowchart LR
     C15 -. rejected precursor .-> KEEP
     C16 --> C17 --> SR9 --> R110 --> R111 --> R112 --> R113 --> R114 --> R115 --> R116 --> R117 --> R118 --> R119
     R119 --> R120 --> R121 --> R122 --> R123 --> R126 --> R020 --> R021 --> R022 --> R023 --> R024 --> R025 --> R026 --> R027 --> R028
-    R028 -. planned .-> R029
+    R028 --> R029
     SP -. declined .-> SI
     SI --> SV -->|Completed| SC
     SC -->|first exact signed run| SR9
@@ -302,7 +303,7 @@ flowchart LR
 
 ## Current frontier
 
-- [v] **v0.2.7 was the previous public release (2026-10-13).** Manual
+- [v] **v0.2.7 released (2026-10-13).** Manual
   check-for-updates (GitHub #4) — the product's first outbound network call and
   first self-modifying behaviour — plus window-icon parity on Windows and X11.
   macOS keeps the icon its `.app` carries; the runtime path for the bare CLI
@@ -312,7 +313,7 @@ flowchart LR
   run ids in `prd/archive/v0.2.7-release-history.md`. Behaviour
   `prd/PRD_02_25_con_workspace.md`, boundary amendment
   `prd/PRD_02_23_minicon.md`.
-- [v] **v0.2.8 is the latest public release (2026-10-14).** It closes the four
+- [v] **v0.2.8 was the previous public release (2026-10-14).** It closes the four
   defects an independent security review found **inside the 0.2.7 update path
   already shipped to users** — a Unix in-place update installing a
   non-executable binary (`{EXECBIT}`), the failed-launch rollback deleting the
@@ -329,14 +330,18 @@ flowchart LR
   `prd/archive/v0.2.8-release-history.md`. Behaviour
   `prd/PRD_02_25_con_workspace.md`, budget record
   `prd/PRD_02_27_con_delivery.md` "Artifact budget".
-- [-] **v0.2.9 is in progress — planned in `plan/plan-v0.2.9.md`.** Its
+- [v] **v0.2.9 is the latest public release (2026-10-14).** Its
   outcome: a choice made in the settings panel (theme, language, text size) is
   still in force at the next launch, kept in the same hand-editable
   `minicon.json` the product already reads — `{PREF}`, the first write path the
-  product has ever had. **Landed 2026-10-14, with `{RESTART}` (the panel states
+  product has ever had. **Also in the release: `{RESTART}` (the panel states
   the tab count a Restart costs, in three languages, published as
   `update.restart_cost`) and `{HIST}` (each history row carries the tab it was
-  sent to, and the list scrolls past its own height).** The reported "flashing"
+  sent to, and the list scrolls past its own height).** Source `e7b36a7`,
+  chain run ids (including the Defender court's four-attempt Microsoft-side
+  signature-update outage and its recovery) in
+  `prd/archive/v0.2.9-release-history.md`, plan
+  `plan/archive/plan-v0.2.9.md`. The reported "flashing"
   is filed as `{SCROLL-DAMAGE}`, and its spec —
   `plan/plan-scroll-damage.md`, written 2026-10-14 — found that the leaf as
   scoped **cannot** deliver the reported outcome: the vendored `vt100`'s damage

@@ -5,7 +5,7 @@ the leaf changes a **vendored crate's contract** that `src/terminal.rs` consumes
 and because writing it turned up two facts that make the leaf's stated evidence
 unreachable as-is.
 
-Read with: `plan/plan-v0.2.9.md` (the leaf), `prd/PRD_02_24_con_terminal.md` (the
+Read with: `plan/archive/plan-v0.2.9.md` (the leaf), `prd/PRD_02_24_con_terminal.md` (the
 owner), `src/terminal.rs` (the consumer), `third_party/vt100/src/damage.rs` (the
 contract), `third_party/vt100/src/grid.rs` (the two producers).
 

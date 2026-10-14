@@ -37,7 +37,7 @@ release plan; version sequencing lives in `plan/archive/plan-v0.2.6.md`.
   comment above it already carries the fact, so nothing was lost and the
   `send-wheel --ctrl` test path never went through the disabled branch. The bare
   `#[allow(dead_code)]` convergence is **not** a hygiene edit and moved to
-  `plan/plan-v0.2.9.md`: the 2026-10-14 audit counted **56** sites (not the 47
+  `plan/archive/plan-v0.2.9.md`: the 2026-10-14 audit counted **56** sites (not the 47
   this ledger first recorded), most are `crates/minicon-platform` per-target
   adapters and `contract/*` fields one OS adapter reads, and turning each into a
   `cfg_attr` is a per-site judgement with a six-cell build behind it.
@@ -56,7 +56,7 @@ release plan; version sequencing lives in `plan/archive/plan-v0.2.6.md`.
 - `[_]` **G — third pass, the 0.2.9 planning sweep** (owner-ordered 2026-10-14):
   archived the shipped 0.2.8 plan, closed two stale-information contradictions
   the second pass left, and turned the whole audit into the consolidation track
-  of `plan/plan-v0.2.9.md`. See §Third pass below.
+  of `plan/archive/plan-v0.2.9.md`. See §Third pass below.
 - `[-]` **F — second pass, after the PRD-series fold** (2026-10-13, owner-ordered
   re-review): audit the remaining non-PRD markdown for (a) facts that belong to a
   `prd/PRD_*.md` owner and are therefore a second copy, and (b) stale or dead
@@ -242,7 +242,7 @@ moved or deleted except where it says so.
   it now says so in a sentence above it rather than being silently read as
   today's output (`prd/PRD_02_27_con_delivery.md` had authorised exactly this).
 
-### Found and re-homed into `plan/plan-v0.2.9.md`
+### Found and re-homed into `plan/archive/plan-v0.2.9.md`
 
 The measured findings that needed more than a hygiene edit. Each is now a leaf
 with an invariant, evidence and an order — they are **not** done here:
@@ -298,7 +298,7 @@ with an invariant, evidence and an order — they are **not** done here:
 
 **Re-homed 2026-10-14:** the big-module splits, the platform crate's 90
 features and the stale naming are no longer "not done" — they are scoped,
-evidenced and ordered in `plan/plan-v0.2.9.md`'s consolidation track
+evidenced and ordered in `plan/archive/plan-v0.2.9.md`'s consolidation track
 (`{SPLIT}`/`{SEAM}`/`{ENCAP}`/`{FEAT}`/`{NAME}`). The `Cargo.toml` comment that
 disagreed with `autotests` **was fixed 2026-10-14** (it claimed `autotests` was
 off; only `autobins = false` is set).
