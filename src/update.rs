@@ -46,10 +46,31 @@ const RELEASE_BODY_LIMIT: usize = 512 * 1024;
 /// megabytes, so that ceiling is the bound rather than a second number that
 /// could drift past it.
 const ARCHIVE_BODY_LIMIT: usize = minicon_platform::network_http::NETWORK_HTTP_MAX_RESPONSE_BYTES;
+/// The ceiling for one archive member *after* decompression.
+///
+/// `ARCHIVE_BODY_LIMIT` bounds the compressed download and nothing else: gzip
+/// reaches roughly 1000:1, and a zip entry declares its own output size, so a
+/// few megabytes on the wire can ask this process for gigabytes. Derived from
+/// the download bound so there is one number rather than two that can drift,
+/// and four times it because that bound is a *download* budget: 0.2.7's
+/// largest archive is 2.4 MB and inflates to a few megabytes of executable.
+const ARCHIVE_DECODED_LIMIT: usize = ARCHIVE_BODY_LIMIT * 4;
 const CHECK_TIMEOUT: Duration = Duration::from_secs(20);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 /// The name a release asset's checksum sidecar carries, appended to it.
 const SIDECAR_SUFFIX: &str = ".sha256";
+/// The only scheme the update path may fetch over.
+///
+/// The release document names the archive URL, so the scheme is a claim made by
+/// whatever answered the check; admitting `http` would let that claim downgrade
+/// the download that carries the product's own replacement to plaintext.
+const REQUIRED_SCHEME: &str = "https";
+/// Hosts exempt from [`REQUIRED_SCHEME`], because they are the machine itself.
+///
+/// Loopback is a test seam, not a policy hole: `src/update.rs`'s own suite
+/// serves a release from a local `TcpListener`, and traffic to 127.0.0.1,
+/// `::1` or `localhost` never reaches a wire anyone else can read.
+const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "::1", "localhost"];
 
 /// Where this build's archive comes from, and how it can be installed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -206,6 +227,113 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     encoded
 }
 
+/// What went wrong, as a closed set rather than a formatted sentence.
+///
+/// The failure text used to be a `format!`ed English string built here and
+/// painted verbatim, which made a Chinese UI show English and never told the
+/// user the one thing that matters after a failed swap -- whether the product
+/// still starts. The kind is the part a human reads, so it is translated by the
+/// panel's own string tables; `cause` stays the untranslated diagnostic from
+/// the platform layer, kept beside it for `ui-snapshot` and for a bug report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FailureKind {
+    /// No release archive is published for this platform.
+    Platform,
+    /// The release document could not be read or understood.
+    Release,
+    /// The release document, the archive or the checksum could not be fetched.
+    Transport,
+    /// The download did not match the release's own checksum.
+    Checksum,
+    /// The archive did not yield an executable.
+    Archive,
+    /// The new executable could not be written beside the current one.
+    Staging,
+    /// The swap could not be completed; the current executable is still there.
+    Swap,
+    /// The new copy was placed but would not start.
+    Launch,
+    /// The new copy would not start *and* the previous one could not be put
+    /// back: the one state that may need a reinstall.
+    LaunchUnrestored,
+}
+
+/// Whether the install still runs, which is the second half of every failure
+/// sentence and not derivable from "what failed".
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InstallState {
+    /// The failed step ran before the swap, so the executable was never moved.
+    Untouched,
+    /// The swap began, so the previous executable was put back and kept.
+    Restored,
+    /// The previous executable could not be confirmed back in place.
+    Unknown,
+}
+
+impl FailureKind {
+    /// The install state this kind leaves behind. Stated here, next to the
+    /// kinds, so the invariant is one table rather than one sentence per call
+    /// site: everything before the swap is `Untouched`, a failed launch is
+    /// `Restored`, an unrestorable one is `Unknown`.
+    #[must_use]
+    pub const fn install_state(self) -> InstallState {
+        match self {
+            Self::Platform
+            | Self::Release
+            | Self::Transport
+            | Self::Checksum
+            | Self::Archive
+            | Self::Staging
+            | Self::Swap => InstallState::Untouched,
+            Self::Launch => InstallState::Restored,
+            Self::LaunchUnrestored => InstallState::Unknown,
+        }
+    }
+
+    /// A stable, language-independent name for this kind, published by
+    /// `ui-snapshot` so automation asserts the state without matching a
+    /// translated sentence.
+    #[must_use]
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::Platform => "platform",
+            Self::Release => "release",
+            Self::Transport => "transport",
+            Self::Checksum => "checksum",
+            Self::Archive => "archive",
+            Self::Staging => "staging",
+            Self::Swap => "swap",
+            Self::Launch => "launch",
+            Self::LaunchUnrestored => "launch-unrestored",
+        }
+    }
+}
+
+/// A failed update action: what happened, and the detail behind it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Failure {
+    pub kind: FailureKind,
+    /// The platform layer's own words. Diagnostic; never painted alone.
+    pub cause: String,
+}
+
+impl Failure {
+    pub fn new(kind: FailureKind, cause: impl Into<String>) -> Self {
+        Self {
+            kind,
+            cause: cause.into(),
+        }
+    }
+}
+
+/// The kind and the cause, for a log line or an assertion message. The panel
+/// never paints this: it paints the translated sentence for the kind.
+impl std::fmt::Display for Failure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.kind.token(), self.cause)
+    }
+}
+
 /// What the panel shows. Product state, not panel-local: the phase outlives the
 /// settings panel being closed.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -223,7 +351,7 @@ pub enum Phase {
     /// The verified archive is staged and waiting for a restart.
     Ready { remote: Version, opens_dmg: bool },
     /// The last action failed. The running executable is untouched.
-    Failed { message: String },
+    Failed(Failure),
 }
 
 /// The update state the product owns and the panel renders.
@@ -277,7 +405,7 @@ impl State {
             }
             Event::AssetChosen(name) => self.asset = Some(name),
             Event::Staged { remote, opens_dmg } => self.phase = Phase::Ready { remote, opens_dmg },
-            Event::Failed(message) => self.phase = Phase::Failed { message },
+            Event::Failed(failure) => self.phase = Phase::Failed(failure),
         }
     }
 }
@@ -296,7 +424,7 @@ pub enum Event {
     Checked(Release),
     AssetChosen(String),
     Staged { remote: Version, opens_dmg: bool },
-    Failed(String),
+    Failed(Failure),
 }
 
 /// Where the worker is in the download, for a progress line.
@@ -310,20 +438,56 @@ pub enum Progress {
 
 /// The update state as `ui-snapshot` publishes it.
 ///
-/// A stable phase tag plus the two versions and the failure text, so automation
-/// asserts the state without matching painted strings — the same pattern as the
-/// other host UI facts. The tag is spelled once, here, and the panel's own
-/// labels stay free to be translated.
-pub fn snapshot(state: &State) -> (&'static str, Option<String>, Option<String>, bool) {
+/// A stable phase tag plus the versions and, when something failed, both the
+/// stable kind and the untranslated cause — so automation asserts the state
+/// without matching painted strings, and the panel's own sentence stays free to
+/// be translated. The tag is spelled once, here.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Snapshot {
+    pub phase: &'static str,
+    pub remote: Option<String>,
+    /// The platform layer's own words, for a bug report. Diagnostic only.
+    pub cause: Option<String>,
+    /// The stable failure kind. `None` unless the phase is `failed`.
+    pub failure: Option<&'static str>,
+    /// Whether the download was handed to the browser rather than swapped.
+    pub handoff: bool,
+}
+
+/// Reads the phases out of a state.
+#[must_use]
+pub fn snapshot(state: &State) -> Snapshot {
+    let mut published = Snapshot {
+        phase: "idle",
+        remote: None,
+        cause: None,
+        failure: None,
+        handoff: false,
+    };
     match &state.phase {
-        Phase::Idle => ("idle", None, None, false),
-        Phase::Checking => ("checking", None, None, false),
-        Phase::UpToDate => ("up-to-date", None, None, false),
-        Phase::Available { remote } => ("available", Some(remote.to_string()), None, false),
-        Phase::Ahead { remote } => ("ahead", Some(remote.to_string()), None, false),
-        Phase::Ready { remote, opens_dmg } => ("ready", Some(remote.to_string()), None, *opens_dmg),
-        Phase::Failed { message } => ("failed", None, Some(message.clone()), false),
+        Phase::Idle => {}
+        Phase::Checking => published.phase = "checking",
+        Phase::UpToDate => published.phase = "up-to-date",
+        Phase::Available { remote } => {
+            published.phase = "available";
+            published.remote = Some(remote.to_string());
+        }
+        Phase::Ahead { remote } => {
+            published.phase = "ahead";
+            published.remote = Some(remote.to_string());
+        }
+        Phase::Ready { remote, opens_dmg } => {
+            published.phase = "ready";
+            published.remote = Some(remote.to_string());
+            published.handoff = *opens_dmg;
+        }
+        Phase::Failed(failure) => {
+            published.phase = "failed";
+            published.failure = Some(failure.kind.token());
+            published.cause = Some(failure.cause.clone());
+        }
     }
+    published
 }
 
 /// The worker's side of one install, so the file work is testable on its own.
@@ -342,28 +506,82 @@ pub struct InstallInput<'a> {
 /// write to a sibling name, so a failure at any point leaves the running
 /// executable exactly as it was. The caller performs the rename-aside and the
 /// place, which is the only part that must be atomic.
-pub fn verify_and_stage(input: InstallInput<'_>) -> Result<PathBuf, String> {
-    let expected = parse_sidecar(input.sidecar)?;
+pub fn verify_and_stage(input: InstallInput<'_>) -> Result<PathBuf, Failure> {
+    let expected =
+        parse_sidecar(input.sidecar).map_err(|cause| Failure::new(FailureKind::Checksum, cause))?;
     let actual = sha256_hex(input.archive);
     if actual != expected {
-        return Err("downloaded archive does not match the release checksum".to_owned());
+        return Err(Failure::new(
+            FailureKind::Checksum,
+            "downloaded archive does not match the release checksum",
+        ));
     }
     let executable = match input.target.extension {
-        ".zip" => update_archive::read_zip(input.archive, input.target.executable),
-        ".tar.gz" => update_archive::read_tar_gz(input.archive, input.target.executable),
-        other => return Err(format!("no reader for {other} archives")),
+        ".zip" => update_archive::read_zip(
+            input.archive,
+            input.target.executable,
+            ARCHIVE_DECODED_LIMIT,
+        ),
+        ".tar.gz" => update_archive::read_tar_gz(
+            input.archive,
+            input.target.executable,
+            ARCHIVE_DECODED_LIMIT,
+        ),
+        other => {
+            return Err(Failure::new(
+                FailureKind::Archive,
+                format!("no reader for {other} archives"),
+            ));
+        }
     }
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| Failure::new(FailureKind::Archive, error.to_string()))?;
     if executable.is_empty() {
-        return Err("the archive's executable is empty".to_owned());
+        return Err(Failure::new(
+            FailureKind::Archive,
+            "the archive's executable is empty",
+        ));
     }
     let staged = staged_path(&input.destination);
     minicon_platform::filesystem_publish::write_file_atomic(&staged, |file| {
         use std::io::Write as _;
         file.write_all(&executable)
     })
-    .map_err(|error| format!("could not stage the new executable: {error}"))?;
+    .map_err(|error| Failure::new(FailureKind::Staging, format!("{error}")))?;
+    apply_staged_mode(&staged, &input.destination)
+        .map_err(|cause| Failure::new(FailureKind::Staging, cause))?;
     Ok(staged)
+}
+
+/// Makes the staged executable runnable on the hosts that decide that with a
+/// file mode.
+///
+/// Independent of [`staged_path`] used above on purpose: the staged file is
+/// written by a generic atomic writer that deliberately creates a plain
+/// private file, and `read_tar_gz` reads only the member's *bytes*, so nothing
+/// on the Unix path would otherwise carry the tar header's mode. The
+/// destination is the running product, which is executable by definition:
+/// copying its mode is what keeps the install launchable, and it preserves
+/// whatever mode the user had chosen for it.
+#[cfg(unix)]
+fn apply_staged_mode(staged: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let mode = match std::fs::metadata(destination) {
+        Ok(metadata) => metadata.permissions().mode(),
+        // The destination could not be stat'ed. Refusing is wrong -- the swap
+        // would otherwise install a file that cannot run -- and guessing 0644
+        // is worse, so fall back to the mode a released binary always has.
+        Err(_) => 0o755,
+    };
+    std::fs::set_permissions(staged, std::fs::Permissions::from_mode(mode))
+        .map_err(|error| format!("could not make the staged copy executable: {error}"))
+}
+
+/// Windows decides "executable" by the file's extension, not by a mode, so the
+/// staged sibling needs nothing here.
+#[cfg(not(unix))]
+fn apply_staged_mode(_staged: &Path, _destination: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 /// The sibling the new executable is staged as.
@@ -373,11 +591,43 @@ pub fn staged_path(destination: &Path) -> PathBuf {
     destination.with_file_name(name)
 }
 
+/// Removes a staged copy a previous session left behind.
+///
+/// `Ready` is session-scoped — nothing carries it across a restart — so a
+/// `*.update` beside the executable at startup is the residue of an update that
+/// was staged and then not swapped, which is what happens when a user presses
+/// Update and closes the window instead of pressing Restart. Clearing it is
+/// what keeps the README's "nothing left behind" true one file later; a session
+/// that has not staged anything has nothing to clear.
+pub fn clear_stale_staged(destination: &Path) {
+    // Best-effort on purpose: a staged file that cannot be removed is not a
+    // reason to refuse to start, and the next update overwrites it anyway.
+    let _ = remove_if_present(&staged_path(destination));
+}
+
 /// The backup the replaced executable is moved aside to.
 pub fn backup_path(destination: &Path) -> PathBuf {
     let mut name = destination.file_name().unwrap_or_default().to_os_string();
     name.push(".backup");
     destination.with_file_name(name)
+}
+
+/// The name the replaced executable is kept under, for a sentence that has to
+/// name it.
+///
+/// Best-effort by construction: the panel has to say something even when the
+/// running executable cannot be resolved, so the fallback is the same suffix
+/// [`backup_path`] appends.
+#[must_use]
+pub fn backup_file_name() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            backup_path(&path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "minicon.backup".to_owned())
 }
 
 /// Replaces `destination` with the staged executable, keeping the old one.
@@ -386,17 +636,48 @@ pub fn backup_path(destination: &Path) -> PathBuf {
 /// but not overwritten or deleted, so it is moved aside first and the staged
 /// file takes its name. If the second rename fails the first is rolled back, so
 /// the caller is never left with no executable at the destination.
-pub fn commit_swap(staged: &Path, destination: &Path) -> Result<PathBuf, String> {
+pub fn commit_swap(staged: &Path, destination: &Path) -> Result<PathBuf, Failure> {
     let backup = backup_path(destination);
-    remove_if_present(&backup)?;
-    std::fs::rename(destination, &backup)
-        .map_err(|error| format!("could not move the current executable aside: {error}"))?;
+    remove_if_present(&backup).map_err(|cause| Failure::new(FailureKind::Swap, cause))?;
+    std::fs::rename(destination, &backup).map_err(|error| {
+        Failure::new(
+            FailureKind::Swap,
+            format!("could not move the current executable aside: {error}"),
+        )
+    })?;
     if let Err(error) = std::fs::rename(staged, destination) {
-        // Roll the backup back so the product is still launchable.
-        let _ = std::fs::rename(&backup, destination);
-        return Err(format!("could not place the new executable: {error}"));
+        // Put the previous executable back. Its own failure is part of the
+        // message: swallowing it would leave the user reading "could not place
+        // the new executable" about a directory that no longer holds either.
+        return Err(match rollback_swap(&backup, destination) {
+            Ok(()) => Failure::new(
+                FailureKind::Swap,
+                format!("could not place the new executable: {error}"),
+            ),
+            Err(rollback) => Failure::new(
+                FailureKind::Swap,
+                format!("could not place the new executable: {error}; and {rollback}"),
+            ),
+        });
     }
     Ok(backup)
+}
+
+/// Puts the executable [`commit_swap`] moved aside back at `destination`.
+///
+/// Deliberately **not** a second `commit_swap`. That function begins by
+/// deleting `backup_path(destination)`, and on this path `backup` *is* that
+/// path, so re-entering it deleted the only good copy, moved the new file into
+/// its place and then renamed it back — reporting success while leaving the
+/// non-launchable file installed and the previous one gone
+/// (`plan/plan-v0.2.8.md`, `{ROLLBACK}`). One `rename` is the whole operation.
+pub fn rollback_swap(backup: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(backup, destination).map_err(|error| {
+        format!(
+            "could not restore the previous executable from {}: {error}",
+            backup.display()
+        )
+    })
 }
 
 /// Deletes a file the backup replaced, tolerating its absence.
@@ -428,9 +709,10 @@ pub fn worker(
 ) {
     let Some(target) = current_target() else {
         while let Ok(Command::Check) = commands.recv() {
-            let _ = events.send(Event::Failed(
-                "no release archive is published for this platform".to_owned(),
-            ));
+            let _ = events.send(Event::Failed(Failure::new(
+                FailureKind::Platform,
+                "no release archive is published for this platform",
+            )));
         }
         return;
     };
@@ -439,16 +721,17 @@ pub fn worker(
             Command::Check => check(&events, &endpoint),
             Command::Install => install(&events, &progress, target, &destination, &endpoint),
         };
-        if let Err(message) = outcome {
-            let _ = events.send(Event::Failed(message));
+        if let Err(failure) = outcome {
+            let _ = events.send(Event::Failed(failure));
         }
     }
 }
 
 /// Reads the latest release and reports its version.
-fn check(events: &Sender<Event>, endpoint: &str) -> Result<(), String> {
+fn check(events: &Sender<Event>, endpoint: &str) -> Result<(), Failure> {
     let body = fetch(endpoint, RELEASE_BODY_LIMIT, CHECK_TIMEOUT)?;
-    let release = parse_release(&body)?;
+    let release =
+        parse_release(&body).map_err(|cause| Failure::new(FailureKind::Release, cause))?;
     let _ = events.send(Event::Checked(release));
     Ok(())
 }
@@ -460,25 +743,35 @@ fn install(
     target: Target,
     destination: &Path,
     endpoint: &str,
-) -> Result<(), String> {
+) -> Result<(), Failure> {
     progress(Progress::Downloading);
     let body = fetch(endpoint, RELEASE_BODY_LIMIT, CHECK_TIMEOUT)?;
-    let release = parse_release(&body)?;
+    let release =
+        parse_release(&body).map_err(|cause| Failure::new(FailureKind::Release, cause))?;
     let (archive, sidecar) = release.archive_for(target).ok_or_else(|| {
-        format!(
-            "release {} publishes no archive for this platform",
-            release.version
+        Failure::new(
+            FailureKind::Platform,
+            format!(
+                "release {} publishes no archive for this platform",
+                release.version
+            ),
         )
     })?;
-    let sidecar = sidecar.ok_or_else(|| "the release has no checksum sidecar".to_owned())?;
+    let sidecar = sidecar
+        .ok_or_else(|| Failure::new(FailureKind::Release, "the release has no checksum sidecar"))?;
     let _ = events.send(Event::AssetChosen(archive.name.clone()));
     // macOS cannot replace one file: the product ships as a signed, notarized
     // `.app`, and swapping only the inner Mach-O breaks the signature. Hand the
     // release's own download over instead of pretending to install it.
     if !target.in_place {
+        require_secure_url(&archive.url)?;
         progress(Progress::Opening);
-        minicon_platform::host_open::open(&archive.url, Default::default())
-            .map_err(|error| format!("could not open the download page: {error}"))?;
+        minicon_platform::host_open::open(&archive.url, Default::default()).map_err(|error| {
+            Failure::new(
+                FailureKind::Transport,
+                format!("could not open the download page: {error}"),
+            )
+        })?;
         let _ = events.send(Event::Staged {
             remote: release.version,
             opens_dmg: true,
@@ -502,24 +795,78 @@ fn install(
     Ok(())
 }
 
+/// Refuses a URL the update path must not speak to.
+///
+/// The archive's URL is not this product's choice — it is a claim made by
+/// whatever answered the release check — so the scheme is checked before any
+/// request goes out. See [`REQUIRED_SCHEME`] and [`LOOPBACK_HOSTS`].
+fn require_secure_url(url: &str) -> Result<(), Failure> {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("HTTPS://"));
+    if rest.is_some() {
+        return Ok(());
+    }
+    let refusal = |scheme: &str| {
+        Failure::new(
+            FailureKind::Transport,
+            format!("refused a {scheme} URL for an update; {REQUIRED_SCHEME} is required"),
+        )
+    };
+    for scheme in ["http://", "HTTP://"] {
+        if let Some(authority) = url.strip_prefix(scheme) {
+            let host = authority_host(authority);
+            if LOOPBACK_HOSTS.contains(&host.to_ascii_lowercase().as_str()) {
+                return Ok(());
+            }
+            return Err(refusal(scheme));
+        }
+    }
+    Err(Failure::new(
+        FailureKind::Transport,
+        format!("refused a URL for an update that is not {REQUIRED_SCHEME}"),
+    ))
+}
+
+/// The host of a URL authority: userinfo stripped, port stripped, and an IPv6
+/// literal returned without its brackets. No 7-bit fallback for a host that is
+/// percent-encoded -- such a host is not a loopback literal, so it is refused,
+/// which is the safe direction.
+fn authority_host(authority: &str) -> &str {
+    let authority = authority.split(['/', '?', '#']).next().unwrap_or(authority);
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
+    if let Some(rest) = authority.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or(rest);
+    }
+    authority.split(':').next().unwrap_or(authority)
+}
+
 /// One bounded `GET`, with non-2xx and truncation surfaced as failures.
-fn fetch(url: &str, limit: usize, timeout: Duration) -> Result<Vec<u8>, String> {
+fn fetch(url: &str, limit: usize, timeout: Duration) -> Result<Vec<u8>, Failure> {
     use minicon_platform::network_http::{
         NetworkHttpMethod, NetworkHttpRequest, request, validate,
     };
 
+    require_secure_url(url)?;
     let http = NetworkHttpRequest::new(NetworkHttpMethod::Get, url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
         .timeout(timeout)
         .max_response_bytes(limit);
-    validate(&http).map_err(|error| error.to_string())?;
-    let response = request(&http).map_err(|error| error.to_string())?;
+    validate(&http).map_err(|error| Failure::new(FailureKind::Transport, error.to_string()))?;
+    let response =
+        request(&http).map_err(|error| Failure::new(FailureKind::Transport, error.to_string()))?;
     if !response.is_success() {
-        return Err(format!("the release server answered {}", response.status));
+        return Err(Failure::new(
+            FailureKind::Transport,
+            format!("the release server answered {}", response.status),
+        ));
     }
     if response.truncated {
-        return Err("the release response was cut short".to_owned());
+        return Err(Failure::new(
+            FailureKind::Transport,
+            "the release response was cut short",
+        ));
     }
     Ok(response.body)
 }
@@ -547,8 +894,8 @@ pub fn drain(
                 state.apply(Event::Staged { remote, opens_dmg });
                 changed = true;
             }
-            Ok(Event::Failed(message)) => {
-                state.apply(Event::Failed(message));
+            Ok(Event::Failed(failure)) => {
+                state.apply(Event::Failed(failure));
                 changed = true;
             }
             Err(TryRecvError::Empty) => break,
@@ -691,7 +1038,8 @@ mod tests {
         );
         let (events, _received) = std::sync::mpsc::channel();
         let error = check(&events, &format!("{base}/releases/latest")).unwrap_err();
-        assert!(error.contains("403"), "{error}");
+        assert_eq!(error.kind, FailureKind::Transport, "{error}");
+        assert!(error.cause.contains("403"), "{error}");
     }
 
     #[test]
@@ -702,7 +1050,7 @@ mod tests {
         serve(listener, vec![("latest", short)]);
         let (events, _received) = std::sync::mpsc::channel();
         let error = check(&events, &format!("{base}/releases/latest")).unwrap_err();
-        assert!(!error.is_empty());
+        assert!(!error.cause.is_empty());
     }
 
     #[test]
@@ -773,7 +1121,8 @@ mod tests {
             &format!("{base}/releases/latest"),
         )
         .unwrap_err();
-        assert!(error.contains("checksum"), "{error}");
+        assert_eq!(error.kind, FailureKind::Checksum, "{error}");
+        assert!(error.cause.contains("checksum"), "{error}");
         assert!(!staged_path(&destination).exists());
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -827,10 +1176,117 @@ mod tests {
                 remote: Version::parse("0.2.10").unwrap()
             }
         );
-        let (phase, remote, error, handoff) = snapshot(&state);
+        let published = snapshot(&state);
         assert_eq!(
-            (phase, remote.as_deref(), error, handoff),
-            ("available", Some("0.2.10"), None, false)
+            (
+                published.phase,
+                published.remote.as_deref(),
+                published.cause.as_deref(),
+                published.failure,
+                published.handoff,
+            ),
+            ("available", Some("0.2.10"), None, None, false)
+        );
+    }
+
+    /// A failure publishes both halves of what a reader needs: the stable kind
+    /// for automation, and the cause for a bug report. Neither is a painted
+    /// string, so the panel stays free to translate.
+    #[test]
+    fn a_failure_publishes_its_kind_and_its_cause() {
+        let mut state = State::new(Version::parse("0.2.8").unwrap());
+        state.apply(Event::Failed(Failure::new(
+            FailureKind::Checksum,
+            "downloaded archive does not match the release checksum",
+        )));
+        let published = snapshot(&state);
+        assert_eq!(published.phase, "failed");
+        assert_eq!(published.failure, Some("checksum"));
+        assert_eq!(
+            published.cause.as_deref(),
+            Some("downloaded archive does not match the release checksum")
+        );
+        assert!(state.can_check(), "a failure is not a dead end");
+    }
+
+    /// Every kind answers whether the install still runs -- the fact the old
+    /// panel never gave, and the one a user has to know before retrying.
+    #[test]
+    fn every_failure_kind_states_whether_the_install_still_runs() {
+        use InstallState as State;
+        let expected = [
+            (FailureKind::Platform, State::Untouched),
+            (FailureKind::Release, State::Untouched),
+            (FailureKind::Transport, State::Untouched),
+            (FailureKind::Checksum, State::Untouched),
+            (FailureKind::Archive, State::Untouched),
+            (FailureKind::Staging, State::Untouched),
+            (FailureKind::Swap, State::Untouched),
+            (FailureKind::Launch, State::Restored),
+            (FailureKind::LaunchUnrestored, State::Unknown),
+        ];
+        for (kind, state) in expected {
+            assert_eq!(kind.install_state(), state, "{kind:?}");
+            assert!(!kind.token().is_empty(), "{kind:?}");
+        }
+    }
+
+    /// The token is what automation matches, so two kinds may never share one.
+    #[test]
+    fn failure_tokens_are_unique() {
+        let tokens: Vec<&str> = [
+            FailureKind::Platform,
+            FailureKind::Release,
+            FailureKind::Transport,
+            FailureKind::Checksum,
+            FailureKind::Archive,
+            FailureKind::Staging,
+            FailureKind::Swap,
+            FailureKind::Launch,
+            FailureKind::LaunchUnrestored,
+        ]
+        .into_iter()
+        .map(FailureKind::token)
+        .collect();
+        let mut unique = tokens.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), tokens.len(), "{tokens:?}");
+    }
+
+    /// The update path speaks https. A plaintext URL is refused *by the scheme
+    /// check*, which is observable: a request that actually went out would come
+    /// back as a connect failure, and `192.0.2.1` (TEST-NET-1) is unrouted, so
+    /// the two outcomes cannot be confused.
+    #[test]
+    fn a_plaintext_release_url_is_refused_by_the_scheme_check() {
+        let (events, _received) = std::sync::mpsc::channel();
+        let error = match check(&events, "http://192.0.2.1/releases/latest") {
+            Ok(()) => panic!("an http release URL must be refused"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind, FailureKind::Transport, "{error}");
+        assert!(error.cause.contains("https"), "{error}");
+        assert!(
+            error.cause.contains("refused"),
+            "the refusal must say it refused, not that the network failed: {error}"
+        );
+    }
+
+    /// The loopback exemption is a test seam and stays a seam: without it the
+    /// suite's own release server dies with the policy.
+    #[test]
+    fn a_loopback_http_url_is_the_one_exemption() {
+        assert!(require_secure_url("https://example.test/x").is_ok());
+        assert!(require_secure_url("http://127.0.0.1:8000/x").is_ok());
+        assert!(require_secure_url("http://localhost:8000/x").is_ok());
+        assert!(require_secure_url("http://user@localhost:8000/x").is_ok());
+        assert!(require_secure_url("http://[::1]:8000/x").is_ok());
+        assert!(require_secure_url("http://example.test/x").is_err());
+        assert!(require_secure_url("ftp://example.test/x").is_err());
+        assert!(
+            require_secure_url("http://127.0.0.1.example.test/x").is_err(),
+            "a host that merely starts with a loopback literal is not loopback"
         );
     }
 
@@ -925,7 +1381,8 @@ mod tests {
             destination: destination.clone(),
         })
         .unwrap_err();
-        assert!(error.contains("checksum"), "{error}");
+        assert_eq!(error.kind, FailureKind::Checksum, "{error}");
+        assert!(error.cause.contains("checksum"), "{error}");
         assert!(!staged_path(&destination).exists(), "nothing may be staged");
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -979,6 +1436,133 @@ mod tests {
         let missing = directory.join("absent.exe");
         assert!(commit_swap(&missing, &destination).is_err());
         assert_eq!(std::fs::read(&destination).unwrap(), b"new");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// `{ROLLBACK}`, asserted on the **final on-disk state** rather than on the
+    /// return value — the defect this replaces returned `Ok` while leaving the
+    /// non-launchable file installed and the previous one deleted, so a test
+    /// that stopped at the call would have passed.
+    #[test]
+    fn a_failed_launch_puts_the_previous_executable_back_on_disk() {
+        let directory = std::env::temp_dir().join("minicon-update-rollback");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("minicon.exe");
+        std::fs::write(&destination, b"old-and-good").unwrap();
+        let staged = staged_path(&destination);
+        std::fs::write(&staged, b"new-and-broken").unwrap();
+
+        let backup = commit_swap(&staged, &destination).unwrap();
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"new-and-broken",
+            "the swap is what puts the new file in place"
+        );
+        rollback_swap(&backup, &destination).expect("the previous executable goes back");
+
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"old-and-good",
+            "the destination must hold the old bytes again"
+        );
+        assert!(
+            !backup.exists(),
+            "the rollback consumes its own backup; nothing is left behind"
+        );
+        assert!(
+            !staged.exists(),
+            "the file that would not launch must not survive anywhere"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A rollback that cannot do its job must say so rather than reporting a
+    /// state it did not reach.
+    #[test]
+    fn a_rollback_with_no_backup_reports_itself() {
+        let directory = std::env::temp_dir().join("minicon-update-rollback-missing");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("minicon.exe");
+        let error = rollback_swap(&backup_path(&destination), &destination).unwrap_err();
+        assert!(error.contains("restore"), "{error}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A staged file that was never swapped must not outlive the session that
+    /// made it: `Ready` does not survive a restart, so leaving the file would
+    /// be the one thing the product's own sentence says it does not do.
+    #[test]
+    fn a_staged_file_from_a_previous_session_is_cleared_at_startup() {
+        let directory = std::env::temp_dir().join("minicon-update-stale");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("minicon.exe");
+        std::fs::write(&destination, b"running").unwrap();
+        std::fs::write(staged_path(&destination), b"never swapped").unwrap();
+
+        clear_stale_staged(&destination);
+
+        assert!(!staged_path(&destination).exists(), "the residue is gone");
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"running",
+            "the executable itself is untouched"
+        );
+        // A directory with nothing staged is the ordinary case, and must not
+        // be mistaken for a failure.
+        clear_stale_staged(&destination);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// `{EXECBIT}`. Unix decides "runnable" with a file mode and the staged
+    /// file is written by a mode-less atomic writer, so without this an
+    /// in-place update installs a file the OS refuses to run. Windows has no
+    /// such concept, which is why this is `cfg(unix)` — the Linux cells of
+    /// `six-cell-qualify.sh` are where it runs.
+    #[cfg(unix)]
+    #[test]
+    fn the_staged_executable_carries_the_destinations_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let directory = std::env::temp_dir().join("minicon-update-mode");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("minicon");
+        std::fs::write(&destination, b"old").unwrap();
+        std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        let archive = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/assets/update-archive.zip"
+        ))
+        .unwrap();
+        let sidecar = format!("{}  fixture\n", sha256_hex(&archive));
+        let staged = verify_and_stage(InstallInput {
+            archive: &archive,
+            sidecar: sidecar.as_bytes(),
+            target: Target {
+                suffix: "windows-x86_64",
+                extension: ".zip",
+                executable: "minicon.exe",
+                in_place: true,
+            },
+            destination: destination.clone(),
+        })
+        .unwrap();
+
+        let mode = std::fs::metadata(&staged).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o7777,
+            0o700,
+            "the staged copy must inherit the destination's mode, not the \
+             writer's 0644"
+        );
+        assert!(
+            mode & 0o111 != 0,
+            "a staged executable with no execute bit is the defect"
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 }

@@ -9,7 +9,12 @@
 //! member — and anything else is a typed refusal, never a guess.
 //!
 //! Both readers take the whole archive as one slice because the download
-//! ceiling already bounded it; a streaming API would buy nothing here.
+//! ceiling already bounded it; a streaming API would buy nothing here. That
+//! ceiling bounds the *compressed* input only, so every reader also takes the
+//! caller's ceiling for the decoded output: gzip reaches roughly 1000:1 and a
+//! zip local header may *declare* any size it likes, so without a second bound
+//! a small download can ask this process for gigabytes -- or make it allocate
+//! on a declaration alone, before a single byte has been inflated.
 
 use std::io::Read;
 
@@ -24,6 +29,9 @@ pub enum ArchiveError {
     UnsupportedCompression,
     /// The inflated bytes did not match the size the archive declared.
     SizeMismatch,
+    /// The entry claims or reaches more output than the caller's ceiling
+    /// allows. A typed refusal, never an abort.
+    TooLarge,
 }
 
 impl std::fmt::Display for ArchiveError {
@@ -33,6 +41,7 @@ impl std::fmt::Display for ArchiveError {
             Self::EntryMissing => "the archive does not contain the expected executable",
             Self::UnsupportedCompression => "the archive uses an unsupported compression method",
             Self::SizeMismatch => "the archive entry did not decode to its declared size",
+            Self::TooLarge => "the archive expands past the update's size ceiling",
         };
         formatter.write_str(text)
     }
@@ -45,7 +54,11 @@ impl std::fmt::Display for ArchiveError {
 /// hand-made archive never registered. A Zip64 marker is refused rather than
 /// truncated to 32 bits, because the archives this repository publishes are
 /// always small and a silent wrap would be a wrong answer, not a slow one.
-pub fn read_zip(bytes: &[u8], expected: &str) -> Result<Vec<u8>, ArchiveError> {
+pub fn read_zip(
+    bytes: &[u8],
+    expected: &str,
+    decoded_limit: usize,
+) -> Result<Vec<u8>, ArchiveError> {
     let end = find_zip_end(bytes).ok_or(ArchiveError::Malformed)?;
     let entries = u16::from_le_bytes(read_array(bytes, end + 10)?);
     let directory = u32::from_le_bytes(read_array(bytes, end + 16)?) as usize;
@@ -71,7 +84,7 @@ pub fn read_zip(bytes: &[u8], expected: &str) -> Result<Vec<u8>, ArchiveError> {
             let local_extra = u16::from_le_bytes(read_array(bytes, local + 28)?) as usize;
             let start = local + 30 + local_name + local_extra;
             let data = read_slice(bytes, start, compressed as usize)?;
-            return inflate(data, method, uncompressed as usize);
+            return inflate(data, method, uncompressed as usize, decoded_limit);
         }
         cursor = cursor + 46 + name_length + extra_length + comment_length;
     }
@@ -79,11 +92,21 @@ pub fn read_zip(bytes: &[u8], expected: &str) -> Result<Vec<u8>, ArchiveError> {
 }
 
 /// Reads the single member named `expected` out of a `.tar.gz`.
-pub fn read_tar_gz(bytes: &[u8], expected: &str) -> Result<Vec<u8>, ArchiveError> {
+pub fn read_tar_gz(
+    bytes: &[u8],
+    expected: &str,
+    decoded_limit: usize,
+) -> Result<Vec<u8>, ArchiveError> {
     let mut tar = Vec::new();
+    // `take` is what makes the bound real: without it the decoder inflates the
+    // whole stream into memory before anyone can look at how big it got.
     flate2::read::GzDecoder::new(bytes)
+        .take(decoded_limit as u64 + 1)
         .read_to_end(&mut tar)
         .map_err(|_| ArchiveError::Malformed)?;
+    if tar.len() > decoded_limit {
+        return Err(ArchiveError::TooLarge);
+    }
     let mut cursor = 0usize;
     while cursor + 512 <= tar.len() {
         let header = read_slice(&tar, cursor, 512)?;
@@ -108,14 +131,34 @@ pub fn read_tar_gz(bytes: &[u8], expected: &str) -> Result<Vec<u8>, ArchiveError
     Err(ArchiveError::EntryMissing)
 }
 
-fn inflate(data: &[u8], method: u16, expected: usize) -> Result<Vec<u8>, ArchiveError> {
+fn inflate(
+    data: &[u8],
+    method: u16,
+    expected: usize,
+    decoded_limit: usize,
+) -> Result<Vec<u8>, ArchiveError> {
+    // Checked before the allocation, not after it: a zip entry is free to
+    // declare ~4 GiB in 8 MiB of archive, and `with_capacity` on that number
+    // aborts the process on a declaration alone.
+    if expected > decoded_limit {
+        return Err(ArchiveError::TooLarge);
+    }
     let mut out = Vec::with_capacity(expected);
     match method {
-        0 => out.extend_from_slice(data),
+        0 => {
+            if data.len() > decoded_limit {
+                return Err(ArchiveError::TooLarge);
+            }
+            out.extend_from_slice(data);
+        }
         8 => {
             flate2::read::DeflateDecoder::new(data)
+                .take(decoded_limit as u64 + 1)
                 .read_to_end(&mut out)
                 .map_err(|_| ArchiveError::Malformed)?;
+            if out.len() > decoded_limit {
+                return Err(ArchiveError::TooLarge);
+            }
         }
         _ => return Err(ArchiveError::UnsupportedCompression),
     }
@@ -179,29 +222,32 @@ mod tests {
     use super::*;
 
     const PAYLOAD: &[u8] = b"minicon-update-fixture-payload\n";
+    /// Roomier than the fixtures, so these tests exercise the readers rather
+    /// than the ceiling. The real ceiling is the caller's (`src/update.rs`).
+    const ROOMY: usize = 1 << 20;
 
     #[test]
     fn a_deflated_zip_entry_is_read_by_name() {
         let archive = include_bytes!("../tests/assets/update-archive.zip");
-        assert_eq!(read_zip(archive, "minicon.exe").unwrap(), PAYLOAD);
+        assert_eq!(read_zip(archive, "minicon.exe", ROOMY).unwrap(), PAYLOAD);
     }
 
     #[test]
     fn a_gzipped_tar_member_is_read_by_name() {
         let archive = include_bytes!("../tests/assets/update-archive.tar.gz");
-        assert_eq!(read_tar_gz(archive, "minicon").unwrap(), PAYLOAD);
+        assert_eq!(read_tar_gz(archive, "minicon", ROOMY).unwrap(), PAYLOAD);
     }
 
     #[test]
     fn an_archive_without_the_expected_entry_is_a_typed_refusal() {
         let zip = include_bytes!("../tests/assets/update-archive.zip");
         assert_eq!(
-            read_zip(zip, "minicon").unwrap_err(),
+            read_zip(zip, "minicon", ROOMY).unwrap_err(),
             ArchiveError::EntryMissing
         );
         let tar = include_bytes!("../tests/assets/update-archive.tar.gz");
         assert_eq!(
-            read_tar_gz(tar, "minicon.exe").unwrap_err(),
+            read_tar_gz(tar, "minicon.exe", ROOMY).unwrap_err(),
             ArchiveError::EntryMissing
         );
     }
@@ -209,12 +255,41 @@ mod tests {
     #[test]
     fn bytes_that_are_not_an_archive_are_refused() {
         assert_eq!(
-            read_zip(b"not a zip at all", "minicon.exe").unwrap_err(),
+            read_zip(b"not a zip at all", "minicon.exe", ROOMY).unwrap_err(),
             ArchiveError::Malformed
         );
         assert_eq!(
-            read_tar_gz(b"not gzip at all", "minicon").unwrap_err(),
+            read_tar_gz(b"not gzip at all", "minicon", ROOMY).unwrap_err(),
             ArchiveError::Malformed
+        );
+    }
+
+    /// The decode ceiling the download ceiling does not provide. Both readers
+    /// refuse *before* inflating: a zip's declared size is checked before the
+    /// allocation it would cause, and a tar's inflated stream is read through
+    /// a `take` so a compression bomb cannot be materialised first.
+    #[test]
+    fn an_archive_that_expands_past_the_ceiling_is_a_typed_refusal() {
+        let zip = include_bytes!("../tests/assets/update-archive.zip");
+        assert_eq!(
+            read_zip(zip, "minicon.exe", 4).unwrap_err(),
+            ArchiveError::TooLarge,
+            "a declaration above the ceiling must be refused, not allocated"
+        );
+        let tar = include_bytes!("../tests/assets/update-archive.tar.gz");
+        assert_eq!(
+            read_tar_gz(tar, "minicon", 4).unwrap_err(),
+            ArchiveError::TooLarge,
+            "the inflated stream must stop at the ceiling"
+        );
+        // A refusal is a value, not an abort, and the ceiling is what it says:
+        // the bound is on the whole decoded stream, which tar pads to its own
+        // blocking factor (this fixture decodes to 10240 bytes), so the same
+        // archive clears a ceiling above that and is refused below it.
+        assert!(read_tar_gz(tar, "minicon", 10240).is_ok());
+        assert_eq!(
+            read_tar_gz(tar, "minicon", 10239).unwrap_err(),
+            ArchiveError::TooLarge
         );
     }
 }

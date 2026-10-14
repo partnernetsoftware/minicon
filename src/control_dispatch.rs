@@ -232,14 +232,34 @@ impl ConApp {
                                 ]),
                             ),
                             ("update", {
-                                let (phase, remote, error, handoff) =
-                                    crate::update::snapshot(&self.update);
+                                let published = crate::update::snapshot(&self.update);
                                 json::object(vec![
-                                    ("phase", phase.into()),
+                                    ("phase", published.phase.into()),
                                     ("current", self.update.current.to_string().into()),
-                                    ("remote", remote.map_or(json::JsonValue::Null, Into::into)),
-                                    ("error", error.map_or(json::JsonValue::Null, Into::into)),
-                                    ("handoff", handoff.into()),
+                                    (
+                                        "remote",
+                                        published.remote.map_or(json::JsonValue::Null, Into::into),
+                                    ),
+                                    // The untranslated cause, for a bug report; and the
+                                    // stable kind, so automation never has to match a
+                                    // translated sentence.
+                                    (
+                                        "error",
+                                        published.cause.map_or(json::JsonValue::Null, Into::into),
+                                    ),
+                                    (
+                                        "failure",
+                                        published.failure.map_or(json::JsonValue::Null, Into::into),
+                                    ),
+                                    // The line the panel actually paints, in the
+                                    // language the panel is set to. Publishing the
+                                    // rendered string is what makes "is the failure
+                                    // localised" observable at all.
+                                    (
+                                        "status",
+                                        self.ui_language.update_status(&self.update).into(),
+                                    ),
+                                    ("handoff", published.handoff.into()),
                                 ])
                             }),
                             ("geometry", geometry.unwrap_or(json::JsonValue::Null)),

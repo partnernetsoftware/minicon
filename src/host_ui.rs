@@ -412,30 +412,7 @@ pub(crate) fn paint_settings_panel(
     action(surface, s.update[0], strings.update_check, can_check);
     action(surface, s.update[1], strings.update_install, can_install);
     action(surface, s.update[2], strings.update_restart, can_restart);
-    let status = if update.phase == Phase::Idle {
-        format!("v{}", update.current)
-    } else if update.phase == Phase::Checking {
-        strings.update_checking.to_owned()
-    } else if let Phase::UpToDate = update.phase {
-        format!("v{} — {}", update.current, strings.update_latest)
-    } else if let Phase::Available { remote } = &update.phase {
-        format!("v{remote} {}", strings.update_available)
-    } else if let Phase::Ahead { remote } = &update.phase {
-        format!("v{remote} — {}", strings.update_ahead)
-    } else if let Phase::Ready { remote, opens_dmg } = &update.phase {
-        format!(
-            "v{remote} — {}",
-            if *opens_dmg {
-                strings.update_staged_open
-            } else {
-                strings.update_ready
-            }
-        )
-    } else if let Phase::Failed { message } = &update.phase {
-        message.clone()
-    } else {
-        String::new()
-    };
+    let status = ui_language.update_status(update);
     paint_host_ui_text(
         surface,
         inner_x,

@@ -70,6 +70,14 @@ compose CJK through the same paths a person's input takes.
 - **Permanently open source.** MIT OR Apache-2.0. No telemetry, no account, no
   auto-updater — the settings panel's update check is manual, per-press, and
   never runs on its own. The source is the product.
+- **Updates are manual, and reversible.** The panel can check the release page
+  and replace the one file in place; the copy it replaces is kept beside it as
+  `minicon.exe.backup` on Windows and `minicon.backup` elsewhere, so a build
+  that will not start is one rename away from being undone — rename the backup
+  back over the executable (and on Linux, if you ever end up with a `minicon`
+  that will not run, `chmod +x minicon` or re-download). Nothing else is
+  left behind: a download that was never installed is cleared the next time
+  MiniCon starts.
 - **Signed and notarized.** Windows and macOS, as PARTNERNET SOFTWARE PTY LTD.
   It uses only the libraries your OS already ships.
 - **Low on purpose.** One process, no background service, no daemon; close the

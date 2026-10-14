@@ -771,6 +771,136 @@ pub struct HostUiStrings {
     pub update_staged_open: &'static str,
 }
 
+/// The Updates section's one status line, and the failure sentence inside it.
+///
+/// Kept on the language rather than in the paint code so there is exactly one
+/// owner of what the panel says: `host_ui` paints the result and `ui-snapshot`
+/// publishes the same string, so a reader cannot catch them disagreeing.
+/// Every arm is a `match` over the language *and* over the phase, so a new
+/// phase or a missing translation is a compile error rather than a blank label
+/// a user finds.
+impl UiLanguage {
+    /// What failed, in this language.
+    #[must_use]
+    const fn update_failure_text(self, kind: crate::update::FailureKind) -> &'static str {
+        use crate::update::FailureKind as Kind;
+        match self {
+            Self::English => match kind {
+                Kind::Platform => "no release is published for this platform",
+                Kind::Release => "the release information could not be read",
+                Kind::Transport => "the download could not be completed",
+                Kind::Checksum => "the download did not match the release checksum",
+                Kind::Archive => "the downloaded archive could not be unpacked",
+                Kind::Staging => "the new version could not be prepared",
+                Kind::Swap => "the new version could not be put in place",
+                Kind::Launch => "the new version would not start",
+                Kind::LaunchUnrestored => {
+                    "the new version would not start, and the previous one could not be put back"
+                }
+            },
+            Self::ChineseSimplified => match kind {
+                Kind::Platform => "这个平台没有发布安装包",
+                Kind::Release => "读取发布信息失败",
+                Kind::Transport => "下载未能完成",
+                Kind::Checksum => "下载内容与发布校验值不符",
+                Kind::Archive => "下载的压缩包无法解包",
+                Kind::Staging => "新版本未能准备好",
+                Kind::Swap => "新版本未能就位",
+                Kind::Launch => "新版本无法启动",
+                Kind::LaunchUnrestored => "新版本无法启动，旧版本也未能放回",
+            },
+            Self::ChineseTraditional => match kind {
+                Kind::Platform => "這個平台沒有發布安裝包",
+                Kind::Release => "讀取發布資訊失敗",
+                Kind::Transport => "下載未能完成",
+                Kind::Checksum => "下載內容與發布校驗值不符",
+                Kind::Archive => "下載的壓縮檔無法解包",
+                Kind::Staging => "新版本未能準備好",
+                Kind::Swap => "新版本未能就位",
+                Kind::Launch => "新版本無法啟動",
+                Kind::LaunchUnrestored => "新版本無法啟動，舊版本也未能放回",
+            },
+        }
+    }
+
+    /// Whether the install still runs. Never left out: a failure a user cannot
+    /// judge is a failure they will retry into the same wall.
+    #[must_use]
+    const fn update_install_text(self, kind: crate::update::FailureKind) -> &'static str {
+        use crate::update::InstallState as State;
+        match (self, kind.install_state()) {
+            (Self::English, State::Untouched) => "your current install was not changed",
+            (Self::English, State::Restored) => {
+                "your previous version was put back and is kept as {}"
+            }
+            (Self::English, State::Unknown) => "your install may need to be replaced",
+            (Self::ChineseSimplified, State::Untouched) => "当前安装未受影响",
+            (Self::ChineseSimplified, State::Restored) => "已放回更新前的版本，保存在 {}",
+            (Self::ChineseSimplified, State::Unknown) => "当前安装可能需要重新安装",
+            (Self::ChineseTraditional, State::Untouched) => "目前安裝未受影響",
+            (Self::ChineseTraditional, State::Restored) => "已放回更新前的版本，保存在 {}",
+            (Self::ChineseTraditional, State::Unknown) => "目前安裝可能需要重新安裝",
+        }
+    }
+
+    /// The next thing the user can do, which is the third fact every failure
+    /// sentence owes them.
+    #[must_use]
+    const fn update_next_text(self, kind: crate::update::FailureKind) -> &'static str {
+        use crate::update::FailureKind as Kind;
+        if let Kind::LaunchUnrestored = kind {
+            return match self {
+                Self::English => "reinstall from the releases page",
+                Self::ChineseSimplified => "请从发布页重新安装",
+                Self::ChineseTraditional => "請從發布頁重新安裝",
+            };
+        }
+        match self {
+            Self::English => "try again",
+            Self::ChineseSimplified => "请重试",
+            Self::ChineseTraditional => "請重試",
+        }
+    }
+
+    /// The whole failure sentence: what failed, whether the install still runs,
+    /// and what to do next.
+    #[must_use]
+    pub fn update_failure_sentence(self, failure: &crate::update::Failure) -> String {
+        let install = self
+            .update_install_text(failure.kind)
+            .replace("{}", &crate::update::backup_file_name());
+        format!(
+            "{} — {}; {}.",
+            self.update_failure_text(failure.kind),
+            install,
+            self.update_next_text(failure.kind)
+        )
+    }
+
+    /// The panel's one status line for the current update phase.
+    #[must_use]
+    pub fn update_status(self, update: &crate::update::State) -> String {
+        use crate::update::Phase;
+        let strings = self.strings();
+        match &update.phase {
+            Phase::Idle => format!("v{}", update.current),
+            Phase::Checking => strings.update_checking.to_owned(),
+            Phase::UpToDate => format!("v{} — {}", update.current, strings.update_latest),
+            Phase::Available { remote } => format!("v{remote} {}", strings.update_available),
+            Phase::Ahead { remote } => format!("v{remote} — {}", strings.update_ahead),
+            Phase::Ready { remote, opens_dmg } => format!(
+                "v{remote} — {}",
+                if *opens_dmg {
+                    strings.update_staged_open
+                } else {
+                    strings.update_ready
+                }
+            ),
+            Phase::Failed(failure) => self.update_failure_sentence(failure),
+        }
+    }
+}
+
 pub fn tree_hit(
     layout: Layout,
     x: u32,
@@ -2817,6 +2947,80 @@ mod tests {
             scrollback_for_thumb_top(geometry, geometry.track.top - 500, 100),
             100,
             "dragging above the track clamps to the oldest"
+        );
+    }
+
+    /// `{RECOVER}`: every failure sentence has to answer three questions --
+    /// what failed, whether the install still runs, and what to do next -- and
+    /// has to be in the language the panel is set to. The old panel painted the
+    /// worker's raw English cause, so a Chinese UI showed English and said
+    /// nothing about whether the product still started.
+    #[test]
+    fn a_failure_sentence_answers_all_three_questions_in_the_panels_language() {
+        use crate::update::{Failure, FailureKind};
+
+        let untouched = UiLanguage::English
+            .update_failure_sentence(&Failure::new(FailureKind::Checksum, "raw cause"));
+        assert!(untouched.contains("checksum"), "{untouched}");
+        assert!(
+            untouched.contains("was not changed"),
+            "the user must be told the install is intact: {untouched}"
+        );
+        assert!(untouched.contains("try again"), "{untouched}");
+        assert!(
+            !untouched.contains("raw cause"),
+            "the diagnostic is not the panel sentence: {untouched}"
+        );
+
+        // A failed launch is the state where the backup is the recovery net, so
+        // the sentence has to name the file it is kept as.
+        let restored = UiLanguage::English
+            .update_failure_sentence(&Failure::new(FailureKind::Launch, "raw cause"));
+        assert!(restored.contains("would not start"), "{restored}");
+        assert!(
+            restored.contains(".backup"),
+            "the recovery has to name the file: {restored}"
+        );
+
+        let simplified = UiLanguage::ChineseSimplified
+            .update_failure_sentence(&Failure::new(FailureKind::Launch, "raw cause"));
+        assert!(simplified.contains("无法启动"), "{simplified}");
+        assert!(simplified.contains("已放回"), "{simplified}");
+        assert!(
+            !simplified.contains("would not start"),
+            "a Chinese panel must not show the English sentence: {simplified}"
+        );
+
+        let traditional = UiLanguage::ChineseTraditional
+            .update_failure_sentence(&Failure::new(FailureKind::LaunchUnrestored, "raw cause"));
+        assert!(traditional.contains("無法啟動"), "{traditional}");
+        assert!(
+            traditional.contains("重新安裝"),
+            "an unrestored install is the one that needs a reinstall: {traditional}"
+        );
+    }
+
+    /// The status line is one owner for both readers: the panel paints it and
+    /// `ui-snapshot` publishes it, so the two can never disagree.
+    #[test]
+    fn the_status_line_covers_every_phase_including_a_failure() {
+        use crate::update::{Failure, FailureKind, Phase, State, Version};
+
+        let current = Version::parse("0.2.8").unwrap();
+        let mut state = State::new(current);
+        assert_eq!(UiLanguage::English.update_status(&state), "v0.2.8");
+
+        state.phase = Phase::Checking;
+        assert_eq!(
+            UiLanguage::English.update_status(&state),
+            UiLanguage::English.strings().update_checking
+        );
+
+        state.phase = Phase::Failed(Failure::new(FailureKind::Transport, "raw cause"));
+        let failed = UiLanguage::ChineseSimplified.update_status(&state);
+        assert!(
+            failed.contains("下载未能完成") && failed.contains("当前安装未受影响"),
+            "the status is the failure sentence, in the panel's language: {failed}"
         );
     }
 }

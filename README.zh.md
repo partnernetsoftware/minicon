@@ -63,6 +63,11 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
   算。免安装，不捆绑运行时。
 - **永久开源。** MIT 或 Apache-2.0。无遥测、无账号、无自动更新——设置面板里的更新
   检查是手动、逐次点击的，绝不会自行运行。源码就是产品。
+- **更新是手动的，而且可以退回去。** 面板能去发布页查版本并就地替换这一个文件；被
+  替换掉的旧文件会留在旁边——Windows 上是 `minicon.exe.backup`，其他平台是
+  `minicon.backup`——所以万一新版本起不来，改一个名字就能退回；Linux 上如果拿到一个
+  跑不起来的 `minicon`，`chmod +x minicon` 或重新下载即可。除此之外不留东西：
+  下载了却没安装的那份，会在下次启动 MiniCon 时被清掉。
 - **已签名并公证。** Windows 与 macOS，主体 PARTNERNET SOFTWARE PTY LTD。只用
   系统自带的库。
 - **极省资源。** 只有一个进程，没有后台服务、没有守护进程；关窗后什么都不再运行。把

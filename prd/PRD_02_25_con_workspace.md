@@ -210,13 +210,17 @@ header tools, and the composer. It is not the browser, and it is not layout.
   checked against its published SHA-256 sidecar, and the executable is pulled
   out by name with a small in-product reader for the two shapes the release
   ships (a deflated `.zip` entry and a gzipped tar member), so no general
-  archive crate enters the graph. The swap is rename-aside then place-new,
-  keeping the replaced executable beside the new one and rolling it back if the
-  place fails; the restart is a separate, explicit press because it drops every
+  archive crate enters the graph. Decoding is bounded on its **output** as well
+  as its input, and staging gives the new file the destination's own executable
+  mode before the rename, so the file that lands is one the host can run. The
+  swap is rename-aside then place-new, keeping the replaced executable beside
+  the new one and — since 0.2.8 — genuinely putting it back when the place
+  fails; the restart is a separate, explicit press because it drops every
   terminal and ends the `--control` endpoint. **Saying so is owed, not
   optional:** that press is currently the first moment a user learns what it
-  costs, and the tab count is already known to the host. Leaf `{RESTART}` in
-  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) owns naming the loss before
+  costs, and the tab count is already known to the host. Leaf `{RESTART}`
+  (now "Deferred to 0.2.9" in
+  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md)) owns naming the loss before
   the button; its non-goal is preserving the sessions, because MiniCon has no
   persistent workspace and is not getting one. macOS never swaps in place — one
   file inside a signed, notarized `.app` cannot be replaced without breaking
@@ -245,34 +249,79 @@ header tools, and the composer. It is not the browser, and it is not layout.
   bytes that release published". For an ordinary download that is the usual
   guarantee; for a product that replaces **its own executable** it is the
   weaker half, because the thing doing the verifying is the thing being
-  replaced. Planned as leaf `{SIGV}` in
-  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md); the open question there is
+  replaced. Carried as leaf `{SIGV}`, now **deferred to 0.2.9** (the "Deferred to
+  0.2.9" table in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md)) because the
+  fix must not wait behind a size decision; the open question there is
   **size, not mechanism** (enable `app-facts`, or expose one verify-only entry
   point behind `network-http`), and it belongs to
   [27](PRD_02_27_con_delivery.md)'s budget, not to whoever writes the code.
-- [_] four defects the shipped 0.2.7 update path was found to carry, filed by an
-  independent security review and confirmed line-by-line (2026-10-13). All four
-  are in code that is **already public**, so they cannot be patched into 0.2.7;
-  each is a leaf in [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) and is the
-  reason that version leads with correctness rather than features.
-  - `{EXECBIT}` — a Unix in-place update installs a **non-executable** binary:
-    staging sets no file mode and the tar reader discards the header's mode
-    field, so `spawn` fails EACCES. Linux-only (it is the only `in_place` host
-    whose archive is a `.tar.gz`; the `.zip` path is Windows-only).
-  - `{ROLLBACK}` — the failed-launch rollback deletes the last good copy:
-    `main.rs` re-enters `commit_swap`, which recomputes and `remove_if_present`s
-    the same `.backup` path, emptying the destination. `{EXECBIT}` is what makes
-    this reachable in normal Linux use. The two must be fixed together.
-  - `{BOMB}` — the archive decode is unbounded on its **output**: the download
-    ceiling bounds the compressed input only, and the zip path pre-allocates the
-    declared uncompressed size, so a crafted or tampered release aborts the
-    process by exhausting memory instead of refusing it.
-  - `{SCHEME}` — `validate_url` admits `http://`, and the download URL is taken
-    verbatim from the release document, so a plaintext downgrade is not refused.
+- [v] four defects the shipped 0.2.7 update path was found to carry, filed by an
+  independent security review, confirmed line-by-line (2026-10-13) and **fixed
+  in 0.2.8** (2026-10-14). All four were in code that is **already public**, so
+  they could not be patched into 0.2.7; each was a leaf in
+  [`plan/plan-v0.2.8.md`](../plan/plan-v0.2.8.md) and is the reason that version
+  led with correctness rather than features. Each is marked with the test that
+  holds it, since the defect in this area is always "the local gate never
+  reached the line".
+  - `{EXECBIT}` — a Unix in-place update installed a **non-executable** binary:
+    staging set no file mode and the tar reader discarded the header's mode
+    field, so `spawn` failed EACCES. Linux-only (it is the only `in_place` host
+    whose archive is a `.tar.gz`; the `.zip` path is Windows-only). **Fixed by
+    copying the destination's own mode onto the staged file**
+    (`update::apply_staged_mode`, `cfg(unix)`, falling back to `0o755`), which
+    cannot install a non-runnable file because the destination is by definition
+    runnable — and it preserves whatever mode the user had, rather than
+    inventing one. Evidence: `the_staged_executable_carries_the_destinations_mode`.
+  - `{ROLLBACK}` — the failed-launch rollback deleted the last good copy:
+    `main.rs` re-entered `commit_swap`, which recomputed and
+    `remove_if_present`ed the same `.backup` path, emptying the destination.
+    `{EXECBIT}` is what made this reachable in normal Linux use. **Fixed:** the
+    rollback is now `update::rollback_swap`, a single rename that cannot
+    re-enter the swap, and a rollback that itself fails is reported as
+    `FailureKind::LaunchUnrestored` instead of being swallowed — so the one
+    state where the destination is *not* launchable is the one state that
+    says so. Evidence:
+    `a_failed_launch_puts_the_previous_executable_back_on_disk` (asserts the
+    final on-disk bytes, not that the call returned),
+    `a_rollback_with_no_backup_reports_itself`.
+  - `{BOMB}` — the archive decode was unbounded on its **output**: the download
+    ceiling bounded the compressed input only, and the zip path pre-allocated
+    the declared uncompressed size, so a crafted or tampered release aborted the
+    process by exhausting memory instead of refusing it. **Fixed:** every
+    reader takes a `decoded_limit` (`ARCHIVE_DECODED_LIMIT`, derived from
+    `ARCHIVE_BODY_LIMIT` so there is one number and not two that can drift) and
+    refuses past it with the typed `ArchiveError::TooLarge`, checked *before*
+    any allocation and with the inflate loop `take`-bounded. Evidence:
+    `an_archive_that_expands_past_the_ceiling_is_a_typed_refusal`.
+  - `{SCHEME}` — `validate_url` admitted `http://`, and the download URL was
+    taken verbatim from the release document, so a plaintext downgrade was not
+    refused. **Fixed:** `update::require_secure_url` refuses any scheme but
+    `https` before a request is constructed, with loopback hosts as the single
+    exemption the offline test harness needs. Evidence:
+    `a_plaintext_release_url_is_refused_by_the_scheme_check`,
+    `a_loopback_http_url_is_the_one_exemption`.
   The review found the verification order and every network bound sound, and no
   path traversal, panic or integer overflow in the reader (the extraction path
   comes from `current_exe`, never from the entry name); that is recorded so it is
   not re-litigated.
+- [v] when an update fails, the panel says what happened, **whether the install
+  is still launchable**, and what to do next — in the panel's own language
+  (0.2.8). `Phase::Failed` used to carry a developer `String` that was painted
+  raw, in English, into a three-language UI: a bare errno was the entire
+  explanation, and it was silent about the only thing that matters after a
+  failed swap. Failure is now a typed `Failure { kind, cause }` over a
+  `FailureKind` that states its own `InstallState` (`Untouched` / `Restored` /
+  `Unknown`), and `UiLanguage::update_failure_sentence` renders it as three
+  answers in the active language, naming the backup file on the paths where one
+  exists; `Unknown` says the install may need reinstalling and names the
+  Releases page. `ui-snapshot` publishes the raw `failure` token alongside the
+  rendered `status`. Evidence:
+  `a_failure_sentence_answers_all_three_questions_in_the_panels_language`,
+  `every_failure_kind_states_whether_the_install_still_runs`,
+  `failure_tokens_are_unique`, `the_status_line_covers_every_phase_including_a_failure`.
+  Non-goals: multi-line error UI, an on-disk error log, telemetry, and
+  translating the internal cause (the cause stays English data; only the
+  sentence the user reads is localised).
 - [v] interface language is chosen from the panel (English / Simplified /
   Traditional). Only host UI is translated; each option is written in the
   language it selects, and the active one is drawn in the accent colour, so the
@@ -600,13 +649,16 @@ the window rather than being hidden to save pixels.
   the HWND alive and visible and localized 5,921 of 6,049 changed pixels to the
   composer band.
 
-### Screenshot/image paste into the composer — direction decided, not scheduled
+### Screenshot/image paste into the composer — file-path fallback landed, thumbnail chip open
 
 Owner request (2026-09-26): a long-standing want; the owner had no UI/UX or
 implementation direction, so this session proposed the tradeoff and the
-owner accepted it (2026-09-26). Direction is decided; it is not yet
-scheduled to a version — tracked as `F1` in `plan/plan-carried-debt.md`. No
-status marker here since no implementation has started.
+owner accepted it (2026-09-26). Direction is decided, and the file-path
+fallback has since landed on **both** paste surfaces — the composer and the
+terminal content area; the thumbnail-chip UI is still open. Tracked as `F1`
+in [`plan/plan-carried-debt.md`](../plan/plan-carried-debt.md); that section
+owns the progress trail and its evidence boundary, this one owns the
+requirement.
 
 Current architecture (verified against source, not assumed):
 
@@ -630,6 +682,16 @@ Current architecture (verified against source, not assumed):
   from MiniCon today via `available_types()` + `get_type("public.png", ...)`
   (or the Windows/X11 equivalent) with **no platform-layer change needed** —
   this replaces step 1 below, which was based on the wrong assumption.
+- **A Windows DIB is not a self-contained image, and BMP is the wrong
+  container anyway.** `CF_DIB`/`CF_DIBV5` carry a bare device-independent
+  bitmap with no 14-byte `BITMAPFILEHEADER`, so the raw bytes are not a file
+  any viewer opens; and a BMP of even one screen is far too large for the
+  downstream model to read. A clipboard's own registered `PNG` format is
+  preferred when present (snipping tools, browsers and Office register it),
+  otherwise the DIB is decoded and re-encoded as PNG, with the wrapped BMP
+  kept only as a fallback if that decode fails. macOS `public.png`,
+  X11/Linux `image/png` and `public.jpeg` are already self-contained and are
+  written unchanged.
 - Submission does not go through a structured message: `submit_composer` in
   `src/main.rs` takes the composer's plain-text draft and writes it as raw
   PTY bytes (`session.write_pty`), identically to keystrokes, then appends
@@ -659,8 +721,14 @@ Concretely:
    Linux, trying each in `available_types()`'s order) and decoding/
    re-encoding the bytes to a file — that logic belongs here, not in the
    shared platform crate, per AGENTS.md's boundary rule.
-2. **Paste-only entry.** Ctrl/Cmd+V when the clipboard holds an image (no
-   file-picker, no drag-drop for the first cut).
+2. **Paste-only entry, on both surfaces.** Ctrl/Cmd+V when the clipboard
+   holds an image (no file-picker, no drag-drop for the first cut). This
+   applies to the terminal content area as well as the composer: text pastes
+   as text when the clipboard holds non-empty text, and the paste falls back
+   to an image's temp-file absolute path only when it does not — one shared
+   decision, owned by an explicit new module (`src/clipboard_paste.rs`) so
+   the two surfaces cannot drift apart again. The terminal's read stays off
+   the GUI event loop (see "Selection and clipboard" below).
 3. **Temp file + thumbnail chip.** The pasted image is saved to a temp
    file; the composer shows a thumbnail chip in place of path text — a new
    non-text draft-segment type in `ComposerState`, not modeled today.
@@ -676,10 +744,17 @@ Concretely:
 
 - [v] a high-contrast vertical scrollbar stays visible at the right edge of
   every terminal viewport. Its column is excluded from PTY grid sizing; the
-  thumb maps bottom to the live view and upward to older history. Track clicks
+  thumb maps bottom to the live view and upward to older history. It scales and
+  positions against the scrollback that **actually exists**, not the parser's
+  configured capacity, so a fresh session does not draw a full-length bar over
+  phantom rows. Track clicks
   move one visible page, thumb drags retain their grab offset, and capture loss
   cancels the drag without emitting terminal mouse input. Structured snapshots
   expose both current and maximum scrollback.
+- [v] the tab's own scroll affordances are the host's, never the inner
+  program's: the scrollbar and the `Shift+PageUp`/`Shift+PageDown` paging keys
+  act on MiniCon's viewport regardless of what the tab runs, and an application
+  that grabs the mouse does not take the scrollbar from them.
 - [v] the tab-tree divider exposes a horizontal-resize cursor on hover and a
   bounded capture-safe drag that retains the terminal's minimum usable width.
 - [v] divider drag stays visually responsive without synchronously resizing the

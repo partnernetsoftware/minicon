@@ -8,6 +8,11 @@ string and either keeps or drops the OPTIONAL_APE block from
 release-policy.json, then publishes the result verbatim. It is a TEMPLATE, not
 a changelog: per-version facts are owned by prd/archive/<version>-release-history.md,
 and this file must not restate them (it did, and drifted seven releases behind).
+
+The "If a build will not start" section is the deliberate exception in kind: it
+names no version and states a standing property of an in-place self-updater, so
+it stays true for every release that follows. Do not delete it as stale.
+
 Owner: prd/PRD_02_27_con_delivery.md.
 -->
 
@@ -58,6 +63,22 @@ Verify a download before running it:
 ```
 sha256sum -c minicon-VERSION-linux-x86_64.tar.gz.sha256
 ```
+
+## If a build will not start
+
+The in-place update keeps the copy it replaces, so an update that leaves you
+with something that will not launch is undone by hand — no installer, no
+uninstall step:
+
+```
+mv minicon.backup minicon          # Linux and macOS CLI
+```
+
+On Windows the same file is `minicon.exe.backup`, next to `minicon.exe`. If the
+backup is gone too, download the previous release's archive again: the file
+inside is identical to the one you had, and there is nothing else on the machine
+to clean up. A Linux binary that arrived without its executable bit is
+`chmod +x minicon`.
 
 ## Older Windows
 
