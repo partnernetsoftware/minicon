@@ -1457,3 +1457,117 @@ fn minicon_platform_features_match_the_consumer_matrix() {
         );
     }
 }
+
+/// The injected-input parity invariant (plan v0.2.12, scope item 3).
+///
+/// The invisible-rename defect chain (0.2.10 → 0.2.11 → the rename fix) had
+/// one repeating shape: injected UI input carried a private copy of the focus
+/// routing that the physical pipeline did not know about, so a new focus
+/// owner wired into one path stayed invisible to the other. e986344 unified
+/// every `send-ui-*` verb onto `ConApp::event`; this test locks that in, so
+/// the next focus owner (notes editor, settings search) cannot be wired into
+/// one path and forgotten in the other without turning this red.
+#[test]
+fn injected_ui_input_rides_the_physical_event_pipeline() {
+    let root = repo_root();
+    let control = fs::read_to_string(root.join("src/control.rs")).expect("read src/control.rs");
+    let dispatch =
+        fs::read_to_string(root.join("src/control_dispatch.rs")).expect("read control_dispatch");
+    let main_source = fs::read_to_string(root.join("src/main.rs")).expect("read src/main.rs");
+    let rename_source = fs::read_to_string(root.join("src/rename.rs")).expect("read src/rename.rs");
+
+    // 1. Every `SendUi*` command variant exists, and its dispatch arm delivers
+    //    every event through `ConApp::event` — the same entry a physical
+    //    keystroke takes.
+    let variants: Vec<String> = control
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed.strip_prefix("SendUi")?;
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric())
+                .collect();
+            (!name.is_empty()).then(|| format!("SendUi{name}"))
+        })
+        .collect();
+    assert!(
+        variants.contains(&"SendUiKeys".to_owned())
+            && variants.contains(&"SendUiIme".to_owned())
+            && variants.contains(&"SendUiMouse".to_owned()),
+        "expected the three known send-ui verbs in control.rs, found {variants:?}"
+    );
+    // Arm boundaries: each `CliCommand::…` arm runs until the next one.
+    let mut arm_starts: Vec<usize> = dispatch
+        .match_indices("CliCommand::")
+        .map(|(index, _)| index)
+        .collect();
+    arm_starts.push(dispatch.len());
+    for variant in &variants {
+        let needle = format!("CliCommand::{variant}");
+        let start = dispatch
+            .find(&needle)
+            .unwrap_or_else(|| panic!("{needle} has no dispatch arm"));
+        let end = *arm_starts
+            .iter()
+            .find(|&&index| index > start + needle.len())
+            .expect("arm terminator");
+        let arm = &dispatch[start..end];
+        assert!(
+            arm.contains("self.event(window"),
+            "{variant} must deliver through ConApp::event (the physical \
+             pipeline); a private routing copy here is the defect shape that \
+             shipped the invisible rename editor"
+        );
+        // 2. No private copy of the focus routing inside the arm. The event
+        //    pipeline dispatches to these; an injection arm calling them
+        //    directly has bypassed it.
+        for banned in [
+            "handle_workspace_shortcut",
+            "handle_composer_key",
+            "handle_composer_ime",
+            "handle_rename_key",
+            "handle_rename_ime",
+            "forward_keys_to_terminal",
+            "forward_key_checked",
+        ] {
+            assert!(
+                !arm.contains(banned),
+                "{variant} calls {banned} directly; injected input must ride \
+                 ConApp::event so the routing cannot drift from the physical path"
+            );
+        }
+    }
+
+    // 3. The physical pipeline owns text-input routing through exactly the two
+    //    funnels, called from `event` before anything else consumes keys.
+    assert!(
+        main_source.contains("if self.route_rename_input(window, &event).is_some()"),
+        "event() must route keyboard/IME through the rename funnel"
+    );
+    assert!(
+        main_source.contains("if self.route_composer_input(window, &event).is_some()"),
+        "event() must route keyboard/IME through the composer funnel"
+    );
+    assert!(
+        rename_source.contains("fn route_rename_input("),
+        "route_rename_input must live with the rename state machine in rename.rs"
+    );
+    assert!(
+        main_source.contains("fn route_composer_input("),
+        "route_composer_input must stay with the composer state in main.rs"
+    );
+
+    // 4. A funnel that claims `Changed` must have marked its damage region on
+    //    the way: the pairing of claim and damage is the whole point of the
+    //    funnel boundary.
+    let rename_funnel = rename_source
+        [rename_source.find("fn route_rename_input(").expect("funnel present")
+            ..rename_source.find("fn update_rename_ime_anchor").expect("funnel end")]
+        .to_owned();
+    assert!(
+        rename_funnel.contains("mark_tree_dirty()")
+            && rename_funnel.contains("request_dirty_redraw(window)"),
+        "the rename funnel must pair its Changed claim with the tree damage mark"
+    );
+}
