@@ -60,6 +60,18 @@ rule instead of a one-off rescue.
    the leaf with numbers recorded; only build the retained-canvas machinery
    if measurement says otherwise.
 
+   **Closed 2026-10-15, measured-not-felt.** The only shipped platform
+   (Windows) holds `RetainedAcrossFrames` backing — a construction-time
+   constant, not a runtime state — so the transient forced-full path has no
+   shipped carrier. Measured on the Windows host
+   (`controlled_resize_storm`, 16 resizes): 7 frames total, 2 full (both
+   from resize/DPI invalidation, which retained-canvas machinery could not
+   avoid either) and 5 partial reusing the retained raster;
+   `present_success=67`, `present_failure=0`. Building the retained second
+   canvas would also re-create the duplicate product-owned full-window
+   canvas the frame contract deleted (PRD 02.24, the `[v]` backing line).
+   The leaf closes with these numbers; no machinery built.
+
 ## Explicitly deferred (to 0.2.13+)
 
 - **#5 notes scratchpad** — unchanged from the previous draft of this plan

@@ -339,9 +339,21 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   track_not_full`) is **unrun on any host** — the development agent's sandbox
   blacklisted `reg.exe`, which `winresource`'s resource embed needs, blocking
   every cargo build — and the Unix transient host still forces a full frame
-  by frame-contract design (`TransientRequiresFull`); narrowing it needs a
-  retained second canvas and is deferred to 0.2.11 with its design note in
-  `plan/plan-v0.2.10.md` {AMPLIFIER-T}. The flashing claim stays `[-]` until
+  by frame-contract design (`TransientRequiresFull`). The {AMPLIFIER-T}
+  question ("is that forced full felt on any shipped platform?") was
+  **measured and closed in 0.2.12**: the only shipped platform (Windows)
+  holds `RetainedAcrossFrames` backing
+  (`adapters/windows/native_pixel_window.rs`, `PixelFrameState::new` at
+  construction — not a runtime state), so the transient forced-full path
+  has no shipped carrier at all. Measured on the Windows host
+  (controlled_resize_storm, 2026-10-15): 16 resizes produced 7 frames —
+  2 full (resize/DPI invalidation, which retained-canvas machinery could
+  not avoid either) and 5 partial reusing the retained raster — with
+  `present_success=67`, `present_failure=0`. A retained second canvas
+  would also re-create the duplicate product-owned full-window canvas the
+  frame contract had just deleted (see the `[v]` line below), so the
+  machinery is **not built**; the leaf closes as measured-not-felt, per
+  `plan/plan-v0.2.12.md` scope 5. The flashing claim stays `[-]` until
   the journey runs.
 - [v] the pixel-window contract identifies retained versus transient host
   backing and requires each frame to commit `None`, `Full`, or a bounded partial
