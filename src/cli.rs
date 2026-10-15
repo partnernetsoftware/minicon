@@ -445,6 +445,8 @@ window appears only when something sends attach-gui.
   ... send-keys [--target TAB] KEY...
   ... send-ui-ime enabled|disabled|preedit TEXT [--cursor N]|commit TEXT
   ... send-ui-keys KEY...
+  ... send-ui-mouse --action press|release|move|click
+                   --button none|left|middle|right --column N --row N
   ... send-mouse [--target TAB] --action press|release|move|click
                  --button none|left|middle|right --column N --row N
   ... send-wheel [--target TAB] --column N --row N --notches N [--ctrl]
@@ -454,6 +456,8 @@ window appears only when something sends attach-gui.
 Keys use names such as Enter, Escape, Tab, Up, F1 or modifiers such as Ctrl+C.
 send-ui-keys follows current UI focus; send-keys always targets a terminal.
 Mouse coordinates are zero-based terminal cells. Positive wheel notches scroll up.
+send-ui-mouse coordinates are window logical pixels and follow the real event
+path: hover, click targets and focus all resolve exactly as with a real mouse.
 
   Ctrl+Shift+T       New root terminal
   Ctrl+Shift+N       New child terminal below the active tab

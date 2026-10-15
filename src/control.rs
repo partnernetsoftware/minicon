@@ -242,6 +242,12 @@ pub enum CliCommand {
     SendUiIme {
         event: ImeEvent,
     },
+    SendUiMouse {
+        action: MouseAction,
+        button: MouseButton,
+        column: u16,
+        row: u16,
+    },
     SendMouse {
         target: Option<TabId>,
         action: MouseAction,
@@ -482,6 +488,25 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
             let event = parse_ime_event(&mut cursor)?;
             CliCommand::SendUiIme { event }
         }
+        "send-ui-mouse" => {
+            let action = parse_mouse_action(cursor.required_value("--action")?)?;
+            let button = parse_mouse_button(cursor.required_value("--button")?)?;
+            let column = cursor.required_u16("--column")?;
+            let row = cursor.required_u16("--row")?;
+            cursor.finish()?;
+            if (action == MouseAction::Move) != (button == MouseButton::None) {
+                return Err(
+                    "send-ui-mouse move requires --button none; button actions require a button"
+                        .to_owned(),
+                );
+            }
+            CliCommand::SendUiMouse {
+                action,
+                button,
+                column,
+                row,
+            }
+        }
         "send-mouse" => {
             let target = cursor.optional_target()?;
             let action = parse_mouse_action(cursor.required_value("--action")?)?;
@@ -556,10 +581,10 @@ pub fn parse_cli(args: &[String]) -> Result<CliRequest, String> {
 }
 
 pub fn usage() -> String {
-    "usage: minicon cli list-commands\n       minicon cli --control ENDPOINT <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-mouse|send-wheel|wait-text|wait-tab-exit> ...".to_owned()
+    "usage: minicon cli list-commands\n       minicon cli --control ENDPOINT <list-tabs|ui-snapshot|perf-stats|reset-perf-stats|cancel-pointer|close-window|detach-gui|attach-gui|resize-window|new-tab|select-tab|close-tab|capture-pane|screenshot-pane|send-text|send-paste|send-keys|send-ui-ime|send-ui-keys|send-ui-mouse|send-mouse|send-wheel|wait-text|wait-tab-exit> ...".to_owned()
 }
 
-const CLI_COMMAND_CATALOG: &str = "attach-gui\ncancel-pointer\ncapture-pane\nclose-tab\nclose-window\ndetach-gui\nlist-commands\nlist-tabs\nnew-tab\nperf-stats\nreset-perf-stats\nresize-window\nscreenshot-pane\nselect-tab\nsend-keys\nsend-mouse\nsend-paste\nsend-text\nsend-ui-ime\nsend-ui-keys\nsend-wheel\nui-snapshot\nwait-tab-exit\nwait-text\n";
+const CLI_COMMAND_CATALOG: &str = "attach-gui\ncancel-pointer\ncapture-pane\nclose-tab\nclose-window\ndetach-gui\nlist-commands\nlist-tabs\nnew-tab\nperf-stats\nreset-perf-stats\nresize-window\nscreenshot-pane\nselect-tab\nsend-keys\nsend-mouse\nsend-paste\nsend-text\nsend-ui-ime\nsend-ui-keys\nsend-ui-mouse\nsend-wheel\nui-snapshot\nwait-tab-exit\nwait-text\n";
 
 const MAX_IME_TEXT_BYTES: usize = 64 * 1024;
 
@@ -1929,6 +1954,18 @@ fn encode_request(command: CliCommand) -> Result<Vec<u8>, String> {
                 _ => return Err("unsupported IME event".to_owned()),
             }
         }
+        CliCommand::SendUiMouse {
+            action,
+            button,
+            column,
+            row,
+        } => {
+            wire.byte(22);
+            wire.byte(action.wire_tag());
+            wire.byte(button.wire_tag());
+            wire.u16(column);
+            wire.u16(row);
+        }
         CliCommand::SendMouse {
             target,
             action,
@@ -2064,6 +2101,25 @@ fn decode_request(bytes: &[u8]) -> Result<CliCommand, String> {
             };
             validate_ime_event(&event)?;
             CliCommand::SendUiIme { event }
+        }
+        22 => {
+            let action = match MouseAction::from_wire_tag(wire.byte()?) {
+                Some(action) => action,
+                None => return Err("invalid control mouse action".to_owned()),
+            };
+            let button = match MouseButton::from_wire_tag(wire.byte()?) {
+                Some(button) => button,
+                None => return Err("invalid control mouse button".to_owned()),
+            };
+            if (action == MouseAction::Move) != (button == MouseButton::None) {
+                return Err("invalid control mouse action/button pair".to_owned());
+            }
+            CliCommand::SendUiMouse {
+                action,
+                button,
+                column: wire.u16()?,
+                row: wire.u16()?,
+            }
         }
         10 => {
             let target = wire.optional_tab()?;
@@ -2619,6 +2675,50 @@ mod tests {
             "--control",
             "local-control",
             "send-mouse",
+            "--action",
+            "move",
+            "--button",
+            "left",
+            "--column",
+            "3",
+            "--row",
+            "4",
+        ]))
+        .unwrap_err();
+        assert!(error.contains("move requires --button none"));
+    }
+
+    #[test]
+    fn send_ui_mouse_parses_click_and_rejects_ambiguous_move_button_state() {
+        let command = parse_cli(&args(&[
+            "cli",
+            "--control",
+            "local-control",
+            "send-ui-mouse",
+            "--action",
+            "click",
+            "--button",
+            "left",
+            "--column",
+            "84",
+            "--row",
+            "30",
+        ]))
+        .expect("send-ui-mouse click parses");
+        assert_eq!(
+            command.command,
+            CliCommand::SendUiMouse {
+                action: MouseAction::Click,
+                button: MouseButton::Left,
+                column: 84,
+                row: 30,
+            }
+        );
+        let error = parse_cli(&args(&[
+            "cli",
+            "--control",
+            "local-control",
+            "send-ui-mouse",
             "--action",
             "move",
             "--button",
@@ -3199,6 +3299,12 @@ mod tests {
                     text: "nihao".to_owned(),
                     cursor: Some((5, 5)),
                 },
+            },
+            CliCommand::SendUiMouse {
+                action: MouseAction::Click,
+                button: MouseButton::Left,
+                column: 84,
+                row: 30,
             },
             CliCommand::SendMouse {
                 target: None,

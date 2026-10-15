@@ -2640,8 +2640,11 @@ impl ConApp {
             | keymap::Action::RecallPrevious
             | keymap::Action::RecallNext => {}
         }
+        // Damage and redraw are owned by the dispatch site: a bare
+        // request_redraw here paints the last rasterised frame again (the
+        // 0.2.10 damage model skips re-rasterising undamaged host UI), which
+        // is exactly how an in-progress rename showed no text or caret.
         let _ = self.update_rename_ime_anchor(window);
-        window.request_redraw();
     }
 
     fn handle_rename_ime(&mut self, window: &PixelWindow, event: minicon_platform::ime::ImeEvent) {
@@ -2660,7 +2663,6 @@ impl ConApp {
             _ => rename.editor.preedit.clear(),
         }
         let _ = self.update_rename_ime_anchor(window);
-        window.request_redraw();
     }
 
     /// Anchors the IME candidate window at the inline rename editor's caret.
@@ -3819,10 +3821,14 @@ impl PixelWindowApplication for ConApp {
             match event {
                 PixelWindowEvent::Keyboard(key) => {
                     self.handle_rename_key(window, &key);
+                    self.mark_tree_dirty();
+                    self.request_dirty_redraw(window);
                     return Ok(PixelWindowDirective::Continue);
                 }
                 PixelWindowEvent::Ime(ime) => {
                     self.handle_rename_ime(window, ime);
+                    self.mark_tree_dirty();
+                    self.request_dirty_redraw(window);
                     return Ok(PixelWindowDirective::Continue);
                 }
                 _ => {}

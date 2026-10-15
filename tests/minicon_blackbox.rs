@@ -2650,6 +2650,7 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "ime_status",
         "pending_control_screenshots",
         "pending_control_waits",
+        "rename",
         "terminal_clipboard_paste",
         "terminal_ime_preedit",
         "ui_language",
@@ -2725,6 +2726,154 @@ fn the_history_panel_toggle_reinsets_the_terminal_and_closes_back() {
             .expect("terminal viewport width"),
         closed_width,
         "closing must restore the exact geometry: {closed}"
+    );
+    let _ = session.child.kill();
+}
+
+/// The tab-row pencil must open a rename editor whose typed text and caret
+/// are actually rendered.
+///
+/// This is the blackbox guard for a user-reported 0.2.10 bug: clicking the
+/// pencil entered the editor, but keystrokes never showed. The rename key and
+/// IME dispatch arms returned early without marking the host UI damaged, and
+/// under the 0.2.10 damage model a redraw without damage re-presents the last
+/// rasterised frame — so the editor state advanced invisibly while the pixels
+/// stood still. A bare `request_redraw` in the handler is exactly the trap:
+/// only the state moved, the frame did not.
+///
+/// The state half of that bug is invisible to a snapshot: `rename.text`
+/// updated correctly the whole time. What catches it is pixels — the sidebar
+/// row band must differ between "just entered" and "typed a character". The
+/// click itself rides the same `event` pipeline a physical mouse drives
+/// (`send-ui-mouse`), and the pencil rectangle comes from the host's own
+/// layout (`geometry.tree_edit_button`), so the test derives nothing from the
+/// tree's button math.
+#[cfg(windows)]
+#[test]
+fn the_rename_editor_renders_typed_text_and_the_caret() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("rename-editor");
+    let before_path = dir.join("before-typing.png");
+    let after_path = dir.join("after-typing.png");
+    // A long-lived child so the window stays up for the whole journey.
+    let args = command_shell_args("ping -n 60 127.0.0.1 >nul");
+    let mut session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+    let host_pid = session.child.id();
+
+    let snapshot = session.control_json(&["ui-snapshot"]);
+    let geometry = &snapshot["geometry"];
+    let pencil = geometry["tree_edit_button"].clone();
+    assert!(
+        pencil.is_object(),
+        "the active row must expose its pencil button: {snapshot}"
+    );
+    // Pencil geometry is window physical pixels; `send-ui-mouse` takes
+    // logical pixels, and `scale_permille` is the host's own conversion.
+    let scale = geometry["scale_permille"].as_f64().unwrap_or(1000.0) / 1000.0;
+    let logical = |rect: &serde_json::Value, field: &str| {
+        (rect[field].as_f64().expect("pencil geometry number") / scale) as u16
+    };
+    let center_x = logical(&pencil, "x") + logical(&pencil, "width") / 2;
+    let center_y = logical(&pencil, "y") + logical(&pencil, "height") / 2;
+    let click = [
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &center_x.to_string(),
+        "--row",
+        &center_y.to_string(),
+    ];
+
+    session.control_json(&click);
+    let entering = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        !snapshot["rename"].is_null()
+    });
+    let seeded = entering["rename"]["text"]
+        .as_str()
+        .expect("rename seeds the row name")
+        .to_owned();
+    assert!(
+        !seeded.is_empty(),
+        "the editor must open pre-filled with the row name: {entering}"
+    );
+
+    // Let the entry frame rasterise and present before sampling pixels.
+    std::thread::sleep(Duration::from_millis(500));
+    capture_native_window(host_pid, &before_path).expect("capture before typing");
+    session.control_json(&["send-ui-keys", "X"]);
+    let typed = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["rename"]["text"] == "X"
+    });
+    assert_eq!(
+        typed["rename"]["text"], "X",
+        "the editor opens fully selected, so one key replaces the name: {typed}"
+    );
+    std::thread::sleep(Duration::from_millis(500));
+    capture_native_window(host_pid, &after_path).expect("capture after typing");
+
+    fn decode(path: &Path) -> (usize, usize, Vec<u8>, png::ColorType) {
+        let decoder = png::Decoder::new(std::fs::File::open(path).expect("open screenshot"));
+        let mut reader = decoder.read_info().expect("read screenshot info");
+        let mut bytes = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut bytes).expect("decode screenshot");
+        bytes.truncate(info.buffer_size());
+        (info.width as usize, info.height as usize, bytes, info.color_type)
+    }
+    let (width, height, before, color) = decode(&before_path);
+    let (after_width, after_height, after, after_color) = decode(&after_path);
+    assert_eq!((width, height), (after_width, after_height));
+    assert_eq!(color, after_color);
+    let channels = match color {
+        png::ColorType::Rgb => 3,
+        png::ColorType::Rgba => 4,
+        other => panic!("unexpected screenshot color type {other:?}"),
+    };
+    // Crop to the renamed row's band across the sidebar (physical pixels).
+    let row_y = pencil["y"].as_u64().expect("pencil y") as usize;
+    let row_h = geometry["tree_row_height"].as_u64().expect("row height") as usize;
+    let sidebar_x = geometry["sidebar"]["x"].as_u64().expect("sidebar x") as usize;
+    let sidebar_w = geometry["sidebar"]["width"].as_u64().expect("sidebar w") as usize;
+    let y_end = (row_y + row_h).min(height);
+    let x_end = (sidebar_x + sidebar_w).min(width);
+    let changed: usize = (row_y..y_end)
+        .map(|y| {
+            let start = y * width * channels;
+            let before_row = &before[start..start + width * channels];
+            let after_row = &after[start..start + width * channels];
+            (sidebar_x * channels..x_end * channels)
+                .filter(|&offset| before_row[offset] != after_row[offset])
+                .count()
+        })
+        .sum();
+    assert!(
+        changed > 0,
+        "typing into the rename editor must change the sidebar pixels (the \
+         0.2.10 damage bug re-presented the old frame instead): \
+         before={before_path:?}, after={after_path:?}"
+    );
+
+    // Enter commits; re-entering the editor seeds from the committed name.
+    session.control_json(&["send-ui-keys", "Enter"]);
+    let committed = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["rename"].is_null()
+    });
+    assert!(
+        committed["rename"].is_null(),
+        "Enter must leave the editor: {committed}"
+    );
+    session.control_json(&click);
+    let reentered = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        !snapshot["rename"].is_null()
+    });
+    assert_eq!(
+        reentered["rename"]["text"], "X",
+        "the committed name must survive as the row's custom title: {reentered}"
     );
     let _ = session.child.kill();
 }

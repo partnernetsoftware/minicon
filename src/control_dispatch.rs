@@ -209,6 +209,50 @@ impl ConApp {
                                 ("status_band", rect_obj(layout.status)),
                                 ("history_panel_band", rect_obj(layout.panel)),
                                 ("panel_toggle", rect_obj(layout.panel_toggle)),
+                                ("sidebar", rect_obj(layout.sidebar)),
+                                (
+                                    "tree_header_height",
+                                    layout.tree_header_height.into(),
+                                ),
+                                (
+                                    "tree_row_height",
+                                    layout.tree_row_height.into(),
+                                ),
+                                (
+                                    "tree_edit_button",
+                                    // Where the active row's rename (pencil)
+                                    // button sits, in window physical pixels —
+                                    // or null with no active row or when that
+                                    // row is scrolled out of the tree. The
+                                    // rename journey clicks this instead of
+                                    // re-deriving the tree's button math, the
+                                    // same way terminal_viewport spares tests
+                                    // the inset arithmetic.
+                                    self.workspace.active().map_or(
+                                        json::JsonValue::Null,
+                                        |active| {
+                                            self.workspace
+                                                .nodes()
+                                                .iter()
+                                                .position(|node| node.id == active)
+                                                .and_then(|index| {
+                                                    index.checked_sub(self.tree_scroll_offset)
+                                                })
+                                                .filter(|visible| {
+                                                    *visible < layout.tree_capacity()
+                                                })
+                                                .map_or(
+                                                    json::JsonValue::Null,
+                                                    |visible| {
+                                                        rect_obj(layout.tree_edit_rect(
+                                                            visible,
+                                                            metrics.scale_factor,
+                                                        ))
+                                                    },
+                                                )
+                                        },
+                                    ),
+                                ),
                                 (
                                     "grid",
                                     json::object(vec![
@@ -338,6 +382,22 @@ impl ConApp {
                             ),
                             ("ui_language", self.ui_language.tag().into()),
                             ("ui_theme", self.ui_theme.tag().into()),
+                            (
+                                "rename",
+                                self.rename.as_ref().map_or(
+                                    json::JsonValue::Null,
+                                    |rename| {
+                                        json::object(vec![
+                                            ("tab", tab_id_json(Some(rename.target))),
+                                            ("text", rename.editor.text.as_str().into()),
+                                            (
+                                                "preedit",
+                                                rename.editor.preedit.as_str().into(),
+                                            ),
+                                        ])
+                                    },
+                                ),
+                            ),
                             ("composer_focused", self.composer.focused.into()),
                             ("composer_text", self.composer.text.as_str().into()),
                             ("composer_preedit", self.composer.preedit.as_str().into()),
@@ -456,28 +516,16 @@ impl ConApp {
                 // later key is rejected leaves the interface in a state the
                 // caller never asked for and cannot predict from the error.
                 let parsed = parse_control_keys(&keys)?;
+                // Injected keys take the exact routing a physical keystroke
+                // takes — workspace shortcut, live rename, composer, then the
+                // terminal — by going through `event` itself. A private copy
+                // of that routing here once drifted: rename shipped with typed
+                // text invisible because only the real path knew the damage
+                // contract. One routing authority; the injection site adds no
+                // routing of its own.
                 for (key, ctrl, alt, shift) in parsed {
-                    let event = injected_key_event(key, ctrl, alt, shift);
-                    if self
-                        .handle_workspace_shortcut(window, &event)
-                        .map_err(|error| error.to_string())?
-                    {
-                        continue;
-                    }
-                    if self.composer.focused {
-                        self.handle_composer_key(window, &event);
-                        self.mark_composer_dirty();
-                    } else {
-                        let id = self
-                            .workspace
-                            .active()
-                            .ok_or_else(|| "no active terminal session".to_owned())?;
-                        self.forward_keys_to_terminal(window, id, |session| {
-                            session
-                                .forward_key_checked(&event)
-                                .map_err(|error| format!("terminal input failed: {error}"))
-                        })?;
-                    }
+                    let event = PixelWindowEvent::Keyboard(injected_key_event(key, ctrl, alt, shift));
+                    self.event(window, event).map_err(|error| error.to_string())?;
                 }
                 self.request_dirty_redraw(window);
                 Ok(single_field_json("sent_keys", keys.len().into()))
@@ -490,21 +538,79 @@ impl ConApp {
                     minicon_platform::ime::ImeEvent::Disabled => "disabled",
                     _ => "unknown",
                 };
-                let route = if self.composer.focused {
-                    self.handle_composer_ime(window, event);
-                    self.mark_composer_dirty();
-                    "composer"
-                } else {
-                    self.active_session_mut()
-                        .map_err(|error| error.to_string())?
-                        .handle_ime_checked(window, event)?;
-                    "terminal"
-                };
+                // Same single-routing-authority rule as `SendUiKeys` above:
+                // the IME event rides the real `event` pipeline, so a live
+                // rename or focused composer claims it exactly as it would a
+                // physical IME delivery.
+                let delivered = PixelWindowEvent::Ime(event);
+                self.event(window, delivered).map_err(|error| error.to_string())?;
                 self.request_dirty_redraw(window);
                 Ok(json::object(vec![
                     ("action", action.into()),
-                    ("route", route.into()),
+                    ("route", "event".into()),
                 ]))
+            })(),
+            CliCommand::SendUiMouse {
+                action,
+                button,
+                column,
+                row,
+            } => (|| {
+                // The cell-addressed `send-mouse` reaches one terminal's grid;
+                // host UI (the sidebar tree, the composer chrome) has no cell
+                // address at all. This command injects at window logical
+                // pixels and rides the same `event` pipeline a physical mouse
+                // drives, so hover, hit-testing and focus resolve identically
+                // — which is what makes the pencil-click rename journey a
+                // blackbox test instead of a whitebox reproduction.
+                let position = LogicalPoint::new(f64::from(column), f64::from(row));
+                let modifiers = ModifierState::default();
+                let moved = PixelWindowEvent::PointerMoved {
+                    position,
+                    modifiers,
+                };
+                let events: Vec<PixelWindowEvent> = match action {
+                    control::MouseAction::Move => vec![moved],
+                    control::MouseAction::Press
+                    | control::MouseAction::Release
+                    | control::MouseAction::Click => {
+                        let platform_button = match button {
+                            control::MouseButton::Left => PointerButton::Left,
+                            control::MouseButton::Middle => PointerButton::Middle,
+                            control::MouseButton::Right => PointerButton::Right,
+                            control::MouseButton::None => {
+                                return Err(
+                                    "send-ui-mouse button actions require a button".to_owned()
+                                );
+                            }
+                        };
+                        let pointer = |state| PixelWindowEvent::PointerButton {
+                            button: platform_button,
+                            state,
+                            position: Some(position),
+                            modifiers,
+                        };
+                        match action {
+                            control::MouseAction::Press => {
+                                vec![moved, pointer(PointerButtonState::Pressed)]
+                            }
+                            control::MouseAction::Release => {
+                                vec![pointer(PointerButtonState::Released)]
+                            }
+                            _ => vec![
+                                moved,
+                                pointer(PointerButtonState::Pressed),
+                                pointer(PointerButtonState::Released),
+                            ],
+                        }
+                    }
+                };
+                let count = events.len();
+                for event in events {
+                    self.event(window, event).map_err(|error| error.to_string())?;
+                }
+                self.request_dirty_redraw(window);
+                Ok(single_field_json("injected_events", count.into()))
             })(),
             CliCommand::SendMouse {
                 target,

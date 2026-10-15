@@ -6,7 +6,7 @@
     "list-commands", "list-tabs",
     "new-tab", "perf-stats", "reset-perf-stats", "resize-window", "screenshot-pane",
     "select-tab", "send-keys", "send-mouse", "send-paste", "send-text",
-    "send-ui-ime", "send-ui-keys", "send-wheel", "ui-snapshot", "wait-tab-exit", "wait-text"
+    "send-ui-ime", "send-ui-keys", "send-ui-mouse", "send-wheel", "ui-snapshot", "wait-tab-exit", "wait-text"
   ],
   "capabilities": [
     {
@@ -62,6 +62,16 @@
       "prd_anchor": "- [v] composer focus isolation is owned by a Windows black-box journey: it",
       "evidence": ["minicon_blackbox::native_composer_focus_keeps_editing_keys_local_until_ctrl_o"],
       "commands": ["send-ui-keys"]
+    },
+    {
+      "id": "con.workspace.rename-editor",
+      "kind": "behavior",
+      "status": "shipped",
+      "evidence_mode": "black-box",
+      "prd": "prd/PRD_02_25_con_workspace.md",
+      "prd_anchor": "- [v] the rename editor renders what is typed, not just what is stored. The",
+      "evidence": ["minicon_blackbox::the_rename_editor_renders_typed_text_and_the_caret"],
+      "commands": ["send-ui-mouse"]
     },
     {
       "id": "con.workspace.ime-routing",

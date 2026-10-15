@@ -68,9 +68,16 @@ minicon workspace and input
   shipped in v0.2.5 without a requirement line here, and this entry is its
   registration, written 2026-10-13 from the source of record
   (`crates/minicon-core` workspace `custom_title`, `src/host_paint.rs`'s row
-  painting). It carries no `[v]`-grade named evidence of its own yet; treat the
-  claim as "shipped and described", and add the black-box journey when this
-  line next gets worked on.
+  painting).
+- [v] the rename editor renders what is typed, not just what is stored. The
+  0.2.10 damage model let the pencil's key and IME dispatch arms return without
+  marking the sidebar damaged, so the editor advanced invisibly while every
+  redraw re-presented the last frame. A black-box journey clicks the pencil
+  through the real event pipeline (`send-ui-mouse` at the host's own pencil
+  geometry), types with `send-ui-keys`, commits with Enter, and requires the
+  sidebar's pixels to change — because the state moving without the frame
+  moving is exactly the shape of the report. (v0.2.12; the journey is
+  `the_rename_editor_renders_typed_text_and_the_caret`.)
 
 ## Tab tree authority
 

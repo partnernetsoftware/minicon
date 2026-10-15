@@ -90,7 +90,7 @@ flowchart LR
   `close-window`, `detach-gui`, `list-commands`,
   `list-tabs`, `new-tab`, `perf-stats`, `reset-perf-stats`, `resize-window`,
   `screenshot-pane`, `select-tab`, `send-keys`, `send-mouse`, `send-paste`,
-  `send-text`, `send-ui-ime`, `send-ui-keys`, `send-wheel`, `ui-snapshot`, `wait-tab-exit` and
+  `send-text`, `send-ui-ime`, `send-ui-keys`, `send-ui-mouse`, `send-wheel`, `ui-snapshot`, `wait-tab-exit` and
   `wait-text`.
 - [v] the fixed process-lifetime local CLI uses stable `@N` tab IDs for `list-tabs`,
   `new-tab`, `select-tab`, `close-tab`, `capture-pane`, `screenshot-pane`,
