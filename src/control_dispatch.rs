@@ -522,11 +522,21 @@ impl ConApp {
                 // of that routing here once drifted: rename shipped with typed
                 // text invisible because only the real path knew the damage
                 // contract. One routing authority; the injection site adds no
-                // routing of its own.
-                for (key, ctrl, alt, shift) in parsed {
-                    let event = PixelWindowEvent::Keyboard(injected_key_event(key, ctrl, alt, shift));
-                    self.event(window, event).map_err(|error| error.to_string())?;
-                }
+                // routing of its own. The provenance flag rides along so the
+                // paste-chord drain inside `event` can keep the documented
+                // injected-bypasses-review contract (PRD 02.26) without the
+                // two paths diverging anywhere else.
+                self.injected_ui_keys_live = true;
+                let delivered: Result<(), String> = (|| {
+                    for (key, ctrl, alt, shift) in parsed {
+                        let event =
+                            PixelWindowEvent::Keyboard(injected_key_event(key, ctrl, alt, shift));
+                        self.event(window, event).map_err(|error| error.to_string())?;
+                    }
+                    Ok(())
+                })();
+                self.injected_ui_keys_live = false;
+                delivered?;
                 self.request_dirty_redraw(window);
                 Ok(single_field_json("sent_keys", keys.len().into()))
             })(),
@@ -538,6 +548,20 @@ impl ConApp {
                     minicon_platform::ime::ImeEvent::Disabled => "disabled",
                     _ => "unknown",
                 };
+                // Preedit, enable and disable are local-only state and stay
+                // available on a retained exited tab; a commit writes the
+                // PTY and carries the same explicit exited-tab contract as
+                // send-keys (PRD 02.26) — checked before anything moves, so
+                // a refused commit also leaves the preedit untouched.
+                if matches!(event, minicon_platform::ime::ImeEvent::Commit(_))
+                    && self.rename.is_none()
+                    && !self.composer.focused
+                {
+                    let session = self
+                        .active_session()
+                        .map_err(|error| error.to_string())?;
+                    session.ensure_pty_input_open()?;
+                }
                 // Same single-routing-authority rule as `SendUiKeys` above:
                 // the IME event rides the real `event` pipeline, so a live
                 // rename or focused composer claims it exactly as it would a
@@ -545,9 +569,21 @@ impl ConApp {
                 let delivered = PixelWindowEvent::Ime(event);
                 self.event(window, delivered).map_err(|error| error.to_string())?;
                 self.request_dirty_redraw(window);
+                // The reply's `route` names the surface that owns IME input
+                // after delivery — the contract tests pin `terminal` and
+                // `composer` against it. Delivery decides the owner, so the
+                // reply reads the post-delivery state instead of predicting
+                // it.
+                let route = if self.rename.is_some() {
+                    "rename"
+                } else if self.composer.focused {
+                    "composer"
+                } else {
+                    "terminal"
+                };
                 Ok(json::object(vec![
                     ("action", action.into()),
-                    ("route", "event".into()),
+                    ("route", route.into()),
                 ]))
             })(),
             CliCommand::SendUiMouse {

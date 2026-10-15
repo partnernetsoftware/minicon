@@ -777,8 +777,15 @@ struct ConApp {
     current_window_title: String,
     /// An in-progress inline rename of a tab-tree label; `None` when not
     /// renaming. While set, keyboard and IME input edit `editor` instead of
-    /// reaching the terminal (see the key routing in `event`).
+    /// reaching the terminal (see `route_rename_input`).
     rename: Option<RenameState>,
+    /// True only while a control-plane key injection (`send-ui-keys`) is in
+    /// flight through `event`. The clipboard-paste drain site reads it to
+    /// honor the documented contract that injected `Ctrl+Shift+V` bypasses
+    /// the human review modal — an injection has no human at the keyboard to
+    /// review anything, and the caller vouches for the payload's origin.
+    /// Physical chords always review.
+    injected_ui_keys_live: bool,
 }
 
 /// An in-progress inline tab rename.
@@ -789,6 +796,30 @@ struct ConApp {
 struct RenameState {
     target: workspace::TabId,
     editor: composer::ComposerState,
+}
+
+/// The damage ledger of one text-input surface for one keyboard or IME event.
+///
+/// A surface that consumes an event must name what its pixels owe. The
+/// invisible-rename defect (shipped 0.2.10, fixed on `main` after 0.2.11)
+/// happened because a dispatch arm consumed an event while its damage
+/// obligation lived somewhere else — at the dispatch site, where the next
+/// refactor could forget it again. Here the obligation travels with the
+/// claim: the only producers of [`Self::Changed`] are the routing funnels,
+/// which mark the surface's damage before returning it, and
+/// [`Self::Unchanged`] requires a reason, so a no-damage consume stays a
+/// deliberate, greppable act rather than an omission.
+enum TextInputOutcome {
+    /// The surface consumed the event and its visible state moved; the
+    /// surface's damage region was marked and a dirty redraw requested
+    /// before this value exists.
+    Changed,
+    /// The surface consumed the event but no pixel could move, and the
+    /// reason says why in one greppable phrase. The string is source
+    /// documentation carried in the type — writing it forces the arm to
+    /// articulate why nothing can move — and nothing reads it at runtime.
+    #[allow(dead_code)]
+    Unchanged(&'static str),
 }
 
 impl Drop for ConApp {
@@ -1143,6 +1174,7 @@ impl ConApp {
             a11y_dirty: false,
             current_window_title: product_window_title(),
             rename: None,
+            injected_ui_keys_live: false,
         }
     }
 
@@ -2576,32 +2608,38 @@ impl ConApp {
     /// Enter (soft newline) and Ctrl+O (send) commit, Escape cancels; everything
     /// else edits the buffer. Enter cannot insert a newline because the buffer
     /// is single-line — the key is the commit affordance here, not a line break.
-    fn handle_rename_key(&mut self, window: &PixelWindow, key: &NormalizedKeyEvent) {
+    ///
+    /// Returns whether the editor's visible state may have moved. Arms that can
+    /// no-op (Copy with no selection, an unmapped Insert) still claim a change:
+    /// the safe direction of this claim is over-marking, which costs one
+    /// bounded re-raster, while under-marking is the invisible-frame defect
+    /// class. Only exits that provably touch nothing return `false`.
+    fn handle_rename_key(&mut self, window: &PixelWindow, key: &NormalizedKeyEvent) -> bool {
         if key.state != KeyPressState::Pressed {
-            return;
+            return false;
         }
         let Some(chord) = composer_chord(key) else {
-            return;
+            return false;
         };
         let Some(action) = keymap::action(chord, CLIPBOARD_MODIFIER, keymap::Draft::single_line())
         else {
-            return;
+            return false;
         };
         match action {
             // Scrollback paging is not a thing while renaming; swallow it.
-            keymap::Action::Decline => return,
+            keymap::Action::Decline => return false,
             keymap::Action::SoftNewline | keymap::Action::Send => {
                 self.commit_rename(window);
-                return;
+                return true;
             }
             keymap::Action::CancelFocus => {
                 self.cancel_rename(window);
-                return;
+                return true;
             }
             _ => {}
         }
         let Some(editor) = self.rename.as_mut().map(|rename| &mut rename.editor) else {
-            return;
+            return false;
         };
         match action {
             keymap::Action::SelectAll => composer::select_all(editor),
@@ -2640,17 +2678,23 @@ impl ConApp {
             | keymap::Action::RecallPrevious
             | keymap::Action::RecallNext => {}
         }
-        // Damage and redraw are owned by the dispatch site: a bare
+        // Damage and redraw are owned by the routing funnel, not here: a bare
         // request_redraw here paints the last rasterised frame again (the
         // 0.2.10 damage model skips re-rasterising undamaged host UI), which
-        // is exactly how an in-progress rename showed no text or caret.
+        // is exactly how an in-progress rename showed no text or caret. The
+        // funnel pairs this `true` with the tree-damage mark.
         let _ = self.update_rename_ime_anchor(window);
+        true
     }
 
-    fn handle_rename_ime(&mut self, window: &PixelWindow, event: minicon_platform::ime::ImeEvent) {
+    fn handle_rename_ime(
+        &mut self,
+        window: &PixelWindow,
+        event: minicon_platform::ime::ImeEvent,
+    ) -> bool {
         use minicon_platform::ime::{ImeAction, classify_event};
         let Some(rename) = self.rename.as_mut() else {
-            return;
+            return false;
         };
         match classify_event(event, true) {
             ImeAction::UpdatePreedit { text, .. } => rename.editor.preedit = text,
@@ -2659,10 +2703,88 @@ impl ConApp {
                 rename.editor.preedit.clear();
                 composer::insert(&mut rename.editor, &single_line_label(&text));
             }
-            ImeAction::None => {}
+            ImeAction::None => return false,
             _ => rename.editor.preedit.clear(),
         }
         let _ = self.update_rename_ime_anchor(window);
+        true
+    }
+
+    /// The rename editor's ownership of one keyboard or IME event.
+    ///
+    /// While a rename is live it owns the keyboard and IME entirely, so a
+    /// keystroke edits the label instead of reaching the terminal; a left
+    /// press already committed the rename before this runs, and non-text
+    /// events fall through so window-level handling still works.
+    ///
+    /// Returns `None` when the event was not consumed, and a
+    /// [`TextInputOutcome`] — with the tree damage already marked — when it
+    /// was. This funnel is the only place a rename consume becomes a claim:
+    /// the pairing of "handled the event" and "marked the damage" cannot
+    /// drift apart here the way it did at the old inline dispatch site.
+    fn route_rename_input(
+        &mut self,
+        window: &PixelWindow,
+        event: &PixelWindowEvent,
+    ) -> Option<TextInputOutcome> {
+        self.rename.as_ref()?;
+        match event {
+            PixelWindowEvent::Keyboard(key) => {
+                if self.handle_rename_key(window, key) {
+                    self.mark_tree_dirty();
+                    self.request_dirty_redraw(window);
+                    Some(TextInputOutcome::Changed)
+                } else {
+                    Some(TextInputOutcome::Unchanged(
+                        "rename editor: key release or unmapped chord",
+                    ))
+                }
+            }
+            PixelWindowEvent::Ime(ime) => {
+                if self.handle_rename_ime(window, ime.clone()) {
+                    self.mark_tree_dirty();
+                    self.request_dirty_redraw(window);
+                    Some(TextInputOutcome::Changed)
+                } else {
+                    Some(TextInputOutcome::Unchanged("rename editor: IME no-op"))
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The composer's ownership of one keyboard or IME event.
+    ///
+    /// Same contract as [`Self::route_rename_input`], with the composer band
+    /// as the damage region. A key `handle_composer_key` does not claim is
+    /// `None` — not an `Unchanged` — because it was never consumed: it still
+    /// forwards to the terminal below.
+    fn route_composer_input(
+        &mut self,
+        window: &PixelWindow,
+        event: &PixelWindowEvent,
+    ) -> Option<TextInputOutcome> {
+        if !self.composer.focused {
+            return None;
+        }
+        match event {
+            PixelWindowEvent::Keyboard(key) => {
+                if self.handle_composer_key(window, key) {
+                    self.mark_composer_dirty();
+                    self.request_dirty_redraw(window);
+                    Some(TextInputOutcome::Changed)
+                } else {
+                    None
+                }
+            }
+            PixelWindowEvent::Ime(ime) => {
+                self.handle_composer_ime(window, ime.clone());
+                self.mark_composer_dirty();
+                self.request_dirty_redraw(window);
+                Some(TextInputOutcome::Changed)
+            }
+            _ => None,
+        }
     }
 
     /// Anchors the IME candidate window at the inline rename editor's caret.
@@ -3813,42 +3935,15 @@ impl PixelWindowApplication for ConApp {
             self.mark_composer_dirty();
             self.request_dirty_redraw(window);
         }
-        if self.rename.is_some() {
-            // While a rename is live it owns the keyboard and IME entirely, so a
-            // keystroke edits the label instead of reaching the terminal. A left
-            // press already committed the rename above; other events fall
-            // through so window-level handling still works.
-            match event {
-                PixelWindowEvent::Keyboard(key) => {
-                    self.handle_rename_key(window, &key);
-                    self.mark_tree_dirty();
-                    self.request_dirty_redraw(window);
-                    return Ok(PixelWindowDirective::Continue);
-                }
-                PixelWindowEvent::Ime(ime) => {
-                    self.handle_rename_ime(window, ime);
-                    self.mark_tree_dirty();
-                    self.request_dirty_redraw(window);
-                    return Ok(PixelWindowDirective::Continue);
-                }
-                _ => {}
-            }
+        // Text-input ownership funnels: each returns Some only when it
+        // consumed the event, and every `Changed` claim it can produce has
+        // its damage mark inside the funnel — the pairing the old inline
+        // dispatch site let drift apart.
+        if self.route_rename_input(window, &event).is_some() {
+            return Ok(PixelWindowDirective::Continue);
         }
-        if self.composer.focused {
-            match event {
-                PixelWindowEvent::Keyboard(key) if self.handle_composer_key(window, &key) => {
-                    self.mark_composer_dirty();
-                    self.request_dirty_redraw(window);
-                    return Ok(PixelWindowDirective::Continue);
-                }
-                PixelWindowEvent::Ime(ime) => {
-                    self.handle_composer_ime(window, ime);
-                    self.mark_composer_dirty();
-                    self.request_dirty_redraw(window);
-                    return Ok(PixelWindowDirective::Continue);
-                }
-                _ => {}
-            }
+        if self.route_composer_input(window, &event).is_some() {
+            return Ok(PixelWindowDirective::Continue);
         }
         if self.workspace.active().is_none() {
             // Closing must keep working with no tabs open. `CloseRequested` is
@@ -3874,12 +3969,28 @@ impl PixelWindowApplication for ConApp {
         {
             return Ok(PixelWindowDirective::Continue);
         }
+        if self.injected_ui_keys_live {
+            // PRD 02.26: injected input rejects a retained exited tab with
+            // the explicit contract message, while physical keys stay
+            // best-effort — a typist has no client to report to, a control
+            // caller does. The provenance flag is what keeps one routing
+            // path honest about that difference without forking the route.
+            let session = self.active_session()?;
+            session.ensure_pty_input_open().map_err(|message| {
+                PixelWindowError::failed("con_terminal_exited", message)
+            })?;
+        }
         let directive = self.active_session_mut()?.event(window, event)?;
         let requested = self
             .sessions
             .get_mut(&active)
             .is_some_and(ConTerminal::take_clipboard_paste_request);
-        if requested && let Err(error) = self.request_terminal_clipboard_paste(window, active, true)
+        // A physical chord carries the human's own clipboard intent and
+        // reviews; an injected one has no human at the keyboard and the
+        // contract (PRD 02.26) says it bypasses the review modal explicitly.
+        let review = !self.injected_ui_keys_live;
+        if requested
+            && let Err(error) = self.request_terminal_clipboard_paste(window, active, review)
         {
             self.terminal_clipboard_error = Some(error);
             self.mark_host_ui_full_and_repaint(window);
