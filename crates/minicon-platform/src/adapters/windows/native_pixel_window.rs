@@ -594,6 +594,26 @@ fn stretch_geometry_for_paint(
     })
 }
 
+/// The byte-exact window of the pixel buffer a band present asks GDI to read:
+/// the bit pointer offset and the total u32 count, derived the same way the
+/// StretchDIBits call site derives them. The pair is what the bounds contract
+/// is asserted against: `offset + count` must never exceed the buffer length.
+/// 0.2.10 shipped a form whose offset carried a column component while the
+/// DIB stride stayed full-width, pushing the final row past the buffer end —
+/// an out-of-bounds read that crashed GDI32 (0xc0000005) on bottom-band
+/// presents with left > 0, which a busy TUI emits constantly. Keeping the
+/// derivation in one testable function is the regression fence.
+fn band_present_read_window(
+    source: Win32Rect,
+    frame_width: u32,
+    _frame_height: u32,
+) -> (usize, usize) {
+    let stride = frame_width as usize;
+    let offset = source.top as usize * stride;
+    let rows = (source.bottom - source.top) as usize;
+    (offset, rows * stride)
+}
+
 struct Backend {
     hwnd: Cell<HWND>,
     wake_hwnd: Arc<AtomicIsize>,
@@ -1997,14 +2017,23 @@ fn paint(state: &mut HostState, hwnd: HWND) -> Result<(), PixelWindowError> {
         // the bit pointer to the source origin and asks for a zero-origin
         // source rect; the DIB stride (biWidth) is unchanged, so GDI still
         // walks full-width rows from the offset start.
-        // The header describes the sub-DIB GDI is asked to read: full stride
-        // (biWidth) but only the exposed rows (biHeight), with the bit pointer
-        // advanced to the first exposed row and column. GDI therefore sees a
-        // self-consistent top-down DIB whose full extent is exactly the
-        // request — the shape it handles correctly — instead of a sub-rect
-        // request against the whole-window header, which is where the quirk
-        // above lives.
-        let stride = metrics.physical_width as usize;
+        // The header describes the sub-DIB GDI is asked to read: the exposed
+        // ROWS only (biHeight), full stride (biWidth), with the bit pointer
+        // advanced to the first exposed ROW. The column offset is deliberately
+        // NOT applied to the pointer: with biWidth at full stride GDI walks
+        // full-width rows from the offset start, so a column offset would push
+        // the final row `source.left` u32s past the buffer end — an out-of-
+        // bounds read that crashed GDI32 (0xc0000005, offset 0x226c) whenever
+        // the update band reached the bottom of the frame with left > 0, which
+        // a busy TUI (codex) produces constantly. Presenting the full-width
+        // band is safe — the paint DC clips output to the update region, so
+        // columns outside the band cost clipped blits, not pixels.
+        // The bottom of the band is clamped to the frame height by
+        // stretch_geometry_for_paint, so a full-stride read of the last exposed
+        // row still ends exactly at the buffer end.
+        let (bits_offset, bits_len) =
+            band_present_read_window(source, metrics.physical_width, metrics.physical_height);
+        debug_assert!(bits_offset + bits_len <= state.pixels.len());
         let exposed_height = source.bottom - source.top;
         let info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
@@ -2018,25 +2047,19 @@ fn paint(state: &mut HostState, hwnd: HWND) -> Result<(), PixelWindowError> {
             },
             ..unsafe { mem::zeroed() }
         };
-        let source_bits = unsafe {
-            state
-                .pixels
-                .as_ptr()
-                .add(source.top as usize * stride + source.left as usize)
-                .cast()
-        };
+        let source_bits = unsafe { state.pixels.as_ptr().add(bits_offset).cast() };
         let started = Instant::now();
         let copied = unsafe {
             StretchDIBits(
                 dc,
-                destination.left,
+                0,
                 destination.top,
-                destination.right - destination.left,
+                metrics.physical_width as i32,
                 destination.bottom - destination.top,
                 0,
                 0,
-                source.right - source.left,
-                source.bottom - source.top,
+                metrics.physical_width as i32,
+                exposed_height,
                 source_bits,
                 &info,
                 DIB_RGB_COLORS,
@@ -2655,6 +2678,52 @@ mod tests {
         assert!(!frame_geometry_changed(100, 80, 1.5_f64.to_bits(), metrics));
         assert!(frame_geometry_changed(100, 80, 1.0_f64.to_bits(), metrics));
         assert!(frame_geometry_changed(99, 80, 1.5_f64.to_bits(), metrics));
+    }
+
+    #[test]
+    fn band_present_read_window_stays_inside_the_frame_buffer() {
+        // The 0.2.10 crash case: a bottom band (bottom == frame height) with
+        // left > 0, emitted constantly by a busy TUI (codex). The read window
+        // must end exactly at the buffer end — never past it.
+        let crash = Win32Rect {
+            left: 40,
+            top: 300,
+            right: 680,
+            bottom: 400,
+        };
+        let (offset, len) = band_present_read_window(crash, 720, 400);
+        let buffer_len = 720 * 400;
+        assert_eq!(offset, 300 * 720);
+        assert_eq!(len, 100 * 720);
+        assert_eq!(offset + len, buffer_len);
+
+        // Full frame: window is the whole buffer.
+        let full = Win32Rect {
+            left: 0,
+            top: 0,
+            right: 720,
+            bottom: 400,
+        };
+        let (offset, len) = band_present_read_window(full, 720, 400);
+        assert_eq!((offset, len), (0, 720 * 400));
+
+        // Interior band with left > 0: the window is full-stride rows, so it
+        // still ends before the buffer end despite the column offset.
+        let interior = Win32Rect {
+            left: 5,
+            top: 10,
+            right: 715,
+            bottom: 20,
+        };
+        let (offset, len) = band_present_read_window(interior, 720, 400);
+        assert!(offset + len < 720 * 400);
+
+        // The 0.2.10 shipped form (pointer offset including the column) is
+        // provably out of bounds for the crash case: same read length, offset
+        // shifted right by source.left columns.
+        let (crash_offset, crash_len) = band_present_read_window(crash, 720, 400);
+        let shipped_offset = crash_offset + crash.left as usize;
+        assert!(shipped_offset + crash_len > buffer_len);
     }
 
     #[test]
