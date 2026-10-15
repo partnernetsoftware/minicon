@@ -315,6 +315,11 @@ flowchart LR
 
 ## Current frontier
 
+- [-] **v0.2.12 in planning.** Anchor: the user-notes scratchpad (GitHub #5
+  phase 1 — session-scoped, global-first, never sent to the PTY, no
+  persistence) plus the carried {AMPLIFIER-T} transient-host debt from
+  0.2.10. Plan: `plan/plan-v0.2.12.md`. Issues #3 and #4 verified shipped
+  and closed (0.2.6 / 0.2.7 respectively).
 - [v] **v0.2.11 released (2026-10-15, 06:56:25 UTC).** Hotfix: 0.2.10's
   band present read past the pixel buffer (bit pointer offset included the
   column component while biWidth stayed full-stride), crashing GDI32 with
