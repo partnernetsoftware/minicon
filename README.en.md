@@ -174,6 +174,7 @@ Rust 1.97. Linux needs `libxkbcommon.so.0` and `libwayland-client.so.0` (no
 | `src/` | the binary: terminal, host UI, control protocol |
 | `crates/minicon-core/` | host-neutral logic — no platform or architecture `cfg` |
 | `PRD.md` | product tree and module PRDs |
+| `AGENTS.md` | the agent working agreement: build, test, qualify, release |
 | `docs/` | the website at `minicon.agenterm.work` |
 
 ## More

@@ -157,6 +157,7 @@ Rust 1.97。Linux 需要 `libxkbcommon.so.0` 和 `libwayland-client.so.0`（无�
 | `src/` | 二进制本体：终端、宿主界面、控制协议 |
 | `crates/minicon-core/` | 与宿主无关的逻辑——没有平台或架构的 `cfg` |
 | `PRD.md` | 产品树与各模块 PRD |
+| `AGENTS.md` | agent 工作约定：开发、测试、资格认证、发布 |
 | `docs/` | 位于 `minicon.agenterm.work` 的网站 |
 
 ## 更多

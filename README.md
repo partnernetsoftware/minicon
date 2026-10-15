@@ -12,3 +12,8 @@ Read it in your language:
 - [简体中文 — README.zh.md](README.zh.md)
 
 Product site: [minicon.agenterm.work](https://minicon.agenterm.work/).
+
+Developing or extending this repo: start at [AGENTS.md](AGENTS.md) (the
+working agreement — build, test, qualify, release) and follow it to
+[PRD.md](PRD.md), the product index that links every module PRD and the
+delivery/release chain.
