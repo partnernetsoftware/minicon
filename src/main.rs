@@ -32,6 +32,7 @@ use host_ui::{
 mod cli;
 mod pointer;
 mod rename;
+mod snapshot;
 use cli::{ConArgs, offline_cli_exit, parse_args};
 #[cfg(test)]
 use cli::{FEATURES, status_text, usage_text};
