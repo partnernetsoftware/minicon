@@ -136,6 +136,12 @@ static GUI_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// (default 1, clamped to 1..=20). The six-cell harness sets this so cells that
 /// run in parallel on one machine get proportionally longer budgets instead of
 /// flaking on host starvation.
+///
+/// Hand-rolled polling loops must scale the same way: build their deadlines as
+/// `Instant::now() + Duration::… * test_slowdown()`. A bare deadline is a
+/// budget that shrinks under load — the controlled_resize_storm red (once, in
+/// a full parallel run; green in isolation, 2026-10-15) is the recorded
+/// precedent for why every budget here goes through this factor.
 fn test_slowdown() -> u32 {
     std::env::var("MINICON_TEST_SLOWDOWN")
         .ok()
@@ -350,7 +356,9 @@ fn invoke_control(endpoint: &str, args: &[String]) -> Result<(), String> {
 }
 
 fn replay_control_journey(endpoint: &str, path: &Path, host_pid: u32) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Budget, not assertion: a loaded machine (full parallel suite) starts the
+    // host slower; scale with the same slowdown factor the wait_for helpers use.
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     loop {
         if invoke_control(endpoint, &["list-tabs".to_owned()]).is_ok() {
             break;
@@ -1168,7 +1176,7 @@ fn nonexistent_program_via_dash_e_exits_cleanly_instead_of_hanging() {
         return;
     }
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     let status = loop {
         if let Some(status) = child.try_wait().expect("poll child") {
             break status;
@@ -1213,7 +1221,7 @@ fn an_unwritable_snapshot_path_does_not_disturb_the_running_session() {
 
     // The control surface still answers, so the render loop did not abort on
     // the failed snapshot write.
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     let mut saw_marker = false;
     while Instant::now() < deadline {
         if let Ok(output) = invoke_control_output(&session.endpoint, &["capture-pane".to_owned()])
@@ -2051,7 +2059,7 @@ fn controlled_screenshot_produces_a_valid_nonempty_png() {
         ConSession::screen_text(snapshot).contains("SHOT_MARKER")
     });
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     while !png_path.exists() {
         assert!(
             Instant::now() < deadline,
@@ -2103,7 +2111,10 @@ fn an_exited_shell_repaints_its_tab_row() {
     let args = interactive_shell_args(&script);
     let mut session = ConSession::spawn(&dir, &args);
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // Budget, not assertion: screenshot writes wait on the host's rasterizer
+    // under whatever load the machine carries; scale with test_slowdown like
+    // the wait_for helpers.
+    let deadline = Instant::now() + Duration::from_secs(15) * test_slowdown();
     while !(before_path.exists() && after_path.exists()) {
         assert!(
             Instant::now() < deadline,
@@ -2166,7 +2177,7 @@ fn controlled_resize_changes_the_native_render_surface() {
     let args = interactive_shell_args(&script);
     let mut session = ConSession::spawn(&dir, &args);
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     while !(before_path.exists() && after_path.exists()) {
         assert!(
             Instant::now() < deadline,
@@ -2226,7 +2237,11 @@ fn controlled_resize_storm_reports_successful_frames_and_exits_cleanly() {
     let args = interactive_shell_args(&script);
     let mut session = ConSession::spawn(&dir, &args);
 
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // Budget, not assertion: this deadline was hit once inside a full
+    // parallel-suite run (the stats wait, not any assertion) and passed in
+    // isolation every time - machine load, not a regression. Scale it the way
+    // the wait_for helpers scale their budgets.
+    let deadline = Instant::now() + Duration::from_secs(15) * test_slowdown();
     while !stats_path.exists() {
         assert!(
             Instant::now() < deadline,
@@ -2326,7 +2341,7 @@ fn zooming_in_while_the_shell_is_actively_producing_output_survives() {
     session.wait_for(Duration::from_secs(15), |snapshot| {
         ConSession::screen_text(snapshot).contains("中文日本語")
     });
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     while Instant::now() < deadline {
         if let Ok(Some(status)) = session.child.try_wait() {
             panic!(
@@ -2387,7 +2402,10 @@ fn rapid_ctrl_wheel_zoom_burst_against_a_repainting_tui_survives() {
             lines_path.to_str().unwrap(),
         ],
     );
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // Budget, not assertion: the burst must outlive the observation window, so
+    // a slower machine gets a proportionally longer window rather than a
+    // weaker test.
+    let deadline = Instant::now() + Duration::from_secs(15) * test_slowdown();
     let mut last_snapshot = None;
     loop {
         if let Ok(Some(status)) = session.child.try_wait() {
