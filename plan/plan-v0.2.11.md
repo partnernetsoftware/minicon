@@ -52,6 +52,13 @@ end for a bottom band, and strictly inside it for interior bands.
   out-of-bounds read.
 - {AMPLIFIER-T} remains deferred as in 0.2.10.
 
+## Outcome
+
+**[v] Delivered — v0.2.11 published 2026-10-15 06:56:25 UTC** (source
+`c0214e8`, chain and verification in
+`prd/archive/v0.2.11-release-history.md`). The crash case is pinned by a
+regression test; the present read window is now a tested pure function.
+
 ## GATE status
 
 Local gate green 2026-10-15. Release chain via `scripts/release.sh 0.2.11`

@@ -315,7 +315,18 @@ flowchart LR
 
 ## Current frontier
 
-- [v] **v0.2.10 released (2026-10-14, 16:19:42 UTC).** Ordinary output stops
+- [v] **v0.2.11 released (2026-10-15, 06:56:25 UTC).** Hotfix: 0.2.10's
+  band present read past the pixel buffer (bit pointer offset included the
+  column component while biWidth stayed full-stride), crashing GDI32 with
+  0xc0000005 on busy-TUI bottom-band presents — the mycodex.bat (codex TUI)
+  crash the owner reported. Fix `c0214e8`: the read window is derived by
+  `band_present_read_window()` (whole-row offset, full-stride band, DC
+  clips), pinned by a regression test that also proves the 0.2.10 form out
+  of bounds; a debug_assert guards the call site. Chain eight steps green
+  (Defender on attempt 3 through the known RPC window; one dispatcher
+  incident: signing first dispatched without `qualification_only=false`).
+  History: `prd/archive/v0.2.11-release-history.md`.
+- [v] **v0.2.10 released (2026-10-14, superseded by v0.2.11 hotfix).** Ordinary output stops
   re-rasterising the whole window — the reported flashing (总是感觉闪屏) is
   root-caused and fixed. Four code commits: {GATE-FORK} (`e566635`) gates the
   vendored fork's damage oracle; {SCROLL-DAMAGE} (`7f21e48`) narrows a scroll
