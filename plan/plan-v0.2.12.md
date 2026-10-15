@@ -1,95 +1,88 @@
-# plan-v0.2.12 — user notes scratchpad (#5) + {AMPLIFIER-T} debt
+# plan-v0.2.12 — structure and robustness (quality release; features deferred)
 
-## Product thinking first
+Owner's direction (2026-10-15): this release is themed on **product code
+structure, module structure, abstraction and reuse, encapsulation and
+coupling, robustness and performance** — incremental refinement across all
+of those axes. Functional needs (the #5 notes scratchpad, new surfaces of
+any kind) defer to 0.2.13 and later.
 
-MiniCon's promise is `one file · no install · nothing left behind`. Every
-feature so far serves the *terminal* (run, read, scroll, resend). The one
-thing a terminal cannot do is hold the *user's own intent* — the hostname
-you'll need in ten minutes, the TODO for the pipeline you're watching.
-That thought today lands in a different window or dies. #5's product
-thesis: a scratchpad inside the terminal, never sent to the PTY, is the
-smallest feature that makes MiniCon a place you *stay* rather than a
-surface you *use*.
+## Why quality now
 
-The information architecture is already reserved: the right-side panel
-(#3) was designed with history (top) · notes (middle) · loop/goal
-(reserved, bottom). 0.2.12 fills the middle slot.
+0.2.10 shipped the first public crash; 0.2.11 fixed it; and within a day a
+third defect surfaced (the rename editor advanced invisibly under the
+damage model). All three share one root shape: **state, damage ownership
+and event routing live in different places, and a new dispatch site can
+forget one of them while every existing test stays green.** The fix for
+rename (e986344) was also the first structural payment: injected UI input
+now rides `ConApp::event` as the single routing authority, and host UI
+became black-box reachable (`send-ui-mouse`). 0.2.12 makes that shape the
+rule instead of a one-off rescue.
 
-The second thread is trust. 0.2.10→0.2.11 was the first public crash —
-owners forgive one, but the product's credibility now depends on the
-render pipeline's remaining debt being paid visibly. {AMPLIFIER-T} is
-that debt: the transient host still forces full frames, which is the
-same amplifier class 0.2.10 removed on Windows. Paying it on the *other*
-host completes the flashing story on both sides of the product.
+## Scope (all quality-axis, no new features)
 
-## Scope
+1. **Damage ownership as an API, not a convention.**
+   The rename bug was a dispatch arm that returned without marking damage;
+   a bare `request_redraw` re-presented the last frame. Today
+   `mark_tree_dirty` / `mark_composer_dirty` / `mark_host_ui_full` are
+   conventions scattered across dispatch sites. Consolidate: one
+   input-surface → damage-ownership boundary so an arm that consumes an
+   event cannot forget its damage. Include a guard (unit test or debug
+   assertion) that fails a dispatch branch which swallows Keyboard/Ime
+   events without a damage mark — the exact trap class that produced 0.2.11
+   and the rename defect.
 
-1. **{NOTES} — GitHub #5 phase 1** (session-scoped skeleton, the issue's
-   decided defaults):
-   - Notes section in the right-side panel, below sent-history, own
-     collapsible section label; does not touch the loop/goal reserved
-     sub-area.
-   - One editor, target = current context. Phase 1 ships the Global
-     note + `This tab / Global` toggle with only Global active (per the
-     issue's global-first decision); per-tab follows after the
-     interaction is proven.
-   - **Never written to the PTY.** Clicking a note edits it; clicking
-     history fills the composer. The two must never be confusable.
-   - Session-only — must be described as a scratchpad, not memory; no
-     persistence, no charter change, nothing irreversible.
-   - The hard part is focus/IME: the product has exactly one text input
-     surface today (the composer, with the "exactly one focus owner"
-     a11y invariant and IME routing bound to it, PRD_02_25 §Host UI).
-     The notes editor is the second editable field: focus arbitration
-     (composer must not receive keys while notes is focused; Escape
-     blurs notes back to the composer), and the IME publish path
-     extended to route to the notes field. This is the engineering
-     risk, not the drawing.
-   - Observability per AGENTS.md: `ui-snapshot` exposes the notes
-     section (open/closed, context, text, geometry); a black-box
-     journey types into the notes editor through the real input path
-     and reads it back; a second journey proves PTY isolation (note
-     text never appears in the terminal stream).
-   - Control surface: **no** `--control` read or write path in phase 1
-     (the issue's privacy question stays unanswered — do not open the
-     cross-tab disclosure surface).
+2. **Split main.rs along its seams.**
+   main.rs is the last monolith: rename state machine, composer routing,
+   snapshot assembly, pixel helpers and the window loop all share one file.
+   control_dispatch.rs and host_paint.rs proved the pattern works (moved
+   verbatim, no behavior change). Candidates in dependency order:
+   rename editor (state + key/IME handling, ~100 lines, already
+   self-describing), snapshot builders, pointer-gesture handling. Each move
+   is a separate commit, each commit is verbatim-plus-imports only.
 
-2. **{AMPLIFIER-T}** (carried from 0.2.10, design note in
-   plan/plan-v0.2.10.md): on a Transient-retention host the frame
-   contract rejects partial commits (`TransientRequiresFull`) and a
-   fresh buffer needs every pixel — so "narrow the invalidation" there
-   means retaining a second canvas and presenting a diff band, which is
-   real machinery. Two honest options at implementation time:
-   (a) build the retained-canvas path with its own journey, or
-   (b) if measurement shows the transient host's forced-full presents
-   are not a user-visible amplifier on any shipped platform, close the
-   leaf as measured-not-felt with the numbers recorded. Decide by
-   measurement, not preference.
+3. **Injected-input parity as a standing invariant.**
+   e986344 unified send-ui-keys / send-ui-ime / send-ui-mouse onto the real
+   event path. Lock it: a contract test that walks the dispatch arms of
+   `event` and the control injection paths and requires them to share one
+   routing entry point, so a future focus owner (notes editor, settings
+   search) cannot be wired into one path and forgotten in the other.
 
-3. **{NOTES-FEEDBACK}** — after landing, watch how the owner actually
-   uses notes for a few days (global-only assumption, scratchpad vs
-   memory expectations). Feeds the phase-2 gate (persistence charter,
-   durable tab identity, privacy decisions — all owner-authority
-   questions, not this release).
+4. **Journey-suite robustness.**
+   `controlled_resize_storm` failed once inside a full parallel-suite run
+   and passed in isolation — timing-budget flakiness under load. Re-audit
+   the frame/timeout budgets of the load-sensitive journeys so a green
+   suite does not depend on machine mood. (Not the assertion itself: the
+   budgets.)
 
-## Non-goals
+5. **{AMPLIFIER-T}, measurement-first** (carried; demoted from feature to
+   robustness probe): measure whether Transient-retention forced-full
+   presents are felt on any shipped platform. If measured-not-felt, close
+   the leaf with numbers recorded; only build the retained-canvas machinery
+   if measurement says otherwise.
 
-- No persistence, no charter wording change, no per-tab notes, no
-  templates/sendable snippets, no search/tags/formatting.
-- No control-CLI notes surface of any kind.
-- No loop/goal work — the reserved area stays reserved.
-- No renderer changes beyond {AMPLIFIER-T} if it ships; 0.2.11's fix
-  stands as-is.
+## Explicitly deferred (to 0.2.13+)
+
+- **#5 notes scratchpad** — unchanged from the previous draft of this plan
+  (kept in git history, commit 5dfe4b7): panel section, Global-only,
+  PTY isolation, focus/IME arbitration. It is the second editable field and
+  deserves a release whose theme is features, not one stacked on a
+  refactor.
+- **{NOTES-FEEDBACK}** — follows the notes release.
+- No new control verbs beyond what testability already forced
+  (send-ui-mouse landed with the rename fix); no renderer behavior changes;
+  0.2.11's band-present fix stands as-is.
 
 ## Risks and their fences
 
 | Risk | Fence |
 |---|---|
-| Second editor breaks the one-focus-owner invariant (IME, AT-SPI, IMM32) | The invariant is asserted in existing journeys; notes journeys must cover CN IME input on Windows at minimum |
-| Notes text leaks into PTY | Dedicated isolation journey: type a note, assert the byte never appears in the child's stream |
-| Panel gets crowded (history + notes) | Notes section is collapsed by default; the region's IA was designed for this in #3 |
-| {AMPLIFIER-T} grows beyond a small release | The measured-not-felt exit (b) is a legitimate close; do not build machinery without a felt defect |
+| "Refactor" drifts into behavior change | Every move is verbatim-plus-imports; behavior changes (damage API, routing guard) are separate commits with their own tests; clippy `-D warnings` + full suite per commit |
+| Damage API over-abstracts | The API is exactly the three mark helpers plus the dispatch-site pairing; anything more is rejected |
+| Module split churns conflicts with in-flight fixes | Split commits land early in the cycle; the release chain (six-grid → signatures → Candidate → Defender → reputation → publish) starts only after the tree is quiet |
+| Budget re-audit masks a real regression | Only budgets move; assertions and thresholds stay, and any test that needed a budget change gets its reason recorded in a comment |
 
 ## GATE status
 
-Planned 2026-10-15. Not started. Owner's go signal = start of work.
+Planned 2026-10-15. Started: e986344 (rename fix + single routing
+authority + send-ui-mouse testability) is scope item 3's first payment.
+Owner's go signal = start of work.
