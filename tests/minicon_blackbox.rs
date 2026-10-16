@@ -3053,7 +3053,37 @@ fn the_notes_scratchpad_edits_renders_and_persists() {
         "typing into the notes editor must change the panel pixels: {typed}"
     );
 
-    // Escape blurs and saves.
+    // Closing the panel out from under a focused editor must release focus
+    // with it (an editor that cannot paint is the invisible-editor class)
+    // and still save what was typed.
+    session.control_json(&["send-ui-keys", "Ctrl+Shift+H"]);
+    let reclosed = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["history_panel"]["open"] == false && snapshot["notes_focused"] == false
+    });
+    assert_eq!(
+        reclosed["notes_text"], "HI",
+        "closing the panel keeps the note and the save: {reclosed}"
+    );
+
+    // Reopen, refocus, then Escape blurs and saves.
+    session.control_json(&["send-ui-keys", "Ctrl+Shift+H"]);
+    session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["history_panel"]["open"] == true
+    });
+    session.control_json(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &click_x.to_string(),
+        "--row",
+        &click_y.to_string(),
+    ]);
+    session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["notes_focused"] == true
+    });
     session.control_json(&["send-ui-keys", "Escape"]);
     let blurred = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
         snapshot["notes_focused"] == false

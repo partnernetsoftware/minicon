@@ -688,6 +688,11 @@ struct ConApp {
     /// Whether the notes field owns keyboard/IME input. Session-scoped view
     /// state like `history_panel_open`; a restart starts unfocused.
     notes_focused: bool,
+    /// Set when the panel closed out from under a focused notes editor: the
+    /// focus is released immediately (an editor that cannot paint is the
+    /// invisible-editor defect class) and the save owed by the blur happens
+    /// at the call site that owns the window.
+    notes_blur_pending_save: bool,
     /// Which region the pointer last worked; scopes the terminal paste
     /// shortcuts (see [`InputSurface`]). Defaults to the terminal so a fresh
     /// window pastes without a prior click.
@@ -1135,6 +1140,7 @@ impl ConApp {
             session_seed,
             notes: composer::ComposerState::default(),
             notes_focused: false,
+            notes_blur_pending_save: false,
             composer: composer::ComposerState::default(),
             input_surface: InputSurface::default(),
             composer_selecting: false,
@@ -1810,6 +1816,16 @@ impl ConApp {
         if self.history_panel_open != open {
             self.history_panel_open = open;
             self.history_panel_scroll = 0;
+            // Closing the panel must release notes focus with it: a focused
+            // editor whose pixels just left the screen is the invisible-
+            // editor defect class (0.2.10's rename), and its keystrokes
+            // would vanish into a section that cannot paint them. The blur
+            // also saves — a user closing the panel mid-thought keeps the
+            // note they had typed.
+            if self.notes_focused {
+                self.notes_focused = false;
+                self.notes_blur_pending_save = true;
+            }
         }
     }
 
@@ -1942,6 +1958,10 @@ impl ConApp {
         // CLI reach the panel for machine verification.
         if text.eq_ignore_ascii_case("h") {
             self.set_history_panel(!self.history_panel_open);
+            if self.notes_blur_pending_save {
+                self.notes_blur_pending_save = false;
+                self.persist_notes(window);
+            }
             self.apply_panel_width(window)?;
             self.mark_host_ui_full_and_repaint(window);
             return Ok(true);
@@ -3168,6 +3188,10 @@ impl PixelWindowApplication for ConApp {
                 match ui::history_hit(layout, x, y, scale) {
                     ui::HistoryHit::Close => {
                         self.set_history_panel(false);
+                        if self.notes_blur_pending_save {
+                            self.notes_blur_pending_save = false;
+                            self.persist_notes(window);
+                        }
                         self.apply_panel_width(window)?;
                         self.mark_host_ui_full_and_repaint(window);
                     }

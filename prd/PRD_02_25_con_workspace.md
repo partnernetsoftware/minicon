@@ -196,6 +196,24 @@ header tools, and the composer. It is not the browser, and it is not layout.
   re-inset, never overlaid; a blank area below the list is reserved for future
   `{LOOP}`/goal controls. `ui-snapshot` publishes `history_panel` and the
   `panel_toggle` rect.
+- [v] the reserved area below the sent-history list became the **notes
+  scratchpad** (#5, 0.2.13) — the section the reservation was held for. A
+  click in the area focuses a second editable field: multiline (Enter is a
+  soft newline), clipboard-complete, IME-composed, with the caret rule and
+  preedit painted while focused. While focused it — not the composer, not
+  the terminal — owns keyboard/IME through the same single `ConApp::event`
+  routing authority the rename editor rides; Escape defocuses and saves,
+  and any click elsewhere defocuses-and-saves on its way to the click's
+  real target. PTY isolation is structural: the buffer's only exits are the
+  clipboard and `minicon.json` — nothing a note contains can reach a shell.
+  Persistence rides the config document (a `notes` key, atomic write,
+  seeded once at startup with the caret at the end; the key is absent until
+  first save so an untouched config stays byte-identical). `ui-snapshot`
+  publishes `notes_focused`, `notes_text`, and the `geometry.notes_area`
+  rect. Deliberately not in 0.2.13: feeding a note into an agent harness
+  (`{NOTES-FEEDBACK}`) — deferred with this note because the harness
+  context plan's `{CTX}` leaf it would ride is still open; it returns as an
+  explicit Send-only affordance when that design lands.
 - [v] the sent-history panel's two follow-ups landed in 0.2.9. A row now carries
   the **destination** it was sent to: the composer records the tab's tree label
   with each line (`ComposerState::remember(entry, destination)`), so the row says
