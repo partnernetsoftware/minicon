@@ -233,6 +233,11 @@ fn find_less_exe() -> Option<PathBuf> {
                 candidates.push(PathBuf::from(base).join(r"Git\usr\bin\less.exe"));
             }
         }
+        // Deliberately NOT scanning PATH: a less.exe from a non-standard Git
+        // install can lack its terminfo wiring and die at startup with
+        // "terminals database is inaccessible" — a fixture that cannot run
+        // must stay a skip, not turn the journey red (observed on the owner's
+        // machine, 2026-10-16, when a PATH scan was tried).
         candidates.into_iter().find(|path| path.is_file())
     }
 }
@@ -2153,6 +2158,165 @@ fn an_exited_shell_repaints_its_tab_row() {
         changed > 0,
         "the tab column did not repaint when the shell exited (0 of the sampled pixels changed)"
     );
+    let _ = session.child.kill();
+}
+
+/// A window resize must reach the *hosted child* as a new PTY geometry, not
+/// merely re-flow MiniCon's own chrome. This is the exact chain the owner
+/// reported broken in the field (2026-10-16, 0.2.12: "resized the window
+/// while running codex-cli, the harness inside did not follow"):
+/// window -> GeometryChanged -> resize debounce -> PTY resize -> the child
+/// sees new console geometry.
+///
+/// The probe child prints the geometry *it* sees (`[Console]::WindowWidth`)
+/// twice a second, so the visible rows always end in the child's current
+/// believed size. Narrowing first means the wide rows from the default
+/// window scroll away; the widening assertion can then only pass when the
+/// child itself reports >= 100 columns again — if the PTY resize never
+/// propagates, the probe keeps printing narrow rows forever and this test
+/// times out red.
+#[test]
+fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("resize-reaches-child");
+    let probe = dir.join("geometry_probe.ps1");
+    std::fs::write(
+        &probe,
+        "while ($true) {\r\n  \
+         Write-Host (\"CHILDGEOM W={0} H={1}\" -f [Console]::WindowWidth, [Console]::WindowHeight)\r\n  \
+         Start-Sleep -Milliseconds 250\r\n}\r\n",
+    )
+    .expect("write geometry probe");
+    let mut session = ConSession::spawn(
+        &dir,
+        &[
+            "-e".to_owned(),
+            "powershell.exe".to_owned(),
+            "-NoProfile".to_owned(),
+            "-ExecutionPolicy".to_owned(),
+            "Bypass".to_owned(),
+            "-File".to_owned(),
+            probe.to_string_lossy().into_owned(),
+        ],
+    );
+
+    // The probe is printing geometry lines.
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        ConSession::screen_text(snapshot).contains("CHILDGEOM")
+    });
+
+    fn child_widths(snapshot: &serde_json::Value) -> Vec<u32> {
+        ConSession::screen_text(snapshot)
+            .split_whitespace()
+            .filter_map(|token| token.strip_prefix("W=").and_then(|n| n.parse().ok()))
+            .collect()
+    }
+
+    // Narrow the window. Once settled, every geometry line on the visible
+    // rows is narrow — the default window's wide lines have scrolled away —
+    // which is what makes the later widening assertion non-vacuous.
+    session.control_json(&["resize-window", "--width", "640", "--height", "420"]);
+    let narrow = session.wait_for(Duration::from_secs(15), |snapshot| {
+        let widths = child_widths(snapshot);
+        widths.iter().any(|&w| w <= 70) && !widths.iter().any(|&w| w >= 100)
+    });
+
+    // Widen the window. The child must start reporting >= 100 columns of
+    // its own accord: those rows can only come from the probe observing the
+    // resized ConPTY, not from any MiniCon-side bookkeeping.
+    session.control_json(&["resize-window", "--width", "1400", "--height", "800"]);
+    let wide = session.wait_for(Duration::from_secs(15), |snapshot| {
+        child_widths(snapshot).iter().any(|&w| w >= 100)
+    });
+    assert_eq!(
+        wide["backend_resize_failures"],
+        0,
+        "PTY refused a resize during the journey: {wide}"
+    );
+    assert!(
+        wide["backend_resize_error"].is_null(),
+        "PTY resize error leaked to the session: {wide}"
+    );
+    let _ = session.child.kill();
+    drop(narrow);
+}
+
+
+/// Source of the child-process probe for
+/// [`window_resize_delivers_a_console_buffer_size_event_to_the_child`]:
+/// a tight `ReadConsoleInput` loop that prints one line when (and only
+/// when) the console posts a WINDOW_BUFFER_SIZE_EVENT — the exact input
+/// record a crossterm/ratatui TUI (codex-cli, glazier, and friends) waits
+/// for before re-flowing its layout.
+#[cfg(windows)]
+const CONSOLE_EVENT_PROBE_PS1: &str = r#"
+$src = @"
+using System;
+using System.Runtime.InteropServices;
+public static class ConsoleEventProbe {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool ReadConsoleInput(IntPtr h, byte[] buffer, uint length, out uint read);
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetStdHandle(uint which);
+    public static void Run() {
+        IntPtr h = GetStdHandle(0xFFFFFFF6);
+        byte[] record = new byte[64];
+        while (true) {
+            uint read;
+            if (!ReadConsoleInput(h, record, 1, out read)) return;
+            if (BitConverter.ToUInt16(record, 0) == 4) {
+                Console.WriteLine("RESIZEEVENT " + BitConverter.ToInt16(record, 4) + "x" + BitConverter.ToInt16(record, 6));
+            }
+        }
+    }
+}
+"@
+Add-Type -TypeDefinition $src
+[Console]::Out.WriteLine("PROBE-READY")
+[ConsoleEventProbe]::Run()
+"#;
+
+/// A hosted TUI does not poll its geometry — it blocks on console input
+/// until the console posts a WINDOW_BUFFER_SIZE_EVENT, which crossterm
+/// translates into `Event::Resize` for codex-cli and every ratatui program.
+/// The owner's 0.2.12 field report (2026-10-16, "resized the window while
+/// running codex-cli, the harness inside did not follow") splits into two
+/// hops, and this pins the second: the PTY geometry hop is covered by
+/// [`window_resize_reaches_the_hosted_child_as_new_pty_geometry`] (a
+/// polling child sees the new size); this one proves the *notification*
+/// hop (an event-waiting child is woken with the record) so a TUI that
+/// only ever redraws on resize events is not left painting stale geometry.
+#[cfg(windows)]
+#[test]
+fn window_resize_delivers_a_console_buffer_size_event_to_the_child() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("resize-console-event");
+    let probe = dir.join("console_event_probe.ps1");
+    std::fs::write(&probe, CONSOLE_EVENT_PROBE_PS1).expect("write console event probe");
+    let mut session = ConSession::spawn(
+        &dir,
+        &[
+            "-e".to_owned(),
+            "powershell.exe".to_owned(),
+            "-NoProfile".to_owned(),
+            "-ExecutionPolicy".to_owned(),
+            "Bypass".to_owned(),
+            "-File".to_owned(),
+            probe.to_string_lossy().into_owned(),
+        ],
+    );
+
+    // Add-Type compiles before the probe announces itself, so this wait
+    // also proves the listener is actually blocking in ReadConsoleInput
+    // *before* the resize happens.
+    session.wait_for(Duration::from_secs(30), |snapshot| {
+        ConSession::screen_text(snapshot).contains("PROBE-READY")
+    });
+
+    session.control_json(&["resize-window", "--width", "900", "--height", "600"]);
+    session.wait_for(Duration::from_secs(15), |snapshot| {
+        ConSession::screen_text(snapshot).contains("RESIZEEVENT")
+    });
     let _ = session.child.kill();
 }
 
