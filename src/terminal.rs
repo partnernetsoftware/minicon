@@ -8,6 +8,12 @@
 
 use super::*;
 
+/// How long after a settled geometry change the one-shot nudge re-applies
+/// the same size. Long enough that a program mid-repaint finishes and can
+/// observe the second event; short enough to land while the user is still
+/// looking at the mislaid UI. 150 ms sits inside both bounds.
+const RESIZE_NUDGE_DELAY: Duration = Duration::from_millis(150);
+
 pub(super) struct ConTerminal {
     working_dir: Option<String>,
 
@@ -85,6 +91,16 @@ pub(super) struct ConTerminal {
     /// Latest un-applied geometry (coalesced). Applied once the stream settles.
     pending_geometry: Option<(u32, u32, f64)>,
     last_geometry_at: Instant,
+    /// When the one-shot resize nudge fires. Settled geometry occasionally
+    /// fails to wake every hosted TUI (codex-cli 0.162.1: the input box
+    /// stays where the old rows put it) even though both MiniCon hops — PTY
+    /// geometry propagation and the resize event's delivery — measurably
+    /// worked. Re-applying the SAME size a moment later is a no-op for a
+    /// program that handled the first event and a second chance for one
+    /// that dropped it; nothing is injected into the child's input.
+    resize_nudge_at: Option<Instant>,
+    /// The geometry the pending nudge re-applies.
+    resize_nudge_geometry: Option<(u16, u16)>,
     /// A composer submission's Enter, held back so the child does not read it
     /// as trailing bytes of the paste. See [`COMPOSER_ENTER_DELAY`].
     pub(super) pending_submit_enter: Option<(Instant, Vec<u8>)>,
@@ -272,6 +288,8 @@ impl ConTerminal {
             rows: 24,
             pending_geometry: None,
             last_geometry_at: Instant::now(),
+            resize_nudge_at: None,
+            resize_nudge_geometry: None,
             pending_submit_enter: None,
             default_fg: Rgb(0xF0, 0xF0, 0xF0),
             default_bg: Rgb(0x00, 0x00, 0x00),
@@ -797,6 +815,49 @@ impl ConTerminal {
             self.record_resize_outcome(cols, rows, outcome);
         }
         self.parser.screen_mut().set_size(rows, cols);
+        // Arm the one-shot nudge: re-apply this exact size shortly after the
+        // storm settles. See `resize_nudge_at` for why a no-op resize is the
+        // whole payload. Re-armed on every settled change, cancelled if a new
+        // change lands first (the fresh resize carries its own nudge).
+        self.resize_nudge_at = Some(Instant::now() + RESIZE_NUDGE_DELAY);
+        self.resize_nudge_geometry = Some((cols, rows));
+    }
+
+
+/// Fires the due resize nudge, if one is armed and due. Same wake
+    /// discipline as the debounce: when armed but not yet due, the caller
+    /// folds a wake so the loop returns in time to fire it.
+    /// Test seam for [`Self::fire_resize_nudge_if_due`]: arms the nudge for
+    /// an arbitrary geometry without driving a full `apply_resize` (which
+    /// needs the frame metrics the fixture would rather set by hand).
+    #[cfg(test)]
+    fn arm_resize_nudge_for_test(&mut self, cols: u16, rows: u16) {
+        self.resize_nudge_at = Some(Instant::now() + RESIZE_NUDGE_DELAY);
+        self.resize_nudge_geometry = Some((cols, rows));
+    }
+
+    fn fire_resize_nudge_if_due(&mut self, now: Instant, fold_wake: &mut dyn FnMut(Instant)) {
+        let Some(deadline) = self.resize_nudge_at else {
+            return;
+        };
+        if now < deadline {
+            fold_wake(deadline);
+            return;
+        }
+        self.resize_nudge_at = None;
+        let Some((cols, rows)) = self.resize_nudge_geometry.take() else {
+            return;
+        };
+        if let Some(master) = &self.master {
+            // Same-size re-apply: for a program that handled the first event
+            // this changes nothing; for one that dropped it, the backend
+            // delivers the resize notification again. Recorded through the
+            // same ledger so a backend that refuses it is visible.
+            let outcome = master
+                .resize(TerminalSize { rows, cols })
+                .map_err(|error| error.to_string());
+            self.record_resize_outcome(cols, rows, outcome);
+        }
     }
 
     /// What the session remembers about a resize the backend answered.
@@ -2447,6 +2508,9 @@ impl ConTerminal {
             }
         }
 
+        // The settled-geometry nudge rides the same tick the debounce does.
+        self.fire_resize_nudge_if_due(now, &mut fold_wake);
+
         // A steady cursor needs no timer at all. A blinking cursor that is
         // hidden or scrolled out of the live viewport also needs none: the
         // overlay would not paint, and unix transient backing full-rasters
@@ -2711,6 +2775,30 @@ pub(crate) mod tests {
         assert!(outcome.redraw);
         assert!(app.dirty.is_full());
     }
+    /// The settled-geometry nudge (0.2.14): a real geometry change arms a
+    /// one-shot same-size re-apply; before the delay it only folds a wake,
+    /// after it fires once and disarms. No master is attached in these
+    /// fixtures, which is exactly the PTY-less shape: arming is state, the
+    /// re-apply itself is the backend call the blackbox probe covers.
+    #[test]
+    fn a_settled_resize_arms_and_fires_the_one_shot_nudge() {
+        let mut term = ConTerminal::new(None, None);
+        term.cols = 80;
+        term.rows = 24;
+        term.arm_resize_nudge_for_test(100, 40);
+        assert_eq!(term.resize_nudge_geometry, Some((100, 40)), "armed");
+        let mut wakes = Vec::new();
+        term.fire_resize_nudge_if_due(Instant::now(), &mut |d| wakes.push(d));
+        assert_eq!(term.resize_nudge_geometry, Some((100, 40)), "not yet due");
+        assert_eq!(wakes.len(), 1, "a wake is folded for the deadline");
+        // Past the deadline it fires exactly once and disarms.
+        let later = Instant::now() + RESIZE_NUDGE_DELAY + Duration::from_millis(5);
+        term.fire_resize_nudge_if_due(later, &mut |_| {});
+        assert_eq!(term.resize_nudge_geometry, None, "fired and disarmed");
+        // Firing again is a no-op: the nudge is one-shot per settled change.
+        term.fire_resize_nudge_if_due(later + Duration::from_secs(1), &mut |_| {});
+    }
+
     #[test]
     fn scrollback_bounds_reports_the_real_depth_not_the_capacity() {
         let mut app = ConTerminal::new(None, None);

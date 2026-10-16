@@ -2291,7 +2291,7 @@ public static class ConsoleEventProbe {
             uint read;
             if (!ReadConsoleInput(h, record, 1, out read)) return;
             if (BitConverter.ToUInt16(record, 0) == 4) {
-                Console.WriteLine("RESIZEEVENT " + BitConverter.ToInt16(record, 4) + "x" + BitConverter.ToInt16(record, 6));
+                Console.WriteLine("RESIZEEVENT " + BitConverter.ToInt16(record, 4) + "x" + BitConverter.ToInt16(record, 6) + " " + Environment.TickCount);
             }
         }
     }
@@ -2343,6 +2343,97 @@ fn window_resize_delivers_a_console_buffer_size_event_to_the_child() {
     session.wait_for(Duration::from_secs(15), |snapshot| {
         ConSession::screen_text(snapshot).contains("RESIZEEVENT")
     });
+    let _ = session.child.kill();
+}
+
+/// The settled-geometry nudge (0.2.14): after a resize lands, MiniCon
+/// re-applies the SAME size ~150 ms later - a no-op for a TUI that handled
+/// the first event, a second chance for one that dropped it (codex-cli
+/// 0.162.1's input box staying where the old rows put it). The same
+/// console-event probe as the notification hop, now counting: one settled
+/// resize must produce at least TWO WINDOW_BUFFER_SIZE_EVENTs, the last two
+/// of the SAME size. No keystroke is ever injected into the child - the
+/// nudge's whole payload is the duplicate resize.
+#[cfg(windows)]
+#[test]
+fn a_settled_resize_fires_the_one_shot_same_size_nudge() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("resize-nudge");
+    let probe = dir.join("console_event_probe.ps1");
+    std::fs::write(&probe, CONSOLE_EVENT_PROBE_PS1).expect("write console event probe");
+    let mut session = ConSession::spawn(
+        &dir,
+        &[
+            "-e".to_owned(),
+            "powershell.exe".to_owned(),
+            "-NoProfile".to_owned(),
+            "-ExecutionPolicy".to_owned(),
+            "Bypass".to_owned(),
+            "-File".to_owned(),
+            probe.to_string_lossy().into_owned(),
+        ],
+    );
+
+    session.wait_for(Duration::from_secs(30), |snapshot| {
+        ConSession::screen_text(snapshot).contains("PROBE-READY")
+    });
+
+    session.control_json(&["resize-window", "--width", "900", "--height", "600"]);
+    // The debounce (60 ms) lands the resize, the nudge follows ~150 ms
+    // later; generous margin, then settle before counting.
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        ConSession::screen_text(snapshot)
+            .lines()
+            .filter(|line| line.starts_with("RESIZEEVENT"))
+            .count()
+            >= 2
+    });
+    std::thread::sleep(Duration::from_millis(800));
+    let settled = session.wait_for(Duration::from_secs(5), |snapshot| {
+        ConSession::screen_text(snapshot).contains("PROBE-READY")
+    });
+    let text = ConSession::screen_text(&settled);
+    let events: Vec<&str> = text
+        .lines()
+        .filter(|line| line.starts_with("RESIZEEVENT"))
+        .collect();
+    assert!(
+        events.len() >= 2,
+        "the settled resize must deliver a nudge: {events:?}"
+    );
+    // Lines are "RESIZEEVENT <cols>x<rows> <tick-ms>". Baseline = the size
+    // of the LAST event (the settled geometry this resize produced); the
+    // probe's first records can carry start-up noise (a bogus 120x9001
+    // before the initial geometry settles), so indexing from the front is
+    // not stable. The nudge is the delayed re-apply: among the events of
+    // the settled size, the last must be >=100 ms after the first - the
+    // console's natural duplicates all land within a few milliseconds,
+    // which is exactly what the mutation (nudge disabled) reduces to.
+    fn ticks(line: &str) -> i64 {
+        line.rsplit(' ')
+            .next()
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(-1)
+    }
+    fn sizes(line: &str) -> &str {
+        line.split(' ').nth(1).unwrap_or("?")
+    }
+    let settled_size = sizes(events[events.len() - 1]);
+    let burst: Vec<&&str> = events
+        .iter()
+        .filter(|line| sizes(line) == settled_size)
+        .collect();
+    let first_tick = ticks(burst[0]);
+    let last_tick = ticks(burst[burst.len() - 1]);
+    assert!(
+        last_tick - first_tick >= 100,
+        "the second event must be the delayed nudge, not a natural duplicate: \
+         first@{first_tick} last@{last_tick} burst={burst:?}"
+    );
+    assert!(
+        burst.len() >= 2,
+        "the nudge re-applies the settled size: {burst:?}"
+    );
     let _ = session.child.kill();
 }
 
