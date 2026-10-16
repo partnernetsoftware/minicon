@@ -1458,6 +1458,93 @@ fn minicon_platform_features_match_the_consumer_matrix() {
     }
 }
 
+/// The platform-boundary invariant (owner directive 2026-10-16: "platform
+/// packages the architecture so the upper layers call one unified,
+/// abstract seam").
+///
+/// `minicon-platform` exists so the product layer never needs to know which
+/// OS it talks to: every raw OS reach (`std::os::*`, bare FFI) belongs inside
+/// that crate's adapters. Two leaks were found and closed on 2026-10-16
+/// (update.rs's `apply_staged_mode` and cli.rs's `install_cli` symlink) —
+/// this test keeps the next one from landing. Product modules may keep
+/// `#[cfg]` *selectors* for behaviour differences (docs text, key chords),
+/// but not raw OS calls outside two sanctioned residents: the loader
+/// entries (`startup.rs`, `linux_startup.rs`), which run before the platform
+/// is initialized at all, and `#[cfg(test)] mod tests` fixture blocks.
+#[test]
+fn the_product_layer_never_touches_the_operating_system_directly() {
+    let root = repo_root();
+    // Loader entries live before the platform exists; their FFI is the
+    // platform's own bootstrap problem, not a product choice.
+    let residents = ["src/startup.rs", "src/linux_startup.rs"];
+    let mut offenders = BTreeSet::new();
+    for path in tracked_files(&root) {
+        if !path.starts_with("src/") || !path.ends_with(".rs") || residents.contains(&path.as_str())
+        {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(root.join(&path)) else {
+            continue;
+        };
+        // Strip `#[cfg(test)] mod tests { ... }` blocks: fixtures may build
+        // symlinks or set modes on any host to prove the seam works.
+        let production = strip_test_modules(&text);
+        for (index, line) in production.lines().enumerate() {
+            if line.contains("std::os::") || line.contains("unsafe extern") || line.contains("extern \"system\"") {
+                offenders.insert(format!("{path}:{}: {}", index + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "raw OS reach outside minicon-platform (move it behind a platform \
+         seam; see filesystem_publish::copy_executable_mode for the pattern):\
+         \n{offenders:#?}"
+    );
+}
+
+/// Removes `#[cfg(test)] mod tests { .. }` blocks (including nested braces)
+/// so architecture guards judge production code only.
+fn strip_test_modules(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("#[cfg(test)]") {
+        output.push_str(&rest[..start]);
+        let after_marker = &rest[start + "#[cfg(test)]".len()..];
+        let Some(open) = after_marker.find('{') else {
+            // Attribute without a brace block on the same text; keep scanning
+            // from just after this occurrence to avoid an infinite loop.
+            output.push_str("#[cfg(test)]");
+            rest = after_marker;
+            continue;
+        };
+        let mut depth = 0usize;
+        let mut close = None;
+        for (offset, character) in after_marker[open..].char_indices() {
+            match character {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(open + offset + 1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        match close {
+            Some(end) => rest = &after_marker[end..],
+            None => {
+                output.push_str(after_marker);
+                return output;
+            }
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
 /// The injected-input parity invariant (plan v0.2.12, scope item 3).
 ///
 /// The invisible-rename defect chain (0.2.10 → 0.2.11 → the rename fix) had

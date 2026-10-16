@@ -561,27 +561,12 @@ pub fn verify_and_stage(input: InstallInput<'_>) -> Result<PathBuf, Failure> {
 /// on the Unix path would otherwise carry the tar header's mode. The
 /// destination is the running product, which is executable by definition:
 /// copying its mode is what keeps the install launchable, and it preserves
-/// whatever mode the user had chosen for it.
-#[cfg(unix)]
+/// whatever mode the user had chosen for it. The platform's seam (Unix copies
+/// the destination's mode, falling back to 0o755; Windows decides by
+/// extension and needs nothing) keeps `std::os` out of this file.
 fn apply_staged_mode(staged: &Path, destination: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let mode = match std::fs::metadata(destination) {
-        Ok(metadata) => metadata.permissions().mode(),
-        // The destination could not be stat'ed. Refusing is wrong -- the swap
-        // would otherwise install a file that cannot run -- and guessing 0644
-        // is worse, so fall back to the mode a released binary always has.
-        Err(_) => 0o755,
-    };
-    std::fs::set_permissions(staged, std::fs::Permissions::from_mode(mode))
-        .map_err(|error| format!("could not make the staged copy executable: {error}"))
-}
-
-/// Windows decides "executable" by the file's extension, not by a mode, so the
-/// staged sibling needs nothing here.
-#[cfg(not(unix))]
-fn apply_staged_mode(_staged: &Path, _destination: &Path) -> Result<(), String> {
-    Ok(())
+    minicon_platform::filesystem_publish::copy_executable_mode(staged, destination)
+        .map_err(|error| error.to_string())
 }
 
 /// The sibling the new executable is staged as.

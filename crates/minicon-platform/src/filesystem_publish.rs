@@ -162,6 +162,32 @@ pub fn publish_file(
     )
 }
 
+/// Makes a staged executable runnable on the hosts that decide that with a
+/// file mode. Unix copies the destination's mode (falling back to 0o755 when
+/// the destination cannot be stat'ed) onto the staged sibling; Windows
+/// decides by extension and needs nothing. The single seam the product's
+/// updater calls, so no `std::os` import lives above this crate.
+pub fn copy_executable_mode(staged: &Path, destination: &Path) -> Result<(), FilePublishError> {
+    crate::selected::filesystem_publish::copy_executable_mode(staged, destination).map_err(|error| {
+        FilePublishError::new(
+            FilePublishErrorKind::Install,
+            format!("could not make the staged copy executable: {error}"),
+        )
+    })
+}
+
+/// Creates the `install-cli` symlink: a plain link into a user-named prefix.
+/// Only meaningful on Unix; Windows answers a clear error instead so product
+/// code needs no platform branch for this mechanism.
+pub fn install_cli_symlink(target: &Path, link: &Path) -> Result<(), FilePublishError> {
+    crate::selected::filesystem_publish::install_cli_symlink(target, link).map_err(|error| {
+        FilePublishError::new(
+            FilePublishErrorKind::Install,
+            format!("could not create {link_display}: {error}", link_display = link.display()),
+        )
+    })
+}
+
 /// Creates, writes, synchronizes and atomically publishes a unique sibling
 /// temporary file. The temporary is removed on every pre-publication failure.
 pub fn write_file_atomic<T>(

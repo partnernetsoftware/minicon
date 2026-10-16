@@ -1,5 +1,6 @@
 //! Unix atomic file publication adapter.
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 pub fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
@@ -26,4 +27,21 @@ pub fn normalize_owned_destination(destination: &Path) -> std::io::Result<std::p
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     std::fs::canonicalize(parent).map(|parent| parent.join(name))
+}
+
+/// Unix decides "executable" with a file mode, and the generic atomic writer
+/// stages a mode-less private file, so a published executable needs the
+/// destination's mode (or 0o755 when the destination cannot be stat'ed)
+/// copied onto the staged sibling or the OS refuses to run it.
+pub fn copy_executable_mode(staged: &Path, destination: &Path) -> std::io::Result<()> {
+    let mode = match std::fs::metadata(destination) {
+        Ok(metadata) => metadata.permissions().mode(),
+        Err(_) => 0o755,
+    };
+    std::fs::set_permissions(staged, std::fs::Permissions::from_mode(mode))
+}
+
+/// The `install-cli` mechanism: a plain symlink into a user-named prefix.
+pub fn install_cli_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
 }

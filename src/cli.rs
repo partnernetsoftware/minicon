@@ -620,10 +620,9 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
 /// (`minicon cli ...`), so a GUI install still needs one step to be usable from
 /// a shell. This is the VS Code `code` model: an explicit symlink into a prefix
 /// the user names, never an installer silently writing into the system.
-#[cfg(unix)]
+/// The symlink mechanism itself is the platform's seam: Unix makes one, Windows
+/// answers "add the folder to PATH" so this function needs no platform branch.
 fn install_cli(rest: &[String], install: bool) -> i32 {
-    use std::os::unix::fs::symlink;
-
     let mut prefix = PathBuf::from("/usr/local/bin");
     let mut rest = rest.iter();
     while let Some(arg) = rest.next() {
@@ -724,7 +723,7 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
             return 1;
         }
     }
-    match symlink(&target, &link) {
+    match minicon_platform::filesystem_publish::install_cli_symlink(&target, &link) {
         Ok(()) => {
             let _ = minicon_platform::parent_console::write_stdout(&format!(
                 "linked {} -> {}\nopen a new shell, then `minicon --version`\n",
@@ -744,22 +743,12 @@ fn install_cli(rest: &[String], install: bool) -> i32 {
     }
 }
 
-#[cfg(unix)]
 fn install_cli_permission_hint(prefix: &std::path::Path) -> String {
     format!(
         "{} may not be writable by this user. Re-run with sudo, or choose a \
          directory you own:\n  minicon install-cli --prefix ~/.local/bin\n",
         prefix.display()
     )
-}
-
-#[cfg(not(unix))]
-fn install_cli(_rest: &[String], _install: bool) -> i32 {
-    let _ = minicon_platform::parent_console::write_stderr(
-        "error: install-cli is a Unix convenience; on Windows add the folder \
-         holding minicon.exe to PATH instead\n",
-    );
-    2
 }
 
 /// The composer's key list, rendered from the table that also decides what

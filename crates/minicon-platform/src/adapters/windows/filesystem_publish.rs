@@ -155,6 +155,20 @@ pub fn sync_parent(_parent: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Windows decides "executable" by the file's extension, not a mode, so a
+/// staged sibling needs nothing here.
+pub fn copy_executable_mode(_staged: &Path, _destination: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// `install-cli` is a Unix convenience; Windows users add the folder holding
+/// minicon.exe to PATH instead, so there is no symlink to make.
+pub fn install_cli_symlink(_target: &Path, _link: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::other(
+        "install-cli is a Unix convenience; on Windows add the folder holding minicon.exe to PATH",
+    ))
+}
+
 pub fn normalize_owned_destination(destination: &Path) -> std::io::Result<PathBuf> {
     let destination = verbatim(full_path(destination)?);
     let parent = destination
