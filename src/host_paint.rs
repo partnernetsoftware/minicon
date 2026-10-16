@@ -875,8 +875,9 @@ impl ConApp {
                 }
             }
         }
-        // The reserved area is marked off so it reads as deliberate room rather
-        // than the panel having run out of content.
+        // The notes section is marked off by the same rule that used to bound
+        // the blank reservation, so the panel still reads as deliberate
+        // sections rather than content that ran out.
         surface.fill_rect(
             p.panel.x.saturating_add(pad),
             p.reserved_top,
@@ -884,6 +885,120 @@ impl ConApp {
             1,
             t.border.to_xrgb(),
         );
+        // The notes scratchpad: a title, then the multiline text with a caret
+        // while focused. Overflow is clipped (no own scroll — the panel's
+        // wheel belongs to the history list above), and the empty state is a
+        // quiet hint rather than blank space.
+        paint_host_ui_text(
+            surface,
+            p.panel.x.saturating_add(pad),
+            p.notes.title_y,
+            strings.notes_title,
+            t.muted,
+            font_size_px,
+            inner_w,
+        );
+        let cell = font::cell_metrics(font_size_px);
+        let cell_w = cell.width.max(1);
+        let cell_h = cell.height.max(1);
+        let line_gap = (cell_h / 4).max(1);
+        let line_stride = cell_h.saturating_add(line_gap);
+        let note_cols = (p.notes.text_w / cell_w).max(1) as usize;
+        let note_lines = p.notes_visible_rows;
+        if self.notes.text.is_empty() && self.notes.preedit.is_empty() {
+            if self.notes_focused || !strings.notes_empty.is_empty() {
+                paint_host_ui_text(
+                    surface,
+                    p.notes.text_x,
+                    p.notes.text_y,
+                    strings.notes_empty,
+                    t.muted,
+                    font_size_px,
+                    p.notes.text_w,
+                );
+            }
+        } else {
+            // The composer's own line painter wraps the same way the composer
+            // panel does; rows beyond the visible window are clipped, showing
+            // the tail of the note (where writing happens).
+            let lines: Vec<&str> = self.notes.text.lines().collect();
+            let preedit_first = self.notes.preedit.lines().next().unwrap_or("");
+            let skip = lines.len().saturating_sub(note_lines);
+            for (index, line) in lines.iter().enumerate().skip(skip) {
+                let visible_index = index - skip;
+                let y = p
+                    .notes
+                    .text_y
+                    .saturating_add((visible_index as u32).saturating_mul(line_stride));
+                // The preedit renders on the caret's line; a simpler contract
+                // than the composer's (which windows long lines) because a
+                // note line wraps at the panel width instead of scrolling.
+                let mut parts: [&str; 2] = [line, ""];
+                let mut tail = "";
+                if self.notes_focused && !preedit_first.is_empty() {
+                    let caret_line = composer::line_index_at(
+                        &self.notes.text,
+                        self.notes.caret.min(self.notes.text.len()),
+                    );
+                    if caret_line == index {
+                        let caret = self.notes.caret.min(self.notes.text.len());
+                        let line_start = self
+                            .notes
+                            .text
+                            .lines()
+                            .take(index)
+                            .map(|l| l.len() + 1)
+                            .sum::<usize>();
+                        let offset = caret.saturating_sub(line_start);
+                        let split = offset.min(line.len());
+                        parts = [&line[..split], &line[split..]];
+                        tail = preedit_first;
+                        let _ = note_cols; // width bound is the panel's
+                    }
+                }
+                let mut segments: [&str; 3] = [parts[0], parts[1], tail];
+                if tail.is_empty() {
+                    segments = [parts[0], parts[1], ""];
+                }
+                paint_host_ui_text_parts(
+                    surface,
+                    p.notes.text_x,
+                    y,
+                    &segments,
+                    t.text,
+                    font_size_px,
+                    p.notes.text_w,
+                );
+            }
+        }
+        // The caret is a rule, not a character (the composer's own rule),
+        // drawn only while the notes own the keyboard.
+        if self.notes_focused {
+            let caret = self.notes.caret.min(self.notes.text.len());
+            let line = composer::line_index_at(&self.notes.text, caret);
+            let lines: Vec<&str> = self.notes.text.lines().collect();
+            let skip = lines.len().saturating_sub(note_lines);
+            if line >= skip {
+                let line_start = self
+                    .notes
+                    .text
+                    .lines()
+                    .take(line)
+                    .map(|l| l.len() + 1)
+                    .sum::<usize>();
+                let offset = caret.saturating_sub(line_start);
+                let head = lines.get(line).map_or("", |l| l.get(..offset).unwrap_or(l));
+                let caret_cells = composer::cells(head);
+                let x = p
+                    .notes
+                    .text_x
+                    .saturating_add(cell_w.saturating_mul(caret_cells as u32));
+                let y = p.notes.text_y.saturating_add(
+                    (u32::try_from(line - skip).unwrap_or(u32::MAX)).saturating_mul(line_stride),
+                );
+                surface.fill_rect(x, y, 1.max(cell_w / 8), cell_h, t.text.to_xrgb());
+            }
+        }
     }
 
     pub(crate) fn paint_empty_workspace(

@@ -80,6 +80,20 @@ impl ConApp {
                                 ("composer_band", rect_obj(layout.composer)),
                                 ("status_band", rect_obj(layout.status)),
                                 ("history_panel_band", rect_obj(layout.panel)),
+                                // Where the notes scratchpad sits inside the
+                                // open panel, physical pixels — the notes
+                                // journey clicks this instead of re-deriving
+                                // the panel's section math.
+                                (
+                                    "notes_area",
+                                    if layout.panel_open {
+                                        let p =
+                                            layout.history_panel(metrics.scale_factor);
+                                        rect_obj(p.notes.area)
+                                    } else {
+                                        json::JsonValue::Null
+                                    },
+                                ),
                                 ("panel_toggle", rect_obj(layout.panel_toggle)),
                                 ("sidebar", rect_obj(layout.sidebar)),
                                 (
@@ -273,6 +287,8 @@ impl ConApp {
                             ("composer_focused", self.composer.focused.into()),
                             ("composer_text", self.composer.text.as_str().into()),
                             ("composer_preedit", self.composer.preedit.as_str().into()),
+                            ("notes_focused", self.notes_focused.into()),
+                            ("notes_text", self.notes.text.as_str().into()),
                             (
                                 "terminal_ime_preedit",
                                 self.active_session_opt()

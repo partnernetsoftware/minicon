@@ -80,6 +80,9 @@ pub struct ConfigValues {
     /// know falls back to that caller's default instead of failing the parse.
     pub theme: Option<String>,
     pub language: Option<String>,
+    /// The notes scratchpad text, as written. Free text kept verbatim: the
+    /// codec validates JSON shape (bounded by the input cap), never content.
+    pub notes: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -105,6 +108,7 @@ enum ConfigField {
     Rows,
     Theme,
     Language,
+    Notes,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -123,6 +127,7 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         rows: None,
         theme: None,
         language: None,
+        notes: None,
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -237,6 +242,9 @@ impl ConfigParser<'_> {
                     ConfigField::Language => {
                         config.language = self.string_value(value, "language")?;
                     }
+                    ConfigField::Notes => {
+                        config.notes = self.string_value(value, "notes")?;
+                    }
                 }
             }
             keys.push(key);
@@ -321,6 +329,8 @@ impl ConfigParser<'_> {
             Some(ConfigField::Theme)
         } else if self.key_equals(key, "language") {
             Some(ConfigField::Language)
+        } else if self.key_equals(key, "notes") {
+            Some(ConfigField::Notes)
         } else {
             None
         }

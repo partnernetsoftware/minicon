@@ -830,6 +830,15 @@ impl ConSession {
         }
     }
 
+    /// Like [`Self::control_json`], but a transport failure is `None` so a
+    /// caller inside a poll loop can retry instead of panicking on the
+    /// spawn/bind race.
+    fn try_control_json(&self, args: &[&str]) -> Option<serde_json::Value> {
+        let argv: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let text = invoke_control_output(&self.endpoint, &argv).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
     /// Asks the live host for one control command's JSON, for cross-checks
     /// against the `--emit-snapshot` file.
     fn control_json(&self, args: &[&str]) -> serde_json::Value {
@@ -921,7 +930,21 @@ impl ConSession {
         predicate: impl Fn(&serde_json::Value) -> bool,
     ) -> serde_json::Value {
         let deadline = Instant::now() + timeout * test_slowdown();
-        let mut last_seen = self.control_json(&["ui-snapshot"]);
+        // The first dial races the host's control bind: a freshly spawned
+        // host has a millisecond-scale window where the pipe exists in the
+        // spawn args but not on the machine yet, and a bare control_json
+        // panics on it (observed live as a ~50% flake in the notes
+        // journey's second session). Retry the connect inside the same
+        // budget instead of letting the race read as a product failure.
+        let mut last_seen = loop {
+            match self.try_control_json(&["ui-snapshot"]) {
+                Some(value) => break value,
+                None if Instant::now() >= deadline => {
+                    panic!("timed out dialing the control endpoint for ui-snapshot")
+                }
+                None => std::thread::sleep(Duration::from_millis(30)),
+            }
+        };
         loop {
             if predicate(&last_seen) {
                 return last_seen;
@@ -933,7 +956,10 @@ impl ConSession {
                 );
             }
             std::thread::sleep(Duration::from_millis(30));
-            last_seen = self.control_json(&["ui-snapshot"]);
+            let Some(next) = self.try_control_json(&["ui-snapshot"]) else {
+                continue;
+            };
+            last_seen = next;
         }
     }
 
@@ -2823,6 +2849,8 @@ fn the_ui_snapshot_keeps_a_fixed_top_level_key_set() {
         "composer_preedit",
         "composer_submit_error",
         "composer_text",
+        "notes_focused",
+        "notes_text",
         "control_pointer_owner",
         "geometry",
         "settings_open",
@@ -2912,6 +2940,153 @@ fn the_history_panel_toggle_reinsets_the_terminal_and_closes_back() {
     let _ = session.child.kill();
 }
 
+
+/// The notes scratchpad (#5, 0.2.13): clicking the panel's notes section
+/// focuses a second editable field, typed text renders, Escape blurs and
+/// saves, and the text survives a process restart through `minicon.json`.
+///
+/// The pixel half is deliberate (the rename lesson): `notes_text` moving
+/// while the panel's pixels stand still is exactly the invisible-editor
+/// defect class, so the window must differ between "empty" and "typed".
+#[cfg(windows)]
+#[test]
+fn the_notes_scratchpad_edits_renders_and_persists() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("notes-scratchpad");
+    let before_path = dir.join("notes-before.png");
+    let after_path = dir.join("notes-after.png");
+    // A long-lived child so the window stays up for the whole journey.
+    let args = command_shell_args("ping -n 90 127.0.0.1 >nul");
+    let mut session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+    let host_pid = session.child.id();
+
+    session.control_json(&["send-ui-keys", "Ctrl+Shift+H"]);
+    let opened = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["history_panel"]["open"] == true
+    });
+    assert!(
+        !opened["geometry"]["notes_area"].is_null(),
+        "the open panel must expose the notes area: {opened}"
+    );
+
+    // Click the notes area (geometry gives physical pixels; send-ui-mouse
+    // takes logical - scale_permille converts, the same contract as the
+    // rename pencil).
+    let geometry = opened["geometry"].clone();
+    let notes = &geometry["notes_area"];
+    let scale = geometry["scale_permille"].as_f64().unwrap_or(1000.0) / 1000.0;
+    let logical = |field: &str| (notes[field].as_f64().expect("number") / scale) as u16;
+    let click_x = logical("x") + logical("width") / 2;
+    let click_y = logical("y") + logical("height") / 2;
+
+    session.control_json(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &click_x.to_string(),
+        "--row",
+        &click_y.to_string(),
+    ]);
+    let focused = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["notes_focused"] == true
+    });
+    assert_eq!(
+        focused["composer_focused"], false,
+        "notes focus must take keyboard ownership from the composer: {focused}"
+    );
+
+    // The config file is machine-global, so a previous run may have left a
+    // note behind (observed live: a rerun seeded "HI" and the typed pair
+    // became "HIHI"). Clear the field first so the journey starts from a
+    // known empty state regardless of what an earlier run persisted.
+    if focused["notes_text"].as_str().is_some_and(|text| !text.is_empty()) {
+        session.control_json(&["send-ui-keys", "Ctrl+A"]);
+        session.control_json(&["send-ui-keys", "Backspace"]);
+        let cleared = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+            snapshot["notes_text"] == ""
+        });
+        assert_eq!(cleared["notes_text"], "", "the field must clear: {cleared}");
+    }
+
+    // One damage-driven repaint later the focused panel (with its caret
+    // rule) is on screen; the short settle rides the same 30 ms poll the
+    // snapshot helpers use, bounded by * test_slowdown() (the journey
+    // budget rule — a bare deadline is the flake shape scope ④ of 0.2.12
+    // audited out).
+    std::thread::sleep(Duration::from_millis(600) * test_slowdown());
+    capture_native_window(host_pid, &before_path).expect("capture before typing");
+
+    session.control_json(&["send-ui-keys", "H"]);
+    session.control_json(&["send-ui-keys", "I"]);
+    let typed = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["notes_text"] == "HI"
+    });
+
+    std::thread::sleep(Duration::from_millis(600) * test_slowdown());
+    capture_native_window(host_pid, &after_path).expect("capture after typing");
+
+    // Pixel proof: the window changed between empty and typed.
+    let band = |path: &Path| -> Vec<u8> {
+        let decoder = png::Decoder::new(std::fs::File::open(path).expect("open png"));
+        let mut reader = decoder.read_info().expect("read png info");
+        let mut bytes = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut bytes).expect("decode png");
+        bytes.truncate(info.buffer_size());
+        bytes
+    };
+    let before_shot = band(&before_path);
+    let after_shot = band(&after_path);
+    assert_eq!(before_shot.len(), after_shot.len(), "same window size");
+    let changed = before_shot
+        .iter()
+        .zip(after_shot.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(
+        changed > 0,
+        "typing into the notes editor must change the panel pixels: {typed}"
+    );
+
+    // Escape blurs and saves.
+    session.control_json(&["send-ui-keys", "Escape"]);
+    let blurred = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
+        snapshot["notes_focused"] == false
+    });
+    assert_eq!(blurred["notes_text"], "HI", "blur keeps the text: {blurred}");
+    let _ = session.child.kill();
+    let _ = session.child.wait();
+
+    // Persistence: a fresh process on the same machine reads the same
+    // minicon.json, so the note must come back. The journey must outlive
+    // the checks: a completed journey exits the host, and the pipe this
+    // test then dials is gone (observed live as os error 2).
+    let script = write_journey(&dir, r#"[{"wait_ms": 120000}]"#);
+    let mut second = ConSession::spawn(
+        &dir,
+        &[
+            TEST_JOURNEY_ARG.to_owned(),
+            script.to_str().unwrap().to_owned(),
+            "-e".to_owned(),
+            "cmd".to_owned(),
+        ],
+    );
+    second.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+    let restored = second.control_json(&["ui-snapshot"]);
+    assert_eq!(
+        restored["notes_text"], "HI",
+        "the note must survive the restart through minicon.json: {restored}"
+    );
+    let _ = second.child.kill();
+}
+
 /// The tab-row pencil must open a rename editor whose typed text and caret
 /// are actually rendered.
 ///
@@ -2986,7 +3161,12 @@ fn the_rename_editor_renders_typed_text_and_the_caret() {
     );
 
     // Let the entry frame rasterise and present before sampling pixels.
-    std::thread::sleep(Duration::from_millis(500));
+    // One damage-driven repaint later the focused panel (with its caret
+    // rule) is on screen; the short settle rides the same 30 ms poll the
+    // snapshot helpers use, bounded by * test_slowdown() (the journey
+    // budget rule — a bare deadline is the flake shape scope ④ of 0.2.12
+    // audited out).
+    std::thread::sleep(Duration::from_millis(600) * test_slowdown());
     capture_native_window(host_pid, &before_path).expect("capture before typing");
     session.control_json(&["send-ui-keys", "X"]);
     let typed = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
@@ -2996,7 +3176,7 @@ fn the_rename_editor_renders_typed_text_and_the_caret() {
         typed["rename"]["text"], "X",
         "the editor opens fully selected, so one key replaces the name: {typed}"
     );
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(600) * test_slowdown());
     capture_native_window(host_pid, &after_path).expect("capture after typing");
 
     fn decode(path: &Path) -> (usize, usize, Vec<u8>, png::ColorType) {

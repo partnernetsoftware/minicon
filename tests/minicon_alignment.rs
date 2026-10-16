@@ -1562,6 +1562,7 @@ fn injected_ui_input_rides_the_physical_event_pipeline() {
         fs::read_to_string(root.join("src/control_dispatch.rs")).expect("read control_dispatch");
     let main_source = fs::read_to_string(root.join("src/main.rs")).expect("read src/main.rs");
     let rename_source = fs::read_to_string(root.join("src/rename.rs")).expect("read src/rename.rs");
+    let notes_source = fs::read_to_string(root.join("src/notes.rs")).expect("read src/notes.rs");
 
     // 1. Every `SendUi*` command variant exists, and its dispatch arm delivers
     //    every event through `ConApp::event` — the same entry a physical
@@ -1615,6 +1616,8 @@ fn injected_ui_input_rides_the_physical_event_pipeline() {
             "handle_composer_ime",
             "handle_rename_key",
             "handle_rename_ime",
+            "handle_notes_key",
+            "handle_notes_ime",
             "forward_keys_to_terminal",
             "forward_key_checked",
         ] {
@@ -1633,12 +1636,20 @@ fn injected_ui_input_rides_the_physical_event_pipeline() {
         "event() must route keyboard/IME through the rename funnel"
     );
     assert!(
+        main_source.contains("if self.route_notes_input(window, &event).is_some()"),
+        "event() must route keyboard/IME through the notes funnel"
+    );
+    assert!(
         main_source.contains("if self.route_composer_input(window, &event).is_some()"),
         "event() must route keyboard/IME through the composer funnel"
     );
     assert!(
         rename_source.contains("fn route_rename_input("),
         "route_rename_input must live with the rename state machine in rename.rs"
+    );
+    assert!(
+        notes_source.contains("fn route_notes_input("),
+        "route_notes_input must live with the notes editor in notes.rs"
     );
     assert!(
         main_source.contains("fn route_composer_input("),
@@ -1656,5 +1667,14 @@ fn injected_ui_input_rides_the_physical_event_pipeline() {
         rename_funnel.contains("mark_tree_dirty()")
             && rename_funnel.contains("request_dirty_redraw(window)"),
         "the rename funnel must pair its Changed claim with the tree damage mark"
+    );
+    let notes_funnel = notes_source
+        [notes_source.find("fn route_notes_input(").expect("funnel present")
+            ..notes_source.find("fn update_notes_ime_anchor").expect("funnel end")]
+        .to_owned();
+    assert!(
+        notes_funnel.contains("mark_host_ui_full()")
+            && notes_funnel.contains("request_dirty_redraw(window)"),
+        "the notes funnel must pair its Changed claim with the panel damage mark"
     );
 }

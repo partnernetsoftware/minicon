@@ -50,6 +50,7 @@ mod ime_mode;
 #[cfg(target_os = "linux")]
 mod linux_startup;
 mod mux;
+mod notes;
 mod palette;
 mod perf;
 mod raster_surface;
@@ -330,6 +331,9 @@ struct ConConfig {
     rows: Option<u16>,
     theme: Option<theme::ThemeChoice>,
     language: Option<ui::UiLanguage>,
+    /// The notes scratchpad text. `None` until the notes are first saved,
+    /// so a config the feature never touched stays byte-identical.
+    notes: Option<String>,
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
@@ -372,6 +376,7 @@ fn config_from_bytes(bytes: &[u8]) -> ConConfig {
             .language
             .as_deref()
             .and_then(ui::UiLanguage::from_tag),
+        notes: config.notes,
     }
 }
 
@@ -397,6 +402,9 @@ fn config_document(config: &ConConfig) -> json::JsonValue {
     }
     if let Some(language) = config.language {
         fields.push(("language", language.tag().into()));
+    }
+    if let Some(notes) = &config.notes {
+        fields.push(("notes", notes.as_str().into()));
     }
     json::object(fields)
 }
@@ -673,6 +681,13 @@ struct ConApp {
     /// the greeting page is a lifecycle boundary rather than a settings reset.
     session_seed: SessionSeed,
     composer: composer::ComposerState,
+    /// The notes scratchpad buffer (right panel, Global-only, PTY-isolated).
+    /// Session state: editing never reaches the PTY; persistence rides the
+    /// config file on blur and on committing gestures.
+    notes: composer::ComposerState,
+    /// Whether the notes field owns keyboard/IME input. Session-scoped view
+    /// state like `history_panel_open`; a restart starts unfocused.
+    notes_focused: bool,
     /// Which region the pointer last worked; scopes the terminal paste
     /// shortcuts (see [`InputSurface`]). Defaults to the terminal so a fresh
     /// window pastes without a prior click.
@@ -1118,6 +1133,8 @@ impl ConApp {
             workspace,
             sessions,
             session_seed,
+            notes: composer::ComposerState::default(),
+            notes_focused: false,
             composer: composer::ComposerState::default(),
             input_surface: InputSurface::default(),
             composer_selecting: false,
@@ -1774,6 +1791,13 @@ impl ConApp {
         self.ui_theme = config.theme.unwrap_or_default();
         self.ui_language = config.language.unwrap_or_default();
         self.apply_theme_to_all_sessions();
+        // The notes scratchpad rides the same config document: seeded once
+        // at startup, saved on blur. A caret at the end is the honest
+        // restore for a scratchpad — where "continue writing" starts.
+        if let Some(text) = config.notes.as_deref() {
+            self.notes.text = text.to_owned();
+            self.notes.caret = self.notes.text.len();
+        }
         self.config = config;
     }
 
@@ -3123,11 +3147,14 @@ impl PixelWindowApplication for ConApp {
             ..
         } = &event
         {
-            // Any left press finishes an in-progress rename. The click itself
-            // still does whatever it would have (select, close, start another
-            // edit, focus the terminal); committing here keeps the rename from
-            // outliving the click that ended it.
+            // Any left press finishes an in-progress rename and, unless the
+            // press lands in the notes area (which re-focuses below), drops
+            // notes focus on its way out. The click still does whatever it
+            // would have; saving on blur is what keeps the scratchpad found.
             self.commit_rename(window);
+            if self.notes_focused {
+                self.blur_notes(window);
+            }
             if self.history_panel_open {
                 let metrics = window.metrics()?;
                 let scale = metrics.scale_factor.max(1.0);
@@ -3143,6 +3170,9 @@ impl PixelWindowApplication for ConApp {
                         self.set_history_panel(false);
                         self.apply_panel_width(window)?;
                         self.mark_host_ui_full_and_repaint(window);
+                    }
+                    ui::HistoryHit::Notes => {
+                        self.focus_notes(window);
                     }
                     ui::HistoryHit::Row(row) => {
                         let count = self.composer.history().len();
@@ -3384,6 +3414,9 @@ impl PixelWindowApplication for ConApp {
         // its damage mark inside the funnel — the pairing the old inline
         // dispatch site let drift apart.
         if self.route_rename_input(window, &event).is_some() {
+            return Ok(PixelWindowDirective::Continue);
+        }
+        if self.route_notes_input(window, &event).is_some() {
             return Ok(PixelWindowDirective::Continue);
         }
         if self.route_composer_input(window, &event).is_some() {
@@ -5225,6 +5258,7 @@ mod tests {
             rows: Some(40),
             theme: Some(theme::ThemeChoice::Paper),
             language: Some(ui::UiLanguage::ChineseTraditional),
+            notes: Some("scratch\npad".to_owned()),
         };
         write_config_to(&path, &saved).expect("the preference is published");
 
@@ -5238,6 +5272,9 @@ mod tests {
         assert_eq!(reloaded.rows, Some(40));
         assert_eq!(reloaded.theme, Some(theme::ThemeChoice::Paper));
         assert_eq!(reloaded.language, Some(ui::UiLanguage::ChineseTraditional));
+        // Notes ride the same document: newlines survive the JSON round trip
+        // verbatim, because a scratchpad's structure is the user's own.
+        assert_eq!(reloaded.notes, Some("scratch\npad".to_owned()));
         let _ = std::fs::remove_dir_all(&directory);
     }
 

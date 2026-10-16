@@ -595,6 +595,8 @@ impl UiLanguage {
                 settings_shortcuts: "Shortcuts",
                 history_title: "HISTORY",
                 history_empty: "(nothing sent yet)",
+                notes_title: "NOTES",
+                notes_empty: "(click to jot a note)",
                 settings_updates: "Updates",
                 update_check: "Check",
                 update_install: "Update",
@@ -627,6 +629,8 @@ impl UiLanguage {
                 settings_shortcuts: "快捷键",
                 history_title: "历史发送",
                 history_empty: "（还没有发送过内容）",
+                notes_title: "笔记",
+                notes_empty: "（点击记录一条笔记）",
                 settings_updates: "更新",
                 update_check: "检查",
                 update_install: "更新",
@@ -659,6 +663,8 @@ impl UiLanguage {
                 settings_shortcuts: "快捷鍵",
                 history_title: "歷史發送",
                 history_empty: "（還沒有送出過內容）",
+                notes_title: "筆記",
+                notes_empty: "（點擊記錄一條筆記）",
                 settings_updates: "更新",
                 update_check: "檢查",
                 update_install: "更新",
@@ -773,6 +779,8 @@ pub struct HostUiStrings {
     pub settings_shortcuts: &'static str,
     pub history_title: &'static str,
     pub history_empty: &'static str,
+    pub notes_title: &'static str,
+    pub notes_empty: &'static str,
     /// The Updates section: its label, its three controls and the phase line.
     ///
     /// The detailed cause a failure carries is diagnostic text from the worker
@@ -1269,6 +1277,21 @@ impl Layout {
             .saturating_sub(dip(HISTORY_RESERVED_HEIGHT_DIP, scale))
             .max(list_top);
         let row_capacity = reserved_top.saturating_sub(list_top) / row_height;
+        // The notes section occupies the former blank reservation: a title
+        // line, then the editable area down to the panel's bottom pad.
+        let notes_title_h = dip(20.0, scale);
+        let notes_title_y = reserved_top.saturating_add(dip(4.0, scale));
+        let notes_text_y = notes_title_y.saturating_add(notes_title_h);
+        let panel_bottom =
+            self.panel.y.saturating_add(self.panel.height).saturating_sub(pad);
+        let notes_text_h = panel_bottom.saturating_sub(notes_text_y);
+        let notes_area = Rect {
+            x: self.panel.x.saturating_add(pad / 2),
+            y: reserved_top,
+            width: self.panel.width.saturating_sub(pad),
+            height: panel_bottom.saturating_sub(reserved_top),
+        };
+        let cell_h = dip(18.0, scale).max(1);
         HistoryPanelLayout {
             panel: self.panel,
             close,
@@ -1277,6 +1300,15 @@ impl Layout {
             row_height,
             row_capacity: row_capacity as usize,
             reserved_top,
+            notes: NotesAreaLayout {
+                title_y: notes_title_y,
+                text_x: self.panel.x.saturating_add(pad),
+                text_y: notes_text_y,
+                text_w: self.panel.width.saturating_sub(pad.saturating_mul(2)),
+                text_h: notes_text_h,
+                area: notes_area,
+            },
+            notes_visible_rows: (notes_text_h / cell_h) as usize,
         }
     }
 }
@@ -1291,9 +1323,34 @@ pub struct HistoryPanelLayout {
     pub row_height: u32,
     /// How many history rows fit above the reserved area at this size.
     pub row_capacity: usize,
-    /// Top of the blank area reserved for future loop/goal controls. The
-    /// history list never paints below this line.
+    /// Top of the notes scratchpad section. The former blank reservation
+    /// (96 DIP kept free for "future loop/goal controls") is the notes
+    /// area now — the same room, finally spent on the section it was
+    /// held for. The history list never paints below this line.
     pub reserved_top: u32,
+    /// The notes section's own geometry, derived from `reserved_top`.
+    pub notes: NotesAreaLayout,
+    /// How many text rows the notes area can show at this size. The editor
+    /// does not scroll its own; overflow is clipped, and the IME anchor
+    /// clamps to this so a long note parks the candidate window inside
+    /// the panel.
+    pub notes_visible_rows: usize,
+}
+
+/// Geometry of the notes scratchpad area inside the open right panel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NotesAreaLayout {
+    /// The section's title baseline y.
+    pub title_y: u32,
+    /// The editable text area's top-left, inset from the panel edges.
+    pub text_x: u32,
+    pub text_y: u32,
+    /// Inner width available to note text, between the insets.
+    pub text_w: u32,
+    /// Inner height available to note text, down to the panel's bottom pad.
+    pub text_h: u32,
+    /// The whole section, for hit-testing focus clicks.
+    pub area: Rect,
 }
 
 /// Where a pointer landed on the open history panel.
@@ -1305,6 +1362,8 @@ pub enum HistoryHit {
     /// Row index counting from the top of the list (`0` = newest shown). May
     /// exceed the entry count; the caller ignores an index with no entry.
     Row(usize),
+    /// The notes scratchpad section — a click focuses the notes editor.
+    Notes,
 }
 
 /// Hit-test the open history/notes panel. Call only while [`Layout::panel_open`].
@@ -1319,6 +1378,9 @@ pub fn history_hit(layout: Layout, x: u32, y: u32, scale: f64) -> HistoryHit {
     }
     if y >= p.list_top && y < p.reserved_top {
         return HistoryHit::Row(((y - p.list_top) / p.row_height.max(1)) as usize);
+    }
+    if p.notes.area.contains(x, y) {
+        return HistoryHit::Notes;
     }
     HistoryHit::Panel
 }
@@ -2775,10 +2837,11 @@ mod tests {
             history_hit(l, x, p.list_top + p.row_height + 1, 1.0),
             HistoryHit::Row(1)
         );
-        // Below the list, the reserved band is panel, not a row.
+        // Below the list, the notes scratchpad band answers Notes (its
+        // click focuses the editor), not Panel and not a row.
         assert_eq!(
             history_hit(l, x, p.reserved_top + 1, 1.0),
-            HistoryHit::Panel
+            HistoryHit::Notes
         );
         // With the panel closed there is nothing to hit.
         let closed = Layout::with_chrome(1200, 800, 1.0, SIDEBAR_WIDTH_DIP, false, false, 260.0);
