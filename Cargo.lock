@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "flate2",
  "itoa",
