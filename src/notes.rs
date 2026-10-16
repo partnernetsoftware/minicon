@@ -21,6 +21,15 @@ impl ConApp {
     /// composer (a focused composer is unfocused, exactly as `begin_rename`
     /// does; a live rename is committed first because a click that lands in
     /// notes must not leave an invisible rename dangling).
+    /// Scrolls the notes view by `delta` rows, clamped so the tail row is
+    /// the farthest the view can go (scrolling past the note's head or
+    /// below its tail is not a place a reader can be).
+    pub(super) fn scroll_notes(&mut self, delta: isize, visible_rows: usize) {
+        let total = self.notes.text.lines().count();
+        let max_back = total.saturating_sub(visible_rows.max(1));
+        self.notes_scroll = (self.notes_scroll as isize + delta).clamp(0, max_back as isize) as usize;
+    }
+
     pub(super) fn focus_notes(&mut self, window: &PixelWindow) {
         self.commit_rename(window);
         self.composer.focused = false;
@@ -138,6 +147,10 @@ impl ConApp {
             | keymap::Action::CancelFocus
             | keymap::Action::Decline => {}
         }
+        // Typing recentres the view on the tail: writing is what the view
+        // exists for, and a view left scrolled up while the caret edits the
+        // tail is the same stale-window shape the composer windows away.
+        self.notes_scroll = 0;
         let _ = self.update_notes_ime_anchor(window);
         true
     }
@@ -228,9 +241,13 @@ impl ConApp {
         let cell = font::cell_metrics(font_size);
         let caret = self.notes.caret.min(self.notes.text.len());
         let line = composer::line_index_at(&self.notes.text, caret);
-        // Clamp the row to the area so a long note still parks the IME
-        // inside the panel instead of past the window's bottom edge.
-        let row = line.min(layout.notes_visible_rows.saturating_sub(1));
+        // The same clamped view offset the painter uses, so the candidate
+        // window parks beside the caret row the user actually sees; the
+        // final clamp keeps a long note's IME inside the panel.
+        let total = self.notes.text.lines().count();
+        let max_back = total.saturating_sub(layout.notes_visible_rows);
+        let skip = self.notes_scroll.min(max_back);
+        let row = line.saturating_sub(skip).min(layout.notes_visible_rows.saturating_sub(1));
         let x = f64::from(layout.notes.text_x.saturating_add(cell.width / 2)) / scale;
         let y = f64::from(
             layout

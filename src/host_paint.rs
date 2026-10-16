@@ -923,7 +923,11 @@ impl ConApp {
             // the tail of the note (where writing happens).
             let lines: Vec<&str> = self.notes.text.lines().collect();
             let preedit_first = self.notes.preedit.lines().next().unwrap_or("");
-            let skip = lines.len().saturating_sub(note_lines);
+            // The view offset is clamped at every read (the history offset's
+            // rule): a resize that shrank the window cannot leave the view
+            // pointing past the note's own head.
+            let max_back = lines.len().saturating_sub(note_lines);
+            let skip = self.notes_scroll.min(max_back);
             for (index, line) in lines.iter().enumerate().skip(skip) {
                 let visible_index = index - skip;
                 let y = p
@@ -977,7 +981,8 @@ impl ConApp {
             let caret = self.notes.caret.min(self.notes.text.len());
             let line = composer::line_index_at(&self.notes.text, caret);
             let lines: Vec<&str> = self.notes.text.lines().collect();
-            let skip = lines.len().saturating_sub(note_lines);
+            let max_back = lines.len().saturating_sub(note_lines);
+            let skip = self.notes_scroll.min(max_back);
             if line >= skip {
                 let line_start = self
                     .notes

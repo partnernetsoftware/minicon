@@ -693,6 +693,11 @@ struct ConApp {
     /// invisible-editor defect class) and the save owed by the blur happens
     /// at the call site that owns the window.
     notes_blur_pending_save: bool,
+    /// How many rows the notes view is scrolled up from the note's tail.
+    /// Zero while typing (the tail is where writing happens); the wheel over
+    /// the notes area moves it so a long note's head is reachable. Session
+    /// view state, clamped at every read like the history offset.
+    notes_scroll: usize,
     /// Which region the pointer last worked; scopes the terminal paste
     /// shortcuts (see [`InputSurface`]). Defaults to the terminal so a fresh
     /// window pastes without a prior click.
@@ -1141,6 +1146,7 @@ impl ConApp {
             notes: composer::ComposerState::default(),
             notes_focused: false,
             notes_blur_pending_save: false,
+            notes_scroll: 0,
             composer: composer::ComposerState::default(),
             input_surface: InputSurface::default(),
             composer_selecting: false,
@@ -3114,8 +3120,20 @@ impl PixelWindowApplication for ConApp {
                     }
                     _ => 0,
                 };
-                let capacity = layout.history_panel(scale).row_capacity;
-                self.scroll_history_panel(rows, capacity);
+                // The wheel belongs to the section under the pointer: the
+                // history list above the divider, the note below it. A note
+                // scrolled by the list above it (or vice versa) is the same
+                // misattribution that made the sidebar own everything.
+                let panel = layout.history_panel(scale);
+                let over_notes = panel.notes.area.contains(
+                    (position.x * scale).max(0.0) as u32,
+                    (position.y * scale).max(0.0) as u32,
+                );
+                if over_notes {
+                    self.scroll_notes(rows, panel.notes_visible_rows);
+                } else {
+                    self.scroll_history_panel(rows, panel.row_capacity);
+                }
                 self.mark_host_ui_full_and_repaint(window);
                 return Ok(PixelWindowDirective::Continue);
             }

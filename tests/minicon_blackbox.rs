@@ -3097,19 +3097,28 @@ fn the_notes_scratchpad_edits_renders_and_persists() {
     // the checks: a completed journey exits the host, and the pipe this
     // test then dials is gone (observed live as os error 2).
     let script = write_journey(&dir, r#"[{"wait_ms": 120000}]"#);
+    // A long-lived child, not a bare interactive shell: a bare `cmd` under
+    // piped stdio exits at once on some machines, and the host follows its
+    // child out - the pipe this test then dials is gone (the 18-second
+    // flake). The ping keeps the second host alive exactly as it does the
+    // first.
+    let second_args = command_shell_args("ping -n 120 127.0.0.1 >nul");
     let mut second = ConSession::spawn(
         &dir,
         &[
             TEST_JOURNEY_ARG.to_owned(),
             script.to_str().unwrap().to_owned(),
-            "-e".to_owned(),
-            "cmd".to_owned(),
-        ],
+        ]
+        .into_iter()
+        .chain(second_args)
+        .collect::<Vec<String>>(),
     );
-    second.wait_for(Duration::from_secs(10), |snapshot| {
-        snapshot["child_alive"] == true
+    // The restored read rides the retrying ui-snapshot poll: a fresh host's
+    // pipe bind races the first dial, and the note's arrival is the
+    // condition itself (seeded from minicon.json before the first paint).
+    let restored = second.wait_for_ui_snapshot(Duration::from_secs(10), |snapshot| {
+        snapshot["notes_text"] == "HI"
     });
-    let restored = second.control_json(&["ui-snapshot"]);
     assert_eq!(
         restored["notes_text"], "HI",
         "the note must survive the restart through minicon.json: {restored}"
