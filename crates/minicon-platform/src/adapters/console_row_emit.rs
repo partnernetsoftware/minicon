@@ -104,7 +104,11 @@ pub(crate) fn is_wide(c: char) -> bool {
 pub(crate) fn scrolled_rows(previous: &[Cell], next: &[Cell], cols: u16, rows: u16) -> usize {
     let width = usize::from(cols);
     let height = usize::from(rows);
-    if width == 0 || height == 0 || previous.len() != next.len() || previous.len() != width * height
+    if width == 0
+        || height == 0
+        || previous.len() != next.len()
+        || previous.len() != width * height
+        || previous == next
     {
         return 0;
     }
@@ -298,6 +302,10 @@ mod tests {
     fn an_unchanged_frame_reports_no_scroll() {
         let before = frame(&["a", "b", "c"], 1);
         assert_eq!(scrolled_rows(&before, &before, 1, 3), 0);
+        for lines in [["", "", ""], ["x", "x", "x"]] {
+            let repeated = frame(&lines, 1);
+            assert_eq!(scrolled_rows(&repeated, &repeated, 1, 3), 0);
+        }
     }
 
     /// Blank overlaps match at several shifts; reporting the largest would

@@ -167,6 +167,11 @@ history rows exist. Only then does it send wheel input and assert the unchanged
 5→3 offsets. This removes the unsupported burst-output precondition rather
 than weakening the wheel assertion. Qualification and negative-control results
 belong to `plan/plan-v0.2.15.md` while the version is in progress.
+Observe the fully edited command before sending Enter, then observe its
+shell-expanded marker. Otherwise a fast shell can both edit the previous last
+row and scroll between mirror samples, leaving no unchanged suffix from which
+the screen-buffer mirror can infer the real scroll. The fixture's readiness
+assertion retains its last snapshot on failure.
 
 The keyboard forwarding journey has the same observation-order requirement:
 capture the cursor after typing `ABCDE` before sending either ArrowLeft. A
@@ -183,6 +188,20 @@ tty through `stty size`. Invoking `powershell.exe` unconditionally produced an
 empty pane and a timeout on both Linux ISAs and macOS ARM in run `39137777772`.
 Keep the shared narrow/wide assertions and never substitute the host's own grid
 size for what the child reports.
+
+The Windows resize fixture compares the child's reported columns with the
+actual host grid after each change, not a fixed 100-column threshold: the hosted
+desktop can clamp a 1400-pixel request to an 88-column grid. First require a
+smaller baseline containing only that width, then a larger host width accompanied
+by fresh equal child output. PowerShell probes start after an interactive shell
+executes an observed readiness marker, as in the throughput court; this does not
+qualify the separate `-File` startup path.
+
+Resize-event timestamps use a probe-local monotonic stopwatch. Determine the
+settled size from the chronologically latest event and compare the earliest and
+latest timestamps for that size; console repaint rows need not be chronological.
+The same-size nudge still requires at least two events spanning 100 ms. The
+product-nudge delay mutation must fail that assertion.
 
 ### Gates that compile a path but cannot exercise it
 A compiled path is not a working path. The same 0.2.7 release produced the

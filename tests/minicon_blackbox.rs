@@ -1797,6 +1797,51 @@ fn controlled_press_drag_release_extends_a_local_selection() {
     let _ = session.child.kill();
 }
 
+#[cfg(windows)]
+#[test]
+fn idle_blank_console_does_not_manufacture_scrollback() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("idle-blank-console");
+    let ready = dir.join("ready");
+    let command = format!(
+        "cls & type nul > \"{}\" & ping -n 60 127.0.0.1 >nul\r",
+        ready.display()
+    );
+    let journey = write_journey(&dir, "[]");
+    let args = interactive_shell_args(&journey);
+    let session = ConSession::spawn(&dir, &args);
+    session.wait_for_ui_snapshot(Duration::from_secs(10), |_| true);
+    session.control_json(&[
+        "send-text",
+        "for /l %i in (1,1,1) do @echo BLANK_BEGIN_%i\r",
+    ]);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        ConSession::screen_text(snapshot).contains("BLANK_BEGIN_1")
+    });
+    session.control_json(&["send-text", &command]);
+    let blank = session.wait_for(Duration::from_secs(10), |snapshot| {
+        ready.is_file()
+            && snapshot["child_alive"] == true
+            && ConSession::screen_text(snapshot).trim().is_empty()
+    });
+    let baseline = blank["max_scrollback"].clone();
+    // The child's own file confirms it has cleared the native console and is
+    // holding a blank frame. Observe multiple mirror polls, not just startup.
+    let deadline = Instant::now() + Duration::from_secs(2) * test_slowdown();
+    while Instant::now() < deadline {
+        let snapshot = session.wait_for(Duration::from_secs(5), |_| true);
+        assert_eq!(
+            snapshot["max_scrollback"], baseline,
+            "idle blank frame scrolled: {snapshot}"
+        );
+        assert_eq!(
+            snapshot["child_alive"], true,
+            "blank producer exited: {snapshot}"
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
+}
+
 #[test]
 fn controlled_wheel_moves_the_real_scrollback_offset_up_then_down() {
     let _guard = gui_test_guard();
@@ -1814,19 +1859,27 @@ fn controlled_wheel_moves_the_real_scrollback_offset_up_then_down() {
     session.wait_for_ui_snapshot(Duration::from_secs(10), |_| true);
 
     // A single output burst can be sampled as only the final console frame
-    // on Windows. Observe each child-produced marker before sending another
-    // line, then prove that at least five real scrollback rows exist. The
+    // on Windows. Observe the fully edited command before Enter, then each
+    // child-produced marker before sending another line. This gives the mirror
+    // an unchanged suffix to identify when the console really scrolls. Prove
+    // that at least five real scrollback rows exist. The
     // marker is expanded by the shell, so echoed command text cannot satisfy
     // the wait. The wheel contract remains exactly +5 followed by -2.
     let mut ready = false;
+    let mut last_seed = None;
     for index in 1..=120 {
         let command = if cfg!(windows) {
-            format!("for /l %i in ({index},1,{index}) do @echo WHEEL_READY_%i\r")
+            format!("for /l %i in ({index},1,{index}) do @echo WHEEL_READY_%i")
         } else {
-            format!("i={index}; echo WHEEL_READY_$i\r")
+            format!("i={index}; echo WHEEL_READY_$i")
         };
-        invoke_control(&session.endpoint, &["send-text".to_owned(), command])
-            .expect("seed scrollback through the real child");
+        session.control_json(&["send-text", &command]);
+        session.wait_for(Duration::from_secs(10), |snapshot| {
+            ConSession::screen_text(snapshot)
+                .replace('\n', "")
+                .contains(&command)
+        });
+        session.control_json(&["send-keys", "Enter"]);
         let marker = format!("WHEEL_READY_{index}");
         let snapshot = session.wait_for(Duration::from_secs(10), |snapshot| {
             ConSession::screen_text(snapshot).contains(&marker)
@@ -1835,10 +1888,11 @@ fn controlled_wheel_moves_the_real_scrollback_offset_up_then_down() {
             ready = true;
             break;
         }
+        last_seed = Some(snapshot);
     }
     assert!(
         ready,
-        "the wheel fixture must produce at least five real history rows"
+        "the wheel fixture must produce at least five real history rows: {last_seed:?}"
     );
     invoke_control(
         &session.endpoint,
@@ -2216,58 +2270,85 @@ fn an_exited_shell_repaints_its_tab_row() {
     let _ = session.child.kill();
 }
 
-/// A window resize must reach the *hosted child* as a new PTY geometry, not
-/// merely re-flow MiniCon's own chrome. This is the exact chain the owner
-/// reported broken in the field (2026-10-16, 0.2.12: "resized the window
-/// while running codex-cli, the harness inside did not follow"):
-/// window -> GeometryChanged -> resize debounce -> PTY resize -> the child
-/// sees new console geometry.
-///
-/// The probe child prints the geometry *it* sees (`[Console]::WindowWidth`)
-/// twice a second, so the visible rows always end in the child's current
-/// believed size. Narrowing first means the wide rows from the default
-/// window scroll away; the widening assertion can then only pass when the
-/// child itself reports >= 100 columns again — if the PTY resize never
-/// propagates, the probe keeps printing narrow rows forever and this test
-/// times out red.
+/// Start a probe after the interactive shell executes an observed readiness
+/// marker, matching the sustained-output court's startup rendezvous.
+#[cfg(windows)]
+fn powershell_probe_session(dir: &Path, name: &str, source: &str) -> ConSession {
+    let probe = dir.join(name);
+    std::fs::write(&probe, source).expect("write PowerShell probe");
+    let session = ConSession::spawn(
+        dir,
+        &[
+            "--font-size",
+            "15",
+            "--cols",
+            "120",
+            "--rows",
+            "40",
+            "-e",
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-NoExit",
+            "-ExecutionPolicy",
+            "Bypass",
+        ],
+    );
+    session.wait_for_ui_snapshot(Duration::from_secs(10), |_| true);
+    session.control_json(&[
+        "send-text",
+        "[Console]::Out.WriteLine(('PROBE_'+'SHELL_READY'))\r",
+    ]);
+    session.wait_for(Duration::from_secs(60), |snapshot| {
+        ConSession::screen_text(snapshot).contains("PROBE_SHELL_READY")
+    });
+    let command = format!("& '{}'\r", probe.to_string_lossy().replace('\'', "''"));
+    session.control_json(&["send-text", &command]);
+    session
+}
+
+/// A window resize must reach the hosted child as a new native PTY geometry.
+/// The narrowed baseline replaces every old measurement before widening, so
+/// stale output cannot satisfy the second assertion. Compare against the actual
+/// host grid, because a runner's display may clamp a 1400-pixel request.
 #[test]
 fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
     let _guard = gui_test_guard();
     let dir = scratch_dir("resize-reaches-child");
-    let args = if cfg!(windows) {
-        let probe = dir.join("geometry_probe.ps1");
-        std::fs::write(
-            &probe,
-            "while ($true) {\r\n  \
+    #[cfg(windows)]
+    let mut session = powershell_probe_session(
+        &dir,
+        "geometry_probe.ps1",
+        "while ($true) {\r\n  \
              Write-Host (\"CHILDGEOM W={0} H={1}\" -f [Console]::WindowWidth, [Console]::WindowHeight)\r\n  \
              Start-Sleep -Milliseconds 250\r\n}\r\n",
-        )
-        .expect("write geometry probe");
-        vec![
-            "-e".to_owned(),
-            "powershell.exe".to_owned(),
-            "-NoProfile".to_owned(),
-            "-ExecutionPolicy".to_owned(),
-            "Bypass".to_owned(),
-            "-File".to_owned(),
-            probe.to_string_lossy().into_owned(),
-        ]
-    } else {
+    );
+    #[cfg(not(windows))]
+    let mut session = {
         // Query this child's actual tty, not MiniCon's snapshot bookkeeping.
         // PowerShell is not a dependency of the Unix product or its test court.
-        vec![
-            "-e".to_owned(),
-            "sh".to_owned(),
-            "-c".to_owned(),
-            r#"while :; do set -- $(stty size); printf 'CHILDGEOM W=%s H=%s\n' "$2" "$1"; sleep 0.25; done"#.to_owned(),
-        ]
+        ConSession::spawn(
+            &dir,
+            &[
+                "--font-size",
+                "15",
+                "--cols",
+                "120",
+                "--rows",
+                "40",
+                "-e",
+                "sh",
+                "-c",
+                r#"while :; do set -- $(stty size); printf 'CHILDGEOM W=%s H=%s\n' "$2" "$1"; sleep 0.25; done"#,
+            ],
+        )
     };
-    let mut session = ConSession::spawn(&dir, &args);
 
     // The probe is printing geometry lines.
-    session.wait_for(Duration::from_secs(10), |snapshot| {
+    let initial = session.wait_for(Duration::from_secs(30), |snapshot| {
         ConSession::screen_text(snapshot).contains("CHILDGEOM")
     });
+    let initial_cols = initial["cols"].as_u64().expect("initial columns");
 
     fn child_widths(snapshot: &serde_json::Value) -> Vec<u32> {
         ConSession::screen_text(snapshot)
@@ -2282,15 +2363,17 @@ fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
     session.control_json(&["resize-window", "--width", "640", "--height", "420"]);
     let narrow = session.wait_for(Duration::from_secs(15), |snapshot| {
         let widths = child_widths(snapshot);
-        widths.iter().any(|&w| w <= 70) && !widths.iter().any(|&w| w >= 100)
+        let cols = snapshot["cols"].as_u64().expect("narrow columns");
+        cols < initial_cols && !widths.is_empty() && widths.iter().all(|&w| u64::from(w) == cols)
     });
 
-    // Widen the window. The child must start reporting >= 100 columns of
-    // its own accord: those rows can only come from the probe observing the
-    // resized ConPTY, not from any MiniCon-side bookkeeping.
+    let narrow_cols = narrow["cols"].as_u64().expect("narrow columns");
+    // The child's new width must equal the host's larger, display-clamped grid.
+    // All old wide measurements were removed in the preceding baseline.
     session.control_json(&["resize-window", "--width", "1400", "--height", "800"]);
     let wide = session.wait_for(Duration::from_secs(15), |snapshot| {
-        child_widths(snapshot).iter().any(|&w| w >= 100)
+        let cols = snapshot["cols"].as_u64().expect("wide columns");
+        cols > narrow_cols && child_widths(snapshot).iter().any(|&w| u64::from(w) == cols)
     });
     assert_eq!(
         wide["backend_resize_failures"], 0,
@@ -2323,11 +2406,12 @@ public static class ConsoleEventProbe {
     public static void Run() {
         IntPtr h = GetStdHandle(0xFFFFFFF6);
         byte[] record = new byte[64];
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         while (true) {
             uint read;
             if (!ReadConsoleInput(h, record, 1, out read)) return;
             if (BitConverter.ToUInt16(record, 0) == 4) {
-                Console.WriteLine("RESIZEEVENT " + BitConverter.ToInt16(record, 4) + "x" + BitConverter.ToInt16(record, 6) + " " + Environment.TickCount);
+                Console.WriteLine("RESIZEEVENT " + BitConverter.ToInt16(record, 4) + "x" + BitConverter.ToInt16(record, 6) + " " + clock.ElapsedMilliseconds);
             }
         }
     }
@@ -2353,20 +2437,8 @@ Add-Type -TypeDefinition $src
 fn window_resize_delivers_a_console_buffer_size_event_to_the_child() {
     let _guard = gui_test_guard();
     let dir = scratch_dir("resize-console-event");
-    let probe = dir.join("console_event_probe.ps1");
-    std::fs::write(&probe, CONSOLE_EVENT_PROBE_PS1).expect("write console event probe");
-    let mut session = ConSession::spawn(
-        &dir,
-        &[
-            "-e".to_owned(),
-            "powershell.exe".to_owned(),
-            "-NoProfile".to_owned(),
-            "-ExecutionPolicy".to_owned(),
-            "Bypass".to_owned(),
-            "-File".to_owned(),
-            probe.to_string_lossy().into_owned(),
-        ],
-    );
+    let mut session =
+        powershell_probe_session(&dir, "console_event_probe.ps1", CONSOLE_EVENT_PROBE_PS1);
 
     // Add-Type compiles before the probe announces itself, so this wait
     // also proves the listener is actually blocking in ReadConsoleInput
@@ -2395,20 +2467,8 @@ fn window_resize_delivers_a_console_buffer_size_event_to_the_child() {
 fn a_settled_resize_fires_the_one_shot_same_size_nudge() {
     let _guard = gui_test_guard();
     let dir = scratch_dir("resize-nudge");
-    let probe = dir.join("console_event_probe.ps1");
-    std::fs::write(&probe, CONSOLE_EVENT_PROBE_PS1).expect("write console event probe");
-    let mut session = ConSession::spawn(
-        &dir,
-        &[
-            "-e".to_owned(),
-            "powershell.exe".to_owned(),
-            "-NoProfile".to_owned(),
-            "-ExecutionPolicy".to_owned(),
-            "Bypass".to_owned(),
-            "-File".to_owned(),
-            probe.to_string_lossy().into_owned(),
-        ],
-    );
+    let mut session =
+        powershell_probe_session(&dir, "console_event_probe.ps1", CONSOLE_EVENT_PROBE_PS1);
 
     session.wait_for(Duration::from_secs(30), |snapshot| {
         ConSession::screen_text(snapshot).contains("PROBE-READY")
@@ -2438,29 +2498,42 @@ fn a_settled_resize_fires_the_one_shot_same_size_nudge() {
         "the settled resize must deliver a nudge: {events:?}"
     );
     // Lines are "RESIZEEVENT <cols>x<rows> <tick-ms>". Baseline = the size
-    // of the LAST event (the settled geometry this resize produced); the
+    // of the chronologically latest event (the settled geometry); the
     // probe's first records can carry start-up noise (a bogus 120x9001
     // before the initial geometry settles), so indexing from the front is
-    // not stable. The nudge is the delayed re-apply: among the events of
-    // the settled size, the last must be >=100 ms after the first - the
+    // not stable. Screen rows may also arrive out of timestamp order after a
+    // console repaint. Among events of the settled size, the latest timestamp
+    // must be >=100 ms after the earliest - the
     // console's natural duplicates all land within a few milliseconds,
     // which is exactly what the mutation (nudge disabled) reduces to.
     fn ticks(line: &str) -> i64 {
         line.rsplit(' ')
             .next()
             .and_then(|t| t.parse().ok())
-            .unwrap_or(-1)
+            .expect("resize event timestamp")
     }
     fn sizes(line: &str) -> &str {
         line.split(' ').nth(1).unwrap_or("?")
     }
-    let settled_size = sizes(events[events.len() - 1]);
+    let latest = events
+        .iter()
+        .max_by_key(|line| ticks(line))
+        .expect("resize event");
+    let settled_size = sizes(latest);
     let burst: Vec<&&str> = events
         .iter()
         .filter(|line| sizes(line) == settled_size)
         .collect();
-    let first_tick = ticks(burst[0]);
-    let last_tick = ticks(burst[burst.len() - 1]);
+    let first_tick = burst
+        .iter()
+        .map(|line| ticks(line))
+        .min()
+        .expect("first tick");
+    let last_tick = burst
+        .iter()
+        .map(|line| ticks(line))
+        .max()
+        .expect("last tick");
     assert!(
         last_tick - first_tick >= 100,
         "the second event must be the delayed nudge, not a natural duplicate: \

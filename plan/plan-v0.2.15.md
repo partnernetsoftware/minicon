@@ -25,6 +25,8 @@ Outcome: release MiniCon with explicit reuse boundaries and qualified behavior
 │   └── core owns; platform keeps compatibility re-exports and native oracle tests
 ├── {THEME} Include the implemented Dark theme
 │   └── existing workspace/settings owner; preserve existing tags and default
+├── {MIRROR} Correct the unchanged-frame contract exposed in qualification
+│   └── identical console frames never imply scroll, even for uniform rows
 └── {EVIDENCE} Behavior and consumer qualification
     ├── source guard negative control; tree identity/contract; numeric bit oracle
     ├── default and minimal-feature consumer graphs; Windows host build/lint
@@ -40,6 +42,7 @@ flowchart LR
     F --> N["NUMERIC: core implementation, platform compatibility"]
     T & N --> V["Serial integration: API identity, oracles, feature graphs"]
     D["THEME: existing workspace/settings implementation"] --> V
+    B["MIRROR: unchanged native frames infer no scroll"] --> V
     V --> H["Native host qualification"]
     H --> X["Six OS/ISA cells: scoped build/runtime evidence"]
     X --> R["Release readiness; explicit publish authority"]
@@ -56,6 +59,7 @@ flowchart LR
 | TREE | UI and core tree types are identical and existing tree results/errors preserved | FEATURES and source comparison; retain UI import paths; stop on contract difference; no migration of AgenTerm's distinct tree policy |
 | NUMERIC | Existing platform numeric API forwards core's bit-level rules; IEEE edge/sample oracles pass | FEATURES and source comparison; preserve native import behavior and inline policy; no math algorithm rewrite |
 | THEME | Fourth swatch, cycle and saved `dark` tag agree; historical default/tags remain stable | Workspace PRD owns behavior and native screenshot evidence; no change to explicit application colors |
+| MIRROR | Identical blank/repeated frames infer zero scroll; real shifted frames keep existing behavior | Existing Windows mirror; terminal PRD owns contract; expanded old regression rejects old implementation; no new public API |
 | EVIDENCE | Name source, feature set, OS/ISA, result and negative control; missing cells BLOCKED | Prior leaves; no inferred pass from compilation or neighboring ISA; no unrelated features |
 
 ## Sequence and shared files
@@ -101,6 +105,8 @@ published; current gate portability fixes do not claim to complete it.
 Keep terminal rendering, CLI/protocol, key bindings and notes/update behavior
 unchanged apart from the implemented Dark theme, its fourth settings swatch and
 theme-cycle persistence owned by [workspace](../prd/PRD_02_25_con_workspace.md).
+The qualification-exposed unchanged-frame defect is the additional terminal
+exception, owned by [terminal/rendering](../prd/PRD_02_24_con_terminal.md).
 Release sequencing after the renewed owner instruction includes this already
 implemented and locally qualified working-tree change; it does not add a second
 theme implementation. Keep the three public crate names. No full terminal-engine
@@ -177,6 +183,35 @@ The revised Windows fixture passes through `build.sh test`
 (`resize-native-probe-windows.log`, one pass); workspace/all-target Clippy with
 warnings denied also passes (`clippy-native-probe.log`). Unix runtime proof
 remains the next exact-source native CI run; no Windows result substitutes for it.
+
+On `cc27200b746dae459c55d004cd31f4ce6d317401`, pack `39138311227` passes all six
+unsigned execution cells and dev run `39138314772` passes the four Unix cells.
+Windows follow-up reveals fixed-width and timestamp-order fixture assumptions,
+plus ARM probe-readiness/history failures. The fixture now uses observed native
+geometry, chronological event spans and a shell-readiness rendezvous. Separately,
+the mirror's existing unchanged-frame contract fails for identical blank/repeated
+rows (`negative-unchanged-console-frame.log`: 1 vs expected 0). Add an equality
+guard and retain the existing shifted-frame oracles. These further changes require
+a new exact-source pack; do not sign the now-superseded successful pack. Production
+mirror correctness and fixture readiness have independent evidence; neither is
+claimed to explain every ARM failure before the targeted native rerun.
+The expanded unchanged-frame unit fails without the equality guard, and removing
+that real guard also fails the new public-CLI blank-console regression
+(`negative-idle-blank-console.log`, history grows 0→6). Restoring it passes the
+two-second live-child observation (`idle-blank-positive.log`). GUI test discovery
+increases 38→39 on Windows. The chronological nudge assertion fails when the real
+nudge is deferred (`negative-nudge-chronology.log`) and passes after restoration
+(`nudge-chronology-restored.log`). Fixing the real backend resize to 120×40 fails
+the stronger host/child geometry assertion (`negative-child-native-geometry.log`).
+All temporary production mutations are restored before committing.
+The final fixture also waits for the edited shell command before Enter, preserving
+an observable frame suffix before sampling the output marker. Its exact wheel
+assertions pass locally (`wheel-edited-command.log`). The combined five GUI
+regressions and the unchanged-frame unit pass through the canonical wrapper
+(`native-courts-final-local.log`); final fmt and workspace/all-target Clippy pass
+(`clippy-console-courts-final.log`). Blank-console readiness observes a visible
+shell marker before clearing, so an initial blank startup snapshot cannot become
+the baseline before the child clear has reached the renderer.
 
 The administrator/UAC checkbox request belongs to the existing Run dialog in
 the adjacent `minicon-winmgr/src/run_dialog.rs`. MiniCon has no such entry.

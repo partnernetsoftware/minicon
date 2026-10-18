@@ -178,6 +178,13 @@ flowchart LR
   Output latency has a floor set by the polling interval, and a program driving
   the console API in ways a screen buffer cannot express will not round-trip
   perfectly. Both are accepted costs of running where no pseudoconsole exists.
+- [-] scroll inference requires an observable frame change. An identical frame,
+  including all-blank or repeated-row content, is not evidence of scrolling and
+  must not synthesize newlines or grow history. The existing unchanged-frame
+  regression now includes these cases: the old overlap-only rule incorrectly
+  returned one row; the equality guard returns zero. v0.2.15's plan records the
+  failing baseline and qualification. This rule remains internal to the Windows
+  console mirror, not a new generic terminal API.
 - [_] **known defect, registered 2026-10-10 (v0.2.4):** a hosted TUI's status
   line can render **duplicated** in the MiniCon window on Windows, while the
   same program is correct in other terminals (owner report, real hardware; not
