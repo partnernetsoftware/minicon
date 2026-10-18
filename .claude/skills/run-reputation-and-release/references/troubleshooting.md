@@ -140,6 +140,10 @@ product's code and from ad-hoc experimentation.
   scanned the same Candidate successfully. A transient setup failure permits a
   bounded retry, never a skipped update/scan or a fabricated clean receipt.
   Record the successful attempt as well as the failed one.
+  MiniCon's 0.2.15 alternate native controller uses the command-line update
+  channel and measured post-scan hashes; the exact dispatch and two-identity
+  contract are owned by its delivery PRD's "Native Defender court with a
+  separate controller" section. Keep the Candidate bytes and source pinned.
 - Avoid extra artifact downloads on the critical path when the official
   Promotion workflow already downloads, rehashes and executes the public
   assets. Additional local downloads are diagnostic, not a new release gate.

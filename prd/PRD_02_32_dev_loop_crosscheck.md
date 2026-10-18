@@ -180,7 +180,8 @@ shell-expanded output markers until the snapshot proves at least five real
 history rows exist. Only then does it send wheel input and assert the unchanged
 5→3 offsets. This removes the unsupported burst-output precondition rather
 than weakening the wheel assertion. Qualification and negative-control results
-belong to `plan/plan-v0.2.15.md` while the version is in progress.
+belong to the [archived 0.2.15 plan](../plan/archive/plan-v0.2.15.md) and
+[release history](archive/v0.2.15-release-history.md).
 Observe the fully edited command before sending Enter, then observe its
 shell-expanded marker. Otherwise a fast shell can both edit the previous last
 row and scroll between mirror samples, leaving no unchanged suffix from which
@@ -256,6 +257,11 @@ reading `ureq`'s own feature tree rather than a live call.
 
 ## Permission walls, disambiguated
 
+The observations below describe the 2026-09-27 session, not a universal current
+publication restriction. Current release authority and gate selection belong
+to [delivery](PRD_02_27_con_delivery.md); 0.2.15's authorized public Promotion is
+recorded in its release history.
+
 Found and confirmed distinct while building this (2026-09-27); recorded here
 because the framing had been conflated before being corrected:
 
@@ -276,6 +282,16 @@ on (2) or (3) while trying to test something should reach for this workflow
 instead of trying to work around either wall.
 
 ## Validation record
+
+- v0.2.15 source `0ac2d7ed1b3898835956f80569718c4d2eb994b9`, run
+  `39142875932`: all six native cells pass their full configured dev-suite
+  sets, including default UI and the isolated minimal consumer. Root/platform
+  compilation is not a claim that every such unit executed on every cell;
+  the separate canonical Windows workspace/fork gate and final artifact courts
+  are scoped in [release history](archive/v0.2.15-release-history.md).
+- Proposed selection/profile changes are owned by
+  [test orchestration](PRD_02_33_test_orchestration.md), with implementation
+  still planned. This module continues to describe the current native workflow.
 
 - Run `36312887935` (`lnx-x86_64 lnx-aarch64`, commit `38ddba2`, first real
   dispatch): reported `success` in ~107s, but logs show the test-run step

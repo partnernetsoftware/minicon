@@ -1,0 +1,214 @@
+# Test orchestration and evidence scope
+
+Owner of test selection, profile composition, fixture lifetime and feedback-cost
+measurement. Parent: [product requirements](../PRD.md). Initial design targets
+v0.2.16; implementation is planned, not shipped. Sequencing:
+[v0.2.16 plan](../plan/plan-v0.2.16.md).
+
+[Module ownership](PRD_02_28_shared_core.md) owns abstraction boundaries.
+[Native development court](PRD_02_32_dev_loop_crosscheck.md) owns the hosted
+workflow and fixture-specific observations. [Delivery](PRD_02_27_con_delivery.md)
+owns release obligations and exact-artifact authority. This module does not
+change the product's capabilities or any release policy.
+
+## Outcome tree DAG
+
+```text
+Outcome: relevant development feedback without lost release obligations
+├── Inventory authority
+│   ├── one manifest: scripts/test-profiles.json
+│   ├── actual suite names, feature/target/backend tuples and resources
+│   └── required, opt-in, diagnostic, manual and unavailable evidence
+├── Selection and composition
+│   ├── explicit profile union; changed-path owner/dependent closure
+│   ├── unknown/broad changes expand conservatively
+│   └── exact task/build identities; isolated consumer graphs stay separate
+├── Fixture and resource lifecycle
+│   ├── causal readiness; cancellable waits and owned process teardown
+│   └── isolate shared resources before enabling concurrency
+└── Observable evidence
+    ├── planned/observed names and counts, phase costs and final verdicts
+    ├── real guard mutation must fail its selected profile
+    └── complete canonical full gate; independent exact-artifact release courts
+```
+
+```mermaid
+flowchart TD
+    O["PRD 28 module owners"] --> I["task/profile inventory"]
+    C["explicit profiles or changed paths"] --> S["selection + dependent closure"]
+    I --> S
+    S --> E["explainable plan; deduplicated task union"]
+    E --> L["resource leases + bounded owned fixtures"]
+    L --> T["actual Cargo-discovered execution"]
+    T --> R["observed counts, identities, costs, outcomes"]
+    U["unknown dependency or broad source change"] --> F["canonical full qualification"]
+    E --> F
+    F --> A["PRD 27 exact-artifact release courts"]
+    R -. scoped feedback only .-> D["developer result"]
+```
+
+## Contracts
+
+### Implementation ownership (planned)
+
+| Component | Responsibility | Boundary |
+|---|---|---|
+| `scripts/test-profiles.json` | Obligation/profile inventory, ownership, selection edges and phase/resource metadata | No second suite list in shell or workflow code |
+| Planned `test-plan.py` under `scripts/` | One planner/executor: resolve dependency closure, explain a plan, batch discovered test names, compare observed receipts | Use the Python runtime already required by build tooling; no new Rust runner crate |
+| `scripts/test-tier.sh` | Compatible tier/profile CLI and forwarding | No independent dependency resolver, lint flags or release decision |
+| `scripts/build.sh` | Canonical compiler flags and full workspace/fork gate; a planned `test-build` mode emits Cargo artifact metadata without running tests | Reuse the same command/flag definitions for full and selected execution; `--no-run` is build evidence only |
+| `tests/support/` | Owned fixture lifetime, temporary resources and diagnostics shared by actual test callers | First callers are black-box/control fixtures where contracts match; assertions remain with their capability suites; no generic fixture framework |
+| Native dev workflow | Select native cells and invoke the same inventory/executor, upload final receipts on success/failure/cancellation | Do not compile a target and report its tests as executed |
+| Release workflows | Existing exact-artifact authority in PRD 27 | No hidden signer/Promotion dispatch from a test profile |
+
+Introduce these interfaces in stages; the current shipped scripts do not yet
+implement this table. New executables, lint flags and full-suite lists must not
+be reconstructed separately in each consumer.
+
+### Inventory and selection
+
+`scripts/test-profiles.json` is the proposed single inventory. Each task records
+its owning capability, execution entry, features, target/backend constraints,
+resource claims and whether its evidence is mandatory, opt-in, diagnostic or
+manual. Source selection follows the PRD 28 dependency graph and reverse
+dependents; a filename is not proof of a pure or GUI-free test.
+
+An obligation can name a complete suite or explicit discovered test names.
+Map dependencies at module/API granularity where proved; a composer-only edit
+does not acquire every numeric/backend obligation merely because both live in
+one crate. Unmapped/new tests, modules or dependency edges expand coverage until
+their ownership is reconciled. Validate discovery separately for each required
+feature/target tuple; a declared non-applicable court differs from a required
+court whose executable or tests unexpectedly disappeared.
+
+`scripts/test-tier.sh` retains tier aliases and gains `--list`, `--plan`,
+`--profile` (repeatable) and `--changed-since`. A plan prints selected tasks,
+reasons, prerequisite closures, feature/target tuples and unavailable courts.
+Unknown paths, ambiguous ownership, build/feature changes or unresolved fanout
+expand to full coverage. A filter that observes zero tests cannot satisfy a
+mandatory obligation. Renames/deletions and unstaged changes participate in the
+change inventory, as do staged and untracked source files; a base revision alone
+does not describe the current tree. Ignored generated output stays outside the
+source inventory. Start selection in plan-only comparison mode; enable reduced
+developer execution only after dependency/omission mutations demonstrate the
+selection contract. Explicitly owned prose-only edits use the docs profile;
+changes to a documented behavior also select that capability's contract tests.
+
+Composition deduplicates identical obligations in a union. Build reuse requires
+matching source/configuration, compiler, target, features, profile and rustflags.
+Use Cargo discovery for executable identities; never guess hashed paths or pick
+by modification time. Minimal external consumers remain in an isolated workspace
+so feature unification cannot hide dependency leakage.
+
+Resolve executables from Cargo's artifact output, then use the toolchain's
+supported exact-name filters and listing interface to batch a union. On the
+baseline Rust 1.97 harness, `--list --exact` with the clipboard and multi-tab
+control names lists both tests, without executing either. Listing is discovery
+evidence only; execution must still return those observed names and counts.
+Do not depend on nightly JSON reporting or infer execution from a listing.
+
+### Full coverage and reuse boundaries
+
+`scripts/build.sh test` remains the canonical workspace-plus-vendored-fork
+execution gate with dead_code, unused_variables and unused_must_use denied.
+The full profile/tier adds existing required lint, minimal-consumer and script
+checks without maintaining a second, incomplete workspace-suite list. Root
+binary units, platform library units and vt100 damage oracles must be executed,
+not merely compiled. A hosted development workflow remains scoped feedback;
+its coverage cannot be inferred from `--all-targets` compilation.
+
+Phases remain explicit. Edit feedback runs selected local obligations;
+integration composes the affected contracts and resources; release requires the
+canonical local full gate and the independent native/artifact gates owned by
+PRD 27. `l3`/`all` is the complete local regression entry, not an instruction to
+sign or publish. Its receipt states the local scope and names external courts
+that it did not execute. A release planner cannot accept that receipt in place
+of required six-cell, signing, Defender, reputation and Promotion receipts.
+An ordinary developer plan prints which native courts are relevant; starting
+cloud courts is an explicit selection, not a hidden side effect of a pure rule
+test. OS/ISA-specific changes include their affected native implementation and
+its scalar/neutral oracle; broad target/feature changes expand conservatively.
+
+Consumer profiles cover core defaults/minimal/independent optional features,
+UI default/terminal-selection and platform minimal/product feature closures.
+Retain API identity, numerical oracles, recursive portability checks and the
+legacy newline exception defined by PRD 28. An AgenTerm dependency update needs
+an immutable MiniCon revision and evidence from AgenTerm's actual enabled
+features and call sites. MiniCon's native result does not certify another
+product or every optional capability.
+
+### Lifetime, readiness and concurrency
+
+Fixture waits react to cancellation. Drop closes only owned processes and
+endpoints and joins workers within a documented deadline; the initial
+cancellation-to-teardown target is two seconds, to be qualified per native
+court. A pending wait cannot outlive its test solely to keep a host alive.
+Cancellation covers both journey sleeps and in-flight owned CLI subprocesses;
+an interruptible sleep alone does not bound a driver blocked on a 120-second
+control exchange. Diagnostic output collection is bounded too.
+Retain the assertion that caused a fixture to exist, including persistence
+across a real process restart.
+
+Separate causal readiness from operation assertions: observe an executed marker,
+actual geometry or real history before asserting input effects. A shell's
+echoed command alone is insufficient output evidence. Bounded failures name the
+operation, last observation and owned process identity. Setup failures do not
+count as negative proof of a later guard.
+
+Diagnostic sampling runs in an explicit diagnostics profile. Removing optional
+observation must not remove required functional assertions or turn an unrun
+capability green. Actual timing budgets and exceptions are named, not global
+sleep multipliers or blanket retries.
+
+Isolate user configuration, native windows, clipboard formats and filesystem
+fixtures before parallelism. Otherwise hold an explicit resource lease shared
+across executables. A mutex inside one test executable cannot protect another
+executable. Never kill processes by image name or mutate a user's global
+configuration merely to accelerate tests.
+
+### Receipts and measurements
+
+Each receipt binds source/configuration, target, compiler, features, backend and
+binary identity to planned obligations and selection reasons, observed names
+and counts, final suite verdicts and unavailable/omitted courts. Distinguish
+queue, setup/cache transfer, build, readiness, assertion and teardown times.
+Do not derive a final pass from a status captured before tests finish.
+
+Record controller and artifact-source revisions independently when they differ;
+`GITHUB_SHA` identifies a workflow controller, not necessarily the binary under
+test. With `MINICON_TEST_BINARY`, hash the supplied bytes and bind available
+manifest provenance; never silently replace them with a local rebuild or infer
+their source from the checkout. Required unknown provenance remains unresolved.
+Receipt measurements must be real: a post-operation digest copied from the
+expected value does not prove unchanged bytes. The 0.2.15 native Defender court
+provides a measured-digest example owned by PRD 27.
+
+Compare at least three like-for-like cold and warm runs with medians/ranges,
+retained coverage and guard-mutation failures. Throughput reports identify
+whether bytes are actually PTY-drained or console-agent rendered generation;
+existing workload floors remain mandatory. Debug/source and exact retail-binary
+tests are separate receipts. Optional network, manual IME and VM evidence must
+be named explicitly; unavailable courts remain BLOCKED.
+
+## Delivery leaves and safe failure
+
+| Leaf | Invariant / observable evidence | Dependency / safe failure / non-goal |
+|---|---|---|
+| Inventory | Canonical expansion matches actual suite discovery and current gates | PRD 28/27/32; unknown obligations expand or fail; no invented universal certification |
+| Selection | Required dependency mutation cannot escape its selected plan | Inventory; unknown paths select full; no release authority from a targeted pass |
+| Composition | Identical tasks run once with matching identities and observed names/counts | Selection; incompatible graphs stay separate; no workspace-unified minimal consumer |
+| Lifetime | Cancellation bounds teardown while persistence/input assertions remain | Owned fixtures; expose timeout and clean only owned PIDs; no skipped regression |
+| Resources | Parallel tasks cannot clobber another session's settings/clipboard | Isolation or lease; serialize if uncertain; no blanket parallel run |
+| Receipts | Planned obligations match observed outcomes; real guard mutations fail | Prior leaves; missing evidence stays unavailable; no successful zero-test gate |
+
+## Status and non-goals
+
+- [v] Initial design documented; implementation acceptance is in the v0.2.16 plan.
+- [_] Inventory/dispatcher, fixture cancellation, diagnostic extraction,
+  composition, consumer matrix and comparable measurements.
+- [_] Native qualification of the implemented changes; no new native pass is
+  claimed by this document.
+
+Non-goals: new product features, a generic terminal engine, public crate renames,
+new OS/ISA support, lower throughput floors, compiler/LTO changes, signing-policy
+changes or weakening the six-cell/Defender/reputation/Promotion chain.

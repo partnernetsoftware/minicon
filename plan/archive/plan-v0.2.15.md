@@ -1,10 +1,18 @@
 # v0.2.15 — explicit module boundaries and reusable mechanisms
 
+Completed and archived 2026-10-19. Public source:
+`0ac2d7ed1b3898835956f80569718c4d2eb994b9`.
+[Release history](../../prd/archive/v0.2.15-release-history.md) owns the final
+publication/court receipts; [0.2.16](../plan-v0.2.16.md) owns the successor design.
+Intermediate failures below preserve the qualification sequence; they are not
+current blockers. Current behavior is upserted into the owning PRDs.
+
+
 Owner direction (2026-10-18): organize and improve abstraction/reuse before
 new features. This authorizes the preparation and behavior-preserving changes
 below. The owner subsequently explicitly requested development through public
 release of 0.2.15; that supplies named-version publication authority. The behavior
-owner is [PRD_02_28](../prd/PRD_02_28_shared_core.md); this file owns sequencing
+owner is [PRD_02_28](../../prd/PRD_02_28_shared_core.md); this file owns sequencing
 and evidence only. Existing public crate names and import paths are retained.
 
 ## Outcome tree DAG
@@ -104,9 +112,9 @@ published; current gate portability fixes do not claim to complete it.
 
 Keep terminal rendering, CLI/protocol, key bindings and notes/update behavior
 unchanged apart from the implemented Dark theme, its fourth settings swatch and
-theme-cycle persistence owned by [workspace](../prd/PRD_02_25_con_workspace.md).
+theme-cycle persistence owned by [workspace](../../prd/PRD_02_25_con_workspace.md).
 The qualification-exposed unchanged-frame defect is the additional terminal
-exception, owned by [terminal/rendering](../prd/PRD_02_24_con_terminal.md).
+exception, owned by [terminal/rendering](../../prd/PRD_02_24_con_terminal.md).
 Release sequencing after the renewed owner instruction includes this already
 implemented and locally qualified working-tree change; it does not add a second
 theme implementation. Keep the three public crate names. No full terminal-engine
@@ -306,16 +314,13 @@ workspace-filtered gates compile the product's terminal-selection feature too.
 The l1 run leaves the live GitHub update-API test ignored; its separate current
 Windows invocation is qualified in the later release-gate record above.
 
-- [_] Six-cell build/runtime evidence: **BLOCKED (not run on this host)**.
-  Linux/macOS and aarch64 behavior require their own receipts. Six-cell
-  release-profile size/import checks, exact-source CI qualification and Candidate
-  remain release-readiness work; no six-cell claim is inferred from the local
-  gates. The full local workspace gate, its Clippy/minimal-consumer
-  constituents and the native release build are now green as recorded above;
-  `test-tier.sh l3` itself was not separately repeated.
-- [-] Version is now 0.2.15 in Cargo, the lock and release policy. Local gates
-  recorded above pass. Freeze this scope for exact-source CI qualification;
-  the owner's next requested deliverable is the 0.2.16 design after publication.
-  Public promotion
-  is authorized by the owner's explicit 0.2.15 release objective; no publish
-  has been dispatched yet.
+- [v] Six-cell qualification is complete on source
+  `0ac2d7ed1b3898835956f80569718c4d2eb994b9`: native dev run `39142875932`,
+  unsigned artifact run `39142875325`, signed six-cell court `39143588769`
+  and packaged six-cell Candidate `39144731170`. Each has its own scope;
+  no optional feature or independent local VM pass is inferred.
+- [v] Version 0.2.15 is publicly released. Promotion `39147010239` and public
+  smoke `39147135643` pass. The public tag/source and manifest/payload identity
+  are verified; exact receipts and limitations are owned by release history.
+- [v] The post-release 0.2.16 design is in the successor plan. Its implementation
+  remains planned; the Win+R checkbox remains a separately owned WinMgr requirement.

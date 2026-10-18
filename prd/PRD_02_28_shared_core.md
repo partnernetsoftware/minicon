@@ -3,7 +3,8 @@
 Owner of the question "what can another product take from MiniCon, through
 which boundary, and where do OS and ISA differences live?" Parent:
 [MiniCon product requirements](../PRD.md). Source inventory reviewed
-2026-10-18; v0.2.15 preparation evidence is recorded in the owning plan.
+2026-10-18; v0.2.15 publication and qualification are recorded in
+[release history](archive/v0.2.15-release-history.md).
 
 Legend: `[v]` implemented with named evidence, `[-]` partial, `[_]` planned.
 
@@ -56,7 +57,7 @@ flowchart LR
     E["Exact source + enabled features + OS/ISA + build/runtime evidence"]
     MC --> CORE & UI & PLAT & VT
     AG -->|"immutable revision; own feature selection"| UI & PLAT
-    AG -. "available API; consumer adoption must be checked" .-> CORE
+    AG -. "prepared core consumer; own qualification" .-> CORE
     UI -->|"tree; core defaults disabled"| CORE
     PLAT -->|"numeric; core defaults disabled"| CORE
     UI --> PIX
@@ -106,10 +107,12 @@ than duplicating the full platform feature catalog.
 MiniCon consumes its crates through workspace paths. External products consume
 `minicon-platform` and `minicon-ui-core` through immutable full Git revisions;
 the dependency recipe lives in `crates/minicon-platform/README.md`. The local
-agenterm `Cargo.toml` inspected during this review pins both to
-`0326e2abaf71cb2f8dc22f766de9b410efa4be1e`. That is observed adoption of those
-two crates at that revision, not proof that agenterm consumes current main or
-uses `minicon-core`. Consumers of fork-dependent functionality must also check
+agenterm checkout pins all three MiniCon crates to
+`0326e2abaf71cb2f8dc22f766de9b410efa4be1e`. Direct core consumption is prepared
+in its text-selection boundary conversion, with scoped Windows development
+evidence in that checkout; it is not an automatic pin to 0.2.15 or a claim of
+qualified AgenTerm behavior on every native cell. Consumers of fork-dependent
+functionality must also check
 their own dependency resolution: this workspace's `[patch.crates-io]` does not
 automatically become a consuming workspace's patch policy.
 Direct dependencies on multiple sibling MiniCon crates must use the same Git
@@ -162,11 +165,15 @@ specialization inside shared mechanism owners, not product dispatch sites.
 - Six-cell qualification and exact-artifact runtime evidence belong to
   [delivery](PRD_02_27_con_delivery.md) and
   [dev-loop crosscheck](PRD_02_32_dev_loop_crosscheck.md). Release receipts,
-  including [v0.2.14](archive/v0.2.14-release-history.md), retain their recorded
+  including [v0.2.15](archive/v0.2.15-release-history.md), retain their recorded
   source and gate scope; they do not certify every optional platform feature.
-- v0.2.15 preparation adds scoped host/consumer evidence in
-  [the plan](../plan/plan-v0.2.15.md). New six-cell runtime qualification remains
-  **BLOCKED (not run in this pass)**; no new six-cell pass is claimed.
+- v0.2.15 source `0ac2d7ed1b3898835956f80569718c4d2eb994b9` passes all six
+  native dev courts, including default UI and an isolated minimal consumer,
+  plus the six-cell signed/packaged artifact courts. The complete workspace/fork
+  gate is qualified on Windows x86_64; native dev compilation does not imply
+  every root/platform unit or optional feature executed on every cell. Exact
+  scope and receipts are in [release history](archive/v0.2.15-release-history.md)
+  and [the archived plan](../plan/archive/plan-v0.2.15.md).
 
 ## Design assessment and compatibility boundary (2026-10-18)
 
@@ -205,24 +212,29 @@ API compatibility decision; no new target selectors inherit this exception.
 
 Keep external reuse reproducible at an immutable revision with the consumer's
 actual features and fork resolution. The initial assessment was static; added
-local tests support the scoped plan receipts, not six-cell certification.
+local tests and native receipts support only their recorded feature/cell scope.
 
 ## Consolidation frontier and maintenance rule
 
-- [-] v0.2.15 accepted scope: recursively guard core source portability;
+- [v] v0.2.15 delivered scope: recursively guard core source portability;
   preserve default APIs while making dependency-bearing core modules optional;
   make core the tree/numeric implementation owner with UI/platform compatibility
   exports; correct names/descriptions without renaming public crates. The
   default-disabled core edges must not import unrelated composer/JSON
   dependencies into minimal UI/native consumers. Delivery contracts, order and
-  evidence: [0.2.15 plan](../plan/plan-v0.2.15.md).
+  evidence: [release history](archive/v0.2.15-release-history.md) and
+  [archived plan](../plan/archive/plan-v0.2.15.md).
 - [v] Shared platform/UI ownership moved into MiniCon in v0.2.5, with the
   `{PLATFORM-MOVE}` evidence in
   [the archived plan](../plan/archive/plan-v0.2.5.md). The former staged
   external-platform extraction is superseded by that ownership decision.
 - [v] Tree/numeric implementations are consolidated through compatibility
   exports; named guard, oracle, type-identity and isolated-consumer evidence is
-  recorded in the 0.2.15 plan (Windows x86_64 scope).
+  recorded in the archived plan and six native minimal-consumer receipts,
+  within the feature scopes stated above.
+- [_] v0.2.16 consumer/feature selection and test orchestration follow
+  [the owning test contract](PRD_02_33_test_orchestration.md). AgenTerm pin
+  movement remains conditional on that product's actual consumer evidence.
 - [_] `workspace`, `session_store`, `ui` and `palette` remain product-local.
   Extract a rule only for an identified consumer and explicit contract; no
   completed reusable terminal-engine crate is claimed.
