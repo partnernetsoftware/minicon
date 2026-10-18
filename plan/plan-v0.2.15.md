@@ -213,6 +213,17 @@ regressions and the unchanged-frame unit pass through the canonical wrapper
 shell marker before clearing, so an initial blank startup snapshot cannot become
 the baseline before the child clear has reached the renderer.
 
+Source `06c3f26e02f4fad0cdaa68baa9f2342136152ee1` passes the full local canonical
+gate (`full-test-console-final.log`, exit zero): GUI 38 pass / one manual IME
+ignore, product units 454/one live-API ignore, platform 460/one measurement
+ignore, core 106, UI-core 55 and vendored vt100 12. Windows targeted native run
+`39139623345` passes all five regressions on x86_64 and four on ARM64. The
+remaining ARM failure occurs before the first C# probe's `PROBE-READY`, not at
+the nudge assertion. Share a 60-second shell/compiler-readiness budget and retain
+the temporal/geometry assertions. Only test readiness and docs change after
+06c3f26; production code is identical. Final Clippy passes in
+`clippy-probe-budget.log`. Qualify the new exact commit before signing.
+
 The administrator/UAC checkbox request belongs to the existing Run dialog in
 the adjacent `minicon-winmgr/src/run_dialog.rs`. MiniCon has no such entry.
 Following the renewed instruction to finish this release, use that existing

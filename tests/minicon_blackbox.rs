@@ -2270,6 +2270,11 @@ fn an_exited_shell_repaints_its_tab_row() {
     let _ = session.child.kill();
 }
 
+// Cold Add-Type compilation on hosted Windows ARM can exceed 30 seconds.
+// This is a readiness budget; the nudge's 100 ms assertion is independent.
+#[cfg(windows)]
+const POWERSHELL_PROBE_READY_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Start a probe after the interactive shell executes an observed readiness
 /// marker, matching the sustained-output court's startup rendezvous.
 #[cfg(windows)]
@@ -2299,7 +2304,7 @@ fn powershell_probe_session(dir: &Path, name: &str, source: &str) -> ConSession 
         "send-text",
         "[Console]::Out.WriteLine(('PROBE_'+'SHELL_READY'))\r",
     ]);
-    session.wait_for(Duration::from_secs(60), |snapshot| {
+    session.wait_for(POWERSHELL_PROBE_READY_TIMEOUT, |snapshot| {
         ConSession::screen_text(snapshot).contains("PROBE_SHELL_READY")
     });
     let command = format!("& '{}'\r", probe.to_string_lossy().replace('\'', "''"));
@@ -2443,7 +2448,7 @@ fn window_resize_delivers_a_console_buffer_size_event_to_the_child() {
     // Add-Type compiles before the probe announces itself, so this wait
     // also proves the listener is actually blocking in ReadConsoleInput
     // *before* the resize happens.
-    session.wait_for(Duration::from_secs(30), |snapshot| {
+    session.wait_for(POWERSHELL_PROBE_READY_TIMEOUT, |snapshot| {
         ConSession::screen_text(snapshot).contains("PROBE-READY")
     });
 
@@ -2470,7 +2475,7 @@ fn a_settled_resize_fires_the_one_shot_same_size_nudge() {
     let mut session =
         powershell_probe_session(&dir, "console_event_probe.ps1", CONSOLE_EVENT_PROBE_PS1);
 
-    session.wait_for(Duration::from_secs(30), |snapshot| {
+    session.wait_for(POWERSHELL_PROBE_READY_TIMEOUT, |snapshot| {
         ConSession::screen_text(snapshot).contains("PROBE-READY")
     });
 

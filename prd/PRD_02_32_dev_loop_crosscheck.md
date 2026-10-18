@@ -203,6 +203,12 @@ latest timestamps for that size; console repaint rows need not be chronological.
 The same-size nudge still requires at least two events spanning 100 ms. The
 product-nudge delay mutation must fail that assertion.
 
+The shared PowerShell shell/probe-readiness budget is 60 seconds. In targeted
+run `39139623345`, Windows ARM completes four of five regressions; the first
+C# probe has not announced readiness at the old 30-second deadline, while a
+later equivalent probe completes in about 25 seconds. Keep cold shell/compiler
+startup separate from the nudge interval and from throughput performance floors.
+
 ### Gates that compile a path but cannot exercise it
 A compiled path is not a working path. The same 0.2.7 release produced the
 opposite failure from the ones above: a path that *did* compile on the one host
