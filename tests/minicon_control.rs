@@ -9,6 +9,22 @@ use serde_json::Value;
 
 static UNIQUE: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(windows)]
+static CLIPBOARD_LEASE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct HostTrace(PathBuf);
+
+impl Drop for HostTrace {
+    fn drop(&mut self) {
+        if thread::panicking()
+            && let Ok(text) = fs::read_to_string(&self.0)
+        {
+            eprintln!("control journey host stderr: {text}");
+        }
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 struct OwnedGui {
     child: Child,
     screenshot: PathBuf,
@@ -16,6 +32,13 @@ struct OwnedGui {
 
 impl Drop for OwnedGui {
     fn drop(&mut self) {
+        if thread::panicking() {
+            eprintln!(
+                "control fixture host {} exit before cleanup: {:?}",
+                self.child.id(),
+                self.child.try_wait()
+            );
+        }
         // `Child::kill()` sends a single signal to exactly the PID this
         // struct tracks -- the top-level `minicon` process. On Unix that does
         // *not* cascade to anything `minicon` itself has forked (its PTY
@@ -487,9 +510,11 @@ fn gui_control_surface_isolated_multitab_black_box() {
     for arg in host_shell_args() {
         host.arg(arg);
     }
-    // Launch with an interactive shell; inject ROOT_READY after control is up.
-    host.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+    // Keep diagnostics readable even when a failed journey kills the host.
+    // Unread pipes can also backpressure the very host this test observes.
+    let trace = HostTrace(std::env::temp_dir().join(format!("minicon-control-{suffix}.log")));
+    host.stdout(std::process::Stdio::null())
+        .stderr(fs::File::create(&trace.0).expect("create host diagnostic file"));
     let child = host.spawn().expect("minicon GUI must start");
     let mut gui = OwnedGui { child, screenshot };
 
@@ -633,6 +658,11 @@ fn gui_control_surface_isolated_multitab_black_box() {
 
     #[cfg(windows)]
     {
+        // Clipboard contents are shared by the two native clipboard journeys
+        // in this executable; hold the lease through read, paste and restore.
+        let _clipboard_lease = CLIPBOARD_LEASE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let _restore = ClipboardRestore(minicon_platform::clipboard::get_text(1024 * 1024).ok());
         minicon_platform::clipboard::set_text("echo ASYNC_CLIPBOARD_OK\r")
             .expect("test clipboard text must be published");
@@ -2031,6 +2061,9 @@ fn composer_paste_of_a_clipboard_image_inserts_its_temp_file_path() {
 #[cfg(windows)]
 #[test]
 fn composer_paste_of_a_clipboard_image_inserts_a_png_temp_path() {
+    let _clipboard_lease = CLIPBOARD_LEASE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     /// A minimal 24bpp `BITMAPINFOHEADER` DIB, the shape a screenshot tool
     /// leaves on the clipboard (rows padded to 4 bytes, bottom-up).
     fn make_24bpp_dib(width: i32, height: i32) -> Vec<u8> {

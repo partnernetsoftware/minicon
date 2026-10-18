@@ -99,6 +99,14 @@ so a transport timeout can be attributed to its actual operation rather than
 treated as a generic slow start. A negative control is valid only if it reaches
 the guarded behavior; an earlier setup failure does not prove that guard.
 
+Windows clipboard journeys in the control executable share one clipboard lease
+through seed, asynchronous completion and restoration; an image-paste journey
+cannot replace another journey's text payload. This lease covers this executable,
+not other processes or a user's desktop. The multi-tab host sends stderr to an
+owned diagnostic file, reported on panic after host cleanup; its unread output
+must not backpressure the host. Panic cleanup also reports the host's exit status
+before termination, so an exited host and a live stalled host are distinguishable.
+
 A local check that compiles nothing is worse than no check, because it reads as
 green. Two were found by a release chain failing on code a local gate had
 "passed" (0.2.7, 2026-10-13), so each is written down with the exact command

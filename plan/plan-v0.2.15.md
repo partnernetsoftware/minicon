@@ -248,6 +248,33 @@ The restored focused journey passes in 13.19 seconds
 (`control-history-final-restored.log`); final fmt and workspace/all-target Clippy
 pass (`clippy-control-history-final.log`). No production mutation remains.
 
+Source `78b7eed3b61cc8b959914bfa748a8b5d67ab486a` passes all six unsigned
+artifact execution cells (`39141817506`). Full dev run `39141817164` attempt 1
+passes Linux both ISAs and macOS ARM. macOS x86_64 passes functional suites but
+fails the unchanged throughput floor (1,256,142 versus 1,310,720 B/s). The prior
+`8ed1553` run measured 2,382,671 B/s with identical production source; one
+same-source macOS job repeat is recorded separately, not substituted for the
+failed observation. Both Windows control journeys stop at ASYNC_CLIPBOARD_OK
+(x64 endpoint lost, ARM text timeout). Their GUI suites all pass. Exact failure
+logs and per-suite receipts are retained under
+`target/v0215-release/crosscheck-78b7eed-{osx-x64,win-x64,win-arm}/`.
+
+The local current harness's complete 11-case control suite passes with two
+threads in 16.08 seconds (`control-suite-parallel-diagnosis.log`). Two native
+clipboard journeys nevertheless mutate the same system clipboard without a
+lease; serialize their seed/read/restore intervals. Keep host stderr in an owned
+diagnostic file and report pre-cleanup exit status on failure. This removes a
+known fixture resource conflict and improves diagnosis, but does not by itself
+prove why the x64 host exited. Production code remains unchanged. Qualify the
+corrected fixture on the actual native Windows courts before claiming resolution.
+The corrected local canonical filtered gate passes
+(`control-clipboard-restored.log`), followed by the complete Cargo-produced
+control harness with two threads: 11 pass in 18.79 seconds
+(`control-suite-clipboard-lease.log`). Disabling actual asynchronous paste
+delivery makes the existing ASYNC_CLIPBOARD_OK assertion fail, with the host
+still alive (`negative-async-clipboard-delivery.log`); production is restored.
+Final fmt and workspace/all-target Clippy pass (`clippy-clipboard-lease.log`).
+
 The administrator/UAC checkbox request belongs to the existing Run dialog in
 the adjacent `minicon-winmgr/src/run_dialog.rs`. MiniCon has no such entry.
 Following the renewed instruction to finish this release, use that existing
