@@ -24,9 +24,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  product-identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      digest: ${{ steps.bind.outputs.digest }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+      - name: Bind controller and Candidate product source
+        id: bind
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          git fetch --no-tags origin main
+          digest="$(scripts/product-source-hash.sh "$SOURCE_SHA")"
+          [[ "$(scripts/product-source-hash.sh "$GITHUB_SHA")" == "$digest" ]]
+          [[ "$(scripts/product-source-hash.sh origin/main)" == "$digest" ]]
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+
   scan:
+    needs: product-identity
     runs-on: windows-2025
     timeout-minutes: 20
+    env:
+      PRODUCT_SOURCE_SHA256: ${{ needs.product-identity.outputs.digest }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -47,13 +76,7 @@ jobs:
           [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "candidate_run_id is not a positive integer: $CANDIDATE_RUN_ID" >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo "checked-out HEAD does not match source_sha" >&2; exit 1; }
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid controller SHA" >&2; exit 1; }
-          git fetch --no-tags origin main
-          [[ "$(scripts/product-source-hash.sh "$GITHUB_SHA")" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]] || { echo "controller changes product source" >&2; exit 1; }
           printf 'controller_sha=%s\ncandidate_source_sha=%s\n' "$GITHUB_SHA" "$SOURCE_SHA"
-          # Product source tree only, not raw HEAD equality -- see
-          # scripts/product-source-hash.sh. A workflow/doc-only fix landing on
-          # main after the Candidate sealed must not force a version bump.
-          [[ "$(scripts/product-source-hash.sh origin/main)" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]] || { echo "product source tree at origin/main has drifted from source_sha" >&2; exit 1; }
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
           [[ "$(jq -r .path <<<"$run")" == ".github/workflows/candidate.yml" ]] || { echo "candidate_run_id is not a candidate.yml run" >&2; exit 1; }
           [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]] || { echo "candidate_run_id was not triggered by workflow_dispatch" >&2; exit 1; }
@@ -207,6 +230,7 @@ jobs:
             provider           = "windows-defender-native-ci"
             controller_sha     = "$env:GITHUB_SHA"
             source_sha         = "$sourceSha"
+            product_source_sha256 = "$env:PRODUCT_SOURCE_SHA256"
             product_version    = "$($status.AMProductVersion)"
             engine_version     = "$($status.AMEngineVersion)"
             signature_version  = "$($status.AntivirusSignatureVersion)"

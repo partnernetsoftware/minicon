@@ -2648,7 +2648,10 @@ The controller SHA is recorded separately from the Candidate source SHA. Only
 workflow/documentation drift already excluded by `product-source-hash.sh` is
 accepted; Candidate run identity, checked-out source, policy and every payload
 digest remain bound. The original Defender workflow's source assertion is not
-changed. If `main` advances for this controller, dispatch reputation/Promotion
+changed. The unchanged canonical product-source hash runs in a required Linux
+preflight; the Windows job consumes its digest and performs native scanning.
+This avoids hundreds of Windows Git process launches for neutral metadata work.
+If `main` advances for this controller, dispatch reputation/Promotion
 on the established `candidate-src-<version>` ref at the Candidate SHA, then
 delete that ref after publication. A controller update does not qualify a new
 product build or change the release tag's source.
