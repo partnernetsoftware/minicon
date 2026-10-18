@@ -106,6 +106,7 @@ jobs:
           import hashlib
           import json
           import pathlib
+          import subprocess
           import zipfile
 
           manifest = json.loads(pathlib.Path("candidate/candidate-manifest.json").read_text(encoding="utf-8"))
@@ -117,8 +118,11 @@ jobs:
           scan_dir.mkdir()
 
           rows = []
-          policy = json.loads(pathlib.Path("release-policy.json").read_text(encoding="utf-8"))
-          if manifest["release_policy"] != policy:
+          policy_bytes = subprocess.check_output(["git", "show", "HEAD:release-policy.json"])
+          policy = json.loads(policy_bytes)
+          manifest_policy = dict(manifest["release_policy"])
+          policy_sha = manifest_policy.pop("sha256")
+          if manifest_policy != policy or policy_sha != hashlib.sha256(policy_bytes).hexdigest():
               raise SystemExit("Candidate policy differs from its checked-out source")
           wanted = policy["reputation"]["assets"]
           if set(manifest["reputation_assets"]) != set(wanted):
