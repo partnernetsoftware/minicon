@@ -93,6 +93,12 @@ elsewhere in this repo's workflows.
 
 ## Local per-host gates, and the ones that are not gates
 
+Focus-dependent control journeys establish their intended UI focus before
+asserting event routing. Failed CLI assertions include the attempted command,
+so a transport timeout can be attributed to its actual operation rather than
+treated as a generic slow start. A negative control is valid only if it reaches
+the guarded behavior; an earlier setup failure does not prove that guard.
+
 A local check that compiles nothing is worse than no check, because it reads as
 green. Two were found by a release chain failing on code a local gate had
 "passed" (0.2.7, 2026-10-13), so each is written down with the exact command
@@ -172,6 +178,10 @@ shell-expanded marker. Otherwise a fast shell can both edit the previous last
 row and scroll between mirror samples, leaving no unchanged suffix from which
 the screen-buffer mirror can infer the real scroll. The fixture's readiness
 assertion retains its last snapshot on failure.
+The multi-tab control journey uses the same observed-command preparation for
+the inactive target before asserting its one-notch wheel receipt. A final marker
+from a 1,200-line burst alone does not prove that the sampled mirror retained
+history; its actual viewport row count bounds the required preparation.
 
 The keyboard forwarding journey has the same observation-order requirement:
 capture the cursor after typing `ABCDE` before sending either ArrowLeft. A

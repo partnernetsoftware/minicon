@@ -224,6 +224,30 @@ the temporal/geometry assertions. Only test readiness and docs change after
 06c3f26; production code is identical. Final Clippy passes in
 `clippy-probe-budget.log`. Qualify the new exact commit before signing.
 
+On source `8ed1553a29dce04a25b4e6c85de9661aaca4de86`, unsigned pack `39140202038`
+passes all six execution cells. Dev run `39140181891` passes five complete native
+cells and every x86_64 GUI case; its x86_64 multi-tab control journey expects one
+wheel notch after a collapsed burst without proving history exists (actual zero).
+Prepare observed per-line command/output transitions for that inactive target,
+bounded by its real viewport rows. Keep the one-notch receipt assertion unchanged.
+The revised local journey passes (`control-observed-history.log`) and Clippy passes
+(`clippy-control-history.log`). Production code and dependencies are unchanged;
+qualify another exact commit before signing rather than promote the old pack.
+
+A subsequent local repeat timed out reading the control reply (132.83 seconds;
+`control-observed-history-restored.log`). A backtrace-enabled diagnostic repeat
+passed in 13.67 seconds (`control-timeout-diagnosis.log`); the timeout's call site
+was unavailable, so it is not declared fixed. CLI assertion diagnostics now name
+the attempted command. Establish terminal focus explicitly before the IME route
+assertion: the first wheel negative attempt stopped at a composer-focus race and
+is invalid as wheel evidence. The corrected negative control reverses the real
+wheel direction and reaches the unchanged one-notch assertion (actual zero,
+expected one; `negative-control-wheel-sign-final.log`). Restore production code
+before positive qualification; do not count the earlier focus failure as proof.
+The restored focused journey passes in 13.19 seconds
+(`control-history-final-restored.log`); final fmt and workspace/all-target Clippy
+pass (`clippy-control-history-final.log`). No production mutation remains.
+
 The administrator/UAC checkbox request belongs to the existing Run dialog in
 the adjacent `minicon-winmgr/src/run_dialog.rs`. MiniCon has no such entry.
 Following the renewed instruction to finish this release, use that existing

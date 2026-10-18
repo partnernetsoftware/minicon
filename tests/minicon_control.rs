@@ -247,7 +247,7 @@ fn cli_json(exe: &Path, endpoint: &str, arguments: &[&str]) -> Value {
     let output = invoke(exe, endpoint, arguments);
     assert!(
         output.status.success(),
-        "CLI failed: {}",
+        "CLI {arguments:?} failed: {}",
         error_text(&output)
     );
     serde_json::from_str(&output_text(&output)).expect("successful CLI output must be JSON")
@@ -257,7 +257,7 @@ fn cli_text(exe: &Path, endpoint: &str, arguments: &[&str]) -> String {
     let output = invoke(exe, endpoint, arguments);
     assert!(
         output.status.success(),
-        "CLI failed: {}",
+        "CLI {arguments:?} failed: {}",
         error_text(&output)
     );
     output_text(&output)
@@ -531,6 +531,9 @@ fn gui_control_surface_isolated_multitab_black_box() {
         &["wait-text", "--target", &root, "ROOT_ONLY"],
     );
 
+    // The native window may restore focus to the composer while opening.
+    // Establish terminal focus before exercising focus-dependent IME routing.
+    cli_json(exe, &endpoint, &["send-ui-keys", "Escape"]);
     let enabled_ime = cli_json(exe, &endpoint, &["send-ui-ime", "enabled"]);
     assert_eq!(enabled_ime["route"], "terminal");
     assert_eq!(enabled_ime["action"], "enabled");
@@ -794,6 +797,64 @@ fn gui_control_surface_isolated_multitab_black_box() {
     assert!(root_text.contains("ROOT_ONLY"));
     assert!(!root_text.contains("LOAD_DONE"));
     assert!(child_text.contains("VT_NOISE_1200"));
+
+    #[cfg(windows)]
+    {
+        // A burst's last marker proves delivery, not that the console mirror
+        // observed a scroll. Let it observe each fully edited command before
+        // Enter, preserving the unchanged suffix needed to infer real history.
+        let tabs = cli_json(exe, &endpoint, &["list-tabs"]);
+        let rows = tabs["tabs"]
+            .as_array()
+            .expect("tab list")
+            .iter()
+            .find(|tab| tab["id"] == child_id)
+            .expect("child tab")["rows"]
+            .as_u64()
+            .expect("child viewport rows");
+        let deadline = Instant::now() + Duration::from_secs(30);
+        for index in 1..=rows + 8 {
+            let command = format!("for /L %i in ({index},1,{index}) do @echo CONTROL_HISTORY_%i");
+            cli_json(
+                exe,
+                &endpoint,
+                &["send-text", "--target", &child_id, &command],
+            );
+            loop {
+                let text = cli_text(exe, &endpoint, &["capture-pane", "--target", &child_id]);
+                if text.replace('\n', "").contains(&command) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "edited history command was not observed"
+                );
+                thread::sleep(Duration::from_millis(20));
+            }
+            cli_json(
+                exe,
+                &endpoint,
+                &["send-keys", "--target", &child_id, "Enter"],
+            );
+            let marker = format!("CONTROL_HISTORY_{index}");
+            cli_json(
+                exe,
+                &endpoint,
+                &[
+                    "wait-text",
+                    "--target",
+                    &child_id,
+                    "--timeout-ms",
+                    "10000",
+                    &marker,
+                ],
+            );
+            assert!(
+                Instant::now() < deadline,
+                "history fixture exceeded its readiness budget"
+            );
+        }
+    }
 
     let mouse_move_receipt = cli_json(
         exe,
