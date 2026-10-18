@@ -177,6 +177,13 @@ after observing that baseline, and still requires exactly two columns of motion.
 A one-key negative control must fail that assertion. This is a fixture repair,
 independent of the post-release test-orchestration review.
 
+The child-geometry resize journey also needs a native probe: Windows reads
+`[Console]::WindowWidth/WindowHeight` through PowerShell; Unix reads this child's
+tty through `stty size`. Invoking `powershell.exe` unconditionally produced an
+empty pane and a timeout on both Linux ISAs and macOS ARM in run `39137777772`.
+Keep the shared narrow/wide assertions and never substitute the host's own grid
+size for what the child reports.
+
 ### Gates that compile a path but cannot exercise it
 A compiled path is not a working path. The same 0.2.7 release produced the
 opposite failure from the ones above: a path that *did* compile on the one host

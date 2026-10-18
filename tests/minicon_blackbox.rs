@@ -2234,17 +2234,16 @@ fn an_exited_shell_repaints_its_tab_row() {
 fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
     let _guard = gui_test_guard();
     let dir = scratch_dir("resize-reaches-child");
-    let probe = dir.join("geometry_probe.ps1");
-    std::fs::write(
-        &probe,
-        "while ($true) {\r\n  \
-         Write-Host (\"CHILDGEOM W={0} H={1}\" -f [Console]::WindowWidth, [Console]::WindowHeight)\r\n  \
-         Start-Sleep -Milliseconds 250\r\n}\r\n",
-    )
-    .expect("write geometry probe");
-    let mut session = ConSession::spawn(
-        &dir,
-        &[
+    let args = if cfg!(windows) {
+        let probe = dir.join("geometry_probe.ps1");
+        std::fs::write(
+            &probe,
+            "while ($true) {\r\n  \
+             Write-Host (\"CHILDGEOM W={0} H={1}\" -f [Console]::WindowWidth, [Console]::WindowHeight)\r\n  \
+             Start-Sleep -Milliseconds 250\r\n}\r\n",
+        )
+        .expect("write geometry probe");
+        vec![
             "-e".to_owned(),
             "powershell.exe".to_owned(),
             "-NoProfile".to_owned(),
@@ -2252,8 +2251,18 @@ fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
             "Bypass".to_owned(),
             "-File".to_owned(),
             probe.to_string_lossy().into_owned(),
-        ],
-    );
+        ]
+    } else {
+        // Query this child's actual tty, not MiniCon's snapshot bookkeeping.
+        // PowerShell is not a dependency of the Unix product or its test court.
+        vec![
+            "-e".to_owned(),
+            "sh".to_owned(),
+            "-c".to_owned(),
+            r#"while :; do set -- $(stty size); printf 'CHILDGEOM W=%s H=%s\n' "$2" "$1"; sleep 0.25; done"#.to_owned(),
+        ]
+    };
+    let mut session = ConSession::spawn(&dir, &args);
 
     // The probe is printing geometry lines.
     session.wait_for(Duration::from_secs(10), |snapshot| {

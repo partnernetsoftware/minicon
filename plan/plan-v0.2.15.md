@@ -163,6 +163,21 @@ Its SHA-256 is
 The release payload's forbidden-symbol/GDI+ import assertions and OS-module
 allowlist pass (`native-release-imports.log`, `native-release-loader-modules.log`).
 
+CI follow-up on source `52527f457a7dd799900f7519524a4c0d62e7180e`:
+`39137638496` stopped at checkout because a short SHA was interpreted as a branch;
+the full-SHA dispatch `39137777772` executes tests. Both Linux ISAs and both macOS
+ISAs pass core/UI/minimal-reuse, but the child-geometry GUI test unconditionally
+invokes PowerShell and times out. Keep its original narrow/wide assertions and
+use a Unix tty probe (`stty size`) on those hosts. This changes the fixture only;
+production Rust and dependency files remain identical to the locally qualified
+source. Cancel the unsealed pack `39137635531` and qualify a new exact commit;
+do not sign or promote the superseded pack. Its component-level passes are
+diagnostic evidence, not a green final-source release court.
+The revised Windows fixture passes through `build.sh test`
+(`resize-native-probe-windows.log`, one pass); workspace/all-target Clippy with
+warnings denied also passes (`clippy-native-probe.log`). Unix runtime proof
+remains the next exact-source native CI run; no Windows result substitutes for it.
+
 The administrator/UAC checkbox request belongs to the existing Run dialog in
 the adjacent `minicon-winmgr/src/run_dialog.rs`. MiniCon has no such entry.
 Following the renewed instruction to finish this release, use that existing
