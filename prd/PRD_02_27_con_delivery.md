@@ -2612,6 +2612,68 @@ discipline.
 
 ### Driving the chain
 
+#### Native Defender court with a separate controller
+
+`.github/workflows/defender-native-court.yml` is an alternate hosted Windows
+court when `Update-MpSignature` fails before scanning. It preserves the same
+three policy-selected assets and canonical reputation qualifier. It uses the
+latest installed Defender command-line tool and its supported
+`-SignatureUpdate -MMPC` channel, documented by
+[Microsoft](https://learn.microsoft.com/en-us/defender-endpoint/command-line-arguments-microsoft-defender-antivirus).
+Successful definition update, an active engine, successful clean static scans
+and measured pre/post SHA-256 equality are mandatory. No exclusions, security
+policy changes, sample execution, rebuilding or re-signing are involved.
+
+```text
+Outcome: qualify one immutable Candidate despite an unavailable CIM update path
+├── Controller — reviewed workflow commit; read-only Actions/contents token
+├── Source — exact checkout and successful Candidate head/attempt match
+├── Identity — source, controller and origin/main product-source hashes agree
+├── Court — native update; scan every selected file; actually rehash afterward
+└── Evidence — canonical qualifier, including raw court receipt digest
+```
+
+```mermaid
+flowchart LR
+    C["sealed Candidate; source SHA"] --> V["verify manifest, payload and policy"]
+    W["workflow controller SHA"] --> H["unchanged product-source hash"]
+    C --> H
+    H & V --> D["native Defender update and static scans"]
+    D --> B["measured before/after byte identity"]
+    B --> Q["existing reputation qualifier"]
+    Q --> P["existing no-rebuild Promotion"]
+```
+
+The controller SHA is recorded separately from the Candidate source SHA. Only
+workflow/documentation drift already excluded by `product-source-hash.sh` is
+accepted; Candidate run identity, checked-out source, policy and every payload
+digest remain bound. The original Defender workflow's source assertion is not
+changed. If `main` advances for this controller, dispatch reputation/Promotion
+on the established `candidate-src-<version>` ref at the Candidate SHA, then
+delete that ref after publication. A controller update does not qualify a new
+product build or change the release tag's source.
+
+The file/hash guard includes a real changed-file negative control. Replacing
+measurement with the expected constant makes that control fail. Any update,
+scan, binding or hash failure prevents qualification. Local Defender/UTM court
+preconditions remain independent; an unavailable local court is not made ready
+by changing the host's security configuration.
+
+Operational dispatch:
+
+```sh
+gh workflow run defender-native-court.yml --ref main \
+  -f source_sha=<candidate-source-sha> -f candidate_run_id=<candidate-run>
+gh run download <court-run> \
+  --name defender-native-qualification-<court-run>-attempt-<attempt> --dir <output>
+```
+
+The output uses the existing `reputation-qualification.b64` protocol. This
+alternate route requires no signing credentials and grants no publication
+authority of its own. Version-specific outcomes stay in release history.
+
+#### Release driver and source discipline
+
 Windows build-state cleanup must query owner liveness without signaling the
 owner. Python's [`os.kill` Windows contract](https://docs.python.org/3/library/os.html#os.kill)
 terminates for signal values other than the console-control events, including
@@ -2635,10 +2697,12 @@ easy to get wrong:
 - **A non-interactive stdin stops safely after the dry run** (exit 3, nothing
   published) and prints the exact `release.yml` Promotion command. Dispatch that
   to finish, then delete the pinned `candidate-src-<v>` branch.
-- **`source_sha` is frozen through the chain.** Every gate asserts
-  `source_sha == GITHUB_SHA`, so `main` must not move between the first dispatch
-  and the Promotion; once it has moved, pin a throwaway `candidate-src-<v>`
-  branch at the Candidate SHA and dispatch reputation/release on that ref.
+- **`source_sha` is frozen through the artifact chain.** Original signing,
+  Candidate, reputation and Promotion dispatches require
+  `source_sha == GITHUB_SHA`; the alternate native Defender court explicitly
+  records a separate controller as described above. If `main` moves without
+  product changes, pin a throwaway `candidate-src-<v>` branch at the Candidate
+  SHA and dispatch reputation/release on that ref.
 - **If `Cargo.toml` and `release-policy.json` already read `<version>`** (the
   version was bumped in an earlier commit), the script's `1/8 bump` step has
   nothing to commit and it exits before the first dispatch. Drive steps 2–8 by

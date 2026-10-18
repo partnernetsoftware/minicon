@@ -1,0 +1,240 @@
+name: Defender Native Court
+
+# Delivery PRD owns this alternate hosted court. The controller can advance
+# without rebuilding a sealed Candidate; product-source hashes must still agree.
+# No signing keys, release writes, exclusions or Candidate execution are needed.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Release Candidate workflow run ID
+        required: true
+        type: string
+      source_sha:
+        description: Exact Candidate source SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: minicon-defender-native-${{ inputs.candidate_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.source_sha }}
+
+      - name: Bind exact source and successful Candidate
+        id: identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha is not a 40-char sha: $SOURCE_SHA" >&2; exit 1; }
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo "candidate_run_id is not a positive integer: $CANDIDATE_RUN_ID" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || { echo "checked-out HEAD does not match source_sha" >&2; exit 1; }
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid controller SHA" >&2; exit 1; }
+          git fetch --no-tags origin main
+          [[ "$(scripts/product-source-hash.sh "$GITHUB_SHA")" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]] || { echo "controller changes product source" >&2; exit 1; }
+          printf 'controller_sha=%s\ncandidate_source_sha=%s\n' "$GITHUB_SHA" "$SOURCE_SHA"
+          # Product source tree only, not raw HEAD equality -- see
+          # scripts/product-source-hash.sh. A workflow/doc-only fix landing on
+          # main after the Candidate sealed must not force a version bump.
+          [[ "$(scripts/product-source-hash.sh origin/main)" == "$(scripts/product-source-hash.sh "$SOURCE_SHA")" ]] || { echo "product source tree at origin/main has drifted from source_sha" >&2; exit 1; }
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID")"
+          [[ "$(jq -r .path <<<"$run")" == ".github/workflows/candidate.yml" ]] || { echo "candidate_run_id is not a candidate.yml run" >&2; exit 1; }
+          [[ "$(jq -r .event <<<"$run")" == "workflow_dispatch" ]] || { echo "candidate_run_id was not triggered by workflow_dispatch" >&2; exit 1; }
+          [[ "$(jq -r .status <<<"$run")" == "completed" ]] || { echo "candidate_run_id has not completed" >&2; exit 1; }
+          [[ "$(jq -r .conclusion <<<"$run")" == "success" ]] || { echo "candidate_run_id did not conclude successfully" >&2; exit 1; }
+          [[ "$(jq -r .head_sha <<<"$run")" == "$SOURCE_SHA" ]] || { echo "candidate_run_id's head_sha does not match source_sha" >&2; exit 1; }
+          printf '%s\n' "$run" > candidate-run-metadata.json
+          mkdir candidate
+          gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "release-candidate-$CANDIDATE_RUN_ID" --dir candidate
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify sealed Candidate payload and policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 release/candidate_bundle.py verify \
+            --manifest candidate/candidate-manifest.json \
+            --payload candidate/payload --policy candidate/release-policy.json
+
+      - name: Extract the exact reputation-scoped bytes named by the Candidate manifest
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import pathlib
+          import zipfile
+
+          manifest = json.loads(pathlib.Path("candidate/candidate-manifest.json").read_text(encoding="utf-8"))
+          run = json.loads(pathlib.Path("candidate-run-metadata.json").read_text(encoding="utf-8"))
+          if manifest["source_sha"] != run["head_sha"] or manifest["candidate_run"] != {"id": run["id"], "attempt": run["run_attempt"]}:
+              raise SystemExit("Candidate manifest differs from the successful run identity")
+          payload = pathlib.Path("candidate/payload")
+          scan_dir = pathlib.Path("defender-scan")
+          scan_dir.mkdir()
+
+          rows = []
+          policy = json.loads(pathlib.Path("release-policy.json").read_text(encoding="utf-8"))
+          if manifest["release_policy"] != policy:
+              raise SystemExit("Candidate policy differs from its checked-out source")
+          wanted = policy["reputation"]["assets"]
+          if set(manifest["reputation_assets"]) != set(wanted):
+              raise SystemExit("Candidate reputation asset set differs from policy")
+          for key in wanted:
+              row = manifest["reputation_assets"][key]
+              if "member" in row:
+                  with zipfile.ZipFile(payload / row["container"]) as zipped:
+                      raw = zipped.read(row["member"])
+              else:
+                  raw = (payload / row["container"]).read_bytes()
+              digest = hashlib.sha256(raw).hexdigest()
+              if digest != row["sha256"]:
+                  raise SystemExit(f"{key}: extracted bytes do not match the Candidate manifest")
+              out_path = scan_dir / f"{key}.bin"
+              out_path.write_bytes(raw)
+              rows.append({"key": key, "path": str(out_path.resolve()), "sha256": digest})
+
+          pathlib.Path("defender-scan-manifest.json").write_text(json.dumps(rows), encoding="utf-8")
+          pathlib.Path("candidate-run.json").write_text(
+              json.dumps(manifest["candidate_run"]), encoding="utf-8"
+          )
+          print(json.dumps(rows, indent=2))
+
+      - name: Update Defender through its native command-line channel
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $platformRoot = Join-Path $env:ProgramData "Microsoft\Windows Defender\Platform"
+          $platforms = @(Get-ChildItem -LiteralPath $platformRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+(-\d+)?$' } |
+            Sort-Object { [version](($_.Name -split '-')[0]) } -Descending)
+          $mpCmdRun = $null
+          foreach ($platform in $platforms) {
+            $tool = Join-Path $platform.FullName "MpCmdRun.exe"
+            if (Test-Path -LiteralPath $tool) { $mpCmdRun = $tool; break }
+          }
+          if (-not $mpCmdRun) { $mpCmdRun = Join-Path $env:ProgramFiles "Windows Defender\MpCmdRun.exe" }
+          if (-not (Test-Path -LiteralPath $mpCmdRun)) { throw "Defender command-line tool is unavailable" }
+          $update = & $mpCmdRun -SignatureUpdate -MMPC 2>&1
+          $updateExit = $LASTEXITCODE
+          $update | Tee-Object -FilePath defender-update.log | Write-Output
+          if ($updateExit -ne 0) { throw "Defender signature update exited $updateExit" }
+          $status = Get-MpComputerStatus
+          if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled -or
+              -not $status.AMEngineVersion -or "$($status.AMEngineVersion)" -eq "0.0.0.0" -or
+              -not $status.AntivirusSignatureVersion) { throw "Defender engine is not active" }
+          $status | Select-Object AMProductVersion, AMEngineVersion, AntivirusSignatureVersion,
+            AntivirusSignatureLastUpdated, RealTimeProtectionEnabled | Format-List
+          "DEFENDER_CLI_PATH=$mpCmdRun" >> $env:GITHUB_ENV
+
+      - name: Scan each reputation-scoped asset with Windows Defender
+        # Real MpCmdRun.exe -ScanType 3 clean output observed on windows-2025
+        # (run 36079454500, 2026-09-25): "Scanning <path> found no threats.",
+        # not the two guessed patterns this match started with. Keep those
+        # two too -- neither has been observed yet, but nothing rules out a
+        # different scan type or signature build emitting them instead.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rows = Get-Content defender-scan-manifest.json | ConvertFrom-Json
+          $status = Get-MpComputerStatus
+          $assets = [ordered]@{}
+          $mpCmdRun = $env:DEFENDER_CLI_PATH
+          if (-not $mpCmdRun) { throw "signature-update tool identity is missing" }
+          function Read-ExactDigest([string]$Path, [string]$Expected) {
+            $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Expected) { throw "Defender file digest mismatch" }
+            return $actual
+          }
+          # Prove the real file/hash guard rejects changed bytes before trusting
+          # it for the Candidate. This file is never a reputation-scoped asset.
+          $probe = Join-Path $env:RUNNER_TEMP "defender-hash-guard.txt"
+          [IO.File]::WriteAllText($probe, "before")
+          $probeHash = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $null = Read-ExactDigest $probe $probeHash
+          [IO.File]::WriteAllText($probe, "after")
+          $rejected = $false
+          try { $null = Read-ExactDigest $probe $probeHash }
+          catch { if ($_.Exception.Message -ne "Defender file digest mismatch") { throw }; $rejected = $true }
+          if (-not $rejected) { throw "changed-byte negative control unexpectedly passed" }
+          Remove-Item -LiteralPath $probe
+          Write-Output "PASS actual changed-byte negative control"
+
+          foreach ($row in $rows) {
+            $before = Read-ExactDigest $row.path $row.sha256
+            $output = & $mpCmdRun -Scan -ScanType 3 -File $row.path -DisableRemediation 2>&1
+            Write-Output $output
+            if ($LASTEXITCODE -ne 0) {
+              throw "Defender scan of $($row.key) exited $LASTEXITCODE"
+            }
+            $clean = ($output -match "Threat(s)? detected:\s*0") -or
+                     ($output -match "No infections found") -or
+                     ($output -match "found no threats")
+            if (-not $clean) {
+              throw "Defender scan of $($row.key) did not report a clean result: $output"
+            }
+            $after = Read-ExactDigest $row.path $before
+            $assets[$row.key] = @{ sha256 = $before; post_scan_sha256 = $after }
+          }
+
+          $candidateRun = Get-Content candidate-run.json | ConvertFrom-Json -AsHashtable
+          $sourceSha = (Get-Content -LiteralPath candidate/candidate-manifest.json -Raw | ConvertFrom-Json).source_sha
+          $defender = [ordered]@{
+            kind               = "minicon-defender-court"
+            verdict            = "clean"
+            candidate_run      = $candidateRun
+            assets             = $assets
+            provider           = "windows-defender-native-ci"
+            controller_sha     = "$env:GITHUB_SHA"
+            source_sha         = "$sourceSha"
+            product_version    = "$($status.AMProductVersion)"
+            engine_version     = "$($status.AMEngineVersion)"
+            signature_version  = "$($status.AntivirusSignatureVersion)"
+            scanned_at         = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          }
+          $defender | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 defender-receipt.json
+          Get-Content defender-receipt.json
+
+      - name: Bind Defender evidence to the exact Candidate and produce the qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 release/reputation_court.py qualify \
+            --manifest candidate/candidate-manifest.json \
+            --defender defender-receipt.json \
+            --output reputation-qualification.json
+          python3 release/reputation_court.py verify \
+            --manifest candidate/candidate-manifest.json \
+            --qualification reputation-qualification.json
+          base64 -w0 reputation-qualification.json > reputation-qualification.b64
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: defender-native-qualification-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            reputation-qualification.json
+            reputation-qualification.b64
+            defender-receipt.json
+            defender-update.log
+          if-no-files-found: error
+          retention-days: 14
