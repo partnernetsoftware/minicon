@@ -2624,6 +2624,12 @@ Successful definition update, an active engine, successful clean static scans
 and measured pre/post SHA-256 equality are mandatory. No exclusions, security
 policy changes, sample execution, rebuilding or re-signing are involved.
 
+Use this native court for measured byte-preservation evidence. The historical
+`defender-ci-scan.yml` producer copied the declared digest into its post-scan
+field rather than measuring it. That field alone is not a post-scan measurement.
+[_] Unify the legacy/default driver with the measured producer as an
+infrastructure follow-up; do not silently promote a declared value into evidence.
+
 ```text
 Outcome: qualify one immutable Candidate despite an unavailable CIM update path
 ├── Controller — reviewed workflow commit; read-only Actions/contents token

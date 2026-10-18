@@ -95,9 +95,9 @@ Placeholders: `<sha>` = Candidate source SHA, `<cand>` = candidate run id,
 
 ### 1. Defender reputation court — CI-NATIVE PATH NEEDS NO MAC, NO UTM
 
-MiniCon's alternate `defender-native-court.yml` supports an immutable Candidate
-with a separate workflow controller and measured post-scan hashes when the CIM
-updater is unavailable. Its input, artifact naming and identity contract are
+For MiniCon, `defender-native-court.yml` is the current measured-byte court;
+it supports an immutable Candidate and a separate workflow controller when
+the CIM updater is unavailable. Its input, artifact naming and identity contract are
 owned by `prd/PRD_02_27_con_delivery.md`, "Native Defender court with a separate
 controller"; use that route without rebuilding or weakening the reputation gate.
 

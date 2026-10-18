@@ -108,8 +108,8 @@ bash scripts/test-tier.sh --profile terminal --profile control
 bash scripts/test-tier.sh l3
 ```
 
-Implementation allocation belongs to PRD 33: one planned `test-plan.py` under `scripts/`,
-planner/executor, the compatible tier wrapper, canonical metadata-producing
+Implementation allocation belongs to PRD 33: the planned `test-plan.py`
+planner/executor under `scripts/`, the compatible tier wrapper, canonical metadata-producing
 build entry and internal fixtures reused by real black-box/control callers.
 Milestone 1 introduces inventory and plan-only comparison; milestone 4 adds
 the canonical `test-build` path and composition. Keep compiler/lint command
