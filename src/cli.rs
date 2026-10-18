@@ -465,7 +465,7 @@ path: hover, click targets and focus all resolve exactly as with a real mouse.
   Ctrl+Shift+B       Collapse the tab sidebar to a rail, or expand it again
   Ctrl+Shift+[ / ]   Switch terminal tabs
   Ctrl+Shift+I       Focus the external input area
-  Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper)
+  Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper / Dark)
   Ctrl+Shift+,       Open or close the settings panel
   Ctrl+Shift+G       Toggle the grid crosshair
   Ctrl+Shift+H       Open or close the sent-history panel

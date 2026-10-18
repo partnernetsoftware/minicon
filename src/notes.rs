@@ -27,7 +27,8 @@ impl ConApp {
     pub(super) fn scroll_notes(&mut self, delta: isize, visible_rows: usize) {
         let total = self.notes.text.lines().count();
         let max_back = total.saturating_sub(visible_rows.max(1));
-        self.notes_scroll = (self.notes_scroll as isize + delta).clamp(0, max_back as isize) as usize;
+        self.notes_scroll =
+            (self.notes_scroll as isize + delta).clamp(0, max_back as isize) as usize;
     }
 
     pub(super) fn focus_notes(&mut self, window: &PixelWindow) {
@@ -115,7 +116,8 @@ impl ConApp {
                     let _ = clipboard_status::set_text(text);
                 }
             }
-            keymap::Action::Cut => {                if let Some(text) = composer::cut(editor) {
+            keymap::Action::Cut => {
+                if let Some(text) = composer::cut(editor) {
                     let _ = clipboard_status::set_text(&text);
                 }
             }
@@ -233,9 +235,8 @@ impl ConApp {
             .history_panel(scale);
         let font_size = scaled_host_ui_font(
             HOST_UI_TAB_SIZE_PX,
-            self.active_session().map_or(12.0, |session| {
-                session.font_size_logical
-            }),
+            self.active_session()
+                .map_or(12.0, |session| session.font_size_logical),
             scale,
         );
         let cell = font::cell_metrics(font_size);
@@ -247,19 +248,19 @@ impl ConApp {
         let total = self.notes.text.lines().count();
         let max_back = total.saturating_sub(layout.notes_visible_rows);
         let skip = self.notes_scroll.min(max_back);
-        let row = line.saturating_sub(skip).min(layout.notes_visible_rows.saturating_sub(1));
+        let row = line
+            .saturating_sub(skip)
+            .min(layout.notes_visible_rows.saturating_sub(1));
         let x = f64::from(layout.notes.text_x.saturating_add(cell.width / 2)) / scale;
         let y = f64::from(
-            layout
-                .notes
-                .text_y
-                .saturating_add(u32::try_from(row).unwrap_or(u32::MAX).saturating_mul(cell.height)),
+            layout.notes.text_y.saturating_add(
+                u32::try_from(row)
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(cell.height),
+            ),
         ) / scale;
         let _ = window.set_ime_cursor_area(minicon_platform::window_host::LogicalRect::new(
-            x,
-            y,
-            2.0,
-            20.0,
+            x, y, 2.0, 20.0,
         ));
         Ok(())
     }

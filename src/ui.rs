@@ -1100,8 +1100,8 @@ pub struct SettingsLayout {
     pub font_down: Rect,
     pub font_reset: Rect,
     pub font_up: Rect,
-    /// Theme swatches: Neutral, Docs, Paper (in order).
-    pub theme: [Rect; 3],
+    /// Theme swatches: Neutral, Docs, Paper, Dark (in order).
+    pub theme: [Rect; 4],
     /// Where the shortcut lines begin (the reused help text).
     pub shortcuts_y: u32,
     pub shortcut_line_height: u32,
@@ -1121,7 +1121,7 @@ pub struct SettingsLayout {
 }
 
 /// Where a pointer landed inside the settings panel. Theme is an index (0=Neutral
-/// 1=Docs 2=Paper) so this module stays free of the host-UI theme type.
+/// 1=Docs 2=Paper 3=Dark) so this module stays free of the host-UI theme type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsHit {
     Outside,
@@ -1182,7 +1182,13 @@ impl Layout {
             .saturating_add(row_h)
             .saturating_add(gap)
             .saturating_add(label_h);
-        let theme = [cell(0, theme_row), cell(1, theme_row), cell(2, theme_row)];
+        let theme_w = inner_w.saturating_sub(cell_gap.saturating_mul(3)) / 4;
+        let theme = std::array::from_fn(|index| Rect {
+            x: inner_x.saturating_add((theme_w + cell_gap) * index as u32),
+            y: theme_row,
+            width: theme_w,
+            height: row_h,
+        });
 
         // The Updates section comes before the shortcut list: a short window
         // truncates the help text, which `--help` also carries, rather than
@@ -1282,8 +1288,11 @@ impl Layout {
         let notes_title_h = dip(20.0, scale);
         let notes_title_y = reserved_top.saturating_add(dip(4.0, scale));
         let notes_text_y = notes_title_y.saturating_add(notes_title_h);
-        let panel_bottom =
-            self.panel.y.saturating_add(self.panel.height).saturating_sub(pad);
+        let panel_bottom = self
+            .panel
+            .y
+            .saturating_add(self.panel.height)
+            .saturating_sub(pad);
         let notes_text_h = panel_bottom.saturating_sub(notes_text_y);
         let notes_area = Rect {
             x: self.panel.x.saturating_add(pad / 2),
@@ -2223,8 +2232,8 @@ mod tests {
             SettingsHit::FontUp
         );
         assert_eq!(
-            settings_hit(layout, s.theme[2].x + 1, s.theme[2].y + 1, 1.0),
-            SettingsHit::Theme(2)
+            settings_hit(layout, s.theme[3].x + 1, s.theme[3].y + 1, 1.0),
+            SettingsHit::Theme(3)
         );
         // A point in the header above the panel is Outside the panel.
         assert_eq!(

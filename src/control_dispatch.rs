@@ -232,7 +232,8 @@ impl ConApp {
                     for (key, ctrl, alt, shift) in parsed {
                         let event =
                             PixelWindowEvent::Keyboard(injected_key_event(key, ctrl, alt, shift));
-                        self.event(window, event).map_err(|error| error.to_string())?;
+                        self.event(window, event)
+                            .map_err(|error| error.to_string())?;
                     }
                     Ok(())
                 })();
@@ -258,9 +259,7 @@ impl ConApp {
                     && self.rename.is_none()
                     && !self.composer.focused
                 {
-                    let session = self
-                        .active_session()
-                        .map_err(|error| error.to_string())?;
+                    let session = self.active_session().map_err(|error| error.to_string())?;
                     session.ensure_pty_input_open()?;
                 }
                 // Same single-routing-authority rule as `SendUiKeys` above:
@@ -268,7 +267,8 @@ impl ConApp {
                 // rename or focused composer claims it exactly as it would a
                 // physical IME delivery.
                 let delivered = PixelWindowEvent::Ime(event);
-                self.event(window, delivered).map_err(|error| error.to_string())?;
+                self.event(window, delivered)
+                    .map_err(|error| error.to_string())?;
                 self.request_dirty_redraw(window);
                 // The reply's `route` names the surface that owns IME input
                 // after delivery — the contract tests pin `terminal` and
@@ -344,7 +344,8 @@ impl ConApp {
                 };
                 let count = events.len();
                 for event in events {
-                    self.event(window, event).map_err(|error| error.to_string())?;
+                    self.event(window, event)
+                        .map_err(|error| error.to_string())?;
                 }
                 self.request_dirty_redraw(window);
                 Ok(single_field_json("injected_events", count.into()))

@@ -1,4 +1,8 @@
-//! Host-neutral interaction and rendering primitives shared by AgenTerm UIs.
+//! Host-neutral UI mechanisms for MiniCon and embedding products.
+//!
+//! Geometry and retained rendering state share one contract across hosts.
+//! Pixel kernels may specialize internally by ISA; native windows and product
+//! routing stay outside this crate. Ownership: `prd/PRD_02_28_shared_core.md`.
 
 pub mod damage;
 pub mod glyph_cache;

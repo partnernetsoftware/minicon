@@ -78,6 +78,7 @@ case "$tier" in
   l1)
     run_lib_units
     for suite in "${L1_SUITES[@]}"; do run_suite "$suite"; done
+    bash ./scripts/check-reuse.sh
     echo "l1 done: unit + alignment contract"
     ;;
   l2)
@@ -87,6 +88,7 @@ case "$tier" in
   l3|all)
     cargo clippy --all-targets -- -D warnings
     run_lib_units
+    bash ./scripts/check-reuse.sh
     for suite in "${L1_SUITES[@]}" "${L2_SUITES[@]}"; do run_suite "$suite"; done
     run_suite minicon_blackbox
     echo "l3 done: full release-gate pyramid"

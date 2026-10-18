@@ -9,7 +9,7 @@ state and executable naming stay in the embedding application.
 
 Ownership: the boundary, its history and the rules that decide what belongs in
 this crate are owned by [`prd/PRD_02_28_shared_core.md`](../../prd/PRD_02_28_shared_core.md)
-("Stage 3" records how the crate moved here on 2026-10-11). Prose older than
+("Consolidation frontier" links the ownership move on 2026-10-11). Prose older than
 2026-10-10 that says `agenterm-platform` / `agenterm-ui-core` names this same
 code under its former name and repository.
 
@@ -40,12 +40,15 @@ minicon-platform = {
 
 Use an immutable full commit SHA in production. Advance the revision
 deliberately when adopting newer capabilities.
+When directly depending on sibling `minicon-core` or `minicon-ui-core`, use
+the same Git URL and revision for all three so shared public types resolve to
+one crate identity. Consumer/fork checks are owned in the reuse PRD above.
 
 
 ## Features
 
-The default feature set is empty. The contract/status surface therefore adds no
-third-party dependency. Native dependency subfeatures are forwarded by the
+The default feature set is empty; this does not mean the crate has no normal
+dependencies. Consult `Cargo.toml` for the current graph. Native dependency subfeatures are forwarded by the
 owning capability; enabling `process` or `filesystem` does not enable UI, GDI,
 clipboard, IPC, or screenshot modules.
 

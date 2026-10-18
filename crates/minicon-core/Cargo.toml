@@ -3,23 +3,28 @@ name = "minicon-core"
 version = "0.1.18"
 edition = "2024"
 rust-version = "1.97"
-description = "Host-neutral MiniCon logic: multiline composer editing and a bounded JSON codec"
+description = "Host-neutral editing, input, tree, numeric and codec rules shared by MiniCon consumers"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/partnernetsoftware/minicon"
 
 [lib]
 path = "src/lib.rs"
 
-# Deliberately no platform, OS, window, or terminal-backend dependency, and no
-# `cfg` on architecture or operating system anywhere in the crate. That is the
-# property that makes this consumable from another product without dragging a
-# platform layer along, and it is enforced by a test rather than by intent.
+[features]
+# Preserve every existing export for default consumers. Geometry/native users
+# can disable defaults to reuse tree/numeric without editor or codec dependencies.
+default = ["composer", "json", "keymap"]
+composer = ["dep:unicode-width"]
+json = ["dep:itoa"]
+keymap = ["composer"]
+
 [dependencies]
-itoa = "1"
-unicode-width = "0.2"
+itoa = { version = "1", optional = true }
+unicode-width = { version = "0.2", optional = true }
 
 # Oracle only. The codec exists because `serde_json` is too large for this
 # product's budget, so the test compares against it rather than shipping it —
 # a dev-dependency cannot reach the production graph.
 [dev-dependencies]
 serde_json = "1"
+syn = { version = "2", features = ["full", "visit"] }

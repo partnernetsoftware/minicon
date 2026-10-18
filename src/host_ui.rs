@@ -302,12 +302,7 @@ pub(crate) fn paint_settings_panel(
     option(surface, s.font_up, "+", false);
     // Theme (each swatch shows that theme's own canvas + accent stripe)
     section_label(surface, s.theme[0], strings.settings_theme);
-    let choices = [
-        theme::ThemeChoice::Neutral,
-        theme::ThemeChoice::Docs,
-        theme::ThemeChoice::Paper,
-    ];
-    for (rect, choice) in s.theme.iter().zip(choices) {
+    for (rect, choice) in s.theme.iter().zip(theme::ThemeChoice::ALL) {
         let pal = theme::Theme::for_choice(choice);
         surface.fill_rect(
             rect.x,
@@ -323,6 +318,15 @@ pub(crate) fn paint_settings_panel(
             rect.width,
             dip(5.0),
             pal.accent.to_xrgb(),
+        );
+        paint_host_ui_text(
+            surface,
+            rect.x.saturating_add(dip(4.0)),
+            text_dy(*rect).saturating_sub(dip(2.0)),
+            choice.label(ui_language),
+            pal.text,
+            font_size_px,
+            rect.width.saturating_sub(dip(8.0)),
         );
         let border = if ui_theme == choice {
             theme.accent

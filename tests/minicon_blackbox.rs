@@ -1539,24 +1539,22 @@ fn key_command_moves_the_cursor_through_the_real_forward_key_path() {
     // cooked line editor must move exactly two cells.
     let _guard = gui_test_guard();
     let dir = scratch_dir("key-wiring");
-    let script = write_journey(
-        &dir,
-        r#"[
-            {"text": "ABCDE"},
-            {"wait_ms": 400},
-            {"key": "ArrowLeft"},
-            {"key": "ArrowLeft"},
-            {"wait_ms": 400}
-        ]"#,
-    );
+    let script = write_journey(&dir, "[]");
     let args = interactive_shell_args(&script);
     let mut session = ConSession::spawn(&dir, &args);
+    session.wait_for_ui_snapshot(Duration::from_secs(10), |_| true);
+    session.control_json(&["send-text", "ABCDE"]);
     let first = session.wait_for(Duration::from_secs(10), |snapshot| {
         ConSession::screen_text(snapshot).contains("ABCDE")
             && snapshot["cursor"]["col"].as_u64().unwrap_or(0) >= 5
     });
     let col_after_typing = first["cursor"]["col"].as_u64().expect("cursor.col");
 
+    // Observe the starting column before issuing either key. A timed journey
+    // can finish both moves before the observer samples "ABCDE", turning the
+    // final column into its baseline and waiting forever for two extra moves.
+    session.control_json(&["send-keys", "ArrowLeft"]);
+    session.control_json(&["send-keys", "ArrowLeft"]);
     let second = session.wait_for(Duration::from_secs(10), |snapshot| {
         snapshot["cursor"]["col"].as_u64() == Some(col_after_typing.saturating_sub(2))
     });
@@ -1810,35 +1808,52 @@ fn controlled_wheel_moves_the_real_scrollback_offset_up_then_down() {
     // what proves `notches`' sign is actually wired through, not just that
     // *a* wheel command moves the offset off zero once.
     let dir = scratch_dir("wheel-scroll");
-    let scroll_command = if cfg!(windows) {
-        "for /l %i in (1,1,120) do @echo SCROLL_LINE_%i"
-    } else {
-        "i=1; while [ $i -le 120 ]; do echo SCROLL_LINE_$i; i=$((i+1)); done"
-    };
-    let script = write_journey(
-        &dir,
-        &format!(
-            r#"[
-            {{"text": {} }},
-            {{"wait_text": "SCROLL_LINE_120", "timeout_ms": 30000}},
-            {{"wait_ms": 300}},
-            {{"wheel": {{"row": 0, "col": 0, "notches": 5}}}},
-            {{"wait_ms": 200}},
-            {{"wheel": {{"row": 0, "col": 0, "notches": -2}}}},
-            {{"wait_ms": 200}}
-        ]"#,
-            serde_json::to_string(&format!("{scroll_command}\r")).unwrap()
-        ),
-    );
+    let script = write_journey(&dir, "[]");
     let args = interactive_shell_args(&script);
     let mut session = ConSession::spawn(&dir, &args);
-    // wait_ms in the script paces the wheel commands, not this poll — but the
-    // wheel commands only move the offset meaningfully once the loop has
-    // actually pushed 200 lines into scrollback, so this confirms that
-    // happened before trusting the scroll assertions below.
-    session.wait_for(Duration::from_secs(10), |snapshot| {
-        ConSession::screen_text(snapshot).contains("SCROLL_LINE_120")
-    });
+    session.wait_for_ui_snapshot(Duration::from_secs(10), |_| true);
+
+    // A single output burst can be sampled as only the final console frame
+    // on Windows. Observe each child-produced marker before sending another
+    // line, then prove that at least five real scrollback rows exist. The
+    // marker is expanded by the shell, so echoed command text cannot satisfy
+    // the wait. The wheel contract remains exactly +5 followed by -2.
+    let mut ready = false;
+    for index in 1..=120 {
+        let command = if cfg!(windows) {
+            format!("for /l %i in ({index},1,{index}) do @echo WHEEL_READY_%i\r")
+        } else {
+            format!("i={index}; echo WHEEL_READY_$i\r")
+        };
+        invoke_control(&session.endpoint, &["send-text".to_owned(), command])
+            .expect("seed scrollback through the real child");
+        let marker = format!("WHEEL_READY_{index}");
+        let snapshot = session.wait_for(Duration::from_secs(10), |snapshot| {
+            ConSession::screen_text(snapshot).contains(&marker)
+        });
+        if snapshot["max_scrollback"].as_u64().unwrap_or(0) >= 5 {
+            ready = true;
+            break;
+        }
+    }
+    assert!(
+        ready,
+        "the wheel fixture must produce at least five real history rows"
+    );
+    invoke_control(
+        &session.endpoint,
+        &[
+            "send-wheel",
+            "--column",
+            "0",
+            "--row",
+            "0",
+            "--notches",
+            "5",
+        ]
+        .map(str::to_owned),
+    )
+    .expect("wheel up through the public input path");
     let scrolled_up = session.wait_for(Duration::from_secs(10), |snapshot| {
         snapshot["scroll_offset"].as_u64().unwrap_or(0) > 0
     });
@@ -1848,6 +1863,20 @@ fn controlled_wheel_moves_the_real_scrollback_offset_up_then_down() {
         "5 wheel-up notches must move exactly 5 lines: {scrolled_up}"
     );
 
+    invoke_control(
+        &session.endpoint,
+        &[
+            "send-wheel",
+            "--column",
+            "0",
+            "--row",
+            "0",
+            "--notches",
+            "-2",
+        ]
+        .map(str::to_owned),
+    )
+    .expect("wheel down through the public input path");
     let scrolled_down = session.wait_for(Duration::from_secs(10), |snapshot| {
         snapshot["scroll_offset"].as_u64() == Some(3)
     });
@@ -2255,8 +2284,7 @@ fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
         child_widths(snapshot).iter().any(|&w| w >= 100)
     });
     assert_eq!(
-        wide["backend_resize_failures"],
-        0,
+        wide["backend_resize_failures"], 0,
         "PTY refused a resize during the journey: {wide}"
     );
     assert!(
@@ -2266,7 +2294,6 @@ fn window_resize_reaches_the_hosted_child_as_new_pty_geometry() {
     let _ = session.child.kill();
     drop(narrow);
 }
-
 
 /// Source of the child-process probe for
 /// [`window_resize_delivers_a_console_buffer_size_event_to_the_child`]:
@@ -3031,7 +3058,6 @@ fn the_history_panel_toggle_reinsets_the_terminal_and_closes_back() {
     let _ = session.child.kill();
 }
 
-
 /// The notes scratchpad (#5, 0.2.13): clicking the panel's notes section
 /// focuses a second editable field, typed text renders, Escape blurs and
 /// saves, and the text survives a process restart through `minicon.json`.
@@ -3096,7 +3122,10 @@ fn the_notes_scratchpad_edits_renders_and_persists() {
     // note behind (observed live: a rerun seeded "HI" and the typed pair
     // became "HIHI"). Clear the field first so the journey starts from a
     // known empty state regardless of what an earlier run persisted.
-    if focused["notes_text"].as_str().is_some_and(|text| !text.is_empty()) {
+    if focused["notes_text"]
+        .as_str()
+        .is_some_and(|text| !text.is_empty())
+    {
         session.control_json(&["send-ui-keys", "Ctrl+A"]);
         session.control_json(&["send-ui-keys", "Backspace"]);
         let cleared = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
@@ -3179,7 +3208,10 @@ fn the_notes_scratchpad_edits_renders_and_persists() {
     let blurred = session.wait_for_ui_snapshot(Duration::from_secs(5), |snapshot| {
         snapshot["notes_focused"] == false
     });
-    assert_eq!(blurred["notes_text"], "HI", "blur keeps the text: {blurred}");
+    assert_eq!(
+        blurred["notes_text"], "HI",
+        "blur keeps the text: {blurred}"
+    );
     let _ = session.child.kill();
     let _ = session.child.wait();
 
@@ -3315,7 +3347,12 @@ fn the_rename_editor_renders_typed_text_and_the_caret() {
         let mut bytes = vec![0; reader.output_buffer_size()];
         let info = reader.next_frame(&mut bytes).expect("decode screenshot");
         bytes.truncate(info.buffer_size());
-        (info.width as usize, info.height as usize, bytes, info.color_type)
+        (
+            info.width as usize,
+            info.height as usize,
+            bytes,
+            info.color_type,
+        )
     }
     let (width, height, before, color) = decode(&before_path);
     let (after_width, after_height, after, after_color) = decode(&after_path);

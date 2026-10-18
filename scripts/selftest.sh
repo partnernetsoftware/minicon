@@ -18,6 +18,18 @@ set -euo pipefail
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
+python_bin=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    python_bin="$candidate"
+    break
+  fi
+done
+if [[ -z "$python_bin" ]]; then
+  echo "selftest: Python is required" >&2
+  exit 127
+fi
+
 WITH_COURT=false
 case "${1:-}" in
   "") ;;
@@ -47,7 +59,7 @@ run_one() {
   printf '[selftest] %-52s ' "$script"
   local output
   case "$script" in
-    *.py) output="$(python3 "$script" 2>&1)" || { printf 'FAIL\n%s\n' "$output" >&2; return 1; } ;;
+    *.py) output="$("$python_bin" "$script" 2>&1)" || { printf 'FAIL\n%s\n' "$output" >&2; return 1; } ;;
     *) output="$(bash "$script" 2>&1)" || { printf 'FAIL\n%s\n' "$output" >&2; return 1; } ;;
   esac
   printf 'PASS\n'

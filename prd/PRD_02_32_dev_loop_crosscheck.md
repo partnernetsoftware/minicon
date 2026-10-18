@@ -16,6 +16,8 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 ├── Non-goal: never a release-evidence path, never publishes, never needs write
 ├── Mechanism: GitHub-hosted native per-cell build + test on request
 │   ├── inputs: ref, cells, test_filter
+│   ├── core and UI library tests, including each native ISA kernel
+│   ├── isolated minimal consumer; no workspace feature leakage
 │   └── permissions: contents: read only
 ├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
 └── Validation record (real hosted runners, run 36313213803)
@@ -28,6 +30,7 @@ flowchart LR
     W --> C2["lnx-aarch64 runner"]
     W --> C3["win / osx cells<br/>when requested"]
     C1 --> L["real per-cell logs"]
+    C2 & C3 --> L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -74,6 +77,14 @@ test binaries live hashed under `target/<triple>/debug/deps/`; a workflow
 that stats a guessed path and treats "not found" as "nothing to run" reports
 a false green with zero suites executed. This is not hypothetical: it is
 exactly what happened and was caught below.
+
+From v0.2.15 preparation, each cell also runs the UI-core library suite and
+`scripts/check-reuse.sh`. The latter sets `CARGO_BUILD_TARGET` to the matrix
+triple, checks minimal core/UI dependency edges in an isolated workspace and
+executes the compatibility APIs with dead-code/unused-result warnings denied.
+It is not filtered by `test_filter`: feature leakage must remain visible even
+when a developer selects one Rust test. Its result is included in the same
+per-cell structured receipt; it does not substitute for release artifacts.
 
 Failure or a hang (`cancelled`, not just `failure` — the same gap fixed in
 `local-artifact-probe.yml`, see `prd/PRD_02_27_con_delivery.md`) uploads
@@ -128,10 +139,10 @@ that actually compiles the code:
   revision of `plan/archive/plan-v0.2.8.md` mis-attributed this failure to a sandbox
   `reg.exe` blacklist; that cause was wrong and is withdrawn.
 
-### One black-box gate that holds on a POSIX PTY, not on this host
+### Observed-state preconditions for black-box gates
 
 `minicon_blackbox::controlled_wheel_moves_the_real_scrollback_offset_up_then_down`
-fails on this Windows host and has failed on it for at least three releases:
+historically failed on this Windows host for at least three releases:
 `plan/plan-repo-hygiene.md` records it against the pristine tree, and
 `prd/archive/v0.2.6-release-history.md` lists it as that release's one
 pre-existing local-gate failure. Re-checked 2026-10-14 by A/B — it fails both at
@@ -147,11 +158,24 @@ rows of scrollback at that moment even though the configured capacity
 it always read 4000 and so hid a wheel that had nothing to move.
 
 Why the live grid retains so little is **not established**. The leading
-hypothesis is that ConPTY repaints with absolute cursor addressing instead of
+hypothesis was that ConPTY repaints with absolute cursor addressing instead of
 emitting the linear newline stream a POSIX PTY produces, so far fewer rows pass
 through `Grid::scroll_up` and reach the scrollback — a hypothesis, not a
-finding. The test is left as-is: it is green on the Linux cells, where a real
-POSIX PTY drives it.
+finding. In v0.2.15 preparation the fixture now observes individual
+shell-expanded output markers until the snapshot proves at least five real
+history rows exist. Only then does it send wheel input and assert the unchanged
+5→3 offsets. This removes the unsupported burst-output precondition rather
+than weakening the wheel assertion. Qualification and negative-control results
+belong to `plan/plan-v0.2.15.md` while the version is in progress.
+
+The keyboard forwarding journey has the same observation-order requirement:
+capture the cursor after typing `ABCDE` before sending either ArrowLeft. A
+timed background journey could finish both moves before the first snapshot,
+mistaking the final column for the starting column and asking for two further
+moves. The fixture now sends both keys through the public control command only
+after observing that baseline, and still requires exactly two columns of motion.
+A one-key negative control must fail that assertion. This is a fixture repair,
+independent of the post-release test-orchestration review.
 
 ### Gates that compile a path but cannot exercise it
 A compiled path is not a working path. The same 0.2.7 release produced the

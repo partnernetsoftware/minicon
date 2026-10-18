@@ -2612,6 +2612,16 @@ discipline.
 
 ### Driving the chain
 
+Windows build-state cleanup must query owner liveness without signaling the
+owner. Python's [`os.kill` Windows contract](https://docs.python.org/3/library/os.html#os.kill)
+terminates for signal values other than the console-control events, including
+zero. `scripts/cleanup-build-state.py` therefore uses a SYNCHRONIZE-only process
+handle and a zero-timeout wait on Windows; query failures conservatively retain
+the owner's files. POSIX retains its signal-zero probe. The cleanup self-test
+must prove that a probed child still responds and returns its own nonzero exit
+code, rather than trusting a successful zero termination as a pass. v0.2.15
+qualification and the old-probe negative control are tracked in its plan.
+
 `scripts/release.sh <version>` drives the whole tree above end to end — the
 version bump, `minicon-com`, both signing courts, the Candidate, the Defender
 scan, reputation, the dry run and (only after a typed confirmation) the

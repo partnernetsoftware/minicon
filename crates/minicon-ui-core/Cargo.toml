@@ -3,7 +3,7 @@ name = "minicon-ui-core"
 version = "0.1.19"
 edition = "2024"
 rust-version = "1.97"
-description = "Host-neutral MiniCon interaction geometry"
+description = "Host-neutral UI geometry, damage, caching and pixel primitives"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/partnernetsoftware/minicon"
 
@@ -15,4 +15,5 @@ default = []
 terminal-selection = ["dep:vt100"]
 
 [dependencies]
+minicon-core = { path = "../minicon-core", default-features = false }
 vt100 = { version = "0.16", optional = true }

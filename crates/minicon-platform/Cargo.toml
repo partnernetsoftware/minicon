@@ -623,6 +623,7 @@ objc2-foundation = { version = "0.2.2", optional = true }
 security-framework-sys = { version = "2.17", optional = true }
 
 [dependencies]
+minicon-core = { path = "../minicon-core", default-features = false }
 memmap2 = { version = "0.9", optional = true }
 # Width oracle for the pre-ConPTY console agent's row re-encoding. Must match the
 # vendored vt100 parser, which uses unicode-width to advance its cursor, so wide

@@ -34,6 +34,18 @@ impl Payload {
     }
 }
 
+/// Product selection for the native paste-review editor; the shared core
+/// accepts the newline contract explicitly instead of choosing a host.
+pub fn review_display_text(text: &str) -> String {
+    use minicon_core::composer::{NewlineForm, paste_review_display_text_with_newline};
+    let newline = if cfg!(windows) {
+        NewlineForm::CrLf
+    } else {
+        NewlineForm::Lf
+    };
+    paste_review_display_text_with_newline(text, newline)
+}
+
 /// The paste payload, for a surface that reports failures (the terminal).
 ///
 /// The clipboard's text when it holds non-empty text (so a copy that carries

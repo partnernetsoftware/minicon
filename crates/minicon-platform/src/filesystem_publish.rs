@@ -168,12 +168,14 @@ pub fn publish_file(
 /// decides by extension and needs nothing. The single seam the product's
 /// updater calls, so no `std::os` import lives above this crate.
 pub fn copy_executable_mode(staged: &Path, destination: &Path) -> Result<(), FilePublishError> {
-    crate::selected::filesystem_publish::copy_executable_mode(staged, destination).map_err(|error| {
-        FilePublishError::new(
-            FilePublishErrorKind::Install,
-            format!("could not make the staged copy executable: {error}"),
-        )
-    })
+    crate::selected::filesystem_publish::copy_executable_mode(staged, destination).map_err(
+        |error| {
+            FilePublishError::new(
+                FilePublishErrorKind::Install,
+                format!("could not make the staged copy executable: {error}"),
+            )
+        },
+    )
 }
 
 /// Creates the `install-cli` symlink: a plain link into a user-named prefix.
@@ -183,7 +185,10 @@ pub fn install_cli_symlink(target: &Path, link: &Path) -> Result<(), FilePublish
     crate::selected::filesystem_publish::install_cli_symlink(target, link).map_err(|error| {
         FilePublishError::new(
             FilePublishErrorKind::Install,
-            format!("could not create {link_display}: {error}", link_display = link.display()),
+            format!(
+                "could not create {link_display}: {error}",
+                link_display = link.display()
+            ),
         )
     })
 }

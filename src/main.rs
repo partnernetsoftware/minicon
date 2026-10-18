@@ -1983,6 +1983,7 @@ impl ConApp {
         if text.eq_ignore_ascii_case("p") {
             self.ui_theme = self.ui_theme.next();
             self.apply_theme_to_all_sessions();
+            self.persist_config(window);
             self.mark_host_ui_full();
             self.request_dirty_redraw(window);
             return Ok(true);
@@ -2682,7 +2683,7 @@ impl ConApp {
                     // everywhere; delivery re-normalizes to CR. The event loop
                     // keeps running while the review is open; completion arrives
                     // through `try_poll`.
-                    let display = composer::paste_review_display_text(&text);
+                    let display = clipboard_paste::review_display_text(&text);
                     if display.is_empty() {
                         return Err("clipboard text contains no pasteable characters".to_owned());
                     }
@@ -3270,10 +3271,8 @@ impl PixelWindowApplication for ConApp {
                         self.mark_host_ui_full_and_repaint(window);
                     }
                     ui::SettingsHit::Theme(index) => {
-                        let choice = match index {
-                            0 => theme::ThemeChoice::Neutral,
-                            1 => theme::ThemeChoice::Docs,
-                            _ => theme::ThemeChoice::Paper,
+                        let Some(&choice) = theme::ThemeChoice::ALL.get(index) else {
+                            return Ok(PixelWindowDirective::Continue);
                         };
                         if self.ui_theme != choice {
                             self.ui_theme = choice;
@@ -3495,9 +3494,9 @@ impl PixelWindowApplication for ConApp {
             // caller does. The provenance flag is what keeps one routing
             // path honest about that difference without forking the route.
             let session = self.active_session()?;
-            session.ensure_pty_input_open().map_err(|message| {
-                PixelWindowError::failed("con_terminal_exited", message)
-            })?;
+            session
+                .ensure_pty_input_open()
+                .map_err(|message| PixelWindowError::failed("con_terminal_exited", message))?;
         }
         let directive = self.active_session_mut()?.event(window, event)?;
         let requested = self
@@ -4299,7 +4298,7 @@ mod tests {
             "first\nsecond\nthird"
         };
         assert_eq!(
-            composer::paste_review_display_text(clipboard),
+            clipboard_paste::review_display_text(clipboard),
             expected_display
         );
         assert_eq!(
@@ -4307,7 +4306,7 @@ mod tests {
             "first\rsecond\rthird"
         );
         assert_eq!(
-            terminal_input::normalize_terminal_paste(&composer::paste_review_display_text(
+            terminal_input::normalize_terminal_paste(&clipboard_paste::review_display_text(
                 clipboard
             )),
             "first\rsecond\rthird"
@@ -5298,7 +5297,7 @@ mod tests {
             font_size: Some(18.5),
             cols: Some(120),
             rows: Some(40),
-            theme: Some(theme::ThemeChoice::Paper),
+            theme: Some(theme::ThemeChoice::Dark),
             language: Some(ui::UiLanguage::ChineseTraditional),
             notes: Some("scratch\npad".to_owned()),
         };
@@ -5312,7 +5311,7 @@ mod tests {
         assert_eq!(reloaded.font_size, Some(18.5));
         assert_eq!(reloaded.cols, Some(120));
         assert_eq!(reloaded.rows, Some(40));
-        assert_eq!(reloaded.theme, Some(theme::ThemeChoice::Paper));
+        assert_eq!(reloaded.theme, Some(theme::ThemeChoice::Dark));
         assert_eq!(reloaded.language, Some(ui::UiLanguage::ChineseTraditional));
         // Notes ride the same document: newlines survive the JSON round trip
         // verbatim, because a scratchpad's structure is the user's own.

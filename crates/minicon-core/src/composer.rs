@@ -847,6 +847,10 @@ fn normalize_composer_paste(text: &str) -> String {
     normalize_paste_chars(text, NewlineForm::Lf, PASTE_LIMIT_BYTES)
 }
 
+/// Legacy host-sensitive convenience API, retained for existing consumers.
+/// New consumers should use [`paste_review_display_text_with_newline`] and
+/// select their editor's newline form outside the shared rules.
+///
 /// Human-facing terminal paste review, in the newline form the host's native
 /// review control paints multiple rows with. Windows' multiline EDIT paints a
 /// new row only on CRLF; macOS (NSTextView) and Linux controls use LF and would
@@ -859,11 +863,18 @@ pub fn paste_review_display_text(text: &str) -> String {
     } else {
         NewlineForm::Lf
     };
+    paste_review_display_text_with_newline(text, form)
+}
+
+/// Normalize paste review text for an explicitly selected editor contract.
+/// Both forms are available on every host; this rule does not select an OS.
+pub fn paste_review_display_text_with_newline(text: &str, form: NewlineForm) -> String {
     normalize_paste_chars(text, form, usize::MAX)
 }
 
+/// Line separator accepted by the caller's editor or display control.
 #[derive(Clone, Copy)]
-enum NewlineForm {
+pub enum NewlineForm {
     Lf,
     CrLf,
 }
@@ -1746,6 +1757,19 @@ mod tests {
         assert_eq!(composer.text, "a\nb\tc\nd");
         assert_eq!(line_count(&composer.text), 3);
         assert!(!composer.select_all);
+    }
+
+    #[test]
+    fn paste_review_display_accepts_both_newline_contracts_on_every_host() {
+        let input = "中\nb\r\nc\rd\t\u{1b}e";
+        assert_eq!(
+            paste_review_display_text_with_newline(input, NewlineForm::Lf),
+            "中\nb\nc\nd\te"
+        );
+        assert_eq!(
+            paste_review_display_text_with_newline(input, NewlineForm::CrLf),
+            "中\r\nb\r\nc\r\nd\te"
+        );
     }
 
     #[test]

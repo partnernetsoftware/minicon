@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import hashlib
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def receipt(
 def run(root: Path, expected: int, probe: str = "none") -> dict:
     output = root / "aggregate.json"
     completed = subprocess.run([
-        "python3", str(Path(__file__).with_name("aggregate-six-grid-runtime.py")),
+        sys.executable, str(Path(__file__).with_name("aggregate-six-grid-runtime.py")),
         "--receipts", str(root), "--output", str(output), "--bundle-ref", BUNDLE,
         "--source-sha", SOURCE, "--source-tree-sha256", TREE, "--suite", "test",
         "--evidence-probe-cell", probe,

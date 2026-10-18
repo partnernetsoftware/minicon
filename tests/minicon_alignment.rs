@@ -1490,7 +1490,10 @@ fn the_product_layer_never_touches_the_operating_system_directly() {
         // symlinks or set modes on any host to prove the seam works.
         let production = strip_test_modules(&text);
         for (index, line) in production.lines().enumerate() {
-            if line.contains("std::os::") || line.contains("unsafe extern") || line.contains("extern \"system\"") {
+            if line.contains("std::os::")
+                || line.contains("unsafe extern")
+                || line.contains("extern \"system\"")
+            {
                 offenders.insert(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
@@ -1572,10 +1575,7 @@ fn injected_ui_input_rides_the_physical_event_pipeline() {
         .filter_map(|line| {
             let trimmed = line.trim();
             let rest = trimmed.strip_prefix("SendUi")?;
-            let name: String = rest
-                .chars()
-                .take_while(|c| c.is_alphanumeric())
-                .collect();
+            let name: String = rest.chars().take_while(|c| c.is_alphanumeric()).collect();
             (!name.is_empty()).then(|| format!("SendUi{name}"))
         })
         .collect();
@@ -1659,18 +1659,24 @@ fn injected_ui_input_rides_the_physical_event_pipeline() {
     // 4. A funnel that claims `Changed` must have marked its damage region on
     //    the way: the pairing of claim and damage is the whole point of the
     //    funnel boundary.
-    let rename_funnel = rename_source
-        [rename_source.find("fn route_rename_input(").expect("funnel present")
-            ..rename_source.find("fn update_rename_ime_anchor").expect("funnel end")]
+    let rename_funnel = rename_source[rename_source
+        .find("fn route_rename_input(")
+        .expect("funnel present")
+        ..rename_source
+            .find("fn update_rename_ime_anchor")
+            .expect("funnel end")]
         .to_owned();
     assert!(
         rename_funnel.contains("mark_tree_dirty()")
             && rename_funnel.contains("request_dirty_redraw(window)"),
         "the rename funnel must pair its Changed claim with the tree damage mark"
     );
-    let notes_funnel = notes_source
-        [notes_source.find("fn route_notes_input(").expect("funnel present")
-            ..notes_source.find("fn update_notes_ime_anchor").expect("funnel end")]
+    let notes_funnel = notes_source[notes_source
+        .find("fn route_notes_input(")
+        .expect("funnel present")
+        ..notes_source
+            .find("fn update_notes_ime_anchor")
+            .expect("funnel end")]
         .to_owned();
     assert!(
         notes_funnel.contains("mark_host_ui_full()")

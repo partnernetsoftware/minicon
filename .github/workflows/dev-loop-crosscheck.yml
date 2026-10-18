@@ -143,6 +143,13 @@ jobs:
           }
           echo "== minicon-core (lib unit tests) ${{ inputs.test_filter }}"
           run_suite minicon-core cargo test --locked --target "$triple" -p minicon-core -- --test-threads 2 ${{ inputs.test_filter }}
+          echo "== minicon-ui-core (shared types and pixel kernels) ${{ inputs.test_filter }}"
+          run_suite minicon-ui-core cargo test --locked --target "$triple" -p minicon-ui-core --lib -- --test-threads 2 ${{ inputs.test_filter }}
+          # Keep this outside workspace feature unification. An explicit native
+          # target binds the consumer evidence to this matrix cell even if the
+          # runner happens to use a translated host toolchain.
+          echo "== isolated minimal reuse consumer"
+          run_suite minimal-reuse env CARGO_BUILD_TARGET="$triple" bash scripts/check-reuse.sh
           # The alignment suite reads the repository and the built binary, and
           # no other workflow runs it: 0.2.6 shipped with
           # `the_help_and_readme_list_the_same_shortcuts` failing because the

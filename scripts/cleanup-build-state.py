@@ -30,6 +30,32 @@ def env_int(name: str, default: int, minimum: int = 0) -> int:
 
 
 def process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        # os.kill(pid, 0) terminates a Windows process; it is only a POSIX
+        # liveness probe. Query a synchronization handle without an effect.
+        import ctypes
+        from ctypes import wintypes
+
+        if pid > 0xFFFFFFFF:
+            return False
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+        if not handle:
+            # ERROR_INVALID_PARAMETER identifies an absent PID. Access denied
+            # and unknown errors conservatively protect the owner's files.
+            return ctypes.get_last_error() != 87
+        try:
+            return kernel.WaitForSingleObject(handle, 0) != 0  # WAIT_OBJECT_0: exited
+        finally:
+            kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True

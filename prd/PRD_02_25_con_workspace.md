@@ -24,7 +24,23 @@ minicon workspace and input
 ├── Scrollbar and divider
 ├── Selection and clipboard
 ├── Configuration (minicon.json; themes; language; font size)
+│   └── [-] Dark / 深色: winmgr warm charcoal palette; picker + cycle + saved id
+│       invariant: one selection colors all tabs and survives reload
+│       evidence: theme tests, settings hit tests, preference round trip
+│       failure: unknown ids fall back to Neutral; existing default is unchanged
+│       dependency: existing ThemeChoice/config/terminal propagation
+│       non-goal: OS theme detection or changing explicit program colors
 └── Native adoption gate
+```
+
+```mermaid
+flowchart LR
+    Choice["Theme swatch or keyboard cycle"] --> T["ThemeChoice + stable tag"]
+    T --> Host["Host UI palette"]
+    T --> Tabs["All open terminal defaults"]
+    T --> Save["Atomic minicon.json preference"]
+    Save -->|next launch| T
+    Bad["Unknown tag"] --> Default["Neutral fallback"]
 ```
 
 ## Tab and window naming
@@ -228,8 +244,8 @@ header tools, and the composer. It is not the browser, and it is not layout.
 - [v] the settings icon opens a lightweight in-app panel, anchored under the
   header on the sidebar rather than a centered modal. It carries four sections:
   interface language (English / 简 / 繁, the active one filled with the accent),
-  font size (−/100%/+), a theme picker of three swatches (Neutral / Docs Ink /
-  Paper Ink, each showing its own canvas and accent, the active one outlined),
+  font size (−/100%/+), a theme picker of four swatches (Neutral / Docs Ink /
+  Paper Ink / Dark, each showing its own canvas and accent, the active one outlined),
   and the keyboard shortcuts (the former help text). Escape or a click outside
   closes it; the panel is available with zero tabs.
 - [v] the settings panel carries an **Updates** section (0.2.7): the running
@@ -390,15 +406,26 @@ header tools, and the composer. It is not the browser, and it is not layout.
   no clipping/overlap, and no increase in total header/composer height unless
   the old height cannot contain the larger glyph bounds. Merely enlarging the
   terminal cell font, or enlarging empty padding with the label, fails.
-- [v] the theme picker switches three themes at runtime — Neutral
-  Ink (the historical monochrome default), Docs Ink (the website's blue palette)
-  and Paper Ink (light) — from the panel swatches or `Ctrl+Shift+P`. The chosen
+- [v] the theme picker switches four themes at runtime — Neutral
+  Ink (the historical monochrome default), Docs Ink (the website's blue palette),
+  Paper Ink (light), and Dark / 深色 (winmgr's warm charcoal and amber palette) — from the panel swatches or `Ctrl+Shift+P`. The chosen
   theme is reported by `ui-snapshot` as `ui_theme`.
+  Dark implementation evidence (Windows x86_64, 2026-10-18; not a release):
+  `theme::tests` (five tests, including a contrast mutation red→green),
+  `settings_panel` (two layout/hit tests), and
+  `a_saved_choice_is_read_back_by_id_with_the_other_keys_intact` (Dark round trip).
+  The native public-CLI smoke cycled/persisted all four choices, clicked the
+  fourth swatch, reloaded `dark` in a new process, and checked the actual PNG's
+  warm color tokens; receipts/screenshots are in local ignored
+  `target/dark-theme-validation/`. Original user preferences were restored.
+  These receipts do not claim the other five platform/ISA cells.
 - [v] each theme also carries a terminal color scheme (the conventional model:
   default background/foreground, cursor, and the 16 ANSI colors — Windows
   Terminal / Alacritty / iTerm2 all define exactly these), so the terminal body
   recolors with the chrome: Neutral keeps the classic black console, Docs Ink a
   deep-navy console, Paper Ink a light console with a legibility-tuned ANSI set.
+  Dark uses the warm canvas/text/cursor and the existing dark ANSI palette.
+  Its stable configuration and snapshot id is `dark`; the default stays Neutral.
   Indices 16..256 (the 6x6x6 cube and grayscale ramp) stay standard, and a
   program's own explicit color requests are never overridden — the theme sets
   the terminal's *defaults and named colors*, not what an app paints. Colors are
@@ -874,7 +901,8 @@ Concretely:
   `minicon.json` decodes `font_size`/`cols`/`rows` plus two id-valued keys —
   `theme` (a `ThemeChoice` tag) and `language` (a `UiLanguage` tag) — and the
   product writes the file back for the first time when the panel's theme,
-  language or font controls change. The write is the platform's atomic
+  language or font controls change (the keyboard theme cycle uses the same
+  writer). The write is the platform's atomic
   sibling-and-rename (`minicon_platform::filesystem_publish::write_file_atomic`,
   the same primitive the update path uses), so a failure at any point leaves the
   previous file exactly as it was; the document is built from the values in

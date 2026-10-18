@@ -177,6 +177,9 @@ current shape exists, not just what it is.
 
 ## Change and documentation rules
 
+- Before adding scope or moving a module, consult the ownership/reuse map in
+  `prd/PRD_02_28_shared_core.md` and follow its maintenance rule. Keep reuse
+  entry points, internal OS/ISA differences and evidence scope current there.
 - Put cross-platform mechanisms in the shared platform crates and product
   meaning in MiniCon-owned code. Do not make MiniCon depend on AgenTerm product
   state or evidence.

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -24,6 +26,26 @@ def touch_tree(path: Path, value: bytes = b"x") -> None:
 
 def main() -> None:
     source = Path(__file__).with_name("cleanup-build-state.py")
+    process_alive = runpy.run_path(str(source))["process_alive"]
+    # A successful probe must leave its subject alive. Waiting for the child's
+    # reply and explicit exit code catches Windows os.kill(pid, 0), which can
+    # terminate the subject with a misleadingly successful zero exit status.
+    victim = subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdin.buffer.read(); print('alive'); sys.exit(37)"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        assert process_alive(victim.pid)
+        output, errors = victim.communicate(b"probe", timeout=10)
+        assert victim.returncode == 37 and output.strip() == b"alive", (victim.returncode, output, errors)
+        assert not process_alive(victim.pid)
+        assert not process_alive(0)
+    finally:
+        if victim.poll() is None:
+            victim.kill()
+            victim.wait(timeout=10)
     with tempfile.TemporaryDirectory(prefix="minicon-cleanup-") as temporary:
         repo = Path(temporary)
         (repo / ".git").mkdir()
@@ -79,7 +101,7 @@ def main() -> None:
             "MINICON_CLOUD_CACHE_KEEP": "1",
             "MINICON_CLOUD_CACHE_TTL_HOURS": "1",
         }
-        command = ["python3", str(scripts / source.name), "--scope", "all", "--now-epoch", str(NOW)]
+        command = [sys.executable, str(scripts / source.name), "--scope", "all", "--now-epoch", str(NOW)]
         dry = subprocess.run(command, cwd=repo, env=env, check=True, text=True, capture_output=True)
         assert "WOULD_REMOVE" in dry.stdout and (builds / stale_id).exists()
         assert stale_sibling.exists()

@@ -823,8 +823,7 @@ impl ConTerminal {
         self.resize_nudge_geometry = Some((cols, rows));
     }
 
-
-/// Fires the due resize nudge, if one is armed and due. Same wake
+    /// Fires the due resize nudge, if one is armed and due. Same wake
     /// discipline as the debounce: when armed but not yet due, the caller
     /// folds a wake so the loop returns in time to fire it.
     /// Test seam for [`Self::fire_resize_nudge_if_due`]: arms the nudge for

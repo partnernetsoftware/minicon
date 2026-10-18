@@ -1,9 +1,7 @@
 //! Host-UI color themes.
 //!
-//! The theme paints only MiniCon's own shell — sidebar, tab column, composer,
-//! borders, and status color. Terminal body text keeps the xterm 256 palette in
-//! [`crate::palette`] regardless of theme, so a program's output never changes
-//! meaning when the user switches how the frame looks.
+//! Themes color MiniCon's shell and terminal defaults. Explicit program colors
+//! retain their meaning; the xterm cube and grayscale ramp stay unchanged.
 
 use crate::palette::Rgb;
 
@@ -18,9 +16,32 @@ pub enum ThemeChoice {
     Docs,
     /// Paper Ink — a light palette in the same hues as Docs Ink.
     Paper,
+    /// Dark / 深色 — warm charcoal and amber, shared with minicon-winmgr.
+    Dark,
 }
 
 impl ThemeChoice {
+    /// Picker order, also used by the keyboard cycle. Existing indices stay stable.
+    pub const ALL: [Self; 4] = [Self::Neutral, Self::Docs, Self::Paper, Self::Dark];
+
+    /// Short swatch labels, sized for the settings panel's compact row.
+    #[must_use]
+    pub const fn label(self, language: crate::ui::UiLanguage) -> &'static str {
+        use crate::ui::UiLanguage::{ChineseSimplified, ChineseTraditional, English};
+        match (self, language) {
+            (Self::Neutral, English) => "Ink",
+            (Self::Docs, English) => "Docs",
+            (Self::Paper, English) => "Paper",
+            (Self::Dark, English) => "Dark",
+            (Self::Neutral, ChineseSimplified | ChineseTraditional) => "中性",
+            (Self::Docs, ChineseSimplified) => "文档",
+            (Self::Docs, ChineseTraditional) => "文件",
+            (Self::Paper, ChineseSimplified) => "纸色",
+            (Self::Paper, ChineseTraditional) => "紙色",
+            (Self::Dark, ChineseSimplified | ChineseTraditional) => "深色",
+        }
+    }
+
     /// Stable identifier for the control surface, so automation can read and
     /// assert the theme without matching a display label.
     #[must_use]
@@ -29,17 +50,18 @@ impl ThemeChoice {
             Self::Neutral => "neutral",
             Self::Docs => "docs",
             Self::Paper => "paper",
+            Self::Dark => "dark",
         }
     }
 
-    /// The next theme in the cycle, for the keyboard toggle that stands in for
-    /// the settings panel's swatch row until that panel exists.
+    /// The next theme in the keyboard cycle, in the same order as the picker.
     #[must_use]
     pub const fn next(self) -> Self {
         match self {
             Self::Neutral => Self::Docs,
             Self::Docs => Self::Paper,
-            Self::Paper => Self::Neutral,
+            Self::Paper => Self::Dark,
+            Self::Dark => Self::Neutral,
         }
     }
 
@@ -58,13 +80,14 @@ impl ThemeChoice {
             "neutral" => Some(Self::Neutral),
             "docs" => Some(Self::Docs),
             "paper" => Some(Self::Paper),
+            "dark" => Some(Self::Dark),
             _ => None,
         }
     }
 }
 
 /// Concrete host-UI colors for one theme. Field names are semantic roles, not
-/// palette-specific names, so all three themes fill the same slots.
+/// palette-specific names, so every theme fills the same slots.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Theme {
     /// Sidebar / tab-column background.
@@ -168,6 +191,26 @@ impl Theme {
                     Rgb(0xf0, 0xf6, 0xfc),
                 ],
             },
+            // minicon-winmgr dark-mode RGB tokens, mapped by semantic role.
+            ThemeChoice::Dark => Self {
+                sidebar_bg: Rgb(0x24, 0x21, 0x1e),
+                canvas_bg: Rgb(0x24, 0x21, 0x1e),
+                surface: Rgb(0x40, 0x37, 0x2f),
+                composer_bg: Rgb(0x2f, 0x2a, 0x25),
+                panel_bg: Rgb(0x2f, 0x2a, 0x25),
+                border: Rgb(0xb9, 0xab, 0x9b),
+                branch: Rgb(0xb9, 0xab, 0x9b),
+                text: Rgb(0xf0, 0xe6, 0xd8),
+                muted: Rgb(0xb9, 0xab, 0x9b),
+                accent: Rgb(0xc8, 0x98, 0x64),
+                error: Rgb(0xf2, 0x77, 0x6b),
+                term_bg: Rgb(0x24, 0x21, 0x1e),
+                term_fg: Rgb(0xf0, 0xe6, 0xd8),
+                term_cursor: Rgb(0xc8, 0x98, 0x64),
+                // Reuse the proven dark-terminal ANSI colors; the warm tokens
+                // set defaults without redefining the program's color names.
+                term_ansi: Self::for_choice(ThemeChoice::Docs).term_ansi,
+            },
             // = same hues, light (Turn 2, 2c Paper Ink).
             ThemeChoice::Paper => Self {
                 sidebar_bg: Rgb(0xf3, 0xf5, 0xf7),
@@ -227,11 +270,16 @@ mod tests {
     fn every_choice_has_a_distinct_tag_and_the_cycle_returns_home() {
         let mut seen = std::collections::BTreeSet::new();
         let mut c = ThemeChoice::Neutral;
-        for _ in 0..3 {
+        for expected in ThemeChoice::ALL {
+            assert_eq!(c, expected, "cycle and picker order must agree");
             assert!(seen.insert(c.tag()), "tags must be distinct");
             c = c.next();
         }
-        assert_eq!(c, ThemeChoice::Neutral, "three steps return to the start");
+        assert_eq!(
+            c,
+            ThemeChoice::Neutral,
+            "one full cycle returns to the start"
+        );
     }
 
     /// A stored theme id must name exactly the choice it was written from, and
@@ -241,11 +289,55 @@ mod tests {
     /// binds them.
     #[test]
     fn from_tag_is_the_inverse_of_each_choices_tag() {
-        for choice in [ThemeChoice::Neutral, ThemeChoice::Docs, ThemeChoice::Paper] {
+        for choice in ThemeChoice::ALL {
             assert_eq!(ThemeChoice::from_tag(choice.tag()), Some(choice));
         }
         for unknown in ["", "Neutral", "neutral ", "ink", "chartreuse"] {
             assert_eq!(ThemeChoice::from_tag(unknown), None, "accepted {unknown:?}");
+        }
+    }
+
+    #[test]
+    fn dark_labels_and_text_contrast_are_readable_on_every_surface() {
+        assert_eq!(
+            ThemeChoice::Dark.label(crate::ui::UiLanguage::ChineseSimplified),
+            "深色"
+        );
+        assert_eq!(
+            ThemeChoice::Dark.label(crate::ui::UiLanguage::ChineseTraditional),
+            "深色"
+        );
+        assert_eq!(
+            ThemeChoice::Dark.label(crate::ui::UiLanguage::English),
+            "Dark"
+        );
+        let dark = Theme::for_choice(ThemeChoice::Dark);
+        let luminance = |Rgb(r, g, b): Rgb| {
+            let channel = |value: u8| {
+                let value = f64::from(value) / 255.0;
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+        };
+        for background in [
+            dark.sidebar_bg,
+            dark.canvas_bg,
+            dark.surface,
+            dark.composer_bg,
+            dark.panel_bg,
+            dark.term_bg,
+        ] {
+            for foreground in [dark.text, dark.muted, dark.accent, dark.term_fg] {
+                let ratio = (luminance(foreground) + 0.05) / (luminance(background) + 0.05);
+                assert!(
+                    ratio >= 4.5,
+                    "{foreground:?} on {background:?} has contrast {ratio}"
+                );
+            }
         }
     }
 

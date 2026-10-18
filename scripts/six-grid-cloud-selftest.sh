@@ -4,9 +4,20 @@ set -euo pipefail
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 workflow="$repo_root/.github/workflows/six-grid-runtime.yml"
 
-python3 -m py_compile "$repo_root/scripts/package-six-grid-runtime.py"
-python3 -m py_compile "$repo_root/scripts/aggregate-six-grid-runtime.py"
-python3 "$repo_root/scripts/aggregate-six-grid-runtime-selftest.py"
+python_bin=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    python_bin="$candidate"
+    break
+  fi
+done
+if [[ -z "$python_bin" ]]; then
+  echo "six-grid-cloud-selftest: Python is required" >&2
+  exit 127
+fi
+"$python_bin" -m py_compile "$repo_root/scripts/package-six-grid-runtime.py"
+"$python_bin" -m py_compile "$repo_root/scripts/aggregate-six-grid-runtime.py"
+"$python_bin" "$repo_root/scripts/aggregate-six-grid-runtime-selftest.py"
 bash -n "$repo_root/scripts/publish-six-grid-runtime.sh"
 bash "$repo_root/scripts/publish-six-grid-runtime-selftest.sh"
 

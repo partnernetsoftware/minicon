@@ -143,7 +143,9 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_27_con_delivery.md · "Driving the chain"
 │   └── prd/PRD_02_27_con_delivery.md
 ├── Reuse boundaries
-│   ├── host-neutral shared rules only
+│   ├── module owners and reuse entries: core / UI-core / platform / product
+│   ├── portable contracts vs internal OS / ISA / ABI selection
+│   ├── source inventory vs per-cell build and runtime evidence
 │   └── prd/PRD_02_28_shared_core.md
 ├── Capability vs plugin boundary (with agenterm)
 │   ├── capabilities sink into MiniCon; plugins/apps gather in agenterm;
@@ -205,6 +207,7 @@ flowchart LR
         H["MiniCon host<br/>local product policy"]
         P["Platform adapters<br/>window · PTY · input · IPC"]
         K["minicon-core<br/>host-neutral rules"]
+        UI["minicon-ui-core<br/>shared UI mechanisms<br/>internal ISA kernels"]
         N["Explicitly absent<br/>server · persistence · mux · scripts"]
     end
     subgraph E["Exact-artifact evidence"]
@@ -262,7 +265,7 @@ flowchart LR
     end
 
     U --> T & W & C
-    K & P --> H
+    K & UI & P --> H
     N -. constrains .-> H
     H --> T & W & C
     T & W & C --> X
@@ -311,10 +314,15 @@ flowchart LR
 | Ship portable exact artifacts | [Delivery](prd/PRD_02_27_con_delivery.md) | six-cell runtime and release receipts | block the artifact or claim; never weaken it silently |
 | Stay small in RAM | [Delivery](prd/PRD_02_27_con_delivery.md) | idle host RSS court; named regression ceiling | fail the claim; do not kill user sessions |
 | Agent-driven cross-arch dev/test loop | [Dev-loop crosscheck](prd/PRD_02_32_dev_loop_crosscheck.md) | native per-cell build+test on request, real logs | cell BLOCKED, never a silent skip; never a release/publish path |
-| Reuse host-neutral rules | [Shared core](prd/PRD_02_28_shared_core.md) | dependency and source-boundary tests | keep code product-local until proven neutral |
+| Module ownership, abstraction and reuse | [Module and reuse map](prd/PRD_02_28_shared_core.md) | dependency/source boundaries, kernel oracles and scoped per-cell receipts | keep product policy local; unavailable runtime evidence is BLOCKED |
 
 ## Current frontier
 
+- [-] **v0.2.15 preparation: module abstraction and reuse.** Preserve public
+  crate names and behavior; strengthen core portability checks, enable minimal
+  core consumers, and unify tree/numeric ownership behind compatible exports.
+  Scope owner: [module and reuse map](prd/PRD_02_28_shared_core.md).
+  Sequence and scoped evidence: [0.2.15 plan](plan/plan-v0.2.15.md).
 - [-] **v0.2.12 in planning.** Anchor: the user-notes scratchpad (GitHub #5
   phase 1 — session-scoped, global-first, never sent to the PTY, no
   persistence) plus the carried {AMPLIFIER-T} transient-host debt from
@@ -623,6 +631,10 @@ Details and historical run records stay in the owning modules.
 1. Select one owning leaf and state its problem, invariant, evidence, safe
    failure and non-goal.
 2. Update the owning module; keep this root an index, not a duplicate.
+   Check the [module and reuse map](prd/PRD_02_28_shared_core.md) before new
+   scope: identify existing reusable mechanisms, remaining duplication, and
+   public-contract versus internal OS/ISA differences. Update it when ownership
+   or portability changes; qualify claims with their actual evidence scope.
 3. Implement at the narrowest shared/native/product boundary.
 4. Add public black-box evidence and register public capabilities/commands.
 5. Qualify one exact source state; a failed cell narrows or blocks the claim.
