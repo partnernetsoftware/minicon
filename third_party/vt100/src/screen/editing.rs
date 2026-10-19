@@ -129,7 +129,7 @@ mod tests {
             assert_eq!(replay.screen().cursor_position(), before.cursor_position());
             assert_eq!(replay.screen().cell(0, 3).unwrap().contents(), " ");
             assert_eq!(replay.screen().cell(1, 1).unwrap().contents(), "\u{25cc}");
-            assert_eq!(replay.screen().cell(1, 2).unwrap().contents(), "\u{25cc}");
+            assert_eq!(replay.screen().cell(1, 2).unwrap().contents(), "\u{fffd}");
             assert_eq!(replay.screen().cell(0, 2).unwrap().contents(), "c");
             assert_eq!(
                 replay.screen().attributes_formatted(),

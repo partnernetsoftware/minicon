@@ -303,6 +303,54 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn replacement_scalar_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(if rust {
+            "unicode-output-owned"
+        } else {
+            "unicode-output"
+        })
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("unicode-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    (std::fs::read_to_string(&report.0).unwrap(), parser)
+}
+
+const REPLACEMENT_RECEIPT: &str =
+    "wide:3,0;0007\nutf8:6,0;0007\nfill:7,0;0007\nrow0:0041,fffd,0042,0043,fffd,0044,0058,fffd,\n";
+
+#[test]
+fn rust_console_pty_replacement_scalars_preserve_native_and_consumed_cells() {
+    let (receipt, parser) = replacement_scalar_report(true);
+    assert_eq!(
+        receipt,
+        format!(
+            "{REPLACEMENT_RECEIPT}invalid-wide:4,2;0007\ninvalid-utf8:8,2;0007\nrow2:fffd,0045,fffd,0046,fffd,0047,fffd,0048,\n"
+        )
+    );
+    assert_eq!(parser.screen().contents(), "A�BC�DX�\n\n�E�F�G�H");
+    assert_eq!(parser.screen().cursor_position(), (2, 8));
+}
+
+#[test]
+#[ignore = "explicit system ConPTY literal replacement-scalar differential court"]
+fn rust_console_client_literal_replacement_scalars_match_system_conpty() {
+    let (receipt, parser) = replacement_scalar_report(false);
+    assert_eq!(receipt, REPLACEMENT_RECEIPT);
+    assert_eq!(parser.screen().contents(), "A�BC�DX�");
+    assert_eq!(parser.screen().cursor_position(), (0, 7));
+}
+
 fn echo_output_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -502,7 +550,7 @@ fn rust_console_pty_native_fills_preserve_cells_styles_cursor_and_projection() {
         [
             "abcdefghijZZ",
             "Z Q中中中中x",
-            "    ││ ◌◌◌",
+            "    ││ ◌◌�",
             "",
             "中中中",
             "",

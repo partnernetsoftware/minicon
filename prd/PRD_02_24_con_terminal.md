@@ -24,7 +24,8 @@ minicon terminal and rendering
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills — shared state, safe VT projection
-│   └── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
+│   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
+│   └── Visible replacement scalar — stream/error recovery and literal replay
 ├── Damage, raster and present
 ├── Fonts and glyphs (CJK, native faces)
 ├── Architecture kernels (SIMD behind scalar fallbacks)
@@ -123,10 +124,12 @@ formatted full/diff/cursor replay emits spaces or a dotted-circle placeholder
 to keep their one-cell meaning without executing terminal grammar. Parsing
 unfinished client text is independent of these edits.
 
-Literal U+FFFD cells also project as a dotted circle: the existing streaming
-parser routes U+FFFD to its unhandled-character callback, so raw projection
-would otherwise drop a column. This scoped literal-cell projection preserves
-the native value without changing the general streaming replacement policy.
+Literal U+FFFD cells now project as U+FFFD. The shared streaming parser treats
+that scalar as ordinary one-cell text, including when produced by decoding
+recovery. It no longer invokes the unhandled-character callback for that scalar.
+C1 control dispatch remains separate. The previous dotted-circle workaround for
+literal replacement cells is retired; standalone zero-width placeholders and
+literal control safety remain unchanged.
 
 The direct `literal_cell_edits_preserve_state_and_project_safe_full_and_diff`
 oracle checks retained state/styles, damage, full/diff replay, control and
@@ -617,3 +620,29 @@ frame and pixel counts.
   complete PTY byte count, at least one bounded-budget yield, zero native-present
   failures, zero host copies and clean `close-window` shutdown. This is distinct
   from the OSC and close-under-flood robustness journeys.
+
+## Accepted replacement-scalar recovery leaf
+
+Invariant: U+FFFD is a visible one-cell scalar in streaming text and literal
+cell projection. UTF decoding errors already represented as U+FFFD must not
+silently collapse subsequent cell positions. Evidence must cover fragmented
+valid UTF-8, malformed recovery, cell damage, callback scope and full/diff
+replay, plus native Windows write/readback through the PTY consumer. Safe
+failure and pending-grammar budgets remain unchanged. Dependencies are the
+owned parser/screen and existing native APIs; no per-OS replacement renderer
+or new cell storage is introduced. C1 control callback handling stays separate;
+complete Unicode grapheme and legacy-code-page qualification is not this leaf.
+
+The product chooses visible replacement when the shared lexer/UTF-16 converter
+has produced U+FFFD. This is a product display contract; the
+[Unicode encoding FAQ](https://www.unicode.org/faq/utf_bom.html) permits multiple
+error-recovery strategies and does not mandate this terminal policy. The
+existing VTE raw-byte/C1 dispatch and pending-input budgets are unchanged.
+
+`replacement_scalar_stream_recovery_and_replay_are_lossless` covers a fragmented
+valid scalar, malformed UTF-8 recovery without losing following ASCII, row
+damage, callback scope, literal fill and full/diff replay. Native Windows SDK
+coverage and the installed system comparison belong to
+[PRD 02.34](PRD_02_34_windows_console_backend.md). This changes no cell storage,
+OS branches or ISA kernels. External consumers that relied on the former
+U+FFFD unhandled callback need to qualify their pin independently.

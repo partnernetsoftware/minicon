@@ -829,6 +829,8 @@ mod tests {
         host.write_utf16([b'A' as u16, 0xdc00], &mut output)
             .unwrap();
         assert_eq!(output, "�A�".as_bytes());
+        assert_eq!(host.terminal.screen().contents(), "�A�");
+        assert_eq!(host.terminal.screen().cursor_position(), (0, 3));
     }
 
     #[test]

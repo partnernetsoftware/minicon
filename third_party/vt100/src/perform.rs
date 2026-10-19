@@ -23,7 +23,7 @@ impl<CB: crate::callbacks::Callbacks> WrappedScreen<CB> {
 
 impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
     fn print(&mut self, c: char) {
-        if c == '\u{fffd}' || ('\u{80}'..'\u{a0}').contains(&c) {
+        if ('\u{80}'..'\u{a0}').contains(&c) {
             self.callbacks.unhandled_char(&mut self.screen, c);
         } else {
             self.screen.text(c);

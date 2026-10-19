@@ -140,7 +140,6 @@ impl Cell {
         let text = self.contents();
         match text.chars().next() {
             Some(character) if character.is_control() => " ",
-            Some('\u{fffd}') => "\u{25cc}",
             Some(character) if character.width() == Some(0) => "\u{25cc}",
             _ => text,
         }

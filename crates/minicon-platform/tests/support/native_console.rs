@@ -17,6 +17,8 @@ mod screen_fill;
 mod screen_readback;
 #[cfg(windows)]
 mod text_attributes;
+#[cfg(windows)]
+mod unicode_output;
 #[cfg(not(windows))]
 fn main() {
     std::process::exit(2);
@@ -42,6 +44,12 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "unicode-output" || mode == "unicode-output-owned" {
+        return unicode_output::run(
+            std::path::Path::new(&arguments[1]),
+            mode.ends_with("-owned"),
+        );
+    }
     if mode == "echo-output" || mode == "echo-output-owned" {
         return echo_output::run(
             std::path::Path::new(&arguments[1]),

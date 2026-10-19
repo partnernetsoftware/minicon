@@ -139,3 +139,9 @@ also drops the read's private echo state. GUI migration remains separate.
 The accepted cooked-echo behavior, its actual SDK and system reference scope,
 and remaining mode/editing/performance qualification belong to
 [the native backend](PRD_02_34_windows_console_backend.md).
+
+The common screen/parser now preserves U+FFFD as visible text and in literal
+full/diff projection. The display contract and callback migration note are
+owned by [terminal state](PRD_02_24_con_terminal.md); native SDK evidence is in
+PRD 02.34. It is one shared OS/ISA-neutral implementation, consumed by GUI
+parsing and the owned service; native runtime qualification remains scoped.

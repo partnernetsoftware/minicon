@@ -1231,7 +1231,7 @@ no exception automatically.
 
 Literal ESC, NUL, TAB, U+FFFD and standalone combining cells are kept in the same cells
 and returned exactly through native readback. Formatted output projects controls
-as spaces and standalone zero-width/U+FFFD cells as dotted circles, preserving one
+as spaces and standalone zero-width cells as dotted circles, preserving one
 column each and preventing their execution as VT grammar. The native probe
 checks all intermediate character/attribute receipts and final owned projected
 rows, including no consecutive raw ESC bytes, restored drawing colors and
@@ -1354,7 +1354,7 @@ Local logs are `cooked-echo-red.log`, `cooked-echo-positive.log` and
 records an actual owned SDK failure and a passing system receipt reference,
 before changing echo routing. Broader output-mode combinations, full cooked
 editing/history, control-key display/wakeup combinations, interrupted partial
-Unicode reads, encoding/mode changes, malformed-scalar cell projection and
+Unicode reads, encoding/mode changes, broader malformed-scalar/code-page combinations and
 large paste/screen clone cost remain explicit qualification work. Default
 selection and GUI routing remain unchanged.
 
@@ -1369,3 +1369,36 @@ Windows aarch64 and macOS x86_64; the minimal Windows ARM64 PTY consumer and
 probe also compile, with existing minimal-feature dead-code warnings. These
 are compile-only cross-target receipts. No native ARM/macOS/Linux runtime,
 GUI/default selection, full mode matrix or release promotion is claimed.
+
+### Visible replacement-scalar native evidence
+
+The shared parser now preserves U+FFFD in streamed text and native literal
+projections; the library contract and callback change are owned by
+[terminal state](PRD_02_24_con_terminal.md). A real SDK client writes it with
+WriteConsoleW, UTF-8 WriteFile and FillConsoleOutputCharacterW, then independently
+reads native cells/cursor and consumes PTY output. The installed system
+reference agrees on these valid-scalar receipts and consumed cells. The owned
+extension checks malformed UTF-16 and invalid UTF-8 recovery while preserving
+following ASCII and column positions; those malformed cases are not claimed
+as installed-system equivalence. Existing native fill projection expectations
+now preserve the literal replacement glyph instead of its former dotted circle.
+
+`replacement-scalar-shared-red.log` records a real shared-unit failure before
+the print policy changed; `replacement-scalar-native-red.log` records both owned
+and system-consumer failures before the change, including the system SDK's
+correct native readback. `replacement-scalar-positive.log` covers shared/native
+recovery and the existing fill and malformed-surrogate regressions. Logs remain
+under the ignored research directory. Final unpaired-unit EOF handling, wider
+legacy code pages, arbitrary malformed sequences and GUI/font/runtime matrices
+remain separate qualification work.
+
+The final selected suite records 181 passes in `replacement-scalar-final-suite.log`,
+including 17 alignment checks and all three new shared/native cases. Three
+runtime mutation cases in `replacement-scalar-negative-audit.json` restore
+character dropping or the literal placeholder and fail the expected courts;
+guard files are byte-restored. Root fmt, default/experimental workspace strict
+Clippy and standalone owned-parser strict Clippy passed. Updated shared-library
+compile checks cover Linux x86_64/aarch64, Windows aarch64 and macOS x86_64;
+the minimal Windows ARM64 PTY/probe consumer also compiles with its existing
+minimal-feature warnings. These compile checks do not certify native non-host
+runtime, packaging, GUI selection or a default backend change.
