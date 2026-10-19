@@ -1,4 +1,5 @@
 //! Private child-family fixture. Results use files outside the tested console.
+use super::console_file::open as open_console;
 use std::io;
 use std::io::Read;
 use std::path::Path;
@@ -9,30 +10,6 @@ use windows_sys::Win32::System::Console::{
     FreeConsole, GetConsoleMode, GetStdHandle, ReadConsoleW, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
     WriteConsoleW,
 };
-
-fn open_console(name: &str, access: u32) -> io::Result<std::fs::File> {
-    use std::os::windows::io::FromRawHandle;
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, OPEN_EXISTING};
-    let name: Vec<u16> = name.encode_utf16().chain([0]).collect();
-    // SAFETY: terminated local console name; successful handle ownership moves
-    // directly into File and is never reconstructed from a numeric PID.
-    let handle = unsafe {
-        CreateFileW(
-            name.as_ptr(),
-            access,
-            3,
-            std::ptr::null(),
-            OPEN_EXISTING,
-            0,
-            std::ptr::null_mut(),
-        )
-    };
-    if handle == INVALID_HANDLE_VALUE {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(unsafe { std::fs::File::from_raw_handle(handle) })
-}
 
 fn wait(path: &Path) -> io::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(10);

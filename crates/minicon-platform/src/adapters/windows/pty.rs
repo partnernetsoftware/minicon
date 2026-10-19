@@ -732,6 +732,12 @@ impl PtyChild {
                 .send_key(key, repeat_count)
                 .map_err(|error| pty_error("send native key", "pty_native_key_failed", error));
         }
+        if key == NativeTerminalKey::Break {
+            return Err(PtyError::unsupported(
+                "send native key",
+                "this backend has no qualified Ctrl+Break key delivery",
+            ));
+        }
         let _attachment =
             super::console::ConsoleGuard::attach_process(self.pid.as_u32()).map_err(|error| {
                 PtyError::failed("send native key", "pty_console_attach_failed", error)
@@ -854,15 +860,16 @@ const fn native_console_key_event(
     key: NativeTerminalKey,
     repeat_count: u16,
 ) -> WindowsConsoleKeyEvent {
-    let (virtual_key_code, virtual_scan_code) = match key {
-        NativeTerminalKey::Up => (0x26, 0x48),
-        NativeTerminalKey::Down => (0x28, 0x50),
+    let (virtual_key_code, virtual_scan_code, controls) = match key {
+        NativeTerminalKey::Up => (0x26, 0x48, ENHANCED_KEY),
+        NativeTerminalKey::Down => (0x28, 0x50, ENHANCED_KEY),
+        NativeTerminalKey::Break => (0x03, 0x46, ENHANCED_KEY | 8),
     };
     WindowsConsoleKeyEvent {
         virtual_key_code,
         virtual_scan_code,
         unicode_char: 0,
-        control_key_state: ENHANCED_KEY,
+        control_key_state: controls,
         repeat_count,
     }
 }

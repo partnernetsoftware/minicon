@@ -33,8 +33,11 @@ sequences that contract without assigning a release or changing current defaults
    Private-Job Ctrl+C admission, actual native handler/interrupted-read/default
    exit receipts and system-ConPTY comparisons extend the scoped signal slice;
    Attached-group native C/Break generation, standalone full-queue interruption
-   and native handler API reentry extend that slice. Keyboard Ctrl+Break, mixed
+   and native handler API reentry extend that slice. Broader keyboard/transport qualification, mixed
    input pressure and unattached-group compatibility remain open.
+   The Rust native-key facade now delivers Break in raw/cooked modes; private
+   live-file readback distinguishes flushed ANSI data from retained completed
+   UTF-16 text and native-ready reset. Other key transports remain unqualified.
    Final ConDrv cancellation now waits briefly for the private Job to settle
    empty; actual delayed/live-member fixtures guard that EOF classification.
    Qualify further real shells/agent clients, cancellation/crash races and both

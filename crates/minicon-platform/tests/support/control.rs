@@ -1,14 +1,17 @@
 //! Actual Win32 control-handler receipts, independent of the console output.
 use std::io;
+use std::io::Read;
+use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
 use windows_sys::Win32::System::Console::{
-    GenerateConsoleCtrlEvent, GetConsoleMode, GetNumberOfConsoleInputEvents, GetStdHandle,
-    ReadConsoleW, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleCtrlHandler, SetConsoleMode,
-    WriteConsoleW,
+    GenerateConsoleCtrlEvent, GetConsoleCP, GetConsoleMode, GetNumberOfConsoleInputEvents,
+    GetStdHandle, ReadConsoleW, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleCP,
+    SetConsoleCtrlHandler, SetConsoleMode, WriteConsoleW,
 };
+use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
 static EVENT: AtomicU32 = AtomicU32::new(0);
 static HANDLER_IO: AtomicBool = AtomicBool::new(false);
@@ -48,8 +51,14 @@ unsafe extern "system" fn handler(event: u32) -> i32 {
 }
 
 pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
+    let byte_tail = mode.starts_with("control-break-tail");
+    let wide_tail = mode.starts_with("control-break-wide-tail");
     let raw = mode == "control-raw";
-    let reading = raw || mode == "control-read";
+    let reading = raw
+        || matches!(
+            mode,
+            "control-read" | "control-break-read" | "control-break-raw-read"
+        );
     HANDLER_IO.store(mode == "control-handler-io", Ordering::Release);
     // SAFETY: this controlled child's own console; the callback remains valid
     // for the process lifetime and uses fixed buffers for its optional API I/O.
@@ -65,7 +74,11 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
         let input = GetStdHandle(STD_INPUT_HANDLE);
         if SetConsoleMode(
             input,
-            if raw || mode.starts_with("control-generate-") {
+            if raw
+                || mode.starts_with("control-generate-")
+                || mode.contains("break-raw")
+                || mode == "control-break-tail"
+            {
                 0
             } else {
                 7
@@ -76,6 +89,44 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
         }
         println!("control-probe-ready:");
         let mut result = String::new();
+        // Hold the file through signal/readback observations so final close
+        // cannot be confused with keyboard flushing or cached-text retention.
+        let mut tail_file = if byte_tail || wide_tail {
+            Some(super::console_file::open("CONIN$", 0xc000_0000)?)
+        } else {
+            None
+        };
+        if let Some(file) = tail_file.as_mut() {
+            if SetConsoleCP(65001) == 0
+                || SetConsoleMode(file.as_raw_handle(), if wide_tail { 7 } else { 0 }) == 0
+                || GetConsoleCP() != 65001
+            {
+                return Err(io::Error::last_os_error());
+            }
+            println!("break-tail-send:");
+            let first = if wide_tail {
+                let mut unit = 0_u16;
+                let mut count = 0;
+                if ReadConsoleW(
+                    file.as_raw_handle(),
+                    (&mut unit as *mut u16).cast(),
+                    1,
+                    &mut count,
+                    std::ptr::null(),
+                ) == 0
+                    || count != 1
+                {
+                    return Err(io::Error::last_os_error());
+                }
+                unit
+            } else {
+                let mut first = [0];
+                file.read_exact(&mut first)?;
+                u16::from(first[0])
+            };
+            result = format!("{first},{}", WaitForSingleObject(input, 0));
+            std::fs::write(report.with_extension("ready"), &result)?;
+        }
         if mode == "control-group-parent" {
             return group_parent(report);
         }
@@ -106,7 +157,10 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
                 return std::fs::write(report, format!("{result}|0"));
             }
         }
-        if mode == "control-full-queue" {
+        if matches!(
+            mode,
+            "control-full-queue" | "control-break-queue" | "control-break-raw-queue"
+        ) {
             let deadline = Instant::now() + Duration::from_secs(8);
             let mut queued = 0;
             loop {
@@ -158,17 +212,54 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-        if mode == "control-full-queue" {
+        if mode.ends_with("queue") || (byte_tail || wide_tail) {
             let mut remaining = 0;
             if GetNumberOfConsoleInputEvents(input, &mut remaining) == 0 {
                 return Err(io::Error::last_os_error());
             }
             result.push_str(&format!(",{remaining}"));
+            if mode.starts_with("control-break") {
+                result.push_str(&format!(",{}", WaitForSingleObject(input, 0)));
+            }
+        }
+        if mode.ends_with("-observe") {
+            std::fs::write(report.with_extension("go"), b"break-observed")?;
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while !report.with_extension("opened").exists() {
+                if Instant::now() >= deadline {
+                    return Err(io::Error::from(io::ErrorKind::TimedOut));
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            let file = tail_file.as_mut().unwrap();
+            if wide_tail {
+                let mut units = [0_u16; 3];
+                let mut count = 0;
+                if ReadConsoleW(
+                    file.as_raw_handle(),
+                    units.as_mut_ptr().cast(),
+                    3,
+                    &mut count,
+                    std::ptr::null(),
+                ) == 0
+                {
+                    return Err(io::Error::last_os_error());
+                }
+                result.push_str(&format!(
+                    ";read:{count},{},{},{}",
+                    units[0], units[1], units[2]
+                ));
+            } else {
+                let mut bytes = [0_u8; 2];
+                file.read_exact(&mut bytes)?;
+                result.push_str(&format!(";read:{},{}", bytes[0], bytes[1]));
+            }
         }
         std::fs::write(
             report,
             format!("{result}|{}", EVENT.load(Ordering::Acquire)),
         )?;
+        drop(tail_file);
     }
     Ok(())
 }

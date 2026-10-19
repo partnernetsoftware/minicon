@@ -39,6 +39,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   inventory/handler receipts, bounded failure, same private Job authority
 │   ├── [v] native GenerateConsoleCtrlEvent: C/Break, attached process groups,
 │   │   retained group metadata and real same-Job child isolation; no PID recovery
+│   ├── [v] scoped keyboard Break: shared native-key facade, raw/cooked interruption,
+│   │   events/ANSI flush, completed text retention and native-ready reset
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -72,6 +74,9 @@ flowchart LR
     GENERATE --> RETAIN
     INPUT --> CAP["queued-record budget / bounded interrupt batches"]
     CAP --> SIGNAL
+    CAP --> BRK["native Break / modifier validation"]
+    BRK --> CACHE["flush events and ANSI bytes / preserve completed line text"]
+    CACHE --> READY["cached text readable / post-Break native event reset"]
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
@@ -240,7 +245,7 @@ certification for all clients or OS releases.
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
 | GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
-| Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Keyboard Ctrl+Break, unattached-group compatibility, other signals and broader OS/client qualification. |
+| Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Other native-key transports, unattached-group compatibility, other signals and broader OS/client qualification. |
 | Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Remaining layer APIs and GUI/product qualification. |
 
 The backend reuses this repository's owned `vt100` fork for screen state behind
@@ -583,7 +588,7 @@ with zero native counts. With processed input disabled, that character remains
 ordinary input. WriteConsoleInputW record injection is a separate native API
 route and is not qualified as a signal generator by this milestone. General
 GenerateConsoleCtrlEvent and connected-group C/Break delivery are implemented
-in the following milestone; keyboard Ctrl+Break remains open. This is private
+in the following milestone; the Rust native-key Break slice is implemented below; other key transports remain open. This is private
 console authority, not a foreground-process contract.
 
 The Cargo-built Win32 client explicitly clears its inherited ignore-Ctrl+C
@@ -655,8 +660,8 @@ that actual child group ID; the child reports Break and the parent reports no
 signal. This fixture uses only its private Job family. The explicit system
 ConPTY court repeats C, Break, invalid event/group and child-group isolation,
 and matches every native result. Unattached groups that an upstream host may
-recover through parent-PID lookup, keyboard VK_CANCEL and other event types
-remain unqualified.
+recover through parent-PID lookup and other event types remain unqualified.
+The scoped native-key VK_CANCEL path is implemented in the following milestone.
 
 The expanded targeted command selects 99 cases: 70 backend cases plus 29 legacy
 agent units, with nine requested external/reference cases. Local baseline and
@@ -683,3 +688,83 @@ respective behavior changes. Sources are restored before the final 99-case
 suite. Local `control-groups-negative-audit.json` records exact test/log and
 restored-source identities. ARM64/other Windows runtime, complete interactive
 shells and packaged/default selection remain outside this receipt.
+
+### Native Break keys and completed-read ownership
+
+`NativeTerminalKey::Break` extends the non-exhaustive PTY vocabulary. The
+experimental Rust backend consumes it through `PtyChild::send_native_key` and
+its existing bounded control channel. One shared Windows key-identity helper
+serves both the previous cursor-key transport and the Rust adapter. Ctrl+Break
+maps to VK_CANCEL with the control modifier; key-up, zero-repeat and Alt-modified
+records do not trigger console shortcuts. Typed Ctrl+C with a native virtual
+key/modifier is also recognized while processed input is enabled.
+
+Break is independent of processed-input mode. It clears queued events and ANSI
+byte tails, interrupts pending raw/cooked reads with STATUS_ALERTED and resets
+native input readiness. Completed cooked text is a separate ownership class:
+remaining UTF-16 data stays readable after Break while the native wait handle
+is reset. A new suppression bit describes that distinction until new text is
+cooked. Generation through the programmatic control API remains separate from
+keyboard flushing.
+
+The initial implementation erased all completed text. The pinned
+[InputBuffer](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/inputBuffer.cpp)
+separates event storage from cached text, and the native system court disproved
+that first implementation: after reading `A` from `AB` plus CR/LF, Break leaves
+`B` plus CR/LF available. The final implementation preserves those exact units.
+The private file remains open throughout the signal and subsequent readback;
+file finalization cannot masquerade as flushing. Both byte and wide fixtures
+record the wait result before/after Break, then accept fresh `Z` plus CR to
+make the following SDK read bounded and distinguish old cache from fresh data.
+
+The system court sends the pinned
+[Win32-input sequence](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/terminal/parser/InputStateMachineEngine.cpp)
+for VK_CANCEL directly through its owned ConPTY input stream. This validates
+the reference route without attaching the test runner to a console. The public
+native-key method still explicitly returns Unsupported for other Windows
+transports; their full provider/OS/ISA qualification is not supplied by this
+single reference-wire observation. POSIX native-key delivery remains unsupported.
+The reference uses the input parser's control-key dispatch rather than calling
+WriteConsoleInputW from the test process.
+
+On the measured 20348 system provider, the first one-byte CP65001 ReadFile
+returned varying incorrect values (including 248 and 56), while the owned
+UTF-8 path consistently returns 228 for the same CJK character. The fixture
+requests and independently queries CP65001 before this read. This discrepancy
+is reported, not adopted as an owned-backend requirement: the comparison
+excludes only that first native byte, requires correct owned UTF-8, and compares
+the exact following flush/readback behavior. It does not attribute all reported
+system-host instability to this scoped observation.
+
+A concurrent run also exposed an ACK/readiness race: the SDK read could resume
+before the server updated its input event. Read service now publishes readiness
+before completing a request. Cancellation first removes the pending inventory
+and publishes its state, completes each interrupted request, and only then
+posts the keyboard control event. Failures completing one read do not suppress
+posting the signal to the remaining owned targets.
+
+Real clients cover full 4096-event queues in processed/raw modes, partial cooked
+line interruption, raw read interruption, live ANSI/wide conversion state and
+native input-handle waiting. The input-open fixture is shared with inherited
+stdio tests through `tests/support/console_file.rs`. The native cursor-key
+identity test is explicitly retained to protect its shared mapping.
+
+The expanded targeted command adds `native_cursor_keys_preserve_win32_identity_and_repeat`
+to the previous selectors and executes 107 cases: 78 backend/reference cases and
+29 legacy-agent units, including twelve requested external/reference cases.
+Local baseline/final evidence is `key-break-positive-suite.log` and
+`key-break-final-suite.log`. `key-break-tail-reference-repro.log` preserves the
+failing first comparison; `key-break-tail-corrected.log` records the corrected
+cache semantics. Mixed byte-stream/control backpressure, other Windows/ISA
+runtime, complete interactive shells/TUI and packaged/default selection remain
+open.
+
+Fourteen runtime mutation controls cover Alt/Ctrl/native-key classification,
+processed-independent Break, the shared key mapping, physical/ANSI flushing,
+completed text retention, readiness suppression, pending-read cancellation,
+unsupported transport rejection, reference-wire byte transport, cursor-key
+regression and response/readiness ordering. The last control deliberately
+replies before refreshing readiness and holds that stale window for 100 ms;
+the native read/wait fixture must detect it. All seven new tests and the
+retained cursor-map test have observed runtime negatives. Source restoration
+and log identities are in `key-break-negative-audit.json`.

@@ -132,6 +132,16 @@ impl Drop for Fixture {
 
 struct Report(PathBuf);
 impl Report {
+    fn wait_ready(&self) {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !self.0.with_extension("ready").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "native fixture did not publish readiness"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
     fn new() -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -231,6 +241,196 @@ fn rust_console_pty_ctrl_c_bypasses_a_full_input_event_queue() {
     fixture.master.write_all(&[3]).unwrap();
     fixture.finish(0);
     assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,4096|1");
+}
+
+#[test]
+fn rust_console_pty_break_flushes_full_raw_and_cooked_queues_and_resets_native_ready() {
+    for mode in ["control-break-queue", "control-break-raw-queue"] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(mode)
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("control-probe-ready:");
+        assert!(
+            fixture
+                .child
+                .send_native_key(NativeTerminalKey::Break, 0)
+                .is_err()
+        );
+        fixture.master.write_all(&[b'x'; 4096]).unwrap();
+        report.wait_ready();
+        fixture
+            .child
+            .send_native_key(NativeTerminalKey::Break, 1)
+            .unwrap();
+        fixture.finish(0);
+        assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,0,258|2");
+    }
+}
+
+#[test]
+fn rust_console_pty_break_interrupts_cooked_and_raw_native_reads() {
+    for mode in ["control-break-read", "control-break-raw-read"] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(mode)
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("control-probe-ready:");
+        if mode == "control-break-read" {
+            fixture.master.write_all(b"partial").unwrap();
+            fixture.until("partial");
+        } else {
+            std::thread::sleep(Duration::from_millis(60));
+        }
+        fixture
+            .child
+            .send_native_key(NativeTerminalKey::Break, 1)
+            .unwrap();
+        fixture.finish(0);
+        assert_eq!(
+            std::fs::read_to_string(&report.0).unwrap(),
+            "true,995,0,0|2"
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_break_resets_ready_with_live_file_conversion_tails() {
+    for (mode, text, expected) in [
+        ("control-break-tail", "中", "228,0,0,258|2"),
+        ("control-break-wide-tail", "AB\r", "65,0,0,258|2"),
+    ] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(mode)
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("break-tail-send:");
+        fixture.master.write_all(text.as_bytes()).unwrap();
+        report.wait_ready();
+        fixture
+            .child
+            .send_native_key(NativeTerminalKey::Break, 1)
+            .unwrap();
+        fixture.finish(0);
+        assert_eq!(
+            std::fs::read_to_string(&report.0).unwrap(),
+            expected,
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "explicit system ConPTY unsupported native Break transport court"]
+fn rust_console_client_unqualified_native_break_transport_rejects_without_delivery() {
+    let report = Report::new();
+    let mut fixture = Fixture::open_backend(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-handler")
+            .arg(report.0.as_os_str()),
+        "conpty",
+    );
+    fixture.until("control-probe-ready:");
+    assert!(matches!(
+        fixture.child.send_native_key(NativeTerminalKey::Break, 1),
+        Err(minicon_platform::pty::PtyError::Unsupported { .. })
+    ));
+    fixture.master.write_all(&[3]).unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "|1");
+}
+
+#[test]
+#[ignore = "explicit system ConPTY Win32-input control sequence court"]
+fn rust_console_client_system_conpty_accepts_win32_break_sequence() {
+    let report = Report::new();
+    let mut fixture = Fixture::open_backend(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-handler")
+            .arg(report.0.as_os_str()),
+        "conpty",
+    );
+    fixture.until("control-probe-ready:");
+    fixture.master.write_all(b"\x1b[3;70;0;1;264;1_").unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "|2");
+}
+
+fn break_tail_observation(mode: &str, rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(mode)
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("break-tail-send:");
+    fixture
+        .master
+        .write_all(if mode.contains("wide-tail") {
+            b"AB\r"
+        } else {
+            "中".as_bytes()
+        })
+        .unwrap();
+    report.wait_ready();
+    if rust {
+        fixture
+            .child
+            .send_native_key(NativeTerminalKey::Break, 1)
+            .unwrap();
+    } else {
+        fixture.master.write_all(b"\x1b[3;70;0;1;264;1_").unwrap();
+    }
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !report.0.with_extension("go").exists() {
+        assert!(
+            Instant::now() < deadline,
+            "Break did not reach observation barrier"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    fixture.master.write_all(b"Z\r").unwrap();
+    std::fs::write(report.0.with_extension("opened"), b"input-sent").unwrap();
+    fixture.finish(0);
+    std::fs::read_to_string(&report.0).unwrap()
+}
+
+#[test]
+#[ignore = "explicit system ConPTY Break tail/readback differential court"]
+fn rust_console_client_break_tail_readback_matches_system_conpty() {
+    let mut reference = Vec::new();
+    let mut owned = Vec::new();
+    for mode in [
+        "control-break-tail-observe",
+        "control-break-wide-tail-observe",
+    ] {
+        reference.push(break_tail_observation(mode, false));
+        owned.push(break_tail_observation(mode, true));
+        eprintln!(
+            "{mode}: system={:?}; owned={:?}",
+            reference.last(),
+            owned.last()
+        );
+    }
+    assert_eq!(owned[0], "228,0,0,258;read:90,13|2");
+    assert_eq!(
+        reference[0].split_once(',').unwrap().1,
+        owned[0].split_once(',').unwrap().1
+    );
+    assert_eq!(owned[1], "65,0,0,258;read:3,66,13,10|2");
+    assert_eq!(owned[1], reference[1]);
 }
 
 #[test]

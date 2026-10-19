@@ -113,6 +113,9 @@ pub enum NativeTerminalKey {
     Up,
     /// The terminal cursor-down key.
     Down,
+    /// Ctrl+Break. Requires a backend with control-key delivery support;
+    /// unavailable transports return Unsupported instead of writing key bytes.
+    Break,
 }
 
 /// The input protocol currently owned by the program attached to a PTY.

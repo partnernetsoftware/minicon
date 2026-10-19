@@ -1,5 +1,7 @@
 //! Independent Win32 caller for the platform PTY integration court.
 #[cfg(windows)]
+mod console_file;
+#[cfg(windows)]
 mod control;
 #[cfg(windows)]
 mod inheritance;

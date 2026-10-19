@@ -78,6 +78,12 @@ flowchart LR
     CORE & PIX & OS & ISA --> E
 ```
 
+The non-exhaustive PTY native-key vocabulary includes `NativeTerminalKey::Break`.
+The experimental Rust Windows adapter implements it; other native-key adapters
+currently return Unsupported for that key. Cursor-key identities share one
+Windows conversion helper. Behavior and scoped evidence are owned by
+[PRD 02.34](PRD_02_34_windows_console_backend.md).
+
 ## Reading portability claims
 
 Record these dimensions independently for each module:

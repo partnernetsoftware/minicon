@@ -256,17 +256,14 @@ fn serve(
                     (host.resize(size.cols, size.rows, &mut sink), reply)
                 }
                 Control::Key(key, repeat, reply) => {
-                    let (virtual_key, scan_code) = match key {
-                        NativeTerminalKey::Up => (0x26, 0x48),
-                        NativeTerminalKey::Down => (0x28, 0x50),
-                    };
+                    let key = native_console_key_event(key, repeat);
                     let event = ConsoleInput::Key {
                         down: true,
-                        repeat,
-                        virtual_key,
-                        scan_code,
-                        character: 0,
-                        controls: ENHANCED_KEY,
+                        repeat: key.repeat_count,
+                        virtual_key: key.virtual_key_code,
+                        scan_code: key.virtual_scan_code,
+                        character: key.unicode_char,
+                        controls: key.control_key_state,
                     };
                     (host.enqueue_input(&[event], &mut sink).map(|_| ()), reply)
                 }

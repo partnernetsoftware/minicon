@@ -40,8 +40,19 @@ pub enum ConsoleInput {
 pub(super) struct InputState<'session> {
     pub(super) events: VecDeque<ConsoleInput>,
     ready: VecDeque<u16>,
+    ready_event_suppressed: bool,
     ansi_tail: BTreeMap<usize, VecDeque<u8>>,
     pending: VecDeque<PendingRead<'session>>,
+}
+
+impl InputState<'_> {
+    pub(super) fn flush_keyboard_input(&mut self) {
+        self.events.clear();
+        // A completed cooked read can retain text independently of keyboard
+        // storage. Native Break resets readiness without discarding that text.
+        self.ready_event_suppressed = !self.ready.is_empty();
+        self.ansi_tail.clear();
+    }
 }
 
 enum ReadKind {
@@ -200,24 +211,41 @@ impl<'session> ConsoleHost<'session> {
             return Err(io::Error::from(io::ErrorKind::WouldBlock));
         }
         let processed = self.input_mode & 1 != 0;
-        let is_interrupt = |event: &ConsoleInput| {
-            matches!(
-                event,
-                ConsoleInput::Key {
-                    down: true,
-                    repeat: 1..,
-                    character: 3,
-                    ..
-                }
-            ) && processed
+        let control_event = |event: &ConsoleInput| {
+            let ConsoleInput::Key {
+                down: true,
+                repeat: 1..,
+                virtual_key,
+                character,
+                controls,
+                ..
+            } = event
+            else {
+                return None;
+            };
+            if controls & 3 != 0 {
+                return None;
+            } // Alt excludes console shortcuts.
+            if *virtual_key == 3 && controls & 0xc != 0 {
+                Some(crate::control::ControlEvent::CtrlBreak)
+            } else if processed
+                && (*character == 3 || (*virtual_key == 0x43 && controls & 0xc != 0))
+            {
+                Some(crate::control::ControlEvent::CtrlC)
+            } else {
+                None
+            }
         };
-        let queued = events.iter().filter(|event| !is_interrupt(event)).count();
+        let queued = events
+            .iter()
+            .filter(|event| control_event(event).is_none())
+            .count();
         if queued > MAX_EVENTS.saturating_sub(self.input.events.len()) {
             return Err(io::Error::from(io::ErrorKind::WouldBlock));
         }
         for event in events {
-            if is_interrupt(event) {
-                self.send_ctrl_c()?;
+            if let Some(event) = control_event(event) {
+                self.interrupt_control(event)?;
             } else {
                 self.input.events.push_back(*event);
             }
@@ -227,9 +255,11 @@ impl<'session> ConsoleHost<'session> {
 
     /// Wake blocked reads with the console interruption status (STATUS_ALERTED).
     pub fn cancel_pending_reads(&mut self) -> io::Result<usize> {
-        let count = self.input.pending.len();
-        let mut failure = None;
-        for mut read in self.input.pending.drain(..) {
+        let pending = std::mem::take(&mut self.input.pending);
+        let count = pending.len();
+        // Publish native readiness before any blocked SDK caller resumes.
+        let mut failure = self.update_input_event().err();
+        for mut read in pending {
             match read.kind {
                 ReadKind::Text { raw: false, .. } => read.body[12..20].fill(0),
                 ReadKind::Records { .. } => read.body[..4].fill(0),
@@ -239,7 +269,6 @@ impl<'session> ConsoleHost<'session> {
                 failure.get_or_insert(error);
             }
         }
-        self.update_input_event()?;
         if let Some(error) = failure {
             Err(error)
         } else {
@@ -463,6 +492,7 @@ impl<'session> ConsoleHost<'session> {
                 read.body[16..20].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
             }
             read.request.write_output(read.body.len() as u32, &bytes)?;
+            self.update_input_event()?;
             read.request.complete(SUCCESS, bytes.len(), &read.body)?;
             completed += 1;
         }
@@ -524,6 +554,7 @@ impl<'session> ConsoleHost<'session> {
                     }
                     read.line.extend(sequence);
                     if !line_mode && !sequence.is_empty() {
+                        self.input.ready_event_suppressed = false;
                         self.input.ready.extend(read.line.drain(..));
                         return Ok(());
                     }
@@ -565,6 +596,7 @@ impl<'session> ConsoleHost<'session> {
                 if echo {
                     self.write_utf16([13, 10], output)?;
                 }
+                self.input.ready_event_suppressed = false;
                 self.input.ready.extend(read.line.drain(..));
                 return Ok(());
             }
@@ -584,6 +616,7 @@ impl<'session> ConsoleHost<'session> {
                 continue;
             }
             if !line_mode || (character < 32 && wakeup & (1_u32 << character) != 0) {
+                self.input.ready_event_suppressed = false;
                 self.input.ready.extend(read.line.drain(..));
                 return Ok(());
             }
@@ -670,7 +703,7 @@ impl<'session> ConsoleHost<'session> {
         if let Some(session) = self.session {
             session.set_input_available(
                 !self.input.events.is_empty()
-                    || !self.input.ready.is_empty()
+                    || (!self.input.ready.is_empty() && !self.input.ready_event_suppressed)
                     || !self.input.ansi_tail.is_empty(),
             )?;
         }

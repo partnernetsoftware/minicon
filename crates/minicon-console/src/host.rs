@@ -105,12 +105,22 @@ impl<'session> ConsoleHost<'session> {
     /// Request Ctrl+C delivery to live attached clients in the owned Job.
     /// The count reports attempted targets, not handler execution or completion.
     pub fn send_ctrl_c(&mut self) -> io::Result<usize> {
-        let control = self
-            .control
-            .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no owned control scope"))?;
-        let count = control.send(crate::control::ControlEvent::CtrlC, 0);
-        self.cancel_pending_reads()?;
+        self.interrupt_control(crate::control::ControlEvent::CtrlC)
+    }
+
+    fn interrupt_control(&mut self, event: crate::control::ControlEvent) -> io::Result<usize> {
+        if self.control.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "no owned control scope",
+            ));
+        }
+        if matches!(event, crate::control::ControlEvent::CtrlBreak) {
+            self.input.flush_keyboard_input();
+        }
+        let cancelled = self.cancel_pending_reads();
+        let count = self.control.as_ref().unwrap().send(event, 0);
+        cancelled?;
         Ok(count)
     }
 
@@ -654,6 +664,32 @@ fn put_coord(body: &mut [u8], offset: usize, x: u16, y: u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_console_host_control_keys_require_the_native_shortcut_modifiers() {
+        let mut host = ConsoleHost::new();
+        let key = |down, virtual_key, character, controls| ConsoleInput::Key {
+            down,
+            repeat: 1,
+            virtual_key,
+            character,
+            controls,
+            scan_code: 0,
+        };
+        let data = [
+            key(false, 3, 0, 8),
+            key(true, 3, 0, 0),
+            key(true, 3, 0, 9),
+            key(true, 0x43, 3, 9),
+        ];
+        host.enqueue_input(&data, &mut Vec::new()).unwrap();
+        assert_eq!(host.input.events.len(), 4);
+        let error = host
+            .enqueue_input(&[key(true, 0x43, 0, 8)], &mut Vec::new())
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        assert_eq!(host.input.events.len(), 4);
+    }
 
     #[test]
     fn rust_console_host_bounds_interrupt_batch_before_attempting_delivery() {

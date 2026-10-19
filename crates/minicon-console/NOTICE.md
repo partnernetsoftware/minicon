@@ -14,6 +14,7 @@ Microsoft Terminal source at revision
 - `src/server/ApiDispatchersInternal.cpp`
 - `src/host/readDataCooked.cpp`, `readDataDirect.cpp` and `readDataRaw.cpp`
 - `src/host/input.cpp`, `conwinuserrefs.h` and `src/interactivity/win32/ConsoleControl.cpp`
+- `src/host/inputBuffer.cpp` and `src/terminal/parser/InputStateMachineEngine.cpp`
 - `src/winconpty/winconpty.h`
 
 Copyright (c) Microsoft Corporation. The MIT notice is retained in
