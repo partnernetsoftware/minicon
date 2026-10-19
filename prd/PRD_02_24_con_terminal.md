@@ -23,6 +23,7 @@ minicon terminal and rendering
 ├── Scheduling (bounded 128 KiB per GUI turn; input yields)
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
+│   └── Programmatic literal cell/style fills — shared state, safe VT projection
 ├── Damage, raster and present
 ├── Fonts and glyphs (CJK, native faces)
 ├── Architecture kernels (SIMD behind scalar fallbacks)
@@ -37,6 +38,8 @@ flowchart LR
     VT --> DMG["damage"]
     VT --> WRAP["shared DECAWM state / full and incremental replay"]
     WRAP --> DMG
+    EDIT["CellStyle / literal cell edits"] --> VT
+    EDIT --> DMG
     DMG --> RAS["raster<br/>font · CJK"]
     RAS --> PRES["native present"]
     PRES --> WIN["visible window"]
@@ -73,6 +76,32 @@ screen-readback leaf in [PRD 02.34](PRD_02_34_windows_console_backend.md) expose
 the previous default-attribute continuation and now consumes these same cells.
 `autowrap_wide_continuation_attributes_survive_scroll_and_replay` guards the
 OS/ISA-neutral invariant directly, alongside the native SDK observations.
+
+`Screen::fill_cell_text` and `fill_cell_style` now provide OS/ISA-neutral
+programmatic edits of that same grid. `CellStyle` is a public color/style value,
+without Windows flags or native handles. Text edits preserve existing cell
+attributes; style edits preserve text and width metadata. Both preserve cursor
+and drawing state, clip at the screen end, and report conservative row damage.
+Wide repetitions occupy pairs, pad an unplaceable row-end cell without consuming
+a repetition, and heal neighbours when overwritten. Literal controls and
+standalone zero-width characters remain available through `Cell::contents`;
+formatted full/diff/cursor replay emits spaces or a dotted-circle placeholder
+to keep their one-cell meaning without executing terminal grammar. Parsing
+unfinished client text is independent of these edits.
+
+Literal U+FFFD cells also project as a dotted circle: the existing streaming
+parser routes U+FFFD to its unhandled-character callback, so raw projection
+would otherwise drop a column. This scoped literal-cell projection preserves
+the native value without changing the general streaming replacement policy.
+
+The direct `literal_cell_edits_preserve_state_and_project_safe_full_and_diff`
+oracle checks retained state/styles, damage, full/diff replay, control and
+zero-width projection, wide padding/healing and UTF-8 continuation after an
+edit. The Windows consumer and its native differential receipts belong to
+[PRD 02.34](PRD_02_34_windows_console_backend.md). This mechanism adds no new
+persistent grid or per-cell storage field; callers may use a transient clone to
+commit only after successful projection. Larger-screen clone/diff performance
+and other programmatic editing operations remain to be qualified.
 
 - [v] each tree tab owns an independent PTY, parser, viewport and failure state
   in a single GUI process. It is explicitly not a mux, persistent workspace,

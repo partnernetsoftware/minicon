@@ -303,6 +303,113 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn screen_fill_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("screen-fill")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 12 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("fill-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 12, 0);
+    if rust {
+        assert!(
+            !fixture.bytes.windows(2).any(|bytes| bytes == b"\x1b\x1b"),
+            "literal ESC cells must not enter the VT grammar"
+        );
+    }
+    parser.process(&fixture.bytes);
+    (std::fs::read_to_string(&report.0).unwrap(), parser)
+}
+
+#[test]
+fn rust_console_pty_native_fills_preserve_cells_styles_cursor_and_projection() {
+    let (receipt, parser) = screen_fill_report(true);
+    assert_eq!(
+        receipt.split_once('\n').unwrap().1,
+        include_str!("support/screen_fill.txt")
+    );
+    assert_eq!(
+        parser
+            .screen()
+            .rows(0, 12)
+            .map(|row| row.trim_end().to_owned())
+            .collect::<Vec<_>>(),
+        [
+            "abcdefghijZZ",
+            "Z Q中中中中x",
+            "    ││ ◌◌◌",
+            "",
+            "中中中",
+            "",
+            "",
+            "           !"
+        ]
+    );
+    assert_eq!(parser.screen().cursor_position(), (3, 5));
+    assert_eq!(parser.screen().fgcolor(), vt100::Color::Idx(13));
+    assert_eq!(parser.screen().bgcolor(), vt100::Color::Idx(2));
+    assert_eq!(
+        parser.screen().cell(0, 11).unwrap().fgcolor(),
+        vt100::Color::Idx(15)
+    );
+    assert_eq!(
+        parser.screen().cell(0, 11).unwrap().bgcolor(),
+        vt100::Color::Idx(1)
+    );
+}
+
+#[test]
+fn rust_console_pty_cmd_cls_clears_screen_and_keeps_session_usable() {
+    let mut fixture = Fixture::spawn("echo BEFORECLS&cls&echo AFTERCLS", |command| {
+        command.size(TerminalSize { rows: 6, cols: 20 })
+    });
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(6, 20, 0);
+    parser.process(&fixture.bytes);
+    assert!(!parser.screen().contents().contains("BEFORECLS"));
+    assert!(parser.screen().contents().contains("AFTERCLS"));
+}
+
+#[test]
+#[ignore = "explicit system ConPTY native fill differential court"]
+fn rust_console_client_native_fills_match_system_conpty() {
+    let (reference, _) = screen_fill_report(false);
+    std::fs::write(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/conhost-research/screen-fill-reference.txt"),
+        &reference,
+    )
+    .unwrap();
+    let (owned, _) = screen_fill_report(true);
+    std::fs::write(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/conhost-research/screen-fill-owned.txt"),
+        &owned,
+    )
+    .unwrap();
+    let (_, reference_body) = reference.split_once('\n').unwrap();
+    let (_, owned_body) = owned.split_once('\n').unwrap();
+    assert_eq!(owned_body, include_str!("support/screen_fill.txt"));
+    let normalized = if reference.starts_with("build=20348\n") {
+        // This old host retains an orphaned leading half after overwriting
+        // its trailing cell. Our cell edit heals the pair instead.
+        reference_body.replace(
+            "row:1:[005a, 4e2d, 0051, 4e2d, 4e2d, 4e2d, 4e2d, 0078]:[004f, 014f,",
+            "row:1:[005a, 0020, 0051, 4e2d, 4e2d, 4e2d, 4e2d, 0078]:[004f, 004f,",
+        )
+    } else {
+        reference_body.to_owned()
+    };
+    assert_eq!(owned_body, normalized);
+}
+
 fn screen_readback_report(rust: bool, complex: bool) -> String {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))

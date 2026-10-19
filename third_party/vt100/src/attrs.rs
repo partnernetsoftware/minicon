@@ -14,6 +14,44 @@ pub enum Color {
     Rgb(u8, u8, u8),
 }
 
+/// Drawing attributes for programmatic cell edits, independent of VT grammar.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CellStyle {
+    /// Foreground color.
+    pub foreground: Color,
+    /// Background color.
+    pub background: Color,
+    /// Bold intensity.
+    pub bold: bool,
+    /// Dim intensity; takes precedence if both intensity flags are set.
+    pub dim: bool,
+    /// Italic text.
+    pub italic: bool,
+    /// Underlined text.
+    pub underline: bool,
+    /// Reversed foreground and background.
+    pub inverse: bool,
+}
+
+impl From<CellStyle> for Attrs {
+    fn from(style: CellStyle) -> Self {
+        let mut attrs = Self {
+            fgcolor: style.foreground,
+            bgcolor: style.background,
+            mode: 0,
+        };
+        if style.bold {
+            attrs.set_bold();
+        }
+        if style.dim {
+            attrs.set_dim();
+        }
+        attrs.set_italic(style.italic);
+        attrs.set_underline(style.underline);
+        attrs.set_inverse(style.inverse);
+        attrs
+    }
+}
 const TEXT_MODE_INTENSITY: u8 = 0b0000_0011;
 const TEXT_MODE_BOLD: u8 = 0b0000_0001;
 const TEXT_MODE_DIM: u8 = 0b0000_0010;
@@ -91,11 +129,7 @@ impl Attrs {
         }
     }
 
-    pub fn write_escape_code_diff(
-        &self,
-        contents: &mut Vec<u8>,
-        other: &Self,
-    ) {
+    pub fn write_escape_code_diff(&self, contents: &mut Vec<u8>, other: &Self) {
         if self != other && self == &Self::default() {
             crate::term::ClearAttrs.write_buf(contents);
             return;

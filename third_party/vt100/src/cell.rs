@@ -130,6 +130,22 @@ impl Cell {
         &self.attrs
     }
 
+    pub(crate) fn set_attrs(&mut self, attrs: crate::attrs::Attrs) {
+        self.attrs = attrs;
+    }
+
+    // Literal control/zero-width cells have native readback meaning, but must
+    // not execute terminal grammar or shift subsequent projected columns.
+    pub(crate) fn display_contents(&self) -> &str {
+        let text = self.contents();
+        match text.chars().next() {
+            Some(character) if character.is_control() => " ",
+            Some('\u{fffd}') => "\u{25cc}",
+            Some(character) if character.width() == Some(0) => "\u{25cc}",
+            _ => text,
+        }
+    }
+
     /// Returns the foreground color of the cell.
     #[must_use]
     pub fn fgcolor(&self) -> crate::Color {

@@ -16,6 +16,8 @@ Microsoft Terminal source at revision
 - `src/host/input.cpp`, `conwinuserrefs.h` and `src/interactivity/win32/ConsoleControl.cpp`
 - `src/host/inputBuffer.cpp` and `src/terminal/parser/InputStateMachineEngine.cpp`
 - `src/host/_stream.cpp` (processed/legacy/VT output mode behavior)
+- `src/host/output.cpp` and `directio.cpp` (legacy screen readback)
+- `src/host/_output.cpp` (native fill counting and component preservation)
 - `src/winconpty/winconpty.h`
 
 Copyright (c) Microsoft Corporation. The MIT notice is retained in

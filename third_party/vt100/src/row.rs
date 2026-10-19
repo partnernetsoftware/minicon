@@ -98,6 +98,43 @@ impl Row {
         self.wrapped = wrap;
     }
 
+    pub fn fill_literal(&mut self, start: u16, end: u16, character: char) {
+        let mut column = start;
+        while column < end {
+            self.clear_wide(column);
+            let wide = unicode_width::UnicodeWidthChar::width(character)
+                .unwrap_or(1)
+                > 1;
+            if wide {
+                self.clear_wide(column + 1);
+            }
+            let attrs = *self.cells[usize::from(column)].attrs();
+            self.cells[usize::from(column)].set(character, attrs);
+            column += 1;
+            if wide {
+                let cell = &mut self.cells[usize::from(column)];
+                cell.clear(*cell.attrs());
+                cell.set_wide_continuation(true);
+                column += 1;
+            }
+        }
+        if end == self.cols() {
+            self.wrapped = false;
+        }
+    }
+
+    pub fn fill_style(
+        &mut self,
+        start: u16,
+        end: u16,
+        style: crate::CellStyle,
+    ) {
+        let attrs = style.into();
+        for cell in &mut self.cells[usize::from(start)..usize::from(end)] {
+            cell.set_attrs(attrs);
+        }
+    }
+
     pub fn wrapped(&self) -> bool {
         self.wrapped
     }
@@ -225,8 +262,7 @@ impl Row {
                     {
                         if new_pos.col > 0 {
                             contents.extend(
-                                " ".repeat(usize::from(new_pos.col))
-                                    .as_bytes(),
+                                " ".repeat(usize::from(new_pos.col)).as_bytes(),
                             );
                         } else {
                             contents.extend(b" ");
@@ -269,7 +305,7 @@ impl Row {
                     }
 
                     prev_pos.col += if cell.is_wide() { 2 } else { 1 };
-                    let cell_contents = cell.contents();
+                    let cell_contents = cell.display_contents();
                     contents.extend(cell_contents.as_bytes());
                 } else if erase.is_none() {
                     erase = Some((pos.col, attrs));
@@ -333,11 +369,10 @@ impl Row {
         {
             let first_cell_attrs = first_cell.attrs();
             if &prev_attrs != first_cell_attrs {
-                first_cell_attrs
-                    .write_escape_code_diff(contents, &prev_attrs);
+                first_cell_attrs.write_escape_code_diff(contents, &prev_attrs);
                 prev_attrs = *first_cell_attrs;
             }
-            let mut cell_contents = prev_first_cell.contents();
+            let mut cell_contents = prev_first_cell.display_contents();
             let need_erase = if cell_contents.is_empty() {
                 cell_contents = " ";
                 true
@@ -382,8 +417,7 @@ impl Row {
                     {
                         if new_pos.col > 0 {
                             contents.extend(
-                                " ".repeat(usize::from(new_pos.col))
-                                    .as_bytes(),
+                                " ".repeat(usize::from(new_pos.col)).as_bytes(),
                             );
                         } else {
                             contents.extend(b" ");
@@ -426,7 +460,7 @@ impl Row {
                     }
 
                     prev_pos.col += if cell.is_wide() { 2 } else { 1 };
-                    contents.extend(cell.contents().as_bytes());
+                    contents.extend(cell.display_contents().as_bytes());
                 } else if erase.is_none() {
                     erase = Some((pos.col, attrs));
                 }
@@ -463,8 +497,7 @@ impl Row {
         // wrapped, we need to redraw the last character without erasing it to
         // position the cursor after the end of the line correctly so that
         // drawing the next line can just start writing and be wrapped.
-        if (!self.wrapped && prev.wrapped) || (!prev.wrapped && self.wrapped)
-        {
+        if (!self.wrapped && prev.wrapped) || (!prev.wrapped && self.wrapped) {
             let end_pos = if self.cells[usize::from(self.cols() - 1)]
                 .is_wide_continuation()
             {
@@ -478,8 +511,7 @@ impl Row {
                     col: self.cols() - 1,
                 }
             };
-            crate::term::MoveFromTo::new(prev_pos, end_pos)
-                .write_buf(contents);
+            crate::term::MoveFromTo::new(prev_pos, end_pos).write_buf(contents);
             prev_pos = end_pos;
             if !self.wrapped {
                 crate::term::EraseChar::new(1).write_buf(contents);
@@ -491,7 +523,7 @@ impl Row {
                     attrs.write_escape_code_diff(contents, &prev_attrs);
                     prev_attrs = *attrs;
                 }
-                contents.extend(end_cell.contents().as_bytes());
+                contents.extend(end_cell.display_contents().as_bytes());
                 prev_pos.col += if end_cell.is_wide() { 2 } else { 1 };
             }
         }

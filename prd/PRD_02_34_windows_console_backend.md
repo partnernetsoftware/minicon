@@ -46,6 +46,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   terminal projection, retain finite wide-margin progress and shared parser ownership
 │   ├── [v] scoped drawing attributes: native setter/query and subsequent text share VT state
 │   ├── [v] scoped native character/attribute readback: bounded views of the shared screen
+│   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -80,6 +81,8 @@ flowchart LR
     ATTR --> VT
     HOST --> READBACK["native cell readback / bounded result / same shared screen"]
     READBACK --> VT
+    HOST --> FILL["native fills / transactional shared-cell edits / safe VT projection"]
+    FILL --> VT
     HOST --> LIFE["connection defaults vs opened file objects"]
     LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
     LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
@@ -143,6 +146,21 @@ The leaf depends on native file lifetimes, shared cell attributes and ordered
 output requests. Hot files are the host dispatcher, output/readback modules,
 owned parser's wide-cell creation and native probe. Fill/rectangular writes,
 literal C0 cell preservation and multiple screen buffers remain separate work.
+
+### Accepted native-fill leaf
+
+Invariant: FillConsoleOutputCharacter A/W and FillConsoleOutputAttribute edit
+the existing shared cells, preserve cursor/drawing state and the untouched
+character/style component, and never execute literal cell contents as VT.
+Evidence combines SDK fill counts/readback with owned projected cells, access
+checks, wide overwrite/padding, controls, OEM conversion and a real cmd clear
+regression. Safe failure leaves owned cells unchanged if projection fails;
+unsupported legacy attributes/unpaired UTF-16 and excessive projection fail
+explicitly with zero native written count. Dependencies are readback, FIFO
+output scheduling, native handle rights and shared full/diff projection. Hot
+files are the host dispatcher/screen/output modules and the owned parser's
+cell/style/edit/serialization modules. Remaining rectangular/multi-buffer and
+partial-client-VT interaction work is not replaced by this leaf.
 
 Microsoft describes OpenConsole as the open-source console host. Its public
 server source contains API dispatch and driver transport; this is a better
@@ -298,6 +316,7 @@ certification for all clients or OS releases.
 | GetScreenBufferInfo | Return geometry, cursor and scoped current drawing attributes from the owned VT parser; retain initial palette. | Palette mutation/RGB quantization, full legacy screen mutation, scrolling, resize, multiple buffers and rectangular readback. |
 | SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | LVB mode/code-page gating, native attribute fill/rectangular readback and API interleaving inside incomplete client escape sequences. |
 | ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. | Rectangular readback, literal C0 retention, all code-page/grapheme policies and simultaneous output-pressure ordering qualification. |
+| FillConsoleOutputCharacter A/W / FillConsoleOutputAttribute | Validate WRITE access; literal shared-cell/style edits, repetition counts, native readback, safe projection and cursor/drawing-state preservation. | Remaining legacy attribute flags/unpaired UTF-16, rectangular and multiple-buffer mutations, large-screen performance and incomplete-client-VT interleaving. |
 | GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
 | Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Other native-key transports, unattached-group compatibility, other signals and broader OS/client qualification. |
@@ -1167,3 +1186,75 @@ counts. Both new native cases and the shared parser unit have runtime negatives;
 source restoration is recorded by hash. Filling/rectangular mutation and
 readback, literal C0 cells, multiple buffers, broader code pages, real full-screen
 clients and packaged/default promotion still require further work.
+
+## Native fills and literal cell projection
+
+The host's `screen.rs` now handles FillConsoleOutputCharacter A/W and
+FillConsoleOutputAttribute through the shared programmatic edit contract owned
+by [terminal rendering](PRD_02_24_con_terminal.md). Windows element kinds,
+code-page conversion, access rights, supported attribute mask and native counts
+remain in `minicon-console`; `CellStyle`, literal cells, pair healing, row damage
+and safe full/diff projection stay OS/ISA-neutral in the owned parser. This is
+an actual consumer of the reusable API, not a second Windows screen model.
+
+Character fills preserve existing styles, attribute fills preserve characters
+and width metadata, and both preserve cursor/current drawing attributes. Native
+receipts cover crossing a row, clipping at screen end, invalid origins and zero
+length. Wide fill length counts repetitions, not occupied columns. An
+unplaceable final column is padded without consuming a repetition before
+continuing on the next row, matching the pinned
+[FillConsoleImpl source](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/_output.cpp)
+and measured native counts. Narrow overwrite heals both halves of an old wide
+pair. Build 20348 instead retains an orphan leading half in this case; the
+reference court normalizes exactly that measured row/flag difference for that
+build and requires all other native receipts to agree. Other builds inherit
+no exception automatically.
+
+Literal ESC, NUL, TAB, U+FFFD and standalone combining cells are kept in the same cells
+and returned exactly through native readback. Formatted output projects controls
+as spaces and standalone zero-width/U+FFFD cells as dotted circles, preserving one
+column each and preventing their execution as VT grammar. The native probe
+checks all intermediate character/attribute receipts and final owned projected
+rows, including no consecutive raw ESC bytes, restored drawing colors and
+cursor. A read-only console file fails both character/attribute fills with
+access denied and zero count; a write-only file succeeds. CP437 ANSI line
+characters are converted using the current output code page.
+
+The host applies an edit to a transient clone of the existing screen type,
+builds a safe diff, and commits after successful output. The client VT parser
+does not consume this diff, so literal cells and unfinished internal client
+decoder state survive. This introduces no Windows-specific shadow grid or per-cell
+storage field. Native fills remain in the ordered emitting-request queue.
+Projection above one MiB fails explicitly before output/commit. Unsupported
+legacy attribute bits and unpaired UTF-16 fill units return NOT_SUPPORTED; native
+written count is zero on failure. Large-screen clone/diff allocation, projection
+budget boundaries, high-pressure mixed API scheduling and concurrent writers
+still need qualification. A failing sink is explicitly tested to leave cells
+unchanged; partial downstream writes retain the existing fatal I/O behavior.
+
+The separate real `cmd /c cls` regression proves clearing followed by further
+output through the owned PTY. The negative audit confirms this cmd build can
+clear through its existing VT path even when native character fills are disabled;
+it is guarded by an output-sink mutation instead of being misrepresented as a
+native fill consumer. Full PowerShell Clear-Host/shim and other real TUI clearing
+paths remain open.
+
+Evidence is `screen-fill-red.log`, `screen-fill-positive.log`,
+`screen-fill-final-suite.log`, the explicit reference/owned native receipts and
+`screen-fill-negative-audit.json` in the ignored research directory. The owned
+golden is derived from independent native SDK receipts plus the explicit healed
+wide-pair invariant. Four new tests grow the canonical selected suite to 150:
+99 backend/reference, 29 legacy-agent and 22 shared parser/UI, including sixteen
+explicitly selected external/reference cases. Thirteen runtime mutations cover
+text/style edits, WRITE access, returned counts, attribute preservation, literal
+control/zero-width projection, wide healing/padding, sink commit order, ANSI
+code-page conversion and the actual cmd output path. Workspace and owned-parser
+negative courts run separately when workspace failure would stop the wrapper.
+Every new test has a runtime negative; the audit records restored source hashes.
+
+The shared edit mechanism preserves incomplete internal decoder state, but the
+host still forwards client output bytes. Native API projection interleaved into
+an unfinished wire-level VT/UTF-8 command is not yet a coherent stream contract.
+That requires further output/parser integration, along with rectangular
+operations, scrolling/multiple buffers, complete legacy flags/code pages,
+broader Windows/ISA/application runtime and packaged/default qualification.

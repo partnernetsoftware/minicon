@@ -238,6 +238,16 @@ fn swap_red_blue(index: u8) -> u8 {
     (index & 10) | ((index & 1) << 2) | ((index & 4) >> 2)
 }
 
+pub(super) fn legacy_style(attribute: u16) -> vt100::CellStyle {
+    vt100::CellStyle {
+        foreground: vt100::Color::Idx(swap_red_blue((attribute & 15) as u8)),
+        background: vt100::Color::Idx(swap_red_blue(((attribute >> 4) & 15) as u8)),
+        inverse: attribute & 0x4000 != 0,
+        underline: attribute & 0x8000 != 0,
+        ..vt100::CellStyle::default()
+    }
+}
+
 pub(super) fn legacy_attribute(
     foreground: vt100::Color,
     background: vt100::Color,

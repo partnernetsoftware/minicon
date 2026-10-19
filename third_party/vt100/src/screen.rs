@@ -1,5 +1,6 @@
 use crate::term::BufWrite as _;
 use unicode_width::UnicodeWidthChar as _;
+mod editing;
 
 const MODE_APPLICATION_KEYPAD: u8 = 0b0000_0001;
 const MODE_APPLICATION_CURSOR: u8 = 0b0000_0010;

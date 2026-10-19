@@ -4,6 +4,7 @@ mod input;
 mod objects;
 mod output;
 mod readback;
+mod screen;
 pub use input::ConsoleInput;
 use input::InputState;
 use std::collections::{BTreeMap, VecDeque};
@@ -440,6 +441,35 @@ impl<'session> ConsoleHost<'session> {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0200_0000 if body.len() >= 16 => {
+                let requested = read_u32(&body, 12).unwrap();
+                body[12..16].fill(0);
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
+                    let kind = read_u32(&body, 4).unwrap();
+                    let element = u16::from_le_bytes([body[8], body[9]]);
+                    let column = u16::from_le_bytes([body[0], body[1]]);
+                    let row = u16::from_le_bytes([body[2], body[3]]);
+                    match self.fill_output(
+                        kind,
+                        element,
+                        row,
+                        column,
+                        requested as usize,
+                        output,
+                    )? {
+                        Ok(written) => {
+                            body[12..16].copy_from_slice(&(written as u32).to_le_bytes())
+                        }
+                        Err(status) => receipt.status = status,
+                    }
+                }
+            }
             0x0200_0001 if body.len() >= 8 => {
                 let event = match read_u32(&body, 0).unwrap() {
                     0 => Some(crate::control::ControlEvent::CtrlC),
@@ -807,5 +837,8 @@ mod tests {
         let result = host.set_text_attribute(0xc012, &mut FailedOutput);
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
         assert_eq!(host.text_attribute(), 7);
+        let result = host.fill_output(2, u16::from(b'X'), 0, 0, 1, &mut FailedOutput);
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(host.screen.screen().cell(0, 0).unwrap().contents(), "");
     }
 }

@@ -8,6 +8,8 @@ mod inheritance;
 #[cfg(windows)]
 mod output_modes;
 #[cfg(windows)]
+mod screen_fill;
+#[cfg(windows)]
 mod screen_readback;
 #[cfg(windows)]
 mod text_attributes;
@@ -36,6 +38,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "screen-fill" {
+        return screen_fill::run(std::path::Path::new(&arguments[1]));
+    }
     if matches!(
         mode,
         "screen-readback"
