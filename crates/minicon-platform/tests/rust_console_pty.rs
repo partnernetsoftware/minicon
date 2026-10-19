@@ -165,6 +165,8 @@ impl Drop for Report {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
         for extension in [
+            "ps1",
+            "client-ready",
             "ready",
             "read-error",
             "read-panic",
@@ -4159,6 +4161,123 @@ fn rust_console_pty_record_queries_stay_live_under_output_pressure() {
     .into_bytes();
     expected.extend(vec![b'P'; 65536]);
     assert_eq!(fixture.bytes, expected);
+}
+
+fn cooked_edit_report(kind: &str, rust: bool) -> String {
+    let report = Report::new();
+    let cols = if matches!(kind, "cmd" | "powershell") {
+        80
+    } else {
+        16
+    };
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(format!("cooked-edit-{kind}"))
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("cooked-edit-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    let (build, receipt) = receipt.split_once('\n').unwrap();
+    let build: u32 = build.strip_prefix("build=").unwrap().parse().unwrap();
+    if rust {
+        assert!(build > 0);
+    } else {
+        assert_eq!(build, 20348);
+    }
+    let mut parser = vt100::Parser::new(8, cols, 0);
+    parser.process(&fixture.bytes);
+    let body = format!(
+        "{receipt}screen:{:?}\nfrontend-cursor:{:?}\n",
+        parser.screen().contents(),
+        parser.screen().cursor_position()
+    );
+    println!("cooked-edit rust={rust};kind={kind};build={build}\n{body}");
+    body
+}
+
+fn cooked_edit_cases(rust: bool) {
+    for kind in [
+        "insert",
+        "implicit-insert",
+        "inherit-overwrite",
+        "overwrite",
+        "toggle",
+        "delete",
+        "end",
+        "backspace",
+        "escape",
+        "escape-masked",
+        "initial",
+        "enter-middle",
+        "unicode-motion",
+        "unicode-overwrite",
+        "pair-overwrite",
+        "invalid",
+        "invalid-retained",
+        "f1",
+        "edges",
+        "ctrl-home",
+        "ctrl-end",
+        "repeat",
+        "masked-middle",
+        "literal-bs",
+        "escape-alt",
+    ] {
+        let actual = cooked_edit_report(kind, rust);
+        assert_eq!(
+            actual,
+            cooked_edit_expected(kind, rust),
+            "kind={kind};rust={rust}"
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_cooked_editor_keeps_utf16_and_native_editing_state() {
+    cooked_edit_cases(true);
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell cooked-read court; missing client is BLOCKED"]
+fn rust_console_pty_cooked_editor_feeds_powershell_console_readline() {
+    assert_eq!(
+        cooked_edit_report("powershell", true),
+        cooked_edit_expected("powershell", true)
+    );
+}
+
+fn cooked_edit_expected(kind: &str, rust: bool) -> String {
+    let text = if rust {
+        include_str!("support/cooked_edit_owned.txt")
+    } else {
+        include_str!("support/cooked_edit_reference_20348.txt")
+    }
+    .replace("\r\n", "\n");
+    let prefix = format!("[{kind}]\n");
+    let body = text
+        .split_once(&prefix)
+        .unwrap()
+        .1
+        .split("\n[")
+        .next()
+        .unwrap();
+    format!("{}\n", body.trim_end())
+}
+
+#[test]
+#[ignore = "explicit system ConPTY cooked-editor differential court"]
+fn rust_console_client_cooked_editor_compares_system_conpty() {
+    cooked_edit_cases(false);
+    assert_eq!(
+        cooked_edit_report("powershell", false),
+        cooked_edit_expected("powershell", false)
+    );
 }
 
 fn cooked_controls_report(kind: &str, rust: bool) -> (String, vt100::Parser) {

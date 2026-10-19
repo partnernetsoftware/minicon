@@ -13,6 +13,7 @@ Microsoft Terminal source at revision
 - `src/server/ApiSorter.cpp` and `src/server/ApiDispatchers.cpp`
 - `src/server/ApiDispatchersInternal.cpp`
 - `src/host/readDataCooked.cpp`, `readDataDirect.cpp` and `readDataRaw.cpp`
+- `src/host/stream.cpp` (native cooked-input editing-key classification)
 - `src/host/input.cpp`, `conwinuserrefs.h` and `src/interactivity/win32/ConsoleControl.cpp`
 - `src/host/inputBuffer.cpp` and `src/terminal/parser/InputStateMachineEngine.cpp`
 - `src/host/_stream.cpp` (processed/legacy/VT output mode behavior)

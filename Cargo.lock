@@ -1092,6 +1092,7 @@ name = "minicon-console"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "unicode-segmentation",
  "unicode-width",
  "vt100",
  "windows-sys 0.61.2",

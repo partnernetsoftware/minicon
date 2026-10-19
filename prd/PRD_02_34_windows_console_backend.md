@@ -32,6 +32,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped ANSI record reads/peeks: bounded expansion, tail lifetime and live queries
 │   ├── [v] scoped single-write input coalescing: shared admission and checked repeats
 │   ├── [-] cooked editing: processed backspace/newline and wakeup-control precedence
+│   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
+│   │   └── [_] echoed cursor/repaint and broader editing-key transport
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -3065,3 +3067,97 @@ all-targets compilation. Runtime scope remains Windows x86_64 build 20348;
 cross-target results prove compilation only. Final formatting/alignment checks
 and `cooked-controls-final-receipt.json` bind source tree, restored guard hashes,
 logs, pinned source and executed image identities; the broader goal stays open.
+
+### Silent cooked-read editing state
+
+Invariant: a non-VT, line-mode read with echo disabled edits its original
+UTF-16 storage at a per-read cursor. Left/Right/F1 move by grapheme; Home/End,
+Delete, processed Backspace, Escape, Insert and Ctrl+Home/End have native editing
+meaning. Key classification precedes character handling and wakeup; Alt+Escape
+remains character data. Enter returns the entire edited line, while a masked
+control returns the edited prefix and control unit, retiring the suffix without
+consuming later input records. Initial text begins with its cursor at the end.
+
+`crates/minicon-console/src/host/input/edit.rs` owns the native model;
+`host/input.rs` owns request/queue
+lifetime and mode selection. It uses `unicode-segmentation` only for boundaries
+on temporary lossy text; storage and the W API result retain original UTF-16,
+including invalid units. Overwrite removes one following grapheme, and a low
+surrogate completing the just-accepted high unit does not remove another one.
+Growth is preflighted against the existing 32,768-unit line limit before edits;
+replacement at capacity remains valid and completion retains the existing
+two-unit newline allowance. Native errors remain explicit; general mode and
+lifecycle failures retain their existing owners.
+
+Global insert mode starts enabled. Only SetConsoleMode with EXTENDED_FLAGS
+changes that default; a read captures it and Insert toggles only the read's
+editor. Reads returning to legacy echo/VT handling retire the silent editor's
+cursor and reinitialize on later silent input, avoiding stale offsets. This is
+not qualification of arbitrary concurrent mode changes or insert-mode changes
+inside an active read.
+
+Dependencies are raw key records/repeats, bounded cooked reads, native mode
+state and the Windows-only segmentation dependency. This model cannot reuse
+platform's UTF-8 `LineBuffer` without losing the native ABI's UTF-16 contract
+and introducing a reverse dependency. It stays private until portable consumers
+establish an appropriate shared contract. Echoed cursor/repaint, history,
+word-wise movement, general combining/ZWJ overwrite, broader key transport,
+resize/concurrent-output layout and full line-editor compatibility remain open.
+The ordinary echoed path continues to use its existing append/backspace logic;
+this delivery does not claim echoed cursor editing is complete.
+
+Actual Windows PowerShell `[Console]::ReadLine()` is a separate consumer court:
+the controlled script selects silent line mode itself, publishes readiness, then
+the SDK parent supplies records. Returned text is printed by the real .NET
+console API and checked through the PTY, alongside process exit, queue and native
+cursor. SDK fixtures separately cover insert/overwrite/toggle and global mode
+inheritance; Left/Right/Home/End/F1, Delete/Backspace/Escape, Ctrl+Home/End,
+repeat/boundary behavior, initial text, CJK/supplementary/combining graphemes,
+invalid-unit deletion/retention, masked completion and Alt+Escape classification.
+
+Build 20348 has explicit differences: movement/overwrite can split surrogate
+pairs or combining text; middle wakeup overwrites a unit and retains a padded
+suffix. Some edits paint blank cells even with echo disabled. Separate expected
+assets preserve those observed results; owned receipts use grapheme boundaries,
+lossless UTF-16 and prefix-only wakeup. The pinned modern source still documents
+multi-unit overwrite limitations; the owned surrogate-pair rule is an explicit
+improvement, not a blanket upstream-equivalence claim.
+
+`cooked-edit-cmd-path-observe.log` is an open-frontier diagnostic, not a passing
+editor regression: real `cmd /c set /p` re-enables echo. System ConPTY reads
+`abXcd` from `abcd`, Left twice, X; the owned echoed path currently reads
+`abcdX`. This demonstrates the remaining integration requirement. The SDK's
+manual `cooked-edit-cmd` mode retains the probe, but it is excluded from the
+qualified silent-editor scenario count. Integrate the same editor with common
+echo publication and qualify actual cmd before claiming interactive line editing.
+
+Local qualification: `cooked-edit-final-focused.log` records four passing tests
+and 52 native scenarios: 25 silent SDK cases plus one actual Windows PowerShell
+consumer on each provider. The tests are
+`rust_console_pty_cooked_editor_keeps_utf16_and_native_editing_state`,
+`rust_console_pty_cooked_editor_feeds_powershell_console_readline`,
+`rust_console_client_cooked_editor_compares_system_conpty` and the private
+`rust_console_cooked_editor_bounds_growth_without_rejecting_replacement` unit.
+Both the external client and system reference are explicit courts; missing
+prerequisites fail rather than silently skip. The boundary unit rejects growth
+without changing text/cursor, permits overwrite at capacity and preserves the
+existing completion allowance.
+
+`cooked-edit-negative-audit.json` records eighteen byte-restored runtime faults:
+actual SDK/PowerShell adoption, initial cursor, left/right movement, insert toggle,
+Delete/Backspace, Ctrl+Home/End, wakeup suffix, surrogate overwrite, raw UTF-16,
+grapheme boundaries, explicit/default insert mode, capacity, modifier-based
+classification and the reference SDK caller. One compile-rejected initial-cursor
+mutation was replaced with a compiling runtime fault and is excluded from that
+count. `cooked-edit-final-suite.log` records 273 selected passes, including
+existing client, pressure, control, geometry, lifetime and alignment coverage.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Execution remains Windows x86_64 build 20348; cross
+targets are compile-only. Final formatting and 17 alignment checks follow this
+documentation. `cooked-edit-final-receipt.json` binds the source tree, all guard
+and log hashes, expected assets, executed image identities, compiler and two
+pinned upstream source blobs. High-repeat movement and per-turn work cost still
+need latency qualification; bounded storage alone does not establish it. No
+complete editor, backend, portable session or default-promotion claim follows.

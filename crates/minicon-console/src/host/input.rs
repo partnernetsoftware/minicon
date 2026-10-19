@@ -1,4 +1,5 @@
 //! Deferred console input. Requests retain their originating driver's lifetime.
+mod edit;
 mod records;
 use super::*;
 use std::collections::VecDeque;
@@ -46,6 +47,7 @@ pub(super) struct InputState<'session> {
     ansi_write_lead: Option<ConsoleInput>,
     record_tail: VecDeque<ConsoleInput>,
     pending: VecDeque<PendingRead<'session>>,
+    pub(super) insert_mode: Option<bool>,
 }
 
 impl InputState<'_> {
@@ -110,6 +112,8 @@ struct PendingRead<'session> {
     line: Vec<u16>,
     controls: u32,
     echo_decoder: crate::terminal::Utf16Decoder,
+    editor: edit::Editor,
+    editing: bool,
 }
 
 impl<'session> ConsoleHost<'session> {
@@ -399,6 +403,8 @@ impl<'session> ConsoleHost<'session> {
                 control_z,
                 wakeup,
             },
+            editor: edit::Editor::new(line.len(), self.input.insert_mode.unwrap_or(true)),
+            editing: false,
             line,
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
@@ -477,6 +483,8 @@ impl<'session> ConsoleHost<'session> {
             body,
             kind: ReadKind::Records { flags, unicode },
             line: Vec::new(),
+            editor: edit::Editor::new(0, true),
+            editing: false,
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
         });
@@ -597,6 +605,34 @@ impl<'session> ConsoleHost<'session> {
             if !line_mode {
                 read.controls = controls;
             }
+            if line_mode
+                && !echo
+                && self.input_mode & 0x200 == 0
+                && !(character == 3 && self.input_mode & 1 != 0)
+            {
+                if !read.editing {
+                    read.editor =
+                        edit::Editor::new(read.line.len(), self.input.insert_mode.unwrap_or(true));
+                }
+                read.editing = true;
+                match read.editor.handle(
+                    &mut read.line,
+                    character,
+                    virtual_key,
+                    controls,
+                    self.input_mode & 1 != 0,
+                    wakeup,
+                )? {
+                    edit::Outcome::Continue => continue,
+                    edit::Outcome::Complete(modifiers) => {
+                        read.controls = modifiers;
+                        self.input.ready_event_suppressed = false;
+                        self.input.ready.extend(read.line.drain(..));
+                        return Ok(());
+                    }
+                }
+            }
+            read.editing = false;
             if character == 0 {
                 if self.input_mode & 0x200 != 0 {
                     let sequence: &[u16] = match virtual_key {

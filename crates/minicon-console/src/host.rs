@@ -714,6 +714,11 @@ impl<'session> ConsoleHost<'session> {
                             receipt.status = INVALID_PARAMETER;
                         } else {
                             *mode = requested;
+                            if matches!(self.handles[&descriptor.object].kind, HandleKind::Input)
+                                && requested & 0x80 != 0
+                            {
+                                self.input.insert_mode = Some(requested & 0x20 != 0);
+                            }
                             if matches!(self.handles[&descriptor.object].kind, HandleKind::Output) {
                                 self.set_output_mode(requested, output)?;
                             }

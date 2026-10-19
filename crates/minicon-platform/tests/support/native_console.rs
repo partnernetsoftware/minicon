@@ -16,6 +16,8 @@ mod control;
 #[cfg(windows)]
 mod cooked_controls;
 #[cfg(windows)]
+mod cooked_edit;
+#[cfg(windows)]
 mod cursor_info;
 #[cfg(windows)]
 mod echo_output;
@@ -80,6 +82,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("cooked-edit-") {
+        return cooked_edit::run(kind, std::path::Path::new(&arguments[1]));
+    }
     if let Some(kind) = mode.strip_prefix("cooked-controls-") {
         return cooked_controls::run(kind, std::path::Path::new(&arguments[1]));
     }
