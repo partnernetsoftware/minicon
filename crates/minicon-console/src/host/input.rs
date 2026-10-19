@@ -255,10 +255,25 @@ impl<'session> ConsoleHost<'session> {
 
     /// Wake blocked reads with the console interruption status (STATUS_ALERTED).
     pub fn cancel_pending_reads(&mut self) -> io::Result<usize> {
+        // Dropping a deferred read uses DriverRequest's native interrupted-read
+        // completion, including the original API shape and zero byte counts.
+        let (deferred_reads, retained): (VecDeque<_>, VecDeque<_>) =
+            std::mem::take(&mut self.deferred_output)
+                .into_iter()
+                .partition(|request| {
+                    request.descriptor.function == 6
+                        || (request.descriptor.function == 7
+                            && matches!(
+                                read_u32(request.inline_payload(), 0),
+                                Some(0x0100_0004 | 0x0100_0005)
+                            ))
+                });
+        self.deferred_output = retained;
         let pending = std::mem::take(&mut self.input.pending);
-        let count = pending.len();
+        let count = pending.len() + deferred_reads.len();
         // Publish native readiness before any blocked SDK caller resumes.
         let mut failure = self.update_input_event().err();
+        drop(deferred_reads);
         for mut read in pending {
             match read.kind {
                 ReadKind::Text { raw: false, .. } => read.body[12..20].fill(0),

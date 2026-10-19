@@ -213,10 +213,53 @@ fn wait_for_empty_job(child: &ConsoleChild, timeout: Duration) -> io::Result<boo
     }
 }
 
-struct QueueWriter<'a>(&'a OutputPipe);
+fn settle_native_result<T>(
+    result: io::Result<T>,
+    child: &ConsoleChild,
+    closed: &mut bool,
+) -> io::Result<()> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(error)
+            if error.raw_os_error() == Some(ERROR_OPERATION_ABORTED as i32)
+                && wait_for_empty_job(child, Duration::from_millis(500)).unwrap_or(false) =>
+        {
+            *closed = true;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+const OUTPUT_STAGING_CAPACITY: usize = 4 * 1024 * 1024;
+struct QueueWriter<'a> {
+    output: &'a OutputPipe,
+    pending: VecDeque<u8>,
+}
+impl QueueWriter<'_> {
+    fn drain(&mut self) {
+        while !self.pending.is_empty() {
+            let (first, _) = self.pending.as_slices();
+            let count = self.output.try_push(first);
+            if count == 0 {
+                break;
+            }
+            self.pending.drain(..count);
+        }
+    }
+    fn ready(&self) -> bool {
+        self.pending.is_empty()
+    }
+}
 impl io::Write for QueueWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.push(bytes);
+        if bytes.len() > OUTPUT_STAGING_CAPACITY - self.pending.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "console output staging budget exceeded",
+            ));
+        }
+        self.pending.extend(bytes);
         Ok(bytes.len())
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -236,19 +279,42 @@ fn serve(
     size: TerminalSize,
 ) -> io::Result<()> {
     let mut host = ConsoleHost::for_child(child)?;
-    let mut sink = QueueWriter(output);
+    let mut sink = QueueWriter {
+        output,
+        pending: VecDeque::new(),
+    };
     host.resize(size.cols, size.rows, &mut sink)?;
     let mut pending = Vec::new();
     let mut previous_cr = false;
     let mut escape_wait = None;
     let mut input_blocked = false;
+    let mut driver_closed = false;
     while !stop.load(Ordering::Acquire) {
+        sink.drain();
+        if driver_closed {
+            input.close();
+            // Requests racing the final native disconnect must not wait for
+            // output consumption before their reply channels disconnect.
+            for control in controls.try_iter().take(32) {
+                drop(control);
+            }
+            if sink.ready() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+            continue;
+        }
         // Bound each lap so input cannot starve native request dispatch.
         for control in controls.try_iter().take(32) {
             let (result, reply) = match control {
-                Control::Resize(size, reply) => {
-                    (host.resize(size.cols, size.rows, &mut sink), reply)
-                }
+                Control::Resize(size, reply) => (
+                    if sink.ready() && host.pending_output_requests() == 0 {
+                        host.resize(size.cols, size.rows, &mut sink)
+                    } else {
+                        Err(io::ErrorKind::WouldBlock.into())
+                    },
+                    reply,
+                ),
                 Control::Interrupt(pressure_only, reply) => {
                     let result = if host.input_mode() & 1 != 0 && (!pressure_only || input_blocked)
                     {
@@ -260,6 +326,12 @@ fn serve(
                     continue;
                 }
                 Control::Key(key, repeat, reply) => {
+                    if key != NativeTerminalKey::Break
+                        && (!sink.ready() || host.pending_output_requests() != 0)
+                    {
+                        let _ = reply.send(Err(io::ErrorKind::WouldBlock.into()));
+                        continue;
+                    }
                     if key == NativeTerminalKey::Break {
                         input.flush()?;
                         pending.clear();
@@ -280,6 +352,10 @@ fn serve(
             };
             let _ = reply.send(result);
         }
+        if sink.ready() {
+            settle_native_result(host.resume_output(&mut sink), child, &mut driver_closed)?;
+            mode.store(host.input_mode(), Ordering::Release);
+        }
         input.fill_pending(&mut pending)?;
         let mut input_progress = false;
         let mut valid = match std::str::from_utf8(&pending) {
@@ -290,7 +366,10 @@ fn serve(
         {
             // VT transport becomes native key identity for record readers.
             // The host converts keys back to sequences only for VT text reads.
-            if let Some(escape) = pending[..valid].iter().position(|byte| *byte == 27) {
+            if let Some(escape) = pending[..valid].iter().position(|byte| *byte == 27)
+                && sink.ready()
+                && host.pending_output_requests() == 0
+            {
                 if escape != 0 {
                     valid = escape;
                 } else {
@@ -325,7 +404,11 @@ fn serve(
                                 escape_wait = None;
                             }
                             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                            Err(error) => return Err(error),
+                            Err(error) => settle_native_result(
+                                Err::<(), _>(error),
+                                child,
+                                &mut driver_closed,
+                            )?,
                         }
                         valid = 0;
                     } else if pending.len() == 1 {
@@ -351,7 +434,7 @@ fn serve(
                 escape_wait = None;
             }
         }
-        if valid != 0 {
+        if valid != 0 && sink.ready() && host.pending_output_requests() == 0 {
             let mut cr = previous_cr;
             let text: String = std::str::from_utf8(&pending[..valid])
                 .unwrap()
@@ -369,7 +452,7 @@ fn serve(
                     previous_cr = cr;
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-                Err(error) => return Err(error),
+                Err(error) => settle_native_result(Err::<(), _>(error), child, &mut driver_closed)?,
             }
         }
         input_blocked = !input_progress && !pending.is_empty();
@@ -381,21 +464,32 @@ fn serve(
                 input.take_queued_interrupt()?
             };
             if interrupted {
-                host.send_ctrl_c()?;
+                settle_native_result(host.send_ctrl_c(), child, &mut driver_closed)?;
             }
+        }
+        if driver_closed {
+            continue;
+        }
+        if child.wait(Duration::ZERO)?.is_some()
+            && host.connected_clients() == 0
+            && child.active_processes()? == 0
+        {
+            driver_closed = true;
+            continue;
         }
         match driver.receive(Duration::from_millis(5)) {
             Ok(request) => {
-                host.dispatch(request, &mut sink)?;
+                settle_native_result(
+                    host.dispatch_with_output_ready(request, sink.ready(), &mut sink),
+                    child,
+                    &mut driver_closed,
+                )?;
                 mode.store(host.input_mode(), Ordering::Release);
                 // API-level rejection was completed to the requesting client;
                 // it is not a transport failure or authority to kill siblings.
             }
             Err(error) if error.kind() == io::ErrorKind::TimedOut => {}
-            Err(error) => return Err(error),
-        }
-        if child.wait(Duration::ZERO)?.is_some() && host.connected_clients() == 0 {
-            break;
+            Err(error) => settle_native_result(Err::<(), _>(error), child, &mut driver_closed)?,
         }
     }
     host.cancel_pending_reads()?;
@@ -405,6 +499,46 @@ fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
+
+    #[test]
+    fn rust_console_pty_output_staging_bounds_writes_atomically_and_discards_only_on_shutdown() {
+        let output = OutputPipe::new();
+        let mut sink = QueueWriter {
+            output: &output,
+            pending: VecDeque::new(),
+        };
+        sink.write_all(&vec![b'x'; OUTPUT_STAGING_CAPACITY])
+            .unwrap();
+        sink.drain();
+        assert_eq!(
+            sink.pending.len(),
+            OUTPUT_STAGING_CAPACITY - OUTPUT_QUEUE_CAPACITY
+        );
+        assert_eq!(
+            output.state.lock().unwrap().queue.len(),
+            OUTPUT_QUEUE_CAPACITY
+        );
+        let error = sink
+            .write_all(&vec![b'y'; OUTPUT_QUEUE_CAPACITY + 1])
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(
+            sink.pending.len(),
+            OUTPUT_STAGING_CAPACITY - OUTPUT_QUEUE_CAPACITY
+        );
+        let mut buffered = vec![0; OUTPUT_QUEUE_CAPACITY];
+        assert_eq!(output.read(&mut buffered).unwrap(), OUTPUT_QUEUE_CAPACITY);
+        assert!(buffered.iter().all(|byte| *byte == b'x'));
+        sink.drain();
+        assert!(
+            !sink.ready(),
+            "normal pressure must retain unconsumed bytes"
+        );
+        output.begin_drain();
+        sink.drain();
+        assert!(sink.ready(), "only explicit shutdown discards staging");
+    }
 
     fn suspended_client() -> (DriverSession, Arc<ConsoleChild>) {
         let session = DriverSession::open().unwrap();
@@ -412,6 +546,32 @@ mod tests {
         let command = OsString::from(format!("\"{}\" /d /c exit 0", image.display()));
         let child = session.spawn_suspended(&image, &command).unwrap();
         (session, Arc::new(child))
+    }
+
+    #[test]
+    fn rust_console_pty_final_cancellation_requires_an_empty_job_and_preserves_other_errors() {
+        let (_session, child) = suspended_client();
+        let cancelled = || io::Error::from_raw_os_error(ERROR_OPERATION_ABORTED as i32);
+        let mut closed = false;
+        let error =
+            settle_native_result(Err::<(), _>(cancelled()), &child, &mut closed).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(ERROR_OPERATION_ABORTED as i32));
+        assert!(!closed);
+        child.terminate(1).unwrap();
+        assert!(wait_for_empty_job(&child, Duration::from_secs(1)).unwrap());
+        settle_native_result(Err::<(), _>(cancelled()), &child, &mut closed).unwrap();
+        assert!(closed);
+        closed = false;
+        let error = settle_native_result(
+            Err::<(), _>(io::Error::from_raw_os_error(5)),
+            &child,
+            &mut closed,
+        )
+        .unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(5));
+        assert!(!closed);
+        settle_native_result(Ok(17), &child, &mut closed).unwrap();
+        assert!(!closed);
     }
 
     #[test]

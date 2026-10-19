@@ -14,8 +14,9 @@ behind the existing PTY contract. The new `minicon-console` workspace crate has
 experimental Windows-only APIs and native x86_64 cmd/I/O/record/job evidence.
 The platform's optional `rust-console` feature consumes it behind the existing
 PTY facade; MiniCon forwards that feature as `experimental-rust-console` but
-does not select it in GUI sessions. Its Windows adapter owns bounded input
-staging and control priority; `minicon-console` owns console API/input semantics.
+does not select it in GUI sessions. Its Windows adapter owns bounded input/output
+staging and control priority; `minicon-console` owns console API/input semantics
+and the lifetime/classification/completion of deferred native output requests.
 The detailed bounds, ordering and runtime evidence stay in PRD 02.34.
 Native ABI stabilization, AgenTerm reuse and cross-ISA claims
 require their own implementation and consumer evidence.

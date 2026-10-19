@@ -33,8 +33,12 @@ impl Fixture {
     }
 
     fn open_backend(command: ChildCommand, expected: &str) -> Self {
-        let (mut master, child) = command.spawn().expect("open owned Rust PTY").into_parts();
+        let (master, child) = command.spawn().expect("open owned Rust PTY").into_parts();
         assert_eq!(master.backend_kind(), expected);
+        Self::with_parts(master, child)
+    }
+
+    fn with_parts(mut master: PtyMaster, child: PtyChild) -> Self {
         let reader = master.try_clone_for_startup_reader().unwrap();
         let (send, output) = mpsc::channel();
         std::thread::spawn(move || {
@@ -137,7 +141,8 @@ impl Report {
         while !self.0.with_extension("ready").exists() {
             assert!(
                 Instant::now() < deadline,
-                "native fixture did not publish readiness"
+                "native fixture did not publish readiness; details={:?}",
+                std::fs::read_to_string(self.0.with_extension("go"))
             );
             std::thread::sleep(Duration::from_millis(2));
         }
@@ -166,6 +171,12 @@ impl Drop for Report {
             "opened-ready",
             "detached",
             "first",
+            "first.tmp",
+            "ready.tmp",
+            "go.tmp",
+            "opened-ready.tmp",
+            "orphan-ready",
+            "orphan",
             "child",
         ] {
             let _ = std::fs::remove_file(self.0.with_extension(extension));
@@ -241,6 +252,183 @@ fn rust_console_pty_ctrl_c_bypasses_a_full_input_event_queue() {
     fixture.master.write_all(&[3]).unwrap();
     fixture.finish(0);
     assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,4096|1");
+}
+
+#[test]
+fn rust_console_pty_output_pressure_keeps_controls_and_native_queries_live_and_recovers_in_order() {
+    for (mode, expected) in [
+        ("control-output-c", "1,7,7"),
+        ("control-output-break-raw", "2,0,0"),
+        ("control-output-budget", "1,7,7,2"),
+        ("control-output-read", "1,7,7,true,995,0"),
+    ] {
+        let report = Report::new();
+        let (master, child) =
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(mode)
+                .arg(report.0.as_os_str())
+                .rust_console()
+                .spawn()
+                .unwrap()
+                .into_parts();
+        report.wait_ready();
+        assert_eq!(
+            std::fs::read_to_string(report.0.with_extension("ready")).unwrap(),
+            "73728"
+        );
+        let started = Instant::now();
+        if mode.ends_with("-read") {
+            // Give the native thread which published readiness time to enter
+            // its synchronous read. The cancellation mutation must strand it.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if !mode.contains("break-raw") {
+            master.write_all(&[3]).unwrap();
+        } else {
+            child.send_native_key(NativeTerminalKey::Break, 1).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !report.0.with_extension("go").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "native control/query stranded behind output"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert_eq!(
+            std::fs::read_to_string(report.0.with_extension("go")).unwrap(),
+            expected
+        );
+        // Release exactly one 4 KiB prefix, then hold the reader until two
+        // native query round trips establish a partial staging flush.
+        let mut prefix = vec![0; 4096];
+        assert_eq!(master.io().read(&mut prefix).unwrap(), prefix.len());
+        std::fs::write(report.0.with_extension("opened"), b"drain").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !report.0.with_extension("opened-ready").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "partial flush/query did not progress"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let mut fixture = Fixture::with_parts(master, child);
+        fixture.bytes.extend_from_slice(&prefix);
+        fixture.finish(0);
+        assert_eq!(std::fs::read_to_string(&report.0).unwrap(), expected);
+        let chunks = if mode.ends_with("-budget") {
+            32 + 63
+        } else {
+            32
+        };
+        assert!(
+            fixture.bytes == expected_pressure_output(chunks, !mode.ends_with("-budget")),
+            "output recovery changed ordered chunks ({} bytes)",
+            fixture.bytes.len()
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_output_tail_survives_root_exit_before_the_first_consumer_read() {
+    let report = Report::new();
+    let (mut master, child) =
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-output-tail")
+            .arg(report.0.as_os_str())
+            .rust_console()
+            .spawn()
+            .unwrap()
+            .into_parts();
+    report.wait_ready();
+    let mut waiter = child.try_clone_for_wait().unwrap();
+    let (send, receive) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = send.send(waiter.wait());
+    });
+    assert_eq!(
+        receive
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap()
+            .unwrap()
+            .code(),
+        Some(0)
+    );
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "tail");
+    let writer = master.try_clone_for_startup_reader().unwrap();
+    let (send, receive) = mpsc::channel();
+    std::thread::spawn(move || {
+        loop {
+            if let Err(error) = writer.write_all(b"late-input") {
+                let _ = send.send(error.kind());
+                break;
+            }
+        }
+    });
+    assert_eq!(
+        receive.recv_timeout(Duration::from_millis(500)).unwrap(),
+        std::io::ErrorKind::BrokenPipe,
+        "root exit must close input even while output awaits its first reader"
+    );
+    let mut fixture = Fixture::with_parts(master, child);
+    fixture.finish(0);
+    assert!(
+        fixture.bytes == expected_pressure_output(9, true),
+        "output tail changed ordered chunks ({} bytes)",
+        fixture.bytes.len()
+    );
+}
+
+#[test]
+fn rust_console_pty_output_eof_waits_for_unattached_private_job_members() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-output-tail-orphan")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.wait_exit(0);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while fixture.bytes.len() < 9 * 8192 {
+        let chunk = fixture
+            .output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap()
+            .unwrap();
+        fixture.bytes.extend(chunk);
+    }
+    assert!(
+        matches!(
+            fixture.output.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ),
+        "a live unattached Job member must keep EOF pending"
+    );
+    assert!(!report.0.with_extension("orphan").exists());
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    assert_eq!(
+        std::fs::read_to_string(report.0.with_extension("orphan")).unwrap(),
+        "finished"
+    );
+    assert!(fixture.bytes == expected_pressure_output(9, true));
+}
+
+fn expected_pressure_output(chunks: usize, vary: bool) -> Vec<u8> {
+    (0..chunks)
+        .flat_map(|index| {
+            (0..1024).flat_map(move |position| {
+                let prefix = if vary {
+                    b'A' + ((index * 7 + position) % 26) as u8
+                } else {
+                    b'a'
+                };
+                format!("{}中😀", char::from(prefix)).into_bytes()
+            })
+        })
+        .collect()
 }
 
 #[test]

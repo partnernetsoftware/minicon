@@ -49,6 +49,9 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] minicon-platform bounded input queue and control priority: serialized
 │   │   ordinary writes, processed C bypass, raw order and Break transport flush;
 │   │   native receipts and finite close, no unbounded staging
+│   ├── [v] scoped nonblocking bounded output staging and deferred output-producing
+│   │   requests: keep private controls/native queries live under output pressure;
+│   │   ordered recovery and EOF tail evidence, explicit budget failure
 │   ├── console API dispatch, handles and client attachment
 │   ├── input records, processed/raw modes, Unicode and screen state
 │   └── cancellation, process ownership, resize and bounded shutdown
@@ -88,6 +91,9 @@ flowchart LR
     PRIORITY --> SIGNAL
     BRK --> EPOCH["clear transport and decoder fragments / interrupt old writers"]
     EPOCH --> IQ
+    ADAPTER --> OQ["bounded output staging / FIFO deferred emitting requests"]
+    OQ --> LIVE["continue controls and non-emitting native queries"]
+    OQ --> TAIL["consumer recovery drains staged bytes before EOF"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
     KEYS["shared Windows VT-key decoder"] --> ADAPTER
     KEYS --> OLD["existing console-agent transport"]
@@ -835,3 +841,94 @@ host. An actor blocked writing to a full output sink still requires separate
 control-delivery qualification; this change proves neither that scenario nor
 complete interactive shell/TUI compatibility. Other Windows/ISA runtime,
 performance, packaged artifacts and default selection remain open.
+
+## Output pressure, deferred requests and retained EOF tails
+
+The previous experimental adapter called blocking `OutputPipe::push` from the
+same actor servicing ConDrv. A full 64 KiB consumer queue therefore blocked
+control delivery and native query dispatch. `output-pressure-repro.log`
+preserves the native-process failure before the replacement: a writer could
+not finish its ninth 8 KiB output block without any consumer.
+
+The adapter now stages at most 4 MiB of terminal bytes and moves only available
+space into the existing 64 KiB output queue. It never waits on that queue from
+inside API dispatch. One output-producing request is resumed only after the
+preceding staged bytes have drained. Normal input/echo and non-Break native
+keys also wait for output capacity; resize/non-Break facade requests report
+`WouldBlock` rather than adding an unbounded control backlog. Processed C and
+Break remain serviceable and retain their private-Job authority.
+
+`minicon-console` owns `dispatch_with_output_ready`, the conservative native
+API bypass classification, FIFO request retention and completion. Only known
+non-emitting queries, attachment/object lifecycle and native control generation
+bypass stalled output; future API additions default to ordered deferral.
+`minicon-platform` owns bounded byte staging and calls `resume_output` when
+ready. At most 64 borrowed `DriverRequest` objects retain their kernel request
+identities; client payloads are not copied while queued. Excess requests get
+`STATUS_INSUFFICIENT_RESOURCES`; native WriteConsoleW fixtures observe Windows
+error 1450. Disconnect/final object close reclaim matching retained requests.
+Keyboard interruption also removes deferred console reads using their native
+interrupted-read completion after publishing input readiness.
+
+The byte budget rejects an oversized append before changing staging. Normal
+backpressure retains unconsumed bytes; explicit shutdown may discard staging.
+Unrecoverable transport errors remain failed sessions rather than normal EOF.
+Root exit or final ConDrv cancellation does not publish EOF until staged
+terminal bytes have drained. Cancellation still requires an actually empty
+private Job before becoming normal EOF. This classification also covers native
+errors while completing or resuming a request, not only receiving its next
+descriptor, so a final completion race does not discard accepted terminal
+bytes. Other errors and cancellation with a live Job member remain failures.
+Once native input ends, blocked/new writers get `BrokenPipe` and queued control
+reply channels disconnect while output can still await a consumer. Closing the
+PTY releases its actor and private Job even when no consumer remains.
+
+Native fixtures exercise processed C, raw Break, query reentry from the native
+control handler and main thread, and a ReadConsoleW call deferred behind full
+output. The latter returns successful interruption with LastError 995 and zero
+read units. The consumer starts only after these receipts. Recovery compares
+262,144 bytes of independently encoded UTF-16/UTF-8 data, varying within and
+between blocks to expose byte duplication, loss or reordering. A separate
+73,728-byte case waits for actual root exit and observed input closure before
+creating its first reader, then compares the exact retained tail and EOF.
+Recovery first consumes exactly 4 KiB, pauses consumption across two native
+query round trips, then resumes. This forces a partial staging flush and makes
+loss/repetition of an unconsumed prefix observable without a timing-only wait.
+
+The capacity fixture opens 65 independent CONOUT$ file objects while one write
+is already waiting. Exactly 64 requests remain pending and two extra writes
+fail with 1450; controls and queries remain live and all successful writes
+survive recovery. Threads sharing the same synchronous output file did not
+expose the needed independent requests in the first fixture; separate file
+objects make the server-side capacity observable. This is scoped behavior,
+not a claim about every Windows console I/O serialization rule. Readiness and
+handler receipts publish via temporary-file rename so file existence cannot
+race incomplete receipt contents.
+
+A separate native child uses `DETACHED_PROCESS` with null stdio but remains in
+the same private Job. After root exit and delivery of all terminal bytes, EOF
+must stay pending until that live, unattached member is explicitly released by
+its own report handshake and exits. Zero attached clients alone do not prove
+an empty Job. No system console attachment, process-name sweep or unrelated
+user/session lookup is used. Native Job-backed units also distinguish final
+cancellation from live-member failure and unrelated native errors, and check
+the staging bound, atomic rejection and explicit shutdown discard boundary.
+
+The targeted command above now executes 117 cases: 88 backend/reference cases
+and 29 legacy-agent units, including all twelve requested external/reference
+cases. Five new tests comprise three native-process cases and two native
+adapter units. `output-pressure-positive-suite.log` and
+`output-pressure-final-suite.log` record the baseline and restored-source run.
+Seventeen runtime mutations cover the blocking sink, query bypass, deferral,
+request capacity/status, deferred-read cancellation, EOF tail, input closure,
+zero-member Job authority, cancellation status/authority, byte capacity/atomic
+rejection, consumer capacity, shutdown versus pressure and partial-byte order.
+All five new tests have observed runtime negatives. Restored source hashes and
+individual log identities are in `output-pressure-negative-audit.json` under
+the ignored local evidence directory.
+
+Complete interactive shells/TUI, native Windows ARM64 and other Windows versions,
+performance and packaged/default selection still require their own evidence.
+The above fixtures qualify these output-pressure paths on the recorded native
+Windows x86_64 host; they do not prove every simultaneous API/mode/screen
+interaction or concurrent writer ordering scenario.

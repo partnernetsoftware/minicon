@@ -1131,6 +1131,21 @@ impl OutputPipe {
         }
     }
 
+    #[cfg(feature = "rust-console")]
+    fn try_push(&self, bytes: &[u8]) -> usize {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.draining || state.eof {
+            return bytes.len();
+        }
+        let count = bytes.len().min(OUTPUT_QUEUE_CAPACITY - state.queue.len());
+        state.queue.extend(&bytes[..count]);
+        self.wake.notify_all();
+        count
+    }
+
     fn begin_drain(&self) {
         let mut state = self
             .state

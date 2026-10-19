@@ -13,13 +13,25 @@ use windows_sys::Win32::System::Console::{
 };
 use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
+#[path = "output_pressure.rs"]
+mod output_pressure;
+
 static EVENT: AtomicU32 = AtomicU32::new(0);
 static SIGNALS: AtomicU32 = AtomicU32::new(0);
 static HANDLER_IO: AtomicBool = AtomicBool::new(false);
+static HANDLER_QUERY: AtomicBool = AtomicBool::new(false);
+static QUERY_MODE: AtomicU32 = AtomicU32::new(u32::MAX);
 
 unsafe extern "system" fn handler(event: u32) -> i32 {
     if event <= 1 {
         SIGNALS.fetch_add(1, Ordering::AcqRel);
+        if HANDLER_QUERY.load(Ordering::Acquire) {
+            let mut mode = 0;
+            if unsafe { GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mut mode) } == 0 {
+                return 1;
+            }
+            QUERY_MODE.store(mode, Ordering::Release);
+        }
         if HANDLER_IO.load(Ordering::Acquire) {
             // Deliberately issue synchronous API requests from the real native
             // callback thread. No stdio locks, allocation or file reporting.
@@ -88,6 +100,10 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
         ) == 0
         {
             return Err(io::Error::last_os_error());
+        }
+        if mode.starts_with("control-output-") {
+            HANDLER_QUERY.store(true, Ordering::Release);
+            return output_pressure::run(input, report, mode);
         }
         println!("control-probe-ready:");
         if matches!(mode, "control-pressure-raw" | "control-pressure-processed") {

@@ -30,6 +30,18 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "output-orphan-member" {
+        let report = std::path::Path::new(&arguments[1]);
+        std::fs::write(report.with_extension("orphan-ready"), b"live")?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        while !report.with_extension("opened").exists() {
+            if std::time::Instant::now() >= deadline {
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        return std::fs::write(report.with_extension("orphan"), b"finished");
+    }
     if mode.starts_with("control-") {
         return control::run(mode, std::path::Path::new(&arguments[1]));
     }

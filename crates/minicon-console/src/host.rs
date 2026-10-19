@@ -4,7 +4,7 @@ mod input;
 mod objects;
 pub use input::ConsoleInput;
 use input::InputState;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, Write};
 use windows_sys::Win32::Globalization::{
     GetOEMCP, GetUserDefaultLangID, IsValidCodePage, MultiByteToWideChar,
@@ -63,6 +63,7 @@ pub struct ConsoleHost<'session> {
     screen: vt100::Parser,
     original_title: Vec<u16>,
     title: Vec<u16>,
+    deferred_output: VecDeque<DriverRequest<'session>>,
 }
 
 impl Default for ConsoleHost<'_> {
@@ -85,6 +86,7 @@ impl Default for ConsoleHost<'_> {
             screen: vt100::Parser::new(30, 120, 0),
             original_title: Vec::new(),
             title: Vec::new(),
+            deferred_output: VecDeque::new(),
         }
     }
 }
@@ -168,6 +170,73 @@ impl<'session> ConsoleHost<'session> {
     /// observing native close/connection cleanup without exposing identities.
     pub fn open_handles(&self) -> usize {
         self.handles.len()
+    }
+
+    /// Dispatch queries and controls while terminal output is backpressured.
+    /// Calls which may emit or change output interpretation retain their real
+    /// kernel request, in order, without copying client payloads. The adapter
+    /// resumes one only when its bounded output staging is empty.
+    pub fn dispatch_with_output_ready(
+        &mut self,
+        request: DriverRequest<'session>,
+        ready: bool,
+        output: &mut impl Write,
+    ) -> io::Result<DispatchReceipt> {
+        let descriptor = request.descriptor;
+        let api = (descriptor.function == 7)
+            .then(|| read_u32(request.inline_payload(), 0))
+            .flatten();
+        // Fail closed for future API additions: only known non-emitting calls
+        // bypass ordered output. Input reads may cook and echo queued keys.
+        let bypass = matches!(descriptor.function, 1..=4)
+            || (descriptor.function == 7
+                && matches!(
+                    api,
+                    Some(
+                        0x0200_0001
+                            | 0x0100_0003
+                            | 0x0100_0000
+                            | 0x0100_0001
+                            | 0x0100_0008
+                            | 0x0200_0005
+                            | 0x0200_0007
+                            | 0x0200_0014
+                    )
+                ));
+        if !bypass && (!ready || !self.deferred_output.is_empty()) {
+            let mut receipt = DispatchReceipt {
+                function: descriptor.function,
+                api,
+                status: SUCCESS,
+                pending: true,
+            };
+            if self.deferred_output.len() == 64 {
+                receipt.status = 0xc000_009a_u32 as i32; // STATUS_INSUFFICIENT_RESOURCES
+                receipt.pending = false;
+                request.complete(receipt.status, 0, &[])?;
+            } else {
+                self.deferred_output.push_back(request);
+            }
+            return Ok(receipt);
+        }
+        self.dispatch(request, output)
+    }
+
+    /// Resume at most one queued emitting call; the caller must have drained
+    /// the preceding call's terminal bytes before invoking this method.
+    pub fn resume_output(
+        &mut self,
+        output: &mut impl Write,
+    ) -> io::Result<Option<DispatchReceipt>> {
+        self.deferred_output
+            .pop_front()
+            .map(|request| self.dispatch(request, output))
+            .transpose()
+    }
+
+    /// Number of retained kernel calls waiting for terminal output capacity.
+    pub fn pending_output_requests(&self) -> usize {
+        self.deferred_output.len()
     }
 
     /// Service one real driver request and write terminal bytes to the caller's
@@ -264,6 +333,8 @@ impl<'session> ConsoleHost<'session> {
                 }
             }
             2 => {
+                self.deferred_output
+                    .retain(|pending| pending.descriptor.process != descriptor.process);
                 self.cancel_process_reads(descriptor.process);
                 if let Some(control) = &mut self.control {
                     control.remove(descriptor.process);
@@ -288,6 +359,8 @@ impl<'session> ConsoleHost<'session> {
             }
             3 => return self.create_object(request),
             4 => {
+                self.deferred_output
+                    .retain(|pending| pending.descriptor.object != descriptor.object);
                 // This is a kernel object finalizer, including closes after
                 // process disconnect; it need not carry a live process token.
                 self.retire_input_object(descriptor.object);
