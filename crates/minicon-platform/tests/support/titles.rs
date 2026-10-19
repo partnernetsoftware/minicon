@@ -54,6 +54,42 @@ fn query(label: &str, report: &mut String) {
             hex(&data[..8])
         ));
     }
+    for original in [false, true] {
+        for capacity in [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 64, 512] {
+            let mut units = [0x5555; 512];
+            unsafe {
+                SetLastError(0);
+            }
+            let count = unsafe {
+                if original {
+                    GetConsoleOriginalTitleW(units.as_mut_ptr(), capacity)
+                } else {
+                    GetConsoleTitleW(units.as_mut_ptr(), capacity)
+                }
+            };
+            report.push_str(&format!(
+                "{label}:original={original};wide-cap={capacity};ret={count},{};data={}\n",
+                unsafe { GetLastError() },
+                hex(&units[..12])
+            ));
+            let mut data = [0x55; 512];
+            unsafe {
+                SetLastError(0);
+            }
+            let count = unsafe {
+                if original {
+                    GetConsoleOriginalTitleA(data.as_mut_ptr(), capacity)
+                } else {
+                    GetConsoleTitleA(data.as_mut_ptr(), capacity)
+                }
+            };
+            report.push_str(&format!(
+                "{label}:original={original};ansi-cap={capacity};ret={count},{};data={}\n",
+                unsafe { GetLastError() },
+                hex(&data[..12])
+            ));
+        }
+    }
 }
 fn stage(output: HANDLE, path: &Path, n: usize, report: &mut String) -> io::Result<()> {
     query(&format!("stage{n}"), report);
@@ -119,5 +155,10 @@ pub(super) fn run(path: &Path) -> io::Result<()> {
     stage(other.as_raw_handle(), path, 9, &mut report)?;
     set_w("A\x07\x1b]2;BAD")?;
     stage(other.as_raw_handle(), path, 10, &mut report)?;
+    checked(unsafe { SetConsoleTitleA(c"".as_ptr().cast()) })?;
+    stage(other.as_raw_handle(), path, 11, &mut report)?;
+    let invalid = [0xc2, b'Q', 0];
+    checked(unsafe { SetConsoleTitleA(invalid.as_ptr()) })?;
+    stage(other.as_raw_handle(), path, 12, &mut report)?;
     Ok(())
 }

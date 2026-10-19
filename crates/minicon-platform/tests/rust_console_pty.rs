@@ -378,6 +378,75 @@ fn native_buffers(rust: bool) {
     );
 }
 
+fn check_wide_title_queries(native: &str, stage: usize, original: bool, title: &str) {
+    let title: Vec<_> = title.encode_utf16().collect();
+    for capacity in [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 64, 512] {
+        let mut data = [0x5555; 12];
+        let copied = if original {
+            capacity.min(title.len())
+        } else {
+            capacity.saturating_sub(1).min(title.len())
+        };
+        for (i, unit) in title.iter().take(copied.min(12)).enumerate() {
+            data[i] = if original && i + 1 == capacity {
+                0
+            } else {
+                *unit
+            };
+        }
+        if !original && capacity > 0 && copied < 12 {
+            data[copied] = 0;
+        }
+        let hex = data
+            .iter()
+            .map(|u| format!("{u:x}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let count = if capacity == 0 { 0 } else { title.len() };
+        let expected = format!(
+            "stage{stage}:original={original};wide-cap={capacity};ret={count},0;data={hex}"
+        );
+        assert!(
+            native.lines().any(|line| line == expected),
+            "missing wide query: {expected}"
+        );
+    }
+}
+
+fn check_ansi_title_queries(native: &str, stage: usize, original: bool, title: &[u8]) {
+    for capacity in [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 64, 512] {
+        let mut data = [0x55; 12];
+        let count = if capacity >= title.len() {
+            title.len()
+        } else {
+            0
+        };
+        if !title.is_empty() && capacity > 0 {
+            if capacity < title.len() {
+                data[0] = 0;
+            } else {
+                let copied = title.len().min(12);
+                data[..copied].copy_from_slice(&title[..copied]);
+                if capacity > title.len() && title.len() < 12 {
+                    data[title.len()] = 0;
+                }
+            }
+        }
+        let hex = data
+            .iter()
+            .map(|u| format!("{u:x}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let expected = format!(
+            "stage{stage}:original={original};ansi-cap={capacity};ret={count},0;data={hex}"
+        );
+        assert!(
+            native.lines().any(|line| line == expected),
+            "missing ANSI query: {expected}"
+        );
+    }
+}
+
 fn native_titles(rust: bool) {
     #[derive(Default)]
     struct Titles(Vec<Vec<u8>>);
@@ -397,7 +466,7 @@ fn native_titles(rust: bool) {
         Fixture::open_backend(command, "conpty")
     };
     let mut peer = vt100::Parser::new_with_callbacks(8, 16, 0, Titles::default());
-    for n in 0..11 {
+    for n in 0..13 {
         let marker = format!("ttl-stage-{n}:");
         let deadline = Instant::now() + Duration::from_secs(8);
         while peer
@@ -429,7 +498,10 @@ fn native_titles(rust: bool) {
             let expected = match n {
                 1 => Some("native-中😀"),
                 2 | 3 => Some("during-fragment"),
-                8 | 9 => Some(""),
+                6 => Some("A中"),
+                7 => Some("B中"),
+                8 | 9 | 11 => Some(""),
+                12 => Some("�Q"),
                 _ => None,
             };
             if let Some(expected) = expected {
@@ -455,6 +527,24 @@ fn native_titles(rust: bool) {
     }
     fixture.finish(0);
     let native = std::fs::read_to_string(&report.0).unwrap();
+    assert!(native.contains("set-936=1,0\n"));
+    assert!(native.contains("set-65001=1,0\n"));
+    let original = env!("CARGO_BIN_EXE_minicon-platform-console-probe");
+    assert!(original.is_ascii());
+    for stage in 0..13 {
+        check_wide_title_queries(&native, stage, true, original);
+        check_ansi_title_queries(&native, stage, true, original.as_bytes());
+    }
+    for (stage, title, ansi) in [
+        (6, "A中", b"A\xd6\xd0".as_slice()),
+        (7, "B中", b"B\xe4\xb8\xad".as_slice()),
+        (8, "", b"".as_slice()),
+        (11, "", b"".as_slice()),
+        (12, "�Q", b"\xef\xbf\xbdQ".as_slice()),
+    ] {
+        check_wide_title_queries(&native, stage, false, title);
+        check_ansi_title_queries(&native, stage, false, ansi);
+    }
     if !rust {
         assert!(
             native.starts_with("build=20348\n"),

@@ -1,6 +1,5 @@
 //! Bounded legacy readback views of the existing shared VT screen.
 use super::{ConsoleHost, INVALID_PARAMETER, NOT_SUPPORTED};
-use windows_sys::Win32::Globalization::WideCharToMultiByte;
 
 impl ConsoleHost<'_> {
     pub(super) fn read_output_string(
@@ -75,48 +74,12 @@ impl ConsoleHost<'_> {
         if kind != 1 {
             return Ok(units.into_iter().flat_map(u16::to_le_bytes).collect());
         }
-        if units.is_empty() {
-            return Ok(Vec::new());
-        }
-        // SAFETY: initialized UTF-16 input bounded above; query requires no
-        // output buffer. Counts fit i32 under the one-MiB transfer limit.
-        let size = unsafe {
-            WideCharToMultiByte(
-                self.output_code_page,
-                0,
-                units.as_ptr(),
-                units.len() as i32,
-                std::ptr::null_mut(),
-                0,
-                std::ptr::null(),
-                std::ptr::null_mut(),
-            )
-        };
-        if size == 0 {
-            return Err(INVALID_PARAMETER);
-        }
-        // Native compatibility: an expanded string that does not fit is an
-        // empty successful read, rather than a split encoded character.
-        if size as usize > capacity {
-            return Ok(Vec::new());
-        }
-        let mut bytes = vec![0; size as usize];
-        // SAFETY: same live input, exact queried capacity and disjoint output.
-        if unsafe {
-            WideCharToMultiByte(
-                self.output_code_page,
-                0,
-                units.as_ptr(),
-                units.len() as i32,
-                bytes.as_mut_ptr(),
-                size,
-                std::ptr::null(),
-                std::ptr::null_mut(),
-            )
-        } != size
-        {
-            return Err(INVALID_PARAMETER);
-        }
-        Ok(bytes)
+        // Native readback returns an empty success rather than split an
+        // encoded character. The shared native codec queries before allocation.
+        Ok(
+            super::encoding::encode(self.output_code_page, &units, capacity)
+                .map_err(|_| INVALID_PARAMETER)?
+                .unwrap_or_default(),
+        )
     }
 }

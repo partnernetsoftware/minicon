@@ -265,6 +265,10 @@ local tests and native receipts support only their recorded feature/cell scope.
 - [-] Native W title publication also consumes the common bounded formatter;
   its portable contract belongs to [PRD 02.35](PRD_02_35_terminal_library.md#independent-title-publication)
   and native compatibility scope to [PRD 02.34](PRD_02_34_windows_console_backend.md#native-wide-title-publication-leaf).
+- [-] Native title conversion, ordinary output and string readback share a
+  Windows-private whole-string codec; input/output code-page selection and
+  legacy reply rules remain native policy. Its scoped API evidence belongs to
+  [PRD 02.34](PRD_02_34_windows_console_backend.md#title-code-pages-and-native-reply-boundaries).
 - [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
   `adapters/unix/pty`; the macOS adapter currently imports the former file by
   path. Preserve distinct adapter identities and qualify both actual platforms.

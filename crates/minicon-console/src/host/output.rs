@@ -228,26 +228,8 @@ impl ConsoleHost<'_> {
         if self.output_code_page == 65001 {
             return self.write_output_bytes(bytes, output);
         }
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        let mut wide = vec![0_u16; bytes.len()];
-        // SAFETY: input/output point to live, disjoint buffers and lengths fit
-        // i32 because read_input bounds every request to at most one MiB.
-        let length = unsafe {
-            MultiByteToWideChar(
-                self.output_code_page,
-                0,
-                bytes.as_ptr(),
-                bytes.len() as i32,
-                wide.as_mut_ptr(),
-                wide.len() as i32,
-            )
-        };
-        if length == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        self.write_utf16(wide[..length as usize].iter().copied(), output)
+        let wide = super::encoding::decode(self.output_code_page, bytes)?;
+        self.write_utf16(wide, output)
     }
 
     pub(super) fn write_utf16(

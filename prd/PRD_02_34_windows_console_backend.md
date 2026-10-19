@@ -58,6 +58,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] native buffer handoff preserves each stream's VT main/alternate pair
 │   ├── [-] console-wide title metadata and frontend publication
 │   │   └── native W setter uses the common independent title formatter
+│   │   └── scoped A/W setters/getters, input code pages and bounded native replies
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -113,6 +114,9 @@ flowchart LR
     HOST --> FAMILY["native buffer file lifetime / creator exit / inherited survivor / final-close fallback"]
     HOST --> FOLLOW["vertical stream follow / two-axis native cursor commands / fixed metadata effects"]
     HOST --> LAYER["common displayed-stream activation / logical VT layer / pending grammar"]
+    HOST --> TITLE["A/W title metadata / input code page / exact native reply counts"]
+    TITLE --> CODEC["Windows-private whole-string codec: titles / output / readback"]
+    TITLE --> TITLEOUT["common independent bounded title publication"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -2316,8 +2320,8 @@ is pinned to that build, rather than treated as modern-source parity. Unicode
 frontend-title assertions apply to the owned backend; native W readback is
 asserted on both. This is not byte-for-byte system-output parity.
 
-Remaining title work includes A setters/getters and input-code-page conversion,
-short-buffer/NUL rules, initial title publication, completed VT-title metadata,
+The subsequent code-page leaf below covers A setters/getters and scoped
+short-buffer/NUL rules. Remaining title work includes initial title publication, completed VT-title metadata,
 nonvisual effects from inactive buffers, title payloads with semicolons in the
 receiving parser, and process-exit restoration. General title compatibility is
 still partial; this leaf does not change backend selection or default promotion.
@@ -2334,3 +2338,81 @@ platform PTY/Rust-console compilation. Non-host checks are compile-only.
 `native-title-final-receipt.json` binds the source tree, source blobs, executable
 identities, logs, guards and remaining scope. Documentation is followed by a
 final 17-test alignment run.
+
+
+## Title code pages and native reply boundaries
+
+```text
+Outcome: unchanged native applications can set and query console titles through A/W APIs
+├── Input-code-page conversion
+│   invariant: title A APIs use input CP; output CP keeps its separate meaning
+│   evidence: SDK input CP 936 versus output CP 65001, then input CP 65001
+│   safe failure: explicit invalid-parameter conversion/transfer failure
+│   dependency: native whole-string codec; non-goal: moving Windows code pages into common APIs
+├── Bounded current/original replies
+│   invariant: return length, actual reply bytes and caller capacity remain distinct
+│   evidence: A/W current/original SDK calls at twelve capacities, including zero and exact fit
+│   safe failure: no caller-sized allocation, no partial A encoded string
+│   dependency: actual title metadata; non-goal: correcting legacy API behavior
+└── Setter publication
+    invariant: A/W share independent sink-before-metadata publication and original title is unchanged
+    evidence: decoded frontend fences, SDK W readback, empty A and malformed UTF-8 A cases
+    safe failure: retain existing title on rejected conversion or publication
+    dependency: common title formatter; non-goal: VT-title metadata/lifecycle restoration
+```
+
+The Windows-private whole-string codec is shared by title conversion, ordinary
+non-UTF-8 output and native string readback. Callers select input or output code
+pages and retain their own API/error policy. Encoding queries the required size
+before allocation; bounded readback can return its existing empty success when
+the full encoded string does not fit. It is neither an OS-neutral code-page API
+nor a replacement for the independent streaming UTF-16 decoder.
+
+Title A setters decode with input CP, then use the same W metadata and display
+publisher. Both representations retain the existing native title limits:
+65,534 payload bytes and 32,767 decoded UTF-16 units; malformed W byte counts
+fail explicitly. Invalid UTF-8 A text uses the Windows conversion policy, not
+UTF-8 stream framing. These are service bounds, not exhaustive claims about
+all legacy title limits.
+
+Title W replies report the full UTF-16 length and return min(capacity, length)
+units. A short reply contains NUL in its final unit; a reply with spare room
+excludes the trailing NUL from its reported byte count. The actual KernelBase
+current-title W API terminates its caller buffer; original-title W reads expose
+the returned bytes without that additional step. Current and original APIs are
+therefore asserted independently rather than normalized by the test.
+
+Title A replies convert using input CP. Insufficient capacity returns length
+zero and one NUL byte when space exists; exact fit returns the complete encoded
+string without NUL; spare room includes NUL. An empty title returns no reply
+bytes, leaving the A caller buffer unchanged. Tests preserve sentinel-filled
+caller buffers to detect counts and extra writes. Original-title reads remain
+unchanged across all thirteen stages.
+
+The real SDK scenario exercises current/original A/W getters at capacities
+0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 64 and 512. Native metadata and encoded bytes are
+asserted on both the owned backend and the installed build-20348 ConPTY
+reference. Frontend Unicode title assertions remain owned-backend scoped.
+A direct native-helper unit additionally checks malformed W payloads, both
+transfer limits and huge caller capacities without caller-sized allocation.
+
+Primary sources are the pinned `src/host/getset.cpp` helpers and
+`src/server/ApiDispatchers.cpp` title dispatchers. The older control-character
+metadata policy remains separately asserted as documented in the preceding
+leaf. VT title metadata, inactive-buffer effects, semicolon payload parsing,
+initial title and process-exit restoration remain open.
+
+
+Local qualification: `title-codepage-final-focused.log` records three passes
+(native payload/reply unit, owned SDK, installed-system SDK); the final selected
+suite records 244 passes, including 17 alignment checks and the existing real
+PowerShell/Node/lifecycle cases. The suite count increased by one native-boundary
+unit. Ten byte-restored runtime guards cover separate setter/getter code-page
+choice, W short replies, A exact/short capacity, original selection, odd W bytes,
+payload/decoded limits and the installed-reference oracle. Default/enabled
+workspace strict all-target Clippy, both standalone parser Clippy gates, lexer
+no-std, four common-library cross-target builds and Windows ARM64 platform
+PTY/Rust-console compilation pass. Runtime scope remains Windows x86_64 build
+20348; cross-target checks do not certify runtime behavior. Final documentation
+is followed by 17 alignment passes. `title-codepage-final-receipt.json` binds
+source tree, source blobs, executable identities, tests, guards and remaining work.

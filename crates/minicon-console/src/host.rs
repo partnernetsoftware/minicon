@@ -3,6 +3,7 @@ use crate::{DriverRequest, DriverSession};
 mod buffers;
 mod cell_codec;
 mod cursor;
+mod encoding;
 mod font;
 mod geometry;
 mod indexed;
@@ -1013,34 +1014,26 @@ impl<'session> ConsoleHost<'session> {
                     }
                 }
             }
-            0x0200_0014 if body.len() >= 8 && body[4] != 0 => {
-                let title = if body[5] != 0 {
-                    &self.original_title
-                } else {
-                    &self.title
-                };
-                let capacity = (descriptor.output_size - body_size) as usize / 2;
-                let written = title.len().min(capacity.saturating_sub(1));
-                let bytes: Vec<u8> = title[..written]
-                    .iter()
-                    .flat_map(|unit| unit.to_le_bytes())
-                    .collect();
-                request.write_output(body_size, &bytes)?;
-                body[..4].copy_from_slice(&(title.len() as u32).to_le_bytes());
-                information = bytes.len();
+            0x0200_0014 if body.len() >= 8 => {
+                let capacity = (descriptor.output_size - body_size) as usize;
+                match self.title_reply(body[4] != 0, body[5] != 0, capacity) {
+                    Ok((needed, bytes)) => {
+                        request.write_output(body_size, &bytes)?;
+                        body[..4].copy_from_slice(&(needed as u32).to_le_bytes());
+                        information = bytes.len();
+                    }
+                    Err(status) => receipt.status = status,
+                }
             }
-            0x0200_0015 if !body.is_empty() && body[0] != 0 => {
+            0x0200_0015 if !body.is_empty() => {
                 let offset = body_size + 8;
                 let bytes =
                     request.read_input(offset, (descriptor.input_size - offset) as usize)?;
-                if !bytes.len().is_multiple_of(2) || bytes.len() > 65534 {
-                    receipt.status = INVALID_PARAMETER;
-                } else {
-                    let title = bytes
-                        .chunks_exact(2)
-                        .map(|b| u16::from_le_bytes([b[0], b[1]]))
-                        .collect();
-                    receipt.status = output::write_status(self.set_native_title(title, output))?;
+                match self.decode_title_payload(body[0] != 0, &bytes) {
+                    Ok(title) => {
+                        receipt.status = output::write_status(self.set_native_title(title, output))?
+                    }
+                    Err(status) => receipt.status = status,
                 }
             }
             _ => receipt.status = NOT_SUPPORTED,
