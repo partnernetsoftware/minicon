@@ -19,6 +19,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   dependency: owned vt100/vte; non-goal: GUI/event loop or process spawning
 │   └── bounded encoded runs / read-only lexer text_prefix / shared scalar width
 │       └── invalid UTF-8 prefixes recover before native edits; new grammar stays pending
+│       └── absolute drawing-cursor edits preserve client modes and pending grammar
 ├── [-] Shared cell operations — terminal::CellRect / Screen region and literal spans
 │   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
 │   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
@@ -127,6 +128,13 @@ backpressure, explicit-close versus natural EOF, and errors portable across OSes
 Native process and Job/foreground-group authority must remain in one owner.
 POSIX PTY consolidation is tracked in [reuse map](PRD_02_28_shared_core.md).
 Do not move general filesystem/network/window APIs into this terminal library.
+
+The facade's shared Screen also exposes absolute drawing-cursor mutation;
+its coordinate, delayed-wrap and damage contract belongs to
+[terminal state](PRD_02_24_con_terminal.md#absolute-drawing-cursor).
+The Windows cooked editor uses it to stage text/cursor publication while
+retaining client grammar. Native editing policy and compatibility remain in
+the Windows owner, rather than becoming portable session semantics by accident.
 
 ### Integration acceptance contract
 

@@ -77,11 +77,11 @@ impl Screen {
             && column >= 0
             && (column < i64::from(columns) && column < width || delayed);
         if visible {
-            result.grid_mut().set_pos(crate::grid::Pos {
-                row: u16::try_from(row).unwrap(),
-                col: 0,
-            });
-            result.grid_mut().col_set(u16::try_from(column).unwrap());
+            if !result
+                .set_cursor_position(u16::try_from(row).unwrap(), u16::try_from(column).unwrap())
+            {
+                return None;
+            }
         } else {
             result.modes |= MODE_HIDE_CURSOR;
         }

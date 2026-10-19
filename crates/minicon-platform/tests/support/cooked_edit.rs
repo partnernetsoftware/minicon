@@ -34,6 +34,9 @@ fn put(input: windows_sys::Win32::Foundation::HANDLE, records: &[INPUT_RECORD]) 
 }
 
 pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
+    let (echo, kind) = kind
+        .strip_prefix("echo-")
+        .map_or((false, kind), |kind| (true, kind));
     let mut mode = 0xa3;
     let mut initial = Vec::new();
     let mut wakeup = 0;
@@ -192,8 +195,95 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
             r.extend([key(27, 27, 1, 1), key(0, 88, 0, 1)]);
             r
         }
+        "cross-row" => {
+            let mut r = text("abcdefghijklmnopqrstu");
+            r.extend([
+                press(0x24),
+                key(0x27, 0, 0, 16),
+                press(0x2e),
+                key(8, 8, 0, 1),
+                key(0, 88, 0, 1),
+                press(0x23),
+            ]);
+            r
+        }
+        "tab-erase" => {
+            let mut r = text("ab\tCD");
+            r.extend([
+                press(0x24),
+                key(0x27, 0, 0, 3),
+                press(0x2e),
+                key(8, 8, 0, 1),
+                key(0, 88, 0, 1),
+            ]);
+            r
+        }
+        "control-erase" => {
+            let mut r = text("a\u{1}b");
+            r.extend([
+                press(0x24),
+                key(0x27, 0, 0, 2),
+                key(8, 8, 0, 1),
+                key(0, 88, 0, 1),
+            ]);
+            r
+        }
+        "wide-wrap" => {
+            let mut r = text("abcdefghijklmn中Z");
+            r.extend([press(0x25), key(8, 8, 0, 1), key(0, 88, 0, 1)]);
+            r
+        }
+        "scroll-home" => {
+            let mut r = text(&"a".repeat(150));
+            r.extend([press(0x24), key(0, 88, 0, 1), press(0x23), key(8, 8, 0, 1)]);
+            r
+        }
+        "initial-tab" => {
+            initial = "ab\tc".encode_utf16().collect();
+            vec![press(0x24), press(0x2e), key(0, 88, 0, 1), press(0x23)]
+        }
+        "initial-wide" => {
+            initial = "中😀ab".encode_utf16().collect();
+            vec![
+                press(0x24),
+                key(0x27, 0, 0, 2),
+                key(8, 8, 0, 1),
+                key(0, 88, 0, 1),
+                press(0x23),
+            ]
+        }
+        "pending-csi" => {
+            let mut r = text("abcd");
+            r.extend([key(0x25, 0, 0, 2), key(0, 88, 0, 1)]);
+            r
+        }
+        "legacy-wrap" => text("abcdefghijklmno"),
+        "tail-high" => {
+            let mut r = text("ab");
+            r.push(key(0, 0xd83d, 0, 1));
+            r
+        }
+        "narrow" => {
+            let mut r = text("abc");
+            r.extend([
+                press(0x24),
+                press(0x27),
+                press(0x2e),
+                key(8, 8, 0, 1),
+                key(0, 88, 0, 1),
+            ]);
+            r
+        }
+        "no-wrap" => {
+            let mut r = text("abcdefghijklmnopqr");
+            r.extend([key(0x25, 0, 0, 2), key(0, 88, 0, 1)]);
+            r
+        }
         _ => return Err(io::ErrorKind::InvalidInput.into()),
     };
+    if echo {
+        mode |= 4;
+    }
     records.push(key(13, 13, 16, 1));
     // SAFETY: this isolated SDK client's console handles.
     let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
@@ -204,7 +294,9 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
     {
         return Err(io::Error::last_os_error());
     }
-    if kind == "inherit-overwrite" && unsafe { SetConsoleMode(input, 3) } == 0 {
+    if kind == "inherit-overwrite"
+        && unsafe { SetConsoleMode(input, if echo { 7 } else { 3 }) } == 0
+    {
         return Err(io::Error::last_os_error());
     }
     bytes(output, b"\x1b[2J\x1b[H>")?;
@@ -214,6 +306,17 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
     let mut count = 0;
     if kind != "powershell" {
         put(input, &records)?;
+    }
+    if echo || kind == "cmd" {
+        bytes(output, b"\x1b]2;cooked-echo-begin:\x07")?;
+    }
+    if kind == "pending-csi" {
+        bytes(output, b"\x1b[3")?;
+    }
+    if matches!(kind, "legacy-wrap" | "no-wrap")
+        && unsafe { SetConsoleMode(output, if kind == "legacy-wrap" { 3 } else { 5 }) } == 0
+    {
+        return Err(io::Error::last_os_error());
     }
     let mut report = format!("build={}\n", super::output_modes::windows_build()?);
     if kind == "powershell" {
@@ -277,7 +380,7 @@ exit 0
             .status()?;
         report.push_str(&format!("cmd-exit:{:?}\n", child.code()));
     } else {
-        let mut buffer = [0_u16; 128];
+        let mut buffer = [0_u16; 512];
         buffer[..initial.len()].copy_from_slice(&initial);
         let mut control = CONSOLE_READCONSOLE_CONTROL {
             nLength: std::mem::size_of::<CONSOLE_READCONSOLE_CONTROL>() as u32,
@@ -313,8 +416,14 @@ exit 0
         return Err(io::Error::last_os_error());
     }
     report.push_str(&format!("queued:{queued}\n"));
+    if kind == "pending-csi" {
+        bytes(output, b"1m!")?;
+    }
     position(output, "cursor", &mut report)?;
     std::fs::write(path, report)?;
+    if matches!(kind, "legacy-wrap" | "no-wrap") && unsafe { SetConsoleMode(output, 15) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
     bytes(output, b"\x1b]2;cooked-edit-end:\x07")?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
     while !path.with_extension("opened").exists() {

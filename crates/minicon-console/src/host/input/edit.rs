@@ -10,10 +10,14 @@ pub(super) struct Editor {
 
 pub(super) enum Outcome {
     Continue,
-    Complete(u32),
+    Enter,
+    Wake(u32),
 }
 
 impl Editor {
+    pub(super) fn cursor(&self) -> usize {
+        self.cursor
+    }
     pub(super) fn new(length: usize, insert: bool) -> Self {
         Self {
             cursor: length,
@@ -78,7 +82,7 @@ impl Editor {
             // the caller. The undisplayed suffix is no longer editable.
             line.truncate(self.cursor);
             self.put(line, character)?;
-            return Ok(Outcome::Complete(controls));
+            return Ok(Outcome::Wake(controls));
         }
         if character == 13 {
             line.push(13);
@@ -86,7 +90,7 @@ impl Editor {
                 line.push(10);
             }
             self.cursor = line.len();
-            return Ok(Outcome::Complete(0));
+            return Ok(Outcome::Enter);
         }
         if character == 8 && processed {
             let start = previous(line, self.cursor);

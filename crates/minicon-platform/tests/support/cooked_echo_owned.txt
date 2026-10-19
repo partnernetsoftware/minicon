@@ -1,0 +1,340 @@
+[echo-insert]
+read:0061,0062,0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abXcd"
+frontend-cursor:(1, 0)
+rows:[">abXcd", "", "", "", "", "", "", ""]
+
+[echo-implicit-insert]
+read:0061,0062,0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abXcd"
+frontend-cursor:(1, 0)
+rows:[">abXcd", "", "", "", "", "", "", ""]
+
+[echo-inherit-overwrite]
+read:0061,0062,0058,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abXd"
+frontend-cursor:(1, 0)
+rows:[">abXd", "", "", "", "", "", "", ""]
+
+[echo-overwrite]
+read:0061,0062,0058,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abXd"
+frontend-cursor:(1, 0)
+rows:[">abXd", "", "", "", "", "", "", ""]
+
+[echo-toggle]
+read:0061,0062,0058,0059,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abXYd"
+frontend-cursor:(1, 0)
+rows:[">abXYd", "", "", "", "", "", "", ""]
+
+[echo-delete]
+read:0061,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">acd"
+frontend-cursor:(1, 0)
+rows:[">acd", "", "", "", "", "", "", ""]
+
+[echo-end]
+read:0061,0063,0064,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">acdX"
+frontend-cursor:(1, 0)
+rows:[">acdX", "", "", "", "", "", "", ""]
+
+[echo-backspace]
+read:0061,0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">aXcd"
+frontend-cursor:(1, 0)
+rows:[">aXcd", "", "", "", "", "", "", ""]
+
+[echo-escape]
+read:0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">X"
+frontend-cursor:(1, 0)
+rows:[">X", "", "", "", "", "", "", ""]
+
+[echo-escape-masked]
+read:0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">X"
+frontend-cursor:(1, 0)
+rows:[">X", "", "", "", "", "", "", ""]
+
+[echo-initial]
+read:0061,0058,0062,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">aXb"
+frontend-cursor:(1, 0)
+rows:[">aXb", "", "", "", "", "", "", ""]
+
+[echo-enter-middle]
+read:0061,0062,0063,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abc"
+frontend-cursor:(1, 0)
+rows:[">abc", "", "", "", "", "", "", ""]
+
+[echo-unicode-motion]
+read:0041,4e2d,005a,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">A中ZX"
+frontend-cursor:(1, 0)
+rows:[">A中ZX", "", "", "", "", "", "", ""]
+
+[echo-unicode-overwrite]
+read:0041,0058,0065,0301,005a,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">AXe\u{301}Z"
+frontend-cursor:(1, 0)
+rows:[">AXe\u{301}Z", "", "", "", "", "", "", ""]
+
+[echo-pair-overwrite]
+read:0061,d83d,de00,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">a😀cd"
+frontend-cursor:(1, 0)
+rows:[">a😀cd", "", "", "", "", "", "", ""]
+
+[echo-invalid]
+read:0041,0042,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">AB"
+frontend-cursor:(1, 0)
+rows:[">AB", "", "", "", "", "", "", ""]
+
+[echo-invalid-retained]
+read:d800,0058,0041,dc00,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">�XA�"
+frontend-cursor:(1, 0)
+rows:[">�XA�", "", "", "", "", "", "", ""]
+
+[echo-f1]
+read:0061,0058,0062,0063,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">aXbc"
+frontend-cursor:(1, 0)
+rows:[">aXbc", "", "", "", "", "", "", ""]
+
+[echo-edges]
+read:0062,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">bX"
+frontend-cursor:(1, 0)
+rows:[">bX", "", "", "", "", "", "", ""]
+
+[echo-ctrl-home]
+read:0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">Xcd"
+frontend-cursor:(1, 0)
+rows:[">Xcd", "", "", "", "", "", "", ""]
+
+[echo-ctrl-end]
+read:0061,0062,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abX"
+frontend-cursor:(1, 0)
+rows:[">abX", "", "", "", "", "", "", ""]
+
+[echo-repeat]
+read:0061,0058,0062,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">aXbcd"
+frontend-cursor:(1, 0)
+rows:[">aXbcd", "", "", "", "", "", "", ""]
+
+[echo-masked-middle]
+read:0061,0062,0009,
+controls:00000010
+queued:1
+cursor:3,0;0007
+screen:">ab"
+frontend-cursor:(0, 3)
+rows:[">ab", "", "", "", "", "", "", ""]
+
+[echo-literal-bs]
+read:0061,0062,0008,0063,000d,
+controls:00000000
+queued:0
+cursor:0,0;0007
+screen:">ab^Hc"
+frontend-cursor:(0, 0)
+rows:[">ab^Hc", "", "", "", "", "", "", ""]
+
+[echo-escape-alt]
+read:0061,0062,001b,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">ab^[X"
+frontend-cursor:(1, 0)
+rows:[">ab^[X", "", "", "", "", "", "", ""]
+
+[echo-cross-row]
+read:0061,0062,0063,0064,0065,0066,0067,0068,0069,006a,006b,006c,006d,006e,006f,0058,0072,0073,0074,0075,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">abcdefghijklmno\nXrstu"
+frontend-cursor:(2, 0)
+rows:[">abcdefghijklmno", "Xrstu", "", "", "", "", "", ""]
+
+[echo-tab-erase]
+read:0061,0062,0058,0044,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abXD"
+frontend-cursor:(1, 0)
+rows:[">abXD", "", "", "", "", "", "", ""]
+
+[echo-control-erase]
+read:0061,0058,0062,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">aXb"
+frontend-cursor:(1, 0)
+rows:[">aXb", "", "", "", "", "", "", ""]
+
+[echo-wide-wrap]
+read:0061,0062,0063,0064,0065,0066,0067,0068,0069,006a,006b,006c,006d,006e,0058,005a,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">abcdefghijklmnX\nZ"
+frontend-cursor:(2, 0)
+rows:[">abcdefghijklmnX", "Z", "", "", "", "", "", ""]
+
+[echo-scroll-home]
+read:0058,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,0061,000d,000a,
+controls:00000000
+queued:0
+cursor:0,7;0007
+screen:"aaaaaaaaaaaaaaaa\naaaaaaaaaaaaaaaa\naaaaaaaaaaaaaaaa\naaaaaaaaaaaaaaaa\naaaaaaaaaaaaaaaa\naaaaaaaaaaaaaaaa\naaaaaaa"
+frontend-cursor:(7, 0)
+rows:["aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa", "aaaaaaa", ""]
+
+[echo-initial-tab]
+read:0058,0062,0009,0063,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">Xb     c"
+frontend-cursor:(1, 0)
+rows:[">Xb     c", "", "", "", "", "", "", ""]
+
+[echo-initial-wide]
+read:4e2d,0058,0061,0062,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">中Xab"
+frontend-cursor:(1, 0)
+rows:[">中Xab", "", "", "", "", "", "", ""]
+
+[echo-pending-csi]
+read:0061,0062,0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:1,1;0004
+screen:">abXcd\n!"
+frontend-cursor:(1, 1)
+rows:[">abXcd", "!", "", "", "", "", "", ""]
+
+[echo-legacy-wrap]
+read:0061,0062,0063,0064,0065,0066,0067,0068,0069,006a,006b,006c,006d,006e,006f,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">abcdefghijklmno"
+frontend-cursor:(2, 0)
+rows:[">abcdefghijklmno", "", "", "", "", "", "", ""]
+
+[echo-no-wrap]
+read:0061,0062,0063,0064,0065,0066,0067,0068,0069,006a,006b,006c,006d,006e,006f,0070,0058,0071,0072,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">abcdefghijklmnr"
+frontend-cursor:(1, 0)
+rows:[">abcdefghijklmnr", "", "", "", "", "", "", ""]
+
+[cmd]
+cmd-exit:Some(0)
+queued:0
+cursor:0,2;0007
+screen:">abXcd\nMINICON_EDIT=abXcd"
+frontend-cursor:(2, 0)
+rows:[">abXcd", "MINICON_EDIT=abXcd", "", "", "", "", "", ""]
+
+[echo-tail-high]
+read:0061,0062,d83d,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">ab�"
+frontend-cursor:(1, 0)
+rows:[">ab�", "", "", "", "", "", "", ""]
+
+[echo-narrow]
+read:0058,0063,000d,000a,
+controls:00000000
+queued:0
+cursor:0,3;0007
+screen:">\nX\nc"
+frontend-cursor:(3, 0)
+rows:[">", "X", "c", "", "", "", "", ""]

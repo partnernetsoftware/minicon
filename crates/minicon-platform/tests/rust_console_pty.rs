@@ -4167,6 +4167,8 @@ fn cooked_edit_report(kind: &str, rust: bool) -> String {
     let report = Report::new();
     let cols = if matches!(kind, "cmd" | "powershell") {
         80
+    } else if kind == "echo-narrow" {
+        1
     } else {
         16
     };
@@ -4192,11 +4194,71 @@ fn cooked_edit_report(kind: &str, rust: bool) -> String {
     }
     let mut parser = vt100::Parser::new(8, cols, 0);
     parser.process(&fixture.bytes);
-    let body = format!(
+    let echo = kind.starts_with("echo-") || kind == "cmd";
+    let rows: Vec<_> = parser
+        .screen()
+        .rows(0, cols)
+        .map(|row| row.trim_end_matches(' ').to_owned())
+        .collect();
+    let image = if echo {
+        rows.join("\n").trim_end_matches('\n').to_owned()
+    } else {
+        parser.screen().contents()
+    };
+    let mut body = format!(
         "{receipt}screen:{:?}\nfrontend-cursor:{:?}\n",
-        parser.screen().contents(),
+        image,
         parser.screen().cursor_position()
     );
+    if echo {
+        body.push_str(&format!("rows:{:?}\n", rows));
+        println!(
+            "cooked-echo-logical rust={rust};kind={kind};text={:?}",
+            parser.screen().contents()
+        );
+        println!(
+            "cooked-echo-wire rust={rust};kind={kind};bytes={}",
+            fixture.bytes.len()
+        );
+        if rust && kind == "echo-scroll-home" {
+            let marker = b"cooked-echo-begin:";
+            let start = fixture
+                .bytes
+                .windows(marker.len())
+                .position(|w| w == marker)
+                .unwrap()
+                + marker.len();
+            let tail = &fixture.bytes[start..];
+            let start = start
+                + if tail.starts_with(b"\x07") {
+                    1
+                } else {
+                    assert!(tail.starts_with(b"\x1b\\"));
+                    2
+                };
+            let end_marker = b"cooked-edit-end:";
+            let end = fixture
+                .bytes
+                .windows(end_marker.len())
+                .position(|w| w == end_marker)
+                .unwrap();
+            let end = fixture.bytes[..end]
+                .windows(2)
+                .rposition(|w| w == b"\x1b]")
+                .unwrap();
+            assert!(
+                end - start <= 512,
+                "bulk echo exceeded wire budget: {}",
+                end - start
+            );
+        }
+    }
+    if kind == "echo-pending-csi" {
+        assert_eq!(
+            parser.screen().cell(1, 0).unwrap().fgcolor(),
+            vt100::Color::Idx(1)
+        );
+    }
     println!("cooked-edit rust={rust};kind={kind};build={build}\n{body}");
     body
 }
@@ -4236,6 +4298,86 @@ fn cooked_edit_cases(rust: bool) {
             "kind={kind};rust={rust}"
         );
     }
+}
+
+fn cooked_echo_cases(rust: bool) {
+    for kind in [
+        "insert",
+        "implicit-insert",
+        "inherit-overwrite",
+        "overwrite",
+        "toggle",
+        "delete",
+        "end",
+        "backspace",
+        "escape",
+        "escape-masked",
+        "initial",
+        "enter-middle",
+        "unicode-motion",
+        "unicode-overwrite",
+        "pair-overwrite",
+        "invalid",
+        "invalid-retained",
+        "f1",
+        "edges",
+        "ctrl-home",
+        "ctrl-end",
+        "repeat",
+        "masked-middle",
+        "literal-bs",
+        "escape-alt",
+        "cross-row",
+        "tab-erase",
+        "control-erase",
+        "wide-wrap",
+        "scroll-home",
+        "initial-tab",
+        "initial-wide",
+        "pending-csi",
+        "legacy-wrap",
+        "no-wrap",
+        "tail-high",
+        "narrow",
+    ] {
+        let mode = format!("echo-{kind}");
+        assert_eq!(
+            cooked_edit_report(&mode, rust),
+            cooked_echo_expected(&mode, rust),
+            "kind={kind};rust={rust}"
+        );
+    }
+    let cmd = cooked_edit_report("cmd", rust);
+    assert_eq!(cmd, cooked_echo_expected("cmd", rust));
+}
+
+fn cooked_echo_expected(kind: &str, rust: bool) -> String {
+    let text = if rust {
+        include_str!("support/cooked_echo_owned.txt")
+    } else {
+        include_str!("support/cooked_echo_reference_20348.txt")
+    }
+    .replace("\r\n", "\n");
+    let prefix = format!("[{kind}]\n");
+    let body = text
+        .split_once(&prefix)
+        .unwrap()
+        .1
+        .split("\n[")
+        .next()
+        .unwrap();
+    format!("{}\n", body.trim_end())
+}
+
+#[test]
+fn rust_console_pty_cooked_echo_edits_use_shared_layout() {
+    cooked_echo_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY echoed cooked-editor differential court"]
+fn rust_console_client_cooked_echo_edits_compare_system_conpty() {
+    cooked_echo_cases(false);
 }
 
 #[test]

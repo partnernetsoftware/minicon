@@ -29,6 +29,7 @@ minicon terminal and rendering
 │   │   └── [v] explicit fixed / vertical / two-axis cursor-follow policy
 │   ├── Bounded visual-text lookahead and shared scalar placement width
 │   ├── Cursor appearance replay — visibility, position, shape and blinking
+│   │   └── Absolute drawing-cursor mutation — independent of VT origin/margins
 │   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
@@ -58,6 +59,7 @@ flowchart LR
     TEXT["bounded encoded runs / exact lexer lookahead / scalar width"] --> FRAME
     CUR["cursor shape / blinking / visibility / replay"] --> VT
     CUR --> DMG
+    DRAW["absolute drawing cursor / validated delayed wrap"] --> CUR
     SPAN["literal text / variable style spans"] --> EDIT
     MOVE["CellRect / snapshot region movement"] --> EDIT
     EDIT --> DMG
@@ -944,3 +946,30 @@ fragmented UTF-8 ST, zero-byte sink rejection/retry and subsequent ST recovery.
 Native/reference qualification belongs to PRD 02.34's OSC termination leaf.
 Malformed UTF-8/control interleavings, general C1 modes and other control-string
 families remain separate compatibility work.
+
+## Absolute drawing cursor
+
+`vt100::Screen::set_cursor_position(row, column)` places the drawing cursor in
+absolute buffer coordinates. It preserves cells, attributes, saved cursor,
+history, VT origin/margin modes and the containing parser's unfinished grammar.
+Rows must be inside the drawing buffer. Columns may equal its width only while
+DECAWM is enabled, representing the delayed-wrap position. Invalid coordinates
+return false without mutation or damage. Valid edits mark old/new cursor damage.
+
+This is a screen-model operation, independent of interpreting a CUP command in
+client VT origin mode. The existing screen replay handles a delayed-wrap cursor;
+callers do not erase/retype a boundary glyph just to move it. Coordinates remain
+row/column cell positions, with no OS handles, native ABI or ISA policy.
+
+`Screen::project_region` also uses this operation for translated cursors. An
+equal-width viewport must retain the pending column instead of clamping it back
+to the final cell; otherwise a subsequent diff can lose the row's wrap state.
+The shared test checks this snapshot as well as the authoritative screen.
+
+Named shared evidence is
+`drawing_cursor_absolute_positions_preserve_modes_cells_grammar_and_damage`:
+origin-relative VT mode, invalid bounds, unchanged cells and damage on rejection,
+cursor damage, pending CSI completion, saved-cursor restoration and no-wrap
+rejection. The Windows cooked editor is an actual consumer; native publication,
+runtime guards and compile-target receipts belong to
+[the echoed editor](PRD_02_34_windows_console_backend.md#echoed-cooked-editing-over-the-common-screen).

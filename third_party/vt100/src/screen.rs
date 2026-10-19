@@ -585,6 +585,23 @@ impl Screen {
         )
     }
 
+    /// Place the drawing cursor at absolute buffer coordinates, independently
+    /// of VT origin mode and margins. A column equal to the width represents
+    /// delayed wrapping and requires automatic wrapping. Invalid coordinates
+    /// leave cells, cursor and damage unchanged. Attributes, modes, saved
+    /// cursor, history and the containing parser's grammar are preserved.
+    pub fn set_cursor_position(&mut self, row: u16, column: u16) -> bool {
+        let (rows, columns) = self.size();
+        if row >= rows || column > columns || (column == columns && !self.auto_wrap()) {
+            return false;
+        }
+        self.mark_cursor();
+        self.grid_mut()
+            .set_drawing_pos(crate::grid::Pos { row, col: column });
+        self.mark_cursor();
+        true
+    }
+
     /// Whether DEC automatic right-margin wrapping (DECAWM) is enabled.
     #[must_use]
     pub fn auto_wrap(&self) -> bool {
@@ -1551,6 +1568,52 @@ fn u16_to_u8(i: u16) -> Option<u8> {
 
 #[cfg(test)]
 mod autowrap_tests {
+    #[test]
+    fn drawing_cursor_absolute_positions_preserve_modes_cells_grammar_and_damage() {
+        let mut parser = crate::Parser::new(4, 5, 3);
+        parser.process(b"abcde\x1b[3;3H\x1b7\x1b[2;4r\x1b[?6h\x1b[3");
+        let before = parser.screen().state_formatted();
+        parser.take_damage();
+        assert!(!parser.screen_mut().set_cursor_position(4, 0));
+        assert!(!parser.screen_mut().set_cursor_position(0, 6));
+        assert_eq!(parser.screen().state_formatted(), before);
+        assert!(parser.take_damage().is_empty());
+        assert!(parser.screen_mut().set_cursor_position(0, 5));
+        assert_eq!(parser.screen().cursor_position(), (0, 5));
+        assert_eq!(parser.screen().cell(0, 4).unwrap().contents(), "e");
+        let view = parser
+            .screen()
+            .project_region(
+                super::CellRect {
+                    top: 0,
+                    left: 0,
+                    bottom: 4,
+                    right: 5,
+                },
+                4,
+                5,
+            )
+            .unwrap();
+        assert_eq!(view.cursor_position(), (0, 5));
+        assert!(parser.take_damage().cursor_changed());
+        assert!(!parser.at_boundary());
+        parser.process(b"1mZ");
+        assert_eq!(parser.screen().cell(1, 0).unwrap().contents(), "Z");
+        assert_eq!(
+            parser.screen().cell(1, 0).unwrap().fgcolor(),
+            crate::Color::Idx(1)
+        );
+        parser.process(b"\x1b[1;1H");
+        assert_eq!(parser.screen().cursor_position(), (1, 0));
+        parser.process(b"\x1b8");
+        assert_eq!(parser.screen().cursor_position(), (2, 2));
+        parser.process(b"\x1b[?7l");
+        let before = parser.screen().state_formatted();
+        assert!(!parser.screen_mut().set_cursor_position(0, 5));
+        assert_eq!(parser.screen().state_formatted(), before);
+        assert!(parser.screen_mut().set_cursor_position(3, 4));
+    }
+
     #[test]
     fn autowrap_wide_continuation_attributes_survive_scroll_and_replay() {
         let mut parser = crate::Parser::new(3, 8, 0);

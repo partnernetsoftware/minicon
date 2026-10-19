@@ -1,4 +1,5 @@
 //! Deferred console input. Requests retain their originating driver's lifetime.
+mod echo;
 mod edit;
 mod records;
 use super::*;
@@ -114,6 +115,7 @@ struct PendingRead<'session> {
     echo_decoder: crate::terminal::Utf16Decoder,
     editor: edit::Editor,
     editing: bool,
+    echo: Option<echo::Echo>,
 }
 
 impl<'session> ConsoleHost<'session> {
@@ -405,6 +407,7 @@ impl<'session> ConsoleHost<'session> {
             },
             editor: edit::Editor::new(line.len(), self.input.insert_mode.unwrap_or(true)),
             editing: false,
+            echo: None,
             line,
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
@@ -485,6 +488,7 @@ impl<'session> ConsoleHost<'session> {
             line: Vec::new(),
             editor: edit::Editor::new(0, true),
             editing: false,
+            echo: None,
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
         });
@@ -575,6 +579,7 @@ impl<'session> ConsoleHost<'session> {
         let line_mode = self.input_mode & 2 != 0;
         let echo = self.input_mode & 4 != 0;
         let unicode = matches!(read.kind, ReadKind::Text { unicode: true, .. });
+        let mut echo_dirty = false;
         while let Some(event) = self.input.events.pop_front() {
             let ConsoleInput::Key {
                 down: true,
@@ -606,26 +611,40 @@ impl<'session> ConsoleHost<'session> {
                 read.controls = controls;
             }
             if line_mode
-                && !echo
                 && self.input_mode & 0x200 == 0
                 && !(character == 3 && self.input_mode & 1 != 0)
             {
                 if !read.editing {
                     read.editor =
                         edit::Editor::new(read.line.len(), self.input.insert_mode.unwrap_or(true));
+                    read.echo = None;
                 }
                 read.editing = true;
-                match read.editor.handle(
+                if echo {
+                    self.prepare_cooked_echo(read)?;
+                }
+                let outcome = read.editor.handle(
                     &mut read.line,
                     character,
                     virtual_key,
                     controls,
                     self.input_mode & 1 != 0,
                     wakeup,
-                )? {
-                    edit::Outcome::Continue => continue,
-                    edit::Outcome::Complete(modifiers) => {
-                        read.controls = modifiers;
+                )?;
+                match outcome {
+                    edit::Outcome::Continue => {
+                        echo_dirty |= echo;
+                        continue;
+                    }
+                    edit::Outcome::Enter | edit::Outcome::Wake(_) => {
+                        if echo {
+                            self.redraw_cooked_echo(read, &outcome, output)?;
+                        }
+                        read.controls = if let edit::Outcome::Wake(modifiers) = outcome {
+                            modifiers
+                        } else {
+                            0
+                        };
                         self.input.ready_event_suppressed = false;
                         self.input.ready.extend(read.line.drain(..));
                         return Ok(());
@@ -739,6 +758,9 @@ impl<'session> ConsoleHost<'session> {
                 self.input.ready.extend(read.line.drain(..));
                 return Ok(());
             }
+        }
+        if echo_dirty {
+            self.redraw_cooked_echo(read, &edit::Outcome::Continue, output)?;
         }
         Ok(())
     }

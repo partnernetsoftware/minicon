@@ -33,7 +33,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped single-write input coalescing: shared admission and checked repeats
 │   ├── [-] cooked editing: processed backspace/newline and wakeup-control precedence
 │   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
-│   │   └── [_] echoed cursor/repaint and broader editing-key transport
+│   │   └── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -100,6 +100,12 @@ flowchart LR
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
+    INPUT --> COOK["one native UTF-16 editor / silent and echoed reads"]
+    COOK --> ELAYOUT["temporary common-parser layout / bounded origin search"]
+    ELAYOUT --> DCURSOR["absolute drawing cursor / delayed wrap"]
+    DCURSOR --> VT
+    ELAYOUT --> ECOMMIT["sink before screen / viewport / echo-origin commit"]
+    ECOMMIT --> VIEW
     HOST --> MODES["Win32 output modes / native SDK differential receipts"]
     MODES --> VT["reuse owned VT parser and terminal projection"]
     HOST --> ATTR["native drawing attributes / SDK query / projected cells"]
@@ -3103,8 +3109,9 @@ and introducing a reverse dependency. It stays private until portable consumers
 establish an appropriate shared contract. Echoed cursor/repaint, history,
 word-wise movement, general combining/ZWJ overwrite, broader key transport,
 resize/concurrent-output layout and full line-editor compatibility remain open.
-The ordinary echoed path continues to use its existing append/backspace logic;
-this delivery does not claim echoed cursor editing is complete.
+At that delivery the ordinary echoed path still used append/backspace logic.
+The echoed integration below reuses this same native editor rather than adding
+a second editing model.
 
 Actual Windows PowerShell `[Console]::ReadLine()` is a separate consumer court:
 the controlled script selects silent line mode itself, publishes readiness, then
@@ -3123,13 +3130,13 @@ lossless UTF-16 and prefix-only wakeup. The pinned modern source still documents
 multi-unit overwrite limitations; the owned surrogate-pair rule is an explicit
 improvement, not a blanket upstream-equivalence claim.
 
-`cooked-edit-cmd-path-observe.log` is an open-frontier diagnostic, not a passing
-editor regression: real `cmd /c set /p` re-enables echo. System ConPTY reads
-`abXcd` from `abcd`, Left twice, X; the owned echoed path currently reads
-`abcdX`. This demonstrates the remaining integration requirement. The SDK's
-manual `cooked-edit-cmd` mode retains the probe, but it is excluded from the
-qualified silent-editor scenario count. Integrate the same editor with common
-echo publication and qualify actual cmd before claiming interactive line editing.
+`cooked-edit-cmd-path-observe.log` captures the pre-integration frontier, not a
+passing editor regression: real `cmd /c set /p` re-enables echo. System ConPTY read
+`abXcd` from `abcd`, Left twice, X; the owned echoed path then read
+`abcdX`. The SDK's `cooked-edit-cmd` mode retains that probe, excluded from the
+qualified silent-editor scenario count. The echoed owner below supersedes this
+finding only for its explicitly qualified case; broader interactive compatibility
+still requires its own evidence.
 
 Local qualification: `cooked-edit-final-focused.log` records four passing tests
 and 52 native scenarios: 25 silent SDK cases plus one actual Windows PowerShell
@@ -3161,3 +3168,89 @@ and log hashes, expected assets, executed image identities, compiler and two
 pinned upstream source blobs. High-repeat movement and per-turn work cost still
 need latency qualification; bounded storage alone does not establish it. No
 complete editor, backend, portable session or default-promotion claim follows.
+
+### Echoed cooked editing over the common screen
+
+Invariant: echoed and silent non-VT line reads use the same native UTF-16 editor.
+Keyboard text is laid out by the common parser, not by counting UTF-16 units or
+maintaining a Windows shadow grid. Two scratch drawing rows with bounded history
+model Unicode cells, tabs, control notation and delayed/eager wrapping. Scratch
+state is temporary; the service's TerminalStream screen stays authoritative.
+The drawing-cursor API contract is owned by
+[terminal state](PRD_02_24_con_terminal.md#absolute-drawing-cursor).
+
+The native echo formatter is shared by layout and legacy publication. A trailing
+high surrogate stays undisplayed until completed, removed or flushed by Enter;
+invalid interior sequences use the shared decoder's replacement behavior without
+normalizing the API's UTF-16 result.
+Wakeup units remain result-only. A read retains origin, prior footprint and a
+bounded formatted prompt prefix. Initial caller text is matched against drawing
+cells to infer its origin; tabs and wide text are not subtracted as unit counts.
+Caller-supplied initial text is also valid when it has not been drawn. If no
+candidate matches within the completed search, publication starts at the current
+cursor while preserving the entire initial UTF-16 prefix in the API result.
+Before repaint, the old visible footprint is erased in a transient shared screen.
+Natural continuation between rendered rows preserves wrap metadata. Scrolling
+keeps the edit cursor visible and can recover the saved prompt when returning to
+an earlier row. The viewport follows the resulting cursor through its existing
+public projection path.
+
+Available key records are edited as a batch before repaint, or before Enter or
+wakeup completes a read. This avoids publishing every intermediate bulk-input
+state; interactive batches still publish as they are serviced. A complete staged
+screen is committed after sink success. Client grammar, pending UTF-8/VT bytes
+and callbacks are preserved by the shared screen/view commit. No native user
+text is injected into the client's unfinished grammar. Partial sink failure
+still requires retiring the transport; echo origin/footprint advance only after
+publication succeeds.
+
+Dependencies are the existing editor, common screen/parser, viewport publication
+and native echo policy. Generated projections and saved prompt prefixes retain
+the one-MiB publication bound; line/history scratch storage follows the existing
+line budget. Initial-origin search charges text units plus two scratch rows per
+candidate against 1,048,576 text/cell work units; mismatched/offscreen-only drawing
+data cannot authorize a guessed origin. An unmatched completed search uses the
+current cursor; exhausted search/publication quotas still fail explicitly.
+Paint extent is distinct from cursor position: in no-wrap mode the occupied final
+cell is included even though the cursor remains in that cell. Width/output-mode
+changes during an active echoed read require relayout and currently fail locally
+with Unsupported. Active-buffer switching/read-buffer binding, arbitrary VT
+margins, concurrent output/mode/resize, word/history keys, broad native-key
+transport, worst-case input work and complete interactive compatibility remain
+open. No default-provider or release selection changes in this delivery.
+
+The SDK court compares returned UTF-16, modifiers, remaining records, native
+cursor and frontend cursor/text rows. Echo images normalize trailing blank-cell
+padding and use physical row boundaries, rather than depending on a system
+renderer choosing spaces versus erase commands or a particular wire wrap flag.
+Raw logical text remains in the logs. Common source/peer wrap invariants and the
+pending right-margin cursor are asserted separately by direct shared/host tests.
+The pending-CSI scenario also checks the frontend's actual red foreground.
+
+Local qualification: `cooked-echo-final-focused.log` records seven passing tests:
+the owned/reference SDK courts, three host echo units, the common drawing-cursor
+unit and the existing caller-supplied-initial-text regression. The native courts
+execute 37 echoed SDK scenarios plus actual `cmd set /p` on each provider: 76
+scenarios in total. The real command now reads `abXcd` after moving left twice
+within `abcd` and inserting X. Both 38-section snapshots retain scoped reference
+differences instead of claiming complete native equivalence.
+
+`cooked-echo-negative-audit.json` records 22 compiling, byte-restored runtime
+faults that fail all six new tests and the existing initial-text regression.
+They cover editor adoption, cursor/footprint, initial-origin matching and its
+work budget, UTF-16, wrapping, prompt/scroll recovery, sink-before-screen/view/
+echo-state commit, client grammar, projection cursor, wire budget and the actual
+reference command. The bulk 150-unit case bounds measured echo publication to
+512 bytes; this is a wire-size assertion, not a CPU or layout-count benchmark.
+
+`cooked-echo-final-suite.log` records 279 selected passes, including existing
+external-client, control, pressure, geometry and lifecycle coverage. Its earlier
+run is reused only after all eleven implementation/test/fork file hashes match
+the final restored source. Ten static/cross checks pass: strict default/enabled
+workspace and owned vt100/vte all-targets Clippy, vte no-std, four portable-library
+targets and Windows ARM64 platform PTY/Rust-console all-targets compilation.
+Execution remains Windows x86_64 build 20348; other targets are compile-only.
+Final formatting and 17 alignment checks follow this documentation.
+`cooked-echo-final-receipt.json` binds the staged source tree, guard/log hashes,
+eight executed x64 image identities, compiler and two pinned upstream blobs.
+The open boundaries above remain prerequisites for broader qualification.

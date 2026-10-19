@@ -8,6 +8,46 @@ use windows_sys::Win32::System::Console::{
 };
 const VT_OUTPUT: u32 = ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
 
+// The native echo policy is shared by actual publication and scratch layout;
+// character placement and Unicode width remain in the common VT parser.
+pub(super) fn echo_fragment(
+    character: char,
+    mode: u32,
+    column: u16,
+    columns: u16,
+) -> (Vec<u8>, bool) {
+    let (bytes, printable) = if mode & ENABLE_PROCESSED_OUTPUT == 0 && character.is_ascii_control()
+    {
+        (vec![b' '], true)
+    } else {
+        match character {
+            '\r' => (vec![b'\r'], false),
+            '\n' => (
+                if mode & DISABLE_NEWLINE_AUTO_RETURN == 0 && column != 0 {
+                    b"\r\n".to_vec()
+                } else {
+                    vec![b'\n']
+                },
+                false,
+            ),
+            '\t' => (
+                vec![b' '; usize::from((8 - column % 8).min(columns.saturating_sub(column)))],
+                true,
+            ),
+            control if control.is_ascii_control() => (vec![b'^', (control as u8) ^ 64], true),
+            printable => {
+                let mut buffer = [0; 4];
+                (printable.encode_utf8(&mut buffer).as_bytes().to_vec(), true)
+            }
+        }
+    };
+    let eager = printable
+        && !bytes.is_empty()
+        && mode & VT_OUTPUT != VT_OUTPUT
+        && mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0;
+    (bytes, eager)
+}
+
 impl ConsoleHost<'_> {
     pub(super) fn set_text_attribute(
         &mut self,
@@ -276,47 +316,13 @@ impl ConsoleHost<'_> {
         output: &mut impl Write,
     ) -> io::Result<()> {
         for character in decoder.push(unit) {
-            if self.output_mode & ENABLE_PROCESSED_OUTPUT == 0 && character.is_ascii_control() {
-                self.echo_printable(' ', output)?;
-            } else {
-                match character {
-                    '\r' => self.emit_native(b"\r", output)?,
-                    '\n' => {
-                        if self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
-                            && self.terminal.screen().cursor_position().1 != 0
-                        {
-                            self.emit_native(b"\r", output)?;
-                        }
-                        self.emit_native(b"\n", output)?;
-                    }
-                    '\t' => {
-                        let (_, column) = self.terminal.screen().cursor_position();
-                        let columns = self.terminal.screen().size().1;
-                        for _ in 0..(8 - column % 8).min(columns.saturating_sub(column)) {
-                            self.echo_printable(' ', output)?;
-                        }
-                    }
-                    control if control.is_ascii_control() => {
-                        // Cooked input displays control notation instead of
-                        // interpreting keyboard bytes as client VT commands.
-                        self.echo_printable('^', output)?;
-                        self.echo_printable(char::from((control as u8) ^ 64), output)?;
-                    }
-                    printable => self.echo_printable(printable, output)?,
-                }
+            let (_, column) = self.terminal.screen().cursor_position();
+            let columns = self.terminal.screen().size().1;
+            let (bytes, eager) = echo_fragment(character, self.output_mode, column, columns);
+            self.emit_native(&bytes, output)?;
+            if eager && self.terminal.screen().cursor_position().1 >= columns {
+                self.emit_native(b"\r\n", output)?;
             }
-        }
-        Ok(())
-    }
-
-    fn echo_printable(&mut self, character: char, output: &mut impl Write) -> io::Result<()> {
-        let mut encoded = [0; 4];
-        self.emit_native(character.encode_utf8(&mut encoded).as_bytes(), output)?;
-        if self.output_mode & VT_OUTPUT != VT_OUTPUT
-            && self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0
-            && self.terminal.screen().cursor_position().1 >= self.terminal.screen().size().1
-        {
-            self.emit_native(b"\r\n", output)?;
         }
         Ok(())
     }

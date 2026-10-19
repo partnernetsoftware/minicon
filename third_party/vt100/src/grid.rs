@@ -146,6 +146,10 @@ impl Grid {
         self.pos
     }
 
+    pub(crate) fn set_drawing_pos(&mut self, pos: Pos) {
+        self.pos = pos;
+    }
+
     pub fn set_pos(&mut self, mut pos: Pos) {
         if self.origin_mode {
             pos.row = pos.row.saturating_add(self.scroll_top);
