@@ -52,6 +52,7 @@ version = "1.0.15"
 version = "0.2.1"
 
 [dependencies.vte]
+path = "../vte"
 version = "0.15.0"
 default-features = false
 

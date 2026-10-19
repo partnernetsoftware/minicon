@@ -1,6 +1,7 @@
 /target/
 /target-six/
 /third_party/vt100/target/
+/third_party/vte/target/
 /loader/dist/
 __pycache__/
 *.swp

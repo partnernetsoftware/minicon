@@ -301,7 +301,10 @@ fn serve(
                 drop(control);
             }
             if sink.ready() {
-                break;
+                host.finish_output(&mut sink)?;
+                if sink.ready() {
+                    break;
+                }
             }
             std::thread::sleep(Duration::from_millis(1));
             continue;

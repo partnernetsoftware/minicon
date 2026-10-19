@@ -6,6 +6,8 @@ mod control;
 #[cfg(windows)]
 mod inheritance;
 #[cfg(windows)]
+mod mixed_output;
+#[cfg(windows)]
 mod output_modes;
 #[cfg(windows)]
 mod screen_fill;
@@ -38,6 +40,15 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "mixed-output-tail-csi" || mode == "mixed-output-tail-utf8" {
+        return mixed_output::tail(std::path::Path::new(&arguments[1]), mode.ends_with("utf8"));
+    }
+    if mode == "mixed-output" || mode == "mixed-output-budget" {
+        return mixed_output::run(
+            std::path::Path::new(&arguments[1]),
+            mode.ends_with("-budget"),
+        );
+    }
     if mode == "screen-fill" {
         return screen_fill::run(std::path::Path::new(&arguments[1]));
     }

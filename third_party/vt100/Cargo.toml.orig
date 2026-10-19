@@ -17,7 +17,7 @@ include = ["src/**/*", "LICENSE", "README.md", "CHANGELOG.md"]
 [dependencies]
 itoa = "1.0.15"
 unicode-width = "0.2.1"
-vte = "0.15.0"
+vte = { version = "0.15.0", path = "../vte" }
 
 [dev-dependencies]
 nix = { version = "0.30.1", features = ["term"] }

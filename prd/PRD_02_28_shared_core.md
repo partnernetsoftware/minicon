@@ -44,10 +44,12 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── ISA branches: byte search, checksum, CPU facts and native ABI details
 │   ├── numeric compatibility exports use core implementation
 │   └── opt-in features; a common facade does not imply equal availability
-├── Experimental Windows console service — crates/minicon-console
-│   └── ConDrv/object/API/input/job/control mechanisms, owned vt100 reuse; explicit experimental PTY adapter
+├── Independent terminal library — crates/minicon-console; PRD_02_35
+│   ├── terminal::TerminalStream: OS/ISA-neutral state and bounded output facade
+│   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
 ├── Owned dependencies — third_party/
-│   ├── vt100: VT parsing, screen state and damage extensions
+│   ├── vte: authoritative VT/UTF-8 grammar and side-effect-free boundary preview
+│   ├── vt100: VT parsing, screen state, damage and bounded OutputFramer
 │   └── softbuffer: native presentation backends
 ├── Bootstrap exception — src/startup.rs
 │   └── Windows x86_64 / aarch64 entry assembly; not a reusable runtime API
@@ -68,6 +70,9 @@ flowchart LR
     OS["selected native adapters: Windows / macOS / Linux"]
     ISA["internal ISA, ABI and CPU-feature selection"]
     VT["owned vt100 fork"]
+    GRAM["owned vte: common VT/UTF-8 grammar"]
+    FRAME["vt100 OutputFramer: OS-neutral framing"]
+    CON["minicon-console: Windows ConDrv / native semantics"]
     SB["owned softbuffer fork"]
     E["Exact source + enabled features + OS/ISA + build/runtime evidence"]
     MC --> CORE & UI & PLAT & VT
@@ -75,6 +80,10 @@ flowchart LR
     AG -. "prepared core consumer; own qualification" .-> CORE
     UI -->|"tree; core defaults disabled"| CORE
     PLAT -->|"numeric; core defaults disabled"| CORE
+    VT --> GRAM
+    FRAME --> VT
+    CON --> FRAME
+    PLAT -->|"rust-console only"| CON
     UI --> PIX
     UI -->|"terminal-selection only"| VT
     PLAT --> OS & ISA
@@ -119,6 +128,8 @@ than duplicating the full platform feature catalog.
 | `crates/minicon-ui-core/src/pixel.rs` | `blend_mask_xrgb`, `pack_xrgb_to_rgb8`, pixel fill helpers | Internal ISA kernels; see inventory below | Scalar reference; public blend uses common input prefix, pack writes complete pixels |
 | `crates/minicon-platform/src/lib.rs`, `contract/`, `selected.rs` | Capability facades for PTY, window, input, IME, font, IPC, clipboard, process, filesystem and other native mechanisms | OS adapter selection; some mechanisms also branch by ISA/ABI | Default features empty; enable required features explicitly; unsupported/failure results are capability-specific, never inferred success |
 | `third_party/vt100` | VT screen/parser API including damage, DECAWM, `auto_wrap()`, `CellStyle`, programmatic literal cell/style fills and full/diff replay | Shared OS/ISA-neutral parser state; dependencies may specialize internally | Own fork required by terminal rendering and the optional Windows console service, which consumes the cell-edit API; upstream vt100 is not interchangeable; behavior owner [terminal](PRD_02_24_con_terminal.md) |
+| `third_party/vte` | VT/UTF-8 grammar, `at_boundary()` and side-effect-free `preview_byte()` exposed through the owned vt100 parser | OS/ISA-neutral grammar; memchr may specialize internally | Exact lexer state, not a second boundary scanner; shared by terminal parsing and the optional Windows service; owner [terminal](PRD_02_24_con_terminal.md) |
+| `crates/minicon-console` | Common `terminal::TerminalStream` facade; Windows ConDrv server/clients, typed APIs and native output ordering | Common state/stream is OS/ISA-neutral; native service is Windows-only, native ABI/ISA qualification stays separate | Optional `rust-console` provider in platform; direct paths to owned vt100/VTE preserve required APIs for external repository consumers; owner [Windows backend](PRD_02_34_windows_console_backend.md) |
 | `third_party/softbuffer` | Native pixel presentation consumed by platform's portable window host | Backend selected by OS/window system; not a native-free UI rule | Own fork carries macOS presentation changes; backend failures remain native results |
 | `src/terminal.rs`, `terminal_paint.rs`, `raster_surface.rs`, `font.rs` | Terminal lifecycle and renderer composition | Shared composition over native facades; behavior may select by OS | Binary-private modules, not an independently exported terminal engine; owner [terminal](PRD_02_24_con_terminal.md) |
 | `src/workspace.rs`, `ui.rs`, `rename.rs`, `notes.rs`, `session_store.rs`, `update*.rs` | Tab identity, layout, editable surfaces, persistence and manual update policy | Product composition; native operations go through platform | Do not export product state merely because a helper is pure; owner [workspace](PRD_02_25_con_workspace.md) |
@@ -234,6 +245,29 @@ API compatibility decision; no new target selectors inherit this exception.
 Keep external reuse reproducible at an immutable revision with the consumer's
 actual features and fork resolution. The initial assessment was static; added
 local tests and native receipts support only their recorded feature/cell scope.
+
+## Terminal library consolidation
+
+- [-] Keep parsing, cells/styles, damage and output framing in owned shared
+  libraries. Windows native error mapping and producer-lifetime policy stay in
+  adapters. `OutputFramer` now has a neutral error contract and no OS/ISA imports;
+  its concrete behavior belongs to [terminal](PRD_02_24_con_terminal.md).
+- [-] The initial `terminal::TerminalStream` facade is now in `minicon-console`;
+  its independent library scope and future merger decision belong to
+  [PRD 02.35](PRD_02_35_terminal_library.md). Extend session composition only after identifying its
+  required composition: feed output, inspect cells/damage, resize, encode input,
+  report capabilities and own shutdown/backpressure. Product tabs, settings,
+  event loops and GUI painting policy must remain outside that facade.
+- [-] The facade owns its parser/framer pair, exposes screen edits without
+  decoder reset, and consumes itself on final-tail delivery. Native-host and GUI
+  migration, explicit session-discard receipts and process lifecycle remain open.
+- [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
+  `adapters/unix/pty`; the macOS adapter currently imports the former file by
+  path. Preserve distinct adapter identities and qualify both actual platforms.
+- [_] Qualify a minimal external consumer with actual selected features and
+  owned fork resolution on Windows/macOS/Linux and supported ISAs. Linux/ARM
+  cross-compilation cannot substitute for macOS or ARM native runtime evidence.
+  Installation/package ergonomics and stable public API policy remain open.
 
 ## Consolidation frontier and maintenance rule
 

@@ -23,7 +23,8 @@ minicon terminal and rendering
 ├── Scheduling (bounded 128 KiB per GUI turn; input yields)
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
-│   └── Programmatic literal cell/style fills — shared state, safe VT projection
+│   ├── Programmatic literal cell/style fills — shared state, safe VT projection
+│   └── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
 ├── Damage, raster and present
 ├── Fonts and glyphs (CJK, native faces)
 ├── Architecture kernels (SIMD behind scalar fallbacks)
@@ -40,11 +41,44 @@ flowchart LR
     WRAP --> DMG
     EDIT["CellStyle / literal cell edits"] --> VT
     EDIT --> DMG
+    GRAM["owned vte: authoritative grammar / boundary preview"] --> VT
+    GRAM --> FRAME["vt100 OutputFramer: bounded pending bytes / neutral errors"]
+    FRAME --> VT
     DMG --> RAS["raster<br/>font · CJK"]
     RAS --> PRES["native present"]
     PRES --> WIN["visible window"]
     DMG -. "no pixel change ⇒ no present" .-> PRES
 ```
+
+## Shared streaming library boundary
+
+The owned `vte` lexer is the single VT/UTF-8 grammar. Its `at_boundary()` and
+`preview_byte()` inspect real grammar progress without changing the screen or
+callbacks. The preview copies lexer state only. The owned `vt100` parser exposes
+these operations, grammar-only `reset_input()` and consuming `into_parts()`.
+`vt100::OutputFramer` provides bounded frame retention using that parser:
+complete frames reach the sink, executed C0 controls inside unfinished commands
+reach it exactly once, and sink failure precedes the corresponding parser commit.
+Its `FrameError` distinguishes pending-budget rejection from an I/O failure.
+No Windows error number, native handle or process-lifetime authority lives here.
+
+Use one framer per parser and sink. Client bytes must go through that framer;
+direct parser processing/reset while bytes are pending violates the pairing.
+Screen-only edits preserve the client grammar. `finish()` publishes a retained
+incomplete tail only after the caller establishes that no producer or native
+projection can follow. Partial sink writes are fatal to the transport; this
+API does not promise rollback or blindly retry a partially written stream.
+The Windows consumer chooses its 64 KiB pending budget and native error mapping;
+its native projection, final-Job authority and application evidence belong to
+[PRD 02.34](PRD_02_34_windows_console_backend.md).
+
+This is an OS/ISA-neutral reusable mechanism, not a complete exported terminal
+engine. The new shared units are `stream_boundary_framing_bounds_recovery_and_sink_commit`,
+`stream_boundary_reset_preserves_shared_screen_and_edit_state` and
+`stream_boundary_preview_uses_real_grammar_and_isolates_state`, selected through
+`scripts/build.sh test`. Their current local receipts live in ignored
+`target/conhost-research/mixed-output-*`; runtime and external consumer coverage
+must be stated separately from source portability.
 
 ## Session ownership
 

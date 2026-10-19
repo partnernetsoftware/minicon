@@ -1450,7 +1450,7 @@ fn minicon_platform_features_match_the_consumer_matrix() {
         "Cargo.toml still depends on the external AgenTerm repository; the \
          terminal stack is meant to be owned in-repo"
     );
-    for fork in ["vt100", "softbuffer"] {
+    for fork in ["vte", "vt100", "softbuffer"] {
         assert!(
             manifest.contains(&format!("{fork} = {{ path = \"third_party/{fork}\" }}")),
             "the {fork} fork must be patched by path into third_party/"

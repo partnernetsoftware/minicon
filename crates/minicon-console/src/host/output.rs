@@ -16,7 +16,7 @@ impl ConsoleHost<'_> {
     ) -> io::Result<()> {
         let foreground = swap_red_blue((attribute & 15) as u8);
         let background = swap_red_blue(((attribute >> 4) & 15) as u8);
-        self.emit(
+        self.emit_native(
             format!(
                 "\x1b[0;38;5;{foreground};48;5;{background};{};{}m",
                 if attribute & 0x4000 != 0 { 7 } else { 27 },
@@ -43,7 +43,7 @@ impl ConsoleHost<'_> {
     pub fn set_output_mode(&mut self, requested: u32, output: &mut impl Write) -> io::Result<()> {
         self.output_mode = requested;
         if self.screen.screen().auto_wrap() != (requested & ENABLE_WRAP_AT_EOL_OUTPUT != 0) {
-            self.emit(
+            self.emit_native(
                 if requested & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
                     b"\x1b[?7h"
                 } else {
@@ -86,7 +86,7 @@ impl ConsoleHost<'_> {
                             .screen()
                             .cell(row, previous)
                             .is_some_and(vt100::Cell::is_wide_continuation);
-                        self.emit(
+                        self.emit_native(
                             format!(
                                 "\x1b[{};{}H",
                                 row + 1,
@@ -217,20 +217,29 @@ impl ConsoleHost<'_> {
     }
 
     pub(super) fn emit(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        output.write_all(bytes)?;
-        self.screen.process(bytes);
+        self.emit_framed(bytes, output)
+    }
+
+    pub(super) fn sync_output_wrap(&mut self) {
         self.output_mode = (self.output_mode & !ENABLE_WRAP_AT_EOL_OUTPUT)
             | if self.screen.screen().auto_wrap() {
                 ENABLE_WRAP_AT_EOL_OUTPUT
             } else {
                 0
             };
-        Ok(())
     }
 
     fn emit_char(&mut self, character: char, output: &mut impl Write) -> io::Result<()> {
         let mut buffer = [0; 4];
         self.write_output_bytes(character.encode_utf8(&mut buffer).as_bytes(), output)
+    }
+}
+
+pub(super) fn write_status(result: io::Result<()>) -> io::Result<i32> {
+    match result {
+        Ok(()) => Ok(super::SUCCESS),
+        Err(error) if error.raw_os_error() == Some(1450) => Ok(0xc000_009a_u32 as i32),
+        Err(error) => Err(error),
     }
 }
 

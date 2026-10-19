@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["third_party/vte", "third_party/vt100", "third_party/softbuffer"]
 members = [
     "crates/minicon-console",
     "crates/minicon-core",
@@ -168,5 +169,6 @@ strip = false
 # now live in this repository under `third_party/`, so MiniCon owns its
 # terminal rendering stack instead of tracking an external revision.
 [patch.crates-io]
+vte = { path = "third_party/vte" }
 vt100 = { path = "third_party/vt100" }
 softbuffer = { path = "third_party/softbuffer" }

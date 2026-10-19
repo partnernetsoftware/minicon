@@ -126,19 +126,10 @@ mod tests {
             let mut replay = crate::Parser::new(3, 6, 0);
             replay.process(&before.state_formatted());
             replay.process(&projection);
-            assert_eq!(
-                replay.screen().cursor_position(),
-                before.cursor_position()
-            );
+            assert_eq!(replay.screen().cursor_position(), before.cursor_position());
             assert_eq!(replay.screen().cell(0, 3).unwrap().contents(), " ");
-            assert_eq!(
-                replay.screen().cell(1, 1).unwrap().contents(),
-                "\u{25cc}"
-            );
-            assert_eq!(
-                replay.screen().cell(1, 2).unwrap().contents(),
-                "\u{25cc}"
-            );
+            assert_eq!(replay.screen().cell(1, 1).unwrap().contents(), "\u{25cc}");
+            assert_eq!(replay.screen().cell(1, 2).unwrap().contents(), "\u{25cc}");
             assert_eq!(replay.screen().cell(0, 2).unwrap().contents(), "c");
             assert_eq!(
                 replay.screen().attributes_formatted(),
@@ -154,12 +145,9 @@ mod tests {
         assert_eq!(parser.screen().cell(2, 0).unwrap().contents(), "");
         assert_eq!(parser.screen_mut().fill_cell_text(3, 0, 1, 'X'), 0);
         parser.process(b"\x1b[3;5H\xe4");
-        parser.screen_mut().fill_cell_style(
-            0,
-            0,
-            1,
-            crate::CellStyle::default(),
-        );
+        parser
+            .screen_mut()
+            .fill_cell_style(0, 0, 1, crate::CellStyle::default());
         parser.process(b"\xb8\xad");
         assert_eq!(parser.screen().cell(2, 4).unwrap().contents(), "中");
     }

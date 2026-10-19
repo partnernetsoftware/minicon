@@ -600,7 +600,7 @@ impl<'session> ConsoleHost<'session> {
                             .and_then(UnicodeWidthChar::width)
                             .unwrap_or(1);
                         for _ in 0..width {
-                            self.emit(b"\x08 \x08", output)?;
+                            self.emit_native(b"\x08 \x08", output)?;
                         }
                     }
                 }

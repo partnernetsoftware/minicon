@@ -5,6 +5,7 @@ mod objects;
 mod output;
 mod readback;
 mod screen;
+mod stream;
 pub use input::ConsoleInput;
 use input::InputState;
 use std::collections::{BTreeMap, VecDeque};
@@ -62,6 +63,7 @@ pub struct ConsoleHost<'session> {
     output_code_page: u32,
     pending_high_surrogate: Option<u16>,
     previous_output_cr: bool,
+    output_framer: vt100::OutputFramer,
     screen: vt100::Parser,
     original_title: Vec<u16>,
     title: Vec<u16>,
@@ -86,6 +88,7 @@ impl Default for ConsoleHost<'_> {
             output_code_page: code_page,
             pending_high_surrogate: None,
             previous_output_cr: false,
+            output_framer: vt100::OutputFramer::new(65536),
             screen: vt100::Parser::new(30, 120, 0),
             original_title: Vec::new(),
             title: Vec::new(),
@@ -382,8 +385,16 @@ impl<'session> ConsoleHost<'session> {
                     request.complete(receipt.status, 0, &[])?;
                 } else {
                     let bytes = request.read_input(0, descriptor.input_size as usize)?;
-                    self.write_ansi(&bytes, output)?;
-                    request.complete(SUCCESS, bytes.len(), &[])?;
+                    receipt.status = output::write_status(self.write_ansi(&bytes, output))?;
+                    request.complete(
+                        receipt.status,
+                        if receipt.status == SUCCESS {
+                            bytes.len()
+                        } else {
+                            0
+                        },
+                        &[],
+                    )?;
                 }
             }
             6 => return self.defer_text_read(request, Vec::new(), true, output),
@@ -571,19 +582,22 @@ impl<'session> ConsoleHost<'session> {
                     let offset = body_size + 8;
                     let length = descriptor.input_size - offset;
                     let bytes = request.read_input(offset, length as usize)?;
+                    body[..4].fill(0);
                     if body[4] != 0 {
                         if !bytes.len().is_multiple_of(2) {
                             receipt.status = INVALID_PARAMETER;
                         } else {
-                            self.write_utf16(
-                                bytes
-                                    .chunks_exact(2)
-                                    .map(|b| u16::from_le_bytes([b[0], b[1]])),
-                                output,
+                            receipt.status = output::write_status(
+                                self.write_utf16(
+                                    bytes
+                                        .chunks_exact(2)
+                                        .map(|b| u16::from_le_bytes([b[0], b[1]])),
+                                    output,
+                                ),
                             )?;
                         }
                     } else {
-                        self.write_ansi(&bytes, output)?;
+                        receipt.status = output::write_status(self.write_ansi(&bytes, output))?;
                     }
                     if receipt.status == SUCCESS {
                         information = bytes.len();
@@ -623,7 +637,7 @@ impl<'session> ConsoleHost<'session> {
                     if column >= columns || row >= rows {
                         receipt.status = INVALID_PARAMETER;
                     } else {
-                        self.emit(
+                        self.emit_native(
                             format!("\x1b[{};{}H", row + 1, column + 1).as_bytes(),
                             output,
                         )?;
@@ -840,5 +854,28 @@ mod tests {
         let result = host.fill_output(2, u16::from(b'X'), 0, 0, 1, &mut FailedOutput);
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
         assert_eq!(host.screen.screen().cell(0, 0).unwrap().contents(), "");
+        host.set_output_mode(7, &mut Vec::new()).unwrap();
+        host.write_ansi(b"\x1b[3", &mut Vec::new()).unwrap();
+        assert!(!host.screen.at_boundary());
+        let error = host
+            .emit_native(b"\x1b[2;2H", &mut FailedOutput)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        let error = host.finish_output(&mut FailedOutput).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(host.output_framer.pending_bytes(), b"\x1b[3");
+        assert_eq!(host.screen.screen().cursor_position(), (0, 0));
+        host.write_ansi(b"1", &mut Vec::new()).unwrap();
+        let error = host.write_ansi(b"m", &mut FailedOutput).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(host.output_framer.pending_bytes(), b"\x1b[31");
+        assert!(!host.screen.at_boundary());
+        let mut output = Vec::new();
+        host.write_ansi(b"mX", &mut output).unwrap();
+        assert_eq!(output, b"\x1b[31mX");
+        assert_eq!(
+            host.screen.screen().cell(0, 0).unwrap().fgcolor(),
+            vt100::Color::Idx(1)
+        );
     }
 }

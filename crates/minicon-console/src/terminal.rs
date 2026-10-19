@@ -1,0 +1,111 @@
+//! OS/ISA-neutral terminal state and ordered output. No native process or
+//! event-loop ownership is implied by this module.
+
+use std::io::{self, Write};
+pub use vt100::{
+    Callbacks, Cell, CellStyle, Color, CursorShape, FrameError, MouseProtocolEncoding,
+    MouseProtocolMode, RowRange, Screen, ScreenDamage,
+};
+
+/// A parser paired with bounded output framing for its entire lifetime.
+/// Screen edits cannot accidentally replace its unfinished client decoder.
+/// Native projections must be complete commands and must update the shared
+/// screen only after successful publication to the same sink.
+pub struct TerminalStream<CB: Callbacks = ()> {
+    parser: vt100::Parser<CB>,
+    framer: vt100::OutputFramer,
+}
+
+impl TerminalStream {
+    /// Construct a terminal without callbacks; sizes are rows then columns.
+    #[must_use]
+    pub fn new(rows: u16, columns: u16, scrollback: usize, pending_limit: usize) -> Self {
+        Self::with_callbacks(rows, columns, scrollback, pending_limit, ())
+    }
+}
+
+impl<CB: Callbacks> TerminalStream<CB> {
+    /// Construct a terminal with caller-owned event callbacks. The pending
+    /// limit bounds unfinished VT/UTF-8 bytes, not cells or scrollback memory.
+    #[must_use]
+    pub fn with_callbacks(
+        rows: u16,
+        columns: u16,
+        scrollback: usize,
+        pending_limit: usize,
+        callbacks: CB,
+    ) -> Self {
+        Self {
+            parser: vt100::Parser::new_with_callbacks(rows, columns, scrollback, callbacks),
+            framer: vt100::OutputFramer::new(pending_limit),
+        }
+    }
+
+    /// Feed client bytes, publishing complete frames to the downstream sink.
+    /// Earlier complete frames may be committed before a later error. Retire
+    /// a transport after partial sink failure; rollback is not guaranteed.
+    pub fn write_output(&mut self, bytes: &[u8], sink: &mut impl Write) -> Result<(), FrameError> {
+        self.framer.write(&mut self.parser, bytes, sink)
+    }
+
+    /// Current terminal cells, cursor and modes.
+    #[must_use]
+    pub fn screen(&self) -> &Screen {
+        self.parser.screen()
+    }
+
+    /// Edit cells, styles or dimensions without touching client input grammar.
+    pub fn screen_mut(&mut self) -> &mut Screen {
+        self.parser.screen_mut()
+    }
+
+    /// Consume accumulated conservative damage.
+    pub fn take_damage(&mut self) -> ScreenDamage {
+        self.parser.take_damage()
+    }
+
+    /// Inspect event callbacks without exposing mutable decoder state.
+    #[must_use]
+    pub fn callbacks(&self) -> &CB {
+        self.parser.callbacks()
+    }
+
+    /// Bytes accepted but withheld until a complete grammar boundary.
+    #[must_use]
+    pub fn pending_bytes(&self) -> &[u8] {
+        self.framer.pending_bytes()
+    }
+
+    /// Consume the stream after all producers and native projections stop,
+    /// publishing any accepted incomplete tail. On failure the stream remains
+    /// consumed: the caller must retire the transport rather than replay it.
+    pub fn finish(mut self, sink: &mut impl Write) -> io::Result<(Screen, CB)> {
+        self.framer.finish(sink)?;
+        Ok(self.parser.into_parts())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TerminalStream;
+
+    #[test]
+    fn rust_console_terminal_stream_preserves_pending_grammar_across_screen_edits() {
+        let mut terminal = TerminalStream::new(2, 8, 0, 64);
+        let mut wire = Vec::new();
+        terminal.write_output(b"A\x1b[3", &mut wire).unwrap();
+        assert_eq!(wire, b"A");
+        terminal.screen_mut().fill_cell_text(1, 0, 1, 'N');
+        terminal.write_output(b"1mB", &mut wire).unwrap();
+        assert_eq!(
+            terminal.screen().cell(0, 1).unwrap().fgcolor(),
+            super::Color::Idx(1)
+        );
+        assert_eq!(terminal.screen().cell(1, 0).unwrap().contents(), "N");
+        terminal.write_output(&[0xe4, 0xb8], &mut wire).unwrap();
+        assert_eq!(terminal.pending_bytes(), &[0xe4, 0xb8]);
+        let (screen, ()) = terminal.finish(&mut wire).unwrap();
+        assert_eq!(screen.cell(0, 0).unwrap().contents(), "A");
+        assert_eq!(wire, b"A\x1b[31mB\xe4\xb8");
+    }
+}

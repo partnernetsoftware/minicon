@@ -42,11 +42,13 @@ def main():
                                     env=env, capture_output=True, text=True, timeout=30)
             assert result.returncode == 0, result.stderr
             calls = [part.strip().splitlines() for part in log.read_text().split("CALL\n")[1:]]
-            assert len(calls) == 2, calls
-            workspace, fork = [call[:-1] for call in calls]
+            assert len(calls) == 3, calls
+            workspace, terminal, lexer = [call[:-1] for call in calls]
             assert workspace[-len(arguments):] == arguments, workspace
-            assert fork == ["test", "--locked", "--manifest-path", "third_party/vt100/Cargo.toml",
-                            "--lib", "rust_console_", "--", "--exact", *(["--features"] if arguments is cases[0] else [])], fork
+            lint_config='build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]'
+            for name, fork in [("vt100", terminal), ("vte", lexer)]:
+                assert fork == ["test", "--locked", "--manifest-path", f"third_party/{name}/Cargo.toml",
+                                "--config",lint_config,"--lib", "rust_console_", "--", "--exact", *(["--features"] if arguments is cases[0] else [])], fork
             assert "build.rustflags=[\"-D\",\"dead_code\",\"-D\",\"unused_variables\",\"-D\",\"unused_must_use\"]" in workspace
         print("build feature forwarding: 2 black-box cases passed")
     finally:

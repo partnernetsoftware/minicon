@@ -47,6 +47,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped drawing attributes: native setter/query and subsequent text share VT state
 │   ├── [v] scoped native character/attribute readback: bounded views of the shared screen
 │   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
+│   ├── [-] mixed output: authoritative parser boundaries, bounded fragments and native injection
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -83,6 +84,8 @@ flowchart LR
     READBACK --> VT
     HOST --> FILL["native fills / transactional shared-cell edits / safe VT projection"]
     FILL --> VT
+    HOST --> FRAME["client VT/UTF-8 fragments / immediate controls / native output boundary"]
+    FRAME --> VT
     HOST --> LIFE["connection defaults vs opened file objects"]
     LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
     LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
@@ -161,6 +164,22 @@ output scheduling, native handle rights and shared full/diff projection. Hot
 files are the host dispatcher/screen/output modules and the owned parser's
 cell/style/edit/serialization modules. Remaining rectangular/multi-buffer and
 partial-client-VT interaction work is not replaced by this leaf.
+
+### Accepted mixed-output leaf
+
+Invariant: one authoritative client parser owns UTF-8 and VT grammar. Native
+screen operations preserve that input state and reach the consumer at complete
+wire boundaries. Immediate controls inside an unfinished sequence execute once;
+incomplete bytes cannot capture a later native projection. Evidence must compare
+actual SDK readback and consumed PTY cells for fragmented CSI/UTF-8/string
+commands, native fill/cursor/attribute calls, cancellation and bounded recovery.
+Dependencies are the existing parser, safe native projection and API error
+completion. Hot files are the shared lexer/parser, host output/screen/dispatch
+and native fixtures. The upstream lexer must expose its own state boundary;
+do not reconstruct a parallel VT grammar. Pending bytes have a fixed budget;
+overflow rejects the write explicitly, discards only unfinished input and leaves
+the host usable. Broader rectangular APIs, signals and default selection remain
+separate work rather than substitutes for this stream contract.
 
 Microsoft describes OpenConsole as the open-source console host. Its public
 server source contains API dispatch and driver transport; this is a better
@@ -1252,9 +1271,38 @@ code-page conversion and the actual cmd output path. Workspace and owned-parser
 negative courts run separately when workspace failure would stop the wrapper.
 Every new test has a runtime negative; the audit records restored source hashes.
 
-The shared edit mechanism preserves incomplete internal decoder state, but the
-host still forwards client output bytes. Native API projection interleaved into
-an unfinished wire-level VT/UTF-8 command is not yet a coherent stream contract.
-That requires further output/parser integration, along with rectangular
-operations, scrolling/multiple buffers, complete legacy flags/code pages,
-broader Windows/ISA/application runtime and packaged/default qualification.
+### Mixed client output and native projections
+
+The host now uses shared `vt100::OutputFramer` to withhold unfinished client
+CSI/UTF-8/OSC/DCS commands. Complete native attribute/cursor commands use a
+transient parser over a cloned screen, commit only after sink success, and
+preserve the authoritative client decoder. Literal fill projections likewise
+reach a downstream parser at ground. C0 execution inside a pending command is
+published immediately and excluded from its retained bytes, preventing duplicate
+scrolling when the command completes. The host maps the neutral 64 KiB pending
+limit to native error 1450 / STATUS_INSUFFICIENT_RESOURCES and permits recovery.
+RawWrite and WriteConsole share this completion path. A failed Win32 call's
+caller-owned written-count pointer is not treated as defined SDK output.
+
+After the private Job is empty, the provider drains accepted incomplete tails
+before EOF; explicit close retains its bounded discard semantics. The shared
+framer has no authority to infer producer exit. Shared API ownership and pairing
+requirements are recorded in [terminal](PRD_02_24_con_terminal.md).
+
+The actual SDK fixture exercises split CSI, UTF-8 (CJK and emoji), OSC, DCS,
+charset selection, CAN, native fill/cursor/attribute interleaving and an embedded
+LF that scrolls exactly once. It compares native readback with the consumed
+PTY screen, plus separate raw/wide over-budget recovery and final incomplete
+CSI/UTF-8 tail checks. The installed build 20348 reference retains a literal CAN
+cell and shifts subsequent text; its explicit receipt branch records that
+observed difference. The owned parser retains standard CAN cancellation.
+The reference is not claimed to agree on those cells. Named logs are
+`mixed-output-positive.log`, `mixed-output-shared-framer-positive.log` and
+`mixed-output-tail-red.log` under the ignored research directory.
+
+This closes the exercised output/native-call paths, not all producer mixing.
+Cooked input echo and encoding/mode changes while client output is incomplete
+still need integration and qualification. Rectangular operations,
+scrolling/multiple buffers, complete legacy flags/code pages, high-pressure
+concurrent writers, broader Windows/ISA/application runtime and packaged/default
+qualification remain open. GUI/default selection remains unchanged.

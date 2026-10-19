@@ -472,7 +472,10 @@ mod tests {
             for glyph in ["你", "😀"] {
                 for byte in glyph.as_bytes() {
                     let damage = process_and_assert(&mut parser, std::slice::from_ref(byte));
-                    assert!(damage.is_empty(), "unrepresentable {glyph:?} changed damage");
+                    assert!(
+                        damage.is_empty(),
+                        "unrepresentable {glyph:?} changed damage"
+                    );
                 }
             }
         }

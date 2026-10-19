@@ -303,6 +303,110 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn mixed_output_report(rust: bool, budget: bool) -> (String, vt100::Parser, Vec<u8>) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(if budget {
+            "mixed-output-budget"
+        } else {
+            "mixed-output"
+        })
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("mixed-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    (receipt, parser, std::mem::take(&mut fixture.bytes))
+}
+
+const MIXED_OUTPUT_RECEIPT: &str = "csi:1,0;0004\nutf8:4,1;002e\ncontrol:4,2;002e\nstrings:11,4;001f\nscroll:1,0;001f\ncell:0,0:004b\ncell:2,0:0042\ncell:0,1:0046\ncell:4,2:0058\ncell:5,3:0043\ncell:6,3:0052\ncell:7,3:0054\ncell:10,3:0051\ncell:0,7:004a\n";
+
+fn assert_mixed_output(receipt: &str, parser: &vt100::Parser, bytes: &[u8]) {
+    assert_eq!(receipt.split_once('\n').unwrap().1, MIXED_OUTPUT_RECEIPT);
+    assert_eq!(
+        parser
+            .screen()
+            .rows(0, 16)
+            .map(|row| row.trim_end().to_owned())
+            .collect::<Vec<_>>(),
+        ["K B", "F", "    X", "     CRT😀Q", "", "", "", "J"]
+    );
+    assert_eq!(parser.screen().cursor_position(), (0, 1));
+    assert!(
+        bytes
+            .windows(b"\x1b]2;native-title\x07".len())
+            .any(|window| window == b"\x1b]2;native-title\x07")
+    );
+}
+
+#[test]
+fn rust_console_pty_mixed_output_preserves_client_fragments_and_immediate_controls() {
+    let (receipt, parser, bytes) = mixed_output_report(true, false);
+    assert_mixed_output(&receipt, &parser, &bytes);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY mixed-output differential court"]
+fn rust_console_client_mixed_output_matches_system_conpty() {
+    let (reference, _, _) = mixed_output_report(false, false);
+    eprintln!("mixed output reference:\n{reference}");
+    let (owned, parser, bytes) = mixed_output_report(true, false);
+    assert_mixed_output(&owned, &parser, &bytes);
+    let reference_body = reference.split_once('\n').unwrap().1;
+    if reference.starts_with("build=20348\n") {
+        // The measured old host stores CAN as a literal cell, shifting later
+        // text by one. Preserve the exact observation rather than adopting it.
+        let expected = MIXED_OUTPUT_RECEIPT
+            .replace("strings:11,4", "strings:12,4")
+            .replace("cell:6,3:0052", "cell:6,3:0018")
+            .replace("cell:7,3:0054", "cell:7,3:0052")
+            .replace("cell:10,3:0051", "cell:10,3:0020");
+        assert_eq!(reference_body, expected);
+    } else {
+        assert_eq!(reference_body, MIXED_OUTPUT_RECEIPT);
+    }
+}
+
+#[test]
+fn rust_console_pty_mixed_output_budget_rejects_raw_and_wide_then_recovers() {
+    let (receipt, parser, _) = mixed_output_report(true, true);
+    assert_eq!(
+        receipt.split_once('\n').unwrap().1,
+        "raw-limit:0,1450,0\nwide-limit:0,1450\nrecovery:9,0;0007\n"
+    );
+    assert_eq!(parser.screen().contents(), "RECOVEROK");
+}
+
+#[test]
+fn rust_console_pty_mixed_output_delivers_accepted_incomplete_tail_before_eof() {
+    for (name, tail) in [
+        ("csi", b"\x1b[3".as_slice()),
+        ("utf8", [0xe4, 0xb8].as_slice()),
+    ] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("mixed-output-tail-{name}"))
+            .arg(report.0.as_os_str())
+            .rust_console();
+        let mut fixture = Fixture::open(command);
+        fixture.finish(0);
+        assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "accepted");
+        assert!(
+            fixture.bytes.ends_with(tail),
+            "accepted {name} tail must precede EOF: {:?}",
+            fixture.bytes
+        );
+    }
+}
+
 fn screen_fill_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))

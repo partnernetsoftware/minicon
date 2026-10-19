@@ -1,12 +1,13 @@
-//! Experimental owned Windows console service.
+//! Reusable terminal state and streaming mechanisms, with an experimental
+//! owned Windows console service. The `terminal` module is OS/ISA-neutral;
+//! native ConDrv and console API exports currently exist only on Windows.
 //!
-//! This crate is not yet a replacement for ConPTY/conhost. The initial slice
-//! establishes a real, owned ConDrv server and a limited console API service.
-//! Actual cmd I/O, Win32 input records and job-owned cleanup are tested.
-//! Current-object lifetime, scoped processed Ctrl+C and experimental PTY
-//! integration are implemented. Full signals, screen semantics and product
-//! selection remain incomplete; this is not a default backend.
-//! Architecture, provenance and acceptance: prd/PRD_02_34_windows_console_backend.md.
+//! The service is not yet a complete ConPTY/conhost replacement or the default
+//! product backend. Native lifecycle and compatibility evidence belong to
+//! prd/PRD_02_34_windows_console_backend.md; reusable library ownership belongs
+//! to prd/PRD_02_28_shared_core.md.
+
+pub mod terminal;
 
 #[cfg(windows)]
 mod client;
