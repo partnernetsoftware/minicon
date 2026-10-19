@@ -31,6 +31,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
 │   ├── [v] scoped ANSI record reads/peeks: bounded expansion, tail lifetime and live queries
 │   ├── [v] scoped single-write input coalescing: shared admission and checked repeats
+│   ├── [-] cooked editing: processed backspace/newline and wakeup-control precedence
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -3012,3 +3013,55 @@ binds the final tree, source/guard/log hashes, both expected-reply assets,
 compiler, three pinned reference files and executed client/probe/test image
 identities. Earlier blocked narrow UTF-8 reference evidence is not superseded;
 general backend completion and default promotion remain unproven.
+
+### Cooked controls and line-editing prerequisites
+
+Invariant: line-mode control handling follows the input mode and read-control
+mask before editing or echo. For the qualified BS/CR/TAB/character-ESC records,
+a masked unit is included in the UTF-16 result without echo or ordinary
+backspace/CR processing. Its modifiers are
+returned, and subsequent records remain queued. Normal CR completion returns
+zero modifiers and adds LF only with processed input enabled. With processed
+input disabled, backspace is retained as data. Initial caller-provided UTF-16
+participates in the same behavior and is not echoed a second time.
+
+The native owner remains `host/input.rs`; bounded queues, line budgets, native
+request lifetime and encoding stay unchanged. Echo continues through the common
+terminal facade and per-read UTF-16 decoder, preserving client grammar. No
+platform-to-console dependency is introduced. Unsupported/malformed requests
+retain their existing explicit errors; output failure retires the transport.
+
+The pinned `src/host/readDataCooked.cpp` provides `_handleChar` wakeup precedence,
+processed-backspace gating, zero default modifier state and CR/CRLF completion.
+Its modern `_layoutLine` displays literal controls using caret notation. The
+installed build 20348 instead applies literal BS to echo as cursor movement;
+the owned implementation retains modern caret display. A character ESC record
+with virtual-key zero is deliberately distinguished from the native Escape
+editing key. Escape editing, cursor movement, insertion/deletion, history,
+grapheme deletion, tab/wrap-aware erasure and concurrent-output/resize layout
+remain open; this leaf does not certify a complete line editor.
+
+Independent SDK scenarios exercise processed, literal and no-echo backspace;
+BS/CR/TAB/character-ESC wakeup; literal-mode wakeup; and initial-text editing
+and wakeup. They use real `ReadConsoleW`/`WriteConsoleInputW`, check returned
+UTF-16/modifiers and remaining raw records, query native cursor state, and
+parse actual PTY output. A title fence keeps the child alive until publication
+has been observed; closing system HPCON immediately after exit can lose the
+echo tail and is not a valid display comparison. System snapshots are scoped
+to the measured Windows build, independently from owned behavior.
+
+`rust_console_pty_cooked_controls_preserve_mode_and_wakeup_precedence` and
+`rust_console_client_cooked_controls_compare_system_conpty` pass twenty native
+scenarios in `cooked-controls-final-focused.log`. The latter is an explicitly
+requested, build-20348 reference court. `cooked-controls-negative-audit.json`
+records ten observed runtime failures and exact byte restoration: processed
+backspace gating, BS/CR wakeup precedence, CRLF mode, ordinary and wakeup
+modifiers, wakeup echo/result/tail consumption, and the reference caller's mask.
+`cooked-controls-final-suite.log` records 269 selected passes including the
+existing real-client, controls, pressure, lifecycle and 17 alignment cases.
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four console-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Runtime scope remains Windows x86_64 build 20348;
+cross-target results prove compilation only. Final formatting/alignment checks
+and `cooked-controls-final-receipt.json` bind source tree, restored guard hashes,
+logs, pinned source and executed image identities; the broader goal stays open.

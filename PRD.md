@@ -72,9 +72,12 @@ flowchart LR
     P -->|numeric compatibility exports| C
     UI --> I["internal ISA kernels"]
     P --> N["OS / ISA / ABI adapters"]
+    CON["minicon-console<br/>independent terminal library / PRD 35"] --> VT["shared state / stream / viewport"]
+    P -->|rust-console opt-in| CON
+    CON --> W["Windows console service / PRD 34"]
     A["AgenTerm<br/>own immutable pin and qualification"] --> UI & P
     A -. prepared core consumer .-> C
-    M["PRD 28<br/>ownership and reuse map"] -. contracts and evidence scope .-> C & UI & P
+    M["PRD 28<br/>ownership and reuse map"] -. contracts and evidence scope .-> C & UI & P & CON
     T["PRD 33<br/>targeted development plan"] --> D["PRD 32<br/>native dev courts"]
     MC --> D
     MC --> E["PRD 27<br/>exact artifact courts"]

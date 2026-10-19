@@ -592,7 +592,11 @@ impl<'session> ConsoleHost<'session> {
                     scan_code,
                 });
             }
-            read.controls = controls;
+            // Cooked reads report modifier state only for a wakeup character,
+            // not for the ordinary key which happens to finish a line.
+            if !line_mode {
+                read.controls = controls;
+            }
             if character == 0 {
                 if self.input_mode & 0x200 != 0 {
                     let sequence: &[u16] = match virtual_key {
@@ -625,7 +629,8 @@ impl<'session> ConsoleHost<'session> {
                     "processed Ctrl+C signal delivery is not implemented",
                 ));
             }
-            if line_mode && character == 8 {
+            let wakes_line = line_mode && character < 32 && wakeup & (1_u32 << character) != 0;
+            if line_mode && !wakes_line && character == 8 && self.input_mode & 1 != 0 {
                 if let Some(last) = read.line.pop() {
                     let removed = if (0xdc00..=0xdfff).contains(&last)
                         && read
@@ -655,11 +660,19 @@ impl<'session> ConsoleHost<'session> {
                 }
                 continue;
             }
-            if line_mode && character == 13 {
-                read.line.extend([13, 10]);
+            if line_mode && !wakes_line && character == 13 {
+                // Without processed input CR ends the read but does not add LF.
+                let processed = self.input_mode & 1 != 0;
+                read.line.push(13);
+                if processed {
+                    read.line.push(10);
+                }
+                read.controls = 0;
                 if echo {
                     self.echo_unit(&mut read.echo_decoder, 13, output)?;
-                    self.echo_unit(&mut read.echo_decoder, 10, output)?;
+                    if processed {
+                        self.echo_unit(&mut read.echo_decoder, 10, output)?;
+                    }
                 }
                 self.input.ready_event_suppressed = false;
                 self.input.ready.extend(read.line.drain(..));
@@ -672,7 +685,12 @@ impl<'session> ConsoleHost<'session> {
                 ));
             }
             read.line.push(character);
-            if echo {
+            if wakes_line {
+                read.controls = controls;
+            }
+            // Wakeup units belong to the API result, never the displayed line.
+            // Test this before backspace/CR handling as well as ordinary echo.
+            if echo && !wakes_line {
                 self.echo_unit(&mut read.echo_decoder, character, output)?;
             }
             if !line_mode && !unicode && (0xd800..=0xdbff).contains(&character) {
@@ -680,7 +698,7 @@ impl<'session> ConsoleHost<'session> {
                 // even when its two UTF-16 input records arrive separately.
                 continue;
             }
-            if !line_mode || (character < 32 && wakeup & (1_u32 << character) != 0) {
+            if !line_mode || wakes_line {
                 self.input.ready_event_suppressed = false;
                 self.input.ready.extend(read.line.drain(..));
                 return Ok(());

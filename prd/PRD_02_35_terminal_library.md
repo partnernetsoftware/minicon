@@ -4,6 +4,9 @@ Parent: [product index](../PRD.md). Accepted direction: keep `minicon-console`
 as an independent terminal-specific library, with reusable common mechanisms
 and explicit native adapters. A possible later merge into `minicon-platform`
 is a separate design decision, not a prerequisite or a current migration.
+Implementation sequencing belongs to
+[the terminal-library plan](../plan/plan-terminal-library.md); Windows service
+compatibility continues in its own backend plan.
 
 ## Outcome and delivery tree
 
@@ -124,6 +127,42 @@ backpressure, explicit-close versus natural EOF, and errors portable across OSes
 Native process and Job/foreground-group authority must remain in one owner.
 POSIX PTY consolidation is tracked in [reuse map](PRD_02_28_shared_core.md).
 Do not move general filesystem/network/window APIs into this terminal library.
+
+### Integration acceptance contract
+
+The target is one independently consumable terminal library, not merely a
+Windows service with portable helper exports. Keep the `minicon-console` name
+while state/stream, session/input and native adapters converge. A future platform
+merger needs a separate dependency, consumer and maintenance review after those
+boundaries have actual consumers.
+
+Before publishing a portable session interface, resolve these requirements with
+both the existing Windows and POSIX implementations:
+
+| Contract | Required observable behavior |
+| --- | --- |
+| Dimensions | Cell rows/columns have one meaning; optional pixel size is distinct; invalid or unsupported resize fails explicitly |
+| Input | Text, paste, encoded bytes and native key/control capabilities are distinguishable; unsupported events cannot report success |
+| Ownership | Exactly one owner controls the child/session lifetime; readers/writers have explicit concurrency and cancellation rules |
+| Flow control | Input/output budgets, saturation behavior and shutdown bounds are stated; slow consumers cannot create unbounded queues |
+| Completion | Natural child exit, output EOF, explicit close and forced termination remain distinguishable; accepted final output can be drained |
+| Native differences | Provider identity, foreground control and cleanup capabilities remain queryable; Windows Job and POSIX process-group semantics are not conflated |
+| Errors | Portable categories retain actionable native context without exposing native handles as common types |
+
+Move mechanisms only after a working consumer demonstrates the contract. Reuse
+the existing POSIX implementation for macOS and Linux; do not create a second
+copy for the new crate. The platform facade may forward to console-owned
+contracts/adapters, but the console library must never import platform to reuse
+them. Migrate neutral dependencies first or keep the adapter in place until
+that dependency can be resolved. General process-management policy stays with
+its existing owner; session-specific authority must not gain a second owner.
+
+Each delivered slice needs a direct library consumer without MiniCon GUI state,
+positive behavior and an observed behavior-changing runtime negative. Record
+source/features, OS, ISA and provider separately for build and execution.
+Windows x86_64 evidence cannot certify Windows ARM64, and either Linux target's
+compilation cannot certify macOS runtime. A common API is the reuse boundary;
+these individual receipts determine its supported implementation scope.
 
 ### Independent title publication
 

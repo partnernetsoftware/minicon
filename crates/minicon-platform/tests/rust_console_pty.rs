@@ -4161,6 +4161,108 @@ fn rust_console_pty_record_queries_stay_live_under_output_pressure() {
     assert_eq!(fixture.bytes, expected);
 }
 
+fn cooked_controls_report(kind: &str, rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(format!("cooked-controls-{kind}"))
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("cooked-controls-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    println!(
+        "cooked-controls rust={rust};kind={kind}\n{receipt}screen={:?};cursor={:?}",
+        parser.screen().contents(),
+        parser.screen().cursor_position()
+    );
+    let (build, receipt) = receipt.split_once('\n').unwrap();
+    let build = build
+        .strip_prefix("build=")
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
+    if rust {
+        assert!(build > 0);
+    } else {
+        assert_eq!(build, 20348, "reference qualifies only the measured build");
+    }
+    (receipt.to_owned(), parser)
+}
+
+fn cooked_controls_cases(rust: bool) {
+    for kind in [
+        "processed-bs",
+        "literal-bs",
+        "literal-noecho-bs",
+        "wakeup-bs",
+        "wakeup-cr",
+        "wakeup-tab",
+        "wakeup-esc",
+        "wakeup-literal-bs",
+        "initial-wakeup-bs",
+        "initial-processed-bs",
+    ] {
+        let (units, controls, queued, cursor, screen) = match kind {
+            "processed-bs" | "initial-processed-bs" => {
+                ("0061,0063,000d,000a,", 0, 0, (1, 0), ">ac")
+            }
+            "literal-bs" => (
+                "0061,0062,0008,0063,000d,",
+                0,
+                0,
+                (0, 0),
+                if rust { ">ab^Hc" } else { ">ac" },
+            ),
+            "literal-noecho-bs" => ("0061,0062,0008,0063,000d,", 0, 0, (0, 1), ">"),
+            "wakeup-bs" | "wakeup-literal-bs" | "initial-wakeup-bs" => {
+                ("0061,0062,0008,", 16, 2, (0, 3), ">ab")
+            }
+            "wakeup-cr" => ("0061,0062,000d,", 16, 2, (0, 3), ">ab"),
+            "wakeup-tab" => ("0061,0062,0009,", 16, 2, (0, 3), ">ab"),
+            "wakeup-esc" => ("0061,0062,001b,", 16, 2, (0, 3), ">ab"),
+            _ => unreachable!(),
+        };
+        let (receipt, parser) = cooked_controls_report(kind, rust);
+        assert_eq!(
+            receipt,
+            format!(
+                "read:{units}\ncontrols:{controls:08x}\nqueued:{queued}\ncursor:{},{};0007\n",
+                cursor.1, cursor.0
+            ),
+            "kind={kind};rust={rust}"
+        );
+        assert_eq!(
+            parser.screen().contents(),
+            screen,
+            "kind={kind};rust={rust}"
+        );
+        assert_eq!(
+            parser.screen().cursor_position(),
+            cursor,
+            "kind={kind};rust={rust}"
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_cooked_controls_preserve_mode_and_wakeup_precedence() {
+    cooked_controls_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY cooked-control differential court"]
+fn rust_console_client_cooked_controls_compare_system_conpty() {
+    cooked_controls_cases(false);
+}
+
 fn input_merge_report(kind: &str, rust: bool) -> String {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
