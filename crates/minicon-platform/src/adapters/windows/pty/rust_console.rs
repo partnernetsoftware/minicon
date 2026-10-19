@@ -3,13 +3,16 @@ use super::*;
 use minicon_console::{ClientOptions, ConsoleChild, ConsoleHost, ConsoleInput, DriverSession};
 use std::os::windows::ffi::OsStringExt;
 use std::sync::atomic::AtomicU32;
-use std::sync::mpsc::{self, Receiver, SyncSender};
-use windows_sys::Win32::System::Pipes::PeekNamedPipe;
+use std::sync::mpsc::{self, Receiver};
+#[path = "rust_console/input.rs"]
+mod input;
+pub(super) use input::RustInput;
 
 type Reply = mpsc::Sender<io::Result<()>>;
 enum Control {
     Resize(TerminalSize, Reply),
     Key(NativeTerminalKey, u16, Reply),
+    Interrupt(bool, mpsc::Sender<io::Result<bool>>),
 }
 
 #[derive(Debug)]
@@ -19,24 +22,12 @@ pub(super) struct RustConsole {
     mode: Arc<AtomicU32>,
     output: Arc<OutputPipe>,
     finished: Arc<(Mutex<bool>, Condvar)>,
-    control: SyncSender<Control>,
+    input: Arc<RustInput>,
 }
 
 impl RustConsole {
     fn request(&self, make: impl FnOnce(Reply) -> Control) -> io::Result<()> {
-        if self.stop.load(Ordering::Acquire) {
-            return Err(io::Error::from(io::ErrorKind::BrokenPipe));
-        }
-        let (send, receive) = mpsc::channel();
-        self.control
-            .try_send(make(send))
-            .map_err(|error| match error {
-                mpsc::TrySendError::Full(_) => io::Error::from(io::ErrorKind::WouldBlock),
-                mpsc::TrySendError::Disconnected(_) => io::Error::from(io::ErrorKind::BrokenPipe),
-            })?;
-        receive
-            .recv_timeout(PTY_WRITE_TIMEOUT)
-            .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))?
+        self.input.request(make, PTY_WRITE_TIMEOUT)
     }
 
     pub(super) fn resize(&self, size: TerminalSize) -> io::Result<()> {
@@ -129,17 +120,18 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
     )?);
     let process = child.process_handle().try_clone_to_owned()?;
     let pid = ProcessId::new(child.id()).map_err(io::Error::other)?;
-    let input = create_input_pipe(PIPE_BUFFER_SIZE)?;
-    let writer = Arc::new(InputWriter::new(input.write)?);
+
     let output = Arc::new(OutputPipe::new());
     let (send, receive) = mpsc::sync_channel(32);
+    let input = Arc::new(RustInput::new(send));
+    let writer = Arc::new(InputWriter::Rust(Arc::clone(&input)));
     let state = Arc::new(RustConsole {
         child: Arc::clone(&child),
         stop: Arc::new(AtomicBool::new(false)),
         mode: Arc::new(AtomicU32::new(7)),
         output: Arc::clone(&output),
         finished: Arc::new((Mutex::new(false), Condvar::new())),
-        control: send,
+        input: Arc::clone(&input),
     });
     let stop = Arc::clone(&state.stop);
     let mode = Arc::clone(&state.mode);
@@ -155,7 +147,7 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
                 serve(
                     driver,
                     &worker_child,
-                    input.read,
+                    &input,
                     &worker_output,
                     &stop,
                     &mode,
@@ -164,6 +156,7 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
                 )
             }))
             .unwrap_or_else(|_| Err(io::Error::other("Rust console worker panicked")));
+            input.close();
             // ConDrv may cancel the final completion after every client has
             // exited. An empty private job is required before treating 995 as
             // normal EOF; no live client's I/O failure is hidden.
@@ -235,7 +228,7 @@ impl io::Write for QueueWriter<'_> {
 fn serve(
     driver: DriverSession,
     child: &ConsoleChild,
-    input: OwnedHandle,
+    input: &RustInput,
     output: &OutputPipe,
     stop: &AtomicBool,
     mode: &AtomicU32,
@@ -248,6 +241,7 @@ fn serve(
     let mut pending = Vec::new();
     let mut previous_cr = false;
     let mut escape_wait = None;
+    let mut input_blocked = false;
     while !stop.load(Ordering::Acquire) {
         // Bound each lap so input cannot starve native request dispatch.
         for control in controls.try_iter().take(32) {
@@ -255,7 +249,23 @@ fn serve(
                 Control::Resize(size, reply) => {
                     (host.resize(size.cols, size.rows, &mut sink), reply)
                 }
+                Control::Interrupt(pressure_only, reply) => {
+                    let result = if host.input_mode() & 1 != 0 && (!pressure_only || input_blocked)
+                    {
+                        host.send_ctrl_c().map(|_| true)
+                    } else {
+                        Ok(false)
+                    };
+                    let _ = reply.send(result);
+                    continue;
+                }
                 Control::Key(key, repeat, reply) => {
+                    if key == NativeTerminalKey::Break {
+                        input.flush()?;
+                        pending.clear();
+                        previous_cr = false;
+                        escape_wait = None;
+                    }
                     let key = native_console_key_event(key, repeat);
                     let event = ConsoleInput::Key {
                         down: true,
@@ -270,47 +280,8 @@ fn serve(
             };
             let _ = reply.send(result);
         }
-        if pending.len() < WRITE_CHUNK_SIZE {
-            let mut available = 0;
-            // SAFETY: sole reader of this owned pipe; query does not block.
-            let ok = unsafe {
-                PeekNamedPipe(
-                    input.as_raw_handle(),
-                    null_mut(),
-                    0,
-                    null_mut(),
-                    &mut available,
-                    null_mut(),
-                )
-            };
-            if ok == 0 {
-                let error = io::Error::last_os_error();
-                if !stop.load(Ordering::Acquire) {
-                    return Err(error);
-                }
-                break;
-            }
-            if available != 0 {
-                let mut bytes = [0; WRITE_CHUNK_SIZE];
-                let mut count = 0;
-                let amount = (available as usize).min(bytes.len() - pending.len());
-                // SAFETY: only the already available byte count is read, with a
-                // matching writable buffer on the non-overlapped read endpoint.
-                if unsafe {
-                    ReadFile(
-                        input.as_raw_handle(),
-                        bytes.as_mut_ptr(),
-                        amount as u32,
-                        &mut count,
-                        null_mut(),
-                    )
-                } == 0
-                {
-                    return Err(io::Error::last_os_error());
-                }
-                pending.extend_from_slice(&bytes[..count as usize]);
-            }
-        }
+        input.fill_pending(&mut pending)?;
+        let mut input_progress = false;
         let mut valid = match std::str::from_utf8(&pending) {
             Ok(text) => text.len(),
             Err(error) if error.error_len().is_none() => error.valid_up_to(),
@@ -349,6 +320,7 @@ fn serve(
                         match host.enqueue_input(&[event], &mut sink) {
                             Ok(_) => {
                                 pending.drain(..used);
+                                input_progress = true;
                                 previous_cr = false;
                                 escape_wait = None;
                             }
@@ -393,10 +365,23 @@ fn serve(
             match host.enqueue_text(&text, &mut sink) {
                 Ok(_) => {
                     pending.drain(..valid);
+                    input_progress = true;
                     previous_cr = cr;
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(error),
+            }
+        }
+        input_blocked = !input_progress && !pending.is_empty();
+        if input_blocked && host.input_mode() & 1 != 0 {
+            let interrupted = if let Some(at) = pending.iter().position(|byte| *byte == 3) {
+                pending.remove(at);
+                true
+            } else {
+                input.take_queued_interrupt()?
+            };
+            if interrupted {
+                host.send_ctrl_c()?;
             }
         }
         match driver.receive(Duration::from_millis(5)) {

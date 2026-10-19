@@ -1154,14 +1154,41 @@ impl OutputPipe {
 }
 
 #[derive(Debug)]
-struct InputWriter {
+enum InputWriter {
+    Pipe(PipeInputWriter),
+    #[cfg(feature = "rust-console")]
+    Rust(Arc<rust_console::RustInput>),
+}
+
+impl InputWriter {
+    fn new(handle: OwnedHandle) -> io::Result<Self> {
+        PipeInputWriter::new(handle).map(Self::Pipe)
+    }
+    fn write_all(&self, bytes: &[u8], timeout: Duration) -> io::Result<()> {
+        match self {
+            Self::Pipe(writer) => writer.write_all(bytes, timeout),
+            #[cfg(feature = "rust-console")]
+            Self::Rust(writer) => writer.write_all(bytes, timeout),
+        }
+    }
+    fn close(&self) {
+        match self {
+            Self::Pipe(writer) => writer.close(),
+            #[cfg(feature = "rust-console")]
+            Self::Rust(writer) => writer.close(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PipeInputWriter {
     handle: OwnedHandle,
     event: OwnedHandle,
     operation: Mutex<()>,
     closed: AtomicBool,
 }
 
-impl InputWriter {
+impl PipeInputWriter {
     fn new(handle: OwnedHandle) -> io::Result<Self> {
         let event = unsafe {
             // SAFETY: null security attributes and name request default event

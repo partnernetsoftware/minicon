@@ -14,10 +14,12 @@ use windows_sys::Win32::System::Console::{
 use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
 static EVENT: AtomicU32 = AtomicU32::new(0);
+static SIGNALS: AtomicU32 = AtomicU32::new(0);
 static HANDLER_IO: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn handler(event: u32) -> i32 {
     if event <= 1 {
+        SIGNALS.fetch_add(1, Ordering::AcqRel);
         if HANDLER_IO.load(Ordering::Acquire) {
             // Deliberately issue synchronous API requests from the real native
             // callback thread. No stdio locks, allocation or file reporting.
@@ -88,6 +90,9 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
             return Err(io::Error::last_os_error());
         }
         println!("control-probe-ready:");
+        if matches!(mode, "control-pressure-raw" | "control-pressure-processed") {
+            return pressure_records(input, report, mode == "control-pressure-processed");
+        }
         let mut result = String::new();
         // Hold the file through signal/readback observations so final close
         // cannot be confused with keyboard flushing or cached-text retention.
@@ -159,7 +164,10 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
         }
         if matches!(
             mode,
-            "control-full-queue" | "control-break-queue" | "control-break-raw-queue"
+            "control-full-queue"
+                | "control-break-queue"
+                | "control-break-raw-queue"
+                | "control-break-raw-queue-hold"
         ) {
             let deadline = Instant::now() + Duration::from_secs(8);
             let mut queued = 0;
@@ -212,7 +220,10 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-        if mode.ends_with("queue") || (byte_tail || wide_tail) {
+        if mode.ends_with("queue")
+            || mode == "control-break-raw-queue-hold"
+            || (byte_tail || wide_tail)
+        {
             let mut remaining = 0;
             if GetNumberOfConsoleInputEvents(input, &mut remaining) == 0 {
                 return Err(io::Error::last_os_error());
@@ -220,6 +231,16 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
             result.push_str(&format!(",{remaining}"));
             if mode.starts_with("control-break") {
                 result.push_str(&format!(",{}", WaitForSingleObject(input, 0)));
+            }
+        }
+        if mode == "control-break-raw-queue-hold" {
+            std::fs::write(report.with_extension("go"), b"break-observed")?;
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while !report.with_extension("opened").exists() {
+                if Instant::now() >= deadline {
+                    return Err(io::Error::from(io::ErrorKind::TimedOut));
+                }
+                std::thread::sleep(Duration::from_millis(2));
             }
         }
         if mode.ends_with("-observe") {
@@ -262,6 +283,89 @@ pub(super) fn run(mode: &str, report: &Path) -> io::Result<()> {
         drop(tail_file);
     }
     Ok(())
+}
+
+fn pressure_records(
+    input: windows_sys::Win32::Foundation::HANDLE,
+    report: &Path,
+    processed: bool,
+) -> io::Result<()> {
+    use windows_sys::Win32::System::Console::{
+        INPUT_RECORD, KEY_EVENT, ReadConsoleInputW, SetConsoleMode,
+    };
+    // SAFETY: private fixture console, SDK-sized buffers, checked record tags.
+    unsafe {
+        if SetConsoleMode(input, u32::from(processed)) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let mut queued = 0;
+            if GetNumberOfConsoleInputEvents(input, &mut queued) == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if queued == 4096 {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::from(io::ErrorKind::TimedOut));
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        std::fs::write(report.with_extension("ready"), b"full")?;
+        while if processed {
+            EVENT.load(Ordering::Acquire) == 0
+        } else {
+            !report.with_extension("go").exists()
+        } {
+            if Instant::now() >= deadline {
+                return Err(io::Error::from(io::ErrorKind::TimedOut));
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let mut total = 0;
+        let expected_total = if processed { 80_000 } else { 80_001 };
+        while total < expected_total {
+            let mut records = [INPUT_RECORD::default(); 512];
+            let mut count = 0;
+            if ReadConsoleInputW(
+                input,
+                records.as_mut_ptr(),
+                records.len() as u32,
+                &mut count,
+            ) == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            for record in &records[..count as usize] {
+                if record.EventType != KEY_EVENT as u16 {
+                    return Err(io::Error::other("unexpected record tag"));
+                }
+                let key = record.Event.KeyEvent;
+                let expected = if !processed && total == 80_000 {
+                    3
+                } else {
+                    u16::from(b'x')
+                };
+                if key.bKeyDown == 0 || key.wRepeatCount != 1 || key.uChar.UnicodeChar != expected {
+                    return Err(io::Error::other("raw pressure input order changed"));
+                }
+                total += 1;
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::from(io::ErrorKind::TimedOut));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(
+            report,
+            format!(
+                "{total},{},{}",
+                EVENT.load(Ordering::Acquire),
+                SIGNALS.load(Ordering::Acquire)
+            ),
+        )
+    }
 }
 
 fn group_parent(report: &Path) -> io::Result<()> {

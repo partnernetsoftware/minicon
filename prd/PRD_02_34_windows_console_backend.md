@@ -46,6 +46,9 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── explicit selected-host launch; record actual image, hash and fallback
 │   └── retain upstream notices and separate upstream baseline from our changes
 ├── [-] Replace behavior behind a reusable Windows adapter
+│   ├── [v] minicon-platform bounded input queue and control priority: serialized
+│   │   ordinary writes, processed C bypass, raw order and Break transport flush;
+│   │   native receipts and finite close, no unbounded staging
 │   ├── console API dispatch, handles and client attachment
 │   ├── input records, processed/raw modes, Unicode and screen state
 │   └── cancellation, process ownership, resize and bounded shutdown
@@ -79,6 +82,12 @@ flowchart LR
     CACHE --> READY["cached text readable / post-Break native event reset"]
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
+    ADAPTER --> IQ["Rust input: 16 frames / serialized ordinary writers"]
+    IQ --> PRESS["actor observes stalled input pump"]
+    PRESS --> PRIORITY["processed Ctrl+C priority / raw bytes retain order"]
+    PRIORITY --> SIGNAL
+    BRK --> EPOCH["clear transport and decoder fragments / interrupt old writers"]
+    EPOCH --> IQ
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
     KEYS["shared Windows VT-key decoder"] --> ADAPTER
     KEYS --> OLD["existing console-agent transport"]
@@ -768,3 +777,61 @@ replies before refreshing readiness and holds that stale window for 100 ms;
 the native read/wait fixture must detect it. All seven new tests and the
 retained cursor-map test have observed runtime negatives. Source restoration
 and log identities are in `key-break-negative-audit.json`.
+
+## Bounded input transport and controls under input pressure
+
+The experimental Windows adapter now owns its input staging in Rust instead
+of sending its own input through an anonymous kernel pipe. The existing PTY
+facade delegates to either `PipeInputWriter` for the previous Windows providers
+or `RustInput` for the explicit Rust provider. Both remain internal Windows
+adapters; no public cross-OS or cross-ISA contract changes. Console API and
+keyboard semantics still belong to `minicon-console`; transport ordering and
+backpressure belong to `minicon-platform`.
+
+Ordinary calls serialize through one writer lock. At most sixteen 4 KiB frames
+are queued, with one 4 KiB worker prefix and one 4 KiB active producer frame.
+The caller's borrowed input is not copied into an unbounded staging buffer.
+The existing separate control channel holds at most 32 requests. Queue waits,
+writer-lock acquisition and control replies have finite timeouts; normal
+progress refreshes the write inactivity deadline. Closing the worker wakes
+blocked writers with `BrokenPipe`, and diagnostic formatting excludes input
+contents.
+
+A singleton Ctrl+C asks the actor before acquiring the ordinary writer lock,
+so a different thread's large input cannot prevent its delivery. For mixed
+input, priority requires actual actor-observed pressure and the actor's current
+processed-input mode. The actor can remove one C from its prefix or queued
+frames; the writer can submit one still-unaccepted C through the control
+channel and records its offset so that byte is not delivered twice. Priority
+may overtake ordinary input under pressure; ordinary bytes retain their
+relative order. In raw mode the same C remains ordinary input, including when
+written separately by a second thread. A write error can follow partial input
+acceptance, as with the existing PTY writer.
+
+Keyboard Break clears queued transport bytes, the worker prefix and partial
+UTF-8/CRLF/escape decoder state, then uses the shared native-key mapping and
+the core's existing Break semantics. Incrementing the transport generation
+stops an already active old write with `Interrupted`; it cannot reinsert old
+bytes after the flush. New calls can write in the new generation. This does
+not erase the core's completed UTF-16 line cache described above.
+
+Five additional native-process tests cover C in caller/queue/worker buffers,
+exactly one callback while retaining 80,000 ordinary input records, raw record
+order for mixed and separate C, interruption of a different thread's blocked
+write, and Break cancellation with no stale transport resurrection. The
+initial old-pipe failure is preserved as `input-pressure-repro.log`.
+`input-pressure-positive-suite.log` runs 112 cases: 83 backend/reference cases
+and 29 legacy-agent units, including the twelve requested external/reference
+cases. Eleven runtime mutations independently remove the queue bound, raw-mode
+gate, singleton/caller/queued/prefix priority, exactly-once offset, close wake,
+Break generation, queued flush and prefix flush. Each produces a runtime test
+failure; all five new cases have an observed negative. Restored source hashes
+and log identities are in `input-pressure-negative-audit.json`; the restored
+112-case rerun is `input-pressure-final-suite.log`. Receipts stay under the
+ignored `target/conhost-research/` evidence directory.
+
+This qualifies input-pressure controls on the recorded native Windows x86_64
+host. An actor blocked writing to a full output sink still requires separate
+control-delivery qualification; this change proves neither that scenario nor
+complete interactive shell/TUI compatibility. Other Windows/ISA runtime,
+performance, packaged artifacts and default selection remain open.

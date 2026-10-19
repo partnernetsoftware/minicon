@@ -244,6 +244,159 @@ fn rust_console_pty_ctrl_c_bypasses_a_full_input_event_queue() {
 }
 
 #[test]
+fn rust_console_pty_processed_ctrl_c_survives_a_large_mixed_write_under_backpressure() {
+    // Exercise controls still in the caller, in queued frames, and in the
+    // worker's current frame after the native event queue is already full.
+    for size in [1_000_000, 8_000, 100] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg("control-full-queue")
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("control-probe-ready:");
+        if size != 1_000_000 {
+            fixture.master.write_all(&vec![b'x'; 4096]).unwrap();
+            report.wait_ready();
+        }
+        let mut input = vec![b'x'; size];
+        input.push(3);
+        let started = Instant::now();
+        let _write = fixture.master.write_all(&input);
+        fixture.finish(0);
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "control was stranded behind ordinary input"
+        );
+        assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,4096|1");
+    }
+}
+
+#[test]
+fn rust_console_pty_raw_ctrl_c_preserves_large_mixed_input_order_under_backpressure() {
+    for separate_control in [false, true] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg("control-pressure-raw")
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("control-probe-ready:");
+        // A mode query round trip after readiness establishes raw ownership before
+        // the writer can request any control priority.
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while fixture.child.native_input_ownership().unwrap() != NativeInputOwnership::RawNative {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let writer = fixture.master.try_clone_for_startup_reader().unwrap();
+        let (send, receive) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut bytes = vec![b'x'; 80_000];
+            if !separate_control {
+                bytes.push(3);
+            }
+            let _ = send.send(writer.write_all(&bytes));
+        });
+        report.wait_ready();
+        assert!(
+            matches!(
+                receive.recv_timeout(Duration::from_millis(100)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "write must actually encounter backpressure"
+        );
+        std::fs::write(report.0.with_extension("go"), b"read").unwrap();
+        if separate_control {
+            fixture.master.write_all(&[3]).unwrap();
+        }
+        receive
+            .recv_timeout(Duration::from_secs(15))
+            .unwrap()
+            .unwrap();
+        fixture.finish(0);
+        assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "80001,0,0");
+    }
+}
+
+#[test]
+fn rust_console_pty_processed_mixed_write_delivers_one_control_and_preserves_all_normal_input() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-pressure-processed")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("control-probe-ready:");
+    let mut bytes = vec![b'x'; 80_000];
+    bytes.push(3);
+    fixture.master.write_all(&bytes).unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "80000,1,1");
+}
+
+#[test]
+fn rust_console_pty_single_ctrl_c_overtakes_another_threads_blocked_input_write() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-full-queue")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("control-probe-ready:");
+    let writer = fixture.master.try_clone_for_startup_reader().unwrap();
+    let (send, receive) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = send.send(writer.write_all(&vec![b'x'; 1_000_000]));
+    });
+    report.wait_ready();
+    let started = Instant::now();
+    fixture.master.write_all(&[3]).unwrap();
+    let error = receive
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    fixture.finish(0);
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,4096|1");
+}
+
+#[test]
+fn rust_console_pty_break_cancels_inflight_write_and_flushes_transport_backlog() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-break-raw-queue-hold")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("control-probe-ready:");
+    let writer = fixture.master.try_clone_for_startup_reader().unwrap();
+    let (send, receive) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = send.send(writer.write_all(&vec![b'x'; 1_000_000]));
+    });
+    report.wait_ready();
+    fixture
+        .child
+        .send_native_key(NativeTerminalKey::Break, 1)
+        .unwrap();
+    let error = receive
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,0,258|2");
+}
+
+#[test]
 fn rust_console_pty_break_flushes_full_raw_and_cooked_queues_and_resets_native_ready() {
     for mode in ["control-break-queue", "control-break-raw-queue"] {
         let report = Report::new();
