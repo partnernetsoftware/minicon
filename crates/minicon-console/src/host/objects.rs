@@ -3,6 +3,7 @@ use super::*;
 
 pub(super) const READ: u32 = 0x8000_0000;
 pub(super) const WRITE: u32 = 0x4000_0000;
+pub(super) const MAX_HANDLES: usize = 1024;
 const ACCESS_DENIED: i32 = 0xc000_0022_u32 as i32;
 const SHARING_VIOLATION: i32 = 0xc000_0043_u32 as i32;
 
@@ -19,6 +20,10 @@ impl ConsoleHost<'_> {
                 && (h.lifetime == HandleLifetime::FileObject
                     || h.lifetime == HandleLifetime::Connection(process))
                 && kind.is_none_or(|kind| kind == h.kind)
+                && (h.kind == HandleKind::Input
+                    || h.buffer == self.current_buffer
+                    || h.buffer == self.active_buffer
+                    || self.buffers.contains_key(&h.buffer))
         }) else {
             return INVALID_HANDLE;
         };
@@ -44,7 +49,7 @@ impl<'session> ConsoleHost<'session> {
         };
         if !self.processes.contains_key(&descriptor.process) {
             receipt.status = INVALID_HANDLE;
-        } else if descriptor.input_size < 12 || self.handles.len() >= 1024 {
+        } else if descriptor.input_size < 12 || self.handles.len() >= MAX_HANDLES {
             receipt.status = INVALID_PARAMETER;
         } else {
             let body = request.read_input(0, 12)?;
@@ -59,13 +64,38 @@ impl<'session> ConsoleHost<'session> {
                     _ => 4,
                 };
             }
+            if kind == 3 {
+                if share & !3 != 0 || access & !(READ | WRITE) != 0 || descriptor.input_size < 24 {
+                    receipt.status = INVALID_PARAMETER;
+                } else {
+                    let create = request.read_input(12, 12)?;
+                    if read_u32(&create, 0).unwrap() & !1 != 0 {
+                        receipt.status = INVALID_PARAMETER;
+                    } else if let Some(state) = self.new_buffer()? {
+                        let token = self.token()?;
+                        request.complete(SUCCESS, token, &[])?;
+                        self.buffers.insert(token, state);
+                        self.handles.insert(
+                            token,
+                            ClientHandle {
+                                lifetime: HandleLifetime::FileObject,
+                                kind: HandleKind::Output,
+                                access,
+                                share,
+                                buffer: token,
+                            },
+                        );
+                        return Ok(receipt);
+                    } else {
+                        receipt.status = 0xc000_009a_u32 as i32;
+                    }
+                }
+                request.complete(receipt.status, 0, &[])?;
+                return Ok(receipt);
+            }
             let kind = match kind {
                 1 => Some(HandleKind::Input),
                 2 => Some(HandleKind::Output),
-                3 => {
-                    receipt.status = NOT_SUPPORTED;
-                    None
-                } // separate screen buffers remain explicit
                 _ => {
                     receipt.status = INVALID_PARAMETER;
                     None
@@ -77,7 +107,10 @@ impl<'session> ConsoleHost<'session> {
                 } else if self
                     .handles
                     .values()
-                    .filter(|handle| handle.kind == kind)
+                    .filter(|handle| {
+                        handle.kind == kind
+                            && (kind == HandleKind::Input || handle.buffer == self.active_buffer)
+                    })
                     .any(|handle| {
                         (access & READ != 0 && handle.share & 1 == 0)
                             || (access & WRITE != 0 && handle.share & 2 == 0)
@@ -98,6 +131,7 @@ impl<'session> ConsoleHost<'session> {
                             kind,
                             access,
                             share,
+                            buffer: self.active_buffer,
                         },
                     );
                     return Ok(receipt);

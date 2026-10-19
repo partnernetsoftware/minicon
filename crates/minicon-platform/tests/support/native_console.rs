@@ -1,5 +1,7 @@
 //! Independent Win32 caller for the platform PTY integration court.
 #[cfg(windows)]
+mod buffers;
+#[cfg(windows)]
 mod console_file;
 #[cfg(windows)]
 mod control;
@@ -54,6 +56,12 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "buffers" {
+        return buffers::run(std::path::Path::new(&arguments[1]));
+    }
+    if mode == "buffers-pressure" {
+        return buffers::pressure(std::path::Path::new(&arguments[1]));
+    }
     if mode == "geometry-parent" {
         return geometry::parent_resize(std::path::Path::new(&arguments[1]));
     }

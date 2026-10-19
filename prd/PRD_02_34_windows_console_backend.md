@@ -50,6 +50,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] rectangular W/A read/write: clipped row stride, per-cell styles and scoped wide pairs
 │   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
 │   ├── [-] native geometry: buffer versus viewport versus parent PTY dimensions
+│   ├── [-] multiple native buffers: stable handle binding, inactive state and active publication
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -97,6 +98,9 @@ flowchart LR
     HOST --> GEO["native buffer / window geometry / access / bounds"]
     GEO --> VIEW["common drawing grid versus projected viewport"]
     VIEW --> VT
+    HOST --> BUFFERS["native buffer identities / per-buffer common terminal state"]
+    BUFFERS --> VIEW
+    BUFFERS --> BIND["CONOUT open / duplicate lifetime / active-close fallback"]
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
     CV --> VT
@@ -1854,3 +1858,110 @@ existing Windows PowerShell RawUI rectangle client. Its isolated repeat and the
 complete serial run passed without product changes. The failure is retained in
 `geometry-parallel-suite-failure.log` and the isolated result in
 `geometry-rawui-isolated.log`; the cause and parallel reliability remain open.
+
+### Accepted multiple-buffer leaf
+
+Invariant: an output file object binds to one native screen buffer; activation
+changes the displayed buffer, not existing handle bindings. Each buffer owns
+common terminal state/grammar and native per-buffer modes/cursor/viewport;
+console code pages, input, process/Job authority and physical output ownership
+remain console-wide. Inactive writes/readback must remain independent and must
+not draw into the active peer. Activation publishes a complete current image
+before changing the active identity. Failed publication retains the old active
+state. Object closure/disconnect must reclaim unused buffers without invalidating
+live duplicates or an unrelated buffer. Counts and total cells are bounded.
+
+Evidence: independent CreateConsoleScreenBuffer/SetConsoleActiveScreenBuffer SDK
+calls, buffer/window inheritance, modes/styles/cursors/readback, inactive writes,
+CONOUT reopen and duplicate/final-close behavior, fenced consumer snapshots and
+real managed buffer clients. Measure the installed system before choosing
+version-specific fallback or parser-fragment expectations. Shared snapshots and
+streaming remain in the common library; Win32 identity/access/closure policy is
+native. Dependencies: handle lifetimes, common viewport publication and output
+ordering. Safe failure is explicit access/argument/resource status or fatal
+transport I/O; no success-only activation. Non-goals: a new input/Job owner,
+desktop windows or default promotion before full backend qualification.
+
+Primary contracts: [create buffer](https://learn.microsoft.com/en-us/windows/console/createconsolescreenbuffer)
+and [activate buffer](https://learn.microsoft.com/en-us/windows/console/setconsoleactivescreenbuffer).
+
+The scoped implementation serves NEW_OUTPUT creation from the driver's twelve-
+byte create record plus twelve-byte text-buffer payload, and activation API
+0x02000002 (no body, WRITE required). Every output handle binds to a stable
+native buffer identity. Current-output opens and new connection defaults bind
+to the currently active identity; duplicated native handles retain the original
+file object until the driver's final close. Share checks apply to the selected
+buffer, not every output buffer in the console.
+
+The active drawing state remains in ConsoleHost; inactive buffers retain their
+own TerminalStream, viewport, output mode, cursor percentage, UTF-16 decoder and
+CR/LF state. A scoped context swap routes inactive requests through the same
+native API implementation and common terminal mechanisms with a discarded wire
+sink, restoring the active context on both success and I/O failure. Input, code
+pages, title metadata, private-Job/process authority and output scheduling stay
+console-wide. New buffers start blank at the active window's size and inherit
+drawing attributes; the measured headless default mode is 7 and cursor is 25,
+visible. They do not inherit screen contents, cursor position or client grammar.
+
+Activation publishes a normalized full shared Screen viewport snapshot before
+committing the identity and state swap. Physical size stays parent-owned. Native
+cursor/geometry operations and common state remain bound to each logical buffer;
+no Windows shadow grid is introduced. Unused inactive buffers are reclaimed;
+closing the active buffer selects the newest remaining live buffer, matching
+the pinned source list order and the scoped installed-system SDK case. With no
+live replacement the last image is retained until session teardown.
+
+There are at most sixteen native buffers and one Mi drawing cells across their
+logical grids, including the temporarily parked active context during an
+inactive resize. Creation and resize check the aggregate before allocation.
+Output ordering includes finalizers which may switch the active image. Their
+queue reserves bounded capacity for the maximum retained handles/connections,
+even when the ordinary 64-request output queue is full. Disconnect cancellation
+preserves queued file finalizers. Character/rectangle readbacks (0x0200000f and
+0x02000013) join the known non-emitting query list and remain live under pressure.
+
+The independent SDK court fences six consumed images and checks new-buffer
+geometry/attributes, inactive writes, per-buffer cursor/mode values, current-
+output reopen, duplicates, final-close fallback and twenty-four create/close
+cycles. A pressure court fills the actual output queue, issues an active final
+close, reopens/reads the still-displayed buffer and then drains output to observe
+the fallback. CloseHandle return is not treated as proof of completed server
+reclamation: the kernel finalizer can be asynchronous. The initial pressure
+fixture exposed blocked readback while the non-emitting mode/info queries were
+already live; buffers-pressure-progress.log retains that runtime failure.
+
+Real Windows PowerShell 5/7 clients combine native buffer creation/activation
+with managed Console properties/writes and RawUI readback through the original
+inactive handle, fence a CJK alternate image and restore the modified original
+image. The native unit covers failed activation, context restoration on error,
+independent CSI/UTF-16 fragments, aggregate allocation/count bounds and collection.
+Full native-buffer/VT-alternate interactions, implicit process-exit fallback,
+inherited-buffer child lifetimes, additional system versions/ISAs, large-buffer
+performance and default promotion remain open qualification work.
+
+Local multiple-buffer qualification: `buffers-final-suite.log` records 220
+selected serial passes, including 17 alignment checks; the six added tests also
+pass independently in `buffers-final-new-tests.log`. Sixteen runtime guard
+mutations in `buffers-negative-audit.json` establish activation commit ordering,
+context restoration, independent UTF-16 decoding, aggregate/parked allocation
+bounds, buffer count and collection, creation dispatch (SDK and both actual
+PowerShell clients), reopen identity, share domains, suppressed inactive output,
+activation access, finalizer ordering, both pressure-time readbacks and the
+independent system-reference oracle. Every recorded guard matches restored
+source bytes. The corrected pressure court observes the wrong active buffer
+when close ordering is removed, and blocks when either readback is gated.
+
+The source dispatcher identifies 0x02000013 as rectangle read and 0x02000011 as
+rectangle write; only the read operation bypasses terminal output scheduling.
+Both character and rectangle readbacks execute before the parent begins draining
+the actual output queue. The prototype close-return/readback observations are
+not substitutes for the final fenced court and source-matched mutation receipts.
+
+Root fmt, default/experimental workspace all-target strict Clippy and standalone
+shared-parser strict Clippy passed. Library checks passed for Linux x86_64 and
+aarch64, Windows aarch64 and macOS x86_64; the minimal Windows ARM64 PTY/probe
+all-target check passed with existing minimal-feature warnings. These cross-
+target results are compile-only; native execution remains Windows x86_64 build
+20348. Eight reviewed source blobs match their pinned Git-tree identities.
+Ignored `buffers-final-receipt.json` records the tree, compiler, actual executable
+identities, log/guard hashes and remaining qualification scope.

@@ -221,3 +221,11 @@ between cross-target compilation and native execution are recorded by
 [native geometry qualification](PRD_02_34_windows_console_backend.md#accepted-native-geometry-leaf).
 Portable session composition and independent external consumers remain planned
 in the consolidation sequence above.
+
+Native multiple-buffer support composes independent instances of the same
+TerminalStream and shared viewport renderer. Buffer identities, Win32 handle
+sharing/closure, cursor percentages and native output-mode metadata remain
+Windows-private; there is one parser/screen authority for each logical buffer,
+not a second native cell model. Input/Job ownership is not duplicated per buffer.
+The contracts, measured compatibility and remaining lifecycle scope belong to
+[native buffers](PRD_02_34_windows_console_backend.md#accepted-multiple-buffer-leaf).

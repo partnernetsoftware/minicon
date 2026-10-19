@@ -17,7 +17,10 @@ impl ConsoleHost<'_> {
     }
 
     fn resize_capacity(&self) -> Result<(), i32> {
-        if self.input_mode & 8 != 0 && self.input.events.len() >= super::input::MAX_EVENTS {
+        if self.current_buffer == self.active_buffer
+            && self.input_mode & 8 != 0
+            && self.input.events.len() >= super::input::MAX_EVENTS
+        {
             Err(NOT_SUPPORTED)
         } else {
             Ok(())
@@ -28,7 +31,7 @@ impl ConsoleHost<'_> {
         if columns == 0 || rows == 0 || columns > MAX_AXIS || rows > MAX_AXIS {
             return Err(INVALID_PARAMETER);
         }
-        if usize::from(columns) * usize::from(rows) > MAX_CELLS {
+        if usize::from(columns) * usize::from(rows) > super::buffers::MAX_TOTAL_CELLS {
             return Err(NOT_SUPPORTED);
         }
         Ok(())
@@ -43,6 +46,9 @@ impl ConsoleHost<'_> {
     ) -> io::Result<Result<(), i32>> {
         if let Err(status) = Self::size_valid(columns, rows).and_then(|()| self.resize_capacity()) {
             return Ok(Err(status));
+        }
+        if !self.buffer_size_fits(rows, columns) {
+            return Ok(Err(NOT_SUPPORTED));
         }
         let changed = self.terminal.screen().size() != (rows, columns);
         let mut next = self.terminal.screen().clone();
@@ -62,7 +68,7 @@ impl ConsoleHost<'_> {
             };
         }
         self.viewport = Some(view);
-        if changed && self.input_mode & 8 != 0 {
+        if changed && self.input_mode & 8 != 0 && self.current_buffer == self.active_buffer {
             self.enqueue_input(
                 &[ConsoleInput::Resize {
                     columns: columns as i16,

@@ -178,6 +178,12 @@ impl Drop for Report {
             "orphan-ready",
             "orphan",
             "child",
+            "stage0",
+            "stage1",
+            "stage2",
+            "stage3",
+            "stage4",
+            "stage5",
         ] {
             let _ = std::fs::remove_file(self.0.with_extension(extension));
         }
@@ -301,6 +307,116 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
             .collect::<Vec<_>>(),
         ["", "               Z", "", ""]
     );
+}
+
+fn native_buffers(rust: bool) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("buffers")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let mut states = Vec::new();
+    for stage in 0..6 {
+        fixture.until(&format!("buffers-stage-{stage}:"));
+        let mut parser = vt100::Parser::new(8, 16, 0);
+        parser.process(&fixture.bytes);
+        states.push(parser.screen().clone());
+        std::fs::write(
+            report.0.with_extension(format!("stage{stage}")),
+            b"observed",
+        )
+        .unwrap();
+    }
+    fixture.finish(0);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!("native buffers rust={rust}: {receipt}");
+    for (stage, screen) in states.iter().enumerate() {
+        eprintln!(
+            "stage {stage}: {:?}",
+            screen.rows(0, 16).collect::<Vec<_>>()
+        );
+    }
+    for (stage, first, second, third) in [
+        (0, "BASE", "", ""),
+        (1, "FIRST", "", "DUP"),
+        (2, "SECOND", "", ""),
+        (3, "BASE", "HIDDEN", ""),
+        (4, "SECOND", "MORE", ""),
+        (5, "BASE", "HIDDEN", ""),
+    ] {
+        let rows = states[stage].rows(0, 16).collect::<Vec<_>>();
+        assert_eq!(
+            &rows[..3],
+            &[first, second, third],
+            "stage {stage}: {receipt}"
+        );
+    }
+    assert!(receipt.contains("readonly-active:0,5"), "{receipt}");
+    assert!(
+        receipt.contains("first-new:size=16,8;view=0,0,15,7;pos=0,0;attr=001e;mode=7;cursor=25,1"),
+        "{receipt}"
+    );
+    assert!(
+        receipt.contains("second-new:size=16,8;view=0,0,15,7;pos=0,0;attr=001e;mode=7;cursor=25,1"),
+        "{receipt}"
+    );
+    assert!(
+        receipt.contains(
+            "reopened-first:size=16,8;view=0,0,15,7;pos=5,0;attr=002d;mode=7;cursor=61,0"
+        ),
+        "{receipt}"
+    );
+    assert!(
+        receipt
+            .contains("active-close:size=32,12;view=0,0,15,7;pos=6,1;attr=001e;mode=7;cursor=25,1"),
+        "{receipt}"
+    );
+}
+
+#[test]
+fn rust_console_pty_native_buffers_preserve_identity_and_display() {
+    native_buffers(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY multiple-buffer court"]
+fn rust_console_client_native_buffers_match_system_conpty() {
+    native_buffers(false);
+}
+
+#[test]
+fn rust_console_pty_native_buffer_close_preserves_output_order_under_pressure() {
+    let report = Report::new();
+    let (master, child) = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("buffers-pressure")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 4, cols: 16 })
+        .rust_console()
+        .spawn()
+        .unwrap()
+        .into_parts();
+    report.wait_ready();
+    let held = std::fs::read_to_string(report.0.with_extension("ready")).unwrap();
+    assert!(
+        held.contains("held:row0=\"ALT\""),
+        "close changed active identity before output capacity: {held}"
+    );
+    assert!(held.contains("held-rect=ALT"), "{held}");
+    let mut fixture = Fixture::with_parts(master, child);
+    fixture.finish(0);
+    assert_eq!(
+        std::fs::read_to_string(&report.0).unwrap(),
+        "closed-after-drain"
+    );
+    let mut parser = vt100::Parser::new(4, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().rows(0, 16).next().unwrap(), "BASE");
+    assert!(String::from_utf8_lossy(&fixture.bytes).contains("buffers-pressure-end:"));
 }
 
 fn geometry_parent_resize(rust: bool) {
@@ -2428,6 +2544,79 @@ fn rust_console_client_windows_powershell_native_geometry() {
 #[ignore = "explicit external PowerShell 7 geometry court; missing client is BLOCKED"]
 fn rust_console_client_powershell7_native_geometry() {
     powershell_geometry("MINICON_TEST_PWSH");
+}
+
+fn powershell_buffers(name: &str) {
+    let report = Report::new();
+    let ack = report
+        .0
+        .with_extension("opened")
+        .to_string_lossy()
+        .replace('\'', "''");
+    let script=r#"$ErrorActionPreference='Stop';Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class BufferApi {
+ [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr GetStdHandle(int n);
+ [DllImport("kernel32.dll",SetLastError=true)] public static extern IntPtr CreateConsoleScreenBuffer(uint access,uint share,IntPtr security,uint flags,IntPtr data);
+ [DllImport("kernel32.dll",SetLastError=true)] public static extern bool SetConsoleActiveScreenBuffer(IntPtr h);
+ [DllImport("kernel32.dll",SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool WriteConsoleW(IntPtr h,string text,uint count,out uint written,IntPtr reserved);
+ public static void Put(IntPtr h,string text) {uint written;if(!WriteConsoleW(h,text,(uint)text.Length,out written,IntPtr.Zero)||written!=text.Length)throw new Exception("native buffer write failed");}
+}
+'@;
+[Console]::SetBufferSize(32,12);[Console]::Write('BASE');
+$base=[BufferApi]::GetStdHandle(-11);
+$alt=[BufferApi]::CreateConsoleScreenBuffer(3221225472,3,[IntPtr]::Zero,1,[IntPtr]::Zero);
+if($alt -eq [IntPtr](-1)){throw 'create failed'};
+[BufferApi]::Put($alt,'ALT中');if(![BufferApi]::SetConsoleActiveScreenBuffer($alt)){throw 'activate failed'};
+if([Console]::BufferWidth -ne 32){exit 19};[Console]::CursorSize=43;
+[Console]::SetCursorPosition(0,1);[Console]::Write('BASE-HIDDEN');
+$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 0,1,10,1;
+$read=$Host.UI.RawUI.GetBufferContents($area);if($read[0,0].Character -cne 'B' -or $read[0,10].Character -cne 'N'){exit 20};
+[BufferApi]::Put($alt,([char]27)+']2;buffers-app-alt:'+([char]7));
+$deadline=[DateTime]::UtcNow.AddSeconds(8);while(!(Test-Path -LiteralPath '__ACK__')){if([DateTime]::UtcNow -gt $deadline){throw 'observation timeout'};Start-Sleep -Milliseconds 2};
+if(![BufferApi]::SetConsoleActiveScreenBuffer($base)){throw 'restore failed'};if(![BufferApi]::CloseHandle($alt)){throw 'close failed'};
+if([Console]::CursorSize -ne 43 -or [Console]::BufferWidth -ne 32){exit 21};
+[Console]::SetCursorPosition(0,3);[Console]::Write('buffers-app-ok:');exit 0"#.replace("__ACK__",&ack);
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client(name))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .size(TerminalSize { rows: 8, cols: 16 })
+            .rust_console(),
+    );
+    fixture.until("buffers-app-alt:");
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().rows(0, 16).next().unwrap(), "ALT中");
+    assert_eq!(parser.screen().rows(0, 16).nth(1).unwrap(), "");
+    std::fs::write(report.0.with_extension("opened"), b"observed").unwrap();
+    fixture.until("buffers-app-ok:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().rows(0, 16).next().unwrap(), "BASE");
+    assert_eq!(parser.screen().rows(0, 16).nth(1).unwrap(), "BASE-HIDDEN");
+    assert_eq!(
+        parser.screen().rows(0, 16).nth(3).unwrap(),
+        "buffers-app-ok:"
+    );
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell multiple-buffer court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_native_buffers() {
+    powershell_buffers("MINICON_TEST_WINDOWS_POWERSHELL");
+}
+
+#[test]
+#[ignore = "explicit external PowerShell 7 multiple-buffer court; missing client is BLOCKED"]
+fn rust_console_client_powershell7_native_buffers() {
+    powershell_buffers("MINICON_TEST_PWSH");
 }
 
 fn powershell_cursor_properties(name: &str) {

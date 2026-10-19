@@ -1,5 +1,6 @@
 //! Initial user-mode console API service; no system console host is used.
 use crate::{DriverRequest, DriverSession};
+mod buffers;
 mod cell_codec;
 mod cursor;
 mod font;
@@ -23,6 +24,8 @@ const SUCCESS: i32 = 0;
 const INVALID_PARAMETER: i32 = 0xc000_000d_u32 as i32;
 const INVALID_HANDLE: i32 = 0xc000_0008_u32 as i32;
 const NOT_SUPPORTED: i32 = 0xc000_00bb_u32 as i32;
+const MAX_CLIENTS: usize = 64;
+const MAX_DEFERRED_OUTPUT: usize = 64;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum HandleKind {
@@ -35,6 +38,7 @@ struct ClientHandle {
     kind: HandleKind,
     access: u32,
     share: u32,
+    buffer: usize,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -73,6 +77,10 @@ pub struct ConsoleHost<'session> {
     previous_output_cr: bool,
     terminal: crate::terminal::TerminalStream,
     viewport: Option<crate::terminal::TerminalViewport>,
+    buffers: BTreeMap<usize, buffers::BufferState>,
+    active_buffer: usize,
+    current_buffer: usize,
+    parked_cells: usize,
     original_title: Vec<u16>,
     title: Vec<u16>,
     deferred_output: VecDeque<DriverRequest<'session>>,
@@ -99,6 +107,10 @@ impl Default for ConsoleHost<'_> {
             previous_output_cr: false,
             terminal: crate::terminal::TerminalStream::new(30, 120, 0, 65536),
             viewport: None,
+            buffers: BTreeMap::new(),
+            active_buffer: 0,
+            current_buffer: 0,
+            parked_cells: 0,
             original_title: Vec::new(),
             title: Vec::new(),
             deferred_output: VecDeque::new(),
@@ -156,7 +168,7 @@ impl<'session> ConsoleHost<'session> {
             || rows == 0
             || columns > geometry::MAX_AXIS
             || rows > geometry::MAX_AXIS
-            || usize::from(columns) * usize::from(rows) > 1024 * 1024
+            || !self.buffer_size_fits(rows, columns)
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -206,7 +218,8 @@ impl<'session> ConsoleHost<'session> {
             .flatten();
         // Fail closed for future API additions: only known non-emitting calls
         // bypass ordered output. Input reads may cook and echo queued keys.
-        let bypass = matches!(descriptor.function, 1..=4)
+        let bypass = matches!(descriptor.function, 1 | 3)
+            || (matches!(descriptor.function, 2 | 4) && !self.close_may_publish(descriptor))
             || (descriptor.function == 7
                 && matches!(
                     api,
@@ -219,6 +232,8 @@ impl<'session> ConsoleHost<'session> {
                             | 0x0200_0005
                             | 0x0200_0007
                             | 0x0200_000b
+                            | 0x0200_000f
+                            | 0x0200_0013
                             | 0x0200_0014
                             | 0x0300_0003
                             | 0x0300_0004
@@ -231,7 +246,15 @@ impl<'session> ConsoleHost<'session> {
                 status: SUCCESS,
                 pending: true,
             };
-            if self.deferred_output.len() == 64 {
+            let limit = if matches!(descriptor.function, 2 | 4) {
+                // Kernel finalizers must retain capacity even when ordinary
+                // emitting calls exhaust their queue. At most one final close
+                // per retained file object and one disconnect per connection.
+                MAX_DEFERRED_OUTPUT + objects::MAX_HANDLES + MAX_CLIENTS
+            } else {
+                MAX_DEFERRED_OUTPUT
+            };
+            if self.deferred_output.len() >= limit {
                 receipt.status = 0xc000_009a_u32 as i32; // STATUS_INSUFFICIENT_RESOURCES
                 receipt.pending = false;
                 request.complete(receipt.status, 0, &[])?;
@@ -268,6 +291,30 @@ impl<'session> ConsoleHost<'session> {
         output: &mut impl Write,
     ) -> io::Result<DispatchReceipt> {
         let descriptor = request.descriptor;
+        let activation =
+            descriptor.function == 7 && read_u32(request.inline_payload(), 0) == Some(0x0200_0002);
+        let target = self
+            .handles
+            .get(&descriptor.object)
+            .filter(|handle| {
+                matches!(descriptor.function, 5 | 7)
+                    && !activation
+                    && handle.kind == HandleKind::Output
+                    && handle.buffer != self.active_buffer
+            })
+            .map(|handle| handle.buffer);
+        if let Some(target) = target {
+            return self.with_buffer(target, |host| host.dispatch_inner(request, &mut io::sink()));
+        }
+        self.dispatch_inner(request, output)
+    }
+
+    fn dispatch_inner(
+        &mut self,
+        request: DriverRequest<'session>,
+        output: &mut impl Write,
+    ) -> io::Result<DispatchReceipt> {
+        let descriptor = request.descriptor;
         let mut receipt = DispatchReceipt {
             function: descriptor.function,
             api: None,
@@ -284,8 +331,8 @@ impl<'session> ConsoleHost<'session> {
         self.update_input_event()?;
         match descriptor.function {
             1 => {
-                if self.processes.len() >= 64
-                    || self.handles.len() > 1021
+                if self.processes.len() >= MAX_CLIENTS
+                    || self.handles.len() > objects::MAX_HANDLES - 3
                     || descriptor.process == 0
                     || u32::try_from(descriptor.process).is_err()
                     || descriptor.input_size < 1340
@@ -340,6 +387,7 @@ impl<'session> ConsoleHost<'session> {
                             kind: HandleKind::Input,
                             access: objects::READ | objects::WRITE,
                             share: 3,
+                            buffer: 0,
                         },
                     );
                     self.handles.insert(
@@ -349,13 +397,16 @@ impl<'session> ConsoleHost<'session> {
                             kind: HandleKind::Output,
                             access: objects::READ | objects::WRITE,
                             share: 3,
+                            buffer: self.active_buffer,
                         },
                     );
                 }
             }
             2 => {
-                self.deferred_output
-                    .retain(|pending| pending.descriptor.process != descriptor.process);
+                self.deferred_output.retain(|pending| {
+                    pending.descriptor.function == 4
+                        || pending.descriptor.process != descriptor.process
+                });
                 self.cancel_process_reads(descriptor.process);
                 if let Some(control) = &mut self.control {
                     control.remove(descriptor.process);
@@ -376,6 +427,7 @@ impl<'session> ConsoleHost<'session> {
                     self.handles.remove(&object);
                 }
                 self.update_input_event()?;
+                self.collect_buffers(output)?;
                 request.complete(receipt.status, 0, &[])?;
             }
             3 => return self.create_object(request),
@@ -386,6 +438,7 @@ impl<'session> ConsoleHost<'session> {
                 // process disconnect; it need not carry a live process token.
                 self.retire_input_object(descriptor.object);
                 self.handles.remove(&descriptor.object);
+                self.collect_buffers(output)?;
                 self.update_input_event()?;
                 request.complete(receipt.status, 0, &[])?;
             }
@@ -467,6 +520,18 @@ impl<'session> ConsoleHost<'session> {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0200_0002 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
+                    receipt.status =
+                        self.activate_buffer(self.handles[&descriptor.object].buffer, output)?;
+                }
+            }
             0x0200_0000 if body.len() >= 16 => {
                 let requested = read_u32(&body, 12).unwrap();
                 body[12..16].fill(0);
