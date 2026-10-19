@@ -2,6 +2,7 @@
 //! The codec is shared with native titles/output; event policy stays here.
 use super::{ConsoleInput, NOT_SUPPORTED};
 use crate::host::encoding;
+use std::{collections::VecDeque, io};
 use windows_sys::Win32::Globalization::IsDBCSLeadByteEx;
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Vec<ConsoleInput>, i32> {
@@ -101,4 +102,74 @@ pub(super) fn ansi(
         }
     }
     (output, lead)
+}
+
+pub(super) struct ReadBatch {
+    pub(super) bytes: Vec<u8>,
+    pub(super) consumed: usize,
+    pub(super) tail: VecDeque<ConsoleInput>,
+}
+
+/// Preview a bounded reply before consuming anything. A peek can change
+/// reading mode, but cannot create, consume or duplicate encoded key tails.
+pub(super) fn read(
+    code_page: u32,
+    events: &VecDeque<ConsoleInput>,
+    tail: &VecDeque<ConsoleInput>,
+    unicode: bool,
+    peek: bool,
+    capacity: usize,
+) -> io::Result<ReadBatch> {
+    let mut pending = if unicode {
+        VecDeque::new()
+    } else {
+        tail.clone()
+    };
+    let mut output = Vec::new();
+    while output.len() < capacity {
+        let Some(event) = pending.pop_front() else {
+            break;
+        };
+        output.push(event);
+    }
+    let mut consumed = 0;
+    for mut event in events.iter().copied() {
+        if output.len() >= capacity {
+            break;
+        }
+        consumed += 1;
+        if !unicode && let ConsoleInput::Key { character, .. } = event {
+            let encoded = encoding::encode(code_page, &[character], 8)?.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "input record encoding exceeds native byte budget",
+                )
+            })?;
+            for byte in encoded {
+                if let ConsoleInput::Key { character, .. } = &mut event {
+                    *character = u16::from(byte);
+                }
+                if output.len() < capacity {
+                    output.push(event);
+                } else {
+                    pending.push_back(event);
+                }
+            }
+        } else {
+            output.push(event);
+        }
+    }
+    if peek {
+        consumed = 0;
+        pending = if unicode {
+            VecDeque::new()
+        } else {
+            tail.clone()
+        };
+    }
+    Ok(ReadBatch {
+        bytes: output.iter().flat_map(super::record_bytes).collect(),
+        consumed,
+        tail: pending,
+    })
 }

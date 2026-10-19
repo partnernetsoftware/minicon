@@ -44,10 +44,15 @@ pub(super) struct InputState<'session> {
     ready_event_suppressed: bool,
     ansi_tail: BTreeMap<usize, VecDeque<u8>>,
     ansi_write_lead: Option<ConsoleInput>,
+    record_tail: VecDeque<ConsoleInput>,
     pending: VecDeque<PendingRead<'session>>,
 }
 
 impl InputState<'_> {
+    fn commit_records(&mut self, batch: records::ReadBatch) {
+        self.events.drain(..batch.consumed);
+        self.record_tail = batch.tail;
+    }
     pub(super) fn flush_keyboard_input(&mut self) {
         self.events.clear();
         // A completed cooked read can retain text independently of keyboard
@@ -66,6 +71,7 @@ enum ReadKind {
     },
     Records {
         flags: u16,
+        unicode: bool,
     },
 }
 
@@ -350,6 +356,9 @@ impl<'session> ConsoleHost<'session> {
         };
         let control_z = raw || body[1] != 0;
         let wakeup = if raw { 0 } else { read_u32(&body, 8).unwrap() };
+        // Mode changes retire encoded record tails, independently of the
+        // existing text reader/file conversion ownership.
+        self.input.record_tail.clear();
         let previous = self.input.pending.len();
         self.input.pending.push_back(PendingRead {
             request,
@@ -381,6 +390,12 @@ impl<'session> ConsoleHost<'session> {
             pending: false,
         };
         let flags = u16::from_le_bytes([body[4], body[5]]);
+        let unicode = body[6] != 0;
+        let capacity = request
+            .descriptor
+            .output_size
+            .saturating_sub(body.len() as u32) as usize
+            / 20;
         receipt.status = self.handle_status(
             request.descriptor.process,
             request.descriptor.object,
@@ -390,47 +405,47 @@ impl<'session> ConsoleHost<'session> {
         if receipt.status != SUCCESS {
             // Preserve the native handle/access result before buffer validation.
         } else if flags & !3 != 0
-            || request
-                .descriptor
-                .output_size
-                .saturating_sub(body.len() as u32)
-                < 20
-            || self.input.pending.len() >= MAX_PENDING
+            || (capacity != 0 && flags & 2 == 0 && self.input.pending.len() >= MAX_PENDING)
         {
             receipt.status = INVALID_PARAMETER;
-        } else if body[6] == 0 {
-            receipt.status = NOT_SUPPORTED;
         }
         if receipt.status != 0 {
             request.complete(receipt.status, 0, &[])?;
             return Ok(receipt);
         }
+        if capacity == 0 {
+            let mut body = body;
+            body[..4].fill(0);
+            request.complete(SUCCESS, 0, &body)?;
+            return Ok(receipt);
+        }
+        if unicode {
+            self.input.record_tail.clear();
+        }
         if flags & 2 != 0 {
             // A NOWAIT request cannot queue behind a blocked cooked read.
-            let capacity = (request.descriptor.output_size as usize - body.len()) / 20;
-            let count = capacity.min(self.input.events.len());
-            let bytes: Vec<u8> = self
-                .input
-                .events
-                .iter()
-                .take(count)
-                .flat_map(record_bytes)
-                .collect();
-            if flags & 1 == 0 {
-                self.input.events.drain(..count);
-            }
+            let batch = records::read(
+                self.input_code_page,
+                &self.input.events,
+                &self.input.record_tail,
+                unicode,
+                flags & 1 != 0,
+                capacity,
+            )?;
             let mut body = body;
-            body[..4].copy_from_slice(&(count as u32).to_le_bytes());
-            request.write_output(body.len() as u32, &bytes)?;
-            request.complete(SUCCESS, bytes.len(), &body)?;
+            body[..4].copy_from_slice(&((batch.bytes.len() / 20) as u32).to_le_bytes());
+            let length = batch.bytes.len();
+            request.write_output(body.len() as u32, &batch.bytes)?;
+            self.input.commit_records(batch);
             self.update_input_event()?;
+            request.complete(SUCCESS, length, &body)?;
             return Ok(receipt);
         }
         let previous = self.input.pending.len();
         self.input.pending.push_back(PendingRead {
             request,
             body,
-            kind: ReadKind::Records { flags },
+            kind: ReadKind::Records { flags, unicode },
             line: Vec::new(),
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
@@ -442,25 +457,26 @@ impl<'session> ConsoleHost<'session> {
     fn service_pending(&mut self, output: &mut impl Write) -> io::Result<usize> {
         let mut completed = 0;
         while let Some(mut read) = self.input.pending.pop_front() {
+            let mut record_batch = None;
             let data = match read.kind {
-                ReadKind::Records { flags } => {
-                    if self.input.events.is_empty() && flags & 2 == 0 {
+                ReadKind::Records { flags, unicode } => {
+                    let capacity =
+                        (read.request.descriptor.output_size as usize - read.body.len()) / 20;
+                    let mut batch = records::read(
+                        self.input_code_page,
+                        &self.input.events,
+                        &self.input.record_tail,
+                        unicode,
+                        flags & 1 != 0,
+                        capacity,
+                    )?;
+                    if batch.bytes.is_empty() && flags & 2 == 0 {
                         None
                     } else {
-                        let capacity =
-                            (read.request.descriptor.output_size as usize - read.body.len()) / 20;
-                        let count = capacity.min(self.input.events.len());
-                        let bytes = self
-                            .input
-                            .events
-                            .iter()
-                            .take(count)
-                            .flat_map(record_bytes)
-                            .collect();
-                        if flags & 1 == 0 {
-                            self.input.events.drain(..count);
-                        }
-                        read.body[..4].copy_from_slice(&(count as u32).to_le_bytes());
+                        read.body[..4]
+                            .copy_from_slice(&((batch.bytes.len() / 20) as u32).to_le_bytes());
+                        let bytes = std::mem::take(&mut batch.bytes);
+                        record_batch = Some(batch);
                         Some(bytes)
                     }
                 }
@@ -501,6 +517,9 @@ impl<'session> ConsoleHost<'session> {
                 read.body[16..20].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
             }
             read.request.write_output(read.body.len() as u32, &bytes)?;
+            if let Some(batch) = record_batch {
+                self.input.commit_records(batch);
+            }
             self.update_input_event()?;
             read.request.complete(SUCCESS, bytes.len(), &read.body)?;
             completed += 1;

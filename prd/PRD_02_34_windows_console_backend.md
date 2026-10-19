@@ -29,6 +29,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
+│   ├── [v] scoped ANSI record reads/peeks: bounded expansion, tail lifetime and live queries
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -124,6 +125,10 @@ flowchart LR
     ANSI --> CODEC
     ANSI --> CAP
     ANSI --> LEAD["one retained DBCS lead / commit after converted admission"]
+    INPUT --> AR["A/W record read / Peek / bounded staged reply"]
+    AR --> CODEC
+    AR --> RT["at most seven encoded key tails / pure Peek / raw queue counts"]
+    AR --> LIVE
     TITLE --> TITLEOUT["common independent bounded title publication"]
     TITLE --> EVENTS["committed OSC title events / inactive stream effect publication"]
     TITLE --> INIT["staged initial title / admission / output readiness / accepted CONNECT"]
@@ -391,7 +396,7 @@ certification for all clients or OS releases.
 | GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
 | GetMode / SetMode | Store input modes/enforce echo dependency; configure output modes and mirror VT DECAWM in native output flags; explicit PTY defaults match system ConPTY. | Full flag validation, insert/history editing and broader mode/screen interactions. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
-| GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInput A/W | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. ANSI write conversion/admission and native evidence are owned by the input-record leaf below. | ANSI record reads/peeks, remaining record types and broad application qualification. |
+| GetNumberOfInputEvents / ReadConsoleInput A/W / PeekConsoleInput A/W / WriteConsoleInput A/W | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. ANSI write/read conversion and native evidence are owned by the input-record leaves below. | Broader cache-mode/coalescing semantics, remaining record types, system versions and application qualification. |
 | GetScreenBufferInfo | Return selected-buffer geometry, cursor and scoped current drawing attributes from the shared screen; retain initial palette. Geometry, scrolling, multiple buffers and rectangle scope is specified below. | Palette mutation/RGB quantization, exact legacy layout, reflow and complete viewport-follow policy. |
 | SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | Full LVB mode/code-page gating and additional attribute/mode/API combinations. |
 | ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. Rectangle/literal/pressure scope is specified below. | Complete raw UTF-16 layout, all code-page/grapheme policies and every concurrent query/output ordering variant. |
@@ -2711,7 +2716,8 @@ system versions. Backend completion and promotion are still unproven.
 The native input queue implements both `FlushConsoleInputBuffer`
 (`0x02000003`) and ConDrv RAW_FLUSH (`8`, reached by `FlushFileBuffers`),
 using the same bounded input-state operation. Successful flush removes unread
-records and ANSI conversion tails and resets input readiness; already cooked
+records and ANSI text-read conversion tails and resets input readiness; already
+cooked
 UTF-16 text and an unfinished cooked read remain live. It does not generate a
 control event, cancel a read or publish output. Read-only input, output and
 invalid handles must fail without touching the queue. No caller-sized
@@ -2806,8 +2812,9 @@ lead, while a non-key first event after a retained lead is processed normally
 and the lead is discarded. Owned tests cover both cases explicitly.
 
 Dependencies are native handle rights, the shared Windows codec, input-event
-bounds and pending-read ownership. ANSI record reads/peeks, general input queue
-coalescing, stateful code pages, processed-control interactions, all input union
+bounds and pending-read ownership. The following leaf owns ANSI record reads/peeks.
+General input queue coalescing, stateful code pages, processed-control interactions,
+all input union
 variants, simultaneous-reader fairness, non-host execution and backend promotion
 remain open.
 
@@ -2834,3 +2841,88 @@ final tree, source/guard/log hashes, compiler, three pinned reference files and
 executed client/probe/test image identities. The varying non-key reference
 diagnostics remain unqualified. General backend completion and promotion are
 still unproven.
+
+### ANSI record-read and pure Peek leaf
+
+One staged record-reply implementation now serves A/W NOWAIT queries and
+queued native reads. ANSI key conversion uses the common Windows codec with
+the current input CP, one UTF-16 unit at a time, preserving key-up/repeat/
+virtual/scan/control metadata and non-key records. Converted bytes have a
+zero-extended union field. A native eight-byte encoding budget bounds the
+surplus to seven key records in console-wide state. Queue consumption and
+newly encoded-tail publication commit only after writing a bounded kernel reply;
+encoding or reply-write failure does not consume raw queued input. No new raw
+event queue, GUI policy or portable Windows-ABI dependency is introduced.
+
+An ANSI Peek previews cached bytes plus queued records without consuming or
+creating conversion tails. Repeated identical Peeks return identical data
+when no intervening operation changes state. This deliberately fixes the
+cache-on-Peek behavior present in the pinned source and installed 20348, where
+a narrow Peek can change the next returned byte. The public SDK contract is
+[PeekConsoleInput](https://learn.microsoft.com/en-us/windows/console/peekconsoleinput).
+
+A successful consuming read removes whole raw records and retains any encoded
+surplus. In the exercised record-only cases, count/wait state describes the raw
+queue, so cached bytes can be readable while that queue is empty and nonsignaled.
+Encoded record tails survive input flush, a CP change and creator-file close;
+accepted W-record or text reads discard the encoded record tail. Valid
+zero-capacity queries succeed without consuming or changing reading mode. This leaf does
+not generalize existing text-ready/file-codec caches into a new unified mode
+policy; broader mixed-reader semantics remain open.
+
+NOWAIT record reads and peeks use the direct non-emitting path even under
+output pressure, without cooking or echoing a blocked text read. Blocking reads
+retain their A/W identity in the pending queue. A Euro-sign SDK call proves
+that the blocking A path returns CP1252 byte 128 instead of UTF-16 unit 8364.
+Native access failures leave the raw queue and cached state unchanged;
+zero-length and NOWAIT queries do not consume pending-read slots.
+
+The independent SDK fixture uses ordinary ReadConsoleInputA and dynamically
+resolved ReadConsoleInputEx A/W with the exact pinned `winconp.h` signature.
+Its physical output storage exceeds each requested test capacity, with spare
+record tags detecting writes past the requested bound. Exact expected receipts
+name every count, capacity, character/metadata, spare tag, raw count and wait
+state. Owned cases include single-byte/non-key data, DBCS/UTF-8 fragmentation,
+repeated Peeks, tail-only reads, flush, code pages, W/text mode changes, zero
+capacity, file lifetime, rights, surrogate units, blocking A reads and queries
+behind an unfinished cooked read. A separate no-reader pressure fixture checks
+query completion before drain and the entire 65,536-byte output plus initial
+title and EOF.
+
+Installed build 20348 has explicit reference differences: signed high union
+bytes, cache-on-Peek, tail-only NOWAIT short-circuit and retained A tails across
+other read modes. Expected reference receipts preserve these observations
+rather than normalizing them into owned behavior. Small UTF-8 reference Peek is
+**BLOCKED**: the controlled session returns pipe-disconnected error 233 at the
+second Peek, then the child's stderr write also finds a disconnected pipe.
+Retained diagnostics prove that session failure, not a system-host crash or
+its cause. No passing reference claim is made for that case; the owned UTF-8
+case remains exercised. Other system versions and native ISAs are unqualified.
+
+Dependencies are the shared codec, typed record serialization, native input
+handles/events and ordered output admission. General coalescing, all record
+union variants, processed controls, stateful code pages, simultaneous readers,
+full mixed text-cache policy, performance and default promotion remain open.
+
+Local qualification: `ansi-read-final-focused.log` records three passes, with
+14 owned read cases, 13 measured 20348 reference cases and one no-reader output
+pressure case. The blocked reference UTF-8 case is explicitly reported outside
+those 28 scenarios. The tests are
+`rust_console_pty_ansi_record_reads_preserve_peek_capacity_and_tail_lifetimes`,
+`rust_console_client_ansi_record_read_receipts_compare_system_conpty` and
+`rust_console_pty_record_queries_stay_live_under_output_pressure`.
+`ansi-read-final-suite.log` records 263 selected passes, including existing real
+PowerShell/Node, native control and private-Job lifecycle cases and 17 alignment
+checks. Fifteen byte-restored runtime mutations cover CP selection, consuming
+and tail-generating Peeks, capacity, retained bytes, unsigned storage, cache-only
+reads, read-mode/zero-query state, close/flush, readiness, blocking A identity,
+output admission and the independent native reference fixture.
+
+Seven static/cross-target checks pass: strict default/enabled workspace
+all-targets Clippy, four portable-library targets and Windows ARM64 platform
+PTY/Rust-console all-targets compilation. Native execution is Windows x86_64
+build 20348; other targets are compile-only. Final formatting and 17 alignment
+checks follow the documentation. `ansi-read-final-receipt.json` binds the final
+tree, source/guard/log hashes, both expected-reply assets, compiler, four pinned
+reference files, executed client/probe/test image identities and preserved
+failed UTF-8 reference diagnostics. Backend completion remains unproven.

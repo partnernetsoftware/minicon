@@ -166,6 +166,8 @@ impl Drop for Report {
         let _ = std::fs::remove_file(&self.0);
         for extension in [
             "ready",
+            "read-error",
+            "read-panic",
             "go",
             "opened",
             "opened-ready",
@@ -4025,6 +4027,138 @@ fn rust_console_pty_ansi_input_record_capacity_is_checked_after_conversion_witho
 
 fn ansi_record_snapshot(prefix: &str, records: &str, count: usize) -> String {
     format!("{prefix}queued={count},0\npeek={records}\nread={records}\nempty=0,258\n")
+}
+
+fn ansi_record_read_report(kind: &str, rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(format!("ansi-read-{kind}"))
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fixture.finish(0)));
+    if let Err(panic) = result {
+        eprintln!(
+            "native read error={:?}; panic={:?}",
+            std::fs::read_to_string(report.0.with_extension("read-error")),
+            std::fs::read_to_string(report.0.with_extension("read-panic"))
+        );
+        std::panic::resume_unwind(panic);
+    }
+    let observed = std::fs::read_to_string(&report.0).unwrap();
+    println!("ansi-read rust={rust};kind={kind}\n{observed}");
+    let (build, body) = observed.split_once('\n').unwrap();
+    let build = build
+        .strip_prefix("build=")
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
+    if !rust {
+        assert_eq!(build, 20348, "reference snapshots qualify only this build");
+    } else {
+        assert!(build > 0);
+    }
+    body.to_owned()
+}
+
+fn ansi_record_read_cases(rust: bool) {
+    for kind in [
+        "single",
+        "split",
+        "utf8",
+        "tail",
+        "flush",
+        "codepage",
+        "switch",
+        "text",
+        "zero",
+        "close",
+        "rights",
+        "surrogate",
+        "wait",
+        "behind",
+    ] {
+        // Installed reference disconnects at the second UTF-8 narrow Peek.
+        // Failed diagnostics are retained; that reference case is unqualified.
+        if !rust && kind == "utf8" {
+            println!("BLOCKED reference utf8: retained SDK p2 pipe-disconnect diagnostics");
+            continue;
+        }
+        let observed = ansi_record_read_report(kind, rust);
+        assert_eq!(
+            observed,
+            ansi_record_read_expected(kind, rust),
+            "read case: {kind}, rust={rust}"
+        );
+    }
+}
+
+fn ansi_record_read_expected(kind: &str, rust: bool) -> String {
+    let text = if rust {
+        include_str!("support/ansi_read_owned.txt")
+    } else {
+        include_str!("support/ansi_read_reference_20348.txt")
+    };
+    let text = text.replace("\r\n", "\n");
+    let prefix = format!("[{kind}]\n");
+    let body = text
+        .split_once(&prefix)
+        .unwrap()
+        .1
+        .split("\n[")
+        .next()
+        .unwrap();
+    format!("{}\n", body.trim_end())
+}
+
+#[test]
+fn rust_console_pty_ansi_record_reads_preserve_peek_capacity_and_tail_lifetimes() {
+    ansi_record_read_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY ANSI record-read differential court"]
+fn rust_console_client_ansi_record_read_receipts_compare_system_conpty() {
+    ansi_record_read_cases(false);
+}
+
+#[test]
+fn rust_console_pty_record_queries_stay_live_under_output_pressure() {
+    let report = Report::new();
+    let (master, child) = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("ansi-read-pressure")
+        .arg(report.0.as_os_str())
+        .rust_console()
+        .spawn()
+        .unwrap()
+        .into_parts();
+    assert_eq!(master.backend_kind(), "rust-console");
+    report.wait_ready();
+    let ready = std::fs::read_to_string(report.0.with_extension("ready")).unwrap();
+    println!("ansi-read pressure\n{}", ready);
+    let (build, body) = ready.split_once('\n').unwrap();
+    assert!(
+        build
+            .strip_prefix("build=")
+            .unwrap()
+            .parse::<u32>()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(body, ansi_record_read_expected("pressure", true));
+    let mut fixture = Fixture::with_parts(master, child);
+    std::fs::write(report.0.with_extension("go"), b"drain").unwrap();
+    fixture.finish(0);
+    let mut expected = format!(
+        "\x1b]0;{}\x1b\\",
+        env!("CARGO_BIN_EXE_minicon-platform-console-probe")
+    )
+    .into_bytes();
+    expected.extend(vec![b'P'; 65536]);
+    assert_eq!(fixture.bytes, expected);
 }
 
 #[test]

@@ -227,6 +227,13 @@ impl<'session> ConsoleHost<'session> {
         let api = (descriptor.function == 7)
             .then(|| read_u32(request.inline_payload(), 0))
             .flatten();
+        // NOWAIT record reads/peeks use a direct path which never cooks or
+        // echoes a previously blocked text read. Blocking reads may service it.
+        let record_query = api == Some(0x0100_0004)
+            && request
+                .inline_payload()
+                .get(12)
+                .is_some_and(|flags| flags & 2 != 0);
         // Pin the transport before retaining its first CONNECT. Foreign calls
         // must not occupy the queue or bind the host through a later bypass.
         if !self.accept_origin(&request) {
@@ -235,6 +242,7 @@ impl<'session> ConsoleHost<'session> {
         // Fail closed for future API additions: only known non-emitting calls
         // bypass ordered output. Input reads may cook and echo queued keys.
         let bypass = descriptor.function == 3
+            || record_query
             || descriptor.function == 8
             || (descriptor.function == 1 && !self.processes.is_empty())
             || (matches!(descriptor.function, 2 | 4) && !self.close_may_publish(descriptor))
