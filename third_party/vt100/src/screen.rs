@@ -2,6 +2,7 @@ use crate::term::BufWrite as _;
 use unicode_width::UnicodeWidthChar as _;
 mod editing;
 mod moving;
+mod projecting;
 pub use moving::{CellMoveError, CellRect};
 
 const MODE_APPLICATION_KEYPAD: u8 = 0b0000_0001;

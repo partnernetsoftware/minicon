@@ -49,6 +49,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
 │   ├── [-] rectangular W/A read/write: clipped row stride, per-cell styles and scoped wide pairs
 │   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
+│   ├── [-] native geometry: buffer versus viewport versus parent PTY dimensions
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -93,6 +94,9 @@ flowchart LR
     RECT --> EDIT["shared Screen::write_cell / row bounds / damage"]
     EDIT --> VT
     RAWUI["real Windows PowerShell RawUI"] --> RECT
+    HOST --> GEO["native buffer / window geometry / access / bounds"]
+    GEO --> VIEW["common drawing grid versus projected viewport"]
+    VIEW --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
     CV --> VT
@@ -1752,3 +1756,101 @@ cross-target receipts. Native non-host runtime, pixel-exact percentage rendering
 multiple buffers, packaging and default qualification remain open. Four pinned
 source blobs were verified against their Git tree identities; ignored
 cursor-info-final-receipt.json records source/log/image hashes and evidence scope.
+
+### Accepted native-geometry leaf
+
+Invariant: native screen-buffer dimensions, window rectangle and parent-owned
+PTY dimensions have explicit owners. A native setter must not silently equate
+these merely because the initial values match. Coordinate bounds, cursor/data
+preservation, relative rectangle arithmetic, resize events and bounded failure
+must be validated against actual SDK/system behavior. Shared geometry/projection
+mechanisms remain OS/ISA-neutral; Win32 body layouts, rights and error mapping
+stay native. Native API mutations must preserve client grammar and input/Job
+lifecycle; failed publication cannot silently advance observable state.
+
+Evidence begins with independent GetLargestConsoleWindowSize,
+SetConsoleScreenBufferSize and SetConsoleWindowInfo calls, sizes/readback before
+and after growth/shrink/relative moves, invalid arguments and restricted handles.
+Actual managed size properties and parent PTY resize must be tested separately.
+Source comments/headless paths differ from the public desktop documentation;
+measure these before choosing the projection model. Dependencies are current
+common terminal state, bounded publication and native resize/input ordering.
+Hot files are native host/geometry, shared screen/view contracts and SDK probes.
+Safe failure uses explicit status/budget errors without pretending an ignored
+request succeeded. Pixel monitor metrics and a desktop window are not implied
+by a headless terminal; full buffer/view semantics remain required by the
+backend and are not reduced to a size-query-only success condition.
+Primary contracts: [buffer size](https://learn.microsoft.com/en-us/windows/console/setconsolescreenbuffersize),
+[window rectangle](https://learn.microsoft.com/en-us/windows/console/setconsolewindowinfo)
+and [largest window](https://learn.microsoft.com/en-us/windows/console/getlargestconsolewindowsize).
+
+The scoped implementation now serves native buffer-size (0x02000009, COORD),
+window-info (0x0200000e, BOOLEAN/padding/SMALL_RECT, ten bytes) and largest-window
+(0x0200000b, COORD) requests. All require WRITE. The new largest query is known
+non-emitting; setters remain ordered. A headless virtual display advertises a
+32766 coordinate ceiling per axis, independently of its one-Mi-cell allocation
+budget. These are virtual native limits, not font/monitor metrics. Parent and
+native size validation share this ceiling. GetScreenBufferInfo reports the
+actual drawing buffer, viewport rectangle and buffer-limited native maximum.
+The installed system's monitor-derived largest value is recorded independently.
+
+Native buffer growth retains the window dimensions. Headless window-size changes
+resize the drawing buffer and normalize the requested viewport into valid bounds
+using inclusive extents; no desktop window is created or remote physical resize
+silently requested. This differs from the observed build 20348's out-of-range
+relative/offset rectangles, which remain explicit reference-only legacy layouts.
+Reversed rectangles fail; one-cell windows work, as the actual SDK demonstrates.
+Parent PTY resize updates the display/drawing dimensions and publishes a complete
+viewport. Resize-event capacity is checked before publication and events follow
+the state commit. Build 20348's parent resize can first report an intermediate
+24x16 event while its subsequent query is 24x12; the reference records that
+observation. The owned event reports committed 24x12. Applications should still
+query authoritative geometry after receiving native resize notifications.
+
+After geometry separates buffer and display, the Windows host consumes common
+TerminalViewport mapping for client output and native edits. Thus a 32-column
+buffer retains all 40 written characters while the 16-column peer receives
+0123456789abcdef on row zero and wxyzABCD on row one, in both VT and processed
+legacy output. Native readback retains offscreen data. Native cursor commands
+can follow the drawing cursor; ordinary output retains the current source view,
+matching the observed expanded-buffer writes. Original partial VT/UTF-8 grammar,
+nonvisual frames and alternate-grid transitions survive. Existing cell/style/
+rectangle/scroll edits use this same viewport publication path, not a second
+Windows screen. ASCII/CR-LF runs publish in batches in VT and legacy modes;
+the core unit guards against per-glyph whole-screen publication.
+
+Independent SDK cases cover buffer/window growth, relative/offset behavior,
+invalid sizes/rectangles, restricted handles, expanded-buffer drawing in both
+output modes and parent resize events/final queries. Real Windows PowerShell 5/7
+clients exercise Console buffer/window properties and offscreen colored CJK
+RawUI read/write, then validate consumed output. Shared/native units cover wide
+edge healing, pending grammar, events, output/queue budgets and sink-before-commit.
+Full wrapped-line reflow policy, all scrolling/origin interactions, non-ASCII/
+control-heavy large-buffer performance, more native versions/ISAs and promotion
+remain open. Current resizing preserves/clips the common drawing rows; it does
+not claim the system's registry-dependent reflow policy. Exact system geometry
+oracles are qualified for the recorded 20348 build; other builds require their
+own runtime evidence instead of an implicit pass.
+
+Local geometry qualification: `geometry-final-suite.log` records 214 selected
+serial passes, including 17 alignment checks. `geometry-final-new-tests.log`
+separately records all eleven added tests. Twelve runtime guard mutations in
+`geometry-negative-audit.json` fail every added test: wide-pair repair, exact
+fork grammar, effect forwarding, sink-before-commit, native buffer dispatch
+(SDK and both real PowerShell clients), WRITE access, actual host projection,
+parent viewport dimensions, ASCII batching and three independent system-reference
+oracles. Sources were byte-restored before the final runs.
+
+Root fmt, default/experimental workspace all-target strict Clippy and standalone
+shared-parser strict Clippy passed. Library checks passed for Linux x86_64 and
+aarch64, Windows aarch64 and macOS x86_64. The minimal Windows ARM64 PTY/probe
+all-target check passed with existing minimal-feature warnings. Cross-target
+checks remain compile-only; runtime evidence is Windows x86_64 build 20348.
+`geometry-final-receipt.json` records the source tree, restored guard hashes,
+logs, actual executable identities, compiler and qualification scope.
+
+The initial parallel selected run had one eight-second wait timeout in the
+existing Windows PowerShell RawUI rectangle client. Its isolated repeat and the
+complete serial run passed without product changes. The failure is retained in
+`geometry-parallel-suite-failure.log` and the isolated result in
+`geometry-rawui-isolated.log`; the cause and parallel reliability remain open.

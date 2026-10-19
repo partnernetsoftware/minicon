@@ -24,6 +24,7 @@ minicon terminal and rendering
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
+│   ├── Drawing-grid viewport snapshots and transactional mapped frames
 │   ├── Cursor appearance replay — visibility, position, shape and blinking
 │   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
@@ -44,6 +45,8 @@ flowchart LR
     VT --> WRAP["shared DECAWM state / full and incremental replay"]
     WRAP --> DMG
     EDIT["CellStyle / literal cell edits"] --> VT
+    VIEW["drawing buffer / transient viewport projection / exact lexer forks"] --> VT
+    VIEW --> FRAME
     CUR["cursor shape / blinking / visibility / replay"] --> VT
     CUR --> DMG
     SPAN["literal text / variable style spans"] --> EDIT
@@ -728,3 +731,29 @@ requested parameters 0..6 and both visibility states. It also checks cells,
 drawing state and retained partial CSI. cursor-replay-red.log records its actual
 runtime failure before replay included appearance. Native metadata, sink
 transactions and SDK/application evidence belong to PRD 02.34.
+
+## Drawing buffer and viewport projection
+
+Screen::project_region creates a transient, normalized single-grid drawing
+snapshot of a signed half-open CellRect for independently chosen output rows/
+columns. It copies complete cells/styles, clips/pads source bounds, heals broken
+wide pairs and translates/hides the cursor. A logical delayed-margin cursor is
+clamped when its source window is smaller than the output surface. Full-width
+rows retain wrapping only when the source and output widths match. History and
+source grammar are untouched; active alternate-grid cells can be projected
+without creating a second authoritative model. The allocation size remains the
+caller's policy, as with Parser construction.
+
+Parser::fork_with_callbacks copies the exact lexer and screen with independent
+callback ownership; commit_fork commits that state while returning the fork's
+callbacks and retaining the original owner. OutputFramer::write_mapped supplies
+complete raw frames and only the unconsumed delta to a publisher. The publisher
+must commit exactly once after successful output; partial commands and executed
+C0 controls retain the existing framing invariant. Raw write uses the same path.
+Effectful controls are separate from printable ASCII/visual CR-LF batches, so a
+render adapter can preserve nonvisual event ordering.
+
+The shared viewport_regions_clip_wide_cells_and_preserve_authoritative_state
+unit covers clipping, padding, CJK/combining/supplementary cells, alternate-grid
+projection and cursor appearance without source mutation. Native/common-facade
+composition and its scoped runtime evidence belong to PRD 02.34 and 02.35.

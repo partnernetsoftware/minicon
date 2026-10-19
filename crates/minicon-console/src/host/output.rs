@@ -55,6 +55,58 @@ impl ConsoleHost<'_> {
         Ok(())
     }
     fn write_output_bytes(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
+        // A viewport transaction clones the drawing state once per published
+        // batch. Keep ordinary ASCII runs together, including deterministic
+        // CR/LF translation, instead of cloning a large buffer per glyph.
+        if self.viewport.is_some()
+            && self.terminal.at_boundary()
+            && (self.terminal.screen().cursor_position().1 < self.terminal.screen().size().1
+                || self.output_mode & VT_OUTPUT == VT_OUTPUT)
+            && bytes.iter().all(|b| {
+                (32..127).contains(b)
+                    || self.output_mode & ENABLE_PROCESSED_OUTPUT != 0
+                        && matches!(*b, b'\r' | b'\n')
+            })
+        {
+            let vt = self.output_mode & VT_OUTPUT == VT_OUTPUT;
+            let wrap = self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0;
+            let columns = self.terminal.screen().size().1;
+            let mut column = self.terminal.screen().cursor_position().1;
+            let mut previous_cr = self.previous_output_cr;
+            let mut translated = Vec::with_capacity(bytes.len());
+            for &byte in bytes {
+                match byte {
+                    b'\r' => {
+                        translated.push(byte);
+                        column = 0;
+                    }
+                    b'\n' => {
+                        if self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
+                            && (!previous_cr || column != 0)
+                        {
+                            translated.push(b'\r');
+                            column = 0;
+                        }
+                        translated.push(byte);
+                    }
+                    _ => {
+                        translated.push(byte);
+                        column = column.saturating_add(1);
+                        if !vt && wrap && column >= columns {
+                            translated.extend_from_slice(b"\r\n");
+                            column = 0;
+                        } else if !wrap {
+                            column = column.min(columns - 1);
+                        }
+                    }
+                }
+                previous_cr = byte == b'\r';
+            }
+            self.emit_framed(&translated, output)?;
+            self.previous_output_cr = previous_cr;
+            return Ok(());
+        }
+
         for &byte in bytes {
             let vt = self.output_mode & VT_OUTPUT == VT_OUTPUT;
             if vt {
@@ -194,9 +246,33 @@ impl ConsoleHost<'_> {
         units: impl IntoIterator<Item = u16>,
         output: &mut impl Write,
     ) -> io::Result<()> {
-        for unit in units {
-            for character in self.output_decoder.push(unit) {
-                self.emit_char(character, output)?;
+        if self.viewport.is_some() {
+            let mut run = Vec::new();
+            for unit in units {
+                for character in self.output_decoder.push(unit) {
+                    if character.is_ascii()
+                        && ((32..127).contains(&(character as u8))
+                            || self.output_mode & ENABLE_PROCESSED_OUTPUT != 0
+                                && matches!(character, '\r' | '\n'))
+                    {
+                        run.push(character as u8);
+                    } else {
+                        if !run.is_empty() {
+                            self.write_output_bytes(&run, output)?;
+                            run.clear();
+                        }
+                        self.emit_char(character, output)?;
+                    }
+                }
+            }
+            if !run.is_empty() {
+                self.write_output_bytes(&run, output)?;
+            }
+        } else {
+            for unit in units {
+                for character in self.output_decoder.push(unit) {
+                    self.emit_char(character, output)?;
+                }
             }
         }
         Ok(())

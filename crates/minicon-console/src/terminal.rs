@@ -2,7 +2,9 @@
 //! event-loop ownership is implied by this module.
 
 mod utf16;
+mod viewport;
 pub use utf16::Utf16Decoder;
+pub use viewport::TerminalViewport;
 
 use std::io::{self, Write};
 pub use vt100::{

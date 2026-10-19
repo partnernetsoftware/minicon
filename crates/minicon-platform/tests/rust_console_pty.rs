@@ -303,6 +303,231 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn geometry_parent_resize(rust: bool) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("geometry-parent")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("geometry-parent-ready:");
+    fixture
+        .master
+        .resize(TerminalSize { rows: 12, cols: 24 })
+        .unwrap();
+    fixture.until("geometry-parent-done:");
+    fixture.finish(0);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!("geometry parent rust={rust}: {receipt}");
+    let event = if rust {
+        "event:24,12"
+    } else {
+        assert!(
+            receipt.lines().any(|line| line == "build=20348"),
+            "BLOCKED: qualify parent geometry events on this build: {receipt}"
+        );
+        "event:24,16"
+    };
+    assert!(receipt.contains(event), "{receipt}");
+    assert!(
+        receipt.contains("parent-resized:buf=24,12;view=0,0,23,11;"),
+        "{receipt}"
+    );
+}
+
+#[test]
+fn rust_console_pty_native_geometry_parent_resize_delivers_committed_dimensions() {
+    geometry_parent_resize(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY parent geometry resize court"]
+fn rust_console_client_native_geometry_parent_resize_matches_system() {
+    geometry_parent_resize(false);
+}
+
+fn geometry_expanded_buffer_rendering(rust: bool) {
+    for mode in ["geometry-wrap-vt", "geometry-wrap-legacy"] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(mode)
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 8, cols: 16 });
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        fixture.until("geometry-wrap-end:");
+        std::fs::write(report.0.with_extension("opened"), b"observed").unwrap();
+        fixture.finish(0);
+        let receipt = std::fs::read_to_string(&report.0).unwrap();
+        eprintln!("{mode} native: {receipt}");
+        let mut parser = vt100::Parser::new(8, 16, 0);
+        parser.process(&fixture.bytes);
+        eprintln!(
+            "{mode} consumer: {:?};wire={:?}",
+            parser.screen().rows(0, 16).collect::<Vec<_>>(),
+            String::from_utf8_lossy(&fixture.bytes)
+        );
+        assert!(receipt.contains("set-buffer:grow:1,0"), "{receipt}");
+        assert!(
+            receipt.contains("row0:\"0123456789abcdefghijklmnopqrstuv\""),
+            "{receipt}"
+        );
+        assert!(
+            receipt.contains("row1:\"wxyzABCD                        \""),
+            "{receipt}"
+        );
+        assert_eq!(
+            parser.screen().rows(0, 16).collect::<Vec<_>>(),
+            ["0123456789abcdef", "wxyzABCD", "", "", "", "", "", ""]
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_native_geometry_expanded_buffer_rendering() {
+    geometry_expanded_buffer_rendering(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY expanded-buffer rendering court"]
+fn rust_console_client_native_geometry_expanded_buffer_rendering() {
+    geometry_expanded_buffer_rendering(false);
+}
+
+fn geometry_report(rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("geometry")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("geometry-end:");
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!("geometry rust={rust}: {receipt}");
+    std::fs::write(report.0.with_extension("opened"), b"observed").unwrap();
+    fixture.finish(0);
+    receipt
+}
+
+fn assert_native_geometry(receipt: &str, rust: bool) {
+    if !rust {
+        assert!(
+            receipt.lines().any(|line| line == "build=20348"),
+            "BLOCKED: qualify this system geometry build: {receipt}"
+        );
+    }
+    for label in ["grow", "grow-again", "buffer16x8"] {
+        assert!(
+            receipt.contains(&format!("set-buffer:{label}:1,0")),
+            "{receipt}"
+        );
+    }
+    for label in ["negative", "zero", "tiny", "short-max"] {
+        assert!(
+            receipt.contains(&format!("set-buffer:{label}:0,87")),
+            "{receipt}"
+        );
+    }
+    for label in [
+        "window20x10",
+        "relative-shift",
+        "offset16x8",
+        "negative-window",
+        "one-cell",
+        "restore",
+    ] {
+        assert!(
+            receipt.contains(&format!("set-window:{label}:1,0")),
+            "{receipt}"
+        );
+    }
+    assert!(
+        receipt.contains("set-window:reversed-window:0,87"),
+        "{receipt}"
+    );
+    for (label, buffer, view, cursor) in [
+        ("initial", "16,8", "0,0,15,7", "0,0"),
+        ("grow", "32,16", "0,0,15,7", "5,2"),
+        ("window20x10", "20,10", "0,0,19,9", "5,2"),
+        (
+            "relative-shift",
+            "20,10",
+            if rust { "0,0,19,9" } else { "1,1,20,10" },
+            "5,2",
+        ),
+        (
+            "grow-again",
+            "40,20",
+            if rust { "0,0,19,9" } else { "1,1,20,10" },
+            "5,2",
+        ),
+        (
+            "offset16x8",
+            "16,8",
+            if rust { "0,0,15,7" } else { "2,1,16,8" },
+            "5,2",
+        ),
+        ("one-cell", "1,1", "0,0,0,0", "0,0"),
+        ("restore", "16,8", "0,0,15,7", "0,0"),
+    ] {
+        assert!(
+            receipt.contains(&format!(
+                "{label}:buf={buffer};view={view};cursor={cursor};max={buffer};largest="
+            )),
+            "{receipt}"
+        );
+    }
+    assert!(
+        receipt.contains("access-largest:readonly:0,0,5"),
+        "{receipt}"
+    );
+    assert!(receipt.contains("set-buffer:readonly:0,5"), "{receipt}");
+    assert!(receipt.contains("set-window:readonly:0,5"), "{receipt}");
+    assert!(receipt.contains("set-buffer:writeonly:1,0"), "{receipt}");
+    assert!(receipt.contains("set-window:writeonly:1,0"), "{receipt}");
+    let largest = if rust { "32766,32766" } else { "1664,60" };
+    if rust {
+        assert!(
+            receipt.contains(&format!("access-largest:writeonly:{largest},0")),
+            "{receipt}"
+        );
+    } else {
+        let value = receipt
+            .lines()
+            .find_map(|line| line.strip_prefix("access-largest:writeonly:"))
+            .unwrap();
+        let values: Vec<i32> = value.split(',').map(|n| n.parse().unwrap()).collect();
+        assert!(
+            values[0] > 0 && values[1] > 0 && values[2] == 0,
+            "{receipt}"
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_native_geometry_preserves_buffer_window_contracts() {
+    let receipt = geometry_report(true);
+    assert_native_geometry(&receipt, true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY geometry court"]
+fn rust_console_client_native_geometry_matches_system_conpty() {
+    let receipt = geometry_report(false);
+    assert_native_geometry(&receipt, false);
+}
+
 fn cursor_info_report(rust: bool) -> (String, Vec<vt100::Screen>) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -2169,6 +2394,40 @@ fn rust_console_pty_facade_job_cleanup_stops_a_nonreading_client() {
     assert_eq!(receipt.members_observed, 1);
     assert!(receipt.verified_empty);
     fixture.finish(1);
+}
+
+fn powershell_geometry(name: &str) {
+    let script = "$ErrorActionPreference='Stop';[Console]::SetBufferSize(32,16);if([Console]::BufferWidth -ne 32 -or [Console]::BufferHeight -ne 16 -or [Console]::WindowWidth -ne 16 -or [Console]::WindowHeight -ne 8){exit 19};$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('中Q'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 20,0;$raw.SetBufferContents($pos,$cells);$rect=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 20,0,22,0;$read=$raw.GetBufferContents($rect);if($read[0,0].Character -cne '中' -or $read[0,2].Character -cne 'Q'){exit 20};[Console]::SetWindowSize(20,10);if([Console]::WindowWidth -ne 20 -or [Console]::WindowHeight -ne 10 -or [Console]::BufferWidth -ne 20 -or [Console]::BufferHeight -ne 10){exit 21};if([Console]::LargestWindowWidth -le 0 -or [Console]::LargestWindowHeight -le 0){exit 22};[Console]::SetWindowSize(16,8);[Console]::SetCursorPosition(0,0);[Console]::Write('geometry-app-ok:');exit 0";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client(name))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .size(TerminalSize { rows: 8, cols: 16 })
+            .rust_console(),
+    );
+    fixture.until("geometry-app-ok:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(
+        parser.screen().rows(0, 16).next().unwrap(),
+        "geometry-app-ok:"
+    );
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell geometry court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_native_geometry() {
+    powershell_geometry("MINICON_TEST_WINDOWS_POWERSHELL");
+}
+
+#[test]
+#[ignore = "explicit external PowerShell 7 geometry court; missing client is BLOCKED"]
+fn rust_console_client_powershell7_native_geometry() {
+    powershell_geometry("MINICON_TEST_PWSH");
 }
 
 fn powershell_cursor_properties(name: &str) {

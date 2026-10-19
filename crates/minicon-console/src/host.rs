@@ -3,6 +3,7 @@ use crate::{DriverRequest, DriverSession};
 mod cell_codec;
 mod cursor;
 mod font;
+mod geometry;
 mod indexed;
 mod input;
 mod objects;
@@ -71,6 +72,7 @@ pub struct ConsoleHost<'session> {
     output_decoder: crate::terminal::Utf16Decoder,
     previous_output_cr: bool,
     terminal: crate::terminal::TerminalStream,
+    viewport: Option<crate::terminal::TerminalViewport>,
     original_title: Vec<u16>,
     title: Vec<u16>,
     deferred_output: VecDeque<DriverRequest<'session>>,
@@ -96,6 +98,7 @@ impl Default for ConsoleHost<'_> {
             output_decoder: crate::terminal::Utf16Decoder::default(),
             previous_output_cr: false,
             terminal: crate::terminal::TerminalStream::new(30, 120, 0, 65536),
+            viewport: None,
             original_title: Vec::new(),
             title: Vec::new(),
             deferred_output: VecDeque::new(),
@@ -146,10 +149,13 @@ impl<'session> ConsoleHost<'session> {
     /// Update the owned screen dimensions, optionally queueing a native resize
     /// event when the client has enabled ENABLE_WINDOW_INPUT.
     pub fn resize(&mut self, columns: u16, rows: u16, output: &mut impl Write) -> io::Result<()> {
+        if self.viewport.is_some() {
+            return self.resize_projected_parent(columns, rows, output);
+        }
         if columns == 0
             || rows == 0
-            || columns > i16::MAX as u16
-            || rows > i16::MAX as u16
+            || columns > geometry::MAX_AXIS
+            || rows > geometry::MAX_AXIS
             || usize::from(columns) * usize::from(rows) > 1024 * 1024
         {
             return Err(io::Error::new(
@@ -212,6 +218,7 @@ impl<'session> ConsoleHost<'session> {
                             | 0x0100_0008
                             | 0x0200_0005
                             | 0x0200_0007
+                            | 0x0200_000b
                             | 0x0200_0014
                             | 0x0300_0003
                             | 0x0300_0004
@@ -682,6 +689,50 @@ impl<'session> ConsoleHost<'session> {
                     }
                 }
             }
+            0x0200_000b if body.len() >= 4 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                body[..4].fill(0);
+                if receipt.status == SUCCESS {
+                    put_coord(&mut body, 0, geometry::MAX_AXIS, geometry::MAX_AXIS);
+                }
+            }
+            0x0200_0009 if body.len() >= 4 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS
+                    && let Err(status) = self.set_buffer_size(
+                        u16::from_le_bytes([body[0], body[1]]),
+                        u16::from_le_bytes([body[2], body[3]]),
+                        output,
+                    )?
+                {
+                    receipt.status = status;
+                }
+            }
+            0x0200_000e if body.len() >= 10 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                let rect =
+                    std::array::from_fn(|i| i16::from_le_bytes([body[2 + i * 2], body[3 + i * 2]]));
+                if receipt.status == SUCCESS
+                    && let Err(status) = self.set_window_info(body[0] != 0, rect, output)?
+                {
+                    receipt.status = status;
+                }
+            }
             0x0200_0007 if body.len() >= 92 => {
                 receipt.status = self.handle_status(
                     descriptor.process,
@@ -696,9 +747,21 @@ impl<'session> ConsoleHost<'session> {
                     put_coord(&mut body, 0, cols, rows);
                     put_coord(&mut body, 4, col.min(cols.saturating_sub(1)), row);
                     body[12..14].copy_from_slice(&self.text_attribute().to_le_bytes());
-                    // The Win32 client converts dimensions to inclusive bounds.
-                    put_coord(&mut body, 14, cols, rows);
-                    put_coord(&mut body, 18, cols, rows);
+                    let view = self.viewport();
+                    put_coord(&mut body, 8, view.area.left as u16, view.area.top as u16);
+                    // The Win32 client combines origin and exclusive size.
+                    put_coord(
+                        &mut body,
+                        14,
+                        (view.area.right - view.area.left) as u16,
+                        (view.area.bottom - view.area.top) as u16,
+                    );
+                    put_coord(
+                        &mut body,
+                        18,
+                        cols.min(geometry::MAX_AXIS),
+                        rows.min(geometry::MAX_AXIS),
+                    );
                     body[22..24].copy_from_slice(&0xf5_u16.to_le_bytes());
                     const COLORS: [u32; 16] = [
                         0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080,

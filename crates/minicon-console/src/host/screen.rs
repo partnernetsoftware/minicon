@@ -9,6 +9,24 @@ impl ConsoleHost<'_> {
         next: crate::terminal::Screen,
         output: &mut impl Write,
     ) -> io::Result<Result<(), i32>> {
+        if let Some(mut view) = self.viewport {
+            let proposed = view;
+            match self.terminal.commit_viewport_screen(
+                next,
+                &mut view,
+                proposed,
+                1024 * 1024,
+                false,
+                output,
+            ) {
+                Ok(()) => {
+                    self.viewport = Some(view);
+                    return Ok(Ok(()));
+                }
+                Err(error) if error.raw_os_error() == Some(1450) => return Ok(Err(NOT_SUPPORTED)),
+                Err(error) => return Err(error),
+            }
+        }
         let projection = next.contents_diff(self.terminal.screen());
         if projection.len() > 1024 * 1024 {
             return Ok(Err(NOT_SUPPORTED));

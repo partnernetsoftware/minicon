@@ -52,6 +52,29 @@ impl<CB: crate::callbacks::Callbacks> Parser<CB> {
         self.parser.preview_byte(byte)
     }
 
+    /// Fork screen and exact lexer state with independent callbacks. Existing
+    /// callbacks are neither cloned nor invoked. This supports transactional
+    /// render adapters; the fork includes unfinished VT/UTF-8 input grammar.
+    #[must_use]
+    pub fn fork_with_callbacks<T: crate::Callbacks>(&self, callbacks: T) -> Parser<T> {
+        Parser {
+            parser: self.parser.clone(),
+            screen: crate::perform::WrappedScreen {
+                screen: self.screen.screen.clone(),
+                callbacks,
+            },
+        }
+    }
+
+    /// Commit a fork's screen and exact grammar while retaining this parser's
+    /// callback owner. Return the fork's callbacks, such as collected effects.
+    /// The caller must publish its projection before committing a staged fork.
+    pub fn commit_fork<T: crate::Callbacks>(&mut self, fork: Parser<T>) -> T {
+        self.parser = fork.parser;
+        self.screen.screen = fork.screen.screen;
+        fork.screen.callbacks
+    }
+
     /// Discard only unfinished input grammar, preserving cells, cursor,
     /// drawing attributes, terminal modes and callback state.
     pub fn reset_input(&mut self) {

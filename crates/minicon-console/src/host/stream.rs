@@ -10,7 +10,16 @@ impl ConsoleHost<'_> {
     }
 
     pub(super) fn emit_framed(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        match self.terminal.write_output(bytes, output) {
+        let result = if let Some(mut view) = self.viewport {
+            let result =
+                self.terminal
+                    .write_output_viewport(bytes, &mut view, false, 1024 * 1024, output);
+            self.viewport = Some(view);
+            result
+        } else {
+            self.terminal.write_output(bytes, output)
+        };
+        match result {
             Ok(()) => {
                 self.sync_output_wrap();
                 Ok(())
@@ -24,7 +33,13 @@ impl ConsoleHost<'_> {
     }
 
     pub(super) fn emit_native(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        self.terminal.write_projection(bytes, output)?;
+        if let Some(mut view) = self.viewport {
+            self.terminal
+                .write_viewport_projection(bytes, &mut view, true, 1024 * 1024, output)?;
+            self.viewport = Some(view);
+        } else {
+            self.terminal.write_projection(bytes, output)?;
+        }
         self.sync_output_wrap();
         Ok(())
     }

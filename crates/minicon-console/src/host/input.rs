@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
 use windows_sys::Win32::Globalization::WideCharToMultiByte;
 
-const MAX_EVENTS: usize = 4096;
+pub(super) const MAX_EVENTS: usize = 4096;
 const MAX_PENDING: usize = 64;
 const MAX_LINE: usize = 32768;
 // Console handle closing/interruption uses STATUS_ALERTED in the native

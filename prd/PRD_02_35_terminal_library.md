@@ -19,6 +19,11 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
 │   safe failure: typed move error or clipped span count; native sink-before-commit
 │   dependency: common cell model; non-goal: Win32 ABI or incidental history scroll
+├── [-] Independent drawing buffer / terminal viewport
+│   invariant: one authoritative parser/screen; transient snapshots for output
+│   evidence: common viewport unit, native geometry/wrap/parent-resize SDK and real properties
+│   safe failure: staged grammar/view commit after sink success; explicit output budget
+│   dependency: shared exact lexer fork/framer; non-goal: duplicating a Windows shadow grid
 ├── [v] Windows host adopts the common stream facade
 │   invariant: native projections preserve client grammar and commit after sink success
 │   evidence: public projection unit plus SDK mixed-output and existing host/screen courts
@@ -48,6 +53,8 @@ flowchart LR
     VT --> VTE["owned vte: authoritative VT / UTF-8 grammar"]
     APP --> PLATFORM["minicon-platform::pty"]
     PLATFORM -->|"rust-console opt-in"| WIN["minicon-console Windows service"]
+    VP["TerminalViewport / mapped publication / staged screen edits"] --> COMMON
+    WIN --> VP
     MOVE["shared region movement / cell invariants"] --> COMMON
     WIN --> MOVE
     WIN --> COMMON
@@ -180,3 +187,37 @@ full/diff/cursor formatting methods. Its common contract and replay migration
 note belong to [terminal state](PRD_02_24_con_terminal.md); Windows percentage
 metadata remains native and is not part of the portable appearance vocabulary.
 The scoped service consumer and actual property clients are recorded in PRD 02.34.
+
+## Viewport rendering facade
+
+terminal::TerminalViewport describes a signed source region and an independently
+sized output surface. The default-callback TerminalStream can write_output_viewport
+through exact lexer/screen forks, forward complete nonvisual/extension frames,
+project cells/modes and commit after sink success. Alternate-grid transitions
+forward their original control frame followed by a full projected image. The
+native host is its actual consumer after a native geometry change; ordinary
+sessions keep raw framed output. Custom callback streams retain raw operation;
+the new default-callback mapped path does not pretend to transact arbitrary
+external callback side effects.
+
+commit_viewport_screen and write_viewport_projection provide staged cell edits
+and independent-decoder native commands without resetting unfinished client
+input. Entering viewport mode neutralizes physical origin/margins and publishes
+a complete image. Viewport operation continues until session close, including
+when source/output dimensions later match. Each projection is transient and
+read-only; native readback uses the authoritative drawing buffer.
+
+rust_console_terminal_viewport_preserves_buffer_grammar_effects_and_commit
+covers cropped rendering, native commands between UTF-8 fragments, C0 effects
+inside CSI, title forwarding, alternate-grid transitions and failed/budgeted
+publication. Input bytes and projection output have distinct caller budgets.
+Non-ASCII/control-heavy large-buffer performance, richer callback consumers and
+portable session/process composition remain separate qualification work.
+
+The service exercises this public boundary through native geometry and expanded
+buffer rendering, not a Windows-only duplicate. Shared/native SDK and real-client
+positive runs, runtime guard failures, exact-source identities and the distinction
+between cross-target compilation and native execution are recorded by
+[native geometry qualification](PRD_02_34_windows_console_backend.md#accepted-native-geometry-leaf).
+Portable session composition and independent external consumers remain planned
+in the consolidation sequence above.

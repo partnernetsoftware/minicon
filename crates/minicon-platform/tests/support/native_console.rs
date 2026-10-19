@@ -8,6 +8,8 @@ mod cursor_info;
 #[cfg(windows)]
 mod echo_output;
 #[cfg(windows)]
+mod geometry;
+#[cfg(windows)]
 mod indexed_output;
 #[cfg(windows)]
 mod inheritance;
@@ -52,6 +54,18 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "geometry-parent" {
+        return geometry::parent_resize(std::path::Path::new(&arguments[1]));
+    }
+    if mode == "geometry-wrap-vt" || mode == "geometry-wrap-legacy" {
+        return geometry::wrap(
+            std::path::Path::new(&arguments[1]),
+            if mode.ends_with("-vt") { 7 } else { 3 },
+        );
+    }
+    if mode == "geometry" {
+        return geometry::run(std::path::Path::new(&arguments[1]));
+    }
     if mode == "cursor-info" {
         return cursor_info::run(std::path::Path::new(&arguments[1]));
     }

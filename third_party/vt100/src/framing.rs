@@ -76,10 +76,47 @@ impl OutputFramer {
         bytes: &[u8],
         output: &mut impl Write,
     ) -> Result<(), FrameError> {
+        self.write_mapped(parser, bytes, output, true, |parser, raw, delta, output| {
+            output.write_all(raw)?;
+            parser.process(delta);
+            Ok(())
+        })
+    }
+
+    /// Publish frames through a transactional adapter. Raw bytes are the
+    /// complete wire frame; delta contains only bytes not yet processed by the
+    /// authoritative parser. The publisher must process/commit delta exactly
+    /// once on success, preserving parser state on failure. Already executed
+    /// C0 controls are excluded from a later retained frame.
+    ///
+    /// Set `ascii_controls` false for render adapters that need separate effect
+    /// ordering for effectful C0 controls rather than one mixed ASCII batch.
+    /// Visual CR/LF controls can still batch with printable ASCII.
+    ///
+    /// # Errors
+    /// Returns a bounded-frame rejection or publisher failure.
+    pub fn write_mapped<CB: crate::Callbacks, W: Write>(
+        &mut self,
+        parser: &mut crate::Parser<CB>,
+        bytes: &[u8],
+        output: &mut W,
+        ascii_controls: bool,
+        mut publish: impl FnMut(&mut crate::Parser<CB>, &[u8], &[u8], &mut W) -> io::Result<()>,
+    ) -> Result<(), FrameError> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
         // Ordinary ASCII needs neither a copied parser state nor staging.
-        if parser.at_boundary() && bytes.iter().all(|byte| byte.is_ascii() && *byte != 27) {
-            output.write_all(bytes)?;
-            parser.process(bytes);
+        if parser.at_boundary()
+            && bytes.iter().all(|byte| {
+                byte.is_ascii()
+                    && *byte != 27
+                    && (ascii_controls
+                        || (32..127).contains(byte)
+                        || matches!(*byte, b'\r' | b'\n'))
+            })
+        {
+            publish(parser, bytes, bytes, output)?;
             return Ok(());
         }
         for &byte in bytes {
@@ -87,8 +124,7 @@ impl OutputFramer {
             if progress.executed_control && !progress.at_boundary {
                 // Executed C0 controls do not belong to the retained grammar
                 // payload. The peer is at ground and executes each exactly once.
-                output.write_all(&[byte])?;
-                parser.process(&[byte]);
+                publish(parser, &[byte], &[byte], output)?;
                 continue;
             }
             if self.pending.len() == self.limit {
@@ -101,11 +137,10 @@ impl OutputFramer {
             }
             self.pending.push(byte);
             if progress.at_boundary {
-                if let Err(error) = output.write_all(&self.pending) {
+                if let Err(error) = publish(parser, &self.pending, &[byte], output) {
                     self.pending.pop();
                     return Err(FrameError::Io(error));
                 }
-                parser.process(&[byte]);
                 self.pending.clear();
             } else {
                 parser.process(&[byte]);
