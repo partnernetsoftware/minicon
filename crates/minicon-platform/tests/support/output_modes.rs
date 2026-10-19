@@ -12,6 +12,18 @@ unsafe extern "system" {
     fn RtlGetVersion(info: *mut OSVERSIONINFOEXW) -> i32;
 }
 
+pub(super) fn windows_build() -> io::Result<u32> {
+    let mut version = OSVERSIONINFOEXW {
+        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOEXW>() as u32,
+        ..OSVERSIONINFOEXW::default()
+    };
+    // SAFETY: a live structure with the SDK size in its first field.
+    if unsafe { RtlGetVersion(&mut version) } < 0 {
+        return Err(io::Error::other("native Windows version query failed"));
+    }
+    Ok(version.dwBuildNumber)
+}
+
 pub(super) fn wide_margin(report: &Path) -> io::Result<()> {
     // SAFETY: only this child's private console, bounded initialized buffers.
     unsafe {
@@ -82,17 +94,7 @@ pub(super) fn run(mode: u32, report: &Path) -> io::Result<()> {
         if GetConsoleMode(output, &mut actual) == 0 {
             return Err(io::Error::last_os_error());
         }
-        let mut version = OSVERSIONINFOEXW {
-            dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOEXW>() as u32,
-            ..OSVERSIONINFOEXW::default()
-        };
-        if RtlGetVersion(&mut version) < 0 {
-            return Err(io::Error::other("native Windows version query failed"));
-        }
-        let mut receipt = format!(
-            "build={};initial={initial};mode={actual}",
-            version.dwBuildNumber
-        );
+        let mut receipt = format!("build={};initial={initial};mode={actual}", windows_build()?);
         for (column, row, text) in [
             (1, 1, "A\nB"),
             (1, 3, "C\tD"),

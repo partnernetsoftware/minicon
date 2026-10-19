@@ -44,6 +44,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped output mode fidelity: native processed controls, VT gating, newline
 │   │   translation and margin behavior; compare real SDK cursor receipts and
 │   │   terminal projection, retain finite wide-margin progress and shared parser ownership
+│   ├── [v] scoped drawing attributes: native setter/query and subsequent text share VT state
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -74,6 +75,8 @@ flowchart LR
     HOST --> INPUT["deferred input / input-ready event"]
     HOST --> MODES["Win32 output modes / native SDK differential receipts"]
     MODES --> VT["reuse owned VT parser and terminal projection"]
+    HOST --> ATTR["native drawing attributes / SDK query / projected cells"]
+    ATTR --> VT
     HOST --> LIFE["connection defaults vs opened file objects"]
     LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
     LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
@@ -110,6 +113,19 @@ flowchart LR
 ```
 
 ## Verified findings and source identities
+
+### Accepted drawing-attribute leaf
+
+Invariant: native text attributes, subsequent writes and native attribute queries
+use the existing VT drawing state, without a second screen model. Evidence must
+exercise all 256 foreground/background combinations, reverse/underline, native
+access checks and interleaved VT changes through an independent SDK client and
+system ConPTY. Unsupported legacy grid/DBCS attribute flags fail explicitly;
+rectangular writes, buffer cell readback, palette changes and RGB-to-legacy
+quantization remain separate leaves. Dependencies are output request ordering,
+the shared parser and native handle access checks. Hot files are the host API
+dispatcher/output module and the independent native PTY fixture. Failed output
+must propagate before the owned drawing state advances.
 
 Microsoft describes OpenConsole as the open-source console host. Its public
 server source contains API dispatch and driver transport; this is a better
@@ -262,7 +278,8 @@ certification for all clients or OS releases.
 | GetMode / SetMode | Store input modes/enforce echo dependency; configure output modes and mirror VT DECAWM in native output flags; explicit PTY defaults match system ConPTY. | Full flag validation, insert/history editing and broader mode/screen interactions. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
 | GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. Native client-written key/focus records and returned counts are tested. | ANSI input-record variants, remaining record types and broad application qualification. |
-| GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
+| GetScreenBufferInfo | Return geometry, cursor and scoped current drawing attributes from the owned VT parser; retain initial palette. | Palette mutation/RGB quantization, full legacy screen mutation, scrolling, resize, multiple buffers and cell readback. |
+| SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | LVB mode/code-page gating, native cell attribute fill/readback and API interleaving inside incomplete client escape sequences. |
 | GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
 | Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Other native-key transports, unattached-group compatibility, other signals and broader OS/client qualification. |
@@ -1023,3 +1040,50 @@ new tests and the three retained bootstrap cases have observed runtime
 negatives; compile failures are not counted. The audit records restored source
 hashes and individual log identities. The projection observation JSON retains
 all sixteen reference/owned row pairs, including the explicitly differing ones.
+
+## Scoped native drawing attributes
+
+`host/output.rs` owns the Windows BGR-to-VT palette conversion and native query
+projection. `SetConsoleTextAttribute` affects subsequent output through the
+existing parser; no native-only cached attribute or duplicate screen is added.
+The native dispatch checks output handle kind and WRITE access, as the pinned
+public server dispatcher and measured kernel require. The public
+[API documentation](https://learn.microsoft.com/en-us/windows/console/setconsoletextattribute)
+currently says READ; the independent client explicitly verifies read-only
+failure and write-only success instead of trusting that discrepancy.
+
+The qualified mask is `0xc0ff`: foreground/background palette bits, intensity,
+reverse and underline. Other legacy grid/DBCS bits return NOT_SUPPORTED before
+mutation. Current native queries reflect default/16-color VT state, bold
+foreground intensity, inverse and underline, rather than fixed attribute 7.
+Extended indexed/RGB colors currently fall back to default foreground/background
+in native queries; correct legacy palette quantization is still open.
+
+The independent SDK client exercises all 256 color combinations plus three
+reverse/underline combinations with mode 31 (including LVB worldwide), verifies
+setter cursor preservation, writes actual cells and then queries attributes
+after VT SGR changes. A second parser checks the actual PTY cells. The system
+comparison normalizes equivalent default/indexed and bold/intense color
+encodings. It holds the client alive until the output end marker is observed.
+On native build 20348 all native setter queries and effective colors agree;
+the reference drops underline from its wire, and the final SGR query reports
+`0x4069` rather than owned `0xc069`. These two measured differences are explicitly
+restricted to that build. Native screen-cell attribute readback was not queried
+and is not claimed. Other builds require the full reference behavior.
+
+Evidence is `text-attributes-red.log`, `text-attributes-positive.log`,
+`text-attributes-final-suite.log` and `text-attributes-negative-audit.json` in
+the ignored research directory. The canonical selected suite grows from 141 to
+143 cases (94 backend/reference, 29 legacy-agent, 20 shared parser/UI), including
+fourteen explicitly selected external/reference cases. Six runtime mutations
+cover native completion status, BGR mapping, query state, WRITE access,
+unsupported flags and sink failure; both new native cases fail at runtime when
+their implementation is broken. The retained output-failure unit also verifies
+that failed attribute output leaves drawing state unchanged.
+
+This leaf qualifies 16-color drawing state at complete VT command boundaries.
+Legacy LVB mode/code-page gating, native calls interleaved into an incomplete
+client escape sequence, fill/rectangular screen mutation, literal control-cell
+readback and full-screen application qualification remain open. These require
+programmatic edits to the same shared screen state and ordered projection,
+rather than a second Windows screen model. Default backend selection is unchanged.

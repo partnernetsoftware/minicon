@@ -599,6 +599,22 @@ impl<'session> ConsoleHost<'session> {
                     }
                 }
             }
+            0x0200_000d if body.len() >= 2 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
+                    let attribute = u16::from_le_bytes([body[0], body[1]]);
+                    if attribute & !0xc0ff != 0 {
+                        receipt.status = NOT_SUPPORTED;
+                    } else {
+                        self.set_text_attribute(attribute, output)?;
+                    }
+                }
+            }
             0x0200_0007 if body.len() >= 92 => {
                 receipt.status = self.handle_status(
                     descriptor.process,
@@ -612,7 +628,7 @@ impl<'session> ConsoleHost<'session> {
                     body.fill(0);
                     put_coord(&mut body, 0, cols, rows);
                     put_coord(&mut body, 4, col.min(cols.saturating_sub(1)), row);
-                    body[12..14].copy_from_slice(&7_u16.to_le_bytes());
+                    body[12..14].copy_from_slice(&self.text_attribute().to_le_bytes());
                     // The Win32 client converts dimensions to inclusive bounds.
                     put_coord(&mut body, 14, cols, rows);
                     put_coord(&mut body, 18, cols, rows);
@@ -759,5 +775,8 @@ mod tests {
         let result = host.write_utf16([b'A' as u16], &mut FailedOutput);
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
         assert_eq!(host.screen.screen().cursor_position(), (0, 0));
+        let result = host.set_text_attribute(0xc012, &mut FailedOutput);
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(host.text_attribute(), 7);
     }
 }

@@ -9,6 +9,39 @@ use windows_sys::Win32::System::Console::{
 const VT_OUTPUT: u32 = ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
 
 impl ConsoleHost<'_> {
+    pub(super) fn set_text_attribute(
+        &mut self,
+        attribute: u16,
+        output: &mut impl Write,
+    ) -> io::Result<()> {
+        let foreground = swap_red_blue((attribute & 15) as u8);
+        let background = swap_red_blue(((attribute >> 4) & 15) as u8);
+        self.emit(
+            format!(
+                "\x1b[0;38;5;{foreground};48;5;{background};{};{}m",
+                if attribute & 0x4000 != 0 { 7 } else { 27 },
+                if attribute & 0x8000 != 0 { 4 } else { 24 },
+            )
+            .as_bytes(),
+            output,
+        )
+    }
+
+    pub(super) fn text_attribute(&self) -> u16 {
+        let screen = self.screen.screen();
+        let index = |color, default| match color {
+            vt100::Color::Idx(index @ 0..=15) => swap_red_blue(index),
+            // Extended palette/RGB quantization remains a separate capability.
+            _ => default,
+        };
+        let foreground = index(screen.fgcolor(), 7) | if screen.bold() { 8 } else { 0 };
+        let background = index(screen.bgcolor(), 0);
+        u16::from(foreground)
+            | (u16::from(background) << 4)
+            | if screen.inverse() { 0x4000 } else { 0 }
+            | if screen.underline() { 0x8000 } else { 0 }
+    }
+
     /// Configure Win32 output flags and keep the shared terminal's wrapping
     /// state aligned. PTY providers can choose their initial VT mode here.
     pub fn set_output_mode(&mut self, requested: u32, output: &mut impl Write) -> io::Result<()> {
@@ -203,6 +236,10 @@ impl ConsoleHost<'_> {
         let mut buffer = [0; 4];
         self.write_output_bytes(character.encode_utf8(&mut buffer).as_bytes(), output)
     }
+}
+
+fn swap_red_blue(index: u8) -> u8 {
+    (index & 10) | ((index & 1) << 2) | ((index & 4) >> 2)
 }
 
 #[cfg(test)]

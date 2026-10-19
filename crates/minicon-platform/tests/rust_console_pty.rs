@@ -303,6 +303,115 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn text_attribute_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(if rust {
+            "text-attributes-owned"
+        } else {
+            "text-attributes"
+        })
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 20, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("attributes-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(20, 16, 0);
+    parser.process(&fixture.bytes);
+    (std::fs::read_to_string(&report.0).unwrap(), parser)
+}
+
+fn assert_text_attributes(receipt: &str, parser: &vt100::Parser, system: bool) {
+    let (build, receipt) = receipt.split_once(';').unwrap();
+    let build: u32 = build.strip_prefix("build=").unwrap().parse().unwrap();
+    assert!(build > 0);
+    let mut expected = String::new();
+    for (index, attribute) in (0..256_u16).chain([0x401e, 0x802f, 0xc03a]).enumerate() {
+        expected.push_str(&format!("{attribute:04x},"));
+        let cell = parser
+            .screen()
+            .cell(index as u16 / 16, index as u16 % 16)
+            .unwrap();
+        assert_eq!(cell.contents(), "X", "attribute {attribute:04x}");
+        // Windows attributes use BGR bits; the VT palette uses RGB bits.
+        let color =
+            |n: u16| vt100::Color::Idx(((n & 8) | ((n & 1) << 2) | (n & 2) | ((n & 4) >> 2)) as u8);
+        let normalize = |value, default, bold| match value {
+            vt100::Color::Default => vt100::Color::Idx(default),
+            vt100::Color::Idx(index @ 0..=7) if bold => vt100::Color::Idx(index | 8),
+            value => value,
+        };
+        let (mut foreground, mut background) = (cell.fgcolor(), cell.bgcolor());
+        let (mut expected_foreground, mut expected_background) =
+            (color(attribute & 15), color((attribute >> 4) & 15));
+        if system {
+            foreground = normalize(foreground, 7, cell.bold());
+            background = normalize(background, 0, false);
+            if cell.inverse() {
+                std::mem::swap(&mut foreground, &mut background);
+            }
+            if attribute & 0x4000 != 0 {
+                std::mem::swap(&mut expected_foreground, &mut expected_background);
+            }
+        } else {
+            assert_eq!(cell.inverse(), attribute & 0x4000 != 0);
+        }
+        assert_eq!(
+            foreground, expected_foreground,
+            "foreground {attribute:04x}"
+        );
+        assert_eq!(
+            background, expected_background,
+            "background {attribute:04x}"
+        );
+        let expected_underline = attribute & 0x8000 != 0 && !(system && build == 20348);
+        assert_eq!(
+            cell.underline(),
+            expected_underline,
+            "underline {attribute:04x}, system={system}, build={build}"
+        );
+    }
+    expected.push_str(if system && build == 20348 {
+        "vt=4069"
+    } else {
+        "vt=c069"
+    });
+    assert_eq!(receipt, expected);
+    assert_eq!(parser.screen().cell(16, 3).unwrap().contents(), "Y");
+}
+
+#[test]
+fn rust_console_pty_native_text_attributes_share_query_and_projected_state() {
+    let (receipt, parser) = text_attribute_report(true);
+    assert_text_attributes(&receipt, &parser, false);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY drawing-attribute differential court"]
+fn rust_console_client_native_text_attributes_match_system_conpty() {
+    let (reference, reference_screen) = text_attribute_report(false);
+    assert_text_attributes(&reference, &reference_screen, true);
+    let (owned, owned_screen) = text_attribute_report(true);
+    assert_text_attributes(&owned, &owned_screen, false);
+    eprintln!(
+        "drawing attributes: reference {} / owned {}",
+        reference.rsplit_once(',').unwrap().1,
+        owned.rsplit_once(',').unwrap().1
+    );
+    if reference.starts_with("build=20348;") {
+        // This measured host drops underline in its wire and VT query. Native
+        // SetConsoleTextAttribute queries above still retain the requested bit.
+        assert_eq!(owned.replace("vt=c069", "vt=4069"), reference);
+    } else {
+        assert_eq!(owned, reference);
+    }
+}
+
 fn output_mode_report(mode: u32, rust: bool) -> (u32, String, Vec<String>) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))

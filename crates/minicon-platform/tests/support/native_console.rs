@@ -7,6 +7,8 @@ mod control;
 mod inheritance;
 #[cfg(windows)]
 mod output_modes;
+#[cfg(windows)]
+mod text_attributes;
 #[cfg(not(windows))]
 fn main() {
     std::process::exit(2);
@@ -32,6 +34,12 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "text-attributes" || mode == "text-attributes-owned" {
+        return text_attributes::run(
+            std::path::Path::new(&arguments[1]),
+            mode.ends_with("-owned"),
+        );
+    }
     if mode == "output-wide-margin" {
         return output_modes::wide_margin(std::path::Path::new(&arguments[1]));
     }
