@@ -36,6 +36,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
+│   ├── [v] scoped retirement preflight / caller-scoped completion / in-flight file-reference ownership
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -109,6 +110,10 @@ flowchart LR
     BIND --> CANCELBUF["cancel: discard hidden orphan / retain active identity until admitted"]
     CANCELBUF --> READYWORK["has_pending_output / one fallback before queued kernel call"]
     READYWORK --> ECOMMIT
+    CANCELBUF --> RETIRE["one process/object read-retirement match"]
+    RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
+    POSTLIVE -->|"may publish"| READYWORK
+    POSTLIVE -->|"another read survives"| INPUT
     COOK --> ELAYOUT["temporary common-parser layout / bounded origin search"]
     ELAYOUT --> DCURSOR["absolute drawing cursor / delayed wrap"]
     DCURSOR --> VT
@@ -3345,6 +3350,9 @@ This qualifies the named lifetime slice, not the open boundaries above.
 
 ### Cancelled-read buffer reclamation
 
+Read retirement and in-flight input-file ownership are specified in
+[disconnect retirement and native file closes](#disconnect-retirement-and-native-file-closes).
+
 Invariant: cancelling pending reads releases their native output retention without
 waiting for a writable terminal sink. Inactive orphaned buffers are discarded
 before SDK callers resume. An orphaned active buffer retains its identity and
@@ -3387,8 +3395,8 @@ pending input and is not used as a keyboard cancellation substitute.
 
 Dependencies are existing deferred-read interruption, buffer liveness/activation,
 private-Job control delivery, query classification and bounded output staging.
-Missing fallback state or sink failure stays explicit. Input-handle close or
-disconnect racing output pressure, mixed readers and foreign-request races with
+Missing fallback state or sink failure stays explicit. Further finalizer and
+queued-read retirement races, mixed readers and foreign-request races with
 pending fallback, general concurrent output/modes/geometry and full OS/ISA
 runtime/performance qualification remain open. Default/release selection and
 the independent library boundary are unchanged.
@@ -3420,3 +3428,83 @@ and 17 alignment checks follow these owner/reuse-map updates.
 `cooked-cancel-final-receipt.json` binds the staged source tree, source/log/fault
 hashes, compiler, eight executed x64 image identities and two pinned upstream
 blobs. The named slice does not qualify the remaining race/transport boundaries.
+
+### Disconnect retirement and native file closes
+
+Invariant: output readiness classification predicts whether retiring a caller or
+file would release the final read retaining the active drawing buffer. The same
+private `ReadRetirement` process/object matcher selects reads for both preflight
+and actual cleanup. Preflight computes surviving read and output owners without
+mutating them, preserves the existing conservative output-close barrier, and
+requires output admission only when a surviving buffer could be revealed.
+Independent file objects survive their creator's disconnect; connection defaults
+are excluded when predicting that disconnect's surviving output handles.
+
+The accepted-read cases distinguish three native lifetimes. Closing the user
+input handle makes GetHandleInformation report error 6, while the already-issued
+kernel read still returns `aXb\r\n` successfully after more input. Its later
+input-file finalizer remains non-emitting. FreeConsole instead retires the
+detaching caller's accepted read and can release the last active-buffer owner;
+the direct court keeps that disconnect and read pending behind a rejecting sink
+until admitted fallback publication. A second actual process can retain another
+read on that buffer: the first disconnect must then return without publication,
+and the surviving process receives its own `z\r\n` rather than the first caller's
+unfinished line. The direct court verifies both processes belong to the private
+Job and attaches the peer to the base buffer before activating the edit buffer.
+
+Accepted process-retired reads now complete with STATUS_THREAD_IS_TERMINATING
+(`0xc000004b`), yielding BOOL false, LastError 5 and zero count on the observed
+Windows build. This matches the pinned cooked/direct/raw read waiters' ThreadDying
+status and the locally verified RtlNtStatusToDosError mapping. Explicit keyboard
+interruption retains STATUS_ALERTED, BOOL true, LastError 995 and zero count.
+One body-completion helper retains the native API shape and zeroes returned
+control/count fields for retirement and explicit interruption.
+
+Kernel retirement can also arrive after its recipient thread has died. A 995
+error from completing that already-cancelled request is benign within this
+retirement path; it must not abort dispatch for another live caller. Other
+completion errors still propagate, and output-sink errors are not swallowed.
+The first expanded suite exposed both existing dead-caller regressions;
+`cooked-retire-dead-caller-regression.log` retains those failures, excluded from
+positive qualification. Their old tests remain unchanged.
+
+Dependencies are existing driver request ownership, deferred output admission,
+native buffer liveness/activation, file-versus-connection handle lifetimes and
+private-Job process ownership. Native prototypes are called directly by the
+independent shared SDK fixture; no private matcher simulates the client result.
+Queued but not yet admitted reads during disconnect still require a separate
+status/cleanup audit. More finalizer/deferred-call, mixed-reader, last-orphan and
+foreign-request races, other native API/geometry/editor behavior, OS/ISA runtime
+and performance courts, portable sessions and packaging/default promotion remain
+open. This changes no product default or library-merger decision.
+
+Local qualification: `cooked-retire-final-focused.log` records six passing tests:
+three new retirement courts plus the existing explicit-interruption and two
+dead-caller regressions. The new tests are
+`rust_console_native_read_retirement_waits_for_fallback_publication`,
+`rust_console_pty_read_retirement_reveals_the_surviving_buffer` and
+`rust_console_client_read_retirement_compares_system_conpty`. They execute seven
+retirement scenarios: three direct-driver cases and two per PTY provider. Reports
+check BOOL, LastError, count, returned UTF-16 and the surviving peer's separate
+line; direct/PTY checks verify the restored base text/cursor. Both console-agent
+forcing variables are cleared for the system reference.
+
+`cooked-retire-negative-audit.json` records eleven compiling, byte-restored runtime
+faults, failing all three new tests and all three retained regressions. They cover
+preflight/adoption, remaining-read and independent-file ownership, process/object
+matching, process-versus-keyboard status, actual SDK close/disconnect calls and
+benign already-dead-recipient completion. One compile-rejected adoption attempt
+is excluded; its replacement keeps the classifier referenced and fails at runtime.
+
+`cooked-retire-final-suite.log` records 288 selected passes, including existing
+PowerShell 5/7, Node, cmd, output pressure, controls, geometry and lifecycle cases.
+The earlier successful suite is reused only after all eight changed implementation/
+test files match restored hashes. Seven static/cross checks pass: strict
+default/enabled workspace all-targets Clippy, four portable-library targets and
+Windows ARM64 platform PTY/Rust-console all-targets compilation. Native execution
+remains Windows x86_64 build 20348; other targets are compile-only. Final formatting
+and 17 alignment checks follow this documentation.
+`cooked-retire-final-receipt.json` binds the staged source tree, source/log/fault
+hashes, compiler, nine executed x64 image identities, three pinned read-waiter
+source blobs and the native status-to-error mapping. This does not close the
+unadmitted-read and other remaining boundaries above.

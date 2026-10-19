@@ -364,3 +364,184 @@ pub(crate) fn run_cancel(kind: &str, path: &Path, controlled: bool) -> io::Resul
     wait(deadline, || Ok(path.with_extension("opened").exists()))?;
     Ok(())
 }
+
+pub(crate) fn run_retire(kind: &str, path: &Path, controlled: bool) -> io::Result<()> {
+    use windows_sys::Win32::Foundation::{GetHandleInformation, GetLastError, SetLastError};
+    if kind == "peer" {
+        return retire_peer(path);
+    }
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let base = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    let standard_input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    let fallback = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONOUT$")?;
+    let input = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONIN$")?;
+    let input_token = input.as_raw_handle() as usize;
+    let created = unsafe {
+        CreateConsoleScreenBuffer(
+            0xc000_0000,
+            3,
+            std::ptr::null(),
+            CONSOLE_TEXTMODE_BUFFER,
+            std::ptr::null(),
+        )
+    };
+    if created == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let buffer = unsafe { OwnedHandle::from_raw_handle(created) };
+    // SDK pointers are bounded initialized buffers; all objects belong to this
+    // isolated console. Closing the reader's native file while it is blocked is
+    // the behavior under observation, not a Rust reference to a dropped File.
+    unsafe {
+        check(SetConsoleMode(standard_input, 0xa7))?;
+        check(SetConsoleMode(base, 15))?;
+        check(SetConsoleMode(created, 15))?;
+    }
+    write(base, "\x1b[2J\x1b[HB>")?;
+    let mut peer = if kind == "remaining" {
+        let child = std::process::Command::new(std::env::current_exe()?)
+            .arg("cooked-retire-peer")
+            .arg(path.with_extension("peer"))
+            .spawn()?;
+        wait(deadline, || Ok(path.with_extension("peer-ready").exists()))?;
+        Some(child)
+    } else {
+        None
+    };
+    unsafe {
+        check(SetConsoleActiveScreenBuffer(created))?;
+    }
+    write(created, "\x1b[2J\x1b[HA>")?;
+    let reader = std::thread::spawn(move || {
+        let mut text = [0_u16; 32];
+        let mut count = 0;
+        unsafe {
+            SetLastError(0);
+            let ok = ReadConsoleW(
+                input_token as HANDLE,
+                text.as_mut_ptr().cast(),
+                text.len() as u32,
+                &mut count,
+                std::ptr::null_mut(),
+            ) != 0;
+            (ok, GetLastError(), count, text)
+        }
+    });
+    if controlled {
+        wait(deadline, || Ok(path.with_extension("go").exists()))?;
+    } else {
+        keys(standard_input, false)?;
+        wait(deadline, || Ok(snapshot(created)?.1 == (0, 4)))?;
+    }
+    if kind == "remaining" {
+        std::fs::write(path.with_extension("peer-go"), b"second-reader")?;
+        wait(deadline, || Ok(path.with_extension("go-two").exists()))?;
+    }
+    drop(buffer);
+    write(base, "\x1b]2;cooked-retire-ready:\x07")?;
+    std::fs::write(path.with_extension("retire-ready"), b"retire")?;
+    let mut detached = false;
+    let closer = if kind != "input-close" {
+        unsafe {
+            check(FreeConsole())?;
+        }
+        detached = true;
+        None
+    } else {
+        let closer = std::thread::spawn(move || drop(input));
+        wait(deadline, || {
+            let mut flags = 0;
+            if unsafe { GetHandleInformation(input_token as HANDLE, &mut flags) } == 0 {
+                if unsafe { GetLastError() } != 6 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })?;
+        std::fs::write(path.with_extension("closed"), b"handle-table-entry-removed")?;
+        if !controlled {
+            keys(standard_input, true)?;
+        }
+        Some(closer)
+    };
+    std::fs::write(path.with_extension("retired"), b"returned")?;
+    wait(deadline, || Ok(reader.is_finished()))?;
+    let (ok, error, count, units) = reader
+        .join()
+        .map_err(|_| io::Error::other("SDK retired reader panicked"))?;
+    if count as usize > units.len() {
+        return Err(io::Error::other("oversized retired read"));
+    }
+    let units = format!("{:?}", &units[..count as usize]);
+    if let Some(closer) = closer {
+        closer
+            .join()
+            .map_err(|_| io::Error::other("SDK closer panicked"))?;
+    }
+    let secondary = if let Some(ref mut peer) = peer {
+        if !peer.wait()?.success() {
+            return Err(io::Error::other("retirement peer failed"));
+        }
+        std::fs::read_to_string(path.with_extension("peer"))?
+    } else {
+        "[]".to_owned()
+    };
+    let temporary = path.with_extension("retire-tmp");
+    std::fs::write(
+        &temporary,
+        format!(
+            "{{\"ok\":{ok},\"error\":{error},\"count\":{count},\"detached\":{detached},\"secondary\":{secondary},\"units\":{units}}}"
+        ),
+    )?;
+    std::fs::rename(temporary, path)?;
+    wait(deadline, || Ok(path.with_extension("opened").exists()))?;
+    drop(fallback);
+    Ok(())
+}
+
+fn retire_peer(path: &Path) -> io::Result<()> {
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+    let input = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONIN$")?;
+    let output = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONOUT$")?;
+    if snapshot(output.as_raw_handle())? != ("B>".to_owned(), (0, 2)) {
+        return Err(io::Error::other(
+            "peer must attach before the private edit buffer activates",
+        ));
+    }
+    std::fs::write(path.with_extension("peer-ready"), b"attached-to-base")?;
+    wait(Instant::now() + Duration::from_secs(15), || {
+        Ok(path.with_extension("peer-go").exists())
+    })?;
+    let mut units = [0_u16; 32];
+    let mut count = 0;
+    unsafe {
+        SetLastError(0);
+        check(ReadConsoleW(
+            input.as_raw_handle(),
+            units.as_mut_ptr().cast(),
+            units.len() as u32,
+            &mut count,
+            std::ptr::null_mut(),
+        ))?;
+        if GetLastError() != 0 || count as usize > units.len() {
+            return Err(io::Error::other("peer read interrupted or oversized"));
+        }
+    }
+    let temporary = path.with_extension("peer-tmp");
+    std::fs::write(&temporary, format!("{:?}", &units[..count as usize]))?;
+    std::fs::rename(temporary, path)
+}

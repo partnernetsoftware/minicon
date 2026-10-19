@@ -85,6 +85,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("cooked-retire-") {
+        return cooked_buffer::run_retire(kind, std::path::Path::new(&arguments[1]), false);
+    }
     if let Some(kind) = mode.strip_prefix("cooked-edit-") {
         return cooked_edit::run(kind, std::path::Path::new(&arguments[1]));
     }

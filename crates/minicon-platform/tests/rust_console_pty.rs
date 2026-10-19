@@ -179,6 +179,10 @@ impl Drop for Report {
             "queried",
             "created",
             "signal",
+            "retire-ready",
+            "retired",
+            "retire-tmp",
+            "closed",
             "opened-ready",
             "detached",
             "first",
@@ -4494,6 +4498,64 @@ fn rust_console_pty_break_reclaims_cancelled_read_buffers_and_publishes_fallback
 #[ignore = "explicit system ConPTY cancelled-read buffer lifetime court"]
 fn rust_console_client_cancelled_read_buffers_compare_system_conpty() {
     cancelled_buffer_cases(false);
+}
+
+fn retiring_buffer_cases(rust: bool) {
+    for kind in ["input-close", "disconnect"] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("cooked-retire-{kind}"))
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 8, cols: 16 });
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        fixture.until("cooked-retire-ready:");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !report.0.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "retirement {rust}/{kind} stalled"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        assert_eq!(
+            value,
+            format!(
+                r#"{{"ok":{},"error":{},"count":{},"detached":{},"secondary":[],"units":{}}}"#,
+                kind != "disconnect",
+                if kind == "disconnect" { 5 } else { 0 },
+                if kind == "disconnect" { 0 } else { 5 },
+                kind == "disconnect",
+                if kind == "disconnect" {
+                    "[]"
+                } else {
+                    "[97, 88, 98, 13, 10]"
+                }
+            )
+        );
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+        let mut peer = vt100::Parser::new(8, 16, 0);
+        peer.process(&fixture.bytes);
+        assert_eq!(peer.screen().contents(), "B>");
+        assert_eq!(peer.screen().cursor_position(), (0, 2));
+        eprintln!("cooked-retire rust={rust};kind={kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_pty_read_retirement_reveals_the_surviving_buffer() {
+    retiring_buffer_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY read-retirement lifetime court"]
+fn rust_console_client_read_retirement_compares_system_conpty() {
+    retiring_buffer_cases(false);
 }
 
 #[test]

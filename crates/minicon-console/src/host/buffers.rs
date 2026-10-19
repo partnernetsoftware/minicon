@@ -189,14 +189,39 @@ impl ConsoleHost<'_> {
     }
 
     pub(super) fn close_may_publish(&self, descriptor: RequestDescriptor) -> bool {
-        !self.buffers.is_empty()
-            && self.handles.iter().any(|(id, handle)| {
-                handle.kind == HandleKind::Output
-                    && handle.buffer == self.active_buffer
-                    && (descriptor.function == 4 && *id == descriptor.object
-                        || descriptor.function == 2
-                            && handle.lifetime == HandleLifetime::Connection(descriptor.process))
-            })
+        if self.buffers.is_empty() {
+            return false;
+        }
+        let retirement = match descriptor.function {
+            2 => super::input::ReadRetirement::Process(descriptor.process),
+            4 => super::input::ReadRetirement::Object(descriptor.object),
+            _ => return false,
+        };
+        let closes_handle = |id: usize, handle: &super::ClientHandle| {
+            descriptor.function == 4 && id == descriptor.object
+                || descriptor.function == 2
+                    && handle.lifetime == HandleLifetime::Connection(descriptor.process)
+        };
+        // Preserve the existing conservative output-close ordering barrier.
+        if self.handles.iter().any(|(id, handle)| {
+            handle.kind == HandleKind::Output
+                && handle.buffer == self.active_buffer
+                && closes_handle(*id, handle)
+        }) {
+            return true;
+        }
+        if !self.input.retains_output(self.active_buffer) {
+            return false;
+        }
+        let live_after = |buffer: usize| {
+            self.input.retains_output_after(buffer, retirement)
+                || self.handles.iter().any(|(id, handle)| {
+                    handle.kind == HandleKind::Output
+                        && handle.buffer == buffer
+                        && !closes_handle(*id, handle)
+                })
+        };
+        !live_after(self.active_buffer) && self.buffers.keys().any(|id| live_after(*id))
     }
 }
 

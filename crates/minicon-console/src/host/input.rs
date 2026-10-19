@@ -5,6 +5,7 @@ mod records;
 use super::*;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
+use windows_sys::Win32::Foundation::ERROR_OPERATION_ABORTED;
 use windows_sys::Win32::Globalization::WideCharToMultiByte;
 
 pub(super) const MAX_EVENTS: usize = 4096;
@@ -51,7 +52,42 @@ pub(super) struct InputState<'session> {
     pub(super) insert_mode: Option<bool>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ReadRetirement {
+    Process(usize),
+    Object(usize),
+}
+
+impl ReadRetirement {
+    fn matches(self, read: &PendingRead<'_>) -> bool {
+        match self {
+            Self::Process(process) => read.request.descriptor.process == process,
+            Self::Object(object) => read.request.descriptor.object == object,
+        }
+    }
+
+    fn status(self) -> i32 {
+        match self {
+            Self::Process(_) => 0xc000_004b_u32 as i32, // STATUS_THREAD_IS_TERMINATING
+            Self::Object(_) => READ_INTERRUPTED,
+        }
+    }
+}
+
 impl InputState<'_> {
+    pub(super) fn retains_output_after(&self, buffer: usize, retirement: ReadRetirement) -> bool {
+        self.pending
+            .iter()
+            .any(|read| read.output_buffer == Some(buffer) && !retirement.matches(read))
+    }
+
+    fn take_retired(&mut self, retirement: ReadRetirement) -> VecDeque<PendingRead<'_>> {
+        let (retired, retained) = std::mem::take(&mut self.pending)
+            .into_iter()
+            .partition(|read| retirement.matches(read));
+        self.pending = retained;
+        retired
+    }
     pub(super) fn retains_output(&self, buffer: usize) -> bool {
         self.pending
             .iter()
@@ -122,6 +158,17 @@ struct PendingRead<'session> {
     editing: bool,
     echo: Option<echo::Echo>,
     output_buffer: Option<usize>,
+}
+
+impl PendingRead<'_> {
+    fn interrupt(mut self, status: i32) -> io::Result<()> {
+        match self.kind {
+            ReadKind::Text { raw: false, .. } => self.body[12..20].fill(0),
+            ReadKind::Records { .. } => self.body[..4].fill(0),
+            _ => {}
+        }
+        self.request.complete(status, 0, &self.body)
+    }
 }
 
 impl<'session> ConsoleHost<'session> {
@@ -317,13 +364,8 @@ impl<'session> ConsoleHost<'session> {
         // Publish native readiness before any blocked SDK caller resumes.
         let mut failure = self.update_input_event().err();
         drop(deferred_reads);
-        for mut read in pending {
-            match read.kind {
-                ReadKind::Text { raw: false, .. } => read.body[12..20].fill(0),
-                ReadKind::Records { .. } => read.body[..4].fill(0),
-                _ => {}
-            }
-            if let Err(error) = read.request.complete(READ_INTERRUPTED, 0, &read.body) {
+        for read in pending {
+            if let Err(error) = read.interrupt(READ_INTERRUPTED) {
                 failure.get_or_insert(error);
             }
         }
@@ -880,19 +922,30 @@ impl<'session> ConsoleHost<'session> {
         Ok(())
     }
 
-    pub(super) fn cancel_process_reads(&mut self, process: usize) {
-        // Waiting operations belong to their caller; shared file conversion
-        // state belongs to the file object and can outlive its creator.
-        self.input
-            .pending
-            .retain(|read| read.request.descriptor.process != process);
+    fn retire_reads(&mut self, retirement: ReadRetirement) -> io::Result<()> {
+        let mut failure = None;
+        for read in self.input.take_retired(retirement) {
+            if let Err(error) = read.interrupt(retirement.status()) {
+                // Kernel retirement can race the recipient's final thread
+                // exit. A request already cancelled by ConDrv has no remaining
+                // reply owner; it must not abort other live callers' dispatch.
+                if error.raw_os_error() != Some(ERROR_OPERATION_ABORTED as i32) {
+                    failure.get_or_insert(error);
+                }
+            }
+        }
+        failure.map_or(Ok(()), Err)
     }
 
-    pub(super) fn retire_input_object(&mut self, object: usize) {
+    pub(super) fn cancel_process_reads(&mut self, process: usize) -> io::Result<()> {
+        // Waiting operations belong to their caller; shared file conversion
+        // state belongs to the file object and can outlive its creator.
+        self.retire_reads(ReadRetirement::Process(process))
+    }
+
+    pub(super) fn retire_input_object(&mut self, object: usize) -> io::Result<()> {
         self.input.ansi_tail.remove(&object);
-        self.input
-            .pending
-            .retain(|read| read.request.descriptor.object != object);
+        self.retire_reads(ReadRetirement::Object(object))
     }
 }
 

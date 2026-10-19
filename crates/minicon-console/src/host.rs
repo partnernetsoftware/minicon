@@ -480,7 +480,7 @@ impl<'session> ConsoleHost<'session> {
                     pending.descriptor.function == 4
                         || pending.descriptor.process != descriptor.process
                 });
-                self.cancel_process_reads(descriptor.process);
+                self.cancel_process_reads(descriptor.process)?;
                 if let Some(control) = &mut self.control {
                     control.remove(descriptor.process);
                 }
@@ -496,7 +496,7 @@ impl<'session> ConsoleHost<'session> {
                     .map(|(id, _)| *id)
                     .collect();
                 for object in defaults {
-                    self.retire_input_object(object);
+                    self.retire_input_object(object)?;
                     self.handles.remove(&object);
                 }
                 self.update_input_event()?;
@@ -509,7 +509,7 @@ impl<'session> ConsoleHost<'session> {
                     .retain(|pending| pending.descriptor.object != descriptor.object);
                 // This is a kernel object finalizer, including closes after
                 // process disconnect; it need not carry a live process token.
-                self.retire_input_object(descriptor.object);
+                self.retire_input_object(descriptor.object)?;
                 self.handles.remove(&descriptor.object);
                 self.collect_buffers(output)?;
                 self.update_input_event()?;

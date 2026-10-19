@@ -153,6 +153,15 @@ impl Drop for Report {
             "queried",
             "created",
             "signal",
+            "retire-ready",
+            "retired",
+            "retire-tmp",
+            "closed",
+            "peer",
+            "peer-ready",
+            "peer-go",
+            "peer-tmp",
+            "go-two",
         ] {
             let _ = std::fs::remove_file(self.path.with_extension(extension));
         }
@@ -473,6 +482,156 @@ fn rust_console_native_cancelled_read_reclaims_buffers_and_orders_fallback_under
         assert_eq!(host.connected_clients(), 0);
         assert!(!host.has_pending_output());
         eprintln!("cooked-cancel-direct {kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_native_read_retirement_waits_for_fallback_publication() {
+    struct Reject;
+    impl std::io::Write for Reject {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    for kind in ["input-close", "disconnect", "remaining"] {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let child = launch_probe(&format!("cooked-retire-{kind}"), &report, &session);
+        let mut host = ConsoleHost::new();
+        let mut output = Vec::new();
+        let mut admitted = false;
+        let mut input_object = 0;
+        let mut completed_input = false;
+        let mut released = false;
+        let deadline = Instant::now() + Duration::from_secs(18);
+        while child.wait(Duration::ZERO).unwrap().is_none()
+            || host.connected_clients() != 0
+            || host.open_handles() != 0
+        {
+            assert!(Instant::now() < deadline, "retirement {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let pressure = !admitted
+                        && report.path.with_extension("retire-ready").exists()
+                        && output
+                            .windows(b"cooked-retire-ready:".len())
+                            .any(|w| w == b"cooked-retire-ready:");
+                    let function = request.descriptor.function;
+                    let object = request.descriptor.object;
+                    let before = output.clone();
+                    let call = if pressure {
+                        host.dispatch_with_output_ready(request, false, &mut Reject)
+                            .unwrap()
+                    } else {
+                        host.dispatch_with_output_ready(request, true, &mut output)
+                            .unwrap()
+                    };
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if call.api == Some(0x0100_0005) {
+                        assert!(call.pending);
+                        if input_object == 0 {
+                            input_object = object;
+                            assert_eq!(host.enqueue_text("ab", &mut output).unwrap(), 0);
+                            std::fs::write(report.path.with_extension("go"), b"read-admitted")
+                                .unwrap();
+                        } else {
+                            assert_eq!(kind, "remaining");
+                            assert_eq!(host.pending_reads(), 2);
+                            std::fs::write(
+                                report.path.with_extension("go-two"),
+                                b"peer-read-admitted",
+                            )
+                            .unwrap();
+                        }
+                    }
+                    if pressure
+                        && (kind != "input-close" && function == 2
+                            || kind == "input-close" && function == 4 && object == input_object)
+                    {
+                        if kind == "remaining" {
+                            assert_eq!(child.active_processes().unwrap(), 2);
+                            assert!(!call.pending);
+                            assert_eq!(output, before);
+                            assert_eq!(host.pending_reads(), 1);
+                            assert_eq!(host.connected_clients(), 1);
+                            assert!(!host.has_pending_output());
+                            assert_eq!(host.enqueue_text("z\r", &mut output).unwrap(), 1);
+                            admitted = true;
+                            continue;
+                        }
+                        if kind == "input-close" {
+                            assert!(completed_input);
+                            assert!(!call.pending);
+                            assert_eq!(output, before);
+                            assert_eq!(host.pending_reads(), 0);
+                            admitted = true;
+                            continue;
+                        }
+                        assert!(call.pending);
+                        assert_eq!(output, before);
+                        assert_eq!(
+                            host.pending_reads(),
+                            1,
+                            "retirement must not release the read before output admission"
+                        );
+                        assert_eq!(host.pending_output_requests(), 1);
+                        assert_eq!(host.connected_clients(), 1);
+                        assert!(!report.path.exists());
+                        let completed = host.resume_output(&mut output).unwrap().unwrap();
+                        assert_eq!((completed.function, completed.status), (function, 0));
+                        assert_eq!(host.pending_reads(), 0);
+                        assert_eq!(host.pending_output_requests(), 0);
+                        let mut peer = vt100::Parser::new(30, 120, 0);
+                        peer.process(&output);
+                        assert_eq!(peer.screen().contents(), "B>");
+                        assert_eq!(peer.screen().cursor_position(), (0, 2));
+                        admitted = true;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("{kind}: {error}"),
+            }
+            if kind == "input-close"
+                && !completed_input
+                && report.path.with_extension("closed").exists()
+            {
+                assert_eq!(
+                    host.pending_reads(),
+                    1,
+                    "closed user handle must leave the in-flight kernel read alive"
+                );
+                let keys = [(0x25, 0), (0, 88), (13, 13)].map(|(virtual_key, character)| {
+                    ConsoleInput::Key {
+                        down: true,
+                        repeat: 1,
+                        virtual_key,
+                        scan_code: 0,
+                        character,
+                        controls: 0,
+                    }
+                });
+                assert_eq!(host.enqueue_input(&keys, &mut output).unwrap(), 1);
+                completed_input = true;
+            }
+            if !released && admitted && report.path.exists() {
+                released = true;
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+            }
+        }
+        assert!(admitted && released);
+        assert_eq!(child.wait(Duration::ZERO).unwrap(), Some(0));
+        let value: Value = serde_json::from_slice(&std::fs::read(&report.path).unwrap()).unwrap();
+        assert_eq!(
+            value,
+            json!({"ok":kind=="input-close","error":if kind=="input-close" {0}else{5},"count":if kind=="input-close" {5}else{0},"detached":kind!="input-close","secondary":if kind=="remaining" {vec![122,13,10]}else{vec![]},"units":if kind=="input-close" {vec![97,88,98,13,10]}else{vec![]}})
+        );
+        assert_eq!(host.pending_reads(), 0);
+        assert_eq!(host.open_handles(), 0);
+        assert!(!host.has_pending_output());
+        eprintln!("cooked-retire-direct {kind}: {value}");
     }
 }
 
