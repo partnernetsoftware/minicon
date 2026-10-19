@@ -3821,6 +3821,104 @@ fn rust_console_pty_native_writeconsoleinput_roundtrips_actual_sdk_records() {
     );
 }
 
+fn input_flush_report(rust: bool) {
+    for kind in ["records", "pending", "wide", "bytes"] {
+        for suffix in ["", "-raw"] {
+            let mode = format!("input-flush-{kind}{suffix}");
+            let report = Report::new();
+            let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(&mode)
+                .arg(report.0.as_os_str());
+            let mut fixture = if rust {
+                Fixture::open(command.rust_console())
+            } else {
+                Fixture::open_backend(command, "conpty")
+            };
+            fixture.finish(0);
+            let observed = std::fs::read_to_string(&report.0).unwrap();
+            println!("input-flush rust={rust};mode={mode}\n{observed}");
+            let (build, observed) = observed.split_once('\n').unwrap();
+            assert!(
+                build
+                    .strip_prefix("build=")
+                    .unwrap()
+                    .parse::<u32>()
+                    .unwrap()
+                    > 0
+            );
+            let expected = match kind {
+                "records" => {
+                    "before=3,0\nread-only=0,5,3\noutput=0,6,3\ninvalid=0,6,3\nflushed=0,258\nempty=0,258\nnew=1,1,0\nread=[90]\n"
+                }
+                "pending" => "pending=0,258\nread=[65, 66, 67, 13, 10]\n",
+                "wide" => "first=65,0\nflushed=0,258\ntail=[66, 13, 10]\nafter=0,258\n",
+                "bytes" => "first=228,0\nflushed=0,258\ntail=[90]\nafter=0,258\n",
+                _ => unreachable!(),
+            };
+            if kind == "bytes" && !rust {
+                // Installed 20348's UTF-8 first byte is unreliable (also
+                // observed in the existing Break court). Keep its raw receipt;
+                // only flush/post-flush behavior is a reference oracle here.
+                let (first, observed) = observed.split_once('\n').unwrap();
+                let (first, count) = first
+                    .strip_prefix("first=")
+                    .unwrap()
+                    .split_once(',')
+                    .unwrap();
+                first.parse::<u8>().unwrap();
+                assert_eq!(count, "0");
+                assert_eq!(observed, expected.split_once('\n').unwrap().1);
+            } else {
+                assert_eq!(observed, expected, "{mode}");
+            }
+        }
+    }
+}
+
+#[test]
+fn rust_console_pty_native_input_flush_preserves_reads_and_caches() {
+    input_flush_report(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY native input flush differential court"]
+fn rust_console_client_native_input_flush_matches_system_conpty() {
+    input_flush_report(false);
+}
+
+#[test]
+fn rust_console_pty_native_input_flush_bypasses_output_pressure() {
+    for suffix in ["", "-raw"] {
+        let report = Report::new();
+        let (master, child) =
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(format!("input-flush-pressure{suffix}"))
+                .arg(report.0.as_os_str())
+                .rust_console()
+                .spawn()
+                .unwrap()
+                .into_parts();
+        assert_eq!(master.backend_kind(), "rust-console");
+        // No reader exists yet: progress must not depend on terminal drain.
+        report.wait_ready();
+        let observed = std::fs::read_to_string(report.0.with_extension("ready")).unwrap();
+        let (build, observed) = observed.split_once('\n').unwrap();
+        assert!(
+            build
+                .strip_prefix("build=")
+                .unwrap()
+                .parse::<u32>()
+                .unwrap()
+                > 0
+        );
+        assert_eq!(observed, "flushed=0,258\n");
+        let mut fixture = Fixture::with_parts(master, child);
+        std::fs::write(report.0.with_extension("go"), b"drain").unwrap();
+        fixture.finish(0);
+        assert!(fixture.bytes.ends_with(&vec![b'P'; 65536]));
+    }
+}
+
 #[test]
 fn rust_console_pty_vt_mode_preserves_native_keys_and_text_sequences() {
     for (mode, expected) in [("vt-key", "1,1,38,72,256"), ("vt-text-key", "27,91,65")] {

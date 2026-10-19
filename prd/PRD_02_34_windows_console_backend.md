@@ -27,6 +27,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] accepted CONNECT, opaque handles and DISCONNECT reclamation
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
+│   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -149,6 +150,9 @@ flowchart LR
     CAP --> SIGNAL
     CAP --> BRK["native Break / modifier validation"]
     BRK --> CACHE["flush events and ANSI bytes / preserve completed line text"]
+    INPUT --> FLUSH["native input flush / WRITE rights / no read interruption"]
+    FLUSH --> CACHE
+    FLUSH --> LIVE
     CACHE --> READY["cached text readable / post-Break native event reset"]
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
@@ -388,7 +392,7 @@ certification for all clients or OS releases.
 | ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. Rectangle/literal/pressure scope is specified below. | Complete raw UTF-16 layout, all code-page/grapheme policies and every concurrent query/output ordering variant. |
 | FillConsoleOutputCharacter A/W / FillConsoleOutputAttribute | Validate WRITE access; literal shared-cell/style edits, repetition counts, native readback, safe projection and cursor/drawing-state preservation. | Remaining legacy attribute flags/unpaired UTF-16, broader per-buffer/VT interactions and largest-grid performance. |
 | GetCursorInfo / SetCursorInfo / SetCursorPosition | Per-buffer native percentage/visibility and validated cursor position; shared cursor state and replay scope is specified below. | Pixel-exact frontend cursor geometry, complete window/scrolling interactions and additional system versions. |
-| GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
+| Native A/W title APIs and VT title events | See the accepted title/publication/lifetime and OSC termination leaves below for implemented behavior and native evidence. | Additional system versions, abnormal lifetime/title-stack behavior and broader control/encoding combinations. |
 | Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Other native-key transports, unattached-group compatibility, other signals and broader OS/client qualification. |
 | Other operations | Additional implemented APIs follow the accepted capability leaves below; unsupported calls return explicit NOT_SUPPORTED with no system-host fallback. | Remaining layer APIs and GUI/product qualification. |
 
@@ -2696,3 +2700,62 @@ hashes, compiler, pinned parser source and native executable identities. It
 also retains the unprimed cursor diagnostics and baseline/current observations;
 those failures are not relabeled as successful runs or evidence about other
 system versions. Backend completion and promotion are still unproven.
+
+### Native input-flush leaf
+
+The native input queue implements both `FlushConsoleInputBuffer`
+(`0x02000003`) and ConDrv RAW_FLUSH (`8`, reached by `FlushFileBuffers`),
+using the same bounded input-state operation. Successful flush removes unread
+records and ANSI conversion tails and resets input readiness; already cooked
+UTF-16 text and an unfinished cooked read remain live. It does not generate a
+control event, cancel a read or publish output. Read-only input, output and
+invalid handles must fail without touching the queue. No caller-sized
+allocation or new process authority belongs in this operation.
+
+The leaf depends on native handle rights, per-file byte tails, deferred input
+and input-ready event ownership. It must bypass output backpressure because it
+cannot publish terminal bytes. Native SDK callers exercise queued records,
+write-only versus read-only rights, empty/repeated flush, subsequent input,
+completed cooked text, multibyte byte tails and a live cooked reader through
+both call paths. Runtime mutation and final-source receipts qualify the
+implemented scope; broader input conversion and simultaneous-reader fairness
+remain separate work. The pinned reference is `src/server/ApiSorter.cpp`,
+`src/server/ApiDispatchers.cpp`, `src/server/IoSorter.cpp` and
+`src/host/inputBuffer.cpp` at the revision recorded above. Public SDK authority
+is [FlushConsoleInputBuffer](https://learn.microsoft.com/en-us/windows/console/flushconsoleinputbuffer).
+
+The first qualified native scenarios are Windows x86_64 build 20348, through
+`minicon-platform::pty`, with eight SDK cases per provider (record queue,
+unfinished cooked line, completed UTF-16 tail and UTF-8 byte tail, each API and
+RAW_FLUSH). The owned byte case checks the first UTF-8 byte as 228. As in the
+existing Break court, the installed reference's first byte varies; its raw
+receipt is retained but that byte's value is excluded from the reference
+oracle. Queue counts, flush readiness, discarded byte tails and subsequent Z
+remain exact assertions on both providers. No UTF-8 first-byte or CP932
+capacity compatibility is inferred from the exploratory failed runs.
+
+The pressure court runs both call paths with no output reader after an initial
+title and 65,536 literal output bytes fill the adapter ring. Flush and its
+native count/wait checks must finish before output drain starts. Reader drain
+then preserves all literal bytes and reaches EOF. The leaf reuses the existing
+keyboard-queue flush operation while leaving control delivery and read
+interruption in their separate owners; no second input store is introduced.
+
+Local qualification: `input-flush-final-focused.log` records three passes;
+`input-flush-final-suite.log` records 257 selected passes, including existing
+PowerShell/Node, output-pressure, private-Job lifecycle and 17 alignment tests.
+Eleven runtime mutations cover both dispatch routes, queue removal, completed
+UTF-16 retention, pending-read lifetime, byte-tail removal, ready-event reset,
+WRITE rights, both pressure bypasses and the independent reference fixture.
+All mutated bytes are restored and hashed. Seven checks pass: strict default
+and enabled workspace all-targets Clippy, four portable-library cross-target
+checks and Windows ARM64 platform PTY/Rust-console all-targets compilation.
+Native execution remains Windows x86_64 build 20348; cross-target compilation
+does not establish runtime compatibility.
+
+Final documentation is followed by formatting and 17 alignment checks.
+`input-flush-final-receipt.json` binds the final tree, source/guard/log hashes,
+compiler, six pinned reference files and executed client/probe/test images.
+Exploratory wrong-backend selection, UTF-8 prefix and CP932 failures are retained
+as diagnostics; they are not passing qualification. The general backend,
+portable session composition and default promotion remain incomplete.

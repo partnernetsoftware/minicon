@@ -77,6 +77,18 @@ struct PendingRead<'session> {
 }
 
 impl<'session> ConsoleHost<'session> {
+    pub(super) fn flush_input(&mut self, process: usize, object: usize) -> io::Result<i32> {
+        let status = self.handle_status(process, object, Some(HandleKind::Input), objects::WRITE);
+        if status == SUCCESS {
+            // Queue flush is also used by keyboard Break, but native Flush
+            // does not interrupt readers or send a signal. Completed UTF-16
+            // and an in-progress cooked line are independent of this queue.
+            self.input.flush_keyboard_input();
+            self.update_input_event()?;
+        }
+        Ok(status)
+    }
+
     pub(super) fn write_input_records(
         &mut self,
         request: DriverRequest<'session>,

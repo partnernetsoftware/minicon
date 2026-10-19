@@ -20,6 +20,8 @@ mod indexed_output;
 #[cfg(windows)]
 mod inheritance;
 #[cfg(windows)]
+mod input_flush;
+#[cfg(windows)]
 mod mixed_output;
 #[cfg(windows)]
 mod output_modes;
@@ -70,6 +72,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode.starts_with("input-flush-") {
+        return input_flush::run(mode, std::path::Path::new(&arguments[1]));
+    }
     if mode == "titles-termination" {
         return titles::termination(std::path::Path::new(&arguments[1]));
     }

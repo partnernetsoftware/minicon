@@ -235,6 +235,7 @@ impl<'session> ConsoleHost<'session> {
         // Fail closed for future API additions: only known non-emitting calls
         // bypass ordered output. Input reads may cook and echo queued keys.
         let bypass = descriptor.function == 3
+            || descriptor.function == 8
             || (descriptor.function == 1 && !self.processes.is_empty())
             || (matches!(descriptor.function, 2 | 4) && !self.close_may_publish(descriptor))
             || (descriptor.function == 7
@@ -242,6 +243,7 @@ impl<'session> ConsoleHost<'session> {
                     api,
                     Some(
                         0x0200_0001
+                            | 0x0200_0003
                             | 0x0100_0003
                             | 0x0100_0000
                             | 0x0100_0001
@@ -506,6 +508,10 @@ impl<'session> ConsoleHost<'session> {
             }
             6 => return self.defer_text_read(request, Vec::new(), true, output),
             7 => return self.dispatch_api(request, output),
+            8 => {
+                receipt.status = self.flush_input(descriptor.process, descriptor.object)?;
+                request.complete(receipt.status, 0, &[])?;
+            }
             _ => {
                 receipt.status = NOT_SUPPORTED;
                 request.reject_unsupported()?;
@@ -559,6 +565,9 @@ impl<'session> ConsoleHost<'session> {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0200_0003 => {
+                receipt.status = self.flush_input(descriptor.process, descriptor.object)?;
+            }
             0x0300_0029 if body.len() >= 4 => {
                 // Native connection registry only; neither global process
                 // enumeration nor caller-sized allocation belongs here.
