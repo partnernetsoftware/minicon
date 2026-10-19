@@ -143,9 +143,11 @@ impl ConsoleHost<'_> {
 
     pub(super) fn collect_buffers(&mut self, output: &mut impl Write) -> io::Result<()> {
         let live = |id: usize| {
-            self.handles
-                .values()
-                .any(|h| h.kind == HandleKind::Output && h.buffer == id)
+            self.input.retains_output(id)
+                || self
+                    .handles
+                    .values()
+                    .any(|h| h.kind == HandleKind::Output && h.buffer == id)
         };
         let unused: Vec<_> = self
             .buffers

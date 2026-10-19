@@ -144,6 +144,8 @@ impl Drop for Report {
         let _ = std::fs::remove_file(self.path.with_extension("ready"));
         let _ = std::fs::remove_file(self.path.with_extension("go"));
         let _ = std::fs::remove_file(self.path.with_extension("peek"));
+        let _ = std::fs::remove_file(self.path.with_extension("switched"));
+        let _ = std::fs::remove_file(self.path.with_extension("opened"));
         let _ = std::fs::remove_dir(self.path.parent().unwrap());
     }
 }
@@ -250,6 +252,97 @@ fn rust_console_native_readconsole_preserves_caller_supplied_initial_characters(
         result["units"],
         json!("pre-x\r\n".encode_utf16().collect::<Vec<_>>())
     );
+}
+
+#[test]
+fn rust_console_native_cooked_read_binds_before_first_key_and_retains_closed_output() {
+    for kind in ["switch", "edited", "close", "initial", "late-prompt"] {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let child = launch_probe(&format!("cooked-buffer-{kind}"), &report, &session);
+        let mut host = ConsoleHost::new();
+        let mut output = Vec::new();
+        let mut pending = false;
+        let mut supplied = false;
+        let mut released = false;
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while child.wait(Duration::ZERO).unwrap().is_none() || host.connected_clients() != 0 {
+            assert!(Instant::now() < deadline, "cooked-buffer {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let call = host.dispatch(request, &mut output).unwrap();
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if call.api == Some(0x0100_0005) {
+                        assert!(call.pending && !pending);
+                        pending = true;
+                        if kind == "edited" {
+                            assert_eq!(host.enqueue_text("ab", &mut output).unwrap(), 0);
+                        }
+                        std::fs::write(report.path.with_extension("go"), b"accepted").unwrap();
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("{kind}: {error}"),
+            }
+            if !supplied && report.path.with_extension("switched").exists() {
+                assert!(pending);
+                supplied = true;
+                let before = output.clone();
+                if !matches!(kind, "edited" | "initial") {
+                    assert_eq!(host.enqueue_text("ab", &mut output).unwrap(), 0);
+                }
+                let events = [(0x25, 0), (0, 88), (13, 13)].map(|(virtual_key, character)| {
+                    ConsoleInput::Key {
+                        down: true,
+                        repeat: 1,
+                        virtual_key,
+                        scan_code: 0,
+                        character,
+                        controls: 0,
+                    }
+                });
+                assert_eq!(host.enqueue_input(&events, &mut output).unwrap(), 1);
+                if kind != "share" {
+                    assert_eq!(
+                        output, before,
+                        "inactive echo leaked into the active buffer"
+                    );
+                }
+            }
+            if !released && report.path.exists() {
+                released = true;
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+            }
+        }
+        assert!(pending && supplied && released);
+        assert_eq!(child.wait(Duration::ZERO).unwrap(), Some(0));
+        let value: Value = serde_json::from_slice(&std::fs::read(&report.path).unwrap()).unwrap();
+        assert_eq!(value["units"], json!([97, 88, 98, 13, 10]));
+        assert_eq!(
+            value["created_after_read"],
+            if kind == "close" { 15 } else { 0 }
+        );
+        assert_eq!(value["base"], "B>");
+        assert_eq!(value["base_cursor"], json!([0, 2]));
+        if kind != "close" {
+            assert_eq!(
+                value["read_buffer"],
+                if kind == "late-prompt" {
+                    "A>LO>aXb"
+                } else {
+                    "A>aXb"
+                }
+            );
+            assert_eq!(value["read_cursor"], json!([1, 0]));
+        }
+        assert_eq!(host.pending_reads(), 0);
+        assert_eq!(host.open_handles(), 0);
+        assert_eq!(host.connected_clients(), 0);
+        let mut peer = vt100::Parser::new(30, 120, 0);
+        peer.process(&output);
+        assert_eq!(peer.screen().contents(), "B>");
+        eprintln!("cooked-buffer-direct {kind}: {value}");
+    }
 }
 
 #[test]

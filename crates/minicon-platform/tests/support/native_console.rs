@@ -14,6 +14,9 @@ mod console_file;
 #[cfg(windows)]
 mod control;
 #[cfg(windows)]
+#[path = "../../../minicon-console/tests/support/cooked_buffer.rs"]
+mod cooked_buffer;
+#[cfg(windows)]
 mod cooked_controls;
 #[cfg(windows)]
 mod cooked_edit;
@@ -84,6 +87,9 @@ fn run() -> std::io::Result<()> {
     let mode = arguments[0].to_str().unwrap_or("");
     if let Some(kind) = mode.strip_prefix("cooked-edit-") {
         return cooked_edit::run(kind, std::path::Path::new(&arguments[1]));
+    }
+    if let Some(kind) = mode.strip_prefix("cooked-buffer-") {
+        return cooked_buffer::run(kind, std::path::Path::new(&arguments[1]), false);
     }
     if let Some(kind) = mode.strip_prefix("cooked-controls-") {
         return cooked_controls::run(kind, std::path::Path::new(&arguments[1]));

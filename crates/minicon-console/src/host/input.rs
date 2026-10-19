@@ -52,6 +52,11 @@ pub(super) struct InputState<'session> {
 }
 
 impl InputState<'_> {
+    pub(super) fn retains_output(&self, buffer: usize) -> bool {
+        self.pending
+            .iter()
+            .any(|read| read.output_buffer == Some(buffer))
+    }
     fn merged_record(&self, events: &[ConsoleInput], append: bool) -> Option<ConsoleInput> {
         if append && events.len() == 1 {
             self.events
@@ -116,6 +121,7 @@ struct PendingRead<'session> {
     editor: edit::Editor,
     editing: bool,
     echo: Option<echo::Echo>,
+    output_buffer: Option<usize>,
 }
 
 impl<'session> ConsoleHost<'session> {
@@ -396,7 +402,8 @@ impl<'session> ConsoleHost<'session> {
         // existing text reader/file conversion ownership.
         self.input.record_tail.clear();
         let previous = self.input.pending.len();
-        self.input.pending.push_back(PendingRead {
+        let cooked = self.input_mode & 2 != 0 && self.input_mode & 0x200 == 0;
+        let mut read = PendingRead {
             request,
             body,
             kind: ReadKind::Text {
@@ -406,12 +413,20 @@ impl<'session> ConsoleHost<'session> {
                 wakeup,
             },
             editor: edit::Editor::new(line.len(), self.input.insert_mode.unwrap_or(true)),
-            editing: false,
+            editing: cooked,
             echo: None,
+            output_buffer: cooked.then_some(self.active_buffer),
             line,
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
-        });
+        };
+        // Initial caller text already has an origin at API entry. An empty
+        // read deliberately discovers its origin at the first key, permitting
+        // applications to publish their prompt after starting a read.
+        if cooked && self.input_mode & 4 != 0 && !read.line.is_empty() {
+            self.prepare_cooked_echo(&mut read)?;
+        }
+        self.input.pending.push_back(read);
         receipt.pending = self.service_pending(output)? <= previous;
         Ok(receipt)
     }
@@ -489,6 +504,7 @@ impl<'session> ConsoleHost<'session> {
             editor: edit::Editor::new(0, true),
             editing: false,
             echo: None,
+            output_buffer: None,
             controls: 0,
             echo_decoder: crate::terminal::Utf16Decoder::default(),
         });
@@ -534,7 +550,14 @@ impl<'session> ConsoleHost<'session> {
                         .get(&read.request.descriptor.object)
                         .is_some_and(|tail| !tail.is_empty());
                     if self.input.ready.is_empty() && !has_tail {
-                        self.cook_text(&mut read, wakeup, output)?;
+                        let buffer = read.output_buffer.unwrap_or(self.active_buffer);
+                        if buffer == self.active_buffer {
+                            self.cook_text(&mut read, wakeup, output)?;
+                        } else {
+                            self.with_buffer(buffer, |host| {
+                                host.cook_text(&mut read, wakeup, &mut io::sink())
+                            })?;
+                        }
                     }
                     if self.input.ready.is_empty() && !has_tail {
                         None
@@ -567,6 +590,9 @@ impl<'session> ConsoleHost<'session> {
             completed += 1;
         }
         self.update_input_event()?;
+        if completed != 0 {
+            self.collect_buffers(output)?;
+        }
         Ok(completed)
     }
 

@@ -33,7 +33,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped single-write input coalescing: shared admission and checked repeats
 │   ├── [-] cooked editing: processed backspace/newline and wakeup-control precedence
 │   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
-│   │   └── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
+│   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
+│   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -101,6 +102,9 @@ flowchart LR
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
     INPUT --> COOK["one native UTF-16 editor / silent and echoed reads"]
+    COOK --> BIND["native read owns starting drawing buffer until completion"]
+    BIND --> HIDECHO["hidden buffer edits / no active-buffer publication"]
+    BIND --> COLLECT["closed buffer retained during read / collected after completion"]
     COOK --> ELAYOUT["temporary common-parser layout / bounded origin search"]
     ELAYOUT --> DCURSOR["absolute drawing cursor / delayed wrap"]
     DCURSOR --> VT
@@ -3171,6 +3175,9 @@ complete editor, backend, portable session or default-promotion claim follows.
 
 ### Echoed cooked editing over the common screen
 
+Native read/buffer lifetime is specified in
+[cooked-read drawing-buffer lifetime](#cooked-read-drawing-buffer-lifetime).
+
 Invariant: echoed and silent non-VT line reads use the same native UTF-16 editor.
 Keyboard text is laid out by the common parser, not by counting UTF-16 units or
 maintaining a Windows shadow grid. Two scratch drawing rows with bounded history
@@ -3214,8 +3221,8 @@ current cursor; exhausted search/publication quotas still fail explicitly.
 Paint extent is distinct from cursor position: in no-wrap mode the occupied final
 cell is included even though the cursor remains in that cell. Width/output-mode
 changes during an active echoed read require relayout and currently fail locally
-with Unsupported. Active-buffer switching/read-buffer binding, arbitrary VT
-margins, concurrent output/mode/resize, word/history keys, broad native-key
+with Unsupported. Further buffer/cancellation/mixed-reader combinations, arbitrary
+VT margins, concurrent output/mode/resize, word/history keys, broad native-key
 transport, worst-case input work and complete interactive compatibility remain
 open. No default-provider or release selection changes in this delivery.
 
@@ -3254,3 +3261,75 @@ Final formatting and 17 alignment checks follow this documentation.
 `cooked-echo-final-receipt.json` binds the staged source tree, guard/log hashes,
 eight executed x64 image identities, compiler and two pinned upstream blobs.
 The open boundaries above remain prerequisites for broader qualification.
+
+### Cooked-read drawing-buffer lifetime
+
+Invariant: a non-VT cooked read retains the active native drawing-buffer identity
+at API entry. Subsequent keyboard input edits that same buffer even after another
+buffer becomes active. Hidden text and Enter update only the retained stream,
+through the existing native buffer swap and common screen/viewport mechanisms;
+they publish no bytes to the currently displayed stream. Activation later reveals
+the committed edit. No OS-specific buffer identity enters the portable terminal API.
+
+Initial caller text captures its drawing origin at API entry. Empty reads resolve
+their origin at the first edit, permitting applications to start a read and then
+print the prompt. This distinction follows the pinned `readDataCooked.cpp`:
+constructor initial-data layout versus lazy `_getOriginInViewport`. A pending
+read participates in native buffer liveness independently of external output
+handles. Closing the final external handle cannot invalidate the read. Completion
+releases retention and runs collection, so an otherwise-closed hidden buffer no
+longer consumes a slot. Dependencies are existing deferred request ownership,
+native buffer selection/collection, the common editor and staged echo publication.
+Missing buffer state remains an explicit error; no active-buffer fallback hides it.
+
+The shared independent SDK fixture is included by both console-probe executables.
+The direct ConDrv court observes an accepted pending ReadConsoleW before allowing
+the second thread to switch buffers. Its five cases cover empty and already-edited
+reads, final external close, initial text followed by native cursor relocation,
+and a prompt printed after read admission. It checks no hidden publication bytes,
+API UTF-16, native buffer cells/cursors and final frontend text. The platform PTY
+court runs switching and final-close cases on each provider, compares the complete
+native report and checks the revealed frontend row and complete restored text. Each close
+case simultaneously holds fifteen fresh buffers after completion to prove slot
+reclamation, rather than relying only on successful input or eventual process exit.
+
+Native internal output share/access compatibility remains unqualified. Both
+observed SDK paths accept an output read open with FILE_SHARE_READ alone, including
+the direct ConDrv device path; this does not demonstrate the newer pinned host's
+internal AllocateIoHandle policy. Cancellation-time collection/fallback, mixed
+readers, mode changes, general concurrent output/geometry/margins and full native
+interactive compatibility remain open. The library stays independent and the
+experimental provider/default and release selections are unchanged.
+
+`cooked-echo-buffer-reference-observe.log` and
+`cooked-echo-buffer-direct-open-observe.log` retain that exploratory SDK open
+observation. Their failed expectation of error 32 is not counted as qualification
+of internal sharing; the speculative sharing change was removed.
+
+Local qualification: `cooked-buffer-final-focused.log` records three passing
+tests and nine native scenarios: five direct-driver cases and two SDK cases on
+each PTY provider. The tests are
+`rust_console_native_cooked_read_binds_before_first_key_and_retains_closed_output`,
+`rust_console_pty_cooked_reads_retain_their_original_drawing_buffer` and
+`rust_console_client_cooked_read_buffers_compare_system_conpty`. System-reference
+selection clears both console-agent forcing variables. The direct court checks
+pending-read, handle and connection retirement; missing prerequisites fail.
+
+`cooked-buffer-negative-audit.json` records eight compiling, byte-restored runtime
+faults, failing all three new tests. They cover buffer adoption, hidden publication,
+retention through final close, completion collection, initial-text origin, delayed
+empty-read origin, preservation of captured editing state and the independent
+reference caller. Removing completion collection exhausts buffer slots in the
+native SDK fixture; successful line delivery alone cannot satisfy that test.
+
+`cooked-buffer-final-suite.log` records 282 selected passes including existing
+PowerShell 5/7, Node, cmd, input/control, output-pressure, geometry and lifecycle
+coverage. Its earlier run is reused only after all seven changed implementation/
+test files match the final restored hashes. Seven static/cross checks pass:
+strict default/enabled workspace all-targets Clippy, four portable-library targets
+and Windows ARM64 platform PTY/Rust-console all-targets compilation. Native
+execution remains Windows x86_64 build 20348; other targets are compile-only.
+Final formatting and 17 alignment checks follow this documentation.
+`cooked-buffer-final-receipt.json` binds the staged source tree, compiler, logs,
+faults, eight executed x64 image identities and two pinned upstream source blobs.
+This qualifies the named lifetime slice, not the open boundaries above.

@@ -172,6 +172,7 @@ impl Drop for Report {
             "read-panic",
             "go",
             "opened",
+            "switched",
             "opened-ready",
             "detached",
             "first",
@@ -4372,6 +4373,54 @@ fn cooked_echo_expected(kind: &str, rust: bool) -> String {
 #[test]
 fn rust_console_pty_cooked_echo_edits_use_shared_layout() {
     cooked_echo_cases(true);
+}
+
+fn cooked_buffer_cases(rust: bool) {
+    for kind in ["switch", "close"] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("cooked-buffer-{kind}"))
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 8, cols: 16 });
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        fixture.until("cooked-buffer-revealed:");
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        let expected = if kind == "close" {
+            r#"{"units":[97, 88, 98, 13, 10],"created_after_read":15,"base":"B>","base_cursor":[0,2],"read_buffer":"","read_cursor":[-1,-1]}"#
+        } else {
+            r#"{"units":[97, 88, 98, 13, 10],"created_after_read":0,"base":"B>","base_cursor":[0,2],"read_buffer":"A>aXb","read_cursor":[1,0]}"#
+        };
+        assert_eq!(value, expected);
+        let mut peer = vt100::Parser::new(8, 16, 0);
+        peer.process(&fixture.bytes);
+        let first = peer.screen().rows(0, 16).next().unwrap();
+        assert_eq!(
+            first.trim_end_matches(' '),
+            if kind == "close" { "B>" } else { "A>aXb" }
+        );
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.until("cooked-buffer-end:");
+        fixture.finish(0);
+        let mut peer = vt100::Parser::new(8, 16, 0);
+        peer.process(&fixture.bytes);
+        assert_eq!(peer.screen().contents(), "B>");
+        eprintln!("cooked-buffer rust={rust};kind={kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_pty_cooked_reads_retain_their_original_drawing_buffer() {
+    cooked_buffer_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY cooked-read buffer/lifetime court"]
+fn rust_console_client_cooked_read_buffers_compare_system_conpty() {
+    cooked_buffer_cases(false);
 }
 
 #[test]
