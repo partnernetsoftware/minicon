@@ -12,26 +12,31 @@ pub struct RowRange {
 
 impl RowRange {
     /// Returns an empty range.
+    #[must_use]
     pub const fn empty() -> Self {
         Self { first: 0, end: 0 }
     }
 
     /// Returns whether this range contains no rows.
+    #[must_use]
     pub const fn is_empty(self) -> bool {
         self.first >= self.end
     }
 
     /// Returns the first row in the range.
+    #[must_use]
     pub const fn first(self) -> u32 {
         self.first
     }
 
     /// Returns the exclusive end row in the range.
+    #[must_use]
     pub const fn end(self) -> u32 {
         self.end
     }
 
     /// Returns whether a row is covered by this range.
+    #[must_use]
     pub fn contains(self, row: u16) -> bool {
         let row = u32::from(row);
         row >= self.first && row < self.end
@@ -71,6 +76,7 @@ impl RowRange {
     }
 
     /// Clips this range to a row count.
+    #[must_use]
     pub fn clip(self, row_count: u16) -> Self {
         let end = self.end.min(u32::from(row_count));
         if self.first >= end {
@@ -112,6 +118,7 @@ pub struct ScreenDamage {
 
 impl ScreenDamage {
     /// Returns an empty damage value.
+    #[must_use]
     pub const fn empty() -> Self {
         Self {
             rows: RowRange::empty(),
@@ -126,6 +133,7 @@ impl ScreenDamage {
     }
 
     /// Returns whether no screen state or visible pixel may have changed.
+    #[must_use]
     pub const fn is_empty(self) -> bool {
         !self.full
             && !self.cursor_changed
@@ -136,41 +144,49 @@ impl ScreenDamage {
     }
 
     /// Returns the conservative changed row range.
+    #[must_use]
     pub const fn rows(self) -> RowRange {
         self.rows
     }
 
     /// Returns whether a full terminal raster is required.
+    #[must_use]
     pub const fn needs_full_raster(self) -> bool {
         self.full || self.viewport_changed
     }
 
     /// Returns whether the cursor overlay may have changed.
+    #[must_use]
     pub const fn cursor_changed(self) -> bool {
         self.cursor_changed
     }
 
     /// Returns the cursor position before the first cursor-affecting mutation.
+    #[must_use]
     pub const fn cursor_before(self) -> Option<(u16, u16)> {
         self.cursor_before
     }
 
     /// Returns the cursor position after the accumulated mutations.
+    #[must_use]
     pub const fn cursor_after(self) -> Option<(u16, u16)> {
         self.cursor_after
     }
 
     /// Returns whether visible-row mapping changed.
+    #[must_use]
     pub const fn viewport_changed(self) -> bool {
         self.viewport_changed
     }
 
     /// Returns whether the retained scrollback depth changed.
+    #[must_use]
     pub const fn scrollback_changed(self) -> bool {
         self.scrollback_changed
     }
 
     /// Returns whether any terminal model state changed.
+    #[must_use]
     pub const fn model_changed(self) -> bool {
         self.model_changed
     }
@@ -235,7 +251,7 @@ impl ScreenDamage {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct GridDamage {
+pub struct GridDamage {
     pub(crate) rows: RowRange,
     pub(crate) full: bool,
     pub(crate) viewport_changed: bool,

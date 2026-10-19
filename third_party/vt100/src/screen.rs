@@ -6,6 +6,7 @@ const MODE_APPLICATION_CURSOR: u8 = 0b0000_0010;
 const MODE_HIDE_CURSOR: u8 = 0b0000_0100;
 const MODE_ALTERNATE_SCREEN: u8 = 0b0000_1000;
 const MODE_BRACKETED_PASTE: u8 = 0b0001_0000;
+const MODE_NO_WRAP: u8 = 0b0010_0000;
 
 /// The xterm mouse handling mode currently in use.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
@@ -95,10 +96,7 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub(crate) fn new(
-        size: crate::grid::Size,
-        scrollback_len: usize,
-    ) -> Self {
+    pub(crate) fn new(size: crate::grid::Size, scrollback_len: usize) -> Self {
         let mut grid = crate::grid::Grid::new(size, scrollback_len);
         grid.allocate_rows();
         Self {
@@ -371,9 +369,15 @@ impl Screen {
     }
 
     fn write_contents_formatted(&self, contents: &mut Vec<u8>) {
+        if !self.auto_wrap() {
+            contents.extend_from_slice(b"\x1b[?7h");
+        }
         crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
         let prev_attrs = self.grid().write_contents_formatted(contents);
         self.attrs.write_escape_code_diff(contents, &prev_attrs);
+        if !self.auto_wrap() {
+            contents.extend_from_slice(b"\x1b[?7l");
+        }
     }
 
     /// Returns the formatted visible contents of the terminal by row,
@@ -433,16 +437,20 @@ impl Screen {
     }
 
     fn write_contents_diff(&self, contents: &mut Vec<u8>, prev: &Self) {
+        if !self.auto_wrap() || !prev.auto_wrap() {
+            contents.extend_from_slice(b"\x1b[?7h");
+        }
         if self.hide_cursor() != prev.hide_cursor() {
             crate::term::HideCursor::new(self.hide_cursor())
                 .write_buf(contents);
         }
-        let prev_attrs = self.grid().write_contents_diff(
-            contents,
-            prev.grid(),
-            prev.attrs,
-        );
+        let prev_attrs =
+            self.grid()
+                .write_contents_diff(contents, prev.grid(), prev.attrs);
         self.attrs.write_escape_code_diff(contents, &prev_attrs);
+        if !self.auto_wrap() {
+            contents.extend_from_slice(b"\x1b[?7l");
+        }
     }
 
     /// Returns a sequence of terminal byte streams sufficient to turn the
@@ -501,14 +509,10 @@ impl Screen {
     }
 
     fn write_input_mode_formatted(&self, contents: &mut Vec<u8>) {
-        crate::term::ApplicationKeypad::new(
-            self.mode(MODE_APPLICATION_KEYPAD),
-        )
-        .write_buf(contents);
-        crate::term::ApplicationCursor::new(
-            self.mode(MODE_APPLICATION_CURSOR),
-        )
-        .write_buf(contents);
+        crate::term::ApplicationKeypad::new(self.mode(MODE_APPLICATION_KEYPAD))
+            .write_buf(contents);
+        crate::term::ApplicationCursor::new(self.mode(MODE_APPLICATION_CURSOR))
+            .write_buf(contents);
         crate::term::BracketedPaste::new(self.mode(MODE_BRACKETED_PASTE))
             .write_buf(contents);
         crate::term::MouseProtocolMode::new(
@@ -550,8 +554,7 @@ impl Screen {
             )
             .write_buf(contents);
         }
-        if self.mode(MODE_BRACKETED_PASTE) != prev.mode(MODE_BRACKETED_PASTE)
-        {
+        if self.mode(MODE_BRACKETED_PASTE) != prev.mode(MODE_BRACKETED_PASTE) {
             crate::term::BracketedPaste::new(self.mode(MODE_BRACKETED_PASTE))
                 .write_buf(contents);
         }
@@ -594,10 +597,8 @@ impl Screen {
 
     fn write_attributes_formatted(&self, contents: &mut Vec<u8>) {
         crate::term::ClearAttrs.write_buf(contents);
-        self.attrs.write_escape_code_diff(
-            contents,
-            &crate::attrs::Attrs::default(),
-        );
+        self.attrs
+            .write_escape_code_diff(contents, &crate::attrs::Attrs::default());
     }
 
     /// Returns the current cursor position of the terminal.
@@ -606,7 +607,20 @@ impl Screen {
     #[must_use]
     pub fn cursor_position(&self) -> (u16, u16) {
         let pos = self.grid().pos();
-        (pos.row, pos.col)
+        (
+            pos.row,
+            if self.auto_wrap() {
+                pos.col
+            } else {
+                pos.col.min(self.grid().size().cols.saturating_sub(1))
+            },
+        )
+    }
+
+    /// Whether DEC automatic right-margin wrapping (DECAWM) is enabled.
+    #[must_use]
+    pub fn auto_wrap(&self) -> bool {
+        !self.mode(MODE_NO_WRAP)
     }
 
     /// Returns terminal escape sequences sufficient to set the current
@@ -825,11 +839,11 @@ impl Screen {
         // DECSET mouse modes are stacked (e.g. 1000 then 1002, or a later
         // 1000h refresh after 1002h). Replacing blindly would downgrade
         // button-motion to press-release and break TUI click/drag pass-through.
-        if mouse_mode_rank(mode) >= mouse_mode_rank(self.mouse_protocol_mode) {
-            if self.mouse_protocol_mode != mode {
-                self.mouse_protocol_mode = mode;
-                self.damage.mark_model();
-            }
+        if mouse_mode_rank(mode) >= mouse_mode_rank(self.mouse_protocol_mode)
+            && self.mouse_protocol_mode != mode
+        {
+            self.mouse_protocol_mode = mode;
+            self.damage.mark_model();
         }
     }
 
@@ -859,7 +873,7 @@ impl Screen {
 
 impl Screen {
     pub(crate) fn text(&mut self, c: char) {
-        let pos = self.grid().pos();
+        let mut pos = self.grid().pos();
         let size = self.grid().size();
         let attrs = self.attrs;
 
@@ -879,6 +893,16 @@ impl Screen {
         // moving the cursor or manufacturing an invalid continuation cell.
         if size.rows == 0 || size.cols == 0 || width > size.cols {
             return;
+        }
+        if !self.auto_wrap() && width > 0 {
+            // A wide glyph cannot straddle the right margin without wrapping.
+            // Leave it unplaced rather than splitting its continuation cell.
+            let column = pos.col.min(size.cols - 1);
+            if column > size.cols - width {
+                return;
+            }
+            self.grid_mut().col_set(column);
+            pos = self.grid().pos();
         }
 
         // Mark before any wrapping, scrolling, combining, or wide-cell
@@ -914,7 +938,9 @@ impl Screen {
                 wrap = true;
             }
         }
-        self.grid_mut().col_wrap(width, wrap);
+        if self.auto_wrap() {
+            self.grid_mut().col_wrap(width, wrap);
+        }
         let pos = self.grid().pos();
         self.damage.mark_row(pos.row);
 
@@ -1340,6 +1366,10 @@ impl Screen {
         for param in params {
             match param {
                 [1] => self.set_mode(MODE_APPLICATION_CURSOR),
+                [7] => {
+                    self.clear_mode(MODE_NO_WRAP);
+                    self.damage.mark_full();
+                }
                 [6] => {
                     self.mark_cursor();
                     self.grid_mut().set_origin_mode(true);
@@ -1383,6 +1413,10 @@ impl Screen {
         for param in params {
             match param {
                 [1] => self.clear_mode(MODE_APPLICATION_CURSOR),
+                [7] => {
+                    self.set_mode(MODE_NO_WRAP);
+                    self.damage.mark_full();
+                }
                 [6] => {
                     self.mark_cursor();
                     self.grid_mut().set_origin_mode(false);
@@ -1565,5 +1599,63 @@ fn u16_to_u8(i: u16) -> Option<u8> {
     } else {
         // safe because we just ensured that the value fits in a u8
         Some(i.try_into().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod autowrap_tests {
+    #[test]
+    fn autowrap_mode_tracks_streaming_controls_and_reset() {
+        let mut parser = crate::Parser::new(3, 4, 0);
+        parser.process(b"abcd");
+        assert!(parser.screen().auto_wrap());
+        parser.process(b"\x1b[?7");
+        parser.process(b"lXYZ");
+        assert!(!parser.screen().auto_wrap());
+        assert_eq!(parser.screen().cursor_position(), (0, 3));
+        assert_eq!(parser.screen().contents(), "abcZ");
+        parser.process("中".as_bytes());
+        assert_eq!(parser.screen().contents(), "abcZ");
+        parser.process(b"\x1b[?7hQ");
+        assert_eq!(parser.screen().cursor_position(), (1, 1));
+        parser.process(b"\x1bc");
+        assert!(parser.screen().auto_wrap());
+        assert_eq!(parser.screen().cursor_position(), (0, 0));
+    }
+    #[test]
+    fn autowrap_state_serialization_preserves_later_writes() {
+        let mut parser = crate::Parser::new(3, 4, 0);
+        parser.process(b"abcde");
+        let previous = parser.screen().clone();
+        parser.process(b"\x1b[?7l12345");
+        let mut full = crate::Parser::new(3, 4, 0);
+        full.process(&parser.screen().state_formatted());
+        let mut diff = crate::Parser::new(3, 4, 0);
+        diff.process(&previous.state_formatted());
+        diff.process(&parser.screen().state_diff(&previous));
+        parser.process(b"Z");
+        full.process(b"Z");
+        diff.process(b"Z");
+        for other in [&full, &diff] {
+            assert!(!other.screen().auto_wrap());
+            assert_eq!(other.screen().contents(), parser.screen().contents());
+            assert_eq!(
+                other.screen().cursor_position(),
+                parser.screen().cursor_position()
+            );
+        }
+        let off = parser.screen().clone();
+        parser.process(b"\x1b[?7h");
+        let mut resumed = crate::Parser::new(3, 4, 0);
+        resumed.process(&off.state_formatted());
+        resumed.process(&parser.screen().state_diff(&off));
+        parser.process(b"Q");
+        resumed.process(b"Q");
+        assert!(resumed.screen().auto_wrap());
+        assert_eq!(resumed.screen().contents(), parser.screen().contents());
+        assert_eq!(
+            resumed.screen().cursor_position(),
+            parser.screen().cursor_position()
+        );
     }
 }

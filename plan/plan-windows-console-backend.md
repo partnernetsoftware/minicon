@@ -48,6 +48,11 @@ sequences that contract without assigning a release or changing current defaults
    tail fixtures extend that slice. Private Job members which never attach keep
    EOF pending; native input closes while accepted output can still be drained.
    Broad simultaneous API/mode/screen behavior still needs compatibility evidence.
+   Output modes now use a dedicated native text-to-VT layer and shared DECAWM
+   state. SDK cursor/mode receipts cover all sixteen basic-bit combinations; owned projection,
+   UTF-8 fragments, state replay and finite wide-margin progress have targeted
+   fixtures. Reference projection exceptions are explicitly build-scoped in the
+   owner PRD; they are not adopted as the owned display contract.
    Final ConDrv cancellation now waits briefly for the private Job to settle
    empty; actual delayed/live-member fixtures guard that EOF classification.
    Qualify further real shells/agent clients, cancellation/crash races and both

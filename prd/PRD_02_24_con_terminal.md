@@ -22,6 +22,7 @@ minicon terminal and rendering
 ├── PTY backend selection
 ├── Scheduling (bounded 128 KiB per GUI turn; input yields)
 ├── Input delivery to the child
+├── Shared VT state — DECAWM, streaming cell placement and state replay
 ├── Damage, raster and present
 ├── Fonts and glyphs (CJK, native faces)
 ├── Architecture kernels (SIMD behind scalar fallbacks)
@@ -34,6 +35,8 @@ flowchart LR
     IN --> PTY["per-tab PTY<br/>1 MiB byte ring"]
     PTY --> VT["bounded VT parse<br/>128 KiB per turn"]
     VT --> DMG["damage"]
+    VT --> WRAP["shared DECAWM state / full and incremental replay"]
+    WRAP --> DMG
     DMG --> RAS["raster<br/>font · CJK"]
     RAS --> PRES["native present"]
     PRES --> WIN["visible window"]
@@ -41,6 +44,27 @@ flowchart LR
 ```
 
 ## Session ownership
+
+The owned `third_party/vt100` parser now handles standard DECAWM (`CSI ? 7 h/l`)
+and exposes `Screen::auto_wrap()`. It is shared, OS/ISA-neutral parser state,
+used by both MiniCon terminal parsing and the experimental Windows console
+service. The native Win32 mode-to-VT mapping remains owned by
+[PRD 02.34](PRD_02_34_windows_console_backend.md); it is not duplicated here.
+The control identifiers follow the primary
+[xterm control-sequence reference](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html).
+
+With wrapping disabled, later printable text overwrites the last column,
+the public cursor remains within the row, and an unplaceable two-cell glyph
+does not split a continuation cell or loop without consuming input. The
+internal pending position remains available for combining marks and later
+wrapping. RIS restores normal wrapping. Formatted full/diff state temporarily
+uses wrapping while reconstructing cells, then restores the requested mode;
+switching back to wrapping is preserved even when no cell changes. Mode
+changes conservatively invalidate damage. The streaming/reset and replay
+contracts are covered by `screen::autowrap_tests` through the canonical test
+wrapper, alongside the existing twelve parser damage oracles and six UI-core
+damage units. This is local implementation evidence, not a packaged-release
+or all-terminal compatibility claim.
 
 - [v] each tree tab owns an independent PTY, parser, viewport and failure state
   in a single GUI process. It is explicitly not a mux, persistent workspace,

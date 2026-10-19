@@ -1,6 +1,6 @@
 # Native protocol provenance
 
-Native ConDrv ABI declarations and bootstrap layout are based on the public
+Native ConDrv ABI declarations, bootstrap layout and selected console behavior are based on the public
 Microsoft Terminal source at revision
 `9fd41b2baec77d25b8cfb584070d5998eab7df81`:
 
@@ -15,6 +15,7 @@ Microsoft Terminal source at revision
 - `src/host/readDataCooked.cpp`, `readDataDirect.cpp` and `readDataRaw.cpp`
 - `src/host/input.cpp`, `conwinuserrefs.h` and `src/interactivity/win32/ConsoleControl.cpp`
 - `src/host/inputBuffer.cpp` and `src/terminal/parser/InputStateMachineEngine.cpp`
+- `src/host/_stream.cpp` (processed/legacy/VT output mode behavior)
 - `src/winconpty/winconpty.h`
 
 Copyright (c) Microsoft Corporation. The MIT notice is retained in

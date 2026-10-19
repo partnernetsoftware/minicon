@@ -472,6 +472,7 @@ fn rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_
     assert_eq!(host.dispatch(request, &mut output).unwrap().status, 0);
     assert_eq!(host.connected_clients(), 1);
     foreign.resume().unwrap();
+    let before_rejection = output.len();
     let request = right.receive(Duration::from_secs(3)).unwrap();
     assert_eq!(request.descriptor.process, foreign.id() as usize);
     let rejected = host.dispatch(request, &mut output).unwrap();
@@ -480,6 +481,11 @@ fn rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_
         "a host cannot adopt a different driver session"
     );
     assert_eq!(host.connected_clients(), 1);
+    assert_eq!(
+        output.len(),
+        before_rejection,
+        "a foreign request cannot emit terminal bytes"
+    );
     // SAFETY: wait only for the child whose connection was rejected.
     assert_eq!(
         unsafe { WaitForSingleObject(foreign.process_handle().as_raw_handle(), 3000) },
@@ -490,7 +496,10 @@ fn rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_
         receipt.exit_code, 0,
         "the original session must continue normally"
     );
-    assert!(receipt.output.is_empty());
+    assert_eq!(
+        receipt.output, b"\x1b[?7l\x1b[?7h",
+        "only the owned cmd's wrap-mode negotiation is emitted"
+    );
 }
 
 #[test]
@@ -498,7 +507,7 @@ fn rust_console_driver_owned_host_executes_real_cmd_output_and_exit() {
     let receipt = run_owned_cmd("echo rust-console-owned-output");
     assert_eq!(receipt.exit_code, 0, "real cmd command must succeed");
     assert_eq!(
-        receipt.output, b"rust-console-owned-output\r\n",
+        receipt.output, b"\x1b[?7l\x1b[?7hrust-console-owned-output\r\n",
         "actual driver output must reach the Rust sink"
     );
     assert!(
@@ -515,7 +524,7 @@ fn rust_console_driver_owned_host_preserves_real_cmd_unicode_and_nonzero_exit() 
     assert_eq!(receipt.exit_code, 7, "preserve the actual client exit code");
     assert_eq!(
         receipt.output,
-        "中文😀 \r\n".as_bytes(),
+        "\x1b[?7l\x1b[?7h中文😀 \r\n".as_bytes(),
         "preserve the UTF-16 console write, including cmd's space before &"
     );
     assert!(

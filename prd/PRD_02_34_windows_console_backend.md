@@ -41,6 +41,9 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   retained group metadata and real same-Job child isolation; no PID recovery
 │   ├── [v] scoped keyboard Break: shared native-key facade, raw/cooked interruption,
 │   │   events/ANSI flush, completed text retention and native-ready reset
+│   ├── [v] scoped output mode fidelity: native processed controls, VT gating, newline
+│   │   translation and margin behavior; compare real SDK cursor receipts and
+│   │   terminal projection, retain finite wide-margin progress and shared parser ownership
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -69,6 +72,8 @@ flowchart LR
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
+    HOST --> MODES["Win32 output modes / native SDK differential receipts"]
+    MODES --> VT["reuse owned VT parser and terminal projection"]
     HOST --> LIFE["connection defaults vs opened file objects"]
     LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
     LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
@@ -252,9 +257,9 @@ certification for all clients or OS releases.
 |---|---|---|
 | CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, cancel the caller's reads and reclaim its connection-default records on disconnect. | Arbitrary cross-process duplication, explicit attach/reconnect and broader descendant qualification remain open; native parent exit/FreeConsole cases are scoped below. |
 | CREATE_OBJECT / CLOSE_OBJECT | Open current input/output and unambiguous generic objects; retain native access/share metadata, enforce API access and retire known kernel-finalizer tokens even without a live creator. Opened file objects can be used by another connected caller holding the native inherited handle. | Separate new screen buffers, other access masks and broad sharing remain unqualified. Native Win32 CON opens on the measured kernel normalize share metadata to 3, including a requested share mode of zero. |
-| RAW_WRITE / WriteConsole | Capture actual client bytes, convert current code page or UTF-16 to UTF-8, send to the supplied writer, update screen state. | DBCS output fragments, processed-output/mode fidelity, pending surrogate at final stream end and complete output backpressure/cancellation. |
+| RAW_WRITE / WriteConsole | Capture actual bytes, convert current code page/UTF-16, apply scoped processed/VT/newline/wrap modes and project onto the shared VT screen. | DBCS fragments, other code-page/grapheme combinations, final dangling surrogate, full native buffer readback and broader mode/API interactions. |
 | GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
-| GetMode / SetMode | Store buffer modes and enforce echo's line-input dependency; basic cooked/raw input consumes those modes. | Full mode validation, signals, insert/history editing and processed-output fidelity. |
+| GetMode / SetMode | Store input modes/enforce echo dependency; configure output modes and mirror VT DECAWM in native output flags; explicit PTY defaults match system ConPTY. | Full flag validation, insert/history editing and broader mode/screen interactions. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
 | GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. Native client-written key/focus records and returned counts are tested. | ANSI input-record variants, remaining record types and broad application qualification. |
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
@@ -932,3 +937,89 @@ performance and packaged/default selection still require their own evidence.
 The above fixtures qualify these output-pressure paths on the recorded native
 Windows x86_64 host; they do not prove every simultaneous API/mode/screen
 interaction or concurrent writer ordering scenario.
+
+## Native output modes and terminal projection
+
+The mode contract follows the primary
+[Windows SetConsoleMode specification](https://learn.microsoft.com/en-us/windows/console/setconsolemode)
+and the pinned public
+[output implementation](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/_stream.cpp).
+The scoped implementation now lives in `minicon-console/src/host/output.rs`;
+native API dispatch remains in `host.rs`. `ConsoleHost::new` retains classic
+output flags 3. The explicit platform PTY adapter chooses flags 7 through the
+same `set_output_mode` mechanism used by native SetConsoleMode calls, matching
+the measured initial system-ConPTY mode. It does not change GUI selection.
+
+The Windows layer distinguishes unprocessed text, processed legacy text and
+processed VT text. It normalizes unprocessed C0/DEL into safe projected spaces,
+handles legacy CR/LF/tab/backspace and OEM control glyph conversion, translates
+LF to CRLF unless newline auto-return is disabled, and keeps split CR/LF from
+acquiring duplicate returns. Legacy writes resolve a filled margin immediately;
+VT writes retain delayed wrapping. Native SDK cursor reports clamp that pending
+column to the last valid screen column. Native output flags mirror VT DECAWM
+changes. The OS/ISA-neutral parser mechanism and full/diff state replay belong
+to [terminal rendering](PRD_02_24_con_terminal.md), not this Windows layer.
+
+UTF-8 byte fragments keep the shared parser's existing decoder state rather
+than introducing another decoder or unbounded staging. UTF-16 surrogate
+handling remains shared with the previous native write path. Existing transfer
+and output staging limits still apply. Opaque output-pressure fixtures now
+explicitly select mode 15, so their byte-integrity proof measures transport
+rather than depending on legacy text being forwarded without interpretation.
+
+Independent SDK fixtures cover all sixteen combinations `0..=15` of the four basic output bits, with
+native initial/current mode, eight cursor observations, and VT wrap-toggle
+reflection where applicable. Owned projected rows are checked separately from
+native cursor receipts, with a second VT parser consuming actual PTY bytes.
+The fixture publishes its native `RtlGetVersion` build. It holds its process
+alive until the consumer observes an invisible end marker; closing system HPCON
+earlier would intentionally discard producer output and invalidate comparison.
+Rows are compared independently so soft-wrap metadata is not confused with
+visible cell content. Stateful legacy screen readback remains unimplemented.
+
+On the measured build 20348, every native cursor/mode receipt agrees. Projected
+rows agree for modes `3,5,7,11,13,15`. The old reference stream in unprocessed
+modes `0,2,4,6,8,10,12,14` can execute C0/ESC although its native SDK cursor counts them as
+literal input; legacy no-wrap modes 1 and 9 also exposes chunk-dependent `ZY` versus
+documented last-column overwrite. These reference stream observations remain
+visible and build-scoped, not adopted as the owned display contract. The owned
+no-wrap path produces `XZ` for a write of `XYZ` starting two cells before the
+margin. Other Windows builds require reference-row agreement or a separately
+reviewed observation; they do not inherit these exceptions silently. The
+current pinned source's control stripping and immediate-wrap handling also
+differ from the older measured host. None of this attributes every reported
+system-host failure to one cause.
+
+The owned wide-margin policy consumes an unplaceable two-cell glyph without
+splitting cells or looping without progress. A real SDK client writes CJK plus
+emoji at the last column with wrapping disabled, receives all three UTF-16
+units as consumed, keeps its cursor there, and subsequently writes `Z` normally.
+This is a bounded owned policy, not a claim of matching every system-host
+wide/grapheme edge case. The independent parser unit also covers this guard,
+fragmented DECAWM, re-enabling wrapping and RIS. Full/diff replay must preserve
+later writes across mode changes, including a mode-only diff back to wrapping.
+
+The expanded local command includes the previous backend selectors plus
+`autowrap_` and `damage::tests::`. It executes 141 cases: 92 backend/reference,
+29 legacy-agent, 14 owned-parser and six UI-core damage cases, including thirteen
+requested external/reference cases. Six new cases comprise one console unit,
+three native platform cases and two parser units. The three original bootstrap
+checks now require cmd's exact wrap-negotiation prefix followed by unchanged
+ASCII/Unicode payload; foreign-session rejection is also checked before any
+owned-client output is drained. The native baseline mismatch remains in
+`output-modes-repro.log`; positive/final receipts stay in the ignored local
+research directory. Full flag validation, other code pages/graphemes, screen
+buffer APIs, broader application/Windows/ISA runtime, performance and packaged
+selection remain open.
+
+Output-mode guard evidence is `output-modes-positive-suite.log`, the restored
+`output-modes-final-suite.log`, and `output-modes-negative-audit.json`.
+Twenty-three runtime mutations cover PTY defaults, processed/VT gates,
+newline/literal/OEM/tab/backspace handling, legacy margins, SDK and terminal
+cursor conventions, mode reflection, UTF-8 decoder continuity, actual sink
+bytes, foreign-session rejection, DECAWM enable/disable, wide-margin progress,
+full/diff replay, mode-only re-enable and native mode-to-parser setup. All six
+new tests and the three retained bootstrap cases have observed runtime
+negatives; compile failures are not counted. The audit records restored source
+hashes and individual log identities. The projection observation JSON retains
+all sixteen reference/owned row pairs, including the explicitly differing ones.

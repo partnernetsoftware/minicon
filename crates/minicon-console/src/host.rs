@@ -2,13 +2,12 @@
 use crate::{DriverRequest, DriverSession};
 mod input;
 mod objects;
+mod output;
 pub use input::ConsoleInput;
 use input::InputState;
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, Write};
-use windows_sys::Win32::Globalization::{
-    GetOEMCP, GetUserDefaultLangID, IsValidCodePage, MultiByteToWideChar,
-};
+use windows_sys::Win32::Globalization::{GetOEMCP, GetUserDefaultLangID, IsValidCodePage};
 
 const SUCCESS: i32 = 0;
 const INVALID_PARAMETER: i32 = 0xc000_000d_u32 as i32;
@@ -60,6 +59,7 @@ pub struct ConsoleHost<'session> {
     input_code_page: u32,
     output_code_page: u32,
     pending_high_surrogate: Option<u16>,
+    previous_output_cr: bool,
     screen: vt100::Parser,
     original_title: Vec<u16>,
     title: Vec<u16>,
@@ -83,6 +83,7 @@ impl Default for ConsoleHost<'_> {
             input_code_page: code_page,
             output_code_page: code_page,
             pending_high_surrogate: None,
+            previous_output_cr: false,
             screen: vt100::Parser::new(30, 120, 0),
             original_title: Vec::new(),
             title: Vec::new(),
@@ -521,6 +522,9 @@ impl<'session> ConsoleHost<'session> {
                             receipt.status = INVALID_PARAMETER;
                         } else {
                             *mode = requested;
+                            if matches!(self.handles[&descriptor.object].kind, HandleKind::Output) {
+                                self.set_output_mode(requested, output)?;
+                            }
                         }
                     }
                 }
@@ -607,7 +611,7 @@ impl<'session> ConsoleHost<'session> {
                     let (row, col) = self.screen.screen().cursor_position();
                     body.fill(0);
                     put_coord(&mut body, 0, cols, rows);
-                    put_coord(&mut body, 4, col, row);
+                    put_coord(&mut body, 4, col.min(cols.saturating_sub(1)), row);
                     body[12..14].copy_from_slice(&7_u16.to_le_bytes());
                     // The Win32 client converts dimensions to inclusive bounds.
                     put_coord(&mut body, 14, cols, rows);
@@ -656,70 +660,6 @@ impl<'session> ConsoleHost<'session> {
         }
         request.complete(receipt.status, information, &body)?;
         Ok(receipt)
-    }
-
-    fn write_ansi(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        if self.output_code_page == 65001 {
-            return self.emit(bytes, output);
-        }
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        let mut wide = vec![0_u16; bytes.len()];
-        // SAFETY: input/output point to live, disjoint buffers and lengths fit
-        // i32 because read_input bounds every request to at most one MiB.
-        let length = unsafe {
-            MultiByteToWideChar(
-                self.output_code_page,
-                0,
-                bytes.as_ptr(),
-                bytes.len() as i32,
-                wide.as_mut_ptr(),
-                wide.len() as i32,
-            )
-        };
-        if length == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        self.write_utf16(wide[..length as usize].iter().copied(), output)
-    }
-
-    fn write_utf16(
-        &mut self,
-        units: impl IntoIterator<Item = u16>,
-        output: &mut impl Write,
-    ) -> io::Result<()> {
-        for unit in units {
-            if let Some(high) = self.pending_high_surrogate.take() {
-                if (0xdc00..=0xdfff).contains(&unit) {
-                    let value =
-                        0x10000 + ((u32::from(high) - 0xd800) << 10) + u32::from(unit) - 0xdc00;
-                    self.emit_char(char::from_u32(value).unwrap(), output)?;
-                    continue;
-                }
-                self.emit_char(char::REPLACEMENT_CHARACTER, output)?;
-            }
-            if (0xd800..=0xdbff).contains(&unit) {
-                self.pending_high_surrogate = Some(unit);
-            } else {
-                self.emit_char(
-                    char::from_u32(u32::from(unit)).unwrap_or(char::REPLACEMENT_CHARACTER),
-                    output,
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    fn emit(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        output.write_all(bytes)?;
-        self.screen.process(bytes);
-        Ok(())
-    }
-
-    fn emit_char(&mut self, character: char, output: &mut impl Write) -> io::Result<()> {
-        let mut buffer = [0; 4];
-        self.emit(character.encode_utf8(&mut buffer).as_bytes(), output)
     }
 }
 

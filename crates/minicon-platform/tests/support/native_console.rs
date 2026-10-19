@@ -5,6 +5,8 @@ mod console_file;
 mod control;
 #[cfg(windows)]
 mod inheritance;
+#[cfg(windows)]
+mod output_modes;
 #[cfg(not(windows))]
 fn main() {
     std::process::exit(2);
@@ -30,6 +32,16 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "output-wide-margin" {
+        return output_modes::wide_margin(std::path::Path::new(&arguments[1]));
+    }
+    if let Some(mode) = mode.strip_prefix("output-modes-") {
+        return output_modes::run(
+            mode.parse()
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?,
+            std::path::Path::new(&arguments[1]),
+        );
+    }
     if mode == "output-orphan-member" {
         let report = std::path::Path::new(&arguments[1]);
         std::fs::write(report.with_extension("orphan-ready"), b"live")?;

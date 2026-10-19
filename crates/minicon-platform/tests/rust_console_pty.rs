@@ -254,6 +254,177 @@ fn rust_console_pty_ctrl_c_bypasses_a_full_input_event_queue() {
     assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,4096|1");
 }
 
+const OUTPUT_MODES: [(u32, &str); 16] = [
+    (0, "|4,1|4,3|8,4|13,4|15,5|15,6|15,6|7,0"),
+    (1, "|1,2|9,3|1,4|11,4|15,5|15,6|15,6|7,0"),
+    (2, "|4,1|4,3|8,4|13,4|1,6|0,7|1,7|7,0"),
+    (3, "|1,2|9,3|1,4|11,4|1,6|0,7|1,7|7,0"),
+    (4, "|4,1|4,3|8,4|13,4|15,5|15,6|15,6|7,0"),
+    (5, "|1,2|9,3|1,4|11,4|15,5|15,6|15,6|5,1"),
+    (6, "|4,1|4,3|8,4|13,4|1,6|0,7|1,7|7,0"),
+    (7, "|1,2|9,3|1,4|11,4|1,6|15,6|1,7|5,1"),
+    (8, "|4,1|4,3|8,4|13,4|15,5|15,6|15,6|7,0"),
+    (9, "|3,2|9,3|1,4|11,4|15,5|15,6|15,6|7,0"),
+    (10, "|4,1|4,3|8,4|13,4|1,6|0,7|1,7|7,0"),
+    (11, "|3,2|9,3|1,4|11,4|1,6|0,7|1,7|7,0"),
+    (12, "|4,1|4,3|8,4|13,4|15,5|15,6|15,6|7,0"),
+    (13, "|3,2|9,3|1,4|11,4|15,5|15,6|15,6|5,1"),
+    (14, "|4,1|4,3|8,4|13,4|1,6|0,7|1,7|7,0"),
+    (15, "|3,2|9,3|1,4|11,4|1,6|15,6|1,7|5,1"),
+];
+
+#[test]
+fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_cells() {
+    let report = Report::new();
+    let started = Instant::now();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("output-wide-margin")
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 4, cols: 16 })
+            .rust_console(),
+    );
+    fixture.finish(0);
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert_eq!(
+        std::fs::read_to_string(&report.0).unwrap(),
+        "5,3,15,1|1,15,1"
+    );
+    let mut parser = vt100::Parser::new(4, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().cursor_position(), (1, 15));
+    assert_eq!(
+        parser
+            .screen()
+            .rows(0, 16)
+            .map(|row| row.trim_end().to_owned())
+            .collect::<Vec<_>>(),
+        ["", "               Z", "", ""]
+    );
+}
+
+fn output_mode_report(mode: u32, rust: bool) -> (u32, String, Vec<String>) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(format!("output-modes-{mode}"))
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    // System-HPC shutdown deliberately discards remaining producer output.
+    // Observe the complete projection while its controlled client is alive.
+    fixture.until("mode-projection-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let full_receipt = std::fs::read_to_string(&report.0).unwrap();
+    let (build, receipt) = full_receipt.split_once(';').unwrap();
+    let build = build
+        .strip_prefix("build=")
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
+    assert!(build > 0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    let rows = parser
+        .screen()
+        .rows(0, 16)
+        .map(|row| row.trim_end().to_owned())
+        .collect();
+    (build, receipt.to_owned(), rows)
+}
+
+fn expected_output_mode_cursor(mode: u32, cursor: &str) -> String {
+    let mut expected = format!("initial=7;mode={mode}{cursor}");
+    if mode & 5 == 5 {
+        expected.push_str(&format!("|wrap={}|wrap={}", mode & !2, mode | 2));
+    }
+    expected
+}
+
+#[test]
+fn rust_console_pty_output_modes_keep_controls_margins_and_projection_coherent() {
+    for (mode, cursor) in OUTPUT_MODES {
+        let (_, receipt, rows) = output_mode_report(mode, true);
+        assert_eq!(receipt, expected_output_mode_cursor(mode, cursor));
+        let processed = mode & 1 != 0;
+        let vt = mode & 5 == 5;
+        let wrap = mode & 2 != 0;
+        let expected = [
+            if vt {
+                ""
+            } else if processed {
+                "←[2;5H!"
+            } else {
+                " [2;5H!"
+            },
+            if vt {
+                " A  !"
+            } else if processed {
+                " A"
+            } else {
+                " A B"
+            },
+            if !processed {
+                ""
+            } else if mode & 8 != 0 {
+                "  B"
+            } else {
+                "B"
+            },
+            if processed { " C      D" } else { " C D" },
+            if processed {
+                "F    E    H"
+            } else {
+                "     E F  G H"
+            },
+            if wrap {
+                "              XY"
+            } else {
+                "              XZ"
+            },
+            if wrap {
+                "Z              A"
+            } else {
+                "               B"
+            },
+            if wrap { "B" } else { "" },
+        ];
+        assert_eq!(
+            rows, expected,
+            "mode {mode}: owned projection must follow buffer semantics"
+        );
+    }
+}
+
+#[test]
+#[ignore = "explicit system ConPTY output-mode differential court"]
+fn rust_console_client_output_mode_cursor_and_qualified_projection_match_system_conpty() {
+    for (mode, cursor) in OUTPUT_MODES {
+        let (build, reference, reference_rows) = output_mode_report(mode, false);
+        let (owned_build, owned, owned_rows) = output_mode_report(mode, true);
+        assert_eq!(owned_build, build);
+        assert_eq!(reference, expected_output_mode_cursor(mode, cursor));
+        assert_eq!(owned, reference, "native SDK cursor mode {mode}");
+        // 20348 forwards unprocessed C0/ESC as active VT; its legacy no-wrap
+        // stream also exposes chunk-dependent overwrite at the right edge.
+        // Keep those observations visible, rather than adopting them as the
+        // owned buffer/projection contract. See PRD 02.34's output-mode court.
+        eprintln!(
+            "output-mode build={build} mode={mode}: reference={reference_rows:?}; owned={owned_rows:?}"
+        );
+        if build != 20348 || matches!(mode, 3 | 5 | 7 | 11 | 13 | 15) {
+            assert_eq!(
+                owned_rows, reference_rows,
+                "qualified projected rows mode {mode}"
+            );
+        }
+    }
+}
+
 #[test]
 fn rust_console_pty_output_pressure_keeps_controls_and_native_queries_live_and_recovers_in_order() {
     for (mode, expected) in [

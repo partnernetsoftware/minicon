@@ -12,6 +12,12 @@ pub(super) fn run(
     report: &Path,
     mode: &str,
 ) -> io::Result<()> {
+    // This fixture qualifies opaque byte transport under pressure. Explicit VT
+    // mode with newline auto-return disabled excludes legacy output rewriting.
+    // SAFETY: the fixture's own live console output handle.
+    if unsafe { SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), 15) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
     let tail = mode.contains("-tail");
     let budget = mode.ends_with("-budget");
     let reading = mode.ends_with("-read");

@@ -283,6 +283,8 @@ fn serve(
         output,
         pending: VecDeque::new(),
     };
+    // System ConPTY starts output in processed, wrapping VT mode (0x07).
+    host.set_output_mode(7, &mut sink)?;
     host.resize(size.cols, size.rows, &mut sink)?;
     let mut pending = Vec::new();
     let mut previous_cr = false;
