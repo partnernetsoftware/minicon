@@ -232,6 +232,9 @@ Windows-private; there is one parser/screen authority for each logical buffer,
 not a second native cell model. Input/Job ownership is not duplicated per buffer.
 The contracts, measured compatibility and remaining lifecycle scope belong to
 [native buffers](PRD_02_34_windows_console_backend.md#accepted-multiple-buffer-leaf).
+Process-family retirement and the native connected-process query remain
+Windows-private; their SDK/PTY lifetime evidence is owned by the same module's
+[process-family leaf](PRD_02_34_windows_console_backend.md#accepted-buffer-process-family-lifetime-leaf).
 
 The public terminal facade now exposes text_prefix and TEXT_BATCH_BYTES for
 bounded encoded producers. Native UTF-16/UTF-8 text output is an actual consumer

@@ -378,6 +378,114 @@ fn native_buffers(rust: bool) {
     );
 }
 
+fn buffer_process_family(rust: bool, tail: bool) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(if tail {
+            "buffer-family-root-tail"
+        } else {
+            "buffer-family-root"
+        })
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    for stage in 0..36 {
+        fixture.until(&format!("buffers-stage-{stage}:"));
+        let mut peer = vt100::Parser::new(8, 16, 0);
+        peer.process(&fixture.bytes);
+        let rows = peer.screen().rows(0, 16).take(3).collect::<Vec<_>>();
+        let inherited = stage % 2 == 0;
+        assert_eq!(
+            rows,
+            if inherited {
+                vec!["ALT", "CHILD", ""]
+            } else {
+                vec!["BASE", "", ""]
+            },
+            "rust={rust}; stage={stage}"
+        );
+        assert_eq!(
+            peer.screen().cursor_position(),
+            if inherited { (1, 5) } else { (0, 4) }
+        );
+        assert_eq!(peer.screen().hide_cursor(), inherited);
+        assert_eq!(
+            peer.screen().cell(0, 0).unwrap().fgcolor(),
+            vt100::Color::Idx(if inherited { 13 } else { 11 })
+        );
+        assert_eq!(
+            peer.screen().cell(0, 0).unwrap().bgcolor(),
+            vt100::Color::Idx(if inherited { 2 } else { 4 })
+        );
+        assert!(peer.at_boundary());
+        assert!(
+            std::str::from_utf8(&fixture.bytes).is_ok(),
+            "retired UTF-8 fragments must not leak to the peer"
+        );
+        let native = std::fs::read_to_string(&report.0).unwrap();
+        let event = format!(
+            "round={};{};",
+            stage / 2,
+            if inherited {
+                "creator-exit=0"
+            } else {
+                "last-exit=0"
+            }
+        );
+        let offset = native.rfind(&event).expect("native report for this stage");
+        let native = &native[offset..];
+        if inherited {
+            assert!(
+                native.contains(
+                    "survivor:size=16,8;view=0,0,15,7;pos=5,1;attr=002d;mode=7;cursor=63,0"
+                ),
+                "{native}"
+            );
+            assert!(native.contains("active-held:row1=\"CHILD\""), "{native}");
+            assert!(native.contains("base-held:row0=\"BASE\""), "{native}");
+        } else {
+            assert!(
+                native.contains(
+                    "fallback:size=16,8;view=0,0,15,7;pos=4,0;attr=001e;mode=7;cursor=25,1"
+                ),
+                "{native}"
+            );
+        }
+        std::fs::write(
+            report.0.with_extension(format!("stage{stage}")),
+            b"observed",
+        )
+        .unwrap();
+    }
+    fixture.finish(0);
+    let native = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!("buffer-family rust={rust};tail={tail}:\n{native}");
+    assert!(native.ends_with("rounds=18\n"));
+    assert_eq!(native.matches("creator-exit=0;clients=2").count(), 18);
+    assert_eq!(native.matches("last-exit=0;clients=1").count(), 18);
+    let mut peer = vt100::Parser::new(8, 16, 0);
+    peer.process(&fixture.bytes);
+    assert_eq!(peer.screen().contents(), "BASE");
+    assert_eq!(peer.screen().cursor_position(), (0, 4));
+    assert!(peer.at_boundary());
+}
+
+#[test]
+fn rust_console_pty_native_buffers_survive_creator_exit_and_retire_after_last_child() {
+    buffer_process_family(true, false);
+    buffer_process_family(true, true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY comparison court"]
+fn rust_console_client_native_buffer_family_matches_system_conpty() {
+    buffer_process_family(false, false);
+}
+
 #[test]
 fn rust_console_pty_malformed_utf8_recovery_survives_native_edits_and_exit() {
     for mapped in [false, true] {
@@ -543,6 +651,7 @@ fn rust_console_pty_native_buffer_close_preserves_output_order_under_pressure() 
         "close changed active identity before output capacity: {held}"
     );
     assert!(held.contains("held-rect=ALT"), "{held}");
+    assert!(held.contains("held-clients=1"), "{held}");
     let mut fixture = Fixture::with_parts(master, child);
     fixture.finish(0);
     assert_eq!(

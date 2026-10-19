@@ -1,5 +1,7 @@
 //! Independent Win32 caller for the platform PTY integration court.
 #[cfg(windows)]
+mod buffer_family;
+#[cfg(windows)]
 mod buffers;
 #[cfg(windows)]
 mod console_file;
@@ -74,6 +76,14 @@ fn run() -> std::io::Result<()> {
             std::path::Path::new(&arguments[1]),
             mode.ends_with("mapped"),
         );
+    }
+    if mode.starts_with("buffer-family-") {
+        let path = std::path::Path::new(&arguments[1]);
+        let result = buffer_family::run(mode, path);
+        if let Err(error) = &result {
+            let _ = std::fs::write(path.with_extension("family-error"), error.to_string());
+        }
+        return result;
     }
     if mode == "buffers" {
         return buffers::run(std::path::Path::new(&arguments[1]));

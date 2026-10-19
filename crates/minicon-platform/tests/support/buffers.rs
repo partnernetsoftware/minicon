@@ -11,7 +11,7 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::System::{Console::*, Threading::GetCurrentProcess};
 
-fn checked(ok: i32) -> io::Result<()> {
+pub(super) fn checked(ok: i32) -> io::Result<()> {
     if ok == 0 {
         Err(io::Error::last_os_error())
     } else {
@@ -19,7 +19,7 @@ fn checked(ok: i32) -> io::Result<()> {
     }
 }
 
-fn create(access: u32, share: u32) -> io::Result<File> {
+pub(super) fn create(access: u32, share: u32) -> io::Result<File> {
     // SAFETY: a private text buffer; no borrowed pointers or inheritable handle.
     let handle =
         unsafe { CreateConsoleScreenBuffer(access, share, std::ptr::null(), 1, std::ptr::null()) };
@@ -46,7 +46,7 @@ fn duplicate(handle: HANDLE) -> io::Result<File> {
     Ok(unsafe { File::from_raw_handle(result) })
 }
 
-fn query(handle: HANDLE, label: &str, report: &mut String) -> io::Result<()> {
+pub(super) fn query(handle: HANDLE, label: &str, report: &mut String) -> io::Result<()> {
     let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
     let mut cursor = CONSOLE_CURSOR_INFO::default();
     let mut mode = 0;
@@ -87,11 +87,11 @@ fn query(handle: HANDLE, label: &str, report: &mut String) -> io::Result<()> {
     Ok(())
 }
 
-fn position(handle: HANDLE, x: i16, y: i16) -> io::Result<()> {
+pub(super) fn position(handle: HANDLE, x: i16, y: i16) -> io::Result<()> {
     checked(unsafe { SetConsoleCursorPosition(handle, COORD { X: x, Y: y }) })
 }
 
-fn stage(handle: HANDLE, path: &Path, n: usize, report: &str) -> io::Result<()> {
+pub(super) fn stage(handle: HANDLE, path: &Path, n: usize, report: &str) -> io::Result<()> {
     std::fs::write(path, report)?;
     bytes(handle, format!("\x1b]2;buffers-stage-{n}:\x07").as_bytes())?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
@@ -221,6 +221,12 @@ pub(super) fn pressure(path: &Path) -> io::Result<()> {
     let mut receipt = String::new();
     std::fs::write(path.with_extension("go"), b"opened")?;
     query(observer.as_raw_handle(), "held", &mut receipt)?;
+    let mut clients = [0; 4];
+    let count = unsafe { GetConsoleProcessList(clients.as_mut_ptr(), clients.len() as u32) };
+    if count != 1 || clients[0] != std::process::id() {
+        return Err(io::Error::other("backpressured process-list query"));
+    }
+    receipt.push_str("held-clients=1\n");
     let mut cells = [CHAR_INFO::default(); 3];
     let mut region = SMALL_RECT {
         Left: 0,

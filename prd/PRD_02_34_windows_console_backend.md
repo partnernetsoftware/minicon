@@ -53,6 +53,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] multiple native buffers: stable handle binding, inactive state and active publication
 │   ├── [-] bounded Unicode publication batches over the shared lexer and scalar-width policy
 │   ├── [-] canonical invalid UTF-8 prefix recovery before native edits and exit
+│   ├── [v] native-buffer process-exit fallback and inherited file-object retirement
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -105,6 +106,7 @@ flowchart LR
     BUFFERS --> BIND["CONOUT open / duplicate lifetime / active-close fallback"]
     HOST --> BATCH["bounded UTF-16/UTF-8 text batches / native newline and margin translation"]
     BATCH --> RECOVERY["shared invalid-prefix boundary / canonical replacement / retained new grammar"]
+    HOST --> FAMILY["native buffer file lifetime / creator exit / inherited survivor / final-close fallback"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -360,26 +362,29 @@ certification for all clients or OS releases.
 | Driver/API operation | Current behavior | Remaining scope |
 |---|---|---|
 | CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, cancel the caller's reads and reclaim its connection-default records on disconnect. | Arbitrary cross-process duplication, explicit attach/reconnect and broader descendant qualification remain open; native parent exit/FreeConsole cases are scoped below. |
-| CREATE_OBJECT / CLOSE_OBJECT | Open current input/output and unambiguous generic objects; retain native access/share metadata, enforce API access and retire known kernel-finalizer tokens even without a live creator. Opened file objects can be used by another connected caller holding the native inherited handle. | Separate new screen buffers, other access masks and broad sharing remain unqualified. Native Win32 CON opens on the measured kernel normalize share metadata to 3, including a requested share mode of zero. |
-| RAW_WRITE / WriteConsole | Capture actual bytes, convert current code page/UTF-16, apply scoped processed/VT/newline/wrap modes and project onto the shared VT screen. | DBCS fragments, other code-page/grapheme combinations, final dangling surrogate, full native buffer readback and broader mode/API interactions. |
+| CREATE_OBJECT / CLOSE_OBJECT | Open current input/output, unambiguous generic objects and independent drawing buffers; retain native access/share metadata and retire kernel-finalizer tokens even without a live creator. Native buffer and process-family scope is specified below. | Other access masks, arbitrary duplication/attach and broad sharing remain unqualified. Native Win32 CON opens on the measured kernel normalize share metadata to 3, including a requested share mode of zero. |
+| GetConsoleProcessList | Return complete distinct connected PIDs from this console's registry; required count with no partial array for short capacity, non-emitting query under pressure. Native SDK capacity/error and process-family evidence is specified below. | Explicit attach/reconnect, additional system versions and all process/connection race orders. |
+| RAW_WRITE / WriteConsole | Capture actual bytes, convert current code page/UTF-16, apply scoped processed/VT/newline/wrap modes and project onto the shared VT screen. | DBCS fragments, other code-page/grapheme combinations, final dangling surrogate and broader mode/API interactions. |
 | GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
 | GetMode / SetMode | Store input modes/enforce echo dependency; configure output modes and mirror VT DECAWM in native output flags; explicit PTY defaults match system ConPTY. | Full flag validation, insert/history editing and broader mode/screen interactions. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
 | GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. Native client-written key/focus records and returned counts are tested. | ANSI input-record variants, remaining record types and broad application qualification. |
-| GetScreenBufferInfo | Return geometry, cursor and scoped current drawing attributes from the owned VT parser; retain initial palette. | Palette mutation/RGB quantization, full legacy screen mutation, scrolling, resize, multiple buffers and rectangular readback. |
-| SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | LVB mode/code-page gating, native attribute fill/rectangular readback and API interleaving inside incomplete client escape sequences. |
-| ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. | Rectangular readback, literal C0 retention, all code-page/grapheme policies and simultaneous output-pressure ordering qualification. |
-| FillConsoleOutputCharacter A/W / FillConsoleOutputAttribute | Validate WRITE access; literal shared-cell/style edits, repetition counts, native readback, safe projection and cursor/drawing-state preservation. | Remaining legacy attribute flags/unpaired UTF-16, rectangular and multiple-buffer mutations, large-screen performance and incomplete-client-VT interleaving. |
-| GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
+| GetScreenBufferInfo | Return selected-buffer geometry, cursor and scoped current drawing attributes from the shared screen; retain initial palette. Geometry, scrolling, multiple buffers and rectangle scope is specified below. | Palette mutation/RGB quantization, exact legacy layout, reflow and complete viewport-follow policy. |
+| SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | Full LVB mode/code-page gating and additional attribute/mode/API combinations. |
+| ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. Rectangle/literal/pressure scope is specified below. | Complete raw UTF-16 layout, all code-page/grapheme policies and every concurrent query/output ordering variant. |
+| FillConsoleOutputCharacter A/W / FillConsoleOutputAttribute | Validate WRITE access; literal shared-cell/style edits, repetition counts, native readback, safe projection and cursor/drawing-state preservation. | Remaining legacy attribute flags/unpaired UTF-16, broader per-buffer/VT interactions and largest-grid performance. |
+| GetCursorInfo / SetCursorInfo / SetCursorPosition | Per-buffer native percentage/visibility and validated cursor position; shared cursor state and replay scope is specified below. | Pixel-exact frontend cursor geometry, complete window/scrolling interactions and additional system versions. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
 | Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Other native-key transports, unattached-group compatibility, other signals and broader OS/client qualification. |
-| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Remaining layer APIs and GUI/product qualification. |
+| Other operations | Additional implemented APIs follow the accepted capability leaves below; unsupported calls return explicit NOT_SUPPORTED with no system-host fallback. | Remaining layer APIs and GUI/product qualification. |
 
 The backend reuses this repository's owned `vt100` fork for screen state behind
 the Windows adapter. That reuse does not make Windows console mode semantics
 equivalent to VT semantics; remaining differences stay explicit above.
-`minicon-platform` and the MiniCon binary still do not depend on this experimental
-crate, so the shipped default and artifact dependency graph are unchanged.
+`minicon-platform::pty` selects the optional service through rust-console; the
+MiniCon binary forwards that opt-in as experimental-rust-console. The default
+product backend remains unchanged. API implementation and experimental selection
+do not certify default-backend or release qualification.
 
 Native evidence:
 
@@ -1940,9 +1945,80 @@ with managed Console properties/writes and RawUI readback through the original
 inactive handle, fence a CJK alternate image and restore the modified original
 image. The native unit covers failed activation, context restoration on error,
 independent CSI/UTF-16 fragments, aggregate allocation/count bounds and collection.
-Full native-buffer/VT-alternate interactions, implicit process-exit fallback,
-inherited-buffer child lifetimes, additional system versions/ISAs, large-buffer
-performance and default promotion remain open qualification work.
+Full native-buffer/VT-alternate interactions, further process-exit/attach/
+inheritance orders and access variants, additional system versions/ISAs,
+large-buffer performance and default promotion remain open qualification work.
+
+#### Accepted buffer process-family lifetime leaf
+
+Invariant: creator exit does not retire a live inherited output file object;
+last-holder exit restores another live buffer without changing its native state
+or replaying the retired buffer's unfinished grammar. Repeated process-family
+rounds must reclaim buffers rather than exhaust the native count limit. Evidence
+must combine actual SDK calls, retained child-process handles, exact console
+client lists, native readback and fenced downstream snapshots through the PTY
+facade, with a distinct system ConPTY reference. Safe failure uses bounded waits
+and the fixture's private-Job shutdown; no foreign-process lookup or termination.
+Dependencies: ConDrv finalizers, connection lifetime and common screen projection.
+Non-goals: all inherited object/access variants, all implicit-exit orders,
+VT-alternate interaction or non-host ISA runtime qualification.
+
+The family court also requires GetConsoleProcessList as an observable native
+connection-lifetime boundary. The accepted adapter serves API 0x03000029 with
+the four-byte process-count body and DWORD output array from the pinned layer-3
+definition. Return the complete distinct live PID set from this console's
+connection registry, never system process enumeration. An undersized buffer gets
+the required count and no partial array; allocation is bounded by MAX_CLIENTS,
+not by caller capacity. The query must remain non-emitting under backpressure.
+Evidence must cover sufficient/short buffers, SDK null/zero rejection, exact
+retained-child PID membership and output-pressure progress. Source and contract:
+[GetConsoleProcessList](https://learn.microsoft.com/en-us/windows/console/getconsoleprocesslist),
+ApiSorter.cpp, ApiDispatchersInternal.cpp and dep/Console/conmsgl3.h at tree
+9fd41b2baec77d25b8cfb584070d5998eab7df81. No public portable process/session API
+is inferred from this Windows capability.
+
+The actual family fixture keeps its original buffer alive, starts a creator
+that activates another buffer, passes a reopened output file to a separate
+child, then exits the creator through process teardown without Rust File drops.
+The surviving child's inherited handle is queried and written after creator
+exit. Retained process handles and exact native PID sets establish the two-client
+and one-client boundaries; no PID lookup is used to select or terminate a target.
+After the last holder exits, a reopened CONOUT observes the original buffer and
+a fenced peer snapshot must restore its cells, colors, cursor and visibility.
+Native mode/attribute/cursor-percentage queries are checked against the current
+stage's report. Painted cell colors are compared; the renderer's incidental
+final SGR state is not a native buffer attribute oracle. Each fixture completes
+18 rounds, exceeding the sixteen-buffer limit, and drains actual output EOF.
+
+The owned court runs both complete-input and unfinished-UTF-8 retirement modes
+(36 rounds). Its peer transcript must remain valid UTF-8: retired buffer grammar
+cannot be flushed into the replacement buffer. A distinct system ConPTY court
+runs the same complete-input family (18 rounds). The earlier system-tail attempt
+in `buffer-family-initial.log` instead observed BASE followed by U+FFFD after
+fallback/title fencing on build 20348. That is a separate compatibility finding,
+not a passing malformed-tail equivalence claim or a proven root cause. Broader
+native/VT grammar and process-exit combinations remain open.
+
+`buffer-family-process-list-red.log` and the native error receipt record error
+50 before GetConsoleProcessList was implemented. The final adapter returns the
+registry's real PIDs rather than server tokens, reports required short capacity
+without a partial list, and passes SDK null/zero argument checks. The existing
+output-pressure fixture now requires this API to finish before consumption
+resumes; removing its non-emitting bypass produces an observed runtime failure.
+
+Local qualification: `buffer-family-final-suite.log` records 233 selected passes
+including 17 alignment checks; `buffer-family-final-focused.log` separately records
+both new tests and the extended pressure test, with all 54 family-round receipts.
+Eight byte-restored guard mutations fail at runtime, covering missing API,
+wrong PID membership, short-count semantics, query bypass, close fallback,
+buffer reclamation, retired grammar leakage and the system-reference oracle.
+Ten static/build checks pass: default/enabled workspace strict all-targets Clippy,
+both standalone parsers' strict Clippy, lexer no-std build, four common-library
+cross-target builds and the Windows ARM64 platform PTY/Rust-console all-targets
+build. Non-host targets are compile-only; actual runtime is Windows x86_64 build
+20348. Three source blobs match the pinned tree. `buffer-family-final-receipt.json`
+binds source, guard/check/log hashes, compiler, executable identities and remaining
+scope. Final documentation edits are followed by alignment checks.
 
 Local multiple-buffer qualification: `buffers-final-suite.log` records 220
 selected serial passes, including 17 alignment checks; the six added tests also

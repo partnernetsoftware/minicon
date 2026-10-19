@@ -237,6 +237,7 @@ impl<'session> ConsoleHost<'session> {
                             | 0x0200_0014
                             | 0x0300_0003
                             | 0x0300_0004
+                            | 0x0300_0029
                     )
                 ));
         if !bypass && (!ready || !self.deferred_output.is_empty()) {
@@ -520,6 +521,20 @@ impl<'session> ConsoleHost<'session> {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0300_0029 if body.len() >= 4 => {
+                // Native connection registry only; neither global process
+                // enumeration nor caller-sized allocation belongs here.
+                let mut ids: Vec<_> = self.processes.values().copied().collect();
+                ids.sort_unstable();
+                ids.dedup();
+                body[..4].copy_from_slice(&(ids.len() as u32).to_le_bytes());
+                let capacity = (descriptor.output_size - body_size) as usize / 4;
+                if ids.len() <= capacity {
+                    let bytes: Vec<_> = ids.into_iter().flat_map(u32::to_le_bytes).collect();
+                    request.write_output(body_size, &bytes)?;
+                    information = bytes.len();
+                }
+            }
             0x0200_0002 => {
                 receipt.status = self.handle_status(
                     descriptor.process,
