@@ -274,6 +274,10 @@ local tests and native receipts support only their recorded feature/cell scope.
   [PRD 02.24](PRD_02_24_con_terminal.md#osc-payloads-parser-events-and-framed-commit),
   reusable API scope to [PRD 02.35](PRD_02_35_terminal_library.md#committed-title-events-and-undisplayed-streams),
   and actual Windows consumer evidence to PRD 02.34.
+- [-] Initial Windows console titles reuse the same native display conversion
+  and common independent publisher as explicit setters. CONNECT admission,
+  reply and console-wide lifetime policy remain Windows-owned; scoped runtime
+  evidence belongs to PRD 02.34's initial-title/lifetime leaf.
 - [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
   `adapters/unix/pty`; the macOS adapter currently imports the former file by
   path. Preserve distinct adapter identities and qualify both actual platforms.

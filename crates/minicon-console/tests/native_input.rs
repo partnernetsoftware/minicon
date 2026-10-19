@@ -15,6 +15,109 @@ use windows_sys::Win32::System::Threading::{
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
+#[test]
+fn rust_console_initial_title_respects_output_admission_and_failed_sink() {
+    struct Reject;
+    impl std::io::Write for Reject {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    for fail in [false, true] {
+        let session = DriverSession::open().unwrap();
+        let foreign_session = DriverSession::open().unwrap();
+        let image = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32")
+            .join("cmd.exe");
+        let command = format!("\"{}\" /d /c exit /b 0", image.display());
+        let child = session
+            .spawn_suspended(&image, OsStr::new(&command))
+            .unwrap();
+        let held = child.process_handle().try_clone_to_owned().unwrap();
+        let mut host = ConsoleHost::for_child(&child).unwrap();
+        let mut output = Vec::new();
+        child.resume().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            assert!(Instant::now() < deadline, "initial CONNECT missing");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let function = request.descriptor.function;
+                    let call = host
+                        .dispatch_with_output_ready(request, false, &mut output)
+                        .unwrap();
+                    assert_eq!(call.status, 0);
+                    if function == 1 {
+                        assert!(call.pending);
+                        assert_eq!(host.pending_output_requests(), 1);
+                        assert_eq!(host.connected_clients(), 0);
+                        assert!(output.is_empty());
+                        break;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("initial CONNECT: {error}"),
+            }
+        }
+        let foreign = foreign_session
+            .spawn_suspended(&image, OsStr::new(&command))
+            .unwrap();
+        foreign.resume().unwrap();
+        let request = foreign_session.receive(Duration::from_secs(3)).unwrap();
+        assert_eq!(request.descriptor.function, 1);
+        let rejected = host
+            .dispatch_with_output_ready(request, false, &mut output)
+            .unwrap();
+        assert_eq!(rejected.status, 0xc000_0008_u32 as i32);
+        assert!(!rejected.pending);
+        assert_eq!(host.pending_output_requests(), 1);
+        assert!(output.is_empty());
+        assert!(foreign.wait(Duration::from_secs(3)).unwrap().is_some());
+        drop(foreign);
+        if fail {
+            assert_eq!(
+                host.resume_output(&mut Reject).unwrap_err().kind(),
+                std::io::ErrorKind::BrokenPipe
+            );
+            assert_eq!(host.connected_clients(), 0);
+            assert_eq!(host.open_handles(), 0);
+            assert_eq!(host.control_targets(), 0);
+            drop(host);
+            drop(child);
+            assert_eq!(
+                unsafe { WaitForSingleObject(held.as_raw_handle(), 3000) },
+                WAIT_OBJECT_0
+            );
+        } else {
+            let call = host.resume_output(&mut output).unwrap().unwrap();
+            assert_eq!((call.function, call.status, call.pending), (1, 0, false));
+            assert_eq!(host.connected_clients(), 1);
+            assert_eq!(host.pending_output_requests(), 0);
+            assert!(output.starts_with(b"\x1b]0;"));
+            assert!(output.ends_with(b"\x1b\\"));
+            while child.wait(Duration::ZERO).unwrap().is_none() || host.connected_clients() != 0 {
+                assert!(Instant::now() < deadline, "startup client did not retire");
+                match session.receive(Duration::from_millis(20)) {
+                    Ok(request) => {
+                        assert_eq!(host.dispatch(request, &mut output).unwrap().status, 0)
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(error) => panic!("startup retirement: {error}"),
+                }
+            }
+            assert_eq!(
+                child.wait(Duration::ZERO).unwrap(),
+                Some(0),
+                "{}",
+                String::from_utf8_lossy(&output)
+            );
+        }
+    }
+}
+
 struct Report {
     path: PathBuf,
 }

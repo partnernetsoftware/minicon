@@ -71,6 +71,16 @@ impl ConsoleHost<'_> {
         title: Vec<u16>,
         output: &mut impl Write,
     ) -> io::Result<()> {
+        self.publish_native_title(&title, output)?;
+        self.title = title;
+        Ok(())
+    }
+
+    pub(super) fn publish_native_title(
+        &self,
+        title: &[u16],
+        output: &mut impl Write,
+    ) -> io::Result<()> {
         // Windows' VT writer displays C0/DEL using DOS glyphs and C1 as '?'.
         // Keep the original UTF-16 metadata separate from this display form.
         const C0: [char; 32] = [
@@ -86,9 +96,7 @@ impl ConsoleHost<'_> {
             })
             .collect();
         self.terminal
-            .write_window_title(&display, 1024 * 1024, output)?;
-        self.title = title;
-        Ok(())
+            .write_window_title(&display, 1024 * 1024, output)
     }
 }
 

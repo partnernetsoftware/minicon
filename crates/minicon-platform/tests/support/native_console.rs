@@ -36,6 +36,8 @@ mod text_attributes;
 #[cfg(windows)]
 mod text_batch;
 #[cfg(windows)]
+mod title_lifetime;
+#[cfg(windows)]
 mod titles;
 #[cfg(windows)]
 mod unicode_output;
@@ -68,6 +70,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode.starts_with("title-life") {
+        return title_lifetime::run(mode, std::path::Path::new(&arguments[1]));
+    }
     if mode == "titles" {
         return titles::run(std::path::Path::new(&arguments[1]));
     }

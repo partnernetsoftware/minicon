@@ -204,6 +204,15 @@ impl<'session> ConsoleHost<'session> {
         self.handles.len()
     }
 
+    fn accept_origin(&mut self, request: &DriverRequest<'session>) -> bool {
+        if self.session_id.is_some_and(|id| id != request.session_id()) {
+            return false;
+        }
+        self.session_id = Some(request.session_id());
+        self.session = Some(request.origin());
+        true
+    }
+
     /// Dispatch queries and controls while terminal output is backpressured.
     /// Calls which may emit or change output interpretation retain their real
     /// kernel request, in order, without copying client payloads. The adapter
@@ -218,9 +227,15 @@ impl<'session> ConsoleHost<'session> {
         let api = (descriptor.function == 7)
             .then(|| read_u32(request.inline_payload(), 0))
             .flatten();
+        // Pin the transport before retaining its first CONNECT. Foreign calls
+        // must not occupy the queue or bind the host through a later bypass.
+        if !self.accept_origin(&request) {
+            return self.dispatch(request, output);
+        }
         // Fail closed for future API additions: only known non-emitting calls
         // bypass ordered output. Input reads may cook and echo queued keys.
-        let bypass = matches!(descriptor.function, 1 | 3)
+        let bypass = descriptor.function == 3
+            || (descriptor.function == 1 && !self.processes.is_empty())
             || (matches!(descriptor.function, 2 | 4) && !self.close_may_publish(descriptor))
             || (descriptor.function == 7
                 && matches!(
@@ -330,13 +345,11 @@ impl<'session> ConsoleHost<'session> {
             status: SUCCESS,
             pending: false,
         };
-        if self.session_id.is_some_and(|id| id != request.session_id()) {
+        if !self.accept_origin(&request) {
             receipt.status = INVALID_HANDLE;
             request.complete(receipt.status, 0, &[])?;
             return Ok(receipt);
         }
-        self.session_id = Some(request.session_id());
-        self.session = Some(request.origin());
         self.update_input_event()?;
         match descriptor.function {
             1 => {
@@ -350,7 +363,7 @@ impl<'session> ConsoleHost<'session> {
                     receipt.status = INVALID_PARAMETER;
                     request.complete(receipt.status, 0, &[])?;
                 } else {
-                    if self.processes.is_empty() {
+                    let initial_title = if self.processes.is_empty() {
                         let connect = request.read_input(0, 1340)?;
                         let length = u16::from_le_bytes([connect[34], connect[35]]) as usize;
                         if length > 520 || !length.is_multiple_of(2) {
@@ -358,12 +371,15 @@ impl<'session> ConsoleHost<'session> {
                             request.complete(receipt.status, 0, &[])?;
                             return Ok(receipt);
                         }
-                        self.title = connect[36..36 + length]
-                            .chunks_exact(2)
-                            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                            .collect();
-                        self.original_title = self.title.clone();
-                    }
+                        Some(
+                            connect[36..36 + length]
+                                .chunks_exact(2)
+                                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                                .collect::<Vec<u16>>(),
+                        )
+                    } else {
+                        None
+                    };
                     let process = self.token()?;
                     let input = self.token()?;
                     let output_handle = self.token()?;
@@ -387,7 +403,21 @@ impl<'session> ConsoleHost<'session> {
                             return Ok(receipt);
                         }
                     }
+                    // Admit before publication; a rejected identity must not
+                    // change title metadata or send a frontend title event.
+                    if let Some(title) = &initial_title
+                        && let Err(error) = self.publish_native_title(title, output)
+                    {
+                        if let Some(control) = &mut self.control {
+                            control.remove(process);
+                        }
+                        return Err(error);
+                    }
                     request.complete(SUCCESS, reply.len(), &reply)?;
+                    if let Some(title) = initial_title {
+                        self.original_title = title.clone();
+                        self.title = title;
+                    }
                     self.processes.insert(process, descriptor.process as u32);
                     self.handles.insert(
                         input,

@@ -447,6 +447,125 @@ fn check_ansi_title_queries(native: &str, stage: usize, original: bool, title: &
     }
 }
 
+fn title_lifetime(rust: bool) {
+    #[derive(Default)]
+    struct Titles(Vec<Vec<u8>>);
+    impl vt100::Callbacks for Titles {
+        fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+            self.0.push(title.to_vec());
+        }
+    }
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("title-life")
+        .arg(&report.0)
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let mut peer = vt100::Parser::new_with_callbacks(8, 16, 0, Titles::default());
+    let initial = env!("CARGO_BIN_EXE_minicon-platform-console-probe");
+    let expected = [
+        initial,
+        "child-native",
+        "child-native",
+        "child-vt",
+        "child-vt",
+        "after-child",
+        "last-title",
+    ];
+    for (n, expected_title) in expected.iter().enumerate() {
+        let marker = format!("life-title-{n}:");
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while peer
+            .screen()
+            .rows(0, 16)
+            .nth(7)
+            .unwrap()
+            .trim_end_matches(' ')
+            != marker
+            || !peer.at_boundary()
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("title lifetime fence")
+                .unwrap();
+            peer.process(&chunk);
+            fixture.bytes.extend(chunk);
+        }
+        eprintln!(
+            "title-life rust={rust};stage={n};peer={:?};row={:?}",
+            peer.callbacks()
+                .0
+                .last()
+                .map(|t| String::from_utf8_lossy(t)),
+            peer.screen().rows(0, 16).next().unwrap()
+        );
+        assert_eq!(
+            peer.callbacks().0.last().map(Vec::as_slice),
+            Some(expected_title.as_bytes())
+        );
+        if n == 5 {
+            assert_eq!(peer.screen().rows(0, 16).next().unwrap(), "ROOTZ");
+            assert_eq!(
+                peer.screen().cell(0, 4).unwrap().fgcolor(),
+                vt100::Color::Idx(1)
+            );
+        }
+        std::fs::write(report.0.with_extension(format!("stage{n}")), b"observed").unwrap();
+    }
+    let consumed = fixture.bytes.len();
+    fixture.finish(0);
+    peer.process(&fixture.bytes[consumed..]);
+    assert_eq!(peer.callbacks().0.last().unwrap(), b"last-title");
+    if rust {
+        assert_eq!(
+            peer.callbacks()
+                .0
+                .iter()
+                .filter(|title| title.as_slice() == initial.as_bytes())
+                .count(),
+            1
+        );
+    }
+    eprintln!(
+        "title-life rust={rust};eof={:?}",
+        peer.callbacks()
+            .0
+            .last()
+            .map(|t| String::from_utf8_lossy(t))
+    );
+    let receipt = std::fs::read_to_string(report.0.as_path()).unwrap();
+    let hex = |s: &str| {
+        s.encode_utf16()
+            .map(|u| format!("{u:x}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    for (n, title) in expected.iter().enumerate() {
+        assert!(
+            receipt
+                .lines()
+                .any(|line| line
+                    == format!("stage{n}:current={};original={}", hex(title), hex(initial))),
+            "{receipt}"
+        );
+    }
+    eprintln!("title-life native rust={rust}:\n{receipt}");
+}
+#[test]
+fn rust_console_pty_title_lifetime_tracks_initial_and_child_exit() {
+    title_lifetime(true);
+}
+#[test]
+#[ignore = "explicit system title lifecycle reference"]
+fn rust_console_client_title_lifetime_records_system_conpty() {
+    title_lifetime(false);
+}
+
 fn native_titles(rust: bool) {
     #[derive(Default)]
     struct Titles(Vec<Vec<u8>>, usize);
@@ -2404,7 +2523,7 @@ fn rust_console_pty_output_pressure_keeps_controls_and_native_queries_live_and_r
         report.wait_ready();
         assert_eq!(
             std::fs::read_to_string(report.0.with_extension("ready")).unwrap(),
-            "73728"
+            "65536"
         );
         let started = Instant::now();
         if mode.ends_with("-read") {
@@ -2504,7 +2623,7 @@ fn rust_console_pty_output_tail_survives_root_exit_before_the_first_consumer_rea
     let mut fixture = Fixture::with_parts(master, child);
     fixture.finish(0);
     assert!(
-        fixture.bytes == expected_pressure_output(9, true),
+        fixture.bytes == expected_pressure_output(8, true),
         "output tail changed ordered chunks ({} bytes)",
         fixture.bytes.len()
     );
@@ -2521,7 +2640,8 @@ fn rust_console_pty_output_eof_waits_for_unattached_private_job_members() {
     );
     fixture.wait_exit(0);
     let deadline = Instant::now() + Duration::from_secs(3);
-    while fixture.bytes.len() < 9 * 8192 {
+    let expected = expected_pressure_output(8, true);
+    while fixture.bytes.len() < expected.len() {
         let chunk = fixture
             .output
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
@@ -2543,22 +2663,26 @@ fn rust_console_pty_output_eof_waits_for_unattached_private_job_members() {
         std::fs::read_to_string(report.0.with_extension("orphan")).unwrap(),
         "finished"
     );
-    assert!(fixture.bytes == expected_pressure_output(9, true));
+    assert_eq!(fixture.bytes, expected);
 }
 
 fn expected_pressure_output(chunks: usize, vary: bool) -> Vec<u8> {
-    (0..chunks)
-        .flat_map(|index| {
-            (0..1024).flat_map(move |position| {
-                let prefix = if vary {
-                    b'A' + ((index * 7 + position) % 26) as u8
-                } else {
-                    b'a'
-                };
-                format!("{}中😀", char::from(prefix)).into_bytes()
-            })
+    let mut bytes = format!(
+        "\x1b]0;{}\x1b\\",
+        env!("CARGO_BIN_EXE_minicon-platform-console-probe")
+    )
+    .into_bytes();
+    bytes.extend((0..chunks).flat_map(|index| {
+        (0..1024).flat_map(move |position| {
+            let prefix = if vary {
+                b'A' + ((index * 7 + position) % 26) as u8
+            } else {
+                b'a'
+            };
+            format!("{}中😀", char::from(prefix)).into_bytes()
         })
-        .collect()
+    }));
+    bytes
 }
 
 #[test]

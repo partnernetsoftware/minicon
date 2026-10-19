@@ -60,6 +60,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   └── native W setter uses the common independent title formatter
 │   │   └── scoped A/W setters/getters, input code pages and bounded native replies
 │   │   └── complete VT title commits and nonvisual effects from inactive producers
+│   │   └── initial CONNECT publication and scoped parent/child title lifetime
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -119,6 +120,7 @@ flowchart LR
     TITLE --> CODEC["Windows-private whole-string codec: titles / output / readback"]
     TITLE --> TITLEOUT["common independent bounded title publication"]
     TITLE --> EVENTS["committed OSC title events / inactive stream effect publication"]
+    TITLE --> INIT["staged initial title / admission / output readiness / accepted CONNECT"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -1017,9 +1019,11 @@ control handler and main thread, and a ReadConsoleW call deferred behind full
 output. The latter returns successful interruption with LastError 995 and zero
 read units. The consumer starts only after these receipts. Recovery compares
 262,144 bytes of independently encoded UTF-16/UTF-8 data, varying within and
-between blocks to expose byte duplication, loss or reordering. A separate
-73,728-byte case waits for actual root exit and observed input closure before
-creating its first reader, then compares the exact retained tail and EOF.
+between blocks to expose byte duplication, loss or reordering, together with
+the initial title frame. A separate retained-tail case waits for actual root
+exit and observed input closure before creating its first reader, then compares
+the exact retained tail and EOF. The initial-title/lifetime leaf below owns the
+updated data/header boundary; the earlier receipt used 73,728 data-only bytes.
 Recovery first consumes exactly 4 KiB, pauses consumption across two native
 query round trips, then resumes. This forces a partial staging flush and makes
 loss/repetition of an unconsumed prefix observable without a timing-only wait.
@@ -2324,8 +2328,9 @@ asserted on both. This is not byte-for-byte system-output parity.
 
 The subsequent code-page leaf below covers A setters/getters and scoped
 short-buffer/NUL rules. The VT-title leaf covers completed VT metadata, inactive
-producer effects and receiving-parser semicolons. Initial title publication and
-process-exit restoration remain open. General title compatibility is still
+producer effects and receiving-parser semicolons. The later lifecycle leaf
+covers initial publication and scoped normal-exit persistence. Other lifecycle
+and title compatibility remains
 partial; this leaf does not change backend selection or default promotion.
 
 
@@ -2402,7 +2407,8 @@ Primary sources are the pinned `src/host/getset.cpp` helpers and
 `src/server/ApiDispatchers.cpp` title dispatchers. The older control-character
 metadata policy remains separately asserted as documented in the preceding
 leaf. The subsequent VT-title leaf covers metadata, inactive-buffer effects and
-semicolon payload parsing. Initial title and process-exit restoration remain open.
+semicolon payload parsing. Initial publication and scoped exit behavior are
+covered by the later lifecycle leaf; other lifecycle cases remain open.
 
 
 Local qualification: `title-codepage-final-focused.log` records three passes
@@ -2469,8 +2475,9 @@ Low-level event storage, opaque OSC payloads and framed callback timing belong
 to [terminal state](PRD_02_24_con_terminal.md#osc-payloads-parser-events-and-framed-commit).
 The reusable hidden publisher and title-event API belong to
 [terminal library](PRD_02_35_terminal_library.md#committed-title-events-and-undisplayed-streams).
-Initial title publication, exit restoration, title-stack operations, broader
-OSC/clipboard consumers and non-host native runtime remain open. Existing
+The later lifecycle leaf covers initial publication and scoped normal-exit
+behavior. Other lifecycle/title-stack operations, broader OSC/clipboard
+consumers and non-host native runtime remain open. Existing
 experimental selection and default product behavior are unchanged.
 
 
@@ -2502,3 +2509,100 @@ scope. The exploratory library-only wrapper invocation's duplicate --lib
 failure is recorded separately in PRD 02.33; it is not reported as a passing
 gate. Complete owned suites were rerun through the same wrapper with explicit
 selectors and observed zero-filter counts.
+
+
+## Initial title and observed console-family lifetime
+
+```text
+Outcome: a new terminal receives its native initial title without corrupting admission or shared output
+├── First accepted CONNECT
+│   invariant: bounded title input is staged, identity admission precedes publication, metadata commits after reply
+│   evidence: native SDK initial current/original readback and decoded frontend title
+│   safe failure: publication failure removes the admitted control target, with no connection/handles committed
+│   dependency: existing native title display conversion and common publisher; non-goal: another formatter
+├── Output-capacity admission
+│   invariant: a first CONNECT can emit; later attachments to the live console remain non-emitting
+│   evidence: actual suspended cmd client, held kernel CONNECT, queued request count and explicit resume
+│   safe failure: rejected output leaves the client unconnected and private Job teardown reclaims it
+│   dependency: existing ordered output queue and retained process handle; non-goal: bypassing backpressure
+└── Shared console-family title
+    invariant: attaching/exiting a child does not republish the parent's initial title or flush another producer's grammar
+    evidence: native and VT-setting children, original-title reads, retained shared CSI and final EOF on both providers
+    safe failure: finite fences, exact private child waits and process-list retirement
+    dependency: one console-wide metadata owner; non-goal: unqualified per-process title restoration
+```
+
+Initial publication reuses the Windows-private read-only display publisher that
+explicit title setters also use; sanitization and common OSC framing have one
+implementation. CONNECT holds the original UTF-16 data locally until admission
+and output succeed. Metadata is assigned only after the successful native
+connection reply. Later live-console attachments do not replace the original
+metadata or emit another initial title. The existing zero-client/re-attachment
+policy is unchanged and is not qualified by this family scenario.
+
+A first CONNECT now participates in ordered output capacity. The native test
+receives the real kernel request while output is deliberately unavailable,
+asserts that no client or title output is committed, then resumes it. A rejected
+sink unwinds control admission and leaves no registered client/handles/targets;
+a retained handle verifies that dropping the private Job owner terminates the
+waiting process. The successful path launches and retires actual cmd with exit
+zero through the same service.
+
+Transport identity is pinned before a request enters that queue. The native
+test inserts a second privately owned session while the first CONNECT is still
+held: the foreign call fails immediately, emits nothing and does not consume
+another queue slot. Direct and readiness-aware dispatch share the same origin
+check; ordinary dispatch still performs the existing input-ready update.
+
+The seven-stage SDK scenario observes startup, a child setting a native title,
+that child's retirement, a VT-title child and its retirement, parent continuation
+of the child's partial CSI, a final explicit title, and finite EOF. It queries
+current/original W title metadata through independent native APIs and decodes
+frontend title/cell events before each acknowledgement. Both the Rust backend
+and installed Windows x86_64 build 20348 ConPTY preserve the child's last title
+after child exit; final EOF preserves the final explicit title. The parent's Z
+remains red after the child exits with an unfinished CSI. Owned-backend initial
+publication is also asserted exactly once across the family.
+
+The [SetConsoleTitle documentation](https://learn.microsoft.com/en-us/windows/console/setconsoletitle)
+describes original-title restoration on termination in general. It is not a
+substitute for the observed ConPTY behavior above: no blanket restore is added
+to each DISCONNECT or EOF. This evidence applies to normal exit in these
+scenarios on build 20348. Other system builds, classic visible consoles,
+abnormal exits, explicit detach/re-attach, title stacks and broader cancellation
+semantics still need their own qualification. General backend completion and
+default promotion remain open.
+
+Named evidence is
+`rust_console_pty_title_lifetime_tracks_initial_and_child_exit`,
+`rust_console_client_title_lifetime_records_system_conpty`, and
+`rust_console_initial_title_respects_output_admission_and_failed_sink`.
+
+Existing exact cmd-wire tests now include the initial title before wrap-mode
+negotiation and original text. Pressure/EOF wire oracles likewise include that
+frame in byte counts and exact ordered output. Eight 8-KiB data writes plus the
+title exceed the 64-KiB output ring, so pressure readiness and root-exit-before-read
+fixtures use that boundary. This preserves a genuinely pending staging tail
+without waiting for a ninth write that requires the reader to drain capacity.
+Queue/staging limits and final native query, control, input-close, orphan-Job
+EOF and byte-integrity assertions remain in force.
+
+
+Local qualification: `title-life-final-focused.log` records nine passes (three
+new native/lifecycle tests, three updated exact cmd-wire tests and three updated
+pressure/EOF tests). `title-life-final-suite.log` records 250 selected passes,
+including 17 alignment checks and the existing PowerShell/Node clients. Eight
+byte-restored runtime guards cover the initial frame, first-CONNECT output
+classification, failed publication, one-time live-console initialization, child
+partial-tail retention, system-reference oracle, queued transport identity and
+exact pressure-prefix/EOF bytes. Every new or updated test has an observed
+runtime guard failure; compiler errors are not counted as guard evidence.
+
+Ten static/build checks pass: strict default/enabled workspace and both owned
+parser Clippy gates, lexer no-std, four common-library cross-target builds and
+Windows ARM64 platform PTY/Rust-console compilation. Runtime scope is Windows
+x86_64 build 20348; cross-target checks remain compile-only. Final source format
+and documentation alignment checks complete before the local commit.
+`title-life-final-receipt.json` binds the source tree, guards, logs, pinned context
+sources, compiler and actual executable identities. No default promotion,
+external-consumer migration or other native-ISA runtime claim is added.

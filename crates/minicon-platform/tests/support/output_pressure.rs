@@ -49,7 +49,10 @@ pub(super) fn run(
     let writer_report = report.to_owned();
     let writer = std::thread::spawn(move || -> io::Result<()> {
         let mut units: Vec<u16> = [u16::from(b'a'), 0x4e2d, 0xd83d, 0xde00].repeat(1024);
-        for index in 0..if tail { 9 } else { 32 } {
+        // Eight full chunks plus the initial title exceed the 64 KiB output
+        // ring. The eighth write returns with staging pending; another write
+        // can then block without preventing the readiness/exit observation.
+        for index in 0..if tail { 8 } else { 32 } {
             if !budget {
                 for (position, group) in units.chunks_exact_mut(4).enumerate() {
                     group[0] = u16::from(b'A' + ((index * 7 + position) % 26) as u8);
@@ -70,11 +73,11 @@ pub(super) fn run(
             {
                 return Err(io::Error::last_os_error());
             }
-            if index == 8 {
+            if index == 7 {
                 publish(
                     &writer_report,
                     if budget || reading { "first" } else { "ready" },
-                    b"73728",
+                    b"65536",
                 )?;
             }
         }
@@ -100,7 +103,7 @@ pub(super) fn run(
     }
     let mut read_receipt = String::new();
     if reading {
-        publish(report, "ready", b"73728")?;
+        publish(report, "ready", b"65536")?;
         let mut units = [0_u16; 8];
         let mut count = 0;
         // SAFETY: the private native input and a live SDK-sized UTF-16 buffer.
@@ -175,7 +178,7 @@ pub(super) fn run(
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-        publish(report, "ready", b"73728")?;
+        publish(report, "ready", b"65536")?;
     }
     while EVENT.load(Ordering::Acquire) == 0 {
         if Instant::now() >= deadline {
