@@ -54,6 +54,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] bounded Unicode publication batches over the shared lexer and scalar-width policy
 │   ├── [-] canonical invalid UTF-8 prefix recovery before native edits and exit
 │   ├── [v] native-buffer process-exit fallback and inherited file-object retirement
+│   ├── [v] ordinary output follows vertical viewport without horizontal panning
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -107,6 +108,7 @@ flowchart LR
     HOST --> BATCH["bounded UTF-16/UTF-8 text batches / native newline and margin translation"]
     BATCH --> RECOVERY["shared invalid-prefix boundary / canonical replacement / retained new grammar"]
     HOST --> FAMILY["native buffer file lifetime / creator exit / inherited survivor / final-close fallback"]
+    HOST --> FOLLOW["vertical stream follow / two-axis native cursor commands / fixed metadata effects"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -1826,8 +1828,9 @@ TerminalViewport mapping for client output and native edits. Thus a 32-column
 buffer retains all 40 written characters while the 16-column peer receives
 0123456789abcdef on row zero and wxyzABCD on row one, in both VT and processed
 legacy output. Native readback retains offscreen data. Native cursor commands
-can follow the drawing cursor; ordinary output retains the current source view,
-matching the observed expanded-buffer writes. Original partial VT/UTF-8 grammar,
+follow both cursor axes. Ordinary output follows rows while preserving the
+horizontal interval, matching the independently observed expanded-buffer writes
+and long-output cases. Original partial VT/UTF-8 grammar,
 nonvisual frames and alternate-grid transitions survive. Existing cell/style/
 rectangle/scroll edits use this same viewport publication path, not a second
 Windows screen. ASCII/CR-LF runs publish in batches in VT and legacy modes;
@@ -2104,8 +2107,8 @@ canonical-layout comparison; `unicode-batch-system-observations.log` records all
 eight W/UTF-8/mode cases. The reference court pins this build and these native
 values and requires actual bulk output; other builds remain unqualified.
 The owned backend retains the pre-existing coherent Unicode scalar model.
-Raw UTF-16/legacy-layout compatibility and complete vertical viewport-follow
-semantics remain open; these findings do not certify that the installed host and
+Raw UTF-16/legacy-layout compatibility and remaining VT-origin/scroll-region/
+manual-scrollback follow semantics remain open; these findings do not certify that the installed host and
 owned backend produce interchangeable legacy API layouts.
 
 Local Unicode-publication qualification: `unicode-batch-final-suite.log`
@@ -2126,6 +2129,9 @@ suite passed without code or timeout changes. This reference-host timing finding
 does not establish a backend regression or resolve the reference's reliability.
 
 ### Accepted invalid UTF-8 prefix-invalidation leaf
+
+This leaf's parser recovery contract is independent of the viewport movement
+policy qualified in the vertical-follow leaf below.
 
 Invariant: a rejected unfinished prefix publishes one replacement before a new
 UTF-8 scalar, VT frame, effect or native edit. Only the new unfinished grammar
@@ -2167,4 +2173,53 @@ MSRV lint caught a too-new helper; the final implementation preserves its
 existing Rust-version declaration. Cross-target results are compilation only;
 native SDK execution is Windows x86_64. `utf8-recovery-final-receipt.json` binds
 the source tree, guard/check/log hashes, compiler, executable identities and
+remaining scope. Final documentation edits are followed by alignment checks.
+
+### Accepted vertical stream-follow leaf
+
+Invariant: ordinary client output follows cursor rows in an expanded drawing
+buffer while preserving the horizontal source interval. Native cursor commands
+retain their two-axis policy; effect-only frames do not pan. Common ViewportFollow
+owns this mechanism; Windows chooses its policy without another drawing grid.
+State/view commit follows sink acceptance and retains the existing projection
+budget. Dependency: shared viewport snapshots, exact lexer forks and framing.
+Safe failure preserves the previous view/state before writing; partial sink
+failure still retires the transport. Non-goals: every VT-origin, scrolling-margin,
+alternate-grid, hidden-cursor or manual-scrollback interaction and reflow.
+
+`vertical-viewport-observations.log` captures the initial mismatch: native cursor
+rows reached 6 and 15 while the owned viewport stayed at top 0 and hid the new
+lines. Installed ConPTY instead reported tops 3 and 12 for its four-row window.
+The final SDK court compares WriteFile and WriteConsoleW in modes 7 and 3:
+24x16 drawing buffer, 12x4 peer, long horizontal writes, multiple vertical pages,
+buffer-bottom scrolling and native cursor return to the top. Native window/
+cursor coordinates and offscreen logical rows are checked at all six stages.
+Eight provider/API/mode cases produce 48 fenced snapshots. Painted rows ignore
+only ASCII blank padding from erase-versus-space rendering. Offscreen cursors
+must be hidden; their native logical coordinates are checked, without claiming
+equal incidental hidden peer coordinates.
+
+Windows PowerShell 5 and PowerShell 7 now write 2,048 decomposed/CJK/supplementary
+groups into a 256x64 buffer with a 128x32 peer and require native cursor row 63
+and WindowTop 32. Every projected row and the existing wire-amplification bound
+remain checked. The earlier bulk SDK case also records native window bounds:
+legacy immediate wrapping at logical row 32 moves the view to top 1, leaving its
+last physical row blank with a visible cursor; VT delayed wrapping remains at
+top 0. Its old fixed-view row assumption is replaced by these explicit native
+and projected-state assertions.
+
+Local qualification: `vertical-viewport-final-suite.log` records 236 selected
+passes, including 17 alignment checks; `vertical-viewport-final-focused.log`
+separately records the common unit, two new SDK/reference tests, both extended
+PowerShell clients and the existing bulk SDK test (six passes). Nine byte-restored
+runtime guard failures cover every new test and both extended managed clients:
+row movement, horizontal preservation, bool compatibility, view transaction,
+projection budget, effect ordering, native policy, row-edge calculation and
+reference oracle. Ten static/build checks pass: default/enabled workspace strict
+all-targets Clippy, both standalone parsers' strict Clippy, lexer no-std build,
+four common-library cross-target builds and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Native runtime is Windows x86_64 build 20348; other
+targets are compile-only. Two reviewed source blobs match pinned tree
+9fd41b2baec77d25b8cfb584070d5998eab7df81. `vertical-viewport-final-receipt.json`
+binds source tree, guard/check/log hashes, compiler, executable identities and
 remaining scope. Final documentation edits are followed by alignment checks.

@@ -25,6 +25,7 @@ minicon terminal and rendering
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
 │   ├── Drawing-grid viewport snapshots and transactional mapped frames
+│   │   └── [v] explicit fixed / vertical / two-axis cursor-follow policy
 │   ├── Bounded visual-text lookahead and shared scalar placement width
 │   ├── Cursor appearance replay — visibility, position, shape and blinking
 │   ├── Literal text/style spans — independent cell components and bounded traversal
@@ -49,6 +50,7 @@ flowchart LR
     EDIT["CellStyle / literal cell edits"] --> VT
     VIEW["drawing buffer / transient viewport projection / exact lexer forks"] --> VT
     VIEW --> FRAME
+    FOLLOW["portable viewport-follow policy / transactional view commit"] --> VIEW
     TEXT["bounded encoded runs / exact lexer lookahead / scalar width"] --> FRAME
     CUR["cursor shape / blinking / visibility / replay"] --> VT
     CUR --> DMG
@@ -761,6 +763,27 @@ The shared viewport_regions_clip_wide_cells_and_preserve_authoritative_state
 unit covers clipping, padding, CJK/combining/supplementary cells, alternate-grid
 projection and cursor appearance without source mutation. Native/common-facade
 composition and its scoped runtime evidence belong to PRD 02.34 and 02.35.
+
+## Explicit viewport-follow policy
+
+ViewportFollow is a common OS/ISA-neutral policy: Fixed keeps the source region,
+Vertical follows cursor rows while preserving its horizontal interval, and
+Cursor follows both coordinates. Stream output and native-command projection
+accept the typed policy; bool remains compatible (false = Fixed, true = Cursor).
+Movement reuses the existing bounded cursor/region calculation and commits with
+the staged screen only after the sink accepts its projection. Effect-only frames
+do not move the viewport. Logical buffer contents and physical dimensions remain
+independent. Evidence must cover horizontal preservation, row movement, legacy
+bool behavior, pending grammar, sink rejection and projection budget errors.
+Dependencies are shared viewport snapshots and transactional framing; explicit
+errors preserve old view/state. Non-goals: native OS window policy, full VT
+scroll/origin/reflow semantics or a second authoritative drawing grid.
+Windows' ordinary-write choice and native/runtime evidence belong to PRD 02.34.
+
+The public rust_console_terminal_vertical_follow_preserves_columns_and_sink_transactions
+unit covers row/column policy, bool compatibility, effect-only frames, failure
+rollback, pending UTF-8 across native projection and replay. Scoped native and
+cross-target receipts belong to PRD 02.34's vertical-follow leaf.
 
 ## Bounded Unicode text publication
 

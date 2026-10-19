@@ -37,6 +37,8 @@ mod text_batch;
 mod unicode_output;
 #[cfg(windows)]
 mod utf8_recovery;
+#[cfg(windows)]
+mod viewport_follow;
 #[cfg(not(windows))]
 fn main() {
     std::process::exit(2);
@@ -62,6 +64,18 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(flags) = mode.strip_prefix("viewport-follow-") {
+        let (flags, kind) = flags
+            .split_once('-')
+            .ok_or(std::io::ErrorKind::InvalidInput)?;
+        return viewport_follow::run(
+            std::path::Path::new(&arguments[1]),
+            flags
+                .parse()
+                .map_err(|_| std::io::ErrorKind::InvalidInput)?,
+            kind == "w",
+        );
+    }
     if let Some(batch) = mode.strip_prefix("text-batch-") {
         let (kind, flags) = batch
             .split_once('-')

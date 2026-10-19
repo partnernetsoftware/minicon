@@ -11,9 +11,13 @@ impl ConsoleHost<'_> {
 
     pub(super) fn emit_framed(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
         let result = if let Some(mut view) = self.viewport {
-            let result =
-                self.terminal
-                    .write_output_viewport(bytes, &mut view, false, 1024 * 1024, output);
+            let result = self.terminal.write_output_viewport(
+                bytes,
+                &mut view,
+                crate::terminal::ViewportFollow::Vertical,
+                1024 * 1024,
+                output,
+            );
             self.viewport = Some(view);
             result
         } else {

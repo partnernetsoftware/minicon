@@ -65,12 +65,16 @@ pub(super) fn run(path: &Path, unicode: bool, mode: u32) -> io::Result<()> {
     std::fs::write(
         path,
         format!(
-            "build={}\nmode={mode};unicode={unicode};written={written}/{expected};size={},{};cursor={},{}\nglyphs={glyphs}\n",
+            "build={}\nmode={mode};unicode={unicode};written={written}/{expected};size={},{};cursor={},{}\nview={},{},{},{}\nglyphs={glyphs}\n",
             super::output_modes::windows_build()?,
             info.dwSize.X,
             info.dwSize.Y,
             info.dwCursorPosition.X,
-            info.dwCursorPosition.Y
+            info.dwCursorPosition.Y,
+            info.srWindow.Left,
+            info.srWindow.Top,
+            info.srWindow.Right,
+            info.srWindow.Bottom
         ),
     )?;
     if unsafe { SetConsoleMode(output, 7) } == 0 {

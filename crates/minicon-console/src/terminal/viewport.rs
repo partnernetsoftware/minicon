@@ -2,6 +2,38 @@
 use super::{Callbacks, CellRect, FrameError, Screen, TerminalStream};
 use std::io::{self, Write};
 
+/// Cursor-driven viewport movement, independent of native output modes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewportFollow {
+    /// Keep the supplied source region fixed.
+    Fixed,
+    /// Follow cursor rows while preserving the horizontal source region.
+    Vertical,
+    /// Follow both cursor coordinates.
+    Cursor,
+}
+
+impl From<bool> for ViewportFollow {
+    fn from(follow: bool) -> Self {
+        if follow { Self::Cursor } else { Self::Fixed }
+    }
+}
+
+impl ViewportFollow {
+    fn apply(self, view: TerminalViewport, screen: &Screen) -> TerminalViewport {
+        match self {
+            Self::Fixed => view,
+            Self::Cursor => view.following_cursor(screen),
+            Self::Vertical => {
+                let mut proposed = view.following_cursor(screen);
+                proposed.area.left = view.area.left;
+                proposed.area.right = view.area.right;
+                proposed
+            }
+        }
+    }
+}
+
 /// A source region and independently sized downstream terminal surface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TerminalViewport {
@@ -136,10 +168,11 @@ impl TerminalStream {
         &mut self,
         bytes: &[u8],
         view: &mut TerminalViewport,
-        follow: bool,
+        follow: impl Into<ViewportFollow>,
         limit: usize,
         sink: &mut impl Write,
     ) -> Result<(), FrameError> {
+        let follow = follow.into();
         self.framer.write_mapped(
             &mut self.parser,
             bytes,
@@ -149,8 +182,8 @@ impl TerminalStream {
                 let mut candidate = parser.fork_with_callbacks(Effects::default());
                 candidate.process(delta);
                 let effects = candidate.callbacks().forward;
-                let proposed = if follow && !effects {
-                    view.following_cursor(candidate.screen())
+                let proposed = if !effects {
+                    follow.apply(*view, candidate.screen())
                 } else {
                     *view
                 };
@@ -211,7 +244,7 @@ impl<CB: Callbacks> TerminalStream<CB> {
         &mut self,
         bytes: &[u8],
         view: &mut TerminalViewport,
-        follow: bool,
+        follow: impl Into<ViewportFollow>,
         limit: usize,
         sink: &mut impl Write,
     ) -> io::Result<()> {
@@ -224,12 +257,12 @@ impl<CB: Callbacks> TerminalStream<CB> {
                 "unfinished viewport command",
             ));
         }
-        let proposed =
-            if follow && candidate.screen().cursor_position() != self.screen().cursor_position() {
-                view.following_cursor(candidate.screen())
-            } else {
-                *view
-            };
+        let follow = follow.into();
+        let proposed = if candidate.screen().cursor_position() != self.screen().cursor_position() {
+            follow.apply(*view, candidate.screen())
+        } else {
+            *view
+        };
         let (next, ()) = candidate.into_parts();
         self.commit_viewport_screen(next, view, proposed, limit, false, sink)
     }
@@ -238,6 +271,169 @@ impl<CB: Callbacks> TerminalStream<CB> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_console_terminal_vertical_follow_preserves_columns_and_sink_transactions() {
+        let mut stream = TerminalStream::new(16, 24, 0, 64);
+        let mut view = TerminalViewport::full(4, 12);
+        let mut wire = Vec::new();
+        stream
+            .write_output_viewport(
+                b"01234567890123456789",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!((view.area.top, view.area.left), (0, 0));
+        stream
+            .write_output_viewport(
+                b"\r\nL01\r\nL02\r\nL03\r\nL04\r\nL05\r\n",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                view.area.top,
+                view.area.bottom,
+                view.area.left,
+                view.area.right
+            ),
+            (3, 7, 0, 12)
+        );
+        let mut peer = vt100::Parser::new(4, 12, 0);
+        peer.process(&wire);
+        assert_eq!(
+            peer.screen().rows(0, 12).collect::<Vec<_>>(),
+            ["L03", "L04", "L05", ""]
+        );
+        assert_eq!(peer.screen().cursor_position(), (3, 0));
+        let before = stream.screen().state_formatted();
+        let old = view;
+        struct Reject;
+        impl Write for Reject {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(
+            stream
+                .write_output_viewport(
+                    b"MORE\r\n",
+                    &mut view,
+                    ViewportFollow::Vertical,
+                    4096,
+                    &mut Reject
+                )
+                .is_err()
+        );
+        assert_eq!(stream.screen().state_formatted(), before);
+        assert_eq!(view, old);
+        assert!(
+            stream
+                .write_output_viewport(
+                    b"MORE\r\n",
+                    &mut view,
+                    ViewportFollow::Vertical,
+                    0,
+                    &mut wire
+                )
+                .is_err()
+        );
+        assert_eq!(stream.screen().state_formatted(), before);
+        assert_eq!(view, old);
+        stream
+            .write_viewport_projection(b"\x1b[7;19H", &mut view, true, 4096, &mut wire)
+            .unwrap();
+        assert_eq!((view.area.top, view.area.left), (3, 7));
+        stream
+            .write_output_viewport(
+                b"\r\nNEXT\r\n",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!((view.area.top, view.area.left, view.area.right), (5, 7, 19));
+        stream
+            .write_output_viewport(
+                b"\x1b]2;effect\x07",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!((view.area.top, view.area.left), (5, 7));
+        stream
+            .write_viewport_projection(b"\x1b[1;1H", &mut view, true, 4096, &mut wire)
+            .unwrap();
+        assert_eq!((view.area.top, view.area.left), (0, 0));
+        stream
+            .write_output_viewport(b"\n\n\n\n\n", &mut view, false, 4096, &mut wire)
+            .unwrap();
+        assert_eq!(view.area.top, 0);
+        stream
+            .write_output_viewport(
+                b"\x1b]2;fixed-effect\x07",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!(
+            view.area.top, 0,
+            "nonvisual effects must not bring an offscreen cursor into view"
+        );
+        stream
+            .write_output_viewport(b"X", &mut view, true, 4096, &mut wire)
+            .unwrap();
+        assert_eq!(view.area.top, 2);
+        stream
+            .write_output_viewport(
+                b"\xe4\xb8",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!(stream.pending_bytes(), b"\xe4\xb8");
+        stream
+            .write_viewport_projection(
+                b"\x1b[12;3H",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!((view.area.top, view.area.left), (8, 0));
+        stream
+            .write_output_viewport(
+                b"\xad",
+                &mut view,
+                ViewportFollow::Vertical,
+                4096,
+                &mut wire,
+            )
+            .unwrap();
+        assert!(stream.at_boundary());
+        assert_eq!(stream.screen().cell(11, 2).unwrap().contents(), "中");
+        let mut peer = vt100::Parser::new(4, 12, 0);
+        peer.process(&wire);
+        assert_eq!(peer.screen().cell(3, 2).unwrap().contents(), "中");
+        assert!(peer.at_boundary());
+    }
 
     #[test]
     fn rust_console_terminal_malformed_utf8_recovery_precedes_native_edits() {

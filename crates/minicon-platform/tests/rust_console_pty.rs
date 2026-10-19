@@ -378,6 +378,110 @@ fn native_buffers(rust: bool) {
     );
 }
 
+fn vertical_viewport_follow(rust: bool) {
+    for (mode, unicode) in [(7, false), (7, true), (3, false), (3, true)] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!(
+                "viewport-follow-{mode}-{}",
+                if unicode { "w" } else { "file" }
+            ))
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 4, cols: 12 });
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        for stage in 0..6 {
+            fixture.until(&format!("buffers-stage-{stage}:"));
+            let mut peer = vt100::Parser::new(4, 12, 0);
+            peer.process(&fixture.bytes);
+            eprintln!(
+                "viewport rust={rust};mode={mode};stage={stage};rows={:?};cursor={:?};hide={}",
+                peer.screen().rows(0, 12).collect::<Vec<_>>(),
+                peer.screen().cursor_position(),
+                peer.screen().hide_cursor()
+            );
+            let native = std::fs::read_to_string(&report.0).unwrap();
+            let rows = peer
+                .screen()
+                .rows(0, 12)
+                .map(|row| row.trim_end_matches(' ').to_owned())
+                .collect::<Vec<_>>();
+            let expected = [
+                ["012345678901", "", "", ""],
+                ["L03", "L04", "L05", ""],
+                ["L17", "L18", "L19", ""],
+                ["R05", "L06", "L07", "L08"],
+                ["R05", "BACK", "L07", "L08"],
+                ["R05", "BACK", "012345678901", "L08"],
+            ];
+            assert_eq!(
+                rows, expected[stage],
+                "rust={rust};mode={mode};unicode={unicode};{native}"
+            );
+            assert_eq!(peer.screen().hide_cursor(), matches!(stage, 0 | 5));
+            if !matches!(stage, 0 | 5) {
+                assert_eq!(
+                    peer.screen().cursor_position(),
+                    [(0, 0), (3, 0), (3, 0), (0, 1), (2, 0), (0, 0)][stage]
+                );
+            }
+            let top = [0, 3, 12, 0, 0, 0][stage];
+            let (x, y) = [(20, 0), (0, 6), (0, 15), (1, 0), (0, 2), (20, 2)][stage];
+            assert!(
+                native.lines().any(|line| line
+                    == format!("stage{stage}:view=0,{top},11,{};cursor={x},{y}", top + 3)),
+                "{native}"
+            );
+            let buffer_rows = [
+                ["01234567890123456789", "", ""],
+                ["01234567890123456789", "L01", "L02"],
+                ["L05", "L06", "L07"],
+                ["R05", "L06", "L07"],
+                ["R05", "BACK", "L07"],
+                ["R05", "BACK", "01234567890123456789"],
+            ];
+            for (row, text) in buffer_rows[stage].iter().enumerate() {
+                assert!(
+                    native
+                        .lines()
+                        .any(|line| line == format!("stage{stage}:row{row}={text:?}")),
+                    "{native}"
+                );
+            }
+            assert!(
+                native
+                    .lines()
+                    .any(|line| line == format!("stage{stage}:row15=\"\"")),
+                "{native}"
+            );
+            std::fs::write(
+                report.0.with_extension(format!("stage{stage}")),
+                b"observed",
+            )
+            .unwrap();
+        }
+        fixture.finish(0);
+        eprintln!(
+            "viewport native rust={rust}:\n{}",
+            std::fs::read_to_string(&report.0).unwrap()
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_vertical_viewport_follows_long_output_without_horizontal_pan() {
+    vertical_viewport_follow(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY viewport reference"]
+fn rust_console_client_vertical_viewport_matches_system_conpty() {
+    vertical_viewport_follow(false);
+}
+
 fn buffer_process_family(rust: bool, tail: bool) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -594,11 +698,21 @@ fn unicode_text_batches(rust: bool) {
             }
             let cursor = if mode & 4 != 0 { "255,31" } else { "0,32" };
             assert!(receipt.contains(&format!("cursor={cursor}\n")), "{receipt}");
+            let top = u16::from(mode & 4 == 0);
+            assert!(
+                receipt.contains(&format!("view=0,{top},127,{}\n", top + 31)),
+                "{receipt}"
+            );
             let mut parser = vt100::Parser::new(32, 128, 0);
             parser.process(&fixture.bytes);
             let expected = "Ae\u{301}中😀BC".repeat(16);
             for (row, text) in parser.screen().rows(0, 128).enumerate() {
-                assert_eq!(text, expected, "row {row}: {receipt}");
+                let expected_row = if top == 1 && row == 31 { "" } else { &expected };
+                assert_eq!(text, expected_row, "row {row}: {receipt}");
+            }
+            if top == 1 {
+                assert_eq!(parser.screen().cursor_position(), (31, 0));
+                assert!(!parser.screen().hide_cursor());
             }
             if rust {
                 assert!(
@@ -2792,7 +2906,7 @@ fn rust_console_client_powershell7_native_geometry() {
 }
 
 fn powershell_unicode_batches(name: &str) {
-    let script = "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new();[Console]::SetBufferSize(256,64);$text=('Ae'+[char]0x301+'中😀BC')*1024;[Console]::Write($text);if([Console]::BufferWidth -ne 256 -or [Console]::BufferHeight -ne 64 -or [Console]::CursorLeft -ne 255 -or [Console]::CursorTop -ne 31){exit 19};[Console]::Write(([char]27)+']2;bulk-app-end:'+([char]7));exit 0";
+    let script = "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new();[Console]::SetBufferSize(256,64);$text=('Ae'+[char]0x301+'中😀BC')*2048;[Console]::Write($text);if([Console]::BufferWidth -ne 256 -or [Console]::BufferHeight -ne 64 -or [Console]::CursorLeft -ne 255 -or [Console]::CursorTop -ne 63 -or [Console]::WindowTop -ne 32){exit 19};[Console]::Write(([char]27)+']2;bulk-app-end:'+([char]7));exit 0";
     let mut fixture = Fixture::open(
         ChildCommand::new(external_client(name))
             .arg("-NoLogo")

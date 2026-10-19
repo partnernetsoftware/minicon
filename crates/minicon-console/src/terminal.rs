@@ -4,7 +4,7 @@
 mod utf16;
 mod viewport;
 pub use utf16::Utf16Decoder;
-pub use viewport::TerminalViewport;
+pub use viewport::{TerminalViewport, ViewportFollow};
 
 use std::io::{self, Write};
 pub use vt100::{
