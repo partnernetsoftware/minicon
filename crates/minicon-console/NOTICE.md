@@ -6,8 +6,10 @@ Microsoft Terminal source at revision
 
 - `dep/Console/condrv.h`
 - `dep/Console/conmsgl1.h` and `dep/Console/conmsgl2.h`
+- `dep/Console/ntcon.h`
 - `src/server/DeviceHandle.cpp`
 - `src/server/ApiSorter.cpp` and `src/server/ApiDispatchers.cpp`
+- `src/host/readDataCooked.cpp`, `readDataDirect.cpp` and `readDataRaw.cpp`
 - `src/winconpty/winconpty.h`
 
 Copyright (c) Microsoft Corporation. The MIT notice is retained in

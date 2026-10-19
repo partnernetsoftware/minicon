@@ -118,7 +118,7 @@ flowchart LR
 ## Current frontier
 
 - [-] **Owned Rust Windows console backend: minicon-console.** Source and REA
-  release pinned; native ConDrv and limited cmd/Unicode output implemented.
+  release pinned; native ConDrv, limited Win32 I/O/records and job cleanup implemented.
   General console API semantics and product integration remain planned.
   [Owner](prd/PRD_02_34_windows_console_backend.md) and
   [sequence](plan/plan-windows-console-backend.md); no release assigned.

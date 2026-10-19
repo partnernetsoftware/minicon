@@ -19,7 +19,9 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::System::IO::{
     CancelIoEx, DeviceIoControl, GetOverlappedResult, OVERLAPPED,
 };
-use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, ResetEvent, SetEvent, WaitForSingleObject,
+};
 
 const OBJ_CASE_INSENSITIVE: u32 = 0x40;
 const SYNCHRONIZE: u32 = 0x0010_0000;
@@ -59,6 +61,7 @@ pub struct DriverRequest<'session> {
     pub descriptor: RequestDescriptor,
     payload: [u8; 4096],
     payload_length: usize,
+    completed: bool,
 }
 
 #[repr(C)]
@@ -128,8 +131,8 @@ unsafe extern "system" {
 /// One private driver server, input event and reference handle.
 ///
 /// Handles are non-inheritable. Dropping the session releases all three; it
-/// neither attaches to nor terminates an existing user's console. No console
-/// client is admitted by this initial implementation.
+/// neither attaches to nor terminates an existing user's console. Clients are
+/// launched explicitly through this session's owned reference.
 pub struct DriverSession {
     id: u64,
     _reference: OwnedHandle,
@@ -138,6 +141,9 @@ pub struct DriverSession {
 }
 
 impl DriverSession {
+    pub(crate) fn client_reference(&self) -> HANDLE {
+        self._reference.as_raw_handle()
+    }
     pub fn open() -> io::Result<Self> {
         let server = open_device(r"\Device\ConDrv\Server", null_mut(), GENERIC_ALL, 0)?;
         // SAFETY: null security attributes make a non-inheritable unnamed
@@ -263,11 +269,31 @@ impl DriverSession {
             descriptor: packet.descriptor,
             payload: packet.payload,
             payload_length: bytes as usize - size_of::<RequestDescriptor>(),
+            completed: false,
         })
+    }
+
+    pub(crate) fn set_input_available(&self, available: bool) -> io::Result<()> {
+        // SAFETY: this session owns the live event registered with ConDrv.
+        let result = unsafe {
+            if available {
+                SetEvent(self._input_available.as_raw_handle())
+            } else {
+                ResetEvent(self._input_available.as_raw_handle())
+            }
+        };
+        if result == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
     }
 }
 
-impl DriverRequest<'_> {
+impl<'session> DriverRequest<'session> {
+    pub(crate) fn origin(&self) -> &'session DriverSession {
+        self.session
+    }
     pub(crate) fn session_id(&self) -> u64 {
         self.session.id
     }
@@ -278,7 +304,12 @@ impl DriverRequest<'_> {
         self.complete(0xc000_00bb_u32 as i32, 0, &[])
     }
 
-    pub(crate) fn complete(self, status: i32, information: usize, reply: &[u8]) -> io::Result<()> {
+    pub(crate) fn complete(
+        mut self,
+        status: i32,
+        information: usize,
+        reply: &[u8],
+    ) -> io::Result<()> {
         if reply.len() > self.descriptor.output_size as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -309,6 +340,7 @@ impl DriverRequest<'_> {
             null_mut(),
             0,
         )?;
+        self.completed = true;
         Ok(())
     }
 
@@ -378,6 +410,65 @@ impl DriverRequest<'_> {
     /// Raw inline bytes for future validated, per-operation decoding.
     pub fn inline_payload(&self) -> &[u8] {
         &self.payload[..self.payload_length]
+    }
+}
+
+impl Drop for DriverRequest<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            let mut reply = [0_u8; 20];
+            let mut reply_len = 0;
+            let mut status = 0xc000_0120;
+            if self.descriptor.function == 6 {
+                status = 0x101; // native console read interruption
+            } else if self.descriptor.function == 7 && self.payload_length >= 8 {
+                let api = u32::from_le_bytes(self.payload[..4].try_into().unwrap());
+                let needed = match api {
+                    0x0100_0004 => 8,
+                    0x0100_0005 => 20,
+                    _ => 0,
+                };
+                if needed != 0
+                    && self.payload_length >= needed + 8
+                    && self.descriptor.output_size >= needed as u32
+                {
+                    reply[..needed].copy_from_slice(&self.payload[8..8 + needed]);
+                    if needed == 8 {
+                        reply[..4].fill(0);
+                    } else {
+                        reply[12..20].fill(0);
+                    }
+                    reply_len = needed;
+                    status = 0x101;
+                }
+            }
+            let completion = Completion {
+                identifier: self.descriptor.identifier,
+                status: IoStatusBlock {
+                    status_or_pointer: status,
+                    information: 0,
+                },
+                write: BufferDescriptor {
+                    data: if reply_len == 0 {
+                        null_mut()
+                    } else {
+                        reply.as_mut_ptr().cast()
+                    },
+                    size: reply_len as u32,
+                    offset: 0,
+                },
+            };
+            // A dropped/failed handler must release the actual waiting client.
+            // The borrow guarantees the driver endpoint still exists here.
+            let _ = control(
+                &self.session.server,
+                IOCTL_COMPLETE_IO,
+                (&completion as *const Completion).cast(),
+                size_of::<Completion>() as u32,
+                null_mut(),
+                0,
+            );
+        }
     }
 }
 

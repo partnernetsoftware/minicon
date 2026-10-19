@@ -1,8 +1,13 @@
 //! Initial user-mode console API service; no system console host is used.
-use crate::DriverRequest;
+use crate::{DriverRequest, DriverSession};
+mod input;
+pub use input::ConsoleInput;
+use input::InputState;
 use std::collections::BTreeMap;
 use std::io::{self, Write};
-use windows_sys::Win32::Globalization::{GetOEMCP, GetUserDefaultLangID, MultiByteToWideChar};
+use windows_sys::Win32::Globalization::{
+    GetOEMCP, GetUserDefaultLangID, IsValidCodePage, MultiByteToWideChar,
+};
 
 const SUCCESS: i32 = 0;
 const INVALID_PARAMETER: i32 = 0xc000_000d_u32 as i32;
@@ -26,11 +31,14 @@ pub struct DispatchReceipt {
     pub function: u32,
     pub api: Option<u32>,
     pub status: i32,
+    pub pending: bool,
 }
 
 /// Experimental console state. Currently supports attachment and a small
 /// output/mode/code-page subset; unsupported APIs return NOT_SUPPORTED.
-pub struct ConsoleHost {
+pub struct ConsoleHost<'session> {
+    session: Option<&'session DriverSession>,
+    input: InputState<'session>,
     session_id: Option<u64>,
     processes: BTreeMap<usize, u32>,
     handles: BTreeMap<usize, ClientHandle>,
@@ -45,11 +53,13 @@ pub struct ConsoleHost {
     title: Vec<u16>,
 }
 
-impl Default for ConsoleHost {
+impl Default for ConsoleHost<'_> {
     fn default() -> Self {
         // SAFETY: GetOEMCP reads the system code page without pointers or handles.
         let code_page = unsafe { GetOEMCP() };
         Self {
+            session: None,
+            input: InputState::default(),
             session_id: None,
             processes: BTreeMap::new(),
             handles: BTreeMap::new(),
@@ -66,7 +76,7 @@ impl Default for ConsoleHost {
     }
 }
 
-impl ConsoleHost {
+impl<'session> ConsoleHost<'session> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -79,7 +89,7 @@ impl ConsoleHost {
     /// bounded output path. No display window or platform host is created.
     pub fn dispatch(
         &mut self,
-        request: DriverRequest<'_>,
+        request: DriverRequest<'session>,
         output: &mut impl Write,
     ) -> io::Result<DispatchReceipt> {
         let descriptor = request.descriptor;
@@ -87,6 +97,7 @@ impl ConsoleHost {
             function: descriptor.function,
             api: None,
             status: SUCCESS,
+            pending: false,
         };
         if self.session_id.is_some_and(|id| id != request.session_id()) {
             receipt.status = INVALID_HANDLE;
@@ -94,6 +105,8 @@ impl ConsoleHost {
             return Ok(receipt);
         }
         self.session_id = Some(request.session_id());
+        self.session = Some(request.origin());
+        self.update_input_event()?;
         match descriptor.function {
             1 => {
                 if self.processes.len() >= 64
@@ -146,6 +159,7 @@ impl ConsoleHost {
                 }
             }
             2 => {
+                self.cancel_client_reads(descriptor.process, None);
                 if self.processes.remove(&descriptor.process).is_none() {
                     receipt.status = INVALID_HANDLE;
                 }
@@ -154,6 +168,7 @@ impl ConsoleHost {
                 request.complete(receipt.status, 0, &[])?;
             }
             4 => {
+                self.cancel_client_reads(descriptor.process, Some(descriptor.object));
                 if !self.valid_handle(descriptor.process, descriptor.object)
                     || self.handles.remove(&descriptor.object).is_none()
                 {
@@ -171,6 +186,7 @@ impl ConsoleHost {
                     request.complete(SUCCESS, bytes.len(), &[])?;
                 }
             }
+            6 => return self.defer_text_read(request, Vec::new(), true, output),
             7 => return self.dispatch_api(request, output),
             _ => {
                 receipt.status = NOT_SUPPORTED;
@@ -206,7 +222,7 @@ impl ConsoleHost {
 
     fn dispatch_api(
         &mut self,
-        request: DriverRequest<'_>,
+        request: DriverRequest<'session>,
         output: &mut impl Write,
     ) -> io::Result<DispatchReceipt> {
         let descriptor = request.descriptor;
@@ -217,6 +233,7 @@ impl ConsoleHost {
             function: 7,
             api,
             status: SUCCESS,
+            pending: false,
         };
         let Some((api, body_size)) = api.zip(body_size) else {
             receipt.status = INVALID_PARAMETER;
@@ -240,6 +257,17 @@ impl ConsoleHost {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0100_0003 if body.len() >= 4 => {
+                if !self.input_handle(descriptor.process, descriptor.object) {
+                    receipt.status = INVALID_HANDLE;
+                } else {
+                    body[..4].copy_from_slice(&(self.input.events.len() as u32).to_le_bytes());
+                }
+            }
+            0x0100_0004 if body.len() >= 8 => return self.defer_record_read(request, body, output),
+            0x0100_0005 if body.len() >= 20 => {
+                return self.defer_text_read(request, body, false, output);
+            }
             0x0100_0000 if body.len() >= 8 => {
                 let code_page = if body[4] != 0 {
                     self.output_code_page
@@ -247,6 +275,17 @@ impl ConsoleHost {
                     self.input_code_page
                 };
                 body[..4].copy_from_slice(&code_page.to_le_bytes());
+            }
+            0x0200_0004 if body.len() >= 8 => {
+                let code_page = read_u32(&body, 0).unwrap();
+                // SAFETY: checks a numeric code-page ID without borrowed buffers.
+                if unsafe { IsValidCodePage(code_page) } == 0 {
+                    receipt.status = INVALID_PARAMETER;
+                } else if body[4] != 0 {
+                    self.output_code_page = code_page;
+                } else {
+                    self.input_code_page = code_page;
+                }
             }
             0x0100_0001 | 0x0100_0002 if body.len() >= 4 => {
                 if !self.valid_handle(descriptor.process, descriptor.object) {
@@ -259,7 +298,15 @@ impl ConsoleHost {
                     if api == 0x0100_0001 {
                         body[..4].copy_from_slice(&mode.to_le_bytes());
                     } else {
-                        *mode = read_u32(&body, 0).unwrap();
+                        let requested = read_u32(&body, 0).unwrap();
+                        if matches!(self.handles[&descriptor.object].kind, HandleKind::Input)
+                            && requested & 4 != 0
+                            && requested & 2 == 0
+                        {
+                            receipt.status = INVALID_PARAMETER;
+                        } else {
+                            *mode = requested;
+                        }
                     }
                 }
             }

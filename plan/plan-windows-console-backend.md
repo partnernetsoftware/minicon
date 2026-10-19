@@ -22,7 +22,8 @@ sequences that contract without assigning a release or changing current defaults
 5. [-] Implement one bounded replacement slice at a time behind the existing
    Windows adapter: lifecycle/transport, input and modes, screen/output, resize
    and remaining required API semantics. Keep unsupported cases visible.
-6. [-] Initial native Windows x86_64 cmd/Unicode/session-isolation cases pass.
+6. [-] Initial native Windows x86_64 cmd/Unicode/session-isolation, deferred
+   input, independent Win32 records and real job-tree teardown cases pass.
    Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.

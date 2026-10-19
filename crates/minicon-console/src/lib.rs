@@ -2,16 +2,21 @@
 //!
 //! This crate is not yet a replacement for ConPTY/conhost. The initial slice
 //! establishes a real, owned ConDrv server and a limited console API service.
-//! Actual cmd output and exit are tested; general input, native object creation,
-//! complete screen semantics and product PTY integration remain unimplemented.
+//! Actual cmd I/O, Win32 input records and job-owned cleanup are tested.
+//! Native object creation, control signals, complete screen semantics and
+//! product PTY integration remain incomplete; this is not a default backend.
 //! Architecture, provenance and acceptance: prd/PRD_02_34_windows_console_backend.md.
 
+#[cfg(windows)]
+mod client;
 #[cfg(windows)]
 mod driver;
 #[cfg(windows)]
 mod host;
 
 #[cfg(windows)]
+pub use client::ConsoleChild;
+#[cfg(windows)]
 pub use driver::{DriverRequest, DriverSession, RequestDescriptor};
 #[cfg(windows)]
-pub use host::{ConsoleHost, DispatchReceipt};
+pub use host::{ConsoleHost, ConsoleInput, DispatchReceipt};

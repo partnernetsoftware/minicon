@@ -26,7 +26,9 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] bounded receive/cancellation and explicit unsupported completion
 │   ├── [v] accepted CONNECT, opaque handles and DISCONNECT reclamation
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
-│   └── [-] API service; input and general screen semantics remain incomplete
+│   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
+│   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
+│   └── [-] general API service, signals, screen semantics and product adapter
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
 │   └── retain upstream notices and separate upstream baseline from our changes
@@ -46,7 +48,10 @@ Outcome: own the Windows console backend with measured compatibility
 flowchart LR
     CLIENT["unchanged cmd / PowerShell / Node / native client"] --> API["Windows console API and ConDrv"]
     API --> HOST["owned Rust console host: limited implementation"]
-    HOST --> ADAPTER["Windows adapter behind minicon-platform::pty"]
+    HOST -. "planned integration" .-> ADAPTER["Windows adapter behind minicon-platform::pty"]
+    HOST --> INPUT["deferred input / input-ready event"]
+    HOST --> JOB["ConsoleChild: suspend / assign job / resume"]
+    JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
     SRC["pinned public C++ source"] --> SPEC["API inventory and differential cases"]
@@ -144,16 +149,17 @@ chooses a separately evidenced compatibility boundary.
 ## Status and next executable milestone
 
 [v] Source and REA research with pinned references. [-] Rust native transport
-and API service; [v] initial connection acceptance/output subset; [_] input,
-remaining API semantics, optional binary analysis and product integration.
+and API service; [v] initial connection/I/O/record/job subset; [_] remaining
+API semantics, control signals, optional binary analysis and product integration.
 Sequence: [backend research plan](../plan/plan-windows-console-backend.md).
 This work has no assigned release version and does not replace the approved
 0.2.16 test-orchestration plan. No production backend or default changed.
 
 ### Initial Windows x86_64 native evidence
 
-`scripts/build.sh test rust_console_ -- --nocapture` executes eleven tests:
-eight native driver/client cases and three output/Unicode state cases. The
+`scripts/build.sh test rust_console_ -- --nocapture` executes thirty tests:
+sixteen library cases (thirteen native and three state cases) and fourteen
+independent native Win32-client cases. The
 canonical wrapper visits unrelated workspace/fork suites but filters those
 cases out; this is a targeted pass. The original five bootstrap cases remain:
 
@@ -201,12 +207,14 @@ certification for all clients or OS releases.
 |---|---|---|
 | CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, reclaim that client's records on disconnect. | General inherited/duplicated handles, attach/free-console and descendant lifecycle qualification. |
 | CLOSE_OBJECT | Validate ownership and retire the token. | Native create-object/access/share semantics are not implemented yet. |
-| RAW_WRITE / WriteConsole | Capture actual client bytes, convert current OEM code page or UTF-16 to UTF-8, send to the supplied writer, update screen state. | DBCS fragments, code-page mutation, processed-output/mode fidelity, pending surrogate at final stream end and complete backpressure/cancellation. |
-| GetCP / GetLangId | Return real system OEM code page/current-user language; input/output page state is distinct. | SetCP is not implemented. |
-| GetMode / SetMode | Read/write the selected buffer's stored mode value. | Full mode validation and input/processed-output semantics remain incomplete; storing a bit does not qualify that behavior. |
+| RAW_WRITE / WriteConsole | Capture actual client bytes, convert current code page or UTF-16 to UTF-8, send to the supplied writer, update screen state. | DBCS output fragments, processed-output/mode fidelity, pending surrogate at final stream end and complete output backpressure/cancellation. |
+| GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
+| GetMode / SetMode | Store buffer modes and enforce echo's line-input dependency; basic cooked/raw input consumes those modes. | Full mode validation, signals, insert/history editing and processed-output fidelity. |
+| RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
+| GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass and native input-handle readiness. | ANSI input-record variants, WriteConsoleInput and broad application qualification. |
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
-| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Input/read/waits, events, control signals, remaining layer APIs and product integration. |
+| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Control signals, remaining layer APIs and product integration. |
 
 The backend reuses this repository's owned `vt100` fork for screen state behind
 the Windows adapter. That reuse does not make Windows console mode semantics
@@ -231,7 +239,8 @@ Native evidence:
 
 Runtime negatives drop actual sink output, disable session binding, discard the
 pending high surrogate and swallow sink failure. Each corresponding selected
-test fails; restored code passes the eleven-case suite. Local evidence:
+test fails; restored code passed the original eleven-case output suite. These
+cases remain in the current thirty-case suite described below. Local evidence:
 `target/conhost-research/host-final-suite.log` and named `*-negative.log` files.
 
 Debugging found two fixture/bootstrap details: standard handles must explicitly
@@ -241,3 +250,70 @@ fail even though native WriteConsole worked. No production workaround or
 relaxed output assertion was used to qualify echo. A separate local native API
 probe helped confirm output mode, screen-info layout and WriteConsole's result;
 it is diagnostic evidence, not a registered cross-platform acceptance case.
+
+### Deferred input, independent API probes and owned process lifetime
+
+`host/input.rs` owns bounded event/read state: 4096 queued events, 64 pending
+reads, 32768 UTF-16 line units and the existing 1 MiB transfer ceiling.
+`ConsoleHost` borrows the originating driver while reads are deferred. Each
+request is completed once; dropping an unhandled request also releases its
+actual kernel wait. On disconnect/handle close, associated deferred requests
+and byte tails are removed. Input availability is the real event registered
+with ConDrv, including input queued before CONNECT.
+
+`ConsoleChild` is the reusable native launch/lifetime owner. It takes an
+absolute image plus an explicit Windows command line, creates a suspended
+client with the private reference, assigns a kill-on-close job, then resumes.
+Resume checks the actual prior suspend count. The public process handle is
+borrowed; membership/counts are queried from the private job. Dropping the owner
+closes that job and waits for its root process with a bounded budget.
+Environment/cwd overrides and the product adapter are still future work.
+
+The Cargo-built `minicon-console-probe` directly calls Windows APIs and reports
+results to private files rather than using the console path it is testing.
+Cargo supplies its exact executable path to `tests/native_input.rs`; the court
+does not guess a hashed test path. It proves:
+
+- ReadConsoleW exact UTF-16/counts, caller-supplied initial characters and a
+  requested Tab wakeup with control-key state.
+- Actual blocked cmd input, Enter-delimited completion and emoji backspace
+  editing; killing the waiting client clears its deferred request.
+- ReadConsoleInputW typed key/mouse/resize/focus fields, empty/nonempty peek,
+  native stdin-handle waiting and NOWAIT from a second thread while a cooked
+  read is already blocked.
+- ReadFile one-byte UTF-8 reads preserve Chinese and a supplementary character;
+  code-page conversion uses the native codec and retains per-handle byte tails.
+- An overflow enqueue leaves the native-visible 4096-record inventory intact,
+  and pre-CONNECT input signals the actual input handle.
+- A blocked reader is reclaimed by job-owner drop. A real child spawned by the
+  probe joins the same job and Rust console; root and descendant process
+  objects are both observed terminated after owner drop. The descendant handle
+  gains cleanup authority only after positive private-job membership checking.
+
+The interruption protocol is console-specific. The pinned Microsoft
+`readDataCooked`, `readDataDirect` and `readDataRaw` implementations use
+`STATUS_ALERTED` for handle-closing/interruption cases. A generic
+`STATUS_CANCELLED` reply caused the controlled cmd fixture to exit with an
+access violation; that is a rejected implementation, not a successful cancel.
+Native ReadConsoleW now returns BOOL success, zero characters and LastError
+995 (`ERROR_OPERATION_ABORTED`) on the tested interruption path. This special
+console behavior is documented by [ReadFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile)
+and inherited by [ReadConsole](https://learn.microsoft.com/en-us/windows/console/readconsole).
+It does not implement delivery of a Ctrl+C process signal.
+
+Seventeen runtime negative controls cover payload delivery, interruption
+status, input-event signaling, ANSI byte tails, raw surrogate pairing, Enter
+waiting, NOWAIT ordering, native mouse fields, dead-client cleanup, initial
+input offsets, kill-on-close, suspended launch, request-drop cancellation,
+Unicode backspace, atomic queue overflow, wakeup control state and prebound
+input signaling. Each selected test must fail with the changed behavior;
+all edited source bytes are restored before the positive suite. An early mouse
+mutation merely caused an unused-variable compile failure and was replaced by
+a runtime mutation; compile failures do not count as negative proof.
+
+Local receipts: `target/conhost-research/input-negative-audit.json`,
+`input-full-suite.log`, and per-control `*-negative.log` files. The current
+native scope is Windows x86_64 on the measured host; Windows aarch64 compilation
+does not replace native execution. General signal/resize/readback compatibility,
+legacy driver bootstrap, output blocking teardown and MiniCon/AgenTerm product
+integration remain open.

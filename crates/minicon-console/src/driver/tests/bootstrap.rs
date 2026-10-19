@@ -1,136 +1,20 @@
-//! Real Windows client bootstrap; this fixture never attaches to existing consoles.
+//! Real client fixtures use the same job-contained launcher as consumers.
 use super::*;
-use std::os::windows::ffi::OsStrExt;
-use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-use windows_sys::Win32::System::Threading::{
-    CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
-    GetCurrentProcess, GetExitCodeProcess, InitializeProcThreadAttributeList,
-    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES,
-    STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
-};
-
-// Private native bootstrap layout from the pinned src/winconpty/winconpty.h.
-// This deliberately does not call the system CreatePseudoConsole function.
-#[repr(C)]
-struct PseudoConsole {
-    signal: HANDLE,
-    reference: HANDLE,
-    host_process: HANDLE,
-}
-
-struct Child {
-    process: OwnedHandle,
-    thread: OwnedHandle,
-    pid: u32,
-}
-
-impl Drop for Child {
-    fn drop(&mut self) {
-        // SAFETY: this unique handle names only our newly created fixture.
-        // These fixtures use cmd builtin commands only; they launch no child tools.
-        unsafe {
-            TerminateProcess(self.process.as_raw_handle(), 0xfe);
-            WaitForSingleObject(self.process.as_raw_handle(), 2000);
-        }
-    }
-}
+use windows_sys::Win32::System::Threading::{GetExitCodeProcess, TerminateProcess};
+type Child = crate::ConsoleChild;
 
 fn create_suspended_client(session: &DriverSession) -> io::Result<Child> {
     create_suspended_cmd(session, "exit 0")
 }
 
 fn create_suspended_cmd(session: &DriverSession, script: &str) -> io::Result<Child> {
-    let mut bytes = 0;
-    // SAFETY: documented sizing query; output lives through the call.
-    unsafe {
-        InitializeProcThreadAttributeList(null_mut(), 1, 0, &mut bytes);
-    }
-    let mut storage = vec![0_usize; bytes.div_ceil(size_of::<usize>())];
-    let list = storage.as_mut_ptr().cast();
-    // SAFETY: pointer-size-aligned writable storage holds the requested size.
-    if unsafe { InitializeProcThreadAttributeList(list, 1, 0, &mut bytes) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    struct Attributes(windows_sys::Win32::System::Threading::LPPROC_THREAD_ATTRIBUTE_LIST);
-    impl Drop for Attributes {
-        fn drop(&mut self) {
-            // SAFETY: initialized list remains backed by storage until return.
-            unsafe {
-                DeleteProcThreadAttributeList(self.0);
-            }
-        }
-    }
-    let attributes = Attributes(list);
-    let mut pseudo = PseudoConsole {
-        // Not used for this rejected bootstrap: no resize/shutdown messages.
-        signal: null_mut(),
-        reference: session._reference.as_raw_handle(),
-        // SAFETY: pseudo-handle denotes this host process without ownership.
-        host_process: unsafe { GetCurrentProcess() },
-    };
-    // SAFETY: PseudoConsole is a repr(C) native layout; it and the referenced
-    // driver session remain live until CreateProcessW consumes the attributes.
-    let set = unsafe {
-        UpdateProcThreadAttribute(
-            attributes.0,
-            0,
-            PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
-            (&mut pseudo as *mut PseudoConsole).cast(),
-            size_of::<HANDLE>(),
-            null_mut(),
-            null(),
-        )
-    };
-    if set == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let system_root =
+    let root =
         std::env::var_os("SystemRoot").ok_or_else(|| io::Error::other("SystemRoot missing"))?;
-    // Keep native separators for cmd's special command-line parser.
-    let executable = std::path::PathBuf::from(system_root)
+    let image = std::path::PathBuf::from(root)
         .join("System32")
         .join("cmd.exe");
-    let image: Vec<u16> = executable.as_os_str().encode_wide().chain([0]).collect();
-    let command = format!("\"{}\" /d /c {script}", executable.display());
-    let mut command: Vec<u16> = command.encode_utf16().chain([0]).collect();
-    let startup = STARTUPINFOEXW {
-        StartupInfo: windows_sys::Win32::System::Threading::STARTUPINFOW {
-            cb: size_of::<STARTUPINFOEXW>() as u32,
-            dwFlags: STARTF_USESTDHANDLES,
-            hStdInput: INVALID_HANDLE_VALUE,
-            hStdOutput: INVALID_HANDLE_VALUE,
-            hStdError: INVALID_HANDLE_VALUE,
-            ..Default::default()
-        },
-        lpAttributeList: attributes.0,
-    };
-    let mut information = PROCESS_INFORMATION::default();
-    // SAFETY: all strings are terminated; native attribute and output storage
-    // are live. No ordinary handles are inherited and no system host is launched.
-    if unsafe {
-        CreateProcessW(
-            image.as_ptr(),
-            command.as_mut_ptr(),
-            null(),
-            null(),
-            0,
-            CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
-            null(),
-            null(),
-            &startup.StartupInfo,
-            &mut information,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(Child {
-        // SAFETY: CreateProcessW transferred these two distinct live handles.
-        process: unsafe { OwnedHandle::from_raw_handle(information.hProcess) },
-        // SAFETY: the thread handle has independent unique ownership.
-        thread: unsafe { OwnedHandle::from_raw_handle(information.hThread) },
-        pid: information.dwProcessId,
-    })
+    let command = format!("\"{}\" /d /c {script}", image.display());
+    session.spawn_suspended(&image, std::ffi::OsStr::new(&command))
 }
 
 struct CmdReceipt {
@@ -145,25 +29,37 @@ fn run_owned_cmd(script: &str) -> CmdReceipt {
     let mut host = crate::ConsoleHost::new();
     let mut output = Vec::new();
     // SAFETY: resume only our owned suspended fixture.
-    assert_ne!(
-        unsafe { ResumeThread(child.thread.as_raw_handle()) },
-        u32::MAX
-    );
+    child.resume().unwrap();
     drain_owned_cmd(&session, &child, &mut host, &mut output)
 }
 
-fn drain_owned_cmd(
-    session: &DriverSession,
+fn drain_owned_cmd<'session>(
+    session: &'session DriverSession,
     child: &Child,
-    host: &mut crate::ConsoleHost,
+    host: &mut crate::ConsoleHost<'session>,
     output: &mut Vec<u8>,
+) -> CmdReceipt {
+    drain_owned_cmd_with(session, child, host, output, |_, _, _, _| {})
+}
+
+fn drain_owned_cmd_with<'session>(
+    session: &'session DriverSession,
+    child: &Child,
+    host: &mut crate::ConsoleHost<'session>,
+    output: &mut Vec<u8>,
+    mut on_dispatch: impl FnMut(
+        &crate::DispatchReceipt,
+        &mut crate::ConsoleHost<'session>,
+        &mut Vec<u8>,
+        &Child,
+    ),
 ) -> CmdReceipt {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let mut dispatches = Vec::new();
     while std::time::Instant::now() < deadline {
         // SAFETY: nonblocking status query for our owned client.
-        let exited =
-            unsafe { WaitForSingleObject(child.process.as_raw_handle(), 0) } == WAIT_OBJECT_0;
+        let exited = unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 0) }
+            == WAIT_OBJECT_0;
         if exited && host.connected_clients() == 0 {
             break;
         }
@@ -173,6 +69,7 @@ fn drain_owned_cmd(
                     .dispatch(request, output)
                     .expect("dispatch real console request");
                 eprintln!("dispatch={receipt:?}");
+                on_dispatch(&receipt, host, output, child);
                 dispatches.push(receipt);
                 assert!(
                     dispatches.len() < 256,
@@ -184,14 +81,14 @@ fn drain_owned_cmd(
         }
     }
     assert_eq!(
-        unsafe { WaitForSingleObject(child.process.as_raw_handle(), 0) },
+        unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 0) },
         WAIT_OBJECT_0,
         "cmd must finish within deadline"
     );
     let mut exit_code = 0;
     // SAFETY: owned process and writable exit-code storage.
     assert_ne!(
-        unsafe { GetExitCodeProcess(child.process.as_raw_handle(), &mut exit_code) },
+        unsafe { GetExitCodeProcess(child.process_handle().as_raw_handle(), &mut exit_code) },
         0
     );
     assert_eq!(
@@ -211,6 +108,197 @@ fn drain_owned_cmd(
 }
 
 #[test]
+fn rust_console_driver_owned_host_delivers_text_after_a_real_blocking_cmd_read() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_cmd(&session,
+        "set MINICON_OWNED_INPUT_CHECK=&set /p MINICON_OWNED_INPUT_CHECK=rust-input:&set MINICON_OWNED_INPUT_CHECK").unwrap();
+    let mut host = crate::ConsoleHost::new();
+    let mut output = Vec::new();
+    let mut observed_wait = false;
+    // SAFETY: our newly created suspended fixture is the sole resumed thread.
+    child.resume().unwrap();
+    let receipt = drain_owned_cmd_with(
+        &session,
+        &child,
+        &mut host,
+        &mut output,
+        |call, host, output, child| {
+            if call.pending {
+                assert!(
+                    !observed_wait,
+                    "the supplied complete line must satisfy the pending input"
+                );
+                observed_wait = true;
+                assert_eq!(host.pending_reads(), 1);
+                // SAFETY: the actual client must still be alive before input arrives.
+                assert_eq!(
+                    unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 0) },
+                    WAIT_TIMEOUT
+                );
+                assert!(
+                    String::from_utf8_lossy(output).contains("rust-input:"),
+                    "the real prompt must precede our input"
+                );
+                assert_eq!(
+                    host.enqueue_text("typed-by-rust", output).unwrap(),
+                    0,
+                    "line input must wait for Enter"
+                );
+                assert_eq!(host.pending_reads(), 1);
+                // SAFETY: the owned client must remain blocked on the partial line.
+                assert_eq!(
+                    unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 0) },
+                    WAIT_TIMEOUT
+                );
+                assert_eq!(host.enqueue_text("\r", output).unwrap(), 1);
+            }
+        },
+    );
+    assert!(
+        observed_wait,
+        "input must be deferred rather than completed as empty success"
+    );
+    assert_eq!(receipt.exit_code, 0);
+    let text = String::from_utf8(receipt.output).unwrap();
+    assert!(
+        text.ends_with("MINICON_OWNED_INPUT_CHECK=typed-by-rust\r\n"),
+        "client received a different input value: {text:?}"
+    );
+    assert_eq!(host.pending_reads(), 0);
+}
+
+#[test]
+fn rust_console_driver_owned_host_edits_unicode_before_completing_line_input() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_cmd(&session,
+        "set MINICON_OWNED_EDIT_CHECK=&set /p MINICON_OWNED_EDIT_CHECK=rust-edit:&set MINICON_OWNED_EDIT_CHECK").unwrap();
+    let mut host = crate::ConsoleHost::new();
+    let mut output = Vec::new();
+    let mut observed_wait = false;
+    // SAFETY: our owned suspended fixture thread only.
+    child.resume().unwrap();
+    let receipt = drain_owned_cmd_with(
+        &session,
+        &child,
+        &mut host,
+        &mut output,
+        |call, host, output, _| {
+            if call.pending {
+                assert!(!observed_wait);
+                observed_wait = true;
+                assert_eq!(host.enqueue_text("A😀", output).unwrap(), 0);
+                assert_eq!(host.enqueue_text("\x08中\r", output).unwrap(), 1);
+            }
+        },
+    );
+    assert!(observed_wait);
+    assert_eq!(receipt.exit_code, 0);
+    let text = String::from_utf8(receipt.output).unwrap();
+    assert!(
+        text.ends_with("MINICON_OWNED_EDIT_CHECK=A中\r\n"),
+        "backspace must remove one Unicode scalar: {text:?}"
+    );
+}
+
+#[test]
+fn rust_console_driver_owned_host_cancellation_wakes_a_blocked_read_as_failure() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_cmd(&session,
+        "set /p MINICON_OWNED_CANCEL=rust-cancel: && echo unexpected-read-success || echo rust-read-cancelled").unwrap();
+    let mut host = crate::ConsoleHost::new();
+    let mut output = Vec::new();
+    let mut cancelled = false;
+    // SAFETY: our owned suspended fixture thread only.
+    child.resume().unwrap();
+    let receipt = drain_owned_cmd_with(
+        &session,
+        &child,
+        &mut host,
+        &mut output,
+        |call, host, _, child| {
+            if call.pending {
+                assert!(!cancelled);
+                cancelled = true;
+                // SAFETY: confirm this actual owned client is still waiting.
+                assert_eq!(
+                    unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 0) },
+                    WAIT_TIMEOUT
+                );
+                assert_eq!(host.cancel_pending_reads().unwrap(), 1);
+                assert_eq!(host.pending_reads(), 0);
+            }
+        },
+    );
+    assert!(cancelled, "must cancel a real deferred read");
+    eprintln!("cancelled cmd exit={:#x}", receipt.exit_code);
+    let text = String::from_utf8(receipt.output).unwrap();
+    assert!(
+        text.contains("rust-read-cancelled"),
+        "client did not observe read failure: {text:?}"
+    );
+    assert!(!text.contains("unexpected-read-success"));
+}
+
+#[test]
+fn rust_console_driver_owned_host_reclaims_reads_after_the_client_is_killed() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_cmd(&session, "set /p MINICON_OWNED_KILLED=rust-wait:").unwrap();
+    let mut host = crate::ConsoleHost::new();
+    let mut output = Vec::new();
+    let mut killed = false;
+    // SAFETY: our owned suspended fixture thread only.
+    child.resume().unwrap();
+    let receipt = drain_owned_cmd_with(
+        &session,
+        &child,
+        &mut host,
+        &mut output,
+        |call, host, _, child| {
+            if call.pending {
+                assert!(!killed);
+                killed = true;
+                assert_eq!(host.pending_reads(), 1);
+                // SAFETY: terminate only the fixture identified by its owned handle.
+                assert_ne!(
+                    unsafe { TerminateProcess(child.process_handle().as_raw_handle(), 0x42) },
+                    0
+                );
+            }
+        },
+    );
+    assert!(killed);
+    assert_eq!(receipt.exit_code, 0x42);
+    assert_eq!(
+        host.pending_reads(),
+        0,
+        "DISCONNECT must retire the dead client's deferred request"
+    );
+}
+
+#[test]
+fn rust_console_driver_dropping_an_unhandled_connection_cancels_the_actual_client() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_client(&session).unwrap();
+    // SAFETY: our owned suspended fixture thread only.
+    child.resume().unwrap();
+    let request = session.receive(Duration::from_secs(3)).unwrap();
+    assert_eq!(request.descriptor.function, 1);
+    assert_eq!(request.descriptor.process, child.id() as usize);
+    drop(request);
+    // SAFETY: wait/query only our owned fixture, not a globally looked-up PID.
+    assert_eq!(
+        unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 3000) },
+        WAIT_OBJECT_0
+    );
+    let mut exit = 0;
+    assert_ne!(
+        unsafe { GetExitCodeProcess(child.process_handle().as_raw_handle(), &mut exit) },
+        0
+    );
+    assert_ne!(exit, 0);
+}
+
+#[test]
 fn rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_client() {
     let left = DriverSession::open().unwrap();
     let right = DriverSession::open().unwrap();
@@ -219,20 +307,14 @@ fn rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_
     let mut host = crate::ConsoleHost::new();
     let mut output = Vec::new();
     // SAFETY: only the two owned fixture threads are resumed.
-    assert_ne!(
-        unsafe { ResumeThread(first.thread.as_raw_handle()) },
-        u32::MAX
-    );
+    first.resume().unwrap();
     let request = left.receive(Duration::from_secs(3)).unwrap();
-    assert_eq!(request.descriptor.process, first.pid as usize);
+    assert_eq!(request.descriptor.process, first.id() as usize);
     assert_eq!(host.dispatch(request, &mut output).unwrap().status, 0);
     assert_eq!(host.connected_clients(), 1);
-    assert_ne!(
-        unsafe { ResumeThread(foreign.thread.as_raw_handle()) },
-        u32::MAX
-    );
+    foreign.resume().unwrap();
     let request = right.receive(Duration::from_secs(3)).unwrap();
-    assert_eq!(request.descriptor.process, foreign.pid as usize);
+    assert_eq!(request.descriptor.process, foreign.id() as usize);
     let rejected = host.dispatch(request, &mut output).unwrap();
     assert_eq!(
         rejected.status, 0xc000_0008_u32 as i32,
@@ -241,7 +323,7 @@ fn rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_
     assert_eq!(host.connected_clients(), 1);
     // SAFETY: wait only for the child whose connection was rejected.
     assert_eq!(
-        unsafe { WaitForSingleObject(foreign.process.as_raw_handle(), 3000) },
+        unsafe { WaitForSingleObject(foreign.process_handle().as_raw_handle(), 3000) },
         WAIT_OBJECT_0
     );
     let receipt = drain_owned_cmd(&left, &first, &mut host, &mut output);
@@ -290,10 +372,7 @@ fn rust_console_driver_receives_and_rejects_a_real_cmd_connection() {
     let session = DriverSession::open().expect("private Rust console server");
     let child = create_suspended_client(&session).expect("select our reference for cmd");
     // SAFETY: start only our owned suspended fixture thread.
-    assert_ne!(
-        unsafe { ResumeThread(child.thread.as_raw_handle()) },
-        u32::MAX
-    );
+    child.resume().unwrap();
     let request = session
         .receive(Duration::from_secs(3))
         .expect("receive kernel client connection");
@@ -302,26 +381,27 @@ fn rust_console_driver_receives_and_rejects_a_real_cmd_connection() {
         "first operation must be CONNECT"
     );
     assert_eq!(
-        request.descriptor.process, child.pid as usize,
+        request.descriptor.process,
+        child.id() as usize,
         "driver must identify our actual child"
     );
     eprintln!(
         "Rust host PID={} received CONNECT for actual cmd PID={}",
         std::process::id(),
-        child.pid
+        child.id()
     );
     request
         .reject_unsupported()
         .expect("explicitly reject unimplemented attach");
     // SAFETY: wait for and query only our owned child.
     assert_eq!(
-        unsafe { WaitForSingleObject(child.process.as_raw_handle(), 3000) },
+        unsafe { WaitForSingleObject(child.process_handle().as_raw_handle(), 3000) },
         WAIT_OBJECT_0
     );
     let mut exit_code = 0;
     // SAFETY: child process handle and writable exit-code storage are live.
     assert_ne!(
-        unsafe { GetExitCodeProcess(child.process.as_raw_handle(), &mut exit_code) },
+        unsafe { GetExitCodeProcess(child.process_handle().as_raw_handle(), &mut exit_code) },
         0
     );
     assert_ne!(
