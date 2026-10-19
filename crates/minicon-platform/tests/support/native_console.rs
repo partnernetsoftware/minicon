@@ -2,6 +2,8 @@
 #[cfg(windows)]
 mod buffer_family;
 #[cfg(windows)]
+mod buffer_vt;
+#[cfg(windows)]
 mod buffers;
 #[cfg(windows)]
 mod console_file;
@@ -64,6 +66,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "buffer-vt" {
+        return buffer_vt::run(std::path::Path::new(&arguments[1]));
+    }
     if let Some(flags) = mode.strip_prefix("viewport-follow-") {
         let (flags, kind) = flags
             .split_once('-')

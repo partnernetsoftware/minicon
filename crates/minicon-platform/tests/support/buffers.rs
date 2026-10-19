@@ -94,6 +94,10 @@ pub(super) fn position(handle: HANDLE, x: i16, y: i16) -> io::Result<()> {
 pub(super) fn stage(handle: HANDLE, path: &Path, n: usize, report: &str) -> io::Result<()> {
     std::fs::write(path, report)?;
     bytes(handle, format!("\x1b]2;buffers-stage-{n}:\x07").as_bytes())?;
+    wait_stage(path, n)
+}
+
+pub(super) fn wait_stage(path: &Path, n: usize) -> io::Result<()> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
     while !path.with_extension(format!("stage{n}")).exists() {
         if std::time::Instant::now() >= deadline {

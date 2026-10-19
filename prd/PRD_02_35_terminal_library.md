@@ -27,6 +27,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   safe failure: staged grammar/view commit after sink success; explicit output budget
 │   dependency: shared exact lexer fork/framer; non-goal: duplicating a Windows shadow grid
 │   └── explicit Fixed / Vertical / Cursor policy; bool callers remain compatible
+│       └── displayed-stream activation / logical layer / portable projection quota
 ├── [v] Windows host adopts the common stream facade
 │   invariant: native projections preserve client grammar and commit after sink success
 │   evidence: public projection unit plus SDK mixed-output and existing host/screen courts
@@ -58,6 +59,7 @@ flowchart LR
     PLATFORM -->|"rust-console opt-in"| WIN["minicon-console Windows service"]
     VP["TerminalViewport / mapped publication / staged screen edits"] --> COMMON
     FOLLOW["ViewportFollow: Fixed / Vertical / Cursor"] --> VP
+    ACT["write_viewport_activation / ProjectionLimit"] --> VP
     TEXT["text_prefix / TEXT_BATCH_BYTES / scalar placement policy"] --> COMMON
     WIN --> VP
     MOVE["shared region movement / cell invariants"] --> COMMON
@@ -236,6 +238,9 @@ ViewportFollow is public common policy; the Windows adapter chooses vertical
 movement for ordinary stream output and both axes for native cursor commands.
 Its mechanics belong to [terminal state](PRD_02_24_con_terminal.md#explicit-viewport-follow-policy),
 with native scrolling/viewport evidence owned by PRD 02.34.
+Displayed-stream activation and typed projection-budget failures are common
+mechanisms as well; Windows buffer IDs and native status translation stay in its
+adapter. The boundary is owned by [terminal state](PRD_02_24_con_terminal.md#displayed-stream-activation-and-projection-budgets).
 The contracts, measured compatibility and remaining lifecycle scope belong to
 [native buffers](PRD_02_34_windows_console_backend.md#accepted-multiple-buffer-leaf).
 Process-family retirement and the native connected-process query remain

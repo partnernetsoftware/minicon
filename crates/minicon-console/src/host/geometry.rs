@@ -61,7 +61,7 @@ impl ConsoleHost<'_> {
             .terminal
             .commit_viewport_screen(next, &mut view, proposed, MAX_CELLS, full, output)
         {
-            return if error.raw_os_error() == Some(1450) {
+            return if crate::terminal::ProjectionLimit::from_error(&error).is_some() {
                 Ok(Err(NOT_SUPPORTED))
             } else {
                 Err(error)

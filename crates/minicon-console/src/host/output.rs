@@ -357,7 +357,12 @@ impl ConsoleHost<'_> {
 pub(super) fn write_status(result: io::Result<()>) -> io::Result<i32> {
     match result {
         Ok(()) => Ok(super::SUCCESS),
-        Err(error) if error.raw_os_error() == Some(1450) => Ok(0xc000_009a_u32 as i32),
+        Err(error)
+            if error.raw_os_error() == Some(1450)
+                || crate::terminal::ProjectionLimit::from_error(&error).is_some() =>
+        {
+            Ok(0xc000_009a_u32 as i32)
+        }
         Err(error) => Err(error),
     }
 }

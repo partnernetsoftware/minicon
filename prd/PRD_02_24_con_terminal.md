@@ -25,6 +25,7 @@ minicon terminal and rendering
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
 │   ├── Drawing-grid viewport snapshots and transactional mapped frames
+│   │   ├── [v] full displayed-stream activation with explicit logical alternate layer
 │   │   └── [v] explicit fixed / vertical / two-axis cursor-follow policy
 │   ├── Bounded visual-text lookahead and shared scalar placement width
 │   ├── Cursor appearance replay — visibility, position, shape and blinking
@@ -51,6 +52,7 @@ flowchart LR
     VIEW["drawing buffer / transient viewport projection / exact lexer forks"] --> VT
     VIEW --> FRAME
     FOLLOW["portable viewport-follow policy / transactional view commit"] --> VIEW
+    ACT["displayed-stream activation / logical alternate layer / portable projection quota"] --> VIEW
     TEXT["bounded encoded runs / exact lexer lookahead / scalar width"] --> FRAME
     CUR["cursor shape / blinking / visibility / replay"] --> VT
     CUR --> DMG
@@ -765,6 +767,39 @@ projection and cursor appearance without source mutation. Native/common-facade
 composition and its scoped runtime evidence belong to PRD 02.34 and 02.35.
 
 ## Explicit viewport-follow policy
+
+### Displayed-stream activation and projection budgets
+
+TerminalStream::write_viewport_activation publishes a complete clipped image and
+selects that stream's logical main/alternate VT layer. It neutralizes the previous
+peer layer, selects the target layer, resets physical origin/margins and publishes
+the transient snapshot. Logical cells, hidden backing grid, callbacks and exact
+unfinished client grammar are read-only; a caller commits displayed-stream
+ownership only after successful I/O. This is a common OS/ISA-neutral mechanism,
+not a Win32 buffer identity or a second terminal authority. Native use and
+render-encoding differences belong to PRD 02.34.
+
+After activation, route client bytes through write_output_viewport. The peer's
+hidden main grid may belong to the previously displayed stream; mapped alternate
+exit repaints the logical saved main. Raw write_output does not perform that
+repaint and is not the continuation contract for an activated viewport.
+
+Generated projections share ProjectionLimit: io::ErrorKind::QuotaExceeded with
+requested/limit byte counts and no OS error number. ProjectionLimit::from_error
+distinguishes that typed failure from a caller sink's unrelated quota error.
+Native adapters own native status translation. Wire limits do not bound grid
+allocation; callers bound screen and viewport dimensions separately. Evidence
+must cover multiple stream handoffs, both layers, pending grammar, full main-grid
+restoration, callbacks, typed budgets and sink rejection. Invalid view dimensions
+fail explicitly. Partial sink failure retires the transport. Non-goals: session
+ownership, all alternate-screen variants, expanded-alt sizing or scrollback parity.
+
+Named common evidence is
+rust_console_terminal_activation_preserves_layers_grammar_and_portable_limits:
+two independent streams, CJK cells, main/alternate selection, saved-main repaint,
+pending CSI completion, non-Clone callbacks, portable quota details, invalid views
+and caller sink errors. Native ownership and system-rendering comparisons are
+owned by PRD 02.34's buffer/VT handoff leaf.
 
 ViewportFollow is a common OS/ISA-neutral policy: Fixed keeps the source region,
 Vertical follows cursor rows while preserving its horizontal interval, and

@@ -378,6 +378,115 @@ fn native_buffers(rust: bool) {
     );
 }
 
+fn native_vt_layers(rust: bool) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("buffer-vt")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let mut peer = vt100::Parser::new(8, 16, 0);
+    for n in 0..9 {
+        let marker = format!("alt-stage-{n}:");
+        let column = [6, 6, 3, 11, 12, 4, 3, 6, 4][n];
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while peer
+            .screen()
+            .rows(0, 16)
+            .nth(7)
+            .unwrap()
+            .trim_end_matches(' ')
+            != marker
+            || peer.screen().cursor_position() != (0, column)
+            || !peer.at_boundary()
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("native layer marker/cursor fence")
+                .unwrap();
+            peer.process(&chunk);
+            fixture.bytes.extend(chunk);
+        }
+        let native = std::fs::read_to_string(&report.0).unwrap();
+        eprintln!(
+            "layers rust={rust};stage={n};alt={};rows={:?};cursor={:?}\n{native}",
+            peer.screen().alternate_screen(),
+            peer.screen().rows(0, 16).take(3).collect::<Vec<_>>(),
+            peer.screen().cursor_position()
+        );
+        let expected = [
+            "VTBASE",
+            "NATIVE",
+            "VTA",
+            "VTBASECARRY",
+            "VTBASECARRYZ",
+            "BASE",
+            "VTA",
+            "NATIVE",
+            "BASE",
+        ][n];
+        assert_eq!(
+            peer.screen()
+                .rows(0, 16)
+                .next()
+                .unwrap()
+                .trim_end_matches(' '),
+            expected
+        );
+        assert!(
+            native
+                .lines()
+                .any(|line| line == format!("stage{n}:row0={expected:?}")),
+            "{native}"
+        );
+        assert!(
+            native.lines().any(|line| line
+                .starts_with(&format!("stage{n}:size=16,8;view=0,0,15,7;pos={column},0;"))),
+            "{native}"
+        );
+        if rust {
+            assert_eq!(
+                peer.screen().alternate_screen(),
+                matches!(n, 0 | 2 | 3 | 4 | 6),
+                "logical alternate layer must survive activation at stage {n}"
+            );
+        } else {
+            assert!(
+                native.lines().any(|line| line == "build=20348"),
+                "BLOCKED: qualify native/VT layers on this system build"
+            );
+            assert!(
+                !peer.screen().alternate_screen(),
+                "this system build projects into its main peer grid"
+            );
+        }
+        if n == 4 {
+            assert_eq!(
+                peer.screen().cell(0, 11).unwrap().fgcolor(),
+                vt100::Color::Idx(1)
+            );
+        }
+        std::fs::write(report.0.with_extension(format!("stage{n}")), b"observed").unwrap();
+    }
+    fixture.finish(0);
+}
+
+#[test]
+fn rust_console_pty_native_buffers_preserve_vt_alternate_layers_and_fragments() {
+    native_vt_layers(true);
+}
+
+#[test]
+#[ignore = "explicit native/VT alternate system comparison"]
+fn rust_console_client_native_vt_layers_record_system_projection() {
+    native_vt_layers(false);
+}
+
 fn vertical_viewport_follow(rust: bool) {
     for (mode, unicode) in [(7, false), (7, true), (3, false), (3, true)] {
         let report = Report::new();

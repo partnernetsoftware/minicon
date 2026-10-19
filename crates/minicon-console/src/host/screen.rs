@@ -23,7 +23,9 @@ impl ConsoleHost<'_> {
                     self.viewport = Some(view);
                     return Ok(Ok(()));
                 }
-                Err(error) if error.raw_os_error() == Some(1450) => return Ok(Err(NOT_SUPPORTED)),
+                Err(error) if crate::terminal::ProjectionLimit::from_error(&error).is_some() => {
+                    return Ok(Err(NOT_SUPPORTED));
+                }
                 Err(error) => return Err(error),
             }
         }

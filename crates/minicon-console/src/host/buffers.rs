@@ -120,23 +120,18 @@ impl ConsoleHost<'_> {
         });
         view.rows = physical.rows;
         view.columns = physical.columns;
-        let Some(snapshot) =
-            target
-                .terminal
-                .screen()
-                .project_region(view.area, view.rows, view.columns)
-        else {
-            return Ok(NOT_SUPPORTED);
-        };
-        // Native selection supplies a complete image, irrespective of the old
-        // physical alternate grid/origin/margins. Logical grammars stay owned
-        // by their respective TerminalStream instances.
-        let mut wire = b"\x1b[?1049l\x1b[?6l\x1b[r".to_vec();
-        wire.extend_from_slice(&snapshot.state_formatted());
-        if wire.len() > 1024 * 1024 {
-            return Ok(NOT_SUPPORTED);
-        };
-        output.write_all(&wire)?;
+        // Layer selection and projection are common terminal mechanisms;
+        // native identity ownership commits only after complete publication.
+        if let Err(error) = target
+            .terminal
+            .write_viewport_activation(view, 1024 * 1024, output)
+        {
+            return if crate::terminal::ProjectionLimit::from_error(&error).is_some() {
+                Ok(NOT_SUPPORTED)
+            } else {
+                Err(error)
+            };
+        }
         let mut next = self.buffers.remove(&id).unwrap();
         next.viewport = Some(view);
         next.swap(self);

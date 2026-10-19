@@ -55,6 +55,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] canonical invalid UTF-8 prefix recovery before native edits and exit
 │   ├── [v] native-buffer process-exit fallback and inherited file-object retirement
 │   ├── [v] ordinary output follows vertical viewport without horizontal panning
+│   ├── [v] native buffer handoff preserves each stream's VT main/alternate pair
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -109,6 +110,7 @@ flowchart LR
     BATCH --> RECOVERY["shared invalid-prefix boundary / canonical replacement / retained new grammar"]
     HOST --> FAMILY["native buffer file lifetime / creator exit / inherited survivor / final-close fallback"]
     HOST --> FOLLOW["vertical stream follow / two-axis native cursor commands / fixed metadata effects"]
+    HOST --> LAYER["common displayed-stream activation / logical VT layer / pending grammar"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -1917,7 +1919,9 @@ drawing attributes; the measured headless default mode is 7 and cursor is 25,
 visible. They do not inherit screen contents, cursor position or client grammar.
 
 Activation publishes a normalized full shared Screen viewport snapshot before
-committing the identity and state swap. Physical size stays parent-owned. Native
+committing the identity and state swap. Common write_viewport_activation also
+selects the target stream's logical alternate layer; native code owns only the
+buffer identity/commit and status translation. Physical size stays parent-owned. Native
 cursor/geometry operations and common state remain bound to each logical buffer;
 no Windows shadow grid is introduced. Unused inactive buffers are reclaimed;
 closing the active buffer selects the newest remaining live buffer, matching
@@ -1951,6 +1955,10 @@ independent CSI/UTF-16 fragments, aggregate allocation/count bounds and collecti
 Full native-buffer/VT-alternate interactions, further process-exit/attach/
 inheritance orders and access variants, additional system versions/ISAs,
 large-buffer performance and default promotion remain open qualification work.
+
+The nine-stage native/VT handoff case below qualifies independent saved pairs and
+incomplete CSI across switches; expanded-alt sizing, resize/margin interactions,
+other alternate selectors and additional close/exit orders remain open.
 
 #### Accepted buffer process-family lifetime leaf
 
@@ -2174,6 +2182,60 @@ existing Rust-version declaration. Cross-target results are compilation only;
 native SDK execution is Windows x86_64. `utf8-recovery-final-receipt.json` binds
 the source tree, guard/check/log hashes, compiler, executable identities and
 remaining scope. Final documentation edits are followed by alignment checks.
+
+### Accepted native-buffer / VT-layer handoff leaf
+
+Invariant: each native buffer retains its own logical main/alternate grids and
+unfinished client grammar. Activating a buffer publishes its image and logical
+VT layer before committing native identity. Inactive writes cannot change the
+displayed stream. Leaving logical alternate mode repaints that stream's saved
+main image, independent of whichever main grid the peer previously displayed.
+Shared activation/projection and error types belong to PRD 02.24; Win32 identity,
+native status mapping and kernel-finalizer authority remain native. Safe failure
+preserves identity before sink acceptance; partial sink I/O retires the transport.
+Dependencies are independent TerminalStreams, viewport snapshots and ordered
+kernel requests. Non-goals: every alt selector/geometry/scrollback interaction,
+all close/exit orders, or byte-for-byte system renderer equivalence.
+
+`buffer-vt-red.log` records the owned layer changing to main at stage 3 while its
+logical alternate contents were still active. Native activation now delegates
+to common write_viewport_activation, which selects the logical layer and renders
+the full transient image without consuming cells, callbacks or client grammar.
+Generated projections use portable ProjectionLimit quota errors instead of
+originating Windows error 1450 in the common module. Geometry, native edits,
+activation and ordinary-output adapters translate that typed failure into their
+existing native statuses; unrelated sink failures remain distinguishable.
+
+The independent SDK fixture creates a second native buffer while the original
+is in VT alternate mode, writes an inactive CARRY plus partial CSI, enters the
+second stream's alternate grid, switches back, completes red Z, restores both
+saved main grids and closes the second native buffer. Nine snapshots per provider
+check native readback/window/cursor, painted text, layer policy and fragment/style
+completion. Native literal-cell markers fence decoded screen state rather than
+assuming a differential renderer repeats an entire marker in its raw bytes.
+Retained backing grids are owned by the common streams, not copied into another
+Windows model.
+
+Installed system ConPTY build 20348 renders all nine stages into the peer's main
+grid. The owned provider preserves its logical alternate flag at stages
+0/2/3/4/6, consistently with its ordinary VT stream path. Both providers must
+match the specified painted/native data and cursor sequence; these observed
+render encodings are recorded separately. Neither full scrollback parity nor
+identical mode bytes is inferred from matching visible cells.
+
+Local receipts: `buffer-vt-final-suite.log` records 239 selected passes including
+17 alignment checks; `buffer-vt-final-focused.log` records the three new tests
+and the existing native ownership/rollback unit (four passes), including eighteen
+fenced SDK snapshots. Nine byte-restored runtime guards cover layer entry/exit,
+native handoff, pending CSI, saved-main repaint, portable errors, wire budgets,
+sink propagation/native commit and the system-reference oracle. Ten checks pass:
+default/enabled workspace strict all-targets Clippy, both standalone parsers'
+strict Clippy, lexer no-std build, four common-library cross-target builds and the
+Windows ARM64 platform PTY/Rust-console all-targets build. Actual runtime remains
+Windows x86_64 build 20348; non-host results are compile-only. Two reviewed blobs
+match source tree 9fd41b2baec77d25b8cfb584070d5998eab7df81. The exact tree, source/
+guard/check/log hashes, compiler, executable identities and remaining scope are
+bound in `buffer-vt-final-receipt.json`. Final docs are followed by alignment.
 
 ### Accepted vertical stream-follow leaf
 
