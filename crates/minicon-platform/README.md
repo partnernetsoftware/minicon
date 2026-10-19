@@ -52,6 +52,9 @@ dependencies. Consult `Cargo.toml` for the current graph. Native dependency subf
 owning capability; enabling `process` or `filesystem` does not enable UI, GDI,
 clipboard, IPC, or screenshot modules.
 
+Experimental owned Windows console selection (`rust-console`) and its evidence
+are described in [PRD 02.34](../../prd/PRD_02_34_windows_console_backend.md).
+
 | Feature | Public capability | Extra dependency |
 |---|---|---|
 | `serde` | `IpcEndpoint` string serialization | `serde` |

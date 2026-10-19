@@ -50,6 +50,25 @@ case "$mode" in
   test) cargo test --locked --workspace \
     --config 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]' \
     "$@"
-    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --lib "$@" ;;
+    # Workspace feature names do not belong to the separately owned fork.
+    # Preserve selectors and libtest arguments, including anything after `--`.
+    fork_args=()
+    skip_feature_value=false
+    libtest_args=false
+    for argument in "$@"; do
+      if "$libtest_args"; then
+        fork_args+=("$argument")
+      elif "$skip_feature_value"; then
+        skip_feature_value=false
+      else
+        case "$argument" in
+          --) libtest_args=true; fork_args+=("$argument") ;;
+          --features|-F) skip_feature_value=true ;;
+          --features=*|-F?*) ;;
+          *) fork_args+=("$argument") ;;
+        esac
+      fi
+    done
+    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --lib "${fork_args[@]}" ;;
   *) echo "usage: scripts/build.sh [release|dev|check|test] [cargo arguments...]" >&2; exit 2 ;;
 esac

@@ -17,11 +17,11 @@ use windows_sys::Win32::System::JobObjects::{
     QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::Threading::{
-    CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
-    GetCurrentProcess, GetExitCodeProcess, InitializeProcThreadAttributeList,
-    LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION,
-    ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
-    UpdateProcThreadAttribute, WaitForSingleObject,
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
+    EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
+    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES,
+    STARTUPINFOEXW, STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 // Native ABI documented in the pinned src/winconpty/winconpty.h.
@@ -33,6 +33,7 @@ struct PseudoConsole {
 }
 
 /// One client and its descendant job. Dropping this owner kills the entire job.
+#[derive(Debug)]
 pub struct ConsoleChild {
     process: OwnedHandle,
     thread: OwnedHandle,
@@ -40,6 +41,13 @@ pub struct ConsoleChild {
     assigned: bool,
     resumed: AtomicBool,
     pid: u32,
+}
+
+/// Already encoded native launch data; an absent environment inherits the host.
+#[derive(Default)]
+pub struct ClientOptions<'a> {
+    pub environment: Option<&'a [u16]>,
+    pub current_dir: Option<&'a Path>,
 }
 
 impl DriverSession {
@@ -51,6 +59,16 @@ impl DriverSession {
         application: &Path,
         command_line: &OsStr,
     ) -> io::Result<ConsoleChild> {
+        self.spawn_suspended_with(application, command_line, ClientOptions::default())
+    }
+
+    /// Launch with a double-NUL-terminated UTF-16 environment and optional cwd.
+    pub fn spawn_suspended_with(
+        &self,
+        application: &Path,
+        command_line: &OsStr,
+        options: ClientOptions<'_>,
+    ) -> io::Result<ConsoleChild> {
         if !application.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -59,6 +77,22 @@ impl DriverSession {
         }
         let image = wide(application.as_os_str())?;
         let mut command = wide(command_line)?;
+        if let Some(environment) = options.environment
+            && (environment.len() > 1024 * 1024
+                || !environment.ends_with(&[0, 0])
+                || environment[..environment.len() - 2]
+                    .windows(2)
+                    .any(|pair| pair == [0, 0]))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid native environment block",
+            ));
+        }
+        let directory = options
+            .current_dir
+            .map(|path| wide(path.as_os_str()))
+            .transpose()?;
         let job = make_job()?;
         let mut bytes = 0;
         // SAFETY: documented attribute-list size query.
@@ -124,9 +158,11 @@ impl DriverSession {
                 null(),
                 null(),
                 0,
-                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
-                null(),
-                null(),
+                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                options
+                    .environment
+                    .map_or(null(), |block| block.as_ptr().cast()),
+                directory.as_ref().map_or(null(), |path| path.as_ptr()),
                 &startup.StartupInfo,
                 &mut information,
             )

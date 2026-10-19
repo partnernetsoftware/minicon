@@ -8,6 +8,10 @@ remain upstream while reuse is being inverted; this module owns MiniCon's
 terminal product decisions and evidence. Dependency direction and extraction
 stages are owned by [shared core](PRD_02_28_shared_core.md).
 
+The explicit experimental Rust Windows PTY adapter and its scoped native
+evidence are owned by [PRD 02.34](PRD_02_34_windows_console_backend.md).
+The GUI has no selection for it yet; current production selection is unchanged.
+
 Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Map

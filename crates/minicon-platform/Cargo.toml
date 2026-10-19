@@ -8,8 +8,16 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/partnernetsoftware/minicon"
 readme = "README.md"
 
+[[bin]]
+name = "minicon-platform-console-probe"
+path = "tests/support/native_console.rs"
+required-features = ["rust-console"]
+test = false
+bench = false
+
 [features]
 default = []
+rust-console = ["pty", "dep:minicon-console"]
 native-pixel-window = ["window"]
 portable-pixel-window = ["window", "dep:winit", "dep:softbuffer"]
 chassis-present = ["dep:x11rb"]
@@ -637,6 +645,7 @@ sha2 = { version = "0.11", optional = true, default-features = false }
 cc = "1"
 
 [target.'cfg(windows)'.dependencies]
+minicon-console = { path = "../minicon-console", optional = true }
 # `network-http` outbound client. Windows uses NativeTls, which verifies through
 # SChannel and the platform certificate stores, per
 # `prd/PRD_02_20_native_platform.md`. Mirrors the root `Cargo.toml` declaration.

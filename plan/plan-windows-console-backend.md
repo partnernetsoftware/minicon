@@ -22,13 +22,17 @@ sequences that contract without assigning a release or changing current defaults
 5. [-] Implement one bounded replacement slice at a time behind the existing
    Windows adapter: lifecycle/transport, input and modes, screen/output, resize
    and remaining required API semantics. Keep unsupported cases visible.
+   The explicit experimental PTY path now reuses existing transport/contracts;
+   native resize/key probes and output-capacity shutdown cover its first slice.
 6. [-] Initial native Windows x86_64 cmd/Unicode/session-isolation, deferred
    input, independent Win32 records and real job-tree teardown cases pass.
    Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.
-7. [_] Resolve single-file delivery and native ABI boundaries, then qualify
+7. [-] Resolve single-file delivery and native ABI boundaries, then qualify
    exact packaged artifacts before any separate default-promotion decision.
+   The experimental service runs in-process; shipping selection and packaged
+   artifact evidence remain unqualified.
 
 Each implementation step records its invariant, observed result, failure and
 dependency in the owning PRD. Avoid global system-host replacement, live-session

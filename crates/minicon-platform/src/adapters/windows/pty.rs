@@ -59,6 +59,9 @@ use crate::contract::pty::{
 };
 
 use super::console_agent;
+#[cfg(feature = "rust-console")]
+#[path = "pty/rust_console.rs"]
+mod rust_console;
 
 /// Windows shells do not accept the POSIX login-shell argument.
 pub fn login_shell_argument(
@@ -348,6 +351,8 @@ pub struct ChildCommand {
     env: Vec<(OsString, OsString)>,
     current_dir: Option<PathBuf>,
     size: Option<TerminalSize>,
+    #[cfg(feature = "rust-console")]
+    rust_console: bool,
 }
 
 impl ChildCommand {
@@ -359,6 +364,8 @@ impl ChildCommand {
             env: Vec::new(),
             current_dir: None,
             size: None,
+            #[cfg(feature = "rust-console")]
+            rust_console: false,
         }
     }
 
@@ -386,8 +393,26 @@ impl ChildCommand {
         self
     }
 
+    /// Explicitly select the experimental owned Rust Windows console service.
+    #[cfg(feature = "rust-console")]
+    #[must_use]
+    pub fn rust_console(mut self) -> Self {
+        self.rust_console = true;
+        self
+    }
+
     pub fn spawn(self) -> PtyResult<SpawnedPty> {
         let size = self.size.unwrap_or(DEFAULT_TERMINAL_SIZE);
+        #[cfg(feature = "rust-console")]
+        if self.rust_console {
+            return rust_console::spawn(self, size).map_err(|error| {
+                pty_error(
+                    "spawn owned console",
+                    "pty_rust_console_spawn_failed",
+                    error,
+                )
+            });
+        }
         // Selected by capability, not by build number: a system either
         // exports the pseudoconsole entry points or it does not, and that is
         // the only fact this decision depends on. The build number is for the
@@ -530,6 +555,19 @@ pub struct PtyMaster {
 }
 
 impl PtyMaster {
+    /// Identity of this opened session, independent of current selection flags.
+    #[must_use]
+    pub fn backend_kind(&self) -> &'static str {
+        #[cfg(feature = "rust-console")]
+        if self.session.rust.is_some() {
+            return "rust-console";
+        }
+        if self.session.agent.is_some() {
+            "console-agent"
+        } else {
+            "conpty"
+        }
+    }
     pub fn resize(&self, size: TerminalSize) -> PtyResult<()> {
         self.session
             .resize(size)
@@ -604,6 +642,16 @@ impl PtyChild {
     }
 
     pub fn terminate_forcefully(&self) -> PtyResult<PtyCleanupReceipt> {
+        #[cfg(feature = "rust-console")]
+        if let Some(rust) = &self.session.rust {
+            return rust.terminate().map_err(|error| {
+                pty_error(
+                    "terminate owned console",
+                    "pty_rust_console_terminate_failed",
+                    error,
+                )
+            });
+        }
         let Some(job) = &self.job else {
             return Err(PtyError::failed(
                 "terminate",
@@ -678,6 +726,12 @@ impl PtyChild {
                 "repeat count must be greater than zero",
             ));
         }
+        #[cfg(feature = "rust-console")]
+        if let Some(rust) = &self.session.rust {
+            return rust
+                .send_key(key, repeat_count)
+                .map_err(|error| pty_error("send native key", "pty_native_key_failed", error));
+        }
         let _attachment =
             super::console::ConsoleGuard::attach_process(self.pid.as_u32()).map_err(|error| {
                 PtyError::failed("send native key", "pty_console_attach_failed", error)
@@ -695,6 +749,10 @@ impl PtyChild {
     /// Queries the target child's console mode without guessing from terminal
     /// output or from the host process's own console state.
     pub fn native_input_ownership(&self) -> PtyResult<NativeInputOwnership> {
+        #[cfg(feature = "rust-console")]
+        if let Some(rust) = &self.session.rust {
+            return Ok(rust.input_ownership());
+        }
         let _attachment =
             super::console::ConsoleGuard::attach_process(self.pid.as_u32()).map_err(|error| {
                 PtyError::failed(
@@ -859,6 +917,8 @@ fn key_input_record(key: WindowsConsoleKeyEvent, key_down: bool) -> INPUT_RECORD
 /// which is the property that keeps the fallback from leaking into the
 /// terminal.
 struct ConptySession {
+    #[cfg(feature = "rust-console")]
+    rust: Option<Arc<rust_console::RustConsole>>,
     /// `Some` only for the ConPTY backend.
     hpc: Mutex<Option<HPCON>>,
     /// `Some` only for the agent backend: the pipe that carries resizes.
@@ -882,6 +942,10 @@ impl ConptySession {
 
     fn resize(&self, size: TerminalSize) -> io::Result<()> {
         let coord = coord_from_size(size)?;
+        #[cfg(feature = "rust-console")]
+        if let Some(rust) = &self.rust {
+            return rust.resize(size);
+        }
         if let Some(agent) = &self.agent {
             let guard = agent
                 .lock()
@@ -940,6 +1004,10 @@ impl ConptySession {
         // never waits on the product's bounded consumer queue.
         self.input.close();
         self.output.begin_drain();
+        #[cfg(feature = "rust-console")]
+        if let Some(rust) = &self.rust {
+            rust.close();
+        }
         if let Some(agent) = &self.agent {
             // Dropping the control pipe is what ends the agent's control
             // thread. The agent itself exits with its child, and the host's
@@ -1558,6 +1626,8 @@ fn create_session_with_flags(
     }
     let passthrough = flags & PSEUDOCONSOLE_PASSTHROUGH_MODE != 0;
     Ok(Arc::new(ConptySession {
+        #[cfg(feature = "rust-console")]
+        rust: None,
         hpc: Mutex::new(Some(hpc.into_raw())),
         agent: None,
         output,
@@ -1919,6 +1989,8 @@ fn spawn_through_console_agent(command: ChildCommand, size: TerminalSize) -> Pty
     let writer = InputWriter::new(input.write)
         .map_err(|error| pty_error("spawn", "pty_spawn_failed", error))?;
     let session = Arc::new(ConptySession {
+        #[cfg(feature = "rust-console")]
+        rust: None,
         hpc: Mutex::new(None),
         agent: Some(Mutex::new(Some(agent.control))),
         output: Arc::new(OutputPipe::new()),

@@ -15,7 +15,7 @@ mod driver;
 mod host;
 
 #[cfg(windows)]
-pub use client::ConsoleChild;
+pub use client::{ClientOptions, ConsoleChild};
 #[cfg(windows)]
 pub use driver::{DriverRequest, DriverSession, RequestDescriptor};
 #[cfg(windows)]

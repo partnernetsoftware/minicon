@@ -111,6 +111,12 @@ Do not depend on nightly JSON reporting or infer execution from a listing.
 
 `scripts/build.sh test` remains the canonical workspace-plus-vendored-fork
 execution gate with dead_code, unused_variables and unused_must_use denied.
+Workspace `--features` / `-F` selections apply to the workspace invocation;
+the separate vendored-fork invocation retains test selectors and arguments
+after `--` but omits those workspace feature names. This permits the explicit
+Rust console integration selector without claiming fork feature equivalence.
+`scripts/build-feature-forwarding-selftest.py` executes the wrapper with
+recording commands and is registered in the offline self-test entry.
 The full profile/tier adds existing required lint, minimal-consumer and script
 checks without maintaining a second, incomplete workspace-suite list. Root
 binary units, platform library units and vt100 damage oracles must be executed,

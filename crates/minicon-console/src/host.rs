@@ -81,6 +81,37 @@ impl<'session> ConsoleHost<'session> {
         Self::default()
     }
 
+    /// Update the owned screen dimensions, optionally queueing a native resize
+    /// event when the client has enabled ENABLE_WINDOW_INPUT.
+    pub fn resize(&mut self, columns: u16, rows: u16, output: &mut impl Write) -> io::Result<()> {
+        if columns == 0
+            || rows == 0
+            || columns > i16::MAX as u16
+            || rows > i16::MAX as u16
+            || usize::from(columns) * usize::from(rows) > 1024 * 1024
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "console dimensions exceed screen budget",
+            ));
+        }
+        if self.input_mode & 8 != 0 {
+            self.enqueue_input(
+                &[ConsoleInput::Resize {
+                    columns: columns as i16,
+                    rows: rows as i16,
+                }],
+                output,
+            )?;
+        }
+        self.screen.screen_mut().set_size(rows, columns);
+        Ok(())
+    }
+
+    pub fn input_mode(&self) -> u32 {
+        self.input_mode
+    }
+
     pub fn connected_clients(&self) -> usize {
         self.processes.len()
     }

@@ -28,15 +28,16 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
-│   └── [-] general API service, signals, screen semantics and product adapter
+│   ├── [v] explicit experimental PTY adapter, native resize and key delivery
+│   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
 │   └── retain upstream notices and separate upstream baseline from our changes
-├── [_] Replace behavior behind a reusable Windows adapter
+├── [-] Replace behavior behind a reusable Windows adapter
 │   ├── console API dispatch, handles and client attachment
 │   ├── input records, processed/raw modes, Unicode and screen state
 │   └── cancellation, process ownership, resize and bounded shutdown
-└── [_] Qualify and integrate
+└── [-] Qualify and integrate
     ├── differential clients, fault injection and current-user lifecycle evidence
     ├── Windows x86_64 and aarch64 separately; exact OS/build and feature scope
     └── explicit selection, package budget and rollback before default promotion
@@ -48,7 +49,7 @@ Outcome: own the Windows console backend with measured compatibility
 flowchart LR
     CLIENT["unchanged cmd / PowerShell / Node / native client"] --> API["Windows console API and ConDrv"]
     API --> HOST["owned Rust console host: limited implementation"]
-    HOST -. "planned integration" .-> ADAPTER["Windows adapter behind minicon-platform::pty"]
+    HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
     HOST --> JOB["ConsoleChild: suspend / assign job / resume"]
     JOB -. "owned teardown" .-> CLIENT
@@ -105,8 +106,9 @@ does not establish absence from the machine.
 
 Keep the public PTY facade stable. Windows-specific driver/bootstrap/ABI code
 belongs in `minicon-console`, now a workspace member, behind the Windows
-adapter when integration is qualified. Its initial Rust APIs are experimental;
-no product yet depends on this crate. AgenTerm can reuse the
+adapter with explicit experimental selection. Its initial Rust APIs are experimental;
+the optional platform `rust-console` feature now depends on it; default
+consumers do not enable or select it. AgenTerm can reuse the
 mechanism, with its own explicit dependency and qualification.
 
 The implementation language is Rust, as explicitly directed by the owner.
@@ -139,18 +141,19 @@ Ctrl+C/Break, UTF-8/UTF-16, CJK, alternate screen, resize/reflow, redirected
 handles, nested children, attach/free console and termination. Keep the matrix
 small enough to diagnose individual differences before expanding it.
 
-Single-file delivery remains an unresolved integration obligation: a sidecar
-reference build may be used only for research. In-image host mode or embedded
-extraction require an explicit packaging decision, size/signature/scan evidence
-and cleanup contract. Neither is implemented or approved as the shipping form
-by this research document. Retain current supported systems until the owner
+The experimental adapter now runs its Rust service in the consumer process,
+without a service sidecar or embedded extraction. Shipping single-file delivery
+still needs an explicit product-selection/packaging decision and exact-artifact
+size/signature/scan and cleanup evidence. A C++ sidecar reference build may be
+used only for research; no new shipping form is approved by this research
+document. Retain current supported systems until the owner
 chooses a separately evidenced compatibility boundary.
 
 ## Status and next executable milestone
 
 [v] Source and REA research with pinned references. [-] Rust native transport
 and API service; [v] initial connection/I/O/record/job subset; [_] remaining
-API semantics, control signals, optional binary analysis and product integration.
+API semantics, control signals, optional binary analysis and product selection.
 Sequence: [backend research plan](../plan/plan-windows-console-backend.md).
 This work has no assigned release version and does not replace the approved
 0.2.16 test-orchestration plan. No production backend or default changed.
@@ -214,7 +217,7 @@ certification for all clients or OS releases.
 | GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass and native input-handle readiness. | ANSI input-record variants, WriteConsoleInput and broad application qualification. |
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
-| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Control signals, remaining layer APIs and product integration. |
+| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Control signals, remaining layer APIs and GUI/product qualification. |
 
 The backend reuses this repository's owned `vt100` fork for screen state behind
 the Windows adapter. That reuse does not make Windows console mode semantics
@@ -240,7 +243,7 @@ Native evidence:
 Runtime negatives drop actual sink output, disable session binding, discard the
 pending high surrogate and swallow sink failure. Each corresponding selected
 test fails; restored code passed the original eleven-case output suite. These
-cases remain in the current thirty-case suite described below. Local evidence:
+cases remain in the backend selector and expanded PTY suite. Local evidence:
 `target/conhost-research/host-final-suite.log` and named `*-negative.log` files.
 
 Debugging found two fixture/bootstrap details: standard handles must explicitly
@@ -267,7 +270,8 @@ client with the private reference, assigns a kill-on-close job, then resumes.
 Resume checks the actual prior suspend count. The public process handle is
 borrowed; membership/counts are queried from the private job. Dropping the owner
 closes that job and waits for its root process with a bounded budget.
-Environment/cwd overrides and the product adapter are still future work.
+Native UTF-16 environment/cwd overrides and an explicit platform adapter are
+implemented in the following milestone; broader product selection remains open.
 
 The Cargo-built `minicon-console-probe` directly calls Windows APIs and reports
 results to private files rather than using the console path it is testing.
@@ -315,5 +319,60 @@ Local receipts: `target/conhost-research/input-negative-audit.json`,
 `input-full-suite.log`, and per-control `*-negative.log` files. The current
 native scope is Windows x86_64 on the measured host; Windows aarch64 compilation
 does not replace native execution. General signal/resize/readback compatibility,
-legacy driver bootstrap, output blocking teardown and MiniCon/AgenTerm product
-integration remain open.
+legacy driver bootstrap and MiniCon/AgenTerm product selection remain open.
+
+### Explicit experimental PTY integration
+
+Enable MiniCon's `experimental-rust-console` feature (forwarding the platform's
+`rust-console` feature), then call the Windows `ChildCommand::rust_console()`
+builder before `spawn`. The ordinary `into_parts`, master reader/writer/resize,
+wait clone, native keys, input ownership and verified Job cleanup contracts are
+used. `PtyMaster::backend_kind()` identifies the actually opened Windows session;
+the process-wide default backend report still describes default selection.
+No GUI setting, environment flag or automatic fallback selects the Rust host.
+
+The Windows adapter's `pty/rust_console.rs` composes the existing command-line
+quoting, application search, environment merge, cancellable input writer and
+64 KiB bounded output queue. One in-process worker owns its driver and borrowing
+host locally. There is no console-agent child, CreatePseudoConsole call or
+system-host launch in this path. It polls its private input pipe, retains split
+UTF-8 and CRLF state, and services a bounded control queue. Invalid UTF-8 is an
+explicit session failure. Native up/down keys bypass host console attachment.
+The owned screen has a 1 Mi-cell budget; resize updates the reused VT screen
+and emits a native window record when window input is enabled. This does not
+yet establish full reflow, alternate-buffer or legacy screen API compatibility.
+
+Shutdown switches output to drain mode before terminating the private job and
+waiting, bounded, for the host worker. The worker reports transport errors and
+EOF through the existing output queue. API-level unsupported replies go back
+to their requesting clients without becoming authority to kill sibling clients.
+A final native cancellation (995) becomes EOF only after the actual private
+Job is observed empty. A live client's error remains visible. Independent
+output-reader failures are sent to the main test thread, which also requires
+EOF; a detached reader panic cannot supply positive evidence.
+
+`scripts/build.sh test --features experimental-rust-console rust_console_ -- --nocapture`
+adds seven platform integration cases and one actual-output-capacity shutdown
+case to the original thirty tests. The facade cases cover environment/cwd and
+nonzero exit, fragmented UTF-8 and CRLF, blocked/nonreading-client cleanup, prelaunch screen
+budget rejection, native initial/resized dimensions and key fields. UTF-8
+fragments are separated by two acknowledged worker laps, preventing pipe
+coalescing from bypassing the decoder boundary. The output-pressure case
+observes the queue at actual capacity before shutdown and requires worker exit,
+not merely client exit. Native dimension/key reports come from a Cargo-built
+Win32 fixture using a private result file; Cargo provides the exact binary path.
+
+Twelve additional runtime negative controls cover actual backend selection,
+environment/cwd forwarding, split UTF-8/CRLF, initial dimensions, resize event
+fields, key repeat, job termination, output-drain release, the prelaunch screen
+budget and the workspace/fork feature boundary. Each selected test/self-test
+fails after its guarded behavior is changed; compile failures are excluded and
+source restoration is SHA-256 checked. Local receipts are
+`target/conhost-research/pty-negative-audit.json`, `pty-positive-suite.log` and
+the named `pty-*-negative.log` files. These extend the earlier milestone's
+negative evidence rather than claiming its old source hashes describe this one.
+
+The measured native facade host reports Windows `10.0.20348`, build `20348`,
+x86_64. This evidence does not qualify PowerShell, Node/TUI clients,
+older Windows or Windows ARM64 runtime behavior. GUI integration, complete
+control signals and screen semantics remain required before promotion.
