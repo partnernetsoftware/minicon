@@ -12,6 +12,8 @@ mod mixed_output;
 #[cfg(windows)]
 mod output_modes;
 #[cfg(windows)]
+mod rect_output;
+#[cfg(windows)]
 mod screen_fill;
 #[cfg(windows)]
 mod screen_readback;
@@ -44,6 +46,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "rect-output" {
+        return rect_output::run(std::path::Path::new(&arguments[1]));
+    }
     if mode == "unicode-output" || mode == "unicode-output-owned" {
         return unicode_output::run(
             std::path::Path::new(&arguments[1]),

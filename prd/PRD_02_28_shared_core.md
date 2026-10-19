@@ -49,7 +49,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
 ├── Owned dependencies — third_party/
 │   ├── vte: authoritative VT/UTF-8 grammar and side-effect-free boundary preview
-│   ├── vt100: VT parsing, screen state, damage and bounded OutputFramer
+│   ├── vt100: VT parsing, literal cell/style writes, damage and bounded OutputFramer
 │   └── softbuffer: native presentation backends
 ├── Bootstrap exception — src/startup.rs
 │   └── Windows x86_64 / aarch64 entry assembly; not a reusable runtime API
@@ -305,3 +305,9 @@ local tests and native receipts support only their recorded feature/cell scope.
 
 Non-goals: a generic utility warehouse, blanket cross-ISA certification,
 unmeasured abstraction layers, or changes to product scope in this inventory.
+
+The Windows console service's read-only font queries expose one private virtual
+compatibility descriptor. They do not depend on platform GUI font discovery or
+claim that the renderer uses that face/size. The native RawUI dependency and
+actual client evidence are owned by [PRD 02.34](PRD_02_34_windows_console_backend.md).
+The neutral cell mutation remains in the owned shared terminal library.

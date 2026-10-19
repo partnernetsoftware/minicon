@@ -3,6 +3,27 @@ use super::Screen;
 use unicode_width::UnicodeWidthChar as _;
 
 impl Screen {
+    /// Replace one scalar and its style without moving the cursor or drawing
+    /// state. A wide scalar requires two cells in this row; invalid placement
+    /// returns false without changing either row. Controls and standalone
+    /// zero-width scalars retain the literal-cell projection contract.
+    pub fn write_cell(
+        &mut self,
+        row: u16,
+        column: u16,
+        character: char,
+        style: crate::CellStyle,
+    ) -> bool {
+        let (rows, columns) = self.size();
+        let width = u16::from(character.width().unwrap_or(1) > 1) + 1;
+        if row >= rows || column >= columns || width > columns - column {
+            return false;
+        }
+        self.fill_cell_text(row, column, 1, character);
+        self.fill_cell_style(row, column, usize::from(width), style);
+        true
+    }
+
     /// Fill consecutive cells with a style, preserving text, width metadata,
     /// cursor and current drawing attributes. Clip at the screen end.
     /// Returns the number of cells changed; invalid origins return zero.
@@ -83,6 +104,34 @@ impl Screen {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rectangular_cell_writes_preserve_state_and_refuse_row_spill() {
+        let mut parser = crate::Parser::new(2, 4, 0);
+        parser.process(b"\x1b[31mAB\x1b[2;2H");
+        let before = parser.screen().clone();
+        let style = crate::CellStyle {
+            foreground: crate::Color::Idx(2),
+            ..crate::CellStyle::default()
+        };
+        assert!(!parser.screen_mut().write_cell(0, 3, '中', style));
+        assert_eq!(parser.screen().state_formatted(), before.state_formatted());
+        assert!(parser.screen_mut().write_cell(0, 1, '中', style));
+        assert!(parser.screen().cell(0, 2).unwrap().is_wide_continuation());
+        assert_eq!(
+            parser.screen().cell(0, 1).unwrap().fgcolor(),
+            crate::Color::Idx(2)
+        );
+        assert!(parser.screen_mut().write_cell(0, 2, 'X', style));
+        assert!(!parser.screen().cell(0, 1).unwrap().is_wide());
+        assert_eq!(parser.screen().cell(0, 2).unwrap().contents(), "X");
+        assert_eq!(parser.screen().cursor_position(), before.cursor_position());
+        assert_eq!(
+            parser.screen().attributes_formatted(),
+            before.attributes_formatted()
+        );
+        assert!(parser.take_damage().rows().contains(0));
+    }
+
     #[test]
     fn literal_cell_edits_preserve_state_and_project_safe_full_and_diff() {
         let mut parser = crate::Parser::new(3, 6, 0);

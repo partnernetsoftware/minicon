@@ -47,6 +47,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped drawing attributes: native setter/query and subsequent text share VT state
 │   ├── [v] scoped native character/attribute readback: bounded views of the shared screen
 │   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
+│   ├── [-] rectangular W/A read/write: clipped row stride, per-cell styles and scoped wide pairs
+│   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
 │   ├── [-] mixed output: authoritative parser boundaries, bounded fragments and native injection
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
@@ -84,6 +86,12 @@ flowchart LR
     READBACK --> VT
     HOST --> FILL["native fills / transactional shared-cell edits / safe VT projection"]
     FILL --> VT
+    HOST --> RECT["CHAR_INFO rectangles / capture bounds / clipping / access"]
+    RECT --> EDIT["shared Screen::write_cell / row bounds / damage"]
+    EDIT --> VT
+    RAWUI["real Windows PowerShell RawUI"] --> RECT
+    RAWUI --> FONT["Windows legacy font queries / virtual metadata only"]
+    HOST --> FONT
     HOST --> FRAME["client VT/UTF-8 fragments / immediate controls / native output boundary"]
     FRAME --> VT
     HOST --> LIFE["connection defaults vs opened file objects"]
@@ -1402,3 +1410,104 @@ compile checks cover Linux x86_64/aarch64, Windows aarch64 and macOS x86_64;
 the minimal Windows ARM64 PTY/probe consumer also compiles with its existing
 minimal-feature warnings. These compile checks do not certify native non-host
 runtime, packaging, GUI selection or a default backend change.
+
+### Accepted rectangular screen API leaf
+
+Outcome: native callers can read/write CHAR_INFO rectangles through the owned
+PTY service. Invariant: explicit READ/WRITE access, bounded capture and response,
+request-row stride preserved under clipping, actual affected rectangle returned,
+untouched caller cells preserved by native client unpacking, cursor/drawing
+state and pending client grammar preserved. Evidence must use independent SDK
+WriteConsoleOutputW/A and ReadConsoleOutputW/A callers, clipped/nonzero origins,
+per-cell styles, wide-cell boundaries, real native readback and consumed PTY
+cells, with the installed reference measured separately. Safe failure rejects
+invalid/oversized/unsupported representations explicitly before mutation;
+partial sink failure remains fatal. Dependencies are shared cell edits and
+ConDrv completion; no Windows shadow grid or generic platform dependency is
+introduced into minicon-console. Multiple buffers, scroll and complete legacy
+encoding qualification remain distinct requirements of the overall backend.
+
+The pinned server structs contain SMALL_RECT plus one-byte Unicode, and API
+indices 0x02000011 (write) / 0x02000013 (read). KernelBase packs the public source
+buffer coordinate/stride before transport; server stride is the requested
+rectangle width. Read replies cover the full requested transport buffer so the
+native client can unpack only the actual clipped rectangle. Primary public
+contracts: [WriteConsoleOutput](https://learn.microsoft.com/en-us/windows/console/writeconsoleoutput)
+and [ReadConsoleOutput](https://learn.microsoft.com/en-us/windows/console/readconsoleoutput).
+
+The initial implementation admits scalar single-cell W data, coherent two-cell
+wide pairs with matching glyph/style, and A ASCII/single-byte code-page cells.
+It validates capture/capacity against one MiB, checked geometry and actual row
+stride before editing. Read returns the complete transport-buffer length so
+KernelBase can preserve untouched caller cells. Native access is checked before
+capture; rectangular calls retain the ordered deferred-output path. Writes edit
+a transient shared screen, publish a bounded safe diff and commit only after
+sink success. The portable cell operation is owned by
+[terminal state](PRD_02_24_con_terminal.md); no persistent shadow grid is added.
+
+The independent SDK fixture compares clipped negative rectangles with nonzero
+source/destination coordinates, sentinel caller cells, per-cell colors,
+CP437 A/W conversion, coherent CJK wide pairs, half-wide reads, right/bottom
+clipping and explicit READ/WRITE denial. It preserves an unfinished client CSI
+through these calls and checks subsequent cursor/color and consumed cells.
+`rect-output-red.log` records the real unsupported owned call before dispatch
+was implemented, while the installed system's ordinary rectangle case passed.
+`rect-output-boundaries-positive.log` records the expanded scoped behavior.
+
+An entirely disjoint read returns invalid-parameter (native error 87), matching
+the installed SDK reference and preserving the caller's buffer. A temporary,
+byte-restored RPC trace established that a successful zero-area server capture
+was mapped by this client DLL to error 1; LastError was explicitly initialized
+with a sentinel in the final fixture. Empty writes return a successful empty
+rectangle. The installed build 20348 instead leaves the original rectangle on
+that successful no-op; the explicit reference branch records this observed
+legacy difference. This is not a wire- or version-universal equivalence claim.
+The temporary trace lives only in the ignored research directory.
+
+This is scoped support, not completion of all rectangular representations.
+Unflagged wide glyphs, orphan/clipped wide writes, differing wide-half styles,
+non-scalar UTF-16 CHAR_INFO, legacy grid attributes and multibyte A encodings
+remain explicitly unsupported pending their own representation/runtime work.
+Complex-grapheme readback inherits the existing modern single-unit replacement
+policy; native historical variants need separate qualification. Large-screen
+clone/diff cost, expanded native version/ISA coverage, real TUI applications,
+multiple buffers, scrolling and GUI/default promotion remain open.
+
+#### Real application dependency: read-only font metadata
+
+Windows PowerShell RawUI calls GetCurrentConsoleFontEx before SetBufferContents.
+The first actual application run failed there despite passing direct SDK
+rectangle tests. The service now handles 0x03000004 (84-byte current-font
+message) and 0x03000003 (8-byte font-size message), with output READ access and
+known non-emitting dispatch. One private `host/font.rs` encoder owns both views:
+font index zero, nominal 8-by-16 cell, scalable monospaced family flags, weight
+400 and the terminated `MiniCon Virtual` identity. Unknown indices fail with
+invalid-parameter. This is a virtual compatibility descriptor for the headless
+cell transport, not an installed face, renderer selection or physical pixel
+allocation; actual frontend typography and future negotiated metrics remain
+separate work. Font setters and font enumeration remain unsupported.
+
+The SDK fixture checks agreement between both queries and invalid-index failure;
+its system reference permits an automatic zero font width instead of assuming
+positive physical pixels. The real Windows PowerShell RawUI court constructs
+and writes a colored cell array containing Chinese wide text, reads it back,
+checks characters/colors and verifies consumed PTY cells. The public
+[GetCurrentConsoleFontEx contract](https://learn.microsoft.com/en-us/windows/console/getcurrentconsolefontex)
+requires output READ access and remains distinct from frontend rendering.
+`rect-output-powershell-rawui-positive.log` and `rect-output-application-positive.log`
+record the scoped application runs. Additional applications, Unicode forms and
+native version/ISA cells are not inferred from this one client.
+
+Final local qualification is `rect-output-final-suite.log`: 186 selected passes,
+including 17 alignment checks, five new tests and the actual Windows PowerShell
+RawUI colored/CJK roundtrip. Ten runtime mutation cases in
+`rect-output-negative-audit.json` cover row stride, capture budget, sink commit,
+row spill, independent reference styles, empty reads, WRITE access, missing
+RawUI read/font APIs and inconsistent font views. Every guard is byte-restored.
+Root fmt, default/experimental workspace all-target strict Clippy and the
+standalone shared-parser strict Clippy passed. Shared-library compile checks
+passed for Linux x86_64/aarch64, Windows aarch64 and macOS x86_64; minimal Windows
+ARM64 PTY/probe compilation also passed with existing minimal-feature warnings.
+These cross checks are compile-only; native non-host cells, all legacy
+representations, more real TUI clients and packaged/default qualification remain
+open. Exact source, artifact and log hashes stay in the ignored final receipt.

@@ -23,7 +23,7 @@ minicon terminal and rendering
 ├── Scheduling (bounded 128 KiB per GUI turn; input yields)
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
-│   ├── Programmatic literal cell/style fills — shared state, safe VT projection
+│   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
 │   └── Visible replacement scalar — stream/error recovery and literal replay
 ├── Damage, raster and present
@@ -646,3 +646,14 @@ coverage and the installed system comparison belong to
 [PRD 02.34](PRD_02_34_windows_console_backend.md). This changes no cell storage,
 OS branches or ISA kernels. External consumers that relied on the former
 U+FFFD unhandled callback need to qualify their pin independently.
+
+`Screen::write_cell(row, column, scalar, CellStyle)` adds a neutral scalar/style
+placement operation for native rectangular callers and other embedders. It
+preserves cursor, drawing attributes and client grammar, heals overwritten wide
+neighbours, marks conservative row damage and refuses an invalid origin or a
+wide scalar that cannot fit within this row. It does not spill a character into
+the next row. Controls and standalone zero-width cells retain the literal
+projection contract above. `rectangular_cell_writes_preserve_state_and_refuse_row_spill`
+is the direct shared oracle; the Windows rectangle consumer, row-stride/access
+rules and unsupported legacy representations belong to
+[PRD 02.34](PRD_02_34_windows_console_backend.md).

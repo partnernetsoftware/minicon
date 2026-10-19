@@ -1,9 +1,11 @@
 //! Initial user-mode console API service; no system console host is used.
 use crate::{DriverRequest, DriverSession};
+mod font;
 mod input;
 mod objects;
 mod output;
 mod readback;
+mod rectangle;
 mod screen;
 mod stream;
 pub use input::ConsoleInput;
@@ -205,6 +207,8 @@ impl<'session> ConsoleHost<'session> {
                             | 0x0200_0005
                             | 0x0200_0007
                             | 0x0200_0014
+                            | 0x0300_0003
+                            | 0x0300_0004
                     )
                 ));
         if !bypass && (!ready || !self.deferred_output.is_empty()) {
@@ -683,6 +687,92 @@ impl<'session> ConsoleHost<'session> {
                     ];
                     for (slot, color) in body[28..92].chunks_exact_mut(4).zip(COLORS) {
                         slot.copy_from_slice(&color.to_le_bytes());
+                    }
+                }
+            }
+            0x0300_0003 if body.len() >= 8 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::READ,
+                );
+                if receipt.status == SUCCESS {
+                    if read_u32(&body, 0).unwrap() != 0 {
+                        receipt.status = INVALID_PARAMETER;
+                    } else {
+                        body[4..8].copy_from_slice(&font::size_bytes());
+                    }
+                }
+            }
+            0x0300_0004 if body.len() >= 84 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::READ,
+                );
+                if receipt.status == SUCCESS {
+                    body[4..84].copy_from_slice(&font::current_bytes());
+                }
+            }
+            0x0200_0011 | 0x0200_0013 if body.len() >= 10 => {
+                let region =
+                    std::array::from_fn(|i| i16::from_le_bytes([body[i * 2], body[i * 2 + 1]]));
+                let unicode = body[8] != 0;
+                for (i, value) in [
+                    region[0],
+                    region[1],
+                    region[0].saturating_sub(1),
+                    region[1].saturating_sub(1),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    body[i * 2..i * 2 + 2].copy_from_slice(&value.to_le_bytes());
+                }
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    if api == 0x0200_0011 {
+                        objects::WRITE
+                    } else {
+                        objects::READ
+                    },
+                );
+                if receipt.status == SUCCESS {
+                    if api == 0x0200_0011 {
+                        let offset = body_size + 8;
+                        let length = descriptor.input_size.saturating_sub(offset) as usize;
+                        if descriptor.input_size > 1024 * 1024 {
+                            receipt.status = NOT_SUPPORTED;
+                        } else {
+                            let bytes = request.read_input(offset, length)?;
+                            match self.write_output_rect(region, unicode, &bytes, output)? {
+                                Ok(actual) => {
+                                    for (i, value) in actual.into_iter().enumerate() {
+                                        body[i * 2..i * 2 + 2]
+                                            .copy_from_slice(&value.to_le_bytes());
+                                    }
+                                }
+                                Err(status) => receipt.status = status,
+                            }
+                        }
+                    } else if descriptor.output_size > 1024 * 1024 {
+                        receipt.status = NOT_SUPPORTED;
+                    } else {
+                        let capacity = (descriptor.output_size - body_size) as usize;
+                        match self.read_output_rect(region, unicode, capacity) {
+                            Ok((actual, bytes)) => {
+                                request.write_output(body_size, &bytes)?;
+                                information = bytes.len();
+                                for (i, value) in actual.into_iter().enumerate() {
+                                    body[i * 2..i * 2 + 2].copy_from_slice(&value.to_le_bytes());
+                                }
+                            }
+                            Err(status) => receipt.status = status,
+                        }
                     }
                 }
             }

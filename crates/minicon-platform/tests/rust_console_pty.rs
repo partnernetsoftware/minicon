@@ -303,6 +303,95 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn rect_output_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("rect-output")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("rect-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!(
+        "rect rust={rust}: {receipt}; screen={:?}",
+        parser.screen().contents()
+    );
+    (receipt, parser)
+}
+
+fn assert_rect_output(receipt: &str, parser: &vt100::Parser, rust: bool) {
+    let (build, receipt) = receipt.split_once('\n').unwrap();
+    assert!(receipt.starts_with(&format!(
+        "clip-write:0,0,1,0\nclip-read:0,0,2,0:{}004b/000b,004c/000c,0020/0007,\n",
+        "0021/0055,".repeat(12)
+    )));
+    assert!(receipt.contains(
+        "block-read:2,2,4,3:0061/001e,0062/001f,0063/0020,0064/0021,0065/0022,0066/0023,"
+    ));
+    assert!(receipt.contains("ansi-read:0,4,2,4:0041/001e,00b3/002d,0042/004f,"));
+    assert!(receipt.contains("ansi-wide-read:0,4,2,4:0041/001e,2502/002d,0042/004f,"));
+    assert!(receipt.contains("wide-read:0,5,3,5:4e2d/0107,4e2d/0207,0051/0007,0052/0007,"));
+    assert!(receipt.contains("tail-read:1,5,1,5:4e2d/0207,"));
+    assert!(receipt.contains("lead-read:0,5,0,5:4e2d/0107,"));
+    assert!(receipt.contains("outside-read:0,87,20,20,19,19;true"));
+    if !rust && build == "build=20348" {
+        assert!(receipt.contains("outside-write:1,0,20,20,21,21"));
+    } else {
+        assert!(receipt.contains("outside-write:1,0,20,20,19,19"));
+    }
+    assert!(receipt.contains("corner-write:15,7,15,7\ncorner-read:15,7,15,7:0021/0005,"));
+    assert!(receipt.contains("access:0,5,0,5\n"));
+    assert!(receipt.contains("font-consistent:true\n"));
+    assert!(receipt.contains("font-invalid:0,0,87\n"));
+    if rust {
+        assert!(receipt.contains("font:0,8,16,36,400,MiniCon Virtual\n"));
+    }
+    assert!(receipt.ends_with("preserved:7,6;002e\nresumed:8,6;0024\n"));
+    assert_eq!(
+        parser.screen().contents(),
+        "KL\n\n  abc\n  def\nA│B\n中QR\n       Z\n               !"
+    );
+    assert_eq!(
+        parser.screen().cell(2, 2).unwrap().fgcolor(),
+        vt100::Color::Idx(11)
+    );
+    assert_eq!(
+        parser.screen().cell(2, 2).unwrap().bgcolor(),
+        vt100::Color::Idx(4)
+    );
+    assert!(parser.screen().cell(5, 0).unwrap().is_wide());
+    assert!(parser.screen().cell(5, 1).unwrap().is_wide_continuation());
+    assert_eq!(
+        parser.screen().cell(6, 7).unwrap().fgcolor(),
+        vt100::Color::Idx(1)
+    );
+    assert_eq!(
+        parser.screen().cell(6, 7).unwrap().bgcolor(),
+        vt100::Color::Idx(2)
+    );
+}
+
+#[test]
+fn rust_console_pty_rectangles_preserve_clipping_styles_and_client_decoder() {
+    let (receipt, parser) = rect_output_report(true);
+    assert_rect_output(&receipt, &parser, true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY rectangle differential court"]
+fn rust_console_client_rectangles_match_system_conpty() {
+    let (receipt, parser) = rect_output_report(false);
+    assert_rect_output(&receipt, &parser, false);
+}
+
 fn replacement_scalar_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -1766,6 +1855,38 @@ fn powershell_console_roundtrip(variable: &str) {
     let text = String::from_utf8_lossy(&fixture.bytes);
     assert!(text.contains("ps-value=中😀"), "{text}");
     assert!(!text.contains("Exception"), "{text}");
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell RawUI rectangle court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_rawui_rectangles() {
+    let script = "$ErrorActionPreference='Stop';$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('A中','CDX'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,2;$raw.SetBufferContents($pos,$cells);$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,3;$read=$raw.GetBufferContents($area);if($read[0,0].Character -cne 'A' -or $read[1,1].Character -cne 'D' -or $read[0,1].Character -cne '中' -or $read[1,2].Character -cne 'X' -or $read[0,0].ForegroundColor -ne [ConsoleColor]::Yellow -or $read[0,0].BackgroundColor -ne [ConsoleColor]::DarkBlue){exit 19};[Console]::SetCursorPosition(0,5);[Console]::Write('rawui-rect-ok:');exit 0";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client("MINICON_TEST_WINDOWS_POWERSHELL"))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .size(TerminalSize { rows: 8, cols: 16 })
+            .rust_console(),
+    );
+    fixture.until("rawui-rect-ok:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().cell(2, 2).unwrap().contents(), "A");
+    assert_eq!(parser.screen().cell(3, 3).unwrap().contents(), "D");
+    assert_eq!(parser.screen().cell(2, 3).unwrap().contents(), "中");
+    assert!(parser.screen().cell(2, 4).unwrap().is_wide_continuation());
+    assert_eq!(
+        parser.screen().cell(2, 2).unwrap().fgcolor(),
+        vt100::Color::Idx(11)
+    );
+    assert_eq!(
+        parser.screen().cell(2, 2).unwrap().bgcolor(),
+        vt100::Color::Idx(4)
+    );
 }
 
 #[test]
