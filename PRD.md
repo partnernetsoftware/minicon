@@ -30,6 +30,8 @@ MiniCon — one-file local terminal
 ├── Product composition — binary-private modules
 │   ├── PTY lifecycle, VT/rendering and native presentation
 │   │   └── prd/PRD_02_24_con_terminal.md
+│   ├── [-] owned Rust Windows console backend: minicon-console
+│   │   └── prd/PRD_02_34_windows_console_backend.md
 │   ├── tab tree, composer, IME, selection, notes, settings and manual update
 │   │   └── prd/PRD_02_25_con_workspace.md
 │   ├── local CLI, waits, structured snapshots and screenshots
@@ -103,6 +105,7 @@ flowchart LR
 |---|---|---|
 | Product scope and authority | [Charter](prd/PRD_02_23_minicon.md) | explicit local-hosting boundary; reject expansion into Agent policy |
 | Run and render real local shells | [Terminal](prd/PRD_02_24_con_terminal.md) | real-child/rendering journeys; fail only the affected session |
+| Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, notes/settings and input journeys; no stale targeting |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
@@ -114,6 +117,11 @@ flowchart LR
 
 ## Current frontier
 
+- [-] **Owned Rust Windows console backend: minicon-console.** Source and REA
+  release pinned; initial native ConDrv/CONNECT proof implemented. Console API
+  semantics and product integration remain planned.
+  [Owner](prd/PRD_02_34_windows_console_backend.md) and
+  [sequence](plan/plan-windows-console-backend.md); no release assigned.
 - [v] **v0.2.15 published**, `2026-10-18T16:53:25Z`, source
   `0ac2d7ed1b3898835956f80569718c4d2eb994b9`. Explicit reuse boundaries,
   optional core features, compatible tree/numeric consolidation, Dark theme

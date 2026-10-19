@@ -8,6 +8,13 @@ which boundary, and where do OS and ISA differences live?" Parent:
 
 Legend: `[v]` implemented with named evidence, `[-]` partial, `[_]` planned.
 
+An owned Windows console backend is now an authorized research direction in
+[PRD 02.34](PRD_02_34_windows_console_backend.md). Keep its implementation
+behind the existing PTY contract. The new `minicon-console` workspace crate has
+experimental Windows-only APIs and native x86_64 bootstrap evidence; no product
+depends on it yet. Native ABI stabilization, AgenTerm reuse and cross-ISA claims
+require their own implementation and consumer evidence.
+
 ## Map
 
 ```text
@@ -31,6 +38,8 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── ISA branches: byte search, checksum, CPU facts and native ABI details
 │   ├── numeric compatibility exports use core implementation
 │   └── opt-in features; a common facade does not imply equal availability
+├── Experimental Windows console service — crates/minicon-console
+│   └── Rust ConDrv bootstrap; not a complete host or product dependency yet
 ├── Owned dependencies — third_party/
 │   ├── vt100: VT parsing, screen state and damage extensions
 │   └── softbuffer: native presentation backends

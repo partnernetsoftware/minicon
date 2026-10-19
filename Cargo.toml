@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/minicon-console",
     "crates/minicon-core",
     "crates/minicon-platform",
     "crates/minicon-ui-core",

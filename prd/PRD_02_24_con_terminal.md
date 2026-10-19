@@ -119,6 +119,10 @@ flowchart LR
 
 ## PTY backend selection
 
+The owner's investigation of an owned Windows console implementation is tracked
+in [PRD 02.34](PRD_02_34_windows_console_backend.md). It has not changed the
+shipped backend selection or established that conhost caused a reported failure.
+
 - [v] the pseudoconsole entry points are resolved at run time rather than
   imported. Every static import is resolved by the PE loader before `main`, so
   importing an API a supported Windows lacks does not degrade a feature — it
