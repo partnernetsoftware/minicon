@@ -12,17 +12,18 @@ sequences that contract without assigning a release or changing current defaults
 3. [-] Prove selected-host bootstrap with a minimal unchanged Windows console
    client. Capture actual executable/hash, API calls and lifecycle. Intentionally
    disable selection and require the identity test to fail. An upstream host
-   build is a baseline, not a rewritten backend. Initial Rust proof receives
-   CONNECT from unchanged cmd and rejects it explicitly; accepting the connection
-   and executing commands remain unimplemented. Reference-selection and native
+   build is a baseline, not a rewritten backend. Rust now accepts unchanged cmd,
+   executes built-in ASCII/Unicode echo and preserves its nonzero exit status.
+   The original explicit-rejection case remains a regression. Reference-selection and native
    handle-inheritance mutations must fail the corresponding runtime tests.
 4. [_] Produce the API/dependency inventory and differential fixtures. Use REA
    on an immutable copy of the exact system binary only for named gaps that
    source and behavior do not resolve; preserve evidence and uncertainty.
-5. [_] Implement one bounded replacement slice at a time behind the existing
+5. [-] Implement one bounded replacement slice at a time behind the existing
    Windows adapter: lifecycle/transport, input and modes, screen/output, resize
    and remaining required API semantics. Keep unsupported cases visible.
-6. [_] Qualify real shells/agent clients, cancellation/crash races and both
+6. [-] Initial native Windows x86_64 cmd/Unicode/session-isolation cases pass.
+   Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.
 7. [_] Resolve single-file delivery and native ABI boundaries, then qualify

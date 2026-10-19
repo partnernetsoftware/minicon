@@ -10,7 +10,8 @@ server implementation, lifecycle and servicing, rather than changing a process
 name. The hypothesis that the system host causes reported instability still
 needs a reproducible failure and attribution; process counts do not prove it.
 
-Legend: `[v]` verified research, `[-]` partial, `[_]` implementation planned.
+Legend: `[v]` implemented/verified with named evidence, `[-]` partial,
+`[_]` planned.
 
 ## Tree
 
@@ -23,8 +24,10 @@ Outcome: own the Windows console backend with measured compatibility
 ├── [-] Rust crate: crates/minicon-console
 │   ├── [v] actual ConDrv server, input event and non-inheritable reference
 │   ├── [v] bounded receive/cancellation and explicit unsupported completion
-│   └── [v] kernel-delivered CONNECT from an unchanged cmd fixture; rejected
-├── [_] Build an isolated, source-pinned reference host
+│   ├── [v] accepted CONNECT, opaque handles and DISCONNECT reclamation
+│   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
+│   └── [-] API service; input and general screen semantics remain incomplete
+├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
 │   └── retain upstream notices and separate upstream baseline from our changes
 ├── [_] Replace behavior behind a reusable Windows adapter
@@ -42,7 +45,7 @@ Outcome: own the Windows console backend with measured compatibility
 ```mermaid
 flowchart LR
     CLIENT["unchanged cmd / PowerShell / Node / native client"] --> API["Windows console API and ConDrv"]
-    API --> HOST["owned user-mode console host: planned"]
+    API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["Windows adapter behind minicon-platform::pty"]
     ADAPTER --> MC["MiniCon sessions and renderer"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
@@ -141,17 +144,18 @@ chooses a separately evidenced compatibility boundary.
 ## Status and next executable milestone
 
 [v] Source and REA research with pinned references. [-] Rust native transport
-and custom-host bootstrap; [_] connection acceptance, API semantics, optional
-binary analysis, remaining replacement modules and integration.
+and API service; [v] initial connection acceptance/output subset; [_] input,
+remaining API semantics, optional binary analysis and product integration.
 Sequence: [backend research plan](../plan/plan-windows-console-backend.md).
 This work has no assigned release version and does not replace the approved
 0.2.16 test-orchestration plan. No production backend or default changed.
 
 ### Initial Windows x86_64 native evidence
 
-`scripts/build.sh test rust_console_driver -- --nocapture` executes five tests
-in the new crate. The canonical wrapper also visits workspace/fork suites;
-those are filtered out by this selector, not a full regression pass.
+`scripts/build.sh test rust_console_ -- --nocapture` executes eleven tests:
+eight native driver/client cases and three output/Unicode state cases. The
+canonical wrapper visits unrelated workspace/fork suites but filters those
+cases out; this is a targeted pass. The original five bootstrap cases remain:
 
 - `rust_console_driver_registers_noninheritable_server_and_reference`: real
   driver registration/reference creation; kernel handle flags checked.
@@ -178,3 +182,62 @@ silently treated as supported; the bootstrap proof instead observes a real
 kernel-delivered client request on our private server. No kernel-driver rewrite,
 Windows aarch64 native pass, complete host implementation or improved stability
 is claimed by these initial tests.
+
+Compile-only checks also pass for Windows aarch64 (including test sources) and
+the non-Windows Linux x86_64 configuration. The Linux configuration exports no
+Windows console service; compilation does not qualify a native runtime.
+
+### Accepted-client service and current API inventory
+
+`ConsoleHost` binds permanently to one driver-session identity. Kernel-provided
+process/object tokens are stored as opaque integers rather than dereferenced
+pointers. The current caps are 64 clients, 1024 handle records and 1 MiB per
+input transfer; oversized transfers fail explicitly. A request borrows its
+originating session and is consumed by completion, preventing double completion
+through the Rust API. These are implementation boundaries, not compatibility
+certification for all clients or OS releases.
+
+| Driver/API operation | Current behavior | Remaining scope |
+|---|---|---|
+| CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, reclaim that client's records on disconnect. | General inherited/duplicated handles, attach/free-console and descendant lifecycle qualification. |
+| CLOSE_OBJECT | Validate ownership and retire the token. | Native create-object/access/share semantics are not implemented yet. |
+| RAW_WRITE / WriteConsole | Capture actual client bytes, convert current OEM code page or UTF-16 to UTF-8, send to the supplied writer, update screen state. | DBCS fragments, code-page mutation, processed-output/mode fidelity, pending surrogate at final stream end and complete backpressure/cancellation. |
+| GetCP / GetLangId | Return real system OEM code page/current-user language; input/output page state is distinct. | SetCP is not implemented. |
+| GetMode / SetMode | Read/write the selected buffer's stored mode value. | Full mode validation and input/processed-output semantics remain incomplete; storing a bit does not qualify that behavior. |
+| GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
+| GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
+| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Input/read/waits, events, control signals, remaining layer APIs and product integration. |
+
+The backend reuses this repository's owned `vt100` fork for screen state behind
+the Windows adapter. That reuse does not make Windows console mode semantics
+equivalent to VT semantics; remaining differences stay explicit above.
+`minicon-platform` and the MiniCon binary still do not depend on this experimental
+crate, so the shipped default and artifact dependency graph are unchanged.
+
+Native evidence:
+
+- `rust_console_driver_owned_host_executes_real_cmd_output_and_exit`: unchanged
+  system cmd executes a built-in echo. Exact output reaches the Rust sink, exit
+  is zero, actual dispatch includes successful output and DISCONNECT clears all
+  client records. Every dispatch in this fixture must be supported.
+- `rust_console_driver_owned_host_preserves_real_cmd_unicode_and_nonzero_exit`:
+  unchanged cmd writes Chinese plus an emoji through WriteConsole, then exits
+  with status 7; exact text/space/CRLF and the actual exit status are checked.
+- `rust_console_driver_owned_host_rejects_a_foreign_session_without_harming_its_client`:
+  two private driver sessions and two real clients; a host rejects the foreign
+  CONNECT while its original client remains live and finishes successfully.
+- Three state cases cover a surrogate pair split across writes, malformed
+  surrogate recovery and writer failure without false screen advancement.
+
+Runtime negatives drop actual sink output, disable session binding, discard the
+pending high surrogate and swallow sink failure. Each corresponding selected
+test fails; restored code passes the eleven-case suite. Local evidence:
+`target/conhost-research/host-final-suite.log` and named `*-negative.log` files.
+
+Debugging found two fixture/bootstrap details: standard handles must explicitly
+avoid the parent's streams; cmd's quoted image spelling must use native path
+separators. A mixed `System32/cmd.exe` spelling caused cmd command parsing to
+fail even though native WriteConsole worked. No production workaround or
+relaxed output assertion was used to qualify echo. A separate local native API
+probe helped confirm output mode, screen-info layout and WriteConsole's result;
+it is diagnostic evidence, not a registered cross-platform acceptance case.

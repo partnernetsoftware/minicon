@@ -11,7 +11,7 @@ Legend: `[v]` implemented with named evidence, `[-]` partial, `[_]` planned.
 An owned Windows console backend is now an authorized research direction in
 [PRD 02.34](PRD_02_34_windows_console_backend.md). Keep its implementation
 behind the existing PTY contract. The new `minicon-console` workspace crate has
-experimental Windows-only APIs and native x86_64 bootstrap evidence; no product
+experimental Windows-only APIs and native x86_64 cmd/Unicode evidence; no product
 depends on it yet. Native ABI stabilization, AgenTerm reuse and cross-ISA claims
 require their own implementation and consumer evidence.
 
@@ -39,7 +39,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── numeric compatibility exports use core implementation
 │   └── opt-in features; a common facade does not imply equal availability
 ├── Experimental Windows console service — crates/minicon-console
-│   └── Rust ConDrv bootstrap; not a complete host or product dependency yet
+│   └── Rust ConDrv/API service, owned vt100 reuse; limited cmd evidence only
 ├── Owned dependencies — third_party/
 │   ├── vt100: VT parsing, screen state and damage extensions
 │   └── softbuffer: native presentation backends

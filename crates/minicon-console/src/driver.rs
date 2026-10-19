@@ -10,6 +10,7 @@ use std::io;
 use std::mem::size_of;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::ptr::{null, null_mut};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
@@ -28,6 +29,9 @@ const FILE_SHARE_ALL: u32 = 7;
 const IOCTL_SET_SERVER_INFORMATION: u32 = (0x50 << 16) | (7 << 2) | 3;
 const IOCTL_READ_IO: u32 = (0x50 << 16) | (1 << 2) | 2;
 const IOCTL_COMPLETE_IO: u32 = (0x50 << 16) | (2 << 2) | 3;
+const IOCTL_READ_INPUT: u32 = (0x50 << 16) | (3 << 2) | 3;
+const IOCTL_WRITE_OUTPUT: u32 = (0x50 << 16) | (4 << 2) | 3;
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -68,6 +72,12 @@ struct BufferDescriptor {
     data: *mut c_void,
     size: u32,
     offset: u32,
+}
+
+#[repr(C)]
+struct BufferOperation {
+    identifier: RequestId,
+    buffer: BufferDescriptor,
 }
 
 #[repr(C)]
@@ -121,6 +131,7 @@ unsafe extern "system" {
 /// neither attaches to nor terminates an existing user's console. No console
 /// client is admitted by this initial implementation.
 pub struct DriverSession {
+    id: u64,
     _reference: OwnedHandle,
     server: OwnedHandle,
     _input_available: OwnedHandle,
@@ -153,6 +164,9 @@ impl DriverSession {
             FILE_SYNCHRONOUS_IO_NONALERT,
         )?;
         Ok(Self {
+            id: NEXT_SESSION_ID
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                .map_err(|_| io::Error::other("console session identity space exhausted"))?,
             _reference: reference,
             server,
             _input_available: input_available,
@@ -254,18 +268,36 @@ impl DriverSession {
 }
 
 impl DriverRequest<'_> {
+    pub(crate) fn session_id(&self) -> u64 {
+        self.session.id
+    }
+
     /// Explicitly reject a request while its API semantics are unimplemented.
     /// This consumes its receipt; it must not be completed a second time.
     pub fn reject_unsupported(self) -> io::Result<()> {
+        self.complete(0xc000_00bb_u32 as i32, 0, &[])
+    }
+
+    pub(crate) fn complete(self, status: i32, information: usize, reply: &[u8]) -> io::Result<()> {
+        if reply.len() > self.descriptor.output_size as usize {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "reply exceeds client output buffer",
+            ));
+        }
         let completion = Completion {
             identifier: self.descriptor.identifier,
             status: IoStatusBlock {
-                status_or_pointer: 0xc000_00bb,
-                information: 0,
+                status_or_pointer: status as u32 as usize,
+                information,
             },
             write: BufferDescriptor {
-                data: null_mut(),
-                size: 0,
+                data: if reply.is_empty() {
+                    null_mut()
+                } else {
+                    reply.as_ptr().cast_mut().cast()
+                },
+                size: reply.len() as u32,
                 offset: 0,
             },
         };
@@ -277,6 +309,70 @@ impl DriverRequest<'_> {
             null_mut(),
             0,
         )?;
+        Ok(())
+    }
+
+    pub(crate) fn read_input(&self, offset: u32, length: usize) -> io::Result<Vec<u8>> {
+        // Bound allocation before touching client-supplied lengths. Requests
+        // beyond this initial transport budget are explicitly unsupported.
+        if length > 1024 * 1024
+            || length > self.descriptor.input_size.saturating_sub(offset) as usize
+            || offset > self.descriptor.input_size
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid or excessive client input range",
+            ));
+        }
+        let mut bytes = vec![0_u8; length];
+        if length != 0 {
+            let operation = BufferOperation {
+                identifier: self.descriptor.identifier,
+                buffer: BufferDescriptor {
+                    data: bytes.as_mut_ptr().cast(),
+                    size: length as u32,
+                    offset,
+                },
+            };
+            control(
+                &self.session.server,
+                IOCTL_READ_INPUT,
+                (&operation as *const BufferOperation).cast(),
+                size_of::<BufferOperation>() as u32,
+                null_mut(),
+                0,
+            )?;
+        }
+        Ok(bytes)
+    }
+
+    pub(crate) fn write_output(&self, offset: u32, bytes: &[u8]) -> io::Result<()> {
+        if offset > self.descriptor.output_size
+            || bytes.len() > self.descriptor.output_size.saturating_sub(offset) as usize
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid client output range",
+            ));
+        }
+        if !bytes.is_empty() {
+            let operation = BufferOperation {
+                identifier: self.descriptor.identifier,
+                buffer: BufferDescriptor {
+                    data: bytes.as_ptr().cast_mut().cast(),
+                    size: bytes.len() as u32,
+                    offset,
+                },
+            };
+            control(
+                &self.session.server,
+                IOCTL_WRITE_OUTPUT,
+                (&operation as *const BufferOperation).cast(),
+                size_of::<BufferOperation>() as u32,
+                null_mut(),
+                0,
+            )?;
+        }
         Ok(())
     }
     /// Raw inline bytes for future validated, per-operation decoding.
