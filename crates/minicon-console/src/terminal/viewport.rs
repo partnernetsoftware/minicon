@@ -130,28 +130,35 @@ impl TerminalViewport {
 #[derive(Default)]
 struct Effects {
     forward: bool,
+    nonvisual: bool,
 }
 impl Callbacks for Effects {
     fn audible_bell(&mut self, _: &mut Screen) {
         self.forward = true;
+        self.nonvisual = true;
     }
     fn visual_bell(&mut self, _: &mut Screen) {
         self.forward = true;
+        self.nonvisual = true;
     }
     fn resize(&mut self, _: &mut Screen, _: (u16, u16)) {
         self.forward = true;
     }
     fn set_window_icon_name(&mut self, _: &mut Screen, _: &[u8]) {
         self.forward = true;
+        self.nonvisual = true;
     }
     fn set_window_title(&mut self, _: &mut Screen, _: &[u8]) {
         self.forward = true;
+        self.nonvisual = true;
     }
     fn copy_to_clipboard(&mut self, _: &mut Screen, _: &[u8], _: &[u8]) {
         self.forward = true;
+        self.nonvisual = true;
     }
     fn paste_from_clipboard(&mut self, _: &mut Screen, _: &[u8]) {
         self.forward = true;
+        self.nonvisual = true;
     }
     fn unhandled_char(&mut self, _: &mut Screen, _: char) {
         self.forward = true;
@@ -206,7 +213,34 @@ impl TerminalStream {
         limit: usize,
         sink: &mut impl Write,
     ) -> Result<(), FrameError> {
-        let follow = follow.into();
+        self.write_output_viewport_mapped(bytes, view, follow.into(), limit, true, sink)
+    }
+
+    /// Update an undisplayed stream while publishing only recognized nonvisual
+    /// effects (titles/icons, bells and clipboard operations). Drawing, layer
+    /// transitions, resize requests and unknown extensions remain private.
+    /// Publication and source/view commit use the same transaction as visible
+    /// viewport output. Activation later publishes this stream's current image.
+    pub fn write_output_viewport_hidden(
+        &mut self,
+        bytes: &[u8],
+        view: &mut TerminalViewport,
+        follow: impl Into<ViewportFollow>,
+        limit: usize,
+        sink: &mut impl Write,
+    ) -> Result<(), FrameError> {
+        self.write_output_viewport_mapped(bytes, view, follow.into(), limit, false, sink)
+    }
+
+    fn write_output_viewport_mapped(
+        &mut self,
+        bytes: &[u8],
+        view: &mut TerminalViewport,
+        follow: ViewportFollow,
+        limit: usize,
+        visible: bool,
+        sink: &mut impl Write,
+    ) -> Result<(), FrameError> {
         self.framer.write_mapped(
             &mut self.parser,
             bytes,
@@ -226,12 +260,12 @@ impl TerminalStream {
                 let alt =
                     candidate.screen().alternate_screen() != parser.screen().alternate_screen();
                 let mut wire = Vec::new();
-                if effects || alt {
+                if (visible && (effects || alt)) || (!visible && candidate.callbacks().nonvisual) {
                     wire.extend_from_slice(raw);
                 }
-                if alt {
+                if visible && alt {
                     wire.extend_from_slice(&next.state_formatted());
-                } else {
+                } else if visible {
                     wire.extend_from_slice(&next.state_diff(&old));
                 }
                 check_projection(&wire, limit)?;
@@ -885,4 +919,89 @@ mod tests {
         );
         assert_eq!(terminal.screen().state_formatted(), before);
     }
+}
+#[test]
+fn rust_console_terminal_hidden_output_preserves_effects_and_isolates_paint() {
+    #[derive(Default)]
+    struct Events {
+        bells: usize,
+        title: Vec<u8>,
+    }
+    impl Callbacks for Events {
+        fn audible_bell(&mut self, _: &mut Screen) {
+            self.bells += 1;
+        }
+        fn set_window_title(&mut self, _: &mut Screen, title: &[u8]) {
+            self.title = title.to_vec();
+        }
+    }
+    let mut stream = TerminalStream::new(4, 16, 0, 128);
+    let mut view = TerminalViewport::full(4, 16);
+    let mut wire = Vec::new();
+    let effects = b"\x07\x1b]2;hidden;title\x1b\\";
+    let input = [
+        b"PRIVATE\x1b[?1049hALT".as_slice(),
+        effects,
+        b"\x1b[3\x071mZ\x1b]999;unknown\x07\x1b[8;9;10t",
+    ]
+    .concat();
+    stream
+        .write_output_viewport_hidden(&input, &mut view, false, 4096, &mut wire)
+        .unwrap();
+    assert_eq!(wire, [effects.as_slice(), b"\x07"].concat());
+    assert!(stream.screen().alternate_screen());
+    assert_eq!(stream.screen().contents(), "ALTZ");
+    assert_eq!(stream.take_window_title_update().unwrap(), b"hidden;title");
+    let mut peer = vt100::Parser::new_with_callbacks(4, 16, 0, Events::default());
+    peer.process(b"PUBLIC");
+    peer.process(&wire);
+    assert_eq!(peer.screen().contents(), "PUBLIC");
+    assert!(!peer.screen().alternate_screen());
+    assert_eq!(peer.callbacks().bells, 2);
+    assert_eq!(peer.callbacks().title, b"hidden;title");
+    let before = stream.screen().state_formatted();
+    let old = view;
+    struct Reject;
+    impl Write for Reject {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    assert!(
+        stream
+            .write_output_viewport_hidden(
+                b"\x1b]2;rejected\x07",
+                &mut view,
+                false,
+                4096,
+                &mut Reject
+            )
+            .is_err()
+    );
+    assert_eq!(stream.take_window_title_update(), None);
+    assert_eq!(stream.screen().state_formatted(), before);
+    assert_eq!(view, old);
+    let Err(FrameError::Io(error)) =
+        stream.write_output_viewport_hidden(b"\x07", &mut view, false, 0, &mut wire)
+    else {
+        panic!("hidden effect exceeded its wire budget");
+    };
+    assert!(ProjectionLimit::from_error(&error).is_some());
+    assert_eq!(stream.take_window_title_update(), None);
+    assert_eq!(view, old);
+    stream
+        .write_output_viewport_hidden(b"\x07", &mut view, false, 4096, &mut wire)
+        .unwrap();
+    assert_eq!(stream.take_window_title_update().unwrap(), b"rejected");
+    stream
+        .write_viewport_activation(view, 4096, &mut wire)
+        .unwrap();
+    let mut peer = vt100::Parser::new(4, 16, 0);
+    peer.process(&wire);
+    assert!(peer.screen().alternate_screen());
+    assert_eq!(peer.screen().contents(), "ALTZ");
+    assert_eq!(stream.take_window_title_update(), None);
 }

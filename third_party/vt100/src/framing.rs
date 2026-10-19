@@ -93,8 +93,10 @@ impl OutputFramer {
 
     /// Publish frames and visual runs through a transactional adapter. Raw bytes are the
     /// complete wire frame (canonical U+FFFD for a rejected UTF-8 prefix);
-    /// delta contains only bytes not yet processed by the
-    /// authoritative parser. The publisher must process/commit delta exactly
+    /// delta contains bytes not yet semantically committed by the
+    /// authoritative parser. Incomplete input advances grammar alone; a complete
+    /// staged frame is replayed from ground at publication. The publisher must
+    /// process/commit delta exactly
     /// once on success, preserving parser state on failure. Already executed
     /// C0 controls are excluded from a later retained frame.
     ///
@@ -165,13 +167,15 @@ impl OutputFramer {
             }
             self.pending.push(byte);
             if progress.at_boundary {
-                if let Err(error) = publish(parser, &self.pending, &[byte], output) {
+                if let Err(error) = parser.with_ground_input(|parser| {
+                    publish(parser, &self.pending, &self.pending, output)
+                }) {
                     self.pending.pop();
                     return Err(FrameError::Io(error));
                 }
                 self.pending.clear();
             } else {
-                parser.process(&[byte]);
+                parser.advance_input_only(byte);
             }
         }
         Ok(())

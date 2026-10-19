@@ -269,6 +269,11 @@ local tests and native receipts support only their recorded feature/cell scope.
   Windows-private whole-string codec; input/output code-page selection and
   legacy reply rules remain native policy. Its scoped API evidence belongs to
   [PRD 02.34](PRD_02_34_windows_console_backend.md#title-code-pages-and-native-reply-boundaries).
+- [-] Committed title events and hidden-stream effect publication now share
+  the common terminal facade. Low-level framing/opaque OSC belongs to
+  [PRD 02.24](PRD_02_24_con_terminal.md#osc-payloads-parser-events-and-framed-commit),
+  reusable API scope to [PRD 02.35](PRD_02_35_terminal_library.md#committed-title-events-and-undisplayed-streams),
+  and actual Windows consumer evidence to PRD 02.34.
 - [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
   `adapters/unix/pty`; the macOS adapter currently imports the former file by
   path. Preserve distinct adapter identities and qualify both actual platforms.

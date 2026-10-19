@@ -40,8 +40,10 @@ impl<CB: Callbacks> TerminalStream<CB> {
         pending_limit: usize,
         callbacks: CB,
     ) -> Self {
+        let mut parser = vt100::Parser::new_with_callbacks(rows, columns, scrollback, callbacks);
+        parser.set_window_title_tracking(true);
         Self {
-            parser: vt100::Parser::new_with_callbacks(rows, columns, scrollback, callbacks),
+            parser,
             framer: vt100::OutputFramer::new(pending_limit),
         }
     }
@@ -141,6 +143,13 @@ impl<CB: Callbacks> TerminalStream<CB> {
         self.parser.callbacks()
     }
 
+    /// Take the latest committed OSC 0/2 title event. A later icon-only event,
+    /// native projection or screen reset does not replace it. Events coalesce;
+    /// use callbacks when every intermediate event is required.
+    pub fn take_window_title_update(&mut self) -> Option<Vec<u8>> {
+        self.parser.take_window_title_update()
+    }
+
     /// Bytes accepted but withheld until a complete grammar boundary.
     #[must_use]
     pub fn pending_bytes(&self) -> &[u8] {
@@ -165,6 +174,71 @@ impl<CB: Callbacks> TerminalStream<CB> {
 #[cfg(test)]
 mod tests {
     use super::TerminalStream;
+
+    #[test]
+    fn rust_console_terminal_title_events_commit_complete_frames_and_survive_screen_reset() {
+        let mut direct = vt100::Parser::new(1, 8, 0);
+        direct.process(b"\x1b]2;untracked\x07");
+        assert_eq!(direct.take_window_title_update(), None);
+        direct.set_window_title_tracking(true);
+        direct.process(b"\x1b]2;tracked\x07");
+        direct.set_window_title_tracking(false);
+        assert_eq!(direct.take_window_title_update(), None);
+        assert!(direct.at_boundary());
+        #[derive(Default)]
+        struct Events {
+            titles: Vec<Vec<u8>>,
+            icons: usize,
+        }
+        impl super::Callbacks for Events {
+            fn set_window_title(&mut self, _: &mut super::Screen, title: &[u8]) {
+                self.titles.push(title.to_vec());
+            }
+            fn set_window_icon_name(&mut self, _: &mut super::Screen, _: &[u8]) {
+                self.icons += 1;
+            }
+        }
+        struct Reject;
+        impl std::io::Write for Reject {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut stream = TerminalStream::with_callbacks(4, 16, 0, 128, Events::default());
+        let title = format!("vt;{}中😀", "x;".repeat(24));
+        let prefix = format!("\x1b]2;{title}\x1b");
+        let mut wire = Vec::new();
+        stream.write_output(prefix.as_bytes(), &mut wire).unwrap();
+        assert!(wire.is_empty());
+        assert!(stream.callbacks().titles.is_empty());
+        assert_eq!(stream.take_window_title_update(), None);
+        stream.write_projection(b"\x1b[2;3HN", &mut wire).unwrap();
+        assert!(stream.write_output(b"\\", &mut Reject).is_err());
+        assert!(stream.callbacks().titles.is_empty());
+        assert_eq!(stream.take_window_title_update(), None);
+        assert_eq!(stream.pending_bytes(), prefix.as_bytes());
+        stream.write_output(b"\\", &mut wire).unwrap();
+        assert_eq!(stream.take_window_title_update().unwrap(), title.as_bytes());
+        assert_eq!(stream.take_window_title_update(), None);
+        assert_eq!(stream.callbacks().titles, vec![title.as_bytes().to_vec()]);
+        stream
+            .write_output(b"\x1b]2;last\x07\x1b]1;icon;only\x07\x1bc", &mut wire)
+            .unwrap();
+        assert_eq!(stream.take_window_title_update().unwrap(), b"last");
+        assert_eq!(stream.callbacks().icons, 1);
+        assert_eq!(stream.callbacks().titles.len(), 2);
+        assert!(stream.screen().contents().is_empty());
+        let bytes = [b"\x1b]2;before-limit\x07\x1b]2;".as_slice(), &[b'x'; 129]].concat();
+        assert!(matches!(
+            stream.write_output(&bytes, &mut wire),
+            Err(super::FrameError::PendingLimit)
+        ));
+        assert_eq!(stream.take_window_title_update().unwrap(), b"before-limit");
+        assert_eq!(stream.callbacks().titles.len(), 3);
+    }
 
     #[test]
     fn rust_console_terminal_title_publication_preserves_grammar_and_rejects_injection() {

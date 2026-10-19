@@ -42,6 +42,32 @@ impl<CB: crate::callbacks::Callbacks> Parser<CB> {
         self.parser.advance(&mut self.screen, bytes);
     }
 
+    /// Take the latest window-title event since the previous take. Icon-only
+    /// updates do not replace it. This is event metadata, not drawing state;
+    /// screen resets/projections do not erase or replay it.
+    pub fn take_window_title_update(&mut self) -> Option<Vec<u8>> {
+        self.screen.window_title_update.take()
+    }
+
+    /// Opt into retaining title events in addition to ordinary callbacks.
+    /// Disabled by default so existing raw-parser consumers do not retain an
+    /// unused title copy. The caller owns input bounds; disabling drops the
+    /// unread event without changing decoder, screen or callback state.
+    pub fn set_window_title_tracking(&mut self, enabled: bool) {
+        self.screen.track_window_title = enabled;
+        if !enabled {
+            self.screen.window_title_update = None;
+        }
+    }
+
+    // Retain exact unfinished grammar without publishing semantic effects.
+    // A framer replays the complete frame after its sink accepts publication.
+    pub(crate) fn advance_input_only(&mut self, byte: u8) {
+        struct Ignore;
+        impl vte::Perform for Ignore {}
+        self.parser.advance(&mut Ignore, &[byte]);
+    }
+
     /// Whether no VT command or UTF-8 scalar is unfinished.
     #[must_use]
     pub fn at_boundary(&self) -> bool {
@@ -64,6 +90,8 @@ impl<CB: crate::callbacks::Callbacks> Parser<CB> {
             screen: crate::perform::WrappedScreen {
                 screen: self.screen.screen.clone(),
                 callbacks,
+                window_title_update: self.screen.window_title_update.clone(),
+                track_window_title: self.screen.track_window_title,
             },
         }
     }
@@ -74,6 +102,8 @@ impl<CB: crate::callbacks::Callbacks> Parser<CB> {
     pub fn commit_fork<T: crate::Callbacks>(&mut self, fork: Parser<T>) -> T {
         self.parser = fork.parser;
         self.screen.screen = fork.screen.screen;
+        self.screen.window_title_update = fork.screen.window_title_update;
+        self.screen.track_window_title = fork.screen.track_window_title;
         fork.screen.callbacks
     }
 

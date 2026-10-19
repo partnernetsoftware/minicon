@@ -59,6 +59,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] console-wide title metadata and frontend publication
 │   │   └── native W setter uses the common independent title formatter
 │   │   └── scoped A/W setters/getters, input code pages and bounded native replies
+│   │   └── complete VT title commits and nonvisual effects from inactive producers
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -117,6 +118,7 @@ flowchart LR
     HOST --> TITLE["A/W title metadata / input code page / exact native reply counts"]
     TITLE --> CODEC["Windows-private whole-string codec: titles / output / readback"]
     TITLE --> TITLEOUT["common independent bounded title publication"]
+    TITLE --> EVENTS["committed OSC title events / inactive stream effect publication"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -2321,10 +2323,10 @@ frontend-title assertions apply to the owned backend; native W readback is
 asserted on both. This is not byte-for-byte system-output parity.
 
 The subsequent code-page leaf below covers A setters/getters and scoped
-short-buffer/NUL rules. Remaining title work includes initial title publication, completed VT-title metadata,
-nonvisual effects from inactive buffers, title payloads with semicolons in the
-receiving parser, and process-exit restoration. General title compatibility is
-still partial; this leaf does not change backend selection or default promotion.
+short-buffer/NUL rules. The VT-title leaf covers completed VT metadata, inactive
+producer effects and receiving-parser semicolons. Initial title publication and
+process-exit restoration remain open. General title compatibility is still
+partial; this leaf does not change backend selection or default promotion.
 
 
 Local qualification: `native-title-final-focused.log` records four passes (two
@@ -2399,8 +2401,8 @@ transfer limits and huge caller capacities without caller-sized allocation.
 Primary sources are the pinned `src/host/getset.cpp` helpers and
 `src/server/ApiDispatchers.cpp` title dispatchers. The older control-character
 metadata policy remains separately asserted as documented in the preceding
-leaf. VT title metadata, inactive-buffer effects, semicolon payload parsing,
-initial title and process-exit restoration remain open.
+leaf. The subsequent VT-title leaf covers metadata, inactive-buffer effects and
+semicolon payload parsing. Initial title and process-exit restoration remain open.
 
 
 Local qualification: `title-codepage-final-focused.log` records three passes
@@ -2416,3 +2418,87 @@ PTY/Rust-console compilation pass. Runtime scope remains Windows x86_64 build
 20348; cross-target checks do not certify runtime behavior. Final documentation
 is followed by 17 alignment passes. `title-codepage-final-receipt.json` binds
 source tree, source blobs, executable identities, tests, guards and remaining work.
+
+
+## Committed VT titles and inactive producer effects
+
+```text
+Outcome: native title queries and the frontend observe accepted VT titles from any drawing buffer
+├── Shared framed event commit
+│   invariant: incomplete OSC and rejected output do not commit title callbacks or metadata
+│   evidence: common non-Clone callback/retry/reset tests and native fragmented ST scenario
+│   safe failure: retained grammar after zero-byte rejection; bounded pending/wire errors
+│   dependency: PRD 02.24 framing and PRD 02.35 event facade; non-goal: a Windows VT parser
+├── Inactive native producers
+│   invariant: titles/bells can escape the undisplayed buffer; its painting and layers cannot
+│   evidence: common hidden-publication test and actual SDK WriteFile to an inactive buffer
+│   safe failure: source/view commit follows effect sink acceptance
+│   dependency: existing native buffer identity; non-goal: forwarding unknown extensions or resize requests
+└── Console-wide metadata
+    invariant: OSC 0/2 consume one committed event; buffer activation does not replay stale titles
+    evidence: SDK current/original A/W readback across fifteen decoded output fences
+    safe failure: earlier committed events survive a later frame failure
+    dependency: shared event take, UTF-8-to-native conversion; non-goal: title-stack/lifecycle restoration
+```
+
+Native output drains committed title events after both ordinary and undisplayed
+stream processing, including earlier accepted frames when a later frame fails.
+Metadata is console-wide and remains outside per-buffer swaps. The Windows
+adapter converts the event bytes into UTF-16; A API code-page conversion retains
+its separate input-CP policy. OSC 1 is icon-only. Native drawing requests remain
+screen-only operations, without client-title callback replay.
+
+Inactive raw writes and WriteConsole requests now reach the same bounded output
+sink, through the common hidden publisher. Other inactive native drawing APIs
+retain their sink isolation. The shared publisher controls which effects are
+forwarded rather than letting native requests paint another buffer's screen.
+The SDK specifically asserts one forwarded audible bell, the inactive title,
+unchanged active cells and later buffer activation without stale title replay.
+
+The extended SDK holds a Unicode OSC title containing twenty-four extra
+semicolons at its final ESC, sets a native title through an independent API,
+then supplies ST. Both the owned backend and installed ConPTY reference expose
+the intermediate native title before completion and the complete VT title
+thereafter. Original-title A/W reads remain unchanged through fifteen stages;
+current-title readback verifies active and inactive VT updates. Receiving-parser
+semicolons also preserve the safe native control-character display title.
+These scenarios use the actual platform PTY facade, SDK APIs, decoded cell
+fences and finite child EOF, rather than raw substring readiness.
+
+Low-level event storage, opaque OSC payloads and framed callback timing belong
+to [terminal state](PRD_02_24_con_terminal.md#osc-payloads-parser-events-and-framed-commit).
+The reusable hidden publisher and title-event API belong to
+[terminal library](PRD_02_35_terminal_library.md#committed-title-events-and-undisplayed-streams).
+Initial title publication, exit restoration, title-stack operations, broader
+OSC/clipboard consumers and non-host native runtime remain open. Existing
+experimental selection and default product behavior are unchanged.
+
+
+Local qualification: `title-vt-final-focused.log` records five passes (two new
+common units, the new opaque-payload lexer unit and both SDK providers); the
+final selected suite records 247 passes, including 17 alignment checks and the
+existing real PowerShell/Node, input, backpressure and lifecycle cases. Sixteen
+byte-restored runtime guard failures cover grammar-only staging, whole-frame
+replay, raw callback/parameter-cap preservation, title-event capture and fork
+commit, hidden effects/painting/sink/quota, actual inactive native routing,
+native metadata consumption, reset persistence, system-reference oracle and
+raw-parser/stream tracking policy. Six guards for the edited core test were
+refreshed after static-check adjustments; retained guards have unchanged
+protected source and test scope.
+
+Full owned parser runs record 26 vt100 and 34 standard VTE passes, then 26 vt100
+and 37 no-std VTE passes, with zero filtered tests in those binaries. The
+no-std raw-byte budget includes separators, with explicit fixed-capacity
+boundary tests. Ten static/build checks pass: default/enabled workspace strict
+all-target Clippy, both standalone parser Clippy gates, lexer no-std build,
+four common-library cross-target builds and Windows ARM64 platform PTY/Rust-console
+compilation. Root and both owned parser format checks pass. Non-host builds
+remain compile-only; runtime remains Windows x86_64 build 20348.
+
+Final documentation is followed by 17 alignment passes.
+`title-vt-final-receipt.json` binds the source tree, raw guard source hashes,
+logs, compiler, pinned context sources, executable identities and remaining
+scope. The exploratory library-only wrapper invocation's duplicate --lib
+failure is recorded separately in PRD 02.33; it is not reported as a passing
+gate. Complete owned suites were rerun through the same wrapper with explicit
+selectors and observed zero-filter counts.

@@ -307,6 +307,12 @@ impl<'session> ConsoleHost<'session> {
             })
             .map(|handle| handle.buffer);
         if let Some(target) = target {
+            let stream = descriptor.function == 5
+                || (descriptor.function == 7
+                    && read_u32(request.inline_payload(), 0) == Some(0x0100_0006));
+            if stream {
+                return self.with_buffer(target, |host| host.dispatch_inner(request, output));
+            }
             return self.with_buffer(target, |host| host.dispatch_inner(request, &mut io::sink()));
         }
         self.dispatch_inner(request, output)

@@ -65,6 +65,11 @@ Introduce these interfaces in stages; the current shipped scripts do not yet
 implement this table. New executables, lint flags and full-suite lists must not
 be reconstructed separately in each consumer.
 
+Run inexpensive static checks over changed test code before a mutation batch.
+If a protected test changes, refresh its dependent guard cases and final affected
+profiles; retain other evidence only when its source and guarded test scope still
+match. This avoids repeating unrelated native courts after a test-only lint fix.
+
 ### Inventory and selection
 
 `scripts/test-profiles.json` is the proposed single inventory. Each task records
@@ -218,3 +223,21 @@ be named explicitly; unavailable courts remain BLOCKED.
 Non-goals: new product features, a generic terminal engine, public crate renames,
 new OS/ISA support, lower throughput floors, compiler/LTO changes, signing-policy
 changes or weakening the six-cell/Defender/reputation/Promotion chain.
+
+
+## Observed library-selection limitation
+
+During the console VT-title work, `scripts/build.sh test --features
+experimental-rust-console --lib -- --test-threads=1` completed the workspace
+library unit binaries, then failed before the owned parsers with Cargo's
+"--lib cannot be used multiple times": the wrapper adds --lib while forwarding
+the caller's copy. This is an orchestration failure, not a full-gate pass.
+Library-only argument normalization remains planned in this owner.
+
+The current scoped workaround uses explicit test-name selectors through the
+same wrapper. Names collected from the owned parser sources ran all 26 vt100
+and 34 standard VTE library tests with zero filtered tests in those binaries;
+no bare Cargo test entry point or release-policy change is implied. Evidence is
+in the console leaf's ignored `title-vt-owned-parsers.log`. Future profile work
+must use actual Cargo discovery and receipts rather than assuming a source-name
+inventory proves coverage; the zero-filter result establishes the scope here.

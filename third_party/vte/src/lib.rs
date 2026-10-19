@@ -481,7 +481,8 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                         return;
                     }
                 }
-                self.action_osc_put_param()
+                self.action_osc_put_param();
+                self.action_osc_put(byte);
             }
             _ => self.action_osc_put(byte),
         }
@@ -595,7 +596,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             // All other params depend on previous indexing.
             _ => {
                 let prev = self.osc_params[param_idx - 1];
-                let begin = prev.1;
+                let begin = prev.1 + 1;
                 self.osc_params[param_idx] = (begin, idx);
             }
         }
@@ -647,7 +648,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         unsafe {
             let num_params = self.osc_num_params;
             let params = &slices[..num_params] as *const [MaybeUninit<&[u8]>] as *const [&[u8]];
-            performer.osc_dispatch(&*params, byte == 0x07);
+            performer.osc_dispatch_raw(&*params, &self.osc_raw, byte == 0x07);
         }
     }
 
@@ -854,6 +855,14 @@ pub trait Perform {
     /// Dispatch an operating system command.
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
 
+    /// Dispatch the original OSC payload, including semicolon separators.
+    /// The legacy parameter array remains capped; raw payload is not truncated
+    /// by that parameter cap. Without std, the raw-byte capacity still applies.
+    /// Existing performers retain their parameter-based callback by default.
+    fn osc_dispatch_raw(&mut self, params: &[&[u8]], _raw: &[u8], bell_terminated: bool) {
+        self.osc_dispatch(params, bell_terminated);
+    }
+
     /// A final character has arrived for a CSI sequence
     ///
     /// The `ignore` flag indicates that either more than two intermediates
@@ -1042,6 +1051,40 @@ mod tests {
     }
 
     #[test]
+    fn stream_boundary_raw_osc_preserves_payload_beyond_parameter_limit() {
+        #[derive(Default)]
+        struct Raw {
+            payload: Vec<u8>,
+            params: Vec<Vec<u8>>,
+            bell: bool,
+        }
+        impl Perform for Raw {
+            fn osc_dispatch_raw(&mut self, params: &[&[u8]], raw: &[u8], bell: bool) {
+                self.payload = raw.to_vec();
+                self.params = params.iter().map(|p| p.to_vec()).collect();
+                self.bell = bell;
+            }
+        }
+        let payload = format!("2;{}tail", "x;".repeat(24));
+        let input = format!("\x1b]{payload}\x07");
+        let mut parser = Parser::new();
+        let mut raw = Raw::default();
+        for byte in input.bytes() {
+            parser.advance(&mut raw, &[byte]);
+        }
+        assert_eq!(raw.payload, payload.as_bytes());
+        assert_eq!(raw.params.len(), MAX_OSC_PARAMS);
+        assert_eq!(raw.params[0], b"2");
+        assert!(raw.bell);
+        let mut legacy = Dispatcher::default();
+        parser.advance(&mut legacy, b"\x1b]52;c;YWJj\x1b\\");
+        assert_eq!(
+            legacy.dispatched[0],
+            Sequence::Osc(vec![b"52".to_vec(), b"c".to_vec(), b"YWJj".to_vec()], false)
+        );
+    }
+
+    #[test]
     fn parse_empty_osc() {
         let mut dispatcher = Dispatcher::default();
         let mut parser = Parser::new();
@@ -1170,7 +1213,7 @@ mod tests {
                 assert_eq!(params[1].len(), NUM_BYTES + INPUT_END.len());
 
                 #[cfg(not(feature = "std"))]
-                assert_eq!(params[1].len(), MAX_OSC_RAW - params[0].len());
+                assert_eq!(params[1].len(), MAX_OSC_RAW - params[0].len() - 1);
             }
             _ => panic!("expected osc sequence"),
         }
@@ -1483,7 +1526,7 @@ mod tests {
             Sequence::Osc(params, _) => {
                 assert_eq!(params.len(), 2);
                 assert_eq!(params[0], b"52");
-                assert_eq!(params[1].len(), OSC_BUFFER_SIZE - params[0].len());
+                assert_eq!(params[1].len(), OSC_BUFFER_SIZE - params[0].len() - 1);
                 for item in params[1].iter() {
                     assert_eq!(*item, b'a');
                 }
@@ -1500,7 +1543,8 @@ mod tests {
         const INPUT_END: &[u8] = b"\x1b\\";
 
         let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<5> = Parser::new_with_size();
+        // Raw capacity now includes the separator as well as selector/payload.
+        let mut parser: Parser<6> = Parser::new_with_size();
 
         parser.advance(&mut dispatcher, INPUT_START);
         parser.advance(&mut dispatcher, INPUT_MIDDLE);

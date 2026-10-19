@@ -128,7 +128,7 @@ pub(super) fn run(path: &Path) -> io::Result<()> {
     stage(output, path, 4, &mut report)?;
     let other = create(0xc000_0000, 3)?;
     checked(unsafe { SetConsoleMode(other.as_raw_handle(), 7) })?;
-    bytes(other.as_raw_handle(), b"\x1b]2;vt-inactive\x07HIDDEN")?;
+    bytes(other.as_raw_handle(), b"\x07\x1b]2;vt-inactive\x1b\\HIDDEN")?;
     stage(output, path, 5, &mut report)?;
     checked(unsafe { SetConsoleCP(936) })?;
     let ansi = [b'A', 0xd6, 0xd0, 0];
@@ -160,5 +160,14 @@ pub(super) fn run(path: &Path) -> io::Result<()> {
     let invalid = [0xc2, b'Q', 0];
     checked(unsafe { SetConsoleTitleA(invalid.as_ptr()) })?;
     stage(other.as_raw_handle(), path, 12, &mut report)?;
+    let title = format!("vt;{}中😀", "x;".repeat(24));
+    bytes(
+        other.as_raw_handle(),
+        format!("\x1b]2;{title}\x1b").as_bytes(),
+    )?;
+    set_w("mid-osc")?;
+    stage(other.as_raw_handle(), path, 13, &mut report)?;
+    bytes(other.as_raw_handle(), b"\\")?;
+    stage(other.as_raw_handle(), path, 14, &mut report)?;
     Ok(())
 }

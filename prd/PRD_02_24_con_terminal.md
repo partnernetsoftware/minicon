@@ -32,6 +32,7 @@ minicon terminal and rendering
 │   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
+│   │   └── Grammar-only unfinished input; OSC raw payload and committed title events
 │   ├── [v] Invalid UTF-8 prefix recovery — visible replacement before native edits
 │   └── Visible replacement scalar — stream/error recovery and literal replay
 ├── Damage, raster and present
@@ -61,6 +62,7 @@ flowchart LR
     EDIT --> DMG
     GRAM["owned vte: authoritative grammar / boundary preview"] --> VT
     GRAM --> FRAME["vt100 OutputFramer: bounded pending bytes / neutral errors"]
+    OSC["raw OSC payload / legacy parameter cap / latest title event"] --> GRAM
     REC["UTF-8 prefix invalidation / transactional replacement / retained new grammar"] --> FRAME
     FRAME --> VT
     DMG --> RAS["raster<br/>font · CJK"]
@@ -865,3 +867,48 @@ scalars one cell. It is not grapheme segmentation, pixel measurement or raw
 UTF-16 cell layout. Existing literal-cell operations retain their independent
 one-cell policy for zero-width/control data. Native text translation consumes
 the scalar policy instead of maintaining a second Unicode-width rule.
+
+
+### OSC payloads, parser events and framed commit
+
+The owned VTE `Perform::osc_dispatch_raw` callback supplies the original OSC
+payload, including semicolon separators, alongside the existing bounded
+parameter array. Its default calls the legacy `osc_dispatch`; existing
+parameter consumers retain their callback shape. The parameter cap does not
+truncate the raw payload. Without std, the raw-buffer capacity now includes
+separators; fixed-buffer callers must account for them. The OSC 0/1/2 consumer
+uses the first separator only, preserving subsequent semicolons and Unicode in
+the title; unrelated commands retain parameter-based dispatch.
+
+The owned parser can record the latest window-title event outside Screen,
+exposed through `take_window_title_update`. Raw parsers default to tracking off;
+`set_window_title_tracking` enables it explicitly, and disabling drops unread
+metadata without changing grammar, screen or callbacks. This avoids an unused
+title copy in existing raw-parser consumers. The caller owns input bounds;
+TerminalStream enables tracking under its pending-frame budget.
+OSC 0/2 update the enabled slot; icon-only OSC 1 does not.
+Taking consumes it; multiple untaken updates coalesce. Screen reset does not
+erase it, screen projections/activation do not replay it, and transactional
+parser forks copy and commit it alongside decoder state. Direct Parser callers
+retain bytewise parser callback timing; the framed contract below is stronger.
+
+OutputFramer advances unfinished input through the exact lexer with an inert
+performer. It does not invoke semantic callbacks or change screen state merely
+to retain unfinished grammar. At a complete boundary it replays the staged
+frame from ground through its publisher; semantic effects commit only after
+sink acceptance. This prevents the parser's OSC-at-ESC callback from escaping
+before a framed ST sequence completes. Earlier committed frames remain valid
+when a later frame exceeds its pending budget. Immediate C0 effects keep their
+ordered publication and are excluded from later replay.
+
+Migration note for `write_mapped` publishers: delta means semantically
+uncommitted input and can contain the entire staged command, rather than its
+last byte. Process it exactly once using the provided parser state. A rejected
+publication restores unfinished lexer state and retains the previously accepted
+prefix; retry only the rejected input after a zero-byte failure. Partial sink
+failure still requires retiring the transport. No second VT grammar is added.
+
+Common facade/hidden publication tests exercise title and callback timing,
+failed publication/retry, reset persistence, icon isolation, semicolon payloads,
+prior-frame retention and hidden drawing/layer isolation. Native SDK and actual
+system-reference evidence are owned by PRD 02.34's VT-title leaf.

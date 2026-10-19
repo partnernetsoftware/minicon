@@ -449,8 +449,11 @@ fn check_ansi_title_queries(native: &str, stage: usize, original: bool, title: &
 
 fn native_titles(rust: bool) {
     #[derive(Default)]
-    struct Titles(Vec<Vec<u8>>);
+    struct Titles(Vec<Vec<u8>>, usize);
     impl vt100::Callbacks for Titles {
+        fn audible_bell(&mut self, _: &mut vt100::Screen) {
+            self.1 += 1;
+        }
         fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
             self.0.push(title.to_vec());
         }
@@ -466,7 +469,7 @@ fn native_titles(rust: bool) {
         Fixture::open_backend(command, "conpty")
     };
     let mut peer = vt100::Parser::new_with_callbacks(8, 16, 0, Titles::default());
-    for n in 0..13 {
+    for n in 0..15 {
         let marker = format!("ttl-stage-{n}:");
         let deadline = Instant::now() + Duration::from_secs(8);
         while peer
@@ -498,10 +501,14 @@ fn native_titles(rust: bool) {
             let expected = match n {
                 1 => Some("native-中😀"),
                 2 | 3 => Some("during-fragment"),
+                4 => Some("vt-active"),
+                5 => Some("vt-inactive"),
                 6 => Some("A中"),
                 7 => Some("B中"),
                 8 | 9 | 11 => Some(""),
+                10 => Some("A•←]2;BAD"),
                 12 => Some("�Q"),
+                13 => Some("mid-osc"),
                 _ => None,
             };
             if let Some(expected) = expected {
@@ -522,6 +529,14 @@ fn native_titles(rust: bool) {
                 assert!(fixture.bytes.windows(safe.len()).any(|bytes| bytes == safe));
                 assert_eq!(peer.screen().rows(0, 16).next().unwrap(), "HIDDEN!");
             }
+            if n == 14 {
+                let expected = format!("vt;{}中😀", "x;".repeat(24));
+                assert_eq!(peer.callbacks().0.last().unwrap(), expected.as_bytes());
+            }
+            if n == 5 {
+                assert_eq!(peer.screen().rows(0, 16).next().unwrap(), "ROOTZ");
+                assert_eq!(peer.callbacks().1, 1);
+            }
         }
         std::fs::write(report.0.with_extension(format!("stage{n}")), b"observed").unwrap();
     }
@@ -531,10 +546,15 @@ fn native_titles(rust: bool) {
     assert!(native.contains("set-65001=1,0\n"));
     let original = env!("CARGO_BIN_EXE_minicon-platform-console-probe");
     assert!(original.is_ascii());
-    for stage in 0..13 {
+    for stage in 0..15 {
         check_wide_title_queries(&native, stage, true, original);
         check_ansi_title_queries(&native, stage, true, original.as_bytes());
     }
+    for (stage, title) in [(4, "vt-active"), (5, "vt-inactive"), (13, "mid-osc")] {
+        check_wide_title_queries(&native, stage, false, title);
+        check_ansi_title_queries(&native, stage, false, title.as_bytes());
+    }
+    check_wide_title_queries(&native, 14, false, &format!("vt;{}中😀", "x;".repeat(24)));
     for (stage, title, ansi) in [
         (6, "A中", b"A\xd6\xd0".as_slice()),
         (7, "B中", b"B\xe4\xb8\xad".as_slice()),

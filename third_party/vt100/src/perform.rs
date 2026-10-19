@@ -4,6 +4,8 @@ const CLIPBOARD_SELECTOR: &[u8] = b"cpqs01234567";
 pub struct WrappedScreen<CB: crate::callbacks::Callbacks = ()> {
     pub screen: crate::screen::Screen,
     pub callbacks: CB,
+    pub window_title_update: Option<Vec<u8>>,
+    pub track_window_title: bool,
 }
 
 impl WrappedScreen<()> {
@@ -17,6 +19,8 @@ impl<CB: crate::callbacks::Callbacks> WrappedScreen<CB> {
         Self {
             screen: crate::screen::Screen::new(crate::grid::Size { rows, cols }, scrollback_len),
             callbacks,
+            window_title_update: None,
+            track_window_title: false,
         }
     }
 }
@@ -181,19 +185,25 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
         }
     }
 
-    fn osc_dispatch(&mut self, params: &[&[u8]], _bel_terminated: bool) {
-        match params {
-            [b"0", s] => {
-                self.callbacks.set_window_icon_name(&mut self.screen, s);
-                self.callbacks.set_window_title(&mut self.screen, s);
+    fn osc_dispatch_raw(&mut self, params: &[&[u8]], raw: &[u8], _bel_terminated: bool) {
+        if let Some(separator) = raw.iter().position(|byte| *byte == b';') {
+            let selector = &raw[..separator];
+            let title = &raw[separator + 1..];
+            if matches!(selector, b"0" | b"1" | b"2") {
+                if matches!(selector, b"0" | b"1") {
+                    self.callbacks.set_window_icon_name(&mut self.screen, title);
+                }
+                if matches!(selector, b"0" | b"2") {
+                    self.callbacks.set_window_title(&mut self.screen, title);
+                    if self.track_window_title {
+                        self.window_title_update = Some(title.to_vec());
+                    }
+                }
+                return;
             }
-            [b"1", s] => {
-                self.callbacks.set_window_icon_name(&mut self.screen, s);
-            }
-            [b"2", s] => {
-                self.callbacks.set_window_title(&mut self.screen, s);
-            }
-            [b"52", ty, data] => match (ty.iter().all(|c| CLIPBOARD_SELECTOR.contains(c)), *data) {
+        }
+        if let [b"52", ty, data] = params {
+            match (ty.iter().all(|c| CLIPBOARD_SELECTOR.contains(c)), *data) {
                 (true, b"?") => {
                     self.callbacks.paste_from_clipboard(&mut self.screen, ty);
                 }
@@ -204,11 +214,10 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
                     self.screen.mark_full_damage();
                     self.callbacks.unhandled_osc(&mut self.screen, params);
                 }
-            },
-            _ => {
-                self.screen.mark_full_damage();
-                self.callbacks.unhandled_osc(&mut self.screen, params);
             }
+        } else {
+            self.screen.mark_full_damage();
+            self.callbacks.unhandled_osc(&mut self.screen, params);
         }
     }
 }

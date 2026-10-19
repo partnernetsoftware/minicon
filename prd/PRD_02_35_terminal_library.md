@@ -29,6 +29,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   └── explicit Fixed / Vertical / Cursor policy; bool callers remain compatible
 │       └── displayed-stream activation / logical layer / portable projection quota
 │       └── independent bounded title publication; native metadata stays in adapter
+│       └── hidden stream publication: recognized effects without painting another stream
 ├── [v] Windows host adopts the common stream facade
 │   invariant: native projections preserve client grammar and commit after sink success
 │   evidence: public projection unit plus SDK mixed-output and existing host/screen courts
@@ -61,6 +62,7 @@ flowchart LR
     VP["TerminalViewport / mapped publication / staged screen edits"] --> COMMON
     FOLLOW["ViewportFollow: Fixed / Vertical / Cursor"] --> VP
     ACT["write_viewport_activation / ProjectionLimit"] --> VP
+    HIDDEN["write_output_viewport_hidden / committed title events"] --> COMMON
     TEXT["text_prefix / TEXT_BATCH_BYTES / scalar placement policy"] --> COMMON
     WIN --> VP
     MOVE["shared region movement / cell invariants"] --> COMMON
@@ -135,9 +137,9 @@ Input is a Rust string without control characters; C0, DEL and C1 are rejected
 before any output. A caller-owned encoded-byte limit includes the six framing
 bytes and uses the common typed `ProjectionLimit` error. Native character
 conversion and display policy stay in the adapter, not the portable formatter.
-This method does not unify title state from client VT output or fix receiving
-parser support for title payloads containing additional semicolons; those remain
-separate compatibility work.
+Client VT titles use the separate committed-event API described below. The
+owned receiving parser now preserves title payload semicolons; its grammar and
+framing contract belongs to [terminal state](PRD_02_24_con_terminal.md).
 
 ## Evidence frontier
 
@@ -304,3 +306,42 @@ Its actual native consumer is guarded by
 `rust_console_pty_native_wide_titles_publish_independently_of_client_grammar`.
 Runtime mutation, selected-suite and cross-target qualification for this leaf
 are recorded by [the native owner](PRD_02_34_windows_console_backend.md#native-wide-title-publication-leaf).
+
+
+## Committed title events and undisplayed streams
+
+`TerminalStream::take_window_title_update` takes the latest committed OSC 0/2
+window-title event without exposing mutable decoder state. It coalesces events;
+callback consumers can observe each intermediate event. The facade enables
+tracking under its frame budget; raw Parser consumers must opt in separately,
+so unused event copies are not added to existing GUI parsers. Native metadata remains
+caller-owned: consuming applications interpret the returned raw title bytes
+(normally UTF-8) using their own validation policy. Drain the slot before
+consuming `finish` if the final title is required without callbacks; the returned
+Screen is drawing state. Low-level raw OSC, parser-event and framing semantics belong
+to [terminal state](PRD_02_24_con_terminal.md#osc-payloads-parser-events-and-framed-commit).
+
+The default-callback stream also supports `write_output_viewport_hidden` with
+the same viewport, follow policy, pending and wire budgets as visible mapped
+output. It commits the undisplayed stream's cells, modes, layers and grammar,
+while forwarding only recognized nonvisual effects: titles/icons, bells and
+clipboard operations. Drawing, alternate-layer transitions, resize requests and
+unknown extensions do not reach the displayed stream. Native activation can
+later publish the stored logical image. The API is not a general sanitizer for
+unknown extension protocols or a transaction for external custom callbacks.
+
+The publisher uses the same sink-before-parser/view transaction as visible
+output. Rejected effect publication and projection quota leave the event and
+view uncommitted. Pure hidden painting requires no transport write. Activation
+is read-only and does not replay consumed metadata. Native Windows producers
+are concrete consumers; the common implementation has no OS handles, code-page
+policy or ISA branches. Portable process/session composition remains open.
+
+Named common evidence is
+`rust_console_terminal_title_events_commit_complete_frames_and_survive_screen_reset`,
+`rust_console_terminal_hidden_output_preserves_effects_and_isolates_paint` and
+`stream_boundary_raw_osc_preserves_payload_beyond_parameter_limit`. The native
+owner records precise SDK, runtime-guard and cross-target scope. Clipboard,
+custom callbacks and unknown extension behavior require their own broader
+consumer qualification; the new hidden scenario specifically asserts titles,
+bells, painting/layer isolation, quota and failed-sink transaction.
