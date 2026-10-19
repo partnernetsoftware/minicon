@@ -2606,3 +2606,93 @@ and documentation alignment checks complete before the local commit.
 `title-life-final-receipt.json` binds the source tree, guards, logs, pinned context
 sources, compiler and actual executable identities. No default promotion,
 external-consumer migration or other native-ISA runtime claim is added.
+
+
+## OSC cancellation and title termination
+
+```text
+Outcome: native title queries and frontend callbacks agree on accepted versus aborted OSC titles
+├── Shared termination state
+│   invariant: only BEL/ST dispatch; CAN/SUB and non-ST escapes do not commit the aborted title
+│   evidence: lexer callback/count tests, raw/hidden facade and actual SDK current/original readback
+│   safe failure: canceled buffers clear without leaking title events; new escape/CSI/OSC continues
+│   dependency: PRD 02.24's single lexer; non-goal: Windows-only escape scanning
+├── UTF-8 ST across producer fragments
+│   invariant: the C2 prefix and title remain pending until 9C arrives; ordinary UTF-8 bytes survive
+│   evidence: full fixed-buffer test and SDK C1-ST-only fence before the following BEL
+│   safe failure: rejected sink retains prefix and committed metadata for a zero-byte retry
+│   dependency: existing exact lexer forks/framer; non-goal: general encoded C1 support
+└── Native/reference agreement
+    invariant: current title changes only for valid termination; original title and drawn cells are unchanged
+    evidence: ten decoded fences on owned and system providers, twelve W capacities per stage
+    safe failure: finite native child EOF and retained per-fixture resource ownership
+    dependency: existing platform PTY facade; non-goal: claiming other OS/ISA native runtime
+```
+
+The SDK exercises BEL, CAN, SUB, an interrupting CSI, a replacement OSC, repeated
+ESC, 7-bit ST, UTF-8 ST followed by BEL, UTF-8 ST without BEL, and the subsequent
+BEL as ten separately acknowledged stages. Each begins from an explicit anchor
+title except the final continuation. Both the owned backend and installed
+Windows x86_64 build 20348 ConPTY retain the anchor for aborted titles, accept
+valid terminators and agree on current/original W metadata and frontend title.
+The UTF-8-ST-only stage establishes termination independently of the later BEL;
+no inference is made from a combined sequence alone.
+
+The source baseline is `src/terminal/parser/stateMachine.cpp` at Microsoft
+terminal revision `9fd41b2baec77d25b8cfb584070d5998eab7df81`, verified against
+its saved tree blob. OscTermination dispatches only for the string-terminator
+indicator; other escapes restart normal escape handling, and CAN/SUB interrupt
+from any state. Its ProcessCharacter C1 path is mode-dependent; the runtime
+reference above establishes the accepted UTF-8 ST behavior in this specific
+host/build. Other C1 modes, malformed UTF-8/control interleavings and DCS/APC
+or other string families are not qualified by these title scenarios.
+
+Implementation ownership remains in the shared parser and facade. Native title
+consumption, conversion, process ownership and backend selection are unchanged.
+The [terminal contract](PRD_02_24_con_terminal.md#osc-cancellation-and-termination)
+owns callback migration and the no-std boundary. General backend completion,
+packaging and default promotion remain open.
+
+
+During this leaf's broad run the existing system cursor reference twice lacked
+a hidden-cursor sequence at its first bar-hide fence. An isolated HEAD-parser
+baseline and an isolated current-parser rerun both passed; source was restored
+byte-for-byte after that diagnostic comparison. The failure output and baseline
+logs are retained. This does not prove a deterministic parser regression or
+resolve system rendering reliability.
+
+The cursor fixture now establishes a visible, steady block cursor and a painted
+P before the bulk API transitions, then clears the priming image. The consumer
+checks decoded appearance, position and that exact glyph before acknowledging
+this first stage; the original eight property/fragment snapshots and assertions
+remain. This makes the first visible-to-hidden transition follow an observed
+paint rather than depending on startup timing. A separate prime-glyph mutation
+must fail both owned and system cursor tests; timeouts and assertions are not
+weakened. Cold-start visibility itself remains separately unqualified by the
+primed transition scenario.
+
+
+Local qualification: `title-end-final-focused.log` records six passes (four new
+termination tests and the two primed cursor scenarios); the final selected suite
+records 254 passes, including 17 alignment checks and existing real client,
+backpressure, Unicode and lifecycle courts. Ten byte-restored runtime mutations
+cover cancellation, non-ST interruption, changed standard/no-std legacy ST
+callback counts, UTF-8 ST, full fixed buffers, ordinary UTF-8 data, prefix reset,
+the native reference oracle and both decoded cursor priming checks. Each new or
+updated test has an observed runtime guard failure; a compilation-only guard
+attempt is not counted.
+
+Complete owned parser runs record 26 vt100 and 35 standard VTE tests, then 26
+vt100 and 38 no-std VTE tests, with zero filtering in those binaries. Ten static
+and cross-target checks pass: default/enabled workspace strict all-targets
+Clippy, both standalone parser Clippy gates, lexer no-std build, four portable
+library cross-target checks and Windows ARM64 platform PTY/Rust-console compile.
+Root and owned lexer formatting pass. Cross-target checks are compile-only;
+native runtime is Windows x86_64 build 20348.
+
+Final documentation is followed by 17 alignment checks.
+`title-end-final-receipt.json` binds the final source tree, guards, check/log
+hashes, compiler, pinned parser source and native executable identities. It
+also retains the unprimed cursor diagnostics and baseline/current observations;
+those failures are not relabeled as successful runs or evidence about other
+system versions. Backend completion and promotion are still unproven.

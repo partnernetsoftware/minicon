@@ -171,3 +171,33 @@ pub(super) fn run(path: &Path) -> io::Result<()> {
     stage(other.as_raw_handle(), path, 14, &mut report)?;
     Ok(())
 }
+
+pub(super) fn termination(path: &Path) -> io::Result<()> {
+    let output = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    checked(unsafe { SetConsoleMode(output, 7) })?;
+    checked(unsafe { SetConsoleOutputCP(65001) })?;
+    bytes(output, b"ROOT")?;
+    let mut report = format!("build={}\n", super::output_modes::windows_build()?);
+    for (n, data) in [
+        b"\x1b]2;bel\x07".as_slice(),
+        b"\x1b]2;can\x18",
+        b"\x1b]2;sub\x1a",
+        b"\x1b]2;esc-csi\x1b[31m",
+        b"\x1b]2;discard\x1b]2;replacement\x07",
+        b"\x1b]2;double\x1b\x1b\\",
+        b"\x1b]2;st\x1b\\",
+        b"\x1b]2;c1\xc2\x9c\x07",
+        b"\x1b]2;c1-only\xc2\x9c",
+        b"\x07",
+    ]
+    .iter()
+    .enumerate()
+    {
+        if n != 9 {
+            set_w("anchor")?;
+        }
+        bytes(output, data)?;
+        stage(output, path, n, &mut report)?;
+    }
+    Ok(())
+}

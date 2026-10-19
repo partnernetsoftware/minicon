@@ -566,6 +566,95 @@ fn rust_console_client_title_lifetime_records_system_conpty() {
     title_lifetime(false);
 }
 
+fn title_termination(rust: bool) {
+    #[derive(Default)]
+    struct Titles(Vec<Vec<u8>>);
+    impl vt100::Callbacks for Titles {
+        fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+            self.0.push(title.to_vec());
+        }
+    }
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("titles-termination")
+        .arg(&report.0)
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let mut peer = vt100::Parser::new_with_callbacks(8, 16, 0, Titles::default());
+    let expected = [
+        "bel",
+        "anchor",
+        "anchor",
+        "anchor",
+        "replacement",
+        "anchor",
+        "st",
+        "c1",
+        "c1-only",
+        "c1-only",
+    ];
+    for (n, expected_title) in expected.iter().enumerate() {
+        let marker = format!("ttl-stage-{n}:");
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while peer
+            .screen()
+            .rows(0, 16)
+            .nth(7)
+            .unwrap()
+            .trim_end_matches(' ')
+            != marker
+            || !peer.at_boundary()
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("OSC termination fence")
+                .unwrap();
+            peer.process(&chunk);
+            fixture.bytes.extend(chunk);
+        }
+        eprintln!(
+            "title-end rust={rust};stage={n};peer={:?};row={:?}",
+            peer.callbacks()
+                .0
+                .last()
+                .map(|t| String::from_utf8_lossy(t)),
+            peer.screen().rows(0, 16).next().unwrap()
+        );
+        assert_eq!(
+            peer.callbacks().0.last().map(Vec::as_slice),
+            Some(expected_title.as_bytes())
+        );
+        assert_eq!(peer.screen().rows(0, 16).next().unwrap(), "ROOT");
+        std::fs::write(report.0.with_extension(format!("stage{n}")), b"observed").unwrap();
+    }
+    fixture.finish(0);
+    let native = std::fs::read_to_string(&report.0).unwrap();
+    for (n, title) in expected.iter().enumerate() {
+        check_wide_title_queries(&native, n, false, title);
+        check_wide_title_queries(
+            &native,
+            n,
+            true,
+            env!("CARGO_BIN_EXE_minicon-platform-console-probe"),
+        );
+    }
+    eprintln!("title-end native rust={rust}:\n{native}");
+}
+#[test]
+fn rust_console_pty_title_termination_preserves_native_and_frontend_state() {
+    title_termination(true);
+}
+#[test]
+#[ignore = "explicit system OSC cancellation reference"]
+fn rust_console_client_title_termination_records_system_conpty() {
+    title_termination(false);
+}
+
 fn native_titles(rust: bool) {
     #[derive(Default)]
     struct Titles(Vec<Vec<u8>>, usize);
@@ -1474,6 +1563,7 @@ fn cursor_info_report(rust: bool) -> (String, Vec<vt100::Screen>) {
     let mut parsed = 0;
     let mut screens = Vec::new();
     for label in [
+        "prime",
         "bar-hide",
         "bar-show",
         "underline",
@@ -1488,14 +1578,16 @@ fn cursor_info_report(rust: bool) -> (String, Vec<vt100::Screen>) {
         parsed = fixture.bytes.len();
         let expected_shape = match label {
             "bar-hide" | "bar-show" => vt100::CursorShape::Bar,
-            "final" => vt100::CursorShape::Block,
+            "prime" | "final" => vt100::CursorShape::Block,
             _ => vt100::CursorShape::Underline,
         };
         let expected_hidden = matches!(
             label,
             "bar-hide" | "underline" | "same-hide" | "partial" | "resumed"
         );
-        let expected_position = if matches!(label, "resumed" | "final") {
+        let expected_position = if label == "prime" {
+            (0, 1)
+        } else if matches!(label, "resumed" | "final") {
             (1, 4)
         } else {
             (1, 3)
@@ -1533,7 +1625,11 @@ fn cursor_info_report(rust: bool) -> (String, Vec<vt100::Screen>) {
             screen.hide_cursor(),
             screen.cursor_position()
         );
-        screens.push(screen.clone());
+        if label == "prime" {
+            assert_eq!(screen.cell(0, 0).unwrap().contents(), "P");
+        } else {
+            screens.push(screen.clone());
+        }
         std::fs::write(report.0.with_extension(label), b"observed").unwrap();
     }
     fixture.finish(0);

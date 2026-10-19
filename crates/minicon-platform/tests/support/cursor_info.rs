@@ -69,6 +69,12 @@ pub(super) fn run(path: &Path) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     let mut report = format!("build={}\n", super::output_modes::windows_build()?);
+    // Establish a painted, visible cursor before the bulk transitions. A cold
+    // system renderer can otherwise coalesce its first hide with startup.
+    set(output, 25, 1)?;
+    bytes(output, b"\x1b[2 q\x1b[?25h\x1b[HP")?;
+    stage(output, path, "prime", &mut report)?;
+    bytes(output, b"\x1b[2J\x1b[H")?;
     for size in 1..=100 {
         for visible in [0, 2] {
             set(output, size, visible)?;

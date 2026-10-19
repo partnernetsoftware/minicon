@@ -21,7 +21,8 @@
 //!
 //! * UTF-8 Support for Input
 //! * OSC Strings can be terminated by 0x07
-//! * Only supports 7-bit codes
+//! * Supports 7-bit codes plus UTF-8 ST for OSC termination
+//! * OSC dispatch waits for BEL/ST; CAN/SUB and non-ST escapes cancel it
 //!
 //! [`Parser`]: struct.Parser.html
 //! [`Perform`]: trait.Perform.html
@@ -83,6 +84,7 @@ pub struct Parser<const OSC_RAW_BUF_SIZE: usize = MAX_OSC_RAW> {
     osc_raw: Vec<u8>,
     osc_params: [(usize, usize); MAX_OSC_PARAMS],
     osc_num_params: usize,
+    osc_pending_c2: bool,
     ignoring: bool,
     partial_utf8: [u8; 4],
     partial_utf8_len: usize,
@@ -232,6 +234,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             State::Escape => self.advance_esc(performer, byte),
             State::EscapeIntermediate => self.advance_esc_intermediate(performer, byte),
             State::OscString => self.advance_osc_string(performer, byte),
+            State::OscTermination => self.advance_osc_termination(performer, byte),
             State::SosPmApcString => self.anywhere(performer, byte),
             State::Ground => unreachable!(),
         }
@@ -423,8 +426,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.state = State::Ground
             }
             0x5D => {
-                self.osc_raw.clear();
-                self.osc_num_params = 0;
+                self.clear_osc();
                 self.state = State::OscString
             }
             0x5E..=0x5F => self.state = State::SosPmApcString,
@@ -458,22 +460,30 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
 
     #[inline(always)]
     fn advance_osc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        // A UTF-8 ST (U+009C) is a terminator, not OSC text. Hold C2
+        // independently of the bounded raw buffer, including when it is full.
+        if self.osc_pending_c2 {
+            self.osc_pending_c2 = false;
+            if byte == 0x9c {
+                self.osc_end(performer, byte);
+                self.state = State::Ground;
+                return;
+            }
+            self.action_osc_put(0xc2);
+        }
         match byte {
+            0xc2 => self.osc_pending_c2 = true,
             0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1C..=0x1F => (),
             0x07 => {
                 self.osc_end(performer, byte);
                 self.state = State::Ground
             }
             0x18 | 0x1A => {
-                self.osc_end(performer, byte);
+                self.clear_osc();
                 performer.execute(byte);
                 self.state = State::Ground
             }
-            0x1B => {
-                self.osc_end(performer, byte);
-                self.reset_params();
-                self.state = State::Escape
-            }
+            0x1B => self.state = State::OscTermination,
             0x3B => {
                 #[cfg(not(feature = "std"))]
                 {
@@ -485,6 +495,19 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.action_osc_put(byte);
             }
             _ => self.action_osc_put(byte),
+        }
+    }
+
+    #[inline]
+    fn advance_osc_termination<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        if byte == b'\\' {
+            self.osc_end(performer, byte);
+            self.state = State::Ground;
+        } else {
+            self.clear_osc();
+            self.reset_params();
+            self.state = State::Escape;
+            self.advance_esc(performer, byte);
         }
     }
 
@@ -618,8 +641,13 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     fn osc_end<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         self.action_osc_put_param();
         self.osc_dispatch(performer, byte);
+        self.clear_osc();
+    }
+
+    fn clear_osc(&mut self) {
         self.osc_raw.clear();
         self.osc_num_params = 0;
+        self.osc_pending_c2 = false;
     }
 
     /// Reset escape sequence parameters and intermediates.
@@ -807,6 +835,7 @@ enum State {
     Escape,
     EscapeIntermediate,
     OscString,
+    OscTermination,
     SosPmApcString,
     #[default]
     Ground,
@@ -1101,7 +1130,7 @@ mod tests {
     #[test]
     fn parse_osc_max_params() {
         let params = ";".repeat(params::MAX_PARAMS + 1);
-        let input = format!("\x1b]{}\x1b", &params[..]).into_bytes();
+        let input = format!("\x1b]{}\x1b\\", &params[..]).into_bytes();
         let mut dispatcher = Dispatcher::default();
         let mut parser = Parser::new();
 
@@ -1133,6 +1162,47 @@ mod tests {
     }
 
     #[test]
+    fn stream_boundary_osc_termination_cancels_and_retains_utf8_st_when_full() {
+        let mut parser: Parser<8> = Default::default();
+        let mut dispatcher = Dispatcher::default();
+        parser.advance(&mut dispatcher, b"\x1b]2;abcdefghijklmn\xc2");
+        assert!(dispatcher.dispatched.is_empty());
+        assert!(!parser.at_boundary());
+        assert!(parser.preview_byte(0x9c).at_boundary);
+        assert!(!parser.at_boundary());
+        parser.advance(&mut dispatcher, &[0x9c]);
+        assert!(parser.at_boundary());
+        #[cfg(feature = "std")]
+        let title = b"abcdefghijklmn".to_vec();
+        #[cfg(not(feature = "std"))]
+        let title = b"abcdef".to_vec();
+        assert_eq!(
+            dispatcher.dispatched,
+            vec![Sequence::Osc(vec![b"2".to_vec(), title], false)]
+        );
+        for cancel in [0x18, 0x1a] {
+            dispatcher.dispatched.clear();
+            parser.advance(&mut dispatcher, b"\x1b]2;bad");
+            parser.advance(&mut dispatcher, &[cancel]);
+            assert_eq!(dispatcher.dispatched, vec![Sequence::Execute(cancel)]);
+        }
+        dispatcher.dispatched.clear();
+        parser.advance(&mut dispatcher, b"\x1b]2;bad\x1b");
+        assert!(dispatcher.dispatched.is_empty());
+        parser.advance(&mut dispatcher, b"[31m");
+        assert_eq!(
+            dispatcher.dispatched,
+            vec![Sequence::Csi(vec![vec![31]], vec![], false, 'm')]
+        );
+        dispatcher.dispatched.clear();
+        parser.advance(&mut dispatcher, b"\x1b]2;\xc2\xaf\x1b\\");
+        assert_eq!(
+            dispatcher.dispatched,
+            vec![Sequence::Osc(vec![b"2".to_vec(), vec![0xc2, 0xaf]], false)]
+        );
+    }
+
+    #[test]
     fn osc_c0_st_terminated() {
         const INPUT: &[u8] = b"\x1b]11;ff/00/ff\x1b\\";
         let mut dispatcher = Dispatcher::default();
@@ -1140,7 +1210,7 @@ mod tests {
 
         parser.advance(&mut dispatcher, INPUT);
 
-        assert_eq!(dispatcher.dispatched.len(), 2);
+        assert_eq!(dispatcher.dispatched.len(), 1);
         match &dispatcher.dispatched[0] {
             Sequence::Osc(_, false) => (),
             _ => panic!("expected osc with ST terminator"),
@@ -1176,7 +1246,7 @@ mod tests {
 
         parser.advance(&mut dispatcher, INPUT);
 
-        assert_eq!(dispatcher.dispatched.len(), 2);
+        assert_eq!(dispatcher.dispatched.len(), 1);
         match &dispatcher.dispatched[0] {
             Sequence::Osc(params, _) => {
                 assert_eq!(params[1], &INPUT[4..(INPUT.len() - 2)]);
@@ -1550,7 +1620,7 @@ mod tests {
         parser.advance(&mut dispatcher, INPUT_MIDDLE);
         parser.advance(&mut dispatcher, INPUT_END);
 
-        assert_eq!(dispatcher.dispatched.len(), 2);
+        assert_eq!(dispatcher.dispatched.len(), 1);
         match &dispatcher.dispatched[0] {
             Sequence::Osc(params, false) => {
                 assert_eq!(params[0], b"2");

@@ -176,6 +176,91 @@ mod tests {
     use super::TerminalStream;
 
     #[test]
+    fn rust_console_terminal_osc_cancellation_preserves_committed_metadata_and_retry() {
+        use super::{FrameError, TerminalViewport};
+        fn feed(
+            stream: &mut TerminalStream,
+            view: &mut TerminalViewport,
+            hidden: bool,
+            data: &[u8],
+            sink: &mut impl std::io::Write,
+        ) -> Result<(), FrameError> {
+            if hidden {
+                stream.write_output_viewport_hidden(data, view, false, 4096, sink)
+            } else {
+                stream.write_output(data, sink)
+            }
+        }
+        struct Reject;
+        impl std::io::Write for Reject {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        for hidden in [false, true] {
+            let mut stream = TerminalStream::new(4, 16, 0, 128);
+            let mut view = TerminalViewport::full(4, 16);
+            let mut wire = Vec::new();
+            feed(
+                &mut stream,
+                &mut view,
+                hidden,
+                b"\x1b]2;anchor\x07",
+                &mut wire,
+            )
+            .unwrap();
+            assert_eq!(stream.take_window_title_update().unwrap(), b"anchor");
+            wire.clear();
+            for data in [
+                b"\x1b]2;bad\x18".as_slice(),
+                b"\x1b]2;bad\x1a",
+                b"\x1b]2;bad\x1b[31m",
+                b"\x1b]2;bad\x1b\x1b\\",
+            ] {
+                feed(&mut stream, &mut view, hidden, data, &mut wire).unwrap();
+                assert!(stream.at_boundary());
+                assert_eq!(stream.take_window_title_update(), None);
+                assert!(stream.screen().contents().is_empty());
+            }
+            if hidden {
+                assert!(wire.is_empty());
+            }
+            feed(
+                &mut stream,
+                &mut view,
+                hidden,
+                b"\x1b]2;next\xc2",
+                &mut wire,
+            )
+            .unwrap();
+            assert_eq!(stream.take_window_title_update(), None);
+            let pending = stream.pending_bytes().to_vec();
+            let before = stream.screen().state_formatted();
+            assert!(feed(&mut stream, &mut view, hidden, &[0x9c], &mut Reject).is_err());
+            assert_eq!(stream.take_window_title_update(), None);
+            assert_eq!(stream.pending_bytes(), pending);
+            assert_eq!(stream.screen().state_formatted(), before);
+            feed(&mut stream, &mut view, hidden, &[0x9c], &mut wire).unwrap();
+            assert_eq!(stream.take_window_title_update().unwrap(), b"next");
+            assert!(stream.at_boundary());
+            feed(
+                &mut stream,
+                &mut view,
+                hidden,
+                b"\x1b]2;fresh\x1b",
+                &mut wire,
+            )
+            .unwrap();
+            assert_eq!(stream.take_window_title_update(), None);
+            feed(&mut stream, &mut view, hidden, b"\\", &mut wire).unwrap();
+            assert_eq!(stream.take_window_title_update().unwrap(), b"fresh");
+        }
+    }
+
+    #[test]
     fn rust_console_terminal_title_events_commit_complete_frames_and_survive_screen_reset() {
         let mut direct = vt100::Parser::new(1, 8, 0);
         direct.process(b"\x1b]2;untracked\x07");

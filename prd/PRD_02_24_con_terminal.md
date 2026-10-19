@@ -33,6 +33,7 @@ minicon terminal and rendering
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
 │   │   └── Grammar-only unfinished input; OSC raw payload and committed title events
+│   │       └── Explicit OSC termination: BEL / ST / UTF-8 ST; cancel and restart isolation
 │   ├── [v] Invalid UTF-8 prefix recovery — visible replacement before native edits
 │   └── Visible replacement scalar — stream/error recovery and literal replay
 ├── Damage, raster and present
@@ -890,14 +891,15 @@ OSC 0/2 update the enabled slot; icon-only OSC 1 does not.
 Taking consumes it; multiple untaken updates coalesce. Screen reset does not
 erase it, screen projections/activation do not replay it, and transactional
 parser forks copy and commit it alongside decoder state. Direct Parser callers
-retain bytewise parser callback timing; the framed contract below is stronger.
+receive an OSC callback only at a valid terminator; the framed contract below
+additionally controls publication and I/O commit.
 
 OutputFramer advances unfinished input through the exact lexer with an inert
 performer. It does not invoke semantic callbacks or change screen state merely
 to retain unfinished grammar. At a complete boundary it replays the staged
 frame from ground through its publisher; semantic effects commit only after
-sink acceptance. This prevents the parser's OSC-at-ESC callback from escaping
-before a framed ST sequence completes. Earlier committed frames remain valid
+sink acceptance. The explicit OSC termination state also prevents direct-parser
+callbacks at an unfinished ESC. Earlier committed frames remain valid
 when a later frame exceeds its pending budget. Immediate C0 effects keep their
 ordered publication and are excluded from later replay.
 
@@ -912,3 +914,33 @@ Common facade/hidden publication tests exercise title and callback timing,
 failed publication/retry, reset persistence, icon isolation, semicolon payloads,
 prior-frame retention and hidden drawing/layer isolation. Native SDK and actual
 system-reference evidence are owned by PRD 02.34's VT-title leaf.
+
+
+### OSC cancellation and termination
+
+An explicit OscTermination lexer state holds ESC inside an OSC until the next
+byte establishes ST. BEL, ESC followed by backslash, and UTF-8 U+009C terminate
+and dispatch once. CAN/SUB discard the OSC payload and execute their control
+callback. A non-ST escape discards the old OSC, resets escape parameters and
+processes the new escape normally; a replacement OSC or CSI is not swallowed.
+A completed ST has one OSC callback and no additional standalone ESC callback.
+This changes the previous direct-performer timing/count and is an intentional
+migration for callback consumers, including the legacy parameter callback.
+
+The lexer holds a possible UTF-8 C2 prefix outside the raw OSC payload until
+the next byte. A following 9C terminates the OSC even when a no-std raw buffer
+is full; any other byte preserves C2 as ordinary payload before processing the
+next byte. This is an OSC UTF-8 ST rule, not general support for all encoded C1
+controls or other string types. Raw-byte capacity, parameter capacity and the
+framer's pending/wire budgets remain distinct.
+
+Named lexer evidence is
+`stream_boundary_osc_termination_cancels_and_retains_utf8_st_when_full`, with
+standard and no-std runs, plus updated ST and capped-parameter tests. The common
+facade test
+`rust_console_terminal_osc_cancellation_preserves_committed_metadata_and_retry`
+covers raw and hidden publication, cancellation, retained committed metadata,
+fragmented UTF-8 ST, zero-byte sink rejection/retry and subsequent ST recovery.
+Native/reference qualification belongs to PRD 02.34's OSC termination leaf.
+Malformed UTF-8/control interleavings, general C1 modes and other control-string
+families remain separate compatibility work.

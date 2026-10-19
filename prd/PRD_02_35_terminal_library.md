@@ -345,3 +345,9 @@ owner records precise SDK, runtime-guard and cross-target scope. Clipboard,
 custom callbacks and unknown extension behavior require their own broader
 consumer qualification; the new hidden scenario specifically asserts titles,
 bells, painting/layer isolation, quota and failed-sink transaction.
+
+Committed title events also inherit shared OSC cancellation/termination rules;
+no native-only abort filter is added to this facade. Callback migration and
+UTF-8 ST bounds belong to
+[terminal state](PRD_02_24_con_terminal.md#osc-cancellation-and-termination),
+with actual Windows/reference evidence in PRD 02.34's termination leaf.
