@@ -17,6 +17,8 @@ PTY facade; MiniCon forwards that feature as `experimental-rust-console` but
 does not select it in GUI sessions. Its Windows adapter owns bounded input/output
 staging and control priority; `minicon-console` owns console API/input semantics
 and the lifetime/classification/completion of deferred native output requests.
+Its Windows host exposes `has_pending_output` for work that includes native
+buffer fallback, alongside the retained-request count and `resume_output`.
 The detailed bounds, ordering and runtime evidence stay in PRD 02.34.
 Native ABI stabilization, AgenTerm reuse and cross-ISA claims
 require their own implementation and consumer evidence.

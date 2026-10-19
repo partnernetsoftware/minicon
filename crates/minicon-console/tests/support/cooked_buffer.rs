@@ -236,3 +236,131 @@ pub(crate) fn run(kind: &str, path: &Path, controlled: bool) -> io::Result<()> {
     write(base, "\x1b]2;cooked-buffer-end:\x07")?;
     Ok(())
 }
+
+static CANCEL_EVENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+unsafe extern "system" fn cancel_handler(event: u32) -> i32 {
+    if event > 1 {
+        return 0;
+    }
+    CANCEL_EVENT.store(event + 1, std::sync::atomic::Ordering::Release);
+    1
+}
+
+pub(crate) fn run_cancel(kind: &str, path: &Path, controlled: bool) -> io::Result<()> {
+    // SDK calls below use this isolated client's live console objects and
+    // bounded initialized buffers. Only the fresh output object is closed
+    // during the read; the inherited input remains open until its thread joins.
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    let base = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    let created = unsafe {
+        CreateConsoleScreenBuffer(
+            0xc000_0000,
+            3,
+            std::ptr::null(),
+            CONSOLE_TEXTMODE_BUFFER,
+            std::ptr::null(),
+        )
+    };
+    if created == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    let buffer = unsafe { OwnedHandle::from_raw_handle(created) };
+    unsafe {
+        check(SetConsoleMode(input, 0xa7))?;
+        check(SetConsoleMode(base, 15))?;
+        check(SetConsoleMode(created, 15))?;
+        check(SetConsoleCtrlHandler(Some(cancel_handler), 1))?;
+    }
+    write(base, "\x1b[2J\x1b[HB>")?;
+    unsafe {
+        check(SetConsoleActiveScreenBuffer(created))?;
+    }
+    write(created, "\x1b[2J\x1b[HA>")?;
+    let token = input as usize;
+    let reader = std::thread::spawn(move || {
+        let mut text = [0_u16; 32];
+        let mut count = 0;
+        unsafe {
+            SetLastError(0);
+            let ok = ReadConsoleW(
+                token as HANDLE,
+                text.as_mut_ptr().cast(),
+                text.len() as u32,
+                &mut count,
+                std::ptr::null_mut(),
+            ) != 0;
+            (ok, GetLastError(), count)
+        }
+    });
+    if controlled {
+        wait(deadline, || Ok(path.with_extension("go").exists()))?;
+    } else {
+        keys(input, false)?;
+        wait(deadline, || Ok(snapshot(created)?.1 == (0, 4)))?;
+    }
+    if kind == "hidden" {
+        unsafe {
+            check(SetConsoleActiveScreenBuffer(base))?;
+        }
+    }
+    drop(buffer);
+    std::fs::write(path.with_extension("cancel-ready"), b"closed")?;
+    write(base, "\x1b]2;cooked-cancel-ready:\x07")?;
+    wait(deadline, || Ok(reader.is_finished()))?;
+    let (ok, error, count) = reader
+        .join()
+        .map_err(|_| io::Error::other("SDK cancellation reader panicked"))?;
+    if !controlled {
+        wait(deadline, || {
+            Ok(CANCEL_EVENT.load(std::sync::atomic::Ordering::Acquire) != 0)
+        })?;
+    }
+    let event = CANCEL_EVENT.load(std::sync::atomic::Ordering::Acquire);
+    std::fs::write(
+        path.with_extension("cancelled"),
+        format!("{ok},{error},{count},{event}"),
+    )?;
+    wait(deadline, || Ok(path.with_extension("probe").exists()))?;
+    let mut mode = 0;
+    unsafe {
+        check(GetConsoleMode(input, &mut mode))?;
+    }
+    if mode != 0xa7 {
+        return Err(io::Error::other("changed cancellation input mode"));
+    }
+    std::fs::write(path.with_extension("queried"), b"query-bypassed")?;
+    let mut fresh = Vec::new();
+    for index in 0..15 {
+        let handle = unsafe {
+            CreateConsoleScreenBuffer(
+                0xc000_0000,
+                3,
+                std::ptr::null(),
+                CONSOLE_TEXTMODE_BUFFER,
+                std::ptr::null(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        fresh.push(unsafe { OwnedHandle::from_raw_handle(handle) });
+        if index == 0 {
+            std::fs::write(path.with_extension("created"), b"first-open")?;
+        }
+    }
+    let created = fresh.len();
+    drop(fresh);
+    let (base_text, cursor) = snapshot(base)?;
+    std::fs::write(
+        path,
+        format!(
+            "{{\"ok\":{ok},\"error\":{error},\"count\":{count},\"event\":{event},\"created\":{created},\"base\":{base_text:?},\"cursor\":[{},{}]}}",
+            cursor.0, cursor.1
+        ),
+    )?;
+    write(base, "\x1b]2;cooked-cancel-end:\x07")?;
+    wait(deadline, || Ok(path.with_extension("opened").exists()))?;
+    Ok(())
+}

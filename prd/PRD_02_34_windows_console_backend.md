@@ -35,6 +35,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
+│   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -105,6 +106,9 @@ flowchart LR
     COOK --> BIND["native read owns starting drawing buffer until completion"]
     BIND --> HIDECHO["hidden buffer edits / no active-buffer publication"]
     BIND --> COLLECT["closed buffer retained during read / collected after completion"]
+    BIND --> CANCELBUF["cancel: discard hidden orphan / retain active identity until admitted"]
+    CANCELBUF --> READYWORK["has_pending_output / one fallback before queued kernel call"]
+    READYWORK --> ECOMMIT
     COOK --> ELAYOUT["temporary common-parser layout / bounded origin search"]
     ELAYOUT --> DCURSOR["absolute drawing cursor / delayed wrap"]
     DCURSOR --> VT
@@ -1025,12 +1029,14 @@ API bypass classification, FIFO request retention and completion. Only known
 non-emitting queries, attachment/object lifecycle and native control generation
 bypass stalled output; future API additions default to ordered deferral.
 `minicon-platform` owns bounded byte staging and calls `resume_output` when
-ready. At most 64 borrowed `DriverRequest` objects retain their kernel request
+ready. At most 64 ordinary borrowed `DriverRequest` objects retain their kernel request
 identities; client payloads are not copied while queued. Excess requests get
 `STATUS_INSUFFICIENT_RESOURCES`; native WriteConsoleW fixtures observe Windows
 error 1450. Disconnect/final object close reclaim matching retained requests.
 Keyboard interruption also removes deferred console reads using their native
 interrupted-read completion after publishing input readiness.
+Internal buffer transitions are also output work; their readiness and one-work-item
+contract are owned by [cancelled-read buffer reclamation](#cancelled-read-buffer-reclamation).
 
 The byte budget rejects an oversized append before changing staging. Normal
 backpressure retains unconsumed bytes; explicit shutdown may discard staging.
@@ -3264,6 +3270,9 @@ The open boundaries above remain prerequisites for broader qualification.
 
 ### Cooked-read drawing-buffer lifetime
 
+Cancellation and output admission are specified in
+[cancelled-read buffer reclamation](#cancelled-read-buffer-reclamation).
+
 Invariant: a non-VT cooked read retains the active native drawing-buffer identity
 at API entry. Subsequent keyboard input edits that same buffer even after another
 buffer becomes active. Hidden text and Enter update only the retained stream,
@@ -3296,7 +3305,7 @@ reclamation, rather than relying only on successful input or eventual process ex
 Native internal output share/access compatibility remains unqualified. Both
 observed SDK paths accept an output read open with FILE_SHARE_READ alone, including
 the direct ConDrv device path; this does not demonstrate the newer pinned host's
-internal AllocateIoHandle policy. Cancellation-time collection/fallback, mixed
+internal AllocateIoHandle policy. Additional cancellation/close/disconnect races, mixed
 readers, mode changes, general concurrent output/geometry/margins and full native
 interactive compatibility remain open. The library stays independent and the
 experimental provider/default and release selections are unchanged.
@@ -3333,3 +3342,81 @@ Final formatting and 17 alignment checks follow this documentation.
 `cooked-buffer-final-receipt.json` binds the staged source tree, compiler, logs,
 faults, eight executed x64 image identities and two pinned upstream source blobs.
 This qualifies the named lifetime slice, not the open boundaries above.
+
+### Cancelled-read buffer reclamation
+
+Invariant: cancelling pending reads releases their native output retention without
+waiting for a writable terminal sink. Inactive orphaned buffers are discarded
+before SDK callers resume. An orphaned active buffer retains its identity and
+screen until the existing activation projection succeeds against an admitted
+sink. Failure leaves that identity selected and preserves queued kernel calls.
+No synthetic native request or second drawing model represents this transition.
+
+`has_pending_output` includes both retained kernel requests and a live fallback
+target; `pending_output_requests` still counts only actual kernel requests.
+`resume_output` admits one fallback or one queued request per invocation. After
+fallback succeeds, a later call may resume the next native request.
+`None` means no kernel receipt was produced, not that no output work occurred;
+consumers use `has_pending_output` for remaining work. Direct
+`dispatch` assumes an admitted sink and resolves fallback before dispatching an
+accepted request. `dispatch_with_output_ready` instead uses a non-publishing
+dispatch path for known queries/control operations. Output-buffer opens, new
+attachments and closes wait behind pending fallback so they cannot revive the
+orphan or select it before publication. The platform actor consumes the broader
+readiness predicate for input, key and resize admission. Native identity/lifetime
+policy stays in the Windows adapter; common terminal projection stays portable.
+
+The independent SDK reader closes its last output handle while ReadConsoleW is
+pending, either before or after switching away. It checks the interrupted Win32
+contract (BOOL true, LastError 995, zero count), handler identity, unchanged base
+cells/cursor and fifteen simultaneously reusable inactive slots. Three direct
+cases cover hidden cancellation, deferred active fallback and direct admitted
+dispatch. The readiness-aware active case proves GetConsoleMode can return with
+a rejecting sink, a buffer create queues without publication, failed fallback
+does not release it, and a successful fallback does not execute the create in
+the same resume call.
+The rejecting sink writes zero bytes; this does not qualify retries after partial
+publication, whose transport-failure contract remains unchanged.
+
+The actual platform PTY exercises owned native Break in hidden/active cases.
+Stock ConPTY uses its already-qualified processed Ctrl+C keyboard path for the
+same lifetime observations; its native Break transport remains unqualified.
+These are separately recorded control entry points, not a Break equivalence
+claim. SDK GenerateConsoleCtrlEvent posts a handler signal without cancelling
+pending input and is not used as a keyboard cancellation substitute.
+
+Dependencies are existing deferred-read interruption, buffer liveness/activation,
+private-Job control delivery, query classification and bounded output staging.
+Missing fallback state or sink failure stays explicit. Input-handle close or
+disconnect racing output pressure, mixed readers and foreign-request races with
+pending fallback, general concurrent output/modes/geometry and full OS/ISA
+runtime/performance qualification remain open. Default/release selection and
+the independent library boundary are unchanged.
+
+Local qualification: `cooked-cancel-final-focused.log` records three passing
+tests and seven native scenarios: three direct-driver cases, two owned native
+Break cases and two stock-ConPTY processed Ctrl+C cases. The tests are
+`rust_console_native_cancelled_read_reclaims_buffers_and_orders_fallback_under_pressure`,
+`rust_console_pty_break_reclaims_cancelled_read_buffers_and_publishes_fallback`
+and `rust_console_client_cancelled_read_buffers_compare_system_conpty`.
+Both console-agent forcing variables are cleared for the reference provider.
+Every scenario reports interrupted input, correct event identity, fifteen reused
+slots and unchanged base text/cursor; PTY cases also check frontend text/cursor.
+
+`cooked-cancel-negative-audit.json` records ten compiling, byte-restored runtime
+faults that fail all three new tests: inactive collection, pending-work identity,
+fallback resumption, buffer-open admission, query isolation, direct admission,
+one-work-item ordering, sink-before-identity commit, platform Break adoption and
+the actual reference keyboard interruption. A compile failure is not evidence.
+
+`cooked-cancel-final-suite.log` records 285 selected passes including existing
+PowerShell 5/7, Node, cmd, pressure, input/control, geometry and lifecycle cases.
+The earlier suite is reused only after all nine changed implementation/test
+files match the restored hashes. Seven static/cross checks pass: strict
+default/enabled workspace all-targets Clippy, four portable-library targets and
+Windows ARM64 platform PTY/Rust-console all-targets compilation. Native execution
+remains Windows x86_64 build 20348; other targets are compile-only. Final formatting
+and 17 alignment checks follow these owner/reuse-map updates.
+`cooked-cancel-final-receipt.json` binds the staged source tree, source/log/fault
+hashes, compiler, eight executed x64 image identities and two pinned upstream
+blobs. The named slice does not qualify the remaining race/transport boundaries.

@@ -313,7 +313,7 @@ fn serve(
         for control in controls.try_iter().take(32) {
             let (result, reply) = match control {
                 Control::Resize(size, reply) => (
-                    if sink.ready() && host.pending_output_requests() == 0 {
+                    if sink.ready() && !host.has_pending_output() {
                         host.resize(size.cols, size.rows, &mut sink)
                     } else {
                         Err(io::ErrorKind::WouldBlock.into())
@@ -332,7 +332,7 @@ fn serve(
                 }
                 Control::Key(key, repeat, reply) => {
                     if key != NativeTerminalKey::Break
-                        && (!sink.ready() || host.pending_output_requests() != 0)
+                        && (!sink.ready() || host.has_pending_output())
                     {
                         let _ = reply.send(Err(io::ErrorKind::WouldBlock.into()));
                         continue;
@@ -373,7 +373,7 @@ fn serve(
             // The host converts keys back to sequences only for VT text reads.
             if let Some(escape) = pending[..valid].iter().position(|byte| *byte == 27)
                 && sink.ready()
-                && host.pending_output_requests() == 0
+                && !host.has_pending_output()
             {
                 if escape != 0 {
                     valid = escape;
@@ -439,7 +439,7 @@ fn serve(
                 escape_wait = None;
             }
         }
-        if valid != 0 && sink.ready() && host.pending_output_requests() == 0 {
+        if valid != 0 && sink.ready() && !host.has_pending_output() {
             let mut cr = previous_cr;
             let text: String = std::str::from_utf8(&pending[..valid])
                 .unwrap()

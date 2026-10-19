@@ -141,27 +141,41 @@ impl ConsoleHost<'_> {
         Ok(SUCCESS)
     }
 
-    pub(super) fn collect_buffers(&mut self, output: &mut impl Write) -> io::Result<()> {
-        let live = |id: usize| {
-            self.input.retains_output(id)
-                || self
-                    .handles
-                    .values()
-                    .any(|h| h.kind == HandleKind::Output && h.buffer == id)
-        };
+    fn buffer_is_live(&self, id: usize) -> bool {
+        self.input.retains_output(id)
+            || self
+                .handles
+                .values()
+                .any(|h| h.kind == HandleKind::Output && h.buffer == id)
+    }
+
+    pub(super) fn buffer_fallback(&self) -> Option<usize> {
+        (!self.buffer_is_live(self.active_buffer))
+            .then(|| {
+                self.buffers
+                    .keys()
+                    .rev()
+                    .copied()
+                    .find(|id| self.buffer_is_live(*id))
+            })
+            .flatten()
+    }
+
+    pub(super) fn discard_unused_buffers(&mut self) {
         let unused: Vec<_> = self
             .buffers
             .keys()
             .copied()
-            .filter(|id| !live(*id))
+            .filter(|id| !self.buffer_is_live(*id))
             .collect();
-        let fallback = (!live(self.active_buffer))
-            .then(|| self.buffers.keys().rev().copied().find(|id| live(*id)))
-            .flatten();
         for id in unused {
             self.buffers.remove(&id);
         }
-        if let Some(id) = fallback {
+    }
+
+    pub(super) fn collect_buffers(&mut self, output: &mut impl Write) -> io::Result<()> {
+        self.discard_unused_buffers();
+        if let Some(id) = self.buffer_fallback() {
             let previous = self.active_buffer;
             let status = self.activate_buffer(id, output)?;
             if status != SUCCESS {

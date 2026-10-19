@@ -173,6 +173,12 @@ impl Drop for Report {
             "go",
             "opened",
             "switched",
+            "cancel-ready",
+            "cancelled",
+            "probe",
+            "queried",
+            "created",
+            "signal",
             "opened-ready",
             "detached",
             "first",
@@ -4421,6 +4427,73 @@ fn rust_console_pty_cooked_reads_retain_their_original_drawing_buffer() {
 #[ignore = "explicit system ConPTY cooked-read buffer/lifetime court"]
 fn rust_console_client_cooked_read_buffers_compare_system_conpty() {
     cooked_buffer_cases(false);
+}
+
+fn cancelled_buffer_cases(rust: bool) {
+    for kind in ["hidden", "active"] {
+        let report = Report::new();
+        let mode = format!("cooked-cancel-{kind}");
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(mode)
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 8, cols: 16 });
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        fixture.until("cooked-cancel-ready:");
+        if rust {
+            fixture
+                .child
+                .send_native_key(NativeTerminalKey::Break, 1)
+                .unwrap();
+        } else {
+            // The reference facade has no qualified native Break transport.
+            // Processed Ctrl+C is its existing actual keyboard interruption path.
+            fixture.master.write_all(&[3]).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !report.0.with_extension("cancelled").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "native cancellation {rust}/{kind} stalled"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(
+            std::fs::read_to_string(report.0.with_extension("cancelled")).unwrap(),
+            if rust { "true,995,0,2" } else { "true,995,0,1" }
+        );
+        std::fs::write(report.0.with_extension("probe"), b"query-and-open").unwrap();
+        fixture.until("cooked-cancel-end:");
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        assert_eq!(
+            value,
+            format!(
+                r#"{{"ok":true,"error":995,"count":0,"event":{},"created":15,"base":"B>","cursor":[0,2]}}"#,
+                if rust { 2 } else { 1 }
+            )
+        );
+        let mut peer = vt100::Parser::new(8, 16, 0);
+        peer.process(&fixture.bytes);
+        assert_eq!(peer.screen().contents(), "B>");
+        assert_eq!(peer.screen().cursor_position(), (0, 2));
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+        eprintln!("cooked-cancel rust={rust};kind={kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_pty_break_reclaims_cancelled_read_buffers_and_publishes_fallback() {
+    cancelled_buffer_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY cancelled-read buffer lifetime court"]
+fn rust_console_client_cancelled_read_buffers_compare_system_conpty() {
+    cancelled_buffer_cases(false);
 }
 
 #[test]

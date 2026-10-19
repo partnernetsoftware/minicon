@@ -241,11 +241,12 @@ impl<'session> ConsoleHost<'session> {
         }
         // Fail closed for future API additions: only known non-emitting calls
         // bypass ordered output. Input reads may cook and echo queued keys.
-        let bypass = descriptor.function == 3
+        let bypass = (self.buffer_fallback().is_none()
+            && (descriptor.function == 3
+                || (descriptor.function == 1 && !self.processes.is_empty())
+                || (matches!(descriptor.function, 2 | 4) && !self.close_may_publish(descriptor))))
             || record_query
             || descriptor.function == 8
-            || (descriptor.function == 1 && !self.processes.is_empty())
-            || (matches!(descriptor.function, 2 | 4) && !self.close_may_publish(descriptor))
             || (descriptor.function == 7
                 && matches!(
                     api,
@@ -267,7 +268,7 @@ impl<'session> ConsoleHost<'session> {
                             | 0x0300_0029
                     )
                 ));
-        if !bypass && (!ready || !self.deferred_output.is_empty()) {
+        if !bypass && (!ready || self.has_pending_output()) {
             let mut receipt = DispatchReceipt {
                 function: descriptor.function,
                 api,
@@ -291,15 +292,19 @@ impl<'session> ConsoleHost<'session> {
             }
             return Ok(receipt);
         }
-        self.dispatch(request, output)
+        self.dispatch_buffer_request(request, output)
     }
 
-    /// Resume at most one queued emitting call; the caller must have drained
+    /// Resume one buffer fallback or queued emitting call; the caller must have drained
     /// the preceding call's terminal bytes before invoking this method.
     pub fn resume_output(
         &mut self,
         output: &mut impl Write,
     ) -> io::Result<Option<DispatchReceipt>> {
+        if self.buffer_fallback().is_some() {
+            self.collect_buffers(output)?;
+            return Ok(None);
+        }
         self.deferred_output
             .pop_front()
             .map(|request| self.dispatch(request, output))
@@ -311,9 +316,28 @@ impl<'session> ConsoleHost<'session> {
         self.deferred_output.len()
     }
 
+    /// Includes internal buffer fallback, which has no retained kernel request.
+    pub fn has_pending_output(&self) -> bool {
+        !self.deferred_output.is_empty() || self.buffer_fallback().is_some()
+    }
+
     /// Service one real driver request and write terminal bytes to the caller's
     /// bounded output path. No display window or platform host is created.
     pub fn dispatch(
+        &mut self,
+        request: DriverRequest<'session>,
+        output: &mut impl Write,
+    ) -> io::Result<DispatchReceipt> {
+        // Direct consumers provide an admitted sink. Readiness-aware callers
+        // use the private dispatch path so non-emitting queries can bypass a
+        // fallback without accidentally publishing it under output pressure.
+        if self.accept_origin(&request) && self.buffer_fallback().is_some() {
+            self.collect_buffers(output)?;
+        }
+        self.dispatch_buffer_request(request, output)
+    }
+
+    fn dispatch_buffer_request(
         &mut self,
         request: DriverRequest<'session>,
         output: &mut impl Write,

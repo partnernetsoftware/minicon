@@ -91,6 +91,9 @@ fn run() -> std::io::Result<()> {
     if let Some(kind) = mode.strip_prefix("cooked-buffer-") {
         return cooked_buffer::run(kind, std::path::Path::new(&arguments[1]), false);
     }
+    if let Some(kind) = mode.strip_prefix("cooked-cancel-") {
+        return cooked_buffer::run_cancel(kind, std::path::Path::new(&arguments[1]), false);
+    }
     if let Some(kind) = mode.strip_prefix("cooked-controls-") {
         return cooked_controls::run(kind, std::path::Path::new(&arguments[1]));
     }

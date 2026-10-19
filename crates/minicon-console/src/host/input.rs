@@ -311,6 +311,9 @@ impl<'session> ConsoleHost<'session> {
         self.deferred_output = retained;
         let pending = std::mem::take(&mut self.input.pending);
         let count = pending.len() + deferred_reads.len();
+        // Inactive state needs no publication. An orphaned active buffer stays
+        // selected until resume_output admits its transactional fallback.
+        self.discard_unused_buffers();
         // Publish native readiness before any blocked SDK caller resumes.
         let mut failure = self.update_input_event().err();
         drop(deferred_reads);

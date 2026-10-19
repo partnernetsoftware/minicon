@@ -146,6 +146,16 @@ impl Drop for Report {
         let _ = std::fs::remove_file(self.path.with_extension("peek"));
         let _ = std::fs::remove_file(self.path.with_extension("switched"));
         let _ = std::fs::remove_file(self.path.with_extension("opened"));
+        for extension in [
+            "cancel-ready",
+            "cancelled",
+            "probe",
+            "queried",
+            "created",
+            "signal",
+        ] {
+            let _ = std::fs::remove_file(self.path.with_extension(extension));
+        }
         let _ = std::fs::remove_dir(self.path.parent().unwrap());
     }
 }
@@ -342,6 +352,127 @@ fn rust_console_native_cooked_read_binds_before_first_key_and_retains_closed_out
         peer.process(&output);
         assert_eq!(peer.screen().contents(), "B>");
         eprintln!("cooked-buffer-direct {kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_native_cancelled_read_reclaims_buffers_and_orders_fallback_under_pressure() {
+    struct Reject;
+    impl std::io::Write for Reject {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    for kind in ["hidden", "active", "direct"] {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let child = launch_probe(&format!("cooked-cancel-{kind}"), &report, &session);
+        let mut host = ConsoleHost::new();
+        let mut output = Vec::new();
+        let mut cancelled = false;
+        let mut query = false;
+        let mut opened = false;
+        let mut released = false;
+        let deadline = Instant::now() + Duration::from_secs(18);
+        while child.wait(Duration::ZERO).unwrap().is_none() || host.connected_clients() != 0 {
+            assert!(Instant::now() < deadline, "cancelled buffer {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let before = output.clone();
+                    let call = if cancelled && !opened {
+                        if kind == "direct" {
+                            host.dispatch(request, &mut output).unwrap()
+                        } else {
+                            host.dispatch_with_output_ready(request, false, &mut Reject)
+                                .unwrap()
+                        }
+                    } else {
+                        host.dispatch_with_output_ready(request, true, &mut output)
+                            .unwrap()
+                    };
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if call.api == Some(0x0100_0005) {
+                        assert!(call.pending);
+                        assert_eq!(host.enqueue_text("ab", &mut output).unwrap(), 0);
+                        std::fs::write(report.path.with_extension("go"), b"read-accepted").unwrap();
+                    }
+                    if cancelled && !opened && call.api == Some(0x0100_0001) {
+                        assert!(!call.pending);
+                        if kind == "direct" {
+                            assert!(!host.has_pending_output());
+                        }
+                        query = true;
+                    }
+                    if cancelled && !opened && call.function == 3 {
+                        assert!(query && report.path.with_extension("queried").exists());
+                        assert_eq!(output, before);
+                        if kind == "active" {
+                            assert!(call.pending && host.has_pending_output());
+                            assert_eq!(host.pending_output_requests(), 1);
+                            assert!(!report.path.with_extension("created").exists());
+                            assert_eq!(
+                                host.resume_output(&mut Reject).unwrap_err().kind(),
+                                std::io::ErrorKind::BrokenPipe
+                            );
+                            assert!(host.has_pending_output());
+                            assert_eq!(host.pending_output_requests(), 1);
+                            assert!(host.resume_output(&mut output).unwrap().is_none());
+                            assert_eq!(
+                                host.pending_output_requests(),
+                                1,
+                                "fallback must not dispatch the next call in the same turn"
+                            );
+                            assert!(!report.path.with_extension("created").exists());
+                            let mut peer = vt100::Parser::new(30, 120, 0);
+                            peer.process(&output);
+                            assert_eq!(peer.screen().contents(), "B>");
+                            assert_eq!(
+                                host.resume_output(&mut output).unwrap().unwrap().function,
+                                3
+                            );
+                        } else {
+                            assert!(!call.pending);
+                        }
+                        assert!(!host.has_pending_output());
+                        opened = true;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("{kind}: {error}"),
+            }
+            if !cancelled
+                && report.path.with_extension("cancel-ready").exists()
+                && output
+                    .windows(b"cooked-cancel-ready:".len())
+                    .any(|w| w == b"cooked-cancel-ready:")
+            {
+                assert_eq!(host.cancel_pending_reads().unwrap(), 1);
+                cancelled = true;
+                assert_eq!(host.pending_reads(), 0);
+                assert_eq!(host.pending_output_requests(), 0);
+                assert_eq!(host.has_pending_output(), kind != "hidden");
+                std::fs::write(report.path.with_extension("probe"), b"query-and-open").unwrap();
+            }
+            if !released && report.path.exists() {
+                released = true;
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+            }
+        }
+        assert!(cancelled && query && opened && released);
+        assert_eq!(child.wait(Duration::ZERO).unwrap(), Some(0));
+        let value: Value = serde_json::from_slice(&std::fs::read(&report.path).unwrap()).unwrap();
+        assert_eq!(
+            value,
+            json!({"ok":true,"error":995,"count":0,"event":0,"created":15,"base":"B>","cursor":[0,2]})
+        );
+        assert_eq!(host.pending_reads(), 0);
+        assert_eq!(host.open_handles(), 0);
+        assert_eq!(host.connected_clients(), 0);
+        assert!(!host.has_pending_output());
+        eprintln!("cooked-cancel-direct {kind}: {value}");
     }
 }
 
