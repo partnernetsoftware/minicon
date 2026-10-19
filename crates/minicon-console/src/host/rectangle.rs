@@ -86,10 +86,29 @@ impl ConsoleHost<'_> {
                 if attribute & !0xc3ff != 0 {
                     return Ok(Err(NOT_SUPPORTED));
                 }
+                let pair = if attribute & 0x300 == 0x100 && column < clipped[2] {
+                    let tail = at + 4;
+                    let tail_unit = u16::from_le_bytes([bytes[tail], bytes[tail + 1]]);
+                    let tail_attribute = u16::from_le_bytes([bytes[tail + 2], bytes[tail + 3]]);
+                    if tail_attribute & !0xc3ff != 0
+                        || tail_attribute & 0x300 != 0x200
+                        || unicode && tail_unit != unit
+                    {
+                        return Ok(Err(NOT_SUPPORTED));
+                    }
+                    Some((tail_unit, tail_attribute))
+                } else {
+                    None
+                };
                 let character = if unicode {
                     char::from_u32(u32::from(unit))
                 } else {
-                    match self.decode_single_byte_cell(unit as u8) {
+                    let decoded = if let Some((tail, _)) = pair {
+                        self.decode_double_byte_cell([unit as u8, tail as u8])
+                    } else {
+                        self.decode_single_byte_cell(unit as u8)
+                    };
+                    match decoded {
                         Ok(value) => Some(value),
                         Err(status) => return Ok(Err(status)),
                     }
@@ -100,17 +119,7 @@ impl ConsoleHost<'_> {
                 let width = character.width().unwrap_or(1).max(1);
                 match attribute & 0x300 {
                     0 if width == 1 => {}
-                    0x100 if width == 2 && column < clipped[2] => {
-                        let tail = at + 4;
-                        let tail_unit = u16::from_le_bytes([bytes[tail], bytes[tail + 1]]);
-                        let tail_attribute = u16::from_le_bytes([bytes[tail + 2], bytes[tail + 3]]);
-                        if !unicode
-                            || tail_unit != unit
-                            || tail_attribute != ((attribute & !0x300) | 0x200)
-                        {
-                            return Ok(Err(NOT_SUPPORTED));
-                        }
-                    }
+                    0x100 if width == 2 && pair.is_some() => {}
                     _ => return Ok(Err(NOT_SUPPORTED)),
                 }
                 if !next.write_cell(
@@ -120,6 +129,14 @@ impl ConsoleHost<'_> {
                     super::output::legacy_style(attribute & !0x300),
                 ) {
                     return Ok(Err(INVALID_PARAMETER));
+                }
+                if let Some((_, tail_attribute)) = pair {
+                    next.fill_cell_style(
+                        row as u16,
+                        column as u16 + 1,
+                        1,
+                        super::output::legacy_style(tail_attribute & !0x300),
+                    );
                 }
                 column += width as i16;
             }
@@ -163,7 +180,15 @@ impl ConsoleHost<'_> {
                 let unit = units.next().unwrap_or(u16::from(b' '));
                 let mut unit = if units.next().is_some() { 0xfffd } else { unit };
                 if !unicode {
-                    unit = u16::from(self.encode_single_byte_cell(unit)?);
+                    unit = u16::from(
+                        if (cell.is_wide() || cell.is_wide_continuation()) && self.is_dbcs_output()
+                        {
+                            self.encode_double_byte_cell(unit)?
+                                [usize::from(cell.is_wide_continuation())]
+                        } else {
+                            self.encode_single_byte_cell(unit)?
+                        },
+                    );
                 }
                 let attribute = super::output::legacy_attribute(
                     cell.fgcolor(),
@@ -190,6 +215,54 @@ impl ConsoleHost<'_> {
 #[cfg(test)]
 mod tests {
     use super::{ConsoleHost, INVALID_PARAMETER, MAX_BYTES, NOT_SUPPORTED, Rectangle};
+
+    #[test]
+    fn rust_console_dbcs_rectangles_validate_pairs_and_preserve_independent_styles() {
+        let mut host = ConsoleHost::new();
+        host.output_code_page = 936;
+        let pair = [0xd6, 0, 0x1e, 1, 0xd0, 0, 0x2d, 2];
+        assert_eq!(
+            host.write_output_rect([0, 0, 1, 0], false, &pair, &mut Vec::new())
+                .unwrap(),
+            Ok([0, 0, 1, 0])
+        );
+        assert_eq!(
+            host.read_output_rect([0, 0, 1, 0], false, 8).unwrap().1,
+            pair
+        );
+        assert_eq!(
+            host.read_output_rect([0, 0, 1, 0], true, 8).unwrap().1,
+            [0x2d, 0x4e, 0x1e, 1, 0x2d, 0x4e, 0x2d, 2]
+        );
+        let before = host.terminal.screen().state_formatted();
+        let mut malformed = pair;
+        malformed[7] = 0;
+        assert_eq!(
+            host.write_output_rect([0, 0, 1, 0], false, &malformed, &mut Vec::new())
+                .unwrap(),
+            Err(NOT_SUPPORTED)
+        );
+        malformed = pair;
+        malformed[4] = 0x7f;
+        assert_eq!(
+            host.write_output_rect([0, 0, 1, 0], false, &malformed, &mut Vec::new())
+                .unwrap(),
+            Err(NOT_SUPPORTED)
+        );
+        assert_eq!(
+            host.write_output_rect([0, 0, 0, 0], false, &pair[..4], &mut Vec::new())
+                .unwrap(),
+            Err(NOT_SUPPORTED)
+        );
+        assert_eq!(host.terminal.screen().state_formatted(), before);
+        host.output_code_page = 65001;
+        assert_eq!(
+            host.write_output_rect([0, 0, 1, 0], false, &pair, &mut Vec::new())
+                .unwrap(),
+            Err(NOT_SUPPORTED)
+        );
+        assert_eq!(host.terminal.screen().state_formatted(), before);
+    }
 
     #[test]
     fn rust_console_rectangles_bound_capture_and_commit_only_after_output() {

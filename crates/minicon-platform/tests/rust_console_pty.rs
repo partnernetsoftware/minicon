@@ -303,6 +303,113 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn indexed_output_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("indexed-output")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 6, cols: 8 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("indexed-end:");
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!("indexed output rust={rust}: {receipt}");
+    std::fs::write(report.0.with_extension("opened"), b"read").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(6, 8, 0);
+    parser.process(&fixture.bytes);
+    (receipt, parser)
+}
+
+fn assert_indexed_output(receipt: &str, rust: bool) {
+    for (label, count) in [
+        ("cross", 4),
+        ("styles", 5),
+        ("wide", 2),
+        ("oem", 3),
+        ("utf8", 4),
+        ("utf8-corner", 0),
+        ("utf8-clipped", 4),
+        ("literal", 13),
+        ("end", 1),
+        ("empty", 0),
+        ("writeonly-text", 1),
+        ("writeonly-style", 1),
+    ] {
+        assert!(
+            receipt
+                .lines()
+                .any(|line| line == format!("{label}:1,0,{count}")),
+            "{receipt}"
+        );
+    }
+    for label in ["negative", "right", "below"] {
+        assert!(receipt.contains(&format!("{label}:0,87,0")), "{receipt}");
+    }
+    for label in ["readonly-text", "readonly-style"] {
+        assert!(receipt.contains(&format!("{label}:0,5,0")), "{receipt}");
+    }
+    let cells = receipt
+        .lines()
+        .find_map(|line| line.strip_prefix("cells:"))
+        .unwrap();
+    let expected = concat!(
+        "0041/0010,0042/0011,0043/0012,0044/0013,0045/0014,0046/0015,0078/0016,0079/004f,",
+        "007a/002e,0071/c031,004b/0017,004c/0060,004d/0014,004e/0015,004f/0016,0020/0017,",
+        "4e2d/0110,4e2d/0211,0051/0012,0054/0013,0055/0014,0056/0015,0057/0016,0058/0017,",
+        "0059/0010,005a/0011,2502/0012,2524/0013,005a/0014,4e2d/0115,4e2d/0216,0052/0017,",
+        "001b/0010,005b/0011,0033/0012,0031/0013,006d/0014,000d/0015,000a/0016,0000/0017,",
+        "0009/0010,0007/0011,0008/0012,0301/0013,fffd/0014,4e2d/0115,4e2d/0216,0021/0017,"
+    );
+    assert_eq!(cells, expected);
+    assert!(
+        receipt.ends_with("preserved:5,5;002e\nresumed:6,5;0024\n"),
+        "{receipt}"
+    );
+    assert!(receipt.contains("dbcs-read:d6/0110,d0/0211,"), "{receipt}");
+    let tail = if !rust && receipt.lines().any(|line| line == "build=20348") {
+        "ffff"
+    } else {
+        "4e2d"
+    };
+    assert!(
+        receipt.contains(&format!("dbcs-written:4e2d/0110,{tail}/0211,")),
+        "{receipt}"
+    );
+}
+
+#[test]
+fn rust_console_pty_indexed_output_preserves_styles_and_pending_decoder() {
+    let (receipt, parser) = indexed_output_report(true);
+    assert_indexed_output(&receipt, true);
+    assert_eq!(parser.screen().cell(0, 6).unwrap().contents(), "x");
+    assert_eq!(
+        parser.screen().cell(0, 6).unwrap().fgcolor(),
+        vt100::Color::Idx(3)
+    );
+    assert!(parser.screen().cell(1, 1).unwrap().inverse());
+    assert!(parser.screen().cell(1, 1).unwrap().underline());
+    assert_eq!(parser.screen().cell(2, 0).unwrap().contents(), "中");
+    assert!(parser.screen().cell(2, 1).unwrap().is_wide_continuation());
+    assert_eq!(parser.screen().cell(5, 3).unwrap().contents(), "◌");
+    assert_eq!(parser.screen().cell(5, 4).unwrap().contents(), "�");
+    assert_eq!(parser.screen().cell(5, 5).unwrap().contents(), "Z");
+    assert_eq!(
+        parser.screen().cell(5, 5).unwrap().fgcolor(),
+        vt100::Color::Idx(1)
+    );
+}
+
+#[test]
+#[ignore = "explicit system ConPTY indexed-output reference court"]
+fn rust_console_client_indexed_output_matches_system_conpty() {
+    let (receipt, _) = indexed_output_report(false);
+    assert_indexed_output(&receipt, false);
+}
+
 fn scroll_output_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -1982,6 +2089,30 @@ fn rust_console_client_windows_powershell_rawui_rectangles() {
         parser.screen().cell(2, 2).unwrap().bgcolor(),
         vt100::Color::Idx(4)
     );
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell managed buffer-move court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_managed_buffer_move() {
+    let script = "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::GetEncoding(936);$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('A中','CDX'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,2;$raw.SetBufferContents($pos,$cells);[Console]::MoveBufferArea(2,2,3,2,2,3,[char]'.',[ConsoleColor]::White,[ConsoleColor]::DarkRed);$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,4;$read=$raw.GetBufferContents($area);if($read[0,0].Character -cne '.' -or $read[1,0].Character -cne 'A' -or $read[1,1].Character -cne '中' -or $read[2,1].Character -cne 'D' -or $read[2,2].Character -cne 'X' -or $read[0,0].BackgroundColor -ne [ConsoleColor]::DarkRed -or $read[1,0].ForegroundColor -ne [ConsoleColor]::Yellow){exit 19};[Console]::SetCursorPosition(0,6);[Console]::Write('managed-move-ok:');exit 0";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client("MINICON_TEST_WINDOWS_POWERSHELL"))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .size(TerminalSize { rows: 8, cols: 16 })
+            .rust_console(),
+    );
+    fixture.until("managed-move-ok:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().cell(2, 2).unwrap().contents(), ".");
+    assert_eq!(parser.screen().cell(3, 2).unwrap().contents(), "A");
+    assert_eq!(parser.screen().cell(3, 3).unwrap().contents(), "中");
+    assert_eq!(parser.screen().cell(4, 4).unwrap().contents(), "X");
 }
 
 #[test]

@@ -3,6 +3,96 @@ use super::Screen;
 use unicode_width::UnicodeWidthChar as _;
 
 impl Screen {
+    /// Write literal scalars into consecutive drawing cells, preserving their
+    /// styles, cursor, drawing attributes, history and parser grammar. Wide
+    /// scalars pad the final column and continue on the next row. Invalid
+    /// origins consume nothing; screen-end clipping returns consumed scalars,
+    /// excluding padding. Overwritten wide neighbours are healed. Controls and
+    /// standalone zero-width scalars use the literal-cell projection contract.
+    #[allow(clippy::missing_panics_doc)] // Drawing indices fit the existing u16 grid.
+    pub fn write_cell_text(&mut self, row: u16, column: u16, text: &str) -> usize {
+        let (rows, columns) = self.size();
+        if row >= rows || column >= columns {
+            return 0;
+        }
+        let mut text = text.chars().peekable();
+        let mut consumed = 0;
+        let mut damage = crate::RowRange::empty();
+        for (index, line) in self
+            .grid_mut()
+            .drawing_rows_mut()
+            .enumerate()
+            .skip(usize::from(row))
+        {
+            let mut at = if index == usize::from(row) { column } else { 0 };
+            while at < columns {
+                let Some(&character) = text.peek() else { break };
+                let width = u16::from(character.width().unwrap_or(1) > 1) + 1;
+                damage.mark_row(u16::try_from(index).unwrap());
+                if width > columns - at {
+                    line.fill_literal(at, columns, ' ');
+                    break;
+                }
+                line.fill_literal(at, at + width, character);
+                at += width;
+                text.next();
+                consumed += 1;
+            }
+            if text.peek().is_none() {
+                break;
+            }
+        }
+        self.mark_literal_damage(damage);
+        consumed
+    }
+
+    /// Write consecutive cell styles while preserving text and wide metadata.
+    /// Clip at the screen end and return the number of styles consumed.
+    /// Cursor, drawing attributes, grammar and history are preserved.
+    #[allow(clippy::missing_panics_doc)] // Drawing indices fit the existing u16 grid.
+    pub fn write_cell_styles(
+        &mut self,
+        row: u16,
+        column: u16,
+        styles: impl IntoIterator<Item = crate::CellStyle>,
+    ) -> usize {
+        let (rows, columns) = self.size();
+        if row >= rows || column >= columns {
+            return 0;
+        }
+        let mut styles = styles.into_iter();
+        let mut consumed = 0;
+        let mut damage = crate::RowRange::empty();
+        'rows: for (index, line) in self
+            .grid_mut()
+            .drawing_rows_mut()
+            .enumerate()
+            .skip(usize::from(row))
+        {
+            let begin = if index == usize::from(row) { column } else { 0 };
+            for at in begin..columns {
+                let Some(style) = styles.next() else {
+                    break 'rows;
+                };
+                line.fill_style(at, at + 1, style);
+                damage.mark_row(u16::try_from(index).unwrap());
+                consumed += 1;
+            }
+        }
+        self.mark_literal_damage(damage);
+        consumed
+    }
+
+    fn mark_literal_damage(&mut self, damage: crate::RowRange) {
+        if !damage.is_empty() {
+            if self.scrollback() == 0 {
+                self.damage.mark_rows(damage);
+            } else {
+                self.damage.mark_full();
+            }
+        }
+    }
+
     /// Replace one scalar and its style without moving the cursor or drawing
     /// state. A wide scalar requires two cells in this row; invalid placement
     /// returns false without changing either row. Controls and standalone
@@ -104,6 +194,50 @@ impl Screen {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn literal_spans_preserve_attributes_history_and_partial_grammar() {
+        let mut parser = crate::Parser::new(3, 5, 8);
+        parser.process(b"old\r\nkeep\r\nABCDE\r\nvwxyz\x1b[31;44m\x1b[3");
+        let before = parser.screen().clone();
+        parser.screen_mut().set_scrollback(1);
+        parser.take_damage();
+        let styles = (2..6).map(|n| crate::CellStyle {
+            foreground: crate::Color::Idx(n),
+            ..crate::CellStyle::default()
+        });
+        assert_eq!(parser.screen_mut().write_cell_styles(1, 3, styles), 4);
+        assert_eq!(parser.screen_mut().write_cell_text(1, 4, "中XR"), 3);
+        let damage = parser.take_damage();
+        assert!(damage.needs_full_raster());
+        assert!(!damage.scrollback_changed());
+        assert_eq!(parser.screen().scrollback_len(), before.scrollback_len());
+        assert_eq!(parser.screen().cursor_position(), before.cursor_position());
+        assert_eq!(
+            parser.screen().attributes_formatted(),
+            before.attributes_formatted()
+        );
+        parser.screen_mut().set_scrollback(0);
+        assert_eq!(parser.screen().rows(0, 5).nth(1).unwrap(), "ABCD ");
+        assert_eq!(parser.screen().rows(0, 5).nth(2).unwrap(), "中XRz");
+        assert_eq!(
+            parser.screen().cell(2, 0).unwrap().fgcolor(),
+            crate::Color::Idx(4)
+        );
+        assert_eq!(
+            parser.screen().cell(2, 1).unwrap().fgcolor(),
+            crate::Color::Idx(5)
+        );
+        assert!(parser.screen().cell(2, 1).unwrap().is_wide_continuation());
+        assert_eq!(parser.screen_mut().write_cell_text(2, 1, "Q"), 1);
+        assert!(!parser.screen().cell(2, 0).unwrap().is_wide());
+        assert_eq!(parser.screen().cell(2, 1).unwrap().contents(), "Q");
+        assert_eq!(parser.screen_mut().write_cell_text(2, 4, "😀"), 0);
+        assert_eq!(parser.screen().cell(2, 4).unwrap().contents(), " ");
+        assert_eq!(parser.screen_mut().write_cell_text(3, 0, "X"), 0);
+        parser.process(b"2m");
+        assert_eq!(parser.screen().fgcolor(), crate::Color::Idx(2));
+    }
+
     #[test]
     fn rectangular_cell_writes_preserve_state_and_refuse_row_spill() {
         let mut parser = crate::Parser::new(2, 4, 0);

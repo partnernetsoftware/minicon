@@ -24,6 +24,7 @@ minicon terminal and rendering
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
+│   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
 │   └── Visible replacement scalar — stream/error recovery and literal replay
@@ -42,6 +43,7 @@ flowchart LR
     VT --> WRAP["shared DECAWM state / full and incremental replay"]
     WRAP --> DMG
     EDIT["CellStyle / literal cell edits"] --> VT
+    SPAN["literal text / variable style spans"] --> EDIT
     MOVE["CellRect / snapshot region movement"] --> EDIT
     EDIT --> DMG
     GRAM["owned vte: authoritative grammar / boundary preview"] --> VT
@@ -681,3 +683,25 @@ commits after sink success; partial sink failures still require transport retire
 Evidence includes `region_moves_snapshot_overlap_preserve_graphemes_and_clip_writes`
 and the scoped native/application courts in PRD 02.34. This is common cell logic,
 not a portable process session or certification of every native backend.
+
+## Literal text and style spans
+
+`Screen::write_cell_text(row, column, &str)` and `write_cell_styles` are common
+OS/ISA-neutral drawing-grid operations exposed through minicon-console::terminal.
+Text writes literal scalars, preserving every cell's attributes; style spans
+preserve text/width. Both clip at the grid end and preserve cursor, drawing
+attributes, client grammar and history. Text returns consumed scalars, excluding
+row-end padding. Native units/byte counts belong to adapters. Input text is
+borrowed UTF-8, without consuming a caller-owned iterator past a clipped end.
+Style iterators are pulled only for writable cells. A wide scalar needs two
+cells: the last column is padded without consuming it, then the next row is
+used. Overwritten wide neighbours are healed. Controls and standalone zero-width
+scalars remain literal data; existing safe projection uses spaces/dotted-circle
+placeholders while native readback can retain the original scalar.
+
+Only drawing cells are edited when a history viewport is selected. Damage then
+conservatively requests a full raster without adding history; normal drawing
+edits report row damage. The unit
+literal_spans_preserve_attributes_history_and_partial_grammar covers mixed styles,
+CJK, supplementary padding, wide healing, active-grid/history isolation and
+retained CSI. Native encoding and transaction evidence belongs to PRD 02.34.

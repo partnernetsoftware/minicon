@@ -14,10 +14,10 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: public facade unit, shared parser/framer units, target build receipts
 │   safe failure: bounded-frame error or explicit I/O failure; no silent truncation
 │   dependency: owned vt100/vte; non-goal: GUI/event loop or process spawning
-├── [-] Shared cell-region movement — terminal::CellRect / Screen::move_region
+├── [-] Shared cell operations — terminal::CellRect / Screen region and literal spans
 │   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
-│   evidence: shared grapheme/overlap unit, native SDK and actual RawUI consumer
-│   safe failure: typed wide-fill error; native adapters commit after sink success
+│   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
+│   safe failure: typed move error or clipped span count; native sink-before-commit
 │   dependency: common cell model; non-goal: Win32 ABI or incidental history scroll
 ├── [v] Windows host adopts the common stream facade
 │   invariant: native projections preserve client grammar and commit after sink success

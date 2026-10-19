@@ -2,6 +2,7 @@
 use crate::{DriverRequest, DriverSession};
 mod cell_codec;
 mod font;
+mod indexed;
 mod input;
 mod objects;
 mod output;
@@ -729,6 +730,38 @@ impl<'session> ConsoleHost<'session> {
                     && let Err(status) = self.scroll_output(&body, output)?
                 {
                     receipt.status = status;
+                }
+            }
+            0x0200_0012 if body.len() >= 12 => {
+                body[8..12].fill(0);
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
+                    let offset = body_size + 8;
+                    if descriptor.input_size > 1024 * 1024 {
+                        receipt.status = NOT_SUPPORTED;
+                    } else {
+                        let bytes = request.read_input(
+                            offset,
+                            descriptor.input_size.saturating_sub(offset) as usize,
+                        )?;
+                        match self.write_output_string(
+                            read_u32(&body, 4).unwrap(),
+                            u16::from_le_bytes([body[0], body[1]]),
+                            u16::from_le_bytes([body[2], body[3]]),
+                            &bytes,
+                            output,
+                        )? {
+                            Ok(written) => {
+                                body[8..12].copy_from_slice(&(written as u32).to_le_bytes())
+                            }
+                            Err(status) => receipt.status = status,
+                        }
+                    }
                 }
             }
             0x0200_0011 | 0x0200_0013 if body.len() >= 10 => {

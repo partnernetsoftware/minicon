@@ -49,6 +49,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
 │   ├── [-] rectangular W/A read/write: clipped row stride, per-cell styles and scoped wide pairs
 │   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
+│   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
 │   ├── [-] mixed output: authoritative parser boundaries, bounded fragments and native injection
 │   └── [-] general API service, signals, screen semantics and product selection
@@ -91,6 +92,9 @@ flowchart LR
     RECT --> EDIT["shared Screen::write_cell / row bounds / damage"]
     EDIT --> VT
     RAWUI["real Windows PowerShell RawUI"] --> RECT
+    HOST --> STR["indexed W/A text / attribute spans / counts / WRITE access"]
+    STR --> SPAN["shared literal text spans / independent styles / clipped end"]
+    SPAN --> VT
     HOST --> SCROLL["native scroll / WRITE access / code pages"]
     SCROLL --> MOVE["common CellRect / snapshot move / wide-pair invariants"]
     MOVE --> VT
@@ -1470,9 +1474,10 @@ legacy difference. This is not a wire- or version-universal equivalence claim.
 The temporary trace lives only in the ignored research directory.
 
 This is scoped support, not completion of all rectangular representations.
-Unflagged wide glyphs, orphan/clipped wide writes, differing wide-half styles,
-non-scalar UTF-16 CHAR_INFO, legacy grid attributes and multibyte A encodings
-remain explicitly unsupported pending their own representation/runtime work.
+Unflagged wide glyphs, orphan/clipped wide writes, non-scalar UTF-16 CHAR_INFO
+and legacy grid attributes remain explicitly unsupported. The later indexed-output
+leaf extends this initial scope with independent wide-half styles and CP936 DBCS
+A rectangles; other multibyte rectangle encodings require separate qualification.
 Complex-grapheme readback inherits the existing modern single-unit replacement
 policy; native historical variants need separate qualification. Large-screen
 clone/diff cost, expanded native version/ISA coverage, real TUI applications,
@@ -1580,3 +1585,92 @@ The minimal Windows ARM64 PTY/probe check passed with existing minimal-feature
 warnings. These are compile-only cross-target receipts; native non-host runtime,
 full legacy scroll behavior, packaging and default selection remain open.
 Exact source/log identities are in ignored scroll-output-final-receipt.json.
+
+### Accepted indexed-output leaf
+
+Invariant: WriteConsoleOutputCharacter A/W and WriteConsoleOutputAttribute use
+bounded coordinate-based edits of the existing common screen. Text preserves
+per-cell attributes; attributes preserve text/width. Cursor, drawing state,
+client grammar and history are unchanged. Shared code owns literal span layout
+and wide-row padding; the native adapter owns its 12-byte request, code pages,
+UTF-16/byte record counts, legacy flags, WRITE access and zero counts on failure.
+
+Evidence must combine independent SDK/system observations for cross-row spans,
+CJK, literal controls, OEM/UTF-8 text, end clipping, invalid origins, distinct
+attributes and restricted handles; shared tests must exercise retained grammar,
+wide healing and state, and native tests must prove sink-before-commit and
+bounded rejection. Actual managed-console regression remains part of the
+application frontier, with its exact APIs distinguished from SDK coverage.
+Safe failure rejects unrepresentable malformed UTF-16/legacy attributes before
+publication, never pretends a complete legacy UTF-16 cell model. Dependencies
+are existing readback/rectangle views, output ordering and shared literal edits.
+Hot files are host dispatch/screen edits and independent native fixtures.
+Multiple screen buffers, font rendering and default promotion remain separate
+parts of the overall backend rather than implied by this leaf.
+Primary contracts: [text](https://learn.microsoft.com/en-us/windows/console/writeconsoleoutputcharacter)
+and [attributes](https://learn.microsoft.com/en-us/windows/console/writeconsoleoutputattribute).
+
+The real managed move initially failed in ReadConsoleOutputA, not in the new
+indexed API: Windows PowerShell 5's framework selected ANSI rectangle calls.
+The accepted dependency extension is CP936 DBCS rectangle read/write: preserve
+lead/trail byte positions, both per-cell styles and scalar identity, reject
+orphan/incomplete/malformed pairs before commit, and prove SDK roundtrip plus
+actual Console.MoveBufferArea. General UTF-8 rectangle packing and every legacy
+DBCS boundary policy remain open; record any evidence-limited semantics.
+
+Indexed output now uses common write_cell_text/write_cell_styles and the existing
+bounded native commit helper. API 0x02000012 has COORD, StringType and NumRecords;
+input capture starts after its 12-byte body and 8-byte driver header. Records
+are cleared before access/capture errors. W returns consumed UTF-16 units;
+A converts through the current output CP and counts the converted prefix bytes.
+The one-MiB input/projection limits remain explicit. Unlike client streaming,
+malformed UTF-16 input fails before any screen commit. Supplementary scalars are
+retained by the common model, with native count/clipping unit coverage; old
+raw-surrogate cell layouts remain a separate representation frontier.
+
+The SDK fixture checks all physical CHAR_INFO cells, independent per-cell
+attributes, cross-row CJK/padding, literal controls/combining/replacement,
+CP437 and UTF-8 byte counts including clipped UTF-8, zero/invalid origins and
+READ-only/WRITE-only handles. The installed build 20348 returns error 87 for
+nonempty invalid origins, while the pinned modern FillConsoleImpl returns zero
+success there. Empty input remains success/zero. These observed version scopes
+are separate, rather than a claim of universal dispatcher parity.
+
+CP936 rectangle A support decodes coherent lead/trail bytes to one wide scalar,
+preserves distinct attributes in both cells, and rejects malformed/orphan pairs
+before publication. Readback returns the corresponding encoded byte per cell.
+The same pair validation now admits distinct W half-cell styles. The observed
+system 20348 ANSI roundtrip uses FFFF for the W trailing-cell character; our
+existing modern readback derives that character from the lead cell. The native
+byte pair, attributes and displayed scalar agree, while this raw legacy W layout
+remains a recorded difference. The SDK oracle branches explicitly for that build;
+owned readback must retain its canonical lead-derived representation.
+
+The real Windows PowerShell 5 managed Console.MoveBufferArea court uses explicit
+CP936 and moves a colored CJK array through ANSI rectangle/fill calls, reads it
+back and checks consumed PTY cells. Its initial failure and byte-restored RPC
+observation are recorded in indexed-output-managed-rpc.log; it is application
+coverage for those actual calls. Indexed-string coverage is supplied by the
+independent SDK court. Malformed pair/style and failed-sink units remain separate
+from the application trace. More code pages, half-wide native boundaries, native
+OS/ISA cells and full legacy representation compatibility remain open.
+
+Wide-half style preservation here is a native cell-metadata contract. A VT wide
+glyph is drawn from its lead style; independent tail-only visual formatting is
+not qualified as a separate glyph operation. The SDK/native readback oracle and
+the consumed terminal-cell oracle retain their distinct scopes.
+
+Final local indexed/DBCS qualification: indexed-output-final-suite.log records
+197 selected passes, including 17 alignment checks and six new tests. Ten runtime
+mutation cases in indexed-output-negative-audit.json prove shared text/styles,
+UTF-16 record counts, input budget, sink commit, pair validation, DBCS byte order,
+independent reference styles, WRITE access and capture offset. All guards were
+byte-restored, including the mutation that fails both the SDK and real managed
+application. Root fmt, default/experimental workspace all-target strict Clippy
+and standalone shared-parser strict Clippy passed. Updated library compile
+checks passed for Linux x86_64/aarch64, Windows aarch64 and macOS x86_64. Minimal
+Windows ARM64 PTY/probe compilation passed with existing minimal-feature warnings.
+These cross checks are compile-only; non-host native runtime, wider code-page/
+legacy-cell coverage, multiple buffers, packaging and default qualification stay
+open. Exact source, log hashes and remaining scope are recorded in ignored
+indexed-output-final-receipt.json.
