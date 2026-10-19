@@ -1,5 +1,7 @@
 //! Independent Win32 caller for the platform PTY integration court.
 #[cfg(windows)]
+mod ansi_input;
+#[cfg(windows)]
 mod buffer_family;
 #[cfg(windows)]
 mod buffer_vt;
@@ -72,6 +74,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode.starts_with("ansi-input-") {
+        return ansi_input::run(mode, std::path::Path::new(&arguments[1]));
+    }
     if mode.starts_with("input-flush-") {
         return input_flush::run(mode, std::path::Path::new(&arguments[1]));
     }

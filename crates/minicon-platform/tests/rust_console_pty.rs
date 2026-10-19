@@ -3919,6 +3919,114 @@ fn rust_console_pty_native_input_flush_bypasses_output_pressure() {
     }
 }
 
+fn ansi_input_report(kind: &str, rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(format!("ansi-input-{kind}"))
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.finish(0);
+    let observed = std::fs::read_to_string(&report.0).unwrap();
+    println!("ansi-input rust={rust};kind={kind}\n{observed}");
+    let (build, observed) = observed.split_once('\n').unwrap();
+    assert!(
+        build
+            .strip_prefix("build=")
+            .unwrap()
+            .parse::<u32>()
+            .unwrap()
+            > 0
+    );
+    observed.to_owned()
+}
+
+fn ansi_input_cases(rust: bool) {
+    let common = [
+        "single", "oem", "pair", "split", "rights", "codepage", "invalid", "utf8", "nonkey",
+        "pending",
+    ];
+    // Non-key trails produce variable key data on installed 20348. Their
+    // failed diagnostic receipts are retained; only the owned modern path is
+    // qualified for that case. The reference court covers the other 9 cases.
+    for kind in common.into_iter().filter(|kind| rust || *kind != "nonkey") {
+        let observed = ansi_input_report(kind, rust);
+        let simple = "K:1,3,65,30,233,16";
+        let pair = "K:1,3,65,30,20013,16";
+        let lead = "lead=0,0,258\nzero=0,0,258\n";
+        let expected = match kind {
+            "single" => ansi_record_snapshot(
+                "written=4\n",
+                "K:1,3,65,30,233,16|F:1|M:-2,3,5,8,1|K:0,3,66,31,65,17",
+                4,
+            ),
+            "oem" => ansi_record_snapshot("written=1\n", simple, 1),
+            "pair" => ansi_record_snapshot("written=1\n", pair, 1),
+            "split" => ansi_record_snapshot(&format!("{lead}written=1\n"), pair, 1),
+            "rights" => ansi_record_snapshot(
+                &format!("{lead}ro=0,5,0,0\nout=0,6,0,0\nbad=0,6,4294967295,0\nwritten=1\n"),
+                pair,
+                1,
+            ),
+            "codepage" => ansi_record_snapshot(
+                &format!("{lead}written=2\n"),
+                if rust {
+                    "K:1,3,65,30,8217,16|K:1,3,65,30,8224,16"
+                } else {
+                    "K:1,3,65,30,8217,16|K:1,3,66,31,8224,17"
+                },
+                2,
+            ),
+            "invalid" => ansi_record_snapshot("written=1\n", "K:1,3,65,30,12539,16", 1),
+            "utf8" => ansi_record_snapshot(
+                "written=3\n",
+                "K:1,3,65,30,65533,16|K:1,3,66,31,65533,17|K:1,3,67,32,65533,18",
+                3,
+            ),
+            "nonkey" => {
+                ansi_record_snapshot("batch=1\n", "K:1,3,67,32,90,18", 1)
+                    + &ansi_record_snapshot("split=2\n", "F:1|K:1,3,67,32,90,18", 2)
+            }
+            "pending" => format!("{lead}written=1\ntext=1,20013\n"),
+            _ => unreachable!(),
+        };
+        // Explicit old-build differences: modern pinned source preserves lead
+        // identity on CP change and skips non-key trails without union casts.
+        assert_eq!(observed, expected, "ANSI records: rust={rust}, kind={kind}");
+    }
+}
+
+#[test]
+fn rust_console_pty_ansi_input_records_preserve_codepages_prefixes_and_native_metadata() {
+    ansi_input_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY ANSI input-record differential court"]
+fn rust_console_client_ansi_input_record_writes_compare_system_conpty() {
+    ansi_input_cases(false);
+}
+
+#[test]
+fn rust_console_pty_ansi_input_record_capacity_is_checked_after_conversion_without_losing_prefix() {
+    let observed = ansi_input_report("capacity", true);
+    assert_eq!(
+        observed,
+        ansi_record_snapshot(
+            "lead=0,0,258\nzero=0,0,258\nfull=0,87,0,4095\nfit=1\npair-fit=1\nwritten=1\n",
+            "K:1,3,65,30,20013,16",
+            1
+        )
+    );
+}
+
+fn ansi_record_snapshot(prefix: &str, records: &str, count: usize) -> String {
+    format!("{prefix}queued={count},0\npeek={records}\nread={records}\nempty=0,258\n")
+}
+
 #[test]
 fn rust_console_pty_vt_mode_preserves_native_keys_and_text_sequences() {
     for (mode, expected) in [("vt-key", "1,1,38,72,256"), ("vt-text-key", "27,91,65")] {

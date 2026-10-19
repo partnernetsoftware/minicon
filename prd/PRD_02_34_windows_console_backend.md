@@ -28,6 +28,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
+│   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -118,7 +119,11 @@ flowchart LR
     HOST --> FOLLOW["vertical stream follow / two-axis native cursor commands / fixed metadata effects"]
     HOST --> LAYER["common displayed-stream activation / logical VT layer / pending grammar"]
     HOST --> TITLE["A/W title metadata / input code page / exact native reply counts"]
-    TITLE --> CODEC["Windows-private whole-string codec: titles / output / readback"]
+    TITLE --> CODEC["Windows-private whole-string codec: titles / output / readback / input records"]
+    INPUT --> ANSI["A record writes / typed conversion / current input CP"]
+    ANSI --> CODEC
+    ANSI --> CAP
+    ANSI --> LEAD["one retained DBCS lead / commit after converted admission"]
     TITLE --> TITLEOUT["common independent bounded title publication"]
     TITLE --> EVENTS["committed OSC title events / inactive stream effect publication"]
     TITLE --> INIT["staged initial title / admission / output readiness / accepted CONNECT"]
@@ -386,7 +391,7 @@ certification for all clients or OS releases.
 | GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
 | GetMode / SetMode | Store input modes/enforce echo dependency; configure output modes and mirror VT DECAWM in native output flags; explicit PTY defaults match system ConPTY. | Full flag validation, insert/history editing and broader mode/screen interactions. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
-| GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. Native client-written key/focus records and returned counts are tested. | ANSI input-record variants, remaining record types and broad application qualification. |
+| GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInput A/W | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. ANSI write conversion/admission and native evidence are owned by the input-record leaf below. | ANSI record reads/peeks, remaining record types and broad application qualification. |
 | GetScreenBufferInfo | Return selected-buffer geometry, cursor and scoped current drawing attributes from the shared screen; retain initial palette. Geometry, scrolling, multiple buffers and rectangle scope is specified below. | Palette mutation/RGB quantization, exact legacy layout, reflow and complete viewport-follow policy. |
 | SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | Full LVB mode/code-page gating and additional attribute/mode/API combinations. |
 | ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. Rectangle/literal/pressure scope is specified below. | Complete raw UTF-16 layout, all code-page/grapheme policies and every concurrent query/output ordering variant. |
@@ -2759,3 +2764,73 @@ compiler, six pinned reference files and executed client/probe/test images.
 Exploratory wrong-backend selection, UTF-8 prefix and CP932 failures are retained
 as diagnostics; they are not passing qualification. The general backend,
 portable session composition and default promotion remain incomplete.
+
+### ANSI input-record write leaf
+
+`WriteConsoleInputA` uses the current input code page, independently of output
+code pages. The Windows-private record module decodes the same bounded SDK
+records as the W path, uses the shared native whole-string codec, and stages a
+converted W-event batch plus at most one DBCS lead record. The lead is console
+input-buffer state: empty writes, a W write, creator-file close and input flush
+do not retire it. A later ANSI call joins a key trail using the current code
+page and the lead's key metadata. Native written counts describe converted
+events, including zero when only a prefix is retained.
+
+Admission bounds raw capture to 4,096 records and checks remaining queue space
+after conversion. A two-byte pair can occupy one free queue slot; a retained
+lead plus a new byte can expand to two events. Failure leaves both the existing
+queue and the retained prefix untouched, with zero returned native count. Only
+a successful admission commits the next prefix and services pending reads.
+READ-only input, output and invalid handles keep their native failure and do
+not consume the prefix. Event kinds unsupported by the existing W service still
+fail explicitly. No second keyboard queue or portable OS/code-page API is added.
+
+The behavioral reference is `src/host/directio.cpp` at the pinned Microsoft
+revision, with native Windows x86_64 build 20348 SDK receipts through
+`minicon-platform::pty`. Ordinary cases compare single-byte CP1252/437,
+CP932 pairs/split calls, repeated peeks and W record readback, key-up/repeat/
+virtual/scan/control metadata, focus/mouse, permissions, CP changes, invalid
+DBCS input, UTF-8 byte-record semantics and delivery to ReadConsoleW. This A
+record API decodes one byte or a DBCS pair; it is not a UTF-8 stream decoder.
+Public SDK contract:
+[WriteConsoleInput](https://learn.microsoft.com/en-us/windows/console/writeconsoleinput).
+
+Two reference differences are explicit. On a code-page change with a retained
+lead, pinned modern source assigns the lead's metadata to all converted units;
+20348 keeps the trail's metadata on its separate second unit. Exact expectations
+name each provider. A non-key trail after a DBCS lead produces varying fabricated
+key data on the installed reference in the exploratory receipts. Its comparison
+is unqualified; it is not normalized into a passing oracle. The owned path uses
+the pinned modern type checks: an in-batch non-key trail is skipped with the
+lead, while a non-key first event after a retained lead is processed normally
+and the lead is discarded. Owned tests cover both cases explicitly.
+
+Dependencies are native handle rights, the shared Windows codec, input-event
+bounds and pending-read ownership. ANSI record reads/peeks, general input queue
+coalescing, stateful code pages, processed-control interactions, all input union
+variants, simultaneous-reader fairness, non-host execution and backend promotion
+remain open.
+
+Local qualification: `ansi-record-final-focused.log` records three passes and
+20 native SDK scenarios: ten owned normal cases, nine system-reference cases
+and one owned capacity/rollback case. The tests are
+`rust_console_pty_ansi_input_records_preserve_codepages_prefixes_and_native_metadata`,
+`rust_console_client_ansi_input_record_writes_compare_system_conpty` and
+`rust_console_pty_ansi_input_record_capacity_is_checked_after_conversion_without_losing_prefix`.
+`ansi-record-final-suite.log` records 260 selected passes, including existing
+PowerShell/Node clients, private-Job lifecycle, output pressure, input flush and
+17 alignment checks. Twelve byte-restored runtime mutations cover input CP,
+byte masking, DBCS detection, retained/empty prefixes, key metadata, non-key
+trails, native counts, converted admission, failed-admission rollback, raw versus
+converted capacity and the independent reference fixture. No compilation-only
+failure is counted as a guard.
+
+Seven static/cross-target checks pass: strict default/enabled workspace
+all-targets Clippy, four portable-library targets and Windows ARM64 platform
+PTY/Rust-console all-targets compilation. Execution remains Windows x86_64
+build 20348; other targets are compile-only. Final documentation is followed by
+formatting and 17 alignment checks. `ansi-record-final-receipt.json` binds the
+final tree, source/guard/log hashes, compiler, three pinned reference files and
+executed client/probe/test image identities. The varying non-key reference
+diagnostics remain unqualified. General backend completion and promotion are
+still unproven.

@@ -1,0 +1,104 @@
+//! Windows input-record conversion, following pinned directio.cpp semantics.
+//! The codec is shared with native titles/output; event policy stays here.
+use super::{ConsoleInput, NOT_SUPPORTED};
+use crate::host::encoding;
+use windows_sys::Win32::Globalization::IsDBCSLeadByteEx;
+
+pub(super) fn decode(bytes: &[u8]) -> Result<Vec<ConsoleInput>, i32> {
+    bytes
+        .chunks_exact(20)
+        .map(|record| {
+            let word = |at| u16::from_le_bytes([record[at], record[at + 1]]);
+            let dword = |at| u32::from_le_bytes(record[at..at + 4].try_into().unwrap());
+            Ok(match word(0) {
+                1 => ConsoleInput::Key {
+                    down: dword(4) != 0,
+                    repeat: word(8),
+                    virtual_key: word(10),
+                    scan_code: word(12),
+                    character: word(14),
+                    controls: dword(16),
+                },
+                2 => ConsoleInput::Mouse {
+                    x: word(4) as i16,
+                    y: word(6) as i16,
+                    buttons: dword(8),
+                    controls: dword(12),
+                    flags: dword(16),
+                },
+                4 => ConsoleInput::Resize {
+                    columns: word(4) as i16,
+                    rows: word(6) as i16,
+                },
+                16 => ConsoleInput::Focus(dword(4) != 0),
+                _ => return Err(NOT_SUPPORTED),
+            })
+        })
+        .collect()
+}
+
+fn byte(event: ConsoleInput) -> Option<u8> {
+    if let ConsoleInput::Key { character, .. } = event {
+        Some(character as u8)
+    } else {
+        None
+    }
+}
+
+fn convert(code_page: u32, bytes: &[u8], mut event: ConsoleInput, output: &mut Vec<ConsoleInput>) {
+    // Native record writes skip a codec failure instead of failing the entire
+    // batch. Incomplete DBCS is handled before this per-record conversion.
+    for unit in encoding::decode(code_page, bytes).unwrap_or_default() {
+        if let ConsoleInput::Key { character, .. } = &mut event {
+            *character = unit;
+        }
+        output.push(event);
+    }
+}
+
+/// Stage both events and the next prefix. The caller commits them together
+/// only after admission, so a rejected batch cannot consume an earlier lead.
+pub(super) fn ansi(
+    code_page: u32,
+    events: &[ConsoleInput],
+    mut lead: Option<ConsoleInput>,
+) -> (Vec<ConsoleInput>, Option<ConsoleInput>) {
+    let mut output = Vec::with_capacity(events.len() + 1);
+    let mut events = events.iter().copied().peekable();
+    if events.peek().is_none() {
+        return (output, lead);
+    }
+    if let Some(prefix) = lead.take()
+        && let Some(trail) = events.peek().copied().and_then(byte)
+    {
+        convert(
+            code_page,
+            &[byte(prefix).unwrap(), trail],
+            prefix,
+            &mut output,
+        );
+        events.next();
+    }
+    while let Some(event) = events.next() {
+        let Some(first) = byte(event) else {
+            output.push(event);
+            continue;
+        };
+        // SAFETY: numeric code-page/byte query; no pointers or shared state.
+        if unsafe { IsDBCSLeadByteEx(code_page, first) } != 0 {
+            match events.next() {
+                None => {
+                    lead = Some(event);
+                    break;
+                }
+                Some(ConsoleInput::Key { character, .. }) => {
+                    convert(code_page, &[first, character as u8], event, &mut output);
+                }
+                _ => {}
+            }
+        } else {
+            convert(code_page, &[first], event, &mut output);
+        }
+    }
+    (output, lead)
+}

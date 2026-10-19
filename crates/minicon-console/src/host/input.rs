@@ -1,4 +1,5 @@
 //! Deferred console input. Requests retain their originating driver's lifetime.
+mod records;
 use super::*;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
@@ -42,6 +43,7 @@ pub(super) struct InputState<'session> {
     ready: VecDeque<u16>,
     ready_event_suppressed: bool,
     ansi_tail: BTreeMap<usize, VecDeque<u8>>,
+    ansi_write_lead: Option<ConsoleInput>,
     pending: VecDeque<PendingRead<'session>>,
 }
 
@@ -108,51 +110,28 @@ impl<'session> ConsoleHost<'session> {
             pending: false,
         };
         let length = descriptor.input_size.saturating_sub(body.len() as u32 + 8) as usize;
-        if receipt.status == SUCCESS {
-            if body[4] == 0 {
-                receipt.status = NOT_SUPPORTED;
-            } else if !length.is_multiple_of(20)
-                || length / 20 > MAX_EVENTS.saturating_sub(self.input.events.len())
-            {
-                receipt.status = INVALID_PARAMETER;
-            }
+        if receipt.status == SUCCESS && (!length.is_multiple_of(20) || length / 20 > MAX_EVENTS) {
+            receipt.status = INVALID_PARAMETER;
         }
         let mut events = Vec::new();
+        let mut lead = self.input.ansi_write_lead;
         if receipt.status == SUCCESS {
             let bytes = request.read_input(body.len() as u32 + 8, length)?;
-            for record in bytes.chunks_exact(20) {
-                let word = |at| u16::from_le_bytes([record[at], record[at + 1]]);
-                let signed = |at| word(at) as i16;
-                let event = match word(0) {
-                    1 => ConsoleInput::Key {
-                        down: read_u32(record, 4).unwrap() != 0,
-                        repeat: word(8),
-                        virtual_key: word(10),
-                        scan_code: word(12),
-                        character: word(14),
-                        controls: read_u32(record, 16).unwrap(),
-                    },
-                    2 => ConsoleInput::Mouse {
-                        x: signed(4),
-                        y: signed(6),
-                        buttons: read_u32(record, 8).unwrap(),
-                        controls: read_u32(record, 12).unwrap(),
-                        flags: read_u32(record, 16).unwrap(),
-                    },
-                    4 => ConsoleInput::Resize {
-                        columns: signed(4),
-                        rows: signed(6),
-                    },
-                    16 => ConsoleInput::Focus(read_u32(record, 4).unwrap() != 0),
-                    _ => {
-                        receipt.status = NOT_SUPPORTED;
-                        break;
-                    }
-                };
-                events.push(event);
+            match records::decode(&bytes) {
+                Ok(decoded) => events = decoded,
+                Err(status) => receipt.status = status,
             }
         }
+        if receipt.status == SUCCESS && body[4] == 0 {
+            (events, lead) = records::ansi(self.input_code_page, &events, lead);
+        }
+        if receipt.status == SUCCESS
+            && events.len() > MAX_EVENTS.saturating_sub(self.input.events.len())
+        {
+            receipt.status = INVALID_PARAMETER;
+        }
         if receipt.status == SUCCESS {
+            self.input.ansi_write_lead = lead;
             if body[5] != 0 {
                 self.input.events.extend(events.iter().copied());
             } else {
