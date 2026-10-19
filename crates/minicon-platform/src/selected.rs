@@ -1055,6 +1055,10 @@ pub(crate) mod pty;
 #[path = "adapters/windows/console_agent.rs"]
 pub(crate) mod console_agent;
 
+#[cfg(all(feature = "pty", windows))]
+#[path = "adapters/windows/console_input.rs"]
+mod console_input;
+
 /// The argument that starts the console agent, where this platform has one.
 #[cfg(all(feature = "pty", windows))]
 pub(crate) const CONSOLE_AGENT_ARGUMENT: Option<&str> = Some(console_agent::AGENT_ARGUMENT);

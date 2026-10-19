@@ -29,6 +29,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
+│   ├── [v] current input/output reopen, native access/duplicate/close probes
+│   ├── [v] scoped PowerShell 5/7 and Node TTY/readline native cases
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -55,6 +57,8 @@ flowchart LR
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
+    KEYS["shared Windows VT-key decoder"] --> ADAPTER
+    KEYS --> OLD["existing console-agent transport"]
     SRC["pinned public C++ source"] --> SPEC["API inventory and differential cases"]
     REA["REA: targeted binary evidence where needed"] --> SPEC
     SPEC --> HOST
@@ -209,13 +213,14 @@ certification for all clients or OS releases.
 | Driver/API operation | Current behavior | Remaining scope |
 |---|---|---|
 | CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, reclaim that client's records on disconnect. | General inherited/duplicated handles, attach/free-console and descendant lifecycle qualification. |
-| CLOSE_OBJECT | Validate ownership and retire the token. | Native create-object/access/share semantics are not implemented yet. |
+| CREATE_OBJECT / CLOSE_OBJECT | Open current input/output and unambiguous generic objects; retain native access/share metadata, enforce API access and retire known kernel-finalizer tokens even without a live process token. | Separate new screen buffers, other access masks, broad sharing and cross-process handle inheritance remain unqualified. Native Win32 CON opens on the measured kernel normalize share metadata to 3, including a requested share mode of zero. |
 | RAW_WRITE / WriteConsole | Capture actual client bytes, convert current code page or UTF-16 to UTF-8, send to the supplied writer, update screen state. | DBCS output fragments, processed-output/mode fidelity, pending surrogate at final stream end and complete output backpressure/cancellation. |
 | GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
 | GetMode / SetMode | Store buffer modes and enforce echo's line-input dependency; basic cooked/raw input consumes those modes. | Full mode validation, signals, insert/history editing and processed-output fidelity. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
-| GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass and native input-handle readiness. | ANSI input-record variants, WriteConsoleInput and broad application qualification. |
+| GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. Native client-written key/focus records and returned counts are tested. | ANSI input-record variants, remaining record types and broad application qualification. |
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
+| GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
 | Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Control signals, remaining layer APIs and GUI/product qualification. |
 
@@ -373,6 +378,86 @@ the named `pty-*-negative.log` files. These extend the earlier milestone's
 negative evidence rather than claiming its old source hashes describe this one.
 
 The measured native facade host reports Windows `10.0.20348`, build `20348`,
-x86_64. This evidence does not qualify PowerShell, Node/TUI clients,
-older Windows or Windows ARM64 runtime behavior. GUI integration, complete
-control signals and screen semantics remain required before promotion.
+x86_64. The following real-client milestone extends this scope; older Windows
+and Windows ARM64 runtime behavior remain unqualified. GUI integration,
+complete control signals and screen semantics remain required before promotion.
+
+### Real-client and native object milestone
+
+The native qualification command adds explicitly selected external courts:
+`scripts/build.sh test --features experimental-rust-console rust_console_ -- --include-ignored --nocapture`.
+Set `MINICON_TEST_WINDOWS_POWERSHELL`, `MINICON_TEST_PWSH` and
+`MINICON_TEST_NODE` to the absolute images being qualified. Their tests fail
+with `BLOCKED` when a requested image is missing; default execution leaves the
+five external/reference courts unrequested rather than counting them as passes.
+Clear `AGENTERM_FORCE_CONSOLE_AGENT` and `FORCE_CONSOLE_AGENT` in that test
+process for the reference court. It requires actual backend identity `conpty`;
+an inherited fallback override initially selected `console-agent` and was
+rejected, not accepted as reference evidence.
+
+The measured images are Windows PowerShell `5.1.20348.859`, PowerShell `7.4.2`
+and Node `v24.15.0`. `target/conhost-research/client-identities.json` records
+their observed runtime versions, file versions and SHA-256 values. Both
+PowerShell cases set UTF-8 input/output explicitly, read CJK plus an emoji and
+return an exact nonzero exit code. Node requires actual stdin/stdout TTYs and
+exercises raw Unicode delivery and readline cursor-left insertion (`ac`, left,
+`b` becomes `abc`). The scripts use `TERM=xterm-256color`, matching MiniCon's
+terminal launch; inherited `TERM=dumb` selected Node's simplified editor and
+was a rejected fixture configuration. This does not qualify PowerShell's full
+interactive editor, all default encodings, Node agent packages or general TUIs.
+
+`host/objects.rs` owns handle identity/access/share checks. Current-buffer
+CREATE_OBJECT completion transfers its token in native `Information`, rather
+than an output byte buffer, following the pinned
+[IoDispatchers](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/server/IoDispatchers.cpp).
+An unchanged Win32 fixture verifies read-only/write-only access failures,
+DuplicateHandle survival after original close, generic CON input, and 1050
+sequential open/close operations beyond the simultaneous handle cap. Its native
+result vector matches the explicitly opened system ConPTY reference. Requested
+Win32 share mode zero succeeds on this host and arrives at our server as share
+metadata 3; this is not evidence that exclusive native sharing has been proved.
+
+The cursor query exposes a concrete contract discrepancy: public
+[GetConsoleCursorInfo](https://learn.microsoft.com/en-us/windows/console/getconsolecursorinfo)
+documents READ access, but the measured 20348 server and pinned
+`ApiDispatchers.cpp` require WRITE. The differential fixture covers both handle
+directions; the implementation follows that observed/source-pinned behavior
+without claiming identical behavior across all Windows builds.
+
+Windows `console_input.rs` now owns the VT-key decoder used by both the legacy
+console agent and the owned adapter; its existing agent tests retain their
+identities. The owned worker uses it for escape keys while preserving its own
+complete UTF-8/UTF-16 text path. Native records retain key identity even with
+VT input mode enabled; only ReadConsole/ReadFile text delivery converts those
+keys into supported VT sequences. A native probe checks both API directions
+after a CSI prefix is split across acknowledged worker laps. Key modifiers,
+all function-key forms, mouse transport decoding and the legacy decoder's full
+Unicode behavior remain separate qualification obligations.
+
+`WriteConsoleInputW` now decodes bounded native records, preserves append versus
+prepend ordering, services actual waiting reads and returns the native count.
+This also supplies the input wakeup used by libuv when canceling a previous
+console read. The [Node v24.15.0 libuv source](https://github.com/nodejs/node/blob/v24.15.0/deps/uv/src/win/tty.c)
+was a source guide; no binary/source equivalence is claimed. Close finalizers
+remove the known handle's pending reads and byte tails before retiring it,
+and refresh the actual input-ready event.
+
+The expanded selector executes 46 targeted cases: the earlier 38, three more
+native platform cases, four external-client cases and one ConPTY differential
+case. Local positive evidence is `target/conhost-research/clients-positive-suite.log`.
+The final selector also includes `selected::console_agent::tests::` after `--`
+and executes the 29 existing agent unit cases, for 75 targeted cases in
+`clients-final-suite.log`. This is scoped regression evidence, not the full GUI
+or release court. Normal experimental execution without requested external
+courts executes 41 of these backend cases and leaves five unrequested.
+
+Twelve additional runtime negative controls cover current-buffer reopen for
+both PowerShell versions, Node cursor-query initialization, access checking,
+compatible share metadata, close-budget reclamation, native cursor permissions,
+shared arrows in both Node and the legacy agent, record payload/count, and VT
+text/record delivery. Source restoration is SHA-256 checked. An initial arrow
+mutation only caused a dead-code compile failure; it was replaced with a
+runtime mutation and the compile-only failure was excluded. Receipts are
+`target/conhost-research/client-negative-audit.json` and named
+`client-*-negative.log` files. Each earlier milestone's receipts retain their
+own source scope; they are not relabeled as evidence for this revision.

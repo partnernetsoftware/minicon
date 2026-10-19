@@ -65,6 +65,90 @@ struct PendingRead<'session> {
 }
 
 impl<'session> ConsoleHost<'session> {
+    pub(super) fn write_input_records(
+        &mut self,
+        request: DriverRequest<'session>,
+        mut body: Vec<u8>,
+        output: &mut impl Write,
+    ) -> io::Result<DispatchReceipt> {
+        let descriptor = request.descriptor;
+        let mut receipt = DispatchReceipt {
+            function: 7,
+            api: Some(0x0200_0010),
+            status: self.handle_status(
+                descriptor.process,
+                descriptor.object,
+                Some(HandleKind::Input),
+                objects::WRITE,
+            ),
+            pending: false,
+        };
+        let length = descriptor.input_size.saturating_sub(body.len() as u32 + 8) as usize;
+        if receipt.status == SUCCESS {
+            if body[4] == 0 {
+                receipt.status = NOT_SUPPORTED;
+            } else if !length.is_multiple_of(20)
+                || length / 20 > MAX_EVENTS.saturating_sub(self.input.events.len())
+            {
+                receipt.status = INVALID_PARAMETER;
+            }
+        }
+        let mut events = Vec::new();
+        if receipt.status == SUCCESS {
+            let bytes = request.read_input(body.len() as u32 + 8, length)?;
+            for record in bytes.chunks_exact(20) {
+                let word = |at| u16::from_le_bytes([record[at], record[at + 1]]);
+                let signed = |at| word(at) as i16;
+                let event = match word(0) {
+                    1 => ConsoleInput::Key {
+                        down: read_u32(record, 4).unwrap() != 0,
+                        repeat: word(8),
+                        virtual_key: word(10),
+                        scan_code: word(12),
+                        character: word(14),
+                        controls: read_u32(record, 16).unwrap(),
+                    },
+                    2 => ConsoleInput::Mouse {
+                        x: signed(4),
+                        y: signed(6),
+                        buttons: read_u32(record, 8).unwrap(),
+                        controls: read_u32(record, 12).unwrap(),
+                        flags: read_u32(record, 16).unwrap(),
+                    },
+                    4 => ConsoleInput::Resize {
+                        columns: signed(4),
+                        rows: signed(6),
+                    },
+                    16 => ConsoleInput::Focus(read_u32(record, 4).unwrap() != 0),
+                    _ => {
+                        receipt.status = NOT_SUPPORTED;
+                        break;
+                    }
+                };
+                events.push(event);
+            }
+        }
+        if receipt.status == SUCCESS {
+            if body[5] != 0 {
+                self.input.events.extend(events.iter().copied());
+            } else {
+                for event in events.iter().rev() {
+                    self.input.events.push_front(*event);
+                }
+            }
+            self.service_pending(output)?;
+            body[..4].copy_from_slice(&(events.len() as u32).to_le_bytes());
+        } else {
+            body[..4].fill(0);
+        }
+        request.complete(
+            receipt.status,
+            if receipt.status == SUCCESS { length } else { 0 },
+            &body,
+        )?;
+        Ok(receipt)
+    }
+
     pub fn pending_reads(&self) -> usize {
         self.input.pending.len()
     }
@@ -141,14 +225,6 @@ impl<'session> ConsoleHost<'session> {
         }
     }
 
-    pub(super) fn input_handle(&self, process: usize, object: usize) -> bool {
-        self.valid_handle(process, object)
-            && matches!(
-                self.handles.get(&object).map(|h| h.kind),
-                Some(HandleKind::Input)
-            )
-    }
-
     pub(super) fn defer_text_read(
         &mut self,
         request: DriverRequest<'session>,
@@ -175,8 +251,14 @@ impl<'session> ConsoleHost<'session> {
         } else {
             u16::from_le_bytes([body[2], body[3]]) as usize * 2
         };
-        if !self.input_handle(descriptor.process, descriptor.object) {
-            receipt.status = INVALID_HANDLE;
+        receipt.status = self.handle_status(
+            descriptor.process,
+            descriptor.object,
+            Some(HandleKind::Input),
+            objects::READ,
+        );
+        if receipt.status != SUCCESS {
+            // Preserve invalid-handle versus access-denied native errors.
         } else if capacity == 0
             || capacity > 1024 * 1024
             || (unicode && capacity < 2)
@@ -240,8 +322,14 @@ impl<'session> ConsoleHost<'session> {
             pending: false,
         };
         let flags = u16::from_le_bytes([body[4], body[5]]);
-        if !self.input_handle(request.descriptor.process, request.descriptor.object) {
-            receipt.status = INVALID_HANDLE;
+        receipt.status = self.handle_status(
+            request.descriptor.process,
+            request.descriptor.object,
+            Some(HandleKind::Input),
+            objects::READ,
+        );
+        if receipt.status != SUCCESS {
+            // Preserve the native handle/access result before buffer validation.
         } else if flags & !3 != 0
             || request
                 .descriptor
@@ -381,7 +469,7 @@ impl<'session> ConsoleHost<'session> {
             else {
                 continue;
             };
-            if repeat == 0 || character == 0 {
+            if repeat == 0 {
                 continue;
             }
             if repeat > 1 {
@@ -395,6 +483,31 @@ impl<'session> ConsoleHost<'session> {
                 });
             }
             read.controls = controls;
+            if character == 0 {
+                if self.input_mode & 0x200 != 0 {
+                    let sequence: &[u16] = match virtual_key {
+                        0x25 => &[27, 91, 68],
+                        0x26 => &[27, 91, 65],
+                        0x27 => &[27, 91, 67],
+                        0x28 => &[27, 91, 66],
+                        0x24 => &[27, 91, 72],
+                        0x23 => &[27, 91, 70],
+                        _ => &[],
+                    };
+                    if read.line.len() + sequence.len() > MAX_LINE {
+                        return Err(io::Error::new(
+                            io::ErrorKind::OutOfMemory,
+                            "console VT line budget exhausted",
+                        ));
+                    }
+                    read.line.extend(sequence);
+                    if !line_mode && !sequence.is_empty() {
+                        self.input.ready.extend(read.line.drain(..));
+                        return Ok(());
+                    }
+                }
+                continue;
+            }
             if character == 3 && self.input_mode & 1 != 0 {
                 return Err(io::Error::new(
                     io::ErrorKind::Unsupported,

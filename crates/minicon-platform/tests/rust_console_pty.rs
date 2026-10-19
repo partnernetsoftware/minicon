@@ -29,8 +29,12 @@ impl Fixture {
     }
 
     fn open(command: ChildCommand) -> Self {
+        Self::open_backend(command, "rust-console")
+    }
+
+    fn open_backend(command: ChildCommand, expected: &str) -> Self {
         let (mut master, child) = command.spawn().expect("open owned Rust PTY").into_parts();
-        assert_eq!(master.backend_kind(), "rust-console");
+        assert_eq!(master.backend_kind(), expected);
         let reader = master.try_clone_for_startup_reader().unwrap();
         let (send, output) = mpsc::channel();
         std::thread::spawn(move || {
@@ -89,6 +93,10 @@ impl Fixture {
                 .code(),
             Some(code)
         );
+        if self.master.backend_kind() == "conpty" {
+            // The system host retains its output pipe until HPCON close.
+            self.child.close_pseudoconsole();
+        }
         loop {
             match self.output.recv_timeout(Duration::from_secs(2)) {
                 Ok(chunk) => self
@@ -197,6 +205,165 @@ fn rust_console_pty_facade_job_cleanup_stops_a_nonreading_client() {
     assert_eq!(receipt.members_observed, 1);
     assert!(receipt.verified_empty);
     fixture.finish(1);
+}
+
+fn external_client(name: &str) -> PathBuf {
+    let image = PathBuf::from(std::env::var_os(name).unwrap_or_else(|| {
+        panic!("BLOCKED: {name} must name an explicitly selected native client")
+    }));
+    assert!(
+        image.is_absolute() && image.is_file(),
+        "BLOCKED: invalid {name}"
+    );
+    image
+}
+
+fn powershell_console_roundtrip(variable: &str) {
+    let script = "[Console]::InputEncoding=[Text.UTF8Encoding]::new();[Console]::OutputEncoding=[Text.UTF8Encoding]::new();[Console]::Write('ps-ready:');$value=[Console]::ReadLine();[Console]::WriteLine('ps-value='+$value);exit 27";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client(variable))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(script)
+            .env("TERM", "xterm-256color")
+            .rust_console(),
+    );
+    fixture.until("ps-ready:");
+    fixture.master.write_all("中😀\r".as_bytes()).unwrap();
+    fixture.finish(27);
+    let text = String::from_utf8_lossy(&fixture.bytes);
+    assert!(text.contains("ps-value=中😀"), "{text}");
+    assert!(!text.contains("Exception"), "{text}");
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_console_roundtrip() {
+    powershell_console_roundtrip("MINICON_TEST_WINDOWS_POWERSHELL");
+}
+
+#[test]
+#[ignore = "explicit external PowerShell 7 court; missing client is BLOCKED"]
+fn rust_console_client_powershell7_console_roundtrip() {
+    powershell_console_roundtrip("MINICON_TEST_PWSH");
+}
+
+#[test]
+#[ignore = "explicit external Node court; missing client is BLOCKED"]
+fn rust_console_client_node_raw_tty_unicode_roundtrip() {
+    let script = "process.stdout.write('node-tty:'+process.stdout.isTTY+','+process.stdin.isTTY+'\\n');process.stdin.setRawMode(true);process.stdout.write('node-ready:');let s='';process.stdin.on('data',d=>{s+=d;if(s.includes('\\r')){process.stdout.write('\\nnode-value:'+s.split('\\r')[0]+'\\n');process.stdin.pause();process.exitCode=29;}});";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client("MINICON_TEST_NODE"))
+            .arg("-e")
+            .arg(script)
+            .env("TERM", "xterm-256color")
+            .rust_console(),
+    );
+    fixture.until("node-ready:");
+    fixture.master.write_all("中😀\r".as_bytes()).unwrap();
+    fixture.finish(29);
+    let text = String::from_utf8_lossy(&fixture.bytes);
+    assert!(text.contains("node-tty:true,true"), "{text}");
+    assert!(text.contains("node-value:中😀"), "{text}");
+}
+
+#[test]
+#[ignore = "explicit external Node readline court; missing client is BLOCKED"]
+fn rust_console_client_node_readline_edits_a_line_in_the_tty() {
+    let script = "if(!process.stdin.isTTY||!process.stdout.isTTY)throw Error('TTY required');const rl=require('readline').createInterface({input:process.stdin,output:process.stdout,terminal:true});rl.question('node-edit-ready:',value=>{process.stdout.write('\\nnode-edited:'+value+'\\n');rl.close();process.exitCode=31;});";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client("MINICON_TEST_NODE"))
+            .arg("-e")
+            .arg(script)
+            .env("TERM", "xterm-256color")
+            .rust_console(),
+    );
+    fixture.until("node-edit-ready:");
+    fixture.master.write_all(b"ac\x1b[Db\r").unwrap();
+    fixture.finish(31);
+    let text = String::from_utf8_lossy(&fixture.bytes);
+    assert!(text.contains("node-edited:abc"), "{text}");
+}
+
+fn native_object_report(rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("objects")
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.finish(0);
+    std::fs::read_to_string(&report.0).unwrap()
+}
+
+#[test]
+fn rust_console_pty_native_objects_preserve_access_share_duplicates_and_close_budget() {
+    let report = native_object_report(true);
+    eprintln!("owned object report: {report}");
+    let values: Vec<u32> = report.split(',').map(|s| s.parse().unwrap()).collect();
+    assert_eq!(&values[..14], &[1, 0, 0, 5, 0, 5, 1, 0, 0, 5, 0, 5, 1, 0]);
+    assert_eq!(&values[14..], &[0, 5, 1, 0, 1, 0, 1, 0, 1, 0]);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY differential court; unavailable reference is BLOCKED"]
+fn rust_console_client_native_object_access_matches_the_system_conpty() {
+    let owned = native_object_report(true);
+    let reference = native_object_report(false);
+    eprintln!("owned objects: {owned}; system ConPTY objects: {reference}");
+    assert_eq!(owned, reference);
+}
+
+#[test]
+fn rust_console_pty_native_writeconsoleinput_roundtrips_actual_sdk_records() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("write-records")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.finish(0);
+    assert_eq!(
+        std::fs::read_to_string(&report.0).unwrap(),
+        "2,2,2,20013,3,16,0"
+    );
+}
+
+#[test]
+fn rust_console_pty_vt_mode_preserves_native_keys_and_text_sequences() {
+    for (mode, expected) in [("vt-key", "1,1,38,72,256"), ("vt-text-key", "27,91,65")] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(mode)
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("native-pty-probe-ready:");
+        assert_eq!(
+            fixture.child.native_input_ownership().unwrap(),
+            NativeInputOwnership::RawVt
+        );
+        fixture.master.write_all(b"\x1b[").unwrap();
+        for _ in 0..2 {
+            fixture
+                .master
+                .resize(TerminalSize { rows: 24, cols: 80 })
+                .unwrap();
+        }
+        fixture.master.write_all(b"A").unwrap();
+        fixture.finish(0);
+        assert_eq!(
+            std::fs::read_to_string(&report.0).unwrap(),
+            expected,
+            "{mode}"
+        );
+    }
 }
 
 #[test]

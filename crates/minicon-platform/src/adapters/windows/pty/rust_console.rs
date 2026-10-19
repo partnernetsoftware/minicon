@@ -234,6 +234,7 @@ fn serve(
     host.resize(size.cols, size.rows, &mut sink)?;
     let mut pending = Vec::new();
     let mut previous_cr = false;
+    let mut escape_wait = None;
     while !stop.load(Ordering::Acquire) {
         // Bound each lap so input cannot starve native request dispatch.
         for control in controls.try_iter().take(32) {
@@ -300,11 +301,74 @@ fn serve(
                 pending.extend_from_slice(&bytes[..count as usize]);
             }
         }
-        let valid = match std::str::from_utf8(&pending) {
+        let mut valid = match std::str::from_utf8(&pending) {
             Ok(text) => text.len(),
             Err(error) if error.error_len().is_none() => error.valid_up_to(),
             Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidData, error)),
         };
+        {
+            // VT transport becomes native key identity for record readers.
+            // The host converts keys back to sequences only for VT text reads.
+            if let Some(escape) = pending[..valid].iter().position(|byte| *byte == 27) {
+                if escape != 0 {
+                    valid = escape;
+                } else {
+                    let decoded = crate::selected::console_input::decode_key(&pending[..valid]);
+                    if let Some((key, used)) = decoded {
+                        let scan_code = match key.virtual_key {
+                            0x25 => 0x4b,
+                            0x26 => 0x48,
+                            0x27 => 0x4d,
+                            0x28 => 0x50,
+                            _ => 0,
+                        };
+                        let event = ConsoleInput::Key {
+                            down: true,
+                            repeat: 1,
+                            virtual_key: key.virtual_key,
+                            scan_code,
+                            character: key.unicode,
+                            controls: if scan_code != 0 {
+                                ENHANCED_KEY
+                            } else if key.control {
+                                8
+                            } else {
+                                0
+                            },
+                        };
+                        match host.enqueue_input(&[event], &mut sink) {
+                            Ok(_) => {
+                                pending.drain(..used);
+                                previous_cr = false;
+                                escape_wait = None;
+                            }
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                            Err(error) => return Err(error),
+                        }
+                        valid = 0;
+                    } else if pending.len() == 1 {
+                        let start = escape_wait.get_or_insert_with(Instant::now);
+                        // A lone Escape needs a finite distinction from a split CSI.
+                        if start.elapsed() < Duration::from_millis(30) {
+                            valid = 0;
+                        } else {
+                            escape_wait = None;
+                        }
+                    } else {
+                        if pending.len() > 128 {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "console escape sequence budget exceeded",
+                            ));
+                        }
+                        escape_wait = None;
+                        valid = 0;
+                    }
+                }
+            } else {
+                escape_wait = None;
+            }
+        }
         if valid != 0 {
             let mut cr = previous_cr;
             let text: String = std::str::from_utf8(&pending[..valid])

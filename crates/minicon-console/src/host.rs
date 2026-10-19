@@ -1,6 +1,7 @@
 //! Initial user-mode console API service; no system console host is used.
 use crate::{DriverRequest, DriverSession};
 mod input;
+mod objects;
 pub use input::ConsoleInput;
 use input::InputState;
 use std::collections::BTreeMap;
@@ -14,7 +15,7 @@ const INVALID_PARAMETER: i32 = 0xc000_000d_u32 as i32;
 const INVALID_HANDLE: i32 = 0xc000_0008_u32 as i32;
 const NOT_SUPPORTED: i32 = 0xc000_00bb_u32 as i32;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum HandleKind {
     Input,
     Output,
@@ -23,6 +24,8 @@ enum HandleKind {
 struct ClientHandle {
     process: usize,
     kind: HandleKind,
+    access: u32,
+    share: u32,
 }
 
 /// Observed dispatch outcome. Unsupported calls remain distinguishable.
@@ -178,6 +181,8 @@ impl<'session> ConsoleHost<'session> {
                         ClientHandle {
                             process,
                             kind: HandleKind::Input,
+                            access: objects::READ | objects::WRITE,
+                            share: 3,
                         },
                     );
                     self.handles.insert(
@@ -185,6 +190,8 @@ impl<'session> ConsoleHost<'session> {
                         ClientHandle {
                             process,
                             kind: HandleKind::Output,
+                            access: objects::READ | objects::WRITE,
+                            share: 3,
                         },
                     );
                 }
@@ -198,18 +205,29 @@ impl<'session> ConsoleHost<'session> {
                     .retain(|_, handle| handle.process != descriptor.process);
                 request.complete(receipt.status, 0, &[])?;
             }
+            3 => return self.create_object(request),
             4 => {
-                self.cancel_client_reads(descriptor.process, Some(descriptor.object));
-                if !self.valid_handle(descriptor.process, descriptor.object)
-                    || self.handles.remove(&descriptor.object).is_none()
+                // This is a kernel object finalizer, including closes after
+                // process disconnect; it need not carry a live process token.
+                if let Some(process) = self
+                    .handles
+                    .get(&descriptor.object)
+                    .map(|handle| handle.process)
                 {
-                    receipt.status = INVALID_HANDLE;
+                    self.cancel_client_reads(process, Some(descriptor.object));
+                    self.handles.remove(&descriptor.object);
                 }
+                self.update_input_event()?;
                 request.complete(receipt.status, 0, &[])?;
             }
             5 => {
-                if !self.output_handle(descriptor.process, descriptor.object) {
-                    receipt.status = INVALID_HANDLE;
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status != SUCCESS {
                     request.complete(receipt.status, 0, &[])?;
                 } else {
                     let bytes = request.read_input(0, descriptor.input_size as usize)?;
@@ -233,22 +251,6 @@ impl<'session> ConsoleHost<'session> {
             .checked_add(1)
             .ok_or_else(|| io::Error::other("console token space exhausted"))?;
         Ok(token)
-    }
-
-    fn valid_handle(&self, process: usize, object: usize) -> bool {
-        self.processes.contains_key(&process)
-            && self
-                .handles
-                .get(&object)
-                .is_some_and(|handle| handle.process == process)
-    }
-
-    fn output_handle(&self, process: usize, object: usize) -> bool {
-        self.valid_handle(process, object)
-            && matches!(
-                self.handles.get(&object).map(|h| h.kind),
-                Some(HandleKind::Output)
-            )
     }
 
     fn dispatch_api(
@@ -289,15 +291,22 @@ impl<'session> ConsoleHost<'session> {
         let mut information = 0;
         match api {
             0x0100_0003 if body.len() >= 4 => {
-                if !self.input_handle(descriptor.process, descriptor.object) {
-                    receipt.status = INVALID_HANDLE;
-                } else {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Input),
+                    objects::READ,
+                );
+                if receipt.status == SUCCESS {
                     body[..4].copy_from_slice(&(self.input.events.len() as u32).to_le_bytes());
                 }
             }
             0x0100_0004 if body.len() >= 8 => return self.defer_record_read(request, body, output),
             0x0100_0005 if body.len() >= 20 => {
                 return self.defer_text_read(request, body, false, output);
+            }
+            0x0200_0010 if body.len() >= 8 => {
+                return self.write_input_records(request, body, output);
             }
             0x0100_0000 if body.len() >= 8 => {
                 let code_page = if body[4] != 0 {
@@ -319,9 +328,17 @@ impl<'session> ConsoleHost<'session> {
                 }
             }
             0x0100_0001 | 0x0100_0002 if body.len() >= 4 => {
-                if !self.valid_handle(descriptor.process, descriptor.object) {
-                    receipt.status = INVALID_HANDLE;
-                } else {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    None,
+                    if api == 0x0100_0001 {
+                        objects::READ
+                    } else {
+                        objects::WRITE
+                    },
+                );
+                if receipt.status == SUCCESS {
                     let mode = match self.handles[&descriptor.object].kind {
                         HandleKind::Input => &mut self.input_mode,
                         HandleKind::Output => &mut self.output_mode,
@@ -342,9 +359,13 @@ impl<'session> ConsoleHost<'session> {
                 }
             }
             0x0100_0006 if body.len() >= 8 => {
-                if !self.output_handle(descriptor.process, descriptor.object) {
-                    receipt.status = INVALID_HANDLE;
-                } else {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
                     let offset = body_size + 8;
                     let length = descriptor.input_size - offset;
                     let bytes = request.read_input(offset, length as usize)?;
@@ -372,10 +393,49 @@ impl<'session> ConsoleHost<'session> {
                 // SAFETY: reads the current user's default language ID.
                 body[..2].copy_from_slice(&unsafe { GetUserDefaultLangID() }.to_le_bytes());
             }
+            0x0200_0005 if body.len() >= 8 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    // Actual 20348 server and pinned source require WRITE,
+                    // despite the public GetConsoleCursorInfo READ wording.
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
+                    body[..4].copy_from_slice(&25_u32.to_le_bytes());
+                    body[4] = u8::from(!self.screen.screen().hide_cursor());
+                }
+            }
+            0x0200_000a if body.len() >= 4 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS {
+                    let column = u16::from_le_bytes([body[0], body[1]]);
+                    let row = u16::from_le_bytes([body[2], body[3]]);
+                    let (rows, columns) = self.screen.screen().size();
+                    if column >= columns || row >= rows {
+                        receipt.status = INVALID_PARAMETER;
+                    } else {
+                        self.emit(
+                            format!("\x1b[{};{}H", row + 1, column + 1).as_bytes(),
+                            output,
+                        )?;
+                    }
+                }
+            }
             0x0200_0007 if body.len() >= 92 => {
-                if !self.output_handle(descriptor.process, descriptor.object) {
-                    receipt.status = INVALID_HANDLE;
-                } else {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::READ,
+                );
+                if receipt.status == SUCCESS {
                     let (rows, cols) = self.screen.screen().size();
                     let (row, col) = self.screen.screen().cursor_position();
                     body.fill(0);

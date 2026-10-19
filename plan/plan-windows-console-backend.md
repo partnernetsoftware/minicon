@@ -26,6 +26,8 @@ sequences that contract without assigning a release or changing current defaults
    native resize/key probes and output-capacity shutdown cover its first slice.
 6. [-] Initial native Windows x86_64 cmd/Unicode/session-isolation, deferred
    input, independent Win32 records and real job-tree teardown cases pass.
+   Scoped PowerShell 5/7, Node raw TTY/readline and system-ConPTY object/access
+   comparisons now extend the explicit experimental adapter evidence.
    Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.

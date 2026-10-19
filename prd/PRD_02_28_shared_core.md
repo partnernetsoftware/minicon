@@ -41,7 +41,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── numeric compatibility exports use core implementation
 │   └── opt-in features; a common facade does not imply equal availability
 ├── Experimental Windows console service — crates/minicon-console
-│   └── ConDrv/API/input/job mechanisms, owned vt100 reuse; explicit experimental PTY adapter
+│   └── ConDrv/object/API/input/job mechanisms, owned vt100 reuse; explicit experimental PTY adapter
 ├── Owned dependencies — third_party/
 │   ├── vt100: VT parsing, screen state and damage extensions
 │   └── softbuffer: native presentation backends
