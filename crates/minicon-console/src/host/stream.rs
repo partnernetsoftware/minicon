@@ -6,11 +6,11 @@ impl ConsoleHost<'_> {
     /// Publish an accepted unfinished tail only after the final native
     /// producer exits; no later native projection may follow.
     pub fn finish_output(&mut self, output: &mut impl Write) -> io::Result<()> {
-        self.output_framer.finish(output)
+        self.terminal.flush_final_tail(output)
     }
 
     pub(super) fn emit_framed(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        match self.output_framer.write(&mut self.screen, bytes, output) {
+        match self.terminal.write_output(bytes, output) {
             Ok(()) => {
                 self.sync_output_wrap();
                 Ok(())
@@ -24,20 +24,7 @@ impl ConsoleHost<'_> {
     }
 
     pub(super) fn emit_native(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        // Reuse the same parser implementation with a transient grammar for
-        // complete host commands, preserving the authoritative client decoder.
-        let mut native = vt100::Parser::new(1, 1, 0);
-        *native.screen_mut() = self.screen.screen().clone();
-        native.process(bytes);
-        if !native.at_boundary() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "unfinished native output command",
-            ));
-        }
-        output.write_all(bytes)?;
-        let (screen, ()) = native.into_parts();
-        *self.screen.screen_mut() = screen;
+        self.terminal.write_projection(bytes, output)?;
         self.sync_output_wrap();
         Ok(())
     }

@@ -28,7 +28,7 @@ impl ConsoleHost<'_> {
     }
 
     pub(super) fn text_attribute(&self) -> u16 {
-        let screen = self.screen.screen();
+        let screen = self.terminal.screen();
         legacy_attribute(
             screen.fgcolor(),
             screen.bgcolor(),
@@ -42,7 +42,7 @@ impl ConsoleHost<'_> {
     /// state aligned. PTY providers can choose their initial VT mode here.
     pub fn set_output_mode(&mut self, requested: u32, output: &mut impl Write) -> io::Result<()> {
         self.output_mode = requested;
-        if self.screen.screen().auto_wrap() != (requested & ENABLE_WRAP_AT_EOL_OUTPUT != 0) {
+        if self.terminal.screen().auto_wrap() != (requested & ENABLE_WRAP_AT_EOL_OUTPUT != 0) {
             self.emit_native(
                 if requested & ENABLE_WRAP_AT_EOL_OUTPUT != 0 {
                     b"\x1b[?7h"
@@ -60,7 +60,7 @@ impl ConsoleHost<'_> {
             if vt {
                 if byte == b'\n'
                     && self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
-                    && (!self.previous_output_cr || self.screen.screen().cursor_position().1 != 0)
+                    && (!self.previous_output_cr || self.terminal.screen().cursor_position().1 != 0)
                 {
                     self.emit(b"\r", output)?;
                 }
@@ -79,10 +79,10 @@ impl ConsoleHost<'_> {
                     0 => self.write_legacy_printable(b" ", output)?,
                     7 => self.emit(b"\x07", output)?,
                     8 => {
-                        let (row, column) = self.screen.screen().cursor_position();
+                        let (row, column) = self.terminal.screen().cursor_position();
                         let previous = column.saturating_sub(1);
                         let wide = self
-                            .screen
+                            .terminal
                             .screen()
                             .cell(row, previous)
                             .is_some_and(vt100::Cell::is_wide_continuation);
@@ -97,8 +97,8 @@ impl ConsoleHost<'_> {
                         )?;
                     }
                     9 => {
-                        let (_, columns) = self.screen.screen().size();
-                        let column = self.screen.screen().cursor_position().1.min(columns - 1);
+                        let (_, columns) = self.terminal.screen().size();
+                        let column = self.terminal.screen().cursor_position().1.min(columns - 1);
                         for _ in 0..(8 - column % 8).min(columns - column) {
                             self.write_legacy_printable(b" ", output)?;
                         }
@@ -106,7 +106,7 @@ impl ConsoleHost<'_> {
                     10 => {
                         if self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
                             && (!self.previous_output_cr
-                                || self.screen.screen().cursor_position().1 != 0)
+                                || self.terminal.screen().cursor_position().1 != 0)
                         {
                             self.emit(b"\r", output)?;
                         }
@@ -152,9 +152,9 @@ impl ConsoleHost<'_> {
 
     fn write_legacy_printable(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
         self.emit(bytes, output)?;
-        let (_, columns) = self.screen.screen().size();
+        let (_, columns) = self.terminal.screen().size();
         if self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0
-            && self.screen.screen().cursor_position().1 >= columns
+            && self.terminal.screen().cursor_position().1 >= columns
         {
             // Legacy console writes wrap immediately, including mode 0x0b;
             // only the VT path retains a delayed right-margin cursor.
@@ -222,7 +222,7 @@ impl ConsoleHost<'_> {
 
     pub(super) fn sync_output_wrap(&mut self) {
         self.output_mode = (self.output_mode & !ENABLE_WRAP_AT_EOL_OUTPUT)
-            | if self.screen.screen().auto_wrap() {
+            | if self.terminal.screen().auto_wrap() {
                 ENABLE_WRAP_AT_EOL_OUTPUT
             } else {
                 0
@@ -287,13 +287,13 @@ mod tests {
             let mut output = Vec::new();
             host.set_output_mode(mode, &mut output).unwrap();
             host.write_ansi(&[b'X', 0xe4], &mut output).unwrap();
-            assert_eq!(host.screen.screen().cursor_position(), (0, 1));
+            assert_eq!(host.terminal.screen().cursor_position(), (0, 1));
             host.write_ansi(&[0xb8, 0xad, b'\r'], &mut output).unwrap();
             host.write_ansi(&[b'\n', 0xf0, 0x9f], &mut output).unwrap();
-            assert_eq!(host.screen.screen().cursor_position(), (1, 0));
+            assert_eq!(host.terminal.screen().cursor_position(), (1, 0));
             host.write_ansi(&[0x98, 0x80], &mut output).unwrap();
             assert_eq!(output, "X中\r\n😀".as_bytes());
-            assert_eq!(host.screen.screen().cursor_position(), (1, 2));
+            assert_eq!(host.terminal.screen().cursor_position(), (1, 2));
         }
     }
 }

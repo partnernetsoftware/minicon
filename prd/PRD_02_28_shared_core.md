@@ -259,8 +259,9 @@ local tests and native receipts support only their recorded feature/cell scope.
   report capabilities and own shutdown/backpressure. Product tabs, settings,
   event loops and GUI painting policy must remain outside that facade.
 - [-] The facade owns its parser/framer pair, exposes screen edits without
-  decoder reset, and consumes itself on final-tail delivery. Native-host and GUI
-  migration, explicit session-discard receipts and process lifecycle remain open.
+  decoder reset, and consumes itself on final-tail delivery. The Windows host now
+  consumes this facade; GUI migration, explicit session-discard receipts and
+  portable process lifecycle remain open.
 - [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
   `adapters/unix/pty`; the macOS adapter currently imports the former file by
   path. Preserve distinct adapter identities and qualify both actual platforms.

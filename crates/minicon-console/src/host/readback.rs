@@ -20,7 +20,7 @@ impl ConsoleHost<'_> {
             return Err(NOT_SUPPORTED);
         }
         let amount = if kind == 1 { capacity } else { capacity / 2 };
-        let screen = self.screen.screen();
+        let screen = self.terminal.screen();
         let (rows, columns) = screen.size();
         if row >= rows || column >= columns || amount == 0 {
             return Ok(Vec::new());

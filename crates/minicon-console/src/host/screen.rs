@@ -19,7 +19,7 @@ impl ConsoleHost<'_> {
         if kind == 3 && element & !0xc0ff != 0 {
             return Ok(Err(NOT_SUPPORTED));
         }
-        let mut next = self.screen.screen().clone();
+        let mut next = self.terminal.screen().clone();
         let written = if kind == 3 {
             next.fill_cell_style(row, column, count, super::output::legacy_style(element))
         } else {
@@ -46,12 +46,12 @@ impl ConsoleHost<'_> {
         // A transient clone supports commit-after-output without a persistent
         // shadow screen. Do not feed the projection back into the client VT
         // grammar: that would lose literal cells and disturb partial commands.
-        let projection = next.contents_diff(self.screen.screen());
+        let projection = next.contents_diff(self.terminal.screen());
         if projection.len() > 1024 * 1024 {
             return Ok(Err(NOT_SUPPORTED));
         }
         output.write_all(&projection)?;
-        *self.screen.screen_mut() = next;
+        *self.terminal.screen_mut() = next;
         Ok(Ok(written))
     }
 }

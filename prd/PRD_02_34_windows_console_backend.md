@@ -1273,9 +1273,11 @@ Every new test has a runtime negative; the audit records restored source hashes.
 
 ### Mixed client output and native projections
 
-The host now uses shared `vt100::OutputFramer` to withhold unfinished client
+The host now owns `terminal::TerminalStream`, whose shared
+`vt100::OutputFramer` withholds unfinished client
 CSI/UTF-8/OSC/DCS commands. Complete native attribute/cursor commands use a
-transient parser over a cloned screen, commit only after sink success, and
+transient parser over a cloned screen through the common `write_projection()`
+API, commit only after sink success, and
 preserve the authoritative client decoder. Literal fill projections likewise
 reach a downstream parser at ground. C0 execution inside a pending command is
 published immediately and excluded from its retained bytes, preventing duplicate

@@ -48,6 +48,34 @@ impl<CB: Callbacks> TerminalStream<CB> {
         self.framer.write(&mut self.parser, bytes, sink)
     }
 
+    /// Publish a complete screen command using an independent transient
+    /// decoder. Client grammar and event callbacks are preserved. Projection
+    /// events are not delivered to client callbacks; this path is intended for
+    /// generated cursor, style and mode commands rather than client output.
+    /// An unfinished command is rejected before publication. Commit the
+    /// resulting screen only after the sink accepts the entire projection.
+    pub fn write_projection(&mut self, bytes: &[u8], sink: &mut impl Write) -> io::Result<()> {
+        let mut projection = vt100::Parser::new(1, 1, 0);
+        *projection.screen_mut() = self.screen().clone();
+        projection.process(bytes);
+        if !projection.at_boundary() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "unfinished terminal screen projection",
+            ));
+        }
+        sink.write_all(bytes)?;
+        let (screen, ()) = projection.into_parts();
+        *self.parser.screen_mut() = screen;
+        Ok(())
+    }
+
+    /// Whether no client VT command or UTF-8 scalar is unfinished.
+    #[must_use]
+    pub fn at_boundary(&self) -> bool {
+        self.parser.at_boundary()
+    }
+
     /// Current terminal cells, cursor and modes.
     #[must_use]
     pub fn screen(&self) -> &Screen {
@@ -80,14 +108,70 @@ impl<CB: Callbacks> TerminalStream<CB> {
     /// publishing any accepted incomplete tail. On failure the stream remains
     /// consumed: the caller must retire the transport rather than replay it.
     pub fn finish(mut self, sink: &mut impl Write) -> io::Result<(Screen, CB)> {
-        self.framer.finish(sink)?;
+        self.flush_final_tail(sink)?;
         Ok(self.parser.into_parts())
+    }
+
+    // Native host finalization retains its existing private-Job authority.
+    // Keep this borrowed operation crate-private; public owners consume finish.
+    pub(crate) fn flush_final_tail(&mut self, sink: &mut impl Write) -> io::Result<()> {
+        self.framer.finish(sink)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::TerminalStream;
+
+    #[test]
+    fn rust_console_terminal_projection_is_transactional_and_preserves_client_events() {
+        #[derive(Default)]
+        struct Bells(usize);
+        impl super::Callbacks for Bells {
+            fn audible_bell(&mut self, _: &mut super::Screen) {
+                self.0 += 1;
+            }
+        }
+        let mut terminal = TerminalStream::with_callbacks(3, 8, 0, 64, Bells::default());
+        let mut wire = Vec::new();
+        terminal.write_output(b"A\x07\x1b[3", &mut wire).unwrap();
+        let before = terminal.screen().state_formatted();
+        let command = b"\x1b[2;3H\x1b[32m";
+        struct Reject;
+        impl std::io::Write for Reject {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("reject before writing"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(terminal.write_projection(command, &mut Reject).is_err());
+        assert_eq!(terminal.screen().state_formatted(), before);
+        assert_eq!(terminal.pending_bytes(), b"\x1b[3");
+        assert!(!terminal.at_boundary());
+        let error = terminal
+            .write_projection(b"\x1b[2;", &mut wire)
+            .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(wire, b"A\x07");
+        terminal.write_projection(command, &mut wire).unwrap();
+        assert_eq!(terminal.callbacks().0, 1);
+        assert_eq!(terminal.pending_bytes(), b"\x1b[3");
+        terminal.write_output(b"1mB\x07", &mut wire).unwrap();
+        assert!(terminal.at_boundary());
+        assert_eq!(terminal.callbacks().0, 2);
+        let mut consumer = vt100::Parser::new(3, 8, 0);
+        consumer.process(&wire);
+        assert_eq!(terminal.screen().contents(), consumer.screen().contents());
+        assert_eq!(terminal.screen().cell(1, 2).unwrap().contents(), "B");
+        assert_eq!(
+            terminal.screen().cell(1, 2).unwrap().fgcolor(),
+            super::Color::Idx(1)
+        );
+        let (_, callbacks) = terminal.finish(&mut wire).unwrap();
+        assert_eq!(callbacks.0, 2);
+    }
 
     #[test]
     fn rust_console_terminal_stream_preserves_pending_grammar_across_screen_edits() {

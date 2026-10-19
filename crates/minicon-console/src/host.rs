@@ -63,8 +63,7 @@ pub struct ConsoleHost<'session> {
     output_code_page: u32,
     pending_high_surrogate: Option<u16>,
     previous_output_cr: bool,
-    output_framer: vt100::OutputFramer,
-    screen: vt100::Parser,
+    terminal: crate::terminal::TerminalStream,
     original_title: Vec<u16>,
     title: Vec<u16>,
     deferred_output: VecDeque<DriverRequest<'session>>,
@@ -88,8 +87,7 @@ impl Default for ConsoleHost<'_> {
             output_code_page: code_page,
             pending_high_surrogate: None,
             previous_output_cr: false,
-            output_framer: vt100::OutputFramer::new(65536),
-            screen: vt100::Parser::new(30, 120, 0),
+            terminal: crate::terminal::TerminalStream::new(30, 120, 0, 65536),
             original_title: Vec::new(),
             title: Vec::new(),
             deferred_output: VecDeque::new(),
@@ -160,7 +158,7 @@ impl<'session> ConsoleHost<'session> {
                 output,
             )?;
         }
-        self.screen.screen_mut().set_size(rows, columns);
+        self.terminal.screen_mut().set_size(rows, columns);
         Ok(())
     }
 
@@ -620,7 +618,7 @@ impl<'session> ConsoleHost<'session> {
                 );
                 if receipt.status == SUCCESS {
                     body[..4].copy_from_slice(&25_u32.to_le_bytes());
-                    body[4] = u8::from(!self.screen.screen().hide_cursor());
+                    body[4] = u8::from(!self.terminal.screen().hide_cursor());
                 }
             }
             0x0200_000a if body.len() >= 4 => {
@@ -633,7 +631,7 @@ impl<'session> ConsoleHost<'session> {
                 if receipt.status == SUCCESS {
                     let column = u16::from_le_bytes([body[0], body[1]]);
                     let row = u16::from_le_bytes([body[2], body[3]]);
-                    let (rows, columns) = self.screen.screen().size();
+                    let (rows, columns) = self.terminal.screen().size();
                     if column >= columns || row >= rows {
                         receipt.status = INVALID_PARAMETER;
                     } else {
@@ -668,8 +666,8 @@ impl<'session> ConsoleHost<'session> {
                     objects::READ,
                 );
                 if receipt.status == SUCCESS {
-                    let (rows, cols) = self.screen.screen().size();
-                    let (row, col) = self.screen.screen().cursor_position();
+                    let (rows, cols) = self.terminal.screen().size();
+                    let (row, col) = self.terminal.screen().cursor_position();
                     body.fill(0);
                     put_coord(&mut body, 0, cols, rows);
                     put_coord(&mut body, 4, col.min(cols.saturating_sub(1)), row);
@@ -820,7 +818,7 @@ mod tests {
         assert_eq!(output, "中".as_bytes());
         host.write_utf16([0xde00, 0x6587], &mut output).unwrap();
         assert_eq!(output, "中😀文".as_bytes());
-        assert_eq!(host.screen.screen().cursor_position(), (0, 6));
+        assert_eq!(host.terminal.screen().cursor_position(), (0, 6));
     }
 
     #[test]
@@ -847,34 +845,34 @@ mod tests {
         let mut host = ConsoleHost::new();
         let result = host.write_utf16([b'A' as u16], &mut FailedOutput);
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
-        assert_eq!(host.screen.screen().cursor_position(), (0, 0));
+        assert_eq!(host.terminal.screen().cursor_position(), (0, 0));
         let result = host.set_text_attribute(0xc012, &mut FailedOutput);
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
         assert_eq!(host.text_attribute(), 7);
         let result = host.fill_output(2, u16::from(b'X'), 0, 0, 1, &mut FailedOutput);
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
-        assert_eq!(host.screen.screen().cell(0, 0).unwrap().contents(), "");
+        assert_eq!(host.terminal.screen().cell(0, 0).unwrap().contents(), "");
         host.set_output_mode(7, &mut Vec::new()).unwrap();
         host.write_ansi(b"\x1b[3", &mut Vec::new()).unwrap();
-        assert!(!host.screen.at_boundary());
+        assert!(!host.terminal.at_boundary());
         let error = host
             .emit_native(b"\x1b[2;2H", &mut FailedOutput)
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
         let error = host.finish_output(&mut FailedOutput).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
-        assert_eq!(host.output_framer.pending_bytes(), b"\x1b[3");
-        assert_eq!(host.screen.screen().cursor_position(), (0, 0));
+        assert_eq!(host.terminal.pending_bytes(), b"\x1b[3");
+        assert_eq!(host.terminal.screen().cursor_position(), (0, 0));
         host.write_ansi(b"1", &mut Vec::new()).unwrap();
         let error = host.write_ansi(b"m", &mut FailedOutput).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
-        assert_eq!(host.output_framer.pending_bytes(), b"\x1b[31");
-        assert!(!host.screen.at_boundary());
+        assert_eq!(host.terminal.pending_bytes(), b"\x1b[31");
+        assert!(!host.terminal.at_boundary());
         let mut output = Vec::new();
         host.write_ansi(b"mX", &mut output).unwrap();
         assert_eq!(output, b"\x1b[31mX");
         assert_eq!(
-            host.screen.screen().cell(0, 0).unwrap().fgcolor(),
+            host.terminal.screen().cell(0, 0).unwrap().fgcolor(),
             vt100::Color::Idx(1)
         );
     }
