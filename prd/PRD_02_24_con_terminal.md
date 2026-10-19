@@ -30,6 +30,7 @@ minicon terminal and rendering
 │   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
+│   ├── [v] Invalid UTF-8 prefix recovery — visible replacement before native edits
 │   └── Visible replacement scalar — stream/error recovery and literal replay
 ├── Damage, raster and present
 ├── Fonts and glyphs (CJK, native faces)
@@ -56,6 +57,7 @@ flowchart LR
     EDIT --> DMG
     GRAM["owned vte: authoritative grammar / boundary preview"] --> VT
     GRAM --> FRAME["vt100 OutputFramer: bounded pending bytes / neutral errors"]
+    REC["UTF-8 prefix invalidation / transactional replacement / retained new grammar"] --> FRAME
     FRAME --> VT
     DMG --> RAS["raster<br/>font · CJK"]
     RAS --> PRES["native present"]
@@ -761,6 +763,28 @@ projection and cursor appearance without source mutation. Native/common-facade
 composition and its scoped runtime evidence belong to PRD 02.34 and 02.35.
 
 ## Bounded Unicode text publication
+
+### Invalid UTF-8 prefix recovery
+
+Invariant: invalidation of an unfinished UTF-8 prefix publishes its replacement
+before any new scalar/VT command or native edit; only the new unfinished grammar
+remains pending. This OS/ISA-neutral mechanism belongs to the shared lexer and
+framer, with the Windows host consuming it through TerminalStream. Evidence must
+cover raw and viewport publication, native interleaving, effects, final tails,
+pending limits and sink rejection through public APIs and a real SDK caller.
+Failure before writing preserves old grammar, screen, callbacks and pending
+bytes. Dependencies are the authoritative UTF-8 decoder and transactional
+publisher. Non-goals are raw malformed-byte identity, replacing decoder recovery
+rules, or claiming other ISA runtime from compilation. Valid frames retain their
+wire bytes; rejected incomplete prefixes may be canonically encoded as U+FFFD
+to leave the downstream decoder between frames.
+
+Named common evidence is stream_boundary_utf8_invalidation_distinguishes_replacement_from_valid_scalar,
+stream_boundary_utf8_recovery_is_transactional_and_preserves_decode_semantics
+and rust_console_terminal_malformed_utf8_recovery_precedes_native_edits. Scoped
+native/runtime and guard receipts belong to PRD 02.34's accepted prefix leaf.
+
+### Complete visual runs
 
 OutputFramer::text_prefix inspects a bounded complete UTF-8 drawing prefix using
 a transient clone of the exact owned VTE lexer and a private event classifier.

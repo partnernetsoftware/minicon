@@ -33,6 +33,8 @@ mod text_attributes;
 mod text_batch;
 #[cfg(windows)]
 mod unicode_output;
+#[cfg(windows)]
+mod utf8_recovery;
 #[cfg(not(windows))]
 fn main() {
     std::process::exit(2);
@@ -66,6 +68,12 @@ fn run() -> std::io::Result<()> {
             .parse::<u32>()
             .map_err(|_| std::io::ErrorKind::InvalidInput)?;
         return text_batch::run(std::path::Path::new(&arguments[1]), kind == "w", flags);
+    }
+    if mode == "utf8-recovery-raw" || mode == "utf8-recovery-mapped" {
+        return utf8_recovery::run(
+            std::path::Path::new(&arguments[1]),
+            mode.ends_with("mapped"),
+        );
     }
     if mode == "buffers" {
         return buffers::run(std::path::Path::new(&arguments[1]));

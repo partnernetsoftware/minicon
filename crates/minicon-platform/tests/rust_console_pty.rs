@@ -378,6 +378,56 @@ fn native_buffers(rust: bool) {
     );
 }
 
+#[test]
+fn rust_console_pty_malformed_utf8_recovery_survives_native_edits_and_exit() {
+    for mapped in [false, true] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(if mapped {
+                "utf8-recovery-mapped"
+            } else {
+                "utf8-recovery-raw"
+            })
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 3, cols: 8 })
+            .rust_console();
+        let mut fixture = Fixture::open(command);
+        report.wait_ready();
+        let mut peer = vt100::Parser::new(3, 8, 0);
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while peer.screen().cell(0, 0).unwrap().contents() != "\u{fffd}"
+            || peer.screen().cursor_position() != (1, 2)
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("early replacement and native cursor must reach peer")
+                .unwrap();
+            peer.process(&chunk);
+            fixture.bytes.extend(chunk);
+        }
+        assert!(peer.at_boundary());
+        std::fs::write(report.0.with_extension("go"), b"observed").unwrap();
+        fixture.finish(0);
+        let receipt = std::fs::read_to_string(&report.0).unwrap();
+        assert_eq!(
+            receipt,
+            format!("mapped={mapped};replacement=fffd;resumed=3042;tail=fffd")
+        );
+        let mut peer = vt100::Parser::new(3, 8, 0);
+        peer.process(&fixture.bytes);
+        assert_eq!(peer.screen().cell(0, 0).unwrap().contents(), "\u{fffd}");
+        assert_eq!(peer.screen().cell(1, 2).unwrap().contents(), "あ");
+        assert_eq!(peer.screen().cell(1, 4).unwrap().contents(), "\u{fffd}");
+        assert_eq!(peer.screen().cursor_position(), (2, 0));
+        assert!(
+            fixture.bytes.ends_with(b"\xe3"),
+            "only new unfinished grammar may reach the final tail"
+        );
+        assert!(!peer.at_boundary());
+    }
+}
+
 fn unicode_text_batches(rust: bool) {
     for mode in [7, 3, 15, 11] {
         for unicode in [true, false] {

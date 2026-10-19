@@ -83,6 +83,21 @@ impl<CB: crate::callbacks::Callbacks> Parser<CB> {
         self.parser = vte::Parser::new();
     }
 
+    // Stage canonical recovery with a fresh decoder. A publisher must retain
+    // its usual sink-before-screen-commit contract; restore old grammar if it
+    // rejects the publication. Screen/callback ownership is never replaced.
+    pub(crate) fn with_ground_input<T, E>(
+        &mut self,
+        publish: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let old = std::mem::take(&mut self.parser);
+        let result = publish(self);
+        if result.is_err() {
+            self.parser = old;
+        }
+        result
+    }
+
     /// Consume the parser, returning its screen and callback state without
     /// copying the grid. Any unfinished input grammar is discarded.
     #[must_use]

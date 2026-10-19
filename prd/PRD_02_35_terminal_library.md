@@ -15,6 +15,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   safe failure: bounded-frame error or explicit I/O failure; no silent truncation
 │   dependency: owned vt100/vte; non-goal: GUI/event loop or process spawning
 │   └── bounded encoded runs / read-only lexer text_prefix / shared scalar width
+│       └── invalid UTF-8 prefixes recover before native edits; new grammar stays pending
 ├── [-] Shared cell operations — terminal::CellRect / Screen region and literal spans
 │   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
 │   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
@@ -239,3 +240,9 @@ in its adapter. Low-level lexer, publication and scalar-width contracts belong
 to [terminal state](PRD_02_24_con_terminal.md#bounded-unicode-text-publication).
 Native bulk clients, system-layout differences and remaining compatibility scope
 belong to [Unicode publication](PRD_02_34_windows_console_backend.md#accepted-unicode-publication-leaf).
+
+Invalid UTF-8 prefix recovery also runs through the common facade in raw and
+mapped sessions. Rejected prefixes use canonical U+FFFD before the new input;
+valid frames retain their wire bytes. The mechanism and failure invariants belong
+to [shared recovery](PRD_02_24_con_terminal.md#invalid-utf-8-prefix-recovery), with
+native SDK interleaving/final-tail evidence owned by PRD 02.34.

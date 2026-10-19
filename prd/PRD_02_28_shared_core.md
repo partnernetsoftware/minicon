@@ -45,7 +45,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── numeric compatibility exports use core implementation
 │   └── opt-in features; a common facade does not imply equal availability
 ├── Independent terminal library — crates/minicon-console; PRD_02_35
-│   ├── terminal::TerminalStream / Utf16Decoder: OS/ISA-neutral state, framing, bounded text lookahead/batches and per-producer decoding
+│   ├── terminal::TerminalStream / Utf16Decoder: OS/ISA-neutral state, framing, bounded text runs, invalid-prefix recovery and per-producer decoding
 │   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
 ├── Owned dependencies — third_party/
 │   ├── vte: authoritative VT/UTF-8 grammar and side-effect-free boundary preview

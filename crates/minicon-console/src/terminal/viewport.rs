@@ -240,6 +240,91 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rust_console_terminal_malformed_utf8_recovery_precedes_native_edits() {
+        let mut terminal = TerminalStream::new(3, 16, 0, 64);
+        let mut view = TerminalViewport::full(3, 8);
+        let mut wire = Vec::new();
+        terminal
+            .write_output_viewport(&[0xe4, 0xb8], &mut view, false, 4096, &mut wire)
+            .unwrap();
+        terminal
+            .write_output_viewport(&[0xe3], &mut view, false, 4096, &mut wire)
+            .unwrap();
+        let mut peer = vt100::Parser::new(3, 8, 0);
+        peer.process(&wire);
+        assert_eq!(
+            peer.screen().contents(),
+            "\u{fffd}",
+            "replacement must be visible before the new scalar completes"
+        );
+        assert_eq!(terminal.pending_bytes(), &[0xe3]);
+        terminal
+            .write_viewport_projection(b"\x1b[2;3H", &mut view, false, 4096, &mut wire)
+            .unwrap();
+        terminal
+            .write_output_viewport(&[0x81, 0x82], &mut view, false, 4096, &mut wire)
+            .unwrap();
+        let (screen, ()) = terminal.finish(&mut wire).unwrap();
+        let mut peer = vt100::Parser::new(3, 8, 0);
+        peer.process(&wire);
+        assert_eq!(screen.cell(0, 0).unwrap().contents(), "\u{fffd}");
+        assert_eq!(screen.cell(1, 2).unwrap().contents(), "あ");
+        assert_eq!(peer.screen().contents(), screen.contents());
+        assert!(peer.at_boundary());
+
+        for suffix in [
+            &b"\xe3\x81\x82"[..],
+            &b"\x1b[31mZ"[..],
+            &b"\x07Z"[..],
+            &b"\xffZ"[..],
+            &b"A"[..],
+        ] {
+            let mut terminal = TerminalStream::new(3, 16, 0, 64);
+            let mut view = TerminalViewport::full(3, 8);
+            let mut wire = Vec::new();
+            terminal
+                .write_output_viewport(b"\xe4\xb8", &mut view, false, 4096, &mut wire)
+                .unwrap();
+            for &byte in suffix {
+                terminal
+                    .write_output_viewport(&[byte], &mut view, false, 4096, &mut wire)
+                    .unwrap();
+                let mut peer = vt100::Parser::new(3, 8, 0);
+                peer.process(&wire);
+                assert_eq!(
+                    peer.screen().state_formatted(),
+                    view.snapshot(terminal.screen()).unwrap().state_formatted()
+                );
+                assert!(peer.at_boundary());
+            }
+        }
+        let mut terminal = TerminalStream::new(3, 16, 0, 64);
+        let mut view = TerminalViewport::full(3, 8);
+        let mut wire = Vec::new();
+        terminal
+            .write_output_viewport(b"\xe4\xb8", &mut view, false, 4096, &mut wire)
+            .unwrap();
+        let before = terminal.screen().state_formatted();
+        assert!(
+            terminal
+                .write_output_viewport(b"\xe3", &mut view, false, 0, &mut wire)
+                .is_err()
+        );
+        assert_eq!(terminal.screen().state_formatted(), before);
+        assert_eq!(terminal.pending_bytes(), b"\xe4\xb8");
+        terminal
+            .write_output_viewport(b"\xe3", &mut view, false, 4096, &mut wire)
+            .unwrap();
+        let tail_start = wire.len();
+        let (screen, ()) = terminal.finish(&mut wire).unwrap();
+        assert_eq!(&wire[tail_start..], b"\xe3");
+        let mut peer = vt100::Parser::new(3, 8, 0);
+        peer.process(&wire);
+        assert_eq!(screen.contents(), "\u{fffd}");
+        assert_eq!(peer.screen().contents(), screen.contents());
+    }
+
+    #[test]
     fn rust_console_terminal_unicode_batches_preserve_effects_fragments_and_errors() {
         let mut terminal = TerminalStream::new(4, 128, 0, 64);
         let mut view = TerminalViewport::full(4, 64);

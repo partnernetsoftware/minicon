@@ -48,6 +48,8 @@ impl From<io::Error> for FrameError {
 /// do not directly process or reset that parser's input grammar while pending
 /// bytes exist. Screen-only edits preserve this relationship. This type has
 /// no OS status codes, native handles, threads or process-lifetime policy.
+/// A rejected incomplete UTF-8 prefix is published as canonical U+FFFD before
+/// the invalidating byte starts new input. Valid frames retain their wire bytes.
 pub struct OutputFramer {
     pending: Vec<u8>,
     limit: usize,
@@ -90,7 +92,8 @@ impl OutputFramer {
     }
 
     /// Publish frames and visual runs through a transactional adapter. Raw bytes are the
-    /// complete wire frame; delta contains only bytes not yet processed by the
+    /// complete wire frame (canonical U+FFFD for a rejected UTF-8 prefix);
+    /// delta contains only bytes not yet processed by the
     /// authoritative parser. The publisher must process/commit delta exactly
     /// once on success, preserving parser state on failure. Already executed
     /// C0 controls are excluded from a later retained frame.
@@ -133,8 +136,19 @@ impl OutputFramer {
                 remaining = &remaining[length..];
                 continue;
             }
-            remaining = rest;
             let progress = parser.preview_byte(byte);
+            if progress.invalidated_utf8 {
+                // Publish the rejected prefix independently, keeping the peer
+                // at ground before a new scalar, effect or native edit. Raw
+                // malformed prefix bytes cannot provide that boundary alone.
+                const REPLACEMENT: &[u8] = "\u{fffd}".as_bytes();
+                parser.with_ground_input(|parser| {
+                    publish(parser, REPLACEMENT, REPLACEMENT, output)
+                })?;
+                self.pending.clear();
+                continue;
+            }
+            remaining = rest;
             if progress.executed_control && !progress.at_boundary {
                 // Executed C0 controls do not belong to the retained grammar
                 // payload. The peer is at ground and executes each exactly once.
@@ -194,6 +208,87 @@ impl OutputFramer {
 #[cfg(test)]
 mod tests {
     use super::{FrameError, OutputFramer};
+
+    #[test]
+    fn stream_boundary_utf8_recovery_is_transactional_and_preserves_decode_semantics() {
+        #[derive(Default)]
+        struct Bells(usize);
+        impl crate::Callbacks for Bells {
+            fn audible_bell(&mut self, _: &mut crate::Screen) {
+                self.0 += 1;
+            }
+        }
+        for prefix in [
+            &b"\xe4"[..],
+            &b"\xe4\xb8"[..],
+            &b"\xef\xbf"[..],
+            &b"\xf0\x9f\x98"[..],
+            &b"\xe0"[..],
+        ] {
+            for suffix in [
+                &b"\xe3\x81\x82"[..],
+                &b"\x1b[31mZ"[..],
+                &b"\x07Z"[..],
+                &b"\xffZ"[..],
+                &b"A"[..],
+                &b"\x80Z"[..],
+            ] {
+                let mut parser = crate::Parser::new_with_callbacks(3, 16, 0, Bells::default());
+                let mut direct = crate::Parser::new_with_callbacks(3, 16, 0, Bells::default());
+                let mut framer = OutputFramer::new(64);
+                let mut wire = Vec::new();
+                for &byte in prefix.iter().chain(suffix) {
+                    framer.write(&mut parser, &[byte], &mut wire).unwrap();
+                    direct.process(&[byte]);
+                    assert_eq!(
+                        parser.screen().state_formatted(),
+                        direct.screen().state_formatted()
+                    );
+                    assert_eq!(parser.callbacks().0, direct.callbacks().0);
+                }
+                let mut peer = crate::Parser::new_with_callbacks(3, 16, 0, Bells::default());
+                peer.process(&wire);
+                assert_eq!(
+                    peer.screen().state_formatted(),
+                    parser.screen().state_formatted()
+                );
+                assert_eq!(peer.callbacks().0, parser.callbacks().0);
+                assert!(peer.at_boundary());
+            }
+        }
+        let mut parser = crate::Parser::new(3, 16, 0);
+        let mut framer = OutputFramer::new(3);
+        let mut wire = Vec::new();
+        framer.write(&mut parser, b"\xe4\xb8", &mut wire).unwrap();
+        let before = parser.screen().state_formatted();
+        assert!(framer.write(&mut parser, b"\xe3", &mut Reject).is_err());
+        assert_eq!(framer.pending_bytes(), b"\xe4\xb8");
+        assert!(!parser.at_boundary());
+        assert_eq!(parser.screen().state_formatted(), before);
+        // Retry a different byte: rollback must restore the exact old prefix.
+        framer.write(&mut parser, b"\xad", &mut wire).unwrap();
+        assert_eq!(wire, "中".as_bytes());
+        assert_eq!(parser.screen().contents(), "中");
+        framer
+            .write(&mut parser, b"\xe4\xb8\xe3", &mut wire)
+            .unwrap();
+        assert_eq!(framer.pending_bytes(), b"\xe3");
+        let before_tail = wire.len();
+        framer.finish(&mut wire).unwrap();
+        assert_eq!(&wire[before_tail..], b"\xe3");
+        assert_eq!(parser.screen().contents(), "中\u{fffd}");
+        let mut parser = crate::Parser::new(3, 16, 0);
+        let mut framer = OutputFramer::new(2);
+        // A two-byte pending budget deliberately rejects a three-byte scalar.
+        // Recoverable rejection leaves no staged grammar or visual mutation.
+        assert!(matches!(
+            framer.write(&mut parser, b"\xe4\xb8\xad", &mut wire),
+            Err(FrameError::PendingLimit)
+        ));
+        assert!(parser.at_boundary());
+        assert!(framer.pending_bytes().is_empty());
+        assert_eq!(parser.screen().contents(), "");
+    }
 
     #[test]
     fn stream_boundary_unicode_runs_bound_publications_and_preserve_wire() {

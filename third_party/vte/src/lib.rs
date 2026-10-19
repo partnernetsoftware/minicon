@@ -52,6 +52,9 @@ pub struct ParseProgress {
     pub at_boundary: bool,
     /// This byte executes an immediate control rather than string payload.
     pub executed_control: bool,
+    /// The existing unfinished UTF-8 prefix becomes invalid before this byte
+    /// is reprocessed as new input. The prefix produces one replacement.
+    pub invalidated_utf8: bool,
 }
 
 struct ControlObserver(bool);
@@ -104,12 +107,26 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     /// string data; callers should bound string input when using the std mode.
     #[must_use]
     pub fn preview_byte(&self, byte: u8) -> ParseProgress {
+        let invalidated_utf8 = if self.partial_utf8_len != 0 {
+            let mut encoded = self.partial_utf8;
+            encoded[self.partial_utf8_len] = byte;
+            // Use the same UTF-8 validator as advance_partial_utf8. Previously
+            // accepted bytes are a valid incomplete prefix, so an error with
+            // a known length rejects that prefix before reprocessing byte.
+            matches!(
+                str::from_utf8(&encoded[..self.partial_utf8_len + 1]),
+                Err(error) if error.error_len().is_some()
+            )
+        } else {
+            false
+        };
         let mut next = self.clone();
         let mut observer = ControlObserver(false);
         next.advance(&mut observer, &[byte]);
         ParseProgress {
             at_boundary: next.at_boundary(),
             executed_control: observer.0,
+            invalidated_utf8,
         }
     }
 
@@ -877,6 +894,36 @@ extern crate std;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stream_boundary_utf8_invalidation_distinguishes_replacement_from_valid_scalar() {
+        for (prefix, byte, invalid) in [
+            (&b"\xe4\xb8"[..], 0xe3, true),
+            (&b"\xe4\xb8"[..], 0x1b, true),
+            (&b"\xe4\xb8"[..], 7, true),
+            (&b"\xe4\xb8"[..], 0xff, true),
+            (&b"\xe0"[..], 0x80, true),
+            (&b"\xed"[..], 0xa0, true),
+            (&b"\xf4"[..], 0x90, true),
+            (&b"\xe4\xb8"[..], 0xad, false),
+            (&b"\xef\xbf"[..], 0xbd, false),
+            (&b"\xf0\x9f\x98"[..], 0x80, false),
+            (&b"\x1b["[..], b'm', false),
+        ] {
+            let mut parser = super::Parser::new();
+            let mut observer = super::ControlObserver(false);
+            parser.advance(&mut observer, prefix);
+            assert_eq!(
+                parser.preview_byte(byte).invalidated_utf8,
+                invalid,
+                "{prefix:x?} {byte:x}"
+            );
+            assert!(
+                !parser.at_boundary(),
+                "preview must preserve the original grammar"
+            );
+        }
+    }
+
     #[test]
     fn stream_boundary_preview_uses_real_grammar_and_isolates_state() {
         let mut parser = super::Parser::new();

@@ -52,6 +52,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] native geometry: buffer versus viewport versus parent PTY dimensions
 │   ├── [-] multiple native buffers: stable handle binding, inactive state and active publication
 │   ├── [-] bounded Unicode publication batches over the shared lexer and scalar-width policy
+│   ├── [-] canonical invalid UTF-8 prefix recovery before native edits and exit
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -103,6 +104,7 @@ flowchart LR
     BUFFERS --> VIEW
     BUFFERS --> BIND["CONOUT open / duplicate lifetime / active-close fallback"]
     HOST --> BATCH["bounded UTF-16/UTF-8 text batches / native newline and margin translation"]
+    BATCH --> RECOVERY["shared invalid-prefix boundary / canonical replacement / retained new grammar"]
     BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
@@ -1986,9 +1988,9 @@ and observed runtime guard failures. Safe failure retains staged commit after
 sink acceptance and the existing pending/projection bounds. Dependencies are
 common framing, viewport projection and native text modes. Non-goals: claiming
 all control-heavy/large-grid performance or other-ISA runtime from one host.
-Malformed UTF-8 that prints replacement text before its new grammar boundary
-also requires explicit mapped-publication/final-tail qualification; valid-text
-batching must not silently redefine that recovery contract.
+Malformed UTF-8 recovery is qualified independently of valid-text batching;
+the accepted prefix-invalidation leaf below owns its interleaving/final-tail
+evidence and the intentional canonical encoding of rejected prefixes.
 
 The native UTF-16 producer now collects bounded UTF-8 runs for all sessions,
 including unmapped output. Native UTF-8 writes resume shared text lookahead after
@@ -2046,3 +2048,47 @@ An earlier serial suite timed out at the installed system ConPTY cursor fence
 (`rust=false`, `bar-hide`); its isolated recheck and the subsequent full serial
 suite passed without code or timeout changes. This reference-host timing finding
 does not establish a backend regression or resolve the reference's reliability.
+
+### Accepted invalid UTF-8 prefix-invalidation leaf
+
+Invariant: a rejected unfinished prefix publishes one replacement before a new
+UTF-8 scalar, VT frame, effect or native edit. Only the new unfinished grammar
+is retained for final output. The shared lexer reports prefix invalidation using
+the same UTF-8 validator as its decoder; the shared framer stages recovery with
+fresh input grammar and restores the original lexer on sink rejection. Native
+code consumes the existing TerminalStream paths without another decoder.
+
+Evidence: public common-facade raw/viewport tests compare incremental state,
+effects, cursor/style, native interleaving and final tails; raw recovery rejection
+is retried with a different byte that must complete the original scalar. Actual
+WriteFile/ReadConsoleOutputCharacterW/SetConsoleCursorPosition clients exercise
+both raw and expanded-buffer sessions, observing the first replacement before
+allowing continuation and then exiting with a new unfinished prefix. Safe
+failure retains original pending bytes, screen and grammar before publication;
+projection limits and accepted earlier frames retain their existing contracts.
+Dependency: shared grammar/transactional publication. Non-goals: malformed raw
+byte identity, system-host malformed decoding parity, all legacy margin policy,
+or non-host ISA runtime certification.
+
+The initial public-facade reproduction (`utf8-recovery-red.log`) accepted
+E4 B8 E3: authoritative state had U+FFFD, while the projected peer was empty.
+The old retained prefix could also be replayed by finalization after the source
+had already applied its replacement. Recovery now canonically publishes U+FFFD
+for E4 B8 before retaining E3, leaving the peer at ground for native edits.
+Completing E3 81 82 after native cursor movement writes the same U+3042 to native
+readback and peer cells. Finalization forwards only the new unfinished prefix.
+The common mechanism and valid-frame byte-preservation boundary belong to
+[PRD 02.24](PRD_02_24_con_terminal.md#invalid-utf-8-prefix-recovery).
+
+Local receipts: `utf8-recovery-final-suite.log` records 231 selected passes,
+including 17 alignment checks; `utf8-recovery-final-focused.log` records all four
+new tests separately. Seven byte-restored guard mutations produce runtime
+failures covering every new test. Ten checks passed: default/enabled workspace
+strict all-targets Clippy, both standalone parsers' strict all-targets Clippy,
+the lexer no-std library build, four common-library cross-target builds and the
+Windows ARM64 platform PTY/Rust-console all-targets build. The standalone lexer
+MSRV lint caught a too-new helper; the final implementation preserves its
+existing Rust-version declaration. Cross-target results are compilation only;
+native SDK execution is Windows x86_64. `utf8-recovery-final-receipt.json` binds
+the source tree, guard/check/log hashes, compiler, executable identities and
+remaining scope. Final documentation edits are followed by alignment checks.
