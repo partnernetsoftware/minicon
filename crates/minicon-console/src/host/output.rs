@@ -54,60 +54,17 @@ impl ConsoleHost<'_> {
         }
         Ok(())
     }
-    fn write_output_bytes(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
-        // A viewport transaction clones the drawing state once per published
-        // batch. Keep ordinary ASCII runs together, including deterministic
-        // CR/LF translation, instead of cloning a large buffer per glyph.
-        if self.viewport.is_some()
-            && self.terminal.at_boundary()
-            && (self.terminal.screen().cursor_position().1 < self.terminal.screen().size().1
-                || self.output_mode & VT_OUTPUT == VT_OUTPUT)
-            && bytes.iter().all(|b| {
-                (32..127).contains(b)
-                    || self.output_mode & ENABLE_PROCESSED_OUTPUT != 0
-                        && matches!(*b, b'\r' | b'\n')
-            })
-        {
-            let vt = self.output_mode & VT_OUTPUT == VT_OUTPUT;
-            let wrap = self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0;
-            let columns = self.terminal.screen().size().1;
-            let mut column = self.terminal.screen().cursor_position().1;
-            let mut previous_cr = self.previous_output_cr;
-            let mut translated = Vec::with_capacity(bytes.len());
-            for &byte in bytes {
-                match byte {
-                    b'\r' => {
-                        translated.push(byte);
-                        column = 0;
-                    }
-                    b'\n' => {
-                        if self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
-                            && (!previous_cr || column != 0)
-                        {
-                            translated.push(b'\r');
-                            column = 0;
-                        }
-                        translated.push(byte);
-                    }
-                    _ => {
-                        translated.push(byte);
-                        column = column.saturating_add(1);
-                        if !vt && wrap && column >= columns {
-                            translated.extend_from_slice(b"\r\n");
-                            column = 0;
-                        } else if !wrap {
-                            column = column.min(columns - 1);
-                        }
-                    }
-                }
-                previous_cr = byte == b'\r';
+    fn write_output_bytes(&mut self, mut bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
+        while let Some((&byte, rest)) = bytes.split_first() {
+            let length = self
+                .terminal
+                .text_prefix(bytes, self.output_mode & ENABLE_PROCESSED_OUTPUT != 0);
+            if length != 0 {
+                self.write_text_batch(&bytes[..length], output)?;
+                bytes = &bytes[length..];
+                continue;
             }
-            self.emit_framed(&translated, output)?;
-            self.previous_output_cr = previous_cr;
-            return Ok(());
-        }
-
-        for &byte in bytes {
+            bytes = rest;
             let vt = self.output_mode & VT_OUTPUT == VT_OUTPUT;
             if vt {
                 if byte == b'\n'
@@ -202,10 +159,62 @@ impl ConsoleHost<'_> {
         Ok(())
     }
 
+    fn write_text_batch(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "non-UTF-8 text prefix"))?;
+        let vt = self.output_mode & VT_OUTPUT == VT_OUTPUT;
+        let wrap = self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0;
+        let columns = self.terminal.screen().size().1;
+        let mut column = self.terminal.screen().cursor_position().1;
+        let mut previous_cr = self.previous_output_cr;
+        let mut translated = Vec::with_capacity(bytes.len());
+        for character in text.chars() {
+            match character {
+                '\r' => {
+                    translated.push(b'\r');
+                    column = 0;
+                }
+                '\n' => {
+                    if self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
+                        && (!previous_cr || column != 0)
+                    {
+                        translated.push(b'\r');
+                        column = 0;
+                    }
+                    translated.push(b'\n');
+                }
+                _ => {
+                    let mut encoded = [0; 4];
+                    translated.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
+                    let width = crate::terminal::Screen::scalar_width(character).unwrap_or(0);
+                    if width <= columns {
+                        if wrap {
+                            if column > columns - width {
+                                column = 0;
+                            }
+                            column += width;
+                        } else if column <= columns - width {
+                            column = (column + width).min(columns - 1);
+                        }
+                    }
+                    if !vt && wrap && column >= columns {
+                        translated.extend_from_slice(b"\r\n");
+                        column = 0;
+                    }
+                }
+            }
+            previous_cr = character == '\r';
+        }
+        self.emit_framed(&translated, output)?;
+        self.previous_output_cr = previous_cr;
+        Ok(())
+    }
+
     fn write_legacy_printable(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
         self.emit(bytes, output)?;
         let (_, columns) = self.terminal.screen().size();
-        if self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0
+        if self.terminal.at_boundary()
+            && self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0
             && self.terminal.screen().cursor_position().1 >= columns
         {
             // Legacy console writes wrap immediately, including mode 0x0b;
@@ -246,34 +255,30 @@ impl ConsoleHost<'_> {
         units: impl IntoIterator<Item = u16>,
         output: &mut impl Write,
     ) -> io::Result<()> {
-        if self.viewport.is_some() {
-            let mut run = Vec::new();
-            for unit in units {
-                for character in self.output_decoder.push(unit) {
-                    if character.is_ascii()
-                        && ((32..127).contains(&(character as u8))
-                            || self.output_mode & ENABLE_PROCESSED_OUTPUT != 0
-                                && matches!(character, '\r' | '\n'))
-                    {
-                        run.push(character as u8);
-                    } else {
-                        if !run.is_empty() {
-                            self.write_output_bytes(&run, output)?;
-                            run.clear();
-                        }
-                        self.emit_char(character, output)?;
+        let mut run = Vec::new();
+        for unit in units {
+            for character in self.output_decoder.push(unit) {
+                if !character.is_control()
+                    || (self.output_mode & ENABLE_PROCESSED_OUTPUT != 0
+                        && matches!(character, '\r' | '\n'))
+                {
+                    if run.len() + character.len_utf8() > crate::terminal::TEXT_BATCH_BYTES {
+                        self.write_output_bytes(&run, output)?;
+                        run.clear();
                     }
-                }
-            }
-            if !run.is_empty() {
-                self.write_output_bytes(&run, output)?;
-            }
-        } else {
-            for unit in units {
-                for character in self.output_decoder.push(unit) {
+                    let mut encoded = [0; 4];
+                    run.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
+                } else {
+                    if !run.is_empty() {
+                        self.write_output_bytes(&run, output)?;
+                        run.clear();
+                    }
                     self.emit_char(character, output)?;
                 }
             }
+        }
+        if !run.is_empty() {
+            self.write_output_bytes(&run, output)?;
         }
         Ok(())
     }
@@ -392,6 +397,121 @@ pub(super) fn legacy_attribute(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_console_unicode_batches_preserve_modes_margins_and_scalar_model() {
+        struct Count(Vec<u8>, usize);
+        impl Write for Count {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.1 += 1;
+                self.0.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        fn host(mode: u32) -> ConsoleHost<'static> {
+            let mut host = ConsoleHost::new();
+            host.resize(80, 32, &mut Vec::new()).unwrap();
+            host.set_buffer_size(160, 64, &mut Vec::new())
+                .unwrap()
+                .unwrap();
+            host.set_output_mode(mode, &mut Vec::new()).unwrap();
+            host.output_code_page = 65001;
+            host
+        }
+        let text = "A中😀BCe\u{301}".repeat(256);
+        for mode in [0, 2, 3, 7, 11, 15] {
+            let mut batched = host(mode);
+            let mut count = Count(Vec::new(), 0);
+            batched
+                .write_utf16(text.encode_utf16(), &mut count)
+                .unwrap();
+            assert!(
+                count.1 <= 2,
+                "mode {mode}: Unicode published {} individual updates",
+                count.1
+            );
+            let text = "A中😀BCe\u{301}".repeat(32);
+            let mut batched = host(mode);
+            batched
+                .write_utf16(text.encode_utf16(), &mut Vec::new())
+                .unwrap();
+            let mut scalar = host(mode);
+            for character in text.chars() {
+                scalar
+                    .write_utf16(
+                        character.encode_utf16(&mut [0; 2]).iter().copied(),
+                        &mut Vec::new(),
+                    )
+                    .unwrap();
+            }
+            assert_eq!(
+                batched.terminal.screen().state_formatted(),
+                scalar.terminal.screen().state_formatted(),
+                "mode {mode}"
+            );
+        }
+        let mut long = host(7);
+        let mut measured = Count(Vec::new(), 0);
+        long.write_utf16(text.repeat(24).encode_utf16(), &mut measured)
+            .unwrap();
+        assert!(
+            measured.1 <= 4,
+            "encoded text must use bounded runs, got {} publications",
+            measured.1
+        );
+        for first in [1, 2] {
+            let mut host = ConsoleHost::new();
+            host.resize(8, 4, &mut Vec::new()).unwrap();
+            host.set_buffer_size(8, 8, &mut Vec::new())
+                .unwrap()
+                .unwrap();
+            host.output_code_page = 65001;
+            host.set_output_mode(7, &mut Vec::new()).unwrap();
+            host.write_ansi(b"12345678", &mut Vec::new()).unwrap();
+            let chinese = "中".as_bytes();
+            host.write_ansi(&chinese[..first], &mut Vec::new()).unwrap();
+            host.set_output_mode(3, &mut Vec::new()).unwrap();
+            host.write_ansi(&chinese[first..], &mut Vec::new()).unwrap();
+            assert_eq!(
+                host.terminal.screen().rows(0, 8).next().unwrap(),
+                "12345678"
+            );
+            assert_eq!(host.terminal.screen().rows(0, 8).nth(1).unwrap(), "中");
+        }
+        for mode in [0, 2, 3, 7, 11, 15] {
+            for columns in [1, 2, 7, 8, 17] {
+                let setup = || {
+                    let mut host = ConsoleHost::new();
+                    host.resize(columns, 4, &mut Vec::new()).unwrap();
+                    host.set_buffer_size(columns, 4, &mut Vec::new())
+                        .unwrap()
+                        .unwrap();
+                    host.set_output_mode(mode, &mut Vec::new()).unwrap();
+                    host.output_code_page = 65001;
+                    host
+                };
+                let mut batched = setup();
+                let mut scalar = setup();
+                let text = "\u{301}A中😀e\u{301}B\r\nC\rD\nZ\x07\x1b[31m中Z";
+                batched
+                    .write_utf16(text.encode_utf16(), &mut Vec::new())
+                    .unwrap();
+                for c in text.chars() {
+                    scalar
+                        .write_utf16(c.encode_utf16(&mut [0; 2]).iter().copied(), &mut Vec::new())
+                        .unwrap();
+                }
+                assert_eq!(
+                    batched.terminal.screen().state_formatted(),
+                    scalar.terminal.screen().state_formatted(),
+                    "mode {mode}, columns {columns}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn rust_console_host_output_utf8_fragments_preserve_scalar_and_crlf_stream() {

@@ -2,7 +2,7 @@
 
 Parent: [product index](../PRD.md). Existing PTY behavior remains owned by
 [terminal](PRD_02_24_con_terminal.md); reusable boundaries by
-[shared core](PRD_02_28_shared_core.md). Research reviewed 2026-10-19.
+[shared core](PRD_02_28_shared_core.md). Research reviewed 2026-10-20.
 
 The owner authorizes development of `minicon-console`, an owned Rust replacement
 for the Windows console host and ConPTY-facing backend. Independence means control of the user-mode API
@@ -51,6 +51,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
 │   ├── [-] native geometry: buffer versus viewport versus parent PTY dimensions
 │   ├── [-] multiple native buffers: stable handle binding, inactive state and active publication
+│   ├── [-] bounded Unicode publication batches over the shared lexer and scalar-width policy
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -101,6 +102,8 @@ flowchart LR
     HOST --> BUFFERS["native buffer identities / per-buffer common terminal state"]
     BUFFERS --> VIEW
     BUFFERS --> BIND["CONOUT open / duplicate lifetime / active-close fallback"]
+    HOST --> BATCH["bounded UTF-16/UTF-8 text batches / native newline and margin translation"]
+    BATCH --> VT
     HOST --> CUR["native cursor size / visibility / WRITE access"]
     CUR --> CV["common visibility / shape / blink and replay"]
     CV --> VT
@@ -1965,3 +1968,81 @@ target results are compile-only; native execution remains Windows x86_64 build
 20348. Eight reviewed source blobs match their pinned Git-tree identities.
 Ignored `buffers-final-receipt.json` records the tree, compiler, actual executable
 identities, log/guard hashes and remaining qualification scope.
+
+### Accepted Unicode-publication leaf
+
+Invariant: ordinary Unicode text must not clone the whole logical screen once
+per scalar after viewport mode is entered. Bound encoded runs and publication
+work; use the authoritative VTE lexer for read-only text lookahead, and one
+shared scalar-width policy for native margin translation. Unicode, fragments,
+callbacks, errors, native CR/LF/immediate wrap and VT delayed wrap must preserve
+their existing semantics. Generic text/frame mechanisms stay OS/ISA-neutral;
+Windows mode/code-page translation remains native.
+
+Evidence: counted shared/native publication calls, batched versus single-scalar
+model and projected-cell equivalence, fragmented grammar and effect fences,
+independent W/UTF-8 SDK bulk writes and system reference, actual managed clients,
+and observed runtime guard failures. Safe failure retains staged commit after
+sink acceptance and the existing pending/projection bounds. Dependencies are
+common framing, viewport projection and native text modes. Non-goals: claiming
+all control-heavy/large-grid performance or other-ISA runtime from one host.
+Malformed UTF-8 that prints replacement text before its new grammar boundary
+also requires explicit mapped-publication/final-tail qualification; valid-text
+batching must not silently redefine that recovery contract.
+
+The native UTF-16 producer now collects bounded UTF-8 runs for all sessions,
+including unmapped output. Native UTF-8 writes resume shared text lookahead after
+each completed fragment/control instead of remaining byte-at-a-time for the rest
+of the request. Mode-specific translation counts the shared scalar widths,
+handles wide-margin/no-wrap placement and immediate legacy versus delayed VT
+wrapping, then publishes a complete run. Processed CR/LF policy remains native;
+effectful controls use the existing path. Legacy fallback wrapping now waits for
+a complete input boundary, so changing from VT to legacy while UTF-8 is partial
+cannot inject a newline into the unfinished scalar.
+
+The counted pre-change cases record 3,584 shared publications for 512 Unicode
+groups (`unicode-batch-framer-red.log`) and 1,280 native mapped updates for the
+256-group mode-zero case (`unicode-batch-native-red.log`). The shared case now
+publishes once; native ordinary runs are bounded independently of input size.
+The native unit compares batched and single-scalar screen state across modes
+0/2/3/7/11/15, narrow/wide margins, newline/control sequences and VT-to-legacy
+fragment transitions. Public-facade evidence fences BEL, Unicode C1 and title
+effects between text, retains UTF-8 across a native command, and rejects failed
+or over-budget publication without committing the candidate screen/view.
+
+The independent SDK writes 8,192 UTF-16 units or 13,312 UTF-8 bytes into a
+256x64 logical buffer with a 128x32 peer, in modes 3/7/11/15. Owned receipts
+validate written counts, canonical scalar cursor positions and every projected
+row; the observed wire is 6,790 bytes and the court bounds amplification. Actual
+Windows PowerShell 5/7 clients exercise managed bulk output and geometry/cursor
+properties with the same decomposed/CJK/supplementary data.
+
+System layout is a separate observation, not a passing equivalence claim. The
+installed Windows 20348 host returns cursor (6,36), stores the combining mark in
+its own UTF-16 cell and reports two replacement-character cells for this emoji
+in the rectangle read, even with VT processing enabled. Its consumed transcript
+also differs. `unicode-batch-reference-layout.log` preserves the initial failed
+canonical-layout comparison; `unicode-batch-system-observations.log` records all
+eight W/UTF-8/mode cases. The reference court pins this build and these native
+values and requires actual bulk output; other builds remain unqualified.
+The owned backend retains the pre-existing coherent Unicode scalar model.
+Raw UTF-16/legacy-layout compatibility and complete vertical viewport-follow
+semantics remain open; these findings do not certify that the installed host and
+owned backend produce interchangeable legacy API layouts.
+
+Local Unicode-publication qualification: `unicode-batch-final-suite.log`
+records 227 selected passes, including 17 alignment checks;
+`unicode-batch-final-new-tests.log` separately records all seven new tests.
+Sixteen byte-restored guard mutations produced runtime failures covering every
+new test. Eight checks passed: default/enabled workspace strict all-targets
+Clippy, standalone parser strict Clippy, four common-library cross-target builds
+and the Windows ARM64 platform PTY/Rust-console all-targets build. Cross-target
+results are compilation evidence only; actual native execution remains Windows
+x86_64 build 20348. Ten reviewed upstream source blobs match the pinned Git-tree
+identities. `unicode-batch-final-receipt.json` binds source tree, guard/check/log
+hashes, compiler, four executable identities and remaining qualification scope.
+
+An earlier serial suite timed out at the installed system ConPTY cursor fence
+(`rust=false`, `bar-hide`); its isolated recheck and the subsequent full serial
+suite passed without code or timeout changes. This reference-host timing finding
+does not establish a backend regression or resolve the reference's reliability.

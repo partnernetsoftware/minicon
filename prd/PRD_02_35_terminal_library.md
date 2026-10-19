@@ -14,6 +14,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: public facade unit, shared parser/framer units, target build receipts
 │   safe failure: bounded-frame error or explicit I/O failure; no silent truncation
 │   dependency: owned vt100/vte; non-goal: GUI/event loop or process spawning
+│   └── bounded encoded runs / read-only lexer text_prefix / shared scalar width
 ├── [-] Shared cell operations — terminal::CellRect / Screen region and literal spans
 │   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
 │   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
@@ -54,6 +55,7 @@ flowchart LR
     APP --> PLATFORM["minicon-platform::pty"]
     PLATFORM -->|"rust-console opt-in"| WIN["minicon-console Windows service"]
     VP["TerminalViewport / mapped publication / staged screen edits"] --> COMMON
+    TEXT["text_prefix / TEXT_BATCH_BYTES / scalar placement policy"] --> COMMON
     WIN --> VP
     MOVE["shared region movement / cell invariants"] --> COMMON
     WIN --> MOVE
@@ -229,3 +231,11 @@ Windows-private; there is one parser/screen authority for each logical buffer,
 not a second native cell model. Input/Job ownership is not duplicated per buffer.
 The contracts, measured compatibility and remaining lifecycle scope belong to
 [native buffers](PRD_02_34_windows_console_backend.md#accepted-multiple-buffer-leaf).
+
+The public terminal facade now exposes text_prefix and TEXT_BATCH_BYTES for
+bounded encoded producers. Native UTF-16/UTF-8 text output is an actual consumer
+in both raw and mapped sessions; Windows newline/margin/code-page policy remains
+in its adapter. Low-level lexer, publication and scalar-width contracts belong
+to [terminal state](PRD_02_24_con_terminal.md#bounded-unicode-text-publication).
+Native bulk clients, system-layout differences and remaining compatibility scope
+belong to [Unicode publication](PRD_02_34_windows_console_backend.md#accepted-unicode-publication-leaf).

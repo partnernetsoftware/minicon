@@ -25,6 +25,7 @@ minicon terminal and rendering
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
 │   ├── Drawing-grid viewport snapshots and transactional mapped frames
+│   ├── Bounded visual-text lookahead and shared scalar placement width
 │   ├── Cursor appearance replay — visibility, position, shape and blinking
 │   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
@@ -47,6 +48,7 @@ flowchart LR
     EDIT["CellStyle / literal cell edits"] --> VT
     VIEW["drawing buffer / transient viewport projection / exact lexer forks"] --> VT
     VIEW --> FRAME
+    TEXT["bounded encoded runs / exact lexer lookahead / scalar width"] --> FRAME
     CUR["cursor shape / blinking / visibility / replay"] --> VT
     CUR --> DMG
     SPAN["literal text / variable style spans"] --> EDIT
@@ -757,3 +759,27 @@ The shared viewport_regions_clip_wide_cells_and_preserve_authoritative_state
 unit covers clipping, padding, CJK/combining/supplementary cells, alternate-grid
 projection and cursor appearance without source mutation. Native/common-facade
 composition and its scoped runtime evidence belong to PRD 02.34 and 02.35.
+
+## Bounded Unicode text publication
+
+OutputFramer::text_prefix inspects a bounded complete UTF-8 drawing prefix using
+a transient clone of the exact owned VTE lexer and a private event classifier.
+It never clones the grid, invokes caller callbacks or changes source grammar.
+ESC, effectful controls, Unicode C1 events, malformed data and incomplete scalars
+stop lookahead; CR/LF are optional visual events. Each scalar still respects the
+unfinished-frame budget. The authoritative decoder handles rejected prefixes.
+
+TEXT_BATCH_BYTES bounds encoded producer chunks and lookahead to 64 KiB. It is
+separate from the pending-grammar budget and projection limit. The existing
+caller-bounded all-ASCII fast path needs neither lookahead nor retained staging.
+Mapped output resumes text lookahead after each complete nonvisual frame, so
+commands and effects do not force the rest of a write into scalar publications.
+Each accepted text run uses one candidate screen/viewport publication and commits
+after sink acceptance; earlier complete runs may already have committed.
+
+Screen::scalar_width is the same scalar placement policy used by Screen::text:
+zero/one/two cells, low nonprinting controls unmeasured and other unmeasured
+scalars one cell. It is not grapheme segmentation, pixel measurement or raw
+UTF-16 cell layout. Existing literal-cell operations retain their independent
+one-cell policy for zero-width/control data. Native text translation consumes
+the scalar policy instead of maintaining a second Unicode-width rule.

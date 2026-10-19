@@ -1,6 +1,12 @@
 //! Bounded transport framing driven by the authoritative terminal grammar.
 use std::io::{self, Write};
 
+/// Working chunk size for encoded producers and Unicode text lookahead.
+///
+/// This is separate from the unfinished-frame budget. The ASCII fast path can
+/// publish an entire caller-bounded slice without lookahead or staging.
+pub const TEXT_BATCH_BYTES: usize = 64 * 1024;
+
 /// Failure while publishing a framed client stream.
 #[derive(Debug)]
 pub enum FrameError {
@@ -83,7 +89,7 @@ impl OutputFramer {
         })
     }
 
-    /// Publish frames through a transactional adapter. Raw bytes are the
+    /// Publish frames and visual runs through a transactional adapter. Raw bytes are the
     /// complete wire frame; delta contains only bytes not yet processed by the
     /// authoritative parser. The publisher must process/commit delta exactly
     /// once on success, preserving parser state on failure. Already executed
@@ -119,7 +125,15 @@ impl OutputFramer {
             publish(parser, bytes, bytes, output)?;
             return Ok(());
         }
-        for &byte in bytes {
+        let mut remaining = bytes;
+        while let Some((&byte, rest)) = remaining.split_first() {
+            let length = self.text_prefix(parser, remaining, true);
+            if length != 0 {
+                publish(parser, &remaining[..length], &remaining[..length], output)?;
+                remaining = &remaining[length..];
+                continue;
+            }
+            remaining = rest;
             let progress = parser.preview_byte(byte);
             if progress.executed_control && !progress.at_boundary {
                 // Executed C0 controls do not belong to the retained grammar
@@ -149,6 +163,21 @@ impl OutputFramer {
         Ok(())
     }
 
+    /// Length of a bounded, complete UTF-8 text prefix at the current input
+    /// boundary. Source screen, grammar, pending bytes and callbacks are not
+    /// changed. Nonvisual controls and malformed/incomplete scalars stop it.
+    /// `newlines` permits visual CR/LF. Each scalar retains the pending budget
+    /// check even though a complete run needs no retained staging allocation.
+    #[must_use]
+    pub fn text_prefix<CB: crate::Callbacks>(
+        &self,
+        parser: &crate::Parser<CB>,
+        bytes: &[u8],
+        newlines: bool,
+    ) -> usize {
+        parser.text_prefix(bytes, self.limit, newlines)
+    }
+
     /// Publish an accepted incomplete tail after the owner establishes that
     /// no further producer or native projection can follow. An I/O failure
     /// retains the pending bytes; retry is safe only if no bytes were written.
@@ -165,6 +194,70 @@ impl OutputFramer {
 #[cfg(test)]
 mod tests {
     use super::{FrameError, OutputFramer};
+
+    #[test]
+    fn stream_boundary_unicode_runs_bound_publications_and_preserve_wire() {
+        use std::io::Write as _;
+        let text = "A中😀BCe\u{301}".repeat(512);
+        let mut parser = crate::Parser::new(64, 160, 0);
+        let mut framer = OutputFramer::new(64);
+        let mut wire = Vec::new();
+        let mut calls = 0;
+        framer
+            .write_mapped(
+                &mut parser,
+                text.as_bytes(),
+                &mut wire,
+                false,
+                |parser, raw, delta, output| {
+                    calls += 1;
+                    output.write_all(raw)?;
+                    parser.process(delta);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            calls, 1,
+            "ordinary Unicode must publish a text run, not individual scalars"
+        );
+        assert_eq!(wire, text.as_bytes());
+        let mut direct = crate::Parser::new(64, 160, 0);
+        direct.process(text.as_bytes());
+        assert_eq!(
+            parser.screen().state_formatted(),
+            direct.screen().state_formatted()
+        );
+        assert!(framer.pending_bytes().is_empty());
+        assert!(parser.at_boundary());
+        assert_eq!(framer.text_prefix(&parser, "中\x07X".as_bytes(), true), 3);
+        assert_eq!(framer.text_prefix(&parser, b"\x1b[31mZ", true), 0);
+        assert_eq!(
+            OutputFramer::new(2).text_prefix(&parser, "中".as_bytes(), true),
+            0
+        );
+        let large = text.repeat(21);
+        let mut chunks = 0;
+        let mut large_wire = Vec::new();
+        framer
+            .write_mapped(
+                &mut parser,
+                large.as_bytes(),
+                &mut large_wire,
+                false,
+                |parser, raw, delta, output| {
+                    assert!(raw.len() <= 65536);
+                    assert_eq!(raw, delta);
+                    chunks += 1;
+                    output.write_all(raw)?;
+                    parser.process(delta);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(chunks, 3);
+        assert_eq!(large_wire, large.as_bytes());
+    }
 
     struct Reject;
 

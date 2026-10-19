@@ -9,7 +9,7 @@ pub use viewport::TerminalViewport;
 use std::io::{self, Write};
 pub use vt100::{
     Callbacks, Cell, CellMoveError, CellRect, CellStyle, Color, CursorShape, FrameError,
-    MouseProtocolEncoding, MouseProtocolMode, RowRange, Screen, ScreenDamage,
+    MouseProtocolEncoding, MouseProtocolMode, RowRange, Screen, ScreenDamage, TEXT_BATCH_BYTES,
 };
 
 /// A parser paired with bounded output framing for its entire lifetime.
@@ -79,6 +79,13 @@ impl<CB: Callbacks> TerminalStream<CB> {
     #[must_use]
     pub fn at_boundary(&self) -> bool {
         self.parser.at_boundary()
+    }
+
+    /// Inspect a bounded complete UTF-8 drawing prefix without changing the
+    /// screen, decoder or callbacks. `newlines` permits visual CR/LF.
+    #[must_use]
+    pub fn text_prefix(&self, bytes: &[u8], newlines: bool) -> usize {
+        self.framer.text_prefix(&self.parser, bytes, newlines)
     }
 
     /// Current terminal cells, cursor and modes.

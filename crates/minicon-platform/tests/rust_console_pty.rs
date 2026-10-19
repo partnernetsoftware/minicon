@@ -378,6 +378,92 @@ fn native_buffers(rust: bool) {
     );
 }
 
+fn unicode_text_batches(rust: bool) {
+    for mode in [7, 3, 15, 11] {
+        for unicode in [true, false] {
+            let report = Report::new();
+            let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(format!(
+                    "text-batch-{}-{mode}",
+                    if unicode { "w" } else { "a" }
+                ))
+                .arg(report.0.as_os_str())
+                .size(TerminalSize {
+                    rows: 32,
+                    cols: 128,
+                });
+            let mut fixture = if rust {
+                Fixture::open(command.rust_console())
+            } else {
+                Fixture::open_backend(command, "conpty")
+            };
+            fixture.until("text-batch-end:");
+            std::fs::write(report.0.with_extension("opened"), b"observed").unwrap();
+            fixture.finish(0);
+            let receipt = std::fs::read_to_string(&report.0).unwrap();
+            eprintln!("bulk rust={rust} bytes={} {receipt}", fixture.bytes.len());
+            let mut observed = vt100::Parser::new(32, 128, 0);
+            observed.process(&fixture.bytes);
+            eprintln!(
+                "bulk first row={:?};wire prefix={:?}",
+                observed.screen().rows(0, 128).next().unwrap(),
+                String::from_utf8_lossy(&fixture.bytes[..fixture.bytes.len().min(220)])
+            );
+            let written = if unicode { 8192 } else { 13312 };
+            assert!(
+                receipt.contains(&format!("written={written}/{written};size=256,64;")),
+                "{receipt}"
+            );
+            if !rust {
+                assert!(
+                    receipt.lines().any(|line| line == "build=20348"),
+                    "BLOCKED: qualify bulk native Unicode layout on this build: {receipt}"
+                );
+                assert!(receipt.contains("cursor=6,36\n"), "{receipt}");
+                assert!(
+                    receipt.contains("glyphs=0041,0065,0301,4e2d,4e2d,fffd,fffd,0042,0043"),
+                    "{receipt}"
+                );
+                assert!(
+                    observed.screen().contents().contains('中'),
+                    "missing system bulk output"
+                );
+                // This installed host stores combining marks/surrogate units
+                // in its legacy cell layout even with VT processing enabled.
+                // It is a measured compatibility gap, not the owned scalar
+                // model's intended cursor or projected-row oracle.
+                continue;
+            }
+            let cursor = if mode & 4 != 0 { "255,31" } else { "0,32" };
+            assert!(receipt.contains(&format!("cursor={cursor}\n")), "{receipt}");
+            let mut parser = vt100::Parser::new(32, 128, 0);
+            parser.process(&fixture.bytes);
+            let expected = "Ae\u{301}中😀BC".repeat(16);
+            for (row, text) in parser.screen().rows(0, 128).enumerate() {
+                assert_eq!(text, expected, "row {row}: {receipt}");
+            }
+            if rust {
+                assert!(
+                    fixture.bytes.len() < 16384,
+                    "bulk projection amplified to {} bytes: {receipt}",
+                    fixture.bytes.len()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn rust_console_pty_unicode_batches_preserve_bulk_output_without_amplification() {
+    unicode_text_batches(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY Unicode bulk output court"]
+fn rust_console_client_unicode_batches_record_system_layout() {
+    unicode_text_batches(false);
+}
+
 #[test]
 fn rust_console_pty_native_buffers_preserve_identity_and_display() {
     native_buffers(true);
@@ -2544,6 +2630,48 @@ fn rust_console_client_windows_powershell_native_geometry() {
 #[ignore = "explicit external PowerShell 7 geometry court; missing client is BLOCKED"]
 fn rust_console_client_powershell7_native_geometry() {
     powershell_geometry("MINICON_TEST_PWSH");
+}
+
+fn powershell_unicode_batches(name: &str) {
+    let script = "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new();[Console]::SetBufferSize(256,64);$text=('Ae'+[char]0x301+'中😀BC')*1024;[Console]::Write($text);if([Console]::BufferWidth -ne 256 -or [Console]::BufferHeight -ne 64 -or [Console]::CursorLeft -ne 255 -or [Console]::CursorTop -ne 31){exit 19};[Console]::Write(([char]27)+']2;bulk-app-end:'+([char]7));exit 0";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client(name))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .size(TerminalSize {
+                rows: 32,
+                cols: 128,
+            })
+            .rust_console(),
+    );
+    fixture.until("bulk-app-end:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(32, 128, 0);
+    parser.process(&fixture.bytes);
+    let expected = "Ae\u{301}中😀BC".repeat(16);
+    for (row, text) in parser.screen().rows(0, 128).enumerate() {
+        assert_eq!(text, expected, "{name}, row {row}");
+    }
+    assert!(
+        fixture.bytes.len() < 32768,
+        "{name}: bulk output amplified to {} bytes",
+        fixture.bytes.len()
+    );
+}
+
+#[test]
+#[ignore = "explicit Windows PowerShell bulk Unicode client; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_unicode_batches() {
+    powershell_unicode_batches("MINICON_TEST_WINDOWS_POWERSHELL");
+}
+
+#[test]
+#[ignore = "explicit PowerShell 7 bulk Unicode client; missing client is BLOCKED"]
+fn rust_console_client_powershell7_unicode_batches() {
+    powershell_unicode_batches("MINICON_TEST_PWSH");
 }
 
 fn powershell_buffers(name: &str) {

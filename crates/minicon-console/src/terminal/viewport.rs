@@ -240,6 +240,125 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rust_console_terminal_unicode_batches_preserve_effects_fragments_and_errors() {
+        let mut terminal = TerminalStream::new(4, 128, 0, 64);
+        let mut view = TerminalViewport::full(4, 64);
+        let proposed = view;
+        let mut wire = Vec::new();
+        terminal
+            .commit_viewport_screen(
+                terminal.screen().clone(),
+                &mut view,
+                proposed,
+                16384,
+                true,
+                &mut wire,
+            )
+            .unwrap();
+        assert_eq!(terminal.text_prefix("中\r\nZ".as_bytes(), false), 3);
+        assert_eq!(terminal.text_prefix("中\r\nZ".as_bytes(), true), 6);
+        assert_eq!(terminal.text_prefix("\u{85}Z".as_bytes(), true), 0);
+        assert_eq!(terminal.text_prefix(b"A\xffZ", true), 1);
+        struct Count<'a>(&'a mut Vec<u8>, usize);
+        impl Write for Count<'_> {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.1 += 1;
+                self.0.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let text = "Ae\u{301}中😀BC".repeat(16);
+        let mut count = Count(&mut wire, 0);
+        terminal
+            .write_output_viewport(text.as_bytes(), &mut view, false, 16384, &mut count)
+            .unwrap();
+        assert_eq!(count.1, 1);
+        terminal
+            .write_output_viewport(
+                "\x07Q\u{85}R\x1b]2;bulk-title\x07Z".as_bytes(),
+                &mut view,
+                false,
+                16384,
+                &mut wire,
+            )
+            .unwrap();
+        terminal
+            .write_output_viewport(&[0xe4, 0xb8], &mut view, false, 16384, &mut wire)
+            .unwrap();
+        assert_eq!(terminal.text_prefix(b"X", true), 0);
+        terminal
+            .write_viewport_projection(b"\x1b[3;2H", &mut view, false, 16384, &mut wire)
+            .unwrap();
+        terminal
+            .write_output_viewport(&[0xad], &mut view, false, 16384, &mut wire)
+            .unwrap();
+        #[derive(Default)]
+        struct Events {
+            bell: usize,
+            c1: usize,
+            title: Vec<u8>,
+            at_bell: String,
+        }
+        impl Callbacks for Events {
+            fn audible_bell(&mut self, screen: &mut Screen) {
+                self.bell += 1;
+                self.at_bell = screen.rows(0, 64).next().unwrap();
+            }
+            fn unhandled_char(&mut self, _: &mut Screen, c: char) {
+                assert_eq!(c, '\u{85}');
+                self.c1 += 1;
+            }
+            fn unhandled_control(&mut self, _: &mut Screen, byte: u8) {
+                assert_eq!(byte, 0x85);
+                self.c1 += 1;
+            }
+            fn set_window_title(&mut self, _: &mut Screen, title: &[u8]) {
+                self.title = title.to_vec();
+            }
+        }
+        let mut peer = vt100::Parser::new_with_callbacks(4, 64, 0, Events::default());
+        peer.process(&wire);
+        assert_eq!(peer.callbacks().bell, 1);
+        assert_eq!(peer.callbacks().c1, 1);
+        assert_eq!(peer.callbacks().title, b"bulk-title");
+        assert_eq!(peer.callbacks().at_bell, "Ae\u{301}中😀BC".repeat(8));
+        assert_eq!(
+            peer.screen().rows(0, 64).next().unwrap(),
+            "Ae\u{301}中😀BC".repeat(8)
+        );
+        assert_eq!(peer.screen().rows(0, 64).nth(1).unwrap(), "QRZ");
+        assert_eq!(peer.screen().cell(2, 1).unwrap().contents(), "中");
+        let before = terminal.screen().state_formatted();
+        let old = view;
+        struct Reject;
+        impl Write for Reject {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(
+            terminal
+                .write_output_viewport("界".as_bytes(), &mut view, false, 16384, &mut Reject)
+                .is_err()
+        );
+        assert_eq!(terminal.screen().state_formatted(), before);
+        assert_eq!(view, old);
+        assert!(
+            terminal
+                .write_output_viewport("界".as_bytes(), &mut view, false, 0, &mut wire)
+                .is_err()
+        );
+        assert_eq!(terminal.screen().state_formatted(), before);
+        assert_eq!(view, old);
+    }
+
+    #[test]
     fn rust_console_terminal_viewport_preserves_buffer_grammar_effects_and_commit() {
         let mut terminal = TerminalStream::new(2, 4, 0, 64);
         let mut view = TerminalViewport::full(2, 4);

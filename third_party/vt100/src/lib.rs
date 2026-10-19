@@ -63,7 +63,7 @@ pub use attrs::{CellStyle, Color};
 pub use callbacks::Callbacks;
 pub use cell::Cell;
 pub use damage::{RowRange, ScreenDamage};
-pub use framing::{FrameError, OutputFramer};
+pub use framing::{FrameError, OutputFramer, TEXT_BATCH_BYTES};
 pub use parser::Parser;
 pub use screen::{
     CellMoveError, CellRect, CursorShape, MouseProtocolEncoding, MouseProtocolMode, Screen,

@@ -5,6 +5,8 @@ pub struct Parser<CB: crate::callbacks::Callbacks = ()> {
     screen: crate::perform::WrappedScreen<CB>,
 }
 
+mod text;
+
 impl Parser {
     /// Creates a new terminal parser of the given size and with the given
     /// amount of scrollback.

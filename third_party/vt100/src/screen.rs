@@ -851,21 +851,27 @@ impl Screen {
 }
 
 impl Screen {
+    /// Scalar placement width used by the drawing engine: zero, one or two
+    /// cells. Nonprinting low controls return None; other unmeasured scalars
+    /// use one cell. This is not a grapheme-cluster or pixel-width API.
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)] // unicode-width returns only 0, 1 or 2.
+    pub fn scalar_width(c: char) -> Option<u16> {
+        let width = c.width();
+        if width.is_none() && u32::from(c) < 256 {
+            return None;
+        }
+        Some(width.unwrap_or(1).try_into().unwrap())
+    }
+
     pub(crate) fn text(&mut self, c: char) {
         let mut pos = self.grid().pos();
         let size = self.grid().size();
         let attrs = self.attrs;
 
-        let width = c.width();
-        if width.is_none() && (u32::from(c)) < 256 {
-            // don't even try to draw control characters
+        let Some(width) = Self::scalar_width(c) else {
             return;
-        }
-        let width = width
-            .unwrap_or(1)
-            .try_into()
-            // width() can only return 0, 1, or 2
-            .unwrap();
+        };
 
         // A zero-column grid has no cell to inspect.  A wide glyph that
         // cannot fit in the grid is not representable, so discard it without

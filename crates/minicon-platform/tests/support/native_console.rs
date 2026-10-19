@@ -30,6 +30,8 @@ mod scroll_output;
 #[cfg(windows)]
 mod text_attributes;
 #[cfg(windows)]
+mod text_batch;
+#[cfg(windows)]
 mod unicode_output;
 #[cfg(not(windows))]
 fn main() {
@@ -56,6 +58,15 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(batch) = mode.strip_prefix("text-batch-") {
+        let (kind, flags) = batch
+            .split_once('-')
+            .ok_or(std::io::ErrorKind::InvalidInput)?;
+        let flags = flags
+            .parse::<u32>()
+            .map_err(|_| std::io::ErrorKind::InvalidInput)?;
+        return text_batch::run(std::path::Path::new(&arguments[1]), kind == "w", flags);
+    }
     if mode == "buffers" {
         return buffers::run(std::path::Path::new(&arguments[1]));
     }
