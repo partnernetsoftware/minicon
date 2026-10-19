@@ -9,6 +9,7 @@ Microsoft Terminal source at revision
 - `dep/Console/ntcon.h`
 - `src/server/DeviceHandle.cpp`
 - `src/server/IoDispatchers.cpp`
+- `src/server/ProcessHandle.cpp` and `src/server/ProcessHandle.h`
 - `src/server/ApiSorter.cpp` and `src/server/ApiDispatchers.cpp`
 - `src/host/readDataCooked.cpp`, `readDataDirect.cpp` and `readDataRaw.cpp`
 - `src/winconpty/winconpty.h`

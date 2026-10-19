@@ -28,6 +28,8 @@ sequences that contract without assigning a release or changing current defaults
    input, independent Win32 records and real job-tree teardown cases pass.
    Scoped PowerShell 5/7, Node raw TTY/readline and system-ConPTY object/access
    comparisons now extend the explicit experimental adapter evidence.
+   Scoped inherited/restricted stdio, creator FreeConsole/exit and shared input
+   tails distinguish connection defaults from kernel file object lifetimes.
    Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.

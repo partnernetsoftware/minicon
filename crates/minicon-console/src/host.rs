@@ -22,10 +22,18 @@ enum HandleKind {
 }
 
 struct ClientHandle {
-    process: usize,
+    lifetime: HandleLifetime,
     kind: HandleKind,
     access: u32,
     share: u32,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum HandleLifetime {
+    // CONNECT's default handles are owned by that console connection.
+    Connection(usize),
+    // CREATE_OBJECT files are retained until the driver's final CLOSE_OBJECT.
+    FileObject,
 }
 
 /// Observed dispatch outcome. Unsupported calls remain distinguishable.
@@ -119,6 +127,12 @@ impl<'session> ConsoleHost<'session> {
         self.processes.len()
     }
 
+    /// Live server handle records, useful alongside connected_clients when
+    /// observing native close/connection cleanup without exposing identities.
+    pub fn open_handles(&self) -> usize {
+        self.handles.len()
+    }
+
     /// Service one real driver request and write terminal bytes to the caller's
     /// bounded output path. No display window or platform host is created.
     pub fn dispatch(
@@ -179,7 +193,7 @@ impl<'session> ConsoleHost<'session> {
                     self.handles.insert(
                         input,
                         ClientHandle {
-                            process,
+                            lifetime: HandleLifetime::Connection(process),
                             kind: HandleKind::Input,
                             access: objects::READ | objects::WRITE,
                             share: 3,
@@ -188,7 +202,7 @@ impl<'session> ConsoleHost<'session> {
                     self.handles.insert(
                         output_handle,
                         ClientHandle {
-                            process,
+                            lifetime: HandleLifetime::Connection(process),
                             kind: HandleKind::Output,
                             access: objects::READ | objects::WRITE,
                             share: 3,
@@ -197,26 +211,31 @@ impl<'session> ConsoleHost<'session> {
                 }
             }
             2 => {
-                self.cancel_client_reads(descriptor.process, None);
+                self.cancel_process_reads(descriptor.process);
                 if self.processes.remove(&descriptor.process).is_none() {
                     receipt.status = INVALID_HANDLE;
                 }
-                self.handles
-                    .retain(|_, handle| handle.process != descriptor.process);
+                let defaults: Vec<_> = self
+                    .handles
+                    .iter()
+                    .filter(|(_, handle)| {
+                        handle.lifetime == HandleLifetime::Connection(descriptor.process)
+                    })
+                    .map(|(id, _)| *id)
+                    .collect();
+                for object in defaults {
+                    self.retire_input_object(object);
+                    self.handles.remove(&object);
+                }
+                self.update_input_event()?;
                 request.complete(receipt.status, 0, &[])?;
             }
             3 => return self.create_object(request),
             4 => {
                 // This is a kernel object finalizer, including closes after
                 // process disconnect; it need not carry a live process token.
-                if let Some(process) = self
-                    .handles
-                    .get(&descriptor.object)
-                    .map(|handle| handle.process)
-                {
-                    self.cancel_client_reads(process, Some(descriptor.object));
-                    self.handles.remove(&descriptor.object);
-                }
+                self.retire_input_object(descriptor.object);
+                self.handles.remove(&descriptor.object);
                 self.update_input_event()?;
                 request.complete(receipt.status, 0, &[])?;
             }

@@ -33,6 +33,124 @@ fn run_owned_cmd(script: &str) -> CmdReceipt {
     drain_owned_cmd(&session, &child, &mut host, &mut output)
 }
 
+#[test]
+fn rust_console_driver_disconnect_reclaims_its_connection_default_handles() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_client(&session).unwrap();
+    let mut host = crate::ConsoleHost::new();
+    let mut output = Vec::new();
+    child.resume().unwrap();
+    let receipt = drain_owned_cmd(&session, &child, &mut host, &mut output);
+    assert_eq!(receipt.exit_code, 0);
+    assert_eq!(
+        host.open_handles(),
+        0,
+        "connection defaults have no separate kernel file close notification"
+    );
+}
+
+#[test]
+fn rust_console_driver_dead_reader_does_not_block_a_live_caller_on_the_shared_file() {
+    use std::os::windows::io::AsHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+    let session = DriverSession::open().unwrap();
+    let script = "cmd /d /c \"cmd /d /c set /p MINICON_SHARED_CHILD=child-wait:&set /p MINICON_SHARED_PARENT=parent-wait:&set MINICON_SHARED_PARENT\" <CONIN$";
+    let root = create_suspended_cmd(&session, script).unwrap();
+    let mut host = crate::ConsoleHost::new();
+    let mut output = Vec::new();
+    let mut connections = Vec::new();
+    let mut killed = false;
+    let mut supplied = false;
+    let mut dead_caller = None;
+    let mut disconnected = false;
+    let mut parent_waiting = false;
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    root.resume().unwrap();
+    while std::time::Instant::now() < deadline {
+        if root.wait(Duration::ZERO).unwrap().is_some() && host.connected_clients() == 0 {
+            break;
+        }
+        let request = match session.receive(Duration::from_millis(20)) {
+            Ok(request) => request,
+            Err(error) if error.kind() == io::ErrorKind::TimedOut => continue,
+            Err(error) => panic!("receive shared-file client: {error}"),
+        };
+        let function = request.descriptor.function;
+        let caller = request.descriptor.process;
+        if function == 1 {
+            connections.push(u32::try_from(request.descriptor.process).unwrap());
+        }
+        let receipt = host.dispatch(request, &mut output).unwrap();
+        // cmd probes SetConsoleMode on the read-only CONIN$ redirection.
+        assert!(
+            receipt.status == 0
+                || (receipt.api == Some(0x01000002) && receipt.status == 0xc0000022u32 as i32),
+            "{receipt:?}"
+        );
+        if function == 2 && Some(caller) == dead_caller {
+            disconnected = true;
+        }
+        if receipt.pending && !killed {
+            dead_caller = Some(caller);
+            assert!(String::from_utf8_lossy(&output).contains("child-wait:"));
+            assert_eq!(
+                connections.len(),
+                3,
+                "outer owner, waiting parent and reading child must all connect"
+            );
+            assert_eq!(host.pending_reads(), 1);
+            let pid = *connections.last().unwrap();
+            // SAFETY: PID comes from the live kernel CONNECT, not enumeration.
+            // Membership is verified before any termination authority is used.
+            let raw = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                    0,
+                    pid,
+                )
+            };
+            assert!(!raw.is_null());
+            let process = unsafe { OwnedHandle::from_raw_handle(raw) };
+            assert!(root.contains_process(process.as_handle()).unwrap());
+            assert_eq!(
+                unsafe { WaitForSingleObject(process.as_raw_handle(), 0) },
+                WAIT_TIMEOUT
+            );
+            assert_ne!(
+                unsafe { TerminateProcess(process.as_raw_handle(), 0xee) },
+                0
+            );
+            assert_eq!(
+                unsafe { WaitForSingleObject(process.as_raw_handle(), 3000) },
+                WAIT_OBJECT_0
+            );
+            killed = true;
+        } else if killed && receipt.pending {
+            parent_waiting = String::from_utf8_lossy(&output).contains("parent-wait:");
+        }
+        if disconnected && parent_waiting && !supplied {
+            assert_eq!(
+                host.pending_reads(),
+                1,
+                "the dead caller must be removed while its creator still holds the file"
+            );
+            host.enqueue_text("kept\r", &mut output).unwrap();
+            supplied = true;
+        }
+    }
+    assert!(
+        killed && supplied,
+        "shared file handoff did not finish: {}",
+        String::from_utf8_lossy(&output)
+    );
+    assert_eq!(root.wait(Duration::ZERO).unwrap(), Some(0));
+    assert_eq!(host.connected_clients(), 0);
+    assert_eq!(host.pending_reads(), 0);
+    assert!(String::from_utf8_lossy(&output).contains("MINICON_SHARED_PARENT=kept"));
+}
+
 fn drain_owned_cmd<'session>(
     session: &'session DriverSession,
     child: &Child,

@@ -16,7 +16,8 @@ impl ConsoleHost<'_> {
     ) -> i32 {
         let Some(handle) = self.handles.get(&object).filter(|h| {
             self.processes.contains_key(&process)
-                && h.process == process
+                && (h.lifetime == HandleLifetime::FileObject
+                    || h.lifetime == HandleLifetime::Connection(process))
                 && kind.is_none_or(|kind| kind == h.kind)
         }) else {
             return INVALID_HANDLE;
@@ -93,7 +94,7 @@ impl<'session> ConsoleHost<'session> {
                     self.handles.insert(
                         token,
                         ClientHandle {
-                            process: descriptor.process,
+                            lifetime: HandleLifetime::FileObject,
                             kind,
                             access,
                             share,

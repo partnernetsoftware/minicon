@@ -79,20 +79,32 @@ impl Fixture {
         }
     }
 
-    fn finish(&mut self, code: i32) {
+    fn wait_exit(&mut self, code: i32) {
         let mut waiter = self.child.try_clone_for_wait().unwrap();
         let (send, receive) = mpsc::channel();
         std::thread::spawn(move || {
             let _ = send.send(waiter.wait());
         });
+        let actual = receive
+            .recv_timeout(Duration::from_secs(8))
+            .unwrap()
+            .unwrap()
+            .code();
+        if actual != Some(code) {
+            while let Ok(Ok(chunk)) = self.output.recv_timeout(Duration::from_millis(20)) {
+                self.bytes.extend(chunk);
+            }
+        }
         assert_eq!(
-            receive
-                .recv_timeout(Duration::from_secs(8))
-                .unwrap()
-                .unwrap()
-                .code(),
-            Some(code)
+            actual,
+            Some(code),
+            "owned client output: {}",
+            String::from_utf8_lossy(&self.bytes)
         );
+    }
+
+    fn finish(&mut self, code: i32) {
+        self.wait_exit(code);
         if self.master.backend_kind() == "conpty" {
             // The system host retains its output pipe until HPCON close.
             self.child.close_pseudoconsole();
@@ -137,8 +149,146 @@ impl Report {
 impl Drop for Report {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
+        for extension in ["ready", "go", "opened", "opened-ready", "detached", "first"] {
+            let _ = std::fs::remove_file(self.0.with_extension(extension));
+        }
         let _ = std::fs::remove_dir(self.0.parent().unwrap());
     }
+}
+
+#[test]
+fn rust_console_pty_inherited_input_output_survive_creator_exit_and_freeconsole() {
+    for mode in ["inherit-parent-exit", "inherit-parent-free"] {
+        let report = Report::new();
+        let mut fixture = Fixture::open(
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(mode)
+                .arg(report.0.as_os_str())
+                .rust_console(),
+        );
+        fixture.until("inherit-parent-ready:");
+        fixture.wait_exit(0);
+        if mode == "inherit-parent-free" {
+            assert!(report.0.with_extension("detached").exists());
+        }
+        std::fs::write(report.0.with_extension("go"), b"creator-exited").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !report.0.with_extension("opened-ready").exists() {
+            assert!(
+                Instant::now() < deadline,
+                "inherited child did not report native opens"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(
+            std::fs::read_to_string(report.0.with_extension("opened")).unwrap(),
+            "true,0,true,0",
+            "{mode}"
+        );
+        fixture.until("inherit-child-ready:");
+        fixture.master.write_all("中😀\r".as_bytes()).unwrap();
+        fixture.finish(0);
+        assert!(String::from_utf8_lossy(&fixture.bytes).contains("inherit-value:中😀"));
+        let result = std::fs::read_to_string(&report.0).unwrap();
+        assert_eq!(result, "true,0,5,19,中😀\r\n", "{mode}");
+    }
+}
+
+#[test]
+fn rust_console_pty_inherited_readonly_output_keeps_its_native_access_limit() {
+    assert_eq!(inherited_readonly_report(true), "true,0,true,0|false,5,0");
+}
+
+#[test]
+fn rust_console_pty_inherited_input_preserves_a_partial_utf8_byte_tail_after_parent_exit() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("inherit-parent-tail")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("inherit-tail-send:");
+    fixture.master.write_all("中".as_bytes()).unwrap();
+    fixture.wait_exit(0);
+    assert_eq!(
+        std::fs::read_to_string(report.0.with_extension("first")).unwrap(),
+        "228"
+    );
+    std::fs::write(report.0.with_extension("go"), b"creator-exited").unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "184,173");
+}
+
+#[test]
+fn rust_console_pty_final_file_close_discards_its_partial_byte_tail_and_input_signal() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("inherit-close-tail")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("inherit-tail-send:");
+    fixture.master.write_all("中".as_bytes()).unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "228,258,0");
+}
+
+fn inherited_readonly_report(rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("inherit-parent-readonly")
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("inherit-parent-ready:");
+    fixture.wait_exit(0);
+    std::fs::write(report.0.with_extension("go"), b"creator-exited").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !report.0.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "inherited native result not published"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    fixture.finish(0);
+    format!(
+        "{}|{}",
+        std::fs::read_to_string(report.0.with_extension("opened")).unwrap(),
+        std::fs::read_to_string(&report.0).unwrap()
+    )
+}
+
+#[test]
+#[ignore = "explicit system ConPTY inheritance differential court"]
+fn rust_console_client_inherited_restricted_handle_matches_system_conpty() {
+    let reference = inherited_readonly_report(false);
+    eprintln!("system ConPTY inherited readonly: {reference}");
+    assert_eq!(reference, "true,0,true,0|false,5,0");
+    let owned = inherited_readonly_report(true);
+    assert_eq!(owned, reference);
+}
+
+#[test]
+#[ignore = "explicit external Node inherited-stdio court; missing client is BLOCKED"]
+fn rust_console_client_node_spawn_inherits_console_stdio() {
+    let script = "const c=require('child_process').spawn(process.execPath,['-e',\"if(!process.stdout.isTTY)throw Error('TTY required');process.stdout.write('node-child-inherited\\\\n');process.exitCode=37;\"],{stdio:'inherit'});c.once('exit',code=>{process.stdout.write('node-parent-exit:'+code+'\\n');process.exitCode=code;});";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client("MINICON_TEST_NODE"))
+            .arg("-e")
+            .arg(script)
+            .env("TERM", "xterm-256color")
+            .rust_console(),
+    );
+    fixture.finish(37);
+    let text = String::from_utf8_lossy(&fixture.bytes);
+    assert!(text.contains("node-child-inherited"), "{text}");
+    assert!(text.contains("node-parent-exit:37"), "{text}");
 }
 
 #[test]

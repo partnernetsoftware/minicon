@@ -31,6 +31,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
 │   ├── [v] scoped PowerShell 5/7 and Node TTY/readline native cases
+│   ├── [v] connection/file lifetimes, restricted inherited stdio and UTF-8 tails
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -53,6 +54,9 @@ flowchart LR
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
+    HOST --> LIFE["connection defaults vs opened file objects"]
+    LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
+    LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
     HOST --> JOB["ConsoleChild: suspend / assign job / resume"]
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
@@ -212,8 +216,8 @@ certification for all clients or OS releases.
 
 | Driver/API operation | Current behavior | Remaining scope |
 |---|---|---|
-| CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, reclaim that client's records on disconnect. | General inherited/duplicated handles, attach/free-console and descendant lifecycle qualification. |
-| CREATE_OBJECT / CLOSE_OBJECT | Open current input/output and unambiguous generic objects; retain native access/share metadata, enforce API access and retire known kernel-finalizer tokens even without a live process token. | Separate new screen buffers, other access masks, broad sharing and cross-process handle inheritance remain unqualified. Native Win32 CON opens on the measured kernel normalize share metadata to 3, including a requested share mode of zero. |
+| CONNECT / DISCONNECT | Accept validated initial metadata, issue process/input/output tokens, cancel the caller's reads and reclaim its connection-default records on disconnect. | Arbitrary cross-process duplication, explicit attach/reconnect and broader descendant qualification remain open; native parent exit/FreeConsole cases are scoped below. |
+| CREATE_OBJECT / CLOSE_OBJECT | Open current input/output and unambiguous generic objects; retain native access/share metadata, enforce API access and retire known kernel-finalizer tokens even without a live creator. Opened file objects can be used by another connected caller holding the native inherited handle. | Separate new screen buffers, other access masks and broad sharing remain unqualified. Native Win32 CON opens on the measured kernel normalize share metadata to 3, including a requested share mode of zero. |
 | RAW_WRITE / WriteConsole | Capture actual client bytes, convert current code page or UTF-16 to UTF-8, send to the supplied writer, update screen state. | DBCS output fragments, processed-output/mode fidelity, pending surrogate at final stream end and complete output backpressure/cancellation. |
 | GetCP / SetCP / GetLangId | Distinct input/output code pages, validated ID updates, real initial OEM page/current-user language. UTF-8 one-byte reads are tested. | Full legacy/stateful code-page and mixed-encoding qualification. |
 | GetMode / SetMode | Store buffer modes and enforce echo's line-input dependency; basic cooked/raw input consumes those modes. | Full mode validation, signals, insert/history editing and processed-output fidelity. |
@@ -265,8 +269,10 @@ it is diagnostic evidence, not a registered cross-platform acceptance case.
 reads, 32768 UTF-16 line units and the existing 1 MiB transfer ceiling.
 `ConsoleHost` borrows the originating driver while reads are deferred. Each
 request is completed once; dropping an unhandled request also releases its
-actual kernel wait. On disconnect/handle close, associated deferred requests
-and byte tails are removed. Input availability is the real event registered
+actual kernel wait. Disconnect cancels that caller's reads and retires its
+connection defaults. Opened-file byte tails survive the creator's disconnect
+until the final object close; that close retires the object's pending reads
+regardless of caller. Input availability is the real event registered
 with ConDrv, including input queued before CONNECT.
 
 `ConsoleChild` is the reusable native launch/lifetime owner. It takes an
@@ -461,3 +467,74 @@ runtime mutation and the compile-only failure was excluded. Receipts are
 `target/conhost-research/client-negative-audit.json` and named
 `client-*-negative.log` files. Each earlier milestone's receipts retain their
 own source scope; they are not relabeled as evidence for this revision.
+
+### Connection lifetime versus opened-file lifetime
+
+Actual standard stdin/stdout inheritance already survived the parent's exit
+and explicit FreeConsole in the first native probe; this disproved the initial
+assumption that all inheritance was broken. The narrower failing case passed
+a separately opened, read-only CONOUT$ as child stdout. After creator exit,
+the owned backend returned invalid handle (6) for a read query. The same fixture
+on system ConPTY kept the read query valid and rejected writing with access
+denied (5). The independent native result is `true,0,true,0|false,5,0`.
+
+The old record tied every handle to its creator's console-process token and
+erased them all on disconnect. `HandleLifetime` now distinguishes connection
+defaults from CREATE_OBJECT files. The connection case carries its owning
+process token; an opened file is instead retained until the driver's final
+CLOSE_OBJECT. This follows the pinned
+[ProcessHandle](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/server/ProcessHandle.h)
+ownership of connection defaults and
+[IoDispatchers](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/server/IoDispatchers.cpp)
+transfer of created-file ownership to the driver. `open_handles()` exposes a
+count of live server records alongside `connected_clients()`, not process IDs
+or OS handle authority.
+
+Every operation still requires a known calling connection, a valid object from
+the already-bound driver session, the proper object kind and native access.
+The creator is not an access boundary for a file that the kernel has inherited
+into another connected caller. The read-only inheritance case proves that
+allowing that caller does not grant WRITE access. Kernel object identity is
+not inferred from an application-supplied numeric handle or a PID scan. The
+public [console-handle contract](https://learn.microsoft.com/en-us/windows/console/console-handles)
+distinguishes creation-time sharing from arbitrary interprocess duplication;
+this milestone does not certify the latter.
+
+`cancel_process_reads` cancels operations belonging to the departing caller.
+`retire_input_object` removes an object's conversion tail and all requests for
+that object when its lifetime ends. A parent reading the first byte of UTF-8
+CJK input from an opened CONIN$ can exit; the child consumes the remaining two
+bytes from the inherited file without replacement or loss. Conversely, closing
+the last file handle discards a partial tail and clears the real native input
+signal. The native fixture observes first byte 228, remaining bytes 184/173,
+and WAIT_TIMEOUT/zero queued events after final close. Separate actual-cmd
+evidence requires all connection-default records to be gone after disconnect.
+A three-cmd private family additionally keeps the opened input file alive while
+its reading child is terminated through an owned, Job-verified process handle.
+After the actual child DISCONNECT, exactly one live parent read must remain and
+consume the supplied line. This isolates caller cancellation from final file
+close and connection-default retirement.
+
+The Cargo-built `tests/support/inheritance.rs` fixture coordinates only its own
+process family through private files. The controller observes creator exit
+before releasing the child; SDK mode/count/error results are independent of
+the output path under test. Native stdio inheritance, parent FreeConsole,
+restricted output, a shared byte tail and final-close input readiness are
+covered. A real Node child_process spawn also inherits TTY output and propagates
+the child's nonzero exit code. Cleanup remains the existing private Job owner.
+
+The expanded command from the preceding milestone, also selecting the 29
+legacy-agent units, executes 83 targeted cases: 54 backend cases plus those 29
+units. Seven explicit external/reference cases are requested in this receipt;
+normal experimental execution leaves them unrequested. Local baseline evidence
+is `target/conhost-research/inherit-final-suite.log`, with the first failing
+reference comparison in `inherit-reference-repro.log`. This adds scoped
+inheritance evidence on the measured Windows x86_64 host, not general attach,
+new-buffer, signal, TUI or Windows ARM64 runtime qualification.
+
+Eight runtime mutation controls cover connection-default cleanup, opened-file
+lifetime, early file retirement, early and final byte-tail cleanup, native
+access checks, nested connections and dead-reader cancellation. Removing each
+guard makes its named native test fail; sources are restored and the final
+83-case suite passes again. Local mutation identities and restored source hashes
+are in `target/conhost-research/inherit-negative-audit.json`.

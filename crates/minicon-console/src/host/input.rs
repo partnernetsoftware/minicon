@@ -655,16 +655,19 @@ impl<'session> ConsoleHost<'session> {
         Ok(())
     }
 
-    pub(super) fn cancel_client_reads(&mut self, process: usize, object: Option<usize>) {
-        self.input.ansi_tail.retain(|id, _| {
-            !self.handles.get(id).is_some_and(|handle| {
-                handle.process == process && object.is_none_or(|wanted| wanted == *id)
-            })
-        });
-        self.input.pending.retain(|read| {
-            !(read.request.descriptor.process == process
-                && object.is_none_or(|id| id == read.request.descriptor.object))
-        });
+    pub(super) fn cancel_process_reads(&mut self, process: usize) {
+        // Waiting operations belong to their caller; shared file conversion
+        // state belongs to the file object and can outlive its creator.
+        self.input
+            .pending
+            .retain(|read| read.request.descriptor.process != process);
+    }
+
+    pub(super) fn retire_input_object(&mut self, object: usize) {
+        self.input.ansi_tail.remove(&object);
+        self.input
+            .pending
+            .retain(|read| read.request.descriptor.object != object);
     }
 }
 
