@@ -4,6 +4,8 @@ mod console_file;
 #[cfg(windows)]
 mod control;
 #[cfg(windows)]
+mod cursor_info;
+#[cfg(windows)]
 mod echo_output;
 #[cfg(windows)]
 mod indexed_output;
@@ -50,6 +52,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "cursor-info" {
+        return cursor_info::run(std::path::Path::new(&arguments[1]));
+    }
     if mode == "indexed-output" {
         return indexed_output::run(std::path::Path::new(&arguments[1]));
     }

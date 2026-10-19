@@ -1,6 +1,7 @@
 //! Initial user-mode console API service; no system console host is used.
 use crate::{DriverRequest, DriverSession};
 mod cell_codec;
+mod cursor;
 mod font;
 mod indexed;
 mod input;
@@ -64,6 +65,7 @@ pub struct ConsoleHost<'session> {
     next_token: usize,
     input_mode: u32,
     output_mode: u32,
+    cursor_size: u32,
     input_code_page: u32,
     output_code_page: u32,
     output_decoder: crate::terminal::Utf16Decoder,
@@ -88,6 +90,7 @@ impl Default for ConsoleHost<'_> {
             next_token: 1,
             input_mode: 7,
             output_mode: 3,
+            cursor_size: 25,
             input_code_page: code_page,
             output_code_page: code_page,
             output_decoder: crate::terminal::Utf16Decoder::default(),
@@ -624,8 +627,22 @@ impl<'session> ConsoleHost<'session> {
                     objects::WRITE,
                 );
                 if receipt.status == SUCCESS {
-                    body[..4].copy_from_slice(&25_u32.to_le_bytes());
+                    body[..4].copy_from_slice(&self.cursor_size.to_le_bytes());
                     body[4] = u8::from(!self.terminal.screen().hide_cursor());
+                }
+            }
+            0x0200_0006 if body.len() >= 8 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS
+                    && let Err(status) =
+                        self.set_cursor_info(read_u32(&body, 0).unwrap(), body[4] != 0, output)?
+                {
+                    receipt.status = status;
                 }
             }
             0x0200_000a if body.len() >= 4 => {

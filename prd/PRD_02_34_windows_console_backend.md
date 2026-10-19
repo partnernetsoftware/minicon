@@ -49,6 +49,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
 │   ├── [-] rectangular W/A read/write: clipped row stride, per-cell styles and scoped wide pairs
 │   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
+│   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
 │   ├── [-] mixed output: authoritative parser boundaries, bounded fragments and native injection
@@ -92,6 +93,9 @@ flowchart LR
     RECT --> EDIT["shared Screen::write_cell / row bounds / damage"]
     EDIT --> VT
     RAWUI["real Windows PowerShell RawUI"] --> RECT
+    HOST --> CUR["native cursor size / visibility / WRITE access"]
+    CUR --> CV["common visibility / shape / blink and replay"]
+    CV --> VT
     HOST --> STR["indexed W/A text / attribute spans / counts / WRITE access"]
     STR --> SPAN["shared literal text spans / independent styles / clipped end"]
     SPAN --> VT
@@ -1674,3 +1678,77 @@ These cross checks are compile-only; non-host native runtime, wider code-page/
 legacy-cell coverage, multiple buffers, packaging and default qualification stay
 open. Exact source, log hashes and remaining scope are recorded in ignored
 indexed-output-final-receipt.json.
+
+### Accepted cursor-info and cursor-replay leaf
+
+Invariant: SetConsoleCursorInfo validates its 1..100 native size and output
+handle, changes visibility through the common terminal stream and commits
+native metadata after sink success. Native size is adapter metadata; shared
+shape/blink/visibility remain OS/ISA-neutral. Native changes preserve cursor
+position, cells, drawing attributes and unfinished client grammar. Public full,
+diff and cursor-state replay must reproduce all common cursor appearance.
+
+Evidence must include an independent SDK/system court for all valid sizes,
+invalid sizes and output/input/restricted handles, same-size visibility changes,
+interleaved DECSCUSR, partial CSI, native readback and consumed state. Real
+Windows PowerShell 5/7 properties must exercise the native service. Safe failure
+preserves native metadata and common state on invalid input or pre-write sink
+failure; publication is still fatal after partial transport failure. Dependencies
+are shared cursor parser/damage, the stream facade and ordered native output.
+Hot files are native host dispatch/cursor module, common screen replay and SDK
+fixtures. Pixel-exact percentage rendering, multiple buffers and promotion are
+separate requirements of the overall backend, not implied by a VT projection.
+
+The pinned getset.cpp validates size and emits DECTCEM in its VT writer path;
+screenInfo.cpp retains a legacy size and preserves an explicit cursor type on
+same-size visibility changes. Dispatcher access is WRITE although the public
+page says READ; the actual SDK court below establishes this on the current system.
+Primary references: [API contract](https://learn.microsoft.com/en-us/windows/console/setconsolecursorinfo),
+[pinned routines](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/getset.cpp)
+and [buffer state](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/screenInfo.cpp).
+
+The native implementation now serves API 0x02000006 with an eight-byte body
+(size ULONG, visibility BOOLEAN and padding). Default native size remains 25;
+GetConsoleCursorInfo reads the retained value instead of a fixed reply and
+reads visibility from the common screen. Range checks precede publication;
+metadata changes only after DECTCEM publication succeeds. The setter remains an
+ordered emitting request, while the existing non-emitting getter can bypass
+output backpressure. Shared shape/blinking are preserved across native changes,
+including a changed percentage, matching the pinned VT writer's projection.
+Pixel-exact native legacy geometry and additional buffer state remain open.
+
+The independent SDK uses every size 1..100 with false/noncanonical-true input,
+checks exact normalized readback, invalid ranges and unchanged state, output
+READ-only/WRITE-only handles and an input handle. Actual current-system access
+is WRITE; READ-only fails with error 5, input handles with error 6 and invalid
+sizes with error 87. Interleaved VT styles, same-size updates and partial CSI
+are checked at eight handshake stages. System cursor rendering is asynchronous:
+the consumer waits for observed appearance and complete ordinary fences, not
+only the API return/title marker. At the deliberately unfinished client-CSI
+stage, wire grammar and hidden cursor position can still be pending; native
+position/attributes must remain exact, and resumed text must appear with the
+expected position/color. The following completed stages establish restoration.
+This distinction is recorded by cursor-info-fenced-reference.log and the final
+positive court, rather than turning an observation timeout into a passing state.
+
+Windows PowerShell 5 and PowerShell 7 property clients exercise Console.CursorSize,
+Console.CursorVisible and RawUI.CursorSize, retain explicit VT bar/steady style
+through same-size native updates, and validate query results and consumed output.
+Native/core and common replay units exercise pre-write failure, bounds and all
+three replay paths. cursor-info-red.log records a real unsupported owned API;
+cursor-replay-red.log records the separate shared replay runtime failure.
+
+Final local cursor qualification: cursor-info-final-suite.log records 203 selected
+passes, including 17 alignment checks and six added tests. Ten runtime mutation
+cases in cursor-info-negative-audit.json prove each shared replay path, native
+query values (failing SDK and both real PowerShell clients), metadata commit,
+visibility, retained grammar, range checks, WRITE access and the independent
+reference query oracle. Every guard was byte-restored before final qualification.
+Root fmt, default/experimental workspace all-target strict Clippy and standalone
+shared-parser strict Clippy passed. Library compile checks passed for Linux
+x86_64/aarch64, Windows aarch64 and macOS x86_64; the minimal Windows ARM64 PTY/
+probe check passed with existing minimal-feature warnings. These are compile-only
+cross-target receipts. Native non-host runtime, pixel-exact percentage rendering,
+multiple buffers, packaging and default qualification remain open. Four pinned
+source blobs were verified against their Git tree identities; ignored
+cursor-info-final-receipt.json records source/log/image hashes and evidence scope.

@@ -367,6 +367,7 @@ impl Screen {
             contents.extend_from_slice(b"\x1b[?7h");
         }
         crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
+        self.write_cursor_style_formatted(contents);
         let prev_attrs = self.grid().write_contents_formatted(contents);
         self.attrs.write_escape_code_diff(contents, &prev_attrs);
         if !self.auto_wrap() {
@@ -424,6 +425,9 @@ impl Screen {
         }
         if self.hide_cursor() != prev.hide_cursor() {
             crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
+        }
+        if self.cursor_shape != prev.cursor_shape || self.cursor_blinking != prev.cursor_blinking {
+            self.write_cursor_style_formatted(contents);
         }
         let prev_attrs = self
             .grid()
@@ -586,8 +590,8 @@ impl Screen {
         !self.mode(MODE_NO_WRAP)
     }
 
-    /// Returns terminal escape sequences sufficient to set the current
-    /// cursor state of the terminal.
+    /// Returns terminal escape sequences sufficient to restore cursor
+    /// position, visibility, shape and blinking state.
     ///
     /// This is not typically necessary, since
     /// [`contents_formatted`](Self::contents_formatted) will leave
@@ -610,8 +614,19 @@ impl Screen {
         contents
     }
 
+    fn write_cursor_style_formatted(&self, contents: &mut Vec<u8>) {
+        let shape = match self.cursor_shape {
+            CursorShape::Block => 1,
+            CursorShape::Underline => 3,
+            CursorShape::Bar => 5,
+        };
+        let parameter = shape + u8::from(!self.cursor_blinking);
+        contents.extend_from_slice(&[0x1b, b'[', b'0' + parameter, b' ', b'q']);
+    }
+
     fn write_cursor_state_formatted(&self, contents: &mut Vec<u8>) {
         crate::term::HideCursor::new(self.hide_cursor()).write_buf(contents);
+        self.write_cursor_style_formatted(contents);
         self.grid()
             .write_cursor_position_formatted(contents, None, None);
 
@@ -1610,5 +1625,59 @@ mod autowrap_tests {
             resumed.screen().cursor_position(),
             parser.screen().cursor_position()
         );
+    }
+}
+
+#[cfg(test)]
+mod cursor_replay_tests {
+    fn assert_appearance(actual: &super::Screen, expected: &super::Screen) {
+        assert_eq!(actual.cursor_shape(), expected.cursor_shape());
+        assert_eq!(actual.cursor_blinking(), expected.cursor_blinking());
+        assert_eq!(actual.hide_cursor(), expected.hide_cursor());
+        assert_eq!(actual.cursor_position(), expected.cursor_position());
+    }
+
+    #[test]
+    fn cursor_appearance_replay_preserves_shape_blink_and_visibility() {
+        for old in 1..=6 {
+            for requested in 0..=6 {
+                for hidden in [false, true] {
+                    let mut source = crate::Parser::new(3, 8, 0);
+                    source.process(
+                        format!(
+                            "\x1b[{requested} q\x1b[?25{}\x1b[31;44mX\x1b[2;3H",
+                            if hidden { 'l' } else { 'h' }
+                        )
+                        .as_bytes(),
+                    );
+                    let mut previous = crate::Parser::new(3, 8, 0);
+                    previous.process(
+                        format!("\x1b[{old} q\x1b[?25{}", if hidden { 'h' } else { 'l' })
+                            .as_bytes(),
+                    );
+                    let before = previous.screen().clone();
+                    let mut full = crate::Parser::new(3, 8, 0);
+                    *full.screen_mut() = before.clone();
+                    full.process(&source.screen().contents_formatted());
+                    assert_appearance(full.screen(), source.screen());
+                    let mut diff = crate::Parser::new(3, 8, 0);
+                    *diff.screen_mut() = before.clone();
+                    diff.process(&source.screen().contents_diff(&before));
+                    assert_appearance(diff.screen(), source.screen());
+                    let mut cursor = previous;
+                    cursor.process(&source.screen().cursor_state_formatted());
+                    assert_appearance(cursor.screen(), source.screen());
+                    assert_eq!(full.screen().contents(), source.screen().contents());
+                    assert_eq!(
+                        diff.screen().attributes_formatted(),
+                        source.screen().attributes_formatted()
+                    );
+                    source.process(b"\x1b[3");
+                    let _formatted = source.screen().cursor_state_formatted();
+                    source.process(b"2mY");
+                    assert_eq!(source.screen().fgcolor(), crate::Color::Idx(2));
+                }
+            }
+        }
     }
 }

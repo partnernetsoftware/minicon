@@ -174,3 +174,9 @@ architecture-specific native ABI. Native modules remain explicitly gated; a
 portable build is not a native runtime guarantee. Shared region semantics belong
 to [terminal state](PRD_02_24_con_terminal.md), with native compatibility evidence
 in [the Windows backend](PRD_02_34_windows_console_backend.md).
+
+Shared cursor appearance restoration is now carried by the same exposed Screen
+full/diff/cursor formatting methods. Its common contract and replay migration
+note belong to [terminal state](PRD_02_24_con_terminal.md); Windows percentage
+metadata remains native and is not part of the portable appearance vocabulary.
+The scoped service consumer and actual property clients are recorded in PRD 02.34.

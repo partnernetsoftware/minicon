@@ -303,6 +303,148 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn cursor_info_report(rust: bool) -> (String, Vec<vt100::Screen>) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("cursor-info")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 10, cols: 48 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let mut parser = vt100::Parser::new(10, 48, 0);
+    let mut parsed = 0;
+    let mut screens = Vec::new();
+    for label in [
+        "bar-hide",
+        "bar-show",
+        "underline",
+        "same-hide",
+        "new-show",
+        "partial",
+        "resumed",
+        "final",
+    ] {
+        fixture.until(&format!("cursor-{label}:"));
+        parser.process(&fixture.bytes[parsed..]);
+        parsed = fixture.bytes.len();
+        let expected_shape = match label {
+            "bar-hide" | "bar-show" => vt100::CursorShape::Bar,
+            "final" => vt100::CursorShape::Block,
+            _ => vt100::CursorShape::Underline,
+        };
+        let expected_hidden = matches!(
+            label,
+            "bar-hide" | "underline" | "same-hide" | "partial" | "resumed"
+        );
+        let expected_position = if matches!(label, "resumed" | "final") {
+            (1, 4)
+        } else {
+            (1, 3)
+        };
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while parser.screen().cursor_shape() != expected_shape
+            || parser.screen().cursor_blinking()
+            || parser.screen().hide_cursor() != expected_hidden
+            || label != "partial"
+                && (parser.screen().cursor_position() != expected_position || !parser.at_boundary())
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "cursor fence rust={rust} {label}: {e}; current={:?},{},{};{:?};wire={:?}",
+                        parser.screen().cursor_shape(),
+                        parser.screen().cursor_blinking(),
+                        parser.screen().hide_cursor(),
+                        parser.screen().cursor_position(),
+                        String::from_utf8_lossy(&fixture.bytes)
+                    )
+                });
+            let chunk = chunk.unwrap();
+            parser.process(&chunk);
+            fixture.bytes.extend(chunk);
+            parsed = fixture.bytes.len();
+        }
+        let screen = parser.screen();
+        eprintln!(
+            "cursor rust={rust} {label}: {:?},{},{};{:?}",
+            screen.cursor_shape(),
+            screen.cursor_blinking(),
+            screen.hide_cursor(),
+            screen.cursor_position()
+        );
+        screens.push(screen.clone());
+        std::fs::write(report.0.with_extension(label), b"observed").unwrap();
+    }
+    fixture.finish(0);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!("cursor native rust={rust}: {receipt}");
+    (receipt, screens)
+}
+
+fn assert_cursor_info(receipt: &str, screens: &[vt100::Screen]) {
+    for line in [
+        "bulk:200",
+        "invalid:0:0,87,true",
+        "invalid:101:0,87,true",
+        "invalid:4294967295:0,87,true",
+        "readonly:0,5",
+        "writeonly:1,0",
+        "readonly-invalid:0,5",
+        "input:0,6",
+        "bar-hide:63,0",
+        "bar-show:63,1",
+        "underline:63,0",
+        "same-hide:63,0",
+        "new-show:100,1",
+        "partial:25,0",
+        "resumed:25,0",
+        "final:75,1",
+    ] {
+        assert!(
+            receipt.lines().any(|actual| actual == line),
+            "missing {line}: {receipt}"
+        );
+    }
+    for label in [
+        "bar-hide",
+        "bar-show",
+        "underline",
+        "same-hide",
+        "new-show",
+        "partial",
+    ] {
+        assert!(receipt.contains(&format!("{label}:3,1;0014")), "{receipt}");
+    }
+    for label in ["resumed", "final"] {
+        assert!(receipt.contains(&format!("{label}:4,1;0012")), "{receipt}");
+    }
+    assert_eq!(screens.len(), 8);
+    assert_eq!(screens[7].cell(1, 2).unwrap().contents(), "X");
+    assert_eq!(screens[7].cell(1, 3).unwrap().contents(), "Z");
+    assert_eq!(
+        screens[7].cell(1, 3).unwrap().fgcolor(),
+        vt100::Color::Idx(2)
+    );
+}
+
+#[test]
+fn rust_console_pty_cursor_properties_preserve_shared_appearance_and_decoder() {
+    let (receipt, screens) = cursor_info_report(true);
+    assert_cursor_info(&receipt, &screens);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY cursor property court"]
+fn rust_console_client_cursor_properties_match_system_conpty() {
+    let (receipt, screens) = cursor_info_report(false);
+    assert_cursor_info(&receipt, &screens);
+}
+
 fn indexed_output_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -2027,6 +2169,38 @@ fn rust_console_pty_facade_job_cleanup_stops_a_nonreading_client() {
     assert_eq!(receipt.members_observed, 1);
     assert!(receipt.verified_empty);
     fixture.finish(1);
+}
+
+fn powershell_cursor_properties(name: &str) {
+    let script = "$ErrorActionPreference='Stop';[Console]::CursorSize=73;[Console]::CursorVisible=$false;if([Console]::CursorSize -ne 73 -or [Console]::CursorVisible){exit 19};$Host.UI.RawUI.CursorSize=35;if($Host.UI.RawUI.CursorSize -ne 35){exit 20};[Console]::Write(([char]27)+'[6 q');[Console]::CursorVisible=$true;$Host.UI.RawUI.CursorSize=35;if([Console]::CursorSize -ne 35 -or ![Console]::CursorVisible){exit 21};[Console]::Write('cursor-properties-ok:');exit 0";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client(name))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .rust_console(),
+    );
+    fixture.until("cursor-properties-ok:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(30, 120, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().cursor_shape(), vt100::CursorShape::Bar);
+    assert!(!parser.screen().cursor_blinking());
+    assert!(!parser.screen().hide_cursor());
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell cursor property court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_cursor_properties() {
+    powershell_cursor_properties("MINICON_TEST_WINDOWS_POWERSHELL");
+}
+
+#[test]
+#[ignore = "explicit external PowerShell 7 cursor property court; missing client is BLOCKED"]
+fn rust_console_client_powershell7_cursor_properties() {
+    powershell_cursor_properties("MINICON_TEST_PWSH");
 }
 
 fn external_client(name: &str) -> PathBuf {

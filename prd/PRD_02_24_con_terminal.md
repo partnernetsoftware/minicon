@@ -24,6 +24,7 @@ minicon terminal and rendering
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
+│   ├── Cursor appearance replay — visibility, position, shape and blinking
 │   ├── Literal text/style spans — independent cell components and bounded traversal
 │   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
@@ -43,6 +44,8 @@ flowchart LR
     VT --> WRAP["shared DECAWM state / full and incremental replay"]
     WRAP --> DMG
     EDIT["CellStyle / literal cell edits"] --> VT
+    CUR["cursor shape / blinking / visibility / replay"] --> VT
+    CUR --> DMG
     SPAN["literal text / variable style spans"] --> EDIT
     MOVE["CellRect / snapshot region movement"] --> EDIT
     EDIT --> DMG
@@ -705,3 +708,23 @@ edits report row damage. The unit
 literal_spans_preserve_attributes_history_and_partial_grammar covers mixed styles,
 CJK, supplementary padding, wide healing, active-grid/history isolation and
 retained CSI. Native encoding and transaction evidence belongs to PRD 02.34.
+
+## Cursor appearance replay
+
+The shared Screen already parses DECSCUSR shape/blinking and DECTCEM visibility.
+Full visible/state formatting, incremental content/state diffs and
+cursor_state_formatted now reproduce this common appearance as well as cursor
+position. Canonical DECSCUSR parameters are 1..6; full/cursor restoration emits
+one even for the default blinking block so that a previously styled consumer
+is reset correctly. Diffs emit it only when shape or blinking changes. Consumers
+with byte-exact replay expectations must account for the additional full/cursor
+restore sequence; the library synopsis has been updated. This adds no native
+percentage, OS/ISA branch or second parser. Row-only formatting still leaves
+cursor restoration to its caller.
+
+cursor_appearance_replay_preserves_shape_blink_and_visibility checks full, diff
+and cursor-only restoration across all six prior shapes/blinking combinations,
+requested parameters 0..6 and both visibility states. It also checks cells,
+drawing state and retained partial CSI. cursor-replay-red.log records its actual
+runtime failure before replay included appearance. Native metadata, sink
+transactions and SDK/application evidence belong to PRD 02.34.
