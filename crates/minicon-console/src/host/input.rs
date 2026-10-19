@@ -73,6 +73,7 @@ struct PendingRead<'session> {
     kind: ReadKind,
     line: Vec<u16>,
     controls: u32,
+    echo_decoder: crate::terminal::Utf16Decoder,
 }
 
 impl<'session> ConsoleHost<'session> {
@@ -370,6 +371,7 @@ impl<'session> ConsoleHost<'session> {
             },
             line,
             controls: 0,
+            echo_decoder: crate::terminal::Utf16Decoder::default(),
         });
         receipt.pending = self.service_pending(output)? <= previous;
         Ok(receipt)
@@ -440,6 +442,7 @@ impl<'session> ConsoleHost<'session> {
             kind: ReadKind::Records { flags },
             line: Vec::new(),
             controls: 0,
+            echo_decoder: crate::terminal::Utf16Decoder::default(),
         });
         receipt.pending = self.service_pending(output)? <= previous;
         Ok(receipt)
@@ -596,9 +599,15 @@ impl<'session> ConsoleHost<'session> {
                         u32::from(last)
                     };
                     if echo {
-                        let width = char::from_u32(removed)
-                            .and_then(UnicodeWidthChar::width)
-                            .unwrap_or(1);
+                        let width = if (0xd800..=0xdbff).contains(&removed)
+                            && read.echo_decoder.discard_pending()
+                        {
+                            0
+                        } else {
+                            char::from_u32(removed)
+                                .and_then(UnicodeWidthChar::width)
+                                .unwrap_or(1)
+                        };
                         for _ in 0..width {
                             self.emit_native(b"\x08 \x08", output)?;
                         }
@@ -609,7 +618,8 @@ impl<'session> ConsoleHost<'session> {
             if line_mode && character == 13 {
                 read.line.extend([13, 10]);
                 if echo {
-                    self.write_utf16([13, 10], output)?;
+                    self.echo_unit(&mut read.echo_decoder, 13, output)?;
+                    self.echo_unit(&mut read.echo_decoder, 10, output)?;
                 }
                 self.input.ready_event_suppressed = false;
                 self.input.ready.extend(read.line.drain(..));
@@ -623,7 +633,7 @@ impl<'session> ConsoleHost<'session> {
             }
             read.line.push(character);
             if echo {
-                self.write_utf16([character], output)?;
+                self.echo_unit(&mut read.echo_decoder, character, output)?;
             }
             if !line_mode && !unicode && (0xd800..=0xdbff).contains(&character) {
                 // Byte reads must encode a complete supplementary character,

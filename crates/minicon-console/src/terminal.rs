@@ -1,6 +1,9 @@
 //! OS/ISA-neutral terminal state and ordered output. No native process or
 //! event-loop ownership is implied by this module.
 
+mod utf16;
+pub use utf16::Utf16Decoder;
+
 use std::io::{self, Write};
 pub use vt100::{
     Callbacks, Cell, CellStyle, Color, CursorShape, FrameError, MouseProtocolEncoding,

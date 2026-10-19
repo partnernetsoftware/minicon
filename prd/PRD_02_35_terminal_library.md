@@ -9,7 +9,7 @@ is a separate design decision, not a prerequisite or a current migration.
 
 ```text
 Outcome: another application can embed our terminal without MiniCon product state
-├── [-] Common terminal state and streaming facade — terminal::TerminalStream
+├── [-] Common terminal state and streaming facade — terminal::TerminalStream / Utf16Decoder
 │   invariant: one owned parser/framer pair; no OS handles or ISA assumptions
 │   evidence: public facade unit, shared parser/framer units, target build receipts
 │   safe failure: bounded-frame error or explicit I/O failure; no silent truncation
@@ -123,3 +123,19 @@ and experimental all-target strict Clippy and root fmt checks passed. Updated
 library checks passed for Linux x86_64/aarch64, Windows aarch64 and macOS x86_64;
 these are compile-only receipts, not new native runtime certification. Detailed
 hashes and remaining scope are in ignored `terminal-host-adoption-final-receipt.json`.
+
+## Independent text producers
+
+`terminal::Utf16Decoder` is the common incremental UTF-16 mechanism. Each
+producer owns one decoder; `push()` yields zero to two owned Unicode scalars,
+retaining an unmatched high surrogate and replacing invalid pairings. Its
+iterator does not borrow the decoder, so a caller can publish immediately.
+`discard_pending()` lets a line editor delete an undisplayed high unit without
+erasing a screen cell. This library mechanism has no native handles or ISA
+branches. The Windows client's output decoder and each pending cooked read's
+echo decoder are concrete, independent consumers. Native interruption/drop
+also drops the read's private echo state. GUI migration remains separate.
+
+The accepted cooked-echo behavior, its actual SDK and system reference scope,
+and remaining mode/editing/performance qualification belong to
+[the native backend](PRD_02_34_windows_console_backend.md).

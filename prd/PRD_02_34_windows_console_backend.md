@@ -1303,8 +1303,69 @@ The reference is not claimed to agree on those cells. Named logs are
 `mixed-output-tail-red.log` under the ignored research directory.
 
 This closes the exercised output/native-call paths, not all producer mixing.
-Cooked input echo and encoding/mode changes while client output is incomplete
-still need integration and qualification. Rectangular operations,
+Cooked echo isolation is qualified below for its explicit SDK scenarios;
+encoding/mode changes while client output is incomplete still need qualification. Rectangular operations,
 scrolling/multiple buffers, complete legacy flags/code pages, high-pressure
 concurrent writers, broader Windows/ISA/application runtime and packaged/default
 qualification remain open. GUI/default selection remains unchanged.
+
+### Accepted cooked-echo isolation leaf
+
+Invariant: input echo is a native producer, not a continuation of client
+VT/UTF-8/UTF-16. Echo must reach the shared screen and consumer immediately
+without consuming retained client grammar. Evidence is an actual Win32 caller
+with pending CSI/UTF-8/OSC, queued key records, ReadConsoleW text receipts,
+native cursor/attribute readback and consumed PTY cells; the installed system
+reference is measured separately. Safe failure remains explicit I/O failure;
+line limits, read interruption and private-Job authority are preserved.
+Dependencies are TerminalStream projections and cooked-read ownership. Hot files
+are host input/output and native fixtures. Complete line editing/history,
+rectangular APIs and all output-mode combinations are not claimed by this leaf.
+
+Cooked echo now emits complete native projections instead of passing through
+client WriteConsole decoding. Each pending read owns its independent shared
+`Utf16Decoder`; client WriteConsoleW output owns another. Deleting a retained,
+undisplayed high surrogate does not backspace the screen. Read cancellation or
+handle closure drops the private echo decoder with that read. Echo does not
+alter the client's retained VT/UTF-8, UTF-16 high unit or CR/LF history.
+The common decoder API is owned by [terminal library](PRD_02_35_terminal_library.md).
+
+The actual SDK fixture sets line/echo/processed input mode 7 and output mode 15.
+It supplies key records and calls ReadConsoleW while client CSI, UTF-8 and OSC
+are unfinished, checking returned UTF-16, native cursor/color and consumed owned
+PTY rows. It includes backspace, CJK, a removed unpaired high input unit, and
+an emoji surrogate pair. The owned-only extension holds a WriteConsoleW output
+high surrogate across an echoed line, then completes the original output pair.
+The installed system reference agrees on the three common SDK receipt phases;
+its consumed screen differs for the echoed emoji, so wire/cell parity is not
+claimed. The fourth streaming-W phase is an owned contract, not an asserted
+system equivalence.
+
+Microsoft documents echo into the active screen buffer and the roles of
+[console input/output modes](https://learn.microsoft.com/en-us/windows/console/setconsolemode)
+and [high-level reads](https://learn.microsoft.com/en-us/windows/console/high-level-console-input-and-output-functions).
+The pinned modern `readDataCooked.cpp` independently generates complete display
+commands and control notation; the installed reference remains a distinct
+binary identity. The new Rust decoder is shared by actual output and echo
+consumers; there is no persistent shadow grid or second client VT grammar.
+
+Local logs are `cooked-echo-red.log`, `cooked-echo-positive.log` and
+`cooked-echo-extended-positive.log` in the ignored research directory. The first
+records an actual owned SDK failure and a passing system receipt reference,
+before changing echo routing. Broader output-mode combinations, full cooked
+editing/history, control-key display/wakeup combinations, interrupted partial
+Unicode reads, encoding/mode changes, malformed-scalar cell projection and
+large paste/screen clone cost remain explicit qualification work. Default
+selection and GUI routing remain unchanged.
+
+Final local evidence: `cooked-echo-final-suite.log` has 178 selected passes,
+including 17 repository alignment checks and the new owned/reference native
+cases. `cooked-echo-negative-audit.json` records four observed runtime failures
+and restored source hashes for client-grammar contamination, stolen output
+surrogate state, erasing an undisplayed high input unit, and changed reference
+SDK input. Root fmt plus default/experimental workspace all-target strict
+Clippy passed. Shared library compile checks cover Linux x86_64/aarch64,
+Windows aarch64 and macOS x86_64; the minimal Windows ARM64 PTY consumer and
+probe also compile, with existing minimal-feature dead-code warnings. These
+are compile-only cross-target receipts. No native ARM/macOS/Linux runtime,
+GUI/default selection, full mode matrix or release promotion is claimed.

@@ -8,7 +8,7 @@ use windows_sys::Win32::System::Console::{
     SetConsoleMode, SetConsoleOutputCP, SetConsoleTextAttribute, WriteConsoleW,
 };
 
-fn bytes(output: HANDLE, value: &[u8]) -> io::Result<()> {
+pub(super) fn bytes(output: HANDLE, value: &[u8]) -> io::Result<()> {
     let mut written = 0;
     // SAFETY: live private console and initialized bounded byte buffer.
     if unsafe {
@@ -76,7 +76,7 @@ pub(super) fn tail(report: &Path, utf8: bool) -> io::Result<()> {
     std::fs::write(report, b"accepted")
 }
 
-fn position(output: HANDLE, phase: &str, receipt: &mut String) -> io::Result<()> {
+pub(super) fn position(output: HANDLE, phase: &str, receipt: &mut String) -> io::Result<()> {
     let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
     // SAFETY: initialized SDK-sized output buffer.
     if unsafe { GetConsoleScreenBufferInfo(output, &mut info) } == 0 {

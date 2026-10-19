@@ -195,22 +195,8 @@ impl ConsoleHost<'_> {
         output: &mut impl Write,
     ) -> io::Result<()> {
         for unit in units {
-            if let Some(high) = self.pending_high_surrogate.take() {
-                if (0xdc00..=0xdfff).contains(&unit) {
-                    let value =
-                        0x10000 + ((u32::from(high) - 0xd800) << 10) + u32::from(unit) - 0xdc00;
-                    self.emit_char(char::from_u32(value).unwrap(), output)?;
-                    continue;
-                }
-                self.emit_char(char::REPLACEMENT_CHARACTER, output)?;
-            }
-            if (0xd800..=0xdbff).contains(&unit) {
-                self.pending_high_surrogate = Some(unit);
-            } else {
-                self.emit_char(
-                    char::from_u32(u32::from(unit)).unwrap_or(char::REPLACEMENT_CHARACTER),
-                    output,
-                )?;
+            for character in self.output_decoder.push(unit) {
+                self.emit_char(character, output)?;
             }
         }
         Ok(())
@@ -218,6 +204,58 @@ impl ConsoleHost<'_> {
 
     pub(super) fn emit(&mut self, bytes: &[u8], output: &mut impl Write) -> io::Result<()> {
         self.emit_framed(bytes, output)
+    }
+
+    pub(super) fn echo_unit(
+        &mut self,
+        decoder: &mut crate::terminal::Utf16Decoder,
+        unit: u16,
+        output: &mut impl Write,
+    ) -> io::Result<()> {
+        for character in decoder.push(unit) {
+            if self.output_mode & ENABLE_PROCESSED_OUTPUT == 0 && character.is_ascii_control() {
+                self.echo_printable(' ', output)?;
+            } else {
+                match character {
+                    '\r' => self.emit_native(b"\r", output)?,
+                    '\n' => {
+                        if self.output_mode & DISABLE_NEWLINE_AUTO_RETURN == 0
+                            && self.terminal.screen().cursor_position().1 != 0
+                        {
+                            self.emit_native(b"\r", output)?;
+                        }
+                        self.emit_native(b"\n", output)?;
+                    }
+                    '\t' => {
+                        let (_, column) = self.terminal.screen().cursor_position();
+                        let columns = self.terminal.screen().size().1;
+                        for _ in 0..(8 - column % 8).min(columns.saturating_sub(column)) {
+                            self.echo_printable(' ', output)?;
+                        }
+                    }
+                    control if control.is_ascii_control() => {
+                        // Cooked input displays control notation instead of
+                        // interpreting keyboard bytes as client VT commands.
+                        self.echo_printable('^', output)?;
+                        self.echo_printable(char::from((control as u8) ^ 64), output)?;
+                    }
+                    printable => self.echo_printable(printable, output)?,
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn echo_printable(&mut self, character: char, output: &mut impl Write) -> io::Result<()> {
+        let mut encoded = [0; 4];
+        self.emit_native(character.encode_utf8(&mut encoded).as_bytes(), output)?;
+        if self.output_mode & VT_OUTPUT != VT_OUTPUT
+            && self.output_mode & ENABLE_WRAP_AT_EOL_OUTPUT != 0
+            && self.terminal.screen().cursor_position().1 >= self.terminal.screen().size().1
+        {
+            self.emit_native(b"\r\n", output)?;
+        }
+        Ok(())
     }
 
     pub(super) fn sync_output_wrap(&mut self) {

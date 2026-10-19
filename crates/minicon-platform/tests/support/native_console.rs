@@ -4,6 +4,8 @@ mod console_file;
 #[cfg(windows)]
 mod control;
 #[cfg(windows)]
+mod echo_output;
+#[cfg(windows)]
 mod inheritance;
 #[cfg(windows)]
 mod mixed_output;
@@ -40,6 +42,12 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "echo-output" || mode == "echo-output-owned" {
+        return echo_output::run(
+            std::path::Path::new(&arguments[1]),
+            mode.ends_with("-owned"),
+        );
+    }
     if mode == "mixed-output-tail-csi" || mode == "mixed-output-tail-utf8" {
         return mixed_output::tail(std::path::Path::new(&arguments[1]), mode.ends_with("utf8"));
     }

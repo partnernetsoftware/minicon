@@ -303,6 +303,60 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn echo_output_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(if rust {
+            "echo-output-owned"
+        } else {
+            "echo-output"
+        })
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("echo-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!(
+        "echo rust={rust}: {receipt:?}; screen={:?}",
+        parser.screen().contents()
+    );
+    (receipt, parser)
+}
+
+const ECHO_OUTPUT_RECEIPT: &str = "csi-read:0065,000d,000a,\ncsi-echo:0,1;0007\ncsi-finish:1,1;0004\nutf8-read:0052,000d,000a,\nutf8-echo:0,2;0004\nutf8-finish:2,2;0004\nosc-read:4e2d,d83d,de00,000d,000a,\nosc-echo:0,3;0004\nosc-finish:0,3;0004\n";
+
+#[test]
+fn rust_console_pty_cooked_echo_preserves_unfinished_client_output() {
+    let (receipt, parser) = echo_output_report(true);
+    assert_eq!(
+        receipt,
+        format!(
+            "{ECHO_OUTPUT_RECEIPT}wide-read:0056,000d,000a,\nwide-echo:0,4;0004\nwide-finish:2,4;0004\n"
+        )
+    );
+    assert_eq!(parser.screen().contents(), "e\nXR\n中中😀\nV\n😀");
+    assert_eq!(parser.screen().cursor_position(), (4, 2));
+    assert_eq!(
+        parser.screen().cell(1, 0).unwrap().fgcolor(),
+        vt100::Color::Idx(1)
+    );
+}
+
+#[test]
+#[ignore = "explicit system ConPTY cooked-echo differential court"]
+fn rust_console_client_cooked_echo_matches_system_conpty() {
+    let (receipt, _) = echo_output_report(false);
+    assert_eq!(receipt, ECHO_OUTPUT_RECEIPT);
+}
+
 fn mixed_output_report(rust: bool, budget: bool) -> (String, vt100::Parser, Vec<u8>) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
