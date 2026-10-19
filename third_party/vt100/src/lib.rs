@@ -65,5 +65,7 @@ pub use cell::Cell;
 pub use damage::{RowRange, ScreenDamage};
 pub use framing::{FrameError, OutputFramer};
 pub use parser::Parser;
-pub use screen::{CursorShape, MouseProtocolEncoding, MouseProtocolMode, Screen};
+pub use screen::{
+    CellMoveError, CellRect, CursorShape, MouseProtocolEncoding, MouseProtocolMode, Screen,
+};
 pub use vte::ParseProgress;

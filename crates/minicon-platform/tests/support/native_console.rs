@@ -18,6 +18,8 @@ mod screen_fill;
 #[cfg(windows)]
 mod screen_readback;
 #[cfg(windows)]
+mod scroll_output;
+#[cfg(windows)]
 mod text_attributes;
 #[cfg(windows)]
 mod unicode_output;
@@ -46,6 +48,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "scroll-output" {
+        return scroll_output::run(std::path::Path::new(&arguments[1]));
+    }
     if mode == "rect-output" {
         return rect_output::run(std::path::Path::new(&arguments[1]));
     }

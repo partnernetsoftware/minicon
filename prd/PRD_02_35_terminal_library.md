@@ -14,6 +14,11 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: public facade unit, shared parser/framer units, target build receipts
 │   safe failure: bounded-frame error or explicit I/O failure; no silent truncation
 │   dependency: owned vt100/vte; non-goal: GUI/event loop or process spawning
+├── [-] Shared cell-region movement — terminal::CellRect / Screen::move_region
+│   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
+│   evidence: shared grapheme/overlap unit, native SDK and actual RawUI consumer
+│   safe failure: typed wide-fill error; native adapters commit after sink success
+│   dependency: common cell model; non-goal: Win32 ABI or incidental history scroll
 ├── [v] Windows host adopts the common stream facade
 │   invariant: native projections preserve client grammar and commit after sink success
 │   evidence: public projection unit plus SDK mixed-output and existing host/screen courts
@@ -43,6 +48,8 @@ flowchart LR
     VT --> VTE["owned vte: authoritative VT / UTF-8 grammar"]
     APP --> PLATFORM["minicon-platform::pty"]
     PLATFORM -->|"rust-console opt-in"| WIN["minicon-console Windows service"]
+    MOVE["shared region movement / cell invariants"] --> COMMON
+    WIN --> MOVE
     WIN --> COMMON
     WIN --> KERNEL["Windows ConDrv"]
     PLATFORM --> POSIX["macOS / Linux native PTY adapters"]
@@ -145,3 +152,25 @@ full/diff projection. The display contract and callback migration note are
 owned by [terminal state](PRD_02_24_con_terminal.md); native SDK evidence is in
 PRD 02.34. It is one shared OS/ISA-neutral implementation, consumed by GUI
 parsing and the owned service; native runtime qualification remains scoped.
+
+## Accepted consolidation sequence
+
+1. Keep common stream, text producers, cells/styles, damage and region operations
+   behind the terminal namespace. The native service is a real consumer of this
+   boundary. Native wire errors and structures do not become common types.
+2. Define portable session/input/capability and shutdown contracts before moving
+   existing PTY code. Retain one process-lifecycle authority and an acyclic
+   dependency graph; no platform-to-console-to-platform dependency cycle.
+3. Consolidate the existing macOS/Linux PTY implementation with native runtime
+   evidence for each OS. Its current platform ownership is not changed by the
+   common screen API. Renderers, product tabs and settings remain consumers.
+4. Qualify external consumers and OS × ISA feature combinations separately.
+   Reconsider a merger with minicon-platform only after these boundaries and
+   actual consumers provide evidence; no merger is authorized by this plan.
+
+The library name is retained: console denotes the integrated terminal domain,
+not an assertion that every export is Windows-only. Common modules contain no
+architecture-specific native ABI. Native modules remain explicitly gated; a
+portable build is not a native runtime guarantee. Shared region semantics belong
+to [terminal state](PRD_02_24_con_terminal.md), with native compatibility evidence
+in [the Windows backend](PRD_02_34_windows_console_backend.md).

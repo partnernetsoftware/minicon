@@ -7,6 +7,26 @@ pub struct Row {
 }
 
 impl Row {
+    pub(crate) fn repair_wide_pairs(&mut self) {
+        let mut column = 0;
+        while column < self.cells.len() {
+            if self.cells[column].is_wide()
+                && self
+                    .cells
+                    .get(column + 1)
+                    .is_some_and(crate::Cell::is_wide_continuation)
+            {
+                column += 2;
+                continue;
+            }
+            if self.cells[column].is_wide() || self.cells[column].is_wide_continuation() {
+                let attrs = *self.cells[column].attrs();
+                self.cells[column].clear(attrs);
+            }
+            column += 1;
+        }
+    }
+
     pub fn new(cols: u16) -> Self {
         Self {
             cells: vec![crate::Cell::new(); usize::from(cols)],

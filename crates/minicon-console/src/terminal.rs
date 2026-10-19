@@ -6,8 +6,8 @@ pub use utf16::Utf16Decoder;
 
 use std::io::{self, Write};
 pub use vt100::{
-    Callbacks, Cell, CellStyle, Color, CursorShape, FrameError, MouseProtocolEncoding,
-    MouseProtocolMode, RowRange, Screen, ScreenDamage,
+    Callbacks, Cell, CellMoveError, CellRect, CellStyle, Color, CursorShape, FrameError,
+    MouseProtocolEncoding, MouseProtocolMode, RowRange, Screen, ScreenDamage,
 };
 
 /// A parser paired with bounded output framing for its entire lifetime.

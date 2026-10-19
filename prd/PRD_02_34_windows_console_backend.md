@@ -49,6 +49,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped native fills: shared literal-cell/style edits with ordered safe projection
 │   ├── [-] rectangular W/A read/write: clipped row stride, per-cell styles and scoped wide pairs
 │   │   └── [v] scoped read-only virtual current-font/size queries for real RawUI
+│   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
 │   ├── [-] mixed output: authoritative parser boundaries, bounded fragments and native injection
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
@@ -90,6 +91,10 @@ flowchart LR
     RECT --> EDIT["shared Screen::write_cell / row bounds / damage"]
     EDIT --> VT
     RAWUI["real Windows PowerShell RawUI"] --> RECT
+    HOST --> SCROLL["native scroll / WRITE access / code pages"]
+    SCROLL --> MOVE["common CellRect / snapshot move / wide-pair invariants"]
+    MOVE --> VT
+    RAWUI --> SCROLL
     RAWUI --> FONT["Windows legacy font queries / virtual metadata only"]
     HOST --> FONT
     HOST --> FRAME["client VT/UTF-8 fragments / immediate controls / native output boundary"]
@@ -1511,3 +1516,67 @@ ARM64 PTY/probe compilation also passed with existing minimal-feature warnings.
 These cross checks are compile-only; native non-host cells, all legacy
 representations, more real TUI clients and packaged/default qualification remain
 open. Exact source, artifact and log hashes stay in the ignored final receipt.
+
+### Accepted region move / native scroll leaf
+
+Invariant: source cells are snapshotted before overlapping moves; destination
+copy and exposed-source fill obey explicit screen/clip bounds, preserve cell
+text/styles, cursor/drawing state and client grammar, and never push terminal
+scrollback as an incidental VT scroll. Shared code owns cell movement and wide
+invariants. Windows owns inclusive SMALL_RECT conversion, its 26-byte scroll
+message, fill code-page conversion, access and compatibility semantics. Evidence
+must include independent ScrollConsoleScreenBufferW/A SDK receipts, overlap in
+both directions, clipped/negative/offscreen regions, wide cells, denied access,
+safe output failure and real managed-console use. Unsupported representations
+fail before commit; capture/projection limits and private-Job authority remain
+unchanged. Complete cmd-specific history shims and multiple native buffers are
+separate requirements of the overall backend, not inferred from a block move.
+
+The public documentation labels the handle READ, while the pinned dispatcher
+requests GENERIC_WRITE; the actual SDK court below resolves this discrepancy
+for its recorded system build.
+Primary contract: [ScrollConsoleScreenBuffer](https://learn.microsoft.com/en-us/windows/console/scrollconsolescreenbuffer).
+
+The scoped implementation now routes API 0x0200000c through the common
+Screen::move_region operation. The 26-byte, pointer-free Windows request keeps
+inclusive rectangles, clip/Unicode bytes, destination and CHAR_INFO fill in the
+native adapter. Fill accepts one Unicode scalar or ASCII/SBCS code-page cells;
+wide fills, lone surrogates and unsupported legacy attributes are rejected.
+Native projection shares the same bounded commit-after-output helper as fills
+and rectangle writes. This does not feed generated VT into pending client grammar.
+
+The actual SDK reference on the recorded Windows build confirms READ-only
+output handles fail with error 5 and WRITE-only handles succeed, matching the
+pinned dispatcher's GENERIC_WRITE requirement. The implementation follows that
+observed contract, rather than widening access from the documentation label.
+The native SDK court checks both overlap directions, clip-limited writes,
+negative source translation, offscreen-destination fill, CP437 fill, text/style
+readback and retained cursor/attributes/partial CSI. Consumer comparison uses
+physical rows: system output may mark full-width seed rows as wrapped, so
+Screen::contents concatenation is not a physical-cell equivalence oracle.
+
+The actual Windows PowerShell RawUI ScrollBufferContents client moves a colored
+array with Chinese wide cells, validates native readback and checks consumed
+PTY cells. Its runtime mutation fails when shared movement is shifted, proving
+it exercises this operation. SDK geometry and legacy wide-edge representations
+on other Windows versions remain separately unqualified; this one application
+is not a complete compatibility claim. The tests are
+rust_console_pty_scroll_moves_overlap_clip_and_preserves_client_decoder,
+rust_console_client_scroll_matches_system_conpty,
+rust_console_client_windows_powershell_rawui_scroll and
+rust_console_scroll_validates_fill_and_commits_after_publication, together with
+the shared region_moves unit owned by PRD 02.24. Five observed runtime mutation
+cases in ignored scroll-output-negative-audit.json cover translation, the shared
+unit, sink commit order, independent SDK style expectations and WRITE access.
+Every source guard was byte-restored before final qualification.
+
+Final local region-move qualification: scroll-output-final-suite.log records
+191 selected passes including 17 alignment checks and five added tests. The
+restored guards in scroll-output-negative-audit.json were rechecked after strict
+lint fixes. Root fmt, default and experimental workspace all-target strict
+Clippy, and standalone shared-parser strict Clippy passed. Updated library
+compile checks passed for Linux x86_64/aarch64, Windows aarch64 and macOS x86_64.
+The minimal Windows ARM64 PTY/probe check passed with existing minimal-feature
+warnings. These are compile-only cross-target receipts; native non-host runtime,
+full legacy scroll behavior, packaging and default selection remain open.
+Exact source/log identities are in ignored scroll-output-final-receipt.json.

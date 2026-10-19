@@ -2,9 +2,6 @@
 use super::{ConsoleHost, INVALID_PARAMETER, NOT_SUPPORTED};
 use std::io::{self, Write};
 use unicode_width::UnicodeWidthChar;
-use windows_sys::Win32::Globalization::{
-    CPINFO, GetCPInfo, MultiByteToWideChar, WideCharToMultiByte,
-};
 
 const MAX_BYTES: usize = 1024 * 1024;
 
@@ -92,7 +89,7 @@ impl ConsoleHost<'_> {
                 let character = if unicode {
                     char::from_u32(u32::from(unit))
                 } else {
-                    match self.rect_ansi_to_wide(unit as u8) {
+                    match self.decode_single_byte_cell(unit as u8) {
                         Ok(value) => Some(value),
                         Err(status) => return Ok(Err(status)),
                     }
@@ -127,12 +124,9 @@ impl ConsoleHost<'_> {
                 column += width as i16;
             }
         }
-        let projection = next.contents_diff(self.terminal.screen());
-        if projection.len() > MAX_BYTES {
-            return Ok(Err(NOT_SUPPORTED));
+        if let Err(status) = self.commit_screen_update(next, output)? {
+            return Ok(Err(status));
         }
-        output.write_all(&projection)?;
-        *self.terminal.screen_mut() = next;
         Ok(Ok(clipped))
     }
 
@@ -169,7 +163,7 @@ impl ConsoleHost<'_> {
                 let unit = units.next().unwrap_or(u16::from(b' '));
                 let mut unit = if units.next().is_some() { 0xfffd } else { unit };
                 if !unicode {
-                    unit = u16::from(self.rect_wide_to_ansi(unit)?);
+                    unit = u16::from(self.encode_single_byte_cell(unit)?);
                 }
                 let attribute = super::output::legacy_attribute(
                     cell.fgcolor(),
@@ -190,43 +184,6 @@ impl ConsoleHost<'_> {
             }
         }
         Ok((clipped, bytes))
-    }
-
-    fn rect_ansi_to_wide(&self, byte: u8) -> Result<char, i32> {
-        if byte.is_ascii() {
-            return Ok(char::from(byte));
-        }
-        let mut info = CPINFO::default();
-        let mut unit = 0;
-        // SAFETY: numeric CP query and one initialized input/output unit.
-        if unsafe { GetCPInfo(self.output_code_page, &mut info) } == 0
-            || info.MaxCharSize != 1
-            || unsafe { MultiByteToWideChar(self.output_code_page, 0, &byte, 1, &mut unit, 1) } != 1
-        {
-            return Err(NOT_SUPPORTED);
-        }
-        char::from_u32(u32::from(unit)).ok_or(NOT_SUPPORTED)
-    }
-
-    fn rect_wide_to_ansi(&self, unit: u16) -> Result<u8, i32> {
-        let mut byte = 0;
-        // SAFETY: one initialized UTF-16 unit, one-byte target and no fallback pointers.
-        if unsafe {
-            WideCharToMultiByte(
-                self.output_code_page,
-                0,
-                &unit,
-                1,
-                &mut byte,
-                1,
-                std::ptr::null(),
-                std::ptr::null_mut(),
-            )
-        } != 1
-        {
-            return Err(NOT_SUPPORTED);
-        }
-        Ok(byte)
     }
 }
 

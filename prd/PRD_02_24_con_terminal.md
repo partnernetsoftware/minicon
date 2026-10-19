@@ -24,6 +24,7 @@ minicon terminal and rendering
 ├── Input delivery to the child
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
+│   ├── Snapshot region movement — shared signed geometry and cell-pair invariants
 │   ├── Bounded OutputFramer — shared grammar, complete wire frames, neutral errors
 │   └── Visible replacement scalar — stream/error recovery and literal replay
 ├── Damage, raster and present
@@ -41,6 +42,7 @@ flowchart LR
     VT --> WRAP["shared DECAWM state / full and incremental replay"]
     WRAP --> DMG
     EDIT["CellStyle / literal cell edits"] --> VT
+    MOVE["CellRect / snapshot region movement"] --> EDIT
     EDIT --> DMG
     GRAM["owned vte: authoritative grammar / boundary preview"] --> VT
     GRAM --> FRAME["vt100 OutputFramer: bounded pending bytes / neutral errors"]
@@ -657,3 +659,25 @@ projection contract above. `rectangular_cell_writes_preserve_state_and_refuse_ro
 is the direct shared oracle; the Windows rectangle consumer, row-stride/access
 rules and unsupported legacy representations belong to
 [PRD 02.34](PRD_02_34_windows_console_backend.md).
+
+## Shared region movement
+
+`Screen::move_region(CellRect, row, column, clip, fill, style)` is exposed by
+`minicon-console::terminal` through its common screen type. CellRect is signed,
+half-open, and independent of native structs. Source reads use a snapshot of
+active drawing cells; clipping limits writes, and negative source coordinates
+retain the original translation. Copying preserves complete graphemes, styles
+and wide-cell flags. Exposed source cells receive the fill; a destination outside
+the screen still exposes source cells. Broken wide pairs are cleared, including
+a neighbouring cell outside a clipping edge when required for cell invariants.
+This boundary healing is not a promise of every legacy native representation.
+
+The operation preserves cursor, drawing attributes and history. It edits the
+active drawing grid even when a history viewport is selected, conservatively
+invalidating that view. A zero move or empty intersection is a no-op. Wide fill
+scalars fail with CellMoveError::WideFill before mutation. Client decoder state
+is separate and retained. Native publication uses a transient screen clone and
+commits after sink success; partial sink failures still require transport retirement.
+Evidence includes `region_moves_snapshot_overlap_preserve_graphemes_and_clip_writes`
+and the scoped native/application courts in PRD 02.34. This is common cell logic,
+not a portable process session or certification of every native backend.

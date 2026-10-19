@@ -4,6 +4,20 @@ use std::io::{self, Write};
 use windows_sys::Win32::Globalization::MultiByteToWideChar;
 
 impl ConsoleHost<'_> {
+    pub(super) fn commit_screen_update(
+        &mut self,
+        next: crate::terminal::Screen,
+        output: &mut impl Write,
+    ) -> io::Result<Result<(), i32>> {
+        let projection = next.contents_diff(self.terminal.screen());
+        if projection.len() > 1024 * 1024 {
+            return Ok(Err(NOT_SUPPORTED));
+        }
+        output.write_all(&projection)?;
+        *self.terminal.screen_mut() = next;
+        Ok(Ok(()))
+    }
+
     pub(super) fn fill_output(
         &mut self,
         kind: u32,
@@ -46,12 +60,9 @@ impl ConsoleHost<'_> {
         // A transient clone supports commit-after-output without a persistent
         // shadow screen. Do not feed the projection back into the client VT
         // grammar: that would lose literal cells and disturb partial commands.
-        let projection = next.contents_diff(self.terminal.screen());
-        if projection.len() > 1024 * 1024 {
-            return Ok(Err(NOT_SUPPORTED));
+        if let Err(status) = self.commit_screen_update(next, output)? {
+            return Ok(Err(status));
         }
-        output.write_all(&projection)?;
-        *self.terminal.screen_mut() = next;
         Ok(Ok(written))
     }
 }

@@ -303,6 +303,101 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn scroll_output_report(rust: bool) -> (String, vt100::Parser) {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("scroll-output")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 6, cols: 8 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("scroll-end:");
+    std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(6, 8, 0);
+    parser.process(&fixture.bytes);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    eprintln!(
+        "scroll rust={rust}: {receipt}; screen={:?}",
+        parser.screen().contents()
+    );
+    (receipt, parser)
+}
+
+fn scroll_rows(receipt: &str, name: &str) -> Vec<String> {
+    let prefix = format!("{name}:");
+    let line = receipt
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix))
+        .unwrap();
+    let units: Vec<_> = line
+        .trim_end_matches(',')
+        .split(',')
+        .map(|cell| u16::from_str_radix(cell.split_once('/').unwrap().0, 16).unwrap())
+        .collect();
+    assert_eq!(units.len(), 48);
+    units.chunks(8).map(String::from_utf16_lossy).collect()
+}
+
+fn assert_scroll_output(receipt: &str, parser: &vt100::Parser) {
+    let right = receipt
+        .lines()
+        .find_map(|line| line.strip_prefix("right:"))
+        .unwrap();
+    let cells: Vec<_> = right.trim_end_matches(',').split(',').collect();
+    assert_eq!(cells[0], "002e/004f");
+    assert_eq!(cells[2], "0041/001e");
+    assert_eq!(cells[10], "0049/001f");
+    assert_eq!(
+        &scroll_rows(receipt, "right")[..2],
+        ["..ABCDEF", "..IJKLMN"]
+    );
+    assert_eq!(&scroll_rows(receipt, "left")[..2], ["CDEFGH..", "KLMNOP.."]);
+    assert_eq!(
+        &scroll_rows(receipt, "clip")[..3],
+        ["A_____GH", "I_ABCDOP", "Q_IJKLWX"]
+    );
+    assert_eq!(
+        &scroll_rows(receipt, "offscreen")[1..3],
+        ["I###MNOP", "Q###UVWX"]
+    );
+    assert_eq!(scroll_rows(receipt, "ansi")[0], "││ABCDGH");
+    assert_eq!(
+        &scroll_rows(receipt, "negative")[..4],
+        ["....EFGH", "....MNOP", "QRABCDWX", "YZIJKL_`"]
+    );
+    assert!(receipt.ends_with("preserved:6,5;002e\nresumed:7,5;0024\n"));
+    assert_eq!(
+        parser.screen().rows(0, 8).collect::<Vec<_>>(),
+        [
+            "││ABCDGH",
+            "IJKLMNOP",
+            "QRSTUVWX",
+            "YZ[\\]^_`",
+            "abcdefgh",
+            "ijklmnZp"
+        ]
+    );
+    assert!(receipt.contains("read-only:0,5"), "{receipt}");
+    assert!(receipt.contains("write-only:1,0"), "{receipt}");
+}
+
+#[test]
+fn rust_console_pty_scroll_moves_overlap_clip_and_preserves_client_decoder() {
+    let (receipt, parser) = scroll_output_report(true);
+    assert_scroll_output(&receipt, &parser);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY native scroll differential court"]
+fn rust_console_client_scroll_matches_system_conpty() {
+    let (receipt, parser) = scroll_output_report(false);
+    assert_scroll_output(&receipt, &parser);
+}
+
 fn rect_output_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -1887,6 +1982,35 @@ fn rust_console_client_windows_powershell_rawui_rectangles() {
         parser.screen().cell(2, 2).unwrap().bgcolor(),
         vt100::Color::Idx(4)
     );
+}
+
+#[test]
+#[ignore = "explicit external Windows PowerShell RawUI scroll court; missing client is BLOCKED"]
+fn rust_console_client_windows_powershell_rawui_scroll() {
+    let script = "$ErrorActionPreference='Stop';$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('A中','CDX'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,2;$raw.SetBufferContents($pos,$cells);$src=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,3;$dst=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,3;$clip=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 0,0,15,7;$fill=New-Object System.Management.Automation.Host.BufferCell -ArgumentList ([char]'.'),([ConsoleColor]::White),([ConsoleColor]::DarkRed),([System.Management.Automation.Host.BufferCellType]::Complete);$raw.ScrollBufferContents($src,$dst,$clip,$fill);$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,4;$read=$raw.GetBufferContents($area);if($read[0,0].Character -cne '.' -or $read[1,0].Character -cne 'A' -or $read[1,1].Character -cne '中' -or $read[2,1].Character -cne 'D' -or $read[2,2].Character -cne 'X' -or $read[0,0].BackgroundColor -ne [ConsoleColor]::DarkRed -or $read[1,0].ForegroundColor -ne [ConsoleColor]::Yellow){exit 19};[Console]::SetCursorPosition(0,6);[Console]::Write('rawui-scroll-ok:');exit 0";
+    let mut fixture = Fixture::open(
+        ChildCommand::new(external_client("MINICON_TEST_WINDOWS_POWERSHELL"))
+            .arg("-NoLogo")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .size(TerminalSize { rows: 8, cols: 16 })
+            .rust_console(),
+    );
+    fixture.until("rawui-scroll-ok:");
+    fixture.finish(0);
+    let mut parser = vt100::Parser::new(8, 16, 0);
+    parser.process(&fixture.bytes);
+    assert_eq!(parser.screen().cell(2, 2).unwrap().contents(), ".");
+    assert_eq!(
+        parser.screen().cell(2, 2).unwrap().bgcolor(),
+        vt100::Color::Idx(1)
+    );
+    assert_eq!(parser.screen().cell(3, 2).unwrap().contents(), "A");
+    assert_eq!(parser.screen().cell(3, 3).unwrap().contents(), "中");
+    assert!(parser.screen().cell(3, 4).unwrap().is_wide_continuation());
+    assert_eq!(parser.screen().cell(4, 3).unwrap().contents(), "D");
 }
 
 #[test]

@@ -1,5 +1,6 @@
 //! Initial user-mode console API service; no system console host is used.
 use crate::{DriverRequest, DriverSession};
+mod cell_codec;
 mod font;
 mod input;
 mod objects;
@@ -7,6 +8,7 @@ mod output;
 mod readback;
 mod rectangle;
 mod screen;
+mod scroll;
 mod stream;
 pub use input::ConsoleInput;
 use input::InputState;
@@ -714,6 +716,19 @@ impl<'session> ConsoleHost<'session> {
                 );
                 if receipt.status == SUCCESS {
                     body[4..84].copy_from_slice(&font::current_bytes());
+                }
+            }
+            0x0200_000c if body.len() >= 26 => {
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::WRITE,
+                );
+                if receipt.status == SUCCESS
+                    && let Err(status) = self.scroll_output(&body, output)?
+                {
+                    receipt.status = status;
                 }
             }
             0x0200_0011 | 0x0200_0013 if body.len() >= 10 => {
