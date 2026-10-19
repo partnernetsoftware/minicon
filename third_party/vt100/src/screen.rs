@@ -1133,7 +1133,7 @@ impl Screen {
                     // only happens if width > 1, and col_wrap takes width
                     // into account.
                     .unwrap();
-                next_cell.clear(crate::attrs::Attrs::default());
+                next_cell.clear(attrs);
                 next_cell.set_wide_continuation(true);
                 self.grid_mut().col_inc(1);
             }
@@ -1604,6 +1604,34 @@ fn u16_to_u8(i: u16) -> Option<u8> {
 
 #[cfg(test)]
 mod autowrap_tests {
+    #[test]
+    fn autowrap_wide_continuation_attributes_survive_scroll_and_replay() {
+        let mut parser = crate::Parser::new(3, 8, 0);
+        parser.process("\x1b[2;1H\x1b[31;44;4;7m中😀".as_bytes());
+        parser.process(b"\x1b[3;1H\n");
+        for column in 0..4 {
+            let cell = parser.screen().cell(0, column).unwrap();
+            assert_eq!(cell.fgcolor(), crate::Color::Idx(1));
+            assert_eq!(cell.bgcolor(), crate::Color::Idx(4));
+            assert!(cell.underline());
+            assert!(cell.inverse());
+            assert_eq!(cell.is_wide_continuation(), column % 2 == 1);
+        }
+        let mut replay = crate::Parser::new(3, 8, 0);
+        replay.process(&parser.screen().state_formatted());
+        for column in 0..4 {
+            assert_eq!(
+                replay.screen().cell(0, column),
+                parser.screen().cell(0, column)
+            );
+        }
+        parser.screen_mut().set_size(3, 3);
+        assert!(!parser.screen().cell(0, 2).unwrap().is_wide());
+        parser.process(b"\x1b[0m\x1b[1;2HX");
+        assert!(!parser.screen().cell(0, 0).unwrap().is_wide());
+        assert_eq!(parser.screen().cell(0, 1).unwrap().contents(), "X");
+    }
+
     #[test]
     fn autowrap_mode_tracks_streaming_controls_and_reset() {
         let mut parser = crate::Parser::new(3, 4, 0);

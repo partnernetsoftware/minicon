@@ -66,6 +66,14 @@ wrapper, alongside the existing twelve parser damage oracles and six UI-core
 damage units. This is local implementation evidence, not a packaged-release
 or all-terminal compatibility claim.
 
+Wide continuation cells inherit their leading cell's drawing attributes when
+created. This shared invariant survives scrolling and formatted state replay;
+clipped resize and subsequent narrow overwrite still heal the pair. The native
+screen-readback leaf in [PRD 02.34](PRD_02_34_windows_console_backend.md) exposed
+the previous default-attribute continuation and now consumes these same cells.
+`autowrap_wide_continuation_attributes_survive_scroll_and_replay` guards the
+OS/ISA-neutral invariant directly, alongside the native SDK observations.
+
 - [v] each tree tab owns an independent PTY, parser, viewport and failure state
   in a single GUI process. It is explicitly not a mux, persistent workspace,
   Fleet authority or script runtime. A tab that cannot open is rolled back and

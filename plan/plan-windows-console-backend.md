@@ -16,7 +16,9 @@ sequences that contract without assigning a release or changing current defaults
    executes built-in ASCII/Unicode echo and preserves its nonzero exit status.
    The original explicit-rejection case remains a regression. Reference-selection and native
    handle-inheritance mutations must fail the corresponding runtime tests.
-4. [_] Produce the API/dependency inventory and differential fixtures. Use REA
+4. [-] Produce the API/dependency inventory and differential fixtures. The owner
+   PRD now records implemented API subsets and native SDK/reference evidence.
+   Use REA
    on an immutable copy of the exact system binary only for named gaps that
    source and behavior do not resolve; preserve evidence and uncertainty.
 5. [-] Implement one bounded replacement slice at a time behind the existing

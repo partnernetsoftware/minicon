@@ -29,17 +29,13 @@ impl ConsoleHost<'_> {
 
     pub(super) fn text_attribute(&self) -> u16 {
         let screen = self.screen.screen();
-        let index = |color, default| match color {
-            vt100::Color::Idx(index @ 0..=15) => swap_red_blue(index),
-            // Extended palette/RGB quantization remains a separate capability.
-            _ => default,
-        };
-        let foreground = index(screen.fgcolor(), 7) | if screen.bold() { 8 } else { 0 };
-        let background = index(screen.bgcolor(), 0);
-        u16::from(foreground)
-            | (u16::from(background) << 4)
-            | if screen.inverse() { 0x4000 } else { 0 }
-            | if screen.underline() { 0x8000 } else { 0 }
+        legacy_attribute(
+            screen.fgcolor(),
+            screen.bgcolor(),
+            screen.bold(),
+            screen.inverse(),
+            screen.underline(),
+        )
     }
 
     /// Configure Win32 output flags and keep the shared terminal's wrapping
@@ -240,6 +236,24 @@ impl ConsoleHost<'_> {
 
 fn swap_red_blue(index: u8) -> u8 {
     (index & 10) | ((index & 1) << 2) | ((index & 4) >> 2)
+}
+
+pub(super) fn legacy_attribute(
+    foreground: vt100::Color,
+    background: vt100::Color,
+    bold: bool,
+    inverse: bool,
+    underline: bool,
+) -> u16 {
+    let index = |color, default| match color {
+        vt100::Color::Idx(index @ 0..=15) => swap_red_blue(index),
+        // Extended palette/RGB quantization remains a separate capability.
+        _ => default,
+    };
+    u16::from(index(foreground, 7) | if bold { 8 } else { 0 })
+        | (u16::from(index(background, 0)) << 4)
+        | if inverse { 0x4000 } else { 0 }
+        | if underline { 0x8000 } else { 0 }
 }
 
 #[cfg(test)]

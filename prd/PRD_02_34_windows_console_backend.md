@@ -45,6 +45,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   translation and margin behavior; compare real SDK cursor receipts and
 │   │   terminal projection, retain finite wide-margin progress and shared parser ownership
 │   ├── [v] scoped drawing attributes: native setter/query and subsequent text share VT state
+│   ├── [v] scoped native character/attribute readback: bounded views of the shared screen
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -77,6 +78,8 @@ flowchart LR
     MODES --> VT["reuse owned VT parser and terminal projection"]
     HOST --> ATTR["native drawing attributes / SDK query / projected cells"]
     ATTR --> VT
+    HOST --> READBACK["native cell readback / bounded result / same shared screen"]
+    READBACK --> VT
     HOST --> LIFE["connection defaults vs opened file objects"]
     LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
     LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
@@ -126,6 +129,20 @@ quantization remain separate leaves. Dependencies are output request ordering,
 the shared parser and native handle access checks. Hot files are the host API
 dispatcher/output module and the independent native PTY fixture. Failed output
 must propagate before the owned drawing state advances.
+
+### Accepted screen-readback leaf
+
+Invariant: ReadConsoleOutputCharacter A/W and ReadConsoleOutputAttribute are
+bounded, non-mutating views of the same VT cells used for output. Evidence uses
+independent native SDK buffers, exact counts/bytes/attributes, read-only and
+write-only handles, wide-cell clipping, invalid coordinates, row/end boundaries,
+UTF-8/OEM conversion and an excessive-transfer rejection. Complex-cell legacy
+projection follows the pinned modern source and is distinguished from old
+native layouts. Failures zero returned records; no extra screen model is added.
+The leaf depends on native file lifetimes, shared cell attributes and ordered
+output requests. Hot files are the host dispatcher, output/readback modules,
+owned parser's wide-cell creation and native probe. Fill/rectangular writes,
+literal C0 cell preservation and multiple screen buffers remain separate work.
 
 Microsoft describes OpenConsole as the open-source console host. Its public
 server source contains API dispatch and driver transport; this is a better
@@ -278,8 +295,9 @@ certification for all clients or OS releases.
 | GetMode / SetMode | Store input modes/enforce echo dependency; configure output modes and mirror VT DECAWM in native output flags; explicit PTY defaults match system ConPTY. | Full flag validation, insert/history editing and broader mode/screen interactions. |
 | RAW_READ / ReadConsole | Retain actual requests until input arrives; cooked line/echo/backspace, Unicode/byte delivery, caller initial text, wake mask/control state, bounded partial-read tails. | Full editing/history, mixed ANSI-to-Unicode transitions with a partially consumed byte, all control-character and cancellation variants. |
 | GetNumberOfInputEvents / ReadConsoleInputW / PeekConsoleInputW / WriteConsoleInputW | Bounded typed key/mouse/resize/focus queue; counts, remove/peek, NOWAIT bypass, native input-handle readiness and Unicode append/prepend decoding. Native client-written key/focus records and returned counts are tested. | ANSI input-record variants, remaining record types and broad application qualification. |
-| GetScreenBufferInfo | Return geometry, cursor and scoped current drawing attributes from the owned VT parser; retain initial palette. | Palette mutation/RGB quantization, full legacy screen mutation, scrolling, resize, multiple buffers and cell readback. |
-| SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | LVB mode/code-page gating, native cell attribute fill/readback and API interleaving inside incomplete client escape sequences. |
+| GetScreenBufferInfo | Return geometry, cursor and scoped current drawing attributes from the owned VT parser; retain initial palette. | Palette mutation/RGB quantization, full legacy screen mutation, scrolling, resize, multiple buffers and rectangular readback. |
+| SetTextAttribute | Validate native output WRITE access; map BGR palette bits, intensity, reverse and underline to shared VT drawing state. Grid/DBCS flags fail explicitly. | LVB mode/code-page gating, native attribute fill/rectangular readback and API interleaving inside incomplete client escape sequences. |
+| ReadConsoleOutputCharacter A/W / ReadConsoleOutputAttribute | Validate READ access; bounded native character/attribute views of the same screen, wide-edge clipping, row/end traversal, current output CP conversion, exact returned record counts and zero records on error. | Rectangular readback, literal C0 retention, all code-page/grapheme policies and simultaneous output-pressure ordering qualification. |
 | GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
 | Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Other native-key transports, unattached-group compatibility, other signals and broader OS/client qualification. |
@@ -992,7 +1010,8 @@ The fixture publishes its native `RtlGetVersion` build. It holds its process
 alive until the consumer observes an invisible end marker; closing system HPCON
 earlier would intentionally discard producer output and invalidate comparison.
 Rows are compared independently so soft-wrap metadata is not confused with
-visible cell content. Stateful legacy screen readback remains unimplemented.
+visible cell content. This output-mode court did not qualify legacy screen
+readback; the later scoped readback leaf below owns that evidence.
 
 On the measured build 20348, every native cursor/mode receipt agrees. Projected
 rows agree for modes `3,5,7,11,13,15`. The old reference stream in unprocessed
@@ -1087,3 +1106,64 @@ client escape sequence, fill/rectangular screen mutation, literal control-cell
 readback and full-screen application qualification remain open. These require
 programmatic edits to the same shared screen state and ordered projection,
 rather than a second Windows screen model. Default backend selection is unchanged.
+
+## Native character and attribute readback
+
+`host/readback.rs` implements the layer-2 ReadConsoleOutputString operation for
+ANSI, real/false Unicode and attribute element types. Public SDK character and
+attribute functions now return native results instead of NOT_SUPPORTED. The
+dispatcher validates the caller/output object and READ access before consulting
+cells, zeroes NumRecords on failure, writes actual client buffers and returns
+the protocol's original output-buffer capacity as reply information. Readbacks
+retain the conservative deferred-output FIFO classification; they do not bypass
+earlier accepted screen-changing requests. Mixed pressure/concurrent-writer
+readback has not yet been independently qualified.
+
+The view reads the existing shared parser cells; there is no shadow screen.
+Invalid start coordinates and zero lengths succeed with zero records. Valid
+ranges cross rows and clip at the screen end. A clipped wide half becomes a
+space in text, or loses its leading/trailing attribute bit. Complete wide pairs
+retain the native `0x0100/0x0200` attribute flags and produce only the leading
+text. Empty cells read as spaces. Cell colors use the same legacy projection
+as current drawing-attribute queries; extended palette/RGB quantization remains
+open. The generic continuation-attribute fix is owned by
+[terminal rendering](PRD_02_24_con_terminal.md), including its scroll/replay unit.
+
+UTF-16 character readback follows the pinned modern
+[ReadOutputStringW implementation](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/output.cpp):
+a leading cell containing more than one UTF-16 unit returns U+FFFD through this
+legacy API. The full grapheme remains unchanged in the shared screen. This
+includes supplementary characters and combining sequences; it is not a claim
+of lossless legacy readback. ANSI uses the current output code page. If the
+whole converted range exceeds the caller's byte capacity, it succeeds with no
+records, rather than returning a partial encoded character, matching the pinned
+[API routine](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/host/directio.cpp).
+Transfers above one MiB fail explicitly before constructing a result. The
+Unicode intermediate is bounded by at most twice that byte budget, and an
+oversized ANSI expansion is measured without allocating it.
+
+The independent SDK client checks exact W/attribute/ANSI receipts with read-only
+CONOUT$ handles, write-only access rejection, UTF-8 and CP437, cross-row reads,
+invalid coordinates, zero count, final-cell truncation and an owned budget
+failure with zero records. Golden basic receipts match actual system ConPTY
+build 20348 byte-for-byte. A second explicit golden covers the owned modern
+complex-cell policy. The older measured host stores supplementary UTF-16 units
+and combining marks differently; its complete complex receipts remain in the
+local log, with native text and width-attribute receipts asserted for that
+specific build. Other reference builds must match the pinned modern complex
+policy or supply separately reviewed evidence. This source-backed policy is
+separate from the older system's observed layout, not an implicit exception to
+the basic differential court.
+
+Evidence is `screen-readback-red.log`, `screen-readback-observation.log`,
+`screen-readback-positive.log`, `screen-readback-final-suite.log` and
+`screen-readback-negative-audit.json` under the ignored research directory.
+Three new cases increase the canonical selected suite to 146: 96 backend and
+reference, 29 legacy-agent and 21 shared parser/UI, including fifteen explicitly
+requested external/reference cases. Nine runtime mutations cover READ access,
+returned counts, transfer budget, wide clipping, row traversal, encoded
+expansion, complex projection, continuation attributes and failure record
+counts. Both new native cases and the shared parser unit have runtime negatives;
+source restoration is recorded by hash. Filling/rectangular mutation and
+readback, literal C0 cells, multiple buffers, broader code pages, real full-screen
+clients and packaged/default promotion still require further work.

@@ -8,6 +8,8 @@ mod inheritance;
 #[cfg(windows)]
 mod output_modes;
 #[cfg(windows)]
+mod screen_readback;
+#[cfg(windows)]
 mod text_attributes;
 #[cfg(not(windows))]
 fn main() {
@@ -34,6 +36,19 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if matches!(
+        mode,
+        "screen-readback"
+            | "screen-readback-complex"
+            | "screen-readback-owned"
+            | "screen-readback-complex-owned"
+    ) {
+        return screen_readback::run(
+            std::path::Path::new(&arguments[1]),
+            mode.contains("-complex"),
+            mode.ends_with("-owned"),
+        );
+    }
     if mode == "text-attributes" || mode == "text-attributes-owned" {
         return text_attributes::run(
             std::path::Path::new(&arguments[1]),

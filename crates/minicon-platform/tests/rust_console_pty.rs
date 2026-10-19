@@ -303,6 +303,73 @@ fn rust_console_pty_no_wrap_wide_margin_makes_native_progress_without_splitting_
     );
 }
 
+fn screen_readback_report(rust: bool, complex: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(match (rust, complex) {
+            (true, true) => "screen-readback-complex-owned",
+            (true, false) => "screen-readback-owned",
+            (false, true) => "screen-readback-complex",
+            (false, false) => "screen-readback",
+        })
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 12 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.finish(0);
+    let receipt = std::fs::read_to_string(&report.0).unwrap();
+    if rust {
+        assert!(receipt.contains("\nbudget:0,50,0\n"), "{receipt}");
+        receipt.replace("budget:0,50,0\n", "")
+    } else {
+        receipt
+    }
+}
+
+fn assert_screen_readback(report: &str, complex: bool) {
+    let (version, body) = report.split_once('\n').unwrap();
+    let build: u32 = version.strip_prefix("build=").unwrap().parse().unwrap();
+    assert!(build > 0);
+    let expected = if complex {
+        include_str!("support/screen_readback-complex.txt")
+    } else {
+        include_str!("support/screen_readback-basic.txt")
+    };
+    assert_eq!(body, expected);
+}
+
+#[test]
+fn rust_console_pty_screen_readback_uses_owned_cells_and_access() {
+    for complex in [false, true] {
+        assert_screen_readback(&screen_readback_report(true, complex), complex);
+    }
+}
+
+#[test]
+#[ignore = "explicit system ConPTY screen readback differential court"]
+fn rust_console_client_screen_readback_matches_system_conpty() {
+    let reference = screen_readback_report(false, false);
+    eprintln!("native screen readback reference:\n{reference}");
+    assert_screen_readback(&reference, false);
+    let owned = screen_readback_report(true, false);
+    assert_screen_readback(&owned, false);
+    assert_eq!(owned, reference);
+    let complex_reference = screen_readback_report(false, true);
+    eprintln!("native complex screen readback reference:\n{complex_reference}");
+    if complex_reference.starts_with("build=20348\n") {
+        assert!(complex_reference.contains(
+            "W:0,0,12:1,0,11:[0041, 4e2d, d83d, de00, 0065, 0301, 005a, 0020, 0020, 0020, 0020]\n"
+        ));
+        assert!(complex_reference.contains("T:0,0,12:1,0,12:[001e, 011e, 021e, 011e, 021e, 001e, 001e, 001e, 0007, 0007, 0007, 0007]\n"));
+    } else {
+        assert_screen_readback(&complex_reference, true);
+    }
+    assert_screen_readback(&screen_readback_report(true, true), true);
+}
+
 fn text_attribute_report(rust: bool) -> (String, vt100::Parser) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))

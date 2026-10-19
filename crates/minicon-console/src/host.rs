@@ -3,6 +3,7 @@ use crate::{DriverRequest, DriverSession};
 mod input;
 mod objects;
 mod output;
+mod readback;
 pub use input::ConsoleInput;
 use input::InputState;
 use std::collections::{BTreeMap, VecDeque};
@@ -640,6 +641,34 @@ impl<'session> ConsoleHost<'session> {
                     ];
                     for (slot, color) in body[28..92].chunks_exact_mut(4).zip(COLORS) {
                         slot.copy_from_slice(&color.to_le_bytes());
+                    }
+                }
+            }
+            0x0200_000f if body.len() >= 12 => {
+                body[8..12].fill(0);
+                receipt.status = self.handle_status(
+                    descriptor.process,
+                    descriptor.object,
+                    Some(HandleKind::Output),
+                    objects::READ,
+                );
+                if receipt.status == SUCCESS {
+                    let kind = read_u32(&body, 4).unwrap();
+                    let column = u16::from_le_bytes([body[0], body[1]]);
+                    let row = u16::from_le_bytes([body[2], body[3]]);
+                    let capacity = (descriptor.output_size - body_size) as usize;
+                    match self.read_output_string(kind, column, row, capacity) {
+                        Ok(bytes) => {
+                            request.write_output(body_size, &bytes)?;
+                            let records = if kind == 1 {
+                                bytes.len()
+                            } else {
+                                bytes.len() / 2
+                            };
+                            body[8..12].copy_from_slice(&(records as u32).to_le_bytes());
+                            information = capacity;
+                        }
+                        Err(status) => receipt.status = status,
                     }
                 }
             }
