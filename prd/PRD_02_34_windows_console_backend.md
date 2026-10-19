@@ -32,6 +32,9 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
 │   ├── [v] scoped PowerShell 5/7 and Node TTY/readline native cases
 │   ├── [v] connection/file lifetimes, restricted inherited stdio and UTF-8 tails
+│   ├── [v] scoped processed Ctrl+C: private Job admission, retained process handles,
+│   │   native handler receipt and interrupted-read evidence; missing native
+│   │   entry point fails explicitly; no host-console group broadcast
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -58,6 +61,8 @@ flowchart LR
     LIFE --> DEFAULTS["DISCONNECT: caller reads and connection defaults"]
     LIFE --> FILES["CLOSE_OBJECT: shared file state and remaining reads"]
     HOST --> JOB["ConsoleChild: suspend / assign job / resume"]
+    JOB --> SIGNAL["control targets admitted before CONNECT reply"]
+    SIGNAL --> RETAIN["retained process handle / live check / native EndTask"]
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
@@ -160,8 +165,8 @@ chooses a separately evidenced compatibility boundary.
 ## Status and next executable milestone
 
 [v] Source and REA research with pinned references. [-] Rust native transport
-and API service; [v] initial connection/I/O/record/job subset; [_] remaining
-API semantics, control signals, optional binary analysis and product selection.
+and API service; [v] initial connection/I/O/record/job subset and scoped Ctrl+C;
+[-] remaining API/signal semantics; [_] optional binary analysis and product selection.
 Sequence: [backend research plan](../plan/plan-windows-console-backend.md).
 This work has no assigned release version and does not replace the approved
 0.2.16 test-orchestration plan. No production backend or default changed.
@@ -226,7 +231,8 @@ certification for all clients or OS releases.
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
 | GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
-| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Control signals, remaining layer APIs and GUI/product qualification. |
+| Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | General process-group GenerateConsoleCtrlEvent, Ctrl+Break, other signals and broader OS/client qualification. |
+| Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Remaining layer APIs and GUI/product qualification. |
 
 The backend reuses this repository's owned `vt100` fork for screen state behind
 the Windows adapter. That reuse does not make Windows console mode semantics
@@ -314,7 +320,8 @@ Native ReadConsoleW now returns BOOL success, zero characters and LastError
 995 (`ERROR_OPERATION_ABORTED`) on the tested interruption path. This special
 console behavior is documented by [ReadFile](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile)
 and inherited by [ReadConsole](https://learn.microsoft.com/en-us/windows/console/readconsole).
-It does not implement delivery of a Ctrl+C process signal.
+The cancellation primitive alone does not deliver a process signal. Owned
+Ctrl+C delivery is implemented in the separate milestone below.
 
 Seventeen runtime negative controls cover payload delivery, interruption
 status, input-event signaling, ANSI byte tails, raw surrogate pairing, Enter
@@ -538,3 +545,66 @@ access checks, nested connections and dead-reader cancellation. Removing each
 guard makes its named native test fail; sources are restored and the final
 83-case suite passes again. Local mutation identities and restored source hashes
 are in `target/conhost-research/inherit-negative-audit.json`.
+
+### Owned Ctrl+C delivery
+
+`ConsoleHost::for_child` binds control authority to the launch owner's private
+Job. The control scope borrows that launch owner through the host lifetime;
+it does not duplicate the Job handle or extend its kill-on-close ownership.
+Each kernel CONNECT is checked against that Job before its success reply.
+The host retains the admitted process handle until DISCONNECT; `control_targets`
+reports those scalar inventory counts. There is no later PID lookup, global
+console attachment or GenerateConsoleCtrlEvent broadcast from the host. A
+foreign private-Job fixture is rejected with native access denied before any
+client handle is admitted. The normal cmd teardown fixture observes one retained
+target after CONNECT and zero after DISCONNECT.
+
+The pinned public `src/host/conwinuserrefs.h`, `src/interactivity/win32/ConsoleControl.cpp`
+and `src/server/IoDispatchers.cpp` supply the native EndTask ABI and console-app
+notification. Rust loads user32 only from the system directory and resolves the
+control entry point; absence fails explicitly. Delivery iterates only retained,
+live targets. The PID-shaped ABI argument comes from the retained process handle;
+its identity cannot be reused while that handle pins the object, as explained
+in Microsoft's [process-ID lifetime discussion](https://devblogs.microsoft.com/oldnewthing/20110107-00/?p=11803/).
+A native return code is not delivery evidence: `send_ctrl_c` counts attempts.
+
+Processed key-down character 0x03 is intercepted on the external input route,
+including when no read is pending. Pending console reads receive STATUS_ALERTED
+with zero native counts. With processed input disabled, that character remains
+ordinary input. WriteConsoleInputW record injection is a separate native API
+route and is not qualified as a signal generator by this milestone. General
+GenerateConsoleCtrlEvent/process-group targeting and Ctrl+Break remain open;
+this is console-wide private authority, not a foreground-process contract.
+
+The Cargo-built Win32 client explicitly clears its inherited ignore-Ctrl+C
+attribute before installing a real handler. Microsoft documents that this
+[ignore attribute is inherited independently of the handler list](https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals).
+The initial native call returned success without executing the handler while
+that inherited attribute was still enabled (`control-native-status.log`). This
+is preserved as a rejected success criterion, not a backend-delivery receipt.
+
+The handler writes only to an atomic; its ordinary main thread reports native
+results through the private file fixture. Real observations cover handler-only
+delivery without a pending read, interrupted ReadConsoleW (BOOL true,
+LastError 995 and zero units), unprocessed input (one unit 3, no handler),
+default STATUS_CONTROL_C_EXIT and isolation between two simultaneously live
+private consoles. Explicit system-ConPTY comparison repeats handler, interrupted
+read and unprocessed-input cases and matches their independently observed values.
+The expanded targeted command now executes 90 cases: 61 backend and 29 legacy
+agent units, including eight requested external/reference cases. Baseline local
+evidence is `target/conhost-research/control-positive-suite.log`; the final
+post-mutation receipt is `control-final-suite.log`.
+
+Remaining control qualification includes synchronous console I/O from a native
+handler, input-queue saturation before interruption, inherited ignore-state
+journeys in real shells and delivery under sustained connection churn. The
+current input-budget precheck can reject new input before control-key dispatch;
+this milestone does not claim overload recovery. These cases remain required
+before promoting the experimental backend.
+
+Eight runtime mutation controls cover native dispatch, processed-mode gating,
+blocked-read interruption, private-Job admission, target retirement on disconnect,
+control-key recognition, missing native export and the system-reference event
+comparison. Each new test fails with the relevant behavior changed. The local
+`control-negative-audit.json` records test/log identities and restored hashes;
+`control-final-suite.log` records the fresh 90-case pass after restoration.

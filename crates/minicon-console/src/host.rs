@@ -52,6 +52,7 @@ pub struct ConsoleHost<'session> {
     input: InputState<'session>,
     session_id: Option<u64>,
     processes: BTreeMap<usize, u32>,
+    control: Option<crate::control::ControlScope<'session>>,
     handles: BTreeMap<usize, ClientHandle>,
     next_token: usize,
     input_mode: u32,
@@ -73,6 +74,7 @@ impl Default for ConsoleHost<'_> {
             input: InputState::default(),
             session_id: None,
             processes: BTreeMap::new(),
+            control: None,
             handles: BTreeMap::new(),
             next_token: 1,
             input_mode: 7,
@@ -90,6 +92,31 @@ impl Default for ConsoleHost<'_> {
 impl<'session> ConsoleHost<'session> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Enable control delivery only to clients admitted from this private Job.
+    /// Attach before servicing any CONNECT requests.
+    pub fn for_child(child: &'session crate::ConsoleChild) -> io::Result<Self> {
+        let mut host = Self::default();
+        host.control = Some(crate::control::ControlScope::new(child)?);
+        Ok(host)
+    }
+
+    /// Request Ctrl+C delivery to live attached clients in the owned Job.
+    /// The count reports attempted targets, not handler execution or completion.
+    pub fn send_ctrl_c(&mut self) -> io::Result<usize> {
+        let control = self
+            .control
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no owned control scope"))?;
+        let count = control.ctrl_c();
+        self.cancel_pending_reads()?;
+        Ok(count)
+    }
+
+    /// Retained signal-target identities; zero when no control scope is bound.
+    pub fn control_targets(&self) -> usize {
+        self.control.as_ref().map_or(0, |scope| scope.targets())
     }
 
     /// Update the owned screen dimensions, optionally queueing a native resize
@@ -188,6 +215,17 @@ impl<'session> ConsoleHost<'session> {
                         .into_iter()
                         .flat_map(usize::to_ne_bytes)
                         .collect();
+                    if let Some(control) = &mut self.control {
+                        let connect = request.read_input(0, 1340)?;
+                        if control
+                            .admit(process, descriptor.process as u32, connect[32] != 0)
+                            .is_err()
+                        {
+                            receipt.status = 0xc000_0022_u32 as i32;
+                            request.complete(receipt.status, 0, &[])?;
+                            return Ok(receipt);
+                        }
+                    }
                     request.complete(SUCCESS, reply.len(), &reply)?;
                     self.processes.insert(process, descriptor.process as u32);
                     self.handles.insert(
@@ -212,6 +250,9 @@ impl<'session> ConsoleHost<'session> {
             }
             2 => {
                 self.cancel_process_reads(descriptor.process);
+                if let Some(control) = &mut self.control {
+                    control.remove(descriptor.process);
+                }
                 if self.processes.remove(&descriptor.process).is_none() {
                     receipt.status = INVALID_HANDLE;
                 }

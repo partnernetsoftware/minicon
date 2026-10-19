@@ -30,6 +30,9 @@ sequences that contract without assigning a release or changing current defaults
    comparisons now extend the explicit experimental adapter evidence.
    Scoped inherited/restricted stdio, creator FreeConsole/exit and shared input
    tails distinguish connection defaults from kernel file object lifetimes.
+   Private-Job Ctrl+C admission, actual native handler/interrupted-read/default
+   exit receipts and system-ConPTY comparisons extend the scoped signal slice;
+   general process-group control and Ctrl+Break remain open.
    Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.

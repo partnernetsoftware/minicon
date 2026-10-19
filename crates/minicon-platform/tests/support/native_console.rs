@@ -1,5 +1,7 @@
 //! Independent Win32 caller for the platform PTY integration court.
 #[cfg(windows)]
+mod control;
+#[cfg(windows)]
 mod inheritance;
 #[cfg(not(windows))]
 fn main() {
@@ -26,6 +28,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode.starts_with("control-") {
+        return control::run(mode, std::path::Path::new(&arguments[1]));
+    }
     if mode.starts_with("inherit-") {
         return inheritance::run(mode, std::path::Path::new(&arguments[1]));
     }

@@ -156,6 +156,97 @@ impl Drop for Report {
     }
 }
 
+fn control_receipt(mode: &str, rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(mode)
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.until("control-probe-ready:");
+    if mode == "control-read" {
+        // A scheduling grace is not the evidence: LastError=995 with zero
+        // units below proves that the SDK read was actually interrupted.
+        std::thread::sleep(Duration::from_millis(60));
+    }
+    fixture.master.write_all(&[3]).unwrap();
+    fixture.finish(0);
+    std::fs::read_to_string(&report.0).unwrap()
+}
+
+#[test]
+fn rust_console_pty_processed_ctrl_c_runs_native_handler_and_interrupts_read() {
+    assert_eq!(control_receipt("control-handler", true), "|1");
+    assert_eq!(control_receipt("control-read", true), "true,995,0,0|1");
+}
+
+#[test]
+fn rust_console_pty_unprocessed_ctrl_c_is_input_without_handler_delivery() {
+    assert_eq!(control_receipt("control-raw", true), "true,0,1,3|0");
+}
+
+#[test]
+#[ignore = "explicit system ConPTY control-handler differential court"]
+fn rust_console_client_ctrl_c_matches_system_conpty() {
+    for (mode, expected) in [
+        ("control-handler", "|1"),
+        ("control-read", "true,995,0,0|1"),
+        ("control-raw", "true,0,1,3|0"),
+    ] {
+        let reference = control_receipt(mode, false);
+        eprintln!("system ConPTY {mode}: {reference}");
+        assert_eq!(reference, expected);
+        assert_eq!(control_receipt(mode, true), reference);
+    }
+}
+
+#[test]
+fn rust_console_pty_ctrl_c_preserves_the_native_default_termination_status() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-default")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("control-probe-ready:");
+    fixture.master.write_all(&[3]).unwrap();
+    fixture.finish(0xc000013au32 as i32);
+    assert!(!report.0.exists());
+}
+
+#[test]
+fn rust_console_pty_ctrl_c_targets_only_its_owned_console() {
+    let reports = [Report::new(), Report::new()];
+    let mut fixtures: Vec<_> = reports
+        .iter()
+        .map(|report| {
+            Fixture::open(
+                ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                    .arg("control-handler")
+                    .arg(report.0.as_os_str())
+                    .rust_console(),
+            )
+        })
+        .collect();
+    for fixture in &mut fixtures {
+        fixture.until("control-probe-ready:");
+    }
+    fixtures[0].master.write_all(&[3]).unwrap();
+    fixtures[0].finish(0);
+    assert_eq!(std::fs::read_to_string(&reports[0].0).unwrap(), "|1");
+    assert!(
+        !reports[1].0.exists(),
+        "other private console received the control"
+    );
+    fixtures[1].master.write_all(&[3]).unwrap();
+    fixtures[1].finish(0);
+    assert_eq!(std::fs::read_to_string(&reports[1].0).unwrap(), "|1");
+}
+
 #[test]
 fn rust_console_pty_inherited_input_output_survive_creator_exit_and_freeconsole() {
     for mode in ["inherit-parent-exit", "inherit-parent-free"] {

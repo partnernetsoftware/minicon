@@ -12,6 +12,7 @@ Microsoft Terminal source at revision
 - `src/server/ProcessHandle.cpp` and `src/server/ProcessHandle.h`
 - `src/server/ApiSorter.cpp` and `src/server/ApiDispatchers.cpp`
 - `src/host/readDataCooked.cpp`, `readDataDirect.cpp` and `readDataRaw.cpp`
+- `src/host/input.cpp`, `conwinuserrefs.h` and `src/interactivity/win32/ConsoleControl.cpp`
 - `src/winconpty/winconpty.h`
 
 Copyright (c) Microsoft Corporation. The MIT notice is retained in

@@ -50,6 +50,47 @@ fn rust_console_driver_disconnect_reclaims_its_connection_default_handles() {
 }
 
 #[test]
+fn rust_console_driver_control_scope_rejects_connect_from_another_private_job() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_client(&session).unwrap();
+    let other_session = DriverSession::open().unwrap();
+    let other_child = create_suspended_client(&other_session).unwrap();
+    let mut host = crate::ConsoleHost::for_child(&other_child).unwrap();
+    child.resume().unwrap();
+    let request = session.receive(Duration::from_secs(3)).unwrap();
+    assert_eq!(request.descriptor.function, 1);
+    let receipt = host.dispatch(request, &mut Vec::new()).unwrap();
+    assert_eq!(receipt.status, 0xc0000022u32 as i32);
+    assert_eq!(host.connected_clients(), 0);
+    assert_eq!(host.open_handles(), 0);
+}
+
+#[test]
+fn rust_console_driver_control_targets_are_released_on_disconnect() {
+    let session = DriverSession::open().unwrap();
+    let child = create_suspended_client(&session).unwrap();
+    let mut host = crate::ConsoleHost::for_child(&child).unwrap();
+    let mut output = Vec::new();
+    let mut admitted = false;
+    child.resume().unwrap();
+    let receipt = drain_owned_cmd_with(
+        &session,
+        &child,
+        &mut host,
+        &mut output,
+        |receipt, host, _, _| {
+            if receipt.function == 1 {
+                assert_eq!(host.control_targets(), 1);
+                admitted = true;
+            }
+        },
+    );
+    assert_eq!(receipt.exit_code, 0);
+    assert!(admitted);
+    assert_eq!(host.control_targets(), 0);
+}
+
+#[test]
 fn rust_console_driver_dead_reader_does_not_block_a_live_caller_on_the_shared_file() {
     use std::os::windows::io::AsHandle;
     use windows_sys::Win32::System::Threading::{

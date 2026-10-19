@@ -229,7 +229,7 @@ fn serve(
     controls: Receiver<Control>,
     size: TerminalSize,
 ) -> io::Result<()> {
-    let mut host = ConsoleHost::new();
+    let mut host = ConsoleHost::for_child(child)?;
     let mut sink = QueueWriter(output);
     host.resize(size.cols, size.rows, &mut sink)?;
     let mut pending = Vec::new();

@@ -199,7 +199,22 @@ impl<'session> ConsoleHost<'session> {
         if events.len() > MAX_EVENTS.saturating_sub(self.input.events.len()) {
             return Err(io::Error::from(io::ErrorKind::WouldBlock));
         }
-        self.input.events.extend(events.iter().copied());
+        for event in events {
+            if matches!(
+                event,
+                ConsoleInput::Key {
+                    down: true,
+                    repeat: 1..,
+                    character: 3,
+                    ..
+                }
+            ) && self.input_mode & 1 != 0
+            {
+                self.send_ctrl_c()?;
+            } else {
+                self.input.events.push_back(*event);
+            }
+        }
         self.service_pending(output)
     }
 
