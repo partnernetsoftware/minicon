@@ -4161,6 +4161,150 @@ fn rust_console_pty_record_queries_stay_live_under_output_pressure() {
     assert_eq!(fixture.bytes, expected);
 }
 
+fn input_merge_report(kind: &str, rust: bool) -> String {
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg(format!("input-merge-{kind}"))
+        .arg(report.0.as_os_str());
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    fixture.finish(0);
+    let observed = std::fs::read_to_string(&report.0).unwrap();
+    println!("input-merge rust={rust};kind={kind}\n{observed}");
+    let (build, body) = observed.split_once('\n').unwrap();
+    let build = build
+        .strip_prefix("build=")
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
+    if rust {
+        assert!(build > 0);
+    } else {
+        assert_eq!(build, 20348, "reference snapshots qualify only this build");
+    }
+    body.to_owned()
+}
+
+fn input_merge_cases(rust: bool) {
+    for kind in [
+        "keys",
+        "batch",
+        "keyup",
+        "identity",
+        "ime",
+        "surrogate",
+        "mouse",
+        "resize",
+        "focus",
+        "barrier",
+        "ansi",
+        "dbcs",
+        "max",
+        "overflow",
+    ] {
+        let observed = input_merge_report(kind, rust);
+        assert_eq!(
+            observed,
+            input_merge_expected(kind, rust),
+            "merge case {kind}, rust={rust}"
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_input_coalescing_preserves_native_single_write_boundaries() {
+    input_merge_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY input-coalescing differential court"]
+fn rust_console_client_input_coalescing_compares_system_conpty() {
+    input_merge_cases(false);
+}
+
+#[test]
+fn rust_console_pty_input_coalescing_admits_full_queue_updates_and_bounds_overflow() {
+    for kind in ["capacity", "resize-capacity"] {
+        let observed = input_merge_report(kind, true);
+        assert_eq!(
+            observed,
+            input_merge_expected(kind, true),
+            "merge capacity {kind}"
+        );
+    }
+}
+
+#[test]
+fn rust_console_pty_transport_and_native_keys_share_input_coalescing() {
+    for kind in ["transport", "native-key"] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("input-merge-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = Fixture::open(command.rust_console());
+        fixture.until("input-merge-ready:");
+        if kind == "transport" {
+            fixture.master.write_all(b"A").unwrap();
+        } else {
+            fixture
+                .child
+                .send_native_key(NativeTerminalKey::Up, 1)
+                .unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !report.0.with_extension("first").exists() {
+            assert!(Instant::now() < deadline, "first input never arrived");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        if kind == "transport" {
+            fixture.master.write_all(b"A").unwrap();
+        } else {
+            fixture
+                .child
+                .send_native_key(NativeTerminalKey::Up, 1)
+                .unwrap();
+        }
+        fixture.finish(0);
+        let observed = std::fs::read_to_string(&report.0).unwrap();
+        println!("input-merge rust=true;kind={kind}\n{observed}");
+        let (build, body) = observed.split_once('\n').unwrap();
+        assert!(
+            build
+                .strip_prefix("build=")
+                .unwrap()
+                .parse::<u32>()
+                .unwrap()
+                > 0
+        );
+        assert_eq!(
+            body,
+            input_merge_expected(kind, true),
+            "merge transport {kind}"
+        );
+    }
+}
+
+fn input_merge_expected(kind: &str, rust: bool) -> String {
+    let text = if rust {
+        include_str!("support/input_merge_owned.txt")
+    } else {
+        include_str!("support/input_merge_reference_20348.txt")
+    };
+    let text = text.replace("\r\n", "\n");
+    let prefix = format!("[{kind}]\n");
+    let body = text
+        .split_once(&prefix)
+        .unwrap()
+        .1
+        .split("\n[")
+        .next()
+        .unwrap();
+    format!("{}\n", body.trim_end())
+}
+
 #[test]
 fn rust_console_pty_vt_mode_preserves_native_keys_and_text_sequences() {
     for (mode, expected) in [("vt-key", "1,1,38,72,256"), ("vt-text-key", "27,91,65")] {

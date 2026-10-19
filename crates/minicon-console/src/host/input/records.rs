@@ -4,6 +4,62 @@ use super::{ConsoleInput, NOT_SUPPORTED};
 use crate::host::encoding;
 use std::{collections::VecDeque, io};
 use windows_sys::Win32::Globalization::IsDBCSLeadByteEx;
+use windows_sys::Win32::System::Console::{MOUSE_MOVED, NLS_IME_CONVERSION};
+
+/// One append can update the last raw record. Preserve its identity and never
+/// wrap a WORD repeat count: a separate record retains overflowing presses.
+pub(super) fn coalesced(
+    mut previous: ConsoleInput,
+    incoming: ConsoleInput,
+) -> Option<ConsoleInput> {
+    match (&mut previous, incoming) {
+        (
+            ConsoleInput::Key {
+                down: true,
+                repeat,
+                scan_code,
+                character,
+                controls,
+                ..
+            },
+            ConsoleInput::Key {
+                down: true,
+                repeat: more,
+                scan_code: next_scan,
+                character: next_char,
+                controls: next_controls,
+                ..
+            },
+        ) if (*scan_code == next_scan || next_controls & NLS_IME_CONVERSION != 0)
+            && *character == next_char
+            && *controls == next_controls
+            && !(0xd800..=0xdfff).contains(&next_char) =>
+        {
+            *repeat = repeat.checked_add(more)?;
+            Some(previous)
+        }
+        (
+            ConsoleInput::Mouse {
+                x,
+                y,
+                flags: MOUSE_MOVED,
+                ..
+            },
+            ConsoleInput::Mouse {
+                x: next_x,
+                y: next_y,
+                flags: MOUSE_MOVED,
+                ..
+            },
+        ) => {
+            *x = next_x;
+            *y = next_y;
+            Some(previous)
+        }
+        (ConsoleInput::Resize { .. }, next @ ConsoleInput::Resize { .. }) => Some(next),
+        _ => None,
+    }
+}
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Vec<ConsoleInput>, i32> {
     bytes

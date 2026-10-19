@@ -30,6 +30,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
 │   ├── [v] scoped ANSI record reads/peeks: bounded expansion, tail lifetime and live queries
+│   ├── [v] scoped single-write input coalescing: shared admission and checked repeats
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -125,6 +126,9 @@ flowchart LR
     ANSI --> CODEC
     ANSI --> CAP
     ANSI --> LEAD["one retained DBCS lead / commit after converted admission"]
+    INPUT --> MERGE["single append / checked key repeat / mouse position / latest resize"]
+    MERGE --> SLOTS["shared raw-queue admission / zero-slot tail replacement"]
+    GEO --> SLOTS
     INPUT --> AR["A/W record read / Peek / bounded staged reply"]
     AR --> CODEC
     AR --> RT["at most seven encoded key tails / pure Peek / raw queue counts"]
@@ -2900,7 +2904,8 @@ its cause. No passing reference claim is made for that case; the owned UTF-8
 case remains exercised. Other system versions and native ISAs are unqualified.
 
 Dependencies are the shared codec, typed record serialization, native input
-handles/events and ordered output admission. General coalescing, all record
+handles/events and ordered output admission. The following leaf owns scoped
+single-append coalescing. All record
 union variants, processed controls, stateful code pages, simultaneous readers,
 full mixed text-cache policy, performance and default promotion remain open.
 
@@ -2926,3 +2931,84 @@ checks follow the documentation. `ansi-read-final-receipt.json` binds the final
 tree, source/guard/log hashes, both expected-reply assets, compiler, four pinned
 reference files, executed client/probe/test image identities and preserved
 failed UTF-8 reference diagnostics. Backend completion remains unproven.
+
+### Single-append input coalescing and shared admission
+
+The Windows-private record module owns one pure tail-coalescing operation.
+`InputState::can_store` and `store` apply it to a single appended, converted W
+record. Multi-record batches retain their boundaries; a focus/other-kind
+barrier separates earlier keys. Native A/W WriteConsoleInput, single ordinary
+PTY text/native-key producers and active-buffer geometry notifications use the
+same raw queue and admission rule. Control events and mixed/multi-event input
+keep their existing bounded interruption path.
+
+Matching key-down records combine repeats when scan codes match (or incoming
+IME-conversion state permits them), characters and control state match, and the
+unit is outside the surrogate range. The retained virtual/scan identity belongs
+to the original tail. Checked WORD addition reaches 65,535 exactly; a larger
+sum requires another record, preserving presses instead of wrapping to zero.
+Mouse-move pairs update only coordinates while retaining the original button/
+control metadata. Adjacent resize records keep the latest dimensions. Key-up,
+other mouse flags, focus barriers, incompatible key state and surrogate units
+retain separate records. The pinned source owner is
+`src/host/inputBuffer.cpp::_CoalesceEvent`, with converted A input handled by
+`src/host/directio.cpp`. The public
+[KEY_EVENT_RECORD contract](https://learn.microsoft.com/en-us/windows/console/key-event-record-str)
+permits repeated presses to appear as separate records or a repeat count.
+
+Capacity is computed after conversion/coalescing: a valid tail replacement can
+succeed with all 4,096 raw slots occupied. A different record or overflowing
+repeat requires space and fails atomically when none remains, with zero native
+written count and unchanged queue/ANSI prefix. Active-buffer size preflight
+uses the same admission; unchanged dimensions need no event slot. A rejected
+actual resize preserves both drawing dimensions and input. Raw storage remains
+bounded to 4,096 records plus the existing bounded codec state; repeat counts
+are separately limited to a WORD. No throughput or held-key work-cost claim is
+inferred from reduced record count.
+
+Native build 20348 and the pinned newer source differ. The installed reference
+merges identical surrogate units, retains separate resize and DBCS write
+records, and wraps a maximum repeat plus one to zero. Owned receipts follow
+newer source for surrogate/resize/converted-write handling, with the explicit
+checked-overflow rule above. Expected reference data preserves the actual old
+behavior; no provider-wide parity or additional system-version claim follows.
+
+Independent SDK callers cover single versus bulk append, key-up, scan/control/
+character identity, IME, surrogates, mouse coordinates and metadata, resize,
+focus barriers, CP1252/932 conversion, exact maximum and overflow. Owned full-
+queue cases prove zero-slot merge admission, rejected nonmerge/overflow, latest
+resize replacement, unchanged-size success and rejected-resize rollback.
+Separate acknowledged PTY writes and native Up commands prove both producers
+reach shared coalescing. The text case also reads back two actual A characters
+from one repeated record, verifying delivery rather than only record count.
+
+Dependencies are typed input records, shared conversion, raw queue ownership,
+geometry transaction and processed-control priority. VT filtering/flow control,
+private prepend comparisons, broader editing/history, mixed-reader fairness,
+performance, additional Windows versions and native ISAs remain open. Generic
+POSIX/terminal contracts and product default selection remain separate owners.
+
+Local qualification: `input-merge-final-focused.log` records four passes and
+32 scenarios: fourteen owned and fourteen measured system-reference normal SDK
+cases, two owned full-capacity/geometry cases, and two acknowledged ordinary
+text/native-key producers. The tests are
+`rust_console_pty_input_coalescing_preserves_native_single_write_boundaries`,
+`rust_console_client_input_coalescing_compares_system_conpty`,
+`rust_console_pty_input_coalescing_admits_full_queue_updates_and_bounds_overflow`
+and `rust_console_pty_transport_and_native_keys_share_input_coalescing`.
+`input-merge-final-suite.log` records 267 selected passes, including existing
+PowerShell/Node, geometry, native controls, input pressure, private-Job cleanup
+and 17 alignment cases. Fifteen byte-restored runtime faults cover disabled
+merge, WORD wrapping, scan/IME/key-up/surrogate boundaries, mouse metadata and
+flags, latest resize, batch boundaries, zero-slot admission, geometry preflight,
+unchanged dimensions, transport reuse and the independent reference fixture.
+
+Seven static/cross-target checks pass: strict default/enabled workspace
+all-targets Clippy, four portable-library targets and Windows ARM64 platform
+PTY/Rust-console all-targets compilation. Runtime evidence remains Windows
+x86_64 build 20348; other targets are compile-only. Final formatting and 17
+alignment checks follow the documentation. `input-merge-final-receipt.json`
+binds the final tree, source/guard/log hashes, both expected-reply assets,
+compiler, three pinned reference files and executed client/probe/test image
+identities. Earlier blocked narrow UTF-8 reference evidence is not superseded;
+general backend completion and default promotion remain unproven.

@@ -49,6 +49,34 @@ pub(super) struct InputState<'session> {
 }
 
 impl InputState<'_> {
+    fn merged_record(&self, events: &[ConsoleInput], append: bool) -> Option<ConsoleInput> {
+        if append && events.len() == 1 {
+            self.events
+                .back()
+                .and_then(|last| records::coalesced(*last, events[0]))
+        } else {
+            None
+        }
+    }
+    pub(super) fn can_store(&self, events: &[ConsoleInput], append: bool) -> bool {
+        let added = if self.merged_record(events, append).is_some() {
+            0
+        } else {
+            events.len()
+        };
+        added <= MAX_EVENTS.saturating_sub(self.events.len())
+    }
+    fn store(&mut self, events: &[ConsoleInput], append: bool) {
+        if let Some(merged) = self.merged_record(events, append) {
+            *self.events.back_mut().unwrap() = merged;
+        } else if append {
+            self.events.extend(events.iter().copied());
+        } else {
+            for event in events.iter().rev() {
+                self.events.push_front(*event);
+            }
+        }
+    }
     fn commit_records(&mut self, batch: records::ReadBatch) {
         self.events.drain(..batch.consumed);
         self.record_tail = batch.tail;
@@ -131,20 +159,13 @@ impl<'session> ConsoleHost<'session> {
         if receipt.status == SUCCESS && body[4] == 0 {
             (events, lead) = records::ansi(self.input_code_page, &events, lead);
         }
-        if receipt.status == SUCCESS
-            && events.len() > MAX_EVENTS.saturating_sub(self.input.events.len())
-        {
+        let append = body[5] != 0;
+        if receipt.status == SUCCESS && !self.input.can_store(&events, append) {
             receipt.status = INVALID_PARAMETER;
         }
         if receipt.status == SUCCESS {
             self.input.ansi_write_lead = lead;
-            if body[5] != 0 {
-                self.input.events.extend(events.iter().copied());
-            } else {
-                for event in events.iter().rev() {
-                    self.input.events.push_front(*event);
-                }
-            }
+            self.input.store(&events, append);
             self.service_pending(output)?;
             body[..4].copy_from_slice(&(events.len() as u32).to_le_bytes());
         } else {
@@ -238,6 +259,15 @@ impl<'session> ConsoleHost<'session> {
             .iter()
             .filter(|event| control_event(event).is_none())
             .count();
+        // Keep controls and multi-event batch boundaries on their established
+        // path. A single ordinary producer uses the same admission as the SDK.
+        if events.len() == 1 && queued == 1 {
+            if !self.input.can_store(events, true) {
+                return Err(io::ErrorKind::WouldBlock.into());
+            }
+            self.input.store(events, true);
+            return self.service_pending(output);
+        }
         if queued > MAX_EVENTS.saturating_sub(self.input.events.len()) {
             return Err(io::Error::from(io::ErrorKind::WouldBlock));
         }

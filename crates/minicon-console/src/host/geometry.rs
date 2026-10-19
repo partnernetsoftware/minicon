@@ -16,10 +16,17 @@ impl ConsoleHost<'_> {
         })
     }
 
-    fn resize_capacity(&self) -> Result<(), i32> {
+    fn resize_capacity(&self, columns: u16, rows: u16) -> Result<(), i32> {
         if self.current_buffer == self.active_buffer
             && self.input_mode & 8 != 0
-            && self.input.events.len() >= super::input::MAX_EVENTS
+            && self.terminal.screen().size() != (rows, columns)
+            && !self.input.can_store(
+                &[ConsoleInput::Resize {
+                    columns: columns as i16,
+                    rows: rows as i16,
+                }],
+                true,
+            )
         {
             Err(NOT_SUPPORTED)
         } else {
@@ -44,7 +51,9 @@ impl ConsoleHost<'_> {
         proposed: TerminalViewport,
         output: &mut impl Write,
     ) -> io::Result<Result<(), i32>> {
-        if let Err(status) = Self::size_valid(columns, rows).and_then(|()| self.resize_capacity()) {
+        if let Err(status) =
+            Self::size_valid(columns, rows).and_then(|()| self.resize_capacity(columns, rows))
+        {
             return Ok(Err(status));
         }
         if !self.buffer_size_fits(rows, columns) {
