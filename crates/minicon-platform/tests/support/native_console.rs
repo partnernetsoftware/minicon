@@ -36,6 +36,8 @@ mod text_attributes;
 #[cfg(windows)]
 mod text_batch;
 #[cfg(windows)]
+mod titles;
+#[cfg(windows)]
 mod unicode_output;
 #[cfg(windows)]
 mod utf8_recovery;
@@ -66,6 +68,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "titles" {
+        return titles::run(std::path::Path::new(&arguments[1]));
+    }
     if mode == "buffer-vt" {
         return buffer_vt::run(std::path::Path::new(&arguments[1]));
     }

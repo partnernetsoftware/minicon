@@ -53,6 +53,37 @@ impl<CB: Callbacks> TerminalStream<CB> {
         self.framer.write(&mut self.parser, bytes, sink)
     }
 
+    /// Publish a complete window/icon title independently of client grammar
+    /// and viewport rendering. The caller owns title metadata. Control
+    /// characters are rejected before publication; native adapters must apply
+    /// their own display conversion first. A partial sink failure requires
+    /// retiring the transport, as with other terminal output.
+    pub fn write_window_title(
+        &self,
+        title: &str,
+        limit: usize,
+        sink: &mut impl Write,
+    ) -> io::Result<()> {
+        if title.chars().any(char::is_control) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "control character in terminal title",
+            ));
+        }
+        let requested = title.len().saturating_add(6);
+        if requested > limit {
+            return Err(io::Error::new(
+                io::ErrorKind::QuotaExceeded,
+                ProjectionLimit { requested, limit },
+            ));
+        }
+        let mut wire = Vec::with_capacity(requested);
+        wire.extend_from_slice(b"\x1b]0;");
+        wire.extend_from_slice(title.as_bytes());
+        wire.extend_from_slice(b"\x1b\\");
+        sink.write_all(&wire)
+    }
+
     /// Publish a complete screen command using an independent transient
     /// decoder. Client grammar and event callbacks are preserved. Projection
     /// events are not delivered to client callbacks; this path is intended for
@@ -134,6 +165,73 @@ impl<CB: Callbacks> TerminalStream<CB> {
 #[cfg(test)]
 mod tests {
     use super::TerminalStream;
+
+    #[test]
+    fn rust_console_terminal_title_publication_preserves_grammar_and_rejects_injection() {
+        let mut terminal = TerminalStream::new(2, 16, 0, 64);
+        let mut wire = Vec::new();
+        terminal.write_output(b"ROOT\x1b[3", &mut wire).unwrap();
+        let before = terminal.screen().state_formatted();
+        let mut titles = Vec::new();
+        terminal
+            .write_window_title("native-中😀;tail", 128, &mut titles)
+            .unwrap();
+        assert_eq!(titles, "\x1b]0;native-中😀;tail\x1b\\".as_bytes());
+        for title in ["A\x07BAD", "A\x1b]2;BAD", "A\u{009c}BAD", "A\x7fBAD"] {
+            let mut rejected = Vec::new();
+            assert_eq!(
+                terminal
+                    .write_window_title(title, 128, &mut rejected)
+                    .unwrap_err()
+                    .kind(),
+                std::io::ErrorKind::InvalidInput
+            );
+            assert!(rejected.is_empty());
+        }
+        let mut rejected = Vec::new();
+        let error = terminal
+            .write_window_title("native", 11, &mut rejected)
+            .unwrap_err();
+        assert_eq!(
+            super::ProjectionLimit::from_error(&error),
+            Some(&super::ProjectionLimit {
+                requested: 12,
+                limit: 11
+            })
+        );
+        assert!(rejected.is_empty());
+        struct Reject;
+        impl std::io::Write for Reject {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("reject title"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(
+            terminal
+                .write_window_title("native", 12, &mut Reject)
+                .is_err()
+        );
+        terminal.write_window_title("", 6, &mut titles).unwrap();
+        assert!(titles.ends_with(b"\x1b]0;\x1b\\"));
+        assert_eq!(terminal.pending_bytes(), b"\x1b[3");
+        assert_eq!(terminal.screen().state_formatted(), before);
+        terminal.write_output(b"1mZ", &mut wire).unwrap();
+        assert_eq!(terminal.screen().contents(), "ROOTZ");
+        assert_eq!(
+            terminal.screen().cell(0, 4).unwrap().fgcolor(),
+            super::Color::Idx(1)
+        );
+        terminal.write_output(&[0xe4, 0xb8], &mut wire).unwrap();
+        terminal
+            .write_window_title("UTF8", 10, &mut titles)
+            .unwrap();
+        assert_eq!(terminal.pending_bytes(), &[0xe4, 0xb8]);
+        terminal.write_output(&[0xad], &mut wire).unwrap();
+        assert_eq!(terminal.screen().contents(), "ROOTZ中");
+    }
 
     #[test]
     fn rust_console_terminal_projection_is_transactional_and_preserves_client_events() {

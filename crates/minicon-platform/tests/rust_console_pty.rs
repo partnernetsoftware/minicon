@@ -378,6 +378,124 @@ fn native_buffers(rust: bool) {
     );
 }
 
+fn native_titles(rust: bool) {
+    #[derive(Default)]
+    struct Titles(Vec<Vec<u8>>);
+    impl vt100::Callbacks for Titles {
+        fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+            self.0.push(title.to_vec());
+        }
+    }
+    let report = Report::new();
+    let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+        .arg("titles")
+        .arg(report.0.as_os_str())
+        .size(TerminalSize { rows: 8, cols: 16 });
+    let mut fixture = if rust {
+        Fixture::open(command.rust_console())
+    } else {
+        Fixture::open_backend(command, "conpty")
+    };
+    let mut peer = vt100::Parser::new_with_callbacks(8, 16, 0, Titles::default());
+    for n in 0..11 {
+        let marker = format!("ttl-stage-{n}:");
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while peer
+            .screen()
+            .rows(0, 16)
+            .nth(7)
+            .unwrap()
+            .trim_end_matches(' ')
+            != marker
+            || !peer.at_boundary()
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("native title fence")
+                .unwrap();
+            peer.process(&chunk);
+            fixture.bytes.extend(chunk);
+        }
+        eprintln!(
+            "title rust={rust};stage={n};peer={:?};row={:?}",
+            peer.callbacks()
+                .0
+                .last()
+                .map(|t| String::from_utf8_lossy(t)),
+            peer.screen().rows(0, 16).next().unwrap()
+        );
+        if rust {
+            let expected = match n {
+                1 => Some("native-中😀"),
+                2 | 3 => Some("during-fragment"),
+                8 | 9 => Some(""),
+                _ => None,
+            };
+            if let Some(expected) = expected {
+                assert_eq!(
+                    peer.callbacks().0.last().map(Vec::as_slice),
+                    Some(expected.as_bytes())
+                );
+            }
+            if n == 3 {
+                assert_eq!(peer.screen().rows(0, 16).next().unwrap(), "ROOTZ");
+                assert_eq!(
+                    peer.screen().cell(0, 4).unwrap().fgcolor(),
+                    vt100::Color::Idx(1)
+                );
+            }
+            if n == 10 {
+                let safe = "\x1b]0;A•←]2;BAD\x1b\\".as_bytes();
+                assert!(fixture.bytes.windows(safe.len()).any(|bytes| bytes == safe));
+                assert_eq!(peer.screen().rows(0, 16).next().unwrap(), "HIDDEN!");
+            }
+        }
+        std::fs::write(report.0.with_extension(format!("stage{n}")), b"observed").unwrap();
+    }
+    fixture.finish(0);
+    let native = std::fs::read_to_string(&report.0).unwrap();
+    if !rust {
+        assert!(
+            native.starts_with("build=20348\n"),
+            "review title reference policy for this Windows build"
+        );
+    }
+    for (stage, title) in [
+        (1, "native-中😀"),
+        (2, "during-fragment"),
+        (3, "during-fragment"),
+        (8, ""),
+        (9, ""),
+        (10, if rust { "A\x07\x1b]2;BAD" } else { "A]2;BAD" }),
+    ] {
+        let units: Vec<_> = title.encode_utf16().collect();
+        let hex = units
+            .iter()
+            .map(|u| format!("{u:x}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let expected = format!(
+            "stage{stage}:original=false;wide={},0;data={hex};next=0",
+            units.len()
+        );
+        assert!(
+            native.contains(&expected),
+            "missing native title: {expected}\n{native}"
+        );
+    }
+    eprintln!("title native rust={rust}:\n{native}");
+}
+#[test]
+fn rust_console_pty_native_wide_titles_publish_independently_of_client_grammar() {
+    native_titles(true);
+}
+#[test]
+#[ignore = "explicit native title system reference"]
+fn rust_console_client_titles_match_system_conpty() {
+    native_titles(false);
+}
+
 fn native_vt_layers(rust: bool) {
     let report = Report::new();
     let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))

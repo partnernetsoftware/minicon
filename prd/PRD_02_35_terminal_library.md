@@ -28,6 +28,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   dependency: shared exact lexer fork/framer; non-goal: duplicating a Windows shadow grid
 │   └── explicit Fixed / Vertical / Cursor policy; bool callers remain compatible
 │       └── displayed-stream activation / logical layer / portable projection quota
+│       └── independent bounded title publication; native metadata stays in adapter
 ├── [v] Windows host adopts the common stream facade
 │   invariant: native projections preserve client grammar and commit after sink success
 │   evidence: public projection unit plus SDK mixed-output and existing host/screen courts
@@ -72,6 +73,24 @@ flowchart LR
 
 ## Dependency and public API boundary
 
+The integration boundary is the terminal domain: applications should eventually
+compose terminal state, input, a native session and output publication through
+this library. Cross-ISA reuse and cross-OS adaptation are separate requirements;
+neither changes the meaning of the common terminal API.
+
+| Layer | Public responsibility | Current implementation and remaining work |
+| --- | --- | --- |
+| Common terminal mechanisms | State, streaming, Unicode, cells, damage and viewport publication | Implemented common facade; compatibility and evidence remain scoped below |
+| Portable session contract | Input events, capabilities, size, I/O ownership, backpressure and close/EOF | Planned; define contracts before relocating PTY implementations |
+| Native terminal adapters | OS handles, console/PTY protocols, process ownership and native errors | Windows service is experimental; macOS/Linux PTY implementations remain in platform pending consolidation |
+| Internal ISA adaptation | Native ABI/layout or measured acceleration behind the same semantic contract | Keep target-specific details internal; qualify each OS/ISA combination separately |
+| Application integration | Rendering, event loops, tabs and product policy consume terminal APIs | Remain outside the library; migrating a consumer requires its own evidence |
+
+The intended dependency direction is application to terminal contracts to native
+adapter. Existing platform PTY entry points remain compatibility consumers during
+consolidation. Do not introduce a reverse library dependency or relocate unrelated
+platform facilities to achieve a single terminal entry point.
+
 `minicon-console` must not depend on `minicon-platform` while platform's optional
 Windows provider depends on it. Common screen/stream mechanisms depend only on
 the owned parsers and Rust standard library. Native console exports remain
@@ -103,6 +122,22 @@ backpressure, explicit-close versus natural EOF, and errors portable across OSes
 Native process and Job/foreground-group authority must remain in one owner.
 POSIX PTY consolidation is tracked in [reuse map](PRD_02_28_shared_core.md).
 Do not move general filesystem/network/window APIs into this terminal library.
+
+### Independent title publication
+
+`TerminalStream::write_window_title` publishes a complete OSC 0 title with ST
+termination, independent of client grammar, callbacks and viewport projection.
+It borrows the stream read-only and does not change screen cells, layers or
+pending CSI/UTF-8. The caller owns title metadata and commits it only after
+publication succeeds. Partial sink failure still requires retiring the transport.
+
+Input is a Rust string without control characters; C0, DEL and C1 are rejected
+before any output. A caller-owned encoded-byte limit includes the six framing
+bytes and uses the common typed `ProjectionLimit` error. Native character
+conversion and display policy stay in the adapter, not the portable formatter.
+This method does not unify title state from client VT output or fix receiving
+parser support for title payloads containing additional semicolons; those remain
+separate compatibility work.
 
 ## Evidence frontier
 
@@ -260,3 +295,12 @@ mapped sessions. Rejected prefixes use canonical U+FFFD before the new input;
 valid frames retain their wire bytes. The mechanism and failure invariants belong
 to [shared recovery](PRD_02_24_con_terminal.md#invalid-utf-8-prefix-recovery), with
 native SDK interleaving/final-tail evidence owned by PRD 02.34.
+
+
+Title publication is exercised by
+`rust_console_terminal_title_publication_preserves_grammar_and_rejects_injection`.
+Its actual native consumer is guarded by
+`rust_console_native_title_commits_after_sink_and_retains_raw_metadata` and
+`rust_console_pty_native_wide_titles_publish_independently_of_client_grammar`.
+Runtime mutation, selected-suite and cross-target qualification for this leaf
+are recorded by [the native owner](PRD_02_34_windows_console_backend.md#native-wide-title-publication-leaf).

@@ -56,6 +56,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] native-buffer process-exit fallback and inherited file-object retirement
 │   ├── [v] ordinary output follows vertical viewport without horizontal panning
 │   ├── [v] native buffer handoff preserves each stream's VT main/alternate pair
+│   ├── [-] console-wide title metadata and frontend publication
+│   │   └── native W setter uses the common independent title formatter
 │   ├── [v] scoped native cursor info: SDK/PowerShell sizes, visibility and shared replay
 │   ├── [-] indexed native output: variable text/attribute spans over common cells
 │   ├── [-] native scroll: shared snapshot moves; scoped W/A, overlap, clip and RawUI evidence
@@ -2285,3 +2287,50 @@ targets are compile-only. Two reviewed source blobs match pinned tree
 9fd41b2baec77d25b8cfb584070d5998eab7df81. `vertical-viewport-final-receipt.json`
 binds source tree, guard/check/log hashes, compiler, executable identities and
 remaining scope. Final documentation edits are followed by alignment checks.
+
+
+## Native wide-title publication leaf
+
+The W title setter now publishes through the common independent title API
+before committing console-wide UTF-16 metadata. It does not use screen-only
+viewport projection, reset a buffer's client decoder or overwrite the original
+title. Native display conversion maps C0/DEL to DOS glyphs, C1 to question marks,
+and malformed UTF-16 to replacement scalars; stored metadata remains unchanged.
+The portable formatter and its failure contract are owned by
+[terminal library](PRD_02_35_terminal_library.md#independent-title-publication).
+
+The SDK scenario fences every stage through decoded screen cells. Owned-backend
+assertions cover Unicode W setters, a title between CSI fragments and the later
+red Z, clearing the title, buffer activation without stale title replay, safe
+control-character publication and unchanged visible cells. W metadata is checked
+through the actual SDK on both backends. Native title sink rejection leaves the
+previous metadata and decoder state intact.
+
+The source baseline is Microsoft terminal tree
+`9fd41b2baec77d25b8cfb584070d5998eab7df81`: `src/host/getset.cpp`
+(SetConsoleTitleWImpl), `src/host/consoleInformation.cpp` (SetTitle), and
+`src/host/VtIo.cpp` (WriteWindowTitle / SanitizeUCS2). Raw source blobs are checked
+against the saved tree. The installed Windows x86_64 build 20348 reference
+strips control characters from metadata instead; its separate expected W result
+is pinned to that build, rather than treated as modern-source parity. Unicode
+frontend-title assertions apply to the owned backend; native W readback is
+asserted on both. This is not byte-for-byte system-output parity.
+
+Remaining title work includes A setters/getters and input-code-page conversion,
+short-buffer/NUL rules, initial title publication, completed VT-title metadata,
+nonvisual effects from inactive buffers, title payloads with semicolons in the
+receiving parser, and process-exit restoration. General title compatibility is
+still partial; this leaf does not change backend selection or default promotion.
+
+
+Local qualification: `native-title-final-focused.log` records four passes (two
+library/native units plus owned SDK and system-reference SDK); the final selected
+suite records 243 passes, including 17 alignment checks. Six byte-restored runtime
+guards cover control rejection, quota, sink-error propagation, metadata commit,
+actual native publication and the system-reference oracle. Ten static/build
+checks pass: strict default/enabled workspace and standalone parser Clippy,
+lexer no-std, four common-library cross-target builds, and Windows ARM64
+platform PTY/Rust-console compilation. Non-host checks are compile-only.
+`native-title-final-receipt.json` binds the source tree, source blobs, executable
+identities, logs, guards and remaining scope. Documentation is followed by a
+final 17-test alignment run.

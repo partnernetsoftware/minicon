@@ -14,6 +14,7 @@ mod rectangle;
 mod screen;
 mod scroll;
 mod stream;
+mod title;
 pub use input::ConsoleInput;
 use input::InputState;
 use std::collections::{BTreeMap, VecDeque};
@@ -1035,10 +1036,11 @@ impl<'session> ConsoleHost<'session> {
                 if !bytes.len().is_multiple_of(2) || bytes.len() > 65534 {
                     receipt.status = INVALID_PARAMETER;
                 } else {
-                    self.title = bytes
+                    let title = bytes
                         .chunks_exact(2)
                         .map(|b| u16::from_le_bytes([b[0], b[1]]))
                         .collect();
+                    receipt.status = output::write_status(self.set_native_title(title, output))?;
                 }
             }
             _ => receipt.status = NOT_SUPPORTED,

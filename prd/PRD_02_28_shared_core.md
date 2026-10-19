@@ -262,6 +262,9 @@ local tests and native receipts support only their recorded feature/cell scope.
   decoder reset, and consumes itself on final-tail delivery. The Windows host now
   consumes this facade; GUI migration, explicit session-discard receipts and
   portable process lifecycle remain open.
+- [-] Native W title publication also consumes the common bounded formatter;
+  its portable contract belongs to [PRD 02.35](PRD_02_35_terminal_library.md#independent-title-publication)
+  and native compatibility scope to [PRD 02.34](PRD_02_34_windows_console_backend.md#native-wide-title-publication-leaf).
 - [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
   `adapters/unix/pty`; the macOS adapter currently imports the former file by
   path. Preserve distinct adapter identities and qualify both actual platforms.
