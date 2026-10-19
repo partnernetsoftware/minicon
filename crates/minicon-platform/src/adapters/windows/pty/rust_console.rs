@@ -170,7 +170,7 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
             if result
                 .as_ref()
                 .is_err_and(|error| error.raw_os_error() == Some(ERROR_OPERATION_ABORTED as i32))
-                && worker_child.active_processes().ok() == Some(0)
+                && wait_for_empty_job(&worker_child, Duration::from_millis(500)).unwrap_or(false)
             {
                 result = Ok(());
             }
@@ -205,6 +205,19 @@ pub(super) fn spawn(command: ChildCommand, size: TerminalSize) -> io::Result<Spa
             pid,
         },
     })
+}
+
+fn wait_for_empty_job(child: &ConsoleChild, timeout: Duration) -> io::Result<bool> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.active_processes()? == 0 {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 struct QueueWriter<'a>(&'a OutputPipe);
@@ -410,6 +423,40 @@ fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn suspended_client() -> (DriverSession, Arc<ConsoleChild>) {
+        let session = DriverSession::open().unwrap();
+        let image = PathBuf::from(env::var_os("SystemRoot").unwrap()).join("System32/cmd.exe");
+        let command = OsString::from(format!("\"{}\" /d /c exit 0", image.display()));
+        let child = session.spawn_suspended(&image, &command).unwrap();
+        (session, Arc::new(child))
+    }
+
+    #[test]
+    fn rust_console_pty_cancelled_job_wait_observes_a_delayed_empty_transition() {
+        let (_session, child) = suspended_client();
+        assert_eq!(child.active_processes().unwrap(), 1);
+        let later = Arc::clone(&child);
+        let terminate = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            later.terminate(1).unwrap();
+        });
+        let empty = wait_for_empty_job(&child, Duration::from_secs(1)).unwrap();
+        terminate.join().unwrap();
+        assert!(
+            empty,
+            "one nonempty observation must not decide final cancellation EOF"
+        );
+        assert_eq!(child.wait(Duration::from_secs(1)).unwrap(), Some(1));
+    }
+
+    #[test]
+    fn rust_console_pty_cancelled_job_wait_keeps_a_live_client_nonempty() {
+        let (_session, child) = suspended_client();
+        assert!(!wait_for_empty_job(&child, Duration::from_millis(10)).unwrap());
+        assert_eq!(child.active_processes().unwrap(), 1);
+        assert_eq!(child.wait(Duration::ZERO).unwrap(), None);
+    }
 
     #[test]
     fn rust_console_pty_shutdown_releases_a_worker_at_actual_output_capacity() {

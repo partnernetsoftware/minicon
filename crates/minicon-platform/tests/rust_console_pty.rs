@@ -149,7 +149,15 @@ impl Report {
 impl Drop for Report {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
-        for extension in ["ready", "go", "opened", "opened-ready", "detached", "first"] {
+        for extension in [
+            "ready",
+            "go",
+            "opened",
+            "opened-ready",
+            "detached",
+            "first",
+            "child",
+        ] {
             let _ = std::fs::remove_file(self.0.with_extension(extension));
         }
         let _ = std::fs::remove_dir(self.0.parent().unwrap());
@@ -172,7 +180,9 @@ fn control_receipt(mode: &str, rust: bool) -> String {
         // units below proves that the SDK read was actually interrupted.
         std::thread::sleep(Duration::from_millis(60));
     }
-    fixture.master.write_all(&[3]).unwrap();
+    if !mode.starts_with("control-generate-") && mode != "control-group-parent" {
+        fixture.master.write_all(&[3]).unwrap();
+    }
     fixture.finish(0);
     std::fs::read_to_string(&report.0).unwrap()
 }
@@ -184,8 +194,86 @@ fn rust_console_pty_processed_ctrl_c_runs_native_handler_and_interrupts_read() {
 }
 
 #[test]
+fn rust_console_pty_ctrl_c_handler_can_query_and_write_console_synchronously() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-handler-io")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("control-probe-ready:");
+    fixture.master.write_all(&[3]).unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "|1");
+    assert!(String::from_utf8_lossy(&fixture.bytes).contains("handler-native-write:"));
+}
+
+#[test]
+fn rust_console_pty_ctrl_c_bypasses_a_full_input_event_queue() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("control-full-queue")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.until("control-probe-ready:");
+    fixture.master.write_all(&[b'x'; 4096]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !report.0.with_extension("ready").exists() {
+        assert!(
+            Instant::now() < deadline,
+            "native input queue did not reach capacity"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    fixture.master.write_all(&[3]).unwrap();
+    fixture.finish(0);
+    assert_eq!(std::fs::read_to_string(&report.0).unwrap(), "4096,4096|1");
+}
+
+#[test]
 fn rust_console_pty_unprocessed_ctrl_c_is_input_without_handler_delivery() {
     assert_eq!(control_receipt("control-raw", true), "true,0,1,3|0");
+}
+
+#[test]
+fn rust_console_pty_native_generate_ctrl_event_supports_c_and_break_with_raw_input() {
+    assert_eq!(control_receipt("control-generate-c", true), "true,0|1");
+    assert_eq!(control_receipt("control-generate-break", true), "true,0|2");
+}
+
+#[test]
+fn rust_console_pty_generated_break_targets_only_the_attached_child_process_group() {
+    assert_eq!(
+        control_receipt("control-group-parent", true),
+        "true,0|child:|2|parent:0"
+    );
+}
+
+#[test]
+fn rust_console_pty_native_generate_ctrl_event_rejects_invalid_event_and_group() {
+    assert_eq!(
+        control_receipt("control-generate-invalid", true),
+        "false,87|false,87|0"
+    );
+}
+
+#[test]
+#[ignore = "explicit system ConPTY native control generation differential court"]
+fn rust_console_client_generate_ctrl_event_matches_system_conpty() {
+    for (mode, expected) in [
+        ("control-generate-c", "true,0|1"),
+        ("control-generate-break", "true,0|2"),
+        ("control-generate-invalid", "false,87|false,87|0"),
+        ("control-group-parent", "true,0|child:|2|parent:0"),
+    ] {
+        let reference = control_receipt(mode, false);
+        eprintln!("system ConPTY {mode}: {reference}");
+        assert_eq!(reference, expected);
+        assert_eq!(control_receipt(mode, true), reference);
+    }
 }
 
 #[test]
@@ -193,6 +281,7 @@ fn rust_console_pty_unprocessed_ctrl_c_is_input_without_handler_delivery() {
 fn rust_console_client_ctrl_c_matches_system_conpty() {
     for (mode, expected) in [
         ("control-handler", "|1"),
+        ("control-handler-io", "|1"),
         ("control-read", "true,995,0,0|1"),
         ("control-raw", "true,0,1,3|0"),
     ] {

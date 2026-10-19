@@ -32,7 +32,11 @@ sequences that contract without assigning a release or changing current defaults
    tails distinguish connection defaults from kernel file object lifetimes.
    Private-Job Ctrl+C admission, actual native handler/interrupted-read/default
    exit receipts and system-ConPTY comparisons extend the scoped signal slice;
-   general process-group control and Ctrl+Break remain open.
+   Attached-group native C/Break generation, standalone full-queue interruption
+   and native handler API reentry extend that slice. Keyboard Ctrl+Break, mixed
+   input pressure and unattached-group compatibility remain open.
+   Final ConDrv cancellation now waits briefly for the private Job to settle
+   empty; actual delayed/live-member fixtures guard that EOF classification.
    Qualify further real shells/agent clients, cancellation/crash races and both
    Windows ISAs independently. Compare CPU/RSS including all helper processes,
    throughput, input latency and cleanup. Retain behavior-changing negatives.

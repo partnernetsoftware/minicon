@@ -35,6 +35,10 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped processed Ctrl+C: private Job admission, retained process handles,
 │   │   native handler receipt and interrupted-read evidence; missing native
 │   │   entry point fails explicitly; no host-console group broadcast
+│   ├── [v] standalone queue-full interruption and handler API reentry: native
+│   │   inventory/handler receipts, bounded failure, same private Job authority
+│   ├── [v] native GenerateConsoleCtrlEvent: C/Break, attached process groups,
+│   │   retained group metadata and real same-Job child isolation; no PID recovery
 │   └── [-] general API service, signals, screen semantics and product selection
 ├── [_] Optional isolated, source-pinned C++ comparison build
 │   ├── explicit selected-host launch; record actual image, hash and fallback
@@ -63,6 +67,11 @@ flowchart LR
     HOST --> JOB["ConsoleChild: suspend / assign job / resume"]
     JOB --> SIGNAL["control targets admitted before CONNECT reply"]
     SIGNAL --> RETAIN["retained process handle / live check / native EndTask"]
+    HOST --> GROUP["admitted CONNECT process-group metadata"]
+    GROUP --> GENERATE["native C/Break API / known group check"]
+    GENERATE --> RETAIN
+    INPUT --> CAP["queued-record budget / bounded interrupt batches"]
+    CAP --> SIGNAL
     JOB -. "owned teardown" .-> CLIENT
     ADAPTER --> MC["MiniCon sessions and renderer"]
     ADAPTER --> AG["AgenTerm: separate pin and qualification"]
@@ -231,7 +240,7 @@ certification for all clients or OS releases.
 | GetScreenBufferInfo | Return bounded initial geometry and cursor from the owned VT parser, plus initial attributes/colors. | Full legacy screen mutation, attributes, scrolling, resize, multiple buffers and readback. |
 | GetCursorInfo / SetCursorPosition | Query initial cursor size and owned VT visibility; validated native position emits a VT cursor move into the same screen state. | Cursor-size mutation, complete window/scrolling interactions and general API fidelity remain open. |
 | GetTitleW / SetTitleW | Preserve initial/current UTF-16 title; bounded metadata and client buffers. | ANSI title variants and independent native API differential coverage. |
-| Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | General process-group GenerateConsoleCtrlEvent, Ctrl+Break, other signals and broader OS/client qualification. |
+| Processed Ctrl+C input | Private-Job admission before CONNECT reply, retained process identity, native handler/default exit and interrupted-read receipts; raw input remains data. | Keyboard Ctrl+Break, unattached-group compatibility, other signals and broader OS/client qualification. |
 | Other operations | Explicit NOT_SUPPORTED; no silent call to system conhost. | Remaining layer APIs and GUI/product qualification. |
 
 The backend reuses this repository's owned `vt100` fork for screen state behind
@@ -573,8 +582,9 @@ including when no read is pending. Pending console reads receive STATUS_ALERTED
 with zero native counts. With processed input disabled, that character remains
 ordinary input. WriteConsoleInputW record injection is a separate native API
 route and is not qualified as a signal generator by this milestone. General
-GenerateConsoleCtrlEvent/process-group targeting and Ctrl+Break remain open;
-this is console-wide private authority, not a foreground-process contract.
+GenerateConsoleCtrlEvent and connected-group C/Break delivery are implemented
+in the following milestone; keyboard Ctrl+Break remains open. This is private
+console authority, not a foreground-process contract.
 
 The Cargo-built Win32 client explicitly clears its inherited ignore-Ctrl+C
 attribute before installing a real handler. Microsoft documents that this
@@ -595,12 +605,10 @@ agent units, including eight requested external/reference cases. Baseline local
 evidence is `target/conhost-research/control-positive-suite.log`; the final
 post-mutation receipt is `control-final-suite.log`.
 
-Remaining control qualification includes synchronous console I/O from a native
-handler, input-queue saturation before interruption, inherited ignore-state
-journeys in real shells and delivery under sustained connection churn. The
-current input-budget precheck can reject new input before control-key dispatch;
-this milestone does not claim overload recovery. These cases remain required
-before promoting the experimental backend.
+The next milestone addresses synchronous console I/O from a native handler
+and a standalone interruption at full input capacity. Mixed text/control
+backpressure, inherited ignore-state journeys in real shells and delivery under
+sustained connection churn remain required before experimental promotion.
 
 Eight runtime mutation controls cover native dispatch, processed-mode gating,
 blocked-read interruption, private-Job admission, target retirement on disconnect,
@@ -608,3 +616,70 @@ control-key recognition, missing native export and the system-reference event
 comparison. Each new test fails with the relevant behavior changed. The local
 `control-negative-audit.json` records test/log identities and restored hashes;
 `control-final-suite.log` records the fresh 90-case pass after restoration.
+
+### Control generation, queue pressure and handler API reentry
+
+The original 4096-record budget charged every incoming key against free queue
+slots, so a standalone processed Ctrl+C could not reach its handler once the
+queue filled. The queue check now charges only records that will be enqueued;
+control events still count against the separate 4096-event batch bound. A real
+SDK query observes 4096 queued keys before and after successful handler execution.
+The ordinary typeahead is preserved. This does not make a mixed over-budget
+text/control batch partially accepted: it still fails atomically, and the PTY
+byte-stream backlog case remains open.
+
+The real native callback now has a dedicated fixture that calls GetConsoleMode
+and WriteConsoleW synchronously using fixed local buffers. It publishes success
+only after both SDK calls return the expected mode/count, and the PTY observer
+also requires the callback's actual output. This passes without a separate
+control worker. The explicit system-ConPTY handler comparison includes the same
+callback; the result does not qualify every reentrant console API or shell.
+
+Native GenerateConsoleCtrlEvent now reaches API 0x02000001 through the existing
+PTY adapter and ConDrv dispatcher. Typed internal C/Break events reuse the
+retained-target authority. CONNECT's ProcessGroupId is captured with each
+admitted process; generation validates a requested attached group and filters
+the retained handles by that group before native dispatch. Invalid events and
+unknown groups return native invalid-parameter results rather than treating an
+unknown PID as authority. The pinned
+[ApiDispatchersInternal](https://github.com/microsoft/terminal/blob/9fd41b2baec77d25b8cfb584070d5998eab7df81/src/server/ApiDispatchersInternal.cpp)
+posts control events without the keyboard path's input flushing/read termination.
+The new API route follows that separation; concurrent blocked-read behavior
+still needs its own explicit generation court.
+
+The Win32 fixture generates C and Break while its input mode is raw and checks
+the actual handler event code. A same-console child is created with
+CREATE_NEW_PROCESS_GROUP and publishes readiness only after connecting and
+registering its handler. The parent then calls GenerateConsoleCtrlEvent with
+that actual child group ID; the child reports Break and the parent reports no
+signal. This fixture uses only its private Job family. The explicit system
+ConPTY court repeats C, Break, invalid event/group and child-group isolation,
+and matches every native result. Unattached groups that an upstream host may
+recover through parent-PID lookup, keyboard VK_CANCEL and other event types
+remain unqualified.
+
+The expanded targeted command selects 99 cases: 70 backend cases plus 29 legacy
+agent units, with nine requested external/reference cases. Local baseline and
+final receipts are `control-groups-positive-suite.log` and
+`control-groups-final-suite.log` under `target/conhost-research/`. The first
+full-queue runtime failure is `control-pressure-repro.log`.
+
+The wider 97-case run exposed a separate close race: a final ConDrv cancellation
+could reach the worker before that worker confirmed an empty private Job,
+even though the termination controller subsequently verified emptiness. The adapter now
+allows up to 500 ms for that exact Job's member count to settle to zero before
+classifying ERROR_OPERATION_ABORTED as normal EOF. It still reports cancellation
+as an error when clients remain alive, or when the membership query fails.
+Native suspended-client fixtures exercise an actual delayed termination and an
+actually live Job; no PID scan or synthetic member count substitutes for them.
+The two additional cases bring the targeted total to 99. General I/O errors are
+not eligible for this cancellation-specific rule.
+
+Ten runtime mutation controls cover interrupt batch bounds, queue charging,
+handler mode queries, native API dispatch, group filtering/validation/metadata,
+Break event identity and both delayed-empty/live-Job settlement outcomes. All
+nine newly added tests and the expanded handler differential fail under their
+respective behavior changes. Sources are restored before the final 99-case
+suite. Local `control-groups-negative-audit.json` records exact test/log and
+restored-source identities. ARM64/other Windows runtime, complete interactive
+shells and packaged/default selection remain outside this receipt.

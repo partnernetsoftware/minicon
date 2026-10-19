@@ -35,9 +35,20 @@ impl Drop for Library {
 
 pub(crate) struct ControlScope<'child> {
     child: &'child ConsoleChild,
-    targets: BTreeMap<usize, OwnedHandle>,
+    targets: BTreeMap<usize, Target>,
     native: NativeControl,
     _library: Library,
+}
+
+struct Target {
+    process: OwnedHandle,
+    group: u32,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ControlEvent {
+    CtrlC,
+    CtrlBreak,
 }
 
 impl<'child> ControlScope<'child> {
@@ -67,7 +78,13 @@ impl<'child> ControlScope<'child> {
         })
     }
 
-    pub(crate) fn admit(&mut self, token: usize, pid: u32, console_app: bool) -> io::Result<()> {
+    pub(crate) fn admit(
+        &mut self,
+        token: usize,
+        pid: u32,
+        console_app: bool,
+        group: u32,
+    ) -> io::Result<()> {
         // Capture before CONNECT completion: the client has not yet been
         // released by our server. Never recover signal targets by PID later.
         let raw = unsafe {
@@ -89,7 +106,7 @@ impl<'child> ControlScope<'child> {
                 "console client is not live in the owned Job",
             ));
         }
-        self.targets.insert(token, process);
+        self.targets.insert(token, Target { process, group });
         // Register the admitted console application with Win32/CSRSS before
         // releasing CONNECT, as the native host's NotifyConsoleApplication does.
         if console_app {
@@ -109,9 +126,17 @@ impl<'child> ControlScope<'child> {
         self.targets.len()
     }
 
-    pub(crate) fn ctrl_c(&self) -> usize {
+    pub(crate) fn has_group(&self, group: u32) -> bool {
+        group == 0 || self.targets.values().any(|target| target.group == group)
+    }
+
+    pub(crate) fn send(&self, event: ControlEvent, group: u32) -> usize {
         let mut attempted = 0;
-        for process in self.targets.values() {
+        for target in self.targets.values() {
+            if group != 0 && target.group != group {
+                continue;
+            }
+            let process = &target.process;
             // The retained handle pins object/PID identity even across exit.
             // SAFETY: live owned process handle; zero-time status query.
             if unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } != WAIT_TIMEOUT {
@@ -124,8 +149,14 @@ impl<'child> ControlScope<'child> {
             let mut task = EndTask {
                 process_id: pid as usize,
                 window: 0,
-                event: 0,
-                flags: 1,
+                event: match event {
+                    ControlEvent::CtrlC => 0,
+                    ControlEvent::CtrlBreak => 1,
+                },
+                flags: match event {
+                    ControlEvent::CtrlC => 1,
+                    ControlEvent::CtrlBreak => 2,
+                },
             };
             // SAFETY: only admitted private Job targets; exact initialized ABI.
             // EndTask's status does not prove delivery. Client receipts do.

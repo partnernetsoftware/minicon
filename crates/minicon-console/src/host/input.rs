@@ -196,11 +196,12 @@ impl<'session> ConsoleHost<'session> {
         events: &[ConsoleInput],
         output: &mut impl Write,
     ) -> io::Result<usize> {
-        if events.len() > MAX_EVENTS.saturating_sub(self.input.events.len()) {
+        if events.len() > MAX_EVENTS {
             return Err(io::Error::from(io::ErrorKind::WouldBlock));
         }
-        for event in events {
-            if matches!(
+        let processed = self.input_mode & 1 != 0;
+        let is_interrupt = |event: &ConsoleInput| {
+            matches!(
                 event,
                 ConsoleInput::Key {
                     down: true,
@@ -208,8 +209,14 @@ impl<'session> ConsoleHost<'session> {
                     character: 3,
                     ..
                 }
-            ) && self.input_mode & 1 != 0
-            {
+            ) && processed
+        };
+        let queued = events.iter().filter(|event| !is_interrupt(event)).count();
+        if queued > MAX_EVENTS.saturating_sub(self.input.events.len()) {
+            return Err(io::Error::from(io::ErrorKind::WouldBlock));
+        }
+        for event in events {
+            if is_interrupt(event) {
                 self.send_ctrl_c()?;
             } else {
                 self.input.events.push_back(*event);

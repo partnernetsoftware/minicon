@@ -109,7 +109,7 @@ impl<'session> ConsoleHost<'session> {
             .control
             .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no owned control scope"))?;
-        let count = control.ctrl_c();
+        let count = control.send(crate::control::ControlEvent::CtrlC, 0);
         self.cancel_pending_reads()?;
         Ok(count)
     }
@@ -218,7 +218,12 @@ impl<'session> ConsoleHost<'session> {
                     if let Some(control) = &mut self.control {
                         let connect = request.read_input(0, 1340)?;
                         if control
-                            .admit(process, descriptor.process as u32, connect[32] != 0)
+                            .admit(
+                                process,
+                                descriptor.process as u32,
+                                connect[32] != 0,
+                                read_u32(&connect, 28).unwrap(),
+                            )
                             .is_err()
                         {
                             receipt.status = 0xc000_0022_u32 as i32;
@@ -350,6 +355,25 @@ impl<'session> ConsoleHost<'session> {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0200_0001 if body.len() >= 8 => {
+                let event = match read_u32(&body, 0).unwrap() {
+                    0 => Some(crate::control::ControlEvent::CtrlC),
+                    1 => Some(crate::control::ControlEvent::CtrlBreak),
+                    _ => None,
+                };
+                let group = read_u32(&body, 4).unwrap();
+                receipt.status = match (event, &self.control) {
+                    (None, _) => INVALID_PARAMETER,
+                    (Some(_), None) => NOT_SUPPORTED,
+                    (Some(event), Some(control)) if control.has_group(group) => {
+                        // API generation posts a signal; unlike keyboard input,
+                        // it does not flush input or terminate console reads.
+                        control.send(event, group);
+                        SUCCESS
+                    }
+                    _ => INVALID_PARAMETER,
+                };
+            }
             0x0100_0003 if body.len() >= 4 => {
                 receipt.status = self.handle_status(
                     descriptor.process,
@@ -630,6 +654,25 @@ fn put_coord(body: &mut [u8], offset: usize, x: u16, y: u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_console_host_bounds_interrupt_batch_before_attempting_delivery() {
+        let mut host = ConsoleHost::new();
+        let event = ConsoleInput::Key {
+            down: true,
+            repeat: 1,
+            virtual_key: 0x43,
+            scan_code: 0,
+            character: 3,
+            controls: 8,
+        };
+        let error = host
+            .enqueue_input(&vec![event; 4097], &mut Vec::new())
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(host.input.events.is_empty());
+        assert_eq!(host.control_targets(), 0);
+    }
 
     #[test]
     fn rust_console_host_preserves_a_surrogate_pair_across_writes() {
