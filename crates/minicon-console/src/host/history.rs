@@ -17,6 +17,13 @@ struct History {
     reset: bool,
 }
 impl History {
+    fn select(&mut self, index: usize) -> Vec<u16> {
+        // Empty allocated histories still have a selection, unlike a missing
+        // history. This matters to subsequent navigation guards.
+        let index = index.min(self.commands.len().saturating_sub(1));
+        self.last = Some(index);
+        self.commands.get(index).cloned().unwrap_or_default()
+    }
     fn matches(&self, exe: &[u16]) -> bool {
         // SAFETY: both bounded UTF-16 slices remain live for this ordinal comparison.
         unsafe {
@@ -196,8 +203,11 @@ impl Histories {
     }
     pub(super) fn recall(&mut self, owner: usize, previous: bool) -> Option<Vec<u16>> {
         let history = self.entries.iter_mut().find(|h| h.owner == Some(owner))?;
-        let last = history.last?;
+        let last = history.last.unwrap_or(0);
         let index = if previous {
+            if !history.reset && history.last == Some(0) {
+                return None;
+            }
             if history.reset {
                 history.reset = false;
                 last
@@ -205,13 +215,56 @@ impl Histories {
                 last.checked_sub(1)?
             }
         } else {
-            if last + 1 >= history.commands.len() {
+            if history.last == history.commands.len().checked_sub(1) {
                 return None;
             }
             last + 1
         };
-        history.last = Some(index);
-        history.commands.get(index).cloned()
+        Some(history.select(index))
+    }
+    pub(super) fn boundary(&mut self, owner: usize, first: bool) -> Option<Vec<u16>> {
+        let history = self.entries.iter_mut().find(|h| h.owner == Some(owner))?;
+        if first && !history.reset && history.last == Some(0)
+            || !first && history.last == history.commands.len().checked_sub(1)
+        {
+            return None;
+        }
+        let index = if first {
+            0
+        } else {
+            history.commands.len().saturating_sub(1)
+        };
+        Some(history.select(index))
+    }
+    pub(super) fn template(&self, owner: usize) -> Option<&[u16]> {
+        let history = self.entries.iter().find(|h| h.owner == Some(owner))?;
+        history.commands.get(history.last?).map(Vec::as_slice)
+    }
+    pub(super) fn clear(&mut self, owner: usize) {
+        if let Some(history) = self.entries.iter_mut().find(|h| h.owner == Some(owner)) {
+            history.commands.clear();
+            history.reset();
+        }
+    }
+    pub(super) fn search(&mut self, owner: usize, prefix: &[u16]) -> Option<Vec<u16>> {
+        let history = self.entries.iter_mut().find(|h| h.owner == Some(owner))?;
+        let count = history.commands.len();
+        if count == 0 {
+            return None;
+        }
+        let mut index = history.last.unwrap_or(count - 1);
+        if history.reset {
+            history.reset = false;
+        } else {
+            index = (index + count - 1) % count;
+        }
+        for _ in 0..count {
+            if history.commands[index].starts_with(prefix) {
+                return Some(history.select(index));
+            }
+            index = (index + count - 1) % count;
+        }
+        None
     }
 }
 

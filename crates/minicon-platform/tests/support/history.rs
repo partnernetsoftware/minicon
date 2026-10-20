@@ -117,6 +117,164 @@ fn check_settings(size: u32, buffers: u32, flags: u32) -> io::Result<()> {
 fn list(exe: &str, expected: &[&str], label: &str, report: &mut String) -> io::Result<()> {
     list_with_length(exe, expected, label, report, None)
 }
+fn editing_keys(
+    kind: &str,
+    input: HANDLE,
+    exe: &str,
+    report: &mut String,
+    reference: bool,
+) -> io::Result<()> {
+    let seeds: &[&str] = match kind {
+        k if k.starts_with("keys-empty") => &[],
+        "keys-selected" => &["first", "second"],
+        "keys-f5" | "keys-pages" | "keys-page-last" => &["first", "second", "third"],
+        "keys-search-unicode" => &["中😀end"],
+        k if k.starts_with("keys-search") => &["echo one", "other", "echo two"],
+        "keys-f1-unicode" => &["abZ"],
+        "keys-f1-template-unicode" => &["中😀Z"],
+        "keys-f3-unicode" => &["中😀xy"],
+        "keys-f3-end" | "keys-f3-shrink" => &["abc"],
+        "keys-clear" | "keys-clear-line" => &["secret"],
+        _ => &["abcdef"],
+    };
+    for value in seeds {
+        read(input, text(value), value, report)?;
+    }
+    let (keys, expected) = match kind {
+        "keys-f1" => (vec![event(0x70, 0, 3), event(0, 88, 1)], "abcX"),
+        "keys-right" => (vec![event(0x27, 0, 2), event(0, 88, 1)], "abX"),
+        "keys-f1-middle" => {
+            let mut keys = text("xy");
+            keys.extend([event(0x24, 0, 1), event(0x70, 0, 1), event(0, 88, 1)]);
+            (keys, "xXy")
+        }
+        "keys-f3" => {
+            let mut keys = text("XYZZ");
+            keys.extend([event(0x24, 0, 1), event(0x27, 0, 2), event(0x72, 0, 1)]);
+            (keys, "XYcdef")
+        }
+        "keys-f3-end" => {
+            let mut keys = text("long");
+            keys.push(event(0x72, 0, 1));
+            (keys, "long")
+        }
+        "keys-f3-shrink" => {
+            let mut keys = text("XYlongtail");
+            keys.extend([event(0x24, 0, 1), event(0x27, 0, 2), event(0x72, 0, 1)]);
+            (keys, if reference { "XYcongtail" } else { "XYc" })
+        }
+        "keys-empty" => {
+            let mut keys = text("x");
+            keys.extend([event(0x70, 0, 1), event(0x72, 0, 1), event(0x77, 0, 1)]);
+            (keys, "x")
+        }
+        "keys-empty-up" | "keys-empty-navigation" | "keys-empty-last" => {
+            let mut keys = text("x");
+            keys.extend(match kind {
+                "keys-empty-up" => vec![event(0x26, 0, 1)],
+                "keys-empty-last" => vec![event(0x22, 0, 1)],
+                _ => vec![event(0x74, 0, 1), event(0x21, 0, 1), event(0x22, 0, 1)],
+            });
+            (
+                keys,
+                if kind == "keys-empty-last" && !reference {
+                    "x"
+                } else {
+                    ""
+                },
+            )
+        }
+        "keys-selected" => (
+            vec![
+                event(0x26, 0, 2),
+                event(0x24, 0, 1),
+                event(0x27, 0, 2),
+                event(0x72, 0, 1),
+                event(0, 88, 1),
+            ],
+            "firstX",
+        ),
+        "keys-f1-unicode" => {
+            let mut keys = text("😀");
+            keys.push(event(0x70, 0, 1));
+            (keys, if reference { "😀Z" } else { "😀b" })
+        }
+        "keys-f1-template-unicode" => (
+            vec![event(0x70, 0, 1), event(0x27, 0, 2), event(0, 88, 1)],
+            if reference { "中😀X" } else { "中😀ZX" },
+        ),
+        "keys-f3-unicode" => {
+            let mut keys = text("中");
+            keys.push(event(0x72, 0, 1));
+            (keys, "中😀xy")
+        }
+        "keys-f5" => (vec![event(0x74, 0, 2), event(0, 33, 1)], "second!"),
+        "keys-pages" => (
+            vec![event(0x21, 0, 1), event(0x22, 0, 1), event(0, 33, 1)],
+            "third!",
+        ),
+        "keys-page-last" => {
+            let mut keys = text("typed");
+            keys.extend([event(0x22, 0, 1), event(0, 33, 1)]);
+            (keys, if reference { "third!" } else { "typed!" })
+        }
+        "keys-clear" | "keys-clear-line" => {
+            let mut keys = text(if kind == "keys-clear" { "" } else { "kept" });
+            let mut clear = event(0x76, 0, 1);
+            clear.Event.KeyEvent.dwControlKeyState = 2;
+            keys.extend([clear, event(0x72, 0, 1)]);
+            (keys, if kind == "keys-clear" { "" } else { "kept" })
+        }
+        k if k.starts_with("keys-search") => {
+            let prefix = match kind {
+                "keys-search-miss" => "missing",
+                "keys-search-case" => "ECHO ",
+                "keys-search-unicode" => "中",
+                "keys-search-middle" => "echo junk",
+                _ => "echo ",
+            };
+            let mut keys = text(prefix);
+            if kind == "keys-search-middle" {
+                keys.extend([event(0x24, 0, 1), event(0x27, 0, 5)]);
+            }
+            let repeat = match kind {
+                "keys-search-cycle" => 2,
+                "keys-search-wrap" => 3,
+                _ => 1,
+            };
+            keys.extend([event(0x77, 0, repeat), event(0, 88, 1)]);
+            let expected = match kind {
+                "keys-search-miss" => "missingX",
+                "keys-search-case" => {
+                    if reference {
+                        "echo Xtwo"
+                    } else {
+                        "ECHO X"
+                    }
+                }
+                "keys-search-unicode" => "中X😀end",
+                "keys-search-cycle" => "echo Xone",
+                _ => "echo Xtwo",
+            };
+            (keys, expected)
+        }
+        _ => return Err(io::ErrorKind::InvalidInput.into()),
+    };
+    read(input, keys, expected, report)?;
+    if kind == "keys-clear" {
+        list(exe, &[], "cleared", report)?;
+    }
+    if kind == "keys-clear-line" {
+        list(exe, &["kept"], "clear-preserved-line", report)?;
+    }
+    let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
+    check(unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &mut info) })?;
+    report.push_str(&format!(
+        "editing-native-cursor:{},{}\n",
+        info.dwCursorPosition.X, info.dwCursorPosition.Y
+    ));
+    Ok(())
+}
 fn list_with_length(
     exe: &str,
     expected: &[&str],
@@ -371,7 +529,7 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
                 }
                 read(input, vec![event(0x26, 0, 1)], "parent", &mut report)?;
             }
-            "cmd" => {
+            "cmd" | "cmd-f3" | "cmd-f8" => {
                 let image = std::path::PathBuf::from(
                     std::env::var_os("SystemRoot").ok_or(io::ErrorKind::NotFound)?,
                 )
@@ -390,7 +548,22 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
                     std::thread::sleep(Duration::from_millis(2));
                 }
                 let mut keys = text("echo history-cmd");
-                keys.extend([event(13, 13, 1), event(0x26, 0, 1), event(13, 13, 1)]);
+                keys.push(event(13, 13, 1));
+                if kind == "cmd-f8" {
+                    keys.extend(text("echo history-"));
+                }
+                keys.extend([
+                    event(
+                        match kind {
+                            "cmd-f3" => 0x72,
+                            "cmd-f8" => 0x77,
+                            _ => 0x26,
+                        },
+                        0,
+                        1,
+                    ),
+                    event(13, 13, 1),
+                ]);
                 keys.extend(text("exit /b 27"));
                 keys.push(event(13, 13, 1));
                 let mut count = 0;
@@ -418,6 +591,7 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
                 list(exe, &["retained"], "configuration-preserved", &mut report)?;
                 report.push_str("configuration-bound:8\n");
             }
+            k if k.starts_with("keys-") => editing_keys(kind, input, exe, &mut report, reference)?,
             _ => return Err(io::ErrorKind::InvalidInput.into()),
         }
         unsafe { ExpungeConsoleCommandHistoryA(format!("{exe}\0").as_ptr()) };

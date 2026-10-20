@@ -2,6 +2,7 @@
 mod cache;
 mod echo;
 mod edit;
+mod history;
 mod records;
 use super::*;
 use crate::driver::READ_INTERRUPTED;
@@ -814,18 +815,9 @@ impl<'session> ConsoleHost<'session> {
                 if echo {
                     self.prepare_cooked_echo(read)?;
                 }
-                if controls & 0xf == 0 && matches!(virtual_key, 0x26 | 0x28) {
-                    if let Some(line) = self
-                        .histories
-                        .recall(read.request.descriptor.process, virtual_key == 0x26)
-                    {
-                        read.editor.replace(&mut read.line, line);
-                    }
+                if self.edit_history_key(read, virtual_key, controls)? {
                     echo_dirty |= echo;
                     continue;
-                }
-                if controls & 0xf == 0 && virtual_key == 27 {
-                    self.histories.reset(read.request.descriptor.process);
                 }
                 let outcome = read.editor.handle(
                     &mut read.line,

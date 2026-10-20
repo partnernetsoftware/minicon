@@ -22,6 +22,50 @@ impl Editor {
         self.cursor = replacement.len();
         *line = replacement;
     }
+    pub(super) fn replace_matching(&mut self, line: &mut Vec<u16>, replacement: Vec<u16>) {
+        debug_assert!(replacement.starts_with(&line[..self.cursor]));
+        *line = replacement;
+    }
+    pub(super) fn copy_template(
+        &mut self,
+        line: &mut Vec<u16>,
+        template: &[u16],
+        suffix: bool,
+    ) -> io::Result<()> {
+        let (start, end) = if suffix {
+            if self.cursor >= template.len() {
+                return Ok(());
+            }
+            (self.cursor, template.len())
+        } else {
+            let position = String::from_utf16_lossy(line).graphemes(true).count();
+            let text = String::from_utf16_lossy(template);
+            let mut start = 0;
+            let mut found = None;
+            for (i, grapheme) in text.graphemes(true).enumerate() {
+                let end = start + grapheme.encode_utf16().count();
+                if i == position {
+                    found = Some((start, end));
+                    break;
+                }
+                start = end;
+            }
+            let Some(span) = found else {
+                return Ok(());
+            };
+            span
+        };
+        if self.cursor + end - start > MAX_LINE {
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "console input line budget exhausted",
+            ));
+        }
+        line.truncate(self.cursor);
+        line.extend_from_slice(&template[start..end]);
+        self.cursor = line.len();
+        Ok(())
+    }
     pub(super) fn new(length: usize, insert: bool) -> Self {
         Self {
             cursor: length,
@@ -179,6 +223,26 @@ fn next(line: &[u16], cursor: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rust_console_cooked_template_growth_is_bounded_before_mutation() {
+        let mut line: Vec<_> = "😀".repeat(MAX_LINE / 2).encode_utf16().collect();
+        let original = line.clone();
+        let mut editor = Editor::new(line.len(), true);
+        let template = vec![120; MAX_LINE];
+        assert_eq!(
+            editor
+                .copy_template(&mut line, &template, false)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::OutOfMemory
+        );
+        assert!(
+            line == original,
+            "failed template growth changed UTF-16 input"
+        );
+        assert_eq!(editor.cursor(), MAX_LINE);
+    }
 
     #[test]
     fn rust_console_cooked_editor_bounds_growth_without_rejecting_replacement() {

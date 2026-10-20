@@ -56,7 +56,9 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
 │   │   ├── [v] scoped native Ctrl+Left/Right word navigation (48-session court below)
 │   │   ├── [v] scoped process-owned command history / A-W APIs / Up-Down recall
-│   │   │   └── [_] F-key history UI/search and broader concurrent lifetime qualification
+│   │   │   └── [-] native history editing keys
+│   │   │       ├── [v] scoped F1/F3 templates, F5/page navigation, F8 prefix search and Alt+F7
+│   │   │       └── [_] F2/F4/F7/F9 popup UI and broader concurrent lifetime qualification
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
@@ -4660,7 +4662,7 @@ exercise connection isolation and retirement/reuse. Compare installed ConPTY
 before claiming native parity. Oversized configuration fails without changing
 accepted settings; history storage remains bounded independently of caller sizes.
 Dependencies: CONNECT/DISCONNECT ownership, native code pages, cooked editor,
-alias expansion and existing output admission. F-key popups/search, persistence,
+alias expansion and existing output admission. Popup-based search, persistence,
 all Windows releases and non-Windows shell history remain open.
 
 ```mermaid
@@ -4706,8 +4708,9 @@ non-emitting requests use the existing ordered-output bypass; cooked reads keep
 their existing output admission and read-owned echo. Echoed Enter records original
 UTF-16 before alias expansion; silent/raw reads and wakeup completion do not
 commit history. Up/Down replacement preserves insert/overwrite mode and uses the
-existing shared-screen echo path. General history UI, F-key templates/search,
-all modifier combinations and concurrent configuration/edit races remain open.
+existing shared-screen echo path. The scoped template/navigation/search extension
+is owned below. Popup history UI, all modifier combinations and concurrent
+configuration/edit races remain open.
 
 `rust_console_pty_history_native_apis_recall_and_connection_lifetimes` opens 13
 SDK root sessions. The explicit build-20348 system comparison opens 12 (excluding
@@ -4748,3 +4751,109 @@ fault, native-case/frame, test-inventory and exercised-image hashes are bound in
 inventory, unrelated user session or model-account CLI is used. Other Windows
 versions, ARM64 execution, broader API/lifetime parity and default-provider
 promotion remain unqualified.
+
+### Accepted native history-editing keys
+
+`[v]` Extend cooked editing over the existing process-owned histories: F1/Right
+at end copies the next template grapheme, F3 replaces the suffix at the UTF-16
+cursor, F5 selects previous history, PageUp/PageDown select history boundaries,
+F8 searches exact prefixes with wrap and preserves the prefix cursor, and Alt+F7
+clears the calling process history. Reuse read-owned echo and bounded line storage;
+do not introduce a separate parser, product profile or second history table.
+
+Independent SDK reads must compare native results with the installed system,
+including repeated keys, missing templates, selection state, prefix misses,
+case, Unicode and cursor behavior. A real cmd must execute recalled commands
+and exit with its designated status. Explicitly qualify differences from old
+Windows Unicode behavior against current Microsoft source. Reject template
+growth before mutation when the input budget would be exceeded. Prove new
+tests with compiling runtime faults and retain source-bound receipts.
+
+```mermaid
+flowchart LR
+    K["native cooked key"] --> E["input history-key dispatcher"]
+    E --> H["existing process-owned history / search"]
+    E --> T["bounded editor template application"]
+    H --> T
+    T --> P["existing read-owned echo / common screen"]
+    SDK["SDK + real cmd"] --> Q["owned / installed-system court"]
+    P --> Q
+```
+
+Dependencies are the existing native history store, input editor, Unicode
+segmentation and PTY facade. Popup drawing/input, persistence, exhaustive
+modifier/Unicode/race behavior, newer Windows and other ISA execution remain open.
+
+The installed build-20348 reference differs from current Microsoft source:
+F1/Right copy UTF-16 units, F8 matches prefixes without case, and PageDown
+replaces input at an already-selected last command (including an empty history).
+The owned implementation targets the current source's grapheme copy, exact
+prefix match and last-command guard. Reference-only expected results explicitly
+retain these measured older behaviors; production policy is not selected by
+the machine's Windows version. Current-source behavior is not a substitute for
+runtime qualification on newer Windows.
+
+The current-source boundaries are reviewed in Microsoft's
+[cooked reader](https://github.com/microsoft/terminal/blob/main/src/host/readDataCooked.cpp)
+and [command history](https://github.com/microsoft/terminal/blob/main/src/host/history.cpp).
+The installed system also leaves the old input tail when F3 copies a shorter
+suffix. The owned F3 truncates that tail before copying, as current source does;
+`keys-f3-shrink` asserts both providers' distinct native results and frames.
+
+`host::input::history` now owns key classification/composition, while
+`host::history` retains process ownership, selection and bounded storage. The
+editor owns template mutation and prefix-cursor preservation. F1/Right at end
+counts existing graphemes and appends one original template grapheme, even when
+the two strings use different UTF-16 lengths. In-line F1/Right retain their
+existing cursor movement. F3 addresses the selected template at the UTF-16
+cursor, replaces the remaining suffix and moves to the end; a template ending
+before that cursor leaves the line untouched. Template growth is checked before
+changing input or cursor. F8 cycles backward through exact UTF-16 prefixes with
+wrap and preserves the prefix cursor for subsequent insertion. Selection and
+reset state also distinguish an absent history from an allocated empty history.
+Alt+F7 clears only the caller's history and preserves the current input line.
+No product/GUI identity, public API, second history table or parser is added.
+
+`rust_console_pty_history_editing_templates_search_and_native_cmd` and the
+explicit build-20348 `rust_console_client_history_editing_compares_system_conpty`
+each open 28 SDK root sessions. Cases cover F1/Right repeated and in-line keys,
+F3 suffix growth/shrink/end and selected templates, empty history/navigation,
+F5/page boundaries, prefix cycles/wrap/miss/case/middle/Unicode, clear-with-line
+preservation and actual cmd F3/F8 recall. Their four actual cmd children each
+display the command result twice and exit 27; SDK roots exit zero and reach
+output EOF. SDK records carry key identity and modifiers within each owned
+console; this does not qualify GUI keyboard routing or every byte-transport key
+encoding. The new `rust_console_cooked_template_growth_is_bounded_before_mutation`
+unit fills the input budget with supplementary characters and verifies that
+copying the next template grapheme fails without changing the original units or
+cursor.
+
+The SDK records literal ReadConsoleW units and queries its native cursor after
+editing. The opened-PTY court independently parses emitted output, checks cursor
+agreement, and requires complete rows and a blank remaining tail to match the
+native return. All owned Unicode cases use that row check. The old system's
+Unicode glyph projection remains recorded but is excluded from return-to-row
+equality; native return and cursor assertions still apply. This is shared-parser
+frame evidence, without a native GUI pixel/compositor claim.
+
+Nine compiling runtime faults fail their intended new courts: remove F1 copying,
+remove F3 suffix replacement, lose the F8 prefix cursor, disable search wrap,
+disable clearing, restore the old empty-history early return, bypass the template
+budget, suppress cooked painting, and deliver a wrong F8 key to actual system
+cmd. Painting suppression leaves successful native reads but fails the frame
+court. Original source bytes are restored in finally blocks and checked against
+SHA-256 before the final regression. Evidence lives under ignored
+`target/conhost-research/history-edit-*`; the final receipt binds the staged
+tree, source files, named passes, native case bodies/cursors/frames, faults and
+executed images. Broader modifier, Unicode, concurrent mutation and popup behavior
+remain open, as do newer Windows/ARM64 runtime and default-provider promotion.
+
+Final local qualification: `history-edit-regression.log` contains 140 named
+passes, including the three new test functions. The new editing courts account
+for 56 SDK roots and four actual cmd invocations. Together with retained history
+coverage, the receipt binds 81 history root case bodies/frames, four SDK peers and
+six actual cmd invocations. Formatting and default/enabled workspace all-target
+Clippy with warnings denied pass; enabled workspace all-target Windows ARM64
+compilation passes without implying ARM64 execution. The exact staged tree,
+source/fault/check logs and executed-image hashes are recorded in
+`history-edit-final-receipt.json` under the ignored research directory.

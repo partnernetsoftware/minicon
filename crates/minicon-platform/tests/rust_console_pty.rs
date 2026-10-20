@@ -4928,26 +4928,33 @@ fn rust_console_pty_cooked_word_navigation_preserves_native_text_and_echo() {
 }
 
 fn history_cases(rust: bool) {
-    for kind in [
-        "basic",
-        "nodup",
-        "resize",
-        "unicode",
-        "alias",
-        "silent",
-        "recall",
-        "lifecycle",
-        "queries",
-        "raw",
-        "wake",
-        "cmd",
-        "limits",
-    ] {
+    history_selected_cases(
+        rust,
+        &[
+            "basic",
+            "nodup",
+            "resize",
+            "unicode",
+            "alias",
+            "silent",
+            "recall",
+            "lifecycle",
+            "queries",
+            "raw",
+            "wake",
+            "cmd",
+            "limits",
+        ],
+    );
+}
+
+fn history_selected_cases(rust: bool, kinds: &[&str]) {
+    for &kind in kinds {
         if !rust && kind == "limits" {
             continue;
         }
         let report = Report::new();
-        let cols = if kind == "cmd" { 80 } else { 40 };
+        let cols = if kind.starts_with("cmd") { 80 } else { 40 };
         let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
             .arg(format!(
                 "history-{}{kind}",
@@ -4960,7 +4967,7 @@ fn history_cases(rust: bool) {
         } else {
             Fixture::open_backend(command, "conpty")
         };
-        if kind == "cmd" {
+        if kind.starts_with("cmd") {
             fixture.until("HISTORY_CMD_READY>");
             std::fs::write(report.0.with_extension("go"), b"release").unwrap();
         }
@@ -4980,6 +4987,45 @@ fn history_cases(rust: bool) {
             .rows(0, cols)
             .map(|row| row.trim_end_matches(' ').to_owned())
             .collect();
+        if kind.starts_with("keys-") {
+            let reads: Vec<Vec<u16>> = body
+                .lines()
+                .filter_map(|line| line.strip_prefix("read:"))
+                .map(|line| {
+                    line.strip_prefix('[')
+                        .unwrap()
+                        .strip_suffix(']')
+                        .unwrap()
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|unit| !unit.is_empty())
+                        .map(|unit| unit.parse::<u16>().unwrap())
+                        .collect()
+                })
+                .collect();
+            assert!(
+                body.contains(&format!("editing-native-cursor:0,{}\n", reads.len())),
+                "{body}"
+            );
+            assert_eq!(parser.screen().cursor_position(), (reads.len() as u16, 0));
+            if rust || !kind.ends_with("unicode") {
+                let expected: Vec<_> = reads
+                    .iter()
+                    .map(|units| {
+                        assert!(units.ends_with(&[13, 10]));
+                        String::from_utf16_lossy(&units[..units.len() - 2])
+                    })
+                    .collect();
+                assert!(
+                    rows[..expected.len()] == expected,
+                    "history echo rows differ: kind={kind};actual={rows:?};expected={expected:?}"
+                );
+                assert!(
+                    rows[expected.len()..].iter().all(String::is_empty),
+                    "unexpected history echo tail: {rows:?}"
+                );
+            }
+        }
         if kind == "recall" {
             assert_eq!(
                 &rows[..5],
@@ -4987,7 +5033,7 @@ fn history_cases(rust: bool) {
             );
             assert_eq!(parser.screen().cursor_position(), (5, 0));
         }
-        if kind == "cmd" {
+        if kind.starts_with("cmd") {
             assert_eq!(
                 rows.iter()
                     .filter(|row| row.as_str() == "history-cmd")
@@ -5014,6 +5060,53 @@ fn rust_console_pty_history_native_apis_recall_and_connection_lifetimes() {
 #[ignore = "explicit native history API and recall comparison with installed ConPTY"]
 fn rust_console_client_history_compares_system_conpty() {
     history_cases(false);
+}
+
+fn history_editing_cases(rust: bool) {
+    history_selected_cases(
+        rust,
+        &[
+            "keys-f1",
+            "keys-right",
+            "keys-f1-middle",
+            "keys-f3",
+            "keys-f3-shrink",
+            "keys-f3-end",
+            "keys-empty",
+            "keys-empty-up",
+            "keys-empty-navigation",
+            "keys-empty-last",
+            "keys-selected",
+            "keys-f1-unicode",
+            "keys-f1-template-unicode",
+            "keys-f3-unicode",
+            "keys-f5",
+            "keys-pages",
+            "keys-page-last",
+            "keys-search",
+            "keys-search-cycle",
+            "keys-search-wrap",
+            "keys-search-miss",
+            "keys-search-case",
+            "keys-search-middle",
+            "keys-search-unicode",
+            "keys-clear",
+            "keys-clear-line",
+            "cmd-f3",
+            "cmd-f8",
+        ],
+    );
+}
+
+#[test]
+fn rust_console_pty_history_editing_templates_search_and_native_cmd() {
+    history_editing_cases(true);
+}
+
+#[test]
+#[ignore = "explicit build-20348 native history-editing comparison with installed ConPTY"]
+fn rust_console_client_history_editing_compares_system_conpty() {
+    history_editing_cases(false);
 }
 
 #[test]
