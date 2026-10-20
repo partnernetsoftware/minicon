@@ -57,9 +57,14 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │           ├── [v] normalize/consume all session titles before control observation and dirty-candidate selection
 │           │   evidence: gui_title_updates_precede_candidates_and_keep_retained_chrome_consistent
 │           │   failure: unchanged titles create no damage; known-geometry inactive updates invalidate only tree chrome
-│           └── [v] scoped native title-band repaint idempotence after the final SDK title
+│           ├── [v] scoped native title-band repaint idempotence after the final SDK title
 │               evidence: extra native-window screenshot after an otherwise neutral composer-band repaint
 │               failure: compare label pixels plus actual list-tabs title; non-goal: desktop compositor proof
+│           └── [v] scoped independent native client-DC readback of the owned product window
+│               invariant: match current native HWND/title and full terminal/title-band pixels to the submitted frame
+│               evidence: GetDC/BitBlt captures through the existing screenshot facade and missing-present fault below
+│               failure: finite mismatch/capture/identity error is not a pass; no desktop or unrelated-window capture
+│               dependency: owned Child handle, process_window identity and screenshot capability; non-goal: full DWM composition proof
 ├── [-] Dense redraw, scroll, Unicode and alternate-screen resize journeys
 │   invariant: byte splitting and redraw rate do not change final rows, cursor or cell geometry
 │   evidence: finite safe traces, independent expected grids, native readback and presented pixels
@@ -364,6 +369,52 @@ diagnostics retain a fixture without real content insets, test-module relocation
 for Clippy, and an overlong selector invocation whose zero exit did not cover
 the requested set. Compact selectors and exact name/count checks qualify the
 final run; the incomplete invocation is not a pass for that scope.
+
+## Owned native client readback
+
+The native-window court now independently captures the client DC through
+`minicon_platform::screenshot::capture_native_window_png`. It locates only the
+fixture's still-owned host PID via `process_window::facts`, checks the native
+HWND/title and checks the same identity again after capture. The fixture keeps
+that window open until these observations finish. No monitor, desktop, foreign
+PID or foreground-window image is requested. `native-client.json` records only
+the owned identity, native title, capture method, attempts and match results.
+
+The readback uses `GetDC` for that HWND followed by `BitBlt`/`GetDIBits`; it does
+not use `PrintWindow`, a control screenshot, forced repaint, or a fallback to
+the application's pixel buffer. The court compares the entire terminal grid
+and left composer/status title bands with the submitted `after.png`, before
+the neutral-click repaint from the preceding court. The final SDK frame hides
+the terminal cursor; input focus stays outside the composer. Capture failures,
+identity changes, or failure to reach pixel agreement by the finite polling
+deadline fail the court. A successful zero/black capture is not a substitute
+for the expected nonempty frame.
+
+The compiling missing-present fault preserves the real `StretchDIBits` call in
+an untaken branch and returns the expected scanline count without submitting
+pixels. Internal PNG/model/native SDK assertions still reach the new check,
+but `native-client.png` is blank and the OS readback comparison fails. Sources
+are restored byte-for-byte with SHA checks and the actual product is rebuilt
+before the positive run. The initial pointer-inference compile rejection is
+retained as a diagnostic, not counted as runtime fault evidence.
+
+This qualifies the current Window DC path on Windows x64 build 20348, not
+complete desktop composition, occlusion/HDR/color-management behavior or
+arbitrary WM_PAINT timing. Microsoft's [GetDC contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdc)
+distinguishes the specified window's client DC from a null-HWND desktop DC.
+[DwmFlush](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmflush)
+fences the calling application's queued changes, not an entire session;
+calling it in this observer would not prove the separate host had presented.
+The acceptance remains literal native client pixel agreement with no inferred
+DWM pass. `native-client-final-receipt.json` binds current source, actual
+product/test images, fault/check logs and reread SDK/frame/DC artifacts.
+`native-client-regression.log` retains the complete 154-test targeted set from
+the title fix. Four static checks cover format, default/enabled workspace
+Clippy and enabled whole-GUI Windows ARM64 compilation. The final focused run
+includes the 17 alignment guards, two title guards and the strengthened native
+window journey. Each of its four window cases retains both native PNG/identity
+JSON and the existing source/native/reply/frame/lifecycle evidence. Other
+OS/ISA runtime cells and real Claude Code remain unqualified.
 
 ## Delivery order and acceptance
 

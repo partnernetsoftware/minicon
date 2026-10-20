@@ -96,6 +96,93 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
             })
             .collect()
     }
+    fn terminal_pixels(path: &Path, geometry: &Value) -> Vec<u8> {
+        let (pixels, info) = image(path);
+        let channels = info.color_type.samples();
+        let x = geometry["terminal_viewport"]["x"].as_u64().unwrap() as usize;
+        let y = geometry["terminal_viewport"]["y"].as_u64().unwrap() as usize;
+        let width = (geometry["grid"]["cols"].as_u64().unwrap()
+            * geometry["grid"]["cell_w"].as_u64().unwrap()) as usize;
+        let height = (geometry["grid"]["rows"].as_u64().unwrap()
+            * geometry["grid"]["cell_h"].as_u64().unwrap()) as usize;
+        assert!(x + width <= info.width as usize && y + height <= info.height as usize);
+        (y..y + height)
+            .flat_map(|row| {
+                pixels[(row * info.width as usize + x) * channels
+                    ..(row * info.width as usize + x + width) * channels]
+                    .iter()
+                    .copied()
+            })
+            .collect()
+    }
+    fn native_client_agreement(
+        gui: &mut OwnedGui,
+        folder: &Path,
+        expected: &Path,
+        geometry: &Value,
+    ) {
+        use minicon_platform::{
+            process_window,
+            screenshot::{NativeCaptureArea, ScreenshotWindowHandle, capture_native_window_png},
+        };
+        let expected_terminal = terminal_pixels(expected, geometry);
+        let expected_titles = title_pixels(expected, geometry);
+        let path = folder.join("native-client.png");
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut attempts = 0;
+        loop {
+            assert!(
+                gui.child.try_wait().unwrap().is_none(),
+                "owned host exited before client readback"
+            );
+            // Exact fixture PID only; no process inventory or foreground capture.
+            let facts = process_window::facts(gui.child.id());
+            assert!(
+                facts.present && facts.window_id != 0 && facts.title.contains("native-sync-3"),
+                "owned native window identity/title unavailable: {facts:?}"
+            );
+            // SAFETY: this fixture owns the live host and keeps its window open
+            // through this synchronous read. Destruction is requested below,
+            // after all captures and stable-identity checks have completed.
+            let handle =
+                unsafe { ScreenshotWindowHandle::from_raw(facts.window_id as isize) }.unwrap();
+            capture_native_window_png(
+                handle,
+                &path,
+                NativeCaptureArea::Client {
+                    left: 0,
+                    top: 0,
+                    width: geometry["frame"]["width"].as_u64().unwrap() as i32,
+                    height: geometry["frame"]["height"].as_u64().unwrap() as i32,
+                },
+            )
+            .unwrap();
+            attempts += 1;
+            let after = process_window::facts(gui.child.id());
+            assert_eq!(
+                facts.window_id, after.window_id,
+                "owned HWND changed during capture"
+            );
+            if terminal_pixels(&path, geometry) == expected_terminal
+                && title_pixels(&path, geometry) == expected_titles
+            {
+                let evidence = serde_json::json!({"host_pid":gui.child.id(),"window_id":facts.window_id,"window_title":facts.title,
+                    "source":"GetDC(owned HWND)/BitBlt/GetDIBits","attempts":attempts,"terminal_equal":true,"titles_equal":true});
+                fs::write(
+                    folder.join("native-client.json"),
+                    serde_json::to_vec_pretty(&evidence).unwrap(),
+                )
+                .unwrap();
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "OS client readback did not match owned frame; attempts={attempts};archive={}",
+                folder.display()
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
     let exe = minicon_binary();
     let probe = exe
         .parent()
@@ -218,6 +305,7 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
             assert_eq!(titles["tabs"][0]["title"], "native-sync-3");
             let ui_before = cli_json(&exe, &endpoint, &["ui-snapshot"]);
             assert_eq!(ui_before["composer_focused"], false);
+            native_client_agreement(&mut gui, &folder, &after, geometry);
             // A click in the exited terminal keeps terminal focus and asks
             // for the composer/status band to repaint. Current-title pixels
             // must already match that independent repaint, without OCR or
