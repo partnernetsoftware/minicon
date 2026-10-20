@@ -2,6 +2,8 @@
 //! Independent Win32 client checks, built by Cargo with its exact binary path.
 use minicon_console::{ConsoleHost, ConsoleInput, DriverSession};
 use serde_json::{Value, json};
+#[path = "support/aliases_court.rs"]
+mod aliases_court;
 #[path = "support/cache_court.rs"]
 mod cache_court;
 #[path = "support/inherit_cache_court.rs"]
@@ -20,6 +22,101 @@ use windows_sys::Win32::System::Threading::{
 };
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
+
+#[test]
+fn rust_console_native_aliases_store_expand_bound_and_run_actual_cmd() {
+    struct Reject;
+    impl std::io::Write for Reject {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    for kind in aliases_court::kinds(false) {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let root = launch_probe(&format!("aliases-{kind}"), &report, &session);
+        let mut host = ConsoleHost::for_child(&root).unwrap();
+        let mut output = Vec::new();
+        let mut calls = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(25);
+        let mut released = false;
+        while root.wait(Duration::ZERO).unwrap().is_none()
+            || host.connected_clients() != 0
+            || host.open_handles() != 0
+            || root.active_processes().unwrap() != 0
+        {
+            assert!(
+                Instant::now() < deadline,
+                "aliases {kind} stalled; report={:?}; output={:?}",
+                std::fs::read_to_string(&report.path),
+                String::from_utf8_lossy(&output)
+            );
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let alias = if request.descriptor.function == 7 {
+                        let h = request.inline_payload();
+                        (h.len() >= 8)
+                            .then(|| u32::from_le_bytes(h[..4].try_into().unwrap()))
+                            .is_some_and(|api| (0x0300_0012..=0x0300_0017).contains(&api))
+                    } else {
+                        false
+                    };
+                    let call = if alias {
+                        let before = output.clone();
+                        let call = host
+                            .dispatch_with_output_ready(request, false, &mut Reject)
+                            .unwrap();
+                        assert!(
+                            !call.pending,
+                            "non-emitting alias API under output pressure"
+                        );
+                        assert_eq!(before, output);
+                        calls.push(call.api.unwrap());
+                        call
+                    } else {
+                        host.dispatch(request, &mut output).unwrap()
+                    };
+                    assert!(
+                        kind == "cmd" || !call.pending,
+                        "preloaded alias input: {kind}; {call:?}"
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("aliases {kind}: {error}"),
+            }
+            if kind == "cmd" && String::from_utf8_lossy(&output).contains("ALIAS_CMD_READY") {
+                std::fs::write(report.path.with_extension("go"), b"prompt-seen").unwrap();
+            }
+            if !released && report.path.exists() {
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+                released = true;
+            }
+        }
+        assert_eq!(
+            root.wait(Duration::ZERO).unwrap(),
+            Some(0),
+            "{kind}: {:?}; output={:?}",
+            std::fs::read_to_string(&report.path),
+            String::from_utf8_lossy(&output)
+        );
+        let value = std::fs::read_to_string(&report.path).unwrap();
+        assert_eq!(value, format!("alias-{kind}-ok"));
+        assert!(!host.has_pending_output());
+        assert_eq!(host.pending_reads(), 0);
+        if kind == "table" {
+            calls.sort_unstable();
+            calls.dedup();
+            assert_eq!(calls, (0x0300_0012..=0x0300_0017).collect::<Vec<_>>());
+        }
+        if kind == "cmd" {
+            assert!(String::from_utf8_lossy(&output).contains("alias-cmd-value"));
+        }
+        eprintln!("aliases-direct {kind}: {value}");
+    }
+}
 
 #[test]
 fn rust_console_initial_title_respects_output_admission_and_failed_sink() {

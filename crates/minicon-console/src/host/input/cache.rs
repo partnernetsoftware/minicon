@@ -8,6 +8,20 @@ pub(super) struct ReadCache {
     pub(super) bytes: VecDeque<u8>,
     cooked: bool,
     suppressed: bool,
+    multiline: bool,
+}
+
+impl ReadCache {
+    pub(super) fn read_limit(&self) -> usize {
+        if self.multiline {
+            self.ready
+                .iter()
+                .position(|u| *u == 10)
+                .map_or(self.ready.len(), |n| n + 1)
+        } else {
+            self.ready.len()
+        }
+    }
 }
 
 impl InputState<'_> {
@@ -38,6 +52,7 @@ impl InputState<'_> {
             .or_default();
         cache.cooked = matches!(read.kind, ReadKind::Text { cooked: true, .. });
         cache.suppressed = false;
+        cache.multiline = read.multiline;
         cache.ready.extend(read.line.drain(..));
     }
     pub(super) fn cache_available(&self) -> bool {

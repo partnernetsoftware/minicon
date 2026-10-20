@@ -1,5 +1,6 @@
 //! Initial user-mode console API service; no system console host is used.
 use crate::{DriverRequest, DriverSession};
+mod aliases;
 mod buffers;
 mod cell_codec;
 mod cursor;
@@ -65,6 +66,7 @@ pub struct DispatchReceipt {
 pub struct ConsoleHost<'session> {
     session: Option<&'session DriverSession>,
     input: InputState<'session>,
+    aliases: aliases::Aliases,
     session_id: Option<u64>,
     processes: BTreeMap<usize, u32>,
     control: Option<crate::control::ControlScope<'session>>,
@@ -95,6 +97,7 @@ impl Default for ConsoleHost<'_> {
         Self {
             session: None,
             input: InputState::default(),
+            aliases: aliases::Aliases::default(),
             session_id: None,
             processes: BTreeMap::new(),
             control: None,
@@ -267,6 +270,7 @@ impl<'session> ConsoleHost<'session> {
                             | 0x0300_0003
                             | 0x0300_0004
                             | 0x0300_0029
+                            | 0x0300_0012..=0x0300_0017
                     )
                 ));
         if !bypass && (!ready || self.has_pending_output()) {
@@ -592,6 +596,9 @@ impl<'session> ConsoleHost<'session> {
         let mut body = inline[8..8 + body_size as usize].to_vec();
         let mut information = 0;
         match api {
+            0x0300_0012..=0x0300_0017 if body.len() >= 8 => {
+                (receipt.status, information) = self.alias_api(&request, api, &mut body)?;
+            }
             0x0200_0003 => {
                 receipt.status = self.flush_input(descriptor.process, descriptor.object)?;
             }

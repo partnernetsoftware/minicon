@@ -172,6 +172,9 @@ fn cooked_input_mode(mode: u32) -> bool {
 }
 
 struct PendingRead<'session> {
+    exe: Vec<u16>,
+    multiline: bool,
+    status: i32,
     request: DriverRequest<'session>,
     body: Vec<u8>,
     kind: ReadKind,
@@ -477,6 +480,15 @@ impl<'session> ConsoleHost<'session> {
             request.complete(receipt.status, 0, &[])?;
             return Ok(receipt);
         }
+        let exe = if exe_length != 0 {
+            request
+                .read_input(8 + body.len() as u32, exe_length)?
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let line = if initial != 0 {
             let offset = 8_usize
                 .checked_add(body.len())
@@ -502,6 +514,9 @@ impl<'session> ConsoleHost<'session> {
         let cooked =
             self.input.has_cooked_ready(descriptor.object) || cooked_input_mode(self.input_mode);
         let mut read = PendingRead {
+            exe,
+            multiline: false,
+            status: SUCCESS,
             request,
             body,
             kind: ReadKind::Text {
@@ -596,6 +611,9 @@ impl<'session> ConsoleHost<'session> {
         }
         let previous = self.input.pending.len();
         self.input.pending.push_back(PendingRead {
+            exe: Vec::new(),
+            multiline: false,
+            status: SUCCESS,
             request,
             body,
             kind: ReadKind::Records { flags, unicode },
@@ -683,6 +701,11 @@ impl<'session> ConsoleHost<'session> {
                     }
                 }
             };
+            let data = if read.status != SUCCESS {
+                Some(Vec::new())
+            } else {
+                data
+            };
             let Some(bytes) = data else {
                 self.input.pending.push_front(read);
                 break;
@@ -696,7 +719,8 @@ impl<'session> ConsoleHost<'session> {
                 self.input.commit_records(batch);
             }
             self.update_input_event()?;
-            read.request.complete(SUCCESS, bytes.len(), &read.body)?;
+            read.request
+                .complete(read.status, bytes.len(), &read.body)?;
             completed += 1;
         }
         self.update_input_event()?;
@@ -781,6 +805,9 @@ impl<'session> ConsoleHost<'session> {
                         } else {
                             0
                         };
+                        if echo && matches!(outcome, edit::Outcome::Enter) {
+                            self.expand_read_alias(read);
+                        }
                         self.input.stage_text(read);
                         return Ok(());
                     }
@@ -862,6 +889,7 @@ impl<'session> ConsoleHost<'session> {
                     if processed {
                         self.echo_unit(&mut read.echo_decoder, 10, output)?;
                     }
+                    self.expand_read_alias(read);
                 }
                 self.input.stage_text(read);
                 return Ok(());
@@ -941,7 +969,7 @@ impl<'session> ConsoleHost<'session> {
             let Some(cache) = self.input.read_cache.get_mut(&object) else {
                 return Ok(Vec::new());
             };
-            let count = (capacity / 2).min(cache.ready.len());
+            let count = (capacity / 2).min(cache.read_limit());
             let bytes = cache
                 .ready
                 .drain(..count)
@@ -958,10 +986,14 @@ impl<'session> ConsoleHost<'session> {
             return Ok(Vec::new());
         };
         let mut bytes = Vec::new();
+        let mut remaining = cache.read_limit();
         while bytes.len() < capacity {
             if let Some(byte) = cache.bytes.pop_front() {
                 bytes.push(byte);
                 continue;
+            }
+            if remaining == 0 {
+                break;
             }
             let Some(first) = cache.ready.front().copied() else {
                 break;
@@ -996,10 +1028,30 @@ impl<'session> ConsoleHost<'session> {
                 return Err(io::Error::last_os_error());
             }
             cache.ready.drain(..count as usize);
+            remaining = remaining.saturating_sub(count as usize);
             cache.bytes.extend(&encoded[..length as usize]);
         }
         self.input.prune_cache(object);
         Ok(bytes)
+    }
+
+    fn expand_read_alias(&mut self, read: &mut PendingRead<'_>) {
+        let line = read
+            .line
+            .strip_suffix(&[13, 10])
+            .or_else(|| read.line.strip_suffix(&[13]))
+            .unwrap_or(&read.line);
+        match self.aliases.expand(&read.exe, line) {
+            Ok(Some((expanded, multiline))) => {
+                read.multiline = multiline;
+                read.line = expanded;
+            }
+            Ok(None) => {}
+            Err(status) => {
+                read.status = status;
+                read.line.clear();
+            }
+        }
     }
 
     pub(super) fn update_input_event(&self) -> io::Result<()> {

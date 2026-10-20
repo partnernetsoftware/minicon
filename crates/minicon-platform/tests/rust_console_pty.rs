@@ -13,6 +13,51 @@ mod inherit_cache_court;
 #[path = "../../minicon-console/tests/support/raw_batch_court.rs"]
 mod raw_batch_court;
 
+#[path = "../../minicon-console/tests/support/aliases_court.rs"]
+mod aliases_court;
+
+fn alias_cases(rust: bool) {
+    for kind in aliases_court::kinds(!rust) {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("aliases-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        if kind == "cmd" {
+            fixture.until("ALIAS_CMD_READY");
+            std::fs::write(report.0.with_extension("go"), b"prompt-seen").unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(12);
+        while !report.0.exists() {
+            assert!(Instant::now() < deadline, "alias {rust}/{kind} stalled");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        assert_eq!(value, format!("alias-{kind}-ok"), "rust={rust}; {kind}");
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+        if kind == "cmd" {
+            assert!(String::from_utf8_lossy(&fixture.bytes).contains("alias-cmd-value"));
+        }
+        eprintln!("aliases-pty rust={rust}; {kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_pty_aliases_store_expand_bound_and_run_actual_cmd() {
+    alias_cases(true);
+}
+
+#[test]
+#[ignore = "explicit SDK and actual cmd alias comparison with installed system ConPTY"]
+fn rust_console_client_aliases_compare_system_conpty() {
+    alias_cases(false);
+}
+
 struct Fixture {
     master: PtyMaster,
     child: PtyChild,

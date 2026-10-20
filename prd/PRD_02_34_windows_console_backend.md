@@ -43,6 +43,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped raw text batches drain available input to caller capacity and preserve record/codec remainders
 │   ├── [v] scoped completed text/cache ownership: duplicates share, independent files isolate, final close retires
 │   ├── [v] scoped inherited input: explicit files retain continuation; defaults rebind per connection; verified child exit
+│   ├── [v] native aliases: bounded per-executable A/W tables, DOSKEY expansion and cooked continuation
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -125,6 +126,7 @@ flowchart LR
     READMODE --> RAWBATCH["raw: available units to remaining capacity / preserve queue and codec tail"]
     RAWBATCH --> FILECACHE["file-owned completed UTF-16 / encoded tail / flush readiness"]
     FILECACHE --> INHERITCACHE["inherited file vs new default connection / creator retirement / retained child observation"]
+    COOK --> ALIASES["native executable-scoped aliases / expand after echo / per-file multiline continuation"]
     RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
     POSTLIVE -->|"may publish"| READYWORK
     POSTLIVE -->|"another read survives"| INPUT
@@ -3985,3 +3987,104 @@ native/identity errors and owned Job cleanup. General process transfer, broad
 mode/code-page changes, OS/ISA runtime/performance, portable sessions and packaged
 default promotion remain open; Windows alias semantics do not become portable
 terminal semantics.
+
+### Native executable-scoped aliases
+
+Invariant: aliases belong to one console and executable name, shared by its
+attached clients. Windows message layout, code-page conversion and DOSKEY
+expansion stay in `host/aliases.rs`; they do not become portable terminal
+contracts. `minicon-console` remains an independent library; portable session
+composition and any future platform merger retain their separate decisions.
+
+The six A/W API families are implemented through native messages
+0x03000012–0x03000017: AddConsoleAlias, GetConsoleAlias, GetConsoleAliasesLength,
+GetConsoleAliasExesLength, GetConsoleAliases and GetConsoleAliasExes. Tables
+normalize executable/source keys and preserve target text. Replacement,
+deletion, missing-name errors, empty-source rejection, byte lengths including
+terminators, enumeration and short-buffer errors have independent SDK checks.
+Enumeration order is not a compatibility promise. Deleting a final alias keeps
+its empty executable table, matching the native executable-list behavior.
+ANSI messages use the input code page; table cases exercise CP1252, CP936 and
+CP65001 with actual encoded names/targets through all six A API families.
+
+An admitted ReadConsole retains its executable name. Ordinary Enter in an
+echo-enabled cooked read expands aliases after the original input echo. Reads
+admitted in raw input mode, echo-disabled reads and leading-space commands do
+not expand. Positional
+`$1`–`$9`, `$*`, `$L`/`$G`/`$B` and `$T` follow the pinned host's ASCII-space argument splitting;
+`$*` retains the remaining argument text, unknown escapes remain literal, and
+expanded commands end in CRLF. Literal LF in a target does not itself select
+multiline continuation: that metadata comes from `$T`. Each multiline read serves
+one LF-delimited line, with capacity splits and later lines retained in the
+existing input-file cache. Cached continuation precedes fresh input even after
+the client switches to raw mode. The shared parser/screen are unchanged.
+
+Bounds per console are 64 executable tables, 1,024 aliases and 262,144 aggregate
+UTF-16 key/target units; empty retained tables still consume the executable
+budget. Expansion is bounded at 32,768 UTF-16 units including its final CRLF.
+SDK cases fill each table budget, reject one more entry with error 8, then prove
+replacement or deletion makes useful work possible. Oversized expansion fails
+only that ReadConsole with BOOL false, error 8 and count zero; a subsequent raw
+read on the same console succeeds. These are allocation/semantic bounds, not an
+aggregate RSS or performance measurement.
+
+Named courts:
+`rust_console_native_aliases_store_expand_bound_and_run_actual_cmd`,
+`rust_console_pty_aliases_store_expand_bound_and_run_actual_cmd`, and
+`rust_console_client_aliases_compare_system_conpty`. Both owned courts execute
+17 fresh-console cases; the installed-system court executes nine, 43 total.
+The direct court passes output-ready false and a rejecting sink to all six
+metadata APIs: they finish without deferred output or publication. All direct
+clients, handles, reads and private-Job members retire. The actual cmd.exe case
+registers its alias in the SDK parent, starts a real interactive child, waits for
+its observed prompt, and executes an expanded echo plus `$T` exit. Child exit 23
+is checked before SDK root exit zero and terminal teardown; process cleanup is
+not accepted as command completion. Both console-agent forcing variables are
+cleared for the system court.
+
+Installed Windows x64 build 20348 is not the pinned modern host. CP65001
+multiline ANSI first-read observation loses LF; a wide first read with capacity
+three returns count nine; a leading-space command still expands. Logs
+`aliases-corrected2-reference.log`, `aliases-reference-preflight.log` and
+`aliases-all-preflight.log` preserve these failed observations. Multiline/split
+ANSI, split wide and leading-space system parity remain BLOCKED. The owned
+assertions are retained, and the pinned modern alias/read implementations define
+their intended behavior. Full-sized wide multiline, single-line A/W, raw and
+silent gating, literal LF, nine positional arguments and the actual cmd journey
+remain in the passing system subset. This does not certify modern Windows
+runtime behavior. The earlier protocol/input-fixture failures are diagnostic
+only, not positive qualification.
+
+Dependencies are validated native messages, existing code-page converters,
+cooked editing/echo completion, file-owned completed-read caches and private-Job
+launch/teardown. `aliases-pinned-sources.json` verifies 13 related source blobs
+against revision 9fd41b2baec77d25b8cfb584070d5998eab7df81, including alias.cpp/h,
+conmsgl3.h, ApiSorter.cpp and the input/dispatcher owners. General command
+history/editing UI, exhaustive Unicode case matching, concurrent updates during
+pending reads, other mode/code-page/VT combinations, modern-host comparison,
+OS/ISA runtime/performance, portable sessions and packaged defaults remain open.
+
+`aliases-early-suite.log` records 307 passing selected tests, retaining the
+preceding 304 and adding these three courts. Nine compiling runtime faults fail
+all three added tests: omitted lookup normalization, skipped deletion, truncated
+`$*` arguments, lost multiline boundaries, expansion without echo, an enlarged
+expansion limit, blocked metadata admission, literal LF misclassified as `$T`,
+and an actual cmd child exiting with the wrong code in the system reference.
+`aliases-negative-audit.json` binds the failing logs and exact-byte restoration
+hashes. Compile failures are not accepted as semantic fault evidence.
+
+The restored nine-test focused selection passes, retaining all six preceding
+inherited-file and completed-cache provider courts. The earlier successful
+307-test selection is reused only after all ten implementation/probe/court files
+match their frozen source hashes. No parser or public portable facade changes
+are included in this slice.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `aliases-final-receipt.json` binds staged source tree, compiled
+working-file and normalized index hashes, log/fault hashes, compiler, nine x64
+image identities, 43 native scenario receipts and 13 pinned source blobs.
+Artifacts remain under ignored `target/conhost-research/aliases-*`. Native
+execution remains Windows x86_64 build 20348 only; other target checks prove
+compilation only. The overall backend remains experimental and opt-in.

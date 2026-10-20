@@ -1,5 +1,8 @@
 //! Independent Win32 caller for the platform PTY integration court.
 #[cfg(windows)]
+#[path = "../../../minicon-console/tests/support/aliases.rs"]
+mod aliases;
+#[cfg(windows)]
 mod ansi_input;
 #[cfg(windows)]
 mod ansi_read;
@@ -94,6 +97,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("aliases-") {
+        return aliases::run(kind, std::path::Path::new(&arguments[1]));
+    }
     if let Some(kind) = mode.strip_prefix("cache-parent-") {
         return cache_inherit::run(kind, std::path::Path::new(&arguments[1]), false);
     }

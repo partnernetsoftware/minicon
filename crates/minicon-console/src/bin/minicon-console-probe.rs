@@ -1,6 +1,9 @@
 //! Native console API probe. Results use files so a broken console path cannot
 //! accidentally supply its own expected output. Used by the integration court.
 #[cfg(windows)]
+#[path = "../../tests/support/aliases.rs"]
+mod aliases;
+#[cfg(windows)]
 #[path = "../../tests/support/cache_inherit.rs"]
 mod cache_inherit;
 #[cfg(windows)]
@@ -71,6 +74,9 @@ fn run() -> std::io::Result<()> {
     }
     if let Some(kind) = mode.strip_prefix("cooked-buffer-") {
         return cooked_buffer::run(kind, result, true);
+    }
+    if let Some(kind) = mode.strip_prefix("aliases-") {
+        return aliases::run(kind, result);
     }
     if mode == "job-child" {
         std::fs::write(result.with_extension("ready"), b"ready")?;
