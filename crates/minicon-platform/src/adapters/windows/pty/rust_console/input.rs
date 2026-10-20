@@ -10,6 +10,62 @@ use std::time::{Duration, Instant};
 
 const INPUT_FRAMES: usize = 16;
 
+/// Recognize one complete DECRPM reply before the physical-key decoder.
+/// Incomplete, malformed and unrelated CSI input keeps the existing key path.
+pub(super) fn private_mode_reply_len(bytes: &[u8]) -> Option<usize> {
+    let tail = bytes.strip_prefix(b"\x1b[?")?;
+    let end = tail.iter().position(|byte| (0x40..=0x7e).contains(byte))?;
+    if tail[end] != b'y' {
+        return None;
+    }
+    let body = tail[..end].strip_suffix(b"$")?;
+    let separator = body.iter().position(|byte| *byte == b';')?;
+    let mode = &body[..separator];
+    let status = &body[separator + 1..];
+    if mode.is_empty()
+        || mode.len() > 5
+        || !mode.iter().all(u8::is_ascii_digit)
+        || std::str::from_utf8(mode).ok()?.parse::<u16>().is_err()
+        || !matches!(status, [b'0'..=b'4'])
+    {
+        return None;
+    }
+    Some(3 + end + 1)
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::private_mode_reply_len;
+    #[test]
+    fn rust_console_private_mode_reply_length_preserves_key_dispatch_boundary() {
+        for reply in [
+            b"\x1b[?7;1$y".as_slice(),
+            b"\x1b[?2026;0$y",
+            b"\x1b[?65535;4$y",
+        ] {
+            for end in 0..reply.len() {
+                assert_eq!(private_mode_reply_len(&reply[..end]), None);
+            }
+            let mut joined = reply.to_vec();
+            joined.extend_from_slice(b"\x1b[Atext");
+            assert_eq!(private_mode_reply_len(&joined), Some(reply.len()));
+        }
+        for bytes in [
+            b"\x1b[A".as_slice(),
+            b"\x1b[?7;1y",
+            b"\x1b[?7;5$y",
+            b"\x1b[?65536;1$y",
+            b"\x1b[?0000007;1$y",
+            b"\x1b[?;1$y",
+            b"\x1b[?7;1;2$y",
+            b"\x1b[?7;1$x",
+            b"\x1b[?7;1$Ay",
+        ] {
+            assert_eq!(private_mode_reply_len(bytes), None);
+        }
+    }
+}
+
 #[derive(Default)]
 struct Queue {
     frames: VecDeque<Vec<u8>>,

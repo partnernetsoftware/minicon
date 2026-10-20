@@ -2859,6 +2859,30 @@ pub(crate) mod tests {
         parser.process(b"\x1b[?15n"); // DEC-private status (printer), unhandled
         assert!(parser.callbacks().pending_replies.is_empty());
     }
+    #[test]
+    fn private_mode_queries_use_shared_truthful_replies_across_split_and_invalid_csi() {
+        let input = b"\x1b[?2004$p\x1b[?2004h\x1b[?2004$p\x1b[?7l\x1b[?7$p\x1b[?25l\x1b[?25$p\x1b[?2026h\x1b[?2026$p\x1b[?65535$p\x1b[?2004l\x1b[?2004$p";
+        let expected = b"\x1b[?2004;2$y\x1b[?2004;1$y\x1b[?7;2$y\x1b[?25;2$y\x1b[?2026;0$y\x1b[?65535;0$y\x1b[?2004;2$y";
+        for split in 0..=input.len() {
+            let mut parser = parser();
+            parser.process(&input[..split]);
+            parser.process(&input[split..]);
+            assert_eq!(
+                parser.callbacks().pending_replies,
+                expected,
+                "split {split}"
+            );
+        }
+        let mut parser = parser();
+        parser.process(b"KEEP\x1b[?2004:1$p\x1b[?2004;7$p\x1b[?2004$ p\x1b[?2004$p");
+        assert_eq!(parser.callbacks().pending_replies, b"\x1b[?2004;2$y");
+        // More than the parser's bounded parameter inventory must not execute
+        // the retained first parameter (in particular, an abbreviated CUP).
+        let overflow = format!("\x1b[{}H", "1;".repeat(200));
+        parser.process(overflow.as_bytes());
+        parser.process(b"X");
+        assert_eq!(parser.screen().contents(), "KEEPX");
+    }
     /// The escape-sequence tables are covered exhaustively in
     /// `minicon_platform::contract::terminal_input`. What matters here is this
     /// host's own policy: that it reads the modes the application negotiated

@@ -23,6 +23,11 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   └── bounded encoded runs / read-only lexer text_prefix / shared scalar width
 │       └── invalid UTF-8 prefixes recover before native edits; new grammar stays pending
 │       └── absolute drawing-cursor edits preserve client modes and pending grammar
+│   └── [v] shared CSI query replies from live screen state; no transport ownership
+│       invariant: one bounded reply per recognized query; unknown capability is not advertised
+│       evidence: common mode oracle, actual GUI callback and native child round trip
+│       safe failure: malformed/non-query metadata produces no reply; caller owns I/O failure
+│       dependency: shared validated grammar; non-goal: presenting synchronized frames
 ├── [-] Shared cell operations — terminal::CellRect / Screen region and literal spans
 │   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
 │   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
@@ -64,6 +69,8 @@ Outcome: another application can embed our terminal without MiniCon product stat
 flowchart LR
     APP["MiniCon / external terminal consumer"] --> COMMON["minicon-console::terminal"]
     COMMON --> VT["owned vt100: screen / damage / framing"]
+    APP --> QUERY["shared csi_query_reply / caller-owned reply transport"]
+    QUERY --> VT
     VT --> VTE["owned vte: authoritative VT / UTF-8 grammar"]
     APP --> PLATFORM["minicon-platform::pty"]
     PROFILE["planned consumer-selected identity / capability profiles"] -.-> COMMON
@@ -82,6 +89,40 @@ flowchart LR
     PLATFORM --> POSIX["macOS / Linux native PTY adapters"]
     COMMON & WIN & POSIX --> E["separate OS × ISA build / runtime / consumer evidence"]
 ```
+
+## Shared terminal query replies
+
+`terminal::csi_query_reply` consumes validated CSI callback metadata plus a
+borrowed live `Screen`. It returns one optional reply of at most 16 bytes,
+without mutating terminal state, owning a queue, writing a PTY or depending on
+an OS/ISA. The GUI now directly depends on `minicon-console` and uses this
+helper for its existing DA1, status and cursor reports as well as private
+DECRQM. Native Windows hosting remains an explicit separate provider choice.
+The parser ignores CSI marked invalid by its bounded parameter/intermediate
+inventory; truncated metadata must not execute an abbreviated command or query.
+Numeric parameter normalization remains the shared lexer's existing policy.
+
+Single scalar DECRQM (`CSI ? Ps $ p`) uses the
+[xterm control sequence contract](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html):
+status 1 means set, 2 reset and 0 unrecognized. The helper reports live modes
+1, 6, 7, 9, 25, 47, 1049, 1000, 1002, 1003, 1005, 1006 and 2004. Origin
+mode comes from the current grid, not the cursor position or a duplicate flag.
+Mouse mode/encoding follows the shared screen's active protocol. This is a
+qualified query subset, not complete xterm conformance. Mode 2026 remains
+unrecognized because complete-frame presentation has not been implemented.
+Unknown modes also report zero; unrelated, subparameter or multi-mode commands
+are unanswered. Primary DA accepts only default/zero, and DSR/CPR accepts one
+scalar 5/6. Consumers retain transport, queue and failure policy.
+
+Named courts: `terminal_query_replies_follow_live_modes_and_reject_nonqueries`
+checks literal replies and every listed mode's set/reset transitions;
+`private_mode_queries_use_shared_truthful_replies_across_split_and_invalid_csi`
+checks the actual GUI callback at every two-way byte split, malformed queries
+and parser inventory overflow. Native return transport and its independent SDK
+expectations belong to [PRD 34](PRD_02_34_windows_console_backend.md#private-mode-query-return-transport).
+Gate/fault receipts and native-runtime limitations are recorded with that
+return-transport court. User-selectable identity profiles remain
+planned; this helper does not implement that settings/API surface.
 
 ## Dependency and public API boundary
 

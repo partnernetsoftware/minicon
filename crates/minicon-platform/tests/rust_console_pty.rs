@@ -17,6 +17,84 @@ mod raw_batch_court;
 mod aliases_court;
 
 #[derive(Default)]
+struct QueryPeer {
+    replies: Vec<u8>,
+    done: bool,
+    keys: bool,
+}
+impl vt100::Callbacks for QueryPeer {
+    fn unhandled_csi(
+        &mut self,
+        screen: &mut vt100::Screen,
+        a: Option<u8>,
+        b: Option<u8>,
+        params: &[&[u16]],
+        c: char,
+    ) {
+        if let Some(reply) = minicon_console::terminal::csi_query_reply(screen, a, b, params, c) {
+            self.replies.extend(reply);
+        }
+    }
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        self.done = title == b"query-roundtrip-done";
+        self.keys = title == b"query-roundtrip-keys";
+    }
+}
+
+#[test]
+fn rust_console_pty_native_private_mode_queries_roundtrip_through_common_peer() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("query-roundtrip")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    let mut peer = vt100::Parser::new_with_callbacks(24, 80, 0, QueryPeer::default());
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut replies = Vec::new();
+    while !peer.callbacks().done {
+        let chunk = fixture
+            .output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|e| {
+                panic!(
+                    "native query: {e}; report={:?}; wire={:?}",
+                    std::fs::read_to_string(&report.0),
+                    String::from_utf8_lossy(&fixture.bytes)
+                )
+            })
+            .unwrap();
+        for byte in &chunk {
+            peer.process(&[*byte]);
+            let reply = std::mem::take(&mut peer.callbacks_mut().replies);
+            if !reply.is_empty() {
+                for byte in &reply {
+                    fixture.master.write_all(&[*byte]).unwrap();
+                }
+                replies.extend(reply);
+            }
+            if std::mem::take(&mut peer.callbacks_mut().keys) {
+                for key_byte in b"\x1b[Aq" {
+                    fixture.master.write_all(&[*key_byte]).unwrap();
+                }
+            }
+        }
+        fixture.bytes.extend(chunk);
+        assert!(fixture.bytes.len() < 65536);
+    }
+    fixture.finish(31);
+    assert_eq!(replies,b"\x1b[?2004;2$y\x1b[?2004;1$y\x1b[?2004;2$y\x1b[?7;2$y\x1b[?7;1$y\x1b[?25;2$y\x1b[?25;1$y\x1b[?2026;0$y\x1b[?65535;0$y");
+    let native = std::fs::read_to_string(&report.0).unwrap();
+    assert_eq!(native.lines().count(), 10);
+    assert!(native.ends_with("keys=[27, 91, 65, 113]\n"));
+    eprintln!(
+        "query-roundtrip native={native:?};wire={:?};replies={replies:?}",
+        fixture.bytes
+    );
+}
+
+#[derive(Default)]
 struct TuiTitles(Option<usize>);
 impl vt100::Callbacks for TuiTitles {
     fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {

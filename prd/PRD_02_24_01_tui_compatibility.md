@@ -15,11 +15,16 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │   evidence: exact app/MiniCon/OS/ISA versions, finite reproduction and boundary captures
 │   safe failure: unknown cause stays unproven; retain each distinct failure class
 │   dependency: isolated terminal fixtures; non-goal: attributing every symptom to conhost
-├── [_] Truthful protocol capability negotiation
+├── [-] Truthful protocol capability negotiation
 │   invariant: replies advertise only implemented behavior and actual mode state
 │   evidence: application probes, independent reply oracle and bounded startup completion
 │   safe failure: report unsupported capabilities; no false positive or indefinite wait
 │   dependency: shared VT semantics and native transport; non-goal: renaming a parser as compatibility
+│   └── [v] shared bounded CSI query replies and actual native round trip
+│       invariant: exact query grammar; current mode state; unknown mode reports zero
+│       evidence: literal replies, split/malformed probes, native child readback and exit/EOF
+│       safe failure: no reply to malformed/non-query commands; 2026 remains unrecognized
+│       dependency: minicon-console common helper + parser validity; non-goal: positive sync support
 ├── [_] Complete-frame presentation, including synchronized updates
 │   invariant: active parser state and externally presented frame have explicit ownership
 │   evidence: split-stream begin/end, bounded timeout/byte recovery, blink/resize/query interleaving
@@ -68,13 +73,21 @@ inventory, not complete xterm conformance.
 
 The actual parser in `third_party/vt100/src/parser.rs` uses `vte::Parser`.
 `Screen::decset/decrst` in `screen.rs` do not handle private mode 2026, and the
-GUI's `ConCallbacks::unhandled_csi` in `src/main.rs` returns immediately for
+GUI's `ConCallbacks::unhandled_csi` in `src/main.rs` returned immediately for
 private/intermediate sequences. The synchronized-update implementation present
 in `third_party/vte/src/ansi.rs` belongs to a different processor path and does
 not establish GUI support. Current GUI state/presentation must not advertise
 synchronized-output support on that basis.
 The existing OutputFramer preserves VT/UTF-8 grammar boundaries; that alone
 does not make a multi-command TUI redraw one atomic presented frame.
+
+The subsequent shared-query slice routes the GUI callback through
+[the common query helper](PRD_02_35_terminal_library.md#shared-terminal-query-replies).
+It replies negatively to mode 2026 and reports current state for its qualified
+private-mode subset. Native report delivery is separately exercised in
+[the Windows return-transport court](PRD_02_34_windows_console_backend.md#private-mode-query-return-transport).
+This advances negotiation and reply transport; synchronized presentation and
+real application acceptance remain open.
 
 Claude Code's [official fullscreen documentation](https://code.claude.com/docs/en/fullscreen#use-with-tmux)
 states that it probes synchronized-output support at startup and uses it when

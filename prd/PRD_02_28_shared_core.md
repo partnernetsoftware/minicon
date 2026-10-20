@@ -74,10 +74,11 @@ flowchart LR
     VT["owned vt100 fork"]
     GRAM["owned vte: common VT/UTF-8 grammar"]
     FRAME["vt100 OutputFramer: OS-neutral framing"]
-    CON["minicon-console: Windows ConDrv / native semantics"]
+    CON["minicon-console: common terminal / Windows native semantics"]
     SB["owned softbuffer fork"]
     E["Exact source + enabled features + OS/ISA + build/runtime evidence"]
     MC --> CORE & UI & PLAT & VT
+    MC -->|"common terminal query replies"| CON
     AG -->|"immutable revision; own feature selection"| UI & PLAT
     AG -. "prepared core consumer; own qualification" .-> CORE
     UI -->|"tree; core defaults disabled"| CORE
@@ -131,7 +132,7 @@ than duplicating the full platform feature catalog.
 | `crates/minicon-platform/src/lib.rs`, `contract/`, `selected.rs` | Capability facades for PTY, window, input, IME, font, IPC, clipboard, process, filesystem and other native mechanisms | OS adapter selection; some mechanisms also branch by ISA/ABI | Default features empty; enable required features explicitly; unsupported/failure results are capability-specific, never inferred success |
 | `third_party/vt100` | VT screen/parser API including damage, DECAWM, `auto_wrap()`, `CellStyle`, programmatic literal cell/style fills and full/diff replay | Shared OS/ISA-neutral parser state; dependencies may specialize internally | Own fork required by terminal rendering and the optional Windows console service, which consumes the cell-edit API; upstream vt100 is not interchangeable; behavior owner [terminal](PRD_02_24_con_terminal.md) |
 | `third_party/vte` | VT/UTF-8 grammar, `at_boundary()` and side-effect-free `preview_byte()` exposed through the owned vt100 parser | OS/ISA-neutral grammar; memchr may specialize internally | Exact lexer state, not a second boundary scanner; shared by terminal parsing and the optional Windows service; owner [terminal](PRD_02_24_con_terminal.md) |
-| `crates/minicon-console` | Common `terminal::TerminalStream` / `Utf16Decoder` / `CellRect` and screen region/literal-span, absolute cursor placement/replay and viewport projection operations; Windows ConDrv server/clients, typed APIs, per-buffer stream composition and native output ordering | Common state/stream is OS/ISA-neutral; native buffer identities/handles and service are Windows-only, native ABI/ISA qualification stays separate | Optional `rust-console` provider in platform; direct paths to owned vt100/VTE preserve required APIs for external repository consumers; owners [terminal library](PRD_02_35_terminal_library.md) and [Windows backend](PRD_02_34_windows_console_backend.md) |
+| `crates/minicon-console` | Common `terminal::csi_query_reply` / `TerminalStream` / `Utf16Decoder` / `CellRect` and screen region/literal-span, absolute cursor placement/replay and viewport projection operations; Windows ConDrv server/clients, typed APIs, per-buffer stream composition and native output ordering | Common state/stream is OS/ISA-neutral; native buffer identities/handles and service are Windows-only, native ABI/ISA qualification stays separate | GUI directly consumes common query replies; optional `rust-console` provider in platform; direct paths to owned vt100/VTE preserve required APIs for external repository consumers; owners [terminal library](PRD_02_35_terminal_library.md) and [Windows backend](PRD_02_34_windows_console_backend.md) |
 | `third_party/softbuffer` | Native pixel presentation consumed by platform's portable window host | Backend selected by OS/window system; not a native-free UI rule | Own fork carries macOS presentation changes; backend failures remain native results |
 | `src/terminal.rs`, `terminal_paint.rs`, `raster_surface.rs`, `font.rs` | Terminal lifecycle and renderer composition | Shared composition over native facades; behavior may select by OS | Binary-private modules, not an independently exported terminal engine; owner [terminal](PRD_02_24_con_terminal.md) |
 | `src/workspace.rs`, `ui.rs`, `rename.rs`, `notes.rs`, `session_store.rs`, `update*.rs` | Tab identity, layout, editable surfaces, persistence and manual update policy | Product composition; native operations go through platform | Do not export product state merely because a helper is pure; owner [workspace](PRD_02_25_con_workspace.md) |

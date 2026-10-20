@@ -131,62 +131,24 @@ impl vt100::Callbacks for ConCallbacks {
         self.title = Some(String::from_utf8_lossy(title).trim().to_string());
     }
 
-    /// Real, previously-missing terminal-query support — discovered as a
-    /// genuine hang, not a cosmetic gap: `claude` (a modern, real-world
-    /// Node/Ink TUI) run inside this binary via `-e` produced zero output
-    /// and never returned, indefinitely, while the identical command via a
-    /// plain `cmd.exe /c` outside minicon completed in under a
-    /// second. Root cause, confirmed by reading vendored vt100's own
-    /// `csi_dispatch`: neither DA1 (`CSI c`, "what are you") nor CPR
-    /// (`CSI 6n`, "where is the cursor") is in its handled-final-byte list
-    /// for the no-intermediate case — both fall through to
-    /// `unhandled_csi`, which every terminal-facing callback in this
-    /// codebase left as the trait's no-op default. A program that queries
-    /// the terminal and *blocks* waiting for a reply before proceeding —
-    /// exactly what sophisticated TUIs do to detect real capabilities —
-    /// hangs forever against a terminal that never answers. This is very
-    /// likely the deeper, more general version of "some effects don't
-    /// render in real TUI programs": a program that never gets past its
-    /// own capability probe never gets to rendering anything at all.
+    // The common terminal library owns reply semantics; this callback only
+    // queues bytes for drain_pty to send through the current session.
     fn unhandled_csi(
         &mut self,
         screen: &mut vt100::Screen,
         intermediate1: Option<u8>,
-        _intermediate2: Option<u8>,
+        intermediate2: Option<u8>,
         params: &[&[u16]],
         final_byte: char,
     ) {
-        // Private-mode sequences (`CSI ? ...`) and anything else with an
-        // intermediate byte are a different, larger space (DEC private
-        // mode queries, etc.) — out of scope for this fix, which targets
-        // specifically the two queries proven to actually hang a real
-        // program.
-        if intermediate1.is_some() {
-            return;
-        }
-        match final_byte {
-            // DA1 (Primary Device Attributes). Real terminals differ in
-            // exact capability bits; `\x1b[?1;2c` ("VT100 with Advanced
-            // Video Option") is the same class of minimal-but-valid answer
-            // xterm and other emulators have shipped as a baseline for
-            // decades — enough for a program that just wants confirmation
-            // something is listening before it proceeds.
-            'c' => self.pending_replies.extend_from_slice(b"\x1b[?1;2c"),
-            'n' => match params.first().and_then(|p| p.first()) {
-                // CPR (Cursor Position Report), 1-indexed per the spec —
-                // reads the screen's actual current cursor position, not a
-                // placeholder, so a program that positions itself relative
-                // to the reported location gets the truth.
-                Some(6) => {
-                    let (row, col) = screen.cursor_position();
-                    let reply = format!("\x1b[{};{}R", row + 1, col + 1);
-                    self.pending_replies.extend_from_slice(reply.as_bytes());
-                }
-                // DSR "are you OK?" -> "0n" (terminal OK, no malfunction).
-                Some(5) => self.pending_replies.extend_from_slice(b"\x1b[0n"),
-                _ => {}
-            },
-            _ => {}
+        if let Some(reply) = minicon_console::terminal::csi_query_reply(
+            screen,
+            intermediate1,
+            intermediate2,
+            params,
+            final_byte,
+        ) {
+            self.pending_replies.extend_from_slice(&reply);
         }
     }
 }

@@ -77,7 +77,12 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
         }
     }
 
-    fn csi_dispatch(&mut self, params: &vte::Params, intermediates: &[u8], _ignore: bool, c: char) {
+    fn csi_dispatch(&mut self, params: &vte::Params, intermediates: &[u8], ignore: bool, c: char) {
+        // Overflowed grammar must not execute a truncated command or reach a
+        // callback whose public metadata can represent only two intermediates.
+        if ignore || intermediates.len() > 2 {
+            return;
+        }
         let mut unhandled = |screen: &mut crate::screen::Screen| {
             screen.mark_full_damage();
             self.callbacks.unhandled_csi(

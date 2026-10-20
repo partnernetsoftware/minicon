@@ -71,6 +71,7 @@ path = "tests/signing_workflow_policy.rs"
 experimental-rust-console = ["minicon-platform/rust-console"]
 
 [dependencies]
+minicon-console = { path = "crates/minicon-console" }
 minicon-platform = { path = "crates/minicon-platform", default-features = false, features = ["clipboard", "contained-process-spawn", "entropy", "filesystem-publish", "filesystem-read", "font", "host-open", "ime", "input", "ipc", "network-http", "parent-console", "pty", "runtime", "screenshot", "window"] }
 minicon-ui-core = { path = "crates/minicon-ui-core", features = ["terminal-selection"] }
 itoa = "1"

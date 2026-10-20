@@ -689,6 +689,12 @@ impl Screen {
         self.mode(MODE_APPLICATION_CURSOR)
     }
 
+    /// Returns whether cursor addressing uses the current scrolling region's origin.
+    #[must_use]
+    pub fn origin_mode(&self) -> bool {
+        self.grid().origin_mode()
+    }
+
     /// Returns whether the terminal should be in hide cursor mode.
     #[must_use]
     pub fn hide_cursor(&self) -> bool {

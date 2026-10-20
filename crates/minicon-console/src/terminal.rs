@@ -1,8 +1,10 @@
 //! OS/ISA-neutral terminal state and ordered output. No native process or
 //! event-loop ownership is implied by this module.
 
+mod query;
 mod utf16;
 mod viewport;
+pub use query::csi_query_reply;
 pub use utf16::Utf16Decoder;
 pub use viewport::{ProjectionLimit, TerminalViewport, ViewportFollow};
 

@@ -1074,6 +1074,7 @@ version = "0.2.15"
 dependencies = [
  "flate2",
  "itoa",
+ "minicon-console",
  "minicon-core",
  "minicon-platform",
  "minicon-ui-core",

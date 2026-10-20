@@ -377,6 +377,12 @@ fn serve(
             {
                 if escape != 0 {
                     valid = escape;
+                } else if let Some(length) = input::private_mode_reply_len(&pending[..valid]) {
+                    // A DECRPM report is terminal input for the application,
+                    // not an unknown physical key to discard. Keep native key
+                    // decoding for arrows etc.; publish this exact ASCII span.
+                    valid = length;
+                    escape_wait = None;
                 } else {
                     let decoded = crate::selected::console_input::decode_key(&pending[..valid]);
                     if let Some((key, used)) = decoded {

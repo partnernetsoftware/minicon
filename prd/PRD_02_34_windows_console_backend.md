@@ -27,6 +27,11 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] accepted CONNECT, opaque handles and DISCONNECT reclamation
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
 │   ├── [v] scoped dense TUI replay: original API payloads / emitted wire / native readback / alternate resize
+│   ├── [v] private-mode report return transport: native VT reads receive actual frontend replies
+│   │   invariant: complete DECRPM is input text, not a dropped unknown physical key
+│   │   evidence: independent SDK literal reads, fragmented round trip, Up/q, exit31 and EOF
+│   │   safe failure: bounded classification/queues and finite owned-process teardown
+│   │   dependency: common frontend helper + native input; non-goal: general response ownership
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
@@ -108,6 +113,8 @@ Outcome: own the Windows console backend with measured compatibility
 ```mermaid
 flowchart LR
     CLIENT["unchanged cmd / PowerShell / Node / native client"] --> API["Windows console API and ConDrv"]
+    FRONTEND["frontend-owned capability replies"] --> RINPUT["bounded DECRPM span before physical-key decoder"]
+    RINPUT --> HOST
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
@@ -4176,3 +4183,69 @@ covering the 40 checkpoints. Phase wire captures exclude the final shutdown
 tail; the court separately parses that tail and verifies restored content,
 exit 29 and EOF. Evidence remains under ignored `target/conhost-research/`.
 Native execution is Windows x86_64 build 20348; other targets compile only.
+
+### Private-mode query return transport
+
+Invariant: a valid frontend DECRPM report reaches an unchanged native VT-input
+reader as actual input bytes, rather than disappearing in physical-key decoding.
+The new SDK producer `crates/minicon-platform/tests/support/query_roundtrip.rs` exposed the baseline
+defect: its first `CSI ? 2004 $ p` reached the frontend and produced a valid
+reply, but the Windows adapter consumed that reply as an unknown key. The real
+ReadFile never returned; the finite parent timed out. That failed preflight
+log is preserved separately from acceptance evidence.
+
+The Rust Windows adapter now recognizes one complete, bounded DECRPM ASCII
+span before the physical-key decoder and enqueues the span as native text.
+The numeric mode is bounded to five digits/u16 and status to 0..4; malformed,
+incomplete and unrelated CSI retains the existing key path. It preserves the
+following bytes for their own dispatch. Input queuing, output backpressure,
+native text reads and Job lifecycle still use the existing PTY/host machinery.
+Microsoft's [Query State contract](https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#query-state)
+distinguishes report delivery from keyboard VT encoding: the input VT flag
+does not gate a requested report. Accordingly, the classifier is outside that
+flag's policy; this runtime court currently qualifies VT-input mode only.
+Common reply semantics and the GUI consumer belong to
+[PRD 35](PRD_02_35_terminal_library.md#shared-terminal-query-replies).
+
+`rust_console_pty_native_private_mode_queries_roundtrip_through_common_peer`
+launches the independent SDK client with the explicitly selected Rust provider.
+The client sets VT input, writes nine queries/mode transitions one API byte at
+a time and reads the actual return bytes through ReadFile. Literal SDK
+expectations cover bracketed paste reset/set/reset, no-wrap/wrap, hidden/visible
+cursor, unsupported 2026 and unknown 65535. The parent consumes output with the
+same public query helper used by the GUI and returns each report one byte per
+PTY write. Finally an actual Up arrow followed by q must read back as
+`[27,91,65,113]`; the report route must not consume or corrupt physical keys.
+The child publishes ten native records, exits 31 and reaches output EOF before
+fixture teardown. `rust_console_private_mode_reply_length_preserves_key_dispatch_boundary`
+checks every incomplete prefix, a following arrow/text tail, numeric/status
+bounds and malformed grammar. Safe failure is the existing bounded queue/error
+or finite fixture timeout with owned-process cleanup.
+
+This is a DECRPM return-path qualification, not a general terminal-response
+protocol or real Claude Code pass. Stock conhost internal mode/query handling
+is not the authority for the common frontend's capabilities; no stock-system
+round-trip result is claimed here. DA/DSR/CPR and other native response routing,
+query ownership across nested applications, GUI pixels, synchronized output,
+other OS/ISA runtime and modern Windows comparison remain open.
+
+Qualification: 317 selected regressions pass, including all 27 owned screen
+fork units and the existing GUI DA/DSR/CPR/unknown-query courts. Six compiling
+runtime faults break unknown-capability status, the grid's origin getter,
+invalid-CSI rejection, the GUI reply queue, report numeric bounds and the
+Windows return-path hook. The four new courts each fail under their intended
+fault; byte-for-byte restoration and source hashes are verified after every
+case. Ten restored focused courts pass, retaining the preceding dense-TUI
+owned/system scenarios and their 40 phase checkpoints. Ten static/cross-target
+checks and 17 final alignment checks also pass; other OS/ISA evidence
+remains compilation only.
+
+`query-final-receipt.json` binds the staged tree, 14 changed manifest/source/test
+files, three unchanged stream/grammar guards, six fault logs, the ten native
+records, exact source/check/log hashes and 120 retained TUI phase-file hashes.
+Its eleven x64 image identities are a compiled-image inventory; five are
+exercised by the final focused courts. The broader selected-suite receipt is
+bound to the same frozen source. The failed initial native preflight is retained
+as the before-fix observation, not counted as a passing gate. Artifacts remain
+under ignored `target/conhost-research/query-*`; no packaged/default provider
+promotion or real Claude Code compatibility claim follows from these results.

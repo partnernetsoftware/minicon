@@ -45,6 +45,8 @@ mod mixed_output;
 #[cfg(windows)]
 mod output_modes;
 #[cfg(windows)]
+mod query_roundtrip;
+#[cfg(windows)]
 #[path = "../../../minicon-console/tests/support/queued_reads.rs"]
 mod queued_reads;
 #[cfg(windows)]
@@ -99,6 +101,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "query-roundtrip" {
+        return query_roundtrip::run(std::path::Path::new(&arguments[1]));
+    }
     if let Some(kind) = mode.strip_prefix("tui-redraw-") {
         return tui_redraw::run(kind, std::path::Path::new(&arguments[1]));
     }
