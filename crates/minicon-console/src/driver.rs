@@ -25,6 +25,12 @@ use windows_sys::Win32::System::Threading::{
 
 const OBJ_CASE_INSENSITIVE: u32 = 0x40;
 const SYNCHRONIZE: u32 = 0x0010_0000;
+pub(crate) const READ_INTERRUPTED: i32 = 0x101;
+enum ReadReplyKind {
+    File,
+    Console,
+    Records,
+}
 const GENERIC_READ_WRITE: u32 = 0xc000_0000;
 const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x20;
 const FILE_SHARE_ALL: u32 = 7;
@@ -411,37 +417,73 @@ impl<'session> DriverRequest<'session> {
     pub fn inline_payload(&self) -> &[u8] {
         &self.payload[..self.payload_length]
     }
+
+    pub(crate) fn is_console_read(&self) -> bool {
+        self.read_reply_kind().is_some()
+    }
+
+    pub(crate) fn is_console_text_read(&self) -> bool {
+        matches!(
+            self.read_reply_kind(),
+            Some(ReadReplyKind::File | ReadReplyKind::Console)
+        )
+    }
+
+    fn read_reply_kind(&self) -> Option<ReadReplyKind> {
+        match self.descriptor.function {
+            6 => Some(ReadReplyKind::File),
+            7 if self.payload_length >= 4 => {
+                match u32::from_le_bytes(self.payload[..4].try_into().unwrap()) {
+                    0x0100_0004 => Some(ReadReplyKind::Records),
+                    0x0100_0005 => Some(ReadReplyKind::Console),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn read_interruption_reply(&self) -> Option<([u8; 20], usize)> {
+        let needed = match self.read_reply_kind()? {
+            ReadReplyKind::File => 0,
+            ReadReplyKind::Console => 20,
+            ReadReplyKind::Records => 8,
+        };
+        let mut reply = [0; 20];
+        if needed != 0 {
+            if self.payload_length < needed + 8 || self.descriptor.output_size < needed as u32 {
+                return None;
+            }
+            reply[..needed].copy_from_slice(&self.payload[8..8 + needed]);
+            if needed == 8 {
+                reply[..4].fill(0);
+            } else {
+                reply[12..20].fill(0);
+            }
+        }
+        Some((reply, needed))
+    }
+
+    pub(crate) fn interrupt_read(self, status: i32) -> io::Result<()> {
+        if !self.is_console_read() {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        if let Some((reply, length)) = self.read_interruption_reply() {
+            self.complete(status, 0, &reply[..length])
+        } else {
+            // Malformed unadmitted reads still get an explicit API rejection.
+            self.complete(0xc000_000d_u32 as i32, 0, &[])
+        }
+    }
 }
 
 impl Drop for DriverRequest<'_> {
     fn drop(&mut self) {
         if !self.completed {
-            let mut reply = [0_u8; 20];
-            let mut reply_len = 0;
-            let mut status = 0xc000_0120;
-            if self.descriptor.function == 6 {
-                status = 0x101; // native console read interruption
-            } else if self.descriptor.function == 7 && self.payload_length >= 8 {
-                let api = u32::from_le_bytes(self.payload[..4].try_into().unwrap());
-                let needed = match api {
-                    0x0100_0004 => 8,
-                    0x0100_0005 => 20,
-                    _ => 0,
-                };
-                if needed != 0
-                    && self.payload_length >= needed + 8
-                    && self.descriptor.output_size >= needed as u32
-                {
-                    reply[..needed].copy_from_slice(&self.payload[8..8 + needed]);
-                    if needed == 8 {
-                        reply[..4].fill(0);
-                    } else {
-                        reply[12..20].fill(0);
-                    }
-                    reply_len = needed;
-                    status = 0x101;
-                }
-            }
+            let (mut reply, reply_len, status) = self
+                .read_interruption_reply()
+                .map(|(reply, length)| (reply, length, READ_INTERRUPTED as u32 as usize))
+                .unwrap_or(([0; 20], 0, 0xc000_0120));
             let completion = Completion {
                 identifier: self.descriptor.identifier,
                 status: IoStatusBlock {

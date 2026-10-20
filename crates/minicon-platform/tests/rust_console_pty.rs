@@ -183,6 +183,7 @@ impl Drop for Report {
             "retired",
             "retire-tmp",
             "closed",
+            "queue-tmp",
             "opened-ready",
             "detached",
             "first",
@@ -4556,6 +4557,145 @@ fn rust_console_pty_read_retirement_reveals_the_surviving_buffer() {
 #[ignore = "explicit system ConPTY read-retirement lifetime court"]
 fn rust_console_client_read_retirement_compares_system_conpty() {
     retiring_buffer_cases(false);
+}
+
+fn queued_read_pressure_cases(rust: bool) {
+    let kinds: &[&str] = if rust {
+        &[
+            "interrupt-file",
+            "interrupt-console",
+            "interrupt-records",
+            "signal-file",
+            "disconnect-file",
+            "disconnect-console",
+            "disconnect-records",
+        ]
+    } else {
+        &[
+            "signal-file",
+            "disconnect-file",
+            "disconnect-console",
+            "disconnect-records",
+        ]
+    };
+    for &kind in kinds {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("queued-read-{kind}"))
+            .arg(report.0.as_os_str());
+        let (master, child) = if rust {
+            command.rust_console().spawn().unwrap().into_parts()
+        } else {
+            command.spawn().unwrap().into_parts()
+        };
+        assert_eq!(
+            master.backend_kind(),
+            if rust { "rust-console" } else { "conpty" }
+        );
+        report.wait_ready();
+        if kind.starts_with("interrupt") || kind.starts_with("signal") {
+            if rust && kind != "signal-file" {
+                child.send_native_key(NativeTerminalKey::Break, 1).unwrap();
+            } else {
+                master.write_all(&[3]).unwrap();
+            }
+        }
+        let record = matches!(kind, "interrupt-records" | "signal-file");
+        let mut parts = Some((master, child));
+        let draining = if record {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !report.0.with_extension("signal").exists() {
+                assert!(
+                    Instant::now() < deadline,
+                    "record read did not survive keyboard control"
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert_eq!(
+                std::fs::read_to_string(report.0.with_extension("signal")).unwrap(),
+                "read-pending"
+            );
+            assert!(!report.0.exists());
+            let (master, child) = parts.take().unwrap();
+            let fixture = Fixture::with_parts(master, child);
+            std::fs::write(report.0.with_extension("records"), b"provide-data").unwrap();
+            Some(fixture)
+        } else {
+            None
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !report.0.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "queued pressure {rust}/{kind} stalled"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        let (body, pending) = value.rsplit_once(",\"writer_pending\":").unwrap();
+        eprintln!("queued-read rust={rust};kind={kind}: {value}");
+        assert!(matches!(pending, "true}" | "false}"));
+        if rust && kind.starts_with("interrupt") && !record {
+            assert_eq!(pending, "true}", "writer must stay blocked until drain");
+        }
+        // Under stock ConPTY output pressure, FreeConsole closes these reads
+        // with ALERTED rather than the accepted-waiter ThreadDying status.
+        // Keep that observed provider difference explicit in the oracle.
+        assert_eq!(
+            body,
+            format!(
+                r#"{{"ok":{},"error":{},"count":{},"unit":{},"event":{},"mode":{},"secondary":[]"#,
+                kind.starts_with("interrupt") || kind.starts_with("signal") || !rust,
+                if kind == "interrupt-console" || (!rust && kind == "disconnect-console") {
+                    995
+                } else if kind.starts_with("interrupt") || kind.starts_with("signal") || !rust {
+                    0
+                } else {
+                    5
+                },
+                usize::from(record),
+                if record { 90 } else { 0 },
+                if kind == "signal-file" {
+                    1
+                } else if kind.starts_with("interrupt") {
+                    2
+                } else {
+                    0
+                },
+                if kind == "interrupt-console" {
+                    7
+                } else if matches!(kind, "interrupt-file" | "signal-file") {
+                    1
+                } else {
+                    0
+                }
+            )
+        );
+        std::fs::write(report.0.with_extension("opened"), b"drain").unwrap();
+        let mut fixture = draining.unwrap_or_else(|| {
+            let (master, child) = parts.take().unwrap();
+            Fixture::with_parts(master, child)
+        });
+        fixture.finish(0);
+        assert!(std::str::from_utf8(&fixture.bytes).is_ok());
+        if rust && (kind.starts_with("interrupt") || kind.starts_with("signal")) {
+            assert!(
+                fixture.bytes.ends_with("a中😀".repeat(32768).as_bytes()),
+                "interruption must preserve every queued writer byte"
+            );
+        }
+    }
+}
+
+#[test]
+fn rust_console_pty_queued_reads_finish_under_unread_output_pressure() {
+    queued_read_pressure_cases(true);
+}
+
+#[test]
+#[ignore = "explicit stock ConPTY read-disconnect/output-pressure court"]
+fn rust_console_client_queued_read_disconnect_compares_system_conpty() {
+    queued_read_pressure_cases(false);
 }
 
 #[test]

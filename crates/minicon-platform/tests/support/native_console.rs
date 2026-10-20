@@ -39,6 +39,9 @@ mod mixed_output;
 #[cfg(windows)]
 mod output_modes;
 #[cfg(windows)]
+#[path = "../../../minicon-console/tests/support/queued_reads.rs"]
+mod queued_reads;
+#[cfg(windows)]
 mod rect_output;
 #[cfg(windows)]
 mod screen_fill;
@@ -85,6 +88,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("queued-read-") {
+        return queued_reads::run(kind, std::path::Path::new(&arguments[1]), false);
+    }
     if let Some(kind) = mode.strip_prefix("cooked-retire-") {
         return cooked_buffer::run_retire(kind, std::path::Path::new(&arguments[1]), false);
     }

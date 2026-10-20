@@ -162,6 +162,9 @@ impl Drop for Report {
             "peer-go",
             "peer-tmp",
             "go-two",
+            "first",
+            "queue-tmp",
+            "records",
         ] {
             let _ = std::fs::remove_file(self.path.with_extension(extension));
         }
@@ -632,6 +635,183 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
         assert_eq!(host.open_handles(), 0);
         assert!(!host.has_pending_output());
         eprintln!("cooked-retire-direct {kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers() {
+    struct Reject;
+    impl std::io::Write for Reject {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    for kind in [
+        "interrupt-file",
+        "interrupt-console",
+        "interrupt-records",
+        "disconnect-file",
+        "disconnect-console",
+        "disconnect-records",
+        "other-console",
+        "signal-records",
+        "signal-file",
+    ] {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let child = launch_probe(&format!("queued-read-{kind}"), &report, &session);
+        let mut host = ConsoleHost::for_child(&child).unwrap();
+        let mut output = Vec::new();
+        let mut reads = 0;
+        let mut root = 0;
+        let mut retired = false;
+        let mut released = false;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while child.wait(Duration::ZERO).unwrap().is_none()
+            || host.connected_clients() != 0
+            || host.open_handles() != 0
+        {
+            assert!(Instant::now() < deadline, "queued {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let function = request.descriptor.function;
+                    let caller = request.descriptor.process;
+                    let api = if function == 7 {
+                        Some(u32::from_le_bytes(
+                            request.inline_payload()[..4].try_into().unwrap(),
+                        ))
+                    } else {
+                        None
+                    };
+                    let reading = function == 6 || matches!(api, Some(0x0100_0004 | 0x0100_0005));
+                    let before = output.clone();
+                    let call = if reading || reads != 0 && !retired {
+                        host.dispatch_with_output_ready(request, false, &mut Reject)
+                            .unwrap()
+                    } else {
+                        host.dispatch_with_output_ready(request, true, &mut output)
+                            .unwrap()
+                    };
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if reading {
+                        if kind.ends_with("file") {
+                            assert_eq!(function, 6);
+                        } else {
+                            assert_eq!(
+                                api,
+                                Some(if kind.ends_with("records") {
+                                    0x0100_0004
+                                } else {
+                                    0x0100_0005
+                                })
+                            );
+                        }
+                        reads += 1;
+                        assert!(call.pending);
+                        assert_eq!(host.pending_reads(), 0);
+                        assert_eq!(host.pending_output_requests(), reads);
+                        assert_eq!(output, before);
+                        if reads == 1 {
+                            root = caller;
+                            if kind.starts_with("interrupt") {
+                                assert_eq!(host.cancel_pending_reads().unwrap(), 1);
+                                assert_eq!(host.cancel_pending_reads().unwrap(), 0);
+                                assert_eq!(host.pending_output_requests(), 0);
+                                retired = true;
+                            } else if kind.starts_with("signal") {
+                                assert_eq!(
+                                    host.enqueue_input(
+                                        &[ConsoleInput::Key {
+                                            down: true,
+                                            repeat: 1,
+                                            virtual_key: if kind == "signal-file" { 0 } else { 3 },
+                                            scan_code: 0,
+                                            character: if kind == "signal-file" { 3 } else { 0 },
+                                            controls: if kind == "signal-file" { 0 } else { 8 },
+                                        }],
+                                        &mut Reject
+                                    )
+                                    .unwrap(),
+                                    0
+                                );
+                                assert_eq!(host.pending_output_requests(), 1);
+                            }
+                            std::fs::write(report.path.with_extension("go"), b"queued").unwrap();
+                        } else {
+                            assert_eq!(kind, "other-console");
+                            assert_ne!(caller, root);
+                            assert_eq!(child.active_processes().unwrap(), 2);
+                            std::fs::write(report.path.with_extension("go-two"), b"two-queued")
+                                .unwrap();
+                        }
+                    }
+                    if function == 2 && caller == root && !retired {
+                        assert!(!call.pending);
+                        assert_eq!(output, before);
+                        assert_eq!(host.pending_reads(), 0);
+                        assert_eq!(
+                            host.pending_output_requests(),
+                            usize::from(kind == "other-console")
+                        );
+                        if kind == "other-console" {
+                            let resumed = host.resume_output(&mut output).unwrap().unwrap();
+                            assert!(resumed.pending);
+                            assert_eq!(resumed.api, Some(0x0100_0005));
+                            assert_eq!(host.pending_reads(), 1);
+                            assert_eq!(host.pending_output_requests(), 0);
+                            assert_eq!(host.enqueue_text("z\r", &mut output).unwrap(), 1);
+                        }
+                        retired = true;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("{kind}: {error}"),
+            }
+            if kind.starts_with("signal")
+                && !retired
+                && report.path.with_extension("signal").exists()
+            {
+                assert_eq!(host.pending_output_requests(), 1);
+                assert_eq!(host.pending_reads(), 0);
+                let resumed = host.resume_output(&mut Reject).unwrap().unwrap();
+                assert!(resumed.pending);
+                assert_eq!(host.pending_reads(), 1);
+                assert_eq!(
+                    host.enqueue_input(
+                        &[ConsoleInput::Key {
+                            down: true,
+                            repeat: 1,
+                            virtual_key: 0,
+                            scan_code: 0,
+                            character: 90,
+                            controls: 0
+                        }],
+                        &mut Reject
+                    )
+                    .unwrap(),
+                    1
+                );
+                retired = true;
+                std::fs::write(report.path.with_extension("records"), b"record-received").unwrap();
+            }
+            if retired && !released && report.path.exists() {
+                released = true;
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+            }
+        }
+        assert!(reads != 0 && retired && released);
+        assert_eq!(child.wait(Duration::ZERO).unwrap(), Some(0));
+        let value: Value = serde_json::from_slice(&std::fs::read(&report.path).unwrap()).unwrap();
+        assert_eq!(
+            value,
+            json!({"ok":kind.starts_with("interrupt")||kind.starts_with("signal"),"error":if kind=="interrupt-console"{995}else if kind.starts_with("interrupt")||kind.starts_with("signal"){0}else{5},"count":usize::from(kind.starts_with("signal")),"unit":if kind.starts_with("signal"){90}else{0},"event":if kind=="signal-file"{1}else if kind=="signal-records"{2}else{0},"mode":if kind=="interrupt-console"{7}else if matches!(kind,"interrupt-file"|"signal-file"){1}else{0},"secondary":if kind=="other-console"{vec![122,13,10]}else{vec![]},"writer_pending":false})
+        );
+        assert_eq!(host.pending_reads(), 0);
+        assert!(!host.has_pending_output());
+        eprintln!("queued-read-direct {kind}: {value}");
     }
 }
 

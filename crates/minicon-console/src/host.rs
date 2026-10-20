@@ -149,7 +149,8 @@ impl<'session> ConsoleHost<'session> {
         if matches!(event, crate::control::ControlEvent::CtrlBreak) {
             self.input.flush_keyboard_input();
         }
-        let cancelled = self.cancel_pending_reads();
+        let cancelled =
+            self.cancel_keyboard_reads(matches!(event, crate::control::ControlEvent::CtrlBreak));
         let count = self.control.as_ref().unwrap().send(event, 0);
         cancelled?;
         Ok(count)
@@ -476,10 +477,6 @@ impl<'session> ConsoleHost<'session> {
                 }
             }
             2 => {
-                self.deferred_output.retain(|pending| {
-                    pending.descriptor.function == 4
-                        || pending.descriptor.process != descriptor.process
-                });
                 self.cancel_process_reads(descriptor.process)?;
                 if let Some(control) = &mut self.control {
                     control.remove(descriptor.process);
@@ -505,8 +502,6 @@ impl<'session> ConsoleHost<'session> {
             }
             3 => return self.create_object(request),
             4 => {
-                self.deferred_output
-                    .retain(|pending| pending.descriptor.object != descriptor.object);
                 // This is a kernel object finalizer, including closes after
                 // process disconnect; it need not carry a live process token.
                 self.retire_input_object(descriptor.object)?;

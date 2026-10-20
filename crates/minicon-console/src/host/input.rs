@@ -3,6 +3,7 @@ mod echo;
 mod edit;
 mod records;
 use super::*;
+use crate::driver::READ_INTERRUPTED;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
 use windows_sys::Win32::Foundation::ERROR_OPERATION_ABORTED;
@@ -11,9 +12,6 @@ use windows_sys::Win32::Globalization::WideCharToMultiByte;
 pub(super) const MAX_EVENTS: usize = 4096;
 const MAX_PENDING: usize = 64;
 const MAX_LINE: usize = 32768;
-// Console handle closing/interruption uses STATUS_ALERTED in the native
-// protocol, not the generic I/O STATUS_CANCELLED (see pinned readData*.cpp).
-const READ_INTERRUPTED: i32 = 0x101;
 
 /// Native console input expressed without exposing Windows union pointers.
 #[derive(Clone, Copy, Debug)]
@@ -60,9 +58,13 @@ pub(super) enum ReadRetirement {
 
 impl ReadRetirement {
     fn matches(self, read: &PendingRead<'_>) -> bool {
+        self.matches_request(&read.request)
+    }
+
+    fn matches_request(self, request: &DriverRequest<'_>) -> bool {
         match self {
-            Self::Process(process) => read.request.descriptor.process == process,
-            Self::Object(object) => read.request.descriptor.object == object,
+            Self::Process(process) => request.descriptor.process == process,
+            Self::Object(object) => request.descriptor.object == object,
         }
     }
 
@@ -161,13 +163,18 @@ struct PendingRead<'session> {
 }
 
 impl PendingRead<'_> {
-    fn interrupt(mut self, status: i32) -> io::Result<()> {
-        match self.kind {
-            ReadKind::Text { raw: false, .. } => self.body[12..20].fill(0),
-            ReadKind::Records { .. } => self.body[..4].fill(0),
-            _ => {}
-        }
-        self.request.complete(status, 0, &self.body)
+    fn interrupt(self, status: i32) -> io::Result<()> {
+        complete_read_interruption(self.request, status)
+    }
+}
+
+fn complete_read_interruption(request: DriverRequest<'_>, status: i32) -> io::Result<()> {
+    // This is a reply to one retiring request. A recipient already cancelled
+    // by ConDrv is benign; event-update, output and other transport errors are
+    // outside this exception and still propagate through their own operations.
+    match request.interrupt_read(status) {
+        Err(error) if error.raw_os_error() == Some(ERROR_OPERATION_ABORTED as i32) => Ok(()),
+        result => result,
     }
 }
 
@@ -342,28 +349,42 @@ impl<'session> ConsoleHost<'session> {
 
     /// Wake blocked reads with the console interruption status (STATUS_ALERTED).
     pub fn cancel_pending_reads(&mut self) -> io::Result<usize> {
-        // Dropping a deferred read uses DriverRequest's native interrupted-read
-        // completion, including the original API shape and zero byte counts.
+        self.cancel_reads(true)
+    }
+
+    pub(super) fn cancel_keyboard_reads(&mut self, is_break: bool) -> io::Result<usize> {
+        // The raw text waiter ignores Ctrl+C; Break still terminates it.
+        if !is_break && self.input_mode & 2 == 0 {
+            return Ok(0);
+        }
+        self.cancel_reads(false)
+    }
+
+    fn cancel_reads(&mut self, include_records: bool) -> io::Result<usize> {
+        // Queued and accepted reads retain the same native reply shape.
         let (deferred_reads, retained): (VecDeque<_>, VecDeque<_>) =
             std::mem::take(&mut self.deferred_output)
                 .into_iter()
                 .partition(|request| {
-                    request.descriptor.function == 6
-                        || (request.descriptor.function == 7
-                            && matches!(
-                                read_u32(request.inline_payload(), 0),
-                                Some(0x0100_0004 | 0x0100_0005)
-                            ))
+                    request.is_console_read() && (include_records || request.is_console_text_read())
                 });
         self.deferred_output = retained;
-        let pending = std::mem::take(&mut self.input.pending);
+        let (pending, retained): (VecDeque<_>, VecDeque<_>) =
+            std::mem::take(&mut self.input.pending)
+                .into_iter()
+                .partition(|read| include_records || matches!(read.kind, ReadKind::Text { .. }));
+        self.input.pending = retained;
         let count = pending.len() + deferred_reads.len();
         // Inactive state needs no publication. An orphaned active buffer stays
         // selected until resume_output admits its transactional fallback.
         self.discard_unused_buffers();
         // Publish native readiness before any blocked SDK caller resumes.
         let mut failure = self.update_input_event().err();
-        drop(deferred_reads);
+        for request in deferred_reads {
+            if let Err(error) = complete_read_interruption(request, READ_INTERRUPTED) {
+                failure.get_or_insert(error);
+            }
+        }
         for read in pending {
             if let Err(error) = read.interrupt(READ_INTERRUPTED) {
                 failure.get_or_insert(error);
@@ -924,14 +945,23 @@ impl<'session> ConsoleHost<'session> {
 
     fn retire_reads(&mut self, retirement: ReadRetirement) -> io::Result<()> {
         let mut failure = None;
+        let (retired, retained): (VecDeque<_>, VecDeque<_>) =
+            std::mem::take(&mut self.deferred_output)
+                .into_iter()
+                .partition(|request| {
+                    request.descriptor.function != 4 && retirement.matches_request(request)
+                });
+        self.deferred_output = retained;
+        for request in retired {
+            if request.is_console_read()
+                && let Err(error) = complete_read_interruption(request, retirement.status())
+            {
+                failure.get_or_insert(error);
+            }
+        }
         for read in self.input.take_retired(retirement) {
             if let Err(error) = read.interrupt(retirement.status()) {
-                // Kernel retirement can race the recipient's final thread
-                // exit. A request already cancelled by ConDrv has no remaining
-                // reply owner; it must not abort other live callers' dispatch.
-                if error.raw_os_error() != Some(ERROR_OPERATION_ABORTED as i32) {
-                    failure.get_or_insert(error);
-                }
+                failure.get_or_insert(error);
             }
         }
         failure.map_or(Ok(()), Err)

@@ -37,6 +37,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
 │   ├── [v] scoped retirement preflight / caller-scoped completion / in-flight file-reference ownership
+│   ├── [v] scoped queued-read reply shapes / caller retirement / unrelated FIFO retention
+│   ├── [v] scoped keyboard waiters: raw Ctrl+C and record C/Break retain their reads
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -111,6 +113,10 @@ flowchart LR
     CANCELBUF --> READYWORK["has_pending_output / one fallback before queued kernel call"]
     READYWORK --> ECOMMIT
     CANCELBUF --> RETIRE["one process/object read-retirement match"]
+    RETIRE --> QUEUED["queued and accepted reads: same selector / cause / native reply builder"]
+    QUEUED --> REPLIES["ReadFile 0 / ReadConsole 20 / records 8 bytes; zero returned counts"]
+    QUEUED --> FOREIGN["preserve other callers / queued writers / kernel finalizers"]
+    INPUT --> WAITERS["keyboard: cooked C/Break ends; raw C and record C/Break wait"]
     RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
     POSTLIVE -->|"may publish"| READYWORK
     POSTLIVE -->|"another read survives"| INPUT
@@ -3431,6 +3437,9 @@ blobs. The named slice does not qualify the remaining race/transport boundaries.
 
 ### Disconnect retirement and native file closes
 
+Queued, not-yet-admitted native reads are covered by the following
+[queued-read section](#queued-read-retirement-and-keyboard-waiters).
+
 Invariant: output readiness classification predicts whether retiring a caller or
 file would release the final read retaining the active drawing buffer. The same
 private `ReadRetirement` process/object matcher selects reads for both preflight
@@ -3456,7 +3465,8 @@ Accepted process-retired reads now complete with STATUS_THREAD_IS_TERMINATING
 (`0xc000004b`), yielding BOOL false, LastError 5 and zero count on the observed
 Windows build. This matches the pinned cooked/direct/raw read waiters' ThreadDying
 status and the locally verified RtlNtStatusToDosError mapping. Explicit keyboard
-interruption retains STATUS_ALERTED, BOOL true, LastError 995 and zero count.
+interruption of the ReadConsole cases retains STATUS_ALERTED, BOOL true,
+LastError 995 and zero count; API-specific results are refined below.
 One body-completion helper retains the native API shape and zeroes returned
 control/count fields for retirement and explicit interruption.
 
@@ -3472,8 +3482,8 @@ Dependencies are existing driver request ownership, deferred output admission,
 native buffer liveness/activation, file-versus-connection handle lifetimes and
 private-Job process ownership. Native prototypes are called directly by the
 independent shared SDK fixture; no private matcher simulates the client result.
-Queued but not yet admitted reads during disconnect still require a separate
-status/cleanup audit. More finalizer/deferred-call, mixed-reader, last-orphan and
+The queued-read status/cleanup audit follows below. More finalizer/deferred-call,
+mixed-reader, last-orphan and
 foreign-request races, other native API/geometry/editor behavior, OS/ISA runtime
 and performance courts, portable sessions and packaging/default promotion remain
 open. This changes no product default or library-merger decision.
@@ -3508,3 +3518,105 @@ and 17 alignment checks follow this documentation.
 hashes, compiler, nine executed x64 image identities, three pinned read-waiter
 source blobs and the native status-to-error mapping. This does not close the
 unadmitted-read and other remaining boundaries above.
+
+### Queued-read retirement and keyboard waiters
+
+Invariant: queued reads and admitted reads use the same process/object selector,
+retirement cause and transport reply builder. Process retirement uses
+STATUS_THREAD_IS_TERMINATING; explicit administrative cancellation uses
+STATUS_ALERTED. The driver owns API identification and reply construction:
+ReadFile has no inline reply body, ReadConsole has 20 bytes and input-record
+reads have 8. Original request flags survive; returned counts/control fields
+are cleared. Malformed recognized reads receive STATUS_INVALID_PARAMETER.
+Non-read dropped requests retain their existing cancellation behavior.
+
+Cancellation partitions only matching reads, preserving queued writers and
+other callers in FIFO order. Process/object retirement also removes matching
+non-read work, while retaining kernel file finalizers (function 4). A failed
+completion with error 995 is benign only for its already-cancelled recipient;
+event readiness, output and other transport errors still propagate. Dependencies
+are the existing request lease, output admission, private Job and retirement
+preflight; this introduces no public cancellation-policy enum or duplicate
+terminal state.
+
+Keyboard cancellation differs from administrative cancellation. Cooked text
+reads terminate on C/Break; raw text reads ignore C and terminate on Break;
+record reads ignore both. The API name does not determine cooked/raw mode:
+LINE_INPUT does. The implementation covers the current input-mode cases;
+changing LINE_INPUT while reads are pending remains unqualified. Break still
+flushes stored keyboard input. GenerateConsoleCtrlEvent remains signal delivery,
+not a substitute for keyboard cancellation. The fixtures explicitly clear
+inherited IGNORE_CTRL_C before installing a handler.
+
+The shared SDK fixture calls actual native ReadFile, ReadConsoleW and
+ReadConsoleInputW. The direct court holds their real driver requests before
+admission, verifies zero promoted reads and the retained queue count, and then
+checks cancellation, FreeConsole, a second private-Job caller and surviving
+keyboard reads. A second caller retains its queued read and receives its own
+`z\r\n`. Raw/record readers survive the selected signal and subsequently return
+one `Z` (90), rather than an empty success.
+
+The PTY court initially leaves output unread. A real writer publishes a 65536-byte
+progress marker; GetThreadIOPendingFlag confirms the actual reader has submitted
+kernel I/O. The writer produces 262144 UTF-8 bytes (`a中😀` repeated 32768 times).
+Owned Break interrupts text reads before output draining; record Break and raw
+C retain their reads until explicit later input. Afterwards the consumer checks
+the complete writer suffix, finite child exit and valid UTF-8. Readiness uses
+observed kernel/file handshakes, not an assumed sleep interval.
+
+Observed native results on Windows x86_64 build 20348:
+
+| Operation | BOOL | LastError | Count |
+| --- | --- | --- | --- |
+| Administrative cancellation: ReadFile / record read | true | 0 | 0 |
+| Administrative cancellation: ReadConsoleW | true | 995 | 0 |
+| Owned process retirement: all three queued APIs | false | 5 | 0 |
+| Surviving raw C / record Break, after later `Z` | true | 0 | 1 |
+| Stock ConPTY under output pressure, FreeConsole: ReadFile / records | true | 0 | 0 |
+| Stock ConPTY under output pressure, FreeConsole: ReadConsoleW | true | 995 | 0 |
+
+The last two rows are an explicit provider difference. The stock result has the
+same API return shape as ALERTED; the fixture cannot inspect its internal waiter
+admission or prove the precise native cause. The owned service deliberately
+applies its process-retirement cause consistently before and after admission.
+The system court also verifies raw C survival. Stock native Break transport is
+still unqualified and is not claimed by these comparisons. The pinned upstream
+cooked/raw/direct waiter sources distinguish C, Break, ThreadDying and handle
+close; raw/direct waiters must not inherit the cooked reader's blanket policy.
+
+Evidence: `rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers`,
+`rust_console_pty_queued_reads_finish_under_unread_output_pressure` and
+`rust_console_client_queued_read_disconnect_compares_system_conpty`. Together
+they execute 20 cases: nine direct, seven owned PTY and four system PTY. The
+six-test focused selection retains the old explicit-interruption and two
+dead-caller regressions. Both console-agent forcing variables are cleared for
+the system reference. Logs and exact-source qualification live under ignored
+`target/conhost-research/queued-read-*`.
+
+`queued-read-negative-audit.json` records eleven compiling runtime faults:
+caller matching, queued retirement cause, administrative record cancellation,
+Console/record API classification, keyboard record and raw-C retention, queued
+writer preservation, the actual SDK FreeConsole call, the old keyboard cause
+and benign already-dead-recipient completion. All three new tests and all three
+retained regressions fail under their selected faults. Each mutation restores
+the original bytes and checks the source hash. A count-field-only attempt that
+did not change the observed interrupted API result is excluded from this audit.
+
+`queued-read-early-suite.log` records 292 selected passes: the prior 288 tests,
+three new tests and one additional existing console-agent black box. The initial
+expanded run found two stale fixture-directory/PID collisions before entering
+the system ANSI behavior courts; `queued-read-initial-environment-failure.log`
+retains those failures separately. The successful run retains all prior tests.
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, the four portable-library targets and Windows ARM64 platform PTY/
+Rust-console all-targets compilation. Native execution remains Windows x86_64
+build 20348; other targets remain compile-only. Final focused tests, source-hash
+verification and 17 alignment checks precede the local commit. The receipt
+`queued-read-final-receipt.json` binds the staged tree, source/log/fault hashes,
+compiler, nine executed x64 image identities and three pinned waiter sources.
+
+Remaining work: mode changes during pending reads, more mixed deferred-call/
+finalizer races, last-orphan/new-buffer races, native internal access/share
+policy, broader concurrent geometry/editor/native API coverage, other OS/ISA
+runtime and performance courts, portable sessions and packaging/default
+promotion. This slice changes no library-merger decision or product default.

@@ -1,0 +1,265 @@
+//! Actual native readers behind an unread terminal output stream.
+use std::os::windows::io::AsRawHandle;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    io,
+    path::Path,
+    time::{Duration, Instant},
+};
+use windows_sys::Win32::Foundation::{GetLastError, HANDLE, SetLastError};
+use windows_sys::Win32::Storage::FileSystem::ReadFile;
+use windows_sys::Win32::System::{Console::*, Threading::GetThreadIOPendingFlag};
+
+static EVENT: AtomicU32 = AtomicU32::new(0);
+unsafe extern "system" fn handler(event: u32) -> i32 {
+    if event > 1 {
+        return 0;
+    }
+    EVENT.store(event + 1, Ordering::Release);
+    1
+}
+fn check(ok: i32) -> io::Result<()> {
+    if ok == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+fn wait(deadline: Instant, condition: impl Fn() -> io::Result<bool>) -> io::Result<()> {
+    while !condition()? {
+        if Instant::now() >= deadline {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    Ok(())
+}
+fn publish(path: &Path, text: &str) -> io::Result<()> {
+    let temporary = path.with_extension("queue-tmp");
+    std::fs::write(&temporary, text)?;
+    std::fs::rename(temporary, path)
+}
+fn write(output: HANDLE, units: &[u16]) -> io::Result<()> {
+    let mut count = 0;
+    // SAFETY: initialized UTF-16 and live private console output.
+    check(unsafe {
+        WriteConsoleW(
+            output,
+            units.as_ptr().cast(),
+            units.len() as u32,
+            &mut count,
+            std::ptr::null(),
+        )
+    })?;
+    if count as usize != units.len() {
+        return Err(io::Error::other("short queued fixture write"));
+    }
+    Ok(())
+}
+#[derive(Clone, Copy)]
+enum Api {
+    File,
+    Console,
+    Records,
+}
+fn read(input: HANDLE, api: Api) -> (bool, u32, u32, u16) {
+    let mut count = 0;
+    let mut unit = 0;
+    // SAFETY: every API receives a bounded live output and count buffer. The
+    // console remains privately owned until this synchronous caller returns.
+    unsafe {
+        SetLastError(0);
+        let ok = match api {
+            Api::File => {
+                let mut bytes = [0_u8; 32];
+                let result = ReadFile(
+                    input,
+                    bytes.as_mut_ptr().cast(),
+                    bytes.len() as u32,
+                    &mut count,
+                    std::ptr::null_mut(),
+                );
+                if count != 0 {
+                    unit = u16::from(bytes[0]);
+                }
+                result
+            }
+            Api::Console => {
+                let mut units = [0_u16; 32];
+                ReadConsoleW(
+                    input,
+                    units.as_mut_ptr().cast(),
+                    units.len() as u32,
+                    &mut count,
+                    std::ptr::null_mut(),
+                )
+            }
+            Api::Records => {
+                let mut records = [INPUT_RECORD::default(); 8];
+                let result = ReadConsoleInputW(
+                    input,
+                    records.as_mut_ptr(),
+                    records.len() as u32,
+                    &mut count,
+                );
+                if count != 0 && records[0].EventType == KEY_EVENT as u16 {
+                    unit = records[0].Event.KeyEvent.uChar.UnicodeChar;
+                }
+                result
+            }
+        } != 0;
+        (ok, GetLastError(), count, unit)
+    }
+}
+
+pub(crate) fn run(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let (action, api) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
+    let api = match api {
+        "file" => Api::File,
+        "console" => Api::Console,
+        "records" => Api::Records,
+        _ => return Err(io::ErrorKind::InvalidInput.into()),
+    };
+    let deadline = Instant::now() + Duration::from_secs(18);
+    let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    let output = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    let mode = match api {
+        Api::Console => 7,
+        Api::File => 1,
+        Api::Records => 0,
+    };
+    unsafe {
+        check(SetConsoleMode(input, mode))?;
+        check(SetConsoleMode(output, 15))?;
+        // The runner can inherit IGNORE_CTRL_C; installing a callback alone
+        // does not clear that independently inherited setting.
+        check(SetConsoleCtrlHandler(None, 0))?;
+        check(SetConsoleCtrlHandler(Some(handler), 1))?;
+    }
+    // Keep the endpoint alive while the detached root reports through files.
+    let keeper = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONOUT$")?;
+    let mut peer = if action == "other" {
+        write(output, &[66, 62])?;
+        let child = std::process::Command::new(std::env::current_exe()?)
+            .arg("cooked-retire-peer")
+            .arg(report.with_extension("peer"))
+            .spawn()?;
+        wait(deadline, || {
+            Ok(report.with_extension("peer-ready").exists())
+        })?;
+        Some(child)
+    } else {
+        None
+    };
+    let writer = if !controlled {
+        let output = output as usize;
+        let path = report.to_owned();
+        Some(std::thread::spawn(move || -> io::Result<()> {
+            let units = [97_u16, 0x4e2d, 0xd83d, 0xde00].repeat(1024);
+            for index in 0..32 {
+                write(output as HANDLE, &units)?;
+                if index == 7 {
+                    publish(&path.with_extension("first"), "65536")?;
+                }
+            }
+            Ok(())
+        }))
+    } else {
+        None
+    };
+    if !controlled {
+        wait(deadline, || Ok(report.with_extension("first").exists()))?;
+    }
+    let token = input as usize;
+    let reader = std::thread::spawn(move || read(token as HANDLE, api));
+    if controlled {
+        wait(deadline, || Ok(report.with_extension("go").exists()))?;
+    } else {
+        wait(deadline, || {
+            let mut pending = 0;
+            check(unsafe { GetThreadIOPendingFlag(reader.as_raw_handle(), &mut pending) })?;
+            Ok(pending != 0)
+        })?;
+    }
+    if action == "other" {
+        publish(&report.with_extension("peer-go"), "read")?;
+        wait(deadline, || Ok(report.with_extension("go-two").exists()))?;
+    }
+    publish(&report.with_extension("ready"), "read-submitted")?;
+    if matches!(action, "disconnect" | "other") {
+        unsafe {
+            check(FreeConsole())?;
+        }
+    }
+    let keyboard_records =
+        action == "signal" || matches!(api, Api::Records) && !controlled && action == "interrupt";
+    if keyboard_records {
+        wait(deadline, || Ok(EVENT.load(Ordering::Acquire) != 0))?;
+        if reader.is_finished() {
+            return Err(io::Error::other("read must survive this keyboard control"));
+        }
+        publish(&report.with_extension("signal"), "read-pending")?;
+        wait(deadline, || Ok(report.with_extension("records").exists()))?;
+        if !controlled {
+            let input = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("CONIN$")?;
+            let mut record = INPUT_RECORD {
+                EventType: KEY_EVENT as u16,
+                ..INPUT_RECORD::default()
+            };
+            record.Event.KeyEvent.bKeyDown = 1;
+            record.Event.KeyEvent.wRepeatCount = 1;
+            record.Event.KeyEvent.uChar.UnicodeChar = 90;
+            let mut written = 0;
+            check(unsafe { WriteConsoleInputW(input.as_raw_handle(), &record, 1, &mut written) })?;
+            if written != 1 {
+                return Err(io::Error::other("short record wakeup"));
+            }
+        }
+    }
+    wait(deadline, || Ok(reader.is_finished()))?;
+    let (ok, error, count, unit) = reader
+        .join()
+        .map_err(|_| io::Error::other("queued reader panicked"))?;
+    if !controlled && action == "interrupt" {
+        wait(deadline, || Ok(EVENT.load(Ordering::Acquire) != 0))?;
+    }
+    let mut after = 0;
+    if matches!(action, "interrupt" | "signal") {
+        unsafe {
+            check(GetConsoleMode(input, &mut after))?;
+        }
+    }
+    let secondary = if let Some(ref mut peer) = peer {
+        if !peer.wait()?.success() {
+            return Err(io::Error::other("queued peer failed"));
+        }
+        std::fs::read_to_string(report.with_extension("peer"))?
+    } else {
+        "[]".to_owned()
+    };
+    let blocked = writer.as_ref().is_some_and(|thread| !thread.is_finished());
+    publish(
+        report,
+        &format!(
+            "{{\"ok\":{ok},\"error\":{error},\"count\":{count},\"unit\":{unit},\"event\":{},\"mode\":{after},\"secondary\":{secondary},\"writer_pending\":{blocked}}}",
+            EVENT.load(Ordering::Acquire)
+        ),
+    )?;
+    wait(deadline, || Ok(report.with_extension("opened").exists()))?;
+    if let Some(writer) = writer {
+        let result = writer
+            .join()
+            .map_err(|_| io::Error::other("queued writer panicked"))?;
+        if matches!(action, "interrupt" | "signal") {
+            result?;
+        }
+    }
+    drop(keeper);
+    Ok(())
+}
