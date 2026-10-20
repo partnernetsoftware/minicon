@@ -143,7 +143,8 @@ pub(super) fn run(mode: &str, path: &Path) -> io::Result<()> {
         bytes(output, b"CHILD")?;
         let mut receipt = String::new();
         query(output, "survivor", &mut receipt)?;
-        std::fs::write(path.with_extension("child-result"), receipt)?;
+        // Existence releases the reader: publish only a complete snapshot.
+        super::queued_reads::publish(&path.with_extension("child-result"), &receipt)?;
         wait(&path.with_extension("child-exit"))?;
         // This grammar belongs to the retiring buffer, never its fallback.
         if mode.ends_with("-tail") {

@@ -42,6 +42,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped pending text reads retain their admitted cooked/raw kind across LINE_INPUT changes
 │   ├── [v] scoped raw text batches drain available input to caller capacity and preserve record/codec remainders
 │   ├── [v] scoped completed text/cache ownership: duplicates share, independent files isolate, final close retires
+│   ├── [v] scoped inherited input: explicit files retain continuation; defaults rebind per connection; verified child exit
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -123,6 +124,7 @@ flowchart LR
     WAITERS --> READMODE["admission fixes waiter kind; current mode still controls signal recognition"]
     READMODE --> RAWBATCH["raw: available units to remaining capacity / preserve queue and codec tail"]
     RAWBATCH --> FILECACHE["file-owned completed UTF-16 / encoded tail / flush readiness"]
+    FILECACHE --> INHERITCACHE["inherited file vs new default connection / creator retirement / retained child observation"]
     RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
     POSTLIVE -->|"may publish"| READYWORK
     POSTLIVE -->|"another read survives"| INPUT
@@ -3879,6 +3881,107 @@ by the existing line limit plus terminators and the codec tail. Several files
 can now retain independent lines, so aggregate RSS/performance still needs a
 separate court. Safe failure remains bounded/native error propagation; replacing
 the kernel, changing product defaults or moving Windows file semantics into
-the portable facade is outside this slice. More mixed-reader, process-inheritance,
-mode/code-page changes, malformed/VT input, OS/ISA runtime, session and packaging
-qualification remain open.
+the portable facade is outside this slice. Actual cross-process inheritance is
+qualified in the following section. More mixed-reader, mode/code-page changes,
+malformed/VT input, OS/ISA runtime, session and packaging qualification remain open.
+
+### Inherited files versus connection defaults
+
+Invariant: an explicitly opened input file transferred as child stdin retains
+its completed text and byte continuation across the creator's exit or FreeConsole.
+A new connection's default stdin alias is different: it has a fresh input/read
+identity and does not inherit its creator connection's completed text. Connection
+retirement must remove only the retiring defaults; it must preserve live native
+file objects and their caches. The current implementation already meets this
+scoped behavior; this slice adds direct/integration evidence and its regressions.
+
+The independent SDK parent reads one unit of `abc\r\n` (or one UTF-8 byte from
+`中é\r\n`), then switches to raw mode. It starts a real child using either
+Stdio::inherit or Stdio::from on a duplicated CONIN$ file. The child queries its
+inherited input and waits. Before creator retirement, the controller acquires a
+read-only child process handle while that child is held; the creation timestamp
+from the parent's original process handle must match. Only query/synchronization
+rights are requested. No signal, termination authority or global PID scan is used.
+The direct court additionally verifies the retained child's private-Job membership,
+two admitted clients and two live Job members.
+
+Creator-exit cases wait for actual root exit code zero before releasing the child;
+the direct court also requires only one client/Job member to remain. FreeConsole
+cases verify the parent's default console mode is unavailable while its process
+is still alive, and the direct court requires one client but two Job members.
+The detached parent waits for the child's actual successful exit. The controller
+checks the retained child handle's exit code zero before PTY close/cleanup, so
+forced Job teardown is not accepted as successful client completion.
+
+After retirement, a newly opened file B receives only `Z`. Another `X` is then
+queued before reading inherited stdin. Explicit-file children receive the old
+`bc\r\n` continuation, leaving `X` for B. Default-alias children receive only the
+new `X`; the old creator text is gone. Direct request receipts prove distinct
+caller tokens, equal inherited file tokens, and unequal default-connection tokens.
+Final native wait state is WAIT_TIMEOUT; all direct clients, handles, pending
+reads and Job members reach zero. Owned UTF-8 file cases retain the exact remaining
+bytes; default UTF-8 aliases discard their creator's text/tail. Installed-system
+narrow UTF-8 parity remains BLOCKED and is not claimed by the reference subset.
+
+Named evidence: `rust_console_native_inherited_input_distinguishes_files_from_connection_defaults`,
+`rust_console_pty_inherited_input_distinguishes_file_and_default_lifetimes` and
+`rust_console_client_inherited_input_lifetimes_compare_system_conpty`. Each owned
+court executes 12 cases (three encodings, two input sources, two retirement
+causes); the system court executes eight ASCII/wide cases, 32 total. The oracle
+and passive observer are separate from the native SDK client. Both console-agent
+forcing variables are cleared for the system court.
+
+The initial oracle incorrectly assumed default aliases shared completed input.
+Both `inherit-cache-observe.log` and `inherit-cache-system-observe.log` returned
+only `X` through the child's default alias. Those diagnostic failures changed the
+oracle, not the backend, and are excluded from positive qualification. Successful
+corrected observations and final qualification use the explicit source/lifetime
+distinction. Artifacts are under ignored `target/conhost-research/inherit-cache-*`.
+
+The expanded regression also exposed an existing native buffer-family report
+race: the child used direct fs::write for `child-result`, while its parent
+treated file existence as a complete snapshot. Round 14 could therefore omit
+the entire `survivor` payload while independent held-buffer queries were correct.
+The SDK now uses the existing atomic publish helper (closed temporary file,
+same-directory rename) before releasing the reader. No sleep or weaker data
+assertion replaces the snapshot. Both existing buffer-family provider courts
+are retained for validation. `inherit-cache-second-suite-failure.log` preserves
+the race; an earlier suite's two old system observations and their passing
+isolated recheck are retained separately in first-suite-failure/recheck-system
+logs, not counted as positive full-suite evidence.
+
+`inherit-cache-early-suite.log` records 304 passing selected tests, retaining the
+prior 301 and adding these three. Eight compiling runtime faults fail all three
+new tests and both updated buffer-family provider tests: clearing file caches
+on caller retirement, retiring shared files as defaults, omitting default-cache
+retirement, passing a new file instead of inheriting the old one, faking detach,
+altering the held child's creation identity, and corrupting the survivor snapshot
+for each provider. One unused-variable compile rejection is retained but excluded
+from `inherit-cache-negative-audit.json`. Faults restore exact bytes and verify
+their source hashes.
+
+The restored eight-test focused selection passes, including the preceding three
+file-cache courts and both buffer-family providers. Seven static/cross checks
+pass: strict default/enabled workspace all-targets Clippy, four portable-library
+targets and Windows ARM64 platform PTY/Rust-console all-targets compilation.
+The successful 304-test selection is reused only after seven changed probe/court
+files and three unchanged implementation files match frozen hashes. The latter
+are also verified against the parent commit: this change qualifies existing
+backend behavior, without changing the backend algorithm.
+
+Formatting and 17 final alignment checks precede the local commit.
+`inherit-cache-final-receipt.json` binds staged source tree, changed and unchanged
+source hashes, log/fault hashes, compiler, nine executed x64 image identities,
+native object-identity reports and nine pinned upstream blobs. Native execution
+is Windows x86_64 build 20348 only; other target checks prove compilation only.
+
+Pinned IoDispatchers.cpp allocates default input/output handles for each connected
+process; stream.cpp and INPUT_READ_HANDLE_DATA own pending file continuations.
+`inherit-cache-pinned-sources.json` verifies nine related blobs at revision
+9fd41b2baec77d25b8cfb584070d5998eab7df81. Dependencies are native FileObject versus
+Connection lifetimes, per-file read caches, existing private-Job launch/admission,
+stable process observation and bounded EOF/teardown. Safe failure remains explicit
+native/identity errors and owned Job cleanup. General process transfer, broad
+mode/code-page changes, OS/ISA runtime/performance, portable sessions and packaged
+default promotion remain open; Windows alias semantics do not become portable
+terminal semantics.

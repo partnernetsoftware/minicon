@@ -8,6 +8,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 #[path = "../../minicon-console/tests/support/cache_court.rs"]
 mod cache_court;
+#[path = "../../minicon-console/tests/support/inherit_cache_court.rs"]
+mod inherit_cache_court;
 #[path = "../../minicon-console/tests/support/raw_batch_court.rs"]
 mod raw_batch_court;
 
@@ -204,6 +206,8 @@ impl Drop for Report {
             "stage3",
             "stage4",
             "stage5",
+            "family",
+            "observed",
         ] {
             let _ = std::fs::remove_file(self.0.with_extension(extension));
         }
@@ -4800,6 +4804,74 @@ fn file_cache_cases(rust: bool) {
         std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
         fixture.finish(0);
     }
+}
+
+fn inherited_cache_phase(report: &std::path::Path, extension: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !report.with_extension(extension).exists() {
+        assert!(
+            !report.exists(),
+            "client failed before {extension}: {:?}",
+            std::fs::read_to_string(report)
+        );
+        assert!(
+            Instant::now() < deadline,
+            "missing inherited-cache phase {extension}"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn inherited_cache_cases(rust: bool) {
+    for kind in inherit_cache_court::kinds(!rust) {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("cache-parent-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        inherited_cache_phase(&report.0, "family");
+        let observer = inherit_cache_court::ChildObserver::open(&report.0).unwrap();
+        std::fs::write(report.0.with_extension("observed"), b"identity-held").unwrap();
+        if kind.ends_with("exit") {
+            fixture.wait_exit(0);
+        } else {
+            inherited_cache_phase(&report.0, "detached");
+            assert_eq!(
+                std::fs::read_to_string(report.0.with_extension("detached")).unwrap(),
+                "available=false"
+            );
+        }
+        std::fs::write(report.0.with_extension("go"), b"creator-retired").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !report.0.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "inherited cache {rust}/{kind} stalled"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        eprintln!("inherit-cache rust={rust};kind={kind}: {value}");
+        assert_eq!(value, inherit_cache_court::expected(&kind));
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        observer.wait_exit().unwrap();
+        fixture.finish(0);
+    }
+}
+
+#[test]
+fn rust_console_pty_inherited_input_distinguishes_file_and_default_lifetimes() {
+    inherited_cache_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY inherited completed-input comparison"]
+fn rust_console_client_inherited_input_lifetimes_compare_system_conpty() {
+    inherited_cache_cases(false);
 }
 
 #[test]

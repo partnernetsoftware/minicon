@@ -1,6 +1,9 @@
 //! Native console API probe. Results use files so a broken console path cannot
 //! accidentally supply its own expected output. Used by the integration court.
 #[cfg(windows)]
+#[path = "../../tests/support/cache_inherit.rs"]
+mod cache_inherit;
+#[cfg(windows)]
 #[path = "../../tests/support/cooked_buffer.rs"]
 mod cooked_buffer;
 #[cfg(windows)]
@@ -42,6 +45,12 @@ fn run() -> std::io::Result<()> {
     }
     let mode = args[0].to_str().unwrap_or("");
     let result = std::path::Path::new(&args[1]);
+    if let Some(kind) = mode.strip_prefix("cache-parent-") {
+        return cache_inherit::run(kind, result, false);
+    }
+    if let Some(kind) = mode.strip_prefix("cache-child-") {
+        return cache_inherit::run(kind, result, true);
+    }
     if let Some(kind) = mode.strip_prefix("read-cache-") {
         return read_cache::run(kind, result);
     }

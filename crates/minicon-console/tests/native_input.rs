@@ -4,6 +4,8 @@ use minicon_console::{ConsoleHost, ConsoleInput, DriverSession};
 use serde_json::{Value, json};
 #[path = "support/cache_court.rs"]
 mod cache_court;
+#[path = "support/inherit_cache_court.rs"]
+mod inherit_cache_court;
 #[path = "support/raw_batch_court.rs"]
 mod raw_batch_court;
 use std::ffi::OsStr;
@@ -168,6 +170,9 @@ impl Drop for Report {
             "go-two",
             "first",
             "queue-tmp",
+            "family",
+            "observed",
+            "detached",
             "records",
         ] {
             let _ = std::fs::remove_file(self.path.with_extension(extension));
@@ -639,6 +644,113 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
         assert_eq!(host.open_handles(), 0);
         assert!(!host.has_pending_output());
         eprintln!("cooked-retire-direct {kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_native_inherited_input_distinguishes_files_from_connection_defaults() {
+    for kind in inherit_cache_court::kinds(false) {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let root = launch_probe(&format!("cache-parent-{kind}"), &report, &session);
+        let mut host = ConsoleHost::for_child(&root).unwrap();
+        let mut output = Vec::new();
+        let mut observer = None;
+        let mut retired = false;
+        let mut released = false;
+        let mut reads = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while root.wait(Duration::ZERO).unwrap().is_none()
+            || host.connected_clients() != 0
+            || host.open_handles() != 0
+            || root.active_processes().unwrap() != 0
+        {
+            assert!(Instant::now() < deadline, "inherit cache {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let descriptor = request.descriptor;
+                    let call = host.dispatch(request, &mut output).unwrap();
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if call.function == 6 || call.api == Some(0x0100_0005) {
+                        assert!(!call.pending, "available inherited text: {kind}");
+                        reads.push((descriptor.process, descriptor.object));
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("inherit cache {kind}: {error}"),
+            }
+            if observer.is_none() && report.path.with_extension("family").exists() {
+                let child = inherit_cache_court::ChildObserver::open(&report.path).unwrap();
+                assert!(root.contains_process(child.handle.as_handle()).unwrap());
+                assert_eq!(root.active_processes().unwrap(), 2);
+                assert_eq!(host.connected_clients(), 2);
+                observer = Some(child);
+                std::fs::write(report.path.with_extension("observed"), b"identity-held").unwrap();
+            }
+            if observer.is_some() && !retired {
+                let ready = if kind.ends_with("exit") {
+                    root.wait(Duration::ZERO).unwrap() == Some(0)
+                        && host.connected_clients() == 1
+                        && root.active_processes().unwrap() == 1
+                } else {
+                    report.path.with_extension("detached").exists() && host.connected_clients() == 1
+                };
+                if ready {
+                    if kind.ends_with("detach") {
+                        assert_eq!(
+                            std::fs::read_to_string(report.path.with_extension("detached"))
+                                .unwrap(),
+                            "available=false"
+                        );
+                        assert_eq!(root.wait(Duration::ZERO).unwrap(), None);
+                        assert_eq!(root.active_processes().unwrap(), 2);
+                    }
+                    std::fs::write(report.path.with_extension("go"), b"creator-retired").unwrap();
+                    retired = true;
+                }
+            }
+            if !released && report.path.exists() {
+                assert!(
+                    retired,
+                    "client failed before creator retirement: {:?}",
+                    std::fs::read_to_string(&report.path)
+                );
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+                released = true;
+            }
+        }
+        observer.unwrap().wait_exit().unwrap();
+        assert_eq!(root.wait(Duration::ZERO).unwrap(), Some(0));
+        assert!(retired && released);
+        let value = std::fs::read_to_string(&report.path).unwrap();
+        eprintln!("inherit-cache-direct {kind}: {value}");
+        eprintln!("inherit-cache-objects {kind}: {reads:?}");
+        assert_eq!(value, inherit_cache_court::expected(&kind));
+        assert_eq!(
+            reads.len(),
+            if kind.split('-').nth(1) == Some("stdio") {
+                3
+            } else {
+                4
+            }
+        );
+        assert_ne!(reads[0].0, reads[1].0);
+        assert!(reads[1..].iter().all(|(process, _)| *process == reads[1].0));
+        if kind.split('-').nth(1) == Some("stdio") {
+            assert_ne!(
+                reads[0].1, reads[2].1,
+                "new connection gets a distinct default input"
+            );
+            assert_ne!(reads[1].1, reads[2].1);
+        } else {
+            assert_eq!(
+                reads[0].1, reads[2].1,
+                "inherited native file object identity"
+            );
+            assert_eq!(reads[1].1, reads[3].1);
+        }
+        assert_ne!(reads[0].1, reads[1].1);
+        assert_eq!(host.pending_reads(), 0);
     }
 }
 

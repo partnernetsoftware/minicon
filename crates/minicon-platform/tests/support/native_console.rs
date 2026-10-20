@@ -10,6 +10,9 @@ mod buffer_vt;
 #[cfg(windows)]
 mod buffers;
 #[cfg(windows)]
+#[path = "../../../minicon-console/tests/support/cache_inherit.rs"]
+mod cache_inherit;
+#[cfg(windows)]
 mod console_file;
 #[cfg(windows)]
 mod control;
@@ -91,6 +94,12 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("cache-parent-") {
+        return cache_inherit::run(kind, std::path::Path::new(&arguments[1]), false);
+    }
+    if let Some(kind) = mode.strip_prefix("cache-child-") {
+        return cache_inherit::run(kind, std::path::Path::new(&arguments[1]), true);
+    }
     if let Some(kind) = mode.strip_prefix("read-cache-") {
         return read_cache::run(kind, std::path::Path::new(&arguments[1]));
     }
