@@ -11,13 +11,13 @@ independent tabs, a dedicated composer and bounded local control. The next
 0.2.x outcome is a terminal that users can trust with a modern interactive
 CLI, while another product can reuse the terminal mechanism without taking
 MiniCon's GUI or policy. The reported 0.2.14 Claude Code screen corruption is
-the highest-priority user symptom. A current-source Claude Code 2.1.304
-comparison now reproduces a scoped Unicode loss in the default Windows path:
-its input low surrogate is fixed, while screen-buffer output still loses the
-character. The full reported redraw failure and broad application acceptance
-remain open in [the compatibility owner](../prd/PRD_02_24_01_tui_compatibility.md#report-and-current-evidence).
-The owned Rust Windows console service preserves this fixture, but a scoped
-comparison does not make it a default replacement for every console program.
+the highest-priority user symptom. Current-source comparisons with Claude Code
+2.1.304, Grok Build 1.0.62 and Codex CLI 0.162.1 reproduce Unicode, spacing,
+redraw and resize failures in the default Windows path. The input low-surrogate
+loss is fixed; output loss and live TUI defects remain open in
+[the compatibility owner](../prd/PRD_02_24_01_tui_compatibility.md#report-and-current-evidence).
+The explicit Rust backend preserves these scoped journeys. It is a promising
+user-selectable route, not yet a qualified default or packaged preview.
 
 Behavior owners: [modern TUI compatibility](../prd/PRD_02_24_01_tui_compatibility.md),
 [Windows backend](../prd/PRD_02_34_windows_console_backend.md),
@@ -55,17 +55,17 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 │   evidence: planned/observed test identities, mutation catches, cost comparison
 │   safe failure: unknown dependency selects full; missing court is BLOCKED
 │   dependency: PRD 33 and existing 0.2.16 plan; non-goal: feature expansion
-├── [_] 0.2.17 — readable modern TUI on the existing product path
-│   invariant: original bytes, parsed state and presented pixels stay consistent
-│   evidence: versioned Claude Code or equivalent real app plus independent replay
-│   safe failure: local session recovery; unknown cause remains an open defect
-│   dependency: PRD 24.01; use 0.2.16 profiles when ready, current full gate meanwhile
-│   non-goal: declaring every TUI fixed
-├── [_] 0.2.18 — useful explicit preview of the owned Windows backend
+├── [_] 0.2.17 — readable modern agent sessions on a named selectable provider
+│   invariant: valid text, settled layout and presented pixels agree during repeated use
+│   evidence: three versioned agents, independent fixtures and source/wire/state/pixel traces
+│   safe failure: narrow the release claim when the classic path or preview fails a cell
+│   dependency: PRD 24.01 and plan-v0.2.17; full gate remains required without 0.2.16 profiles
+│   non-goal: automatic provider-default change or declaring every TUI fixed
+├── [_] 0.2.18 — broaden the owned Windows backend preview
 │   invariant: selected sessions use the actual Rust provider and clean up their own tree
-│   evidence: real shell/harness journeys, API/wire/frame/lifetime comparison and cost
+│   evidence: wider real shell/API/ISA journeys, wire/frame/lifetime comparison and cost
 │   safe failure: reject unavailable selection; preserve stable product default
-│   dependency: PRD 34 and 0.2.17 observable TUI court; non-goal: global conhost removal
+│   dependency: PRD 34 and the 0.2.17 scoped app court; non-goal: global conhost removal
 ├── [_] 0.2.19 — reusable terminal contract across OS and ISA
 │   invariant: one common state/stream contract with explicit native capabilities
 │   evidence: independent consumer and MiniCon on supported native runtime cells
@@ -81,11 +81,11 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 
 ```mermaid
 flowchart LR
-    PAIN["0.2.14 user report: modern TUI corruption"] --> TRACE["versioned reproduction and byte / state / pixel trace"]
+    PAIN["Claude / Grok / Codex default-path corruption"] --> TRACE["versioned reproduction and byte / state / pixel trace"]
     TEST["0.2.16 targeted feedback and full qualification"] --> FIX
-    TRACE --> FIX["0.2.17 presented-frame and protocol fixes"]
-    FIX --> APP["real app acceptance on current product path"]
-    APP --> PREVIEW["0.2.18 explicit Rust Windows preview"]
+    TRACE --> FIX["0.2.17 diagnosed default fixes + qualified explicit choice"]
+    FIX --> APP["three-agent acceptance on named provider"]
+    APP --> PREVIEW["0.2.18 broader Rust Windows preview"]
     WIN["PRD 34 native API and lifetime courts"] --> PREVIEW
     PREVIEW --> CONTRACT["0.2.19 independent terminal consumer"]
     POSIX["macOS / Linux native PTY inventory"] --> CONTRACT
@@ -100,15 +100,16 @@ flowchart LR
 | Version | User-facing result | Release acceptance and decision |
 | --- | --- | --- |
 | 0.2.16 — developer feedback | Changes to one module get relevant tests promptly; integration and release still show every required court. | Implement the existing [0.2.16 plan](plan-v0.2.16.md): inventory, bounded fixture lifetime, explained selection, deduplicated composition and measured cold/warm cost. A mutation of an impacted dependency must fail its selected profile. `l3`/`all` still reaches the canonical full local gate; signing and artifact courts remain separate. Ship this before adding a larger compatibility matrix. |
-| 0.2.17 — modern TUI quality | Claude Code, Grok Build and Codex CLI redraws, scrolling and resize remain readable; a session still accepts input after heavy output. | Extend the scoped real-agent comparisons in [the compatibility owner](../prd/PRD_02_24_01_tui_compatibility.md#grok-and-codex-live-window-comparison) to the owner's exact 0.2.14 reproduction, then separate child bytes, PTY wire, parser state, damage and native pixels. Cover alternate screen, Unicode width, dense redraw, synchronized updates, paste, cancel and resize with both final state and visible-frame checks. Resolve the diagnosed defect class before a compatibility claim. Keep capability replies truthful; advertise mode 2026 only after complete presentation qualification. |
-| 0.2.18 — owned Windows backend preview | An advanced user can select a session using our Rust Windows backend and see its actual provider identity and errors. | Retain explicit selection. Compare installed ConPTY and Rust sessions with real PowerShell/cmd/Node and an available modern harness, including startup, key/input, Ctrl+C/Break, resize, exit tail, child-tree cleanup and close. Report original API input, emitted wire, visible frame, latency and total host/helper RSS. Each unsupported API fails locally with a useful result. Windows x64 and ARM64 runtime claims require separate runs; a cross-compile is only build evidence. A missing real harness or ISA court blocks that claim, not the entire stable product. |
+| 0.2.17 — modern agent quality | A user can select a named provider that keeps Claude Code, Grok Build and Codex CLI readable and usable through repeated output and resize. | Follow [the dedicated 0.2.17 plan](plan-v0.2.17.md): locate each failure across original output, backend wire, shared state and pixels; fix representable classic-path defects, qualify Unicode/SGR color fixtures and repeated real-agent sessions, and include an explicit Rust selection in the exact Windows candidate only if its native/lifecycle courts pass. State failed default-path behavior and provider-specific coverage. A developer-only feature is not a user-facing result; no default promotion or positive 2026 claim without its separate gate. |
+| 0.2.18 — broader Windows backend preview | The explicit Rust choice supports a wider set of ordinary Windows programs, with clear errors for unsupported APIs and bounded teardown. | Build on the 0.2.17 named-provider court. Compare installed ConPTY and Rust with PowerShell/cmd/Node and further real harnesses across startup, input, Ctrl+C/Break, resize, exit tail, child-tree cleanup and close. Report native API input, emitted wire, frame, latency and total host/helper RSS. Windows x64 and ARM64 runtime claims require separate runs; cross-compilation is build evidence only. A missing app or ISA court narrows the preview claim, not the stable product. |
 | 0.2.19 — integrated terminal library | MiniCon and an independent small consumer use `minicon-console` for the same common terminal state, while native providers stay explicit. | Define the smallest input/session/flow-control/capability contract from actual Windows and POSIX consumers. Preserve `minicon-platform::pty` compatibility during migration; move one proven mechanism at a time and check public type identity, features and OS/ISA runtime. Provide a truthful modern VT/xterm-style default profile; expose only qualified compatibility profiles and an advanced TERM override for **new sessions**. Changing TERM describes capabilities to applications and does not switch parser or native backend. If the contract is not proved on supported runtime cells, keep the existing platform adapter and narrow the release claim. |
 | 0.2.20 — default decision and product cost | Users receive the best evidenced Windows backend choice with a known path to recover from failures. | Decide whether to make the owned backend the Windows default using exact packaged artifacts and versioned real-app journeys, comparison of failure/cleanup, input latency, sustained redraw and total process RSS. Include product GUI pixel/snapshot consistency and rollback/selection evidence. A failed or unavailable criterion keeps the stable default and explicit preview. Track the 10 MiB idle-host intent, build/pack latency and artifact size separately; do not exchange correctness or signed-artifact requirements for a speed claim. |
 
 These version numbers express priority and dependencies. 0.2.17 may ship a
-well-bounded rendering fix without the real Claude Code acceptance claim if the
-application remains unavailable; that cell stays explicitly open. 0.2.18 may
-ship an experimental backend with a narrow, visible supported-program set.
+well-bounded repair with a narrower real-agent claim when a named cell fails,
+but cannot call the three-agent use case solved without a packaged selectable
+provider that passes it. 0.2.18 broadens the explicit preview rather than
+changing the Windows default by implication.
 0.2.19 may ship the common contract before every adapter is consolidated.
 0.2.20 is a decision point, not a promise that the default will switch.
 

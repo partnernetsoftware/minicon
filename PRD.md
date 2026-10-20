@@ -53,6 +53,7 @@ MiniCon — one-file local terminal
 └── Current delivery
     ├── [v] v0.2.15 → prd/archive/v0.2.15-release-history.md
     ├── [v] v0.2.16 design; [_] implementation → plan/plan-v0.2.16.md
+    ├── [-] v0.2.17 modern-agent design; [_] implementation → plan/plan-v0.2.17.md
     └── [_] 0.2.x product sequence / release decisions → plan/plan-v0.2.x-product-roadmap.md
 ```
 
@@ -112,6 +113,7 @@ flowchart LR
 |---|---|---|
 | Product scope and authority | [Charter](prd/PRD_02_23_minicon.md) | explicit local-hosting boundary; reject expansion into Agent policy |
 | Run and render real local shells | [Terminal](prd/PRD_02_24_con_terminal.md) | real-child/rendering journeys; fail only the affected session |
+| Keep modern agent TUIs readable | [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md) | versioned real agents, bounded source/wire/state/pixel traces and provider-specific claims |
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, notes/settings and input journeys; no stale targeting |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
@@ -127,8 +129,8 @@ flowchart LR
 
 - [-] **Owned Rust Windows console backend: minicon-console.** Source and REA
   release pinned; native ConDrv, limited Win32 I/O/records and job cleanup implemented.
-  Explicit experimental PTY adapter, scoped PowerShell/Node and Ctrl+C evidence implemented;
-  broader compatibility and GUI selection remain open.
+  Explicit experimental PTY and GUI selection, scoped PowerShell/Node and Ctrl+C
+  evidence implemented; broader compatibility and candidate packaging remain open.
   [Owner](prd/PRD_02_34_windows_console_backend.md) and
   [sequence](plan/plan-windows-console-backend.md); no release assigned.
 - [v] **v0.2.15 published**, `2026-10-18T16:53:25Z`, source
@@ -143,10 +145,11 @@ flowchart LR
   [owning contract](prd/PRD_02_33_test_orchestration.md). No 0.2.16 code or
   version bump is claimed by the design.
 - [_] **0.2.x product sequence proposed.** After 0.2.16 developer feedback,
-  prioritize the reported modern TUI corruption, an explicit owned Windows
-  backend preview, independent terminal-library reuse, then a measured Windows
-  default decision. The [product roadmap](plan/plan-v0.2.x-product-roadmap.md)
-  owns the proposed version gates; the linked PRDs retain behavior and evidence.
+  prioritize the reproduced Claude/Grok/Codex failures and a qualified
+  selectable provider, widen the owned Windows preview, prove independent
+  terminal-library reuse, then decide the Windows default from exact artifacts.
+  The [0.2.17 plan](plan/plan-v0.2.17.md) sequences the next TUI gate;
+  the [roadmap](plan/plan-v0.2.x-product-roadmap.md) owns version decisions.
 - [-] **RSS and transient-host cost**, including carried `{AMPLIFIER-T}`, remain
   open. The 10 MiB intent is not achieved by this release. Measurements and
   retained-frame/native-host investigations belong to

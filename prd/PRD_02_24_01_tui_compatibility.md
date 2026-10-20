@@ -90,6 +90,11 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
         evidence: four independent sessions, actual backend/child identity, pane text and product-frame screenshots
         safe failure: record default-path character and layout defects without attributing every lost byte
         dependency: visible owned windows and isolated scratch directories; non-goal: hue or full harness acceptance
+    └── [-] candidate-quality three-agent matrix → plan/plan-v0.2.17.md
+        invariant: every claimed backend preserves valid text, style and settled layout through repeated interaction
+        evidence: bounded source/wire/state/pixel traces, deterministic fixtures and versioned real sessions
+        safe failure: leave a failed backend explicitly limited; never infer a broad pass from another provider
+        dependency: exact selected build and native lifecycle courts; non-goal: automatic default promotion
 ```
 
 ```mermaid
@@ -202,6 +207,41 @@ includes `grok-retry-after-wide.png`, `grok-rust-wide-settled2.png`,
 `codex-default-followup.png`, `codex-rust-followup.png`, and their paired pane
 files. `session-receipt.json` binds selected captures to the executable and
 source identities. Full TUI compatibility and backend promotion remain open.
+
+### Open compatibility contracts
+
+The three-agent comparison creates distinct obligations. A valid Unicode
+scalar must survive native output and input without U+FFFD, deletion or a
+neighboring-space shift. During and after a resize, an alive child's reported
+grid, the backend's native geometry, parsed/presented cells and product frame
+must converge within a bounded interval; a frozen exited-child frame is a
+different lifecycle case. Repeated prompts must not leave duplicate status or
+composer rows. The same presented-frame identity must back `capture-pane` and
+`screenshot-pane`. Each failure is classified at the original API/child-byte,
+backend-emitted wire, shared parser/presentation or product-pixel boundary
+before claiming a fix.
+
+Color needs an independent producer: these agent themes exercised only gray
+levels. A finite native/VT fixture must specify indexed, 256-color and RGB
+foreground/background samples, then compare the expected cell attributes and
+captured pixels. Real-agent screenshots separately judge readable emphasis,
+dim secondary text and layout. A grayscale session cannot certify hue support.
+The default screen-buffer mirror's observed astral loss and the system-host
+alternate-screen resize limitation remain backend-specific obligations owned
+by [terminal selection](PRD_02_24_con_terminal.md#pty-backend-selection).
+Where that path cannot preserve an application behavior, a qualified explicit
+provider may carry the modern-TUI use case; its success does not silently
+change the default or certify unsupported native APIs.
+
+The candidate court uses independent visible MiniCon processes and isolated
+scratch directories for Claude Code, Grok Build and Codex CLI. It records the
+actual opened backend, app/MiniCon/OS/ISA versions, alive/exited state,
+initial/settled dimensions and paired pane/PNG observations. It repeats
+interaction after resize, includes paste, cancel and teardown, and uses a
+deterministic producer for exact rows and colors because model replies vary.
+Minimized or occluded windows cannot stand in for an observed resize or native
+presentation. Missing application/runtime cells remain BLOCKED; an unexplained
+exit code is an open lifecycle observation, not a backend diagnosis.
 
 Source audit at 56b3b67: MiniCon uses the owned `vt100` screen/parser and `vte`
 grammar. The name does not restrict the implementation to the original VT100:
