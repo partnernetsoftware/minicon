@@ -30,6 +30,7 @@ MiniCon — one-file local terminal
 ├── Product composition — binary-private modules
 │   ├── PTY lifecycle, VT/rendering and native presentation
 │   │   └── prd/PRD_02_24_con_terminal.md
+│   │       └── [-] modern TUI compatibility → prd/PRD_02_24_01_tui_compatibility.md
 │   ├── [-] owned Rust Windows console backend: minicon-console
 │   │   └── prd/PRD_02_34_windows_console_backend.md
 │   ├── tab tree, composer, IME, selection, notes, settings and manual update

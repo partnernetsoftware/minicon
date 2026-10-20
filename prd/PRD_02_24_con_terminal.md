@@ -22,6 +22,7 @@ minicon terminal and rendering
 ├── PTY backend selection
 ├── Scheduling (bounded 128 KiB per GUI turn; input yields)
 ├── Input delivery to the child
+├── [-] Modern TUI compatibility — PRD_02_24_01_tui_compatibility.md
 ├── Shared VT state — DECAWM, streaming cell placement and state replay
 │   ├── Programmatic literal cell/style fills and write_cell — shared state, safe VT projection
 │   ├── Drawing-grid viewport snapshots and transactional mapped frames
@@ -48,6 +49,7 @@ flowchart LR
     K["keyboard / paste"] --> IN["input delivery to the child"]
     IN --> PTY["per-tab PTY<br/>1 MiB byte ring"]
     PTY --> VT["bounded VT parse<br/>128 KiB per turn"]
+    TUI["modern TUI / PRD 24.01<br/>wire, state, presented-frame and lifecycle courts"] -.-> PTY & VT & DMG
     VT --> DMG["damage"]
     VT --> WRAP["shared DECAWM state / full and incremental replay"]
     WRAP --> DMG
@@ -105,6 +107,10 @@ engine. The new shared units are `stream_boundary_framing_bounds_recovery_and_si
 must be stated separately from source portability.
 
 ## Session ownership
+
+Claude Code and comparable interactive application requirements, the reported
+0.2.14 corruption, capability-negotiation gaps and end-to-end acceptance are
+owned by [modern TUI compatibility](PRD_02_24_01_tui_compatibility.md).
 
 The owned `third_party/vt100` parser now handles standard DECAWM (`CSI ? 7 h/l`)
 and exposes `Screen::auto_wrap()`. It is shared, OS/ISA-neutral parser state,

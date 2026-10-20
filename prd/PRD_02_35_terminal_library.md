@@ -7,6 +7,9 @@ is a separate design decision, not a prerequisite or a current migration.
 Implementation sequencing belongs to
 [the terminal-library plan](../plan/plan-terminal-library.md); Windows service
 compatibility continues in its own backend plan.
+Modern TUI protocol and presentation acceptance belongs to
+[PRD 24.01](PRD_02_24_01_tui_compatibility.md); library reuse alone does not
+certify an interactive application.
 
 ## Outcome and delivery tree
 

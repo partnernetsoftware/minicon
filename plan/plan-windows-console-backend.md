@@ -26,6 +26,10 @@ sequences that contract without assigning a release or changing current defaults
    and remaining required API semantics. Keep unsupported cases visible.
    The explicit experimental PTY path now reuses existing transport/contracts;
    native resize/key probes and output-capacity shutdown cover its first slice.
+   Next compatibility focus: dense TUI redraw and alternate-screen resize,
+   separating original child bytes, emitted wire and visible results before
+   extending capability claims. Requirements and acceptance gates are owned by
+   [PRD 24.01](../prd/PRD_02_24_01_tui_compatibility.md).
 6. [-] Initial native Windows x86_64 cmd/Unicode/session-isolation, deferred
    input, independent Win32 records and real job-tree teardown cases pass.
    Scoped PowerShell 5/7, Node raw TTY/readline and system-ConPTY object/access
