@@ -13,7 +13,7 @@ fn info(output: HANDLE) -> io::Result<CONSOLE_SCREEN_BUFFER_INFO> {
     check(unsafe { GetConsoleScreenBufferInfo(output, &mut value) })?;
     Ok(value)
 }
-fn emit(output: HANDLE, record: &mut File, value: &str, wide: bool) -> io::Result<()> {
+pub(super) fn emit(output: HANDLE, record: &mut File, value: &str, wide: bool) -> io::Result<()> {
     let units: Vec<u16> = value.encode_utf16().collect();
     let payload = if wide {
         units
@@ -45,7 +45,7 @@ fn emit(output: HANDLE, record: &mut File, value: &str, wide: bool) -> io::Resul
     }
     Ok(())
 }
-fn split(output: HANDLE, record: &mut File, value: &str) -> io::Result<()> {
+pub(super) fn split(output: HANDLE, record: &mut File, value: &str) -> io::Result<()> {
     let mut offset = 0;
     for length in [1, 2, 7, 3, 13].into_iter().cycle() {
         let end = (offset + length).min(value.len());
@@ -61,7 +61,7 @@ fn split(output: HANDLE, record: &mut File, value: &str) -> io::Result<()> {
     }
     Ok(())
 }
-fn snapshot(output: HANDLE, phase: usize, rows: u16, cols: u16) -> io::Result<String> {
+pub(super) fn snapshot(output: HANDLE, phase: usize, rows: u16, cols: u16) -> io::Result<String> {
     let v = info(output)?;
     let mut report = format!(
         "phase={phase};size={},{};view={},{},{},{};cursor={},{}\n",

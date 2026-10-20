@@ -27,6 +27,11 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] accepted CONNECT, opaque handles and DISCONNECT reclamation
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
 │   ├── [v] scoped dense TUI replay: original API payloads / emitted wire / native readback / alternate resize
+│   ├── [v] scoped native synchronized output into a common presented-frame consumer
+│   │   invariant: owned PTY delivers markers/data while native query reads and controls stay live
+│   │   evidence: two synchronized_native courts; 12 SDK sessions, source/wire/native/frame captures, exit/EOF/private-Job cleanup
+│   │   safe failure: explicit end or bounded consumer recovery; no transport pause or positive GUI capability claim
+│   │   dependency: common TerminalPresentation and native read admission; non-goal: GUI timers/pixels or system-host parity
 │   ├── [v] private-mode report return transport: native VT reads receive actual frontend replies
 │   │   invariant: complete DECRPM is input text, not a dropped unknown physical key
 │   │   evidence: independent SDK literal reads, fragmented round trip, Up/q, exit31 and EOF
@@ -129,6 +134,9 @@ flowchart LR
     READOBS["read-only PTY control / aggregate native read state"] --> HOST
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
+    ADAPTER --> SYNCCONSUMER["SDK synchronized-output court: common TerminalPresentation consumer"]
+    SYNCCONSUMER --> SYNCFRAME["active / presented frames; source / wire / native readback"]
+    SYNCCONSUMER --> FRONTEND
     HOST --> INPUT["deferred input / input-ready event"]
     INPUT --> COOK["one native UTF-16 editor / silent and echoed reads"]
     COOK --> BIND["native read owns starting drawing buffer until completion"]
@@ -4457,3 +4465,80 @@ are exercised by the final focused courts. Runtime qualification remains
 Windows x86_64 build 20348 only. Cross-target checks prove compilation, not
 runtime. Artifacts remain under ignored `target/conhost-research/read-state-*`;
 this adds neither default-provider promotion nor real Claude Code acceptance.
+
+### Native synchronized-output consumer court
+
+The native producer in
+`crates/minicon-platform/tests/support/synchronized_output.rs` runs behind an
+actually opened `ChildCommand::rust_console()` PTY. The consumer court in
+`crates/minicon-platform/tests/support/synchronized_presentation_court.rs`
+feeds its emitted bytes into the public common `TerminalPresentation` API.
+No GUI, system-host provider or positive capability advertisement is involved.
+The fixture deliberately sends mode-2026 markers even though the shared query
+reply still reports mode 2026 as unrecognized. Native transport must preserve
+those markers without pausing console API servicing.
+
+Two named integration courts own the observations:
+
+- `rust_console_pty_synchronized_native_frames_keep_queries_live_and_commit_atomically`
+  covers explicit end and alternate-screen commit/restore.
+- `rust_console_pty_synchronized_native_unclosed_frames_recover_and_reach_eof`
+  covers missing-end timeout, byte-budget exhaustion, explicit resize and EOF.
+
+Each path runs twice: fragmented UTF-8 `WriteFile` output with `ReadFile` input,
+and `WriteConsoleW` output with `ReadConsoleW` input. Both fragment the begin
+and explicit end across native writes. Independent transport splitting then
+feeds the consumer one byte or at most 37 bytes at a time. The existing dense
+TUI recorder/splitter/native snapshot functions are shared; this adds no second
+API-payload format. Original F/W-tagged calls, PTY wire, native ASCII-prefix /
+geometry readback and active/presented snapshots are retained separately.
+Unicode cell placement, RGB, cursor, visibility, wrapping and alternate modes
+use literal consumer expectations; the native readback oracle deliberately
+checks ASCII prefixes and geometry, not a claim of complete Unicode cell ABI.
+
+The SDK program reads actual CPR and negative DECRPM bytes while the consumer
+still presents `MAIN-BASE`, then publishes the received native units and waits
+for an ordinary key. The parent verifies an admitted native text read through
+the opened PTY observation API before releasing that wait. Resize and idle
+recovery also query that live admission state. This is not a thread-pending
+flag or a sleep substituted for native readiness. Normal frames and alternate
+restore retain independent old/new cursor and cell assertions. An EOF case
+remains held through actual producer exit/output EOF, then explicitly calls
+the consumer's `finish` and checks the final frame. Every path requires exit
+35, output EOF, failed post-close read observation and verified-empty private
+Job cleanup.
+
+The presentation clock is scripted and monotonic: incoming output starts at
+1 ms; a 100 ms timeout is checked at 100 ms (before deadline) and 101 ms (deadline),
+with no new bytes required for recovery. The quota is 4096 bytes; the producer
+exceeds it using 900 idempotent no-wrap commands, preserving cells/cursor.
+Resize changes actual native geometry and the consumer from 8×40 to 12×56.
+These are state/transport assertions; they do not prove GUI wall-clock timers,
+pixel presentation, latency or real Claude Code behavior. Forced termination
+during a held native frame and wider process combinations remain separate work.
+
+Frozen-source qualification under ignored `target/conhost-research/`:
+`native-sync-regression.log` passes 14 selected cases: these two, the six
+common presentation cases, and six preceding owned-native query/redraw/
+pressure/read-state/retirement cases. It is a targeted selection, not the full
+workspace/native suite. `native-sync-negative-audit.json` records seven
+compiling runtime faults: leak the held frame, return the wrong cursor row,
+ignore end, miss the exact idle deadline, disable quota recovery, retain the
+hold on resize and omit EOF commit. Each breaks its assigned new native court;
+source bytes are restored in `finally` and SHA-checked. After restoration,
+`native-sync-restored-focused.log` passes ten cases: the new two, six common
+cases and preceding private/status native replies. Four checks pass: workspace
+format, default/enabled all-target workspace Clippy and enabled PTY/Rust-console
+Windows ARM64 all-target compilation. ARM64 is compilation evidence only.
+
+`native-sync-final-receipt.json` binds five changed SDK/test files, 15 unchanged
+hot-file guards, check/fault/log hashes and the exact staged tree. The restored
+native run has 12 sessions and 46 phase checkpoints, each with source/wire/
+native/frame files; their 184 phase files plus 12 case receipts and 12 actual
+native-unit reply reports form 208 retained artifacts. The audit rereads those
+artifacts, checks literal frames/cursors/modes/geometry, F/W records and marker
+presence/absence, and hashes each file. Three x64 exercised images are recorded:
+SDK producer, opened-PTY test runner and common presentation test runner.
+Runtime evidence remains Windows x64 build 20348 only. GUI adoption, incremental
+damage/snapshot cost, modern Windows/other ISA runtime, actual application/pixel
+qualification and default-provider promotion remain open.

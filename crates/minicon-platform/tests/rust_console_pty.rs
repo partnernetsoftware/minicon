@@ -17,6 +17,19 @@ mod raw_batch_court;
 #[path = "../../minicon-console/tests/support/aliases_court.rs"]
 mod aliases_court;
 
+#[path = "support/synchronized_presentation_court.rs"]
+mod synchronized_presentation_court;
+
+#[test]
+fn rust_console_pty_synchronized_native_frames_keep_queries_live_and_commit_atomically() {
+    synchronized_presentation_court::run(&["end", "alt"]);
+}
+
+#[test]
+fn rust_console_pty_synchronized_native_unclosed_frames_recover_and_reach_eof() {
+    synchronized_presentation_court::run(&["timeout", "quota", "resize", "eof"]);
+}
+
 #[derive(Default)]
 struct QueryPeer {
     replies: Vec<u8>,

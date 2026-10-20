@@ -172,13 +172,15 @@ Ten checks cover workspace/fork format, default/enabled workspace Clippy,
 owned-parser Clippy, common-library Linux x64/ARM64, Windows ARM64 and macOS
 x64 compilation, and enabled-platform Windows ARM64 compilation. Runtime
 evidence is Windows x64 build 20348 only; other OS/ISA cells are compilation
-evidence. The native tests remain regression evidence for existing transport,
-not a native producer feeding the new presentation gate.
+evidence. Those native tests remain regression evidence for existing transport,
+not a native producer feeding the new presentation gate. The subsequent
+[native synchronized-output consumer court](PRD_02_34_windows_console_backend.md#native-synchronized-output-consumer-court)
+owns actual SDK-to-presented-frame evidence and its scripted-clock/runtime scope.
 
 This helper is not yet used by the GUI, common `TerminalStream` or platform
 PTY transport. Shared query replies still report mode 2026 as
 unrecognized. Positive capability replies, GUI timers/blink/selection/snapshot
-integration, native-to-presented replay, actual pixels, real Claude Code and
+integration, actual pixels, real Claude Code and
 other OS/ISA runtime qualification remain open.
 
 ## Shared terminal query replies

@@ -32,6 +32,7 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │   dependency: parser, damage and presentation contracts; non-goal: recognizing 2026 without gating presentation
 │   └── [-] shared active/presented state boundary; GUI adoption and pixel qualification remain open
 │       ├── [v] reusable mechanism and six public-consumer courts → PRD 35 bounded synchronized presentation
+│       ├── [v] scoped native SDK producer → opened Rust PTY → common presented frame; native owner PRD 34
 │       └── [_] GUI consumption, timed recovery and native producer-to-pixel journey
 │           invariant: paint/copy/snapshots read presented state; query/input modes read active state
 │           evidence: frame identity/pixels plus held-frame blink, resize, input, timeout and exit journeys
