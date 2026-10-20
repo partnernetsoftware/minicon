@@ -221,3 +221,87 @@ fn synchronized_presentation_zero_limits_disable_holding() {
     plain.process(b"abc", ms(1));
     assert_eq!(plain.presented_screen().contents(), "abc");
 }
+
+#[test]
+fn synchronized_presentation_ordinary_frames_borrow_state_and_keep_incremental_damage() {
+    let mut t = terminal(100, 4096);
+    assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+    t.process(b"!", ms(1));
+    assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+    assert_eq!(t.presented_screen().contents(), "OLD!");
+    let damage = t.take_damage();
+    assert!(!damage.needs_full_raster());
+    assert_eq!((damage.rows().first(), damage.rows().end()), (0, 1));
+    assert_eq!(damage.cursor_before(), Some((0, 3)));
+    assert_eq!(damage.cursor_after(), Some((0, 4)));
+    t.process(b"\x1b[1D?", ms(2));
+    assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+    assert_eq!(t.presented_screen().contents(), "OLD?");
+    assert!(!t.take_damage().needs_full_raster());
+    // Plain OSC payload and invalid/subparameter markers do not create holds.
+    t.process(b"\x1b]2;?2026h\x07\x1b[?2026:1h", ms(3));
+    assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+    assert_eq!(t.callbacks().titles, ["?2026h"]);
+    t.process(BEGIN, ms(4));
+    assert!(!std::ptr::eq(t.active_screen(), t.presented_screen()));
+    t.process(b"\rNEW!", ms(5));
+    assert_eq!(t.presented_screen().contents(), "OLD?");
+    t.process(END, ms(6));
+    assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+    assert_eq!(t.presented_screen().contents(), "NEW!");
+    assert!(t.take_damage().needs_full_raster());
+}
+
+#[test]
+fn synchronized_presentation_preflight_rearms_after_split_end_or_reset_without_replaying_effects() {
+    for reset in [false, true] {
+        let mut t = terminal(100, 4096);
+        t.process(BEGIN, ms(1));
+        t.process(b"\rLIVE", ms(2));
+        t.poll(ms(101));
+        assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+        t.process(BEGIN, ms(102));
+        assert!(!t.is_holding());
+        assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+        let prefix = if reset {
+            b"\x1bc\x1b[?20".as_slice()
+        } else {
+            b"\x1b[?2026l\x1b[?20"
+        };
+        // Keep reset/end and new begin in one batch, including partial grammar.
+        t.process(prefix, ms(103));
+        let prior = t.presented_screen().contents();
+        t.process(b"26h\x1b[H\x1b[2JNEW\x1b]2;one\x07", ms(104));
+        assert!(t.is_holding());
+        assert_eq!(t.presented_screen().contents(), prior);
+        assert_eq!(t.active_screen().contents(), "NEW");
+        assert_eq!(t.callbacks().titles, ["one"]);
+        assert_eq!(t.callbacks().resets, usize::from(reset));
+        t.process(END, ms(105));
+        assert_eq!(t.presented_screen().contents(), "NEW");
+        assert!(std::ptr::eq(t.active_screen(), t.presented_screen()));
+        t.process(BEGIN, ms(106));
+        t.process(b"\rLIVE", ms(107));
+        t.poll(ms(206));
+        assert_eq!(t.presented_screen().contents(), "LIVE");
+        // Here the previous expired phase is reset and a complete new begin
+        // arrives in the same call: the preflight must model the transition.
+        let batch = if reset {
+            b"\x1bc\x1b[?2026hX".as_slice()
+        } else {
+            b"\x1b[?2026l\x1b[?2026h\x1b[H\x1b[2JX"
+        };
+        t.process(batch, ms(207));
+        assert!(t.is_holding());
+        assert_eq!(t.presented_screen().contents(), "LIVE");
+        assert_eq!(t.active_screen().contents(), "X");
+        assert_eq!(t.callbacks().resets, usize::from(reset) * 2);
+    }
+    // An OSC cancelled by ESC followed by CSI must be inspected as a real begin.
+    let mut t = terminal(100, 4096);
+    t.process(b"\x1b]2;unfinished", ms(1));
+    t.process(b"\x1b[?2026h\rNEW", ms(2));
+    assert!(t.is_holding());
+    assert_eq!(t.presented_screen().contents(), "OLD");
+    assert!(t.callbacks().titles.is_empty());
+}

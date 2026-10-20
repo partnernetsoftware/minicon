@@ -80,6 +80,13 @@ impl<CB: crate::callbacks::Callbacks> Parser<CB> {
         self.parser.preview_byte(byte)
     }
 
+    /// Inspect only CSI/ESC events using the current exact input grammar.
+    /// Does not copy the screen, retain string payload, or invoke this parser's
+    /// callbacks. See the owned lexer's `inspect_control_sequences` contract.
+    pub fn inspect_control_sequences<P: vte::Perform>(&self, bytes: &[u8], observer: &mut P) {
+        self.parser.inspect_control_sequences(bytes, observer);
+    }
+
     /// Fork screen and exact lexer state with independent callbacks. Existing
     /// callbacks are neither cloned nor invoked. This supports transactional
     /// render adapters; the fork includes unfinished VT/UTF-8 input grammar.

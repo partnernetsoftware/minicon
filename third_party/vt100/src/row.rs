@@ -1,8 +1,35 @@
 use crate::term::BufWrite as _;
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
+
+// Snapshots share immutable row cells. All existing mutation entry points
+// detach through DerefMut, including wide-pair repair and native literal edits.
+#[derive(Clone, Debug)]
+struct Cells(Arc<Vec<crate::Cell>>);
+impl Deref for Cells {
+    type Target = Vec<crate::Cell>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for Cells {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+impl<'a> IntoIterator for &'a mut Cells {
+    type Item = &'a mut crate::Cell;
+    type IntoIter = std::slice::IterMut<'a, crate::Cell>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref_mut().iter_mut()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Row {
-    cells: Vec<crate::Cell>,
+    cells: Cells,
     wrapped: bool,
 }
 
@@ -29,7 +56,7 @@ impl Row {
 
     pub fn new(cols: u16) -> Self {
         Self {
-            cells: vec![crate::Cell::new(); usize::from(cols)],
+            cells: Cells(Arc::new(vec![crate::Cell::new(); usize::from(cols)])),
             wrapped: false,
         }
     }

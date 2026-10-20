@@ -58,6 +58,11 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
 │   ├── [v] scoped retirement preflight / caller-scoped completion / in-flight file-reference ownership
+│   │   └── [v] retirement court observes projected surviving frame before presentation transport close
+│   │       invariant: client exit is not proof that the last frame was delivered
+│   │       evidence: owned/reference B> frame, cursor/boundary, unchanged native return and EOF assertions
+│   │       safe failure: bounded frame wait; no early HPCON close or relaxed snapshot
+│   │       dependency: native retirement + live PTY reader; non-goal: a GUI teardown or system-host fix
 │   ├── [v] scoped queued-read reply shapes / caller retirement / unrelated FIFO retention
 │   ├── [v] scoped keyboard waiters: raw Ctrl+C and record C/Break retain their reads
 │   ├── [v] scoped pending text reads retain their admitted cooked/raw kind across LINE_INPUT changes
@@ -3474,6 +3479,20 @@ hashes, compiler, eight executed x64 image identities and two pinned upstream
 blobs. The named slice does not qualify the remaining race/transport boundaries.
 
 ### Disconnect retirement and native file closes
+
+The opened-PTY retirement court must observe the surviving buffer before
+closing the presentation transport. `retiring_buffer_cases` now releases the
+SDK's final gate, waits for client exit, and keeps HPCON alive until the parsed
+wire reaches the exact `B>` frame, cursor `(0, 2)` and a complete grammar
+boundary. It then closes/drains the transport and rechecks the final state.
+The same barrier is required of the owned backend. Original native return,
+units, EOF and visible-state assertions remain strict. A broad installed-system
+run had returned the correct native result but retained `A>ab` when HPCON was
+closed immediately after exit; that diagnostic is retained with the
+[shared-storage qualification](PRD_02_35_terminal_library.md#borrowed-frames-shared-row-cells-and-control-inspection).
+This ordering change removes premature close from the court; it does not
+establish a general system-host defect or a GUI teardown fix. The two affected
+retirement courts receive separate runtime-fault verification in that receipt.
 
 Queued, not-yet-admitted native reads are covered by the following
 [queued-read section](#queued-read-retirement-and-keyboard-waiters).

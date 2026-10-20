@@ -67,13 +67,23 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: synchronized_presentation integration court; literal frames/replies, 10 runtime faults
 │   safe failure: finite monotonic deadline and byte budget; repeated begin cannot renew a held frame
 │   dependency: owned parser event ordering; non-goal: positive GUI capability or native transport gating
+│   └── [v] scoped borrowed active frames; bounded control preflight and incremental damage
+│       invariant: copy a screen only for a possible new hold; preserve pre-batch frame and exact decoder state
+│       evidence: ordinary/rearm/inspection/allocation courts, native regressions and standalone std consumer
+│       safe failure: conservative preflight may copy early; no false-negative begin or retained OSC payload
+│       dependency: owned grammar inspection; non-goal: GUI/pixel adoption or a general performance claim
+│       └── [v] snapshot rows share immutable cells; first write detaches only the touched row
+│           invariant: active edits never mutate held/forked/history snapshots
+│           evidence: measured allocation budgets, literal frozen cells and native cell/geometry oracles
+│           safe failure: owned Arc copy-on-write; no unchecked shared mutation
+│           dependency: owned vt100 row storage; non-goal: zero metadata copies or universal latency bounds
 ├── [_] Portable session composition and input vocabulary
 │   invariant: shared terminal semantics; OS-specific capabilities stay explicit
 │   evidence: same external consumer and scenarios on macOS/Linux/Windows
 │   safe failure: typed unsupported capabilities, bounded shutdown/backpressure
 │   dependency: stable common contracts; non-goal: copying all platform facilities
 │   └── [_] terminal identity/capability profiles, consumer-selected TERM and independent native provider
-└── [_] Cross-ISA and external-consumer qualification
+└── [-] Cross-ISA and external-consumer qualification
     invariant: portable API does not imply native ABI/runtime certification
     evidence: minimal consumer, enabled features, exact source, OS/ISA build + runtime
     safe failure: unavailable cells remain unqualified, never implicit passes
@@ -86,6 +96,10 @@ flowchart LR
     COMMON --> VT["owned vt100: screen / damage / framing"]
     VT --> SYNC["ordered 2026 / RIS callbacks"]
     SYNC --> PRESENT["TerminalPresentation: active parser / presented snapshot"]
+    VTE --> INSPECT["bounded control-only inspection; exact unfinished grammar"]
+    INSPECT -->|"possible new hold"| PRESENT
+    VT --> CELLS["immutable Arc row cells / detach before mutation"]
+    CELLS --> PRESENT
     CLOCK["caller monotonic time / byte quota / explicit edits"] --> PRESENT
     PRESENT --> PAINT["consumer paint / copy / snapshot; GUI adoption still open"]
     APP --> QUERY["shared csi_query_reply / caller-owned reply transport"]
@@ -116,7 +130,7 @@ flowchart LR
 ## Bounded synchronized presentation
 
 `terminal::TerminalPresentation<CB>` is an opt-in OS/ISA-neutral consumer
-mechanism. It owns one authoritative active parser and one presented `Screen`.
+mechanism. It owns one authoritative active parser and an optional held `Screen`.
 The owned parser emits validated mode-2026 events in private-parameter order
 and a reset event after RIS; the default callbacks preserve the raw consumer's
 unhandled-query path. This is independent of the unused `vte::ansi` processor.
@@ -129,10 +143,12 @@ Queries therefore see current cursor/modes even during a hold. Drawing, copy
 and structured snapshots must use `presented_screen`; input encoding uses
 `active_screen`. Internal parsing spans do not constitute presented frames.
 Publication happens after the supplied batch, unless a prior phase expired
-when polling at entry. Frame publication currently clones the configured
-screen/history and conservatively reports full damage. Damage is retained in
-the active model during a hold; there is no queued output or second lexer.
-Incremental damage and snapshot cost remain performance work before GUI adoption.
+when polling at entry. Ordinary presented state borrows the active screen and
+forwards its incremental damage. A possible new hold snapshots the pre-batch
+screen once; releasing that snapshot conservatively reports full damage.
+Damage is retained in the active model during a hold. There is no queued output
+or persistent second lexer. Snapshot metadata cost and actual GUI latency still
+need workload-specific qualification.
 
 Consumers supply monotonic elapsed time and schedule `poll` at `deadline` even
 without incoming output. Backwards observations clamp to the latest time.
@@ -182,6 +198,107 @@ PTY transport. Shared query replies still report mode 2026 as
 unrecognized. Positive capability replies, GUI timers/blink/selection/snapshot
 integration, actual pixels, real Claude Code and
 other OS/ISA runtime qualification remain open.
+
+### Borrowed frames, shared row cells and control inspection
+
+The follow-up optimization keeps the same active/presented protocol contract.
+`presented_screen` aliases `active_screen` while no hold exists, avoiding a
+screen/history clone on ordinary output. Before a possible new hold,
+`vt100::Parser::inspect_control_sequences` delegates to the owned VTE decoder's
+control-only inspection API. It starts from exact unfinished CSI/ESC/UTF-8
+grammar, forwards only CSI/ESC to a transient observer, and does not call live
+screen callbacks. OSC payload and offsets are omitted from the fork and discarded
+after spans of at most 64 bytes (smaller for tiny const buffers). This avoids
+copying retained titles/clipboard strings, including for std-feature consumers.
+Only the lexical continuation is inspected; no speculative screen is constructed.
+
+The presentation observer models private mode 2026 end/begin and RIS in stream
+order, including recovery followed by another begin in one batch. Ground input
+without ESC/C1 candidates bypasses inspection. Disabled holding also bypasses
+it. Repeated begin in an expired phase does not allocate a fresh held screen.
+A conservative positive inspection can snapshot unnecessarily if the phase ends
+inside the same batch; it cannot publish an intermediate internal parser span.
+
+Owned `vt100::Row` cell storage now uses private Arc copy-on-write. Screen/fork
+snapshots copy row/history metadata and share immutable cell vectors; every
+mutable access detaches the affected row first. Wrapped flags and grid/cursor/
+mode metadata remain independently owned. This applies to native stream forks
+as well as presentation snapshots. It is not a zero-copy claim: metadata still
+scales with retained rows, and a changed shared row copies its cells. Atomic
+reference counting and additional row-allocation overhead need representative
+throughput/latency measurements before broad performance conclusions.
+
+The public allocation workload uses a thread-local
+System allocator counter, 24×80 cells and over 3000 retained history rows. It
+checks ordinary output allocation traffic, bounded snapshot metadata and touched-
+row copies, and literal frozen-cell independence. Timing samples have no CI
+threshold and do not prove GUI latency. A standalone Windows source consumer
+enables VTE std independently and runs the same workload through a real binary;
+it does not infer external reuse from a workspace-only build. GUI rendering,
+selection, snapshots and timers still require adoption and pixel evidence.
+
+Frozen-source qualification is under ignored `target/conhost-research/`.
+`presentation-borrow-source.json` binds 31 source/manifest/guard files; the staged
+change has four implementation files and three test/SDK-court files. The
+composed selection is 379 distinct tests in three required invocations:
+`presentation-borrow-composed-suite.log` (377), `presentation-borrow-isolated-reference.log`
+(one system queued-read reference), and `presentation-borrow-isolated-mode-reference.log`
+(one system pending-mode reference). This retains all 375 identities from the
+preceding three relevant selections and adds four tests. It is not the full
+workspace suite or proof of single-invocation system-reference stability.
+The default/experimental workspace and owned-parser paths are exercised.
+
+`presentation-borrow-negative-audit.json` records 12 compiling runtime faults,
+all byte-restored in `finally` with source SHA checks. They force ordinary full
+damage, eagerly clone frames, miss RIS/end phase transitions, lose unfinished
+parameters, forward non-control effects, deep-copy row cells, omit row detach,
+corrupt each owned/system retirement snapshot, copy the live OSC payload, and
+remove the incoming-OSC span bound. All four new and both affected retirement
+courts fail their assigned faults; an existing held-frame court also verifies
+row-detach behavior. A fixed-64-byte-span variant survived because it remained
+bounded; its diagnostic is excluded from the defect count. The direct incoming-
+OSC allocation measurement now distinguishes genuinely unbounded retention.
+
+Thirteen checks cover workspace and both fork formats, default/enabled workspace
+Clippy, both fork Clippy paths, VTE no_std compilation, console all-target Linux
+x64/ARM64, Windows ARM64 and macOS x64 compilation, and enabled-platform Windows
+ARM64 compilation. The inspection court also runs with no default VTE features.
+After restoration the focused selection passes 17 tests (nine common presentation/
+allocation cases, one inspection case and seven native/retirement cases), plus
+the no_std inspection invocation. The standalone std consumer is rebuilt and
+executed after restoration; its separate manifest/lock/main and std feature graph
+are retained. Cross-target cells prove compilation, not runtime.
+
+In the measured Windows x64 build-20348 debug workload, both workspace and
+standalone std consumers retain 3177 history rows. Each performs 500 ordinary
+ASCII and 500 ordinary CSI updates with zero allocation traffic. One snapshot
+allocates two metadata blocks / 51,216 bytes; editing one shared row allocates
+two blocks / 2,600 bytes and leaves held cells unchanged. Large incoming-OSC
+inspection uses no heap in the workspace configuration and four small std Vec
+growth requests / 120 bytes in the standalone configuration. The byte cap is
+256; canceling span disposal in a fault requests 131,064 bytes and fails. These
+are requested allocation bytes, not peak/RSS, release throughput or GUI latency.
+Timing samples are recorded without a pass/fail latency threshold; ordinary CSI
+inspection adds CPU work compared with the raw-parser baseline.
+
+The [retirement transport-close ordering](PRD_02_34_windows_console_backend.md#disconnect-retirement-and-native-file-closes)
+was corrected during this qualification. The pre-fix system reference had the
+right native result but stale `A>ab` output. The queued-read system reference
+also failed once in isolation before passing on the same frozen source; its
+GetThreadIOPendingFlag precondition still does not prove host admission. Both
+diagnostics remain separate from positive receipts. Neither system assertion
+was weakened, and the latter observation is not attributed to shared row storage.
+
+`presentation-borrow-final-receipt.json` binds the staged tree, source/consumer/
+image/log identities, composed selection, faults and allocation samples. A fresh
+opened-PTY run retains 12 synchronized SDK sessions / 46 phase checkpoints /
+208 source-wire-native-frame and case/reply files. Those files are reread against
+literal oracles, not merely inventoried. Seven exercised x64 images are recorded
+for focused allocation/presentation/native courts, SDK, std/no_std inspection and
+the standalone consumer. Runtime scope is Windows x64 build 20348. Actual GUI
+adoption, release/scroll-heavy throughput, other allocators, wider native
+compatibility, real Claude Code, other OS/ISA runtime and default promotion remain
+open; shared query replies still advertise mode 2026 as unrecognized.
 
 ## Shared terminal query replies
 

@@ -5079,9 +5079,34 @@ fn retiring_buffer_cases(rust: bool) {
             )
         );
         std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
-        fixture.finish(0);
+        fixture.wait_exit(0);
         let mut peer = vt100::Parser::new(8, 16, 0);
         peer.process(&fixture.bytes);
+        // ConPTY renders asynchronously. Keep HPCON alive after client exit
+        // until the surviving buffer is actually projected; closing it in
+        // finish first can truncate the last frame. The owned host must meet
+        // the same visible-state barrier before transport close.
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while peer.screen().contents() != "B>"
+            || peer.screen().cursor_position() != (0, 2)
+            || !peer.at_boundary()
+        {
+            let chunk = fixture
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "retirement frame {rust}/{kind}: {e};native={value};screen={:?}",
+                        peer.screen().contents()
+                    )
+                })
+                .expect("retirement output reader must not fail");
+            peer.process(&chunk);
+            fixture.bytes.extend(chunk);
+        }
+        let projected = fixture.bytes.len();
+        fixture.finish(0);
+        peer.process(&fixture.bytes[projected..]);
         assert_eq!(peer.screen().contents(), "B>");
         assert_eq!(peer.screen().cursor_position(), (0, 2));
         eprintln!("cooked-retire rust={rust};kind={kind}: {value}");

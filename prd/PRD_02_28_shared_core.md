@@ -55,7 +55,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
 ├── Owned dependencies — third_party/
 │   ├── vte: authoritative VT/UTF-8 grammar and side-effect-free boundary preview
-│   ├── vt100: VT parsing, literal cell/style writes, damage and bounded OutputFramer
+│   ├── vt100: VT parsing, literal cell/style writes, damage, shared row snapshots and bounded OutputFramer
 │   └── softbuffer: native presentation backends
 ├── Bootstrap exception — src/startup.rs
 │   └── Windows x86_64 / aarch64 entry assembly; not a reusable runtime API

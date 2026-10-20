@@ -12,6 +12,36 @@ struct PresentationCallbacks<CB> {
     bytes: usize,
 }
 
+struct BeginPreview {
+    phase: bool,
+    may_begin: bool,
+}
+impl vte::Perform for BeginPreview {
+    fn csi_dispatch(
+        &mut self,
+        params: &vte::Params,
+        intermediates: &[u8],
+        ignore: bool,
+        action: char,
+    ) {
+        if ignore || intermediates != b"?" || !matches!(action, 'h' | 'l') {
+            return;
+        }
+        for param in params {
+            if param == [2026] {
+                let enabled = action == 'h';
+                self.may_begin |= enabled && !self.phase;
+                self.phase = enabled;
+            }
+        }
+    }
+    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
+        if !ignore && intermediates.is_empty() && byte == b'c' {
+            self.phase = false;
+        }
+    }
+}
+
 impl<CB: Callbacks> Callbacks for PresentationCallbacks<CB> {
     fn reset(&mut self, screen: &mut Screen) {
         self.phase = false;
@@ -76,7 +106,7 @@ impl<CB: Callbacks> Callbacks for PresentationCallbacks<CB> {
     }
 }
 
-/// One active parser plus one immutable presented screen. Queries and other
+/// One active parser plus an optional immutable held screen. Queries and other
 /// callbacks always see active state. Rendering, copy and snapshot consumers
 /// must use `presented_screen`; input-mode consumers use `active_screen`.
 ///
@@ -90,7 +120,7 @@ impl<CB: Callbacks> Callbacks for PresentationCallbacks<CB> {
 /// must integrate its paint/snapshot/timer paths before advertising mode 2026.
 pub struct TerminalPresentation<CB: Callbacks = ()> {
     parser: vt100::Parser<PresentationCallbacks<CB>>,
-    presented: Screen,
+    presented: Option<Screen>,
 }
 
 impl TerminalPresentation {
@@ -116,7 +146,7 @@ impl<CB: Callbacks> TerminalPresentation<CB> {
         byte_limit: usize,
         callbacks: CB,
     ) -> Self {
-        let mut parser = vt100::Parser::new_with_callbacks(
+        let parser = vt100::Parser::new_with_callbacks(
             rows,
             columns,
             scrollback,
@@ -130,9 +160,10 @@ impl<CB: Callbacks> TerminalPresentation<CB> {
                 bytes: 0,
             },
         );
-        let presented = parser.screen().clone();
-        let _ = parser.take_damage();
-        Self { parser, presented }
+        Self {
+            parser,
+            presented: None,
+        }
     }
 
     /// Process ordered output without delaying any parser callbacks. Quota
@@ -141,6 +172,9 @@ impl<CB: Callbacks> TerminalPresentation<CB> {
     /// This can release early; retained work never exceeds the configured cap.
     pub fn process(&mut self, bytes: &[u8], now: Duration) {
         self.poll(now);
+        if !self.is_holding() && self.may_begin(bytes) {
+            self.presented = Some(self.parser.screen().clone());
+        }
         let mut remaining_input = bytes;
         while !remaining_input.is_empty() {
             let gate = self.parser.callbacks();
@@ -194,7 +228,9 @@ impl<CB: Callbacks> TerminalPresentation<CB> {
     }
     #[must_use]
     pub fn presented_screen(&self) -> &Screen {
-        &self.presented
+        self.presented
+            .as_ref()
+            .unwrap_or_else(|| self.parser.screen())
     }
     pub fn callbacks(&self) -> &CB {
         &self.parser.callbacks().inner
@@ -221,16 +257,36 @@ impl<CB: Callbacks> TerminalPresentation<CB> {
         self.publish();
     }
 
-    /// Damage refers only to the presented screen. Publication is currently
-    /// conservative full damage; active damage is retained throughout a hold.
+    /// Damage refers only to presented state. Ordinary output preserves the
+    /// parser's incremental damage; releasing a held snapshot reports full
+    /// damage. Active damage is retained throughout a hold.
     pub fn take_damage(&mut self) -> ScreenDamage {
-        self.presented.take_damage()
+        if let Some(presented) = &mut self.presented {
+            presented.take_damage()
+        } else {
+            self.parser.take_damage()
+        }
     }
 
     fn publish(&mut self) {
-        if !self.is_holding() && !self.parser.take_damage().is_empty() {
-            self.presented = self.parser.screen().clone();
-            self.presented.mark_full_damage();
+        if !self.is_holding() && self.presented.take().is_some() {
+            self.parser.screen_mut().mark_full_damage();
         }
+    }
+
+    fn may_begin(&self, bytes: &[u8]) -> bool {
+        let gate = self.parser.callbacks();
+        if gate.byte_limit == 0
+            || gate.timeout.is_zero()
+            || (self.parser.at_boundary() && !bytes.contains(&0x1b) && !bytes.contains(&0x9b))
+        {
+            return false;
+        }
+        let mut preview = BeginPreview {
+            phase: gate.phase,
+            may_begin: false,
+        };
+        self.parser.inspect_control_sequences(bytes, &mut preview);
+        preview.may_begin
     }
 }

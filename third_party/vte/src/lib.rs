@@ -59,6 +59,15 @@ pub struct ParseProgress {
 }
 
 struct ControlObserver(bool);
+struct ControlSequenceObserver<'a, P>(&'a mut P);
+impl<P: Perform> Perform for ControlSequenceObserver<'_, P> {
+    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {
+        self.0.csi_dispatch(params, intermediates, ignore, action);
+    }
+    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
+        self.0.esc_dispatch(intermediates, ignore, byte);
+    }
+}
 impl Perform for ControlObserver {
     fn execute(&mut self, _: u8) {
         self.0 = true;
@@ -98,6 +107,32 @@ impl Parser {
 }
 
 impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
+    /// Inspect CSI and ESC dispatches from this exact unfinished grammar,
+    /// without changing this parser or delivering text/string/control events.
+    /// OSC payload is omitted from the transient fork and discarded after
+    /// bounded spans; inspection never copies or retains a caller's long title
+    /// or clipboard string. Only the supplied observer receives CSI/ESC events.
+    pub fn inspect_control_sequences<P: Perform>(&self, bytes: &[u8], observer: &mut P) {
+        let mut next = Self {
+            state: self.state,
+            intermediates: self.intermediates,
+            intermediate_idx: self.intermediate_idx,
+            params: self.params.clone(),
+            param: self.param,
+            osc_pending_c2: self.osc_pending_c2,
+            ignoring: self.ignoring,
+            partial_utf8: self.partial_utf8,
+            partial_utf8_len: self.partial_utf8_len,
+            ..Self::default()
+        };
+        let mut observer = ControlSequenceObserver(observer);
+        for span in bytes.chunks(OSC_RAW_BUF_SIZE.clamp(1, 64)) {
+            next.advance(&mut observer, span);
+            next.osc_raw.clear();
+            next.osc_num_params = 0;
+        }
+    }
+
     /// True only between complete VT commands and complete UTF-8 scalars.
     #[must_use]
     pub fn at_boundary(&self) -> bool {
@@ -1016,6 +1051,58 @@ mod tests {
         Print(char),
         Execute(u8),
         DcsUnhook,
+    }
+
+    #[test]
+    fn stream_boundary_control_inspection_preserves_partial_input_and_omits_payload_effects() {
+        let input = b"\x1b[?2004;2026h\x1bc\x1b]2;payload\x07\x07text\x1bPqdata\x1b\\\x1b[?2026l";
+        let expected = vec![
+            Sequence::Csi(vec![vec![2004], vec![2026]], vec![b'?'], false, 'h'),
+            Sequence::Esc(vec![], false, b'c'),
+            Sequence::Esc(vec![], false, b'\\'),
+            Sequence::Csi(vec![vec![2026]], vec![b'?'], false, 'l'),
+        ];
+        for split in 0..=input.len() {
+            let mut parser = Parser::new();
+            let mut actual = Dispatcher::default();
+            parser.advance(&mut actual, &input[..split]);
+            let mut inspected = Dispatcher::default();
+            parser.inspect_control_sequences(&input[split..], &mut inspected);
+            let before = actual.dispatched.len();
+            parser.advance(&mut actual, &input[split..]);
+            let controls: Vec<_> = actual
+                .dispatched
+                .drain(before..)
+                .filter(|s| matches!(s, Sequence::Csi(..) | Sequence::Esc(..)))
+                .collect();
+            assert_eq!(inspected.dispatched, controls, "split={split}");
+            let fresh = Parser::new();
+            let mut once = Dispatcher::default();
+            fresh.inspect_control_sequences(input, &mut once);
+            assert_eq!(once.dispatched, expected);
+        }
+        for capacity in [0, 1, 7, 64] {
+            // Default and tiny const capacities exercise bounded payload disposal.
+            fn inspect<const N: usize>(bytes: &[u8]) -> Vec<Sequence> {
+                let parser = Parser::<N>::default();
+                let mut observer = Dispatcher::default();
+                parser.inspect_control_sequences(bytes, &mut observer);
+                observer.dispatched
+            }
+            let mut long = b"\x1b]52;".to_vec();
+            long.extend_from_slice(&vec![b';'; 4096]);
+            long.extend_from_slice(b"\x1b\\\x1b[?2026h");
+            let controls = match capacity {
+                0 => inspect::<0>(&long),
+                1 => inspect::<1>(&long),
+                7 => inspect::<7>(&long),
+                _ => inspect::<64>(&long),
+            };
+            assert_eq!(
+                controls,
+                vec![Sequence::Csi(vec![vec![2026]], vec![b'?'], false, 'h')]
+            );
+        }
     }
 
     impl Perform for Dispatcher {
