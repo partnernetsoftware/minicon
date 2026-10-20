@@ -55,6 +55,32 @@ impl Editor {
                 }
                 self.cursor = line.len();
             }
+            // The installed native console uses ASCII spaces as word separators;
+            // punctuation and tabs remain in the word. Scan original units so
+            // invalid UTF-16 survives, with no allocations or line growth.
+            0x25 if ctrl => {
+                let prefix = &line[..self.cursor];
+                let end = prefix
+                    .iter()
+                    .rposition(|&unit| unit != 32)
+                    .map_or(0, |i| i + 1);
+                self.cursor = prefix[..end]
+                    .iter()
+                    .rposition(|&unit| unit == 32)
+                    .map_or(0, |i| i + 1);
+            }
+            0x27 if ctrl => {
+                let suffix = &line[self.cursor..];
+                let end = suffix
+                    .iter()
+                    .position(|&unit| unit == 32)
+                    .unwrap_or(suffix.len());
+                self.cursor += end
+                    + suffix[end..]
+                        .iter()
+                        .position(|&unit| unit != 32)
+                        .unwrap_or(suffix.len() - end);
+            }
             0x25 if plain => self.cursor = previous(line, self.cursor),
             0x27 | 0x70 if plain => self.cursor = next(line, self.cursor),
             0x2d if plain => self.insert = !self.insert,

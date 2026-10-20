@@ -4708,6 +4708,21 @@ fn cooked_edit_report(kind: &str, rust: bool) -> String {
     } else {
         Fixture::open_backend(command, "conpty")
     };
+    if kind.ends_with("word-wire-left") || kind.ends_with("word-wire-right") {
+        fixture.until("word-wire-ready:");
+        fixture.master.write_all(b"one  two three  ").unwrap();
+        if kind.ends_with("word-wire-left") {
+            // Fragment inside the modifier; retain the incomplete key prefix.
+            fixture.master.write_all(b"\x1b[1;").unwrap();
+            fixture.master.write_all(b"5D").unwrap();
+        } else {
+            fixture
+                .master
+                .write_all(b"\x1b[H\x1b[1;5C\x1b[1;5C")
+                .unwrap();
+        }
+        fixture.master.write_all(b"X\r").unwrap();
+    }
     fixture.until("cooked-edit-end:");
     std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
     fixture.finish(0);
@@ -4850,6 +4865,72 @@ fn cooked_edit_cases(rust: bool) {
             "kind={kind};rust={rust}"
         );
     }
+}
+
+fn cooked_word_cases(rust: bool) {
+    for (kind, expected) in [
+        ("word-wire-left", "one  two Xthree  "),
+        ("word-wire-right", "one  two Xthree  "),
+        ("word-left", "one  two Xthree  "),
+        ("word-right", "one  two Xthree  "),
+        ("word-repeat", "one  Xtwo three  "),
+        ("word-punctuation", "Xab.cd/ef  gh"),
+        ("word-punctuation-right", "ab.cd/ef  Xgh"),
+        ("word-unicode", "中😀  e\u{301} XZ"),
+        ("word-unicode-left", "中😀  Xe\u{301} Z"),
+        ("word-tab", "ab\tcd  Xef"),
+        ("word-tab-left", "Xab\tcd  ef"),
+        ("word-edges", "X"),
+    ] {
+        let expected_read = format!(
+            "read:{}\ncontrols:00000000\n",
+            format!("{expected}\r\n")
+                .encode_utf16()
+                .map(|unit| format!("{unit:04x},"))
+                .collect::<String>()
+        );
+        for prefix in ["", "echo-"] {
+            let name = format!("{prefix}{kind}");
+            let actual = cooked_edit_report(&name, rust);
+            assert!(
+                actual.starts_with(&expected_read),
+                "kind={kind};rust={rust};actual={actual}"
+            );
+            let reference = include_str!("support/cooked_word_owned.txt").replace("\r\n", "\n");
+            let section = format!("[{name}]\n");
+            let expected = reference
+                .split_once(&section)
+                .unwrap()
+                .1
+                .split("\n[")
+                .next()
+                .unwrap();
+            // Build 20348 leaves an Enter key-up after the completed text
+            // read. The owned byte transport currently emits key-downs.
+            // Check the exact release identity instead of discarding events.
+            let expected = if !rust && kind.starts_with("word-wire-") {
+                expected.replace("queued:0\n", "queued:1\npending-key:0,13,000d,00000000\n")
+            } else {
+                expected.to_owned()
+            };
+            assert_eq!(
+                actual.trim_end(),
+                expected.trim_end(),
+                "kind={name};rust={rust}"
+            );
+        }
+    }
+}
+
+#[test]
+fn rust_console_pty_cooked_word_navigation_preserves_native_text_and_echo() {
+    cooked_word_cases(true);
+}
+
+#[test]
+#[ignore = "explicit installed system ConPTY word-navigation differential court"]
+fn rust_console_client_cooked_word_navigation_compares_system_conpty() {
+    cooked_word_cases(false);
 }
 
 fn cooked_echo_cases(rust: bool) {

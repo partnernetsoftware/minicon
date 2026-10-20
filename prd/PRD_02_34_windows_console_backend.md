@@ -54,6 +54,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped single-write input coalescing: shared admission and checked repeats
 │   ├── [-] cooked editing: processed backspace/newline and wakeup-control precedence
 │   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
+│   │   ├── [v] scoped native Ctrl+Left/Right word navigation (48-session court below)
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
@@ -4566,3 +4567,75 @@ SDK producer, opened-PTY test runner and common presentation test runner.
 Runtime evidence remains Windows x64 build 20348 only. GUI adoption, incremental
 damage/snapshot cost, modern Windows/other ISA runtime, actual application/pixel
 qualification and default-provider promotion remain open.
+
+### Accepted native word-navigation leaf
+
+`[v]` Extend the Windows cooked editor with Ctrl+Left/Right. Preserve original
+UTF-16 and the existing read-owned echo path. Observe actual SDK
+WriteConsoleInputW/ReadConsoleW results through the opened PTY, including repeated
+keys, whitespace, punctuation, Unicode and line boundaries. Compare the installed
+system ConPTY behavior before selecting delimiter semantics. Invalid or modified
+non-editing keys must not corrupt the line; existing line and output budgets apply.
+Dependencies are the native editor, input-record dispatch and cooked echo; no
+product or ISA choice enters the portable screen API. History recall, key transport
+expansion and parity with every Windows version remain separate open work.
+
+```mermaid
+flowchart LR
+    SDK["SDK input records"] --> EDIT["bounded UTF-16 cooked editor"]
+    EDIT --> READ["native ReadConsoleW result"]
+    EDIT --> ECHO["existing read-owned echo / shared screen"]
+    REF["installed ConPTY"] --> COURT["literal result and frame comparison"]
+    READ --> COURT
+    ECHO --> COURT
+```
+
+Delivered against the installed Windows x64 build 20348 reference: Ctrl+Left
+skips preceding ASCII spaces and then the preceding non-space run; Ctrl+Right
+skips the current non-space run and following ASCII spaces. Tabs, punctuation,
+surrogates and combining units remain original UTF-16; the two bounded scans
+allocate nothing and do not grow the line. This OS-specific policy belongs to
+the native cooked editor, without changing the portable parser/screen API.
+
+`rust_console_pty_cooked_word_navigation_preserves_native_text_and_echo` and
+`rust_console_client_cooked_word_navigation_compares_system_conpty` each open
+24 actual SDK sessions: 12 cases with echo disabled/enabled. They check literal
+ReadConsoleW units, controls, queued input, native cursor, projected rows and
+frontend cursor against `tests/support/cooked_word_owned.txt` in the platform
+crate. Twenty cases per provider inject WriteConsoleInputW records; four supply
+actual PTY bytes, including separately written Ctrl+Left sequence fragments and
+two Ctrl+Right sequences. Separate writes do not prove a particular host scheduling
+interleaving. Every session requires SDK exit zero and output EOF through the
+existing bounded fixture. The owned native suite now has 156 tests, two more than
+the prior inventory, with the system comparison explicitly ignored by default.
+
+The reference's wire-input completion retains exactly one Enter key-up
+(`down=0, vk=13, char=000d, controls=0`); the owned byte transport currently
+synthesizes key-downs and retains zero events. The SDK peeks actual pending
+records, and the comparison asserts this identity instead of dropping queued
+input or treating the two providers as identical. General key-up parity stays
+open. Keep readiness as the last title until the parent sends input: the system
+provider can coalesce consecutive title changes, which otherwise hides the
+fixture's readiness marker.
+
+`word-navigation-regression.log` retains 21 passing targeted tests, including
+the 48 new SDK sessions, existing native editing/echo, actual PowerShell
+Console.ReadLine, alias expansion, mode/wakeup precedence, read-owned drawing
+buffers, input coalescing, VT input, Break and read-state lifecycle. Three
+compiling runtime faults separately disable Ctrl+Left, Ctrl+Right and cooked
+echo painting; each fails the new owned test after actual SDK execution. Original
+bytes are restored in a finally block and checked against their SHA-256 before
+the final regression. A fourth fault drops Ctrl from the SDK's repeated Right
+records; the new system-reference test fails at the actual native read result.
+That fixture is restored byte-for-byte before rebuilding and rerunning all 21
+selected tests. No system process inventory or unrelated user session is used.
+Local logs and `word-navigation-negative-audit.json` live under ignored
+`target/conhost-research/`. Formatting, default/enabled workspace all-target
+Clippy with warnings denied, and enabled workspace all-target Windows ARM64
+compilation pass. ARM64 compilation is not an ARM64 execution result. The local
+`word-navigation-final-receipt.json` binds the staged tree, source hashes, exact
+test inventory, 48 native case bodies, four faults, check logs and executed images.
+
+This evidence does not establish command history, exhaustive native key/modifier
+behavior, newer Windows word-delimiter policy, GUI keyboard routing, actual
+Claude Code compatibility or other ISA runtime parity.

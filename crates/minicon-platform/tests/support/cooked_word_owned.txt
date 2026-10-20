@@ -1,0 +1,203 @@
+[word-wire-left]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[word-wire-right]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-wire-left]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">one  two Xthree"
+frontend-cursor:(2, 0)
+rows:[">one  two Xthree", "", "", "", "", "", "", ""]
+
+[echo-word-wire-right]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">one  two Xthree"
+frontend-cursor:(2, 0)
+rows:[">one  two Xthree", "", "", "", "", "", "", ""]
+
+[word-left]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-left]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">one  two Xthree"
+frontend-cursor:(2, 0)
+rows:[">one  two Xthree", "", "", "", "", "", "", ""]
+
+[word-right]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-right]
+read:006f,006e,0065,0020,0020,0074,0077,006f,0020,0058,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">one  two Xthree"
+frontend-cursor:(2, 0)
+rows:[">one  two Xthree", "", "", "", "", "", "", ""]
+
+[word-repeat]
+read:006f,006e,0065,0020,0020,0058,0074,0077,006f,0020,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-repeat]
+read:006f,006e,0065,0020,0020,0058,0074,0077,006f,0020,0074,0068,0072,0065,0065,0020,0020,000d,000a,
+controls:00000000
+queued:0
+cursor:0,2;0007
+screen:">one  Xtwo three"
+frontend-cursor:(2, 0)
+rows:[">one  Xtwo three", "", "", "", "", "", "", ""]
+
+[word-punctuation]
+read:0058,0061,0062,002e,0063,0064,002f,0065,0066,0020,0020,0067,0068,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-punctuation]
+read:0058,0061,0062,002e,0063,0064,002f,0065,0066,0020,0020,0067,0068,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">Xab.cd/ef  gh"
+frontend-cursor:(1, 0)
+rows:[">Xab.cd/ef  gh", "", "", "", "", "", "", ""]
+
+[word-punctuation-right]
+read:0061,0062,002e,0063,0064,002f,0065,0066,0020,0020,0058,0067,0068,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-punctuation-right]
+read:0061,0062,002e,0063,0064,002f,0065,0066,0020,0020,0058,0067,0068,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">ab.cd/ef  Xgh"
+frontend-cursor:(1, 0)
+rows:[">ab.cd/ef  Xgh", "", "", "", "", "", "", ""]
+
+[word-unicode]
+read:4e2d,d83d,de00,0020,0020,0065,0301,0020,0058,005a,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-unicode]
+read:4e2d,d83d,de00,0020,0020,0065,0301,0020,0058,005a,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">中😀  e\u{301} XZ"
+frontend-cursor:(1, 0)
+rows:[">中😀  e\u{301} XZ", "", "", "", "", "", "", ""]
+
+[word-unicode-left]
+read:4e2d,d83d,de00,0020,0020,0058,0065,0301,0020,005a,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-unicode-left]
+read:4e2d,d83d,de00,0020,0020,0058,0065,0301,0020,005a,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">中😀  Xe\u{301} Z"
+frontend-cursor:(1, 0)
+rows:[">中😀  Xe\u{301} Z", "", "", "", "", "", "", ""]
+
+[word-tab]
+read:0061,0062,0009,0063,0064,0020,0020,0058,0065,0066,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-tab]
+read:0061,0062,0009,0063,0064,0020,0020,0058,0065,0066,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">ab     cd  Xef"
+frontend-cursor:(1, 0)
+rows:[">ab     cd  Xef", "", "", "", "", "", "", ""]
+
+[word-tab-left]
+read:0058,0061,0062,0009,0063,0064,0020,0020,0065,0066,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-tab-left]
+read:0058,0061,0062,0009,0063,0064,0020,0020,0065,0066,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">Xab    cd  ef"
+frontend-cursor:(1, 0)
+rows:[">Xab    cd  ef", "", "", "", "", "", "", ""]
+
+[word-edges]
+read:0058,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-word-edges]
+read:0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">X"
+frontend-cursor:(1, 0)
+rows:[">X", "", "", "", "", "", "", ""]

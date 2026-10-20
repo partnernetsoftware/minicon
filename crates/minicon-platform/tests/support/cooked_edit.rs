@@ -162,6 +162,38 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
             ]);
             r
         }
+        "word-wire-left" | "word-wire-right" => Vec::new(),
+        "word-left"
+        | "word-right"
+        | "word-repeat"
+        | "word-punctuation"
+        | "word-unicode"
+        | "word-tab"
+        | "word-edges"
+        | "word-punctuation-right"
+        | "word-unicode-left"
+        | "word-tab-left" => {
+            let value = match kind {
+                "word-punctuation" | "word-punctuation-right" => "ab.cd/ef  gh",
+                "word-unicode" | "word-unicode-left" => "中😀  e\u{301} Z",
+                "word-tab" | "word-tab-left" => "ab\tcd  ef",
+                "word-edges" => "",
+                _ => "one  two three  ",
+            };
+            let mut r = text(value);
+            match kind {
+                "word-right" => r.extend([press(0x24), key(0x27, 0, 4, 2)]),
+                "word-repeat" => r.push(key(0x25, 0, 8, 2)),
+                "word-punctuation" | "word-unicode-left" | "word-tab-left" => {
+                    r.push(key(0x25, 0, 8, 2));
+                }
+                "word-punctuation-right" => r.extend([press(0x24), key(0x27, 0, 4, 1)]),
+                "word-edges" => r.extend([key(0x25, 0, 8, 2), key(0x27, 0, 4, 2)]),
+                _ => r.push(key(0x25, 0, 8, 1)),
+            }
+            r.push(key(0, 88, 0, 1));
+            r
+        }
         "ctrl-home" => {
             let mut r = text("abcd");
             r.extend([key(0x25, 0, 0, 2), key(0x24, 0, 8, 1), key(0, 88, 0, 1)]);
@@ -304,11 +336,16 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
         bytes(output, String::from_utf16_lossy(&initial).as_bytes())?;
     }
     let mut count = 0;
-    if kind != "powershell" {
+    if !matches!(kind, "powershell" | "word-wire-left" | "word-wire-right") {
         put(input, &records)?;
     }
     if echo || kind == "cmd" {
         bytes(output, b"\x1b]2;cooked-echo-begin:\x07")?;
+    }
+    if matches!(kind, "word-wire-left" | "word-wire-right") {
+        // Keep readiness as the final title until the parent supplies input:
+        // ConPTY may coalesce consecutive title changes into the latest one.
+        bytes(output, b"\x1b]2;word-wire-ready:\x07")?;
     }
     if kind == "pending-csi" {
         bytes(output, b"\x1b[3")?;
@@ -416,6 +453,29 @@ exit 0
         return Err(io::Error::last_os_error());
     }
     report.push_str(&format!("queued:{queued}\n"));
+    if kind.starts_with("word-wire-") && queued != 0 {
+        let mut pending = [INPUT_RECORD::default(); 8];
+        let mut count = 0;
+        // SAFETY: fixed initialized SDK record array and live count buffer.
+        if unsafe { PeekConsoleInputW(input, pending.as_mut_ptr(), 8, &mut count) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        for record in &pending[..count as usize] {
+            if record.EventType == KEY_EVENT as u16 {
+                // SAFETY: KEY_EVENT tag selects the initialized key union.
+                let key = unsafe { record.Event.KeyEvent };
+                report.push_str(&format!(
+                    "pending-key:{},{},{:04x},{:08x}\n",
+                    key.bKeyDown,
+                    key.wVirtualKeyCode,
+                    unsafe { key.uChar.UnicodeChar },
+                    key.dwControlKeyState
+                ));
+            } else {
+                report.push_str(&format!("pending-event:{}\n", record.EventType));
+            }
+        }
+    }
     if kind == "pending-csi" {
         bytes(output, b"1m!")?;
     }
