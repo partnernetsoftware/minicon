@@ -1,0 +1,152 @@
+[erase-word-end]
+read:006f,006e,0065,0020,0020,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-erase-word-end]
+read:006f,006e,0065,0020,0020,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">one  X"
+frontend-cursor:(1, 0)
+rows:[">one  X", "", "", "", "", "", "", ""]
+
+[erase-word-middle]
+read:006f,006e,0065,0020,0058,0020,0074,0061,0069,006c,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-erase-word-middle]
+read:006f,006e,0065,0020,0058,0020,0074,0061,0069,006c,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">one X tail"
+frontend-cursor:(1, 0)
+rows:[">one X tail", "", "", "", "", "", "", ""]
+
+[erase-word-unicode]
+read:4e2d,d83d,de00,0020,0020,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-erase-word-unicode]
+read:4e2d,d83d,de00,0020,0020,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">中😀  X"
+frontend-cursor:(1, 0)
+rows:[">中😀  X", "", "", "", "", "", "", ""]
+
+[erase-word-literal]
+read:006f,006e,0065,007f,0058,000d,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-erase-word-literal]
+read:006f,006e,0065,007f,0058,000d,
+controls:00000000
+queued:0
+cursor:0,0;0007
+screen:">one^?X"
+frontend-cursor:(0, 0)
+rows:[">one^?X", "", "", "", "", "", "", ""]
+
+[erase-word-wakeup]
+read:006f,006e,0065,0020,0020,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-erase-word-wakeup]
+read:006f,006e,0065,0020,0020,0058,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">one  X"
+frontend-cursor:(1, 0)
+rows:[">one  X", "", "", "", "", "", "", ""]
+
+[f6-middle]
+read:0061,0062,001a,0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-f6-middle]
+read:0061,0062,001a,0058,0063,0064,000d,000a,
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">ab^ZXcd"
+frontend-cursor:(1, 0)
+rows:[">ab^ZXcd", "", "", "", "", "", "", ""]
+
+[f6-wake]
+read:0061,0062,001a,
+controls:00000010
+queued:2
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-f6-wake]
+read:0061,0062,001a,
+controls:00000010
+queued:2
+cursor:3,0;0007
+screen:">ab"
+frontend-cursor:(0, 3)
+rows:[">ab", "", "", "", "", "", "", ""]
+
+[f6-literal]
+read:0061,0062,001a,0058,0063,0064,000d,
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-f6-literal]
+read:0061,0062,001a,0058,0063,0064,000d,
+controls:00000000
+queued:0
+cursor:0,0;0007
+screen:">ab^ZXcd"
+frontend-cursor:(0, 0)
+rows:[">ab^ZXcd", "", "", "", "", "", "", ""]
+
+[f6-file]
+read:
+controls:00000000
+queued:0
+cursor:1,0;0007
+screen:">"
+frontend-cursor:(0, 1)
+
+[echo-f6-file]
+read:
+controls:00000000
+queued:0
+cursor:0,1;0007
+screen:">^Z"
+frontend-cursor:(1, 0)
+rows:[">^Z", "", "", "", "", "", "", ""]

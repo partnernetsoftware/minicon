@@ -194,6 +194,47 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
             r.push(key(0, 88, 0, 1));
             r
         }
+        "erase-word-end" | "erase-word-middle" | "erase-word-unicode" | "erase-word-literal"
+        | "erase-word-wakeup" => {
+            if kind == "erase-word-literal" {
+                mode = 0xa2;
+            }
+            if kind == "erase-word-wakeup" {
+                wakeup = 1 << 8;
+            }
+            let value = match kind {
+                "erase-word-middle" => "one two tail",
+                "erase-word-unicode" => "中😀  λe\u{301}",
+                "erase-word-literal" => "one",
+                _ => "one  two  ",
+            };
+            let mut r = text(value);
+            if kind == "erase-word-middle" {
+                r.extend([press(0x24), key(0x27, 0, 0, 7)]);
+            }
+            r.extend([key(8, 127, 8, 1), key(0, 88, 0, 1)]);
+            r
+        }
+        "f6-middle" | "f6-wake" | "f6-literal" | "f6-file" => {
+            if kind == "f6-literal" {
+                mode = 0xa2;
+            }
+            if kind == "f6-wake" {
+                wakeup = 1 << 26;
+            }
+            if kind == "f6-file" {
+                vec![key(0x75, 0, 0, 1)]
+            } else {
+                let mut r = text("abcd");
+                r.extend([
+                    press(0x24),
+                    key(0x27, 0, 0, 2),
+                    key(0x75, 0, 16, 1),
+                    key(0, 88, 0, 1),
+                ]);
+                r
+            }
+        }
         "ctrl-home" => {
             let mut r = text("abcd");
             r.extend([key(0x25, 0, 0, 2), key(0x24, 0, 8, 1), key(0, 88, 0, 1)]);
@@ -416,6 +457,28 @@ exit 0
             .env_remove("MINICON_EDIT")
             .status()?;
         report.push_str(&format!("cmd-exit:{:?}\n", child.code()));
+    } else if kind == "f6-file" {
+        let mut data = [0_u8; 64];
+        if unsafe {
+            windows_sys::Win32::Storage::FileSystem::ReadFile(
+                input,
+                data.as_mut_ptr(),
+                64,
+                &mut count,
+                std::ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if count > 64 {
+            return Err(io::Error::other("oversized file read"));
+        }
+        report.push_str("read:");
+        for byte in &data[..count as usize] {
+            report.push_str(&format!("{byte:04x},"));
+        }
+        report.push_str("\ncontrols:00000000\n");
     } else {
         let mut buffer = [0_u16; 512];
         buffer[..initial.len()].copy_from_slice(&initial);

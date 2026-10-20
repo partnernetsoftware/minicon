@@ -59,6 +59,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   │   └── [-] native history editing keys
 │   │   │       ├── [v] scoped F1/F3 templates, F5/page navigation, F8 prefix search and Alt+F7
 │   │   │       └── [_] F2/F4/F7/F9 popup UI and broader concurrent lifetime qualification
+│   │   ├── [v] scoped native word erase and F6 control-character / ReadFile EOF semantics
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
@@ -4857,3 +4858,78 @@ Clippy with warnings denied pass; enabled workspace all-target Windows ARM64
 compilation passes without implying ARM64 execution. The exact staged tree,
 source/fault/check logs and executed-image hashes are recorded in
 `history-edit-final-receipt.json` under the ignored research directory.
+
+### Accepted native word erase and F6 leaf
+
+`[v]` Extend the existing cooked editor: native DEL (Ctrl+Backspace) erases the
+preceding word only in processed mode; F6 delivers Ctrl+Z through ordinary
+character/wakeup handling. Preserve the existing byte-transport Backspace
+mapping. Reuse word boundaries, read-owned echo and the existing ReadFile
+Ctrl+Z completion policy; input EOF must not close the live PTY output stream.
+Independent SDK cases must cover middle/end/Unicode deletion, processed/literal
+and wakeup precedence, F6 insertion/wakeup and ReadConsoleW versus ReadFile.
+Require native result/count/controls, queue, cursor and frame evidence against
+the installed system; prove new tests with compiling runtime faults. Dependencies
+are the native editor, code pages and input completion. Popup UI, GUI bindings,
+other Windows/ISA execution and complete key/modifier parity remain open.
+
+```mermaid
+flowchart LR
+    K["native DEL / F6"] --> E["existing cooked editor / character path"]
+    E --> W["wakeup or Enter / retained read ownership"]
+    W --> API["ReadConsoleW units / ReadFile EOF"]
+    E --> P["existing echo / shared screen"]
+    API --> C["SDK owned / installed-system court"]
+    P --> C
+```
+
+The editor's allocation-free ASCII-space word boundary is now shared by Ctrl+Left
+and processed native DEL. Literal native DEL remains original U+007F; the existing
+Windows PTY byte decoder still treats byte DEL as Backspace. F6 enters the same
+character routine as Ctrl+Z, preserving cursor insertion, processed/literal mode,
+wakeup masks and modifier reporting. The existing per-read ReadFile control-Z
+policy remains responsible for input EOF; the console and output transport remain
+alive afterward. No public API, terminal identity, OS/ISA selection or dependency
+is added.
+
+`rust_console_pty_native_word_erase_and_f6_keep_control_and_eof_semantics` and
+`rust_console_client_native_control_edit_compares_system_conpty` each open 18
+actual SDK sessions. Nine cases run with echo disabled/enabled: word erase at
+end/middle/Unicode, literal DEL and Backspace-mask precedence, F6 insertion,
+Ctrl+Z wakeup, literal-mode F6 and ReadFile EOF. They compare literal native
+units/counts, controls, pending-event count, native cursor/attributes and complete
+projected rows/cursor against the owned and build-20348 fixtures. The owned
+fixture was authored from the explicit input/result/glyph/cursor matrix and
+checked against observed output before use. SDK queries and the output end marker
+must succeed after ReadFile returns zero, followed by process exit zero and actual
+PTY output EOF. This separates input EOF from transport shutdown.
+
+The old installed system erases only the trailing space run, converts literal
+native DEL to Backspace, and handles F6 through a legacy insertion path that can
+overwrite middle characters and bypass the Ctrl+Z wakeup mask. Its Unicode glyph
+projection also differs. These measured results are retained explicitly in
+`cooked_control_edit_reference_20348.txt`; they are not accepted as owned output.
+The owned path follows the character/wakeup handling in Microsoft's current
+[cooked reader](https://github.com/microsoft/terminal/blob/main/src/host/readDataCooked.cpp),
+with original native character delivery documented by its
+[stream reader](https://github.com/microsoft/terminal/blob/main/src/host/stream.cpp).
+Newer Windows runtime parity, all word-delimiter classes, fragmented cache/EOF
+and concurrent mode transitions remain unqualified.
+
+Six compiling runtime faults fail the new native courts: remove word erase,
+remove F6 translation, drop its wakeup mask, disable the ReadFile control-Z EOF
+policy, suppress cooked painting, and corrupt the SDK's physical F6 key in the
+system comparison. Each restores original bytes in a finally block and checks
+SHA-256. Local qualification artifacts use `target/conhost-research/control-edit-*`;
+the final receipt binds staged source, complete native case bodies, snapshots,
+named test inventory, fault/check logs and executed images. This is native API
+and common-parser frame evidence, without GUI keyboard/pixel or default-provider
+promotion claims.
+
+Final local evidence: `control-edit-regression.log` has 142 named passes,
+including the two new native courts and their 36 SDK sessions. Formatting,
+default/enabled workspace all-target Clippy with warnings denied, and enabled
+workspace all-target Windows ARM64 compilation pass. Compilation does not imply
+ARM64 runtime coverage. `control-edit-final-receipt.json` records the staged tree,
+source and expectation hashes, all 36 native bodies/cursors/frames, six runtime
+faults, gate logs and executed images.

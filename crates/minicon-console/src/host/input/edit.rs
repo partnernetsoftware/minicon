@@ -106,17 +106,7 @@ impl Editor {
             // The installed native console uses ASCII spaces as word separators;
             // punctuation and tabs remain in the word. Scan original units so
             // invalid UTF-16 survives, with no allocations or line growth.
-            0x25 if ctrl => {
-                let prefix = &line[..self.cursor];
-                let end = prefix
-                    .iter()
-                    .rposition(|&unit| unit != 32)
-                    .map_or(0, |i| i + 1);
-                self.cursor = prefix[..end]
-                    .iter()
-                    .rposition(|&unit| unit == 32)
-                    .map_or(0, |i| i + 1);
-            }
+            0x25 if ctrl => self.cursor = word_previous(line, self.cursor),
             0x27 if ctrl => {
                 let suffix = &line[self.cursor..];
                 let end = suffix
@@ -135,6 +125,7 @@ impl Editor {
             0x2e if plain => {
                 line.drain(self.cursor..next(line, self.cursor));
             }
+            0x75 if plain => return self.character(line, 26, controls, processed, wakeup),
             _ => return self.character(line, character, controls, processed, wakeup),
         }
         Ok(Outcome::Continue)
@@ -166,8 +157,12 @@ impl Editor {
             self.cursor = line.len();
             return Ok(Outcome::Enter);
         }
-        if character == 8 && processed {
-            let start = previous(line, self.cursor);
+        if matches!(character, 8 | 127) && processed {
+            let start = if character == 127 {
+                word_previous(line, self.cursor)
+            } else {
+                previous(line, self.cursor)
+            };
             line.drain(start..self.cursor);
             self.cursor = start;
         } else {
@@ -198,6 +193,18 @@ impl Editor {
         self.cursor += 1;
         Ok(())
     }
+}
+
+fn word_previous(line: &[u16], cursor: usize) -> usize {
+    let prefix = &line[..cursor];
+    let end = prefix
+        .iter()
+        .rposition(|&unit| unit != 32)
+        .map_or(0, |i| i + 1);
+    prefix[..end]
+        .iter()
+        .rposition(|&unit| unit == 32)
+        .map_or(0, |i| i + 1)
 }
 
 // Lossy text is used only to find grapheme boundaries. Each invalid UTF-16

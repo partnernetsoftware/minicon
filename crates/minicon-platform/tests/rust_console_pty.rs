@@ -5115,6 +5115,76 @@ fn rust_console_client_cooked_word_navigation_compares_system_conpty() {
     cooked_word_cases(false);
 }
 
+fn native_control_edit_cases(rust: bool) {
+    let mut failures = Vec::new();
+    for (kind, expected) in [
+        ("erase-word-end", "one  X\r\n"),
+        ("erase-word-middle", "one X tail\r\n"),
+        ("erase-word-unicode", "中😀  X\r\n"),
+        ("erase-word-literal", "one\u{7f}X\r"),
+        ("erase-word-wakeup", "one  X\r\n"),
+        ("f6-middle", "ab\u{1a}Xcd\r\n"),
+        ("f6-wake", "ab\u{1a}"),
+        ("f6-literal", "ab\u{1a}Xcd\r"),
+        ("f6-file", ""),
+    ] {
+        for prefix in ["", "echo-"] {
+            let name = format!("{prefix}{kind}");
+            let body = cooked_edit_report(&name, rust);
+            let expected = if !rust {
+                match kind {
+                    "erase-word-end" | "erase-word-wakeup" => "one  twoX\r\n",
+                    "erase-word-literal" => "one\u{8}X\r",
+                    "f6-middle" | "f6-wake" => "ab\u{1a}Xd \r\n",
+                    "f6-literal" => "ab\u{1a}Xd \r",
+                    _ => expected,
+                }
+            } else {
+                expected
+            };
+            let read = expected
+                .encode_utf16()
+                .map(|unit| format!("{unit:04x},"))
+                .collect::<String>();
+            let controls = if rust && kind == "f6-wake" { 16 } else { 0 };
+            if !body.starts_with(&format!("read:{read}\ncontrols:{controls:08x}\n")) {
+                failures.push(format!("kind={name};rust={rust};{body}"));
+            }
+            let cases = if rust {
+                include_str!("support/cooked_control_edit_owned.txt")
+            } else {
+                include_str!("support/cooked_control_edit_reference_20348.txt")
+            }
+            .replace("\r\n", "\n");
+            let section = format!("[{name}]\n");
+            let expected = cases
+                .split_once(&section)
+                .unwrap()
+                .1
+                .split("\n[")
+                .next()
+                .unwrap();
+            assert_eq!(
+                body.trim_end(),
+                expected.trim_end(),
+                "kind={name};rust={rust}"
+            );
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn rust_console_pty_native_word_erase_and_f6_keep_control_and_eof_semantics() {
+    native_control_edit_cases(true);
+}
+
+#[test]
+#[ignore = "explicit build-20348 word erase / F6 control and EOF comparison"]
+fn rust_console_client_native_control_edit_compares_system_conpty() {
+    native_control_edit_cases(false);
+}
+
 fn cooked_echo_cases(rust: bool) {
     for kind in [
         "insert",
