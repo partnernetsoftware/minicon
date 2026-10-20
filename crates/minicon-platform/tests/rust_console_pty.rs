@@ -1,7 +1,8 @@
 #![cfg(all(windows, feature = "rust-console"))]
 //! Exercise the opened PTY facade, rather than manually servicing ConDrv.
 use minicon_platform::pty::{
-    ChildCommand, NativeInputOwnership, NativeTerminalKey, PtyChild, PtyMaster, TerminalSize,
+    ChildCommand, NativeInputOwnership, NativeInputReadState, NativeTerminalKey, PtyChild,
+    PtyMaster, TerminalSize,
 };
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
@@ -5085,6 +5086,96 @@ fn rust_console_client_read_retirement_compares_system_conpty() {
     retiring_buffer_cases(false);
 }
 
+fn wait_native_read(child: &PtyChild, records: bool, admitted_only: bool) -> NativeInputReadState {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let state = child.native_input_read_state().unwrap();
+        let text = state.admitted_text + state.deferred_text;
+        let events = state.admitted_records + state.deferred_records;
+        if text == u32::from(!records)
+            && events == u32::from(records)
+            && (!admitted_only || state.deferred_text + state.deferred_records == 0)
+        {
+            return state;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "native read not retained/admitted: {state:?}"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn observe_native_read_cases(rust: bool) {
+    for kind in if rust {
+        vec!["file", "console", "records"]
+    } else {
+        vec!["file"]
+    } {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("observe-read-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        report.wait_ready();
+        if rust {
+            assert_eq!(
+                fixture.child.native_input_read_state().unwrap(),
+                NativeInputReadState::default()
+            );
+        } else {
+            assert!(matches!(
+                fixture.child.native_input_read_state(),
+                Err(minicon_platform::pty::PtyError::Unsupported { .. })
+            ));
+        }
+        std::fs::write(report.0.with_extension("start"), b"read").unwrap();
+        let waiting = if rust {
+            Some(wait_native_read(&fixture.child, kind == "records", true))
+        } else {
+            None
+        };
+        fixture.master.write_all(b"Z").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !report.0.exists() {
+            assert!(Instant::now() < deadline, "observed read did not finish");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let native = std::fs::read_to_string(&report.0).unwrap();
+        assert_eq!(native, format!("{kind}:true,0,1,90"));
+        if rust {
+            assert_eq!(
+                fixture.child.native_input_read_state().unwrap(),
+                NativeInputReadState::default()
+            );
+        }
+        std::fs::write(report.0.with_extension("opened"), b"exit").unwrap();
+        fixture.finish(34);
+        if rust {
+            assert!(
+                fixture.child.native_input_read_state().is_err(),
+                "closed observer must not report a fabricated idle state"
+            );
+        }
+        eprintln!(
+            "native-read-state rust={rust};kind={kind};waiting={waiting:?};native={native:?};exit=34;eof=true"
+        );
+    }
+}
+#[test]
+fn rust_console_pty_native_read_state_observes_admission_completion_and_idle() {
+    observe_native_read_cases(true);
+}
+#[test]
+#[ignore = "explicit installed-system native read observation capability check"]
+fn rust_console_client_native_read_state_is_explicitly_unsupported() {
+    observe_native_read_cases(false);
+}
+
 fn queued_read_pressure_cases(rust: bool) {
     let kinds: &[&str] = if rust {
         &[
@@ -5107,7 +5198,10 @@ fn queued_read_pressure_cases(rust: bool) {
     for &kind in kinds {
         let report = Report::new();
         let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
-            .arg(format!("queued-read-{kind}"))
+            .arg(format!(
+                "queued-read-{}{kind}",
+                if rust { "observed-" } else { "" }
+            ))
             .arg(report.0.as_os_str());
         let (master, child) = if rust {
             command.rust_console().spawn().unwrap().into_parts()
@@ -5119,6 +5213,26 @@ fn queued_read_pressure_cases(rust: bool) {
             if rust { "rust-console" } else { "conpty" }
         );
         report.wait_ready();
+        if rust {
+            let state = wait_native_read(&child, kind.ends_with("records"), false);
+            // This fixture deliberately withholds output consumption. The
+            // host's ordered input calls must still be in output admission,
+            // not misreported as validated input waiters.
+            assert_eq!(state.admitted_text, 0, "{kind}: {state:?}");
+            assert_eq!(state.admitted_records, 0, "{kind}: {state:?}");
+            assert_eq!(
+                state.deferred_text,
+                u32::from(!kind.ends_with("records")),
+                "{kind}: {state:?}"
+            );
+            assert_eq!(
+                state.deferred_records,
+                u32::from(kind.ends_with("records")),
+                "{kind}: {state:?}"
+            );
+            eprintln!("queued-read-state kind={kind};state={state:?}");
+            std::fs::write(report.0.with_extension("go"), b"host-retained").unwrap();
+        }
         if kind.starts_with("interrupt") || kind.starts_with("signal") {
             if rust && kind != "signal-file" {
                 child.send_native_key(NativeTerminalKey::Break, 1).unwrap();
@@ -5219,13 +5333,26 @@ fn pending_mode_cases(rust: bool) {
             let kind = format!("{api}-{case}");
             let report = Report::new();
             let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
-                .arg(format!("mode-wait-{kind}"))
+                .arg(format!(
+                    "mode-wait-{}{kind}",
+                    if rust { "observed-" } else { "" }
+                ))
                 .arg(report.0.as_os_str());
             let mut fixture = if rust {
                 Fixture::open(command.rust_console())
             } else {
                 Fixture::open_backend(command, "conpty")
             };
+            if rust {
+                let deadline = Instant::now() + Duration::from_secs(8);
+                while !report.0.with_extension("submitted").exists() {
+                    assert!(Instant::now() < deadline, "mode read not submitted");
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                let state = wait_native_read(&fixture.child, false, true);
+                eprintln!("mode-read-state kind={kind};state={state:?}");
+                std::fs::write(report.0.with_extension("go"), b"host-admitted").unwrap();
+            }
             report.wait_ready();
             let signalled = case.ends_with("signal");
             if signalled {

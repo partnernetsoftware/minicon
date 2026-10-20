@@ -52,6 +52,20 @@ impl std::error::Error for PtyError {}
 
 pub type PtyResult<T> = Result<T, PtyError>;
 
+/// Read-only aggregate for this session's native console, including its
+/// attached descendants. Admitted reads are validated waiters; deferred reads
+/// are retained calls awaiting output admission. This snapshot contains no
+/// process/file identity and grants no authority over future reads.
+/// Backends without this observation capability return Unsupported.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct NativeInputReadState {
+    pub admitted_text: u32,
+    pub admitted_records: u32,
+    pub deferred_text: u32,
+    pub deferred_records: u32,
+}
+
 /// Evidence returned only after the native PTY containment owner has stopped
 /// every process it can still identify and has observed that containment empty.
 ///

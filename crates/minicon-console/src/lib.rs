@@ -25,4 +25,4 @@ pub use client::{ClientOptions, ConsoleChild};
 #[cfg(windows)]
 pub use driver::{DriverRequest, DriverSession, RequestDescriptor};
 #[cfg(windows)]
-pub use host::{ConsoleHost, ConsoleInput, DispatchReceipt};
+pub use host::{ConsoleHost, ConsoleInput, DispatchReceipt, InputReadState};

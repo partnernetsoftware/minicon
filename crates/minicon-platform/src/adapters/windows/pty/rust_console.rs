@@ -10,6 +10,7 @@ pub(super) use input::RustInput;
 
 type Reply = mpsc::Sender<io::Result<()>>;
 enum Control {
+    ReadState(mpsc::Sender<io::Result<NativeInputReadState>>),
     Resize(TerminalSize, Reply),
     Key(NativeTerminalKey, u16, Reply),
     Interrupt(bool, mpsc::Sender<io::Result<bool>>),
@@ -26,6 +27,10 @@ pub(super) struct RustConsole {
 }
 
 impl RustConsole {
+    pub(super) fn input_read_state(&self) -> io::Result<NativeInputReadState> {
+        self.input
+            .request(Control::ReadState, Duration::from_secs(2))
+    }
     fn request(&self, make: impl FnOnce(Reply) -> Control) -> io::Result<()> {
         self.input.request(make, PTY_WRITE_TIMEOUT)
     }
@@ -325,6 +330,16 @@ fn serve(
         // Bound each lap so input cannot starve native request dispatch.
         for control in controls.try_iter().take(32) {
             let (result, reply) = match control {
+                Control::ReadState(reply) => {
+                    let state = host.input_read_state();
+                    let _ = reply.send(Ok(NativeInputReadState {
+                        admitted_text: state.admitted_text,
+                        admitted_records: state.admitted_records,
+                        deferred_text: state.deferred_text,
+                        deferred_records: state.deferred_records,
+                    }));
+                    continue;
+                }
                 Control::Resize(size, reply) => (
                     if sink.ready() && !host.has_pending_output() {
                         host.resize(size.cols, size.rows, &mut sink)

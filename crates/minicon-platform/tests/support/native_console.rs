@@ -103,6 +103,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("observe-read-") {
+        return queued_reads::observe_read(kind, std::path::Path::new(&arguments[1]));
+    }
     if matches!(mode, "status-roundtrip" | "status-query-overflow") {
         return status_roundtrip::run(
             std::path::Path::new(&arguments[1]),

@@ -211,6 +211,9 @@ pub(super) fn raw_read(input: HANDLE, api: &str, capacity: u32) -> io::Result<Ve
 
 /// Change LINE_INPUT after a native text request has become a waiting read.
 pub(crate) fn mode_wait(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let (kind, observed) = kind
+        .strip_prefix("observed-")
+        .map_or((kind, false), |kind| (kind, true));
     let (api, action) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
     let file = match api {
         "file" => true,
@@ -277,11 +280,14 @@ pub(crate) fn mode_wait(kind: &str, report: &Path, controlled: bool) -> io::Resu
         check(unsafe { GetThreadIOPendingFlag(reader.as_raw_handle(), &mut pending) })?;
         Ok(pending != 0)
     })?;
-    if controlled {
+    if observed {
+        publish(&report.with_extension("submitted"), "thread-pending")?;
+    }
+    if controlled || observed {
         wait(deadline, || Ok(report.with_extension("go").exists()))?;
     }
-    // The independent direct court has admitted the read before this change.
-    // The PTY court leaves output free and submits the mode API after pending I/O.
+    // Direct and observed PTY courts acknowledge host admission before change.
+    // The installed-system comparison can observe only thread-level I/O pending.
     let changed = if cooked { 1 } else { 3 };
     check(unsafe { SetConsoleMode(input, changed) })?;
     publish(&report.with_extension("ready"), "mode-changed")?;
@@ -397,13 +403,17 @@ fn read(input: HANDLE, api: Api) -> (bool, u32, u32, u16) {
             }
             Api::Console => {
                 let mut units = [0_u16; 32];
-                ReadConsoleW(
+                let result = ReadConsoleW(
                     input,
                     units.as_mut_ptr().cast(),
                     units.len() as u32,
                     &mut count,
                     std::ptr::null_mut(),
-                )
+                );
+                if count != 0 {
+                    unit = units[0];
+                }
+                result
             }
             Api::Records => {
                 let mut records = [INPUT_RECORD::default(); 8];
@@ -423,7 +433,30 @@ fn read(input: HANDLE, api: Api) -> (bool, u32, u32, u16) {
     }
 }
 
+/// A synchronous native read bracketed by independent file barriers. The
+/// parent observes backend state, supplies data, then observes retirement.
+pub(crate) fn observe_read(kind: &str, report: &Path) -> io::Result<()> {
+    let api = match kind {
+        "file" => Api::File,
+        "console" => Api::Console,
+        "records" => Api::Records,
+        _ => return Err(io::ErrorKind::InvalidInput.into()),
+    };
+    let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    check(unsafe { SetConsoleMode(input, 0) })?;
+    let deadline = Instant::now() + Duration::from_secs(18);
+    publish(&report.with_extension("ready"), "before-read")?;
+    wait(deadline, || Ok(report.with_extension("start").exists()))?;
+    let (ok, error, count, unit) = read(input, api);
+    publish(report, &format!("{kind}:{ok},{error},{count},{unit}"))?;
+    wait(deadline, || Ok(report.with_extension("opened").exists()))?;
+    std::process::exit(34)
+}
+
 pub(crate) fn run(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let (kind, observed) = kind
+        .strip_prefix("observed-")
+        .map_or((kind, false), |kind| (kind, true));
     let (action, api) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
     let api = match api {
         "file" => Api::File,
@@ -500,6 +533,9 @@ pub(crate) fn run(kind: &str, report: &Path, controlled: bool) -> io::Result<()>
         wait(deadline, || Ok(report.with_extension("go-two").exists()))?;
     }
     publish(&report.with_extension("ready"), "read-submitted")?;
+    if observed {
+        wait(deadline, || Ok(report.with_extension("go").exists()))?;
+    }
     if matches!(action, "disconnect" | "other") {
         unsafe {
             check(FreeConsole())?;

@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 use libc::{self, c_int, pid_t};
 
 use crate::contract::pty::{
-    NativeInputOwnership, NativeTerminalKey, ProcessId, PtyCleanupReceipt, PtyError,
-    PtyForegroundSignal, PtyForegroundSignalReceipt, PtyResult, TerminalSize,
+    NativeInputOwnership, NativeInputReadState, NativeTerminalKey, ProcessId, PtyCleanupReceipt,
+    PtyError, PtyForegroundSignal, PtyForegroundSignalReceipt, PtyResult, TerminalSize,
 };
 use crate::process_control::TerminationMode;
 use crate::process_reference::{ProcessReference, ProcessWait};
@@ -254,6 +254,12 @@ impl PtyChild {
         Err(PtyError::unsupported(
             "inspect native input ownership",
             "the POSIX PTY adapter has no Win32 console input mode",
+        ))
+    }
+    pub fn native_input_read_state(&self) -> PtyResult<NativeInputReadState> {
+        Err(PtyError::unsupported(
+            "inspect native input reads",
+            "the POSIX PTY adapter does not expose native read retention/admission",
         ))
     }
 }

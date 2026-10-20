@@ -54,8 +54,8 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use crate::contract::pty::{
-    NativeInputOwnership, NativeTerminalKey, ProcessId, PtyCleanupReceipt, PtyError,
-    PtyForegroundSignal, PtyForegroundSignalReceipt, PtyResult, TerminalSize,
+    NativeInputOwnership, NativeInputReadState, NativeTerminalKey, ProcessId, PtyCleanupReceipt,
+    PtyError, PtyForegroundSignal, PtyForegroundSignalReceipt, PtyResult, TerminalSize,
 };
 
 use super::console_agent;
@@ -782,6 +782,25 @@ impl PtyChild {
             )
         })?;
         Ok(classify_console_input_mode(mode))
+    }
+
+    /// Observe aggregate native read retention/admission without attaching to
+    /// a console, reading user input or guessing from an OS thread's I/O flag.
+    pub fn native_input_read_state(&self) -> PtyResult<NativeInputReadState> {
+        #[cfg(feature = "rust-console")]
+        if let Some(rust) = &self.session.rust {
+            return rust.input_read_state().map_err(|error| {
+                pty_error(
+                    "inspect native input reads",
+                    "pty_native_read_state_failed",
+                    error,
+                )
+            });
+        }
+        Err(PtyError::unsupported(
+            "inspect native input reads",
+            "this backend does not expose native read retention/admission",
+        ))
     }
 }
 

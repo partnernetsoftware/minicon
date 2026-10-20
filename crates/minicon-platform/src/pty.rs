@@ -1,8 +1,9 @@
 //! PTY facade projection; native handles remain adapter-private to selection.
 
 pub use crate::contract::pty::{
-    InvalidProcessId, NativeInputOwnership, NativeTerminalKey, ProcessId, PtyCleanupReceipt,
-    PtyError, PtyForegroundSignal, PtyForegroundSignalReceipt, PtyResult, TerminalSize,
+    InvalidProcessId, NativeInputOwnership, NativeInputReadState, NativeTerminalKey, ProcessId,
+    PtyCleanupReceipt, PtyError, PtyForegroundSignal, PtyForegroundSignalReceipt, PtyResult,
+    TerminalSize,
 };
 pub use crate::selected::pty::{ChildCommand, PtyChild, PtyMaster, login_shell_argument};
 

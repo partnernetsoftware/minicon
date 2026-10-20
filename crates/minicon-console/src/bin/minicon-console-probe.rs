@@ -48,6 +48,9 @@ fn run() -> std::io::Result<()> {
     }
     let mode = args[0].to_str().unwrap_or("");
     let result = std::path::Path::new(&args[1]);
+    if let Some(kind) = mode.strip_prefix("observe-read-") {
+        return queued_reads::observe_read(kind, result);
+    }
     if let Some(kind) = mode.strip_prefix("cache-parent-") {
         return cache_inherit::run(kind, result, false);
     }

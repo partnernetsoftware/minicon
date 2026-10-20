@@ -57,6 +57,11 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: actual console programs, SDK receipts and private-Job lifecycle
 │   safe failure: explicit unsupported/invalid/native errors; no system-host fallback
 │   dependency: ConDrv and Windows adapters; non-goal: replacing the Windows kernel
+│   └── [v] scoped read-only read-state inventory; native admission versus retained output queue
+│       invariant: classify actual retained requests; metadata calls are not input waiters
+│       evidence: native SDK states, opened PTY controls and gated lifecycle courts
+│       safe failure: Unsupported/error rather than fabricated idle; no future/PID authority
+│       dependency: Windows host ledger; non-goal: a portable session implementation
 ├── [_] Portable session composition and input vocabulary
 │   invariant: shared terminal semantics; OS-specific capabilities stay explicit
 │   evidence: same external consumer and scenarios on macOS/Linux/Windows
@@ -83,6 +88,8 @@ flowchart LR
     PROFILE["planned consumer-selected identity / capability profiles"] -.-> COMMON
     APP -. selection .-> PROFILE
     PLATFORM -->|"rust-console opt-in"| WIN["minicon-console Windows service"]
+    WIN --> READSTATE["aggregate native InputReadState"]
+    READSTATE -->|"value mapped by adapter; no reverse library dependency"| PLATFORM
     VP["TerminalViewport / mapped publication / staged screen edits"] --> COMMON
     FOLLOW["ViewportFollow: Fixed / Vertical / Cursor"] --> VP
     ACT["write_viewport_activation / ProjectionLimit"] --> VP
@@ -171,6 +178,35 @@ owned-session retirement are qualified separately by
 [PRD 34](PRD_02_34_windows_console_backend.md#status-response-routing-and-cpr-key-boundary).
 Gate/fault receipts and composed-versus-single-suite limitations are recorded
 with that native court. Synchronization/profile settings remain separate work.
+
+## Native read inventory and optional PTY observation
+
+The Windows service exports `InputReadState` through
+`ConsoleHost::input_read_state()`. Its four u32 counters distinguish admitted
+text/record waiters from supported text/record requests retained behind output
+admission. The former have validated their arguments and selected their input
+kind; the latter have not yet become logical waiters. Ordinary mode queries,
+keyboard data/events and unrelated I/O are not counted as waiting reads.
+This aggregate covers the hosted console and its attached descendants, without
+process, request or file identifiers. Empty read inventory does not establish
+that a process has no other work or I/O. The non-exhaustive value type permits
+future observation fields without exposing native handles or an ISA ABI.
+
+The platform owner maps that value into its independent, non-exhaustive
+`NativeInputReadState` contract. `PtyChild::native_input_read_state()` queries
+the opened Rust provider through its existing bounded control channel. The
+adapter owns the transport, timeout and supported-backend decision; it does
+not attach to a process's console. Installed-system/mirror and shared POSIX
+adapters return Unsupported rather than zero counters. The library adds no
+dependency on platform, clock, GUI or application policy.
+
+Neither value is a lock or authority over a future request. A test that holds
+one known SDK reader before supplying input or releasing a lifecycle action
+can use the observation as a phase acknowledgement. Arbitrary applications
+may finish or start another read after a snapshot. Native phase/runtime courts
+and their limitations belong to
+[PRD 34](PRD_02_34_windows_console_backend.md#native-read-retention-and-admission-observation).
+This native observation does not implement the planned portable session API.
 
 ## Dependency and public API boundary
 

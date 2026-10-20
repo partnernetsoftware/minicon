@@ -37,6 +37,11 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   evidence: independent native literal responses, raw/VT modes, F3 records and exit/EOF
 │   │   safe failure: bounded query inventory and session-local teardown on tracking failure
 │   │   dependency: PRD 35 common response tracker; non-goal: cross-process reply attribution
+│   ├── [v] scoped native read retention/admission through the opened PTY
+│   │   invariant: distinguish retained deferred calls from validated waiting reads; metadata I/O is neither
+│   │   evidence: actual SDK phase transitions, pressure/mode gates and bounded read-only control
+│   │   safe failure: unavailable backend returns Unsupported; snapshot grants no future read/PID authority
+│   │   dependency: native host inventory + platform PTY control; non-goal: guessing ConPTY internals from thread I/O flags
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
@@ -121,6 +126,7 @@ flowchart LR
     FRONTEND["frontend-owned capability replies"] --> RINPUT["common report grammar / finite CPR window before key decoder"]
     HOST --> ACCEPTED["accepted output / caller clock"] --> CPR["common outstanding CPR inventory"] --> RINPUT
     RINPUT --> HOST
+    READOBS["read-only PTY control / aggregate native read state"] --> HOST
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
     HOST --> INPUT["deferred input / input-ready event"]
@@ -4367,3 +4373,87 @@ qualification stages the order-sensitive system queued-disconnect court
 separately and must not be described as a stable single-invocation full suite.
 The lifecycle admission/order issue remains open; the two concrete fixture
 repairs above do not establish that it is fixed.
+
+### Native read retention and admission observation
+
+Invariant: lifecycle and mode-change evidence names the actual native read
+phase, rather than equating generic thread I/O with an admitted read.
+Microsoft documents [GetThreadIOPendingFlag](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadiopendingflag)
+as an observation of any pending I/O on the thread, and notes that it can
+already have changed when returned. The lack of request identity/admission
+information is why that flag alone cannot prove the stronger console phase.
+This is a boundary inference, not a diagnosis of every prior failure.
+
+`ConsoleHost::input_read_state()` counts validated waiting text/record reads
+separately from corresponding requests retained behind output admission. It
+uses existing input/deferred inventories and the driver's cached read-family
+classification, with no additional OS reads, callbacks or IDs. The Windows
+adapter maps that native value to the platform's optional
+`PtyChild::native_input_read_state()` capability. Its read-only control has
+the existing bounded priority channel and a two-second timeout; it remains
+serviceable while terminal output is blocked. Closed observation fails instead
+of reporting fabricated idle. Non-Rust Windows and shared POSIX adapters
+return Unsupported, without attaching to a console. Public reuse and value
+semantics belong to [PRD 35](PRD_02_35_terminal_library.md#native-read-inventory-and-optional-pty-observation).
+
+`rust_console_pty_native_read_state_observes_admission_completion_and_idle`
+runs independent ReadFile, ReadConsoleW and ReadConsoleInputW SDK cases. File
+barriers hold the client before its synchronous read and again after it
+returns. The parent observes empty inventory, exactly one admitted waiter of
+the expected family, then empty inventory after actual input Z completes the
+read. Each SDK result must independently report success, error 0, count 1 and
+unit 90, followed by child exit 34 and EOF. The observer must fail after close.
+The SDK's generic Console reader now copies a positive read's first UTF-16
+unit into its result; prior cancellation-only cases had returned zero units.
+`rust_console_client_native_read_state_is_explicitly_unsupported` verifies
+the installed-system capability error and a normal native file read/exit.
+
+The existing owned queued-pressure court now holds lifecycle/control actions
+behind an observed host-retained text/record read. Seven scenarios expose
+retained deferred reads under unread output; their original status, native
+result, control, writer-byte and cleanup assertions remain. The owned
+mode-change court holds eight changes until a validated text waiter is
+observed, then tests the original captured cooked/raw kind and signal result.
+Neither uses GetThreadIOPendingFlag as the host-admission acknowledgement.
+The SDK's earlier OS-pending marker remains only a submission precursor.
+Installed-system mode/pressure comparisons retain their weaker observation;
+no equivalent introspection capability is invented for them.
+
+Dependencies are existing request classification, input/output ledgers,
+bounded PTY controls, atomic SDK publication and private-Job lifecycle.
+Safe failure is bounded control error, Unsupported or finite fixture cleanup.
+Snapshots are console-wide observations, not locks or promises that arbitrary
+applications cannot change state afterward. Unknown operations, other I/O,
+cross-process correlation, installed-system ordering, modern Windows and
+other OS/ISA runtime remain open.
+
+Final-source evidence: 324 distinct tests pass in three mandatory invocations
+(322 selected regressions plus isolated queued-disconnect and mode-change
+installed-system references). All preceding 322 identities are retained and
+two observation courts are added. The system mode reference also failed with
+the same frozen source in a broader invocation (cooked expectation versus raw
+result); that diagnostic is retained. Its separate positive invocation does
+not prove the missing host-admission phase or single-suite order stability.
+Neither reference assertion was relaxed. The owned pressure court additionally
+asserts the exact deferred family and zero admitted counters before release.
+
+Eight compiling runtime faults break admitted text/record counters, conflate
+each deferred family with admitted state, block read-only control on output,
+fabricate unsupported-provider idle, reinterpret a saved waiter using live
+mode and discard positive SDK Console data. Each fails its intended one of
+the four new/affected courts. Bytes are restored in finally and checked by
+hash. Nine restored focused courts pass, retaining the direct native admitted
+mode/queued-read oracles, preceding actual query round trips and control/query
+liveness under output pressure. Nine static/cross-target checks and 17 final
+alignment checks pass: default/enabled workspace Clippy, four console-library
+targets, Windows ARM64 PTY/Rust-console and two minimal Linux PTY targets.
+
+`read-state-final-receipt.json` binds the staged tree, 12 changed source/test
+files, eight unchanged hot-file guards, all check/fault/log hashes, composed
+324 identities and 19 native phase observations: four SDK outcomes including
+the unsupported-provider case, eight mode snapshots and seven retained-read
+snapshots. Eleven x64 image identities are a compiled-image inventory; four
+are exercised by the final focused courts. Runtime qualification remains
+Windows x86_64 build 20348 only. Cross-target checks prove compilation, not
+runtime. Artifacts remain under ignored `target/conhost-research/read-state-*`;
+this adds neither default-provider promotion nor real Claude Code acceptance.

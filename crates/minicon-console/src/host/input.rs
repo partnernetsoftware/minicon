@@ -14,6 +14,19 @@ pub(super) const MAX_EVENTS: usize = 4096;
 const MAX_PENDING: usize = 64;
 const MAX_LINE: usize = 32768;
 
+/// Read-only aggregate for the entire hosted console, not one process or file.
+/// Admitted reads have validated arguments and selected their input kind;
+/// deferred reads are retained behind output admission. Counts are snapshots,
+/// not locks, completion promises or authority to act on a later request.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct InputReadState {
+    pub admitted_text: u32,
+    pub admitted_records: u32,
+    pub deferred_text: u32,
+    pub deferred_records: u32,
+}
+
 /// Native console input expressed without exposing Windows union pointers.
 #[derive(Clone, Copy, Debug)]
 pub enum ConsoleInput {
@@ -272,6 +285,24 @@ impl<'session> ConsoleHost<'session> {
 
     pub fn pending_reads(&self) -> usize {
         self.input.pending.len()
+    }
+
+    pub fn input_read_state(&self) -> InputReadState {
+        let mut state = InputReadState::default();
+        for read in &self.input.pending {
+            match read.kind {
+                ReadKind::Text { .. } => state.admitted_text += 1,
+                ReadKind::Records { .. } => state.admitted_records += 1,
+            }
+        }
+        for request in &self.deferred_output {
+            if request.is_console_text_read() {
+                state.deferred_text += 1;
+            } else if request.is_console_read() {
+                state.deferred_records += 1;
+            }
+        }
+        state
     }
 
     /// Queue input atomically, respecting the bounded event inventory. Text
