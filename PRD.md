@@ -52,7 +52,8 @@ MiniCon — one-file local terminal
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
     ├── [v] v0.2.15 → prd/archive/v0.2.15-release-history.md
-    └── [v] v0.2.16 design; [_] implementation → plan/plan-v0.2.16.md
+    ├── [v] v0.2.16 design; [_] implementation → plan/plan-v0.2.16.md
+    └── [_] 0.2.x product sequence / release decisions → plan/plan-v0.2.x-product-roadmap.md
 ```
 
 The reuse map distinguishes public contracts, actual consumers, required
@@ -141,6 +142,11 @@ flowchart LR
   coverage/cost evidence. [Plan](plan/plan-v0.2.16.md) sequences the
   [owning contract](prd/PRD_02_33_test_orchestration.md). No 0.2.16 code or
   version bump is claimed by the design.
+- [_] **0.2.x product sequence proposed.** After 0.2.16 developer feedback,
+  prioritize the reported modern TUI corruption, an explicit owned Windows
+  backend preview, independent terminal-library reuse, then a measured Windows
+  default decision. The [product roadmap](plan/plan-v0.2.x-product-roadmap.md)
+  owns the proposed version gates; the linked PRDs retain behavior and evidence.
 - [-] **RSS and transient-host cost**, including carried `{AMPLIFIER-T}`, remain
   open. The 10 MiB intent is not achieved by this release. Measurements and
   retained-frame/native-host investigations belong to
