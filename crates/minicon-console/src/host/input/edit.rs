@@ -18,6 +18,10 @@ impl Editor {
     pub(super) fn cursor(&self) -> usize {
         self.cursor
     }
+    pub(super) fn replace(&mut self, line: &mut Vec<u16>, replacement: Vec<u16>) {
+        self.cursor = replacement.len();
+        *line = replacement;
+    }
     pub(super) fn new(length: usize, insert: bool) -> Self {
         Self {
             cursor: length,

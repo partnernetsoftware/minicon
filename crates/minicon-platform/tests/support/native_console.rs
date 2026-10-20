@@ -33,6 +33,8 @@ mod echo_output;
 #[cfg(windows)]
 mod geometry;
 #[cfg(windows)]
+mod history;
+#[cfg(windows)]
 mod indexed_output;
 #[cfg(windows)]
 mod inheritance;
@@ -149,6 +151,9 @@ fn run() -> std::io::Result<()> {
     }
     if let Some(kind) = mode.strip_prefix("cooked-edit-") {
         return cooked_edit::run(kind, std::path::Path::new(&arguments[1]));
+    }
+    if let Some(kind) = mode.strip_prefix("history-") {
+        return history::run(kind, std::path::Path::new(&arguments[1]));
     }
     if let Some(kind) = mode.strip_prefix("cooked-buffer-") {
         return cooked_buffer::run(kind, std::path::Path::new(&arguments[1]), false);

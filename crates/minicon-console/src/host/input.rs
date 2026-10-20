@@ -814,6 +814,19 @@ impl<'session> ConsoleHost<'session> {
                 if echo {
                     self.prepare_cooked_echo(read)?;
                 }
+                if controls & 0xf == 0 && matches!(virtual_key, 0x26 | 0x28) {
+                    if let Some(line) = self
+                        .histories
+                        .recall(read.request.descriptor.process, virtual_key == 0x26)
+                    {
+                        read.editor.replace(&mut read.line, line);
+                    }
+                    echo_dirty |= echo;
+                    continue;
+                }
+                if controls & 0xf == 0 && virtual_key == 27 {
+                    self.histories.reset(read.request.descriptor.process);
+                }
                 let outcome = read.editor.handle(
                     &mut read.line,
                     character,
@@ -837,6 +850,7 @@ impl<'session> ConsoleHost<'session> {
                             0
                         };
                         if echo && matches!(outcome, edit::Outcome::Enter) {
+                            self.record_read_history(read);
                             self.expand_read_alias(read);
                         }
                         self.input.stage_text(read);
@@ -920,6 +934,7 @@ impl<'session> ConsoleHost<'session> {
                     if processed {
                         self.echo_unit(&mut read.echo_decoder, 10, output)?;
                     }
+                    self.record_read_history(read);
                     self.expand_read_alias(read);
                 }
                 self.input.stage_text(read);
@@ -1064,6 +1079,15 @@ impl<'session> ConsoleHost<'session> {
         }
         self.input.prune_cache(object);
         Ok(bytes)
+    }
+
+    fn record_read_history(&mut self, read: &PendingRead<'_>) {
+        let line = read
+            .line
+            .strip_suffix(&[13, 10])
+            .or_else(|| read.line.strip_suffix(&[13]))
+            .unwrap_or(&read.line);
+        self.histories.record(read.request.descriptor.process, line);
     }
 
     fn expand_read_alias(&mut self, read: &mut PendingRead<'_>) {

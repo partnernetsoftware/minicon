@@ -7,6 +7,7 @@ mod cursor;
 mod encoding;
 mod font;
 mod geometry;
+mod history;
 mod indexed;
 mod input;
 mod objects;
@@ -67,6 +68,7 @@ pub struct ConsoleHost<'session> {
     session: Option<&'session DriverSession>,
     input: InputState<'session>,
     aliases: aliases::Aliases,
+    histories: history::Histories,
     session_id: Option<u64>,
     processes: BTreeMap<usize, u32>,
     control: Option<crate::control::ControlScope<'session>>,
@@ -98,6 +100,7 @@ impl Default for ConsoleHost<'_> {
             session: None,
             input: InputState::default(),
             aliases: aliases::Aliases::default(),
+            histories: history::Histories::default(),
             session_id: None,
             processes: BTreeMap::new(),
             control: None,
@@ -256,21 +259,23 @@ impl<'session> ConsoleHost<'session> {
                     api,
                     Some(
                         0x0200_0001
-                            | 0x0200_0003
-                            | 0x0100_0003
-                            | 0x0100_0000
-                            | 0x0100_0001
-                            | 0x0100_0008
-                            | 0x0200_0005
-                            | 0x0200_0007
-                            | 0x0200_000b
-                            | 0x0200_000f
-                            | 0x0200_0013
-                            | 0x0200_0014
-                            | 0x0300_0003
-                            | 0x0300_0004
-                            | 0x0300_0029
-                            | 0x0300_0012..=0x0300_0017
+                        | 0x0200_0003
+                        | 0x0100_0003
+                        | 0x0100_0000
+                        | 0x0100_0001
+                        | 0x0100_0008
+                        | 0x0200_0005
+                        | 0x0200_0007
+                        | 0x0200_000b
+                        | 0x0200_000f
+                        | 0x0200_0013
+                        | 0x0200_0014
+                        | 0x0300_0003
+                        | 0x0300_0004
+                        | 0x0300_0029
+                        | 0x0300_0012..=0x0300_0017
+                        | 0x0300_0018..=0x0300_001b
+                        | 0x0300_002a..=0x0300_002b,
                     )
                 ));
         if !bypass && (!ready || self.has_pending_output()) {
@@ -402,8 +407,14 @@ impl<'session> ConsoleHost<'session> {
                     receipt.status = INVALID_PARAMETER;
                     request.complete(receipt.status, 0, &[])?;
                 } else {
+                    let connect = request.read_input(0, 1340)?;
+                    let name_length = u16::from_le_bytes([connect[558], connect[559]]) as usize;
+                    if name_length > 256 || !name_length.is_multiple_of(2) {
+                        receipt.status = INVALID_PARAMETER;
+                        request.complete(receipt.status, 0, &[])?;
+                        return Ok(receipt);
+                    }
                     let initial_title = if self.processes.is_empty() {
-                        let connect = request.read_input(0, 1340)?;
                         let length = u16::from_le_bytes([connect[34], connect[35]]) as usize;
                         if length > 520 || !length.is_multiple_of(2) {
                             receipt.status = INVALID_PARAMETER;
@@ -426,9 +437,8 @@ impl<'session> ConsoleHost<'session> {
                         .into_iter()
                         .flat_map(usize::to_ne_bytes)
                         .collect();
-                    if let Some(control) = &mut self.control {
-                        let connect = request.read_input(0, 1340)?;
-                        if control
+                    if let Some(control) = &mut self.control
+                        && control
                             .admit(
                                 process,
                                 descriptor.process as u32,
@@ -436,11 +446,10 @@ impl<'session> ConsoleHost<'session> {
                                 read_u32(&connect, 28).unwrap(),
                             )
                             .is_err()
-                        {
-                            receipt.status = 0xc000_0022_u32 as i32;
-                            request.complete(receipt.status, 0, &[])?;
-                            return Ok(receipt);
-                        }
+                    {
+                        receipt.status = 0xc000_0022_u32 as i32;
+                        request.complete(receipt.status, 0, &[])?;
+                        return Ok(receipt);
                     }
                     // Admit before publication; a rejected identity must not
                     // change title metadata or send a frontend title event.
@@ -458,6 +467,13 @@ impl<'session> ConsoleHost<'session> {
                         self.title = title;
                     }
                     self.processes.insert(process, descriptor.process as u32);
+                    if connect[32] != 0 {
+                        let exe = connect[560..560 + name_length]
+                            .chunks_exact(2)
+                            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                            .collect();
+                        self.histories.attach(process, exe);
+                    }
                     self.handles.insert(
                         input,
                         ClientHandle {
@@ -482,6 +498,7 @@ impl<'session> ConsoleHost<'session> {
             }
             2 => {
                 self.cancel_process_reads(descriptor.process)?;
+                self.histories.detach(descriptor.process);
                 if let Some(control) = &mut self.control {
                     control.remove(descriptor.process);
                 }
@@ -598,6 +615,9 @@ impl<'session> ConsoleHost<'session> {
         match api {
             0x0300_0012..=0x0300_0017 if body.len() >= 8 => {
                 (receipt.status, information) = self.alias_api(&request, api, &mut body)?;
+            }
+            0x0300_0018..=0x0300_001b | 0x0300_002a..=0x0300_002b => {
+                (receipt.status, information) = self.history_api(&request, api, &mut body)?;
             }
             0x0200_0003 => {
                 receipt.status = self.flush_input(descriptor.process, descriptor.object)?;

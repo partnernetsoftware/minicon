@@ -4927,6 +4927,95 @@ fn rust_console_pty_cooked_word_navigation_preserves_native_text_and_echo() {
     cooked_word_cases(true);
 }
 
+fn history_cases(rust: bool) {
+    for kind in [
+        "basic",
+        "nodup",
+        "resize",
+        "unicode",
+        "alias",
+        "silent",
+        "recall",
+        "lifecycle",
+        "queries",
+        "raw",
+        "wake",
+        "cmd",
+        "limits",
+    ] {
+        if !rust && kind == "limits" {
+            continue;
+        }
+        let report = Report::new();
+        let cols = if kind == "cmd" { 80 } else { 40 };
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!(
+                "history-{}{kind}",
+                if rust { "" } else { "reference-" }
+            ))
+            .arg(report.0.as_os_str())
+            .size(TerminalSize { rows: 12, cols });
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        if kind == "cmd" {
+            fixture.until("HISTORY_CMD_READY>");
+            std::fs::write(report.0.with_extension("go"), b"release").unwrap();
+        }
+        fixture.until("history-end:");
+        let body = std::fs::read_to_string(&report.0).unwrap();
+        assert!(body.starts_with(&format!("kind={kind}\n")), "{body}");
+        assert!(
+            body.contains("expunged:wide-length=0;wide-count=0;units=[]"),
+            "{body}"
+        );
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+        let mut parser = vt100::Parser::new(12, cols, 0);
+        parser.process(&fixture.bytes);
+        let rows: Vec<_> = parser
+            .screen()
+            .rows(0, cols)
+            .map(|row| row.trim_end_matches(' ').to_owned())
+            .collect();
+        if kind == "recall" {
+            assert_eq!(
+                &rows[..5],
+                &["first", "second", "second", "first!", "first!"]
+            );
+            assert_eq!(parser.screen().cursor_position(), (5, 0));
+        }
+        if kind == "cmd" {
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.as_str() == "history-cmd")
+                    .count(),
+                2,
+                "{rows:?}"
+            );
+            assert!(body.contains("cmd-exit:27\n"));
+        }
+        println!(
+            "history-frame rust={rust};case={kind};rows={rows:?};cursor={:?}",
+            parser.screen().cursor_position()
+        );
+        println!("history rust={rust};case={kind}\n{body}");
+    }
+}
+
+#[test]
+fn rust_console_pty_history_native_apis_recall_and_connection_lifetimes() {
+    history_cases(true);
+}
+
+#[test]
+#[ignore = "explicit native history API and recall comparison with installed ConPTY"]
+fn rust_console_client_history_compares_system_conpty() {
+    history_cases(false);
+}
+
 #[test]
 #[ignore = "explicit installed system ConPTY word-navigation differential court"]
 fn rust_console_client_cooked_word_navigation_compares_system_conpty() {

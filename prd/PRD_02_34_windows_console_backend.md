@@ -55,6 +55,8 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [-] cooked editing: processed backspace/newline and wakeup-control precedence
 │   │   ├── [v] scoped silent UTF-16 cursor/edit state and actual Console.ReadLine consumer
 │   │   ├── [v] scoped native Ctrl+Left/Right word navigation (48-session court below)
+│   │   ├── [v] scoped process-owned command history / A-W APIs / Up-Down recall
+│   │   │   └── [_] F-key history UI/search and broader concurrent lifetime qualification
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
@@ -4639,3 +4641,110 @@ test inventory, 48 native case bodies, four faults, check logs and executed imag
 This evidence does not establish command history, exhaustive native key/modifier
 behavior, newer Windows word-delimiter policy, GUI keyboard routing, actual
 Claude Code compatibility or other ISA runtime parity.
+
+### Accepted native command-history leaf
+
+`[v]` Host bounded command histories owned by native connection tokens. Match
+executable names ordinally without case, retain released histories for bounded
+reuse, and never merge two simultaneous connections merely because their names
+match. Expose native history settings, length/list A/W, expunge and per-executable
+capacity through the existing ConDrv dispatch. Echoed Enter stores original
+input before alias expansion; silent/raw reads and wakeup completion do not add
+commands. Up/Down recall uses the same process-owned records and existing cooked
+echo; no second screen/parser or product state is introduced.
+
+The independent SDK court must prove literal API results, duplicate/capacity
+semantics, original-versus-expanded commands, caller buffers, Unicode/ANSI,
+recall/echo and exact exit/EOF through the opened PTY. A second process must
+exercise connection isolation and retirement/reuse. Compare installed ConPTY
+before claiming native parity. Oversized configuration fails without changing
+accepted settings; history storage remains bounded independently of caller sizes.
+Dependencies: CONNECT/DISCONNECT ownership, native code pages, cooked editor,
+alias expansion and existing output admission. F-key popups/search, persistence,
+all Windows releases and non-Windows shell history remain open.
+
+```mermaid
+flowchart LR
+    C["native CONNECT token / executable"] --> H["bounded process history"]
+    D["DISCONNECT"] --> R["released buffer / bounded reuse"]
+    R --> H
+    E["echoed Enter / original UTF-16"] --> H
+    H --> K["Up / Down cooked editor"]
+    H --> A["native settings / length / list / expunge"]
+    K --> S["existing echo and shared screen"]
+    SDK["independent SDK + child"] --> Q["owned / installed-system court"]
+    A --> Q
+    S --> Q
+```
+
+Delivered by private `host::history::Histories`, owned by ConsoleHost and consumed
+only through native API/input dispatch. CONNECT validates the counted application
+name and allocates a process-token-owned history for console applications.
+DISCONNECT releases that owner; records remain in a bounded MRU pool. Active
+same-name connections have separate histories. Reuse prefers a released matching
+application, otherwise creates within the configured limit or selects a released
+LRU buffer, preferring an empty one. Executable queries consider active owners
+and use Windows ordinal case-insensitive comparison. No process handles, screen
+state, GUI tab identity or ISA choice enter the history store.
+
+Defaults are 50 commands and four buffers. Configuration admits at most 1024
+commands per buffer and 64 buffers; stored command contents have a separate total
+limit of 262144 UTF-16 units, with bounded metadata. Capacity shrink preserves
+the oldest prefix, whereas append eviction removes the oldest item. Adjacent
+duplicates are suppressed even with flags zero; HISTORY_NO_DUP additionally
+moves a prior duplicate to the newest position. History convenience-state
+pressure preserves existing records and does not fail accepted terminal input.
+The aggregate-budget unit court fills eight maximum-length commands, proves a
+second connection cannot take that storage, and checks recall and failed-resize
+state preservation. Persistence and exhaustive memory-allocation-failure recovery
+are not established.
+
+Native entry points now include Get/SetConsoleHistoryInfo,
+GetConsoleCommandHistoryLengthA/W, GetConsoleCommandHistoryA/W,
+SetConsoleNumberOfCommandsA/W and ExpungeConsoleCommandHistoryA/W. These
+non-emitting requests use the existing ordered-output bypass; cooked reads keep
+their existing output admission and read-owned echo. Echoed Enter records original
+UTF-16 before alias expansion; silent/raw reads and wakeup completion do not
+commit history. Up/Down replacement preserves insert/overwrite mode and uses the
+existing shared-screen echo path. General history UI, F-key templates/search,
+all modifier combinations and concurrent configuration/edit races remain open.
+
+`rust_console_pty_history_native_apis_recall_and_connection_lifetimes` opens 13
+SDK root sessions. The explicit build-20348 system comparison opens 12 (excluding
+the owned resource-limit case). Their lifecycle cases also launch four SDK peers
+and their cmd cases launch two actual system cmd.exe processes: 29 SDK invocations
+and two cmd invocations in total. SDK peers prove live same-name isolation,
+retirement/query fallback and released-buffer reuse. Literal A/W lengths, written
+counts, terminated contents and untouched sentinels are asserted. Small buffers
+return zero/error111 without changing caller storage or retained history. Other
+cases cover duplicate flags, capacity/zero capacity, ordinal executable lookup,
+Unicode/UTF-8, original alias input, silent/raw/wakeup exclusion, Up/Down repeats,
+oversized-configuration refusal and state preservation. SDK roots/peers exit zero;
+the existing opened-PTY fixture requires output EOF. Each actual cmd displays
+`history-cmd` twice after one typed command and Up recall, then exits 27. Recall
+also has exact projected row/cursor assertions; this is not a native GUI pixel
+or compositor claim.
+
+The installed system's Unicode ANSI-length query reports ten UTF-16 units while
+its actual UTF-8 list write returns 16 bytes. The reference-only fixture asserts
+that build-20348 behavior explicitly. The owned backend returns 16 for both,
+matching the trial conversion in Microsoft's current
+[history implementation](https://github.com/microsoft/terminal/blob/main/src/host/history.cpp).
+The two providers are not claimed identical here. Tests use fixed-size guarded
+buffers rather than trusting the reference's underestimated allocation size.
+The real cmd fixture waits for its visible prompt before writing input and uses
+a native Windows executable path; it does not guess readiness from spawn success.
+
+`native-history-regression.log` has 137 selected passes across opened-PTY and
+direct native-host coverage. Eight compiling runtime faults fail their intended
+new courts: storage removal, owner-retirement removal, alias-before-record order,
+recall removal, aggregate-budget bypass, the old ANSI-length bug, mutation before
+failed configuration, and wrong cmd recall input in the system court. Original
+bytes are restored in finally blocks and SHA-checked before final regression.
+The first budget attempt was rejected by the compiler and is retained separately
+as compile-only diagnostics; it is not counted as a runtime fault. Local source,
+fault, native-case/frame, test-inventory and exercised-image hashes are bound in
+`target/conhost-research/native-history-final-receipt.json`. No global process
+inventory, unrelated user session or model-account CLI is used. Other Windows
+versions, ARM64 execution, broader API/lifetime parity and default-provider
+promotion remain unqualified.
