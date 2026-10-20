@@ -40,6 +40,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped queued-read reply shapes / caller retirement / unrelated FIFO retention
 │   ├── [v] scoped keyboard waiters: raw Ctrl+C and record C/Break retain their reads
 │   ├── [v] scoped pending text reads retain their admitted cooked/raw kind across LINE_INPUT changes
+│   ├── [v] scoped raw text batches drain available input to caller capacity and preserve record/codec remainders
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -119,6 +120,7 @@ flowchart LR
     QUEUED --> FOREIGN["preserve other callers / queued writers / kernel finalizers"]
     INPUT --> WAITERS["keyboard: cooked C/Break ends; raw C and record C/Break wait"]
     WAITERS --> READMODE["admission fixes waiter kind; current mode still controls signal recognition"]
+    READMODE --> RAWBATCH["raw: available units to remaining capacity / preserve queue and codec tail"]
     RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
     POSTLIVE -->|"may publish"| READYWORK
     POSTLIVE -->|"another read survives"| INPUT
@@ -3694,6 +3696,101 @@ An initial fixture submitted `Z` and CR together to raw readers. The stock reade
 returned both available units while the owned reader returned only `Z`;
 `mode-wait-raw-batch-diagnostic.log` retains that separate compatibility gap.
 The waiter-mode court supplies only one raw unit to isolate lifetime selection;
-it does not qualify raw multi-record batch draining. Broader mode/VT/echo
-transitions, queued-versus-admitted races and raw batching remain open, alongside
+the following [raw-batch section](#raw-text-batch-capacity-and-remainders)
+qualifies available-input draining separately. Broader mode/VT/echo
+transitions and queued-versus-admitted races remain open, alongside
 the other API, OS/ISA runtime, performance, session and packaging boundaries.
+
+### Raw text batch capacity and remainders
+
+Invariant: a raw text read drains already-available characters up to its caller's
+remaining byte/UTF-16 capacity, then completes without waiting for a full buffer.
+Cooked reads still stop at their completed line/cache. The existing event
+consumer and encoder are reused; there is no second raw input queue or parser.
+Encoded per-file bytes are drained before new input, and each subsequent encode
+receives remaining capacity. Unconsumed key records retain repeat, Unicode unit,
+virtual/scan code and modifier metadata for native peek/record consumers.
+
+For byte reads, a trailing high surrogate without a current trail is restored
+as its exact input record. An earlier completed batch can return its bytes
+without consuming that incomplete unit; the next trail can complete the scalar.
+A known non-trail uses the existing code-page replacement. Unicode reads remain
+UTF-16 unit based and may return half a pair at a caller capacity boundary.
+Byte caches stay attached to their existing file object. Broader malformed,
+VT-key, multi-file and code-page-switch combinations remain unqualified.
+
+Ctrl+Z EOF conversion occurs after filling the requested result. Only a leading
+Ctrl+Z with ProcessControlZ and processed input reduces the returned count to
+zero; an embedded unit remains data. The filled units are consumed while later
+records and cooked cache remain available. This shares the pinned dispatcher
+contract rather than clearing the whole ready queue before encoding. The input
+mode/EOF decision's lifetime across concurrent mode changes remains open.
+
+The independent SDK fixture uses actual ReadFile, ReadConsoleA and ReadConsoleW;
+it sets and reads back input CP=65001. Cases cover ASCII including raw CR,
+partial key repeats, mouse/key-up/focus filtering, BMP UTF-8 capacity splits,
+byte tails followed by new records, leading/embedded Ctrl+Z, accepted pending
+read completion, capacity-split pairs and separately arriving surrogate trails.
+Native GetNumberOfConsoleInputEvents and PeekConsoleInputW snapshot first-read
+remainders; a second actual read checks tail/data recovery. Error diagnostics
+and first-read stages are published through atomic files. The direct pending
+case waits for explicit driver admission; PTY workers observe submitted kernel
+I/O. Private Jobs own all clients and final connection/handle cleanup.
+
+Named evidence: `rust_console_native_raw_reads_batch_to_capacity_and_retain_record_metadata`,
+`rust_console_pty_raw_reads_batch_to_capacity_without_stealing_records` and
+`rust_console_client_raw_read_batches_compare_system_conpty`. Each owned court
+executes 30 cases; installed system ConPTY compares 22 ASCII/wide cases. Tests
+share a return/remaining-record oracle that is separate from the SDK client,
+and check both data batches and native remainder metadata. Logs and receipts
+are under ignored `target/conhost-research/raw-batch-*`.
+
+The three preceding waiter-mode tests are strengthened in the same source:
+their raw-text case now supplies `Z` and CR in one native write after enabling
+LINE_INPUT on an admitted raw waiter. Its expected result is `[90,13]`, without
+LF; the raw signal case retains its independent later single `Z`. This directly
+revisits `mode-wait-raw-batch-diagnostic.log`. The earlier mode-wait receipts
+remain historical evidence for the single-unit version, while this slice's
+final receipt binds the updated tests.
+
+`raw-batch-early-suite.log` records 298 passing selected tests: the prior 295
+and three new courts. Eight compiling runtime faults fail all three new and all
+three strengthened mode tests. They cover single-unit completion, remaining
+capacity, draining a byte tail before new input, incomplete-surrogate record
+restoration, leading versus embedded EOF, repeat accounting, actual native
+capacity and the two-unit mode fixture. The single-unit fault runs its three
+affected tests separately before byte restoration; its canonical log combines
+those actual failures. One compile-rejected capacity attempt is retained but
+excluded from `raw-batch-negative-audit.json`.
+
+The restored six-test focused selection passes. Its earlier 298-test selection
+is reused only after all seven implementation/test files match frozen hashes.
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `raw-batch-final-receipt.json` binds staged source tree, source/log/
+fault hashes, compiler, nine executed x64 image identities and six pinned source
+blobs. Native execution remains Windows x86_64 build 20348; other target checks
+prove compilation only.
+
+BLOCKED for installed-system narrow UTF-8 parity: on Windows x86_64 build 20348,
+the BMP byte fixture reads CP=65001 back but its first ReadFile returns
+`[136,0,90]`, empties the record queue and leaves its second read waiting.
+`raw-batch-diagnose-codepage.log` retains that failure and actual first-read stage;
+earlier observe/diagnose failures are excluded from positive qualification.
+This does not attribute all host instability to the system backend. Byte
+BMP/tail/surrogate cases remain owned-only evidence; modern reference runtime
+is still needed. The system comparison explicitly excludes those cases and
+does not report UTF-8 parity. The [official code-page contract](https://learn.microsoft.com/en-us/windows/console/console-code-pages)
+and pinned stream.cpp, inputBuffer.cpp and server/ApiDispatchers.cpp support the
+intended conversion, capacity and EOF design; they do not certify the installed
+binary. `raw-batch-pinned-sources.json` verifies six source blobs against revision
+9fd41b2baec77d25b8cfb584070d5998eab7df81.
+
+Dependencies are existing deferred read ownership, bounded event admission,
+file-owned conversion tails, native API capacity validation and the shared
+cooked/raw waiter classification. Safe failure remains bounded/native error
+propagation; replacement of the kernel, a second terminal model and a default
+provider change are outside this slice. Other concurrent mode/geometry/editor
+and native API behavior, OS/ISA runtime/performance, portable sessions and
+packaging/default promotion remain open.

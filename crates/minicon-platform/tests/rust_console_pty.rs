@@ -6,6 +6,8 @@ use minicon_platform::pty::{
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
+#[path = "../../minicon-console/tests/support/raw_batch_court.rs"]
+mod raw_batch_court;
 
 struct Fixture {
     master: PtyMaster,
@@ -4727,6 +4729,8 @@ fn pending_mode_cases(rust: bool) {
                         vec![]
                     } else if cooked {
                         vec![90, 13, 10]
+                    } else if case == "raw-text" {
+                        vec![90, 13]
                     } else {
                         vec![90]
                     },
@@ -4738,6 +4742,45 @@ fn pending_mode_cases(rust: bool) {
             fixture.finish(0);
         }
     }
+}
+
+fn raw_batch_cases(rust: bool) {
+    for kind in raw_batch_court::kinds(!rust) {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("raw-batch-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !report.0.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "raw batch {rust}/{kind} stalled; stage={:?}",
+                std::fs::read_to_string(report.0.with_extension("ready"))
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        eprintln!("raw-batch rust={rust};kind={kind}: {value}");
+        assert_eq!(value, raw_batch_court::expected(&kind));
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+    }
+}
+
+#[test]
+fn rust_console_pty_raw_reads_batch_to_capacity_without_stealing_records() {
+    raw_batch_cases(true);
+}
+
+#[test]
+#[ignore = "explicit native raw-read batch comparison with installed system ConPTY"]
+fn rust_console_client_raw_read_batches_compare_system_conpty() {
+    raw_batch_cases(false);
 }
 
 #[test]

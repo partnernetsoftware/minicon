@@ -12,6 +12,203 @@ use windows_sys::Win32::System::{Console::*, Threading::GetThreadIOPendingFlag};
 
 static EVENT: AtomicU32 = AtomicU32::new(0);
 
+pub(crate) fn raw_batch(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let result = raw_batch_impl(kind, report, controlled);
+    if let Err(error) = &result {
+        publish(report, &format!("raw-batch-error: {error:?}"))?;
+    }
+    result
+}
+
+fn raw_batch_impl(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let (api, case) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
+    if !matches!(api, "file" | "wide" | "ansi") {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    check(unsafe { SetConsoleMode(input, u32::from(matches!(case, "eof" | "middle-eof"))) })?;
+    check(unsafe { SetConsoleCP(65001) })?;
+    if unsafe { GetConsoleCP() } != 65001 {
+        return Err(io::Error::other(
+            "raw fixture input code page did not change",
+        ));
+    }
+    let wide = api == "wide";
+    let (units, capacity, second) = match case {
+        "ascii" | "pending" => (vec![65, 13, 66], 32, false),
+        "capacity" => (vec![65, 66], 2, true),
+        "mixed" => (vec![65, 66], 2, true),
+        "bmp" => (vec![0x4e2d, 233, 90], if wide { 2 } else { 4 }, true),
+        "tail" => (vec![0x4e2d, 88], 1, true),
+        "eof" => (vec![26, 65, 66], 2, true),
+        "middle-eof" => (vec![65, 26, 66], 32, false),
+        "pair" => (
+            vec![0x4e2d, 0xd83d, 0xde00, 90],
+            if wide { 2 } else { 5 },
+            true,
+        ),
+        "split" => (vec![65, 0xd83d], 32, true),
+        _ => return Err(io::ErrorKind::InvalidInput.into()),
+    };
+    let mut records: Vec<_> = units.into_iter().map(|unit| raw_key(unit, 1)).collect();
+    if case == "capacity" {
+        records[0] = raw_key(65, 3);
+    }
+    if case == "mixed" {
+        records[1] = raw_key(66, 2);
+        let mut up = raw_key(85, 1);
+        up.Event.KeyEvent.bKeyDown = 0;
+        records.insert(0, up);
+        records.insert(
+            0,
+            INPUT_RECORD {
+                EventType: MOUSE_EVENT as u16,
+                ..INPUT_RECORD::default()
+            },
+        );
+        records.insert(
+            3,
+            INPUT_RECORD {
+                EventType: FOCUS_EVENT as u16,
+                ..INPUT_RECORD::default()
+            },
+        );
+    }
+    let deadline = Instant::now() + Duration::from_secs(18);
+    let pending = case == "pending";
+    if !pending {
+        raw_write(input, &records)?;
+    }
+    let token = input as usize;
+    let api_owned = api.to_owned();
+    let reader = std::thread::spawn(move || raw_read(token as HANDLE, &api_owned, capacity));
+    if pending {
+        wait(deadline, || {
+            let mut pending = 0;
+            check(unsafe { GetThreadIOPendingFlag(reader.as_raw_handle(), &mut pending) })?;
+            Ok(pending != 0)
+        })?;
+        if controlled {
+            wait(deadline, || Ok(report.with_extension("go").exists()))?;
+        }
+        raw_write(input, &records)?;
+    }
+    wait(deadline, || Ok(reader.is_finished()))?;
+    let first = reader
+        .join()
+        .map_err(|_| io::Error::other("raw batch reader panicked"))??;
+    let mut queued = 0;
+    check(unsafe { GetNumberOfConsoleInputEvents(input, &mut queued) })?;
+    let mut remaining = [INPUT_RECORD::default(); 16];
+    let mut count = 0;
+    check(unsafe { PeekConsoleInputW(input, remaining.as_mut_ptr(), 16, &mut count) })?;
+    let mut peek = Vec::new();
+    for record in &remaining[..count as usize] {
+        if record.EventType != KEY_EVENT as u16 {
+            return Err(io::Error::other("unexpected unconsumed non-key event"));
+        }
+        let key = unsafe { record.Event.KeyEvent };
+        peek.push([
+            u32::from(key.wRepeatCount),
+            u32::from(unsafe { key.uChar.UnicodeChar }),
+            u32::from(key.wVirtualKeyCode),
+            u32::from(key.wVirtualScanCode),
+            key.dwControlKeyState,
+        ]);
+    }
+    publish(
+        &report.with_extension("ready"),
+        &format!(
+            "first={first:?};queued={queued};peek={peek:?};cp={}",
+            unsafe { GetConsoleCP() }
+        ),
+    )?;
+    if case == "split" {
+        raw_write(input, &[raw_key(0xde00, 1), raw_key(90, 1)])?;
+    }
+    let second = if second {
+        raw_read(input, api, 32)?
+    } else {
+        Vec::new()
+    };
+    publish(
+        report,
+        &format!("first={first:?};second={second:?};queued={queued};peek={peek:?}"),
+    )?;
+    wait(deadline, || Ok(report.with_extension("opened").exists()))
+}
+
+fn raw_key(unit: u16, repeat: u16) -> INPUT_RECORD {
+    let mut record = INPUT_RECORD {
+        EventType: KEY_EVENT as u16,
+        ..INPUT_RECORD::default()
+    };
+    record.Event.KeyEvent.bKeyDown = 1;
+    record.Event.KeyEvent.wRepeatCount = repeat;
+    record.Event.KeyEvent.wVirtualKeyCode = if unit < 128 { unit } else { 0 };
+    record.Event.KeyEvent.wVirtualScanCode = 30;
+    record.Event.KeyEvent.dwControlKeyState = 32;
+    record.Event.KeyEvent.uChar.UnicodeChar = unit;
+    record
+}
+fn raw_write(input: HANDLE, records: &[INPUT_RECORD]) -> io::Result<()> {
+    let mut count = 0;
+    check(unsafe {
+        WriteConsoleInputW(input, records.as_ptr(), records.len() as u32, &mut count)
+    })?;
+    if count as usize != records.len() {
+        return Err(io::Error::other("short raw batch input write"));
+    }
+    Ok(())
+}
+fn raw_read(input: HANDLE, api: &str, capacity: u32) -> io::Result<Vec<u16>> {
+    let mut count = 0;
+    let mut bytes = [0_u8; 64];
+    let mut units = [0_u16; 32];
+    // SAFETY: initialized arrays hold every permitted fixture capacity, and
+    // the console handle remains owned until all synchronous reads return.
+    unsafe {
+        SetLastError(0);
+        let ok = match api {
+            "file" => ReadFile(
+                input,
+                bytes.as_mut_ptr().cast(),
+                capacity,
+                &mut count,
+                std::ptr::null_mut(),
+            ),
+            "ansi" => ReadConsoleA(
+                input,
+                bytes.as_mut_ptr().cast(),
+                capacity,
+                &mut count,
+                std::ptr::null_mut(),
+            ),
+            "wide" => ReadConsoleW(
+                input,
+                units.as_mut_ptr().cast(),
+                capacity,
+                &mut count,
+                std::ptr::null_mut(),
+            ),
+            _ => return Err(io::ErrorKind::InvalidInput.into()),
+        };
+        check(ok)?;
+        if GetLastError() != 0 || count > capacity {
+            return Err(io::Error::other("invalid raw batch success reply"));
+        }
+    }
+    Ok(if api == "wide" {
+        units[..count as usize].to_vec()
+    } else {
+        bytes[..count as usize]
+            .iter()
+            .copied()
+            .map(u16::from)
+            .collect()
+    })
+}
+
 /// Change LINE_INPUT after a native text request has become a waiting read.
 pub(crate) fn mode_wait(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
     let (api, action) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
@@ -99,9 +296,9 @@ pub(crate) fn mode_wait(kind: &str, report: &Path, controlled: bool) -> io::Resu
             record.Event.KeyEvent.wRepeatCount = 1;
             record.Event.KeyEvent.uChar.UnicodeChar = unit;
         }
-        // A raw waiter gets one unit so this court isolates mode lifetime
-        // from the separate multi-record raw-read batching contract.
-        let records = &records[..if cooked { 2 } else { 1 }];
+        // Text mode switches also exercise raw batching. The signal case
+        // keeps its single later unit as an independent cancellation check.
+        let records = &records[..if cooked || action == "raw-text" { 2 } else { 1 }];
         let mut written = 0;
         check(unsafe {
             WriteConsoleInputW(input, records.as_ptr(), records.len() as u32, &mut written)

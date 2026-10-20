@@ -39,6 +39,9 @@ fn run() -> std::io::Result<()> {
     }
     let mode = args[0].to_str().unwrap_or("");
     let result = std::path::Path::new(&args[1]);
+    if let Some(kind) = mode.strip_prefix("raw-batch-") {
+        return queued_reads::raw_batch(kind, result, true);
+    }
     if let Some(kind) = mode.strip_prefix("mode-wait-") {
         return queued_reads::mode_wait(kind, result, true);
     }

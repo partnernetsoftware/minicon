@@ -637,37 +637,51 @@ impl<'session> ConsoleHost<'session> {
                     }
                 }
                 ReadKind::Text {
+                    cooked,
                     unicode,
                     control_z,
                     wakeup,
                     ..
                 } => {
-                    let has_tail = self
-                        .input
-                        .ansi_tail
-                        .get(&read.request.descriptor.object)
-                        .is_some_and(|tail| !tail.is_empty());
-                    if self.input.ready.is_empty() && !has_tail {
-                        let buffer = read.output_buffer.unwrap_or(self.active_buffer);
-                        if buffer == self.active_buffer {
-                            self.cook_text(&mut read, wakeup, output)?;
-                        } else {
-                            self.with_buffer(buffer, |host| {
-                                host.cook_text(&mut read, wakeup, &mut io::sink())
-                            })?;
+                    let capacity = read.request.descriptor.output_size as usize - read.body.len();
+                    let mut bytes = Vec::new();
+                    loop {
+                        let has_tail = self
+                            .input
+                            .ansi_tail
+                            .get(&read.request.descriptor.object)
+                            .is_some_and(|tail| !tail.is_empty());
+                        if self.input.ready.is_empty() && !has_tail {
+                            let buffer = read.output_buffer.unwrap_or(self.active_buffer);
+                            if buffer == self.active_buffer {
+                                self.cook_text(&mut read, wakeup, output)?;
+                            } else {
+                                self.with_buffer(buffer, |host| {
+                                    host.cook_text(&mut read, wakeup, &mut io::sink())
+                                })?;
+                            }
+                        }
+                        if self.input.ready.is_empty() && !has_tail {
+                            break;
+                        }
+                        bytes.extend(self.encode_ready(&read, unicode, capacity - bytes.len())?);
+                        // A cooked result ends with its completed line/cache. Raw
+                        // reads continue through available records, never waiting
+                        // for the caller's entire buffer to fill.
+                        if cooked || capacity - bytes.len() < if unicode { 2 } else { 1 } {
+                            break;
                         }
                     }
-                    if self.input.ready.is_empty() && !has_tail {
+                    if bytes.is_empty() {
                         None
-                    } else if !has_tail
-                        && control_z
-                        && self.input_mode & 1 != 0
-                        && self.input.ready.front() == Some(&26)
-                    {
-                        self.input.ready.clear();
-                        Some(Vec::new())
                     } else {
-                        Some(self.encode_ready(&read, unicode)?)
+                        // Native EOF processing happens after filling the
+                        // requested buffer. A later Ctrl+Z remains ordinary
+                        // data; unconsumed records/cache stay available.
+                        if control_z && self.input_mode & 1 != 0 && bytes.first() == Some(&26) {
+                            bytes.clear();
+                        }
+                        Some(bytes)
                     }
                 }
             };
@@ -875,7 +889,34 @@ impl<'session> ConsoleHost<'session> {
             if !line_mode && !unicode && (0xd800..=0xdbff).contains(&character) {
                 // Byte reads must encode a complete supplementary character,
                 // even when its two UTF-16 input records arrive separately.
-                continue;
+                let next = self.input.events.iter().find_map(|event| match event {
+                    ConsoleInput::Key {
+                        down: true,
+                        repeat,
+                        character,
+                        virtual_key,
+                        ..
+                    } if *repeat != 0
+                        && (*character != 0
+                            || self.input_mode & 0x200 != 0
+                                && matches!(*virtual_key, 0x23..=0x28)) =>
+                    {
+                        Some(*character)
+                    }
+                    _ => None,
+                });
+                if next.is_some_and(|unit| (0xdc00..=0xdfff).contains(&unit)) {
+                    continue;
+                }
+                if next.is_none() {
+                    // Keep the exact record (and metadata) for a future read
+                    // when this batch has already produced earlier bytes.
+                    read.line.pop();
+                    self.input.events.push_front(event);
+                    break;
+                }
+                // A following non-trail proves this unit is unpaired; the
+                // existing codec supplies its code-page replacement.
             }
             if !line_mode || wakes_line {
                 self.input.ready_event_suppressed = false;
@@ -889,8 +930,12 @@ impl<'session> ConsoleHost<'session> {
         Ok(())
     }
 
-    fn encode_ready(&mut self, read: &PendingRead<'_>, unicode: bool) -> io::Result<Vec<u8>> {
-        let capacity = read.request.descriptor.output_size as usize - read.body.len();
+    fn encode_ready(
+        &mut self,
+        read: &PendingRead<'_>,
+        unicode: bool,
+        capacity: usize,
+    ) -> io::Result<Vec<u8>> {
         if unicode {
             if self
                 .input

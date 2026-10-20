@@ -2,6 +2,8 @@
 //! Independent Win32 client checks, built by Cargo with its exact binary path.
 use minicon_console::{ConsoleHost, ConsoleInput, DriverSession};
 use serde_json::{Value, json};
+#[path = "support/raw_batch_court.rs"]
+mod raw_batch_court;
 use std::ffi::OsStr;
 use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::PathBuf;
@@ -639,6 +641,63 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
 }
 
 #[test]
+fn rust_console_native_raw_reads_batch_to_capacity_and_retain_record_metadata() {
+    for kind in raw_batch_court::kinds(false) {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let child = launch_probe(&format!("raw-batch-{kind}"), &report, &session);
+        let mut host = ConsoleHost::for_child(&child).unwrap();
+        let mut output = Vec::new();
+        let mut reads = 0;
+        let mut released = false;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while child.wait(Duration::ZERO).unwrap().is_none()
+            || host.connected_clients() != 0
+            || host.open_handles() != 0
+        {
+            assert!(Instant::now() < deadline, "raw batch {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let call = host.dispatch(request, &mut output).unwrap();
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if call.function == 6 || call.api == Some(0x0100_0005) {
+                        reads += 1;
+                        if kind.ends_with("-pending") {
+                            assert_eq!(reads, 1);
+                            assert!(call.pending);
+                            assert_eq!(host.pending_reads(), 1);
+                            std::fs::write(report.path.with_extension("go"), b"admitted").unwrap();
+                        } else {
+                            assert!(!call.pending, "preloaded {kind}: {call:?}");
+                        }
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("raw batch {kind}: {error}"),
+            }
+            if !released && report.path.exists() {
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+                released = true;
+            }
+        }
+        assert!(released);
+        let (_, case) = kind.split_once('-').unwrap();
+        assert_eq!(
+            reads,
+            if matches!(case, "ascii" | "middle-eof" | "pending") {
+                1
+            } else {
+                2
+            }
+        );
+        assert_eq!(host.pending_reads(), 0);
+        let value = std::fs::read_to_string(&report.path).unwrap();
+        assert_eq!(value, raw_batch_court::expected(&kind), "{kind}");
+        eprintln!("raw-batch-direct {kind}: {value}");
+    }
+}
+
+#[test]
 fn rust_console_native_pending_text_reads_keep_their_admitted_mode() {
     for api in ["file", "console"] {
         for case in ["cooked-text", "raw-text", "cooked-signal", "raw-signal"] {
@@ -696,7 +755,7 @@ fn rust_console_native_pending_text_reads_keep_their_admitted_mode() {
             let interrupted = cooked && signalled;
             assert_eq!(
                 value,
-                json!({"ok":true,"error":if interrupted && api=="console"{995}else{0},"units":if interrupted{vec![]}else if cooked{vec![90,13,10]}else{vec![90]},"event":u32::from(signalled),"mode":if cooked{1}else{3}}),
+                json!({"ok":true,"error":if interrupted && api=="console"{995}else{0},"units":if interrupted{vec![]}else if cooked{vec![90,13,10]}else if case=="raw-text"{vec![90,13]}else{vec![90]},"event":u32::from(signalled),"mode":if cooked{1}else{3}}),
                 "{kind}"
             );
             eprintln!("mode-wait-direct {kind}: {value}");
