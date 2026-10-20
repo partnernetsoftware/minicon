@@ -1,10 +1,12 @@
 //! OS/ISA-neutral terminal state and ordered output. No native process or
 //! event-loop ownership is implied by this module.
 
+mod presentation;
 mod query;
 mod responses;
 mod utf16;
 mod viewport;
+pub use presentation::TerminalPresentation;
 pub use query::csi_query_reply;
 pub use responses::{ResponseTrackingError, TerminalResponses};
 pub use utf16::Utf16Decoder;

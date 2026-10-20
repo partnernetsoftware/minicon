@@ -1,6 +1,21 @@
 /// This trait is used by the parser to handle extra escape sequences that
 /// don't have an impact on the terminal screen directly.
 pub trait Callbacks {
+    /// The terminal model was reset by RIS. Presentation owners can release
+    /// an unfinished synchronized update without stopping the input decoder.
+    fn reset(&mut self, _: &mut crate::Screen) {}
+    /// A validated private mode 2026 set/reset, in parameter order. This
+    /// event alone does not implement synchronized presentation or advertise
+    /// support; consumers must own a bounded presentation gate separately.
+    fn synchronized_update(&mut self, screen: &mut crate::Screen, enabled: bool) {
+        self.unhandled_csi(
+            screen,
+            Some(b'?'),
+            None,
+            &[&[2026]],
+            if enabled { 'h' } else { 'l' },
+        );
+    }
     /// This callback is called when the terminal requests an audible bell
     /// (typically with `^G`).
     fn audible_bell(&mut self, _: &mut crate::Screen) {}

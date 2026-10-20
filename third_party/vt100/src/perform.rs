@@ -66,7 +66,10 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
                 b'=' => self.screen.deckpam(),
                 b'>' => self.screen.deckpnm(),
                 b'M' => self.screen.ri(),
-                b'c' => self.screen.ris(),
+                b'c' => {
+                    self.screen.ris();
+                    self.callbacks.reset(&mut self.screen);
+                }
                 b'g' => self.callbacks.visual_bell(&mut self.screen),
                 _ => {
                     self.screen.mark_full_damage();
@@ -159,8 +162,26 @@ impl<CB: crate::callbacks::Callbacks> vte::Perform for WrappedScreen<CB> {
                 'K' => self
                     .screen
                     .decsel(canonicalize_params_1(params, 0), unhandled),
-                'h' => self.screen.decset(params, unhandled),
-                'l' => self.screen.decrst(params, unhandled),
+                'h' | 'l' if intermediates.len() == 1 => {
+                    let mut mode_event = |screen: &mut crate::screen::Screen, param: &[u16]| {
+                        if param == [2026] {
+                            self.callbacks.synchronized_update(screen, c == 'h');
+                        } else {
+                            self.callbacks.unhandled_csi(
+                                screen,
+                                Some(b'?'),
+                                None,
+                                &params.iter().collect::<Vec<_>>(),
+                                c,
+                            );
+                        }
+                    };
+                    if c == 'h' {
+                        self.screen.decset(params, &mut mode_event);
+                    } else {
+                        self.screen.decrst(params, &mut mode_event);
+                    }
+                }
                 _ => {
                     self.screen.mark_full_damage();
                     self.callbacks.unhandled_csi(

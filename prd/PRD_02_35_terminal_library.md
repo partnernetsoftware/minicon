@@ -62,6 +62,11 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │       evidence: native SDK states, opened PTY controls and gated lifecycle courts
 │       safe failure: Unsupported/error rather than fabricated idle; no future/PID authority
 │       dependency: Windows host ledger; non-goal: a portable session implementation
+├── [v] Bounded synchronized presentation — terminal::TerminalPresentation; standalone consumer scope
+│   invariant: one active parser continues callbacks while an immutable presented frame is held
+│   evidence: synchronized_presentation integration court; literal frames/replies, 10 runtime faults
+│   safe failure: finite monotonic deadline and byte budget; repeated begin cannot renew a held frame
+│   dependency: owned parser event ordering; non-goal: positive GUI capability or native transport gating
 ├── [_] Portable session composition and input vocabulary
 │   invariant: shared terminal semantics; OS-specific capabilities stay explicit
 │   evidence: same external consumer and scenarios on macOS/Linux/Windows
@@ -79,6 +84,10 @@ Outcome: another application can embed our terminal without MiniCon product stat
 flowchart LR
     APP["MiniCon / external terminal consumer"] --> COMMON["minicon-console::terminal"]
     COMMON --> VT["owned vt100: screen / damage / framing"]
+    VT --> SYNC["ordered 2026 / RIS callbacks"]
+    SYNC --> PRESENT["TerminalPresentation: active parser / presented snapshot"]
+    CLOCK["caller monotonic time / byte quota / explicit edits"] --> PRESENT
+    PRESENT --> PAINT["consumer paint / copy / snapshot; GUI adoption still open"]
     APP --> QUERY["shared csi_query_reply / caller-owned reply transport"]
     QUERY --> VT
     ACCEPT["accepted outgoing bytes / caller monotonic clock"] --> RESP["TerminalResponses: owned lexer / finite CPR expectations"]
@@ -103,6 +112,74 @@ flowchart LR
     PLATFORM --> POSIX["macOS / Linux native PTY adapters"]
     COMMON & WIN & POSIX --> E["separate OS × ISA build / runtime / consumer evidence"]
 ```
+
+## Bounded synchronized presentation
+
+`terminal::TerminalPresentation<CB>` is an opt-in OS/ISA-neutral consumer
+mechanism. It owns one authoritative active parser and one presented `Screen`.
+The owned parser emits validated mode-2026 events in private-parameter order
+and a reset event after RIS; the default callbacks preserve the raw consumer's
+unhandled-query path. This is independent of the unused `vte::ansi` processor.
+The protocol's [synchronized-output semantics](https://github.com/contour-terminal/vt-extensions/blob/master/synchronized-output.md)
+require continued parsing while rendering retains its prior frame. The
+specific timeout is a consumer policy, not a protocol-mandated duration.
+
+`process(bytes, now)` always advances the active parser and all callbacks.
+Queries therefore see current cursor/modes even during a hold. Drawing, copy
+and structured snapshots must use `presented_screen`; input encoding uses
+`active_screen`. Internal parsing spans do not constitute presented frames.
+Publication happens after the supplied batch, unless a prior phase expired
+when polling at entry. Frame publication currently clones the configured
+screen/history and conservatively reports full damage. Damage is retained in
+the active model during a hold; there is no queued output or second lexer.
+Incremental damage and snapshot cost remain performance work before GUI adoption.
+
+Consumers supply monotonic elapsed time and schedule `poll` at `deadline` even
+without incoming output. Backwards observations clamp to the latest time.
+The first begin establishes an absolute deadline and finite byte budget;
+repeated begins do not renew either. Quota accounting conservatively charges
+whole bounded parsing spans, including marker bytes, so it may release early.
+Parsing spans shrink to the remaining quota. Timeout/quota recovery releases
+presentation but ignores further begins until an explicit end or RIS, preventing
+a broken producer from immediately rearming the same unfinished phase. Zero
+timeout or zero quota disables holding. Recovery preserves unfinished VT/UTF-8
+grammar; `edit_screen` explicitly releases a hold for geometry/viewport edits,
+and `finish` releases the latest complete model on EOF without inventing missing
+input. The caller still owns producer shutdown, transport and timer scheduling.
+
+The public-library integration court is
+`crates/minicon-console/tests/synchronized_presentation.rs`. Its six cases cover:
+
+- split begin/body/end, literal CJK/RGB cells and cursor, live CPR/negative
+  2026 reply/title callbacks, damage isolation and no internal-span publication;
+- exact idle deadline, repeated begin, post-recovery suppression and clock clamping;
+- finite byte recovery, large bursts and a UTF-8 scalar split at the quota;
+- ordered combined private modes, invalid intermediates/subparameters and OSC cancellation;
+- explicit resize preserving partial CSI, RIS, and EOF with an unfinished command;
+- independent zero timeout/quota disablement and the default-callback constructor.
+
+Frozen-source evidence under `target/conhost-research/`: `presentation-source.json`
+binds 14 source/guard files; `presentation-regression.log` passes 110 selected
+cases, including these six and six existing owned-native query/redraw/pressure/
+read-state/retirement cases. `presentation-negative-audit.json` binds ten
+compiling runtime faults, each restored byte-for-byte in `finally` with SHA
+checks. All six new courts detect their assigned faults. The faults expose a
+held frame, miss the exact deadline, renew begin, rewind time, disable quota,
+discard UTF-8 at recovery, accept a malformed marker, ignore RIS, discard CSI
+on resize, and hold with zero timeout. `presentation-restored-focused.log`
+passes the new six plus those six native regressions after restoration.
+Ten checks cover workspace/fork format, default/enabled workspace Clippy,
+owned-parser Clippy, common-library Linux x64/ARM64, Windows ARM64 and macOS
+x64 compilation, and enabled-platform Windows ARM64 compilation. Runtime
+evidence is Windows x64 build 20348 only; other OS/ISA cells are compilation
+evidence. The native tests remain regression evidence for existing transport,
+not a native producer feeding the new presentation gate.
+
+This helper is not yet used by the GUI, common `TerminalStream` or platform
+PTY transport. Shared query replies still report mode 2026 as
+unrecognized. Positive capability replies, GUI timers/blink/selection/snapshot
+integration, native-to-presented replay, actual pixels, real Claude Code and
+other OS/ISA runtime qualification remain open.
 
 ## Shared terminal query replies
 

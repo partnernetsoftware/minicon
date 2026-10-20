@@ -25,11 +25,18 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │       evidence: literal replies, split/malformed probes, native child readback and exit/EOF
 │       safe failure: no reply to malformed/non-query commands; 2026 remains unrecognized
 │       dependency: minicon-console common helper + parser validity; non-goal: positive sync support
-├── [_] Complete-frame presentation, including synchronized updates
+├── [-] Complete-frame presentation, including synchronized updates
 │   invariant: active parser state and externally presented frame have explicit ownership
 │   evidence: split-stream begin/end, bounded timeout/byte recovery, blink/resize/query interleaving
 │   safe failure: a missing end marker cannot freeze the UI or stop input/control servicing
 │   dependency: parser, damage and presentation contracts; non-goal: recognizing 2026 without gating presentation
+│   └── [-] shared active/presented state boundary; GUI adoption and pixel qualification remain open
+│       ├── [v] reusable mechanism and six public-consumer courts → PRD 35 bounded synchronized presentation
+│       └── [_] GUI consumption, timed recovery and native producer-to-pixel journey
+│           invariant: paint/copy/snapshots read presented state; query/input modes read active state
+│           evidence: frame identity/pixels plus held-frame blink, resize, input, timeout and exit journeys
+│           safe failure: schedule idle deadlines; recover locally without blocking PTY/control servicing
+│           dependency: shared gate, bounded snapshot cost and GUI timer; non-goal: a parser-bit-only capability claim
 ├── [-] Dense redraw, scroll, Unicode and alternate-screen resize journeys
 │   invariant: byte splitting and redraw rate do not change final rows, cursor or cell geometry
 │   evidence: finite safe traces, independent expected grids, native readback and presented pixels
@@ -88,6 +95,11 @@ private-mode subset. Native report delivery is separately exercised in
 [the Windows return-transport court](PRD_02_34_windows_console_backend.md#private-mode-query-return-transport).
 This advances negotiation and reply transport; synchronized presentation and
 real application acceptance remain open.
+The following [shared presentation mechanism](PRD_02_35_terminal_library.md#bounded-synchronized-presentation)
+separates active parsing from a bounded presented frame and adds ordered parser
+events. Its standalone consumer court does not prove GUI adoption, native wire
+integration or pixels. Mode 2026 remains negatively advertised until those
+presentation paths and timer/recovery behavior are integrated and qualified.
 The next response slice adds [finite CPR/key routing](PRD_02_34_windows_console_backend.md#status-response-routing-and-cpr-key-boundary)
 and native DA/DSR/CPR journeys. Identical bytes inside an active query window
 remain an explicit ambiguity; it does not certify general application input

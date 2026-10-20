@@ -1344,7 +1344,11 @@ impl Screen {
     }
 
     // CSI ? h
-    pub(crate) fn decset(&mut self, params: &vte::Params, mut unhandled: impl FnMut(&mut Self)) {
+    pub(crate) fn decset(
+        &mut self,
+        params: &vte::Params,
+        mut unhandled: impl FnMut(&mut Self, &[u16]),
+    ) {
         for param in params {
             match param {
                 [1] => self.set_mode(MODE_APPLICATION_CURSOR),
@@ -1380,14 +1384,18 @@ impl Screen {
                 [2004] => self.set_mode(MODE_BRACKETED_PASTE),
                 _ => {
                     self.damage.mark_full();
-                    unhandled(self);
+                    unhandled(self, param);
                 }
             }
         }
     }
 
     // CSI ? l
-    pub(crate) fn decrst(&mut self, params: &vte::Params, mut unhandled: impl FnMut(&mut Self)) {
+    pub(crate) fn decrst(
+        &mut self,
+        params: &vte::Params,
+        mut unhandled: impl FnMut(&mut Self, &[u16]),
+    ) {
         for param in params {
             match param {
                 [1] => self.clear_mode(MODE_APPLICATION_CURSOR),
@@ -1426,7 +1434,7 @@ impl Screen {
                 [2004] => self.clear_mode(MODE_BRACKETED_PASTE),
                 _ => {
                     self.damage.mark_full();
-                    unhandled(self);
+                    unhandled(self, param);
                 }
             }
         }
