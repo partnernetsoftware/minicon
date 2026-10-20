@@ -60,6 +60,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   │       ├── [v] scoped F1/F3 templates, F5/page navigation, F8 prefix search and Alt+F7
 │   │   │       └── [_] F2/F4/F7/F9 popup UI and broader concurrent lifetime qualification
 │   │   ├── [v] scoped native word erase and F6 control-character / ReadFile EOF semantics
+│   │   │   └── [v] scoped cooked EOF fragments, file-owned continuation and resumed input
 │   │   ├── [-] shared-parser echoed cursor/repaint; broader editing-key transport open
 │   │   └── [v] scoped read-owned drawing-buffer retention / hidden echo / completion collection
 │   ├── [v] scoped cancelled-read buffer reclamation / admitted fallback / query-safe output scheduling
@@ -3865,8 +3866,9 @@ Invariant: completed text continuations belong to the native input file object.
 Duplicate/inherited references share that cache; independent opens do not.
 The raw keyboard queue stays console-wide. Windows-specific continuation and
 handle lifetime remain inside the native service, not the portable terminal
-facade. The private input/cache.rs groups completed UTF-16, encoded byte tails,
-cooked origin and post-flush readiness suppression under one object key.
+facade. The private input/cache.rs groups completed UTF-16, encoded byte tails
+and cooked origin under one object key. The native input event reflects the
+shared input-record queue, not a particular file's completed text or bytes.
 Unicode and byte codecs consume only that key and prune empty entries.
 
 An existing cooked continuation takes precedence over current LINE_INPUT when
@@ -3874,8 +3876,7 @@ admitting the next read on its file. Serving that continuation ends the read
 without taking fresh keyboard records, even after another file switches the
 console to raw mode. Otherwise the raw batching loop could append unrelated
 new input to the old line. Global Flush/Break still clear encoded byte tails
-and suppress retained completed-text readiness; staging data for another file
-does not undo that file's suppression. Final kernel object retirement removes
+while retaining completed text. Final kernel object retirement removes
 its cache, while closing one duplicate leaves it live. Process retirement keeps
 file-owned state until the existing native lifetime rules retire that object.
 
@@ -3897,9 +3898,13 @@ actual request object tokens to prove duplicate equality and independent-open
 inequality. Preloaded reads complete without promotion; every client finishes
 with zero connected clients, handles and pending reads.
 
-After a flush, B's new input and completed read leave A's retained text suppressed:
-the native wait result is WAIT_TIMEOUT. Final data draining or final-object close
-also leaves the event nonsignaled. UTF-8 cases additionally check encoded-byte
+After B drains its new input, the native wait result is WAIT_TIMEOUT even when
+A retains readable completed text, with or without a flush. Final data draining
+or final-object close also leaves the event nonsignaled. The original non-flush
+cache client stored a constant zero instead of calling WaitForSingleObject; its
+old readiness claim was therefore invalid. The corrected client queries the SDK
+in every branch. The EOF continuation court independently observes zero queued
+records and WAIT_TIMEOUT after each read. UTF-8 cases additionally check encoded-byte
 continuation across duplicate closure, byte-tail removal by global flush and
 discard on final close. Those cases are owned-only: installed-system narrow
 UTF-8 parity remains BLOCKED as described in the raw-batch section.
@@ -3918,8 +3923,8 @@ revision 9fd41b2baec77d25b8cfb584070d5998eab7df81. Artifacts remain under ignore
 `read-cache-early-suite.log` records 301 passing selected tests, retaining the
 prior 298 and adding three file-cache courts. Eight compiling runtime faults
 fail all three new tests: wrong staging owner, ignoring pending-cooked priority,
-omitted final-object retirement, incorrect flush suppression, another file
-resetting suppression, reversed encoded bytes, reversed UTF-16 units and using
+omitted final-object retirement, incorrect flush readiness, another file
+resetting that readiness state, reversed encoded bytes, reversed UTF-16 units and using
 a new native open instead of an actual duplicate. Each restores exact original
 bytes and checks its source hash; `read-cache-negative-audit.json` binds logs.
 The final six-test focused selection also retains all three preceding raw-batch
@@ -4933,3 +4938,55 @@ workspace all-target Windows ARM64 compilation pass. Compilation does not imply
 ARM64 runtime coverage. `control-edit-final-receipt.json` records the staged tree,
 source and expectation hashes, all 36 native bodies/cursors/frames, six runtime
 faults, gate logs and executed images.
+
+### Accepted cooked EOF continuation court
+
+`[v]` Qualify Ctrl+Z input EOF over completed cooked text with small caller
+buffers. Observe subsequent File/A/W reads, duplicate versus independent input
+files, final close, flush and live mode changes. Native input EOF must preserve
+the appropriate unconsumed file-owned data, accept subsequent input and leave
+output alive. Compare actual SDK receipts with installed ConPTY before deciding
+whether production changes are needed; do not clear caches merely on an EOF
+return or infer a session shutdown from a zero-byte input read.
+
+```mermaid
+flowchart LR
+    K["Ctrl+Z / cooked line"] --> C["file-owned completed read cache"]
+    C --> R["caller-sized File / A / W read"]
+    R --> EOF["input EOF / remaining continuation"]
+    D["duplicate / independent file / close / flush / mode"] --> C
+    EOF --> N["subsequent input and live output"]
+    N --> Q["SDK owned / installed-system court"]
+```
+
+Dependencies are existing cooked admission, codecs, cache ownership/readiness and
+the PTY lifecycle. Require exact native results and state transitions, finite
+owned-process teardown and compiling runtime fault evidence. Other OS/ISA,
+unbounded race coverage and default-provider promotion remain open.
+
+On the installed Windows 10.0.20348 runtime, the SDK court now passes eleven
+scenarios on each provider (22 native sessions). It observes every File/A/W
+return, untouched output-buffer sentinel, queued input-record count and real
+WaitForSingleObject result. Short and exactly filled buffers retain their
+file-owned continuations after a zero-byte Ctrl+Z return. Duplicate handles
+share it, independent opens do not, flush retains completed text, and final
+close retires it. Later input still completes and the child emits its output
+completion title after the EOF reads. Both a later cooked File read and a raw
+mode-zero ANSI read are covered; on this runtime the latter returns literal
+Ctrl+Z and `D`, while mode-zero ReadFile returns zero bytes for leading Ctrl+Z.
+
+The production correction removes a processed-mode gate from ReadFile's
+leading Ctrl+Z conversion and derives the native input event solely from
+queued input records. The old completed-text court now calls
+WaitForSingleObject in every branch, with a named `continuation_wait` result;
+the Break/tail court likewise expects WAIT_TIMEOUT while only a file-owned
+tail remains. The final selected regression has 145 named passing tests,
+including the eleven-case owned and installed-system EOF courts and the
+corrected old system cache court. Six compiling runtime faults independently
+detect the processed-mode gate, synthetic cache readiness, reversed cache
+continuation, falsified reference event, old constant-wait oracle and Break
+tail readiness. Formatting, both workspace all-target Clippy configurations
+with warnings denied, and enabled Windows ARM64 workspace compilation pass.
+These observations qualify this scoped Windows x64 runtime and ARM64 build;
+other OS/ISA runtime, concurrent races, GUI pixels and Claude Code rendering
+remain open.

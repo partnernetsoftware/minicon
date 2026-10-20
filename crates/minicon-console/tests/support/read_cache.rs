@@ -70,14 +70,10 @@ fn run_inner(kind: &str, report: &Path) -> io::Result<()> {
     };
     raw_write(b, &[raw_key(90, 1)])?;
     let other_data = raw_read(b, if api == "wide" { "wide" } else { "file" }, 32)?;
-    let flushed_wait = if lifetime == "flush" {
-        unsafe { WaitForSingleObject(b, 0) }
-    } else {
-        0
-    };
+    let continuation_wait = unsafe { WaitForSingleObject(b, 0) };
     publish(
         &report.with_extension("ready"),
-        &format!("first={first:?};other={other_data:?};wait={flushed_wait}"),
+        &format!("first={first:?};other={other_data:?};wait={continuation_wait}"),
     )?;
     raw_write(b, &[raw_key(88, 1)])?;
     let rest = if let Some(ref duplicate) = duplicate {
@@ -111,7 +107,7 @@ fn run_inner(kind: &str, report: &Path) -> io::Result<()> {
     publish(
         report,
         &format!(
-            "first={first:?};other={other_data:?};rest={rest:?};after={after:?};flush_wait={flushed_wait};final_wait={final_wait}"
+            "first={first:?};other={other_data:?};rest={rest:?};after={after:?};continuation_wait={continuation_wait};final_wait={final_wait}"
         ),
     )?;
     wait(Instant::now() + Duration::from_secs(18), || {

@@ -7,7 +7,6 @@ pub(super) struct ReadCache {
     pub(super) ready: VecDeque<u16>,
     pub(super) bytes: VecDeque<u8>,
     cooked: bool,
-    suppressed: bool,
     multiline: bool,
 }
 
@@ -51,19 +50,12 @@ impl InputState<'_> {
             .entry(read.request.descriptor.object)
             .or_default();
         cache.cooked = matches!(read.kind, ReadKind::Text { cooked: true, .. });
-        cache.suppressed = false;
         cache.multiline = read.multiline;
         cache.ready.extend(read.line.drain(..));
-    }
-    pub(super) fn cache_available(&self) -> bool {
-        self.read_cache
-            .values()
-            .any(|cache| !cache.bytes.is_empty() || !cache.ready.is_empty() && !cache.suppressed)
     }
     pub(super) fn flush_cache(&mut self) {
         for cache in self.read_cache.values_mut() {
             cache.bytes.clear();
-            cache.suppressed = !cache.ready.is_empty();
         }
         self.read_cache.retain(|_, cache| !cache.ready.is_empty());
     }

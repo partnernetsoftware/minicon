@@ -26,7 +26,7 @@ pub fn expected(kind: &str) -> String {
         vec![98, 99, 13, 10]
     };
     format!(
-        "first={first:?};other=[90];rest={rest:?};after=[88];flush_wait={};final_wait=258",
-        if lifetime == "flush" { 258 } else { 0 }
+        "first={first:?};other=[90];rest={rest:?};after=[88];continuation_wait={};final_wait=258",
+        258
     )
 }

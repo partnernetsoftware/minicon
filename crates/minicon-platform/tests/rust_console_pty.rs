@@ -3525,8 +3525,8 @@ fn rust_console_pty_break_interrupts_cooked_and_raw_native_reads() {
 #[test]
 fn rust_console_pty_break_resets_ready_with_live_file_conversion_tails() {
     for (mode, text, expected) in [
-        ("control-break-tail", "中", "228,0,0,258|2"),
-        ("control-break-wide-tail", "AB\r", "65,0,0,258|2"),
+        ("control-break-tail", "中", "228,258,0,258|2"),
+        ("control-break-wide-tail", "AB\r", "65,258,0,258|2"),
     ] {
         let report = Report::new();
         let mut fixture = Fixture::open(
@@ -5183,6 +5183,99 @@ fn rust_console_pty_native_word_erase_and_f6_keep_control_and_eof_semantics() {
 #[ignore = "explicit build-20348 word erase / F6 control and EOF comparison"]
 fn rust_console_client_native_control_edit_compares_system_conpty() {
     native_control_edit_cases(false);
+}
+
+fn cooked_eof_cache_cases(rust: bool) {
+    fn row(api: &str, capacity: u32, data: &[u16]) -> String {
+        format!("api={api};capacity={capacity};data={data:?};queued=0;wait=258")
+    }
+    for kind in [
+        "short",
+        "fill",
+        "middle",
+        "wide",
+        "ansi",
+        "duplicate",
+        "independent",
+        "flush",
+        "mode",
+        "mode-ansi",
+        "close",
+    ] {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("eof-cache-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        fixture.until("eof-cache-end:");
+        let body = std::fs::read_to_string(&report.0).unwrap();
+        let mut lines = body.lines();
+        let build: u32 = lines
+            .next()
+            .unwrap()
+            .strip_prefix("build=")
+            .unwrap()
+            .parse()
+            .unwrap();
+        if rust {
+            assert!(build > 0, "missing Windows build: {body}");
+        } else {
+            assert_eq!(build, 20348, "reference build changed: {body}");
+        }
+        assert_eq!(lines.next(), Some(format!("kind={kind}").as_str()));
+        let mut expected = vec![row(
+            "file",
+            if kind == "fill" { 2 } else { 1 },
+            if kind == "middle" || kind.starts_with("mode") {
+                &[65]
+            } else {
+                &[]
+            },
+        )];
+        match kind {
+            "short" | "duplicate" | "flush" => expected.push(row("file", 8, &[65, 13, 10])),
+            "fill" => expected.push(row("file", 8, &[13, 10])),
+            "wide" => expected.push(row("wide", 8, &[65, 13, 10])),
+            "ansi" => expected.push(row("ansi", 8, &[65, 13, 10])),
+            "middle" => {
+                expected.push(row("file", 1, &[]));
+                expected.push(row("file", 8, &[66, 13, 10]));
+            }
+            "independent" => {
+                expected.push(row("file", 8, &[67, 13, 10]));
+                expected.push(row("file", 8, &[65, 13, 10]));
+            }
+            "mode" | "mode-ansi" => {
+                expected.push(row("file", 8, &[]));
+                expected.push(row(
+                    if kind == "mode-ansi" { "ansi" } else { "file" },
+                    8,
+                    if kind == "mode-ansi" { &[26, 68] } else { &[] },
+                ));
+            }
+            "close" => {}
+            _ => unreachable!(),
+        }
+        expected.push(row("file", 8, &[66, 13, 10]));
+        let actual: Vec<_> = lines.collect();
+        assert_eq!(actual, expected, "cooked EOF case {kind}: {body}");
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+        println!("eof-cache rust={rust};case={kind}\n{body}");
+    }
+}
+#[test]
+fn rust_console_pty_cooked_eof_retains_file_continuations_and_resumes_input() {
+    cooked_eof_cache_cases(true);
+}
+#[test]
+#[ignore = "explicit installed-system cooked EOF/cache/lifetime comparison"]
+fn rust_console_client_cooked_eof_cache_compares_system_conpty() {
+    cooked_eof_cache_cases(false);
 }
 
 fn cooked_echo_cases(rust: bool) {

@@ -726,7 +726,7 @@ impl<'session> ConsoleHost<'session> {
                         // Native EOF processing happens after filling the
                         // requested buffer. A later Ctrl+Z remains ordinary
                         // data; unconsumed records/cache stay available.
-                        if control_z && self.input_mode & 1 != 0 && bytes.first() == Some(&26) {
+                        if control_z && bytes.first() == Some(&26) {
                             bytes.clear();
                         }
                         Some(bytes)
@@ -1103,9 +1103,9 @@ impl<'session> ConsoleHost<'session> {
 
     pub(super) fn update_input_event(&self) -> io::Result<()> {
         if let Some(session) = self.session {
-            session.set_input_available(
-                !self.input.events.is_empty() || self.input.cache_available(),
-            )?;
+            // File-owned decoded continuations are readable without being
+            // console-wide input records. They do not signal the native event.
+            session.set_input_available(!self.input.events.is_empty())?;
         }
         Ok(())
     }

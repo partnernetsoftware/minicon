@@ -31,6 +31,8 @@ mod cursor_info;
 #[cfg(windows)]
 mod echo_output;
 #[cfg(windows)]
+mod eof_cache;
+#[cfg(windows)]
 mod geometry;
 #[cfg(windows)]
 mod history;
@@ -151,6 +153,9 @@ fn run() -> std::io::Result<()> {
     }
     if let Some(kind) = mode.strip_prefix("cooked-edit-") {
         return cooked_edit::run(kind, std::path::Path::new(&arguments[1]));
+    }
+    if let Some(kind) = mode.strip_prefix("eof-cache-") {
+        return eof_cache::run(kind, std::path::Path::new(&arguments[1]));
     }
     if let Some(kind) = mode.strip_prefix("history-") {
         return history::run(kind, std::path::Path::new(&arguments[1]));
