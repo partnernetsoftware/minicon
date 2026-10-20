@@ -61,6 +61,8 @@ mod screen_readback;
 #[cfg(windows)]
 mod scroll_output;
 #[cfg(windows)]
+mod status_roundtrip;
+#[cfg(windows)]
 mod text_attributes;
 #[cfg(windows)]
 mod text_batch;
@@ -101,6 +103,12 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if matches!(mode, "status-roundtrip" | "status-query-overflow") {
+        return status_roundtrip::run(
+            std::path::Path::new(&arguments[1]),
+            mode == "status-query-overflow",
+        );
+    }
     if mode == "query-roundtrip" {
         return query_roundtrip::run(std::path::Path::new(&arguments[1]));
     }

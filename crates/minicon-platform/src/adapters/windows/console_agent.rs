@@ -1153,6 +1153,8 @@ fn raise_interrupt(console_input: HANDLE, event: u32) {
     let pending = PENDING_LINE_KEYS.swap(0, Ordering::AcqRel);
     if pending > 0 {
         let backspace = Key {
+            shift: false,
+            alt: false,
             virtual_key: VK_BACK,
             unicode: 0x08,
             control: false,
@@ -1521,7 +1523,7 @@ fn key_record(key: Key, down: bool) -> INPUT_RECORD {
                 uChar: KEY_EVENT_RECORD_0 {
                     UnicodeChar: key.unicode,
                 },
-                dwControlKeyState: if key.control { LEFT_CTRL_PRESSED } else { 0 },
+                dwControlKeyState: key.controls(),
             },
         },
     }

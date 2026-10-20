@@ -28,6 +28,11 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │       evidence: common mode oracle, actual GUI callback and native child round trip
 │       safe failure: malformed/non-query metadata produces no reply; caller owns I/O failure
 │       dependency: shared validated grammar; non-goal: presenting synchronized frames
+│   └── [v] bounded status-response tracking and CPR/key ambiguity window
+│       invariant: only committed outgoing CPR queries admit ambiguous replies; state expires
+│       evidence: split grammar, numeric bounds, timeout/quota, native DA/DSR/CPR and F3 records
+│       safe failure: explicit tracking quota failure; no permanent CPR key interception
+│       dependency: owned lexer + caller clock/transport; non-goal: distinguishing simultaneous identical keys/reports
 ├── [-] Shared cell operations — terminal::CellRect / Screen region and literal spans
 │   invariant: overlap reads a snapshot; clipping limits writes; no OS/ISA branching
 │   evidence: shared grapheme/overlap/span units, native SDK and actual managed consumers
@@ -71,6 +76,8 @@ flowchart LR
     COMMON --> VT["owned vt100: screen / damage / framing"]
     APP --> QUERY["shared csi_query_reply / caller-owned reply transport"]
     QUERY --> VT
+    ACCEPT["accepted outgoing bytes / caller monotonic clock"] --> RESP["TerminalResponses: owned lexer / finite CPR expectations"]
+    RESP --> INPUT["classify report / accept only after native input succeeds"]
     VT --> VTE["owned vte: authoritative VT / UTF-8 grammar"]
     APP --> PLATFORM["minicon-platform::pty"]
     PROFILE["planned consumer-selected identity / capability profiles"] -.-> COMMON
@@ -123,6 +130,47 @@ expectations belong to [PRD 34](PRD_02_34_windows_console_backend.md#private-mod
 Gate/fault receipts and native-runtime limitations are recorded with that
 return-transport court. User-selectable identity profiles remain
 planned; this helper does not implement that settings/API surface.
+
+## Status response grammar and query windows
+
+`terminal::TerminalResponses` observes accepted outgoing bytes with the same
+owned `vte` grammar as the screen. It owns no screen, PTY, clock or OS handle;
+the caller supplies monotonic elapsed `Duration` values and a timeout. The
+crate names the owned lexer by a direct path dependency so external consumers
+cannot accidentally resolve incompatible grammar. `reply_length` classifies
+one complete report without consuming state; `accept_reply` spends a CPR
+expectation only after the input sink accepts that span. Backpressure/retry
+must not spend it. Other bytes retain the caller's keyboard path.
+
+The common grammar admits primary DA reports (`CSI ? ... c`), status OK
+(`CSI 0 n`), the preceding private-mode reports and positive row/column CPR
+(`CSI r ; c R`). Report scanning is bounded to 64 body bytes; scalar numeric
+fields have at most five digits. Mode/attribute numbers fit u16 and CPR
+coordinates allow 1..65536, matching the shared query helper's one-based
+cursor conversion. Malformed/incomplete reports are not guessed at. The
+preceding private-report classifier/unit moves from the Windows adapter into
+this common owner without changing its named evidence identity.
+
+[xterm's DSR description](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)
+explicitly identifies the collision between CPR and modified F3 bytes. The
+tracker therefore admits CPR only after a complete valid outgoing `CSI 6 n`,
+for one response and only until that query's timeout. Each query has its own
+deadline; inspecting a response does not renew it. At most 64 expectations
+are retained. Overflow yields `ResponseTrackingError`, clears expectations
+and permanently fails the observer; the caller must retire that transport.
+A zero timeout disables CPR admission. This is finite contextual routing,
+not a proof of identity: an identical physical key during the live response
+window, a late reply crossing a newer query, nested consumers and correlation
+with a specific process still need a richer ownership contract.
+
+`terminal_responses_track_split_queries_acknowledgement_expiry_and_quota`
+checks literal reports, split queries, no-response defaults, repeated peeks,
+acknowledgement, independent deadlines, malformed requests/replies, limits
+and irreversible overflow. Native clock, output admission, F3 identity and
+owned-session retirement are qualified separately by
+[PRD 34](PRD_02_34_windows_console_backend.md#status-response-routing-and-cpr-key-boundary).
+Gate/fault receipts and composed-versus-single-suite limitations are recorded
+with that native court. Synchronization/profile settings remain separate work.
 
 ## Dependency and public API boundary
 

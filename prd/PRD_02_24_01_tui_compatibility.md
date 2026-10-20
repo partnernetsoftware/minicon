@@ -88,6 +88,10 @@ private-mode subset. Native report delivery is separately exercised in
 [the Windows return-transport court](PRD_02_34_windows_console_backend.md#private-mode-query-return-transport).
 This advances negotiation and reply transport; synchronized presentation and
 real application acceptance remain open.
+The next response slice adds [finite CPR/key routing](PRD_02_34_windows_console_backend.md#status-response-routing-and-cpr-key-boundary)
+and native DA/DSR/CPR journeys. Identical bytes inside an active query window
+remain an explicit ambiguity; it does not certify general application input
+ownership or real Claude Code behavior.
 
 Claude Code's [official fullscreen documentation](https://code.claude.com/docs/en/fullscreen#use-with-tmux)
 states that it probes synchronized-output support at startup and uses it when

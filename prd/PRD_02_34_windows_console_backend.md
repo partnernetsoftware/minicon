@@ -32,6 +32,11 @@ Outcome: own the Windows console backend with measured compatibility
 │   │   evidence: independent SDK literal reads, fragmented round trip, Up/q, exit31 and EOF
 │   │   safe failure: bounded classification/queues and finite owned-process teardown
 │   │   dependency: common frontend helper + native input; non-goal: general response ownership
+│   ├── [v] native DA/DSR/CPR response transport with finite CPR/F3 disambiguation
+│   │   invariant: input follows committed query output; expired/consumed CPR requests release key dispatch
+│   │   evidence: independent native literal responses, raw/VT modes, F3 records and exit/EOF
+│   │   safe failure: bounded query inventory and session-local teardown on tracking failure
+│   │   dependency: PRD 35 common response tracker; non-goal: cross-process reply attribution
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
@@ -113,7 +118,8 @@ Outcome: own the Windows console backend with measured compatibility
 ```mermaid
 flowchart LR
     CLIENT["unchanged cmd / PowerShell / Node / native client"] --> API["Windows console API and ConDrv"]
-    FRONTEND["frontend-owned capability replies"] --> RINPUT["bounded DECRPM span before physical-key decoder"]
+    FRONTEND["frontend-owned capability replies"] --> RINPUT["common report grammar / finite CPR window before key decoder"]
+    HOST --> ACCEPTED["accepted output / caller clock"] --> CPR["common outstanding CPR inventory"] --> RINPUT
     RINPUT --> HOST
     API --> HOST["owned Rust console host: limited implementation"]
     HOST --> ADAPTER["explicit experimental adapter behind minicon-platform::pty"]
@@ -4249,3 +4255,115 @@ bound to the same frozen source. The failed initial native preflight is retained
 as the before-fix observation, not counted as a passing gate. Artifacts remain
 under ignored `target/conhost-research/query-*`; no packaged/default provider
 promotion or real Claude Code compatibility claim follows from these results.
+
+### Status response routing and CPR key boundary
+
+Invariant: valid frontend DA/DSR/CPR reports reach actual native readers, while
+unrequested, consumed or expired CPR-shaped input retains physical-key routing.
+The reusable lexer, bounded report grammar, acknowledgement and query-window
+semantics belong to [PRD 35](PRD_02_35_terminal_library.md#status-response-grammar-and-query-windows).
+
+The Rust adapter's QueueWriter owns that common observer and an elapsed
+monotonic clock. It observes only output admitted after staging-capacity
+validation, including fragmented writes in actual published order. A failed
+write must not admit a query that the frontend never received. The adapter
+uses a two-second per-query window and spends a response credit only after
+native input accepts the bytes; retry/backpressure preserves it. Query quota
+failure permanently disables that observer and makes the worker retire this
+session, using its existing private-Job termination and output-error path.
+Ordinary keyboard input and private controls keep the existing queues.
+
+The shared Windows keyboard decoder now recognizes CSI forms of F1..F4 and
+Shift/Alt/Ctrl modifiers 1..8; both Rust and hidden-console adapters use one
+Win32 modifier formatter. Rust arrow records combine enhanced-key and modifier
+bits. This is a scoped identity/flag extension, not complete keyboard layout,
+scan-code, Meta or modified-keypad qualification.
+
+`rust_console_pty_native_status_queries_and_cpr_key_boundary_roundtrip`
+launches `crates/minicon-platform/tests/support/status_roundtrip.rs` through
+the explicitly selected Rust PTY. For each native input mode 0 and 0x200, the
+independent SDK client writes DA1, DSR OK and positioned CPR queries one API
+byte at a time, then reads exact literal replies using ReadFile. The parent
+answers with the common frontend helper, one PTY input byte per write.
+Both CPR replies are exactly `CSI 1 ; 2 R`. After consuming them, identical
+bytes must instead become a Shift+F3 INPUT_RECORD; Ctrl+F3 and plain SS3 F3
+must retain virtual key 114, zero character and modifier flags 8/0. The child
+then issues an unanswered CPR, waits 2.5 seconds and verifies another actual
+Shift+F3 record after expiry. It publishes ten native records, exits 33 and
+reaches EOF before teardown. This proves mode-independent report delivery for
+these three queries, consistent with Microsoft's
+[Query State contract](https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#query-state).
+
+`rust_console_pty_query_tracking_overflow_retires_owned_session` sends 65
+unanswered queries, observes a tracking error and closed output, waits for
+actual child exit 1 and checks an empty private Job. This is an expected
+failure/cleanup court, not normal EOF acceptance.
+`rust_console_pty_response_tracking_follows_output_admission` verifies rejected
+staging writes cannot create CPR credits and accepted split query completion
+does create one. `console_agent_modified_function_keys_preserve_identity_and_native_modifiers`
+checks four key identities and eight modifier combinations against literals.
+The preceding output-staging court remains part of qualification.
+
+Qualification also exposed a concrete fixture publication race in
+`crates/minicon-platform/tests/support/buffers.rs`: readiness used a direct
+file write, allowing the parent to observe an existing but empty file. That
+producer now reuses the existing atomic `queued_reads::publish` helper. Its
+original native buffer-close assertions remain unchanged. A fault that creates
+the marker early and delays payload publication must reproduce the failure.
+
+The existing installed-system silent-editor snapshot also retained incidental
+trailing-space representation: erased cells and explicitly written spaces
+could produce different text strings with identical cursor/visible content.
+That reference now canonicalizes row tails only after checking that their
+cells have default background and no underline/inverse decoration. Native
+read receipts, cursor assertions, meaningful glyphs and the owned backend's
+exact snapshot stay strict; raw reference screen text is still logged. The
+reference golden removes only those trailing spaces. Separate SDK faults
+replace the prompt glyph and inject a red trailing blank, proving that the
+normalization cannot hide meaningful text or background damage.
+
+Dependencies are the common observer/helper, native text and record APIs,
+bounded staging and existing session cleanup. Safe failure is typed tracking
+overflow propagated to that session's error/retirement path. Current scope is
+Windows x86_64 build 20348; other OS/ISA and modern Windows runtime remain
+open. Identical keys inside a live CPR window and cross-process/nested reply
+ownership remain ambiguous. Other response families, origin/margin CPR
+semantics, complete keyboard/GUI/pixel journeys, synchronized presentation,
+real Claude Code and performance remain open. No stock-system reply identity
+or default-provider promotion is claimed.
+
+Final-source qualification covers 322 distinct tests in two mandatory stages:
+321 selected regressions, then one isolated installed-system queued-disconnect
+reference. The named cases include every preceding 317-case identity (allowing
+the private-report unit's module relocation) and five added courts. No case is
+silently omitted, and this is not a claim of a stable single-invocation full
+suite. Thirteen restored focused courts pass, including the repaired buffer
+readiness and reference editor, preceding private reports and both dense-TUI
+owned/system courts with 40 phase checkpoints. Ten static/cross-target checks
+and 17 final alignment checks also pass; native runtime remains Windows x86_64
+build 20348 only, with other OS/ISA evidence limited to compilation.
+
+Eleven compiling runtime faults cover nine new/moved/affected courts: visible
+glyph/background damage, early readiness publication, expiry, numeric bounds,
+key modifier flags, output observation, input acknowledgement, query quota,
+observation before admission and staging capacity. Each fails its intended
+court, restores original bytes in finally and verifies source hashes.
+`status-final-receipt.json` binds the staged tree, 13 changed manifest/source/
+test/golden files, seven unchanged hot-file guards, all fault/check/log hashes,
+the 321+1 test identities, two native ten-record reports, quota-failure cleanup
+and 120 retained TUI phase-file hashes. Eleven x64 image identities form a
+compiled-image inventory; five are exercised by the final focused courts.
+Earlier failure logs and their pre-repair source scope remain diagnostics,
+separate from final-source acceptance. Artifacts remain under ignored
+`target/conhost-research/status-*`.
+
+Earlier broad attempts also retained intermittent pending-mode and queued-read
+retirement failures: one owned ReadConsole disconnect returned error 6 rather
+than 5, and installed-system disconnect-console sometimes stalled. The SDK's
+GetThreadIOPendingFlag readiness does not identify a particular host-admitted
+read request. That is an observed evidence limitation, not a newly established
+root cause. Three isolated rechecks passed with unchanged assertions. Final
+qualification stages the order-sensitive system queued-disconnect court
+separately and must not be described as a stable single-invocation full suite.
+The lifecycle admission/order issue remains open; the two concrete fixture
+repairs above do not establish that it is fixed.

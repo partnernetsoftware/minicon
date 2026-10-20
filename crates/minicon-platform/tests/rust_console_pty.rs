@@ -22,6 +22,126 @@ struct QueryPeer {
     done: bool,
     keys: bool,
 }
+
+#[derive(Default)]
+struct StatusPeer {
+    replies: Vec<u8>,
+    stage: u8,
+    suppress: bool,
+    done: bool,
+}
+impl vt100::Callbacks for StatusPeer {
+    fn unhandled_csi(
+        &mut self,
+        screen: &mut vt100::Screen,
+        a: Option<u8>,
+        b: Option<u8>,
+        params: &[&[u16]],
+        c: char,
+    ) {
+        if !self.suppress
+            && let Some(reply) = minicon_console::terminal::csi_query_reply(screen, a, b, params, c)
+        {
+            self.replies.extend(reply);
+        }
+    }
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        match title {
+            b"status-keys" => self.stage = 1,
+            b"status-drop" => self.suppress = true,
+            b"status-expired" => self.stage = 2,
+            b"status-done" => self.done = true,
+            _ => {}
+        }
+    }
+}
+#[test]
+fn rust_console_pty_native_status_queries_and_cpr_key_boundary_roundtrip() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("status-roundtrip")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    let mut peer = vt100::Parser::new_with_callbacks(24, 80, 0, StatusPeer::default());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut replies = Vec::new();
+    while !peer.callbacks().done {
+        let chunk = fixture
+            .output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|e| {
+                panic!(
+                    "status {e};native={:?};wire={:?}",
+                    std::fs::read_to_string(&report.0),
+                    fixture.bytes
+                )
+            })
+            .unwrap();
+        for byte in &chunk {
+            peer.process(&[*byte]);
+            let reply = std::mem::take(&mut peer.callbacks_mut().replies);
+            for byte in &reply {
+                fixture.master.write_all(&[*byte]).unwrap();
+            }
+            replies.extend(reply);
+            let keys = match std::mem::take(&mut peer.callbacks_mut().stage) {
+                1 => b"\x1b[1;2R\x1b[1;5R\x1bOR".as_slice(),
+                2 => b"\x1b[1;2R",
+                _ => b"",
+            };
+            for byte in keys {
+                fixture.master.write_all(&[*byte]).unwrap();
+            }
+        }
+        fixture.bytes.extend(chunk);
+        assert!(fixture.bytes.len() < 65536);
+    }
+    fixture.finish(33);
+    assert_eq!(replies, b"\x1b[?1;2c\x1b[0n\x1b[1;2R".repeat(2));
+    let native = std::fs::read_to_string(&report.0).unwrap();
+    assert_eq!(native.lines().count(), 10);
+    assert!(native.ends_with("key=114;character=0;controls=16\n"));
+    eprintln!(
+        "status-roundtrip native={native:?};wire={:?};replies={replies:?}",
+        fixture.bytes
+    );
+}
+#[test]
+fn rust_console_pty_query_tracking_overflow_retires_owned_session() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("status-query-overflow")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let mut error = None;
+    loop {
+        match fixture
+            .output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
+            Ok(Ok(bytes)) => fixture.bytes.extend(bytes),
+            Ok(Err(e)) => error = Some(e.to_string()),
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(e) => panic!("query overflow did not close: {e}"),
+        }
+    }
+    assert!(
+        error
+            .as_deref()
+            .is_some_and(|e| e == "terminal cursor-query tracking capacity exceeded"
+                || e == "terminal response tracking failed"),
+        "{error:?}"
+    );
+    fixture.wait_exit(1);
+    let receipt = fixture.child.terminate_forcefully().unwrap();
+    assert!(receipt.verified_empty);
+    eprintln!("status-overflow error={error:?};cleanup={receipt:?}");
+}
 impl vt100::Callbacks for QueryPeer {
     fn unhandled_csi(
         &mut self,
@@ -4593,7 +4713,32 @@ fn cooked_edit_report(kind: &str, rust: bool) -> String {
         .rows(0, cols)
         .map(|row| row.trim_end_matches(' ').to_owned())
         .collect();
-    let image = if echo {
+    if !rust && !echo {
+        // ConPTY may use erased cells or explicit spaces for the same tail.
+        // Normalize only visually empty default-background, undecorated cells.
+        for row in 0..8 {
+            for col in (0..cols).rev() {
+                let cell = parser.screen().cell(row, col).unwrap();
+                if cell.is_wide_continuation() || !cell.contents().chars().all(|c| c == ' ') {
+                    break;
+                }
+                assert_eq!(
+                    cell.bgcolor(),
+                    vt100::Color::Default,
+                    "reference trailing background {kind}/{row}/{col}"
+                );
+                assert!(
+                    !cell.underline() && !cell.inverse(),
+                    "reference trailing decoration {kind}/{row}/{col}"
+                );
+            }
+        }
+        println!(
+            "cooked-edit-reference-raw kind={kind};screen={:?}",
+            parser.screen().contents()
+        );
+    }
+    let image = if echo || !rust {
         rows.join("\n").trim_end_matches('\n').to_owned()
     } else {
         parser.screen().contents()

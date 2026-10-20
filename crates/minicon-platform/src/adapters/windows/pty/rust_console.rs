@@ -235,8 +235,18 @@ const OUTPUT_STAGING_CAPACITY: usize = 4 * 1024 * 1024;
 struct QueueWriter<'a> {
     output: &'a OutputPipe,
     pending: VecDeque<u8>,
+    responses: minicon_console::terminal::TerminalResponses,
+    origin: Instant,
 }
 impl QueueWriter<'_> {
+    fn new(output: &OutputPipe) -> QueueWriter<'_> {
+        QueueWriter {
+            output,
+            pending: VecDeque::new(),
+            responses: minicon_console::terminal::TerminalResponses::new(Duration::from_secs(2)),
+            origin: Instant::now(),
+        }
+    }
     fn drain(&mut self) {
         while !self.pending.is_empty() {
             let (first, _) = self.pending.as_slices();
@@ -259,6 +269,9 @@ impl io::Write for QueueWriter<'_> {
                 "console output staging budget exceeded",
             ));
         }
+        self.responses
+            .observe_output(bytes, self.origin.elapsed())
+            .map_err(io::Error::other)?;
         self.pending.extend(bytes);
         Ok(bytes.len())
     }
@@ -279,10 +292,7 @@ fn serve(
     size: TerminalSize,
 ) -> io::Result<()> {
     let mut host = ConsoleHost::for_child(child)?;
-    let mut sink = QueueWriter {
-        output,
-        pending: VecDeque::new(),
-    };
+    let mut sink = QueueWriter::new(output);
     // System ConPTY starts output in processed, wrapping VT mode (0x07).
     host.set_output_mode(7, &mut sink)?;
     host.resize(size.cols, size.rows, &mut sink)?;
@@ -292,6 +302,9 @@ fn serve(
     let mut input_blocked = false;
     let mut driver_closed = false;
     while !stop.load(Ordering::Acquire) {
+        if sink.responses.is_failed() {
+            return Err(io::Error::other("terminal response tracking failed"));
+        }
         sink.drain();
         if driver_closed {
             input.close();
@@ -377,10 +390,12 @@ fn serve(
             {
                 if escape != 0 {
                     valid = escape;
-                } else if let Some(length) = input::private_mode_reply_len(&pending[..valid]) {
-                    // A DECRPM report is terminal input for the application,
-                    // not an unknown physical key to discard. Keep native key
-                    // decoding for arrows etc.; publish this exact ASCII span.
+                } else if let Some(length) = sink
+                    .responses
+                    .reply_length(&pending[..valid], sink.origin.elapsed())
+                {
+                    // A terminal report is input text. Ambiguous CPR requires
+                    // an outstanding query; ordinary keys retain their decoder.
                     valid = length;
                     escape_wait = None;
                 } else {
@@ -399,13 +414,8 @@ fn serve(
                             virtual_key: key.virtual_key,
                             scan_code,
                             character: key.unicode,
-                            controls: if scan_code != 0 {
-                                ENHANCED_KEY
-                            } else if key.control {
-                                8
-                            } else {
-                                0
-                            },
+                            controls: key.controls()
+                                | if scan_code != 0 { ENHANCED_KEY } else { 0 },
                         };
                         match host.enqueue_input(&[event], &mut sink) {
                             Ok(_) => {
@@ -458,6 +468,8 @@ fn serve(
                 .collect();
             match host.enqueue_text(&text, &mut sink) {
                 Ok(_) => {
+                    sink.responses
+                        .accept_reply(&pending[..valid], sink.origin.elapsed());
                     pending.drain(..valid);
                     input_progress = true;
                     previous_cr = cr;
@@ -513,12 +525,36 @@ mod tests {
     use std::io::Write as _;
 
     #[test]
+    fn rust_console_pty_response_tracking_follows_output_admission() {
+        let output = OutputPipe::new();
+        let mut sink = QueueWriter::new(&output);
+        sink.write_all(&vec![b'x'; OUTPUT_STAGING_CAPACITY])
+            .unwrap();
+        assert!(sink.write_all(b"\x1b[6n").is_err());
+        assert_eq!(
+            sink.responses
+                .reply_length(b"\x1b[1;2R", sink.origin.elapsed()),
+            None
+        );
+        let mut sink = QueueWriter::new(&output);
+        sink.write_all(b"\x1b[6").unwrap();
+        assert_eq!(
+            sink.responses
+                .reply_length(b"\x1b[1;2R", sink.origin.elapsed()),
+            None
+        );
+        sink.write_all(b"n").unwrap();
+        assert_eq!(
+            sink.responses
+                .reply_length(b"\x1b[1;2R", sink.origin.elapsed()),
+            Some(6)
+        );
+    }
+
+    #[test]
     fn rust_console_pty_output_staging_bounds_writes_atomically_and_discards_only_on_shutdown() {
         let output = OutputPipe::new();
-        let mut sink = QueueWriter {
-            output: &output,
-            pending: VecDeque::new(),
-        };
+        let mut sink = QueueWriter::new(&output);
         sink.write_all(&vec![b'x'; OUTPUT_STAGING_CAPACITY])
             .unwrap();
         sink.drain();

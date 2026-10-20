@@ -1096,6 +1096,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "vt100",
+ "vte",
  "windows-sys 0.61.2",
 ]
 

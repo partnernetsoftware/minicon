@@ -5,6 +5,18 @@ pub(super) struct Key {
     pub(super) virtual_key: u16,
     pub(super) unicode: u16,
     pub(super) control: bool,
+    pub(super) shift: bool,
+    pub(super) alt: bool,
+}
+impl Key {
+    pub(super) fn controls(self) -> u32 {
+        use windows_sys::Win32::System::Console::{
+            LEFT_ALT_PRESSED, LEFT_CTRL_PRESSED, SHIFT_PRESSED,
+        };
+        (if self.control { LEFT_CTRL_PRESSED } else { 0 })
+            | (if self.shift { SHIFT_PRESSED } else { 0 })
+            | (if self.alt { LEFT_ALT_PRESSED } else { 0 })
+    }
 }
 
 /// One key press from the front of a terminal byte stream.
@@ -26,6 +38,8 @@ pub(super) fn decode_key(bytes: &[u8]) -> Option<(Key, usize)> {
                 virtual_key,
                 unicode,
                 control: false,
+                shift: false,
+                alt: false,
             },
             used,
         ))
@@ -60,6 +74,8 @@ pub(super) fn decode_key(bytes: &[u8]) -> Option<(Key, usize)> {
                 virtual_key: u16::from(b'A') + u16::from(*byte) - 1,
                 unicode: u16::from(*byte),
                 control: true,
+                shift: false,
+                alt: false,
             },
             1,
         )),
@@ -101,17 +117,27 @@ fn decode_csi(bytes: &[u8]) -> Option<(Key, usize)> {
     let final_byte = bytes[2 + end];
     let parameters = &bytes[2..2 + end];
     let used = 3 + end;
+    let modifier = std::str::from_utf8(parameters)
+        .ok()
+        .and_then(|p| p.strip_prefix("1;"))
+        .and_then(|p| p.parse::<u8>().ok())
+        .filter(|m| (1..=8).contains(m));
     let key = |virtual_key: u16| {
         Some((
             Key {
                 virtual_key,
                 unicode: 0,
-                control: false,
+                control: modifier.is_some_and(|m| (m - 1) & 4 != 0),
+                shift: modifier.is_some_and(|m| (m - 1) & 1 != 0),
+                alt: modifier.is_some_and(|m| (m - 1) & 2 != 0),
             },
             used,
         ))
     };
     match final_byte {
+        b'P'..=b'S' if parameters.is_empty() || parameters == b"1" || modifier.is_some() => {
+            key(VK_F1 + u16::from(final_byte - b'P'))
+        }
         b'A' => key(VK_UP),
         b'B' => key(VK_DOWN),
         b'C' => key(VK_RIGHT),
@@ -137,6 +163,8 @@ fn decode_csi(bytes: &[u8]) -> Option<(Key, usize)> {
                         virtual_key: 0,
                         unicode: 0,
                         control: false,
+                        shift: false,
+                        alt: false,
                     },
                     used,
                 )),
@@ -149,8 +177,35 @@ fn decode_csi(bytes: &[u8]) -> Option<(Key, usize)> {
                 virtual_key: 0,
                 unicode: 0,
                 control: false,
+                shift: false,
+                alt: false,
             },
             used,
         )),
+    }
+}
+
+#[cfg(test)]
+mod response_key_tests {
+    use super::*;
+    #[test]
+    fn console_agent_modified_function_keys_preserve_identity_and_native_modifiers() {
+        for (final_byte, vk) in [(b'P', 0x70), (b'Q', 0x71), (b'R', 0x72), (b'S', 0x73)] {
+            for modifier in 1..=8 {
+                let wire = format!("\x1b[1;{modifier}{}", char::from(final_byte));
+                for end in 1..wire.len() {
+                    assert!(decode_key(&wire.as_bytes()[..end]).is_none());
+                }
+                let (key, used) = decode_key(wire.as_bytes()).unwrap();
+                assert_eq!((key.virtual_key, key.unicode, used), (vk, 0, wire.len()));
+                let bits = modifier - 1;
+                assert_eq!(
+                    key.controls(),
+                    if bits & 1 != 0 { 16 } else { 0 }
+                        | if bits & 2 != 0 { 2 } else { 0 }
+                        | if bits & 4 != 0 { 8 } else { 0 }
+                );
+            }
+        }
     }
 }

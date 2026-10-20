@@ -256,7 +256,7 @@ pub(super) fn pressure(path: &Path) -> io::Result<()> {
     receipt.push_str(&format!("held-rect={text}\n"));
     std::fs::write(path.with_extension("go"), b"queried")?;
     drop(observer);
-    std::fs::write(path.with_extension("ready"), receipt)?;
+    super::queued_reads::publish(&path.with_extension("ready"), &receipt)?;
     bytes(base, b"\x1b]2;buffers-pressure-end:\x07")?;
     std::fs::write(path, b"closed-after-drain")
 }

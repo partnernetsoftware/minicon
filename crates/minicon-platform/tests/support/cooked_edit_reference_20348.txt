@@ -43,7 +43,7 @@ read:0061,0063,0064,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [end]
@@ -51,7 +51,7 @@ read:0061,0063,0064,0058,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [backspace]
@@ -67,7 +67,7 @@ read:0058,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [initial]
@@ -91,7 +91,7 @@ read:0041,4e2d,0065,0058,0301,005a,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [unicode-overwrite]
@@ -115,7 +115,7 @@ read:0041,0042,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [invalid-retained]
@@ -139,7 +139,7 @@ read:0062,0058,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [ctrl-home]
@@ -147,7 +147,7 @@ read:0058,0063,0064,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [ctrl-end]
@@ -155,7 +155,7 @@ read:0061,0062,0058,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)
 
 [repeat]
@@ -202,5 +202,5 @@ read:0058,000d,000a,
 controls:00000000
 queued:0
 cursor:1,0;0007
-screen:"> "
+screen:">"
 frontend-cursor:(0, 1)

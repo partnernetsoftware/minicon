@@ -10,6 +10,7 @@ repository = "https://github.com/partnernetsoftware/minicon"
 [dependencies]
 # All consumers require the owned screen/grammar APIs even outside this root.
 vt100 = { version = "0.16", path = "../../third_party/vt100" }
+vte = { version = "0.15", path = "../../third_party/vte", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 unicode-segmentation = "1.13"
