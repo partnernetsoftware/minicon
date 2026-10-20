@@ -75,11 +75,16 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │   evidence: build-gated feature/status guards and native window capture/query/exit journey below
 │   failure: unavailable selection rejects before launch; owned fixture cleanup stays bounded
 │   dependency: platform rust_console opt-in and GUI presentation; non-goal: real Claude Code acceptance
-└── [_] Real application and cross-platform qualification
+└── [-] Real application and cross-platform qualification
     invariant: a passing SDK scenario is not a passing Claude Code session or another OS/ISA
     evidence: versioned real TUI startup, streaming, scrolling, resize, paste, cancel and teardown
     safe failure: unavailable application/runtime cells remain BLOCKED
     dependency: preceding leaves and independent courts; non-goal: automatic backend default promotion
+    └── [v] scoped Windows x64 Claude Code 2.1.304 Unicode prompt/reply and resize comparison
+        invariant: identify the opened backend and compare actual text and pixels with a native Unicode oracle
+        evidence: two owned GUI sessions, 12-line reply, screenshots, pane Unicode and WriteConsoleW/ReadConsoleW fixtures
+        safe failure: default output corruption remains open; no full TUI or other OS/ISA pass
+        dependency: console-agent input fix and experimental Rust PTY; non-goal: default backend promotion
 ```
 
 ```mermaid
@@ -104,10 +109,43 @@ flowchart LR
 ## Report and current evidence
 
 Owner report, 2026-10-20: MiniCon 0.2.14 displays substantial screen corruption
-when hosting Claude Code and similar harness TUIs. The reported Claude Code
-version, selected backend, exact OS build and triggering sequence have not yet
-been established. This is a registered real-user symptom, not a reproduced
-root cause or evidence that the current experimental backend fixes it.
+when hosting Claude Code and similar harness TUIs. The owner's original 0.2.14
+sequence remains unrecorded. The current-source comparison below reproduces a
+narrow Unicode failure, not the complete reported screen corruption.
+
+Before the input fix, on Windows x64 build 20348, two owned MiniCon GUI sessions ran the user's
+Claude Code 2.1.304 wrapper from an isolated scratch directory. Structured
+snapshots identified the opened backends as `console-agent` and `rust-console`.
+Both accepted a no-tool prompt and a 12-line Unicode prompt while the window
+was resized. In the default session, the prompt's `🙂` became three U+FFFD
+characters; its answer also contained replacement characters and one damaged
+word boundary. The Rust session retained `汉字 Ω 🙂` in all 12 answer rows and
+in its presented screenshot. The default child later exited with code 251;
+the cause was not established, and no lifecycle diagnosis follows from it.
+
+An independent `WriteConsoleW` fixture wrote `ASCII:🙂:END` through the same
+two backends. The default `capture-pane` contained `ASCII:�:END`; the Rust
+capture retained the scalar. This isolates an output-path difference without
+relying on Claude's generated text. An independent `ReadConsoleW` fixture
+showed the default agent originally delivered only UTF-16 `D83D` for the
+four-byte UTF-8 input `🙂`; Rust delivered `D83D DE42`. The console-agent
+input fix in `console_input.rs`/`console_agent.rs` now emits separate key
+records for both UTF-16 units, and a fresh native default session read exactly
+`D83D DE42 000D 000A` after `send-text` plus Enter. A compiling runtime fault
+that changes the second key unit to `?` fails the named regression
+`astral_text_emits_both_utf16_key_units_without_consuming_a_partial_scalar`;
+all 30 selected console-agent unit tests pass after byte-for-byte restoration.
+The remaining output loss is consistent with the default adapter's
+`ReadConsoleOutputW` screen-buffer mirror and Microsoft's
+[recorded surrogate readback limitation](https://github.com/microsoft/terminal/issues/10810);
+the exact loss point inside this machine's host is not yet
+instrumented. Local ignored receipts under
+`target/conhost-research/claude-tui-20261020/` include
+`default-unicode.txt`, `default-resize-live.png`, `rust-unicode.txt`,
+`rust-unicode.png`, `unicode-base2.txt`, `unicode-rust.txt`,
+`input-native-base.hex`, `input-native-rust.hex`, `input-fixed2.hex`,
+`negative-surrogate.log` and `console-agent-tests.log`. Dense redraw, paste, cancel,
+synchronized frames, lifecycle and other OS/ISA cells remain open.
 
 Source audit at 56b3b67: MiniCon uses the owned `vt100` screen/parser and `vte`
 grammar. The name does not restrict the implementation to the original VT100:
@@ -286,8 +324,8 @@ termination from a missing window, or claim an arbitrary application's private
 job is empty. The earlier opened-PTY job-empty court remains separate evidence.
 
 Runtime scope is Windows x64 build 20348. Actual compositor pixels, held-frame
-native resize/blink/paste interleavings, sustained application workloads, real
-Claude Code, other OS/ISA runtime and default promotion remain open. Mode 2026
+native resize/blink/paste interleavings, sustained application workloads, full
+Claude Code acceptance, other OS/ISA runtime and default promotion remain open. Mode 2026
 is still negatively advertised.
 
 Artifact inspection at 440d7c6 found a separate retained-chrome mismatch in the final
@@ -414,7 +452,7 @@ Clippy and enabled whole-GUI Windows ARM64 compilation. The final focused run
 includes the 17 alignment guards, two title guards and the strengthened native
 window journey. Each of its four window cases retains both native PNG/identity
 JSON and the existing source/native/reply/frame/lifecycle evidence. Other
-OS/ISA runtime cells and real Claude Code remain unqualified.
+OS/ISA runtime cells and full Claude Code compatibility remain unqualified.
 
 ## Delivery order and acceptance
 

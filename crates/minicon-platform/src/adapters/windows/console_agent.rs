@@ -1157,6 +1157,7 @@ fn raise_interrupt(console_input: HANDLE, event: u32) {
             alt: false,
             virtual_key: VK_BACK,
             unicode: 0x08,
+            trailing_surrogate: None,
             control: false,
         };
         let mut records = Vec::with_capacity(pending as usize * 2);
@@ -1272,11 +1273,24 @@ fn write_records(console_input: HANDLE, bytes: &[u8]) -> usize {
         };
         index += used;
         track_pending_line_key(key.virtual_key);
-        records.push(key_record(key, true));
-        records.push(key_record(key, false));
+        append_key_records(&mut records, key);
     }
     flush_records(console_input, &mut records);
     index
+}
+
+fn append_key_records(records: &mut Vec<INPUT_RECORD>, key: Key) {
+    records.push(key_record(key, true));
+    records.push(key_record(key, false));
+    if let Some(trailing) = key.trailing_surrogate {
+        let second = Key {
+            unicode: trailing,
+            trailing_surrogate: None,
+            ..key
+        };
+        records.push(key_record(second, true));
+        records.push(key_record(second, false));
+    }
 }
 
 /// Writes and clears whatever has accumulated.
@@ -1761,6 +1775,26 @@ mod tests {
         let (key, used) = decode_key(text).expect("whole character decodes");
         assert_eq!(used, 3);
         assert_eq!(key.unicode, 0x4E2D);
+    }
+
+    #[test]
+    fn astral_text_emits_both_utf16_key_units_without_consuming_a_partial_scalar() {
+        let text = "🙂".as_bytes();
+        for prefix in 1..text.len() {
+            assert!(decode_key(&text[..prefix]).is_none());
+        }
+        let (key, used) = decode_key(text).expect("whole scalar decodes");
+        assert_eq!(used, text.len());
+        let mut records = Vec::new();
+        append_key_records(&mut records, key);
+        let actual: Vec<(i32, u16)> = records
+            .iter()
+            .map(|record| {
+                let event = unsafe { record.Event.KeyEvent };
+                (event.bKeyDown, unsafe { event.uChar.UnicodeChar })
+            })
+            .collect();
+        assert_eq!(actual, [(1, 0xd83d), (0, 0xd83d), (1, 0xde42), (0, 0xde42)]);
     }
 
     #[test]

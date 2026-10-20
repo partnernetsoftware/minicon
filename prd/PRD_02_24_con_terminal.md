@@ -303,6 +303,14 @@ requested selection; the opened session identity is separately observable throug
 - [v] the agent argument carries no product name. This adapter is shared with
   `agenterm`, so any product name in it would appear in some other product's
   command line, and a process list is public.
+- [v] the console-agent input adapter preserves an astral UTF-8 scalar as two
+  ordered UTF-16 key records. A native `ReadConsoleW` fixture on Windows x64
+  build 20348 read `D83D DE42 000D 000A` after `send-text` of `🙂` and Enter;
+  before this fix it read only `D83D 000D 000A`. The named unit regression
+  `astral_text_emits_both_utf16_key_units_without_consuming_a_partial_scalar`
+  fails a compiling mutation of the low surrogate. The end-to-end Claude Code
+  comparison and the separate output limitation belong to
+  [PRD 24.01](PRD_02_24_01_tui_compatibility.md#report-and-current-evidence).
 - [v] the difference is sealed below the session contract: both backends use the
   same pipes, the same output pump, the same command line and the same
   environment block, and differ only in who creates the child. Nothing above

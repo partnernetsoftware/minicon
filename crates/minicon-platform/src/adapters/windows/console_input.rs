@@ -4,6 +4,7 @@
 pub(super) struct Key {
     pub(super) virtual_key: u16,
     pub(super) unicode: u16,
+    pub(super) trailing_surrogate: Option<u16>,
     pub(super) control: bool,
     pub(super) shift: bool,
     pub(super) alt: bool,
@@ -37,6 +38,7 @@ pub(super) fn decode_key(bytes: &[u8]) -> Option<(Key, usize)> {
             Key {
                 virtual_key,
                 unicode,
+                trailing_surrogate: None,
                 control: false,
                 shift: false,
                 alt: false,
@@ -73,6 +75,7 @@ pub(super) fn decode_key(bytes: &[u8]) -> Option<(Key, usize)> {
                 // virtual key with the control modifier set.
                 virtual_key: u16::from(b'A') + u16::from(*byte) - 1,
                 unicode: u16::from(*byte),
+                trailing_surrogate: None,
                 control: true,
                 shift: false,
                 alt: false,
@@ -92,7 +95,17 @@ pub(super) fn decode_key(bytes: &[u8]) -> Option<(Key, usize)> {
             let character = text.chars().next()?;
             let mut units = [0_u16; 2];
             let encoded = character.encode_utf16(&mut units);
-            plain(0, encoded[0], character.len_utf8())
+            Some((
+                Key {
+                    virtual_key: 0,
+                    unicode: encoded[0],
+                    trailing_surrogate: encoded.get(1).copied(),
+                    control: false,
+                    shift: false,
+                    alt: false,
+                },
+                character.len_utf8(),
+            ))
         }
     }
 }
@@ -127,6 +140,7 @@ fn decode_csi(bytes: &[u8]) -> Option<(Key, usize)> {
             Key {
                 virtual_key,
                 unicode: 0,
+                trailing_surrogate: None,
                 control: modifier.is_some_and(|m| (m - 1) & 4 != 0),
                 shift: modifier.is_some_and(|m| (m - 1) & 1 != 0),
                 alt: modifier.is_some_and(|m| (m - 1) & 2 != 0),
@@ -162,6 +176,7 @@ fn decode_csi(bytes: &[u8]) -> Option<(Key, usize)> {
                     Key {
                         virtual_key: 0,
                         unicode: 0,
+                        trailing_surrogate: None,
                         control: false,
                         shift: false,
                         alt: false,
@@ -176,6 +191,7 @@ fn decode_csi(bytes: &[u8]) -> Option<(Key, usize)> {
             Key {
                 virtual_key: 0,
                 unicode: 0,
+                trailing_surrogate: None,
                 control: false,
                 shift: false,
                 alt: false,
