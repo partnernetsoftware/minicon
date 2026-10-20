@@ -4687,6 +4687,70 @@ fn queued_read_pressure_cases(rust: bool) {
     }
 }
 
+fn pending_mode_cases(rust: bool) {
+    for api in ["file", "console"] {
+        for case in ["cooked-text", "raw-text", "cooked-signal", "raw-signal"] {
+            let kind = format!("{api}-{case}");
+            let report = Report::new();
+            let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(format!("mode-wait-{kind}"))
+                .arg(report.0.as_os_str());
+            let mut fixture = if rust {
+                Fixture::open(command.rust_console())
+            } else {
+                Fixture::open_backend(command, "conpty")
+            };
+            report.wait_ready();
+            let signalled = case.ends_with("signal");
+            if signalled {
+                fixture.master.write_all(&[3]).unwrap();
+            }
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !report.0.exists() {
+                assert!(Instant::now() < deadline, "mode-wait {rust}/{kind} stalled");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            let value = std::fs::read_to_string(&report.0).unwrap();
+            let cooked = case.starts_with("cooked");
+            let interrupted = cooked && signalled;
+            eprintln!("mode-wait rust={rust};kind={kind}: {value}");
+            assert_eq!(
+                value,
+                format!(
+                    r#"{{"ok":true,"error":{},"units":{:?},"event":{},"mode":{}}}"#,
+                    if interrupted && api == "console" {
+                        995
+                    } else {
+                        0
+                    },
+                    if interrupted {
+                        vec![]
+                    } else if cooked {
+                        vec![90, 13, 10]
+                    } else {
+                        vec![90]
+                    },
+                    u32::from(signalled),
+                    if cooked { 1 } else { 3 }
+                )
+            );
+            std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+            fixture.finish(0);
+        }
+    }
+}
+
+#[test]
+fn rust_console_pty_pending_text_reads_keep_their_admitted_mode() {
+    pending_mode_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY pending-read mode-change comparison"]
+fn rust_console_client_pending_text_modes_compare_system_conpty() {
+    pending_mode_cases(false);
+}
+
 #[test]
 fn rust_console_pty_queued_reads_finish_under_unread_output_pressure() {
     queued_read_pressure_cases(true);

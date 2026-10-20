@@ -39,6 +39,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped retirement preflight / caller-scoped completion / in-flight file-reference ownership
 │   ├── [v] scoped queued-read reply shapes / caller retirement / unrelated FIFO retention
 │   ├── [v] scoped keyboard waiters: raw Ctrl+C and record C/Break retain their reads
+│   ├── [v] scoped pending text reads retain their admitted cooked/raw kind across LINE_INPUT changes
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -117,6 +118,7 @@ flowchart LR
     QUEUED --> REPLIES["ReadFile 0 / ReadConsole 20 / records 8 bytes; zero returned counts"]
     QUEUED --> FOREIGN["preserve other callers / queued writers / kernel finalizers"]
     INPUT --> WAITERS["keyboard: cooked C/Break ends; raw C and record C/Break wait"]
+    WAITERS --> READMODE["admission fixes waiter kind; current mode still controls signal recognition"]
     RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
     POSTLIVE -->|"may publish"| READYWORK
     POSTLIVE -->|"another read survives"| INPUT
@@ -3542,9 +3544,10 @@ terminal state.
 Keyboard cancellation differs from administrative cancellation. Cooked text
 reads terminate on C/Break; raw text reads ignore C and terminate on Break;
 record reads ignore both. The API name does not determine cooked/raw mode:
-LINE_INPUT does. The implementation covers the current input-mode cases;
-changing LINE_INPUT while reads are pending remains unqualified. Break still
-flushes stored keyboard input. GenerateConsoleCtrlEvent remains signal delivery,
+LINE_INPUT does. Changing LINE_INPUT during a pending read is qualified in the following
+[waiter-mode section](#pending-text-waiter-mode-lifetime); other combinations
+remain unqualified. Break still flushes stored keyboard input.
+GenerateConsoleCtrlEvent remains signal delivery,
 not a substitute for keyboard cancellation. The fixtures explicitly clear
 inherited IGNORE_CTRL_C before installing a handler.
 
@@ -3615,8 +3618,82 @@ verification and 17 alignment checks precede the local commit. The receipt
 `queued-read-final-receipt.json` binds the staged tree, source/log/fault hashes,
 compiler, nine executed x64 image identities and three pinned waiter sources.
 
-Remaining work: mode changes during pending reads, more mixed deferred-call/
+Remaining work: broader mode combinations during pending reads, more mixed deferred-call/
 finalizer races, last-orphan/new-buffer races, native internal access/share
 policy, broader concurrent geometry/editor/native API coverage, other OS/ISA
 runtime and performance courts, portable sessions and packaging/default
 promotion. This slice changes no library-merger decision or product default.
+
+### Pending text waiter mode lifetime
+
+Invariant: admission chooses a text waiter's cooked/raw kind once. Later
+SetConsoleMode changes do not replace that waiter. Text assembly and keyboard
+cancellation consult this retained kind; signal recognition still uses current
+PROCESSED_INPUT, and the cooked editor continues to consult live processed/echo
+settings. Raw waiters do not acquire cooked echo when modes change. Unadmitted
+requests have no waiter yet and continue using current mode classification.
+Records retain their separate keyboard policy. One private ReadCancellation
+policy distinguishes administration from keyboard C/Break for both queues;
+no public Windows policy type leaks into the portable terminal facade.
+
+The pinned stream.cpp chooses COOKED_READ_DATA or RAW_READ_DATA during read
+creation. Their distinct Notify implementations retain C/Break behavior;
+cooked post-processing reads current PROCESSED_INPUT for CR versus CRLF.
+`mode-wait-pinned-sources.json` verifies stream.cpp and the three read-waiter
+blobs against revision 9fd41b2baec77d25b8cfb584070d5998eab7df81. Dependencies are
+the existing deferred read, native mode APIs, input-event admission, scoped
+native control delivery and retained drawing buffer. Safe failure remains the
+existing bounded/native error path; replacing the Windows kernel or changing
+product defaults is outside this slice.
+
+Actual ReadFile and ReadConsoleW fixtures start in mode 3 (processed + line) or
+mode 1 (processed raw), wait for submitted kernel I/O and then toggle LINE_INPUT.
+The direct court first verifies the read is admitted and pending, then releases
+the mode-changing client. The PTY courts keep output free, change mode after
+GetThreadIOPendingFlag and observe native mode readback. No timing sleep stands
+in for submission or direct admission. After changing mode:
+
+| Initial waiter / current mode | Ordinary input | Keyboard Ctrl+C |
+| --- | --- | --- |
+| Cooked / mode 1 | `Z` + CR returns `[90,13,10]` | Empty interrupted result; File error 0, Console error 995 |
+| Raw / mode 3 | One `Z` returns `[90]`, without waiting for CR | Read survives, receives handler event 1, then returns later `Z` |
+
+All successful reads return BOOL true, error 0; interrupted rows also return
+BOOL true, preserving the API-specific LastError above. The handler explicitly
+clears inherited IGNORE_CTRL_C. Reports include units, error, BOOL, event and
+final mode; the direct court additionally checks pending-read counts across
+the signal and final connection/handle cleanup. Every child uses the existing
+private Job; system comparisons clear both console-agent forcing variables.
+
+Named evidence: `rust_console_native_pending_text_reads_keep_their_admitted_mode`,
+`rust_console_pty_pending_text_reads_keep_their_admitted_mode` and
+`rust_console_client_pending_text_modes_compare_system_conpty`. They execute
+eight cases per court, 24 total, matching the installed system ConPTY for this
+scope. Logs and qualification are under ignored
+`target/conhost-research/mode-wait-*`.
+
+Local qualification: `mode-wait-early-suite.log` records 295 passing selected
+tests, retaining the preceding 292 and adding these three. Five compiling runtime
+faults fail all three new tests: reverse the admitted kind, consult live LINE_INPUT
+for text assembly, consult live mode for accepted-read cancellation, invert the
+keyboard waiter policy, or remove the actual SDK mode toggle. Each fault restores
+and hashes the original bytes; `mode-wait-negative-audit.json` binds their logs.
+The six-test final focused selection also retains the three previous queued-read
+courts. A successful earlier full selection is reused only after all six changed
+implementation/test files match their frozen hashes.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `mode-wait-final-receipt.json` binds source tree, source/log/fault
+hashes, compiler, nine executed x64 image identities and four pinned upstream
+blobs. Native execution is Windows x86_64 build 20348 only; other target checks
+prove compilation, not runtime compatibility.
+
+An initial fixture submitted `Z` and CR together to raw readers. The stock reader
+returned both available units while the owned reader returned only `Z`;
+`mode-wait-raw-batch-diagnostic.log` retains that separate compatibility gap.
+The waiter-mode court supplies only one raw unit to isolate lifetime selection;
+it does not qualify raw multi-record batch draining. Broader mode/VT/echo
+transitions, queued-versus-admitted races and raw batching remain open, alongside
+the other API, OS/ISA runtime, performance, session and packaging boundaries.

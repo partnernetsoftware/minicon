@@ -639,6 +639,72 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
 }
 
 #[test]
+fn rust_console_native_pending_text_reads_keep_their_admitted_mode() {
+    for api in ["file", "console"] {
+        for case in ["cooked-text", "raw-text", "cooked-signal", "raw-signal"] {
+            let kind = format!("{api}-{case}");
+            let report = Report::new();
+            let session = DriverSession::open().unwrap();
+            let child = launch_probe(&format!("mode-wait-{kind}"), &report, &session);
+            let mut host = ConsoleHost::for_child(&child).unwrap();
+            let mut output = Vec::new();
+            let mut admitted = false;
+            let mut signalled = false;
+            let mut released = false;
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while child.wait(Duration::ZERO).unwrap().is_none()
+                || host.connected_clients() != 0
+                || host.open_handles() != 0
+            {
+                assert!(Instant::now() < deadline, "mode-wait {kind} stalled");
+                match session.receive(Duration::from_millis(20)) {
+                    Ok(request) => {
+                        let call = host.dispatch(request, &mut output).unwrap();
+                        assert_eq!(call.status, 0, "{kind}: {call:?}");
+                        if call.function == 6 || call.api == Some(0x0100_0005) {
+                            assert!(!admitted);
+                            assert!(call.pending);
+                            assert_eq!(host.pending_reads(), 1);
+                            admitted = true;
+                            std::fs::write(report.path.with_extension("go"), b"admitted").unwrap();
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(error) => panic!("mode-wait {kind}: {error}"),
+                }
+                if case.ends_with("signal")
+                    && !signalled
+                    && report.path.with_extension("ready").exists()
+                {
+                    assert!(admitted);
+                    assert_eq!(host.pending_reads(), 1);
+                    let cancelled = host.enqueue_text("\u{3}", &mut output).unwrap();
+                    assert_eq!(cancelled, 0);
+                    assert_eq!(host.pending_reads(), usize::from(case.starts_with("raw")));
+                    signalled = true;
+                }
+                if !released && report.path.exists() {
+                    std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+                    released = true;
+                }
+            }
+            assert!(admitted && released);
+            assert_eq!(signalled, case.ends_with("signal"));
+            let value: Value =
+                serde_json::from_slice(&std::fs::read(&report.path).unwrap()).unwrap();
+            let cooked = case.starts_with("cooked");
+            let interrupted = cooked && signalled;
+            assert_eq!(
+                value,
+                json!({"ok":true,"error":if interrupted && api=="console"{995}else{0},"units":if interrupted{vec![]}else if cooked{vec![90,13,10]}else{vec![90]},"event":u32::from(signalled),"mode":if cooked{1}else{3}}),
+                "{kind}"
+            );
+            eprintln!("mode-wait-direct {kind}: {value}");
+        }
+    }
+}
+
+#[test]
 fn rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers() {
     struct Reject;
     impl std::io::Write for Reject {

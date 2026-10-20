@@ -11,6 +11,120 @@ use windows_sys::Win32::Storage::FileSystem::ReadFile;
 use windows_sys::Win32::System::{Console::*, Threading::GetThreadIOPendingFlag};
 
 static EVENT: AtomicU32 = AtomicU32::new(0);
+
+/// Change LINE_INPUT after a native text request has become a waiting read.
+pub(crate) fn mode_wait(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let (api, action) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
+    let file = match api {
+        "file" => true,
+        "console" => false,
+        _ => return Err(io::ErrorKind::InvalidInput.into()),
+    };
+    let cooked = action.starts_with("cooked-");
+    if !matches!(
+        action,
+        "cooked-text" | "raw-text" | "cooked-signal" | "raw-signal"
+    ) {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let deadline = Instant::now() + Duration::from_secs(18);
+    let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    // SAFETY: this fixture's private console and lifetime-long callback.
+    unsafe {
+        check(SetConsoleMode(input, if cooked { 3 } else { 1 }))?;
+        check(SetConsoleCtrlHandler(None, 0))?;
+        check(SetConsoleCtrlHandler(Some(handler), 1))?;
+    }
+    let token = input as usize;
+    let reader = std::thread::spawn(move || {
+        let mut count = 0;
+        // SAFETY: the original handle remains live until the worker joins;
+        // API output pointers refer to bounded initialized arrays.
+        unsafe {
+            let input = token as HANDLE;
+            SetLastError(0);
+            if file {
+                let mut bytes = [0_u8; 32];
+                let ok = ReadFile(
+                    input,
+                    bytes.as_mut_ptr().cast(),
+                    32,
+                    &mut count,
+                    std::ptr::null_mut(),
+                ) != 0;
+                let error = GetLastError();
+                (
+                    ok,
+                    error,
+                    bytes[..count as usize]
+                        .iter()
+                        .map(|b| u16::from(*b))
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                let mut units = [0_u16; 32];
+                let ok = ReadConsoleW(
+                    input,
+                    units.as_mut_ptr().cast(),
+                    32,
+                    &mut count,
+                    std::ptr::null_mut(),
+                ) != 0;
+                let error = GetLastError();
+                (ok, error, units[..count as usize].to_vec())
+            }
+        }
+    });
+    wait(deadline, || {
+        let mut pending = 0;
+        check(unsafe { GetThreadIOPendingFlag(reader.as_raw_handle(), &mut pending) })?;
+        Ok(pending != 0)
+    })?;
+    if controlled {
+        wait(deadline, || Ok(report.with_extension("go").exists()))?;
+    }
+    // The independent direct court has admitted the read before this change.
+    // The PTY court leaves output free and submits the mode API after pending I/O.
+    let changed = if cooked { 1 } else { 3 };
+    check(unsafe { SetConsoleMode(input, changed) })?;
+    publish(&report.with_extension("ready"), "mode-changed")?;
+    if action.ends_with("signal") {
+        wait(deadline, || Ok(EVENT.load(Ordering::Acquire) == 1))?;
+    }
+    if !action.ends_with("signal") || !cooked {
+        let mut records = [INPUT_RECORD::default(); 2];
+        for (record, unit) in records.iter_mut().zip([90_u16, 13]) {
+            record.EventType = KEY_EVENT as u16;
+            record.Event.KeyEvent.bKeyDown = 1;
+            record.Event.KeyEvent.wRepeatCount = 1;
+            record.Event.KeyEvent.uChar.UnicodeChar = unit;
+        }
+        // A raw waiter gets one unit so this court isolates mode lifetime
+        // from the separate multi-record raw-read batching contract.
+        let records = &records[..if cooked { 2 } else { 1 }];
+        let mut written = 0;
+        check(unsafe {
+            WriteConsoleInputW(input, records.as_ptr(), records.len() as u32, &mut written)
+        })?;
+        if written as usize != records.len() {
+            return Err(io::Error::other("short mode-wait input write"));
+        }
+    }
+    wait(deadline, || Ok(reader.is_finished()))?;
+    let (ok, error, units) = reader
+        .join()
+        .map_err(|_| io::Error::other("mode-wait reader panicked"))?;
+    let mut mode = 0;
+    check(unsafe { GetConsoleMode(input, &mut mode) })?;
+    publish(
+        report,
+        &format!(
+            "{{\"ok\":{ok},\"error\":{error},\"units\":{units:?},\"event\":{},\"mode\":{mode}}}",
+            EVENT.load(Ordering::Acquire)
+        ),
+    )?;
+    wait(deadline, || Ok(report.with_extension("opened").exists()))
+}
 unsafe extern "system" fn handler(event: u32) -> i32 {
     if event > 1 {
         return 0;

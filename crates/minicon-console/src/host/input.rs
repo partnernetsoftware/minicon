@@ -138,6 +138,7 @@ impl InputState<'_> {
 
 enum ReadKind {
     Text {
+        cooked: bool,
         unicode: bool,
         raw: bool,
         control_z: bool,
@@ -147,6 +148,29 @@ enum ReadKind {
         flags: u16,
         unicode: bool,
     },
+}
+
+#[derive(Clone, Copy)]
+enum ReadCancellation {
+    Administrative,
+    Keyboard { is_break: bool },
+}
+
+impl ReadCancellation {
+    fn text(self, cooked: bool) -> bool {
+        match self {
+            Self::Administrative => true,
+            Self::Keyboard { is_break } => is_break || cooked,
+        }
+    }
+
+    fn records(self) -> bool {
+        matches!(self, Self::Administrative)
+    }
+}
+
+fn cooked_input_mode(mode: u32) -> bool {
+    mode & 2 != 0 && mode & 0x200 == 0
 }
 
 struct PendingRead<'session> {
@@ -349,30 +373,37 @@ impl<'session> ConsoleHost<'session> {
 
     /// Wake blocked reads with the console interruption status (STATUS_ALERTED).
     pub fn cancel_pending_reads(&mut self) -> io::Result<usize> {
-        self.cancel_reads(true)
+        self.cancel_reads(ReadCancellation::Administrative)
     }
 
     pub(super) fn cancel_keyboard_reads(&mut self, is_break: bool) -> io::Result<usize> {
-        // The raw text waiter ignores Ctrl+C; Break still terminates it.
-        if !is_break && self.input_mode & 2 == 0 {
-            return Ok(0);
-        }
-        self.cancel_reads(false)
+        self.cancel_reads(ReadCancellation::Keyboard { is_break })
     }
 
-    fn cancel_reads(&mut self, include_records: bool) -> io::Result<usize> {
+    fn cancel_reads(&mut self, cancellation: ReadCancellation) -> io::Result<usize> {
         // Queued and accepted reads retain the same native reply shape.
+        // Unadmitted reads have no waiter yet; accepted reads retain the kind
+        // selected at admission even if another caller changes LINE_INPUT.
+        let cooked = cooked_input_mode(self.input_mode);
         let (deferred_reads, retained): (VecDeque<_>, VecDeque<_>) =
             std::mem::take(&mut self.deferred_output)
                 .into_iter()
                 .partition(|request| {
-                    request.is_console_read() && (include_records || request.is_console_text_read())
+                    request.is_console_read()
+                        && if request.is_console_text_read() {
+                            cancellation.text(cooked)
+                        } else {
+                            cancellation.records()
+                        }
                 });
         self.deferred_output = retained;
         let (pending, retained): (VecDeque<_>, VecDeque<_>) =
             std::mem::take(&mut self.input.pending)
                 .into_iter()
-                .partition(|read| include_records || matches!(read.kind, ReadKind::Text { .. }));
+                .partition(|read| match read.kind {
+                    ReadKind::Text { cooked, .. } => cancellation.text(cooked),
+                    ReadKind::Records { .. } => cancellation.records(),
+                });
         self.input.pending = retained;
         let count = pending.len() + deferred_reads.len();
         // Inactive state needs no publication. An orphaned active buffer stays
@@ -468,11 +499,12 @@ impl<'session> ConsoleHost<'session> {
         // existing text reader/file conversion ownership.
         self.input.record_tail.clear();
         let previous = self.input.pending.len();
-        let cooked = self.input_mode & 2 != 0 && self.input_mode & 0x200 == 0;
+        let cooked = cooked_input_mode(self.input_mode);
         let mut read = PendingRead {
             request,
             body,
             kind: ReadKind::Text {
+                cooked,
                 unicode,
                 raw,
                 control_z,
@@ -668,8 +700,8 @@ impl<'session> ConsoleHost<'session> {
         wakeup: u32,
         output: &mut impl Write,
     ) -> io::Result<()> {
-        let line_mode = self.input_mode & 2 != 0;
-        let echo = self.input_mode & 4 != 0;
+        let line_mode = matches!(read.kind, ReadKind::Text { cooked: true, .. });
+        let echo = line_mode && self.input_mode & 4 != 0;
         let unicode = matches!(read.kind, ReadKind::Text { unicode: true, .. });
         let mut echo_dirty = false;
         while let Some(event) = self.input.events.pop_front() {

@@ -88,6 +88,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("mode-wait-") {
+        return queued_reads::mode_wait(kind, std::path::Path::new(&arguments[1]), false);
+    }
     if let Some(kind) = mode.strip_prefix("queued-read-") {
         return queued_reads::run(kind, std::path::Path::new(&arguments[1]), false);
     }
