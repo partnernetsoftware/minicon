@@ -48,7 +48,7 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
             thread::sleep(Duration::from_millis(1));
         }
     }
-    fn row_pixels(path: &Path, geometry: &Value) -> Vec<u8> {
+    fn image(path: &Path) -> (Vec<u8>, png::OutputInfo) {
         let decoder = png::Decoder::new(fs::File::open(path).unwrap());
         let mut reader = decoder.read_info().unwrap();
         let mut pixels = vec![0; reader.output_buffer_size()];
@@ -57,6 +57,10 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
             info.color_type,
             png::ColorType::Rgba | png::ColorType::Rgb
         ));
+        (pixels, info)
+    }
+    fn row_pixels(path: &Path, geometry: &Value) -> Vec<u8> {
+        let (pixels, info) = image(path);
         let channels = info.color_type.samples();
         let x = geometry["terminal_viewport"]["x"].as_u64().unwrap() as usize;
         let y = geometry["terminal_viewport"]["y"].as_u64().unwrap() as usize;
@@ -65,6 +69,25 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
         let height = geometry["grid"]["cell_h"].as_u64().unwrap() as usize;
         assert!(x + width <= info.width as usize && y + height <= info.height as usize);
         (y..y + height)
+            .flat_map(|row| {
+                pixels[(row * info.width as usize + x) * channels
+                    ..(row * info.width as usize + x + width) * channels]
+                    .iter()
+                    .copied()
+            })
+            .collect()
+    }
+    fn title_pixels(path: &Path, geometry: &Value) -> Vec<u8> {
+        let (pixels, info) = image(path);
+        let channels = info.color_type.samples();
+        let band = &geometry["composer_band"];
+        let x = band["x"].as_u64().unwrap() as usize;
+        let y = band["y"].as_u64().unwrap() as usize;
+        let width = band["width"].as_u64().unwrap() as usize / 3;
+        let height = geometry["grid"]["cell_h"].as_u64().unwrap() as usize;
+        assert!(x + width <= info.width as usize && y + height <= info.height as usize);
+        (y..y + height)
+            .chain(info.height as usize - 2 * height..info.height as usize)
             .flat_map(|row| {
                 pixels[(row * info.width as usize + x) * channels
                     ..(row * info.width as usize + x + width) * channels]
@@ -191,6 +214,49 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
                 &["screenshot-pane", "--output", after.to_str().unwrap()],
             );
             assert_ne!(row_pixels(&after, geometry), before_row);
+            let titles = cli_json(&exe, &endpoint, &["list-tabs"]);
+            assert_eq!(titles["tabs"][0]["title"], "native-sync-3");
+            let ui_before = cli_json(&exe, &endpoint, &["ui-snapshot"]);
+            assert_eq!(ui_before["composer_focused"], false);
+            // A click in the exited terminal keeps terminal focus and asks
+            // for the composer/status band to repaint. Current-title pixels
+            // must already match that independent repaint, without OCR or
+            // comparing unrelated cursor/IME/clipboard regions.
+            let scale = geometry["scale_permille"].as_u64().unwrap();
+            let column = ((geometry["terminal_viewport"]["x"].as_u64().unwrap() + 2) * 1000
+                / scale)
+                .to_string();
+            let row = ((geometry["terminal_viewport"]["y"].as_u64().unwrap() + 2) * 1000 / scale)
+                .to_string();
+            cli_json(
+                &exe,
+                &endpoint,
+                &[
+                    "send-ui-mouse",
+                    "--action",
+                    "click",
+                    "--button",
+                    "left",
+                    "--column",
+                    &column,
+                    "--row",
+                    &row,
+                ],
+            );
+            assert_eq!(
+                cli_json(&exe, &endpoint, &["ui-snapshot"])["composer_focused"],
+                false
+            );
+            let repainted = folder.join("title-repaint.png");
+            cli_json(
+                &exe,
+                &endpoint,
+                &["screenshot-pane", "--output", repainted.to_str().unwrap()],
+            );
+            assert!(
+                title_pixels(&after, geometry) == title_pixels(&repainted, geometry),
+                "title pixels changed only after an unrelated band repaint"
+            );
             assert_eq!(
                 client.wait_for_exit(Some(Duration::from_secs(8))).unwrap(),
                 ProcessWait::Exited

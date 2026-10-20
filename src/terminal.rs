@@ -37,10 +37,8 @@ pub(super) struct ConTerminal {
     pub(super) command: Option<Vec<String>>,
     pub(super) rust_console: bool,
 
-    /// Mirrors whatever the window title was last set to (default or an OSC
-    /// title change), so `--emit-snapshot` can report it without needing to
-    /// steal the one-shot `.take()` the render loop uses to notify the OS
-    /// window.
+    /// Normalized session metadata, consumed before host damage selection.
+    /// Native window title and every host label read this same value.
     pub(super) current_title: String,
     /// The program this session runs, and its short name. Kept so a title the
     /// child sets can be distinguished from the child naming itself.
@@ -2336,20 +2334,25 @@ impl ConTerminal {
         }
     }
 
+    pub(super) fn apply_title_update(&mut self) -> bool {
+        let Some(title) = self.parser.callbacks_mut().title.take() else {
+            return false;
+        };
+        let title = session_label(&title, &self.program_path, &self.program_label);
+        if title == self.current_title {
+            return false;
+        }
+        self.current_title = title;
+        true
+    }
+
     pub(super) fn render(
         &mut self,
-        window: &PixelWindow,
         pixels: &mut [u32],
         width: u32,
         height: u32,
         candidate: DirtyRegion,
     ) -> Result<PixelWindowDirective, PixelWindowError> {
-        // Apply OSC title changes (shell emits \e]0;title\a).
-        if let Some(title) = self.parser.callbacks_mut().title.take() {
-            self.current_title = session_label(&title, &self.program_path, &self.program_label);
-            window.set_title(&self.window_title());
-        }
-
         let fw = width;
         let fh = height;
         if candidate.is_empty() {

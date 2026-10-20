@@ -49,11 +49,17 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │               evidence: closed/backlogged pipe, exited child and inactive-session timer courts below
 │               failure: keep PTY/control servicing live; finish only when closed and drained
 │               dependency: bounded output ring and GUI wake/timer fold; non-goal: changing backend selection
-│       └── [-] retained host chrome follows nonvisual title updates
+│       └── [v] scoped retained host chrome follows nonvisual title updates
 │           invariant: tree subtitle, composer target and status label describe the same current title
-│           evidence: native-window after capture currently shows title 3 in the tree but title 1 in the other bands
-│           failure: register the observed mismatch; terminal-row acceptance does not certify host chrome
+│           evidence: title model/retained-pixel/control guards and native title-band repaint comparison below
+│           failure: unknown geometry keeps full-damage fallback; desktop compositor evidence remains separate
 │           dependency: title consumption before dirty-candidate selection; non-goal: blaming the native backend
+│           ├── [v] normalize/consume all session titles before control observation and dirty-candidate selection
+│           │   evidence: gui_title_updates_precede_candidates_and_keep_retained_chrome_consistent
+│           │   failure: unchanged titles create no damage; known-geometry inactive updates invalidate only tree chrome
+│           └── [v] scoped native title-band repaint idempotence after the final SDK title
+│               evidence: extra native-window screenshot after an otherwise neutral composer-band repaint
+│               failure: compare label pixels plus actual list-tabs title; non-goal: desktop compositor proof
 ├── [-] Dense redraw, scroll, Unicode and alternate-screen resize journeys
 │   invariant: byte splitting and redraw rate do not change final rows, cursor or cell geometry
 │   evidence: finite safe traces, independent expected grids, native readback and presented pixels
@@ -86,6 +92,7 @@ flowchart LR
     SELECT["build-gated explicit product selection / handle-free session seed"] --> OS
     OS --> ID["actual opened master identity"] --> COURT
     OS --> WAKE["owned reader / native window wake and deadline fold"] --> PRESENT
+    VT --> TITLE["normalize session titles before observation"] --> HD["host chrome damage before candidate selection"] --> FRAME
     COURT --> SCOPE["named version × backend × OS × ISA evidence"]
 ```
 
@@ -278,14 +285,13 @@ native resize/blink/paste interleavings, sustained application workloads, real
 Claude Code, other OS/ISA runtime and default promotion remain open. Mode 2026
 is still negatively advertised.
 
-Artifact inspection found a separate retained-chrome mismatch in the final
+Artifact inspection at 440d7c6 found a separate retained-chrome mismatch in the final
 file/END window capture: the tree subtitle shows `native-sync-3`, while the
 composer target/status bands still show `native-sync-1`. Source inspection
-places OSC title consumption inside session render, after the host has selected
-its clipped dirty candidate. This identifies a likely invalidation boundary,
-not an established backend fault. The mismatch is open and must be fixed and
-given its own guard before broad GUI presentation acceptance; the first-row
-terminal pixel comparison above deliberately does not certify those bands.
+placed OSC title consumption inside session render, after the host selected
+its clipped dirty candidate. The following fix and fault courts establish that
+frontend boundary; the first-row terminal comparison above did not certify
+those bands or establish an output corruption in the native backend.
 
 `owned-window-regression.log` passes 152 targeted tests: the terminal and main
 composition courts, CLI host-interface/feature guards, 17 alignment guards,
@@ -312,6 +318,52 @@ qualification on this Windows host; the preceding BLOCKED records are not
 converted into passes. No runtime evidence is inferred from cross-compilation.
 `owned-window-final-receipt.json` binds the staged tree, current source, image
 identities, test inventories, fault/check logs and reread native/window artifacts.
+
+### Retained title metadata and paint candidate ordering
+
+`ConTerminal::apply_title_update` normalizes each completed callback using the
+existing session-label policy. It consumes repeated equivalent titles without
+new damage and does not edit cells, reset decoding or release a held frame.
+`ConApp::apply_session_titles` services active/inactive metadata, marks the tree
+and accessibility state, and marks the active composer's complete lower band,
+including status. Known-geometry inactive changes do not dirty the active band;
+before frame dimensions exist, the established full-damage fallback remains.
+
+Control observation consumes pending titles without requiring a render. Wake
+drains schedule the resulting host damage. The final candidate boundary also
+consumes pending titles, covering output accepted by the render's own drain.
+That boundary returns a title-change marker so retained hosts invalidate added
+chrome regions even after a native paint began. The application updates the
+native window title from the same metadata. Session raster no longer consumes
+the callback or requires a native window handle. This is product composition;
+the shared parser/native console contracts are unchanged.
+
+`gui_title_updates_precede_candidates_and_keep_retained_chrome_consistent`
+compares clipped repaint over retained pixels with a fresh full paint of the
+updated model. It checks held-cell ownership, both titles, repeat suppression,
+inactive-only tree damage and the late-title invalidation marker.
+`gui_title_control_observation_normalizes_without_a_render` checks actual
+list-tabs JSON and safe damage before geometry exists. The native-window court
+now checks final title `native-sync-3`, then compares left composer/status title
+pixels before and after an otherwise neutral terminal click that repaints the
+band. The comparison excludes cursor/IME/clipboard fields. The deliberately
+missing-band fault fails that actual product journey; it is not an OCR test.
+
+Seven compiling runtime faults cover missing pre-candidate consumption, losing
+the late-native-invalidation marker, ignoring inactive titles, repainting repeat
+titles, dirtying the active band for inactive changes, delaying control metadata
+until paint, and omitting the active band. Sources are restored byte-for-byte
+with SHA checks. Default/enabled workspace Clippy, format and enabled GUI
+Windows ARM64 all-target compilation pass. Windows x64 remains the runtime
+scope; native compositor readback and adversarial WM_PAINT timing qualification
+remain open. The invalidation marker is unit/plan evidence, not compositor proof.
+
+`title-chrome-final-receipt.json` binds this fix's staged tree, exact source,
+test inventories, fault/check logs and reread window/native artifacts. Historical
+diagnostics retain a fixture without real content insets, test-module relocation
+for Clippy, and an overlong selector invocation whose zero exit did not cover
+the requested set. Compact selectors and exact name/count checks qualify the
+final run; the incomplete invocation is not a pass for that scope.
 
 ## Delivery order and acceptance
 

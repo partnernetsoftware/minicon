@@ -1626,12 +1626,36 @@ impl ConApp {
         self.frame_scale = scale;
     }
 
-    fn take_dirty_candidate(&mut self, width: u32, height: u32) -> DirtyRegion {
+    fn take_dirty_candidate(&mut self, width: u32, height: u32) -> (DirtyRegion, bool) {
+        let titles_changed = self.apply_session_titles();
         let mut candidate = std::mem::take(&mut self.host_ui_dirty);
         if let Ok(session) = self.active_session_mut() {
             candidate = candidate.union(session.take_dirty());
         }
-        candidate.clip(width, height)
+        (candidate.clip(width, height), titles_changed)
+    }
+
+    /// Metadata effects are live even while cells are held, and cannot be
+    /// deferred to a painter after the retained-frame candidate was selected.
+    fn apply_session_titles(&mut self) -> bool {
+        let active = self.workspace.active();
+        let mut changed = false;
+        let mut active_changed = false;
+        for (id, session) in self.sessions.entries_mut() {
+            if session.apply_title_update() {
+                changed = true;
+                active_changed |= active == Some(*id);
+            }
+        }
+        if changed {
+            self.mark_tree_dirty();
+            self.mark_a11y_dirty();
+        }
+        if active_changed {
+            // This band includes the lower status bar as well as SEND TO.
+            self.mark_composer_dirty();
+        }
+        changed
     }
 
     fn request_dirty_redraw(&self, window: &PixelWindow) {
@@ -2975,6 +2999,9 @@ impl PixelWindowApplication for ConApp {
                 backlog |= outcome.backlog;
                 child_exited |= outcome.child_exited;
             }
+            if self.apply_session_titles() {
+                self.request_dirty_redraw(window);
+            }
             if child_exited {
                 // A tab row changed appearance (the shell exited), and that is
                 // host UI the terminal redraw does not cover.
@@ -3579,7 +3606,16 @@ impl PixelWindowApplication for ConApp {
         // The candidate is complete before either product surface starts
         // rasterizing. A late dirty state is therefore a programming error,
         // not an excuse to label a partial frame after the fact.
-        let mut candidate = self.take_dirty_candidate(width, height);
+        let (mut candidate, titles_changed) = self.take_dirty_candidate(width, height);
+        if host_retains_pixels && titles_changed {
+            // A title accepted by this render's drain may widen the region
+            // after WM_PAINT began. The following paint must present those
+            // newly updated chrome pixels from retained backing too.
+            request_candidate_redraw(window, candidate, width, height);
+        }
+        if self.active_session()?.window_title() != self.current_window_title {
+            self.refresh_title(window)?;
+        }
         // Both product painters (session render and host UI) raster through a
         // Surface whose every write — fill, glyph blit, blend — is clipped to
         // the candidate bounds, so a partial frame cannot touch retained
@@ -3612,7 +3648,7 @@ impl PixelWindowApplication for ConApp {
             let session = self.sessions.get_mut(&active_id).ok_or_else(|| {
                 PixelWindowError::failed("con_session_missing", "active terminal session missing")
             })?;
-            let directive = session.render(window, frame.pixels_mut(), width, height, candidate)?;
+            let directive = session.render(frame.pixels_mut(), width, height, candidate)?;
             if !candidate.is_empty() {
                 self.paint_host_ui(frame.pixels_mut(), width, height, candidate)?;
             }
@@ -3973,6 +4009,106 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gui_title_updates_precede_candidates_and_keep_retained_chrome_consistent() {
+        let mut app = ConApp::new(None, None);
+        let active = app.workspace.active().unwrap();
+        let inactive = app.workspace.add_root("background".to_owned()).unwrap();
+        assert!(
+            app.sessions
+                .insert(inactive, ConTerminal::new(None, None))
+                .is_ok()
+        );
+        let _ = app.select_tab(active);
+        let (width, height) = (960, 600);
+        app.note_frame_dimensions(width, height, 1.0);
+        let sidebar_width = app.sidebar_width_logical;
+        let panel_width = app.effective_panel_dip();
+        for (_, session) in app.sessions.entries_mut() {
+            ConApp::configure_host_ui(session, 1.0, sidebar_width, panel_width);
+            session.dirty = DirtyRegion::empty();
+        }
+        let mut retained = vec![0; (width * height) as usize];
+        app.paint_host_ui(&mut retained, width, height, DirtyRegion::full())
+            .unwrap();
+        let before = retained.clone();
+        app.host_ui_dirty = DirtyRegion::empty();
+        app.a11y_dirty = false;
+        app.sessions
+            .get_mut(&active)
+            .unwrap()
+            .parser
+            .process(b"\x1b[?2026h\x1b]2;after-3\x07");
+        app.sessions
+            .get_mut(&inactive)
+            .unwrap()
+            .parser
+            .process(b"\x1b]2;background-1\x07");
+        let (candidate, titles_changed) = app.take_dirty_candidate(width, height);
+        assert!(
+            titles_changed,
+            "late title update did not request native invalidation"
+        );
+        assert_eq!(app.sessions.get(&active).unwrap().current_title, "after-3");
+        assert_eq!(
+            app.sessions.get(&inactive).unwrap().current_title,
+            "background-1"
+        );
+        assert!(app.sessions.get(&active).unwrap().parser.is_holding());
+        assert!(app.sessions.get(&active).unwrap().dirty.is_empty());
+        assert!(app.a11y_dirty && !candidate.is_empty() && !candidate.is_full());
+        app.paint_host_ui(&mut retained, width, height, candidate)
+            .unwrap();
+        let mut expected = vec![0; (width * height) as usize];
+        app.paint_host_ui(&mut expected, width, height, DirtyRegion::full())
+            .unwrap();
+        assert!(
+            before != expected,
+            "title update did not change the reference pixels"
+        );
+        assert!(
+            retained == expected,
+            "retained title bands differ from current metadata: {} pixels; candidate={candidate:?}",
+            retained
+                .iter()
+                .zip(&expected)
+                .filter(|(a, b)| a != b)
+                .count()
+        );
+        app.sessions
+            .get_mut(&active)
+            .unwrap()
+            .parser
+            .process(b"\x1b]2;  after-3  \x07");
+        let (candidate, titles_changed) = app.take_dirty_candidate(width, height);
+        assert!(
+            candidate.is_empty() && !titles_changed,
+            "same normalized title repaints chrome"
+        );
+        app.a11y_dirty = false;
+        app.sessions
+            .get_mut(&inactive)
+            .unwrap()
+            .parser
+            .process(b"\x1b]2;background-2\x07");
+        let (candidate, titles_changed) = app.take_dirty_candidate(width, height);
+        assert!(titles_changed);
+        let sidebar = app.layout(width, height, 1.0).sidebar;
+        let mut expected = DirtyRegion::empty();
+        expected.mark_rect(PixelRect::from_xywh(
+            sidebar.x,
+            sidebar.y,
+            sidebar.width,
+            sidebar.height,
+        ));
+        assert_eq!(
+            candidate,
+            expected.clip(width, height),
+            "inactive title invalidated unrelated bands"
+        );
+        assert!(app.a11y_dirty);
+    }
 
     #[test]
     fn gui_synchronized_deadlines_service_inactive_and_exited_sessions() {

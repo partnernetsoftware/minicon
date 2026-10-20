@@ -33,6 +33,7 @@ impl ConApp {
         command: &control::CliCommand,
     ) -> Option<Result<json::JsonValue, String>> {
         use control::CliCommand;
+        self.apply_session_titles();
         match command {
             CliCommand::ListTabs => Some({
                 let active = self.workspace.active();
@@ -568,6 +569,9 @@ impl ConApp {
                 self.perf_stats.control_budget_yields.saturating_add(1);
             let _ = window.waker().wake();
         }
+        if !self.host_ui_dirty.is_empty() {
+            self.request_dirty_redraw(window);
+        }
         let sessions = &self.sessions;
         let wait_deadline = self.pending_control.poll_waits(now, |target, kind| {
             let Some(session) = sessions.get(&target) else {
@@ -590,5 +594,28 @@ impl ConApp {
             (Some(left), Some(right)) => Some(left.min(right)),
             (left, right) => left.or(right),
         }
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+
+    #[test]
+    fn gui_title_control_observation_normalizes_without_a_render() {
+        let mut app = ConApp::new(None, None);
+        app.host_ui_dirty = DirtyRegion::empty();
+        app.active_session_mut()
+            .unwrap()
+            .parser
+            .process(b"\x1b]2;  observed-3  \x07");
+        let reply = app
+            .windowless_command(&control::CliCommand::ListTabs)
+            .unwrap()
+            .unwrap();
+        let observed: serde_json::Value = serde_json::from_slice(&json::to_vec(&reply)).unwrap();
+        assert_eq!(observed["tabs"][0]["title"], "observed-3");
+        assert_eq!(app.active_session().unwrap().current_title, "observed-3");
+        assert!(app.host_ui_dirty.is_full());
     }
 }
