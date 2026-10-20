@@ -85,6 +85,11 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
         evidence: two owned GUI sessions, 12-line reply, screenshots, pane Unicode and WriteConsoleW/ReadConsoleW fixtures
         safe failure: default output corruption remains open; no full TUI or other OS/ISA pass
         dependency: console-agent input fix and experimental Rust PTY; non-goal: default backend promotion
+    └── [v] scoped Grok Build 1.0.62 and Codex CLI 0.162.1 live GUI comparison
+        invariant: an alive agent can answer and reflow after settled 800×500 / 1180×740 resizes
+        evidence: four independent sessions, actual backend/child identity, pane text and product-frame screenshots
+        safe failure: record default-path character and layout defects without attributing every lost byte
+        dependency: visible owned windows and isolated scratch directories; non-goal: hue or full harness acceptance
 ```
 
 ```mermaid
@@ -146,6 +151,57 @@ instrumented. Local ignored receipts under
 `input-native-base.hex`, `input-native-rust.hex`, `input-fixed2.hex`,
 `negative-surrogate.log` and `console-agent-tests.log`. Dense redraw, paste, cancel,
 synchronized frames, lifecycle and other OS/ISA cells remain open.
+
+### Grok and Codex live-window comparison
+
+At source `58f914d` with local executable SHA-256
+`013BE6CB3F816525BE2F25A3230C7641E66DBAF7085262890794FBA8970AEE30`,
+independent MiniCon GUI processes ran the owner's `mygrok.bat` (Grok Build
+1.0.62) and `mycodex.bat` (Codex CLI 0.162.1). Each application used an
+isolated scratch directory outside this repository. `ui-snapshot` identified
+the actual `console-agent` or opt-in `rust-console` backend; `list-tabs`
+confirmed the child lifetime during the settled 800×500 and 1180×740
+comparisons. Both applications received no-tool/no-file Markdown and Unicode
+prompts and a follow-up after resize. `capture-pane` text and `screenshot-pane`
+pixels were saved at each boundary in
+`target/conhost-research/claude-live-20261020/`.
+
+The default Codex path lost `🙂` in both the visible prompt and answer. Its
+eight-line follow-up joined `red green` into `redgreen` on two rows, removed
+other spaces next to `Ω`, and left two `Ask Codex to do anything` prompts in
+the settled pane. The Rust Codex path retained `汉字 Ω 🙂` and `red green blue`
+on all eight rows. Both children were alive. The exact response bytes were
+not captured before the native backend, so those spacing artifacts are an
+observed default-path failure, not a proven location of byte loss. The
+independent `WriteConsoleW` fixture above separately establishes the default
+emoji output loss.
+
+The first default Grok process exited with code 1 after a reply; its later
+frozen frame cannot prove live resize behavior, and the cause of that exit
+was not established. A fresh visible default Grok process remained alive:
+its startup screen reflowed at both dimensions, but after a reply the narrow
+frame's text/input placement persisted when enlarged, along with stray
+characters in the duration row and fragmented scrollbar blocks. The Rust
+Grok session remained alive, reflowed its table and input box after resize,
+and retained `🙂` through a twelve-line follow-up. This narrows the resize
+failure to the active default backend/application journey; it does not prove
+whether the missed redraw originates in native event delivery, scraping or
+application behavior.
+
+The current agent themes provided grayscale screenshots: each of the four
+settled follow-up PNGs has zero pixels with RGB-channel spread above 10.
+The Rust Codex/Grok captures visibly retain dim secondary text that is flat
+white in the default captures. These runs test grayscale style fidelity and
+layout; they do not establish red/green/blue hue fidelity. Early screenshot
+requests made while the test windows were minimized remained pending and
+resizes did not reach the window; those frames were excluded. Restoring the
+owned windows cleared the requests, and the accepted resize captures used
+visible, non-minimized windows with observed grid dimensions. Named evidence
+includes `grok-retry-after-wide.png`, `grok-rust-wide-settled2.png`,
+`grok-retry-followup.txt`, `grok-rust-followup.txt`,
+`codex-default-followup.png`, `codex-rust-followup.png`, and their paired pane
+files. `session-receipt.json` binds selected captures to the executable and
+source identities. Full TUI compatibility and backend promotion remain open.
 
 Source audit at 56b3b67: MiniCon uses the owned `vt100` screen/parser and `vte`
 grammar. The name does not restrict the implementation to the original VT100:
