@@ -7,6 +7,12 @@
 //! not this one.
 
 use super::*;
+mod presentation;
+use presentation::SessionParser;
+#[cfg(all(test, windows, feature = "experimental-rust-console"))]
+mod synchronized_native_tests;
+#[cfg(test)]
+mod synchronized_tests;
 
 /// How long after a settled geometry change the one-shot nudge re-applies
 /// the same size. Long enough that a program mid-repaint finishes and can
@@ -45,7 +51,10 @@ pub(super) struct ConTerminal {
     pub(super) snapshot_path: Option<PathBuf>,
 
     /// VT model. Resized in lock-step with the PTY (see `apply_resize`).
-    pub(super) parser: vt100::Parser<ConCallbacks>,
+    pub(super) parser: SessionParser,
+    /// Output accepted while a frame is held; viewport/selection updates wait
+    /// for publication rather than leaking the active model into presentation.
+    presentation_output_pending: bool,
 
     /// PTY master (input writes + resize). `None` until `opened` spawns it.
     master: Option<PtyMaster>,
@@ -269,7 +278,8 @@ impl ConTerminal {
             program_path: String::new(),
             program_label: String::from("terminal"),
             snapshot_path: None,
-            parser: vt100::Parser::new_with_callbacks(24, 80, SCROLLBACK, ConCallbacks::default()),
+            parser: SessionParser::new(24, 80, SCROLLBACK),
+            presentation_output_pending: false,
             master: None,
             child: None,
             pty_output,
@@ -750,8 +760,7 @@ impl ConTerminal {
         let output = Arc::clone(&self.pty_output);
         let report = output.drain(budget, |bytes| {
             self.parser.process(bytes);
-            outcome.changed = true;
-            outcome.redraw = true;
+            self.presentation_output_pending = true;
             // Flush terminal-query replies immediately after the contiguous
             // input span that completed them.
             let replies = std::mem::take(&mut self.parser.callbacks_mut().pending_replies);
@@ -764,22 +773,41 @@ impl ConTerminal {
         if outcome.backlog {
             self.pty_wake_pending.store(true, Ordering::Release);
         }
-        // New output snaps scrollback to bottom.
-        if outcome.changed && self.scroll_offset > 0 {
-            self.scroll_offset = 0;
-            self.parser.screen_mut().set_scrollback(0);
+        self.parser.poll(Instant::now());
+        if report.closed && !report.backlog {
+            self.parser.finish();
         }
-        // New output clears stale selection.
-        if outcome.changed && !self.selecting {
-            self.mark_selection(self.selection);
-            self.selection = None;
+        outcome.changed = self.consume_presentation_damage();
+        outcome.redraw |= outcome.changed || self.parser.callbacks_mut().title.is_some();
+        outcome
+    }
+
+    /// Poll even without bytes and even after the immediate child exits.
+    /// The host also calls this for inactive sessions when folding deadlines.
+    pub(super) fn service_presentation(&mut self, now: Instant) -> (bool, Option<Instant>) {
+        self.parser.poll(now);
+        let changed = self.consume_presentation_damage();
+        (changed, self.parser.deadline())
+    }
+
+    fn consume_presentation_damage(&mut self) -> bool {
+        // New output snaps scrollback to bottom.
+        if self.presentation_output_pending && !self.parser.is_holding() {
+            self.presentation_output_pending = false;
+            if self.scroll_offset > 0 {
+                self.scroll_offset = 0;
+                self.parser.screen_mut().set_scrollback(0);
+            }
+            // Keep copy/selection consistent with held cells until publication.
+            if !self.selecting {
+                self.mark_selection(self.selection);
+                self.selection = None;
+            }
         }
         let damage = self.parser.take_damage();
-        if !damage.is_empty() {
-            outcome.redraw = true;
-        }
+        let changed = !damage.is_empty();
         self.mark_vt_damage(damage);
-        outcome
+        changed
     }
 
     /// Applies a settled geometry: resize PTY first, then the VT model. The PTY
@@ -1085,7 +1113,7 @@ impl ConTerminal {
         // but not on the alternate screen, where those keys are the app's.
         let scrollable = event.modifiers.shift
             && event.state == KeyPressState::Pressed
-            && !self.parser.screen().alternate_screen();
+            && !self.parser.active_screen().alternate_screen();
         if let LogicalKey::Named(named) = &event.logical
             && scrollable
         {
@@ -1105,10 +1133,7 @@ impl ConTerminal {
             }
         }
 
-        let mode = TerminalKeyMode {
-            application_cursor: self.parser.screen().application_cursor(),
-            ime_active: self.ime_attached,
-        };
+        let mode = self.input_key_mode();
         if let Some(bytes) = terminal_input::key_event_to_bytes(event, mode) {
             // Typing returns to the live view, as every terminal does.
             self.write_pty(&bytes)?;
@@ -1117,15 +1142,19 @@ impl ConTerminal {
         Ok(())
     }
 
+    fn input_key_mode(&self) -> TerminalKeyMode {
+        TerminalKeyMode {
+            application_cursor: self.parser.active_screen().application_cursor(),
+            ime_active: self.ime_attached,
+        }
+    }
+
     /// The bytes a real Enter key press produces in this terminal's current
     /// keyboard mode — the same encoding a physical press and `send-keys Enter`
     /// go through. A composer commit is a key press, so it must not diverge
     /// from that path by hardcoding a carriage return.
     pub(super) fn encoded_enter(&self) -> Vec<u8> {
-        let mode = TerminalKeyMode {
-            application_cursor: self.parser.screen().application_cursor(),
-            ime_active: self.ime_attached,
-        };
+        let mode = self.input_key_mode();
         let event = injected_key_event(InjectedKey::Named(NamedKey::Enter), false, false, false);
         terminal_input::key_event_to_bytes(&event, mode).unwrap_or_else(|| vec![b'\r'])
     }
@@ -1160,7 +1189,7 @@ impl ConTerminal {
     /// the viewport to `usize::MAX` and restoring it. Bounds queries must not
     /// create their own viewport damage or perturb parser state.
     fn scroll_by(&mut self, lines: isize) {
-        if self.parser.screen().alternate_screen() {
+        if self.parser.active_screen().alternate_screen() {
             return;
         }
         let requested = (self.scroll_offset as isize + lines).max(0) as usize;
@@ -1192,7 +1221,7 @@ impl ConTerminal {
     }
 
     fn set_scrollback(&mut self, requested: usize) {
-        if !self.parser.screen().alternate_screen() {
+        if !self.parser.active_screen().alternate_screen() {
             let previous = self.scroll_offset;
             if previous != requested {
                 self.mark_scrollbar_bounds();
@@ -1423,7 +1452,7 @@ impl ConTerminal {
         if normalized.is_empty() {
             return Ok(());
         }
-        let bracketed = self.parser.screen().bracketed_paste();
+        let bracketed = self.parser.active_screen().bracketed_paste();
         self.write_pty(&terminal_input::terminal_paste_bytes(
             &normalized,
             bracketed,
@@ -1618,7 +1647,7 @@ impl ConTerminal {
         terminal_input::ApplicationMouseMode,
         terminal_input::MouseReportEncoding,
     ) {
-        let screen = self.parser.screen();
+        let screen = self.parser.active_screen();
         let mode = match screen.mouse_protocol_mode() {
             vt100::MouseProtocolMode::None => terminal_input::ApplicationMouseMode::None,
             vt100::MouseProtocolMode::Press => terminal_input::ApplicationMouseMode::Press,
@@ -1803,8 +1832,8 @@ impl ConTerminal {
         // Alternate screen has no local scrollback to move, so translate the
         // gesture into cursor keys the way xterm does — this is what makes the
         // wheel scroll inside less/man/vim.
-        if self.parser.screen().alternate_screen() {
-            let application_cursor = self.parser.screen().application_cursor();
+        if self.parser.active_screen().alternate_screen() {
+            let application_cursor = self.parser.active_screen().application_cursor();
             let sequence: &[u8] = match (up, application_cursor) {
                 (true, true) => b"\x1bOA",
                 (false, true) => b"\x1bOB",
@@ -2335,56 +2364,7 @@ impl ConTerminal {
 
         let (scrollbar, _, _) = self.scrollbar_geometry(fw, fh);
         let scrollbar_active = self.scrollbar_drag.is_some();
-        let screen = self.parser.screen();
-        let cursor = screen.cursor_position();
-        self.last_cursor = Some(TerminalPoint {
-            row: cursor.0,
-            col: cursor.1,
-        });
-        // A steady request always shows the cursor; a blinking one is gated
-        // by the timer in about_to_wait. conhost draws the caret the same
-        // way — this is parity, not an enhancement — but getting it right
-        // matters for vim/nvim, which switch shape *and* blink per mode.
-        paint_cells_at(
-            &mut surface,
-            screen,
-            self.active_selection(),
-            self.cell_w,
-            self.cell_h,
-            self.default_fg,
-            self.default_bg,
-            self.term_ansi,
-            self.font_size_px,
-            self.content_left_px,
-            self.content_top_px,
-        );
-
-        // IME composition, drawn over the cells to the right of the cursor and
-        // underlined so it reads as provisional rather than committed text.
-        // conhost cannot do this — it leaves composition to a floating OS
-        // window that does not line up with the terminal grid.
-        let preedit_cells = if self.ime_preedit.is_empty() {
-            0
-        } else {
-            self.draw_preedit(&mut surface, cursor)
-        };
-
-        paint_cursor(
-            &mut surface,
-            screen,
-            CursorPaintSpec {
-                cell_w: self.cell_w,
-                cell_h: self.cell_h,
-                default_bg: self.default_bg,
-                cursor: self.term_cursor,
-                font_size_px: self.font_size_px,
-                left: self.content_left_px,
-                top: self.content_top_px,
-                scroll_offset: self.scroll_offset,
-                preedit_cells,
-                blink_visible: self.blink_visible,
-            },
-        );
+        self.paint_presented_terminal(&mut surface);
 
         // Grid crosshair: a translucent row/column band plus 1px lines snapped
         // to the hovered cell, drawn over the content without erasing it.
@@ -2453,6 +2433,59 @@ impl ConTerminal {
         Ok(PixelWindowDirective::Continue)
     }
 
+    fn paint_presented_terminal(&mut self, surface: &mut Surface<'_>) {
+        let screen = self.parser.screen();
+        let cursor = screen.cursor_position();
+        self.last_cursor = Some(TerminalPoint {
+            row: cursor.0,
+            col: cursor.1,
+        });
+        // A steady request always shows the cursor; a blinking one is gated
+        // by the timer in about_to_wait. conhost draws the caret the same
+        // way — this is parity, not an enhancement — but getting it right
+        // matters for vim/nvim, which switch shape *and* blink per mode.
+        paint_cells_at(
+            surface,
+            screen,
+            self.active_selection(),
+            self.cell_w,
+            self.cell_h,
+            self.default_fg,
+            self.default_bg,
+            self.term_ansi,
+            self.font_size_px,
+            self.content_left_px,
+            self.content_top_px,
+        );
+
+        // IME composition, drawn over the cells to the right of the cursor and
+        // underlined so it reads as provisional rather than committed text.
+        // conhost cannot do this — it leaves composition to a floating OS
+        // window that does not line up with the terminal grid.
+        let preedit_cells = if self.ime_preedit.is_empty() {
+            0
+        } else {
+            self.draw_preedit(surface, cursor)
+        };
+
+        paint_cursor(
+            surface,
+            screen,
+            CursorPaintSpec {
+                cell_w: self.cell_w,
+                cell_h: self.cell_h,
+                default_bg: self.default_bg,
+                cursor: self.term_cursor,
+                font_size_px: self.font_size_px,
+                left: self.content_left_px,
+                top: self.content_top_px,
+                scroll_offset: self.scroll_offset,
+                preedit_cells,
+                blink_visible: self.blink_visible,
+            },
+        );
+    }
+
     pub(super) fn about_to_wait(
         &mut self,
         window: &PixelWindow,
@@ -2466,8 +2499,13 @@ impl ConTerminal {
         // outer ConApp may still host live siblings; closing the entire GUI
         // here made an ordinary child failure indistinguishable from a host
         // crash and discarded unrelated terminals.
+        let (presentation_changed, presentation_deadline) = self.service_presentation(now);
+        if presentation_changed {
+            self.request_dirty_redraw(window);
+        }
         if self.child_gone {
-            return Ok(PixelWindowDirective::Wait);
+            return Ok(presentation_deadline
+                .map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil));
         }
 
         // Three independent timers can all have work pending at once (a
@@ -2483,6 +2521,10 @@ impl ConTerminal {
         let mut fold_wake = |deadline: Instant| {
             next_wake = Some(next_wake.map_or(deadline, |current| current.min(deadline)));
         };
+
+        if let Some(deadline) = presentation_deadline {
+            fold_wake(deadline);
+        }
 
         if let Some((deadline, _)) = self.pending_submit_enter.as_ref().map(|(d, b)| (*d, b)) {
             if now >= deadline {

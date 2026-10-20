@@ -242,10 +242,17 @@ impl<CB: Callbacks> TerminalPresentation<CB> {
     /// Explicit user geometry/viewport edits recover a held frame and publish
     /// the resulting active state. Unfinished VT/UTF-8 input is preserved.
     pub fn edit_screen(&mut self, edit: impl FnOnce(&mut Screen)) {
-        self.parser.callbacks_mut().deadline = None;
-        edit(self.parser.screen_mut());
+        edit(self.screen_mut());
         self.parser.screen_mut().mark_full_damage();
+    }
+
+    /// Borrow active state for an explicit caller-owned edit, recovering any
+    /// hold first. Ordinary edits retain the screen API's own damage tracking;
+    /// releasing a held frame reports full damage. Input grammar is preserved.
+    pub fn screen_mut(&mut self) -> &mut Screen {
+        self.parser.callbacks_mut().deadline = None;
         self.publish();
+        self.parser.screen_mut()
     }
 
     /// Publish the latest complete model on EOF/shutdown. Does not invent a

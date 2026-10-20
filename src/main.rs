@@ -1083,6 +1083,20 @@ fn ime_status_json(status: Option<&minicon_platform::ime::ImeStatus>) -> json::J
 }
 
 impl ConApp {
+    fn service_presentation_deadlines(&mut self, now: Instant) -> (bool, Option<Instant>) {
+        let active = self.workspace.active();
+        let mut redraw = false;
+        let mut next: Option<Instant> = None;
+        for (id, session) in self.sessions.entries_mut() {
+            let (changed, deadline) = session.service_presentation(now);
+            redraw |= active == Some(*id) && changed;
+            if let Some(deadline) = deadline {
+                next = Some(next.map_or(deadline, |current| current.min(deadline)));
+            }
+        }
+        (redraw, next)
+    }
+
     fn new(working_dir: Option<String>, control_endpoint: Option<String>) -> Self {
         // A staged update is a session-scoped state, so anything named
         // `*.update` beside the executable now is residue from a session that
@@ -2364,8 +2378,10 @@ impl ConApp {
                 .active_session_mut()
                 .map_err(|error| error.to_string())?;
             session.ensure_pty_input_open()?;
-            let payload =
-                composer_submission_payload(&input, session.parser.screen().bracketed_paste());
+            let payload = composer_submission_payload(
+                &input,
+                session.parser.active_screen().bracketed_paste(),
+            );
             session
                 .write_pty(&payload)
                 .map_err(|error| format!("terminal input failed: {error}"))?;
@@ -2922,6 +2938,11 @@ impl PixelWindowApplication for ConApp {
             // A flooded PTY continuously reposts Wake while bounded output
             // remains, so waiting until about_to_wait would starve control
             // requests (including the request that closes that PTY).
+            let now = Instant::now();
+            let (presentation_changed, _) = self.service_presentation_deadlines(now);
+            if presentation_changed {
+                self.active_session()?.request_dirty_redraw(window);
+            }
             let _ = self.drain_control(window, Instant::now());
             if self.exit {
                 return Ok(PixelWindowDirective::Exit);
@@ -3716,6 +3737,11 @@ impl PixelWindowApplication for ConApp {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
+        let (presentation_changed, presentation_deadline) =
+            self.service_presentation_deadlines(now);
+        if presentation_changed {
+            self.active_session()?.request_dirty_redraw(window);
+        }
         let control_deadline = self.drain_control(window, now);
         // A control request can explicitly close the window while draining.
         // Re-check before touching session state so close stays a normal host
@@ -3741,6 +3767,10 @@ impl PixelWindowApplication for ConApp {
         if self.a11y_dirty {
             self.publish_a11y(window);
         }
+        let control_deadline = control_deadline
+            .into_iter()
+            .chain(presentation_deadline)
+            .min();
         if self.workspace.active().is_none() {
             return Ok(control_deadline
                 .map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil));
@@ -3944,6 +3974,47 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gui_synchronized_deadlines_service_inactive_and_exited_sessions() {
+        let mut app = ConApp::new(None, None);
+        let first = app.workspace.active().unwrap();
+        let second = app.workspace.add_root("inactive".to_owned()).unwrap();
+        assert!(
+            app.sessions
+                .insert(second, ConTerminal::new(None, None))
+                .is_ok()
+        );
+        let _ = app.select_tab(first);
+        let mut deadlines = Vec::new();
+        for id in [first, second] {
+            let t = app.sessions.get_mut(&id).unwrap();
+            t.parser.process(b"OLD");
+            let _ = t.parser.take_damage();
+            t.parser.process(b"\x1b[?2026h\rNEW");
+            t.child_gone = true;
+            deadlines.push(t.parser.deadline().unwrap());
+        }
+        let earliest = *deadlines.iter().min().unwrap();
+        let latest = *deadlines.iter().max().unwrap();
+        let (redraw, next) =
+            app.service_presentation_deadlines(earliest - Duration::from_millis(1));
+        assert!(!redraw);
+        assert_eq!(next, Some(earliest));
+        for id in [first, second] {
+            assert_eq!(
+                app.sessions.get(&id).unwrap().parser.screen().contents(),
+                "OLD"
+            );
+        }
+        let (redraw, next) = app.service_presentation_deadlines(latest);
+        assert!(redraw && next.is_none());
+        for id in [first, second] {
+            let t = app.sessions.get(&id).unwrap();
+            assert_eq!(t.parser.screen().contents(), "NEW");
+            assert!(t.dirty.is_full());
+        }
+    }
     use crate::terminal::tests::{parser, prepared_pointer_terminal};
 
     /// A key sequence is validated as a whole before any of it is delivered.

@@ -101,7 +101,7 @@ flowchart LR
     VT --> CELLS["immutable Arc row cells / detach before mutation"]
     CELLS --> PRESENT
     CLOCK["caller monotonic time / byte quota / explicit edits"] --> PRESENT
-    PRESENT --> PAINT["consumer paint / copy / snapshot; GUI adoption still open"]
+    PRESENT --> PAINT["consumer paint / copy / snapshot; GUI qualification in PRD 24.01"]
     APP --> QUERY["shared csi_query_reply / caller-owned reply transport"]
     QUERY --> VT
     ACCEPT["accepted outgoing bytes / caller monotonic clock"] --> RESP["TerminalResponses: owned lexer / finite CPR expectations"]
@@ -193,11 +193,16 @@ not a native producer feeding the new presentation gate. The subsequent
 [native synchronized-output consumer court](PRD_02_34_windows_console_backend.md#native-synchronized-output-consumer-court)
 owns actual SDK-to-presented-frame evidence and its scripted-clock/runtime scope.
 
-This helper is not yet used by the GUI, common `TerminalStream` or platform
-PTY transport. Shared query replies still report mode 2026 as
-unrecognized. Positive capability replies, GUI timers/blink/selection/snapshot
-integration, actual pixels, real Claude Code and
-other OS/ISA runtime qualification remain open.
+The GUI now consumes this helper through a product-private clock adapter;
+[its integration and evidence scope](PRD_02_24_01_tui_compatibility.md#gui-presentation-consumer)
+are owned by PRD 24.01. `screen_mut` recovers a hold before an explicit
+caller-owned edit, preserves unfinished input and retains the screen API's
+incremental damage; releasing a held snapshot reports full damage. The
+existing `edit_screen` convenience method still requests full damage.
+Common `TerminalStream` and platform PTY transport do not acquire presentation
+policy. Shared query replies still report mode 2026 as unrecognized. Positive
+capability replies, native window/compositor qualification, real Claude Code
+and other OS/ISA runtime qualification remain open.
 
 ### Borrowed frames, shared row cells and control inspection
 
@@ -235,7 +240,7 @@ row copies, and literal frozen-cell independence. Timing samples have no CI
 threshold and do not prove GUI latency. A standalone Windows source consumer
 enables VTE std independently and runs the same workload through a real binary;
 it does not infer external reuse from a workspace-only build. GUI rendering,
-selection, snapshots and timers still require adoption and pixel evidence.
+selection, snapshots and timers have their own consumer court in PRD 24.01.
 
 Frozen-source qualification is under ignored `target/conhost-research/`.
 `presentation-borrow-source.json` binds 31 source/manifest/guard files; the staged
@@ -295,8 +300,9 @@ opened-PTY run retains 12 synchronized SDK sessions / 46 phase checkpoints /
 208 source-wire-native-frame and case/reply files. Those files are reread against
 literal oracles, not merely inventoried. Seven exercised x64 images are recorded
 for focused allocation/presentation/native courts, SDK, std/no_std inspection and
-the standalone consumer. Runtime scope is Windows x64 build 20348. Actual GUI
-adoption, release/scroll-heavy throughput, other allocators, wider native
+the standalone consumer. Runtime scope is Windows x64 build 20348. The later
+GUI consumer is qualified separately in PRD 24.01. Release/scroll-heavy
+throughput, other allocators, wider native
 compatibility, real Claude Code, other OS/ISA runtime and default promotion remain
 open; shared query replies still advertise mode 2026 as unrecognized.
 
@@ -449,8 +455,10 @@ low-level parser/framer fields. Client output and complete native screen
 commands use the facade; readback, fills, resize and mode queries use its screen
 accessors. Win32 mode conversion, legacy error mapping and private-Job lifecycle
 remain in their native owners. This is an actual service consumer of the public
-library boundary, not only a parallel export. MiniCon's GUI parser remains a
-direct shared-parser consumer; portable process/session composition is open.
+library boundary, not only a parallel export. MiniCon's GUI now consumes
+`TerminalPresentation` for active/presented state; product raster and selection
+still consume shared screen/cell types. Portable process/session composition
+is open.
 
 `write_projection()` interprets generated complete commands with a transient
 screen decoder, commits only after sink success, and preserves pending client
@@ -700,7 +708,7 @@ are recorded by [the native owner](PRD_02_34_windows_console_backend.md#native-w
 window-title event without exposing mutable decoder state. It coalesces events;
 callback consumers can observe each intermediate event. The facade enables
 tracking under its frame budget; raw Parser consumers must opt in separately,
-so unused event copies are not added to existing GUI parsers. Native metadata remains
+so consumers that do not request tracking incur no event copies. Native metadata remains
 caller-owned: consuming applications interpret the returned raw title bytes
 (normally UTF-8) using their own validation policy. Drain the slot before
 consuming `finish` if the final title is required without callbacks; the returned

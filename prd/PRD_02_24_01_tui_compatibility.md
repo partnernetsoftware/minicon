@@ -30,15 +30,25 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │   evidence: split-stream begin/end, bounded timeout/byte recovery, blink/resize/query interleaving
 │   safe failure: a missing end marker cannot freeze the UI or stop input/control servicing
 │   dependency: parser, damage and presentation contracts; non-goal: recognizing 2026 without gating presentation
-│   └── [-] shared active/presented state boundary; GUI adoption and pixel qualification remain open
+│   └── [-] shared active/presented state boundary; native window/compositor qualification remains open
 │       ├── [v] reusable mechanism and six public-consumer courts → PRD 35 bounded synchronized presentation
 │       ├── [v] scoped native SDK producer → opened Rust PTY → common presented frame; native owner PRD 34
 │       ├── [v] scoped ordinary incremental damage / shared row snapshot cost → PRD 35 borrowed frames
-│       └── [_] GUI consumption, timed recovery and native producer-to-pixel journey
+│       └── [-] GUI consumption, timed recovery and native producer-to-pixel journey
 │           invariant: paint/copy/snapshots read presented state; query/input modes read active state
 │           evidence: frame identity/pixels plus held-frame blink, resize, input, timeout and exit journeys
 │           safe failure: schedule idle deadlines; recover locally without blocking PTY/control servicing
 │           dependency: shared gate, bounded snapshot cost and GUI timer; non-goal: a parser-bit-only capability claim
+│           ├── [v] scoped GUI clock adapter / active input versus presented raster and snapshots
+│           │   invariant: hold the old cells/cursor/selection; queries and key/paste/mouse modes stay live
+│           │   evidence: production offscreen raster plus literal snapshots/input/selection and fault probes; court below
+│           │   failure: bounded 250 ms / 1 MiB recovery; geometry/viewport edits recover explicitly
+│           │   dependency: TerminalPresentation; non-goal: native window/compositor or real harness acceptance
+│           └── [v] scoped active/inactive idle deadline and drained-EOF recovery
+│               invariant: child exit cannot discard queued tail or suppress an outstanding deadline
+│               evidence: closed/backlogged pipe, exited child and inactive-session timer courts below
+│               failure: keep PTY/control servicing live; finish only when closed and drained
+│               dependency: bounded output ring and GUI wake/timer fold; non-goal: changing backend selection
 ├── [-] Dense redraw, scroll, Unicode and alternate-screen resize journeys
 │   invariant: byte splitting and redraw rate do not change final rows, cursor or cell geometry
 │   evidence: finite safe traces, independent expected grids, native readback and presented pixels
@@ -100,8 +110,9 @@ real application acceptance remain open.
 The following [shared presentation mechanism](PRD_02_35_terminal_library.md#bounded-synchronized-presentation)
 separates active parsing from a bounded presented frame and adds ordered parser
 events. Its standalone consumer court does not prove GUI adoption, native wire
-integration or pixels. Mode 2026 remains negatively advertised until those
-presentation paths and timer/recovery behavior are integrated and qualified.
+integration or pixels. The later GUI consumer court below qualifies scoped
+offscreen presentation. Mode 2026 remains negatively advertised pending native
+window/compositor and broader presentation qualification.
 The next response slice adds [finite CPR/key routing](PRD_02_34_windows_console_backend.md#status-response-routing-and-cpr-key-boundary)
 and native DA/DSR/CPR journeys. Identical bytes inside an active query window
 remain an explicit ambiguity; it does not certify general application input
@@ -119,6 +130,95 @@ alternate-screen resize findings remain owned by the parent's
 They are independent candidates, not a newly established diagnosis. Loss of
 synchronized presentation can expose intermediate frames; corrupted escape
 bytes, stale geometry and incorrect damage/cell width need separate judgments.
+
+## GUI presentation consumer
+
+`src/terminal/presentation.rs` is a product-private clock adapter around
+`minicon_console::terminal::TerminalPresentation`, not another VT grammar or
+protocol implementation. The common mechanism remains OS/ISA-neutral. The
+product chooses a monotonic 250 ms / 1 MiB hold limit. Paint, copy, selection,
+structured snapshots, cursor and IME positioning read the presented screen;
+queries and keyboard/paste/mouse modes read active state. Explicit geometry
+and viewport edits recover before borrowing mutable active state and preserve
+unfinished VT/UTF-8 decoding. This does not add a terminal-profile setting.
+
+New output defers automatic viewport-follow and stale-selection clearing until
+publication. Damage is consumed from the presented frame. The host services
+deadlines for every tab, including inactive and exited-child sessions, before
+control reads and when folding its next wake. EOF recovery requires a closed
+**and drained** output ring; immediate-child exit alone cannot discard a queued
+tail or stand in for pipe EOF. Ordinary output retains incremental damage.
+
+The scoped courts use production GUI methods:
+
+- `gui_synchronized_pixels_snapshot_selection_and_live_input_keep_their_owners`:
+  literal RGB pixels from the production cells/cursor/IME raster, paired rows
+  and cursor, held selection/copy, live application-cursor and mouse modes,
+  live CPR/negative-2026 replies, and full publication after END.
+- `gui_synchronized_idle_deadline_recovers_after_child_exit_without_consuming_tail_early`:
+  exact pre-deadline/deadline state after child exit, followed by a separately
+  closed ring with a backlogged partial CSI tail. Finishing early changes the
+  observable held frame and fails the court.
+- `gui_synchronized_explicit_resize_keeps_decoder_and_published_cursor_consistent`:
+  recover a held frame on a screen-size edit, then complete the partial CSI and
+  check literal geometry, rows and cursor.
+- `gui_synchronized_deadlines_service_inactive_and_exited_sessions`:
+  fold the earliest deadline across active/inactive exited-child tabs; publish
+  both locally while requesting redraw only for the active tab.
+- `gui_synchronized_native_sdk_queries_pixels_and_eof_share_the_real_session_path`:
+  four opened Rust PTY sessions, native `WriteFile` / `WriteConsoleW` producers
+  and their matching native reads, explicit END / missing-END EOF variants.
+  The real GUI drain sends CPR and negative-2026 replies through the actual
+  master. Before/held/after PNGs and JSON snapshots share one UI-thread state;
+  native source/readback/reply checkpoints, child exit 35, drained EOF and an
+  empty owned job accompany each archive. This fixture attaches its PTY with
+  an open bounded ring, as production spawn does; the constructor's idle ring
+  intentionally starts closed.
+
+These are offscreen production-raster and session-integration courts on Windows
+x64 build 20348. The manual fixture reader does not certify the native window
+waker, OS event dispatch, compositor, host overlays, or actual window screenshot
+delivery. Native window resizing/blink/paste interleavings and real Claude Code
+acceptance remain open. Default GUI provider selection is unchanged; the native
+fixture explicitly selects `rust_console()`. Mode 2026 remains negatively
+advertised. Other OS/ISA runtime qualification is separate from cross-compilation.
+
+`gui-presentation-negative-audit.json` records eleven compiling runtime faults:
+painting active state, snapshotting active state, freezing key mode, freezing
+mouse mode, clearing selection early, skipping idle expiry, finishing a
+backlogged EOF early, failing to recover on an explicit edit, discarding the
+partial decoder on an edit, skipping inactive tabs and dropping actual native
+query replies. Each fault fails its assigned court; each source is restored
+byte-for-byte in `finally` and checked by SHA. `gui-presentation-restored-gui.log`
+then passes all five courts. An initial native-fixture setup failure and a
+fault variant rejected by the dead-code compile gate are retained as diagnostic
+logs; neither is counted as a successful runtime fault.
+
+Static qualification has eight passes: workspace format, default/enabled
+workspace Clippy, common-library all-target checks for Linux x64/ARM64,
+Windows ARM64 and macOS x64, and the enabled GUI's Windows ARM64 all-target
+check. Whole-GUI Linux x64/ARM64 and macOS x64 checks are BLOCKED on this
+Windows host: `ring` cannot find the required cross C compiler
+(`x86_64-linux-gnu-gcc`, `aarch64-linux-gnu-gcc`, or `cc`). Their failed commands
+and logs remain in `gui-presentation-checks.json`; no whole-GUI POSIX pass is
+inferred from the common library's successful compilation.
+
+`gui-presentation-composed.log` passes 382 selected regressions; the two
+separate system-host queued-read/mode-reference logs pass one each. Their
+384 distinct names retain the preceding 379-test selection and add the five
+GUI courts. Default-feature terminal selection passes 66 tests; the separate
+default-feature main composition selection passes 60, including composer,
+tab/control targeting, status, geometry and existing raster stress courts.
+This is targeted composition, not a full-workspace or all-runtime claim.
+The CLI help/version test writes directly to stdout, so its intact libtest
+successes inventory/result count supplies its name rather than the interrupted
+one-line status. `gui-presentation-final-receipt.json` binds the source/staged
+tree, named selections, faults, checks, exercised GUI/SDK images and the four
+native archives. Those archives retain 14 native phase checkpoints and 56
+source/native/reply/PNG/JSON files; the artifact audit checks literal source
+commands and native rows/cursor, matching before/held frames, published Unicode
+rows, colored raster output and final child status. They do not contain a GUI
+reader wire capture; the earlier native wire court remains separate evidence.
 
 ## Delivery order and acceptance
 
