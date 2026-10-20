@@ -254,6 +254,17 @@ The owner's investigation of an owned Windows console implementation is tracked
 in [PRD 02.34](PRD_02_34_windows_console_backend.md). It has not changed the
 shipped backend selection or established that conhost caused a reported failure.
 
+An explicit experimental GUI opt-in is implemented: `--feature rust-console`
+requires a Windows build with `experimental-rust-console`, selects the existing
+`ChildCommand::rust_console()` path and is inherited by new session seeds.
+Positive backend selections are exclusive and later selections win; `no-`
+disables only its named selection. The final selection, including before `-e`,
+is validated for build support and rejects before opening
+a window. Defaults remain as documented below. Offline status describes the
+requested selection; the opened session identity is separately observable through
+`ui-snapshot.geometry.pty_backend`. Native-window qualification is owned by
+[PRD 24.01](PRD_02_24_01_tui_compatibility.md).
+
 - [v] the pseudoconsole entry points are resolved at run time rather than
   imported. Every static import is resolved by the PE loader before `main`, so
   importing an API a supported Windows lacks does not degrade a feature — it

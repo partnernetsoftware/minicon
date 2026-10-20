@@ -123,6 +123,11 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── input records, processed/raw modes, Unicode and screen state
 │   └── cancellation, process ownership, resize and bounded shutdown
 └── [-] Qualify and integrate
+    ├── [v] scoped explicit product GUI opt-in and actual native-window SDK consumer → PRD 24.01
+    │   invariant: actual opened identity; inherited selection; bounded waiting-client close
+    │   evidence: gui_owned_console native-window/selection courts, scoped Windows x64 artifacts
+    │   failure: reject missing build support; no automatic fallback/default promotion
+    │   dependency: existing PTY facade and shared presentation; non-goal: compositor or real harness acceptance
     ├── differential clients, fault injection and current-user lifecycle evidence
     ├── Windows x86_64 and aarch64 separately; exact OS/build and feature scope
     └── explicit selection, package budget and rollback before default promotion

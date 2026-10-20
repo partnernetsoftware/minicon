@@ -13,8 +13,9 @@ An owned Windows console backend is now an authorized research direction in
 behind the existing PTY contract. The new `minicon-console` workspace crate has
 experimental Windows-only APIs and native x86_64 cmd/I/O/record/job evidence.
 The platform's optional `rust-console` feature consumes it behind the existing
-PTY facade; MiniCon forwards that feature as `experimental-rust-console` but
-does not select it in GUI sessions. Its Windows adapter owns bounded input/output
+PTY facade; MiniCon forwards that feature as `experimental-rust-console` and
+the explicit GUI opt-in is owned by [terminal selection](PRD_02_24_con_terminal.md#pty-backend-selection).
+Its Windows adapter owns bounded input/output
 staging and control priority; `minicon-console` owns console API/input semantics
 and the lifetime/classification/completion of deferred native output requests.
 Its Windows host exposes `has_pending_output` for work that includes native
@@ -25,6 +26,11 @@ observation; unavailable providers return Unsupported. Its contract and native
 phase evidence remain owned by PRD 02.34/35.
 Native ABI stabilization, AgenTerm reuse and cross-ISA claims
 require their own implementation and consumer evidence.
+Opened `PtyMaster::backend_kind()` is now available through the Windows and
+shared POSIX adapters. Product `ui-snapshot` consumes that identity rather than
+inferring an opened backend from invocation flags or the automatic-selection
+report. Windows x64 window-consumer evidence belongs to PRD 24.01; POSIX and
+Windows ARM64 compilation do not establish runtime coverage on those hosts.
 
 ## Map
 

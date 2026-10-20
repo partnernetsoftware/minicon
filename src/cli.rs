@@ -56,18 +56,26 @@ pub(crate) struct Features {
     /// setup. This flag keeps ConPTY reachable meanwhile, and is how you get
     /// back to the Microsoft-blessed path once it carries the mouse.
     pub(crate) conpty: bool,
+    pub(crate) rust_console: bool,
 }
 
 /// Every name `--feature` accepts, with the one-line help shown in usage.
 /// A name absent here is a typo, not an unsupported feature, and is rejected.
-pub(crate) const FEATURES: &[(&str, &str)] = &[(
-    "conpty",
-    "Windows: host the shell through ConPTY instead of the classic\n\
+pub(crate) const FEATURES: &[(&str, &str)] = &[
+    (
+        "conpty",
+        "Windows: host the shell through ConPTY instead of the classic\n\
      \x20                    console. Pick by what the program uses: the default\n\
      \x20                    carries the mouse to agent CLIs, this carries it to\n\
      \x20                    Vim-style programs. No terminal can do both — see\n\
      \x20                    microsoft/terminal#15083. Inert off Windows.",
-)];
+    ),
+    (
+        "rust-console",
+        "Windows: experimental owned Rust console; requires a build with\n\
+     \x20                    experimental-rust-console. Later backend selections win.",
+    ),
+];
 
 impl Features {
     /// Applies one `--feature` word. `no-<name>` turns a feature off, so a
@@ -78,7 +86,18 @@ impl Features {
             None => (word, true),
         };
         match name {
-            "conpty" => self.conpty = enable,
+            "conpty" => {
+                self.conpty = enable;
+                if enable {
+                    self.rust_console = false;
+                }
+            }
+            "rust-console" => {
+                self.rust_console = enable;
+                if enable {
+                    self.conpty = false;
+                }
+            }
             _ => {
                 let known: Vec<&str> = FEATURES.iter().map(|(name, _)| *name).collect();
                 return Err(format!(
@@ -160,7 +179,7 @@ pub(crate) fn parse_args(args: &[String]) -> Result<ConArgs, String> {
                     return Err("error: -e requires a program to run\n".to_owned());
                 }
                 parsed.command = Some(argv);
-                return Ok(parsed);
+                break;
             }
             unknown => {
                 return Err(format!(
@@ -171,6 +190,12 @@ pub(crate) fn parse_args(args: &[String]) -> Result<ConArgs, String> {
                 ));
             }
         }
+    }
+    if parsed.features.rust_console && !cfg!(all(windows, feature = "experimental-rust-console")) {
+        return Err(
+            "error: rust-console requires Windows and a build with experimental-rust-console\n"
+                .to_owned(),
+        );
     }
     Ok(parsed)
 }
@@ -316,30 +341,30 @@ fn hostif_handshake_json() -> String {
     String::from_utf8(json::to_vec(&value)).unwrap_or_default()
 }
 
-/// The feature names beside a `--status`, or `None` when the arguments are
-/// anything else.
+/// Accept only feature flags beside `--status`; parsing owns their values.
 ///
 /// `--status` answers for the run the same flags would produce, so it reads
 /// them; every other offline verb still stands alone.
-fn status_feature_request(args: &[String]) -> Option<Vec<String>> {
+fn status_feature_request(args: &[String]) -> Option<()> {
     let mut rest = args.iter();
     if rest.next().map(String::as_str) != Some("--status") {
         return None;
     }
-    let mut features = Vec::new();
     while let Some(argument) = rest.next() {
-        if let Some(value) = argument.strip_prefix("--feature=") {
-            features.push(value.to_owned());
-        } else if argument == "--feature" {
-            features.push(rest.next()?.clone());
-        } else {
+        if argument == "--feature" {
+            let _ = rest.next()?;
+        } else if !argument.starts_with("--feature=") {
             return None;
         }
     }
-    Some(features)
+    Some(())
 }
 
 pub(crate) fn status_text() -> String {
+    status_text_for(Features::default())
+}
+
+fn status_text_for(features: Features) -> String {
     use std::fmt::Write as _;
 
     let mut text = String::with_capacity(512);
@@ -347,8 +372,21 @@ pub(crate) fn status_text() -> String {
     let _ = writeln!(text);
 
     let backend = minicon_platform::pty::backend_report();
-    let _ = writeln!(text, "  pty backend    {}", backend.kind);
-    if !backend.detail.is_empty() {
+    let _ = writeln!(
+        text,
+        "  pty backend    {}",
+        if features.rust_console {
+            "rust-console"
+        } else {
+            backend.kind
+        }
+    );
+    if features.rust_console {
+        let _ = writeln!(
+            text,
+            "                 experimental owned Rust console; explicit selection"
+        );
+    } else if !backend.detail.is_empty() {
         let _ = writeln!(text, "                 {}", backend.detail);
     }
     // The platform reports the mechanism ("forced by ...=1"); a user needs the
@@ -356,7 +394,7 @@ pub(crate) fn status_text() -> String {
     // mouse input is proven on it, and that choice also costs the wheel its
     // scrollback, so say both and name the way out.
     #[cfg(windows)]
-    if backend.kind == "console-agent" {
+    if !features.rust_console && backend.kind == "console-agent" {
         let _ = writeln!(
             text,
             "                 MiniCon's default on Windows; `--feature conpty` selects ConPTY"
@@ -564,7 +602,13 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             Some(0)
         }
         Some("--status") if status_feature_request(args).is_some() => {
-            let features = status_feature_request(args).unwrap_or_default();
+            let features = match parse_args(&args[1..]) {
+                Ok(parsed) => parsed.features,
+                Err(error) => {
+                    let _ = minicon_platform::parent_console::write_stderr(&error);
+                    return Some(2);
+                }
+            };
             // MiniCon hosts the classic console on Windows unless a feature
             // asks for ConPTY, and that switch is an environment variable the
             // startup path sets after this point -- so `--status` used to
@@ -574,27 +618,22 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
             // the run those same flags would produce.
             #[cfg(windows)]
             {
-                let conpty = features.iter().flat_map(|value| value.split(',')).fold(
-                    false,
-                    |selected, name| match name.trim() {
-                        "conpty" => true,
-                        "no-conpty" => false,
-                        _ => selected,
-                    },
-                );
                 // SAFETY: the offline CLI runs before any window, PTY or
                 // reader thread exists, so the process is single-threaded.
                 unsafe {
-                    if conpty {
+                    if features.conpty {
                         std::env::remove_var("AGENTERM_FORCE_CONSOLE_AGENT");
                     } else {
                         std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1");
                     }
                 }
             }
-            #[cfg(not(windows))]
-            let _ = features;
-            let _ = minicon_platform::parent_console::write_stdout(&status_text());
+            let status = if features.rust_console {
+                status_text_for(features)
+            } else {
+                status_text()
+            };
+            let _ = minicon_platform::parent_console::write_stdout(&status);
             Some(0)
         }
         Some("--help" | "-h") if alone => {
@@ -768,6 +807,60 @@ fn composer_key_help() -> String {
 #[cfg(test)]
 mod hostif_tests {
     use super::*;
+
+    #[test]
+    fn gui_owned_console_feature_selection_is_build_gated_and_exclusive() {
+        let args = |words: &[&str]| words.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert!(!parse_args(&[]).unwrap().features.rust_console);
+        for words in [
+            vec!["--feature=rust-console,no-rust-console"],
+            vec!["--feature=rust-console,conpty", "-e", "unused-program"],
+        ] {
+            assert!(!parse_args(&args(&words)).unwrap().features.rust_console);
+        }
+        assert!(
+            !parse_args(&args(&["--feature=no-rust-console"]))
+                .unwrap()
+                .features
+                .rust_console
+        );
+        let enabled = parse_args(&args(&["--feature=conpty,rust-console"]));
+        if cfg!(all(windows, feature = "experimental-rust-console")) {
+            let features = enabled.unwrap().features;
+            assert!(features.rust_console && !features.conpty);
+            assert!(status_text_for(features).contains("pty backend    rust-console"));
+            for words in [
+                vec!["--feature=rust-console,conpty"],
+                vec!["--feature", "rust-console", "--feature", "conpty"],
+            ] {
+                let features = parse_args(&args(&words)).unwrap().features;
+                assert!(!features.rust_console && features.conpty);
+            }
+            let features = parse_args(&args(&["--feature=rust-console,no-conpty"]))
+                .unwrap()
+                .features;
+            assert!(features.rust_console && !features.conpty);
+            let features = parse_args(&args(&["--feature=rust-console,no-rust-console"]))
+                .unwrap()
+                .features;
+            assert!(!features.rust_console && !features.conpty);
+        } else {
+            assert!(
+                parse_args(&args(&["--feature=rust-console", "-e", "unused-program"])).is_err()
+            );
+            assert!(
+                enabled
+                    .unwrap_err()
+                    .contains("requires Windows and a build with experimental-rust-console")
+            );
+        }
+        assert!(usage_text().contains("--feature rust-console"));
+        let mut session = crate::ConTerminal::new(None, None);
+        session.rust_console = true;
+        let seeded = crate::SessionSeed::from_session(&session).create_session();
+        assert!(seeded.rust_console);
+        assert_eq!(seeded.pty_backend(), None);
+    }
 
     /// Both bodies must be object literals a launcher can actually parse,
     /// not just human-readable text that happens to look JSON-ish.

@@ -9,6 +9,9 @@ use serde_json::Value;
 
 static UNIQUE: AtomicU64 = AtomicU64::new(1);
 
+#[path = "support/owned_console_gui.rs"]
+mod owned_console_gui;
+
 #[cfg(windows)]
 static CLIPBOARD_LEASE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

@@ -49,8 +49,20 @@ fn checkpoint(
     phase: usize,
     resized: bool,
     wide: bool,
+    window: bool,
 ) -> io::Result<()> {
-    let (rows, cols) = if resized { (12, 56) } else { (8, 40) };
+    let (rows, cols) = if window {
+        let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
+        check(unsafe { GetConsoleScreenBufferInfo(output_handle, &mut info) })?;
+        (
+            (info.srWindow.Bottom - info.srWindow.Top + 1) as u16,
+            (info.srWindow.Right - info.srWindow.Left + 1) as u16,
+        )
+    } else if resized {
+        (12, 56)
+    } else {
+        (8, 40)
+    };
     let native = snapshot(output_handle, phase, rows, cols)?;
     publish(&path.with_extension(format!("native{phase}")), &native)?;
     output(
@@ -70,12 +82,18 @@ pub(super) fn run(kind: &str, path: &Path) -> io::Result<()> {
 }
 fn run_impl(kind: &str, path: &Path) -> io::Result<()> {
     let (api, kind) = kind.split_once('-').ok_or(io::ErrorKind::InvalidInput)?;
+    let (window, kind) = kind
+        .strip_prefix("window-")
+        .map_or((false, kind), |kind| (true, kind));
     if !matches!(api, "file" | "wide")
         || !matches!(kind, "end" | "alt" | "timeout" | "quota" | "resize" | "eof")
     {
         return Err(io::ErrorKind::InvalidInput.into());
     }
     let wide = api == "wide";
+    if window {
+        publish(&path.with_extension("pid"), &std::process::id().to_string())?;
+    }
     let output_handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
     let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     check(unsafe { SetConsoleMode(output_handle, 7) })?;
@@ -89,7 +107,7 @@ fn run_impl(kind: &str, path: &Path) -> io::Result<()> {
         "\x1b[?1049l\x1b[0m\x1b[?7l\x1b[2J\x1b[HMAIN-BASE\x1b[2;3H",
         wide,
     )?;
-    checkpoint(output_handle, &mut record, path, 0, false, wide)?;
+    checkpoint(output_handle, &mut record, path, 0, false, wide, window)?;
     drop(record);
     let _ = read(input, b"a", wide)?;
 
@@ -114,7 +132,7 @@ fn run_impl(kind: &str, path: &Path) -> io::Result<()> {
         &path.with_extension("replies"),
         &format!("api={api};units={received:?}\n"),
     )?;
-    checkpoint(output_handle, &mut record, path, 1, false, wide)?;
+    checkpoint(output_handle, &mut record, path, 1, false, wide, window)?;
     drop(record);
 
     let _ = read(input, if kind == "eof" { b"q" } else { b"e" }, wide)?;
@@ -128,7 +146,15 @@ fn run_impl(kind: &str, path: &Path) -> io::Result<()> {
             // Semantically idempotent output exhausts the consumer's quota.
             output(output_handle, &mut record, &"\x1b[?7l".repeat(900), wide)?;
         }
-        checkpoint(output_handle, &mut record, path, 2, kind == "resize", wide)?;
+        checkpoint(
+            output_handle,
+            &mut record,
+            path,
+            2,
+            kind == "resize",
+            wide,
+            window,
+        )?;
         drop(record);
         let _ = read(input, b"q", wide)?;
     }
@@ -136,6 +162,14 @@ fn run_impl(kind: &str, path: &Path) -> io::Result<()> {
     if kind == "alt" {
         output(output_handle, &mut record, "\x1b[?1049l\x1b[?25h", wide)?;
     }
-    checkpoint(output_handle, &mut record, path, 3, kind == "resize", wide)?;
+    checkpoint(
+        output_handle,
+        &mut record,
+        path,
+        3,
+        kind == "resize",
+        wide,
+        window,
+    )?;
     std::process::exit(35)
 }

@@ -201,8 +201,10 @@ incremental damage; releasing a held snapshot reports full damage. The
 existing `edit_screen` convenience method still requests full damage.
 Common `TerminalStream` and platform PTY transport do not acquire presentation
 policy. Shared query replies still report mode 2026 as unrecognized. Positive
-capability replies, native window/compositor qualification, real Claude Code
+capability replies, compositor qualification, real Claude Code
 and other OS/ISA runtime qualification remain open.
+The native-window consumer's own event/render/query/close journey is recorded
+separately in PRD 24.01; it does not promote the backend or capability reply.
 
 ### Borrowed frames, shared row cells and control inspection
 

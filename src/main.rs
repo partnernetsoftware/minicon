@@ -490,8 +490,6 @@ fn main() {
         // SAFETY: nothing has been spawned yet; this is still single-threaded.
         unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
     }
-    #[cfg(not(windows))]
-    let _ = features;
     no_activate |=
         minicon_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
 
@@ -511,6 +509,7 @@ fn main() {
     app.no_activate = no_activate;
     let session = app.active_session_mut().expect("initial terminal session");
     session.command = command;
+    session.rust_console = features.rust_console;
     session.snapshot_path = snapshot_path;
     // CLI flags override config, config overrides defaults.
     session.apply_startup_size(

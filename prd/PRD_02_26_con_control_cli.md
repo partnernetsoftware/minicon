@@ -128,6 +128,11 @@ flowchart LR
   (a tab that could not open) — so black-box journeys assert state instead of
   guessing timing or inferring cleanup only from a later failure. Unknown native
   state keeps the same field types and uses `known=false` plus `IME: ?`.
+- [v] `ui-snapshot.geometry.pty_backend` reports the active opened master's
+  actual backend, or null before it opens. Geometry remains null with no
+  active session. The field is observation, not a backend-selection command;
+  evidence: `gui_owned_console_native_window_queries_frames_seed_and_cleanup`
+  and the handle-free seed guard in PRD 24.01.
 - [v] `send-ui-ime enabled|disabled|preedit|commit` injects one bounded
   platform-neutral IME event through the current UI focus owner. Preedit text is
   capped at 64 KiB, its optional character cursor is range-checked, and terminal

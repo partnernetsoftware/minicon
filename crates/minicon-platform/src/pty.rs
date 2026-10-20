@@ -20,7 +20,7 @@ pub use crate::selected::pty::{ChildCommand, PtyChild, PtyMaster, login_shell_ar
 /// selection's, not a `cfg` in this file.
 pub const CONSOLE_AGENT_ARGUMENT: Option<&str> = crate::selected::CONSOLE_AGENT_ARGUMENT;
 
-/// Which PTY backend this machine will actually get, and why.
+/// Which PTY backend automatic platform selection would use, and why.
 ///
 /// Exists because the answer is a property of the running system, not of the
 /// build: the same executable uses a pseudoconsole on one machine and a
@@ -35,7 +35,8 @@ pub struct BackendReport {
     pub detail: String,
 }
 
-/// Reports the backend without opening one.
+/// Reports automatic selection without opening a PTY. Explicit per-command
+/// providers are observed through the opened master's `backend_kind()`.
 #[must_use]
 pub fn backend_report() -> BackendReport {
     crate::selected::pty_backend_report()

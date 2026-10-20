@@ -60,6 +60,12 @@ impl ConApp {
                             .saturating_sub(session.content_bottom_px),
                     };
                     json::object(vec![
+                        (
+                            "pty_backend",
+                            session
+                                .pty_backend()
+                                .map_or(json::JsonValue::Null, Into::into),
+                        ),
                         // Integer permille (1500 == 1.5x) to keep float
                         // formatting out of the release binary, matching
                         // the delivery module's f64-removal discipline.

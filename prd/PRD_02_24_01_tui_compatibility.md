@@ -30,11 +30,11 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │   evidence: split-stream begin/end, bounded timeout/byte recovery, blink/resize/query interleaving
 │   safe failure: a missing end marker cannot freeze the UI or stop input/control servicing
 │   dependency: parser, damage and presentation contracts; non-goal: recognizing 2026 without gating presentation
-│   └── [-] shared active/presented state boundary; native window/compositor qualification remains open
+│   └── [-] shared active/presented state boundary; remaining native-window interleavings/compositor qualification open
 │       ├── [v] reusable mechanism and six public-consumer courts → PRD 35 bounded synchronized presentation
 │       ├── [v] scoped native SDK producer → opened Rust PTY → common presented frame; native owner PRD 34
 │       ├── [v] scoped ordinary incremental damage / shared row snapshot cost → PRD 35 borrowed frames
-│       └── [-] GUI consumption, timed recovery and native producer-to-pixel journey
+│       ├── [-] GUI consumption, timed recovery and native producer-to-pixel journey
 │           invariant: paint/copy/snapshots read presented state; query/input modes read active state
 │           evidence: frame identity/pixels plus held-frame blink, resize, input, timeout and exit journeys
 │           safe failure: schedule idle deadlines; recover locally without blocking PTY/control servicing
@@ -49,11 +49,21 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │               evidence: closed/backlogged pipe, exited child and inactive-session timer courts below
 │               failure: keep PTY/control servicing live; finish only when closed and drained
 │               dependency: bounded output ring and GUI wake/timer fold; non-goal: changing backend selection
+│       └── [-] retained host chrome follows nonvisual title updates
+│           invariant: tree subtitle, composer target and status label describe the same current title
+│           evidence: native-window after capture currently shows title 3 in the tree but title 1 in the other bands
+│           failure: register the observed mismatch; terminal-row acceptance does not certify host chrome
+│           dependency: title consumption before dirty-candidate selection; non-goal: blaming the native backend
 ├── [-] Dense redraw, scroll, Unicode and alternate-screen resize journeys
 │   invariant: byte splitting and redraw rate do not change final rows, cursor or cell geometry
 │   evidence: finite safe traces, independent expected grids, native readback and presented pixels
 │   safe failure: bounded session-local errors; keep prior committed frame on publication failure
 │   dependency: backend byte integrity, shared screen, viewport and raster; non-goal: echo-only acceptance
+├── [v] scoped explicit owned-backend GUI launch and native-window SDK journey
+│   invariant: selected backend survives tab seeding; live identity comes from the opened master
+│   evidence: build-gated feature/status guards and native window capture/query/exit journey below
+│   failure: unavailable selection rejects before launch; owned fixture cleanup stays bounded
+│   dependency: platform rust_console opt-in and GUI presentation; non-goal: real Claude Code acceptance
 └── [_] Real application and cross-platform qualification
     invariant: a passing SDK scenario is not a passing Claude Code session or another OS/ISA
     evidence: versioned real TUI startup, streaming, scrolling, resize, paste, cancel and teardown
@@ -73,6 +83,9 @@ flowchart LR
     PRESENT --> FRAME["presented pixels and matching structured frame"]
     EXPECT["independent expected grid / pinned comparison terminal"] --> COURT["separate wire / state / pixel / lifecycle judgments"]
     RAW & WIRE & VT & FRAME --> COURT
+    SELECT["build-gated explicit product selection / handle-free session seed"] --> OS
+    OS --> ID["actual opened master identity"] --> COURT
+    OS --> WAKE["owned reader / native window wake and deadline fold"] --> PRESENT
     COURT --> SCOPE["named version × backend × OS × ISA evidence"]
 ```
 
@@ -219,6 +232,86 @@ source/native/reply/PNG/JSON files; the artifact audit checks literal source
 commands and native rows/cursor, matching before/held frames, published Unicode
 rows, colored raster output and final child status. They do not contain a GUI
 reader wire capture; the earlier native wire court remains separate evidence.
+
+## Native-window owned-backend consumer
+
+The explicit product selection is owned by
+[terminal backend selection](PRD_02_24_con_terminal.md#pty-backend-selection).
+`gui_owned_console_feature_selection_is_build_gated_and_exclusive` exercises
+final feature resolution, mutual exclusion, disabling, status identity and
+seed creation without a live handle. Build support is checked after resolving
+all flags, including the `-e` passthrough path. An unavailable intermediate
+selection may be disabled/replaced; a final unavailable selection is an error.
+`gui_owned_console_offline_selection_reports_or_rejects` runs the actual
+product executable for status and missing-build refusal.
+
+`gui_owned_console_native_window_queries_frames_seed_and_cleanup` launches
+four actual product windows with the owned backend, through normal argument
+parsing, session creation, PTY spawn, reader/waker, event loop and rendering.
+Two native APIs (`WriteFile` / `WriteConsoleW`) each exercise END and missing-END
+EOF. The SDK's `window-` variants query native viewport geometry at each
+checkpoint, instead of imposing the earlier offscreen fixture's 40 x 8 grid.
+The UI geometry and actual opened master's `rust-console` identity are checked
+separately. The native producer remains independent of frontend presentation.
+
+The product control endpoint sends the native release characters and receives
+finite screenshot replies. Before/held/after PNGs come from the real window's
+render path. The test compares terminal **first-row** pixels using the observed
+viewport/grid; it excludes host chrome and the blinking cursor on the next row.
+Held `capture-pane` text must still start with `MAIN-BASE`; actual native reads
+must receive literal CPR and negative-2026 replies. After release/EOF the GUI
+must find the literal Unicode frame and report child exit 35. This qualifies
+the native event/render and screenshot-publication path; the PNG is the host
+framebuffer before presentation, not a desktop/compositor readback.
+
+Each case then closes the last tab, reopens from the empty-workspace seed,
+checks the new opened master's identity, and closes its SDK while that client
+is blocked waiting for native input. Read-only process references are retained
+from the fixture's own published PIDs before close; finite waits prove those
+exact process objects exited. The GUI itself must then exit normally after
+`close-window`. This does not enumerate another user's processes, infer
+termination from a missing window, or claim an arbitrary application's private
+job is empty. The earlier opened-PTY job-empty court remains separate evidence.
+
+Runtime scope is Windows x64 build 20348. Actual compositor pixels, held-frame
+native resize/blink/paste interleavings, sustained application workloads, real
+Claude Code, other OS/ISA runtime and default promotion remain open. Mode 2026
+is still negatively advertised.
+
+Artifact inspection found a separate retained-chrome mismatch in the final
+file/END window capture: the tree subtitle shows `native-sync-3`, while the
+composer target/status bands still show `native-sync-1`. Source inspection
+places OSC title consumption inside session render, after the host has selected
+its clipped dirty candidate. This identifies a likely invalidation boundary,
+not an established backend fault. The mismatch is open and must be fixed and
+given its own guard before broad GUI presentation acceptance; the first-row
+terminal pixel comparison above deliberately does not certify those bands.
+
+`owned-window-regression.log` passes 152 targeted tests: the terminal and main
+composition courts, CLI host-interface/feature guards, 17 alignment guards,
+the new product-window journeys and the existing opened-PTY synchronized SDK
+consumers. This requalifies relevant consumers rather than rerunning every
+unmodified native API court. `owned-window-default-owned.log` passes the two
+applicable default-build guards; the final enabled product run passes all
+three new courts after rebuilding the actual executable.
+
+`owned-window-negative-audit.json` records nine compiling runtime faults:
+non-exclusive selection, lost seed selection, lost new-session selection,
+accepted unavailable selection, `-e` bypassing the build gate, incorrect
+offline status, ignored GUI provider selection, fabricated GUI backend metadata
+and fixed SDK geometry in the native-window variant. Every fault fails its
+assigned court, followed by byte-for-byte source restoration and SHA checks.
+The compile-rejected unused-seed fault variant and the first fixture's
+text/JSON parsing mistake remain separate diagnostics, not runtime evidence.
+
+Eight static checks pass: workspace format, default/enabled workspace Clippy,
+the PTY adapter's Linux x64/ARM64, macOS x64 and Windows ARM64 all-target
+compilation, and enabled whole-GUI Windows ARM64 all-target compilation. The
+required cross C compilers remain unavailable for whole-GUI Linux/macOS
+qualification on this Windows host; the preceding BLOCKED records are not
+converted into passes. No runtime evidence is inferred from cross-compilation.
+`owned-window-final-receipt.json` binds the staged tree, current source, image
+identities, test inventories, fault/check logs and reread native/window artifacts.
 
 ## Delivery order and acceptance
 

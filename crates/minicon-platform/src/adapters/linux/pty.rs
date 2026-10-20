@@ -130,6 +130,10 @@ pub struct PtyMaster {
 }
 
 impl PtyMaster {
+    /// Identity of this opened POSIX PTY, independent of process defaults.
+    pub fn backend_kind(&self) -> &'static str {
+        "unix-pty"
+    }
     fn from_fd(fd: OwnedFd) -> io::Result<Self> {
         set_nonblocking(fd.as_raw_fd())?;
         Ok(Self {

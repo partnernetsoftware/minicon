@@ -35,6 +35,7 @@ pub(super) struct ConTerminal {
 
     /// Program to host, from `-e`. `None` runs the user's default shell.
     pub(super) command: Option<Vec<String>>,
+    pub(super) rust_console: bool,
 
     /// Mirrors whatever the window title was last set to (default or an OSC
     /// title change), so `--emit-snapshot` can report it without needing to
@@ -274,6 +275,7 @@ impl ConTerminal {
             working_dir,
             control_endpoint,
             command: None,
+            rust_console: false,
             current_title: String::from("terminal"),
             program_path: String::new(),
             program_label: String::from("terminal"),
@@ -618,6 +620,11 @@ impl ConTerminal {
             })
             .env("TERM", "xterm-256color")
             .env("COLORTERM", "truecolor");
+
+        #[cfg(all(windows, feature = "experimental-rust-console"))]
+        if self.rust_console {
+            command = command.rust_console();
+        }
 
         if let Some(endpoint) = &self.control_endpoint {
             command = command.env("MINICON_CONTROL", endpoint);
@@ -1581,6 +1588,11 @@ impl ConTerminal {
         let outcome = self.handle_wheel(notches, &ModifierState::default(), Some(position))?;
         window.request_redraw();
         Ok(outcome)
+    }
+
+    /// Identity from the opened master, not the requested feature or defaults.
+    pub(super) fn pty_backend(&self) -> Option<&'static str> {
+        self.master.as_ref().map(PtyMaster::backend_kind)
     }
 
     /// Builds the current [`ScreenSnapshot`] for `--emit-snapshot`.
@@ -2581,6 +2593,7 @@ pub(super) struct SessionSeed {
     working_dir: Option<String>,
     control_endpoint: Option<String>,
     command: Option<Vec<String>>,
+    rust_console: bool,
     font_size_logical: f64,
     font_size_baseline: f64,
     cols: u16,
@@ -2593,6 +2606,7 @@ impl SessionSeed {
             working_dir: session.working_dir.clone(),
             control_endpoint: session.control_endpoint.clone(),
             command: session.command.clone(),
+            rust_console: session.rust_console,
             font_size_logical: session.font_size_logical,
             font_size_baseline: session.font_size_baseline,
             cols: session.cols,
@@ -2608,6 +2622,7 @@ impl SessionSeed {
     pub(super) fn create_session(&self) -> ConTerminal {
         let mut session = ConTerminal::new(self.working_dir.clone(), self.control_endpoint.clone());
         session.command = self.command.clone();
+        session.rust_console = self.rust_console;
         session.font_size_logical = self.font_size_logical;
         session.font_size_baseline = self.font_size_baseline;
         session.cols = self.cols;
