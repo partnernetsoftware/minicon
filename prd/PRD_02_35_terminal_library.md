@@ -52,6 +52,7 @@ Outcome: another application can embed our terminal without MiniCon product stat
 │   evidence: same external consumer and scenarios on macOS/Linux/Windows
 │   safe failure: typed unsupported capabilities, bounded shutdown/backpressure
 │   dependency: stable common contracts; non-goal: copying all platform facilities
+│   └── [_] terminal identity/capability profiles, consumer-selected TERM and independent native provider
 └── [_] Cross-ISA and external-consumer qualification
     invariant: portable API does not imply native ABI/runtime certification
     evidence: minimal consumer, enabled features, exact source, OS/ISA build + runtime
@@ -65,6 +66,8 @@ flowchart LR
     COMMON --> VT["owned vt100: screen / damage / framing"]
     VT --> VTE["owned vte: authoritative VT / UTF-8 grammar"]
     APP --> PLATFORM["minicon-platform::pty"]
+    PROFILE["planned consumer-selected identity / capability profiles"] -.-> COMMON
+    APP -. selection .-> PROFILE
     PLATFORM -->|"rust-console opt-in"| WIN["minicon-console Windows service"]
     VP["TerminalViewport / mapped publication / staged screen edits"] --> COMMON
     FOLLOW["ViewportFollow: Fixed / Vertical / Cursor"] --> VP
@@ -81,6 +84,18 @@ flowchart LR
 ```
 
 ## Dependency and public API boundary
+
+Terminal type is a planned user/consumer choice, not the `vt100` crate name.
+The common library should expose bounded identity and implemented-capability
+contracts independently of the OS provider. A modern VT/xterm-style baseline
+is the intended default; qualified compatibility profiles and an advanced TERM
+override remain selectable. Changing TERM selects an application description;
+it does not load a different parser or implement new protocols. Query replies
+must reflect implemented capabilities and the applicable profile, even when an
+override names a richer terminal. Selectable VT220/kitty/etc. emulation claims
+need their own evidence. These contracts are planned, not existing public APIs.
+Product settings and new-session application belong to
+[workspace configuration](PRD_02_25_con_workspace.md#configuration).
 
 The integration boundary is the terminal domain: applications should eventually
 compose terminal state, input, a native session and output publication through

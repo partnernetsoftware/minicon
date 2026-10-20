@@ -67,6 +67,8 @@ mod title_lifetime;
 #[cfg(windows)]
 mod titles;
 #[cfg(windows)]
+mod tui_redraw;
+#[cfg(windows)]
 mod unicode_output;
 #[cfg(windows)]
 mod utf8_recovery;
@@ -97,6 +99,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("tui-redraw-") {
+        return tui_redraw::run(kind, std::path::Path::new(&arguments[1]));
+    }
     if let Some(kind) = mode.strip_prefix("aliases-") {
         return aliases::run(kind, std::path::Path::new(&arguments[1]));
     }

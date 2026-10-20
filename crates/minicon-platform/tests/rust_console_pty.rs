@@ -16,6 +16,256 @@ mod raw_batch_court;
 #[path = "../../minicon-console/tests/support/aliases_court.rs"]
 mod aliases_court;
 
+#[derive(Default)]
+struct TuiTitles(Option<usize>);
+impl vt100::Callbacks for TuiTitles {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        if let Some(phase) = std::str::from_utf8(title)
+            .ok()
+            .and_then(|s| s.strip_prefix("tui-redraw-"))
+            .and_then(|s| s.parse().ok())
+        {
+            self.0 = Some(phase);
+        }
+    }
+}
+fn tui_expected(
+    screen: &vt100::Screen,
+    phase: usize,
+    rows: u16,
+    cols: u16,
+    last: usize,
+    exact_modes: bool,
+    combining: bool,
+) {
+    let accent = if combining { "\u{301}" } else { "" };
+    let expected: Vec<String> = (0..rows)
+        .map(|row| {
+            if phase == 0 || phase == 4 {
+                if row == 0 {
+                    "MAIN-RESTORE".to_owned()
+                } else {
+                    String::new()
+                }
+            } else {
+                format!("P{phase}F{last:03}R{row:02}: λ中😀e{accent}")
+            }
+        })
+        .collect();
+    assert_eq!(
+        screen.rows(0, cols).collect::<Vec<_>>(),
+        expected,
+        "TUI phase {phase}"
+    );
+    assert_eq!(
+        screen.cursor_position(),
+        if phase == 0 || phase == 4 {
+            (1, 2)
+        } else {
+            (rows - 1, cols - 1)
+        }
+    );
+    if exact_modes {
+        assert_eq!(screen.alternate_screen(), phase > 0 && phase < 4);
+        assert!(!screen.auto_wrap());
+    }
+    if phase > 0 && phase < 4 {
+        assert_eq!(screen.cell(0, 12).unwrap().contents(), "中");
+        assert!(screen.cell(0, 13).unwrap().is_wide_continuation());
+        assert_eq!(screen.cell(0, 14).unwrap().contents(), "😀");
+        assert!(screen.cell(0, 15).unwrap().is_wide_continuation());
+        assert_eq!(screen.cell(0, 16).unwrap().contents(), format!("e{accent}"));
+        assert_eq!(
+            screen.cell(0, 0).unwrap().fgcolor(),
+            vt100::Color::Rgb(100, 150, 200)
+        );
+    }
+}
+fn tui_original(parser: &mut vt100::Parser, data: &[u8]) {
+    assert!(data.len() <= 4 * 1024 * 1024, "bounded native TUI trace");
+    let mut offset = 0;
+    while offset < data.len() {
+        assert!(data.len() - offset >= 5);
+        let kind = data[offset];
+        let count = u32::from_le_bytes(data[offset + 1..offset + 5].try_into().unwrap()) as usize;
+        offset += 5;
+        assert!(count <= data.len() - offset);
+        let payload = &data[offset..offset + count];
+        match kind {
+            b'F' => parser.process(payload),
+            b'W' => {
+                assert_eq!(count % 2, 0);
+                let units: Vec<_> = payload
+                    .chunks_exact(2)
+                    .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                    .collect();
+                parser.process(String::from_utf16(&units).unwrap().as_bytes());
+            }
+            _ => panic!("unknown native TUI trace record"),
+        }
+        offset += count;
+    }
+    assert!(parser.at_boundary());
+}
+fn tui_redraw_cases(rust: bool) {
+    for combining in [false, true] {
+        for kind in ["burst", "mixed"] {
+            for resize in [false, true] {
+                // Build 20348's combining trace has a one-column projected cursor
+                // mismatch. Keep that case and alternate resize in the owned court;
+                // retain an identical non-combining stable corpus for both hosts.
+                if (!rust && (resize || combining)) || (!combining && resize) {
+                    continue;
+                }
+                let report = Report::new();
+                let command =
+                    ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                        .arg(format!(
+                            "tui-redraw-{kind}-{}{}",
+                            if resize { "resize" } else { "stable" },
+                            if combining { "" } else { "-plain" }
+                        ))
+                        .arg(report.0.as_os_str())
+                        .size(TerminalSize { rows: 8, cols: 40 });
+                let mut fixture = if rust {
+                    Fixture::open(command.rust_console())
+                } else {
+                    Fixture::open_backend(command, "conpty")
+                };
+                let mut original = vt100::Parser::new(8, 40, 0);
+                let mut observed =
+                    vt100::Parser::new_with_callbacks(8, 40, 0, TuiTitles::default());
+                let mut consumed = 0;
+                let last = if kind == "burst" { 127 } else { 31 };
+                for phase in 0..5 {
+                    let phase_start = consumed;
+                    let (rows, cols) = if resize && phase >= 2 {
+                        if phase == 2 { (12, 56) } else { (6, 32) }
+                    } else {
+                        (8, 40)
+                    };
+                    if resize && (phase == 2 || phase == 3) {
+                        fixture.master.resize(TerminalSize { rows, cols }).unwrap();
+                        original.screen_mut().set_size(rows, cols);
+                        observed.screen_mut().set_size(rows, cols);
+                    }
+                    if phase > 0 {
+                        fixture.master.write_all(b"n").unwrap();
+                    }
+                    let deadline = Instant::now() + Duration::from_secs(20);
+                    while observed.callbacks().0 != Some(phase) {
+                        if consumed < fixture.bytes.len() {
+                            observed.process(&fixture.bytes[consumed..]);
+                            consumed = fixture.bytes.len();
+                            continue;
+                        }
+                        let chunk = fixture
+                        .output
+                        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "TUI {rust}/{kind}/{resize}/{phase}: {e}; report={:?}; tail={:?}",
+                                std::fs::read_to_string(&report.0),
+                                String::from_utf8_lossy(
+                                    &fixture.bytes[fixture.bytes.len().saturating_sub(200)..]
+                                )
+                            )
+                        })
+                        .unwrap();
+                        fixture.bytes.extend(chunk);
+                        assert!(fixture.bytes.len() <= 4 * 1024 * 1024);
+                    }
+                    let data =
+                        std::fs::read(report.0.with_extension(format!("stage{phase}"))).unwrap();
+                    let native = std::fs::read_to_string(&report.0).unwrap();
+                    let archive = report.0.parent().unwrap();
+                    std::fs::write(archive.join(format!("source-{phase}.bin")), &data).unwrap();
+                    std::fs::write(
+                        archive.join(format!("wire-{phase}.bin")),
+                        &fixture.bytes[phase_start..consumed],
+                    )
+                    .unwrap();
+                    std::fs::write(archive.join(format!("native-{phase}.txt")), &native).unwrap();
+                    tui_original(&mut original, &data);
+                    tui_expected(original.screen(), phase, rows, cols, last, true, combining);
+                    // ConPTY can project native modes into equivalent drawing
+                    // commands. Its visible grid/cursor are the common contract;
+                    // owned output additionally preserves the source mode state.
+                    tui_expected(observed.screen(), phase, rows, cols, last, rust, combining);
+                    assert!(observed.at_boundary());
+                    let cursor = if phase == 0 || phase == 4 {
+                        (1, 2)
+                    } else {
+                        (rows - 1, cols - 1)
+                    };
+                    assert!(native.starts_with(&format!("phase={phase};")), "{native}");
+                    assert!(
+                        native.contains(&format!(
+                            ";view=0,0,{},{};cursor={},{}\n",
+                            cols - 1,
+                            rows - 1,
+                            cursor.0,
+                            cursor.1
+                        )),
+                        "{native}"
+                    );
+                    for row in 0..rows {
+                        let text = if phase == 0 || phase == 4 {
+                            if row == 0 {
+                                "MAIN-RESTO".to_owned()
+                            } else {
+                                " ".repeat(10)
+                            }
+                        } else {
+                            format!("P{phase}F{last:03}R{row:02}:")
+                        };
+                        let units: Vec<_> = text.encode_utf16().collect();
+                        assert!(
+                            native
+                                .lines()
+                                .any(|line| line == format!("row{row}={units:?}")),
+                            "{native}"
+                        );
+                    }
+                    eprintln!(
+                        "tui-stage rust={rust};kind={kind};resize={resize};combining={combining};phase={phase};source={};wire={};alternate={};wrap={};native={native:?}",
+                        data.len(),
+                        fixture.bytes.len(),
+                        observed.screen().alternate_screen(),
+                        observed.screen().auto_wrap()
+                    );
+                }
+                fixture.master.write_all(b"q").unwrap();
+                fixture.finish(29);
+                observed.process(&fixture.bytes[consumed..]);
+                let (rows, cols) = if resize { (6, 32) } else { (8, 40) };
+                tui_expected(observed.screen(), 4, rows, cols, last, rust, combining);
+                eprintln!(
+                    "tui-artifacts rust={rust};kind={kind};resize={resize};combining={combining}: {}",
+                    report
+                        .0
+                        .parent()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn rust_console_pty_dense_tui_redraw_preserves_wire_native_state_and_alternate_resize() {
+    tui_redraw_cases(true);
+}
+
+#[test]
+#[ignore = "explicit dense native TUI redraw comparison with installed ConPTY"]
+fn rust_console_client_dense_tui_redraw_compares_system_conpty() {
+    tui_redraw_cases(false);
+}
+
 fn alias_cases(rust: bool) {
     for kind in aliases_court::kinds(!rust) {
         let report = Report::new();

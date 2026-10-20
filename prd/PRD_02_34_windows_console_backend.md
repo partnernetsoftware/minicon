@@ -26,6 +26,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] bounded receive/cancellation and explicit unsupported completion
 │   ├── [v] accepted CONNECT, opaque handles and DISCONNECT reclamation
 │   ├── [v] real cmd ASCII / CJK / emoji output and exact nonzero exit
+│   ├── [v] scoped dense TUI replay: original API payloads / emitted wire / native readback / alternate resize
 │   ├── [v] deferred line/raw/record input, explicit interruption and input-ready event
 │   ├── [v] scoped native input flush: queue, cached-text/read lifetime and readiness
 │   ├── [v] scoped ANSI input-record writes: code pages, partial DBCS and bounded admission
@@ -4088,3 +4089,90 @@ image identities, 43 native scenario receipts and 13 pinned source blobs.
 Artifacts remain under ignored `target/conhost-research/aliases-*`. Native
 execution remains Windows x86_64 build 20348 only; other target checks prove
 compilation only. The overall backend remains experimental and opt-in.
+
+### Dense native TUI replay
+
+Invariant: generated application intent, native console state and the emitted
+terminal screen agree through dense redraw, Unicode and alternate-screen resize.
+This qualifies the existing Rust backend algorithm, with no shared parser,
+Windows host or GUI implementation change. Broader TUI/presentation requirements
+remain owned by [PRD 24.01](PRD_02_24_01_tui_compatibility.md).
+
+`crates/minicon-platform/tests/support/tui_redraw.rs` is an independent native SDK producer in the
+platform court. Burst mode emits 128 complete cursor-addressed redraws in one
+WriteFile; mixed mode emits 32 frames, alternating small raw UTF-8 chunks
+(including scalar/escape splits) and complete WriteConsoleW frames. Alternating
+long and short rows must erase their old tails. Text includes Greek, CJK, emoji
+and optionally an explicit combining accent; foreground uses RGB attributes.
+The last cursor is at the right margin. The five observed phases are main
+baseline, alternate screen, alternate grow, alternate shrink and main restore;
+stable-size cases redraw those phases at the original size.
+
+Application calls are captured before dispatch as tag F/W, little-endian u32
+payload byte length and exact payload bytes (UTF-16LE for W). Each phase closes
+its source record before the publication marker. The parent separately retains
+that original record, the emitted phase stream and the raw Win32 report under
+its private ignored artifact directory. Captures are bounded at four MiB. OSC
+markers are recognized by a parser callback, not a substring that might appear
+before the command terminator. Input arrives through the real PTY writer: each
+observed phase is released with one raw key, and final q makes the actual native
+child exit 29. Expected exit and output EOF are checked before fixture teardown.
+
+Both original intent and emitted bytes are parsed, but their agreement is not
+the sole oracle. Independent literal expectations check every row, cursor,
+CJK/emoji cell and continuation positions, combining attachment, the first-row RGB marker and
+restored main content. Original and owned streams additionally preserve logical
+alternate/no-wrap modes. The stock host can express native modes using canonical
+drawing commands; its visible grid/cursor are checked, and projected mode bits
+are recorded without assuming byte/mode-state identity. Native queries verify
+the visible bounds, cursor and ten ASCII prefix cells per row. Full native
+Unicode-cell encoding and GUI pixels are not certified by that prefix readback.
+
+Named courts are
+`rust_console_pty_dense_tui_redraw_preserves_wire_native_state_and_alternate_resize`
+and `rust_console_client_dense_tui_redraw_compares_system_conpty`. The owned
+court runs six fresh sessions: burst/mixed with and without the accent, plus
+accent cases that grow 8x40 to 12x56 and shrink to 6x32 (rows x columns) while alternate-screen
+content remains active. The system subset runs the same two non-combining stable
+corpora. Together they produce 40 phase checkpoints across eight actual child
+lifetimes. Both console-agent forcing variables are cleared for system cases.
+ConPTY sidecars are absent beside the test runner and probe; the stock court
+uses the installed system provider on Windows x86_64 build 20348.
+
+The initial stock comparison exposed two distinct projection facts. Its output
+does not preserve the source's no-wrap bit. With e plus U+0301, native cursor
+readback is (7,39), but the emitted stream yields (7,38), despite matching row
+text. Replacing Greek lambda with L leaves the mismatch; removing only the
+combining accent eliminates it. Failed system/projection and paired diagnostic
+logs are retained separately from successful qualification. The combining
+system corpus remains BLOCKED, with the strict owned assertions retained.
+Alternate-screen stock resize also remains outside the reference subset; its
+old-build limitation is owned by [the terminal owner](PRD_02_24_con_terminal.md#pty-backend-selection).
+This does not establish the cause of the user's Claude Code 0.2.14 report.
+
+Dependencies are the existing PTY transport, shared stream/screen and width
+implementation, native API readback, explicit parent resize and private-Job EOF.
+Safe failure is bounded API/trace/phase errors and owned process teardown.
+Real Claude Code, GUI pixels/presented-frame identity, synchronized output,
+mode/query negotiation, broader Unicode/layouts, modern Windows and other
+OS/ISA runtimes and performance remain open.
+
+Qualification: 309 selected regressions, six final focused courts (including
+the preceding native geometry and Unicode-batch cases), seven static/cross-target
+checks and 17 final alignment checks pass. Four compiling runtime faults remove
+wire cursor-home commands, corrupt native row readback, alter producer drawing
+intent and suppress actual parent resize; each fails its intended court. Every
+fault restores original file bytes and verifies the source hash. Separately,
+enabling the blocked stock combining corpus reproduces the cursor discrepancy;
+that diagnostic is not counted as a fault guard or a compatibility pass.
+
+The first full run hit the existing system cooked-editor cosmetic trailing-space
+assertion; its isolated recheck and the second complete 309-case run pass. Both
+failed and successful logs are retained. No assertion was weakened for that
+failure. `tui-redraw-final-receipt.json` binds the staged tree, three changed
+test/helper files, five unchanged production/parser guards, four fault logs,
+seven checks, nine x64 image identities and hashes of 120 per-phase artifacts
+covering the 40 checkpoints. Phase wire captures exclude the final shutdown
+tail; the court separately parses that tail and verifies restored content,
+exit 29 and EOF. Evidence remains under ignored `target/conhost-research/`.
+Native execution is Windows x86_64 build 20348; other targets compile only.

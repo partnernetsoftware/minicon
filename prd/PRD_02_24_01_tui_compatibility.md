@@ -25,7 +25,7 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
 │   evidence: split-stream begin/end, bounded timeout/byte recovery, blink/resize/query interleaving
 │   safe failure: a missing end marker cannot freeze the UI or stop input/control servicing
 │   dependency: parser, damage and presentation contracts; non-goal: recognizing 2026 without gating presentation
-├── [_] Dense redraw, scroll, Unicode and alternate-screen resize journeys
+├── [-] Dense redraw, scroll, Unicode and alternate-screen resize journeys
 │   invariant: byte splitting and redraw rate do not change final rows, cursor or cell geometry
 │   evidence: finite safe traces, independent expected grids, native readback and presented pixels
 │   safe failure: bounded session-local errors; keep prior committed frame on publication failure
@@ -90,6 +90,12 @@ synchronized presentation can expose intermediate frames; corrupted escape
 bytes, stale geometry and incorrect damage/cell width need separate judgments.
 
 ## Delivery order and acceptance
+
+The first native replay slice and its source/wire/readback evidence are owned
+by [dense native TUI replay](PRD_02_34_windows_console_backend.md#dense-native-tui-replay).
+That slice does not establish GUI pixels, synchronized presentation or a real
+Claude Code pass. Terminal identity/profile configuration remains owned by
+[the library contract](PRD_02_35_terminal_library.md#dependency-and-public-api-boundary).
 
 1. Inventory exact application/backend identities and reproduce with a finite
    isolated producer. Preserve raw child bytes separately from backend-emitted

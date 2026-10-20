@@ -24,6 +24,11 @@ minicon workspace and input
 ├── Scrollbar and divider
 ├── Selection and clipboard
 ├── Configuration (minicon.json; themes; language; font size)
+│   ├── [_] terminal capability profile / advanced TERM override for new sessions
+│   │   invariant: choice survives reload; existing sessions retain their original contract
+│   │   evidence: planned preference round trip and actual child environment/capability probes
+│   │   failure: reject invalid overrides before spawn; no silent unsupported capability promise
+│   │   dependency: PRD 35 common contract; non-goal: selecting an OS backend by parser name
 │   └── [-] Dark / 深色: winmgr warm charcoal palette; picker + cycle + saved id
 │       invariant: one selection colors all tabs and survives reload
 │       evidence: theme tests, settings hit tests, preference round trip
@@ -41,6 +46,9 @@ flowchart LR
     T --> Save["Atomic minicon.json preference"]
     Save -->|next launch| T
     Bad["Unknown tag"] --> Default["Neutral fallback"]
+    Term["planned terminal profile / advanced TERM choice"] --> Contract["PRD 35 identity / implemented capabilities"]
+    Contract --> Spawn["new session environment / truthful query replies"]
+    Term --> Save
 ```
 
 ## Tab and window naming
@@ -886,6 +894,16 @@ Concretely:
   unchanged.
 
 ## Configuration
+
+Terminal type should be configurable, with a modern VT/xterm-style default.
+Current `ConTerminal::spawn_pty` explicitly supplies `TERM=xterm-256color` and
+`COLORTERM=truecolor`; it does not supply `TERM=vt100`, and no user-facing type
+selector is implemented yet. The planned preference selects a capability
+profile and optionally overrides TERM for new sessions. Color advertisement
+and protocol replies remain consistent with implemented profile capabilities.
+It does not rewrite a running program's environment or silently alter an
+existing session. OS backend selection is independent. Reusable semantics are
+owned by [PRD 35](PRD_02_35_terminal_library.md#dependency-and-public-api-boundary).
 
 - [v] the user configuration root is selected through the platform runtime
   facade: Windows calls `SHGetFolderPathW(CSIDL_APPDATA)` into caller-owned
