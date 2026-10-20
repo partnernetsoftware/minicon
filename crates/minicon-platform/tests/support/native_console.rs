@@ -42,6 +42,9 @@ mod output_modes;
 #[path = "../../../minicon-console/tests/support/queued_reads.rs"]
 mod queued_reads;
 #[cfg(windows)]
+#[path = "../../../minicon-console/tests/support/read_cache.rs"]
+mod read_cache;
+#[cfg(windows)]
 mod rect_output;
 #[cfg(windows)]
 mod screen_fill;
@@ -88,6 +91,9 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if let Some(kind) = mode.strip_prefix("read-cache-") {
+        return read_cache::run(kind, std::path::Path::new(&arguments[1]));
+    }
     if let Some(kind) = mode.strip_prefix("raw-batch-") {
         return queued_reads::raw_batch(kind, std::path::Path::new(&arguments[1]), false);
     }

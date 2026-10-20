@@ -1,4 +1,5 @@
 //! Deferred console input. Requests retain their originating driver's lifetime.
+mod cache;
 mod echo;
 mod edit;
 mod records;
@@ -41,9 +42,7 @@ pub enum ConsoleInput {
 #[derive(Default)]
 pub(super) struct InputState<'session> {
     pub(super) events: VecDeque<ConsoleInput>,
-    ready: VecDeque<u16>,
-    ready_event_suppressed: bool,
-    ansi_tail: BTreeMap<usize, VecDeque<u8>>,
+    read_cache: BTreeMap<usize, cache::ReadCache>,
     ansi_write_lead: Option<ConsoleInput>,
     record_tail: VecDeque<ConsoleInput>,
     pending: VecDeque<PendingRead<'session>>,
@@ -131,8 +130,7 @@ impl InputState<'_> {
         self.events.clear();
         // A completed cooked read can retain text independently of keyboard
         // storage. Native Break resets readiness without discarding that text.
-        self.ready_event_suppressed = !self.ready.is_empty();
-        self.ansi_tail.clear();
+        self.flush_cache();
     }
 }
 
@@ -499,7 +497,10 @@ impl<'session> ConsoleHost<'session> {
         // existing text reader/file conversion ownership.
         self.input.record_tail.clear();
         let previous = self.input.pending.len();
-        let cooked = cooked_input_mode(self.input_mode);
+        // Pending completed input is served before selecting a new raw/cooked
+        // waiter from current modes, matching the native per-file read state.
+        let cooked =
+            self.input.has_cooked_ready(descriptor.object) || cooked_input_mode(self.input_mode);
         let mut read = PendingRead {
             request,
             body,
@@ -646,12 +647,9 @@ impl<'session> ConsoleHost<'session> {
                     let capacity = read.request.descriptor.output_size as usize - read.body.len();
                     let mut bytes = Vec::new();
                     loop {
-                        let has_tail = self
-                            .input
-                            .ansi_tail
-                            .get(&read.request.descriptor.object)
-                            .is_some_and(|tail| !tail.is_empty());
-                        if self.input.ready.is_empty() && !has_tail {
+                        let object = read.request.descriptor.object;
+                        let has_tail = self.input.has_tail(object);
+                        if !self.input.has_ready(object) && !has_tail {
                             let buffer = read.output_buffer.unwrap_or(self.active_buffer);
                             if buffer == self.active_buffer {
                                 self.cook_text(&mut read, wakeup, output)?;
@@ -661,7 +659,7 @@ impl<'session> ConsoleHost<'session> {
                                 })?;
                             }
                         }
-                        if self.input.ready.is_empty() && !has_tail {
+                        if !self.input.has_ready(object) && !has_tail {
                             break;
                         }
                         bytes.extend(self.encode_ready(&read, unicode, capacity - bytes.len())?);
@@ -783,8 +781,7 @@ impl<'session> ConsoleHost<'session> {
                         } else {
                             0
                         };
-                        self.input.ready_event_suppressed = false;
-                        self.input.ready.extend(read.line.drain(..));
+                        self.input.stage_text(read);
                         return Ok(());
                     }
                 }
@@ -809,8 +806,7 @@ impl<'session> ConsoleHost<'session> {
                     }
                     read.line.extend(sequence);
                     if !line_mode && !sequence.is_empty() {
-                        self.input.ready_event_suppressed = false;
-                        self.input.ready.extend(read.line.drain(..));
+                        self.input.stage_text(read);
                         return Ok(());
                     }
                 }
@@ -867,8 +863,7 @@ impl<'session> ConsoleHost<'session> {
                         self.echo_unit(&mut read.echo_decoder, 10, output)?;
                     }
                 }
-                self.input.ready_event_suppressed = false;
-                self.input.ready.extend(read.line.drain(..));
+                self.input.stage_text(read);
                 return Ok(());
             }
             if read.line.len() >= MAX_LINE {
@@ -919,8 +914,7 @@ impl<'session> ConsoleHost<'session> {
                 // existing codec supplies its code-page replacement.
             }
             if !line_mode || wakes_line {
-                self.input.ready_event_suppressed = false;
-                self.input.ready.extend(read.line.drain(..));
+                self.input.stage_text(read);
                 return Ok(());
             }
         }
@@ -936,49 +930,50 @@ impl<'session> ConsoleHost<'session> {
         unicode: bool,
         capacity: usize,
     ) -> io::Result<Vec<u8>> {
+        let object = read.request.descriptor.object;
         if unicode {
-            if self
-                .input
-                .ansi_tail
-                .get(&read.request.descriptor.object)
-                .is_some_and(|tail| !tail.is_empty())
-            {
+            if self.input.has_tail(object) {
                 return Err(io::Error::new(
                     io::ErrorKind::Unsupported,
                     "switching to Unicode in the middle of an ANSI byte is not qualified",
                 ));
             }
-            let count = (capacity / 2).min(self.input.ready.len());
-            return Ok(self
-                .input
+            let Some(cache) = self.input.read_cache.get_mut(&object) else {
+                return Ok(Vec::new());
+            };
+            let count = (capacity / 2).min(cache.ready.len());
+            let bytes = cache
                 .ready
                 .drain(..count)
                 .flat_map(u16::to_le_bytes)
-                .collect());
+                .collect();
+            self.input.prune_cache(object);
+            return Ok(bytes);
         }
-        self.encode_ansi_ready(read.request.descriptor.object, capacity)
+        self.encode_ansi_ready(object, capacity)
     }
 
     fn encode_ansi_ready(&mut self, object: usize, capacity: usize) -> io::Result<Vec<u8>> {
-        let mut tail = self.input.ansi_tail.remove(&object).unwrap_or_default();
+        let Some(cache) = self.input.read_cache.get_mut(&object) else {
+            return Ok(Vec::new());
+        };
         let mut bytes = Vec::new();
         while bytes.len() < capacity {
-            if let Some(byte) = tail.pop_front() {
+            if let Some(byte) = cache.bytes.pop_front() {
                 bytes.push(byte);
                 continue;
             }
-            let Some(first) = self.input.ready.front().copied() else {
+            let Some(first) = cache.ready.front().copied() else {
                 break;
             };
             let mut units = [first, 0];
             let count = if (0xd800..=0xdbff).contains(&first)
-                && self
-                    .input
+                && cache
                     .ready
                     .get(1)
                     .is_some_and(|u| (0xdc00..=0xdfff).contains(u))
             {
-                units[1] = self.input.ready[1];
+                units[1] = cache.ready[1];
                 2
             } else {
                 1
@@ -1000,21 +995,17 @@ impl<'session> ConsoleHost<'session> {
             if length == 0 {
                 return Err(io::Error::last_os_error());
             }
-            self.input.ready.drain(..count as usize);
-            tail.extend(&encoded[..length as usize]);
+            cache.ready.drain(..count as usize);
+            cache.bytes.extend(&encoded[..length as usize]);
         }
-        if !tail.is_empty() {
-            self.input.ansi_tail.insert(object, tail);
-        }
+        self.input.prune_cache(object);
         Ok(bytes)
     }
 
     pub(super) fn update_input_event(&self) -> io::Result<()> {
         if let Some(session) = self.session {
             session.set_input_available(
-                !self.input.events.is_empty()
-                    || (!self.input.ready.is_empty() && !self.input.ready_event_suppressed)
-                    || !self.input.ansi_tail.is_empty(),
+                !self.input.events.is_empty() || self.input.cache_available(),
             )?;
         }
         Ok(())
@@ -1051,7 +1042,7 @@ impl<'session> ConsoleHost<'session> {
     }
 
     pub(super) fn retire_input_object(&mut self, object: usize) -> io::Result<()> {
-        self.input.ansi_tail.remove(&object);
+        self.input.read_cache.remove(&object);
         self.retire_reads(ReadRetirement::Object(object))
     }
 }

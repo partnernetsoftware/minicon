@@ -7,6 +7,9 @@ mod cooked_buffer;
 #[path = "../../tests/support/queued_reads.rs"]
 mod queued_reads;
 #[cfg(windows)]
+#[path = "../../tests/support/read_cache.rs"]
+mod read_cache;
+#[cfg(windows)]
 fn main() {
     if let Err(error) = run() {
         eprintln!("console probe: {error}");
@@ -39,6 +42,9 @@ fn run() -> std::io::Result<()> {
     }
     let mode = args[0].to_str().unwrap_or("");
     let result = std::path::Path::new(&args[1]);
+    if let Some(kind) = mode.strip_prefix("read-cache-") {
+        return read_cache::run(kind, result);
+    }
     if let Some(kind) = mode.strip_prefix("raw-batch-") {
         return queued_reads::raw_batch(kind, result, true);
     }

@@ -138,7 +138,7 @@ fn raw_batch_impl(kind: &str, report: &Path, controlled: bool) -> io::Result<()>
     wait(deadline, || Ok(report.with_extension("opened").exists()))
 }
 
-fn raw_key(unit: u16, repeat: u16) -> INPUT_RECORD {
+pub(super) fn raw_key(unit: u16, repeat: u16) -> INPUT_RECORD {
     let mut record = INPUT_RECORD {
         EventType: KEY_EVENT as u16,
         ..INPUT_RECORD::default()
@@ -151,7 +151,7 @@ fn raw_key(unit: u16, repeat: u16) -> INPUT_RECORD {
     record.Event.KeyEvent.uChar.UnicodeChar = unit;
     record
 }
-fn raw_write(input: HANDLE, records: &[INPUT_RECORD]) -> io::Result<()> {
+pub(super) fn raw_write(input: HANDLE, records: &[INPUT_RECORD]) -> io::Result<()> {
     let mut count = 0;
     check(unsafe {
         WriteConsoleInputW(input, records.as_ptr(), records.len() as u32, &mut count)
@@ -161,7 +161,7 @@ fn raw_write(input: HANDLE, records: &[INPUT_RECORD]) -> io::Result<()> {
     }
     Ok(())
 }
-fn raw_read(input: HANDLE, api: &str, capacity: u32) -> io::Result<Vec<u16>> {
+pub(super) fn raw_read(input: HANDLE, api: &str, capacity: u32) -> io::Result<Vec<u16>> {
     let mut count = 0;
     let mut bytes = [0_u8; 64];
     let mut units = [0_u16; 32];
@@ -329,14 +329,14 @@ unsafe extern "system" fn handler(event: u32) -> i32 {
     EVENT.store(event + 1, Ordering::Release);
     1
 }
-fn check(ok: i32) -> io::Result<()> {
+pub(super) fn check(ok: i32) -> io::Result<()> {
     if ok == 0 {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
     }
 }
-fn wait(deadline: Instant, condition: impl Fn() -> io::Result<bool>) -> io::Result<()> {
+pub(super) fn wait(deadline: Instant, condition: impl Fn() -> io::Result<bool>) -> io::Result<()> {
     while !condition()? {
         if Instant::now() >= deadline {
             return Err(io::ErrorKind::TimedOut.into());
@@ -345,7 +345,7 @@ fn wait(deadline: Instant, condition: impl Fn() -> io::Result<bool>) -> io::Resu
     }
     Ok(())
 }
-fn publish(path: &Path, text: &str) -> io::Result<()> {
+pub(super) fn publish(path: &Path, text: &str) -> io::Result<()> {
     let temporary = path.with_extension("queue-tmp");
     std::fs::write(&temporary, text)?;
     std::fs::rename(temporary, path)

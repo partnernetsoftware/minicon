@@ -41,6 +41,7 @@ Outcome: own the Windows console backend with measured compatibility
 │   ├── [v] scoped keyboard waiters: raw Ctrl+C and record C/Break retain their reads
 │   ├── [v] scoped pending text reads retain their admitted cooked/raw kind across LINE_INPUT changes
 │   ├── [v] scoped raw text batches drain available input to caller capacity and preserve record/codec remainders
+│   ├── [v] scoped completed text/cache ownership: duplicates share, independent files isolate, final close retires
 │   ├── [v] job-owned client launch, actual parent/child teardown and input budgets
 │   ├── [v] explicit experimental PTY adapter, native resize and key delivery
 │   ├── [v] current input/output reopen, native access/duplicate/close probes
@@ -121,6 +122,7 @@ flowchart LR
     INPUT --> WAITERS["keyboard: cooked C/Break ends; raw C and record C/Break wait"]
     WAITERS --> READMODE["admission fixes waiter kind; current mode still controls signal recognition"]
     READMODE --> RAWBATCH["raw: available units to remaining capacity / preserve queue and codec tail"]
+    RAWBATCH --> FILECACHE["file-owned completed UTF-16 / encoded tail / flush readiness"]
     RETIRE --> POSTLIVE["predict surviving output handles and read owners before dispatch"]
     POSTLIVE -->|"may publish"| READYWORK
     POSTLIVE -->|"another read survives"| INPUT
@@ -3794,3 +3796,89 @@ propagation; replacement of the kernel, a second terminal model and a default
 provider change are outside this slice. Other concurrent mode/geometry/editor
 and native API behavior, OS/ISA runtime/performance, portable sessions and
 packaging/default promotion remain open.
+
+### Completed text and input file ownership
+
+Invariant: completed text continuations belong to the native input file object.
+Duplicate/inherited references share that cache; independent opens do not.
+The raw keyboard queue stays console-wide. Windows-specific continuation and
+handle lifetime remain inside the native service, not the portable terminal
+facade. The private input/cache.rs groups completed UTF-16, encoded byte tails,
+cooked origin and post-flush readiness suppression under one object key.
+Unicode and byte codecs consume only that key and prune empty entries.
+
+An existing cooked continuation takes precedence over current LINE_INPUT when
+admitting the next read on its file. Serving that continuation ends the read
+without taking fresh keyboard records, even after another file switches the
+console to raw mode. Otherwise the raw batching loop could append unrelated
+new input to the old line. Global Flush/Break still clear encoded byte tails
+and suppress retained completed-text readiness; staging data for another file
+does not undo that file's suppression. Final kernel object retirement removes
+its cache, while closing one duplicate leaves it live. Process retirement keeps
+file-owned state until the existing native lifetime rules retire that object.
+
+Baseline diagnosis: the new independent client reads one unit of `abc\r\n` on
+file A, opens file B, switches to raw mode and writes `Z`. The prior global queue
+returned `[98,99,13,10,90]` to B; the duplicate of A then received the later `X`.
+`read-cache-baseline-direct.log` and `read-cache-baseline-owned.log` retain those
+runtime failures before the cache change. The same nine ASCII/wide system
+cases passed in `read-cache-baseline-system.log`. These are baseline diagnostics,
+not reusable final-source qualification.
+
+The actual SDK client opens independent CONIN$ files and uses File::try_clone
+for a real duplicate. Cases use ReadConsoleW, ReadFile, a W-to-byte continuation
+and owned UTF-8 bytes, each with duplicate survival, global flush or final close/
+reopen. B returns only `Z`; A's duplicate returns its remaining `bc\r\n`;
+another queued `X` remains available to B. Closing A's final reference discards
+its continuation, and a new file receives only `X`. The direct court records
+actual request object tokens to prove duplicate equality and independent-open
+inequality. Preloaded reads complete without promotion; every client finishes
+with zero connected clients, handles and pending reads.
+
+After a flush, B's new input and completed read leave A's retained text suppressed:
+the native wait result is WAIT_TIMEOUT. Final data draining or final-object close
+also leaves the event nonsignaled. UTF-8 cases additionally check encoded-byte
+continuation across duplicate closure, byte-tail removal by global flush and
+discard on final close. Those cases are owned-only: installed-system narrow
+UTF-8 parity remains BLOCKED as described in the raw-batch section.
+
+Named evidence: `rust_console_native_completed_text_belongs_to_its_file_object`,
+`rust_console_pty_completed_text_isolates_files_and_survives_duplicate_close` and
+`rust_console_client_completed_text_files_compare_system_conpty`. There are
+12 direct cases, 12 owned PTY cases and nine system PTY cases, 33 total. The
+return-value oracle is separate from the SDK client. Pinned stream.cpp chooses
+pending file input before current mode; readDataCooked.cpp saves remaining text
+through INPUT_READ_HANDLE_DATA, whose source/header define the per-file pending
+state. `read-cache-pinned-sources.json` verifies eight related blobs against
+revision 9fd41b2baec77d25b8cfb584070d5998eab7df81. Artifacts remain under ignored
+`target/conhost-research/read-cache-*`.
+
+`read-cache-early-suite.log` records 301 passing selected tests, retaining the
+prior 298 and adding three file-cache courts. Eight compiling runtime faults
+fail all three new tests: wrong staging owner, ignoring pending-cooked priority,
+omitted final-object retirement, incorrect flush suppression, another file
+resetting suppression, reversed encoded bytes, reversed UTF-16 units and using
+a new native open instead of an actual duplicate. Each restores exact original
+bytes and checks its source hash; `read-cache-negative-audit.json` binds logs.
+The final six-test focused selection also retains all three preceding raw-batch
+courts. An earlier successful full selection is reused only after all nine
+implementation/test files match their frozen source hashes.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `read-cache-final-receipt.json` binds staged source tree, source/
+log/fault hashes, compiler, nine executed x64 image identities and eight pinned
+upstream blobs. Native execution remains Windows x86_64 build 20348 only; other
+target checks prove compilation, not runtime compatibility.
+
+Dependencies are validated file tokens, existing object/line budgets, request
+ownership, native close finalizers and the shared codecs/read scheduler. Cache
+identities cannot exceed live input objects; each completed entry remains bounded
+by the existing line limit plus terminators and the codec tail. Several files
+can now retain independent lines, so aggregate RSS/performance still needs a
+separate court. Safe failure remains bounded/native error propagation; replacing
+the kernel, changing product defaults or moving Windows file semantics into
+the portable facade is outside this slice. More mixed-reader, process-inheritance,
+mode/code-page changes, malformed/VT input, OS/ISA runtime, session and packaging
+qualification remain open.

@@ -6,6 +6,8 @@ use minicon_platform::pty::{
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
+#[path = "../../minicon-console/tests/support/cache_court.rs"]
+mod cache_court;
 #[path = "../../minicon-console/tests/support/raw_batch_court.rs"]
 mod raw_batch_court;
 
@@ -4770,6 +4772,45 @@ fn raw_batch_cases(rust: bool) {
         std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
         fixture.finish(0);
     }
+}
+
+fn file_cache_cases(rust: bool) {
+    for kind in cache_court::kinds(!rust) {
+        let report = Report::new();
+        let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg(format!("read-cache-{kind}"))
+            .arg(report.0.as_os_str());
+        let mut fixture = if rust {
+            Fixture::open(command.rust_console())
+        } else {
+            Fixture::open_backend(command, "conpty")
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !report.0.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "file cache {rust}/{kind} stalled; stage={:?}",
+                std::fs::read_to_string(report.0.with_extension("ready"))
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let value = std::fs::read_to_string(&report.0).unwrap();
+        eprintln!("read-cache rust={rust};kind={kind}: {value}");
+        assert_eq!(value, cache_court::expected(&kind));
+        std::fs::write(report.0.with_extension("opened"), b"release").unwrap();
+        fixture.finish(0);
+    }
+}
+
+#[test]
+fn rust_console_pty_completed_text_isolates_files_and_survives_duplicate_close() {
+    file_cache_cases(true);
+}
+
+#[test]
+#[ignore = "explicit system ConPTY completed-text file-object comparison"]
+fn rust_console_client_completed_text_files_compare_system_conpty() {
+    file_cache_cases(false);
 }
 
 #[test]

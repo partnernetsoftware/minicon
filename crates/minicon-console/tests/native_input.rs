@@ -2,6 +2,8 @@
 //! Independent Win32 client checks, built by Cargo with its exact binary path.
 use minicon_console::{ConsoleHost, ConsoleInput, DriverSession};
 use serde_json::{Value, json};
+#[path = "support/cache_court.rs"]
+mod cache_court;
 #[path = "support/raw_batch_court.rs"]
 mod raw_batch_court;
 use std::ffi::OsStr;
@@ -637,6 +639,61 @@ fn rust_console_native_read_retirement_waits_for_fallback_publication() {
         assert_eq!(host.open_handles(), 0);
         assert!(!host.has_pending_output());
         eprintln!("cooked-retire-direct {kind}: {value}");
+    }
+}
+
+#[test]
+fn rust_console_native_completed_text_belongs_to_its_file_object() {
+    for kind in cache_court::kinds(false) {
+        let report = Report::new();
+        let session = DriverSession::open().unwrap();
+        let child = launch_probe(&format!("read-cache-{kind}"), &report, &session);
+        let mut host = ConsoleHost::for_child(&child).unwrap();
+        let mut output = Vec::new();
+        let mut objects = Vec::new();
+        let mut released = false;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while child.wait(Duration::ZERO).unwrap().is_none()
+            || host.connected_clients() != 0
+            || host.open_handles() != 0
+        {
+            assert!(Instant::now() < deadline, "read cache {kind} stalled");
+            match session.receive(Duration::from_millis(20)) {
+                Ok(request) => {
+                    let object = request.descriptor.object;
+                    let call = host.dispatch(request, &mut output).unwrap();
+                    assert_eq!(call.status, 0, "{kind}: {call:?}");
+                    if call.function == 6 || call.api == Some(0x0100_0005) {
+                        assert!(!call.pending, "available cache/input: {kind}");
+                        objects.push(object);
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => panic!("read cache {kind}: {error}"),
+            }
+            if !released && report.path.exists() {
+                std::fs::write(report.path.with_extension("opened"), b"release").unwrap();
+                released = true;
+            }
+        }
+        assert!(released);
+        let value = std::fs::read_to_string(&report.path).unwrap();
+        eprintln!("read-cache-direct {kind}: {value}");
+        assert_eq!(value, cache_court::expected(&kind));
+        assert_ne!(objects[0], objects[1]);
+        if kind.ends_with("close") {
+            assert_eq!(objects.len(), 3);
+            assert_ne!(objects[2], objects[0]);
+            assert_ne!(objects[2], objects[1]);
+        } else {
+            assert_eq!(objects.len(), 4);
+            assert_eq!(
+                objects[0], objects[2],
+                "duplicate shares native file object"
+            );
+            assert_eq!(objects[1], objects[3]);
+        }
+        assert_eq!(host.pending_reads(), 0);
     }
 }
 
