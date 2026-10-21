@@ -14,6 +14,7 @@ use crate::workspace::TabId;
 
 const MAX_WAITS: usize = 32;
 const MAX_WAIT_TIMEOUT_MS: u64 = 10 * 60 * 1000;
+const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) enum WaitKind {
     Text(String),
@@ -38,12 +39,14 @@ pub(super) struct ScreenshotWork {
     pub(super) path: PathBuf,
     pub(super) reply: ReplySender,
     pub(super) restore_active: Option<TabId>,
+    pub(super) deadline: Instant,
 }
 
 struct InflightScreenshot {
     target: TabId,
     reply: Arc<Mutex<Option<ReplySender>>>,
     done: Arc<AtomicBool>,
+    deadline: Instant,
 }
 
 #[derive(Default)]
@@ -133,6 +136,38 @@ impl PendingControl {
             }
         }
         self.waits = pending;
+        if self
+            .screenshot
+            .as_ref()
+            .is_some_and(|shot| now >= shot.deadline)
+            && let Some(shot) = self.screenshot.take()
+        {
+            let _ = shot
+                .reply
+                .send(Err("screenshot timed out waiting for a frame".to_owned()));
+        }
+        if self
+            .inflight_screenshot
+            .as_ref()
+            .is_some_and(|shot| now >= shot.deadline)
+            && let Some(shot) = self.inflight_screenshot.take()
+            && let Some(reply) = shot
+                .reply
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+        {
+            let _ = reply.send(Err("screenshot timed out writing PNG".to_owned()));
+        }
+        for deadline in self
+            .screenshot
+            .as_ref()
+            .map(|shot| shot.deadline)
+            .into_iter()
+            .chain(self.inflight_screenshot.as_ref().map(|shot| shot.deadline))
+        {
+            next = Some(next.map_or(deadline, |current| current.min(deadline)));
+        }
         next
     }
 
@@ -154,6 +189,7 @@ impl PendingControl {
             path,
             reply,
             restore_active: None,
+            deadline: Instant::now() + SCREENSHOT_TIMEOUT,
         });
         Ok(())
     }
@@ -175,11 +211,13 @@ impl PendingControl {
         target: TabId,
         reply: Arc<Mutex<Option<ReplySender>>>,
         done: Arc<AtomicBool>,
+        deadline: Instant,
     ) {
         self.inflight_screenshot = Some(InflightScreenshot {
             target,
             reply,
             done,
+            deadline,
         });
     }
 
@@ -324,6 +362,63 @@ mod tests {
             Err("a screenshot is already pending".to_owned())
         );
         assert!(rejected.is_some());
+    }
+
+    #[test]
+    fn unrendered_screenshot_expires_and_allows_a_retry() {
+        let mut pending = PendingControl::default();
+        let (sender, receiver) = reply();
+        let mut sender = Some(sender);
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("first.png"), &mut sender)
+            .expect("first screenshot");
+        pending.poll_waits(Instant::now() + Duration::from_secs(31), |_, _| {
+            WaitProbe::Pending
+        });
+        assert_eq!(pending.screenshot_count(), 0);
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("reply"),
+            Err("screenshot timed out waiting for a frame".to_owned())
+        );
+        let (retry, _retry_receiver) = reply();
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("retry.png"), &mut Some(retry))
+            .expect("retry screenshot");
+    }
+
+    #[test]
+    fn stalled_png_worker_times_out_once_and_allows_a_retry() {
+        let mut pending = PendingControl::default();
+        let (sender, receiver) = reply();
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("first.png"), &mut Some(sender))
+            .expect("first screenshot");
+        let work = pending.take_screenshot().expect("queued work");
+        let shared = Arc::new(Mutex::new(Some(work.reply)));
+        let done = Arc::new(AtomicBool::new(false));
+        pending.start_screenshot(
+            TabId::new(1),
+            Arc::clone(&shared),
+            Arc::clone(&done),
+            work.deadline,
+        );
+        pending.poll_waits(work.deadline + Duration::from_millis(1), |_, _| {
+            WaitProbe::Pending
+        });
+        assert_eq!(pending.screenshot_count(), 0);
+        assert_eq!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("reply"),
+            Err("screenshot timed out writing PNG".to_owned())
+        );
+        assert!(shared.lock().expect("reply lock").take().is_none());
+        let (retry, _retry_receiver) = reply();
+        pending
+            .enqueue_screenshot(TabId::new(1), PathBuf::from("retry.png"), &mut Some(retry))
+            .expect("retry screenshot");
     }
 
     #[test]
@@ -691,7 +786,12 @@ mod tests {
         // In flight: counted again, but not as pending (it is being encoded).
         let done = Arc::new(AtomicBool::new(false));
         let shared_reply = Arc::new(Mutex::new(Some(work.reply)));
-        pending.start_screenshot(TabId::new(1), Arc::clone(&shared_reply), Arc::clone(&done));
+        pending.start_screenshot(
+            TabId::new(1),
+            Arc::clone(&shared_reply),
+            Arc::clone(&done),
+            work.deadline,
+        );
         assert_eq!(pending.screenshot_count(), 1);
         assert!(
             !pending.has_pending_screenshot(),
@@ -726,7 +826,12 @@ mod tests {
         let work = pending.take_screenshot().expect("work");
         let shared = Arc::new(Mutex::new(Some(work.reply)));
         let done = Arc::new(AtomicBool::new(false));
-        pending.start_screenshot(TabId::new(1), Arc::clone(&shared), Arc::clone(&done));
+        pending.start_screenshot(
+            TabId::new(1),
+            Arc::clone(&shared),
+            Arc::clone(&done),
+            work.deadline,
+        );
 
         // The worker finishes first and takes the reply.
         let taken = shared
@@ -770,7 +875,12 @@ mod tests {
         let work = pending.take_screenshot().expect("work");
         let shared = Arc::new(Mutex::new(Some(work.reply)));
         let done = Arc::new(AtomicBool::new(false));
-        pending.start_screenshot(TabId::new(1), Arc::clone(&shared), Arc::clone(&done));
+        pending.start_screenshot(
+            TabId::new(1),
+            Arc::clone(&shared),
+            Arc::clone(&done),
+            work.deadline,
+        );
 
         // Cancellation wins the race.
         pending.cancel_for_tab(TabId::new(1), "tab closed");

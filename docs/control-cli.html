@@ -80,7 +80,7 @@ minicon cli --control pipe:\\.\pipe\my-session list-tabs</code></pre>
           <tr><td><code>list-tabs</code></td><td>every tab, its <code>@ID</code>, title, parent, and whether its child is alive</td></tr>
           <tr><td><code>ui-snapshot</code></td><td>focus, IME state, input contents, pending work, control geometry</td></tr>
           <tr><td><code>capture-pane</code></td><td>the pane as text; <code>--output PATH</code> writes it to a file instead of stdout</td></tr>
-          <tr><td><code>screenshot-pane</code></td><td>the pane as a PNG</td></tr>
+          <tr><td><code>screenshot-pane</code></td><td>the pane as a PNG; a stalled capture reports an error after 30 seconds</td></tr>
           <tr><td><code>perf-stats</code></td><td>frame and throughput counters</td></tr>
           <tr><td><code>reset-perf-stats</code></td><td>zero the counters so a measurement starts from a known point</td></tr>
           <tr><td><code>list-commands</code></td><td>the commands this build accepts</td></tr>

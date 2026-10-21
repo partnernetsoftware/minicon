@@ -305,11 +305,13 @@ flowchart LR
   attempt (twice in a row, exit 124 under a 25 s cap, PNG written). It has no
   home in this PRD and no plan entry of its own — the only notes are the
   problem file `plan/problem-screenshot-pane-hang.md` — so this line is its
-  owner registration, not a fix. Not reproduced since; a repro needs a real
-  GUI host and the same pressure that produced it. Do not fold it into F2
-  (that is about running with *no* window; this is a hang *with* one) and do
-  not treat the 2026-10-10 occurrence as closed by the later screenshot
-  ownership work above.
+  owner registration. A 0.2.18 Grok session independently left one screenshot
+  queued after resize; whether it shares the older PNG-written failure is
+  unknown. A 30-second server-side deadline now answers and releases both
+  unrendered and stalled-encoder requests, guarded by failing-first queue/retry
+  tests. This is bounded recovery, not a root-cause fix or a passing real-GUI
+  reproduction. Do not fold it into F2 (that is about running with *no*
+  window; this is a hang *with* one).
 - [v] pending text/exit deadlines have a fixed ten-minute upper bound. A larger
   syntactically valid `u64` timeout fails only that request, preserves its reply
   owner for the normal dispatch error path, and registers no latent wait instead
@@ -374,6 +376,12 @@ flowchart LR
   a select/capture race, and zero retained requests afterward. The matching
   present-side rule for the discarded scratch frame is owned by
   [24](PRD_02_24_con_terminal.md).
+- [v] an accepted screenshot has a 30-second server deadline across render and
+  PNG publication. If either stage stalls, it sends a typed error, releases the
+  single global request slot and permits a retry; the worker's shared reply slot
+  still makes a late completion exactly once. The two expiry/retry regression
+  tests live in `control_pending::tests`. This bounds the control contract but
+  does not certify the intermittent GUI hang as diagnosed or fixed.
 - [v] the screenshot writer is one platform-owned contract with target
   adapters: Windows passes a validated clipped pointer and original XRGB stride
   directly to the system GDI+ PNG codec, while Linux/macOS retain the portable

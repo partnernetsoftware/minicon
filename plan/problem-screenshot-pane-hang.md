@@ -1,9 +1,12 @@
 # Problem: `screenshot-pane` writes its PNG but the command does not return
 
-Status: [_] open — a reproduction is not yet established. This document records the
-observed failure and the raw evidence only; no root cause has been confirmed and no
-fix has been chosen. Written 2026-10-11 from an investigation session on this
-Windows host (HEAD `9752fdd`).
+Status: [-] open — a reproduction and root cause are not yet established.
+The 0.2.18 control owner now bounds an accepted screenshot to 30 seconds and
+releases its queue slot on timeout, with failing-first unit tests for an
+unrendered frame and a stalled PNG worker. This prevents an indefinite server
+queue hold; it does not prove the original PNG-written hang is resolved.
+Written 2026-10-11 from an investigation session on this Windows host
+(HEAD `9752fdd`); recovery added 2026-10-21.
 
 ## Symptom
 

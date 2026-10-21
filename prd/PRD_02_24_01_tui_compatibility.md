@@ -230,8 +230,11 @@ prompts. Each fresh session accepted a further prompt after an 800×500 →
 The first Grok run left a `screenshot-pane` request pending after a resize;
 subsequent screenshot requests reported one already pending. Its cause is
 unknown. A fresh Grok process completed the same interaction and screenshot
-sequence, but does not close the pending-request defect. These processes were
-started hidden. Their screenshots are MiniCon's native window readback, not an
+sequence, but does not close the pending-request defect. The control owner now
+bounds queued and in-flight screenshots to 30 seconds with a typed error and
+frees the slot for a retry; the observed missed frame remains unexplained.
+These processes were started hidden. Their screenshots are MiniCon's native
+window readback, not an
 independent desktop-compositor capture or the visible-window Candidate court.
 Original child output/API calls, deterministic color, sustained streaming,
 paste, cancel, broader native lifecycle and the exact signed Candidate are

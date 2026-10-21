@@ -3661,6 +3661,7 @@ impl PixelWindowApplication for ConApp {
                 path,
                 reply,
                 restore_active,
+                deadline,
             } = screenshot;
             let response_path = path.to_string_lossy().into_owned();
             let shared_reply = Arc::new(std::sync::Mutex::new(Some(reply)));
@@ -3669,6 +3670,7 @@ impl PixelWindowApplication for ConApp {
                 target,
                 Arc::clone(&shared_reply),
                 Arc::clone(&done),
+                deadline,
             );
             let waker = window.waker();
             agent_interface::submit_png_atomic(
