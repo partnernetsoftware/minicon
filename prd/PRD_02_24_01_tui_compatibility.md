@@ -90,6 +90,11 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
         evidence: four independent sessions, actual backend/child identity, pane text and product-frame screenshots
         safe failure: record default-path character and layout defects without attributing every lost byte
         dependency: visible owned windows and isolated scratch directories; non-goal: hue or full harness acceptance
+    └── [v] scoped 0.2.18 current-source three-agent Rust-provider interaction
+        invariant: opened rust-console sessions retain Unicode/spacing and accept a follow-up after resize
+        evidence: versioned independent sessions, pane/PNG pairs and hashed local receipt below
+        safe failure: first Grok screenshot pending remains unexplained; no candidate-quality pass
+        dependency: feature-enabled retail-profile build; non-goal: desktop compositor or full TUI acceptance
     └── [-] candidate-quality three-agent matrix → plan/plan-v0.2.17.md
         invariant: every claimed backend preserves valid text, style and settled layout through repeated interaction
         evidence: bounded source/wire/state/pixel traces, deterministic fixtures and versioned real sessions
@@ -207,6 +212,31 @@ includes `grok-retry-after-wide.png`, `grok-rust-wide-settled2.png`,
 `codex-default-followup.png`, `codex-rust-followup.png`, and their paired pane
 files. `session-receipt.json` binds selected captures to the executable and
 source identities. Full TUI compatibility and backend promotion remain open.
+
+### 0.2.18 current-source three-agent Rust-provider interaction
+
+At source `7a06266`, a local `windows-release` MiniCon 0.2.18 executable
+(SHA-256 `8a4e3956e091a4323ea4820560201b0c1386f1b09160139b6812823b8e785d6a`)
+ran independent Claude Code 2.1.304, Grok Build 1.0.62 and Codex CLI 0.162.1
+sessions on Windows x64 build 20348. Each session used the owner's wrapper in
+an isolated scratch directory. `ui-snapshot` reported MiniCon `0.2.18` and the
+actually opened `rust-console` backend. Pane captures and native product-window
+PNGs retained `汉字 Ω 🙂` and `red green blue` in the tested replies. Claude
+answered a twelve-line prompt, while Grok and Codex answered eight-row/line
+prompts. Each fresh session accepted a further prompt after an 800×500 →
+1180×740 → 800×500 resize sequence. The owned MiniCon processes exited after
+`close-window`.
+
+The first Grok run left a `screenshot-pane` request pending after a resize;
+subsequent screenshot requests reported one already pending. Its cause is
+unknown. A fresh Grok process completed the same interaction and screenshot
+sequence, but does not close the pending-request defect. These processes were
+started hidden. Their screenshots are MiniCon's native window readback, not an
+independent desktop-compositor capture or the visible-window Candidate court.
+Original child output/API calls, deterministic color, sustained streaming,
+paste, cancel, broader native lifecycle and the exact signed Candidate are
+still unverified. The ignored local receipt and selected synthetic pane/PNG
+evidence are under `target/conhost-research/agent-live-v0218-20261021/`.
 
 ### Open compatibility contracts
 

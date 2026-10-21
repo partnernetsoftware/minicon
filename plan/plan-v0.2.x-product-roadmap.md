@@ -19,8 +19,11 @@ the highest-priority user symptom. Current-source comparisons with Claude Code
 redraw and resize failures in the default Windows path. The input low-surrogate
 loss is fixed; output loss and live TUI defects remain open in
 [the compatibility owner](../prd/PRD_02_24_01_tui_compatibility.md#report-and-current-evidence).
-The explicit Rust backend preserves these scoped journeys. It is a promising
-user-selectable route, not yet a qualified default or packaged preview.
+The explicit Rust backend preserves these scoped journeys. A current-source
+0.2.18 retail-profile three-agent interaction also preserved Unicode and
+layout through a narrow/wide/narrow resize and follow-up; one earlier Grok
+screenshot request remained pending. This is a promising user-selectable route,
+not yet a qualified default or packaged preview.
 
 Behavior owners: [modern TUI compatibility](../prd/PRD_02_24_01_tui_compatibility.md),
 [Windows backend](../prd/PRD_02_34_windows_console_backend.md),
