@@ -243,7 +243,9 @@ header tools, and the composer. It is not the browser, and it is not layout.
   seeded once at startup with the caret at the end; the key is absent until
   first save so an untouched config stays byte-identical). `ui-snapshot`
   publishes `notes_focused`, `notes_text`, and the `geometry.notes_area`
-  rect. Deliberately not in 0.2.13: feeding a note into an agent harness
+  rect. The shipped scope is Global-only: there is no `This tab / Global`
+  switch or per-tab note storage, so the full per-context scope of GitHub #5
+  remains open. Deliberately not in 0.2.13: feeding a note into an agent harness
   (`{NOTES-FEEDBACK}`) — deferred with this note because the harness
   context plan's `{CTX}` leaf it would ride is still open; it returns as an
   explicit Send-only affordance when that design lands.
@@ -255,9 +257,8 @@ header tools, and the composer. It is not the browser, and it is not layout.
   **scrolls past its capacity**: the wheel over the panel moves an offset that
   counts back from the newest entry, clamped at both ends, and a click resolves
   against the same clamped window the paint used — `ui-snapshot` publishes the
-  effective offset as `history_panel.scroll`. Still open and still its own item:
-  GitHub #5, the notes scratchpad, which is a notes surface rather than a
-  sent-history follow-up.
+  effective offset as `history_panel.scroll`. The notes scratchpad shipped
+  later in 0.2.13; GitHub #5 still tracks its unimplemented per-tab context.
 - [v] the settings icon opens a lightweight in-app panel, anchored under the
   header on the sidebar rather than a centered modal. It carries four sections:
   interface language (English / 简 / 繁, the active one filled with the accent),

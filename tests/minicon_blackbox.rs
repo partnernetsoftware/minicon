@@ -23,6 +23,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
 #[cfg(windows)]
@@ -360,11 +361,23 @@ fn invoke_control(endpoint: &str, args: &[String]) -> Result<(), String> {
     invoke_control_output(endpoint, args).map(|_| ())
 }
 
-fn replay_control_journey(endpoint: &str, path: &Path, host_pid: u32) -> Result<(), String> {
+fn journey_cancelled(cancelled: &Receiver<()>) -> bool {
+    !matches!(cancelled.try_recv(), Err(TryRecvError::Empty))
+}
+
+fn replay_control_journey(
+    endpoint: &str,
+    path: &Path,
+    host_pid: u32,
+    cancelled: &Receiver<()>,
+) -> Result<(), String> {
     // Budget, not assertion: a loaded machine (full parallel suite) starts the
     // host slower; scale with the same slowdown factor the wait_for helpers use.
     let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
     loop {
+        if journey_cancelled(cancelled) {
+            return Ok(());
+        }
         if invoke_control(endpoint, &["list-tabs".to_owned()]).is_ok() {
             break;
         }
@@ -378,6 +391,9 @@ fn replay_control_journey(endpoint: &str, path: &Path, host_pid: u32) -> Result<
     let commands: Vec<serde_json::Value> =
         serde_json::from_slice(&bytes).map_err(|error| format!("parse journey: {error}"))?;
     for command in commands {
+        if journey_cancelled(cancelled) {
+            return Ok(());
+        }
         let object = command
             .as_object()
             .ok_or_else(|| "journey command must be an object".to_owned())?;
@@ -459,7 +475,12 @@ fn replay_control_journey(endpoint: &str, path: &Path, host_pid: u32) -> Result<
             }
             invoke_control(endpoint, &args)?;
         } else if let Some(ms) = object.get("wait_ms").and_then(serde_json::Value::as_u64) {
-            std::thread::sleep(Duration::from_millis(ms));
+            if !matches!(
+                cancelled.recv_timeout(Duration::from_millis(ms)),
+                Err(RecvTimeoutError::Timeout)
+            ) {
+                return Ok(());
+            }
         } else if let Some(text) = object.get("wait_text").and_then(serde_json::Value::as_str) {
             let timeout = object
                 .get("timeout_ms")
@@ -731,6 +752,7 @@ struct ConSession {
     /// the live host what it thinks after reading the `--emit-snapshot` file.
     endpoint: String,
     driver: Option<std::thread::JoinHandle<()>>,
+    driver_cancel: Option<Sender<()>>,
     driver_error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
@@ -810,11 +832,14 @@ impl ConSession {
             .expect("spawn minicon");
         let host_pid = child.id();
         let driver_error = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let (cancel, cancelled) = mpsc::channel();
         let driver = journey.map(|journey| {
             let endpoint = endpoint.clone();
             let error_slot = std::sync::Arc::clone(&driver_error);
             std::thread::spawn(move || {
-                if let Err(error) = replay_control_journey(&endpoint, &journey, host_pid) {
+                if let Err(error) =
+                    replay_control_journey(&endpoint, &journey, host_pid, &cancelled)
+                {
                     *error_slot
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(error);
@@ -825,6 +850,7 @@ impl ConSession {
             child,
             snapshot_path,
             endpoint,
+            driver_cancel: driver.as_ref().map(|_| cancel),
             driver,
             driver_error,
         }
@@ -1029,6 +1055,9 @@ fn native_microsoft_pinyin_preedit_and_commit_reach_the_real_window() {
 
 impl Drop for ConSession {
     fn drop(&mut self) {
+        if let Some(cancel) = self.driver_cancel.take() {
+            let _ = cancel.send(());
+        }
         // Best-effort: the process may have already exited on its own (the
         // child-exit tests rely on exactly that). TerminateProcess-style
         // kill does not run this process's own Drop chain for its PTY child,
@@ -1042,6 +1071,40 @@ impl Drop for ConSession {
             let _ = driver.join();
         }
     }
+}
+
+#[test]
+fn dropping_a_session_cancels_an_active_journey_wait() {
+    let _guard = gui_test_guard();
+    let dir = scratch_dir("cancel-journey-wait");
+    let ready = dir.join("driver-ready.json");
+    let script = write_journey(
+        &dir,
+        &format!(
+            r#"[{{"perf_stats":{}}},{{"wait_ms":5000}}]"#,
+            serde_json::to_string(&ready.to_string_lossy()).unwrap()
+        ),
+    );
+    let args = interactive_shell_args(&script);
+    let session = ConSession::spawn(&dir, &args);
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        snapshot["child_alive"] == true
+    });
+    let deadline = Instant::now() + Duration::from_secs(10) * test_slowdown();
+    while !ready.is_file() {
+        assert!(
+            Instant::now() < deadline,
+            "journey driver never reached its wait"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    let started = Instant::now();
+    drop(session);
+    assert!(
+        started.elapsed() < Duration::from_secs(2) * test_slowdown(),
+        "dropping an owned host must interrupt its journey wait"
+    );
 }
 
 /// Sends `SIGKILL` to the process group led by `pid`, cleaning up whatever
@@ -3591,6 +3654,9 @@ fn diagnostic_script(name: &str) -> Option<PathBuf> {
 /// says whether it went straight there or through the minimal rectangle first.
 #[cfg(windows)]
 fn watch_agent_window(host_pid: u32, dir: &Path) -> Option<(std::process::Child, PathBuf)> {
+    if std::env::var_os("MINICON_ZOOM_WINDOW_WATCH").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        return None;
+    }
     let script = diagnostic_script("window-watch.ps1")?;
     let pid = agent_pid(host_pid, Duration::from_secs(10))?;
     let out = dir.join(format!("window-watch-{pid}.json"));
@@ -3612,7 +3678,6 @@ fn watch_agent_window(host_pid: u32, dir: &Path) -> Option<(std::process::Child,
 #[cfg(windows)]
 fn report_window_watch(watcher: Option<(std::process::Child, PathBuf)>) {
     let Some((mut child, out)) = watcher else {
-        eprintln!("WINDOW_WATCH: no watcher ran");
         return;
     };
     let _ = child.wait();
@@ -3673,12 +3738,9 @@ fn zooming_all_the_way_out_keeps_the_terminal_readable() {
         // wheel arrives. Without it the two events race and there is no
         // control to compare the failing snapshot against.
         //
-        // 8 s, not 1.5: the window watcher has to find the agent in the
-        // process tree and start a PowerShell before it can sample anything,
-        // and in run 35997978849 its very first sample already showed the
-        // degenerate rectangle. That says the window never recovered, and
-        // says nothing about when it broke -- the transition had happened
-        // before the instrument was looking.
+        // 8 s gives an opt-in native window watcher time to find the agent
+        // and sample before the zoom. The ordinary regression keeps this
+        // pre-zoom control, but does not start or wait for that diagnostic.
         r#"{"wait_ms": 8000}"#.to_owned(),
     ];
     // 8..=36 logical px is the clamp; 40 notches down overshoots the bottom

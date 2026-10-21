@@ -2,7 +2,8 @@
 
 Owner of test selection, profile composition, fixture lifetime and feedback-cost
 measurement. Parent: [product requirements](../PRD.md). Initial design targets
-v0.2.16; implementation is planned, not shipped. Sequencing:
+v0.2.16; fixture lifetime implementation is partial, while the planner remains
+planned. Sequencing:
 [v0.2.16 plan](../plan/plan-v0.2.16.md).
 
 [Module ownership](PRD_02_28_shared_core.md) owns abstraction boundaries.
@@ -23,9 +24,10 @@ Outcome: relevant development feedback without lost release obligations
 │   ├── explicit profile union; changed-path owner/dependent closure
 │   ├── unknown/broad changes expand conservatively
 │   └── exact task/build identities; isolated consumer graphs stay separate
-├── Fixture and resource lifecycle
-│   ├── causal readiness; cancellable waits and owned process teardown
-│   └── isolate shared resources before enabling concurrency
+├── [-] Fixture and resource lifecycle
+│   ├── [v] cancellable journey sleeps and owned process teardown
+│   ├── [-] opt-in native window diagnostics; profile wiring pending
+│   └── [_] isolate shared resources before enabling concurrency
 └── Observable evidence
     ├── planned/observed names and counts, phase costs and final verdicts
     ├── real guard mutation must fail its selected profile
@@ -61,9 +63,16 @@ flowchart TD
 | Native dev workflow | Select native cells and invoke the same inventory/executor, upload final receipts on success/failure/cancellation | Do not compile a target and report its tests as executed |
 | Release workflows | Existing exact-artifact authority in PRD 27 | No hidden signer/Promotion dispatch from a test profile |
 
-Introduce these interfaces in stages; the current shipped scripts do not yet
-implement this table. New executables, lint flags and full-suite lists must not
-be reconstructed separately in each consumer.
+Introduce these interfaces in stages; the current scripts do not yet implement
+the planner/profile table. The black-box fixture now cancels journey sleeps on
+drop, and its zoom window watcher is opt-in through `MINICON_ZOOM_WINDOW_WATCH=1`.
+Windows x64 evidence: `dropping_a_session_cancels_an_active_journey_wait`
+passed in about 0.5 seconds; replacing the cancellable wait with `sleep` made
+it fail in about 5 seconds; the notes-persistence and ordinary zoom journeys
+passed in about 2.2 and 9.2 seconds respectively. Other native cells and
+in-flight control-command cancellation are still open. New executables, lint
+flags and full-suite lists must not be reconstructed separately in each
+consumer.
 
 Run inexpensive static checks over changed test code before a mutation batch.
 If a protected test changes, refresh its dependent guard cases and final affected

@@ -1,7 +1,7 @@
 # MiniCon 0.2.x product roadmap
 
-Status: product proposal, 2026-10-20. v0.2.15 is published; v0.2.16 has an
-accepted design but no implementation or version bump. The later version
+Status: product proposal, updated 2026-10-21. v0.2.15 is published; v0.2.16 has
+partial fixture-lifetime implementation but no version bump. The later version
 assignments below are proposed release gates, not dates or shipped claims.
 If a gate is missed, carry its named gap forward or split a patch release;
 do not turn a version number into evidence.
@@ -50,7 +50,7 @@ test-runner redesign must not delay a user-visible repair.
 Outcome: a dependable, portable MiniCon terminal with a reusable engine
 ├── [v] 0.2.15 — explicit crate/reuse boundaries and published baseline
 │   evidence: 0.2.15 release history; non-goal: claiming modern TUI acceptance
-├── [_] 0.2.16 — fast, trustworthy development feedback
+├── [-] 0.2.16 — fast, trustworthy development feedback
 │   invariant: targeted suites save time while full release obligations remain visible
 │   evidence: planned/observed test identities, mutation catches, cost comparison
 │   safe failure: unknown dependency selects full; missing court is BLOCKED

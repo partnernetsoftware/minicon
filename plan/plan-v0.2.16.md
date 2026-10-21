@@ -1,7 +1,8 @@
 # v0.2.16 — targeted feedback with complete release qualification
 
-Design prepared for the owner's direction to finish 0.2.15, then design the
-next version. This deliverable defines the design; implementation remains planned.
+Design prepared after the 0.2.15 release. Implementation is partial: the
+fixture-lifetime work below has begun; inventory, selection, composition, reuse
+and full measurement remain planned.
 The owning behavior specification is
 [test orchestration](../prd/PRD_02_33_test_orchestration.md). The existing
 [reuse map](../prd/PRD_02_28_shared_core.md),
@@ -15,9 +16,9 @@ Outcome: small changes get relevant feedback; releases retain full evidence
 ├── {INVENTORY} One test-profile inventory and explicit capability ownership
 │   ├── classify actual dependencies, features, OS/ISA and shared resources
 │   └── reconcile canonical full gate, tier entry and hosted dev court
-├── {LIFETIME} Stop paying for fixtures after their assertions finish
-│   ├── cancel journey waits and terminate only owned processes
-│   └── opt-in diagnostic observers; keep functional assertions mandatory
+├── [-] {LIFETIME} Stop paying for fixtures after their assertions finish
+│   ├── [v] cancel journey sleeps and terminate only owned processes
+│   └── [-] opt-in diagnostic observers; profile wiring and native cells remain
 ├── {SELECT} Explainable development selection with conservative fallback
 │   ├── --plan / --list / --profile / --changed-since
 │   └── module dependency closure; unknown or shared changes expand coverage
@@ -83,13 +84,14 @@ Source inspection of its test infrastructure identifies these concrete gaps:
 
 ## Ordered milestones and acceptance
 
-All implementation leaves below are `[_]`. A completed design is not a completed
-test-runner implementation. Preserve the released behavior while iterating.
+Only the scoped fixture work described below is implemented. The other
+milestones remain `[_]`; a completed design is not a completed test runner.
+Preserve the released behavior while iterating.
 
 | Order / leaf | Invariant and acceptance evidence | Dependencies / failure / explicit non-goal |
 |---|---|---|
 | 1 — INVENTORY | Inventory every currently executed suite and ignored/manual/real-endpoint court, including root units, platform units, fork damage oracles, script self-tests, source guards, minimal consumers and sustained throughput. Record feature tuple, backend, OS/ISA, resources and measured phase costs. A canonical full expansion matches actual Cargo discovery and script gates. | PRD 28 owners and delivery/development courts; unknown or unavailable coverage is explicit, never a successful zero-test result. No renaming crates or silently replacing release policy. |
-| 2 — LIFETIME | Journey waiting is cancellable; dropping a fixture completes within a bounded budget (initial target 2 seconds after cancellation, validated on the relevant native cells). The notes restart still restores the saved text. Removing cancellation must fail the bounded-lifetime proof. Window watching is explicitly selected as diagnostics; zoom pixel/grid assertions still run normally. | INVENTORY and owned process handles; timeout captures operation and owned PID without killing unrelated sessions. No lower assertion budgets or ignored regression cases. |
+| 2 — LIFETIME `[-]` | Journey sleeps are cancellable; a real owned GUI fixture dropped during a 5-second wait in about 0.5 seconds on Windows x64, under the 2-second local budget. Removing the cancellable wait made the regression fail in about 5 seconds. The notes restart still restored saved text in about 2.2 seconds. The 60-second window watcher is opt-in through `MINICON_ZOOM_WINDOW_WATCH=1`; ordinary zoom assertions passed in about 9.2 seconds. Remaining: native-cell validation, diagnostic-profile wiring and bounded cancellation of any in-flight control command. | INVENTORY and owned process handles; timeout captures operation and owned PID without killing unrelated sessions. No lower assertion budgets or ignored regression cases. |
 | 3 — SELECT | One profile manifest drives list/plan/run. Changed-path rules compute owner and dependent closure, print reasons, and expand unknown or broad changes to full qualification. Tests cover a missed-dependency mutation and unknown-path fallback. | INVENTORY; a missing dependency produces broader coverage or a clear failure. No claim that a developer profile certifies release. |
 | 4 — COMPOSE | The union of selected profiles executes each identical task once. Cargo identifies executables; identical source/toolchain/target/features/profile/rustflags are prerequisites for build reuse. Planned names/counts match observed names/counts. | SELECT and LIFETIME; incompatible identities build separately. Minimal consumer remains a distinct graph. No guessed hashed executable paths or reuse by modification time. |
 | 5 — REUSE | Exercise core default, minimal and composer/json/keymap tuples, UI optional terminal-selection, platform minimal and product feature closures. Preserve core/UI tree identity, numeric oracles, recursive portability guards and the documented legacy newline exception. Qualify actual AgenTerm call sites before moving its immutable pin. | Module contracts; consumer OS/ISA claims require consumer receipts. No universal keymap/tree policy or speculative terminal-engine extraction. |
