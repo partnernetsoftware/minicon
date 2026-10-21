@@ -116,6 +116,23 @@ impl ConApp {
                 self.reveal_active_tree_row(window)?;
                 self.mark_host_ui_full();
             }
+            ui::TreeHit::Child(index) => {
+                // Same visibility rule as edit/close: the button acts only
+                // when it was actually shown. Activating first makes the
+                // clicked row the parent, so this is Ctrl+Shift+N scoped to
+                // the row the pointer named rather than whichever tab
+                // happened to be active.
+                let child_visible = self.hovered_tree_row == Some(index)
+                    || self.workspace.active() == Some(ids[index]);
+                if child_visible {
+                    self.activate_session(window, ids[index]);
+                    self.open_session_contained(window, true);
+                    return Ok(true);
+                }
+                self.activate_session(window, ids[index]);
+                self.reveal_active_tree_row(window)?;
+                self.mark_host_ui_full();
+            }
             ui::TreeHit::Select(index) => {
                 self.activate_session(window, ids[index]);
                 self.reveal_active_tree_row(window)?;
@@ -217,7 +234,8 @@ impl ConApp {
                 let hovered = match hit {
                     ui::TreeHit::Select(index)
                     | ui::TreeHit::Close(index)
-                    | ui::TreeHit::Edit(index) => Some(index),
+                    | ui::TreeHit::Edit(index)
+                    | ui::TreeHit::Child(index) => Some(index),
                     _ => None,
                 };
                 let hovered_header = match hit {

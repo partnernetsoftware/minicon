@@ -188,8 +188,13 @@ Host UI is MiniCon-drawn controls around the terminal grid: the tab tree, the
 header tools, and the composer. It is not the browser, and it is not layout.
 `Layout` is only the geometry of those regions.
 
-- [v] the host UI owns a vertically scrollable left tree with row-level
-  close targets and a header of four tools: New, Settings, and the pair of
+- [v] the host UI owns a vertically scrollable left tree with three row-level
+  buttons on the active or hovered row — edit (rename), new child and close,
+  left to right, tested in that order so an inner click never reads as the
+  destructive close; the new-child button is Ctrl+Shift+N scoped to the
+  clicked row (owner request 2026-10-22, evidence
+  `a_collapsed_rail_never_closes_a_tab_by_a_row_click` ordering asserts in
+  src/ui.rs) — and a header of four tools: New, Settings, and the pair of
   chrome toggles for the left sidebar and the right panel. A distinct bottom
   composer owns input, Send and Newline, and a bottom status bar shows a
   fixed-width `L###:C###` readout that follows the grid crosshair (the hovered

@@ -377,7 +377,9 @@ impl ConApp {
                 let title_h = font::cell_metrics(title_font).height.max(1);
                 let block_h = name_h.saturating_add(if title.is_some() { title_h } else { 0 });
                 let top = y.saturating_add(row_height.saturating_sub(block_h) / 2);
-                let text_width = tree_width.saturating_sub(indent).saturating_sub(58);
+                // Three row buttons (edit, new-child, close) now sit at the
+                // right edge; keep the label clipped clear of all of them.
+                let text_width = tree_width.saturating_sub(indent).saturating_sub(82);
                 paint_host_ui_text_parts_clipped(
                     &mut surface,
                     indent,
@@ -400,26 +402,34 @@ impl ConApp {
                 }
                 if row_active || row_hovered {
                     let edit = layout.tree_edit_rect(visible_index, scale);
+                    let child = layout.tree_child_rect(visible_index, scale);
                     let close = layout.tree_close_rect(visible_index, scale);
                     // A hover plate behind each glyph so it reads as a button,
                     // not floating text.
                     if row_hovered {
-                        surface.fill_rect(
-                            edit.x,
-                            edit.y,
-                            edit.width,
-                            edit.height,
-                            active_bg.to_xrgb(),
-                        );
-                        surface.fill_rect(
-                            close.x,
-                            close.y,
-                            close.width,
-                            close.height,
-                            active_bg.to_xrgb(),
-                        );
+                        for plate in [edit, child, close] {
+                            surface.fill_rect(
+                                plate.x,
+                                plate.y,
+                                plate.width,
+                                plate.height,
+                                active_bg.to_xrgb(),
+                            );
+                        }
                     }
                     paint_edit_glyph(&mut surface, edit, text, scale);
+                    // The new-child button between edit and close: the same
+                    // "+" the header's New uses, scoped to this row
+                    // (Ctrl+Shift+N's pointer twin).
+                    paint_host_ui_text(
+                        &mut surface,
+                        child.x + 6,
+                        child.y + 3,
+                        "+",
+                        text,
+                        host_ui_size(HOST_UI_CLOSE_SIZE_PX),
+                        child.width.saturating_sub(6),
+                    );
                     paint_host_ui_text(
                         &mut surface,
                         close.x + 6,

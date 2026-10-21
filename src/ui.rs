@@ -37,12 +37,12 @@ pub const HISTORY_CLOSE_SIZE_DIP: f64 = 20.0;
 /// Height reserved at the bottom of the panel for future loop/goal controls.
 /// It is blank on purpose — the owner asked for the room to be kept free.
 pub const HISTORY_RESERVED_HEIGHT_DIP: f64 = 96.0;
-/// Size of the per-row icon buttons (close, edit) and the margin from the
-/// sidebar's right edge to the outermost one. Shared by both `tree_*_rect`
-/// helpers so the pair stays aligned.
+/// Size of the per-row icon buttons (edit, new-child, close) and the margin
+/// from the sidebar's right edge to the outermost one. Shared by the
+/// `tree_*_rect` helpers so the trio stays aligned.
 const TREE_BUTTON_SIZE_DIP: f64 = 20.0;
 const TREE_BUTTON_RIGHT_MARGIN_DIP: f64 = 8.0;
-/// Gap between the edit and close buttons, so their hit boxes never overlap.
+/// Gap between adjacent row buttons, so their hit boxes never overlap.
 const TREE_BUTTON_GAP_DIP: f64 = 4.0;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -466,11 +466,12 @@ impl Layout {
         }
     }
 
-    /// The per-row edit button, one gap to the left of the close button.
+    /// The per-row new-child button, one gap to the left of the close button
+    /// (so the row reads edit | new-child | close). Same action as
+    /// Ctrl+Shift+N for that row's tab.
     ///
-    /// Shares the close button's size and vertical centring so the two read as
-    /// one aligned pair; only `x` differs.
-    pub fn tree_edit_rect(self, visible_row: usize, scale: f64) -> Rect {
+    /// Shares the close button's size and vertical centring; only `x` differs.
+    pub fn tree_child_rect(self, visible_row: usize, scale: f64) -> Rect {
         let close = self.tree_close_rect(visible_row, scale);
         let gap = dip(TREE_BUTTON_GAP_DIP, scale);
         Rect {
@@ -478,6 +479,21 @@ impl Layout {
             y: close.y,
             width: close.width,
             height: close.height,
+        }
+    }
+
+    /// The per-row edit button, one gap to the left of the new-child button.
+    ///
+    /// Shares the close button's size and vertical centring so the trio reads
+    /// as one aligned group; only `x` differs.
+    pub fn tree_edit_rect(self, visible_row: usize, scale: f64) -> Rect {
+        let child = self.tree_child_rect(visible_row, scale);
+        let gap = dip(TREE_BUTTON_GAP_DIP, scale);
+        Rect {
+            x: child.x.saturating_sub(gap).saturating_sub(child.width),
+            y: child.y,
+            width: child.width,
+            height: child.height,
         }
     }
 }
@@ -493,6 +509,9 @@ pub enum TreeHit {
     Select(usize),
     Close(usize),
     Edit(usize),
+    /// The per-row new-child button: open a child tab beneath this row's tab,
+    /// the pointer twin of Ctrl+Shift+N.
+    Child(usize),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -997,10 +1016,14 @@ pub fn tree_hit(
     // row and selecting a tab keeps closing it by accident (user report
     // against 0.1.22). While collapsed the whole row selects; the row buttons
     // need the rail expanded, where each box is a small target beside the
-    // title. Edit and close do not overlap (a gap separates them), but the
-    // edit box is tested first so a click there never reads as a close.
+    // title. The boxes do not overlap (a gap separates them), and they are
+    // tested left to right (edit, new-child, close) so a click on an inner
+    // button never reads as the destructive close.
     if !layout.sidebar_collapsed && layout.tree_edit_rect(visible_row, scale).contains(x, y) {
         TreeHit::Edit(index)
+    } else if !layout.sidebar_collapsed && layout.tree_child_rect(visible_row, scale).contains(x, y)
+    {
+        TreeHit::Child(index)
     } else if !layout.sidebar_collapsed && layout.tree_close_rect(visible_row, scale).contains(x, y)
     {
         TreeHit::Close(index)
@@ -2316,6 +2339,12 @@ mod tests {
             TreeHit::Select(0),
             "the edit box is inert on a collapsed rail too"
         );
+        let child = layout.tree_child_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(layout, child.x + 1, child.y + 1, 0, 4, 1.0),
+            TreeHit::Select(0),
+            "the new-child box is inert on a collapsed rail too"
+        );
 
         let expanded = Layout::new(400, 300, 1.0);
         assert!(!expanded.sidebar_collapsed);
@@ -2330,6 +2359,20 @@ mod tests {
             tree_hit(expanded, edit.x + 1, edit.y + 1, 0, 4, 1.0),
             TreeHit::Edit(0),
             "and gains an edit box"
+        );
+        let child = expanded.tree_child_rect(0, 1.0);
+        assert_eq!(
+            tree_hit(expanded, child.x + 1, child.y + 1, 0, 4, 1.0),
+            TreeHit::Child(0),
+            "and a new-child box between edit and close"
+        );
+        // The trio must stay edit | new-child | close from left to right,
+        // with no overlap, or a click intended for one acts as another.
+        let close = expanded.tree_close_rect(0, 1.0);
+        assert!(edit.x + edit.width < child.x, "edit sits left of new-child");
+        assert!(
+            child.x + child.width < close.x,
+            "new-child sits left of close"
         );
     }
 
