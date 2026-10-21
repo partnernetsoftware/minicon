@@ -90,6 +90,26 @@ mechanism lives with its code and test).
 │        and literal `false` twice; control SendMouse skips the
 │        ensure_pty_input_open gate the keys path applies. One
 │        paste-review-policy owner plus one handoff; PRD_02_24 owns review.
+├── G4 minicon_control journeys flake on the owner dev box (2026-10-21)
+│      state: `gui_control_surface_isolated_multitab_black_box` /
+│        `scroll_shortcut_pages_minicon_history` fail ~1 in 3 local runs with
+│        wait-text timeouts; one run had the fixture host die with
+│        0xC0000374 (STATUS_HEAP_CORRUPTION) before cleanup. Reproduced
+│        identically on the published 0.2.18 source (60afc8c, 1 of 3 runs),
+│        so it predates the 0.2.19 changes; the same suites pass natively on
+│        all six CI cells (dev-loop-crosscheck 39624936183, win-x86_64
+│        included). open: the heap-corruption one-off deserves a trigger
+│        hunt (suspect: parallel suite load on a busy host); do not treat a
+│        local wait-text timeout alone as a product regression.
+├── G5 minicon_throughput budget misses on macos-15-intel runners (2026-10-21)
+│      state: `sustained_long_output_keeps_control_and_sibling_responsive`
+│        measured 36.4s for 32MiB against the 30s budget on the shared
+│        macos-15-intel runner (dev-loop-crosscheck 39624936183); every
+│        other suite on that cell and all five other cells passed. The
+│        budget was calibrated elsewhere; per the roadmap's review rule, do
+│        not invent a cross-machine threshold from one host — decide whether
+│        the osx-x86_64 cell gets its own measured budget or the claim names
+│        the cell as unqualified for the throughput bound.
 └── R1 CI action/runner migration debt (observed 2026-10-10)
       warnings, not failures yet: pinned actions on Node 20 shims
         (checkout/upload/download-artifact/setup-python) and
