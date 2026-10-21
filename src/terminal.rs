@@ -37,6 +37,14 @@ pub(super) struct ConTerminal {
     pub(super) command: Option<Vec<String>>,
     pub(super) rust_console: bool,
 
+    /// Advanced TERM override for this session's child environment, from the
+    /// validated `term` key in `minicon.json`. `None` keeps the product's
+    /// truthful modern default (`xterm-256color`). Describes capabilities to
+    /// the application only: it never switches the parser or native backend,
+    /// and it applies to new sessions, never a running child (PRD 02.25
+    /// "Configuration", PRD 02.35 identity contract).
+    pub(super) term_override: Option<String>,
+
     /// Normalized session metadata, consumed before host damage selection.
     /// Native window title and every host label read this same value.
     pub(super) current_title: String,
@@ -274,6 +282,7 @@ impl ConTerminal {
             control_endpoint,
             command: None,
             rust_console: false,
+            term_override: None,
             current_title: String::from("terminal"),
             program_path: String::new(),
             program_label: String::from("terminal"),
@@ -616,7 +625,14 @@ impl ConTerminal {
                 rows: self.rows,
                 cols: self.cols,
             })
-            .env("TERM", "xterm-256color")
+            // The default is the truthful modern profile; a validated config
+            // `term` overrides the description for new sessions only.
+            // COLORTERM stays truecolor either way: the implemented color
+            // capability does not change with the advertised name.
+            .env(
+                "TERM",
+                self.term_override.as_deref().unwrap_or("xterm-256color"),
+            )
             .env("COLORTERM", "truecolor");
 
         #[cfg(all(windows, feature = "experimental-rust-console"))]
@@ -2597,6 +2613,7 @@ pub(super) struct SessionSeed {
     control_endpoint: Option<String>,
     command: Option<Vec<String>>,
     rust_console: bool,
+    term_override: Option<String>,
     font_size_logical: f64,
     font_size_baseline: f64,
     cols: u16,
@@ -2610,6 +2627,7 @@ impl SessionSeed {
             control_endpoint: session.control_endpoint.clone(),
             command: session.command.clone(),
             rust_console: session.rust_console,
+            term_override: session.term_override.clone(),
             font_size_logical: session.font_size_logical,
             font_size_baseline: session.font_size_baseline,
             cols: session.cols,
@@ -2626,6 +2644,7 @@ impl SessionSeed {
         let mut session = ConTerminal::new(self.working_dir.clone(), self.control_endpoint.clone());
         session.command = self.command.clone();
         session.rust_console = self.rust_console;
+        session.term_override = self.term_override.clone();
         session.font_size_logical = self.font_size_logical;
         session.font_size_baseline = self.font_size_baseline;
         session.cols = self.cols;
@@ -3811,6 +3830,7 @@ pub(crate) mod tests {
     fn session_seed_round_trips_every_inherited_field() {
         let mut source = ConTerminal::new(Some("C:\\work".to_owned()), None);
         source.command = Some(vec!["cmd.exe".to_owned(), "/K".to_owned()]);
+        source.term_override = Some("xterm".to_owned());
         source.font_size_logical = 21.5;
         source.font_size_baseline = 18.0;
         source.cols = 101;
@@ -3819,6 +3839,7 @@ pub(crate) mod tests {
         let seeded = SessionSeed::from_session(&source).create_session();
         assert_eq!(seeded.working_dir, source.working_dir);
         assert_eq!(seeded.command, source.command);
+        assert_eq!(seeded.term_override, source.term_override);
         assert_eq!(seeded.font_size_logical, source.font_size_logical);
         assert_eq!(seeded.font_size_baseline, source.font_size_baseline);
         assert_eq!(seeded.cols, source.cols);

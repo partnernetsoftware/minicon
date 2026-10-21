@@ -92,12 +92,9 @@ impl ConApp {
                 if close_visible {
                     self.activate_session(window, ids[index]);
                     self.mark_host_ui_full();
+                    // close_active_session owns the post-close tree-scroll
+                    // clamp for every close origin.
                     self.close_active_session(window)?;
-                    self.tree_scroll_offset = ui::clamp_tree_scroll(
-                        self.tree_scroll_offset,
-                        self.workspace.nodes().len(),
-                        layout.tree_capacity(),
-                    );
                     return Ok(true);
                 }
                 self.activate_session(window, ids[index]);
@@ -185,8 +182,7 @@ impl ConApp {
             PixelWindowEvent::PointerMoved { position, .. } if self.sidebar_resizing => {
                 self.sidebar_width_logical =
                     ui::sidebar_width_from_pointer(position.x, metrics.logical_size.width);
-                let sidebar_width = self.effective_sidebar_dip();
-                let panel_width = self.effective_panel_dip();
+                let (sidebar_width, panel_width) = self.terminal_inset_widths();
                 if let Ok(session) = self.active_session_mut() {
                     Self::configure_host_ui(
                         session,

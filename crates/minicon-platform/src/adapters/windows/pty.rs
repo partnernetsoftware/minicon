@@ -738,12 +738,16 @@ impl PtyChild {
                 .send_key(key, repeat_count)
                 .map_err(|error| pty_error("send native key", "pty_native_key_failed", error));
         }
-        if key == NativeTerminalKey::Break {
+        let Some(event) = native_console_key_event(key, repeat_count) else {
+            // Break has no qualified delivery on this backend, and the
+            // contract enum is non-exhaustive now that the vocabulary lives
+            // in minicon-console: an unmapped key is a typed refusal, never
+            // a guessed key event.
             return Err(PtyError::unsupported(
                 "send native key",
-                "this backend has no qualified Ctrl+Break key delivery",
+                "this backend has no qualified delivery for that native key",
             ));
-        }
+        };
         let _attachment =
             super::console::ConsoleGuard::attach_process(self.pid.as_u32()).map_err(|error| {
                 PtyError::failed("send native key", "pty_console_attach_failed", error)
@@ -751,11 +755,8 @@ impl PtyChild {
         let input = open_console_input().map_err(|error| {
             PtyError::failed("send native key", "pty_console_input_open_failed", error)
         })?;
-        write_console_key(
-            input.as_raw_handle() as HANDLE,
-            native_console_key_event(key, repeat_count),
-        )
-        .map_err(|error| PtyError::failed("send native key", "pty_native_key_failed", error))
+        write_console_key(input.as_raw_handle() as HANDLE, event)
+            .map_err(|error| PtyError::failed("send native key", "pty_native_key_failed", error))
     }
 
     /// Queries the target child's console mode without guessing from terminal
@@ -881,22 +882,24 @@ fn console_input_mode(input: &OwnedHandle) -> io::Result<u32> {
     Ok(mode)
 }
 
+/// `None` is the keys this attach-and-write path refuses: Break (no qualified
+/// delivery here) and any future variant of the non-exhaustive contract enum.
 const fn native_console_key_event(
     key: NativeTerminalKey,
     repeat_count: u16,
-) -> WindowsConsoleKeyEvent {
+) -> Option<WindowsConsoleKeyEvent> {
     let (virtual_key_code, virtual_scan_code, controls) = match key {
         NativeTerminalKey::Up => (0x26, 0x48, ENHANCED_KEY),
         NativeTerminalKey::Down => (0x28, 0x50, ENHANCED_KEY),
-        NativeTerminalKey::Break => (0x03, 0x46, ENHANCED_KEY | 8),
+        _ => return None,
     };
-    WindowsConsoleKeyEvent {
+    Some(WindowsConsoleKeyEvent {
         virtual_key_code,
         virtual_scan_code,
         unicode_char: 0,
         control_key_state: controls,
         repeat_count,
-    }
+    })
 }
 
 fn write_console_key(handle: HANDLE, key: WindowsConsoleKeyEvent) -> io::Result<()> {
@@ -2826,14 +2829,19 @@ mod tests {
 
     #[test]
     fn native_cursor_keys_preserve_win32_identity_and_repeat() {
-        let up = native_console_key_event(NativeTerminalKey::Up, 3);
+        let up = native_console_key_event(NativeTerminalKey::Up, 3).expect("Up is deliverable");
         assert_eq!(up.virtual_key_code, 0x26);
         assert_eq!(up.virtual_scan_code, 0x48);
         assert_eq!(up.unicode_char, 0);
         assert_eq!(up.control_key_state, super::ENHANCED_KEY);
         assert_eq!(up.repeat_count, 3);
 
-        let down = native_console_key_event(NativeTerminalKey::Down, 7);
+        let down =
+            native_console_key_event(NativeTerminalKey::Down, 7).expect("Down is deliverable");
+        assert!(
+            native_console_key_event(NativeTerminalKey::Break, 1).is_none(),
+            "Break has no qualified attach-and-write delivery"
+        );
         assert_eq!(down.virtual_key_code, 0x28);
         assert_eq!(down.virtual_scan_code, 0x50);
         assert_eq!(down.unicode_char, 0);

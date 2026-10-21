@@ -45,6 +45,12 @@ fn main() {
     assert_eq!(depths, Ok(vec![0]));
     let round: fn(f32) -> f32 = minicon_platform::numeric::round_f32;
     assert_eq!(round(-0.0).to_bits(), minicon_core::numeric::round_f32(-0.0).to_bits());
+    // The portable session contract vocabulary is console-owned (PRD_02_35):
+    // reachable without the platform crate or any feature.
+    let refused = minicon_console::session::PtyError::unsupported("resize", "demo consumer");
+    assert!(refused.to_string().contains("resize unsupported"));
+    let size = minicon_console::session::TerminalSize { rows: 24, cols: 80 };
+    assert_eq!((size.rows, size.cols), (24, 80));
     let mut terminal = minicon_console::terminal::TerminalStream::new(2, 8, 0, 4096);
     let mut wire = Vec::new();
     terminal.write_output(b"Hi", &mut wire).unwrap();
@@ -75,6 +81,11 @@ assert not ui["features"], f"UI features leaked into minimal consumer: {ui['feat
 assert {edge["name"] for edge in ui["deps"]} == {"minicon_core"}, "minimal UI must depend only on core"
 assert not console["features"], f"console features leaked into minimal consumer: {console['features']}"
 assert "minicon_platform" not in {edge["name"] for edge in console["deps"]}, "console must not depend on platform"
+platform = nodes["minicon-platform"]
+assert "minicon_console" not in {edge["name"] for edge in platform["deps"]}, (
+    "a feature-less platform consumer must not pull the console library; "
+    "that edge belongs to the pty feature only"
+)
 print("minimal reuse graph: core/UI identity and independent console API verified")
 PY
 cargo run --locked --manifest-path "$probe/Cargo.toml" \

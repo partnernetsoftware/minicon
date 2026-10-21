@@ -481,21 +481,21 @@ impl ConApp {
                 ime_x.saturating_sub(header_x.saturating_add(8)),
             );
         } else {
+            // Names the tab, not just its number — and by the same label the
+            // history rows record (`active_destination_label`): a custom
+            // rename or the program stem, not the shell's changing OSC title.
+            // The band and the history saying different names for one send is
+            // the drift this shared owner closes (2026-10-21 inventory).
+            let destination = self.active_destination_label();
             paint_host_ui_text_parts(
                 &mut surface,
                 header_x,
                 input_y + 7,
-                // Names the tab, not just its number. The tab column and the
-                // window title both call it by name now, and the input area saying
-                // where text is going is the whole reason this band is worth its
-                // permanent share of the window — "@1" is only an answer if you
-                // already know what @1 is.
                 &[
                     self.ui_language.strings().send_to,
                     active_id_text.format(active_id),
                     " ",
-                    self.active_session_opt()
-                        .map_or("", |session| session.current_title.as_str()),
+                    destination.as_str(),
                 ],
                 if self.composer.submit_error.is_some() {
                     error_accent

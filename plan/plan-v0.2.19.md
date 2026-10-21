@@ -35,7 +35,11 @@ surfaced; it does not restate the owners' acceptance contracts.
 
 ```text
 Outcome: the reusable boundaries are consumed, audited and enforced — not merely documented
-├── [_] {MAP} Audit minicon-platform's feature surface against actual consumers
+├── [v] {MAP} Audit minicon-platform's feature surface against actual consumers
+│   done 2026-10-21: closure audit upserted into PRD 28 ("Platform
+│     feature–consumer audit") — 91 features, consumer-union closure 49,
+│     40 zero-verified-consumer facades; AgenTerm read at checkout 2196131f
+│     which pins the crates at 0326e2ab
 │   invariant: every public facade names its real consumers or is explicitly marked
 │   evidence: feature→consumer table upserted into PRD 28; MiniCon side from the
 │     minicon_alignment consumer matrix, AgenTerm side read at its pinned revision
@@ -43,7 +47,19 @@ Outcome: the reusable boundaries are consumed, audited and enforced — not mere
 │   safe failure: an unverifiable external consumer stays UNKNOWN, never assumed in
 │   dependency: PRD 28 maintenance rule; non-goal: deleting or deprecating facades
 │     in this pass — the audit produces facts, removal is a separate owner decision
-├── [_] {SEAM} Consolidate multi-site product decisions out of src/main.rs
+├── [-] {SEAM} Consolidate multi-site product decisions out of src/main.rs
+│   state 2026-10-21: full inventory done — 8 multi-site decisions found, 6
+│     drifted. Unified onto one owner each: terminal inset widths
+│     (terminal_inset_widths; fixes collapsed-sidebar inset after tab switch),
+│     Escape-closes-settings (dead modifier-blind copy removed; Ctrl/Alt+Esc
+│     no longer dismiss), post-close tree-scroll clamp (now inside
+│     close_active_session), composer destination label (band and history both
+│     read active_destination_label). {SPLIT} first unit done: control.rs
+│     mid-file native_endpoint_tests (335 lines) moved to
+│     src/control/native_endpoint_tests.rs, 13 tests pass. Remaining drifts
+│     recorded as carried debt S1–S4 (control IME route label is a protocol
+│     decision owned by PRD 26; composer geometry, activation effects and
+│     paste-review handoff need their own passes)
 │   invariant: one owner module per cross-surface decision; observable behavior unchanged
 │   evidence: existing suites stay green with the gate's test count not reduced;
 │     each extraction names the decision it owns (clipboard_paste.rs precedent);
@@ -52,20 +68,39 @@ Outcome: the reusable boundaries are consumed, audited and enforced — not mere
 │     as debt rather than force-extracted
 │   dependency: {MAP} not required; hot file src/main.rs — serialize with other work
 │   non-goal: new public crates, new exports, or moving product policy into shared crates
-├── [_] {PTY} One POSIX PTY mechanism in its own adapter home
+├── [-] {PTY} One POSIX PTY mechanism in its own adapter home
+│   state 2026-10-21: moved to adapters/unix/pty.rs with thin linux/macos
+│     identity wrappers; cross-target cargo check green on
+│     x86_64-unknown-linux-gnu and aarch64-apple-darwin; open: native runtime
+│     courts (Linux cells + macOS via dev-loop-crosscheck all-cells dispatch)
 │   invariant: distinct adapter identities; macOS stops path-importing the Linux file
 │   evidence: adapters/linux/pty.rs moved to adapters/unix/pty with both actual
 │     platforms' native suites run (macOS court + Linux cells), not one standing for both
 │   safe failure: a missing native court is BLOCKED, never a skipped pass
 │   dependency: PRD 28's open consolidation leaf; non-goal: behavior change
-├── [_] {CONTRACT} Demonstrate the smallest session/input contract with an independent consumer
+├── [-] {CONTRACT} Demonstrate the smallest session/input contract with an independent consumer
+│   state 2026-10-21: step-2 dependency inventory upserted into PRD 35
+│     ("Session/input dependency inventory"); first slice landed — the
+│     session contract vocabulary moved to minicon_console::session with
+│     platform contract::pty re-exporting (one type identity, pty feature
+│     carries the console edge), non-exhaustive enums now refuse unmapped
+│     keys/signals as typed errors, and the isolated check-reuse consumer
+│     exercises the vocabulary and guards both dependency directions.
+│     open: the portable session trait/interface itself (needs both-provider
+│     demonstration per PRD 35's integration acceptance contract)
 │   invariant: one common state/stream contract with explicit native capabilities
 │   evidence: a direct minicon-console consumer (outside workspace feature unification,
 │     check-reuse.sh pattern) and MiniCon itself, per plan-terminal-library.md steps 2–3
 │   safe failure: typed unsupported capabilities; unproved cells narrow the claim
 │   dependency: PRD 35 acceptance contract; non-goal: speculative traits without a
 │     working consumer, automatic platform-crate merger, GUI default promotion
-├── [_] {TERM} Qualified identity profiles and new-session TERM choice
+├── [-] {TERM} Qualified identity profiles and new-session TERM choice
+│   state 2026-10-21: the advanced override shipped — validated `term` key in
+│     minicon.json reaches new sessions (initial tab + SessionSeed
+│     inheritance), COLORTERM/parser/backend untouched; no profile menu is
+│     offered (no second profile has capability evidence), which is the
+│     plan's stated safe failure. Owner record: PRD 25 "Configuration".
+│     open: an actual child environment probe as runtime evidence
 │   invariant: changing TERM describes capabilities to applications; it never switches
 │     parser or native backend
 │   evidence: a truthful modern VT/xterm-style default profile plus an advanced

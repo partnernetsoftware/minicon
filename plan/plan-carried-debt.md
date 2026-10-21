@@ -65,6 +65,31 @@ mechanism lives with its code and test).
 │        spawn, interleaved load); suspect remains agenterm's Windows
 │        ConPTY width sync, do not guess-fix without a repro.
 │      side finding tracked separately: plan/problem-screenshot-pane-hang.md.
+├── S1 control SendUiIme re-decides text-input ownership without notes
+│      found by the 2026-10-21 main.rs seam inventory: the real funnel routes
+│        rename → notes → composer → terminal (src/main.rs event), but
+│        src/control_dispatch.rs SendUiIme's commit pre-check and its reply
+│        `route` label skip notes — with notes focused, an injected commit is
+│        refused on an exited tab and the reply misreports "terminal". The
+│        `route` values are pinned by control contract tests, so the fix is a
+│        protocol decision owned by PRD_02_26; extract one
+│        text-input-owner decision when it is made.
+├── S2 composer text geometry triplicated
+│      painter (src/host_paint.rs), IME anchor and click hit-test
+│        (src/main.rs) each re-derive visible rows / sliding window / caret
+│        cell with drifted caret-reserve, clamp, scale source and rounding.
+│        Needs one composer-geometry owner returning rows/window/caret; a
+│        wrong unification moves the caret, so it needs visual evidence.
+├── S3 tab-activation effects diverge by origin
+│      select_relative, tree click, control SelectTab and screenshot restore
+│        apply different subsets of {geometry, reveal, composer unfocus,
+│        title refresh}; control SelectTab applies no geometry and a stale
+│        inset can survive a sidebar change. Needs one activation plan owner.
+├── S4 paste-review handoff spelled three ways
+│      "injected input skips review" exists as `!injected_ui_keys_live` once
+│        and literal `false` twice; control SendMouse skips the
+│        ensure_pty_input_open gate the keys path applies. One
+│        paste-review-policy owner plus one handoff; PRD_02_24 owns review.
 └── R1 CI action/runner migration debt (observed 2026-10-10)
       warnings, not failures yet: pinned actions on Node 20 shims
         (checkout/upload/download-artifact/setup-python) and

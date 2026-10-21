@@ -24,9 +24,13 @@ minicon workspace and input
 ├── Scrollbar and divider
 ├── Selection and clipboard
 ├── Configuration (minicon.json; themes; language; font size)
-│   ├── [_] terminal capability profile / advanced TERM override for new sessions
+│   ├── [-] terminal capability profile / advanced TERM override for new sessions
 │   │   invariant: choice survives reload; existing sessions retain their original contract
-│   │   evidence: planned preference round trip and actual child environment/capability probes
+│   │   state 0.2.19: validated `term` config key overrides new-session TERM
+│   │   (details in Configuration below); the qualified profile menu is not
+│   │   offered and stays open pending capability evidence
+│   │   evidence: config round-trip and validation tests (src/main.rs), seed
+│   │   round trip (src/terminal.rs); actual child environment probe open
 │   │   failure: reject invalid overrides before spawn; no silent unsupported capability promise
 │   │   dependency: PRD 35 common contract; non-goal: selecting an OS backend by parser name
 │   └── [-] Dark / 深色: winmgr warm charcoal palette; picker + cycle + saved id
@@ -189,7 +193,16 @@ header tools, and the composer. It is not the browser, and it is not layout.
   chrome toggles for the left sidebar and the right panel. A distinct bottom
   composer owns input, Send and Newline, and a bottom status bar shows a
   fixed-width `L###:C###` readout that follows the grid crosshair (the hovered
-  cell) and falls back to the text cursor.
+  cell) and falls back to the text cursor. Two decisions here each have one
+  owner since the 2026-10-21 seam consolidation: the terminal's side insets
+  (collapse-aware sidebar + history panel widths) come from
+  `terminal_inset_widths` at every `configure_host_ui` call site — switching
+  tabs with a collapsed sidebar used to inset by the expanded width — and the
+  post-close tree-scroll clamp lives inside `close_active_session`, so
+  keyboard, pointer and control closes all leave the tree without blank tail
+  rows. The composer's "SEND TO @N" band and the history rows read the same
+  `active_destination_label` (custom rename or program stem, not the shell's
+  changing OSC title).
 - [v] a tab whose shell has exited stays in the tree (remain-on-exit) and is
   visibly inert: its label dims, and the change repaints the tab column
   immediately rather than waiting for unrelated host-UI damage. A pixel
@@ -265,7 +278,11 @@ header tools, and the composer. It is not the browser, and it is not layout.
   font size (−/100%/+), a theme picker of four swatches (Neutral / Docs Ink /
   Paper Ink / Dark, each showing its own canvas and accent, the active one outlined),
   and the keyboard shortcuts (the former help text). Escape or a click outside
-  closes it; the panel is available with zero tabs.
+  closes it; the panel is available with zero tabs. Escape-dismiss is decided
+  once, by the modifier-aware handler: a bare Escape closes the panel while
+  Ctrl+Esc / Alt+Esc do not. A second, modifier-blind copy of this decision
+  used to run first and shadow the exemption; the 2026-10-21 seam
+  consolidation removed it (src/main.rs, single handler).
 - [v] the settings panel carries an **Updates** section (0.2.7): the running
   version, and three controls whose availability is the update phase — Check,
   Update, Restart. The phase is product state, not panel-local, so it survives
@@ -905,15 +922,22 @@ Concretely:
 
 ## Configuration
 
-Terminal type should be configurable, with a modern VT/xterm-style default.
-Current `ConTerminal::spawn_pty` explicitly supplies `TERM=xterm-256color` and
-`COLORTERM=truecolor`; it does not supply `TERM=vt100`, and no user-facing type
-selector is implemented yet. The planned preference selects a capability
-profile and optionally overrides TERM for new sessions. Color advertisement
-and protocol replies remain consistent with implemented profile capabilities.
-It does not rewrite a running program's environment or silently alter an
-existing session. OS backend selection is independent. Reusable semantics are
-owned by [PRD 35](PRD_02_35_terminal_library.md#dependency-and-public-api-boundary).
+Terminal type is configurable in the narrow, truthful sense (0.2.19): the
+default stays the modern profile (`ConTerminal::spawn_pty` supplies
+`TERM=xterm-256color` and `COLORTERM=truecolor`), and `minicon.json` accepts an
+advanced `term` key that overrides the TERM value for **new sessions** — the
+initial tab reads it at startup and later tabs inherit it through
+`SessionSeed`. The value is validated on load (1–64 bytes of the terminfo-name
+alphabet `A–Z a–z 0–9 . _ + -`; anything else falls back to absent, evidence
+`term_override_is_validated_and_round_trips_the_config_document` in
+src/main.rs and the SessionSeed round-trip test in src/terminal.rs). Changing
+it describes capabilities to applications only: COLORTERM stays `truecolor`
+because the implemented color capability does not change with the advertised
+name, no parser or native backend is switched, and a running child's
+environment is never rewritten. There is deliberately **no settings-panel
+emulation menu**: a profile beyond the default is not offered until its
+capability evidence exists (roadmap cross-version rule 1). Reusable semantics
+are owned by [PRD 35](PRD_02_35_terminal_library.md#dependency-and-public-api-boundary).
 
 - [v] the user configuration root is selected through the platform runtime
   facade: Windows calls `SHGetFolderPathW(CSIDL_APPDATA)` into caller-owned

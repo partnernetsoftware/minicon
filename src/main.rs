@@ -296,6 +296,24 @@ struct ConConfig {
     /// The notes scratchpad text. `None` until the notes are first saved,
     /// so a config the feature never touched stays byte-identical.
     notes: Option<String>,
+    /// Advanced TERM override for new sessions (PRD 02.25 "Configuration").
+    /// Validated on load; an unusable value falls back to `None`, which keeps
+    /// the truthful modern default. It describes capabilities to applications
+    /// and never selects a parser or native backend.
+    term: Option<String>,
+}
+
+/// A usable TERM value: 1–64 bytes of the terminfo-name alphabet
+/// (`A–Z a–z 0–9 . _ + -`). Anything else is treated as absent — a preference
+/// is not worth refusing startup, and an empty or exotic value must not reach
+/// a child's environment.
+fn valid_term_override(value: String) -> Option<String> {
+    let usable = !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'+' | b'-'));
+    usable.then_some(value)
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
@@ -339,6 +357,7 @@ fn config_from_bytes(bytes: &[u8]) -> ConConfig {
             .as_deref()
             .and_then(ui::UiLanguage::from_tag),
         notes: config.notes,
+        term: config.term.and_then(valid_term_override),
     }
 }
 
@@ -367,6 +386,9 @@ fn config_document(config: &ConConfig) -> json::JsonValue {
     }
     if let Some(notes) = &config.notes {
         fields.push(("notes", notes.as_str().into()));
+    }
+    if let Some(term) = &config.term {
+        fields.push(("term", term.as_str().into()));
     }
     json::object(fields)
 }
@@ -517,6 +539,10 @@ fn main() {
         [config.cols, initial_cols],
         [config.rows, initial_rows],
     );
+    // The advanced TERM override reaches the initial session here and every
+    // later tab through `SessionSeed::from_session`; a running child is never
+    // rewritten.
+    session.term_override = config.term.clone();
     // The saved theme and language, now that there is a session to colour. The
     // choices the panel writes are read back here, which is what makes them
     // survive the process.
@@ -1307,8 +1333,21 @@ impl ConApp {
         }
         self.mark_host_ui_full();
         let metrics = window.metrics()?;
-        let sidebar_width = self.effective_sidebar_dip();
-        let panel_width = self.effective_panel_dip();
+        // Closing a row can shrink the tree past the current scroll. Clamp
+        // here, in the one owner of tab teardown, so keyboard (Ctrl+Shift+W),
+        // pointer and control CloseTab all leave the tree without blank tail
+        // rows; the pointer path used to carry its own copy of this clamp.
+        self.tree_scroll_offset = ui::clamp_tree_scroll(
+            self.tree_scroll_offset,
+            self.workspace.nodes().len(),
+            self.layout(
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            )
+            .tree_capacity(),
+        );
+        let (sidebar_width, panel_width) = self.terminal_inset_widths();
         let session = self.active_session_mut()?;
         Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
         session.apply_resize(
@@ -1347,8 +1386,7 @@ impl ConApp {
         &mut self,
         metrics: minicon_platform::window_host::PixelWindowMetrics,
     ) -> Result<(), PixelWindowError> {
-        let sidebar_width = self.sidebar_width_logical;
-        let panel_width = self.effective_panel_dip();
+        let (sidebar_width, panel_width) = self.terminal_inset_widths();
         let session = self.active_session_mut()?;
         Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
         session.apply_resize(
@@ -1382,6 +1420,15 @@ impl ConApp {
         }
     }
 
+    /// The one decision for how far the terminal is inset on both sides:
+    /// collapse-aware sidebar width plus the history panel's width. Every
+    /// `configure_host_ui` caller reads this pair; reading the raw stored
+    /// width instead is the drift that left a collapsed sidebar's terminal
+    /// inset by the expanded width after a tab switch (2026-10-21 inventory).
+    fn terminal_inset_widths(&self) -> (f64, f64) {
+        (self.effective_sidebar_dip(), self.effective_panel_dip())
+    }
+
     /// The width the terminal must be inset by on the right for the history
     /// panel — zero while it is closed, so the terminal reclaims the column
     /// instead of leaving a gap where the panel used to be.
@@ -1397,8 +1444,7 @@ impl ConApp {
     /// terminal reclaims (or yields) the column in the same frame as the rail.
     fn apply_sidebar_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         let metrics = window.metrics()?;
-        let sidebar_width = self.effective_sidebar_dip();
-        let panel_width = self.effective_panel_dip();
+        let (sidebar_width, panel_width) = self.terminal_inset_widths();
         if let Ok(session) = self.active_session_mut() {
             Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
             session.queue_resize(
@@ -1414,8 +1460,7 @@ impl ConApp {
     /// so the terminal reclaims (or yields) the column in the same frame.
     fn apply_panel_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         let metrics = window.metrics()?;
-        let sidebar_width = self.effective_sidebar_dip();
-        let panel_width = self.effective_panel_dip();
+        let (sidebar_width, panel_width) = self.terminal_inset_widths();
         if let Ok(session) = self.active_session_mut() {
             Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
             session.queue_resize(
@@ -1711,11 +1756,12 @@ impl ConApp {
 
         let mut session = seed.create_session();
         session.apply_theme(self.ui_theme);
+        let (sidebar_width, panel_width) = self.terminal_inset_widths();
         Self::configure_host_ui(
             &mut session,
             window.metrics()?.scale_factor,
-            self.effective_sidebar_dip(),
-            self.effective_panel_dip(),
+            sidebar_width,
+            panel_width,
         );
         if let Err(error) = session.opened(window) {
             self.workspace.close(id);
@@ -2858,8 +2904,7 @@ fn composer_submission_payload(submission: &str, bracketed: bool) -> Vec<u8> {
 impl PixelWindowApplication for ConApp {
     fn opened(&mut self, window: &PixelWindow) -> Result<PixelWindowDirective, PixelWindowError> {
         let metrics = window.metrics()?;
-        let sidebar_width = self.effective_sidebar_dip();
-        let panel_width = self.effective_panel_dip();
+        let (sidebar_width, panel_width) = self.terminal_inset_widths();
         Self::configure_host_ui(
             self.active_session_mut()?,
             metrics.scale_factor,
@@ -2939,20 +2984,10 @@ impl PixelWindowApplication for ConApp {
             } => self.note_pointer_surface(window, position)?,
             _ => {}
         }
-        if self.settings_open
-            && matches!(
-                &event,
-                PixelWindowEvent::Keyboard(NormalizedKeyEvent {
-                    state: KeyPressState::Pressed,
-                    logical: LogicalKey::Named(NamedKey::Escape),
-                    ..
-                })
-            )
-        {
-            self.settings_open = false;
-            self.mark_host_ui_full_and_repaint(window);
-            return Ok(PixelWindowDirective::Continue);
-        }
+        // Escape-closes-settings is decided once, by the modifier-aware
+        // handler further down this function. A second, modifier-blind copy
+        // used to sit here and shadowed that handler entirely (2026-10-21
+        // inventory), which made Ctrl+Esc and Alt+Esc dismiss the panel.
         if matches!(event, PixelWindowEvent::Wake) {
             self.drain_a11y_actions(window)?;
             self.drain_terminal_clipboard_paste(window);
@@ -3054,8 +3089,7 @@ impl PixelWindowApplication for ConApp {
         }
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
             self.mark_host_ui_full();
-            let sidebar_width = self.effective_sidebar_dip();
-            let panel_width = self.effective_panel_dip();
+            let (sidebar_width, panel_width) = self.terminal_inset_widths();
             if let Ok(session) = self.active_session_mut() {
                 Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
             }
@@ -4011,6 +4045,47 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The advanced TERM override is validated on load (terminfo-name
+    /// alphabet, bounded length), survives the config document round trip,
+    /// and an unusable value falls back to the absent default.
+    #[test]
+    fn term_override_is_validated_and_round_trips_the_config_document() {
+        let config = config_from_bytes(br#"{"term":"xterm-direct"}"#);
+        assert_eq!(config.term.as_deref(), Some("xterm-direct"));
+
+        let written = json::to_vec_pretty(&config_document(&config));
+        let reread = config_from_bytes(&written);
+        assert_eq!(reread.term.as_deref(), Some("xterm-direct"));
+
+        let long = format!(r#"{{"term":"{}"}}"#, "x".repeat(65));
+        for bad in [
+            br#"{"term":""}"#.as_slice(),
+            br#"{"term":"xterm 256color"}"#.as_slice(),
+            br#"{"term":"xterm/256"}"#.as_slice(),
+            long.as_bytes(),
+        ] {
+            assert_eq!(config_from_bytes(bad).term, None, "accepted {bad:?}");
+        }
+    }
+
+    /// `terminal_inset_widths` is the one owner of the terminal's side insets.
+    /// A collapsed sidebar must inset by the rail, not the stored expanded
+    /// width — the drift `apply_active_geometry` carried until 2026-10-21.
+    #[test]
+    fn terminal_insets_follow_collapse_and_panel_state() {
+        let mut app = ConApp::new(None, None);
+        assert_eq!(
+            app.terminal_inset_widths(),
+            (app.sidebar_width_logical, 0.0)
+        );
+        app.sidebar_collapsed = true;
+        app.history_panel_open = true;
+        assert_eq!(
+            app.terminal_inset_widths(),
+            (ui::SIDEBAR_RAIL_WIDTH_DIP, ui::HISTORY_PANEL_WIDTH_DIP)
+        );
+    }
 
     #[test]
     fn gui_title_updates_precede_candidates_and_keep_retained_chrome_consistent() {
@@ -5470,6 +5545,7 @@ mod tests {
             theme: Some(theme::ThemeChoice::Dark),
             language: Some(ui::UiLanguage::ChineseTraditional),
             notes: Some("scratch\npad".to_owned()),
+            term: Some("xterm-direct".to_owned()),
         };
         write_config_to(&path, &saved).expect("the preference is published");
 
@@ -5486,6 +5562,7 @@ mod tests {
         // Notes ride the same document: newlines survive the JSON round trip
         // verbatim, because a scratchpad's structure is the user's own.
         assert_eq!(reloaded.notes, Some("scratch\npad".to_owned()));
+        assert_eq!(reloaded.term, Some("xterm-direct".to_owned()));
         let _ = std::fs::remove_dir_all(&directory);
     }
 

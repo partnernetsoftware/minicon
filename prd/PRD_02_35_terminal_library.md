@@ -503,6 +503,20 @@ The Windows cooked editor uses it to stage text/cursor publication while
 retaining client grammar. Native editing policy and compatibility remain in
 the Windows owner, rather than becoming portable session semantics by accident.
 
+### Session/input dependency inventory (2026-10-21)
+
+The library-sequence step-2 classification of what a portable session needs,
+read at the current source. Each row names where the code sits today, what
+kind of dependency it is, and what that means for relocation:
+
+| Code | Classification | Relocation consequence |
+| --- | --- | --- |
+| `platform::contract::pty` scalar types (`PtyError`/`PtyResult`, `TerminalSize`, `ProcessId`, `NativeTerminalKey`, `NativeInputOwnership`, `NativeInputReadState`, cleanup/foreground-signal receipts) | Terminal mechanism; depends only on `std` | **Moved (0.2.19):** the vocabulary now lives in `minicon_console::session`; `platform::contract::pty` is a re-export, so every `minicon_platform::pty` consumer keeps one type identity. The platform `pty` feature now carries the `dep:minicon-console` edge (console still never imports platform — guarded by `scripts/check-reuse.sh`, which also asserts a feature-less platform consumer pulls no console edge and exercises the session types from the isolated consumer). The non-exhaustive enums now require wildcard arms in adapters: unmapped native keys/signals are typed refusals, never guesses. This is contract vocabulary only — no session implementation or portable interface is published yet |
+| `platform::contract::terminal_input` (key modes, VT encoders, paste/mouse encoding) | Terminal mechanism, pure logic — but its vocabulary is `platform::contract::input` (`NormalizedKeyEvent` and friends), a general platform facility shared with window hosts | Stays in platform until the input-event vocabulary question is resolved; moving it would drag host input types into the library or fork the vocabulary |
+| `platform::adapters/unix/pty.rs` (shared POSIX mechanism; `linux`/`macos` identity wrappers) | Native adapter; consumes `process_control::TerminationMode` and `process_reference` — general platform process facilities | Stays in platform pending the demonstrated session contract; a move now would create a reverse or duplicated process-authority owner |
+| `platform::pty` facade (backend report, console-agent hook, detached shutdown reaper) | Product-neutral session teardown and selection policy over `platform::threading` | Stays as the compatibility facade; it is the forwarding consumer during consolidation |
+| Windows providers (ConPTY adapter, console agent, `rust-console` adapter over `ConsoleHost`/`DriverSession`) | Native adapters; the `rust-console` edge is the existing optional platform→console dependency | Stay; the session contract must be demonstrated against them, not extracted from them |
+
 ### Integration acceptance contract
 
 The target is one independently consumable terminal library, not merely a

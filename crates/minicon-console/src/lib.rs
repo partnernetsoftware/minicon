@@ -9,6 +9,7 @@
 //! prd/PRD_02_28_shared_core.md. Portable session/input composition is planned;
 //! it is not implied by the common state and streaming API.
 
+pub mod session;
 pub mod terminal;
 
 #[cfg(windows)]

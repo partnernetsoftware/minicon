@@ -83,6 +83,10 @@ pub struct ConfigValues {
     /// The notes scratchpad text, as written. Free text kept verbatim: the
     /// codec validates JSON shape (bounded by the input cap), never content.
     pub notes: Option<String>,
+    /// The advanced TERM override for new sessions, as written. Like
+    /// theme/language, kept as the decoded string: the product validates the
+    /// value and gives it meaning; this codec only validates JSON shape.
+    pub term: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -109,6 +113,7 @@ enum ConfigField {
     Theme,
     Language,
     Notes,
+    Term,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -128,6 +133,7 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         theme: None,
         language: None,
         notes: None,
+        term: None,
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -245,6 +251,9 @@ impl ConfigParser<'_> {
                     ConfigField::Notes => {
                         config.notes = self.string_value(value, "notes")?;
                     }
+                    ConfigField::Term => {
+                        config.term = self.string_value(value, "term")?;
+                    }
                 }
             }
             keys.push(key);
@@ -331,6 +340,8 @@ impl ConfigParser<'_> {
             Some(ConfigField::Language)
         } else if self.key_equals(key, "notes") {
             Some(ConfigField::Notes)
+        } else if self.key_equals(key, "term") {
+            Some(ConfigField::Term)
         } else {
             None
         }
@@ -846,6 +857,14 @@ mod tests {
         assert_eq!(config.rows, None);
         assert_eq!(config.theme.as_deref(), Some("paper"));
         assert_eq!(config.language.as_deref(), Some("zh-hant"));
+    }
+
+    #[test]
+    fn config_parser_extracts_the_term_override_as_written() {
+        let config = parse_config(br#"{"term":"xterm"}"#).expect("parse config");
+        assert_eq!(config.term.as_deref(), Some("xterm"));
+        let absent = parse_config(br#"{"term":null}"#).expect("null clears");
+        assert_eq!(absent.term, None);
     }
 
     /// The codec reports JSON *shape*; it does not know the tag vocabulary. An

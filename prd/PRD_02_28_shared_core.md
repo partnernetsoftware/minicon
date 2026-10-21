@@ -51,6 +51,8 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   └── pixel: portable API, internal x86_64 / aarch64 / scalar kernels
 ├── Reusable native mechanisms — crates/minicon-platform
 │   ├── capability facade + contract types + selected native adapters
+│   │   (the PTY/session contract vocabulary is owned by minicon-console::session
+│   │   since 2026-10-21; contract::pty re-exports it under the pty feature)
 │   ├── OS branches: Windows / macOS / Linux / Unix / unsupported
 │   ├── ISA branches: byte search, checksum, CPU facts and native ABI details
 │   ├── numeric compatibility exports use core implementation
@@ -98,7 +100,7 @@ flowchart LR
     FRAME --> VT
     CON --> FRAME
     CON --> RESP --> GRAM
-    PLAT -->|"rust-console only"| CON
+    PLAT -->|"pty: session contract vocabulary; rust-console: Windows provider"| CON
     UI --> PIX
     UI -->|"terminal-selection only"| VT
     PLAT --> OS & ISA
@@ -293,13 +295,51 @@ local tests and native receipts support only their recorded feature/cell scope.
   and common independent publisher as explicit setters. CONNECT admission,
   reply and console-wide lifetime policy remain Windows-owned; scoped runtime
   evidence belongs to PRD 02.34's initial-title/lifetime leaf.
-- [_] Move the common POSIX PTY implementation from `adapters/linux/pty.rs` to
-  `adapters/unix/pty`; the macOS adapter currently imports the former file by
-  path. Preserve distinct adapter identities and qualify both actual platforms.
+- [-] The common POSIX PTY mechanism now lives in `adapters/unix/pty.rs`;
+  `adapters/linux/pty.rs` and `adapters/macos/pty.rs` are thin, distinct
+  adapter identities forwarding the same four public entry points, and
+  `selected.rs` still selects by OS identity. Cross-target `cargo check`
+  (x86_64-unknown-linux-gnu, aarch64-apple-darwin, `--features pty`) passes;
+  native runtime qualification on both actual platforms (Linux cells + macOS
+  dev-loop-crosscheck court) remains open before this reads `[v]`.
 - [_] Qualify a minimal external consumer with actual selected features and
   owned fork resolution on Windows/macOS/Linux and supported ISAs. Linux/ARM
   cross-compilation cannot substitute for macOS or ARM native runtime evidence.
   Installation/package ergonomics and stable public API policy remain open.
+
+## Platform feature–consumer audit (2026-10-21)
+
+Method: the feature graph was read from `crates/minicon-platform/Cargo.toml`
+(91 declared features) and the transitive closure computed for each verified
+consumer's direct enablement. MiniCon's direct set comes from its own
+`Cargo.toml` dependency blocks, guarded live by
+`minicon_platform_features_match_the_consumer_matrix` in
+`tests/minicon_alignment.rs`. AgenTerm's direct set was read in its checkout
+at `2196131f292c31c3355212f4bcb2fa5e1d47a620`, which pins all MiniCon crates to
+revision `0326e2abaf71cb2f8dc22f766de9b410efa4be1e`. The isolated
+`scripts/check-reuse.sh` consumer deliberately enables no features (it proves
+minimality, not consumption); the crate's own probe binary requires
+`rust-console`, already inside MiniCon's closure. "Zero verified consumer"
+means no consumer visible from this repository and the AgenTerm checkout — it
+is not a death certificate; an unverifiable external consumer stays UNKNOWN
+and removal is a separate owner decision, per the audit's non-goal.
+
+Counts: MiniCon closure 37 features, AgenTerm closure 40, union 49 of 91;
+42 features have zero verified consumers, of which `default` (empty by
+policy) and `full` (catalog umbrella) are non-facades by design, leaving
+**40 zero-consumer facades**.
+
+| Consumer tier | Features |
+|---|---|
+| MiniCon direct (20: 16 main + win `native-pixel-window` + unix `portable-pixel-window` + dev `input-inject` + optional `rust-console`) | clipboard, contained-process-spawn, entropy, filesystem-publish, filesystem-read, font, host-open, ime, input, input-inject, ipc, native-pixel-window, network-http, parent-console, portable-pixel-window, pty, runtime, rust-console, screenshot, window |
+| AgenTerm direct (17, at the pin above) | activation, clipboard, console-interrupt, console-line-editor, filesystem, font, ime, input, ipc, locking, portable-pixel-window, process, pty, screenshot, serde, webview, window |
+| Transitive only (21, pulled in by the sets above) | directory-access, file-identity, filesystem-append, filesystem-cleanup, filesystem-conventions, filesystem-create, filesystem-entry, filesystem-open, process-containment, process-control, process-conventions, process-image, process-metrics, process-observation, process-reference, process-security, process-spawn, process-window, user-identity, window-enum, window-op |
+| Zero verified consumers (40 facades + `default`/`full`) | a11y-publish, a11y-tree, app-container-process, app-container-profile, app-facts, audio, cache-hierarchy, chassis-present, current-target-binding, desktop-host, device-capture, device-inventory, device-io, file-attributes, filesystem-usage, filesystem-watch, hardware, host-boot-identity, host-memory, host-notification, host-pressure, host-resource-snapshot, keyboard-layout, login-session, native-messaging-registry, network-dns, network-interfaces, network-routes, permission-settings, privilege-authorization, privilege-service-lifecycle, processor-affinity, processor-topology, service, shared-memory, simulator, storage, storage-device-inventory, system-broker, virtualization-probe |
+
+Maintenance: when a consumer's enablement changes (MiniCon's matrix test, or
+an AgenTerm pin movement), recompute the closure and update this table in the
+same change. A facade leaving the zero tier needs its consumer named; a
+facade entering it is a fact, not an automatic deprecation.
 
 ## Consolidation frontier and maintenance rule
 
