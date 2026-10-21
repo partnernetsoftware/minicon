@@ -54,6 +54,7 @@ MiniCon — one-file local terminal
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
     ├── [-] v0.2.16 test-selection work → plan/plan-v0.2.16.md
     ├── [-] v0.2.17 modern-agent gate → plan/plan-v0.2.17.md
+    ├── [_] v0.2.19 terminal contract / module-reuse consolidation → plan/plan-v0.2.19.md
     └── [_] 0.2.x product sequence / release decisions → plan/plan-v0.2.x-product-roadmap.md
 ```
 

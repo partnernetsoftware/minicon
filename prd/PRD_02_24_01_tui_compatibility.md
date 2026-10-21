@@ -276,6 +276,27 @@ Minimized or occluded windows cannot stand in for an observed resize or native
 presentation. Missing application/runtime cells remain BLOCKED; an unexplained
 exit code is an open lifecycle observation, not a backend diagnosis.
 
+Owner report 2026-10-21, open, targeted at the 0.2.20 gate: in Claude Code
+sessions (owner's `myclaude` wrapper) the file tool's output renders
+misaligned. An owner screenshot of a live MiniCon 0.2.18 GUI session
+(ephemeral, not archived per the private-conversation rule) showed three
+symptom classes in the agent's output region: (a) orphan single characters
+surviving at a right-hand column after their line shortened (a stray `r`
+and `)` at roughly the same column), (b) dropped or merged glyphs mid-line
+("in the" rendered as "inethe"; a URL and a word truncated), and (c) one
+file-list row losing its indent and gaining a stray leading character.
+Together these point at missed cell updates in an incremental
+damage/redraw path (stale cells and lost spans), not a Unicode-width
+computation error; the suspected owner is the Rust-console provider
+(`minicon-console`) but the opened backend identity was not captured. Per
+the classification rule above this stays UNKNOWN until reproduced with
+app/version, `ui-snapshot` backend identity and source/wire/state/pixel
+capture — do not assign it to `minicon-console` from the symptom alone; the
+classic ConPTY path must be compared in the same court, and `capture-pane`
+versus `screenshot-pane` must be compared to split parser-state loss from
+paint-path loss. Reproduction belongs to the 0.2.20 default-decision
+evidence in [the roadmap](../plan/plan-v0.2.x-product-roadmap.md).
+
 Source audit at 56b3b67: MiniCon uses the owned `vt100` screen/parser and `vte`
 grammar. The name does not restrict the implementation to the original VT100:
 the screen includes alternate buffers, cursor addressing, scrolling, bracketed

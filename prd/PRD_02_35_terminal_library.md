@@ -690,7 +690,7 @@ The service exercises this public boundary through native geometry and expanded
 buffer rendering, not a Windows-only duplicate. Shared/native SDK and real-client
 positive runs, runtime guard failures, exact-source identities and the distinction
 between cross-target compilation and native execution are recorded by
-[native geometry qualification](PRD_02_34_windows_console_backend.md#accepted-native-geometry-leaf).
+[native geometry qualification](archive/PRD_02_34-accepted-courts.md#accepted-native-geometry-leaf).
 Portable session composition and independent external consumers remain planned
 in the consolidation sequence above.
 
@@ -707,10 +707,10 @@ Displayed-stream activation and typed projection-budget failures are common
 mechanisms as well; Windows buffer IDs and native status translation stay in its
 adapter. The boundary is owned by [terminal state](PRD_02_24_con_terminal.md#displayed-stream-activation-and-projection-budgets).
 The contracts, measured compatibility and remaining lifecycle scope belong to
-[native buffers](PRD_02_34_windows_console_backend.md#accepted-multiple-buffer-leaf).
+[native buffers](archive/PRD_02_34-accepted-courts.md#accepted-multiple-buffer-leaf).
 Process-family retirement and the native connected-process query remain
 Windows-private; their SDK/PTY lifetime evidence is owned by the same module's
-[process-family leaf](PRD_02_34_windows_console_backend.md#accepted-buffer-process-family-lifetime-leaf).
+[process-family leaf](archive/PRD_02_34-accepted-courts.md#accepted-buffer-process-family-lifetime-leaf).
 
 The public terminal facade now exposes text_prefix and TEXT_BATCH_BYTES for
 bounded encoded producers. Native UTF-16/UTF-8 text output is an actual consumer
@@ -718,7 +718,7 @@ in both raw and mapped sessions; Windows newline/margin/code-page policy remains
 in its adapter. Low-level lexer, publication and scalar-width contracts belong
 to [terminal state](PRD_02_24_con_terminal.md#bounded-unicode-text-publication).
 Native bulk clients, system-layout differences and remaining compatibility scope
-belong to [Unicode publication](PRD_02_34_windows_console_backend.md#accepted-unicode-publication-leaf).
+belong to [Unicode publication](archive/PRD_02_34-accepted-courts.md#accepted-unicode-publication-leaf).
 
 Invalid UTF-8 prefix recovery also runs through the common facade in raw and
 mapped sessions. Rejected prefixes use canonical U+FFFD before the new input;

@@ -514,7 +514,7 @@ Verified on a user's Windows Server 2016 (build 14393) on 2026-08-23.
   would also re-create the duplicate product-owned full-window canvas the
   frame contract had just deleted (see the `[v]` line below), so the
   machinery is **not built**; the leaf closes as measured-not-felt, per
-  `plan/plan-v0.2.12.md` scope 5. The flashing claim stays `[-]` until
+  `plan/archive/plan-v0.2.12.md` scope 5. The flashing claim stays `[-]` until
   the journey runs.
 - [v] the pixel-window contract identifies retained versus transient host
   backing and requires each frame to commit `None`, `Full`, or a bounded partial
