@@ -332,12 +332,12 @@ fn serve(
             let (result, reply) = match control {
                 Control::ReadState(reply) => {
                     let state = host.input_read_state();
-                    let _ = reply.send(Ok(NativeInputReadState {
-                        admitted_text: state.admitted_text,
-                        admitted_records: state.admitted_records,
-                        deferred_text: state.deferred_text,
-                        deferred_records: state.deferred_records,
-                    }));
+                    let _ = reply.send(Ok(NativeInputReadState::new(
+                        state.admitted_text,
+                        state.admitted_records,
+                        state.deferred_text,
+                        state.deferred_records,
+                    )));
                     continue;
                 }
                 Control::Resize(size, reply) => (
@@ -371,7 +371,15 @@ fn serve(
                         previous_cr = false;
                         escape_wait = None;
                     }
-                    let key = native_console_key_event(key, repeat);
+                    let Some(key) = native_console_key_event(key, repeat) else {
+                        // A contract-enum variant this provider has no mapping
+                        // for is a typed refusal, never a guessed key event.
+                        let _ = reply.send(Err(io::Error::new(
+                            io::ErrorKind::Unsupported,
+                            "no native key mapping for that terminal key",
+                        )));
+                        continue;
+                    };
                     let event = ConsoleInput::Key {
                         down: true,
                         repeat: key.repeat_count,

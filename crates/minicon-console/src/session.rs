@@ -78,6 +78,25 @@ pub struct NativeInputReadState {
     pub deferred_records: u32,
 }
 
+impl NativeInputReadState {
+    /// The struct is `non_exhaustive`, so adapters in other crates construct
+    /// it through this constructor rather than a struct expression.
+    #[must_use]
+    pub const fn new(
+        admitted_text: u32,
+        admitted_records: u32,
+        deferred_text: u32,
+        deferred_records: u32,
+    ) -> Self {
+        Self {
+            admitted_text,
+            admitted_records,
+            deferred_text,
+            deferred_records,
+        }
+    }
+}
+
 /// Evidence returned only after the native PTY containment owner has stopped
 /// every process it can still identify and has observed that containment empty.
 ///

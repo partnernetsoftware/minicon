@@ -738,11 +738,16 @@ impl PtyChild {
                 .send_key(key, repeat_count)
                 .map_err(|error| pty_error("send native key", "pty_native_key_failed", error));
         }
+        if key == NativeTerminalKey::Break {
+            return Err(PtyError::unsupported(
+                "send native key",
+                "this backend has no qualified Ctrl+Break key delivery",
+            ));
+        }
         let Some(event) = native_console_key_event(key, repeat_count) else {
-            // Break has no qualified delivery on this backend, and the
-            // contract enum is non-exhaustive now that the vocabulary lives
-            // in minicon-console: an unmapped key is a typed refusal, never
-            // a guessed key event.
+            // The contract enum is non-exhaustive now that the vocabulary
+            // lives in minicon-console: an unmapped key is a typed refusal,
+            // never a guessed key event.
             return Err(PtyError::unsupported(
                 "send native key",
                 "this backend has no qualified delivery for that native key",
@@ -882,8 +887,11 @@ fn console_input_mode(input: &OwnedHandle) -> io::Result<u32> {
     Ok(mode)
 }
 
-/// `None` is the keys this attach-and-write path refuses: Break (no qualified
-/// delivery here) and any future variant of the non-exhaustive contract enum.
+/// `None` is any future variant of the non-exhaustive contract enum (owned by
+/// minicon-console since 2026-10-21): an unmapped key must become a typed
+/// refusal at the caller, never a guessed key event. Break stays mapped here
+/// because the rust-console provider delivers it; the classic attach-and-write
+/// path refuses Break by policy before asking for a mapping.
 const fn native_console_key_event(
     key: NativeTerminalKey,
     repeat_count: u16,
@@ -891,6 +899,7 @@ const fn native_console_key_event(
     let (virtual_key_code, virtual_scan_code, controls) = match key {
         NativeTerminalKey::Up => (0x26, 0x48, ENHANCED_KEY),
         NativeTerminalKey::Down => (0x28, 0x50, ENHANCED_KEY),
+        NativeTerminalKey::Break => (0x03, 0x46, ENHANCED_KEY | 8),
         _ => return None,
     };
     Some(WindowsConsoleKeyEvent {
@@ -2838,10 +2847,10 @@ mod tests {
 
         let down =
             native_console_key_event(NativeTerminalKey::Down, 7).expect("Down is deliverable");
-        assert!(
-            native_console_key_event(NativeTerminalKey::Break, 1).is_none(),
-            "Break has no qualified attach-and-write delivery"
-        );
+        let brk =
+            native_console_key_event(NativeTerminalKey::Break, 1).expect("Break stays mapped");
+        assert_eq!(brk.virtual_key_code, 0x03);
+        assert_eq!(brk.control_key_state, super::ENHANCED_KEY | 8);
         assert_eq!(down.virtual_key_code, 0x28);
         assert_eq!(down.virtual_scan_code, 0x50);
         assert_eq!(down.unicode_char, 0);
