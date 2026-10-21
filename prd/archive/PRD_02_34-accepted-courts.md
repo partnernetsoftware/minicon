@@ -1494,3 +1494,950 @@ These observations qualify this scoped Windows x64 runtime and ARM64 build;
 other OS/ISA runtime, concurrent races, GUI pixels and Claude Code rendering
 remain open.
 
+
+---
+
+# Second-pass court records (archived 2026-10-22)
+
+Per-leaf qualification blocks (named tests, focused/suite logs, runtime
+mutation audits, static/cross-target check lists and final receipt bindings)
+moved verbatim from the live PRD's leaf sections after v0.2.19 shipped. The
+live sections keep each leaf's invariant, behavior, reference differences,
+dependencies and open boundaries; the Tree remains the status index.
+
+## Native wide-title publication leaf — court record
+
+Local qualification: `native-title-final-focused.log` records four passes (two
+library/native units plus owned SDK and system-reference SDK); the final selected
+suite records 243 passes, including 17 alignment checks. Six byte-restored runtime
+guards cover control rejection, quota, sink-error propagation, metadata commit,
+actual native publication and the system-reference oracle. Ten static/build
+checks pass: strict default/enabled workspace and standalone parser Clippy,
+lexer no-std, four common-library cross-target builds, and Windows ARM64
+platform PTY/Rust-console compilation. Non-host checks are compile-only.
+`native-title-final-receipt.json` binds the source tree, source blobs, executable
+identities, logs, guards and remaining scope. Documentation is followed by a
+final 17-test alignment run.
+
+## Title code pages and native reply boundaries — court record
+
+Local qualification: `title-codepage-final-focused.log` records three passes
+(native payload/reply unit, owned SDK, installed-system SDK); the final selected
+suite records 244 passes, including 17 alignment checks and the existing real
+PowerShell/Node/lifecycle cases. The suite count increased by one native-boundary
+unit. Ten byte-restored runtime guards cover separate setter/getter code-page
+choice, W short replies, A exact/short capacity, original selection, odd W bytes,
+payload/decoded limits and the installed-reference oracle. Default/enabled
+workspace strict all-target Clippy, both standalone parser Clippy gates, lexer
+no-std, four common-library cross-target builds and Windows ARM64 platform
+PTY/Rust-console compilation pass. Runtime scope remains Windows x86_64 build
+20348; cross-target checks do not certify runtime behavior. Final documentation
+is followed by 17 alignment passes. `title-codepage-final-receipt.json` binds
+source tree, source blobs, executable identities, tests, guards and remaining work.
+
+## Committed VT titles and inactive producer effects — court record
+
+Local qualification: `title-vt-final-focused.log` records five passes (two new
+common units, the new opaque-payload lexer unit and both SDK providers); the
+final selected suite records 247 passes, including 17 alignment checks and the
+existing real PowerShell/Node, input, backpressure and lifecycle cases. Sixteen
+byte-restored runtime guard failures cover grammar-only staging, whole-frame
+replay, raw callback/parameter-cap preservation, title-event capture and fork
+commit, hidden effects/painting/sink/quota, actual inactive native routing,
+native metadata consumption, reset persistence, system-reference oracle and
+raw-parser/stream tracking policy. Six guards for the edited core test were
+refreshed after static-check adjustments; retained guards have unchanged
+protected source and test scope.
+
+Full owned parser runs record 26 vt100 and 34 standard VTE passes, then 26 vt100
+and 37 no-std VTE passes, with zero filtered tests in those binaries. The
+no-std raw-byte budget includes separators, with explicit fixed-capacity
+boundary tests. Ten static/build checks pass: default/enabled workspace strict
+all-target Clippy, both standalone parser Clippy gates, lexer no-std build,
+four common-library cross-target builds and Windows ARM64 platform PTY/Rust-console
+compilation. Root and both owned parser format checks pass. Non-host builds
+remain compile-only; runtime remains Windows x86_64 build 20348.
+
+Final documentation is followed by 17 alignment passes.
+`title-vt-final-receipt.json` binds the source tree, raw guard source hashes,
+logs, compiler, pinned context sources, executable identities and remaining
+scope. The exploratory library-only wrapper invocation's duplicate --lib
+failure is recorded separately in PRD 02.33; it is not reported as a passing
+gate. Complete owned suites were rerun through the same wrapper with explicit
+selectors and observed zero-filter counts.
+
+## Initial title and observed console-family lifetime — court record
+
+Local qualification: `title-life-final-focused.log` records nine passes (three
+new native/lifecycle tests, three updated exact cmd-wire tests and three updated
+pressure/EOF tests). `title-life-final-suite.log` records 250 selected passes,
+including 17 alignment checks and the existing PowerShell/Node clients. Eight
+byte-restored runtime guards cover the initial frame, first-CONNECT output
+classification, failed publication, one-time live-console initialization, child
+partial-tail retention, system-reference oracle, queued transport identity and
+exact pressure-prefix/EOF bytes. Every new or updated test has an observed
+runtime guard failure; compiler errors are not counted as guard evidence.
+
+Ten static/build checks pass: strict default/enabled workspace and both owned
+parser Clippy gates, lexer no-std, four common-library cross-target builds and
+Windows ARM64 platform PTY/Rust-console compilation. Runtime scope is Windows
+x86_64 build 20348; cross-target checks remain compile-only. Final source format
+and documentation alignment checks complete before the local commit.
+`title-life-final-receipt.json` binds the source tree, guards, logs, pinned context
+sources, compiler and actual executable identities. No default promotion,
+external-consumer migration or other native-ISA runtime claim is added.
+
+## OSC cancellation and title termination — court record
+
+Local qualification: `title-end-final-focused.log` records six passes (four new
+termination tests and the two primed cursor scenarios); the final selected suite
+records 254 passes, including 17 alignment checks and existing real client,
+backpressure, Unicode and lifecycle courts. Ten byte-restored runtime mutations
+cover cancellation, non-ST interruption, changed standard/no-std legacy ST
+callback counts, UTF-8 ST, full fixed buffers, ordinary UTF-8 data, prefix reset,
+the native reference oracle and both decoded cursor priming checks. Each new or
+updated test has an observed runtime guard failure; a compilation-only guard
+attempt is not counted.
+
+Complete owned parser runs record 26 vt100 and 35 standard VTE tests, then 26
+vt100 and 38 no-std VTE tests, with zero filtering in those binaries. Ten static
+and cross-target checks pass: default/enabled workspace strict all-targets
+Clippy, both standalone parser Clippy gates, lexer no-std build, four portable
+library cross-target checks and Windows ARM64 platform PTY/Rust-console compile.
+Root and owned lexer formatting pass. Cross-target checks are compile-only;
+native runtime is Windows x86_64 build 20348.
+
+Final documentation is followed by 17 alignment checks.
+`title-end-final-receipt.json` binds the final source tree, guards, check/log
+hashes, compiler, pinned parser source and native executable identities. It
+also retains the unprimed cursor diagnostics and baseline/current observations;
+those failures are not relabeled as successful runs or evidence about other
+system versions. Backend completion and promotion are still unproven.
+
+## Native input-flush leaf — court record
+
+Local qualification: `input-flush-final-focused.log` records three passes;
+`input-flush-final-suite.log` records 257 selected passes, including existing
+PowerShell/Node, output-pressure, private-Job lifecycle and 17 alignment tests.
+Eleven runtime mutations cover both dispatch routes, queue removal, completed
+UTF-16 retention, pending-read lifetime, byte-tail removal, ready-event reset,
+WRITE rights, both pressure bypasses and the independent reference fixture.
+All mutated bytes are restored and hashed. Seven checks pass: strict default
+and enabled workspace all-targets Clippy, four portable-library cross-target
+checks and Windows ARM64 platform PTY/Rust-console all-targets compilation.
+Native execution remains Windows x86_64 build 20348; cross-target compilation
+does not establish runtime compatibility.
+
+Final documentation is followed by formatting and 17 alignment checks.
+`input-flush-final-receipt.json` binds the final tree, source/guard/log hashes,
+compiler, six pinned reference files and executed client/probe/test images.
+Exploratory wrong-backend selection, UTF-8 prefix and CP932 failures are retained
+as diagnostics; they are not passing qualification. The general backend,
+portable session composition and default promotion remain incomplete.
+
+## ANSI input-record write leaf — court record
+
+Local qualification: `ansi-record-final-focused.log` records three passes and
+20 native SDK scenarios: ten owned normal cases, nine system-reference cases
+and one owned capacity/rollback case. The tests are
+`rust_console_pty_ansi_input_records_preserve_codepages_prefixes_and_native_metadata`,
+`rust_console_client_ansi_input_record_writes_compare_system_conpty` and
+`rust_console_pty_ansi_input_record_capacity_is_checked_after_conversion_without_losing_prefix`.
+`ansi-record-final-suite.log` records 260 selected passes, including existing
+PowerShell/Node clients, private-Job lifecycle, output pressure, input flush and
+17 alignment checks. Twelve byte-restored runtime mutations cover input CP,
+byte masking, DBCS detection, retained/empty prefixes, key metadata, non-key
+trails, native counts, converted admission, failed-admission rollback, raw versus
+converted capacity and the independent reference fixture. No compilation-only
+failure is counted as a guard.
+
+Seven static/cross-target checks pass: strict default/enabled workspace
+all-targets Clippy, four portable-library targets and Windows ARM64 platform
+PTY/Rust-console all-targets compilation. Execution remains Windows x86_64
+build 20348; other targets are compile-only. Final documentation is followed by
+formatting and 17 alignment checks. `ansi-record-final-receipt.json` binds the
+final tree, source/guard/log hashes, compiler, three pinned reference files and
+executed client/probe/test image identities. The varying non-key reference
+diagnostics remain unqualified. General backend completion and promotion are
+still unproven.
+
+## ANSI record-read and pure Peek leaf — court record
+
+Local qualification: `ansi-read-final-focused.log` records three passes, with
+14 owned read cases, 13 measured 20348 reference cases and one no-reader output
+pressure case. The blocked reference UTF-8 case is explicitly reported outside
+those 28 scenarios. The tests are
+`rust_console_pty_ansi_record_reads_preserve_peek_capacity_and_tail_lifetimes`,
+`rust_console_client_ansi_record_read_receipts_compare_system_conpty` and
+`rust_console_pty_record_queries_stay_live_under_output_pressure`.
+`ansi-read-final-suite.log` records 263 selected passes, including existing real
+PowerShell/Node, native control and private-Job lifecycle cases and 17 alignment
+checks. Fifteen byte-restored runtime mutations cover CP selection, consuming
+and tail-generating Peeks, capacity, retained bytes, unsigned storage, cache-only
+reads, read-mode/zero-query state, close/flush, readiness, blocking A identity,
+output admission and the independent native reference fixture.
+
+Seven static/cross-target checks pass: strict default/enabled workspace
+all-targets Clippy, four portable-library targets and Windows ARM64 platform
+PTY/Rust-console all-targets compilation. Native execution is Windows x86_64
+build 20348; other targets are compile-only. Final formatting and 17 alignment
+checks follow the documentation. `ansi-read-final-receipt.json` binds the final
+tree, source/guard/log hashes, both expected-reply assets, compiler, four pinned
+reference files, executed client/probe/test image identities and preserved
+failed UTF-8 reference diagnostics. Backend completion remains unproven.
+
+## Single-append input coalescing and shared admission — court record
+
+Local qualification: `input-merge-final-focused.log` records four passes and
+32 scenarios: fourteen owned and fourteen measured system-reference normal SDK
+cases, two owned full-capacity/geometry cases, and two acknowledged ordinary
+text/native-key producers. The tests are
+`rust_console_pty_input_coalescing_preserves_native_single_write_boundaries`,
+`rust_console_client_input_coalescing_compares_system_conpty`,
+`rust_console_pty_input_coalescing_admits_full_queue_updates_and_bounds_overflow`
+and `rust_console_pty_transport_and_native_keys_share_input_coalescing`.
+`input-merge-final-suite.log` records 267 selected passes, including existing
+PowerShell/Node, geometry, native controls, input pressure, private-Job cleanup
+and 17 alignment cases. Fifteen byte-restored runtime faults cover disabled
+merge, WORD wrapping, scan/IME/key-up/surrogate boundaries, mouse metadata and
+flags, latest resize, batch boundaries, zero-slot admission, geometry preflight,
+unchanged dimensions, transport reuse and the independent reference fixture.
+
+Seven static/cross-target checks pass: strict default/enabled workspace
+all-targets Clippy, four portable-library targets and Windows ARM64 platform
+PTY/Rust-console all-targets compilation. Runtime evidence remains Windows
+x86_64 build 20348; other targets are compile-only. Final formatting and 17
+alignment checks follow the documentation. `input-merge-final-receipt.json`
+binds the final tree, source/guard/log hashes, both expected-reply assets,
+compiler, three pinned reference files and executed client/probe/test image
+identities. Earlier blocked narrow UTF-8 reference evidence is not superseded;
+general backend completion and default promotion remain unproven.
+
+## Cooked controls and line-editing prerequisites — court record
+
+`rust_console_pty_cooked_controls_preserve_mode_and_wakeup_precedence` and
+`rust_console_client_cooked_controls_compare_system_conpty` pass twenty native
+scenarios in `cooked-controls-final-focused.log`. The latter is an explicitly
+requested, build-20348 reference court. `cooked-controls-negative-audit.json`
+records ten observed runtime failures and exact byte restoration: processed
+backspace gating, BS/CR wakeup precedence, CRLF mode, ordinary and wakeup
+modifiers, wakeup echo/result/tail consumption, and the reference caller's mask.
+`cooked-controls-final-suite.log` records 269 selected passes including the
+existing real-client, controls, pressure, lifecycle and 17 alignment cases.
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four console-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Runtime scope remains Windows x86_64 build 20348;
+cross-target results prove compilation only. Final formatting/alignment checks
+and `cooked-controls-final-receipt.json` bind source tree, restored guard hashes,
+logs, pinned source and executed image identities; the broader goal stays open.
+
+## Silent cooked-read editing state — court record
+
+Local qualification: `cooked-edit-final-focused.log` records four passing tests
+and 52 native scenarios: 25 silent SDK cases plus one actual Windows PowerShell
+consumer on each provider. The tests are
+`rust_console_pty_cooked_editor_keeps_utf16_and_native_editing_state`,
+`rust_console_pty_cooked_editor_feeds_powershell_console_readline`,
+`rust_console_client_cooked_editor_compares_system_conpty` and the private
+`rust_console_cooked_editor_bounds_growth_without_rejecting_replacement` unit.
+Both the external client and system reference are explicit courts; missing
+prerequisites fail rather than silently skip. The boundary unit rejects growth
+without changing text/cursor, permits overwrite at capacity and preserves the
+existing completion allowance.
+
+`cooked-edit-negative-audit.json` records eighteen byte-restored runtime faults:
+actual SDK/PowerShell adoption, initial cursor, left/right movement, insert toggle,
+Delete/Backspace, Ctrl+Home/End, wakeup suffix, surrogate overwrite, raw UTF-16,
+grapheme boundaries, explicit/default insert mode, capacity, modifier-based
+classification and the reference SDK caller. One compile-rejected initial-cursor
+mutation was replaced with a compiling runtime fault and is excluded from that
+count. `cooked-edit-final-suite.log` records 273 selected passes, including
+existing client, pressure, control, geometry, lifetime and alignment coverage.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Execution remains Windows x86_64 build 20348; cross
+targets are compile-only. Final formatting and 17 alignment checks follow this
+documentation. `cooked-edit-final-receipt.json` binds the source tree, all guard
+and log hashes, expected assets, executed image identities, compiler and two
+pinned upstream source blobs. High-repeat movement and per-turn work cost still
+need latency qualification; bounded storage alone does not establish it. No
+complete editor, backend, portable session or default-promotion claim follows.
+
+## Echoed cooked editing over the common screen — court record
+
+Local qualification: `cooked-echo-final-focused.log` records seven passing tests:
+the owned/reference SDK courts, three host echo units, the common drawing-cursor
+unit and the existing caller-supplied-initial-text regression. The native courts
+execute 37 echoed SDK scenarios plus actual `cmd set /p` on each provider: 76
+scenarios in total. The real command now reads `abXcd` after moving left twice
+within `abcd` and inserting X. Both 38-section snapshots retain scoped reference
+differences instead of claiming complete native equivalence.
+
+`cooked-echo-negative-audit.json` records 22 compiling, byte-restored runtime
+faults that fail all six new tests and the existing initial-text regression.
+They cover editor adoption, cursor/footprint, initial-origin matching and its
+work budget, UTF-16, wrapping, prompt/scroll recovery, sink-before-screen/view/
+echo-state commit, client grammar, projection cursor, wire budget and the actual
+reference command. The bulk 150-unit case bounds measured echo publication to
+512 bytes; this is a wire-size assertion, not a CPU or layout-count benchmark.
+
+`cooked-echo-final-suite.log` records 279 selected passes, including existing
+external-client, control, pressure, geometry and lifecycle coverage. Its earlier
+run is reused only after all eleven implementation/test/fork file hashes match
+the final restored source. Ten static/cross checks pass: strict default/enabled
+workspace and owned vt100/vte all-targets Clippy, vte no-std, four portable-library
+targets and Windows ARM64 platform PTY/Rust-console all-targets compilation.
+Execution remains Windows x86_64 build 20348; other targets are compile-only.
+Final formatting and 17 alignment checks follow this documentation.
+`cooked-echo-final-receipt.json` binds the staged source tree, guard/log hashes,
+eight executed x64 image identities, compiler and two pinned upstream blobs.
+The open boundaries above remain prerequisites for broader qualification.
+
+## Cooked-read drawing-buffer lifetime — court record
+
+Local qualification: `cooked-buffer-final-focused.log` records three passing
+tests and nine native scenarios: five direct-driver cases and two SDK cases on
+each PTY provider. The tests are
+`rust_console_native_cooked_read_binds_before_first_key_and_retains_closed_output`,
+`rust_console_pty_cooked_reads_retain_their_original_drawing_buffer` and
+`rust_console_client_cooked_read_buffers_compare_system_conpty`. System-reference
+selection clears both console-agent forcing variables. The direct court checks
+pending-read, handle and connection retirement; missing prerequisites fail.
+
+`cooked-buffer-negative-audit.json` records eight compiling, byte-restored runtime
+faults, failing all three new tests. They cover buffer adoption, hidden publication,
+retention through final close, completion collection, initial-text origin, delayed
+empty-read origin, preservation of captured editing state and the independent
+reference caller. Removing completion collection exhausts buffer slots in the
+native SDK fixture; successful line delivery alone cannot satisfy that test.
+
+`cooked-buffer-final-suite.log` records 282 selected passes including existing
+PowerShell 5/7, Node, cmd, input/control, output-pressure, geometry and lifecycle
+coverage. Its earlier run is reused only after all seven changed implementation/
+test files match the final restored hashes. Seven static/cross checks pass:
+strict default/enabled workspace all-targets Clippy, four portable-library targets
+and Windows ARM64 platform PTY/Rust-console all-targets compilation. Native
+execution remains Windows x86_64 build 20348; other targets are compile-only.
+Final formatting and 17 alignment checks follow this documentation.
+`cooked-buffer-final-receipt.json` binds the staged source tree, compiler, logs,
+faults, eight executed x64 image identities and two pinned upstream source blobs.
+This qualifies the named lifetime slice, not the open boundaries above.
+
+## Cancelled-read buffer reclamation — court record
+
+Local qualification: `cooked-cancel-final-focused.log` records three passing
+tests and seven native scenarios: three direct-driver cases, two owned native
+Break cases and two stock-ConPTY processed Ctrl+C cases. The tests are
+`rust_console_native_cancelled_read_reclaims_buffers_and_orders_fallback_under_pressure`,
+`rust_console_pty_break_reclaims_cancelled_read_buffers_and_publishes_fallback`
+and `rust_console_client_cancelled_read_buffers_compare_system_conpty`.
+Both console-agent forcing variables are cleared for the reference provider.
+Every scenario reports interrupted input, correct event identity, fifteen reused
+slots and unchanged base text/cursor; PTY cases also check frontend text/cursor.
+
+`cooked-cancel-negative-audit.json` records ten compiling, byte-restored runtime
+faults that fail all three new tests: inactive collection, pending-work identity,
+fallback resumption, buffer-open admission, query isolation, direct admission,
+one-work-item ordering, sink-before-identity commit, platform Break adoption and
+the actual reference keyboard interruption. A compile failure is not evidence.
+
+`cooked-cancel-final-suite.log` records 285 selected passes including existing
+PowerShell 5/7, Node, cmd, pressure, input/control, geometry and lifecycle cases.
+The earlier suite is reused only after all nine changed implementation/test
+files match the restored hashes. Seven static/cross checks pass: strict
+default/enabled workspace all-targets Clippy, four portable-library targets and
+Windows ARM64 platform PTY/Rust-console all-targets compilation. Native execution
+remains Windows x86_64 build 20348; other targets are compile-only. Final formatting
+and 17 alignment checks follow these owner/reuse-map updates.
+`cooked-cancel-final-receipt.json` binds the staged source tree, source/log/fault
+hashes, compiler, eight executed x64 image identities and two pinned upstream
+blobs. The named slice does not qualify the remaining race/transport boundaries.
+
+## Disconnect retirement and native file closes — court record
+
+Local qualification: `cooked-retire-final-focused.log` records six passing tests:
+three new retirement courts plus the existing explicit-interruption and two
+dead-caller regressions. The new tests are
+`rust_console_native_read_retirement_waits_for_fallback_publication`,
+`rust_console_pty_read_retirement_reveals_the_surviving_buffer` and
+`rust_console_client_read_retirement_compares_system_conpty`. They execute seven
+retirement scenarios: three direct-driver cases and two per PTY provider. Reports
+check BOOL, LastError, count, returned UTF-16 and the surviving peer's separate
+line; direct/PTY checks verify the restored base text/cursor. Both console-agent
+forcing variables are cleared for the system reference.
+
+`cooked-retire-negative-audit.json` records eleven compiling, byte-restored runtime
+faults, failing all three new tests and all three retained regressions. They cover
+preflight/adoption, remaining-read and independent-file ownership, process/object
+matching, process-versus-keyboard status, actual SDK close/disconnect calls and
+benign already-dead-recipient completion. One compile-rejected adoption attempt
+is excluded; its replacement keeps the classifier referenced and fails at runtime.
+
+`cooked-retire-final-suite.log` records 288 selected passes, including existing
+PowerShell 5/7, Node, cmd, output pressure, controls, geometry and lifecycle cases.
+The earlier successful suite is reused only after all eight changed implementation/
+test files match restored hashes. Seven static/cross checks pass: strict
+default/enabled workspace all-targets Clippy, four portable-library targets and
+Windows ARM64 platform PTY/Rust-console all-targets compilation. Native execution
+remains Windows x86_64 build 20348; other targets are compile-only. Final formatting
+and 17 alignment checks follow this documentation.
+`cooked-retire-final-receipt.json` binds the staged source tree, source/log/fault
+hashes, compiler, nine executed x64 image identities, three pinned read-waiter
+source blobs and the native status-to-error mapping. This does not close the
+unadmitted-read and other remaining boundaries above.
+
+## Queued-read retirement and keyboard waiters — court record
+
+Evidence: `rust_console_native_queued_reads_keep_reply_shapes_causes_and_other_callers`,
+`rust_console_pty_queued_reads_finish_under_unread_output_pressure` and
+`rust_console_client_queued_read_disconnect_compares_system_conpty`. Together
+they execute 20 cases: nine direct, seven owned PTY and four system PTY. The
+six-test focused selection retains the old explicit-interruption and two
+dead-caller regressions. Both console-agent forcing variables are cleared for
+the system reference. Logs and exact-source qualification live under ignored
+`target/conhost-research/queued-read-*`.
+
+`queued-read-negative-audit.json` records eleven compiling runtime faults:
+caller matching, queued retirement cause, administrative record cancellation,
+Console/record API classification, keyboard record and raw-C retention, queued
+writer preservation, the actual SDK FreeConsole call, the old keyboard cause
+and benign already-dead-recipient completion. All three new tests and all three
+retained regressions fail under their selected faults. Each mutation restores
+the original bytes and checks the source hash. A count-field-only attempt that
+did not change the observed interrupted API result is excluded from this audit.
+
+`queued-read-early-suite.log` records 292 selected passes: the prior 288 tests,
+three new tests and one additional existing console-agent black box. The initial
+expanded run found two stale fixture-directory/PID collisions before entering
+the system ANSI behavior courts; `queued-read-initial-environment-failure.log`
+retains those failures separately. The successful run retains all prior tests.
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, the four portable-library targets and Windows ARM64 platform PTY/
+Rust-console all-targets compilation. Native execution remains Windows x86_64
+build 20348; other targets remain compile-only. Final focused tests, source-hash
+verification and 17 alignment checks precede the local commit. The receipt
+`queued-read-final-receipt.json` binds the staged tree, source/log/fault hashes,
+compiler, nine executed x64 image identities and three pinned waiter sources.
+
+## Pending text waiter mode lifetime — court record
+
+Local qualification: `mode-wait-early-suite.log` records 295 passing selected
+tests, retaining the preceding 292 and adding these three. Five compiling runtime
+faults fail all three new tests: reverse the admitted kind, consult live LINE_INPUT
+for text assembly, consult live mode for accepted-read cancellation, invert the
+keyboard waiter policy, or remove the actual SDK mode toggle. Each fault restores
+and hashes the original bytes; `mode-wait-negative-audit.json` binds their logs.
+The six-test final focused selection also retains the three previous queued-read
+courts. A successful earlier full selection is reused only after all six changed
+implementation/test files match their frozen hashes.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `mode-wait-final-receipt.json` binds source tree, source/log/fault
+hashes, compiler, nine executed x64 image identities and four pinned upstream
+blobs. Native execution is Windows x86_64 build 20348 only; other target checks
+prove compilation, not runtime compatibility.
+
+An initial fixture submitted `Z` and CR together to raw readers. The stock reader
+returned both available units while the owned reader returned only `Z`;
+`mode-wait-raw-batch-diagnostic.log` retains that separate compatibility gap.
+The waiter-mode court supplies only one raw unit to isolate lifetime selection;
+the following [raw-batch section](#raw-text-batch-capacity-and-remainders)
+qualifies available-input draining separately. Broader mode/VT/echo
+transitions and queued-versus-admitted races remain open, alongside
+the other API, OS/ISA runtime, performance, session and packaging boundaries.
+
+## Raw text batch capacity and remainders — court record
+
+Named evidence: `rust_console_native_raw_reads_batch_to_capacity_and_retain_record_metadata`,
+`rust_console_pty_raw_reads_batch_to_capacity_without_stealing_records` and
+`rust_console_client_raw_read_batches_compare_system_conpty`. Each owned court
+executes 30 cases; installed system ConPTY compares 22 ASCII/wide cases. Tests
+share a return/remaining-record oracle that is separate from the SDK client,
+and check both data batches and native remainder metadata. Logs and receipts
+are under ignored `target/conhost-research/raw-batch-*`.
+
+The three preceding waiter-mode tests are strengthened in the same source:
+their raw-text case now supplies `Z` and CR in one native write after enabling
+LINE_INPUT on an admitted raw waiter. Its expected result is `[90,13]`, without
+LF; the raw signal case retains its independent later single `Z`. This directly
+revisits `mode-wait-raw-batch-diagnostic.log`. The earlier mode-wait receipts
+remain historical evidence for the single-unit version, while this slice's
+final receipt binds the updated tests.
+
+`raw-batch-early-suite.log` records 298 passing selected tests: the prior 295
+and three new courts. Eight compiling runtime faults fail all three new and all
+three strengthened mode tests. They cover single-unit completion, remaining
+capacity, draining a byte tail before new input, incomplete-surrogate record
+restoration, leading versus embedded EOF, repeat accounting, actual native
+capacity and the two-unit mode fixture. The single-unit fault runs its three
+affected tests separately before byte restoration; its canonical log combines
+those actual failures. One compile-rejected capacity attempt is retained but
+excluded from `raw-batch-negative-audit.json`.
+
+The restored six-test focused selection passes. Its earlier 298-test selection
+is reused only after all seven implementation/test files match frozen hashes.
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `raw-batch-final-receipt.json` binds staged source tree, source/log/
+fault hashes, compiler, nine executed x64 image identities and six pinned source
+blobs. Native execution remains Windows x86_64 build 20348; other target checks
+prove compilation only.
+
+## Completed text and input file ownership — court record
+
+Named evidence: `rust_console_native_completed_text_belongs_to_its_file_object`,
+`rust_console_pty_completed_text_isolates_files_and_survives_duplicate_close` and
+`rust_console_client_completed_text_files_compare_system_conpty`. There are
+12 direct cases, 12 owned PTY cases and nine system PTY cases, 33 total. The
+return-value oracle is separate from the SDK client. Pinned stream.cpp chooses
+pending file input before current mode; readDataCooked.cpp saves remaining text
+through INPUT_READ_HANDLE_DATA, whose source/header define the per-file pending
+state. `read-cache-pinned-sources.json` verifies eight related blobs against
+revision 9fd41b2baec77d25b8cfb584070d5998eab7df81. Artifacts remain under ignored
+`target/conhost-research/read-cache-*`.
+
+`read-cache-early-suite.log` records 301 passing selected tests, retaining the
+prior 298 and adding three file-cache courts. Eight compiling runtime faults
+fail all three new tests: wrong staging owner, ignoring pending-cooked priority,
+omitted final-object retirement, incorrect flush readiness, another file
+resetting that readiness state, reversed encoded bytes, reversed UTF-16 units and using
+a new native open instead of an actual duplicate. Each restores exact original
+bytes and checks its source hash; `read-cache-negative-audit.json` binds logs.
+The final six-test focused selection also retains all three preceding raw-batch
+courts. An earlier successful full selection is reused only after all nine
+implementation/test files match their frozen source hashes.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `read-cache-final-receipt.json` binds staged source tree, source/
+log/fault hashes, compiler, nine executed x64 image identities and eight pinned
+upstream blobs. Native execution remains Windows x86_64 build 20348 only; other
+target checks prove compilation, not runtime compatibility.
+
+## Inherited files versus connection defaults — court record
+
+Named evidence: `rust_console_native_inherited_input_distinguishes_files_from_connection_defaults`,
+`rust_console_pty_inherited_input_distinguishes_file_and_default_lifetimes` and
+`rust_console_client_inherited_input_lifetimes_compare_system_conpty`. Each owned
+court executes 12 cases (three encodings, two input sources, two retirement
+causes); the system court executes eight ASCII/wide cases, 32 total. The oracle
+and passive observer are separate from the native SDK client. Both console-agent
+forcing variables are cleared for the system court.
+
+The initial oracle incorrectly assumed default aliases shared completed input.
+Both `inherit-cache-observe.log` and `inherit-cache-system-observe.log` returned
+only `X` through the child's default alias. Those diagnostic failures changed the
+oracle, not the backend, and are excluded from positive qualification. Successful
+corrected observations and final qualification use the explicit source/lifetime
+distinction. Artifacts are under ignored `target/conhost-research/inherit-cache-*`.
+
+The expanded regression also exposed an existing native buffer-family report
+race: the child used direct fs::write for `child-result`, while its parent
+treated file existence as a complete snapshot. Round 14 could therefore omit
+the entire `survivor` payload while independent held-buffer queries were correct.
+The SDK now uses the existing atomic publish helper (closed temporary file,
+same-directory rename) before releasing the reader. No sleep or weaker data
+assertion replaces the snapshot. Both existing buffer-family provider courts
+are retained for validation. `inherit-cache-second-suite-failure.log` preserves
+the race; an earlier suite's two old system observations and their passing
+isolated recheck are retained separately in first-suite-failure/recheck-system
+logs, not counted as positive full-suite evidence.
+
+`inherit-cache-early-suite.log` records 304 passing selected tests, retaining the
+prior 301 and adding these three. Eight compiling runtime faults fail all three
+new tests and both updated buffer-family provider tests: clearing file caches
+on caller retirement, retiring shared files as defaults, omitting default-cache
+retirement, passing a new file instead of inheriting the old one, faking detach,
+altering the held child's creation identity, and corrupting the survivor snapshot
+for each provider. One unused-variable compile rejection is retained but excluded
+from `inherit-cache-negative-audit.json`. Faults restore exact bytes and verify
+their source hashes.
+
+The restored eight-test focused selection passes, including the preceding three
+file-cache courts and both buffer-family providers. Seven static/cross checks
+pass: strict default/enabled workspace all-targets Clippy, four portable-library
+targets and Windows ARM64 platform PTY/Rust-console all-targets compilation.
+The successful 304-test selection is reused only after seven changed probe/court
+files and three unchanged implementation files match frozen hashes. The latter
+are also verified against the parent commit: this change qualifies existing
+backend behavior, without changing the backend algorithm.
+
+Formatting and 17 final alignment checks precede the local commit.
+`inherit-cache-final-receipt.json` binds staged source tree, changed and unchanged
+source hashes, log/fault hashes, compiler, nine executed x64 image identities,
+native object-identity reports and nine pinned upstream blobs. Native execution
+is Windows x86_64 build 20348 only; other target checks prove compilation only.
+
+## Native executable-scoped aliases — court record
+
+Named courts:
+`rust_console_native_aliases_store_expand_bound_and_run_actual_cmd`,
+`rust_console_pty_aliases_store_expand_bound_and_run_actual_cmd`, and
+`rust_console_client_aliases_compare_system_conpty`. Both owned courts execute
+17 fresh-console cases; the installed-system court executes nine, 43 total.
+The direct court passes output-ready false and a rejecting sink to all six
+metadata APIs: they finish without deferred output or publication. All direct
+clients, handles, reads and private-Job members retire. The actual cmd.exe case
+registers its alias in the SDK parent, starts a real interactive child, waits for
+its observed prompt, and executes an expanded echo plus `$T` exit. Child exit 23
+is checked before SDK root exit zero and terminal teardown; process cleanup is
+not accepted as command completion. Both console-agent forcing variables are
+cleared for the system court.
+
+## Native executable-scoped aliases — court record
+
+`aliases-early-suite.log` records 307 passing selected tests, retaining the
+preceding 304 and adding these three courts. Nine compiling runtime faults fail
+all three added tests: omitted lookup normalization, skipped deletion, truncated
+`$*` arguments, lost multiline boundaries, expansion without echo, an enlarged
+expansion limit, blocked metadata admission, literal LF misclassified as `$T`,
+and an actual cmd child exiting with the wrong code in the system reference.
+`aliases-negative-audit.json` binds the failing logs and exact-byte restoration
+hashes. Compile failures are not accepted as semantic fault evidence.
+
+The restored nine-test focused selection passes, retaining all six preceding
+inherited-file and completed-cache provider courts. The earlier successful
+307-test selection is reused only after all ten implementation/probe/court files
+match their frozen source hashes. No parser or public portable facade changes
+are included in this slice.
+
+Seven static/cross checks pass: strict default/enabled workspace all-targets
+Clippy, four portable-library targets and Windows ARM64 platform PTY/Rust-console
+all-targets compilation. Formatting and 17 final alignment checks precede the
+local commit. `aliases-final-receipt.json` binds staged source tree, compiled
+working-file and normalized index hashes, log/fault hashes, compiler, nine x64
+image identities, 43 native scenario receipts and 13 pinned source blobs.
+Artifacts remain under ignored `target/conhost-research/aliases-*`. Native
+execution remains Windows x86_64 build 20348 only; other target checks prove
+compilation only. The overall backend remains experimental and opt-in.
+
+## Dense native TUI replay — court record
+
+Named courts are
+`rust_console_pty_dense_tui_redraw_preserves_wire_native_state_and_alternate_resize`
+and `rust_console_client_dense_tui_redraw_compares_system_conpty`. The owned
+court runs six fresh sessions: burst/mixed with and without the accent, plus
+accent cases that grow 8x40 to 12x56 and shrink to 6x32 (rows x columns) while alternate-screen
+content remains active. The system subset runs the same two non-combining stable
+corpora. Together they produce 40 phase checkpoints across eight actual child
+lifetimes. Both console-agent forcing variables are cleared for system cases.
+ConPTY sidecars are absent beside the test runner and probe; the stock court
+uses the installed system provider on Windows x86_64 build 20348.
+
+The initial stock comparison exposed two distinct projection facts. Its output
+does not preserve the source's no-wrap bit. With e plus U+0301, native cursor
+readback is (7,39), but the emitted stream yields (7,38), despite matching row
+text. Replacing Greek lambda with L leaves the mismatch; removing only the
+combining accent eliminates it. Failed system/projection and paired diagnostic
+logs are retained separately from successful qualification. The combining
+system corpus remains BLOCKED, with the strict owned assertions retained.
+Alternate-screen stock resize also remains outside the reference subset; its
+old-build limitation is owned by [the terminal owner](../PRD_02_24_con_terminal.md#pty-backend-selection).
+This does not establish the cause of the user's Claude Code 0.2.14 report.
+
+## Dense native TUI replay — court record
+
+Qualification: 309 selected regressions, six final focused courts (including
+the preceding native geometry and Unicode-batch cases), seven static/cross-target
+checks and 17 final alignment checks pass. Four compiling runtime faults remove
+wire cursor-home commands, corrupt native row readback, alter producer drawing
+intent and suppress actual parent resize; each fails its intended court. Every
+fault restores original file bytes and verifies the source hash. Separately,
+enabling the blocked stock combining corpus reproduces the cursor discrepancy;
+that diagnostic is not counted as a fault guard or a compatibility pass.
+
+The first full run hit the existing system cooked-editor cosmetic trailing-space
+assertion; its isolated recheck and the second complete 309-case run pass. Both
+failed and successful logs are retained. No assertion was weakened for that
+failure. `tui-redraw-final-receipt.json` binds the staged tree, three changed
+test/helper files, five unchanged production/parser guards, four fault logs,
+seven checks, nine x64 image identities and hashes of 120 per-phase artifacts
+covering the 40 checkpoints. Phase wire captures exclude the final shutdown
+tail; the court separately parses that tail and verifies restored content,
+exit 29 and EOF. Evidence remains under ignored `target/conhost-research/`.
+Native execution is Windows x86_64 build 20348; other targets compile only.
+
+## Private-mode query return transport — court record
+
+`rust_console_pty_native_private_mode_queries_roundtrip_through_common_peer`
+launches the independent SDK client with the explicitly selected Rust provider.
+The client sets VT input, writes nine queries/mode transitions one API byte at
+a time and reads the actual return bytes through ReadFile. Literal SDK
+expectations cover bracketed paste reset/set/reset, no-wrap/wrap, hidden/visible
+cursor, unsupported 2026 and unknown 65535. The parent consumes output with the
+same public query helper used by the GUI and returns each report one byte per
+PTY write. Finally an actual Up arrow followed by q must read back as
+`[27,91,65,113]`; the report route must not consume or corrupt physical keys.
+The child publishes ten native records, exits 31 and reaches output EOF before
+fixture teardown. `rust_console_private_mode_reply_length_preserves_key_dispatch_boundary`
+checks every incomplete prefix, a following arrow/text tail, numeric/status
+bounds and malformed grammar. Safe failure is the existing bounded queue/error
+or finite fixture timeout with owned-process cleanup.
+
+## Private-mode query return transport — court record
+
+Qualification: 317 selected regressions pass, including all 27 owned screen
+fork units and the existing GUI DA/DSR/CPR/unknown-query courts. Six compiling
+runtime faults break unknown-capability status, the grid's origin getter,
+invalid-CSI rejection, the GUI reply queue, report numeric bounds and the
+Windows return-path hook. The four new courts each fail under their intended
+fault; byte-for-byte restoration and source hashes are verified after every
+case. Ten restored focused courts pass, retaining the preceding dense-TUI
+owned/system scenarios and their 40 phase checkpoints. Ten static/cross-target
+checks and 17 final alignment checks also pass; other OS/ISA evidence
+remains compilation only.
+
+`query-final-receipt.json` binds the staged tree, 14 changed manifest/source/test
+files, three unchanged stream/grammar guards, six fault logs, the ten native
+records, exact source/check/log hashes and 120 retained TUI phase-file hashes.
+Its eleven x64 image identities are a compiled-image inventory; five are
+exercised by the final focused courts. The broader selected-suite receipt is
+bound to the same frozen source. The failed initial native preflight is retained
+as the before-fix observation, not counted as a passing gate. Artifacts remain
+under ignored `target/conhost-research/query-*`; no packaged/default provider
+promotion or real Claude Code compatibility claim follows from these results.
+
+## Status response routing and CPR key boundary — court record
+
+`rust_console_pty_native_status_queries_and_cpr_key_boundary_roundtrip`
+launches `crates/minicon-platform/tests/support/status_roundtrip.rs` through
+the explicitly selected Rust PTY. For each native input mode 0 and 0x200, the
+independent SDK client writes DA1, DSR OK and positioned CPR queries one API
+byte at a time, then reads exact literal replies using ReadFile. The parent
+answers with the common frontend helper, one PTY input byte per write.
+Both CPR replies are exactly `CSI 1 ; 2 R`. After consuming them, identical
+bytes must instead become a Shift+F3 INPUT_RECORD; Ctrl+F3 and plain SS3 F3
+must retain virtual key 114, zero character and modifier flags 8/0. The child
+then issues an unanswered CPR, waits 2.5 seconds and verifies another actual
+Shift+F3 record after expiry. It publishes ten native records, exits 33 and
+reaches EOF before teardown. This proves mode-independent report delivery for
+these three queries, consistent with Microsoft's
+[Query State contract](https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#query-state).
+
+`rust_console_pty_query_tracking_overflow_retires_owned_session` sends 65
+unanswered queries, observes a tracking error and closed output, waits for
+actual child exit 1 and checks an empty private Job. This is an expected
+failure/cleanup court, not normal EOF acceptance.
+`rust_console_pty_response_tracking_follows_output_admission` verifies rejected
+staging writes cannot create CPR credits and accepted split query completion
+does create one. `console_agent_modified_function_keys_preserve_identity_and_native_modifiers`
+checks four key identities and eight modifier combinations against literals.
+The preceding output-staging court remains part of qualification.
+
+Qualification also exposed a concrete fixture publication race in
+`crates/minicon-platform/tests/support/buffers.rs`: readiness used a direct
+file write, allowing the parent to observe an existing but empty file. That
+producer now reuses the existing atomic `queued_reads::publish` helper. Its
+original native buffer-close assertions remain unchanged. A fault that creates
+the marker early and delays payload publication must reproduce the failure.
+
+The existing installed-system silent-editor snapshot also retained incidental
+trailing-space representation: erased cells and explicitly written spaces
+could produce different text strings with identical cursor/visible content.
+That reference now canonicalizes row tails only after checking that their
+cells have default background and no underline/inverse decoration. Native
+read receipts, cursor assertions, meaningful glyphs and the owned backend's
+exact snapshot stay strict; raw reference screen text is still logged. The
+reference golden removes only those trailing spaces. Separate SDK faults
+replace the prompt glyph and inject a red trailing blank, proving that the
+normalization cannot hide meaningful text or background damage.
+
+## Status response routing and CPR key boundary — court record
+
+Final-source qualification covers 322 distinct tests in two mandatory stages:
+321 selected regressions, then one isolated installed-system queued-disconnect
+reference. The named cases include every preceding 317-case identity (allowing
+the private-report unit's module relocation) and five added courts. No case is
+silently omitted, and this is not a claim of a stable single-invocation full
+suite. Thirteen restored focused courts pass, including the repaired buffer
+readiness and reference editor, preceding private reports and both dense-TUI
+owned/system courts with 40 phase checkpoints. Ten static/cross-target checks
+and 17 final alignment checks also pass; native runtime remains Windows x86_64
+build 20348 only, with other OS/ISA evidence limited to compilation.
+
+Eleven compiling runtime faults cover nine new/moved/affected courts: visible
+glyph/background damage, early readiness publication, expiry, numeric bounds,
+key modifier flags, output observation, input acknowledgement, query quota,
+observation before admission and staging capacity. Each fails its intended
+court, restores original bytes in finally and verifies source hashes.
+`status-final-receipt.json` binds the staged tree, 13 changed manifest/source/
+test/golden files, seven unchanged hot-file guards, all fault/check/log hashes,
+the 321+1 test identities, two native ten-record reports, quota-failure cleanup
+and 120 retained TUI phase-file hashes. Eleven x64 image identities form a
+compiled-image inventory; five are exercised by the final focused courts.
+Earlier failure logs and their pre-repair source scope remain diagnostics,
+separate from final-source acceptance. Artifacts remain under ignored
+`target/conhost-research/status-*`.
+
+Earlier broad attempts also retained intermittent pending-mode and queued-read
+retirement failures: one owned ReadConsole disconnect returned error 6 rather
+than 5, and installed-system disconnect-console sometimes stalled. The SDK's
+GetThreadIOPendingFlag readiness does not identify a particular host-admitted
+read request. That is an observed evidence limitation, not a newly established
+root cause. Three isolated rechecks passed with unchanged assertions. Final
+qualification stages the order-sensitive system queued-disconnect court
+separately and must not be described as a stable single-invocation full suite.
+The lifecycle admission/order issue remains open; the two concrete fixture
+repairs above do not establish that it is fixed.
+
+## Native read retention and admission observation — court record
+
+`rust_console_pty_native_read_state_observes_admission_completion_and_idle`
+runs independent ReadFile, ReadConsoleW and ReadConsoleInputW SDK cases. File
+barriers hold the client before its synchronous read and again after it
+returns. The parent observes empty inventory, exactly one admitted waiter of
+the expected family, then empty inventory after actual input Z completes the
+read. Each SDK result must independently report success, error 0, count 1 and
+unit 90, followed by child exit 34 and EOF. The observer must fail after close.
+The SDK's generic Console reader now copies a positive read's first UTF-16
+unit into its result; prior cancellation-only cases had returned zero units.
+`rust_console_client_native_read_state_is_explicitly_unsupported` verifies
+the installed-system capability error and a normal native file read/exit.
+
+The existing owned queued-pressure court now holds lifecycle/control actions
+behind an observed host-retained text/record read. Seven scenarios expose
+retained deferred reads under unread output; their original status, native
+result, control, writer-byte and cleanup assertions remain. The owned
+mode-change court holds eight changes until a validated text waiter is
+observed, then tests the original captured cooked/raw kind and signal result.
+Neither uses GetThreadIOPendingFlag as the host-admission acknowledgement.
+The SDK's earlier OS-pending marker remains only a submission precursor.
+Installed-system mode/pressure comparisons retain their weaker observation;
+no equivalent introspection capability is invented for them.
+
+## Native read retention and admission observation — court record
+
+Final-source evidence: 324 distinct tests pass in three mandatory invocations
+(322 selected regressions plus isolated queued-disconnect and mode-change
+installed-system references). All preceding 322 identities are retained and
+two observation courts are added. The system mode reference also failed with
+the same frozen source in a broader invocation (cooked expectation versus raw
+result); that diagnostic is retained. Its separate positive invocation does
+not prove the missing host-admission phase or single-suite order stability.
+Neither reference assertion was relaxed. The owned pressure court additionally
+asserts the exact deferred family and zero admitted counters before release.
+
+Eight compiling runtime faults break admitted text/record counters, conflate
+each deferred family with admitted state, block read-only control on output,
+fabricate unsupported-provider idle, reinterpret a saved waiter using live
+mode and discard positive SDK Console data. Each fails its intended one of
+the four new/affected courts. Bytes are restored in finally and checked by
+hash. Nine restored focused courts pass, retaining the direct native admitted
+mode/queued-read oracles, preceding actual query round trips and control/query
+liveness under output pressure. Nine static/cross-target checks and 17 final
+alignment checks pass: default/enabled workspace Clippy, four console-library
+targets, Windows ARM64 PTY/Rust-console and two minimal Linux PTY targets.
+
+`read-state-final-receipt.json` binds the staged tree, 12 changed source/test
+files, eight unchanged hot-file guards, all check/fault/log hashes, composed
+324 identities and 19 native phase observations: four SDK outcomes including
+the unsupported-provider case, eight mode snapshots and seven retained-read
+snapshots. Eleven x64 image identities are a compiled-image inventory; four
+are exercised by the final focused courts. Runtime qualification remains
+Windows x86_64 build 20348 only. Cross-target checks prove compilation, not
+runtime. Artifacts remain under ignored `target/conhost-research/read-state-*`;
+this adds neither default-provider promotion nor real Claude Code acceptance.
+
+## Native synchronized-output consumer court — court record
+
+Two named integration courts own the observations:
+
+- `rust_console_pty_synchronized_native_frames_keep_queries_live_and_commit_atomically`
+  covers explicit end and alternate-screen commit/restore.
+- `rust_console_pty_synchronized_native_unclosed_frames_recover_and_reach_eof`
+  covers missing-end timeout, byte-budget exhaustion, explicit resize and EOF.
+
+Each path runs twice: fragmented UTF-8 `WriteFile` output with `ReadFile` input,
+and `WriteConsoleW` output with `ReadConsoleW` input. Both fragment the begin
+and explicit end across native writes. Independent transport splitting then
+feeds the consumer one byte or at most 37 bytes at a time. The existing dense
+TUI recorder/splitter/native snapshot functions are shared; this adds no second
+API-payload format. Original F/W-tagged calls, PTY wire, native ASCII-prefix /
+geometry readback and active/presented snapshots are retained separately.
+Unicode cell placement, RGB, cursor, visibility, wrapping and alternate modes
+use literal consumer expectations; the native readback oracle deliberately
+checks ASCII prefixes and geometry, not a claim of complete Unicode cell ABI.
+
+The SDK program reads actual CPR and negative DECRPM bytes while the consumer
+still presents `MAIN-BASE`, then publishes the received native units and waits
+for an ordinary key. The parent verifies an admitted native text read through
+the opened PTY observation API before releasing that wait. Resize and idle
+recovery also query that live admission state. This is not a thread-pending
+flag or a sleep substituted for native readiness. Normal frames and alternate
+restore retain independent old/new cursor and cell assertions. An EOF case
+remains held through actual producer exit/output EOF, then explicitly calls
+the consumer's `finish` and checks the final frame. Every path requires exit
+35, output EOF, failed post-close read observation and verified-empty private
+Job cleanup.
+
+The presentation clock is scripted and monotonic: incoming output starts at
+1 ms; a 100 ms timeout is checked at 100 ms (before deadline) and 101 ms (deadline),
+with no new bytes required for recovery. The quota is 4096 bytes; the producer
+exceeds it using 900 idempotent no-wrap commands, preserving cells/cursor.
+Resize changes actual native geometry and the consumer from 8×40 to 12×56.
+These are state/transport assertions; they do not prove GUI wall-clock timers,
+pixel presentation, latency or real Claude Code behavior. Forced termination
+during a held native frame and wider process combinations remain separate work.
+
+Frozen-source qualification under ignored `target/conhost-research/`:
+`native-sync-regression.log` passes 14 selected cases: these two, the six
+common presentation cases, and six preceding owned-native query/redraw/
+pressure/read-state/retirement cases. It is a targeted selection, not the full
+workspace/native suite. `native-sync-negative-audit.json` records seven
+compiling runtime faults: leak the held frame, return the wrong cursor row,
+ignore end, miss the exact idle deadline, disable quota recovery, retain the
+hold on resize and omit EOF commit. Each breaks its assigned new native court;
+source bytes are restored in `finally` and SHA-checked. After restoration,
+`native-sync-restored-focused.log` passes ten cases: the new two, six common
+cases and preceding private/status native replies. Four checks pass: workspace
+format, default/enabled all-target workspace Clippy and enabled PTY/Rust-console
+Windows ARM64 all-target compilation. ARM64 is compilation evidence only.
+
+`native-sync-final-receipt.json` binds five changed SDK/test files, 15 unchanged
+hot-file guards, check/fault/log hashes and the exact staged tree. The restored
+native run has 12 sessions and 46 phase checkpoints, each with source/wire/
+native/frame files; their 184 phase files plus 12 case receipts and 12 actual
+native-unit reply reports form 208 retained artifacts. The audit rereads those
+artifacts, checks literal frames/cursors/modes/geometry, F/W records and marker
+presence/absence, and hashes each file. Three x64 exercised images are recorded:
+SDK producer, opened-PTY test runner and common presentation test runner.
+Runtime evidence remains Windows x64 build 20348 only. GUI adoption, incremental
+damage/snapshot cost, modern Windows/other ISA runtime, actual application/pixel
+qualification and default-provider promotion remain open.
+
+## 0.2.18 external-client scheduling check (2026-10-21)
+
+On the current Windows x64 development host, the explicit `rust-console`
+backend passed five PowerShell 7 cases (Unicode input/output, geometry, native
+buffers and cursor properties), two Node cases (raw Unicode TTY and readline
+editing), and eight Windows PowerShell 5 cases covering those paths plus RawUI
+rectangles, scrolling and managed buffer moves. These are actual external
+clients of the owned backend, not common-parser-only fixtures. The GUI
+owned-window and 95 non-ignored native PTY cases passed separately; they do
+not replace exact-artifact or other-ISA runtime courts.
+
+The eight ignored Windows PowerShell 5 cases initially failed together under
+libtest's parallel default: each eight-second readiness wait saw only its
+initial native title. All eight passed with `--test-threads=1`. They now take a
+test-process lease around each full external-client journey, so the ordinary
+parallel selector also passes all eight without lengthening the PTY I/O
+deadline. This demonstrates resource pressure in the court; it does not prove
+that every possible concurrent Windows PowerShell workload is supported.
+
+The 0.2.18 Windows payload build now explicitly enables
+`experimental-rust-console` for both x64 and ARM64. The six-cell source gate
+also compiles the enabled all-target graph and the `windows-release` binary
+shape on those two targets, while retaining the default-feature build. This
+closes a packaging-source omission: a default-feature executable rejects
+`--feature=rust-console` even when developer tests compile the service.
+The local Windows x64 `windows-release` executable reports `rust-console`,
+and its four-case real-window SDK/frame/cleanup journey passed when the test
+selected that executable through `MINICON_TEST_BINARY`. The SDK probe was a
+separate current-source test binary placed beside it; this is a retail-profile
+product check, not a sealed or signed Candidate. A sealed Candidate still must
+prove feature inclusion and pass the real-app/ARM64 courts independently.
