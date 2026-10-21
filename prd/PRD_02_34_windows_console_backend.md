@@ -4990,3 +4990,22 @@ with warnings denied, and enabled Windows ARM64 workspace compilation pass.
 These observations qualify this scoped Windows x64 runtime and ARM64 build;
 other OS/ISA runtime, concurrent races, GUI pixels and Claude Code rendering
 remain open.
+
+### 0.2.18 external-client scheduling check (2026-10-21)
+
+On the current Windows x64 development host, the explicit `rust-console`
+backend passed five PowerShell 7 cases (Unicode input/output, geometry, native
+buffers and cursor properties), two Node cases (raw Unicode TTY and readline
+editing), and eight Windows PowerShell 5 cases covering those paths plus RawUI
+rectangles, scrolling and managed buffer moves. These are actual external
+clients of the owned backend, not common-parser-only fixtures. The GUI
+owned-window and 95 non-ignored native PTY cases passed separately; they do
+not replace exact-artifact or other-ISA runtime courts.
+
+The eight ignored Windows PowerShell 5 cases initially failed together under
+libtest's parallel default: each eight-second readiness wait saw only its
+initial native title. All eight passed with `--test-threads=1`. They now take a
+test-process lease around each full external-client journey, so the ordinary
+parallel selector also passes all eight without lengthening the PTY I/O
+deadline. This demonstrates resource pressure in the court; it does not prove
+that every possible concurrent Windows PowerShell workload is supported.

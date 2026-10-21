@@ -3984,6 +3984,7 @@ fn powershell_geometry(name: &str) {
 #[test]
 #[ignore = "explicit external Windows PowerShell geometry court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_native_geometry() {
+    let _lease = legacy_powershell_lease();
     powershell_geometry("MINICON_TEST_WINDOWS_POWERSHELL");
 }
 
@@ -4026,6 +4027,7 @@ fn powershell_unicode_batches(name: &str) {
 #[test]
 #[ignore = "explicit Windows PowerShell bulk Unicode client; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_unicode_batches() {
+    let _lease = legacy_powershell_lease();
     powershell_unicode_batches("MINICON_TEST_WINDOWS_POWERSHELL");
 }
 
@@ -4099,6 +4101,7 @@ if([Console]::CursorSize -ne 43 -or [Console]::BufferWidth -ne 32){exit 21};
 #[test]
 #[ignore = "explicit external Windows PowerShell multiple-buffer court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_native_buffers() {
+    let _lease = legacy_powershell_lease();
     powershell_buffers("MINICON_TEST_WINDOWS_POWERSHELL");
 }
 
@@ -4131,6 +4134,7 @@ fn powershell_cursor_properties(name: &str) {
 #[test]
 #[ignore = "explicit external Windows PowerShell cursor property court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_cursor_properties() {
+    let _lease = legacy_powershell_lease();
     powershell_cursor_properties("MINICON_TEST_WINDOWS_POWERSHELL");
 }
 
@@ -4149,6 +4153,16 @@ fn external_client(name: &str) -> PathBuf {
         "BLOCKED: invalid {name}"
     );
     image
+}
+
+// Eight concurrent Windows PowerShell 5 startups can exhaust the fixture's
+// eight-second readiness window before any script begins. Keep this explicit
+// external-client court bounded without changing the backend's I/O deadline.
+fn legacy_powershell_lease() -> std::sync::MutexGuard<'static, ()> {
+    static LEASE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LEASE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn powershell_console_roundtrip(variable: &str) {
@@ -4173,6 +4187,7 @@ fn powershell_console_roundtrip(variable: &str) {
 #[test]
 #[ignore = "explicit external Windows PowerShell RawUI rectangle court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_rawui_rectangles() {
+    let _lease = legacy_powershell_lease();
     let script = "$ErrorActionPreference='Stop';$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('A中','CDX'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,2;$raw.SetBufferContents($pos,$cells);$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,3;$read=$raw.GetBufferContents($area);if($read[0,0].Character -cne 'A' -or $read[1,1].Character -cne 'D' -or $read[0,1].Character -cne '中' -or $read[1,2].Character -cne 'X' -or $read[0,0].ForegroundColor -ne [ConsoleColor]::Yellow -or $read[0,0].BackgroundColor -ne [ConsoleColor]::DarkBlue){exit 19};[Console]::SetCursorPosition(0,5);[Console]::Write('rawui-rect-ok:');exit 0";
     let mut fixture = Fixture::open(
         ChildCommand::new(external_client("MINICON_TEST_WINDOWS_POWERSHELL"))
@@ -4205,6 +4220,7 @@ fn rust_console_client_windows_powershell_rawui_rectangles() {
 #[test]
 #[ignore = "explicit external Windows PowerShell managed buffer-move court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_managed_buffer_move() {
+    let _lease = legacy_powershell_lease();
     let script = "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::GetEncoding(936);$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('A中','CDX'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,2;$raw.SetBufferContents($pos,$cells);[Console]::MoveBufferArea(2,2,3,2,2,3,[char]'.',[ConsoleColor]::White,[ConsoleColor]::DarkRed);$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,4;$read=$raw.GetBufferContents($area);if($read[0,0].Character -cne '.' -or $read[1,0].Character -cne 'A' -or $read[1,1].Character -cne '中' -or $read[2,1].Character -cne 'D' -or $read[2,2].Character -cne 'X' -or $read[0,0].BackgroundColor -ne [ConsoleColor]::DarkRed -or $read[1,0].ForegroundColor -ne [ConsoleColor]::Yellow){exit 19};[Console]::SetCursorPosition(0,6);[Console]::Write('managed-move-ok:');exit 0";
     let mut fixture = Fixture::open(
         ChildCommand::new(external_client("MINICON_TEST_WINDOWS_POWERSHELL"))
@@ -4229,6 +4245,7 @@ fn rust_console_client_windows_powershell_managed_buffer_move() {
 #[test]
 #[ignore = "explicit external Windows PowerShell RawUI scroll court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_rawui_scroll() {
+    let _lease = legacy_powershell_lease();
     let script = "$ErrorActionPreference='Stop';$raw=$Host.UI.RawUI;$cells=$raw.NewBufferCellArray([string[]]@('A中','CDX'),[ConsoleColor]::Yellow,[ConsoleColor]::DarkBlue);$pos=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,2;$raw.SetBufferContents($pos,$cells);$src=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,3;$dst=New-Object System.Management.Automation.Host.Coordinates -ArgumentList 2,3;$clip=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 0,0,15,7;$fill=New-Object System.Management.Automation.Host.BufferCell -ArgumentList ([char]'.'),([ConsoleColor]::White),([ConsoleColor]::DarkRed),([System.Management.Automation.Host.BufferCellType]::Complete);$raw.ScrollBufferContents($src,$dst,$clip,$fill);$area=New-Object System.Management.Automation.Host.Rectangle -ArgumentList 2,2,4,4;$read=$raw.GetBufferContents($area);if($read[0,0].Character -cne '.' -or $read[1,0].Character -cne 'A' -or $read[1,1].Character -cne '中' -or $read[2,1].Character -cne 'D' -or $read[2,2].Character -cne 'X' -or $read[0,0].BackgroundColor -ne [ConsoleColor]::DarkRed -or $read[1,0].ForegroundColor -ne [ConsoleColor]::Yellow){exit 19};[Console]::SetCursorPosition(0,6);[Console]::Write('rawui-scroll-ok:');exit 0";
     let mut fixture = Fixture::open(
         ChildCommand::new(external_client("MINICON_TEST_WINDOWS_POWERSHELL"))
@@ -4258,6 +4275,7 @@ fn rust_console_client_windows_powershell_rawui_scroll() {
 #[test]
 #[ignore = "explicit external Windows PowerShell court; missing client is BLOCKED"]
 fn rust_console_client_windows_powershell_console_roundtrip() {
+    let _lease = legacy_powershell_lease();
     powershell_console_roundtrip("MINICON_TEST_WINDOWS_POWERSHELL");
 }
 
