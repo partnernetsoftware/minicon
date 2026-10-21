@@ -606,6 +606,9 @@ x64/ARM64, macOS x64 and Windows ARM64. These verify common-library API and
 target compilation only. A standalone POSIX terminal session is still not
 provided by `minicon-console`; the macOS/Linux PTY implementation remains in
 `minicon-platform` until a real portable session contract is qualified.
+The generated external consumer itself also passed `cargo check --locked`
+for Linux x64 and macOS x64; those checks are compile-only, not native runtime
+execution on either OS.
 
 ## Independent text producers
 
