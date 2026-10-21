@@ -102,13 +102,20 @@ impl Workspace {
     }
 
     pub fn add_root(&mut self, title: String) -> Option<TabId> {
-        self.add(None, title, 0)
+        self.add(None, title, 0, self.nodes.len())
     }
 
     pub fn add_child(&mut self, parent: TabId, title: String) -> Option<TabId> {
         let parent_index = self.nodes.iter().position(|node| node.id == parent)?;
-        let depth = self.depths[parent_index].saturating_add(1);
-        self.add(Some(parent), title, depth)
+        let parent_depth = self.depths[parent_index];
+        let depth = parent_depth.saturating_add(1);
+        // Rows are preorder. Append to this parent's branch before the next
+        // row at the parent's depth (or above), rather than after every tab.
+        let insertion_index = self.depths[parent_index + 1..]
+            .iter()
+            .position(|&depth| depth <= parent_depth)
+            .map_or(self.nodes.len(), |offset| parent_index + 1 + offset);
+        self.add(Some(parent), title, depth, insertion_index)
     }
 
     pub fn close(&mut self, id: TabId) -> Option<TabNode> {
@@ -157,19 +164,28 @@ impl Workspace {
         }
     }
 
-    fn add(&mut self, parent: Option<TabId>, title: String, depth: u32) -> Option<TabId> {
+    fn add(
+        &mut self,
+        parent: Option<TabId>,
+        title: String,
+        depth: u32,
+        insertion_index: usize,
+    ) -> Option<TabId> {
         if self.nodes.len() >= MAX_TABS || self.next_id == u64::MAX {
             return None;
         }
         let id = TabId(self.next_id);
         self.next_id = self.next_id.checked_add(1)?;
-        self.nodes.push(TabNode {
-            id,
-            parent,
-            title,
-            custom_title: None,
-        });
-        self.depths.push(depth);
+        self.nodes.insert(
+            insertion_index,
+            TabNode {
+                id,
+                parent,
+                title,
+                custom_title: None,
+            },
+        );
+        self.depths.insert(insertion_index, depth);
         self.active = Some(id);
         Some(id)
     }
@@ -201,6 +217,49 @@ mod tests {
             .position(|node| node.id == id)
             .expect("node present");
         workspace.depths()[index]
+    }
+
+    #[test]
+    fn new_children_stay_inside_their_active_parents_branch() {
+        let mut workspace = Workspace::default();
+        let first = workspace.add_root("first".into()).unwrap();
+        let existing_child = workspace.add_child(first, "existing".into()).unwrap();
+        let second = workspace.add_root("second".into()).unwrap();
+
+        assert!(workspace.set_active(first));
+        let new_child = workspace
+            .add_child(workspace.active().unwrap(), "new".into())
+            .unwrap();
+        assert_eq!(workspace.node(new_child).unwrap().parent, Some(first));
+        assert_eq!(
+            workspace
+                .nodes()
+                .iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>(),
+            [first, existing_child, new_child, second],
+            "a child of the first root must appear before the next root"
+        );
+        assert_eq!(workspace.depths(), &[0, 1, 1, 0]);
+
+        assert!(workspace.set_active(existing_child));
+        let grandchild = workspace
+            .add_child(workspace.active().unwrap(), "grandchild".into())
+            .unwrap();
+        assert_eq!(
+            workspace.node(grandchild).unwrap().parent,
+            Some(existing_child)
+        );
+        assert_eq!(
+            workspace
+                .nodes()
+                .iter()
+                .map(|node| node.id)
+                .collect::<Vec<_>>(),
+            [first, existing_child, grandchild, new_child, second],
+            "a grandchild must appear inside its parent's branch"
+        );
+        assert_eq!(workspace.depths(), &[0, 1, 2, 1, 0]);
     }
 
     /// Closing a node with several children promotes all of them to its parent,

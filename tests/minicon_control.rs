@@ -490,6 +490,75 @@ fn minicon_binary() -> PathBuf {
 }
 
 #[test]
+fn child_shortcut_inserts_beneath_the_active_root_or_child() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let trace =
+        HostTrace(std::env::temp_dir().join(format!("minicon-child-shortcut-{suffix}.log")));
+    let mut host = Command::new(exe);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        host.process_group(0);
+    }
+    host.arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e");
+    for arg in host_shell_args() {
+        host.arg(arg);
+    }
+    host.stdout(std::process::Stdio::null())
+        .stderr(fs::File::create(&trace.0).expect("create host diagnostic file"));
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(format!("minicon-child-shortcut-{suffix}.png")),
+    };
+    let listed = wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
+    let first = tab_id(&listed["tabs"][0]["id"]).to_owned();
+    let second = cli_json(exe, &endpoint, &["new-tab"])["id"]
+        .as_str()
+        .expect("second root ID")
+        .to_owned();
+
+    cli_json(exe, &endpoint, &["select-tab", "--target", &first]);
+    cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+Shift+N"]);
+    let listed = cli_json(exe, &endpoint, &["list-tabs"]);
+    let tabs = listed["tabs"].as_array().expect("tabs array");
+    assert_eq!(tabs.len(), 3, "shortcut must create one tab: {listed}");
+    let child = tab_id(&tabs[1]["id"]).to_owned();
+    assert_eq!(tab_id(&tabs[0]["id"]), first);
+    assert_eq!(tabs[1]["parent"], first, "shortcut parent: {listed}");
+    assert_eq!(tabs[1]["active"], true);
+    assert_eq!(tab_id(&tabs[2]["id"]), second);
+
+    cli_json(exe, &endpoint, &["send-ui-keys", "Ctrl+Shift+N"]);
+    let listed = cli_json(exe, &endpoint, &["list-tabs"]);
+    let tabs = listed["tabs"].as_array().expect("tabs array");
+    assert_eq!(
+        tabs.len(),
+        4,
+        "shortcut must create one grandchild: {listed}"
+    );
+    assert_eq!(tab_id(&tabs[0]["id"]), first);
+    assert_eq!(tab_id(&tabs[1]["id"]), child);
+    assert_eq!(
+        tabs[2]["parent"], child,
+        "active child is the parent: {listed}"
+    );
+    assert_eq!(tabs[2]["active"], true);
+    assert_eq!(tab_id(&tabs[3]["id"]), second);
+}
+
+#[test]
 fn gui_control_surface_isolated_multitab_black_box() {
     let exe = minicon_binary();
     let exe = exe.as_path();

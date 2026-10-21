@@ -14,7 +14,7 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 ```text
 minicon workspace and input
 ├── Tab and window naming (user name vs derived label vs OSC title)
-├── Tab tree authority (stable ids, parent/child, close, remain-on-exit)
+├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
 ├── Host UI
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   ├── sent-history panel (0.2.6)
@@ -108,6 +108,14 @@ flowchart LR
 - [v] `Workspace` is the sole authority for tree order, parentage and stable tab
   identity. Closing a parent promotes its direct children instead of terminating
   them; a parent cycle is rejected.
+- [v] `Ctrl+Shift+N` creates a child of the currently active root or child and
+  places its row at the end of that parent's branch, before the next sibling or
+  root branch. Existing children retain their order. Evidence:
+  `workspace::tests::new_children_stay_inside_their_active_parents_branch` and
+  `child_shortcut_inserts_beneath_the_active_root_or_child` through the real GUI
+  control endpoint. With no active tab, the shortcut creates a root; a full tree
+  keeps its existing capacity refusal. This does not change the root-creation
+  shortcut or session lifetime.
 - [v] local creation is capped at 256 live tabs. Capacity or stable-id
   exhaustion rejects the new tab before mutating tree order, parentage or active
   selection, and the release-build session store rejects duplicate ids rather
@@ -117,10 +125,11 @@ flowchart LR
   interactive tab set and may swap entries on removal because its physical order
   is unobservable.
 - [v] tree depth is a `Workspace`-owned derived cache aligned with node order.
-  Root and child creation append their known depth in O(1); close and direct
-  child promotion rebuild through the shared UI-core typed algorithm, which
-  remains the sole authority for missing parents, duplicate ids, cycles and
-  complete topology resolution. Host UI paint borrows the immutable depth slice
+  Root creation appends its known depth in O(1); child creation scans to the end
+  of its parent's bounded branch and inserts the known depth alongside its row.
+  Close and direct child promotion rebuild through the shared UI-core typed
+  algorithm, which remains the sole authority for missing parents, duplicate
+  ids, cycles and complete topology resolution. Host UI paint borrows the depth slice
   instead of sorting, allocating and resolving every parent chain per frame.
 - [v] geometry, iterative typed tree-depth resolution, tree viewport bounds and
   hit results are pure deterministic contracts covered independently of
