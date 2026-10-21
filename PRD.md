@@ -46,14 +46,14 @@ MiniCon — one-file local terminal
 │       └── prd/PRD_02_35_terminal_library.md
 ├── Qualification and delivery
 │   ├── native developer feedback → prd/PRD_02_32_dev_loop_crosscheck.md
-│   ├── [_] targeted profiles and staged composition
+│   ├── [-] targeted profiles and staged composition
 │   │   └── prd/PRD_02_33_test_orchestration.md · plan/plan-v0.2.16.md
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [v] v0.2.15 → prd/archive/v0.2.15-release-history.md
-    ├── [v] v0.2.16 design; [_] implementation → plan/plan-v0.2.16.md
-    ├── [-] v0.2.17 modern-agent design; [_] implementation → plan/plan-v0.2.17.md
+    ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
+    ├── [-] v0.2.16 test-selection work → plan/plan-v0.2.16.md
+    ├── [-] v0.2.17 modern-agent gate → plan/plan-v0.2.17.md
     └── [_] 0.2.x product sequence / release decisions → plan/plan-v0.2.x-product-roadmap.md
 ```
 
@@ -127,29 +127,29 @@ flowchart LR
 
 ## Current frontier
 
-- [-] **Owned Rust Windows console backend: minicon-console.** Source and REA
-  release pinned; native ConDrv, limited Win32 I/O/records and job cleanup implemented.
-  Explicit experimental PTY and GUI selection, scoped PowerShell/Node and Ctrl+C
-  evidence implemented; broader compatibility and candidate packaging remain open.
+- [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
+  limited Win32 I/O/records and job cleanup are implemented. The explicit
+  experimental PTY and GUI choice is packaged in v0.2.18; scoped PowerShell/Node
+  and Ctrl+C evidence exists. Broader API/runtime compatibility, especially
+  Windows ARM64 Rust-provider execution and a visible exact-Candidate agent
+  matrix, remain open. The classic Windows provider is still the default.
   [Owner](prd/PRD_02_34_windows_console_backend.md) and
-  [sequence](plan/plan-windows-console-backend.md); no release assigned.
-- [v] **v0.2.15 published**, `2026-10-18T16:53:25Z`, source
-  `0ac2d7ed1b3898835956f80569718c4d2eb994b9`. Explicit reuse boundaries,
-  optional core features, compatible tree/numeric consolidation, Dark theme
-  and unchanged-frame console fix. [Release history](prd/archive/v0.2.15-release-history.md)
-  owns final receipts and limitations; [archived plan](plan/archive/plan-v0.2.15.md)
-  preserves intermediate qualification findings.
-- [_] **v0.2.16 implementation; design ready.** Test inventory, targeted
-  dependency-based selection, profile unions, bounded fixtures and comparable
-  coverage/cost evidence. [Plan](plan/plan-v0.2.16.md) sequences the
-  [owning contract](prd/PRD_02_33_test_orchestration.md). No 0.2.16 code or
-  version bump is claimed by the design.
-- [_] **0.2.x product sequence proposed.** After 0.2.16 developer feedback,
-  prioritize the reproduced Claude/Grok/Codex failures and a qualified
-  selectable provider, widen the owned Windows preview, prove independent
-  terminal-library reuse, then decide the Windows default from exact artifacts.
-  The [0.2.17 plan](plan/plan-v0.2.17.md) sequences the next TUI gate;
-  the [roadmap](plan/plan-v0.2.x-product-roadmap.md) owns version decisions.
+  [sequence](plan/plan-windows-console-backend.md).
+- [v] **v0.2.18 published**, `2026-10-21T06:56:59Z`, source
+  `9a25ee4b55809c9118d67ab9c1904a8e800b956d`. The signed packages include
+  the explicit Rust-console choice and display the correct version; child-tab
+  targeting, bounded screenshot replies and initial staged developer profiles
+  also ship. [Release history](prd/archive/v0.2.18-release-history.md) owns the
+  exact receipts and limits. The full three-agent TUI gate was not claimed.
+- [-] **Test selection remains partial.** Explicit edit/integration profiles,
+  task deduplication and plan-only conservative path selection now work;
+  complete inventory, automatic dependency closure and comparable cost/coverage
+  measurement remain open. [Plan](plan/plan-v0.2.16.md) and
+  [owner](prd/PRD_02_33_test_orchestration.md) retain the work.
+- [-] **Modern agent and portable-session quality remain open.** The
+  [TUI plan](plan/plan-v0.2.17.md) and
+  [0.2.x roadmap](plan/plan-v0.2.x-product-roadmap.md) retain the unqualified
+  three-agent, native API, OS/ISA and default-provider decisions.
 - [-] **RSS and transient-host cost**, including carried `{AMPLIFIER-T}`, remain
   open. The 10 MiB intent is not achieved by this release. Measurements and
   retained-frame/native-host investigations belong to
@@ -179,7 +179,7 @@ flowchart LR
 
 [Release-history archive](prd/archive/README.md) owns historical outcomes.
 The previous index is preserved in the
-[v0.2.15 source tag](https://github.com/partnernetsoftware/minicon/blob/v0.2.15/PRD.md);
+[v0.2.18 source tag](https://github.com/partnernetsoftware/minicon/blob/v0.2.18/PRD.md);
 its intermediate planning statements are not the current frontier. Detailed
 behavior, experiment diaries and per-version gate scope stay in their owners.
 

@@ -22,6 +22,10 @@ directory's future TODO.
 
 Entries:
 
+- [v0.2.18 release history](v0.2.18-release-history.md) — versioned window,
+  opt-in packaged Rust console, bounded screenshot replies, staged developer
+  profiles and exact signed/Defender-qualified public Promotion; records the
+  still-open modern-TUI and cross-OS/ISA session gates.
 - [v0.2.15 release history](v0.2.15-release-history.md) — reusable module
   boundaries, optional core features, compatible tree/numeric consolidation,
   Dark theme, unchanged-frame console fix and exact signed/Defender-qualified
@@ -46,7 +50,7 @@ Entries:
   includes the owner's dated `minicon.com` ceiling raise (11 → 11.75 MiB) and
   the second recorded macOS `stapler`/CloudKit flake.
 
-File index (updated 2026-10-19), so a reader can tell "listed" from
+File index (updated 2026-10-21), so a reader can tell "listed" from
 "missing" at a glance — the per-file text is the authority, this is only a map:
 
 - `v0.1.3` · `v0.1.4` · `v0.1.5` · `v0.1.6` · `v0.1.7` · `v0.1.9` · `v0.1.10`
@@ -54,7 +58,7 @@ File index (updated 2026-10-19), so a reader can tell "listed" from
   · `v0.1.17` · `v0.1.18` · `v0.1.19` · `v0.1.20` · `v0.1.21` · `v0.1.22`
   · `v0.1.23` · `v0.1.26` · `v0.2.0` · `v0.2.1` · `v0.2.3` · `v0.2.4`
   · `v0.2.5` · `v0.2.6` · `v0.2.7` · `v0.2.8` · `v0.2.9` · `v0.2.10`
-  · `v0.2.11` · `v0.2.12` · `v0.2.13` · `v0.2.14` · `v0.2.15`
+  · `v0.2.11` · `v0.2.12` · `v0.2.13` · `v0.2.14` · `v0.2.15` · `v0.2.18`
 - Also in this directory: `v0.1.7-mac-handoff.md` (§ handoff, not a release),
   `azure-work-tenant-signing-enroll.md`.
 - No ledger exists for `v0.1.8`, `v0.1.24`, `v0.1.25` or `v0.2.2` — recorded

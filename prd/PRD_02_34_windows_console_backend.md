@@ -5022,3 +5022,13 @@ selected that executable through `MINICON_TEST_BINARY`. The SDK probe was a
 separate current-source test binary placed beside it; this is a retail-profile
 product check, not a sealed or signed Candidate. A sealed Candidate still must
 prove feature inclusion and pass the real-app/ARM64 courts independently.
+
+### Published 0.2.18 boundary
+
+The [v0.2.18 public release](archive/v0.2.18-release-history.md) packages the
+explicit Rust choice in signed Windows artifacts and retains the classic
+default. Its exact Windows x64 archive passes version, selection, signature,
+screenshot and multi-tab checks. The six-cell Candidate executes packaged
+artifacts, but the ARM64 cell does not yet establish an actual Rust-provider
+session. The visible exact-Candidate three-agent matrix, broad API coverage and
+cost/default-promotion decision remain open.

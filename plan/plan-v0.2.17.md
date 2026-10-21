@@ -1,9 +1,10 @@
 # v0.2.17 — modern agent terminal quality
 
-Status: unfinished release gate, updated 2026-10-21. Development source is now
-0.2.18 and a scoped current-source three-agent Rust-provider interaction has
-passed, but no exact Candidate or public 0.2.18 release exists. The unmet
-0.2.17 obligations carry into the 0.2.18 release decision. The behavior and
+Status: unfinished modern-agent gate, updated 2026-10-21. A scoped
+current-source three-agent Rust-provider interaction passed; v0.2.18 is now
+[public](../prd/archive/v0.2.18-release-history.md) with a narrower explicit
+preview. The visible exact-Candidate three-agent matrix and source/wire/style
+attribution were not completed. The behavior and
 evidence owner is
 [modern TUI compatibility](../prd/PRD_02_24_01_tui_compatibility.md);
 [terminal selection](../prd/PRD_02_24_con_terminal.md#pty-backend-selection)

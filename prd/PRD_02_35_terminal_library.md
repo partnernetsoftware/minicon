@@ -779,3 +779,13 @@ no native-only abort filter is added to this facade. Callback migration and
 UTF-8 ST bounds belong to
 [terminal state](PRD_02_24_con_terminal.md#osc-cancellation-and-termination),
 with actual Windows/reference evidence in PRD 02.34's termination leaf.
+
+## Published 0.2.18 reuse boundary
+
+The [v0.2.18 release](archive/v0.2.18-release-history.md) includes the
+independent `minicon-console` consumer in its source gate and an explicitly
+selectable Windows Rust service in the signed product. Linux, macOS and ARM64
+library target checks are compilation evidence; the Windows x64 consumer run
+is native evidence for its common API. A portable process/session contract and
+runtime consumers on each OS/ISA remain open. No `minicon-platform` merger or
+cross-platform native-session claim follows from this release.

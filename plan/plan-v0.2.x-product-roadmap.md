@@ -1,10 +1,10 @@
 # MiniCon 0.2.x product roadmap
 
-Status: product proposal, updated 2026-10-21. v0.2.15 is the latest published
-version. The development source now identifies as v0.2.18; a local retail-profile
-Windows window reports that version, but no v0.2.18 Candidate or public release
-exists. Unfinished 0.2.16 test-orchestration and 0.2.17 agent-quality gates
-carry into the v0.2.18 release decision rather than becoming shipped claims.
+Status: product sequence, updated 2026-10-21. v0.2.18 is the latest published
+version; [its release history](../prd/archive/v0.2.18-release-history.md) owns
+the exact source, artifact and Promotion receipts. Unfinished 0.2.16
+test-orchestration and 0.2.17 agent-quality gates remain open after that
+bounded release rather than becoming shipped claims.
 Explicit edit/integration test profiles are now available; changed-path
 selection remains plan-only until its dependency coverage is qualified.
 The later version assignments below are proposed release gates, not dates.
@@ -69,10 +69,10 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 │   safe failure: narrow the release claim when the classic path or preview fails a cell
 │   dependency: PRD 24.01 and plan-v0.2.17; full gate remains required without 0.2.16 profiles
 │   non-goal: automatic provider-default change or declaring every TUI fixed
-├── [-] 0.2.18 — broaden the owned Windows backend preview
+├── [v] 0.2.18 — publish a bounded, explicit owned Windows backend preview
 │   invariant: selected sessions use the actual Rust provider and clean up their own tree
-│   evidence: wider real shell/API/ISA journeys, wire/frame/lifetime comparison and cost
-│   safe failure: reject unavailable selection; preserve stable product default
+│   evidence: signed six-cell Candidate, explicit x64 selection and scoped app/shell courts
+│   safe failure: reject unavailable selection; preserve stable product default and open gaps
 │   dependency: PRD 34 and the 0.2.17 scoped app court; non-goal: global conhost removal
 ├── [_] 0.2.19 — reusable terminal contract across OS and ISA
 │   invariant: one common state/stream contract with explicit native capabilities
@@ -109,15 +109,14 @@ flowchart LR
 | --- | --- | --- |
 | 0.2.16 — developer feedback | Changes to one module get relevant tests promptly; integration and release still show every required court. | Implement the existing [0.2.16 plan](plan-v0.2.16.md): inventory, bounded fixture lifetime, explained selection, deduplicated composition and measured cold/warm cost. A mutation of an impacted dependency must fail its selected profile. `l3`/`all` still reaches the canonical full local gate; signing and artifact courts remain separate. Ship this before adding a larger compatibility matrix. |
 | 0.2.17 — modern agent quality | A user can select a named provider that keeps Claude Code, Grok Build and Codex CLI readable and usable through repeated output and resize. | Follow [the dedicated 0.2.17 plan](plan-v0.2.17.md): locate each failure across original output, backend wire, shared state and pixels; fix representable classic-path defects, qualify Unicode/SGR color fixtures and repeated real-agent sessions, and include an explicit Rust selection in the exact Windows candidate only if its native/lifecycle courts pass. State failed default-path behavior and provider-specific coverage. A developer-only feature is not a user-facing result; no default promotion or positive 2026 claim without its separate gate. |
-| 0.2.18 — broader Windows backend preview | The explicit Rust choice supports a wider set of ordinary Windows programs, with clear errors for unsupported APIs and bounded teardown. | Windows payload feature wiring, scoped external-client tests and a direct common-library consumer are in progress, not a release pass. Build on the 0.2.17 named-provider court. Compare installed ConPTY and Rust with PowerShell/cmd/Node and further real harnesses across startup, input, Ctrl+C/Break, resize, exit tail, child-tree cleanup and close. Keep the `minicon-console` consumer and Linux/macOS/Windows cross-target library checks in the source gate. Report native API input, emitted wire, frame, latency and total host/helper RSS. Windows x64 and ARM64 runtime claims require separate runs; cross-compilation is build evidence only. A missing app or ISA court narrows the preview claim, not the stable product. |
+| 0.2.18 — bounded Windows backend preview | The packaged explicit Rust choice is available while the classic backend remains default. | [Published with exact signed Candidate, Defender and no-rebuild Promotion](../prd/archive/v0.2.18-release-history.md). Windows x64 current-source shell/agent journeys and direct common-library consumption are scoped passes. Exact-Candidate visible three-agent acceptance, Rust runtime on Windows ARM64, broader native API coverage, source/wire attribution and latency/RSS remain open. Carry them to the next qualification decision; the published version makes no broad compatibility or default-promotion claim. |
 | 0.2.19 — integrated terminal library | MiniCon and an independent small consumer use `minicon-console` for the same common terminal state, while native providers stay explicit. | Define the smallest input/session/flow-control/capability contract from actual Windows and POSIX consumers. Preserve `minicon-platform::pty` compatibility during migration; move one proven mechanism at a time and check public type identity, features and OS/ISA runtime. Provide a truthful modern VT/xterm-style default profile; expose only qualified compatibility profiles and an advanced TERM override for **new sessions**. Changing TERM describes capabilities to applications and does not switch parser or native backend. If the contract is not proved on supported runtime cells, keep the existing platform adapter and narrow the release claim. |
 | 0.2.20 — default decision and product cost | Users receive the best evidenced Windows backend choice with a known path to recover from failures. | Decide whether to make the owned backend the Windows default using exact packaged artifacts and versioned real-app journeys, comparison of failure/cleanup, input latency, sustained redraw and total process RSS. Include product GUI pixel/snapshot consistency and rollback/selection evidence. A failed or unavailable criterion keeps the stable default and explicit preview. Track the 10 MiB idle-host intent, build/pack latency and artifact size separately; do not exchange correctness or signed-artifact requirements for a speed claim. |
 
-These version numbers express priority and dependencies. 0.2.17 may ship a
-well-bounded repair with a narrower real-agent claim when a named cell fails,
-but cannot call the three-agent use case solved without a packaged selectable
-provider that passes it. 0.2.18 broadens the explicit preview rather than
-changing the Windows default by implication.
+These version numbers express priority and dependencies. The skipped 0.2.17
+number did not deliver its full modern-agent gate. The public 0.2.18 release
+provides a bounded explicit preview without changing the Windows default or
+claiming that the three-agent use case is solved.
 0.2.19 may ship the common contract before every adapter is consolidated.
 0.2.20 is a decision point, not a promise that the default will switch.
 
