@@ -5009,3 +5009,16 @@ test-process lease around each full external-client journey, so the ordinary
 parallel selector also passes all eight without lengthening the PTY I/O
 deadline. This demonstrates resource pressure in the court; it does not prove
 that every possible concurrent Windows PowerShell workload is supported.
+
+The 0.2.18 Windows payload build now explicitly enables
+`experimental-rust-console` for both x64 and ARM64. The six-cell source gate
+also compiles the enabled all-target graph and the `windows-release` binary
+shape on those two targets, while retaining the default-feature build. This
+closes a packaging-source omission: a default-feature executable rejects
+`--feature=rust-console` even when developer tests compile the service.
+The local Windows x64 `windows-release` executable reports `rust-console`,
+and its four-case real-window SDK/frame/cleanup journey passed when the test
+selected that executable through `MINICON_TEST_BINARY`. The SDK probe was a
+separate current-source test binary placed beside it; this is a retail-profile
+product check, not a sealed or signed Candidate. A sealed Candidate still must
+prove feature inclusion and pass the real-app/ARM64 courts independently.

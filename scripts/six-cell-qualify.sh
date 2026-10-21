@@ -396,6 +396,13 @@ build_win_x86_64() {
   run_stage win-x86_64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
     cargo xwin build --locked --profile release-fast --workspace --all-targets \
       --target x86_64-pc-windows-msvc
+  run_stage win-x86_64 owned-console-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
+    cargo xwin build --locked --workspace --all-targets --target x86_64-pc-windows-msvc \
+      --features experimental-rust-console
+  run_stage win-x86_64 owned-console-retail-link env CARGO_TARGET_DIR="$BUILD_DIR/win-x86_64" \
+    MINICON_RELEASE_PATHS_REDACTED=1 RUSTFLAGS="--remap-path-prefix=$HOME=~" \
+    cargo xwin build --locked --profile windows-release --bin minicon \
+      --target x86_64-pc-windows-msvc --features experimental-rust-console
   inspect_artifact win-x86_64 "$BUILD_DIR/win-x86_64/x86_64-pc-windows-msvc/debug/minicon.exe" "GUI) x86-64"
 }
 
@@ -405,6 +412,13 @@ build_win_aarch64() {
   run_stage win-aarch64 throughput-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
     cargo xwin build --locked --profile release-fast --workspace --all-targets \
       --target aarch64-pc-windows-msvc
+  run_stage win-aarch64 owned-console-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
+    cargo xwin build --locked --workspace --all-targets --target aarch64-pc-windows-msvc \
+      --features experimental-rust-console
+  run_stage win-aarch64 owned-console-retail-link env CARGO_TARGET_DIR="$BUILD_DIR/win-aarch64" \
+    MINICON_RELEASE_PATHS_REDACTED=1 RUSTFLAGS="--remap-path-prefix=$HOME=~" \
+    cargo xwin build --locked --profile windows-release --bin minicon \
+      --target aarch64-pc-windows-msvc --features experimental-rust-console
   inspect_artifact win-aarch64 "$BUILD_DIR/win-aarch64/aarch64-pc-windows-msvc/debug/minicon.exe" "GUI) Aarch64"
 }
 

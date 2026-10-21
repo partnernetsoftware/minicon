@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build an isolated consumer so workspace feature unification cannot hide a
-# dependency on core's default editor/codec features. Owner: PRD_02_28.
+# dependency on core's default editor/codec features, and exercise the common
+# terminal API without enabling the Windows service. Owner: PRD_02_28/35.
 set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -32,6 +33,7 @@ publish = false
 minicon-core = { path = "../../crates/minicon-core", default-features = false }
 minicon-ui-core = { path = "../../crates/minicon-ui-core", default-features = false }
 minicon-platform = { path = "../../crates/minicon-platform", default-features = false }
+minicon-console = { path = "../../crates/minicon-console" }
 TOML
 cat > "$probe/src/main.rs" <<'RUST'
 fn main() {
@@ -43,6 +45,13 @@ fn main() {
     assert_eq!(depths, Ok(vec![0]));
     let round: fn(f32) -> f32 = minicon_platform::numeric::round_f32;
     assert_eq!(round(-0.0).to_bits(), minicon_core::numeric::round_f32(-0.0).to_bits());
+    let mut terminal = minicon_console::terminal::TerminalStream::new(2, 8, 0, 4096);
+    let mut wire = Vec::new();
+    terminal.write_output(b"Hi", &mut wire).unwrap();
+    assert_eq!(wire, b"Hi");
+    assert_eq!(terminal.screen().rows(0, 8).next(), Some("Hi".to_owned()));
+    let (screen, ()) = terminal.finish(&mut wire).unwrap();
+    assert_eq!(screen.rows(0, 8).next(), Some("Hi".to_owned()));
 }
 RUST
 # Seed from the product lock to retain already-qualified registry versions;
@@ -59,11 +68,14 @@ packages = {package["id"]: package for package in metadata["packages"]}
 nodes = {packages[node["id"]]["name"]: node for node in metadata["resolve"]["nodes"]}
 core = nodes["minicon-core"]
 ui = nodes["minicon-ui-core"]
+console = nodes["minicon-console"]
 assert not core["features"], f"core features leaked into minimal consumer: {core['features']}"
 assert not core["deps"], "minimal core must have no dependency edges"
 assert not ui["features"], f"UI features leaked into minimal consumer: {ui['features']}"
 assert {edge["name"] for edge in ui["deps"]} == {"minicon_core"}, "minimal UI must depend only on core"
-print("minimal reuse graph: core has no dependencies; UI depends only on core")
+assert not console["features"], f"console features leaked into minimal consumer: {console['features']}"
+assert "minicon_platform" not in {edge["name"] for edge in console["deps"]}, "console must not depend on platform"
+print("minimal reuse graph: core/UI identity and independent console API verified")
 PY
 cargo run --locked --manifest-path "$probe/Cargo.toml" \
   --config 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]'

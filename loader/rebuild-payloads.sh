@@ -47,7 +47,8 @@ build_one() {
       MINICON_RELEASE_PATHS_REDACTED=1 \
         RUSTFLAGS="--remap-path-prefix=$HOME=~" \
         CARGO_TARGET_DIR="$dir" cargo xwin build --locked \
-        --profile windows-release --bin minicon --target "$target"
+        --profile windows-release --bin minicon --target "$target" \
+        --features experimental-rust-console
       ;;
   esac
 }

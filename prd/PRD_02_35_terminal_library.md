@@ -596,6 +596,17 @@ library checks passed for Linux x86_64/aarch64, Windows aarch64 and macOS x86_64
 these are compile-only receipts, not new native runtime certification. Detailed
 hashes and remaining scope are in ignored `terminal-host-adoption-final-receipt.json`.
 
+The current `scripts/check-reuse.sh` now gives `minicon-console` a direct
+out-of-workspace consumer alongside the existing core/UI/platform probe. It
+asserts that the console dependency graph has no `minicon-platform` edge, then
+constructs `TerminalStream`, publishes bytes, reads the screen and consumes
+the final stream through public APIs. The Windows x64 host run passed. Explicit
+all-target `cargo check --locked -p minicon-console` runs passed for Linux
+x64/ARM64, macOS x64 and Windows ARM64. These verify common-library API and
+target compilation only. A standalone POSIX terminal session is still not
+provided by `minicon-console`; the macOS/Linux PTY implementation remains in
+`minicon-platform` until a real portable session contract is qualified.
+
 ## Independent text producers
 
 `terminal::Utf16Decoder` is the common incremental UTF-16 mechanism. Each
