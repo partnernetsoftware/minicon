@@ -9,7 +9,7 @@ members = [
 
 [package]
 name = "minicon"
-version = "0.2.15"
+version = "0.2.18"
 edition = "2024"
 rust-version = "1.97"
 description = "Lightweight standalone terminal host (PuTTY-style micro terminal)"
