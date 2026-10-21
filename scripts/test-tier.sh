@@ -4,21 +4,20 @@
 # full runs belong around a release build).
 #
 # Usage: scripts/test-tier.sh <tier> [filter]
-#   l0  lint            clippy --all-targets -D warnings (no tests run)
-#   l1  unit+contract   unit tests in src/ + minicon_alignment (pure, fast,
-#                       no GUI, no spawned processes)
-#   l2  process-level   minicon_control + minicon_mux + minicon_throughput +
+#   l0  lint            workspace/all-targets clippy -D warnings (no tests run)
+#   l1  focused units   root/core/UI units + minicon_alignment + reuse consumer
+#                       (not a claim of pure/no-process coverage)
+#   l2  integration     minicon_control + minicon_mux + minicon_throughput +
 #                       minicon_harness + minicon_console_agent +
 #                       minicon_load_portability (+ linux variant on Linux) +
-#                       policy suites (spawns real minicon processes, no GUI
-#                       window)
-#   l3  full            everything: l0+l1+l2 plus minicon_blackbox (the only
-#                       suite that opens a real GUI window via
-#                       gui_test_guard). This is the release-gate tier.
+#                       policy suites (real MiniCon processes and GUI hosts)
+#   l3  full local      fmt, workspace clippy, canonical build.sh test (workspace
+#                       and vendored forks), reuse consumer and offline script
+#                       self-tests. Native/VM/signed-artifact courts are separate.
 #   all alias for l3.
 #
-# [filter] is an optional Rust test-name substring passed to the suites that
-# run in tiers l1/l2/l3.
+# [filter] is an optional Rust test-name substring for l1/l2 only. A filtered
+# run cannot be called full local qualification.
 #
 # Environment gates respected: CARGO_TARGET_DIR (use one outside the repo on
 # developer hosts, e.g. D:/tmp/mc-target), MINICON_DISK_PRESSURE_GIB=0.
@@ -30,6 +29,10 @@ cd "$repo_root"
 
 tier=${1:-}
 filter=${2:-}
+if [[ $# -gt 2 ]]; then
+  echo "test-tier: expected <tier> [filter]" >&2
+  exit 2
+fi
 
 L1_SUITES=(minicon_alignment)
 L2_SUITES=(
@@ -72,7 +75,7 @@ run_lib_units() {
 
 case "$tier" in
   l0)
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --locked --workspace --all-targets -- -D warnings
     echo "l0 done: clippy clean"
     ;;
   l1)
@@ -86,12 +89,16 @@ case "$tier" in
     echo "l2 done: process-level suites"
     ;;
   l3|all)
-    cargo clippy --all-targets -- -D warnings
-    run_lib_units
+    if [[ -n "$filter" ]]; then
+      echo "test-tier: l3/all requires an unfiltered run; use l1/l2 for focused feedback" >&2
+      exit 2
+    fi
+    cargo fmt --all -- --check
+    cargo clippy --locked --workspace --all-targets -- -D warnings
+    bash ./scripts/build.sh test
     bash ./scripts/check-reuse.sh
-    for suite in "${L1_SUITES[@]}" "${L2_SUITES[@]}"; do run_suite "$suite"; done
-    run_suite minicon_blackbox
-    echo "l3 done: full release-gate pyramid"
+    bash ./scripts/selftest.sh
+    echo "l3 done: full local qualification (native and exact-artifact courts separate)"
     ;;
   *)
     usage

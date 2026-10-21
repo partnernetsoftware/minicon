@@ -54,9 +54,11 @@ Source inspection of its test infrastructure identifies these concrete gaps:
 - `scripts/test-tier.sh l1` omits platform library tests. Its "pure/no spawned
   processes" description does not describe every selected test.
 - `l2` selects `minicon_control`, which opens GUI hosts; it is not a no-GUI tier.
-- `l3` omits platform library and vendored vt100 suites, so its present
-  "full release gate" label is broader than its actual coverage. The canonical
-  `scripts/build.sh test` remains the workspace-plus-fork authority.
+- The original `l3` omitted platform library and vendored vt100 suites, so its
+  old "full release gate" label was broader than its coverage. The tier now
+  invokes canonical `scripts/build.sh test`, workspace fmt/Clippy, reuse and
+  offline script self-tests; a full Windows x64 local run passed. Native and
+  exact-artifact courts retain separate authority.
 - `dev-loop-crosscheck.yml` builds all targets but does not execute root binary
   units or the full platform library suite. Compiling those targets is not
   runtime evidence. Its per-suite receipt is more specific than the early
@@ -84,8 +86,9 @@ Source inspection of its test infrastructure identifies these concrete gaps:
 
 ## Ordered milestones and acceptance
 
-Only the scoped fixture work described below is implemented. The other
-milestones remain `[_]`; a completed design is not a completed test runner.
+Scoped fixture work and the `l3` coverage correction are implemented. The
+inventory/selection/composition planner and comparable measurements remain
+`[_]`; a completed design is not a completed test runner.
 Preserve the released behavior while iterating.
 
 | Order / leaf | Invariant and acceptance evidence | Dependencies / failure / explicit non-goal |

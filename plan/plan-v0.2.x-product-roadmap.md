@@ -1,8 +1,9 @@
 # MiniCon 0.2.x product roadmap
 
 Status: product proposal, updated 2026-10-21. v0.2.15 is published; v0.2.16 has
-partial fixture-lifetime implementation but no version bump. The later version
-assignments below are proposed release gates, not dates or shipped claims.
+partial fixture-lifetime implementation and a corrected full local `l3` gate,
+but no version bump. The later version assignments below are proposed release
+gates, not dates or shipped claims.
 If a gate is missed, carry its named gap forward or split a patch release;
 do not turn a version number into evidence.
 

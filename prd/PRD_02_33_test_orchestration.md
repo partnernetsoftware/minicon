@@ -224,10 +224,15 @@ be named explicitly; unavailable courts remain BLOCKED.
 ## Status and non-goals
 
 - [v] Initial design documented; implementation acceptance is in the v0.2.16 plan.
-- [_] Inventory/dispatcher, fixture cancellation, diagnostic extraction,
-  composition, consumer matrix and comparable measurements.
-- [_] Native qualification of the implemented changes; no new native pass is
-  claimed by this document.
+- [v] `l3`/`all` now executes fmt, workspace Clippy, canonical workspace and
+  fork tests, reuse and offline self-tests. An unfiltered Windows x64 local
+  run passed; filtered `l3` fails closed. This is local qualification only.
+- [-] Fixture cancellation and diagnostic extraction have scoped implemented
+  slices in the v0.2.16 plan.
+- [_] Inventory/dispatcher, composition, consumer matrix and comparable
+  measurements.
+- [-] Windows x64 local platform/GUI courts passed for the explicit Rust
+  provider; other OS/ISA and exact-artifact courts still need their own receipts.
 
 Non-goals: new product features, a generic terminal engine, public crate renames,
 new OS/ISA support, lower throughput floors, compiler/LTO changes, signing-policy

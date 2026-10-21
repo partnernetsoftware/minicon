@@ -452,6 +452,24 @@ facade owns parser and framer together and exposes cells/styles, damage,
 callbacks and bounded output, with consuming finalization. Low-level grammar
 semantics remain owned by [terminal state](PRD_02_24_con_terminal.md).
 
+The implemented wiring has three distinct edges:
+
+| Edge | Current authority | Verification boundary |
+| --- | --- | --- |
+| MiniCon GUI -> `minicon-console::terminal` | Shared parser, screen and presentation; GUI owns raster, tabs and policy | Common units and real-window product tests |
+| MiniCon -> `minicon-platform::pty` | Stable product PTY facade, backend selection, child/session lifetime and errors | Default workspace and actual selected-backend tests |
+| `minicon-platform::pty` -> `minicon-console` Windows service | Optional `rust-console` provider adapts `ConsoleHost`/`DriverSession`/`ConsoleChild` into the PTY facade | Feature-enabled native PTY and GUI courts; default ConPTY remains a separate provider |
+
+This is a one-way optional dependency, not a claim that the common terminal
+facade already owns a portable session. The native service is Windows-only;
+macOS/Linux PTY adapters still live in platform. A test named for a backend
+must select that backend explicitly: process environment may otherwise select
+the console agent and produce misleading evidence. The October 2026 Windows
+x64 local court ran the feature-enabled `rust_console_` suite (95 native PTY
+cases), the owned-window screenshot/cleanup journey, and real Node, PowerShell
+7 and Windows PowerShell Unicode TTY roundtrips. These local receipts do not
+qualify other OS/ISA cells or a signed release artifact.
+
 The Windows host now owns `terminal::TerminalStream` instead of separate
 low-level parser/framer fields. Client output and complete native screen
 commands use the facade; readback, fills, resize and mode queries use its screen

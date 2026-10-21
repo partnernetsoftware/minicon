@@ -420,6 +420,12 @@ impl ChildCommand {
         if !conpty::is_available() || force_console_agent() {
             return spawn_through_console_agent(self, size);
         }
+        self.spawn_conpty(size)
+    }
+
+    /// The actual ConPTY path, separate from backend policy so native ConPTY
+    /// courts cannot silently switch to the console agent via the environment.
+    fn spawn_conpty(self, size: TerminalSize) -> PtyResult<SpawnedPty> {
         let dsr_bootstrap = should_enable_dsr_bootstrap(&self.program);
         let mut session = create_session(size, dsr_bootstrap)
             .map_err(|error| pty_error("spawn", "pty_spawn_failed", error))?;
@@ -2960,12 +2966,15 @@ mod tests {
 
     #[test]
     fn direct_conpty_delivers_real_child_output_before_eof() {
+        if !super::conpty::is_available() {
+            return;
+        }
         let shell = std::env::var_os("COMSPEC").expect("Windows COMSPEC");
         let spawned = super::ChildCommand::new(shell)
             .arg("/D")
             .arg("/C")
             .arg("echo agenterm-direct-conpty")
-            .spawn()
+            .spawn_conpty(super::DEFAULT_TERMINAL_SIZE)
             .expect("spawn direct ConPTY child");
         let (master, mut child) = spawned.into_parts();
         let status = child.wait().expect("wait for direct ConPTY child");
@@ -2990,6 +2999,9 @@ mod tests {
 
     #[test]
     fn direct_conpty_inherits_system_environment_and_applies_override() {
+        if !super::conpty::is_available() {
+            return;
+        }
         let shell = std::env::var_os("COMSPEC").expect("Windows COMSPEC");
         let expected_shell = shell.to_string_lossy().into_owned();
         let spawned = super::ChildCommand::new(shell)
@@ -2997,7 +3009,7 @@ mod tests {
             .arg("/C")
             .arg("echo inherited=%COMSPEC% override=%AGENTERM_PTY_ENV_TEST%")
             .env("AGENTERM_PTY_ENV_TEST", "native-block")
-            .spawn()
+            .spawn_conpty(super::DEFAULT_TERMINAL_SIZE)
             .expect("spawn direct ConPTY child with environment override");
         let (master, mut child) = spawned.into_parts();
         let status = child.wait().expect("wait for direct ConPTY child");
