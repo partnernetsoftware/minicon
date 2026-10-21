@@ -51,10 +51,10 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
+    ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
     ├── [-] v0.2.16 test-selection work → plan/plan-v0.2.16.md
     ├── [-] v0.2.17 modern-agent gate → plan/plan-v0.2.17.md
-    ├── [_] v0.2.19 terminal contract / module-reuse consolidation → plan/plan-v0.2.19.md
     └── [_] 0.2.x product sequence / release decisions → plan/plan-v0.2.x-product-roadmap.md
 ```
 
@@ -136,6 +136,14 @@ flowchart LR
   matrix, remain open. The classic Windows provider is still the default.
   [Owner](prd/PRD_02_34_windows_console_backend.md) and
   [sequence](plan/plan-windows-console-backend.md).
+- [v] **v0.2.19 published**, `2026-10-21T16:28:55Z`, source
+  `7e27648cb3d814187887992b3274be5d73ea38ac`. Seam consolidation (four drifted
+  decisions unified), the console-owned session contract vocabulary, the
+  `adapters/unix/pty` home with native POSIX runtime evidence, and the
+  validated advanced `term` override ship.
+  [Release history](prd/archive/v0.2.19-release-history.md) owns the exact
+  receipts; the portable session trait, the TERM runtime probe and the
+  intel-mac throughput bound stay open by name.
 - [v] **v0.2.18 published**, `2026-10-21T06:56:59Z`, source
   `9a25ee4b55809c9118d67ab9c1904a8e800b956d`. The signed packages include
   the explicit Rust-console choice and display the correct version; child-tab

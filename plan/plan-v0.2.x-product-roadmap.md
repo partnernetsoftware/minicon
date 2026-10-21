@@ -1,7 +1,7 @@
 # MiniCon 0.2.x product roadmap
 
-Status: product sequence, updated 2026-10-21. v0.2.18 is the latest published
-version; [its release history](../prd/archive/v0.2.18-release-history.md) owns
+Status: product sequence, updated 2026-10-21. v0.2.19 is the latest published
+version; [its release history](../prd/archive/v0.2.19-release-history.md) owns
 the exact source, artifact and Promotion receipts. Unfinished 0.2.16
 test-orchestration and 0.2.17 agent-quality gates remain open after that
 bounded release rather than becoming shipped claims.
@@ -74,12 +74,14 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 │   evidence: signed six-cell Candidate, explicit x64 selection and scoped app/shell courts
 │   safe failure: reject unavailable selection; preserve stable product default and open gaps
 │   dependency: PRD 34 and the 0.2.17 scoped app court; non-goal: global conhost removal
-├── [_] 0.2.19 — reusable terminal contract across OS and ISA
-│   invariant: one common state/stream contract with explicit native capabilities
-│   evidence: independent consumer and MiniCon on supported native runtime cells
-│   safe failure: typed unsupported capabilities; no false cross-ISA claim
-│   dependency: PRD 35, reuse map and plan-v0.2.19; non-goal: automatic platform-crate merger
-│   └── qualified identity profiles and new-session TERM choice
+├── [v] 0.2.19 — reusable terminal contract across OS and ISA (bounded scope shipped)
+│   evidence: [release history](../prd/archive/v0.2.19-release-history.md) —
+│     session contract vocabulary console-owned, unix PTY home with five-cell
+│     native runtime passes, seam consolidation, validated `term` override
+│   narrowed claims: the portable session trait awaits both-provider
+│     demonstration (PRD 35); no profile menu shipped; osx-x86_64 throughput
+│     bound and the TERM runtime probe stay open by name (carried debt)
+│   non-goal: automatic platform-crate merger (unchanged)
 └── [_] 0.2.20 — evidence-based Windows default and product-cost decision
     invariant: any default change improves user journeys without hidden regression
     evidence: exact-artifact real apps, reliability, latency/RSS and rollback courts
@@ -113,7 +115,7 @@ flowchart LR
 | 0.2.16 — developer feedback | Changes to one module get relevant tests promptly; integration and release still show every required court. | Implement the existing [0.2.16 plan](plan-v0.2.16.md): inventory, bounded fixture lifetime, explained selection, deduplicated composition and measured cold/warm cost. A mutation of an impacted dependency must fail its selected profile. `l3`/`all` still reaches the canonical full local gate; signing and artifact courts remain separate. Ship this before adding a larger compatibility matrix. |
 | 0.2.17 — modern agent quality | A user can select a named provider that keeps Claude Code, Grok Build and Codex CLI readable and usable through repeated output and resize. | Follow [the dedicated 0.2.17 plan](plan-v0.2.17.md): locate each failure across original output, backend wire, shared state and pixels; fix representable classic-path defects, qualify Unicode/SGR color fixtures and repeated real-agent sessions, and include an explicit Rust selection in the exact Windows candidate only if its native/lifecycle courts pass. State failed default-path behavior and provider-specific coverage. A developer-only feature is not a user-facing result; no default promotion or positive 2026 claim without its separate gate. |
 | 0.2.18 — bounded Windows backend preview | The packaged explicit Rust choice is available while the classic backend remains default. | [Published with exact signed Candidate, Defender and no-rebuild Promotion](../prd/archive/v0.2.18-release-history.md). Windows x64 current-source shell/agent journeys and direct common-library consumption are scoped passes. Exact-Candidate visible three-agent acceptance, Rust runtime on Windows ARM64, broader native API coverage, source/wire attribution and latency/RSS remain open. Carry them to the next qualification decision; the published version makes no broad compatibility or default-promotion claim. |
-| 0.2.19 — integrated terminal library | MiniCon and an independent small consumer use `minicon-console` for the same common terminal state, while native providers stay explicit. | Follow [the dedicated 0.2.19 plan](plan-v0.2.19.md), which also carries the module/reuse consolidation from the 2026-10-21 survey. Define the smallest input/session/flow-control/capability contract from actual Windows and POSIX consumers. Preserve `minicon-platform::pty` compatibility during migration; move one proven mechanism at a time and check public type identity, features and OS/ISA runtime. Provide a truthful modern VT/xterm-style default profile; expose only qualified compatibility profiles and an advanced TERM override for **new sessions**. Changing TERM describes capabilities to applications and does not switch parser or native backend. If the contract is not proved on supported runtime cells, keep the existing platform adapter and narrow the release claim. |
+| 0.2.19 — integrated terminal library | Shipped 2026-10-21 with a bounded claim: the session contract vocabulary is console-owned with one type identity through the platform facade, the POSIX PTY mechanism has one home with five-cell native runtime passes, four drifted product decisions were unified, and a validated advanced `term` override applies to new sessions only. | [Release history](../prd/archive/v0.2.19-release-history.md) owns the receipts; [the archived plan](archive/plan-v0.2.19.md) records leaf outcomes. The claim was narrowed exactly as this row's safe failure required: the portable session trait awaits both-provider demonstration (PRD 35 integration acceptance), no compatibility-profile menu shipped (no second profile has capability evidence), and the osx-x86_64 throughput bound plus the TERM child-environment probe stay open by name in carried debt. |
 | 0.2.20 — default decision and product cost | Users receive the best evidenced Windows backend choice with a known path to recover from failures. | Decide whether to make the owned backend the Windows default using exact packaged artifacts and versioned real-app journeys, comparison of failure/cleanup, input latency, sustained redraw and total process RSS. Include product GUI pixel/snapshot consistency and rollback/selection evidence. A failed or unavailable criterion keeps the stable default and explicit preview. Track the 10 MiB idle-host intent, build/pack latency and artifact size separately; do not exchange correctness or signed-artifact requirements for a speed claim. |
 
 These version numbers express priority and dependencies. The skipped 0.2.17

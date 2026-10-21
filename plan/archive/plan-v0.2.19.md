@@ -1,13 +1,19 @@
 # v0.2.19 — reusable terminal contract and module/reuse consolidation
 
-Status: not started, drafted 2026-10-21 from a module/reuse survey of the
-published v0.2.18 source (`9a25ee4`). The version theme is owned by
-[the 0.2.x roadmap](plan-v0.2.x-product-roadmap.md) ("reusable terminal
+Status: **shipped 2026-10-21** as
+[v0.2.19](../../prd/archive/v0.2.19-release-history.md) (source `7e27648`);
+this plan is archived. Open leaves were upserted before archiving: the
+portable session trait and TERM runtime probe live with PRD 35/25, the
+remaining seam drifts and the two new observations (G4 local control-journey
+flake, G5 intel-mac throughput budget) in
+[carried debt](../plan-carried-debt.md). Originally drafted 2026-10-21 from a
+module/reuse survey of the published v0.2.18 source (`9a25ee4`). The version theme is owned by
+[the 0.2.x roadmap](../plan-v0.2.x-product-roadmap.md) ("reusable terminal
 contract across OS and ISA"); the library sequence itself is owned by
-[PRD 02.35](../prd/PRD_02_35_terminal_library.md) through
-[its standing sequence](plan-terminal-library.md); module ownership, reuse
+[PRD 02.35](../../prd/PRD_02_35_terminal_library.md) through
+[its standing sequence](../plan-terminal-library.md); module ownership, reuse
 entry points and the consumer feature matrix are owned by
-[the reuse map](../prd/PRD_02_28_shared_core.md). This plan sequences what
+[the reuse map](../../prd/PRD_02_28_shared_core.md). This plan sequences what
 0.2.19 actually ships and adds the product-side consolidation the survey
 surfaced; it does not restate the owners' acceptance contracts.
 
@@ -15,7 +21,7 @@ surfaced; it does not restate the owners' acceptance contracts.
 
 - `src/main.rs` is 5298 lines with 188 functions; `terminal.rs`, `control.rs`
   and `ui.rs` each exceed 3100 lines. The F1 clipboard-paste defect
-  ([carried debt](plan-carried-debt.md)) already demonstrated the failure
+  ([carried debt](../plan-carried-debt.md)) already demonstrated the failure
   mode: two call sites in `main.rs` implementing the same decision drifted
   apart until `src/clipboard_paste.rs` gave the decision one owner. Nobody
   has inventoried how many such multi-site decisions remain.
@@ -68,11 +74,12 @@ Outcome: the reusable boundaries are consumed, audited and enforced — not mere
 │     as debt rather than force-extracted
 │   dependency: {MAP} not required; hot file src/main.rs — serialize with other work
 │   non-goal: new public crates, new exports, or moving product policy into shared crates
-├── [-] {PTY} One POSIX PTY mechanism in its own adapter home
-│   state 2026-10-21: moved to adapters/unix/pty.rs with thin linux/macos
-│     identity wrappers; cross-target cargo check green on
-│     x86_64-unknown-linux-gnu and aarch64-apple-darwin; open: native runtime
-│     courts (Linux cells + macOS via dev-loop-crosscheck all-cells dispatch)
+├── [v] {PTY} One POSIX PTY mechanism in its own adapter home
+│   done 2026-10-21: moved to adapters/unix/pty.rs with thin linux/macos
+│     identity wrappers; native runtime evidence dev-loop-crosscheck
+│     39624936183 (cells=all) — lnx-x86_64, lnx-aarch64 and osx-aarch64
+│     passed every suite; osx-x86_64 passed all but the pre-existing
+│     throughput budget (carried debt G5, not a PTY claim)
 │   invariant: distinct adapter identities; macOS stops path-importing the Linux file
 │   evidence: adapters/linux/pty.rs moved to adapters/unix/pty with both actual
 │     platforms' native suites run (macOS court + Linux cells), not one standing for both
@@ -107,7 +114,12 @@ Outcome: the reusable boundaries are consumed, audited and enforced — not mere
 │     override for new sessions, each profile backed by qualified capability evidence
 │   safe failure: an unqualified profile is not offered; the current default is retained
 │   dependency: {CONTRACT}; non-goal: a misleading VT100/VT220/kitty emulation menu
-└── [_] {GATE} Qualify the actual source and upsert the owners
+└── [v] {GATE} Qualify the actual source and upsert the owners
+    done 2026-10-21: fmt/clippy -D warnings/build.sh test (34 suites, 1355)
+      on final source 7e27648; six-cell pack 39630069785; owners PRD
+      25/28/35 updated in the same changes; v0.2.19 published — receipts in
+      prd/archive/v0.2.19-release-history.md (release decision was PRD 27's,
+      supplied by the owner goal)
     invariant: claims name exact source, features, cells and evidence
     evidence: fmt/clippy, build.sh test, six-cell qualification; PRD 28 and PRD 35
       updated in the same change as each module move (maintenance rule)
@@ -149,14 +161,14 @@ the contract is demonstrated against a cleaner product seam, not through it.
 
 ## Inherited consolidation leaves
 
-Carried from the archived [plan-v0.2.10](archive/plan-v0.2.10.md)
+Carried from the archived [plan-v0.2.10](plan-v0.2.10.md)
 consolidation track (behaviour-preserving, never gating the leaves above):
 
 - `{SPLIT}` one module at a time, gate after each; first unit remains the
   `mod native_endpoint_tests` block sitting mid-file in `src/control.rs`.
   Fold into {SEAM}'s inventory.
 - `{SEAM}`/`{ENCAP}`/`{NAME}` as scoped in
-  [plan-v0.2.9](archive/plan-v0.2.9.md); unchanged.
+  [plan-v0.2.9](plan-v0.2.9.md); unchanged.
 - `{FEAT}`/`{DOC-OWNER}` stay owner-gated: a removal that deletes a route
   another product will want is not consolidation.
 
@@ -170,4 +182,4 @@ consolidation track (behaviour-preserving, never gating the leaves above):
 - The `minicon-platform`/`minicon-console` merger question (deferred by
   PRD 35) and the 0.2.20 Windows-default decision.
 - The E1/E2 click/composer seam with AgenTerm stays `(OWNERS)`-gated in
-  [carried debt](plan-carried-debt.md); this plan does not pick it up.
+  [carried debt](../plan-carried-debt.md); this plan does not pick it up.
