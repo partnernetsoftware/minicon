@@ -996,16 +996,27 @@ fn the_documented_test_gate_still_denies_the_dangerous_lints() {
     let script = fs::read_to_string(root.join("scripts/build.sh")).expect("read build.sh");
     let agents = fs::read_to_string(root.join("AGENTS.md")).expect("read AGENTS.md");
 
-    let arm_start = script
-        .find("  test) cargo test")
-        .expect("the test mode runs cargo test");
-    let arm = &script[arm_start..];
-    let arm = &arm[..arm.find(";;").expect("the test arm ends")];
+    let lints_start = script
+        .find("test_lints='build.rustflags=")
+        .expect("shared test lint configuration exists");
+    let lints = script[lints_start..]
+        .lines()
+        .next()
+        .expect("test lint configuration line");
+    for mode in ["  test-suite) cargo test", "  test) cargo test"] {
+        let arm_start = script.find(mode).expect("test mode runs cargo test");
+        let arm = &script[arm_start..];
+        let arm = &arm[..arm.find(";;").expect("test arm ends")];
+        assert!(
+            arm.contains("--config \"$test_lints\""),
+            "{mode} must use the shared dangerous-test-lint configuration"
+        );
+    }
 
     for lint in ["dead_code", "unused_variables", "unused_must_use"] {
         assert!(
-            arm.contains(lint),
-            "the test mode no longer denies {lint}, so a test can silently run nothing"
+            lints.contains(lint),
+            "the test modes no longer deny {lint}, so a test can silently run nothing"
         );
         assert!(
             agents.contains(lint),
@@ -1019,7 +1030,7 @@ fn the_documented_test_gate_still_denies_the_dangerous_lints() {
         "AGENTS.md must name the test entry it describes"
     );
     assert!(
-        script.contains("usage: scripts/build.sh [release|dev|check|test]"),
+        script.contains("usage: scripts/build.sh [release|dev|check|test|test-suite]"),
         "the script's own usage line lists the modes"
     );
 }

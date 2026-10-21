@@ -5,6 +5,8 @@ version. The development source now identifies as v0.2.18; a local retail-profil
 Windows window reports that version, but no v0.2.18 Candidate or public release
 exists. Unfinished 0.2.16 test-orchestration and 0.2.17 agent-quality gates
 carry into the v0.2.18 release decision rather than becoming shipped claims.
+Explicit edit/integration test profiles are now available; changed-path
+selection remains plan-only until its dependency coverage is qualified.
 The later version assignments below are proposed release gates, not dates.
 If a gate is missed, carry its named gap forward or split a patch release;
 do not turn a version number into evidence.

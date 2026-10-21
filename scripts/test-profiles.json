@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "phases": ["edit", "integration", "release"],
+  "tasks": {
+    "control-units": {
+      "phase": "edit",
+      "owner": "PRD 02.26 control request lifetime",
+      "kind": "cargo-test",
+      "args": ["--bin", "minicon", "control_pending::tests"]
+    },
+    "control-cli": {
+      "phase": "integration",
+      "owner": "PRD 02.26 native control endpoint",
+      "kind": "cargo-test",
+      "args": ["--test", "minicon_control"]
+    },
+    "gui-blackbox": {
+      "phase": "integration",
+      "owner": "PRD 02.24 GUI frame and control journey",
+      "kind": "cargo-test",
+      "args": ["--test", "minicon_blackbox"]
+    },
+    "terminal-paint-units": {
+      "phase": "edit",
+      "owner": "PRD 02.24 terminal raster",
+      "kind": "cargo-test",
+      "args": ["--bin", "minicon", "terminal_paint::tests"]
+    },
+    "console-agent": {
+      "phase": "integration",
+      "owner": "PRD 02.24 classic Windows backend",
+      "kind": "cargo-test",
+      "args": ["--test", "minicon_console_agent"]
+    },
+    "docs-links": {
+      "phase": "edit",
+      "owner": "PRD index and public documentation links",
+      "kind": "cargo-test",
+      "args": ["--test", "minicon_alignment", "documentation_links_resolve"]
+    },
+    "reuse-consumer": {
+      "phase": "edit",
+      "owner": "PRD 02.28 independent library consumer",
+      "kind": "script",
+      "path": "scripts/check-reuse.sh"
+    },
+    "script-selftests": {
+      "phase": "integration",
+      "owner": "PRD 02.33 script contracts",
+      "kind": "script",
+      "path": "scripts/selftest.sh"
+    },
+    "full-local": {
+      "phase": "release",
+      "owner": "PRD 02.33 canonical complete local gate",
+      "kind": "script",
+      "path": "scripts/test-tier.sh",
+      "args": ["l3"]
+    }
+  },
+  "profiles": {
+    "control": ["control-units", "control-cli", "gui-blackbox"],
+    "terminal": ["terminal-paint-units", "console-agent", "gui-blackbox"],
+    "docs": ["docs-links"],
+    "reuse": ["reuse-consumer"],
+    "scripts": ["script-selftests"],
+    "full": ["full-local"]
+  },
+  "changed_path_rules": [
+    {"glob": "src/control_pending.rs", "profiles": ["control"]},
+    {"glob": "src/control_dispatch.rs", "profiles": ["control"]},
+    {"glob": "src/terminal_paint.rs", "profiles": ["terminal"]},
+    {"glob": "docs/control-cli.html", "profiles": ["docs", "control"]},
+    {"glob": "docs/**", "profiles": ["docs"]},
+    {"glob": "prd/**", "profiles": ["docs"]},
+    {"glob": "plan/**", "profiles": ["docs"]},
+    {"glob": "scripts/**", "profiles": ["full"]},
+    {"glob": "Cargo.toml", "profiles": ["full"]},
+    {"glob": "Cargo.lock", "profiles": ["full"]}
+  ]
+}

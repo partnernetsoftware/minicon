@@ -2,8 +2,8 @@
 
 Owner of test selection, profile composition, fixture lifetime and feedback-cost
 measurement. Parent: [product requirements](../PRD.md). Initial design targets
-v0.2.16; fixture lifetime implementation is partial, while the planner remains
-planned. Sequencing:
+v0.2.16; fixture lifetime and an initial explicit-profile planner are partial,
+while automatic changed-path execution remains unqualified. Sequencing:
 [v0.2.16 plan](../plan/plan-v0.2.16.md).
 
 [Module ownership](PRD_02_28_shared_core.md) owns abstraction boundaries.
@@ -16,12 +16,13 @@ change the product's capabilities or any release policy.
 
 ```text
 Outcome: relevant development feedback without lost release obligations
-├── Inventory authority
-│   ├── one manifest: scripts/test-profiles.json
+├── [-] Inventory authority
+│   ├── [v] initial manifest: scripts/test-profiles.json
 │   ├── actual suite names, feature/target/backend tuples and resources
 │   └── required, opt-in, diagnostic, manual and unavailable evidence
-├── Selection and composition
-│   ├── explicit profile union; changed-path owner/dependent closure
+├── [-] Selection and composition
+│   ├── [v] explicit control/terminal/docs/reuse/script profile union
+│   ├── [-] changed-path owner/dependent closure (plan-only)
 │   ├── unknown/broad changes expand conservatively
 │   └── exact task/build identities; isolated consumer graphs stay separate
 ├── [-] Fixture and resource lifecycle
@@ -51,20 +52,27 @@ flowchart TD
 
 ## Contracts
 
-### Implementation ownership (planned)
+### Implementation ownership (partial)
 
 | Component | Responsibility | Boundary |
 |---|---|---|
-| `scripts/test-profiles.json` | Obligation/profile inventory, ownership, selection edges and phase/resource metadata | No second suite list in shell or workflow code |
-| Planned `test-plan.py` under `scripts/` | One planner/executor: resolve dependency closure, explain a plan, batch discovered test names, compare observed receipts | Use the Python runtime already required by build tooling; no new Rust runner crate |
+| `scripts/test-profiles.json` | Initial task/profile inventory, ownership and phase metadata; feature/target/resource inventory remains open | No second suite list in shell or workflow code |
+| `scripts/test-plan.py` | Explicit profile union, plan-only path fallback, Cargo test listing and observed count guard; complete dependency closure and receipts remain open | Use the Python runtime already required by build tooling; no new Rust runner crate |
 | `scripts/test-tier.sh` | Compatible tier/profile CLI and forwarding | No independent dependency resolver, lint flags or release decision |
-| `scripts/build.sh` | Canonical compiler flags and full workspace/fork gate; a planned `test-build` mode emits Cargo artifact metadata without running tests | Reuse the same command/flag definitions for full and selected execution; `--no-run` is build evidence only |
+| `scripts/build.sh` | Canonical test lints shared by full and `test-suite` gates; a planned `test-build` mode emits Cargo artifact metadata without running tests | Reuse the same command/flag definitions for full and selected execution; `--no-run` is build evidence only |
 | `tests/support/` | Owned fixture lifetime, temporary resources and diagnostics shared by actual test callers | First callers are black-box/control fixtures where contracts match; assertions remain with their capability suites; no generic fixture framework |
 | Native dev workflow | Select native cells and invoke the same inventory/executor, upload final receipts on success/failure/cancellation | Do not compile a target and report its tests as executed |
 | Release workflows | Existing exact-artifact authority in PRD 27 | No hidden signer/Promotion dispatch from a test profile |
 
-Introduce these interfaces in stages; the current scripts do not yet implement
-the planner/profile table. The black-box fixture now cancels journey sleeps on
+The initial `scripts/test-profiles.json` and `scripts/test-plan.py` now provide
+explicit `--profile`, `--phase`, `--list` and `--plan` entry points through
+`scripts/test-tier.sh`. `--changed-since` is plan-only: unknown/shared paths
+select the canonical full gate, and inferred selection cannot yet execute.
+The manifest presently covers control, terminal paint, docs links, reuse and
+script self-tests; it is not the complete inventory envisioned here. Selected
+Cargo suites use `build.sh test-suite`, which shares the canonical dangerous
+test lints with the full workspace/fork gate and rejects zero discovered or
+executed tests. The black-box fixture now cancels journey sleeps on
 drop, and its zoom window watcher is opt-in through `MINICON_ZOOM_WINDOW_WATCH=1`.
 Windows x64 evidence: `dropping_a_session_cancels_an_active_journey_wait`
 passed in about 0.5 seconds; replacing the cancellable wait with `sleep` made
@@ -81,11 +89,13 @@ match. This avoids repeating unrelated native courts after a test-only lint fix.
 
 ### Inventory and selection
 
-`scripts/test-profiles.json` is the proposed single inventory. Each task records
-its owning capability, execution entry, features, target/backend constraints,
-resource claims and whether its evidence is mandatory, opt-in, diagnostic or
-manual. Source selection follows the PRD 28 dependency graph and reverse
-dependents; a filename is not proof of a pure or GUI-free test.
+`scripts/test-profiles.json` is the initial single inventory. Each current task
+records its owning capability, execution entry and phase. Complete inventory
+must add features, target/backend constraints, resource claims and mandatory,
+opt-in, diagnostic or manual evidence status. The current path rules only
+explain a plan and fail broad/unknown changes to full coverage; they are not a
+qualified PRD 28 reverse-dependent closure. A filename is not proof of a pure
+or GUI-free test.
 
 An obligation can name a complete suite or explicit discovered test names.
 Map dependencies at module/API granularity where proved; a composer-only edit
@@ -229,8 +239,12 @@ be named explicitly; unavailable courts remain BLOCKED.
   run passed; filtered `l3` fails closed. This is local qualification only.
 - [-] Fixture cancellation and diagnostic extraction have scoped implemented
   slices in the v0.2.16 plan.
-- [_] Inventory/dispatcher, composition, consumer matrix and comparable
-  measurements.
+- [-] Initial inventory, explicit-profile dispatcher and task deduplication;
+  automatic path selection, complete suite/consumer inventory and comparable
+  measurements remain open. `test-plan-selftest.py` guards phase deferral,
+  deduplication, unknown-path full fallback and zero-test refusal; a Windows
+  x64 `control` edit run executed 15 tests. This is scoped feedback, not a
+  release verdict.
 - [-] Windows x64 local platform/GUI courts passed for the explicit Rust
   provider; other OS/ISA and exact-artifact courts still need their own receipts.
 

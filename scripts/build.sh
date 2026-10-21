@@ -32,10 +32,15 @@ printf '%s\n' "$$" >"$marker"
 cleanup() { rm -f "$marker"; }
 trap cleanup EXIT HUP INT TERM
 
+test_lints='build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]'
+
 case "$mode" in
   release) cargo build --locked --release "$@" ;;
   dev) cargo build --locked "$@" ;;
   check) cargo check --locked --workspace --all-targets "$@" ;;
+  # A selected suite uses the same dangerous-test-lint gate as the full run,
+  # without compiling or executing unrelated workspace/fork test binaries.
+  test-suite) cargo test --locked --config "$test_lints" "$@" ;;
   # Deny the lints that can silently disable a test. An unused function in a
   # test module compiles and runs nothing, and an unused `Result` hides a
   # failing setup, so the test gate treats both as errors. Passed per
@@ -48,7 +53,7 @@ case "$mode" in
   # needs a rustc-spawning environment the gate does not require, and the
   # oracle under guard lives in the library. plan-v0.2.10 {GATE-FORK}.
   test) cargo test --locked --workspace \
-    --config 'build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]' \
+    --config "$test_lints" \
     "$@"
     # Workspace feature names do not belong to the separately owned fork.
     # Preserve selectors and libtest arguments, including anything after `--`.
@@ -69,9 +74,8 @@ case "$mode" in
         esac
       fi
     done
-    fork_lints='build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]'
-    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --config "$fork_lints" --lib "${fork_args[@]}"
+    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --config "$test_lints" --lib "${fork_args[@]}"
     # The shared grammar boundary oracle belongs to the owned VTE lexer.
-    cargo test --locked --manifest-path third_party/vte/Cargo.toml --config "$fork_lints" --lib "${fork_args[@]}" ;;
-  *) echo "usage: scripts/build.sh [release|dev|check|test] [cargo arguments...]" >&2; exit 2 ;;
+    cargo test --locked --manifest-path third_party/vte/Cargo.toml --config "$test_lints" --lib "${fork_args[@]}" ;;
+  *) echo "usage: scripts/build.sh [release|dev|check|test|test-suite] [cargo arguments...]" >&2; exit 2 ;;
 esac

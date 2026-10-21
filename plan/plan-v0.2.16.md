@@ -1,8 +1,9 @@
 # v0.2.16 — targeted feedback with complete release qualification
 
-Design prepared after the 0.2.15 release. Implementation is partial: the
-fixture-lifetime work below has begun; inventory, selection, composition, reuse
-and full measurement remain planned.
+Design prepared after the 0.2.15 release. Implementation is partial:
+fixture-lifetime work and a small explicit-profile selector are in use;
+complete inventory, automatic changed-path execution, consumer matrix and
+comparable measurement remain planned.
 The owning behavior specification is
 [test orchestration](../prd/PRD_02_33_test_orchestration.md). The existing
 [reuse map](../prd/PRD_02_28_shared_core.md),
@@ -13,16 +14,16 @@ The owning behavior specification is
 
 ```text
 Outcome: small changes get relevant feedback; releases retain full evidence
-├── {INVENTORY} One test-profile inventory and explicit capability ownership
+├── [-] {INVENTORY} One test-profile inventory and explicit capability ownership
 │   ├── classify actual dependencies, features, OS/ISA and shared resources
 │   └── reconcile canonical full gate, tier entry and hosted dev court
 ├── [-] {LIFETIME} Stop paying for fixtures after their assertions finish
 │   ├── [v] cancel journey sleeps and terminate only owned processes
 │   └── [-] opt-in diagnostic observers; profile wiring and native cells remain
-├── {SELECT} Explainable development selection with conservative fallback
+├── [-] {SELECT} Explainable development selection with conservative fallback
 │   ├── --plan / --list / --profile / --changed-since
 │   └── module dependency closure; unknown or shared changes expand coverage
-├── {COMPOSE} Execute profile unions without repeating identical work
+├── [-] {COMPOSE} Execute profile unions without repeating identical work
 │   ├── deduplicate tasks; reuse only identical build identities
 │   └── keep isolated minimal consumers outside workspace feature unification
 ├── {REUSE} Qualify abstractions through their real consumers
@@ -86,9 +87,12 @@ Source inspection of its test infrastructure identifies these concrete gaps:
 
 ## Ordered milestones and acceptance
 
-Scoped fixture work and the `l3` coverage correction are implemented. The
-inventory/selection/composition planner and comparable measurements remain
-`[_]`; a completed design is not a completed test runner.
+Scoped fixture work, the `l3` coverage correction and an initial explicit
+profile planner are implemented. The manifest covers selected control,
+terminal, docs, reuse and script tasks; profile unions deduplicate identical
+tasks and refuse zero-test passes. `--changed-since` can explain a conservative
+plan but cannot execute a reduced inferred set yet. Complete inventory,
+automatic selection and comparable measurements remain open.
 Preserve the released behavior while iterating.
 
 | Order / leaf | Invariant and acceptance evidence | Dependencies / failure / explicit non-goal |

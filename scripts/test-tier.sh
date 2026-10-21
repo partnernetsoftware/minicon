@@ -4,6 +4,7 @@
 # full runs belong around a release build).
 #
 # Usage: scripts/test-tier.sh <tier> [filter]
+#        scripts/test-tier.sh --list|--plan|--profile NAME [--phase PHASE]
 #   l0  lint            workspace/all-targets clippy -D warnings (no tests run)
 #   l1  focused units   root/core/UI units + minicon_alignment + reuse consumer
 #                       (not a claim of pure/no-process coverage)
@@ -26,6 +27,16 @@ set -euo pipefail
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
+
+if [[ "${1:-}" == --* ]]; then
+  for python_bin in python3 python py; do
+    if command -v "$python_bin" >/dev/null 2>&1; then
+      exec "$python_bin" scripts/test-plan.py "$@"
+    fi
+  done
+  echo "test-tier: Python interpreter not found" >&2
+  exit 127
+fi
 
 tier=${1:-}
 filter=${2:-}

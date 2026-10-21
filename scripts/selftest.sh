@@ -42,6 +42,7 @@ esac
 
 OFFLINE=(
   scripts/build-feature-forwarding-selftest.py
+  scripts/test-plan-selftest.py
   scripts/publish-six-grid-runtime-selftest.sh
   scripts/six-grid-cloud-selftest.sh
   scripts/aggregate-six-grid-runtime-selftest.py
