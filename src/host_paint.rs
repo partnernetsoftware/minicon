@@ -1142,6 +1142,13 @@ impl ConApp {
             body,
             content_width,
         );
+        let url = self
+            .workspace
+            .active()
+            .and_then(|id| self.browsers.get(&id))
+            .and_then(|tab| tab.panel().url.clone())
+            .unwrap_or_else(|| "(no url)".to_owned());
+        paint_host_ui_text(&mut surface, x, 176, &url, t.text, body, content_width);
     }
 
     pub(crate) fn paint_empty_workspace(

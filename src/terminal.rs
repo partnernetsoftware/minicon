@@ -1048,6 +1048,41 @@ impl ConTerminal {
         word_selection(self.parser.screen(), point)
     }
 
+    /// http(s) token covering this visible cell, if the row has one.
+    ///
+    /// The index counts content cells, skipping wide continuations, so it
+    /// matches `http_url_at`'s character index on an ASCII URL.
+    pub(super) fn http_link_at(&self, point: TerminalPoint) -> Option<String> {
+        let screen = self.parser.screen();
+        let (rows, cols) = screen.size();
+        if point.row >= rows {
+            return None;
+        }
+        let mut line = String::new();
+        let mut index = 0usize;
+        let mut at = None;
+        for col in 0..cols {
+            let Some(cell) = screen.cell(point.row, col) else {
+                continue;
+            };
+            if cell.is_wide_continuation() {
+                continue;
+            }
+            if col == point.col {
+                at = Some(index);
+            }
+            let text = cell.contents();
+            if text.is_empty() {
+                line.push(' ');
+                index += 1;
+            } else {
+                line.push_str(text);
+                index += text.chars().count();
+            }
+        }
+        crate::browser::http_url_at(&line, at?)
+    }
+
     /// Triple-click owns one visible terminal row; soft-wrapped neighbors are
     /// separate selectable rows, matching the professional-selection contract.
     fn line_at(&self, point: TerminalPoint) -> Option<(TerminalPoint, TerminalPoint)> {
@@ -1409,7 +1444,7 @@ impl ConTerminal {
     }
 
     /// Converts a logical (DIP) pointer position to terminal cell coordinates.
-    fn hit_test(&self, pos: &LogicalPoint) -> TerminalPoint {
+    pub(super) fn hit_test(&self, pos: &LogicalPoint) -> TerminalPoint {
         let phys_x = (pos.x * self.scale - f64::from(self.content_left_px)).max(0.0);
         let phys_y = (pos.y * self.scale - f64::from(self.content_top_px)).max(0.0);
         TerminalPoint {

@@ -127,9 +127,10 @@ minicon (main UI — tab strip owns lifecycle)
 ```text
 [-] B0 shell: browser tab is a root peer of a terminal tab (Ctrl+Shift+O;
        list-tabs kind=browser). One content panel. No tray. wry surface still absent
-[-] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
+[v] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
        one browser content panel and stores the URL. That path does not call
-       host_open. Non-http is ignored. wry navigation still absent
+       host_open. Non-http is ignored. wry navigation still absent.
+       Evidence: `http_handoff_reuses_one_browser_content_panel`
 [-] B2 proxy hook reserved: browser.http_proxy / browser.https_proxy /
        browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
        shell. Not yet applied to a wry/WebKit network session

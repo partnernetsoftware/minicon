@@ -2002,6 +2002,58 @@ impl ConApp {
         Ok(())
     }
 
+    /// Place an http(s) URL on the single browser content panel.
+    ///
+    /// One browser tab in the strip is reused. A second content panel is not
+    /// created. `false` leaves the tree unchanged (non-http, or tab cap).
+    fn handoff_http_link(
+        workspace: &mut workspace::Workspace,
+        browsers: &mut SessionStore<browser::BrowserTab>,
+        url: &str,
+    ) -> bool {
+        if browser::http_url_at(url, 0).as_deref() != Some(url) {
+            return false;
+        }
+        let existing = workspace
+            .nodes()
+            .iter()
+            .find(|node| node.kind == workspace::TabKind::Browser)
+            .map(|node| node.id);
+        let id = if let Some(id) = existing {
+            workspace.set_active(id);
+            id
+        } else {
+            let Some(id) = workspace.add_browser_root() else {
+                return false;
+            };
+            id
+        };
+        if let Some(tab) = browsers.get_mut(&id) {
+            tab.show_http(url);
+        } else {
+            let mut tab = browser::BrowserTab::shell();
+            tab.show_http(url);
+            if browsers.insert(id, tab).is_err() {
+                workspace.close(id);
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Open or focus the one browser content panel for an http(s) URL.
+    ///
+    /// Reuses the existing browser tab when one is already in the strip.
+    /// Does not call `host_open`. A non-http string is ignored. The chrome
+    /// sent-history panel is not involved.
+    fn present_http_link(&mut self, url: &str) -> bool {
+        if !Self::handoff_http_link(&mut self.workspace, &mut self.browsers, url) {
+            return false;
+        }
+        self.mark_host_ui_full();
+        true
+    }
+
     fn open_browser_tab_contained(&mut self, window: &PixelWindow) {
         if let Err(error) = self.open_browser_tab(window) {
             self.note_host_notice(format!("could not open a browser tab: {error}"), window);
@@ -3453,6 +3505,32 @@ impl PixelWindowApplication for ConApp {
             button: PointerButton::Left,
             state: PointerButtonState::Pressed,
             position: Some(position),
+            modifiers,
+            ..
+        } = &event
+            && modifiers.control
+            && !modifiers.shift
+            && !modifiers.alt
+        {
+            if let Some(url) = self
+                .active_session()
+                .ok()
+                .map(|session| {
+                    let point = session.hit_test(position);
+                    session.http_link_at(point)
+                })
+                .flatten()
+                && self.present_http_link(&url)
+            {
+                self.refresh_title(window)?;
+                window.request_redraw();
+                return Ok(PixelWindowDirective::Continue);
+            }
+        }
+        if let PixelWindowEvent::PointerButton {
+            button: PointerButton::Left,
+            state: PointerButtonState::Pressed,
+            position: Some(position),
             ..
         } = &event
         {
@@ -4275,6 +4353,54 @@ fn candidate_bounds(candidate: DirtyRegion, width: u32, height: u32) -> PixelRec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ctrl+click http handoff: one browser content panel, reused, and a
+    /// non-http token does not open a tab or call the OS.
+    #[test]
+    fn http_handoff_reuses_one_browser_content_panel() {
+        let mut workspace = workspace::Workspace::default();
+        let mut browsers = SessionStore::default();
+        assert!(ConApp::handoff_http_link(
+            &mut workspace,
+            &mut browsers,
+            "https://example.test/a"
+        ));
+        assert!(ConApp::handoff_http_link(
+            &mut workspace,
+            &mut browsers,
+            "http://example.test/b"
+        ));
+        let browser_tabs: Vec<_> = workspace
+            .nodes()
+            .iter()
+            .filter(|node| node.kind == workspace::TabKind::Browser)
+            .collect();
+        assert_eq!(browser_tabs.len(), 1);
+        assert_eq!(workspace.active(), Some(browser_tabs[0].id));
+        assert_eq!(browsers.get(&browser_tabs[0].id).unwrap().panel_count(), 1);
+        assert_eq!(
+            browsers
+                .get(&browser_tabs[0].id)
+                .unwrap()
+                .panel()
+                .url
+                .as_deref(),
+            Some("http://example.test/b")
+        );
+        assert!(!ConApp::handoff_http_link(
+            &mut workspace,
+            &mut browsers,
+            "mailto:a@b.test"
+        ));
+        assert_eq!(
+            workspace
+                .nodes()
+                .iter()
+                .filter(|node| node.kind == workspace::TabKind::Browser)
+                .count(),
+            1
+        );
+    }
 
     /// The advanced TERM override is validated on load (terminfo-name
     /// alphabet, bounded length), survives the config document round trip,

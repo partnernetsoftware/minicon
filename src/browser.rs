@@ -12,10 +12,15 @@
 /// unbounded header.
 const PROXY_VALUE_MAX_BYTES: usize = 512;
 
-/// The single panel a browser tab hosts today.
+/// The single content panel a browser tab hosts today.
+///
+/// This is the tab's own page surface. It is not the chrome sent-history
+/// panel on the right of the window.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BrowserPanel {
     pub title: String,
+    /// http(s) handed off from the terminal. Empty until a link is opened.
+    pub url: Option<String>,
 }
 
 /// A browser tab: exactly one panel, same lifecycle as a terminal tab.
@@ -29,12 +34,18 @@ impl BrowserTab {
         Self {
             panel: BrowserPanel {
                 title: "browser".to_owned(),
+                url: None,
             },
         }
     }
 
     pub fn panel(&self) -> &BrowserPanel {
         &self.panel
+    }
+
+    /// Replace the one content panel's URL. Does not add a second panel.
+    pub fn show_http(&mut self, url: &str) {
+        self.panel.url = Some(url.to_owned());
     }
 
     /// The current model is 1 tab ↔ 1 panel. This stays 1 until the layout
@@ -97,6 +108,43 @@ pub fn resolve_proxy_from_process(config: &BrowserProxyConfig) -> BrowserProxy {
     resolve_proxy(config, |key| std::env::var(key).ok())
 }
 
+/// An http(s) token under `char_index` on one terminal row.
+///
+/// `Some` means the product opens that URL in a browser tab. `None` means
+/// this click is not a terminal http link: the caller must not call
+/// `host_open` / `xdg-open` either. Non-http schemes stay out of this leaf.
+pub fn http_url_at(line: &str, char_index: usize) -> Option<String> {
+    let chars: Vec<char> = line.chars().collect();
+    if chars.is_empty() {
+        return None;
+    }
+    let index = char_index.min(chars.len() - 1);
+    if chars[index].is_whitespace() {
+        return None;
+    }
+    let mut start = index;
+    while start > 0 && !chars[start - 1].is_whitespace() {
+        start -= 1;
+    }
+    let mut end = index + 1;
+    while end < chars.len() && !chars[end].is_whitespace() {
+        end += 1;
+    }
+    while end > start && matches!(chars[end - 1], '.' | ',' | ';' | ')' | ']' | '"' | '\'') {
+        end -= 1;
+    }
+    let token: String = chars[start..end].iter().collect();
+    if token.len() > 2048 {
+        return None;
+    }
+    let lower = token.to_ascii_lowercase();
+    if lower.starts_with("https://") || lower.starts_with("http://") {
+        Some(token)
+    } else {
+        None
+    }
+}
+
 fn usable_proxy_value(value: String) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() || trimmed.len() > PROXY_VALUE_MAX_BYTES {
@@ -114,9 +162,27 @@ mod tests {
 
     #[test]
     fn a_browser_tab_hosts_exactly_one_panel() {
-        let tab = BrowserTab::shell();
+        let mut tab = BrowserTab::shell();
+        tab.show_http("https://example.test/a");
         assert_eq!(tab.panel_count(), 1);
-        assert_eq!(tab.panel().title, "browser");
+        assert_eq!(tab.panel().url.as_deref(), Some("https://example.test/a"));
+    }
+
+    #[test]
+    fn http_links_are_browser_urls_and_other_schemes_are_not_opened() {
+        let line = "see https://example.test/a), mailto:a@b.test and ./file";
+        let at = line.find("https").unwrap();
+        assert_eq!(
+            http_url_at(line, at + 4).as_deref(),
+            Some("https://example.test/a")
+        );
+        let mailto = line.find("mailto").unwrap();
+        assert_eq!(http_url_at(line, mailto), None);
+        assert_eq!(http_url_at(line, line.find("./file").unwrap()), None);
+        assert_eq!(
+            http_url_at("http://ok.test", 0).as_deref(),
+            Some("http://ok.test")
+        );
     }
 
     #[test]

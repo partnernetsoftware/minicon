@@ -106,12 +106,14 @@ names above.
   a second windowing model and not a chrome-panel change. Until it ships,
   mux/control still refuse nonzero pane indices
   ([PRD_02_31](PRD_02_31_v0_2_horizon.md)).
-- [-] **browser content panel — shell and URL handoff.** The tab shell paints
-  a peer of a terminal tab and can store an http(s) URL for a later wry
+- [v] **browser content panel — shell and URL handoff.** The tab shell paints
+  a peer of a terminal tab and stores an http(s) URL for a later wry
   surface. Ctrl+click on an http(s) token in the terminal opens or focuses
-  that one browser content panel and **must not** call `host_open` / the OS
-  default browser. wry navigation, OAuth, dashboard and multi-panel layout
-  remain follow-ups in [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
+  that one browser content panel and does not call `host_open` / the OS
+  default browser. Evidence: `browser::tests::http_links_are_browser_urls_and_other_schemes_are_not_opened`;
+  `tests::http_handoff_reuses_one_browser_content_panel`. wry navigation,
+  OAuth, dashboard and multi-content-panel layout remain follow-ups in
+  [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
   Renderer choice (direct-wry helper, no wry linked into core `minicon`) stays
   recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
 - [v] **chrome panels stay chrome.** The right-side **sent-history panel**,
