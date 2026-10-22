@@ -335,6 +335,23 @@ parser or paint fix applies; the repair path is backend selection — this
 record is direct evidence for the 0.2.20 default decision, and the
 `rust-console` preview is the workaround today (`--feature rust-console`).
 
+**Visible three-agent court on the new default (2026-10-22, Windows x64
+20348, current source before the 0.2.20 Candidate).**
+`tests/support/agent-visible-court/run-court.ps1` starts Claude Code 2.1.304,
+Codex CLI 0.162.1 and Grok Build 1.0.62 in a MiniCon tab, lets each start
+screen settle, resizes the window 1100x700 -> 700x600 -> 1400x800 -> 900x650
+and captures parser state and pixels at every step; no prompt is sent.
+On rust-console every agent rendered with zero replacement characters and
+`ui-snapshot` reported the backend: Claude Code's rules and status lines
+re-laid out at each width, Grok's trust dialog re-centred, and Codex's
+folder-access dialog re-wrapped its text narrow and wide — the resize
+notification codex-cli needs (fixed for 0.2.20) observed end to end. Codex's
+own bootstrap intermittently failed with "account/read failed ... workspace
+routing discovery timed out" on both backends alike (two runs each way,
+alternating), which is the agent's network/account path, not rendering; its
+solo run is the evidence. This is a start-screen and resize court, not a
+working-session court; the exact-Candidate run is recorded with the release.
+
 Source audit at 56b3b67: MiniCon uses the owned `vt100` screen/parser and `vte`
 grammar. The name does not restrict the implementation to the original VT100:
 the screen includes alternate buffers, cursor addressing, scrolling, bracketed

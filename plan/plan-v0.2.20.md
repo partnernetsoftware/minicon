@@ -73,7 +73,13 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │     deliver field-identical records. Evidence: tests/support/mouse-court/ before/after
 │     runs, rust_console_sgr_mouse_reports_become_native_mouse_records;
 │     record in PRD 24 backend selection
-├── [_] {COURTS} Exact-artifact decision courts
+├── [-] {COURTS} Exact-artifact decision courts
+│   state 2026-10-22: local cost court (processes 4 vs 10, 35 vs 99 MB,
+│     echo latency, zero hard-kill orphans), release 32 MiB throughput
+│     (rust-console 9.9 s delivering everything vs the agent's scrape),
+│     visible three-agent start-and-resize court on current source (PRD
+│     24.01), native rust_console_pty suite on win-x86_64 and win-aarch64
+│     via dev-loop-crosscheck. open: the same on the exact signed Candidate
 │   invariant: every default-decision claim names exact artifact, cell and court
 │   evidence: (a) visible three-agent matrix (Claude Code / Grok / Codex) on the
 │     exact signed Candidate, classic vs rust-console; (b) win-aarch64 actual
