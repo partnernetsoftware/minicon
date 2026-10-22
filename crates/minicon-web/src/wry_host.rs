@@ -39,6 +39,7 @@ pub fn load(url: &str) -> Result<(), &'static str> {
     let webview = builder
         .build(&window)
         .map_err(|_| "webkit-host-not-linked")?;
+    // `EventLoop::run` does not return. Close ends the process.
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         let _keep = &webview;
@@ -50,5 +51,4 @@ pub fn load(url: &str) -> Result<(), &'static str> {
             *control_flow = ControlFlow::Exit;
         }
     });
-    Ok(())
 }

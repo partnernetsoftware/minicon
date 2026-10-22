@@ -664,6 +664,15 @@ mod tests {
     }
 
     #[test]
+    fn wry_host_source_loads_with_wry_and_not_the_os_browser() {
+        let source = include_str!("wry_host.rs");
+        assert!(source.contains(".with_url(url)"));
+        assert!(source.contains("webkit_proxy_env"));
+        assert!(!source.contains("xdg-open"));
+        assert!(!source.contains("host_open"));
+    }
+
+    #[test]
     fn default_host_reports_unavailable_without_a_webview() {
         assert!(!webview_backend_linked());
         assert_eq!(
