@@ -1,7 +1,7 @@
 # MiniCon 0.2.x product roadmap
 
-Status: product sequence, updated 2026-10-21. v0.2.19 is the latest published
-version; [its release history](../prd/archive/v0.2.19-release-history.md) owns
+Status: product sequence, updated 2026-10-22. v0.2.20 is the latest published
+version; [its release history](../prd/archive/v0.2.20-release-history.md) owns
 the exact source, artifact and Promotion receipts. Unfinished 0.2.16
 test-orchestration and 0.2.17 agent-quality gates remain open after that
 bounded release rather than becoming shipped claims.
@@ -82,12 +82,13 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 │     demonstration (PRD 35); no profile menu shipped; osx-x86_64 throughput
 │     bound and the TERM runtime probe stay open by name (carried debt)
 │   non-goal: automatic platform-crate merger (unchanged)
-└── [-] 0.2.20 — evidence-based Windows default and product-cost decision
+└── [v] 0.2.20 — evidence-based Windows default and product-cost decision (decided: rust-console default)
     invariant: any default change improves user journeys without hidden regression
     evidence: exact-artifact real apps, reliability, latency/RSS and rollback courts
     safe failure: retain explicit preview if a gate is missing
     dependency: all preceding gates and PRD 27; non-goal: a date-driven switch
-    plan: follow [the dedicated 0.2.20 plan](plan-v0.2.20.md) — {BUG} attribution,
+    shipped: [release history](../prd/archive/v0.2.20-release-history.md); plan
+    archived at [plan-v0.2.20](archive/plan-v0.2.20.md) — {BUG} attribution,
     {BACKEND-KEY}, {MOUSE}, exact-artifact {COURTS}, bounded {CRASH} hunt, then
     the decision; per-tab process cost (3 agent-path vs 1 rust-console) is
     already measured in PRD 24

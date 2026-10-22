@@ -1,13 +1,16 @@
 # v0.2.20 — evidence-based Windows default and product-cost decision
 
-Status: planned 2026-10-22, drafted immediately after
-[v0.2.19 shipped](../prd/archive/v0.2.19-release-history.md). The version
-theme is owned by [the 0.2.x roadmap](plan-v0.2.x-product-roadmap.md)
+Status: **shipped 2026-10-22** as
+[v0.2.20](../../prd/archive/v0.2.20-release-history.md) (source `bd881e3`);
+this plan is archived. Open items moved to carried debt (G4, G6) and PRD 34.
+Originally planned 2026-10-22, drafted immediately after
+[v0.2.19 shipped](../../prd/archive/v0.2.19-release-history.md). The version
+theme is owned by [the 0.2.x roadmap](../plan-v0.2.x-product-roadmap.md)
 ("evidence-based Windows default and product-cost decision"); TUI-defect
 attribution discipline and the open compatibility defects are owned by
-[PRD 24.01](../prd/PRD_02_24_01_tui_compatibility.md); backend behavior and
-selection by [PRD 24](../prd/PRD_02_24_con_terminal.md#pty-backend-selection);
-release gates by [PRD 27](../prd/PRD_02_27_con_delivery.md). This plan
+[PRD 24.01](../../prd/PRD_02_24_01_tui_compatibility.md); backend behavior and
+selection by [PRD 24](../../prd/PRD_02_24_con_terminal.md#pty-backend-selection);
+release gates by [PRD 27](../../prd/PRD_02_27_con_delivery.md). This plan
 sequences what 0.2.20 fixes and what evidence the default decision consumes;
 it does not pre-decide the switch.
 
@@ -73,7 +76,7 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │     deliver field-identical records. Evidence: tests/support/mouse-court/ before/after
 │     runs, rust_console_sgr_mouse_reports_become_native_mouse_records;
 │     record in PRD 24 backend selection
-├── [-] {COURTS} Exact-artifact decision courts
+├── [v] {COURTS} Exact-artifact decision courts
 │   state 2026-10-22: local cost court (processes 4 vs 10, 35 vs 99 MB,
 │     echo latency, zero hard-kill orphans), release 32 MiB throughput
 │     (rust-console 9.9 s delivering everything vs the agent's scrape),
@@ -91,7 +94,7 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │   dependency: 0.2.19 Candidate chain mechanics (rerun on 0.2.20 source);
 │     PRD 27 owns runners and costs; non-goal: re-running courts that exist
 │     with matching source/features (inventory receipts first)
-├── [-] {CRASH} G4 fixture-host heap-corruption trigger hunt (bounded)
+├── [-] {CRASH} G4 fixture-host heap-corruption trigger hunt (bounded; carried as G4)
 │   state 2026-10-22: one bounded round under parallel load (minicon_control
 │     concurrent with minicon_blackbox, 0.2.20 source before the default
 │     flip): 3 clean control rounds + 4 clean blackbox rounds, zero
@@ -111,7 +114,7 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │   safe failure: if not reproduced within the box's budget, record the
 │     attempted matrix and keep G4 open with sharper triggers
 │   dependency: carried debt G4; non-goal: rewriting the test harness
-├── [-] {DECIDE} The default decision itself
+├── [v] {DECIDE} The default decision itself
 │   state 2026-10-22: decided — rust-console becomes the Windows default
 │     (decision section in PRD 24 "Backend default decision (0.2.20)").
 │     Flipping the default made every GUI black-box journey run on
@@ -130,7 +133,7 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │   safe failure: keep classic default + explicit preview; name each missing
 │     gate (the roadmap's standing rule — a decision point, not a promise)
 │   dependency: all leaves above; PRD 27 owns the release chain
-└── [-] {GATE} Qualify and upsert
+└── [v] {GATE} Qualify and upsert
     state 2026-10-22: local gate green (fmt, clippy -D warnings default and
       --no-default-features, build.sh test 34 suites / 1465); dev-loop six
       cells: Linux x2 and macOS x2 green, Windows x2 green apart from the

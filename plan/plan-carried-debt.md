@@ -122,8 +122,9 @@ mechanism lives with its code and test).
 │        windows-11-arm runners, always at their FreeConsole ("disconnect")
 │        variant, while interrupt/signal variants pass; never locally on
 │        20348 (6/6 under heavy load). Same rate on pre-flip source 49c5c6b
-│        and on ae10da1, so not introduced by the 0.2.20 default flip or the
-│        chunked raw writes. Suspect: whether `close_may_publish` lets the
+│        and on ae10da1, and 4 of 4 cell-runs on the published v0.2.19 source
+│        7e27648, so it predates the 0.2.20 default flip and the chunked raw
+│        writes. Suspect: whether `close_may_publish` lets the
 │        disconnect bypass output the test deliberately never consumes is
 │        order-dependent on newer kernelbase. Product impact is bounded: a
 │        MiniCon GUI always consumes output, which releases the deferral.

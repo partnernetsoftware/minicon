@@ -51,7 +51,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [-] v0.2.20 Windows default decision → plan/plan-v0.2.20.md
+    ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
     ├── [-] v0.2.16 test-selection work → plan/plan-v0.2.16.md
@@ -137,6 +137,13 @@ flowchart LR
   matrix, remain open. The classic Windows provider is still the default.
   [Owner](prd/PRD_02_34_windows_console_backend.md) and
   [sequence](plan/plan-windows-console-backend.md).
+- [v] **v0.2.20 published**, `2026-10-22T16:04:27Z`, source
+  `bd881e3fc0ff4b6913c82ec5b50df9bcb75e3575`. The owned Rust console is the
+  Windows default backend (rollback: `--feature console-agent`); MSYS2
+  output, mouse, resize notification, unstartable programs and >1 MiB writes
+  were fixed on the way. [Release history](prd/archive/v0.2.20-release-history.md)
+  owns the receipts and the named open items (G4 heap corruption, G6
+  disconnect flake on new Windows runners).
 - [v] **v0.2.19 published**, `2026-10-21T16:28:55Z`, source
   `7e27648cb3d814187887992b3274be5d73ea38ac`. Seam consolidation (four drifted
   decisions unified), the console-owned session contract vocabulary, the
