@@ -42,8 +42,11 @@ MiniCon — one-file local terminal
 │   ├── minicon-core — shared rules; not a complete terminal engine
 │   ├── minicon-ui-core — host-neutral UI mechanisms with internal ISA kernels
 │   ├── minicon-platform — capability contracts and native OS/ISA/ABI adapters
-│   └── [-] minicon-console — independent terminal library and native service
-│       └── prd/PRD_02_35_terminal_library.md
+│   ├── [-] minicon-console — independent terminal library and native service
+│   │   └── prd/PRD_02_35_terminal_library.md
+│   └── [_] minicon-web — browser function API + wry/WebView isolation
+│       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
+│           · plan/plan-browser-tabs.md
 ├── Qualification and delivery
 │   ├── native developer feedback → prd/PRD_02_32_dev_loop_crosscheck.md
 │   ├── [-] targeted profiles and staged composition
@@ -73,6 +76,7 @@ flowchart LR
     MC --> C["minicon-core<br/>shared rules"]
     MC --> UI["minicon-ui-core<br/>UI mechanisms"]
     MC --> P["minicon-platform<br/>native capabilities"]
+    MC -.->|"browser content panel"| WEB["minicon-web<br/>browser API / wry isolate"]
     UI -->|tree compatibility exports| C
     P -->|numeric compatibility exports| C
     UI --> I["internal ISA kernels"]
@@ -118,6 +122,7 @@ flowchart LR
 | Keep modern agent TUIs readable | [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md) | versioned real agents, bounded source/wire/state/pixel traces and provider-specific claims |
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
+| Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
@@ -171,12 +176,15 @@ flowchart LR
   open. The 10 MiB intent is not achieved by this release. Measurements and
   retained-frame/native-host investigations belong to
   [delivery](prd/PRD_02_27_con_delivery.md).
-- [-] **Built-in browser tabs (content panels).** Tab shell and proxy hook
-  reserved; Ctrl+click http(s) → browser content panel (not OS default).
-  wry navigation and 1:N content-panel layout are later.
+- [-] **Built-in browser tabs (content panels) via `minicon-web`.** Tab shell
+  and proxy hook reserved; Ctrl+click http(s) → browser content panel (not OS
+  default). Adopted boundary: `crates/minicon-web` (lib + optional host)
+  unifies open/load URL, proxy, staged OAuth/dashboard/preview/wasm and
+  isolates wry; core `minicon` does not link wry. Crate source not on tip yet.
+  wry navigation and 1:N content-panel layout are later. No tray.
   Names: [Workspace terminology](prd/PRD_02_25_con_workspace.md#terminology-naming-decision-2026-10-23);
-  sequence: [plan-browser-tabs](plan/plan-browser-tabs.md); renderer choice:
-  [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).
+  sequence / target API: [plan-browser-tabs](plan/plan-browser-tabs.md);
+  renderer: [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).
 - [-] **macOS host-UI readability** remains open, including tab/header and
   composer-button text. [Workspace](prd/PRD_02_25_con_workspace.md) owns the
   zoom/text/padding follow-up.

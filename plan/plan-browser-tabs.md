@@ -1,6 +1,6 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: design, plus a tab shell and proxy hook (2026-10-23). **Commissioner re-nail:** no tray; browser = terminal tab peer; content-panel composition later. wry navigation is not in this cut. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
+Status: design, plus a tab shell and proxy hook (2026-10-23). **Commissioner re-nail:** no tray; browser = terminal tab peer; content-panel composition later. **2026-10-23 adopt:** browser surface crate = **`minicon-web`** (lib + optional host); core `minicon` never links wry. Crate source not on tip yet — this plan owns the boundary and target interface list; `0:grk` owns `crates/minicon-web` implementation. wry navigation is not in this cut. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
@@ -53,25 +53,27 @@ WebView windows. Process isolation may still use a sibling binary / subcommand
 for wry; the main process owns the tab chrome and bridges content back.
 
 ```text
-minicon (main UI — tab strip owns lifecycle)
+minicon (main UI — tab strip owns lifecycle; no wry/tao link)
   │
   │  terminal tabs  │  browser tabs   ← same bar, open/close/switch/title
   │       │                │
   │       ▼                ▼
-  │     PTY host     wry surface (embed or child-process bridge)
+  │     PTY host     browser content panel (product face; PRD_02_25)
+  │                        │
+  │                        ▼
+  │              crates/minicon-web  ← unified browser function interface
+  │              (library API + optional host binary / subcommand)
+  │                        │
+  │                        ▼
+  │              wry / system WebView (isolated here only)
+  │              (WebView2 / WKWebView / WebKitGTK)
   │
   │ OSC-8 / Ctrl+click / "open browser"
-  │   → open or focus a browser tab (never xdg-open / ShellExecute for http(s))
+  │   → open or focus a browser tab via minicon-web (never xdg-open /
+  │     ShellExecute for http(s); never tray+外窗)
   │
   │ [now]  each tab hosts exactly one content panel (1:1)
   │ [later] one tab may host multiple content panels (split / side-by-side)
-  │
-  └─ optional: minicon-browser helper process (direct-wry, not linked into core)
-       IPC / embed bridge back into the tab shell — UX is tab, not tray+外窗
-                    │
-                    ▼
-             system WebView runtime
-             (WebView2 / WKWebView / WebKitGTK)
 ```
 
 ### Hard rules (from PRD + commissioner 2026-10-23 re-nail)
@@ -91,13 +93,14 @@ minicon (main UI — tab strip owns lifecycle)
      the capability surface can grow without a second windowing model.
    - Host **chrome panels** (sent-history / settings) are out of this rule —
      they stay chrome (PRD_02_25).
-5. **Separate process / subcommand OK for isolation.** Candidate name:
-   `minicon browser` or sibling `minicon-browser`. Core `minicon` stays free
-   of wry/tao linkage so a missing WebView runtime cannot take down the
+5. **`minicon-web` owns isolation (library + optional host).** Planned path
+   `crates/minicon-web`. Core `minicon` and `minicon-core` stay free of
+   wry/tao linkage so a missing WebView runtime cannot take down the
    terminal ([PRD_02_31 size boundary](../prd/PRD_02_31_v0_2_horizon.md)).
-   **If "independent process" vs "same-window tab" appears to conflict:
-   recommend main process owns the tab shell; wry may nest/bridge from a
-   child process. Product face is tab, not tray+外窗.**
+   The host binary / subcommand name may be `minicon-web`, `minicon browser`,
+   or today's `MINICON_BROWSER_BIN` helper — product face stays **tab /
+   content panel**, not tray+外窗. Main process owns the tab shell;
+   wry nests or bridges only through minicon-web.
 6. **Prefer direct-wry**, evidence already in
    `~/repos/agenterm/research/agenterm-webview/` (Windows receipt: direct-WRY
    ~520 KiB vs Tauri ~8.4 MiB). Consume shared adapter / bridge-v1 when the
@@ -122,6 +125,49 @@ minicon (main UI — tab strip owns lifecycle)
    binding for any bridge; OAuth may need a tightly allowlisted redirect
    origin — record the allowlist in config, not in code comments only.
 
+
+## minicon-web — boundary and target interface (2026-10-23)
+
+Commissioner proposed; machine-room accepted: encapsulate the browser surface
+as **`minicon-web`** so wry/WebView can change underneath one stable function
+interface. **Product names stay PRD_02_25** (Tab / content panel / chrome
+panel; c48a6a0). This crate is **not** tray, not chrome history/settings, and
+not a second windowing model.
+
+| Layer | Owns | Does not own |
+| --- | --- | --- |
+| `src/` workspace + `src/browser.rs` today | Tab strip, `TabKind::Browser`, content-panel shell, Ctrl+click handoff, proxy **config keys**, chrome panels | wry create/navigate; tray |
+| **`crates/minicon-web`** (planned) | Unified browser function API; wry/WebView isolation; optional host process; proxy **application** to navigations; staged OAuth / dashboard / preview / wasm hosts | Tab tree authority; chrome `history_panel` / `settings_panel`; OS-default browser for http(s) |
+| `minicon-platform` `webview` feature | Passive `probe_system_webview()` only | create / navigate / tray |
+
+**Crate status on tip:** absent (`crates/minicon-web` not created). Interface
+below is the **target contract** for the implementer (`0:grk`). When the crate
+lands, re-align this table to real paths; do not invent a parallel API in
+`src/` that bypasses minicon-web.
+
+### Target function interface (library)
+
+Shapes already exercised in `src/browser.rs` are the product-side contract the
+crate must satisfy or absorb; names may move into `minicon_web::` without
+changing meaning.
+
+| API / capability | Intent | Tip code today | Stage |
+| --- | --- | --- | --- |
+| `open_url` / load URL | Open or navigate http(s) in the built-in surface; never `host_open` / xdg-open / ShellExecute for terminal-originated http(s) | `page_host_request` → `program --load <url>`; `spawn_page_host`; `BrowserTab::show_http` + `PageLoad` | B1 shell [v]; Bw load [-] |
+| `http_url_at` | Recognize http(s) tokens for Ctrl+click; non-http → no open | `browser::http_url_at` | [v] in `src/browser.rs` |
+| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); apply to OAuth and ordinary loads when the host exists | `resolve_proxy` / `BrowserProxy*` — reserved, not applied to a session | B2 [-] |
+| Host binary contract | Helper argv is `--load <url>`; reject system opener names; missing host → Unavailable, not OS browser | `MINICON_BROWSER_BIN`; `PageLoad::Unavailable` | Bw [-] |
+| OAuth bridge | Provider authorize URL in a browser **tab**; redirect allowlist; origin-bound, size-capped token hand-back | — | B3 [_] |
+| Dashboard / file preview / wasm pages | First-party packaged origins under `assets/` / `include_bytes!`; deny-by-default foreign navigation | — | B4 [_] |
+| Runtime probe | Soft-fail when system WebView absent | `minicon_platform::webview::probe_system_webview` (passive) | [v] probe only |
+
+### Hard non-goals for the crate
+
+- System tray entry or tray-driven show/hide/quit.
+- Linking wry/tao into core `minicon` / `minicon-core`.
+- Renaming chrome evidence ids (`history_panel`, `panel_toggle`, …).
+- Claiming Draft / Latest / signed package / public ship from this leaf.
+
 ## Leaf split (implementation order when unblocked)
 
 ```text
@@ -131,10 +177,11 @@ minicon (main UI — tab strip owns lifecycle)
        one browser content panel and stores the URL. That path does not call
        host_open. Non-http is ignored. wry navigation still absent.
        Evidence: `http_handoff_reuses_one_browser_content_panel`
-[-] Bw page load: the content panel spawns `MINICON_BROWSER_BIN --load URL`
-       (the wry host). Core does not link wry/tao. A missing host or a
-       system opener name is Unavailable, not `host_open`. Proxy is still
-       not applied. Evidence: `page_host_request_is_the_helper_not_the_system_browser`,
+[-] Bw page load: the content panel asks **minicon-web** (or today's
+       `MINICON_BROWSER_BIN` stand-in) `--load URL`. Core does not link
+       wry/tao. A missing host or a system opener name is Unavailable, not
+       `host_open`. Proxy is still not applied. Evidence:
+       `page_host_request_is_the_helper_not_the_system_browser`,
        `spawn_page_host_passes_the_url_to_the_helper`
 [-] B2 proxy hook reserved: browser.http_proxy / browser.https_proxy /
        browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
@@ -206,7 +253,7 @@ secrets, or enabling assist in the composer UI. Design + hooks only.
 
 | Decision | Choice |
 | --- | --- |
-| Renderer | direct-wry; helper process OK; core does not link wry/tao (PRD_02_31) |
+| Renderer | **minicon-web** (lib + optional host); direct-wry inside that crate; core does not link wry/tao (PRD_02_31) |
 | Product surface | **browser tabs peer to terminal tabs** (same bar / lifecycle) |
 | System tray | **none** — show/hide/quit not tray-driven |
 | Content-panel model now | **1 tab ↔ 1 content panel** |

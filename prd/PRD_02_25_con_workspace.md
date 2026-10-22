@@ -18,7 +18,7 @@ minicon workspace and input
 ├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
 ├── Tab kinds and content panels (1 tab ↔ 1 content panel now; 1:N later)
 │   ├── terminal tab → one terminal content panel (PTY view)
-│   └── [-] browser tab → one browser content panel (shell + URL handoff; wry later)
+│   └── [-] browser tab → one browser content panel (shell + URL handoff; page load via minicon-web)
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -62,6 +62,7 @@ flowchart LR
     Strip --> BrTab["browser tab"]
     TermTab -->|"now 1:1"| TermCP["content panel = PTY view"]
     BrTab -->|"now 1:1"| BrCP["content panel = page surface"]
+    BrCP -->|"via minicon-web"| Web["minicon-web lib / optional host"]
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
     Chrome --> Sett["settings panel"]
@@ -107,21 +108,31 @@ names above.
   mux/control still refuse nonzero pane indices
   ([PRD_02_31](PRD_02_31_v0_2_horizon.md)).
 - [v] **browser content panel — shell and URL handoff.** The tab shell paints
-  a peer of a terminal tab and stores an http(s) URL for a later wry
+  a peer of a terminal tab and stores an http(s) URL for a later page
   surface. Ctrl+click on an http(s) token in the terminal opens or focuses
   that one browser content panel and does not call `host_open` / the OS
   default browser. Evidence: `browser::tests::http_links_are_browser_urls_and_other_schemes_are_not_opened`;
   `tests::http_handoff_reuses_one_browser_content_panel`. The same panel
-  then asks `MINICON_BROWSER_BIN --load <url>` to navigate; core `minicon`
-  does not link wry. A missing host is `PageLoad::Unavailable`
+  then asks a page host (`MINICON_BROWSER_BIN --load <url>` today; target
+  owner **`crates/minicon-web`**) to navigate; core `minicon` does not link
+  wry. A missing host is `PageLoad::Unavailable`
   (`browser-host-not-configured`), not `host_open`. Evidence:
   `browser::tests::page_host_request_is_the_helper_not_the_system_browser`,
   `browser::tests::spawn_page_host_passes_the_url_to_the_helper`.
   A linked wry surface, OAuth, dashboard and multi-content-panel layout
   remain follow-ups in
   [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
-  Renderer choice (direct-wry helper, no wry linked into core `minicon`) stays
-  recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
+  Renderer / crate boundary (minicon-web lib + optional host; no wry in core
+  `minicon`) stays recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
+- [_] **`minicon-web` module (adopted 2026-10-23).** Unified browser function
+  interface (open/load URL, proxy hook application, staged OAuth / dashboard /
+  file preview / wasm) and the only place wry/WebView implementation may live.
+  Product face remains **Tab / content panel** (now 1:1, future 1:N); **no
+  tray**. Chrome panels (sent-history / settings / panel toggle) stay chrome —
+  c48a6a0. Workspace owns tab strip and content-panel shell evidence; the crate
+  path and host binary land under PRD_02_31 / plan-browser-tabs. Tip has no
+  `crates/minicon-web` yet — docs nail the boundary; implementation is a
+  separate leaf.
 - [v] **chrome panels stay chrome.** The right-side **sent-history panel**,
   the **settings panel**, and the header **panel toggle** / `Ctrl+Shift+H`
   continue to mean host chrome (see Host UI below). Their evidence strings and

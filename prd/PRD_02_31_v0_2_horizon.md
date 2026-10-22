@@ -615,7 +615,8 @@ horizon yet.
   subcommand/process (as AgenTerm's own plan keeps CC's webview dependency out
   of `agenterm-cc`/`agenterm.exe`'s 4 MiB budget), never linked into the core
   `minicon` binary, so a missing/broken WebView runtime on one platform cannot
-  take down the CLI.
+  take down the CLI. The adopted home for that isolation is **`minicon-web`**
+  (library + optional host); core interacts only through that boundary.
 - **Deferred, not rejected: a from-scratch `minicon-surf` browser engine.**
   Raised in an earlier discussion, not previously written down anywhere in
   this repository (checked: no `minicon-surf` hits before this entry). A
@@ -638,6 +639,18 @@ prefer direct-wry via a helper / shared adapter, never link wry/tao into core
 `minicon`, never OS-default-browser for terminal-originated http(s). Sequencing
 and leaf status live in [plan-browser-tabs.md](../plan/plan-browser-tabs.md);
 workspace owns the tab/content-panel requirements and evidence.
+
+**`minicon-web` (adopted 2026-10-23).** Encapsulate the browser surface as
+workspace crate **`crates/minicon-web`**: library API plus an optional host
+process / subcommand. Responsibilities: unified browser function interface
+(open/load URL, proxy hook, staged OAuth / dashboard / preview / wasm);
+isolate wry/WebView so the underlying stack can change without rewriting
+product callers. Core `minicon` and `minicon-core` **do not** depend on wry —
+they talk to minicon-web only. Size-boundary rule above is unchanged: a missing
+WebView runtime must not take down the terminal. Product face stays Tab /
+content panel (PRD_02_25); no tray. Tip has not created the crate yet; the
+target interface inventory lives in plan-browser-tabs until `0:grk` lands
+source paths.
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the
