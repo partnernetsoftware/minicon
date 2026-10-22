@@ -27,6 +27,11 @@ layout through a narrow/wide/narrow resize and follow-up; one earlier Grok
 screenshot request remained pending. This is a promising user-selectable route,
 not yet a qualified default or packaged preview.
 
+Overnight design (not a release gate): built-in wry browser + tray —
+[plan-wry-tray-browser.md](plan-wry-tray-browser.md) (OAuth/proxy hook,
+dashboard, file preview, wasm; terminal Ctrl+click / open-browser → wry host,
+never OS default browser).
+
 Behavior owners: [modern TUI compatibility](../prd/PRD_02_24_01_tui_compatibility.md),
 [Windows backend](../prd/PRD_02_34_windows_console_backend.md),
 [terminal library](../prd/PRD_02_35_terminal_library.md),
