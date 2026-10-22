@@ -161,7 +161,7 @@ changing meaning.
 | --- | --- | --- | --- |
 | `open_url` / load URL | Open or navigate http(s) in the built-in surface; never `host_open` / xdg-open / ShellExecute for terminal-originated http(s) | `PageHost::load` / `ProcessPageHost`; `page_host_request` → `--load <url>`; `spawn_page_host`; `BrowserTab::show_http` + `PageLoad` | B1 shell [v]; Bw load [-] |
 | `http_url_at` | Recognize http(s) tokens for Ctrl+click; non-http → no open | `minicon_web::http_url_at` (re-exported from `src/browser.rs`) | [v] |
-| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); apply to OAuth and ordinary loads when the host exists | `resolve_proxy` / `BrowserProxy*` — reserved, not applied to a session | B2 [-] |
+| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); pass them to the page host | `resolve_proxy`; `spawn_page_host_with_proxy` installs them on the child. Not applied inside a WebView session | B2 [-] |
 | Host binary contract | `minicon-web-host --probe` \| `--load <url>`; reject system opener names; missing/unlinked WebView → Unavailable (exit 69), not OS browser | `crates/minicon-web/src/bin/minicon-web-host.rs` + `host_reply`; `MINICON_BROWSER_BIN` still accepted as stand-in | Bw [-] |
 | `PageHost` trait | Swappable surface: process host today; in-process WebView later without new product traits | `PageHost` / `ProcessPageHost` in `crates/minicon-web/src/lib.rs` | [-] |
 | OAuth bridge | Provider authorize URL in a browser **tab**; redirect allowlist; origin-bound, size-capped token hand-back | later `PageHost` callers | B3 [_] |
@@ -190,9 +190,11 @@ changing meaning.
        `host_open`. Proxy is still not applied. Evidence:
        `page_host_request_is_the_helper_not_the_system_browser`,
        `spawn_page_host_passes_the_url_to_the_helper`
-[-] B2 proxy hook reserved: browser.http_proxy / browser.https_proxy /
+[-] B2 proxy hook: browser.http_proxy / browser.https_proxy /
        browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
-       shell. Not yet applied to a wry/WebKit network session
+       shell and installed on the page-host process at `--load`. Not yet
+       applied inside a wry/WebKit network session.
+       Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`
 [_ ] B3 OAuth vertical: one provider login page + redirect allowlist +
        token hand-back to core via bridge (no token in UI chrome labels)
 [_ ] B4 dashboard + file preview + wasm host pages (assets/, include_bytes!)

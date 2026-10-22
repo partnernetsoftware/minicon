@@ -215,18 +215,51 @@ pub fn page_host_request(
 }
 
 /// Spawn the page host. Does not wait, and does not call `host_open`.
+/// The child inherits the parent environment, including any proxy hook.
 pub fn spawn_page_host(
     program: &std::path::Path,
     url: &str,
 ) -> Result<std::process::Child, String> {
+    spawn_page_host_with_proxy(program, url, None)
+}
+
+/// Spawn the page host and install `proxy` as `MINICON_BROWSER_*` on that
+/// process only. `None` leaves the inherited environment alone. A set field
+/// is written; an absent field is removed so a parent value cannot leak in.
+/// Still does not call `host_open`, and does not configure a WebView.
+pub fn spawn_page_host_with_proxy(
+    program: &std::path::Path,
+    url: &str,
+    proxy: Option<&BrowserProxy>,
+) -> Result<std::process::Child, String> {
     let (program, args) = page_host_request(program, url).map_err(str::to_owned)?;
-    std::process::Command::new(program)
+    let mut command = std::process::Command::new(program);
+    command
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|error| error.to_string())
+        .stderr(std::process::Stdio::null());
+    if let Some(proxy) = proxy {
+        apply_proxy_env(&mut command, proxy);
+    }
+    command.spawn().map_err(|error| error.to_string())
+}
+
+fn apply_proxy_env(command: &mut std::process::Command, proxy: &BrowserProxy) {
+    apply_proxy_var(command, "MINICON_BROWSER_HTTP_PROXY", &proxy.http);
+    apply_proxy_var(command, "MINICON_BROWSER_HTTPS_PROXY", &proxy.https);
+    apply_proxy_var(command, "MINICON_BROWSER_NO_PROXY", &proxy.no_proxy);
+}
+
+fn apply_proxy_var(command: &mut std::process::Command, key: &str, value: &Option<String>) {
+    match value {
+        Some(value) => {
+            command.env(key, value);
+        }
+        None => {
+            command.env_remove(key);
+        }
+    }
 }
 
 /// Swappable page surface for one content panel.
@@ -381,6 +414,36 @@ mod tests {
             "https://example.test/a"
         );
         assert!(spawn_page_host(&program, "mailto:a@b.test").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_page_host_installs_the_proxy_hook_on_the_child() {
+        let dir = std::env::temp_dir().join(format!("minicon-proxy-host-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("log");
+        let program = dir.join("minicon-page-host");
+        let script = format!(
+            "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$MINICON_BROWSER_HTTP_PROXY\" \"$MINICON_BROWSER_HTTPS_PROXY\" \"$MINICON_BROWSER_NO_PROXY\" > '{}'\n",
+            log.display()
+        );
+        std::fs::write(&program, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let proxy = BrowserProxy {
+            http: Some("http://127.0.0.1:9".into()),
+            https: None,
+            no_proxy: Some("localhost".into()),
+        };
+        let mut child =
+            spawn_page_host_with_proxy(&program, "https://example.test/a", Some(&proxy)).unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap().trim(),
+            "http://127.0.0.1:9||localhost"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

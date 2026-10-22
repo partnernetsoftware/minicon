@@ -113,8 +113,8 @@ names above.
   that one browser content panel and does not call `host_open` / the OS
   default browser. Evidence: `minicon-web` `http_links_are_browser_urls_and_other_schemes_are_not_opened`;
   `tests::http_handoff_reuses_one_browser_content_panel`. The same panel
-  then asks `MINICON_BROWSER_BIN --load <url>` (`minicon_web::spawn_page_host`)
-  to navigate. Owner is **`crates/minicon-web`**; core `minicon` does not link
+  then asks `MINICON_BROWSER_BIN --load <url>` (`minicon_web::spawn_page_host_with_proxy`)
+  to navigate, with the resolved proxy hook installed on that process. Owner is **`crates/minicon-web`**; core `minicon` does not link
   wry. A missing host is `PageLoad::Unavailable`
   (`browser-host-not-configured`), not `host_open`. Evidence:
   `page_host_request_is_the_helper_not_the_system_browser`,

@@ -2076,7 +2076,9 @@ impl ConApp {
             });
             return;
         };
-        match browser::spawn_page_host(std::path::Path::new(&program), url) {
+        let proxy = self.browser_proxy();
+        match browser::spawn_page_host_with_proxy(std::path::Path::new(&program), url, Some(&proxy))
+        {
             Ok(child) => {
                 self.browser_page = Some(child);
                 self.note_page_load(browser::PageLoad::Loading {
