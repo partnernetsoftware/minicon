@@ -169,12 +169,17 @@ jobs:
           # parses every byte (a screen-scraping backend delivers a fraction),
           # and in debug that alone missed the 32 MiB / 30 s budget while the
           # release binary met it with 3x headroom (2026-10-22).
-          echo "== release product build for throughput"
-          run_suite throughput-release-build cargo build --locked --release --target "$triple" --bin minicon
-          exe_suffix=""
-          case "$CELL" in win-*) exe_suffix=".exe" ;; esac
-          echo "== minicon_throughput --include-ignored --nocapture (release product) ${{ inputs.test_filter }}"
-          run_suite minicon_throughput env MINICON_TEST_BINARY="$PWD/target/$triple/release/minicon$exe_suffix" cargo test --locked --target "$triple" --test minicon_throughput -- --test-threads 2 --include-ignored --nocapture ${{ inputs.test_filter }}
+          # A filtered run that does not name throughput skips the release
+          # build entirely: it costs minutes and selects no test.
+          filter='${{ inputs.test_filter }}'
+          if [ -z "$filter" ] || [ "${filter#*throughput}" != "$filter" ] || [ "${filter#*sustained}" != "$filter" ]; then
+            echo "== release product build for throughput"
+            run_suite throughput-release-build cargo build --locked --release --target "$triple" --bin minicon
+            exe_suffix=""
+            case "$CELL" in win-*) exe_suffix=".exe" ;; esac
+            echo "== minicon_throughput --include-ignored --nocapture (release product) ${{ inputs.test_filter }}"
+            run_suite minicon_throughput env MINICON_TEST_BINARY="$PWD/target/$triple/release/minicon$exe_suffix" cargo test --locked --target "$triple" --test minicon_throughput -- --test-threads 2 --include-ignored --nocapture ${{ inputs.test_filter }}
+          fi
           case "$CELL" in
             win-*)
               # This suite is `#![cfg(windows)]` -- the pre-ConPTY console-agent
