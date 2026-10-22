@@ -101,11 +101,32 @@ mechanism lives with its code and test).
 │        included). open: the heap-corruption one-off deserves a trigger
 │        hunt (suspect: parallel suite load on a busy host); do not treat a
 │        local wait-text timeout alone as a product regression.
+│      CI evidence (2026-10-22): on the GitHub Windows runners the same
+│        journey now fails often at one step — after an injected
+│        Ctrl+Shift+V terminal paste (async clipboard read) — win-x86_64
+│        host exit 0xC0000374 at f4cb1f8, win-aarch64 a wait-text timeout;
+│        it passed on both cells at ae10da1. The paste path in src/ has no
+│        unsafe code and the Windows clipboard adapter's reads are bounded,
+│        so the corruption is elsewhere and only detected there; a page-heap
+│        (AppVerifier) run needs an elevated shell. Not in the release
+│        chain's courts; tracked, not hidden.
 │      consequence evidence (2026-10-22): a crashed fixture host leaks its
 │        console-agent children — the owner's process audit found exactly two
 │        orphaned cmd.exe (created 2026-10-21 16:40, parent PID dead) matching
 │        that day's gate-run crash window; fixture crashes cost real orphans,
 │        raising the trigger hunt's priority.
+├── G6 rust-console disconnect under withheld output flakes on new Windows (2026-10-22)
+│      `rust_console_pty_queued_reads_finish_under_unread_output_pressure`
+│        and `rust_console_pty_read_retirement_reveals_the_surviving_buffer`
+│        fail together about half the time on the GitHub windows-2025 and
+│        windows-11-arm runners, always at their FreeConsole ("disconnect")
+│        variant, while interrupt/signal variants pass; never locally on
+│        20348 (6/6 under heavy load). Same rate on pre-flip source 49c5c6b
+│        and on ae10da1, so not introduced by the 0.2.20 default flip or the
+│        chunked raw writes. Suspect: whether `close_may_publish` lets the
+│        disconnect bypass output the test deliberately never consumes is
+│        order-dependent on newer kernelbase. Product impact is bounded: a
+│        MiniCon GUI always consumes output, which releases the deferral.
 ├── G5 minicon_throughput budget misses on macos-15-intel runners (2026-10-21)
 │      state: `sustained_long_output_keeps_control_and_sibling_responsive`
 │        measured 36.4s for 32MiB against the 30s budget on the shared
