@@ -300,6 +300,24 @@ requested selection; the opened session identity is separately observable throug
   console, spawns the child into it, and polls the screen buffer with
   `ReadConsoleOutputW`, synthesizing a terminal stream from what changed. The
   agent is this product, not a third-party binary — nothing extra is deployed.
+- [v] **backend cost court (2026-10-22, Windows x64 20348, debug builds of
+  one source, same host, three `cmd` tabs).** `tests/support/backend-cost-court/`
+  measures the GUI plus every descendant, a 20-round input-echo round trip
+  through `send-text` + `wait-text` (absolute values include CLI process
+  start-up; only the comparison is meaningful), and orphans after a hard
+  kill of the GUI:
+
+  | Backend | Processes | Working set | Echo p50 / p90 | Hard-kill orphans |
+  |---|---|---|---|---|
+  | console agent (classic default) | 10 | 99.4 MB | 69.9 / 78.7 ms | 0 |
+  | ConPTY | 7 | 57.3 MB | 69.9 / 76.8 ms | 0 |
+  | rust-console | 4 | 35.4 MB | 65.1 / 71.2 ms | 0 |
+
+  rust-console is best or equal on every axis; all three reap their trees on
+  a crash-shaped kill. The first run's ConPTY cell was invalid — the court
+  inherited a host tab's `AGENTERM_FORCE_CONSOLE_AGENT=1` (the S5 leak fixed
+  below) — so the court now clears it; a backend court must measure the
+  backend it names.
 - [v] **mouse delivery parity across all three backends (2026-10-22,
   Windows x64 20348).** The same-court mouse journey
   (`tests/support/mouse-court/`: SGR reporting requested, records read with

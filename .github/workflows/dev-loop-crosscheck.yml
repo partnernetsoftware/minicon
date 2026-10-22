@@ -77,12 +77,13 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     # Compile plus test, on one runner, natively -- no cross toolchain, no
-    # transfer step to go wrong. 20 minutes covers a cold `cargo build` for
-    # this workspace's size with slack for the run loop below; a genuine
+    # transfer step to go wrong. 35 minutes covers a cold `cargo build` for
+    # this workspace's size plus the Windows cells' native rust-console PTY
+    # suite (added for 0.2.20), with slack for the run loop below; a genuine
     # hang (the class of bug this court exists to reproduce) still hits this
     # cap and reports as `cancelled`, which the log-upload step below also
     # covers.
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -169,6 +170,12 @@ jobs:
               # backend, only reachable on Windows.
               echo "== minicon_console_agent ${{ inputs.test_filter }}"
               run_suite minicon_console_agent cargo test --locked --target "$triple" --test minicon_console_agent -- --test-threads 1 ${{ inputs.test_filter }}
+              # The owned rust-console provider's native PTY sessions. Without
+              # this step no cell ever executed an actual Rust-provider session
+              # off the developer's x64 host, which left Windows ARM64 runtime
+              # evidence BLOCKED for the 0.2.20 default decision.
+              echo "== rust_console_pty (feature rust-console) ${{ inputs.test_filter }}"
+              run_suite rust_console_pty cargo test --locked --target "$triple" -p minicon-platform --features rust-console --test rust_console_pty -- --test-threads 1 ${{ inputs.test_filter }}
               ;;
           esac
           # Written before the failure exit below, so a red run still ships a
