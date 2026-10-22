@@ -1,6 +1,6 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: design + spike outline only (2026-10-23 overnight; **commissioner re-nail 2026-10-23**: no tray; browser = terminal tab peer; panel composition later). **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
+Status: design, plus a tab shell and proxy hook (2026-10-23). **Commissioner re-nail:** no tray; browser = terminal tab peer; panel composition later. wry navigation is not in this cut. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
 
 Renamed from `plan-wry-tray-browser.md` (tray-era title/content retired).
 
@@ -121,14 +121,14 @@ minicon (main UI — tab strip owns lifecycle)
 ## Leaf split (implementation order when unblocked)
 
 ```text
-[_ ] B0 spike: empty direct-wry surface hosted as a browser tab in the main
-       tab strip (Linux X11/Wayland); evidence: tab open/close/switch/title;
-       no tray; no OAuth
+[-] B0 shell: browser tab is a root peer of a terminal tab (Ctrl+Shift+O;
+       list-tabs kind=browser). One panel. No tray. wry surface still absent
 [_ ] B1 URL handoff: core minicon Ctrl+click / open-browser → open or focus
        a browser tab (IPC/argv to wry helper if used); prove http URL never
        hits xdg-open in that path
-[_ ] B2 proxy hook: config/env → wry/WebKit network session; curl-equivalent
-       check through corporate proxy fixture
+[-] B2 proxy hook reserved: browser.http_proxy / browser.https_proxy /
+       browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
+       shell. Not yet applied to a wry/WebKit network session
 [_ ] B3 OAuth vertical: one provider login page + redirect allowlist +
        token hand-back to core via bridge (no token in UI chrome labels)
 [_ ] B4 dashboard + file preview + wasm host pages (assets/, include_bytes!)

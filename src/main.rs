@@ -19,6 +19,7 @@
 
 mod a11y;
 mod agent_interface;
+mod browser;
 use minicon_core::{composer, json, keymap};
 
 mod host_paint;
@@ -306,6 +307,11 @@ struct ConConfig {
     /// behaves as absent; a valid-but-unavailable choice keeps the default
     /// and surfaces a visible notice (PRD 02.24 backend selection).
     backend: Option<String>,
+    /// Browser proxy hook. Not edited by the settings panel. Preserved on
+    /// rewrite so a later wry load can read the same file.
+    browser_http_proxy: Option<String>,
+    browser_https_proxy: Option<String>,
+    browser_no_proxy: Option<String>,
 }
 
 /// The backend vocabulary `minicon.json` accepts. Anything else behaves as
@@ -494,6 +500,9 @@ fn config_from_bytes(bytes: &[u8]) -> ConConfig {
         notes: config.notes,
         term: config.term.and_then(valid_term_override),
         backend: config.backend.and_then(valid_backend_choice),
+        browser_http_proxy: config.browser_http_proxy,
+        browser_https_proxy: config.browser_https_proxy,
+        browser_no_proxy: config.browser_no_proxy,
     }
 }
 
@@ -528,6 +537,15 @@ fn config_document(config: &ConConfig) -> json::JsonValue {
     }
     if let Some(backend) = &config.backend {
         fields.push(("backend", backend.as_str().into()));
+    }
+    if let Some(proxy) = &config.browser_http_proxy {
+        fields.push(("browser.http_proxy", proxy.as_str().into()));
+    }
+    if let Some(proxy) = &config.browser_https_proxy {
+        fields.push(("browser.https_proxy", proxy.as_str().into()));
+    }
+    if let Some(bypass) = &config.browser_no_proxy {
+        fields.push(("browser.no_proxy", bypass.as_str().into()));
     }
     json::object(fields)
 }
@@ -799,6 +817,9 @@ struct ConApp {
     no_activate: bool,
     workspace: workspace::Workspace,
     sessions: SessionStore<ConTerminal>,
+    /// Browser tabs have no PTY. Keyed by the same [`workspace::TabId`] as
+    /// terminal sessions, and only present when the node kind is Browser.
+    browsers: SessionStore<browser::BrowserTab>,
     /// Settings inherited when an empty workspace creates its next terminal.
     /// Closing the final tab updates this before the terminal is dropped, so
     /// the greeting page is a lifecycle boundary rather than a settings reset.
@@ -1279,6 +1300,7 @@ impl ConApp {
             no_activate: false,
             workspace,
             sessions,
+            browsers: SessionStore::default(),
             session_seed,
             notes: composer::ComposerState::default(),
             notes_focused: false,
@@ -1415,6 +1437,7 @@ impl ConApp {
             self.session_seed = SessionSeed::from_session(&session);
             drop(session);
         }
+        self.browsers.remove(&id);
         self.workspace.close(id);
         self.workspace.active().is_none()
     }
@@ -1438,7 +1461,36 @@ impl ConApp {
         self.select_tab(id);
     }
 
+    fn host_font_logical(&self) -> f64 {
+        self.active_session()
+            .ok()
+            .map(|session| session.font_size_logical)
+            .unwrap_or_else(|| self.session_seed.font_size_logical())
+    }
+
+    fn active_is_browser(&self) -> bool {
+        self.workspace
+            .active()
+            .and_then(|id| self.workspace.node(id))
+            .is_some_and(|node| node.kind == workspace::TabKind::Browser)
+    }
+
+    fn browser_proxy(&self) -> browser::BrowserProxy {
+        browser::resolve_proxy_from_process(&browser::BrowserProxyConfig {
+            http: self.config.browser_http_proxy.clone(),
+            https: self.config.browser_https_proxy.clone(),
+            no_proxy: self.config.browser_no_proxy.clone(),
+        })
+    }
+
     fn refresh_title(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        if self.active_is_browser() {
+            let title = "MiniCon — browser".to_owned();
+            window.set_title(&title);
+            self.current_window_title = title;
+            self.mark_a11y_dirty();
+            return Ok(());
+        }
         let title = self.active_session()?.window_title();
         window.set_title(&title);
         self.current_window_title = title;
@@ -1483,6 +1535,12 @@ impl ConApp {
             )
             .tree_capacity(),
         );
+        if self.active_is_browser() {
+            self.composer.focused = false;
+            self.refresh_title(window)?;
+            window.request_redraw();
+            return Ok(());
+        }
         let (sidebar_width, panel_width) = self.terminal_inset_widths();
         let session = self.active_session_mut()?;
         Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
@@ -1522,6 +1580,9 @@ impl ConApp {
         &mut self,
         metrics: minicon_platform::window_host::PixelWindowMetrics,
     ) -> Result<(), PixelWindowError> {
+        if self.active_is_browser() {
+            return Ok(());
+        }
         let (sidebar_width, panel_width) = self.terminal_inset_widths();
         let session = self.active_session_mut()?;
         Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
@@ -1916,6 +1977,37 @@ impl ConApp {
         self.refresh_title(window)
     }
 
+    /// Opens a browser tab beside terminal tabs. No PTY, no tray, no wry
+    /// navigation yet: the shell is the panel, and proxy is read when painted.
+    fn open_browser_tab(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        self.cancel_pointer_gestures_for_activation(window);
+        let id = self.workspace.add_browser_root().ok_or_else(|| {
+            PixelWindowError::failed("con_tab_create", "browser tab limit reached")
+        })?;
+        if self
+            .browsers
+            .insert(id, browser::BrowserTab::shell())
+            .is_err()
+        {
+            self.workspace.close(id);
+            return Err(PixelWindowError::failed(
+                "con_tab_create",
+                "stable tab id is already in use",
+            ));
+        }
+        self.mark_host_ui_full();
+        self.reveal_active_tree_row(window)?;
+        self.refresh_title(window)?;
+        window.request_redraw();
+        Ok(())
+    }
+
+    fn open_browser_tab_contained(&mut self, window: &PixelWindow) {
+        if let Err(error) = self.open_browser_tab(window) {
+            self.note_host_notice(format!("could not open a browser tab: {error}"), window);
+        }
+    }
+
     /// Sets a recoverable host notice and repaints the strip that shows it.
     /// A per-tab failure uses this instead of returning `Err`, which the host
     /// would otherwise turn into an exit for every tab.
@@ -2108,6 +2200,11 @@ impl ConApp {
             self.open_session_contained(window, false);
             return Ok(true);
         }
+        // Browser tab, peer of Ctrl+Shift+T. Not a tray popup.
+        if text.eq_ignore_ascii_case("o") {
+            self.open_browser_tab_contained(window);
+            return Ok(true);
+        }
         if text.eq_ignore_ascii_case("n") {
             self.open_session_contained(window, true);
             return Ok(true);
@@ -2220,11 +2317,8 @@ impl ConApp {
         // Measuring the whole buffer sent the IME candidate list off screen as
         // soon as the text outgrew the box, and did it with a hard-coded 8 px
         // advance that no font honours.
-        let composer_font_size = scaled_host_ui_font(
-            COMPOSER_TEXT_SIZE_PX,
-            self.active_session()?.font_size_logical,
-            scale,
-        );
+        let composer_font_size =
+            scaled_host_ui_font(COMPOSER_TEXT_SIZE_PX, self.host_font_logical(), scale);
         let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
             .composer_input
@@ -2297,11 +2391,8 @@ impl ConApp {
             metrics.physical_height,
             metrics.scale_factor,
         );
-        let composer_font_size = scaled_host_ui_font(
-            COMPOSER_TEXT_SIZE_PX,
-            self.active_session()?.font_size_logical,
-            scale,
-        );
+        let composer_font_size =
+            scaled_host_ui_font(COMPOSER_TEXT_SIZE_PX, self.host_font_logical(), scale);
         let cell_width = font::cell_metrics(composer_font_size).width.max(1);
         let text_width = layout
             .composer_input
@@ -3642,11 +3733,10 @@ impl PixelWindowApplication for ConApp {
         if self.route_composer_input(window, &event).is_some() {
             return Ok(PixelWindowDirective::Continue);
         }
-        if self.workspace.active().is_none() {
-            // Closing must keep working with no tabs open. `CloseRequested` is
-            // handled in the session layer, which this early return never
-            // reaches — so without this the window could not be closed at all
-            // and the only way out was killing the process.
+        if self.workspace.active().is_none() || self.active_is_browser() {
+            // Closing must keep working with no terminal session. A browser
+            // tab has no PTY, so keys stop here after the workspace shortcuts
+            // above have already opened, switched, or closed tabs.
             if matches!(event, PixelWindowEvent::CloseRequested) {
                 self.exit = true;
                 return Ok(PixelWindowDirective::Exit);
@@ -3719,10 +3809,14 @@ impl PixelWindowApplication for ConApp {
             frame_info.retention,
             PixelBackingRetention::RetainedAcrossFrames
         );
-        if self.workspace.active().is_none() {
+        if self.workspace.active().is_none() || self.active_is_browser() {
             let scale = window.metrics()?.scale_factor.max(1.0);
             self.note_frame_dimensions(width, height, scale);
-            self.paint_empty_workspace(frame.pixels_mut(), width, height, scale);
+            if self.active_is_browser() {
+                self.paint_browser_shell(frame.pixels_mut(), width, height, scale);
+            } else {
+                self.paint_empty_workspace(frame.pixels_mut(), width, height, scale);
+            }
             frame
                 .commit(PixelFrameWrite::Full)
                 .map_err(|error| PixelWindowError::failed("con_frame_commit", error.to_string()))?;
@@ -3978,7 +4072,7 @@ impl PixelWindowApplication for ConApp {
             .into_iter()
             .chain(presentation_deadline)
             .min();
-        if self.workspace.active().is_none() {
+        if self.workspace.active().is_none() || self.active_is_browser() {
             return Ok(control_deadline
                 .map_or(PixelWindowDirective::Wait, PixelWindowDirective::WaitUntil));
         }
@@ -5772,6 +5866,7 @@ mod tests {
             notes: Some("scratch\npad".to_owned()),
             term: Some("xterm-direct".to_owned()),
             backend: Some("rust-console".to_owned()),
+            ..ConConfig::default()
         };
         write_config_to(&path, &saved).expect("the preference is published");
 

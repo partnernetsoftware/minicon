@@ -56,6 +56,14 @@ impl ConApp {
                             ),
                             ("active", (active == Some(node.id)).into()),
                             (
+                                "kind",
+                                match node.kind {
+                                    workspace::TabKind::Terminal => "terminal",
+                                    workspace::TabKind::Browser => "browser",
+                                }
+                                .into(),
+                            ),
+                            (
                                 "child_alive",
                                 session.is_some_and(|session| !session.child_gone).into(),
                             ),

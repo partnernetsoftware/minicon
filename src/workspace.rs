@@ -19,11 +19,21 @@ impl TabId {
     }
 }
 
+/// What a tab hosts. Terminal and browser are peers in the same strip.
+/// A browser tab is one panel today; splitting a tab into panels is later.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TabKind {
+    #[default]
+    Terminal,
+    Browser,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TabNode {
     pub id: TabId,
     pub parent: Option<TabId>,
     pub title: String,
+    pub kind: TabKind,
     /// A name the user typed for this tab, if any.
     ///
     /// Distinct from the terminal's own title: a shell drives that one over
@@ -102,7 +112,19 @@ impl Workspace {
     }
 
     pub fn add_root(&mut self, title: String) -> Option<TabId> {
-        self.add(None, title, 0, self.nodes.len())
+        self.add(None, title, TabKind::Terminal, 0, self.nodes.len())
+    }
+
+    /// A browser tab at the root of the strip: same open/close/switch identity
+    /// as a terminal tab, and no child of a tray window.
+    pub fn add_browser_root(&mut self) -> Option<TabId> {
+        self.add(
+            None,
+            "browser".to_owned(),
+            TabKind::Browser,
+            0,
+            self.nodes.len(),
+        )
     }
 
     pub fn add_child(&mut self, parent: TabId, title: String) -> Option<TabId> {
@@ -115,7 +137,13 @@ impl Workspace {
             .iter()
             .position(|&depth| depth <= parent_depth)
             .map_or(self.nodes.len(), |offset| parent_index + 1 + offset);
-        self.add(Some(parent), title, depth, insertion_index)
+        self.add(
+            Some(parent),
+            title,
+            TabKind::Terminal,
+            depth,
+            insertion_index,
+        )
     }
 
     pub fn close(&mut self, id: TabId) -> Option<TabNode> {
@@ -168,6 +196,7 @@ impl Workspace {
         &mut self,
         parent: Option<TabId>,
         title: String,
+        kind: TabKind,
         depth: u32,
         insertion_index: usize,
     ) -> Option<TabId> {
@@ -182,6 +211,7 @@ impl Workspace {
                 id,
                 parent,
                 title,
+                kind,
                 custom_title: None,
             },
         );
@@ -208,6 +238,19 @@ mod tests {
         assert_eq!(workspace.node(child).unwrap().parent, Some(root));
         assert_eq!(workspace.node(grandchild).unwrap().parent, Some(child));
         assert_eq!(workspace.depths(), &[0, 1, 2]);
+    }
+
+    #[test]
+    fn a_browser_tab_is_a_root_peer_of_a_terminal_tab() {
+        let mut workspace = Workspace::default();
+        let terminal = workspace.add_root("terminal".into()).unwrap();
+        let browser = workspace.add_browser_root().unwrap();
+        assert_eq!(workspace.node(terminal).unwrap().kind, TabKind::Terminal);
+        assert_eq!(workspace.node(browser).unwrap().kind, TabKind::Browser);
+        assert_eq!(workspace.node(browser).unwrap().parent, None);
+        assert_eq!(workspace.active(), Some(browser));
+        workspace.close(browser).unwrap();
+        assert_eq!(workspace.active(), Some(terminal));
     }
 
     fn depth_of(workspace: &Workspace, id: TabId) -> u32 {
@@ -473,6 +516,7 @@ mod tests {
             id: TabId::new(500),
             parent: Some(TabId::new(999)),
             title: "orphan".into(),
+            kind: TabKind::Terminal,
             custom_title: None,
         });
 

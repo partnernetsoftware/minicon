@@ -91,6 +91,11 @@ pub struct ConfigValues {
     /// contract as `term`: shape-validated here, vocabulary owned by the
     /// product.
     pub backend: Option<String>,
+    /// Browser proxy hook. Dotted keys match the plan's config names. The
+    /// settings panel does not write them; a present value is preserved.
+    pub browser_http_proxy: Option<String>,
+    pub browser_https_proxy: Option<String>,
+    pub browser_no_proxy: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -119,6 +124,9 @@ enum ConfigField {
     Notes,
     Term,
     Backend,
+    BrowserHttpProxy,
+    BrowserHttpsProxy,
+    BrowserNoProxy,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -140,6 +148,9 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         notes: None,
         term: None,
         backend: None,
+        browser_http_proxy: None,
+        browser_https_proxy: None,
+        browser_no_proxy: None,
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -263,6 +274,17 @@ impl ConfigParser<'_> {
                     ConfigField::Backend => {
                         config.backend = self.string_value(value, "backend")?;
                     }
+                    ConfigField::BrowserHttpProxy => {
+                        config.browser_http_proxy =
+                            self.string_value(value, "browser.http_proxy")?;
+                    }
+                    ConfigField::BrowserHttpsProxy => {
+                        config.browser_https_proxy =
+                            self.string_value(value, "browser.https_proxy")?;
+                    }
+                    ConfigField::BrowserNoProxy => {
+                        config.browser_no_proxy = self.string_value(value, "browser.no_proxy")?;
+                    }
                 }
             }
             keys.push(key);
@@ -353,6 +375,12 @@ impl ConfigParser<'_> {
             Some(ConfigField::Term)
         } else if self.key_equals(key, "backend") {
             Some(ConfigField::Backend)
+        } else if self.key_equals(key, "browser.http_proxy") {
+            Some(ConfigField::BrowserHttpProxy)
+        } else if self.key_equals(key, "browser.https_proxy") {
+            Some(ConfigField::BrowserHttpsProxy)
+        } else if self.key_equals(key, "browser.no_proxy") {
+            Some(ConfigField::BrowserNoProxy)
         } else {
             None
         }
@@ -876,6 +904,20 @@ mod tests {
         assert_eq!(config.term.as_deref(), Some("xterm"));
         let absent = parse_config(br#"{"term":null}"#).expect("null clears");
         assert_eq!(absent.term, None);
+    }
+
+    #[test]
+    fn config_parser_keeps_the_browser_proxy_hook() {
+        let config = parse_config(
+            br#"{"browser.http_proxy":"http://proxy:8080","browser.https_proxy":null,"browser.no_proxy":"localhost"}"#,
+        )
+        .expect("parse config");
+        assert_eq!(
+            config.browser_http_proxy.as_deref(),
+            Some("http://proxy:8080")
+        );
+        assert_eq!(config.browser_https_proxy, None);
+        assert_eq!(config.browser_no_proxy.as_deref(), Some("localhost"));
     }
 
     #[test]

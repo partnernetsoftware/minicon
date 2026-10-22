@@ -1016,6 +1016,134 @@ impl ConApp {
         }
     }
 
+    /// Browser tab shell: same sidebar as the terminal host, one content panel.
+    /// wry is not created. The proxy line is the reserved hook, not a setting.
+    pub(crate) fn paint_browser_shell(
+        &self,
+        pixels: &mut [u32],
+        width: u32,
+        height: u32,
+        scale: f64,
+    ) {
+        let mut surface = Surface::with_clip(
+            pixels,
+            width,
+            height,
+            PixelRect::from_xywh(0, 0, width, height),
+        );
+        let layout = self.layout(width, height, scale);
+        let t = theme::Theme::for_choice(self.ui_theme);
+        let scale = scale.max(1.0);
+        let host_ui_size =
+            |nominal| scaled_host_ui_font(nominal, self.session_seed.font_size_logical(), scale);
+        surface.fill_rect(0, 0, width, height, t.canvas_bg.to_xrgb());
+        surface.fill_rect(0, 0, layout.sidebar.width, height, t.sidebar_bg.to_xrgb());
+        surface.fill_rect(
+            layout.sidebar.width.saturating_sub(1),
+            0,
+            1,
+            height,
+            t.border.to_xrgb(),
+        );
+        let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
+        for (button, icon, selected) in [
+            (
+                layout.new_root,
+                HeaderIcon::NewRoot,
+                self.hovered_header == Some(HeaderIcon::NewRoot),
+            ),
+            (
+                layout.settings,
+                HeaderIcon::Settings,
+                self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
+            ),
+        ] {
+            paint_header_icon_button(
+                &mut surface,
+                button,
+                icon,
+                t.text,
+                selected,
+                t.surface,
+                icon_size,
+                scale,
+            );
+        }
+        let row_height = layout.tree_row_height;
+        let label_size = host_ui_size(13);
+        for (visible_index, node) in self
+            .workspace
+            .nodes()
+            .iter()
+            .skip(self.tree_scroll_offset)
+            .enumerate()
+        {
+            let y = layout.tree_header_height + visible_index as u32 * row_height;
+            if y >= height {
+                break;
+            }
+            if self.workspace.active() == Some(node.id) {
+                surface.fill_rect(0, y, layout.sidebar.width, row_height, t.surface.to_xrgb());
+                surface.fill_rect(0, y, 3, row_height, t.accent.to_xrgb());
+            }
+            let session = self.session_for(node.id);
+            let name = tree_row_name(
+                node.custom_title.as_deref(),
+                session.map(|terminal| terminal.program_label()),
+                node.title.as_str(),
+            );
+            paint_host_ui_text(
+                &mut surface,
+                16,
+                y + 4,
+                name,
+                t.text,
+                label_size,
+                layout.sidebar.width.saturating_sub(24),
+            );
+        }
+        let proxy = self.browser_proxy();
+        let body = host_ui_size(16);
+        let x = layout.sidebar.width.saturating_add(24);
+        let content_width = width.saturating_sub(x).saturating_sub(16);
+        paint_host_ui_text(
+            &mut surface,
+            x,
+            48,
+            "Browser",
+            t.text,
+            host_ui_size(20),
+            content_width,
+        );
+        paint_host_ui_text(
+            &mut surface,
+            x,
+            84,
+            "1 tab · 1 panel",
+            t.muted,
+            body,
+            content_width,
+        );
+        paint_host_ui_text(
+            &mut surface,
+            x,
+            112,
+            &proxy.summary(),
+            t.muted,
+            body,
+            content_width,
+        );
+        paint_host_ui_text(
+            &mut surface,
+            x,
+            140,
+            "wry page loads are not linked yet",
+            t.muted,
+            body,
+            content_width,
+        );
+    }
+
     pub(crate) fn paint_empty_workspace(
         &self,
         pixels: &mut [u32],
