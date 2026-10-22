@@ -13,7 +13,7 @@
 //! rather than a running terminal.
 
 use crate::contract::input::{
-    KeyPressState, LogicalKey, ModifierState, NamedKey, NormalizedKeyEvent,
+    KeyPressState, LogicalKey, ModifierState, NamedKey, NormalizedKeyEvent, PhysicalKeyCode,
 };
 
 /// Terminal input modes negotiated by the running application.
@@ -174,16 +174,16 @@ pub fn key_event_to_bytes(event: &NormalizedKeyEvent, mode: TerminalKeyMode) -> 
     }
 
     // Ctrl+letter → C0 control code (Ctrl+A = 0x01 .. Ctrl+Z = 0x1a).
+    //
+    // Resolve the letter from, in order: the logical character, an already
+    // encoded C0 in `text`/`logical` (some winit/xkb paths surface Ctrl+B as
+    // U+0002), then the physical letter key. Linux IME/xkb can report
+    // Control held with `logical: Unidentified` while the physical key is
+    // still Letter('B'); without the physical fallback the chord is dropped
+    // and a later unmodified keypress leaks into the child.
     if event.modifiers.control {
-        if let LogicalKey::Character(text) = &event.logical {
-            let upper = text
-                .chars()
-                .next()
-                .map(|character| character.to_ascii_uppercase())
-                .filter(char::is_ascii_alphabetic);
-            if let Some(upper) = upper {
-                return Some(alt_prefixed(vec![(upper as u8) - b'@'], event.modifiers));
-            }
+        if let Some(byte) = ctrl_letter_c0(event) {
+            return Some(alt_prefixed(vec![byte], event.modifiers));
         }
         // Ctrl with a non-letter produces no C0 code; fall through rather than
         // emitting the bare character, which would type a stray glyph.
@@ -205,6 +205,45 @@ pub fn key_event_to_bytes(event: &NormalizedKeyEvent, mode: TerminalKeyMode) -> 
     };
 
     Some(alt_prefixed(text.as_bytes().to_vec(), event.modifiers))
+}
+
+/// Maps a Ctrl+letter chord to its C0 byte, or `None` when the event is not a
+/// letter chord MiniCon can encode.
+fn ctrl_letter_c0(event: &NormalizedKeyEvent) -> Option<u8> {
+    if let LogicalKey::Character(text) = &event.logical {
+        if let Some(byte) = ascii_letter_to_c0(text.chars().next()) {
+            return Some(byte);
+        }
+        if let Some(byte) = already_encoded_c0(text.chars().next()) {
+            return Some(byte);
+        }
+    }
+    if let Some(text) = event.text.as_deref() {
+        if let Some(byte) = already_encoded_c0(text.chars().next()) {
+            return Some(byte);
+        }
+    }
+    if let PhysicalKeyCode::Letter(letter) = event.physical {
+        return ascii_letter_to_c0(Some(letter));
+    }
+    None
+}
+
+fn ascii_letter_to_c0(character: Option<char>) -> Option<u8> {
+    character
+        .map(|character| character.to_ascii_uppercase())
+        .filter(char::is_ascii_alphabetic)
+        .map(|upper| (upper as u8) - b'@')
+}
+
+fn already_encoded_c0(character: Option<char>) -> Option<u8> {
+    match character {
+        Some(value) => {
+            let byte = value as u32;
+            (0x01..=0x1a).contains(&byte).then_some(byte as u8)
+        }
+        None => None,
+    }
 }
 
 /// Prepends ESC when Alt/Meta is held, the conventional Meta encoding.
@@ -555,6 +594,45 @@ mod tests {
             key_event_to_bytes(&character("c", mods(true, false, true)), NORMAL),
             Some(vec![0x1b, 0x03])
         );
+        // Explicit Ctrl+B: tmux's historical default prefix and a common
+        // attach-side regression when the Control modifier is lost on Linux.
+        assert_eq!(
+            key_event_to_bytes(&character("b", mods(true, false, false)), NORMAL),
+            Some(vec![0x02])
+        );
+        assert_eq!(
+            key_event_to_bytes(&character("B", mods(true, false, false)), NORMAL),
+            Some(vec![0x02])
+        );
+    }
+
+    #[test]
+    fn ctrl_letter_still_encodes_when_only_the_physical_key_names_the_letter() {
+        // winit/xkb under an IME can keep modifiers.control while leaving
+        // logical Unidentified; the physical letter is then the only identity.
+        let event = NormalizedKeyEvent {
+            logical: LogicalKey::Unidentified,
+            physical: PhysicalKeyCode::Letter('B'),
+            text: None,
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: mods(true, false, false),
+        };
+        assert_eq!(key_event_to_bytes(&event, NORMAL), Some(vec![0x02]));
+        assert_eq!(key_event_to_bytes(&event, IME), Some(vec![0x02]));
+    }
+
+    #[test]
+    fn ctrl_letter_accepts_an_already_encoded_c0_from_the_backend() {
+        let event = NormalizedKeyEvent {
+            logical: LogicalKey::Character("\u{2}".into()),
+            physical: PhysicalKeyCode::Other,
+            text: Some("\u{2}".into()),
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: mods(true, false, false),
+        };
+        assert_eq!(key_event_to_bytes(&event, NORMAL), Some(vec![0x02]));
     }
 
     #[test]

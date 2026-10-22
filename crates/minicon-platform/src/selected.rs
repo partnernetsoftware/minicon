@@ -679,17 +679,18 @@ pub(crate) mod font;
 #[path = "adapters/unix/font_raster.rs"]
 pub(crate) mod portable_font_raster;
 
-/// Who measures the primary face: the Windows adapter has a native report;
-/// every other platform assembles one from the portable metrics. The
-/// `cfg` lives here, as the boundary test insists, not in `font.rs`.
-#[cfg(all(feature = "font", windows))]
+/// Who measures the primary face: Windows and Linux adapters have a native
+/// report with half/full-width advances; every other platform assembles one
+/// from the portable metrics. The `cfg` lives here, as the boundary test
+/// insists, not in `font.rs`.
+#[cfg(all(feature = "font", any(windows, target_os = "linux")))]
 pub(crate) fn primary_face_report(
     size_px: u16,
 ) -> Result<crate::font::PrimaryFaceReport, crate::font::FontError> {
     font::primary_face_report(size_px)
 }
 
-#[cfg(all(feature = "font", not(windows)))]
+#[cfg(all(feature = "font", not(windows), not(target_os = "linux")))]
 pub(crate) fn primary_face_report(
     size_px: u16,
 ) -> Result<crate::font::PrimaryFaceReport, crate::font::FontError> {

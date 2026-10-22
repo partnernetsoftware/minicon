@@ -236,6 +236,45 @@ pub(crate) fn primary_metrics(size_px: u16) -> Result<FontMetrics, FontError> {
     })
 }
 
+/// Face report with half/full-width advances so `--status` can say whether the
+/// grid's double-width invariant holds, matching the Windows report shape.
+pub(crate) fn primary_face_report(
+    size_px: u16,
+) -> Result<crate::font::PrimaryFaceReport, FontError> {
+    const FULL_WIDTH_PROBE: char = '\u{4e2d}'; // 中 — same probe as Windows GDI
+    let candidate = candidates()
+        .iter()
+        .copied()
+        .find(|candidate| candidate.exists())
+        .ok_or(FontError::Unavailable)?;
+    let data = std::fs::read(candidate.absolute_path()).map_err(|_| FontError::MetricsFailed)?;
+    let font = FontRef::try_from_slice(&data).map_err(|_| FontError::MetricsFailed)?;
+    let size_px = size_px.clamp(8, 72);
+    let scaled = font.as_scaled(f32::from(size_px));
+    let ascii = scaled.h_advance(scaled.glyph_id('M'));
+    let full = scaled.h_advance(scaled.glyph_id(FULL_WIDTH_PROBE));
+    let cell_height = scaled.height();
+    if ![ascii, cell_height]
+        .into_iter()
+        .all(|metric| metric.is_finite() && metric > 0.0)
+    {
+        return Err(FontError::MetricsFailed);
+    }
+    let ascii_u = crate::numeric::ceil_f32(ascii).max(1.0) as u32;
+    let full_u = if full.is_finite() && full > 0.0 {
+        Some(crate::numeric::ceil_f32(full).max(1.0) as u32)
+    } else {
+        None
+    };
+    Ok(crate::font::PrimaryFaceReport {
+        face: candidate.name.to_owned(),
+        cell_width: ascii_u,
+        cell_height: crate::numeric::ceil_f32(cell_height).max(1.0) as u32,
+        ascii_advance: Some(ascii_u),
+        full_width_advance: full_u,
+    })
+}
+
 pub(crate) fn probe_capability() -> Result<(), FontError> {
     primary_metrics(14).map(|_| ())
 }
