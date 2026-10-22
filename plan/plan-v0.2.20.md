@@ -97,7 +97,13 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │     flip): 3 clean control rounds + 4 clean blackbox rounds, zero
 │     0xC0000374 exits, zero failures; later rounds were contaminated by
 │     concurrent source edits (mid-run rebuilds) and are excluded, not
-│     counted. Not reproduced; G4 stays open with this matrix recorded
+│     counted. Not reproduced; G4 stays open with this matrix recorded.
+│     Later the same day the CI Windows runners reproduced it often at one
+│     step (async clipboard paste, exit 0xC0000374); the paste path has no
+│     unsafe code, so the corruption is elsewhere; a page-heap run needs an
+│     elevated shell. Carried as G4 with that evidence. Found alongside: G6,
+│     a pre-existing FreeConsole-under-withheld-output flake on the new
+│     Windows runners (same rate on pre-flip source)
 │   invariant: the hunt produces either a reproducing trigger or a named
 │     narrowed suspect list with negative controls — not a shrug
 │   evidence: WER/dump or instrumented rerun of the 2026-10-21 crash shape;
@@ -124,7 +130,11 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │   safe failure: keep classic default + explicit preview; name each missing
 │     gate (the roadmap's standing rule — a decision point, not a promise)
 │   dependency: all leaves above; PRD 27 owns the release chain
-└── [_] {GATE} Qualify and upsert
+└── [-] {GATE} Qualify and upsert
+    state 2026-10-22: local gate green (fmt, clippy -D warnings default and
+      --no-default-features, build.sh test 34 suites / 1465); dev-loop six
+      cells: Linux x2 and macOS x2 green, Windows x2 green apart from the
+      pre-existing G4/G6 flakes; release chain next
     invariant: fmt / clippy -D warnings / build.sh test / six-cell on the
       actual source; owners updated in the same change (PRD 24, 24.01, 25, 27)
     safe failure: unavailable evidence is BLOCKED, never skipped
