@@ -447,6 +447,11 @@ fn valid_term_override(value: String) -> Option<String> {
 }
 
 fn config_path() -> Option<std::path::PathBuf> {
+    // An isolated configuration directory (test journeys, or a user who wants
+    // a throwaway profile) replaces the per-user one entirely.
+    if let Some(directory) = std::env::var_os("MINICON_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
+        return Some(std::path::PathBuf::from(directory).join("minicon.json"));
+    }
     minicon_platform::runtime::user_config_directory()
         .ok()
         .map(|directory| directory.join("minicon.json"))

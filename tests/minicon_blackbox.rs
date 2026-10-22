@@ -804,6 +804,11 @@ impl ConSession {
             });
         let endpoint = unique_control_endpoint(dir);
         let mut command = Command::new(binary());
+        // Every journey gets its own config directory: the notes, theme and
+        // language journeys persist preferences, and before this they wrote
+        // the developer's real minicon.json (a stray "notes": "HI" survived
+        // between runs on the owner's machine).
+        command.env("MINICON_CONFIG_DIR", dir);
         if activate {
             command.env_remove("AGENTERM_NO_ACTIVATE");
         } else {

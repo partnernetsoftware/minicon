@@ -944,6 +944,13 @@ emulation menu**: a profile beyond the default is not offered until its
 capability evidence exists (roadmap cross-version rule 1). Reusable semantics
 are owned by [PRD 35](PRD_02_35_terminal_library.md#dependency-and-public-api-boundary).
 
+`MINICON_CONFIG_DIR=<dir>` replaces the per-user configuration directory
+for one process (0.2.20): the black-box suite gives every journey its own,
+because the notes/theme/language journeys persist preferences and used to
+write the developer's real `minicon.json` (a stray `"notes": "HI"` survived
+between runs). Evidence: the notes and rename journeys leave the user file
+byte-identical (checked by diff on 2026-10-22).
+
 `minicon.json` also accepts a `backend` key (0.2.20): `conpty`,
 `rust-console` or `agent`, applied to **new sessions** at startup. CLI
 `--feature` wins for its invocation; an unknown value behaves as absent (the

@@ -26,8 +26,9 @@ foreach ($name in $agents.Keys) {
     $argv = @('--no-activate', '--feature', $Backend, '--control', $ep, '-e') + $agents[$name]
     $gui = Start-Process -FilePath $Exe -ArgumentList $argv -PassThru
     Start-Sleep -Seconds 15
-    $snap = & $Exe cli --control $ep ui-snapshot
-    $snap | Set-Content "$dir\ui.json"
+    # The CLI writes through the parent console, which PowerShell capture
+    # does not see; a shell redirection does.
+    cmd.exe /d /c "`"$Exe`" cli --control $ep ui-snapshot > `"$dir\ui.json`""
     $step = 0
     foreach ($size in @(@(1100, 700), @(700, 600), @(1400, 800), @(900, 650))) {
         & $Exe cli --control $ep resize-window --width $size[0] --height $size[1] | Out-Null
