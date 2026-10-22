@@ -238,10 +238,15 @@ pub(crate) fn primary_metrics(size_px: u16) -> Result<FontMetrics, FontError> {
 
 /// Face report with half/full-width advances so `--status` can say whether the
 /// grid's double-width invariant holds, matching the Windows report shape.
+///
+/// ASCII advance comes from the primary mono face. Full-width advance prefers
+/// a glyph the primary actually covers; when the primary is Latin-only (e.g.
+/// DejaVu Sans Mono maps 中 onto a single-cell `.notdef`/fallback), measure
+/// the probe on the first CJK fallback face so the report reflects the grid
+/// the rasterizer will paint, not a missing-glyph stub.
 pub(crate) fn primary_face_report(
     size_px: u16,
 ) -> Result<crate::font::PrimaryFaceReport, FontError> {
-    const FULL_WIDTH_PROBE: char = '\u{4e2d}'; // 中 — same probe as Windows GDI
     let candidate = candidates()
         .iter()
         .copied()
@@ -252,7 +257,6 @@ pub(crate) fn primary_face_report(
     let size_px = size_px.clamp(8, 72);
     let scaled = font.as_scaled(f32::from(size_px));
     let ascii = scaled.h_advance(scaled.glyph_id('M'));
-    let full = scaled.h_advance(scaled.glyph_id(FULL_WIDTH_PROBE));
     let cell_height = scaled.height();
     if ![ascii, cell_height]
         .into_iter()
@@ -261,11 +265,17 @@ pub(crate) fn primary_face_report(
         return Err(FontError::MetricsFailed);
     }
     let ascii_u = crate::numeric::ceil_f32(ascii).max(1.0) as u32;
-    let full_u = if full.is_finite() && full > 0.0 {
-        Some(crate::numeric::ceil_f32(full).max(1.0) as u32)
-    } else {
-        None
-    };
+    let full_u = full_width_advance_px(&font, size_px, ascii).or_else(|| {
+        fallback_candidates()
+            .iter()
+            .copied()
+            .find(|candidate| candidate.exists())
+            .and_then(|fallback| {
+                let data = std::fs::read(fallback.absolute_path()).ok()?;
+                let face = FontRef::try_from_slice(&data).ok()?;
+                full_width_advance_px(&face, size_px, ascii)
+            })
+    });
     Ok(crate::font::PrimaryFaceReport {
         face: candidate.name.to_owned(),
         cell_width: ascii_u,
@@ -273,6 +283,27 @@ pub(crate) fn primary_face_report(
         ascii_advance: Some(ascii_u),
         full_width_advance: full_u,
     })
+}
+
+fn full_width_advance_px(font: &FontRef<'_>, size_px: u16, ascii: f32) -> Option<u32> {
+    const FULL_WIDTH_PROBE: char = '\u{4e2d}';
+    let scaled = font.as_scaled(f32::from(size_px));
+    let glyph = scaled.glyph_id(FULL_WIDTH_PROBE);
+    // Reject missing-glyph substitutes that share the ascii cell width.
+    if glyph.0 == 0 {
+        return None;
+    }
+    let full = scaled.h_advance(glyph);
+    if !full.is_finite() || full <= 0.0 {
+        return None;
+    }
+    // A Latin mono face often still returns a positive advance for an
+    // uncovered CJK codepoint via .notdef at ~1 cell; treat "not wider than
+    // ascii" as unmeasured so callers do not claim a false double-width fail.
+    if full <= ascii * 1.25 {
+        return None;
+    }
+    Some(crate::numeric::ceil_f32(full).max(1.0) as u32)
 }
 
 pub(crate) fn probe_capability() -> Result<(), FontError> {
