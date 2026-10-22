@@ -197,8 +197,11 @@ changing meaning.
        `no_proxy` for a `wry-host` build. Exit 69 stays Unavailable.
        Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`,
        `exit_69_is_unavailable_and_proxy_maps_onto_webkit_names`
-[_ ] B3 OAuth vertical: one provider login page + redirect allowlist +
-       token hand-back to core via bridge (no token in UI chrome labels)
+[-] B3 OAuth vertical: authorize URL is https and loads with `--load` on
+       the one content panel. Redirect host must be allowlisted. No token
+       stored, no OS browser. DeepSeek uses this hook.
+       Evidence: `deepseek_oauth_authorize_loads_in_the_content_panel_only`
+       Token hand-back is still later.
 [_ ] B4 dashboard + file preview + wasm host pages (assets/, include_bytes!)
 [_ ] B5 upsert PRD_02_3x when streaming/workbench blockers clear
 [_ ] Bx later (not this leaf): content-panel layout engine — still 1:1
@@ -252,7 +255,8 @@ composer "Connect AI" / first-use assist
 ### Leaf addendum
 
 ```text
-[_ ] B3a DeepSeek OAuth vertical on wry browser tab (authorize → redirect → bridge)
+[-] B3a DeepSeek OAuth starts as an https authorize URL on the content panel
+       (`oauth_authorize_load`). Redirect host is allowlisted. No token bridge yet.
 [_ ] B3b provider registry stub + API-key config schema (no UI chrome yet)
 [_ ] B3c composer entry point calls B3a by default when assist is enabled
 ```

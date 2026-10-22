@@ -355,6 +355,74 @@ pub fn webview_backend_linked() -> bool {
     cfg!(feature = "wry-host")
 }
 
+/// HTTPS authorize URL for the built-in content panel.
+///
+/// `redirect_uri` must be loopback or https, and its host must be in
+/// `allowed_hosts`. The result is what `--load` should open. This does not
+/// store a token and does not call the OS browser. DeepSeek OAuth uses the
+/// same path as any other allowlisted provider.
+pub fn oauth_authorize_load(
+    authorize_url: &str,
+    redirect_uri: &str,
+    allowed_hosts: &[&str],
+) -> Result<String, &'static str> {
+    let authorize = http_url_at(authorize_url, 0).ok_or("not-http")?;
+    if authorize != authorize_url || !authorize.to_ascii_lowercase().starts_with("https://") {
+        return Err("not-https");
+    }
+    let redirect_host = redirect_host(redirect_uri).ok_or("redirect-rejected")?;
+    if !allowed_hosts
+        .iter()
+        .any(|host| host.eq_ignore_ascii_case(&redirect_host))
+    {
+        return Err("redirect-rejected");
+    }
+    let encoded = percent_encode(redirect_uri);
+    if authorize.contains("redirect_uri=") {
+        return Ok(authorize);
+    }
+    let join = if authorize.contains('?') { '&' } else { '?' };
+    Ok(format!("{authorize}{join}redirect_uri={encoded}"))
+}
+
+fn redirect_host(redirect_uri: &str) -> Option<String> {
+    let lower = redirect_uri.to_ascii_lowercase();
+    let rest = if let Some(rest) = lower.strip_prefix("https://") {
+        rest
+    } else if let Some(rest) = lower.strip_prefix("http://") {
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = host.split('@').next_back().unwrap_or(host);
+        let host = host.split(':').next().unwrap_or(host);
+        if host == "127.0.0.1" || host == "localhost" {
+            return Some(host.to_owned());
+        }
+        return None;
+    } else {
+        return None;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = host.split('@').next_back().unwrap_or(host);
+    let host = host.split(':').next().unwrap_or(host);
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_owned())
+    }
+}
+
+fn percent_encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 /// Reply from `minicon-web-host`.
 ///
 /// `--probe` and `--load` stay Unavailable (exit 69) unless `wry-host` is
@@ -557,6 +625,42 @@ mod tests {
             PageLoad::Unavailable { reason, .. } if reason == "webkit-host-not-linked"
         ));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deepseek_oauth_authorize_loads_in_the_content_panel_only() {
+        let url = oauth_authorize_load(
+            "https://platform.deepseek.com/oauth/authorize",
+            "http://127.0.0.1/callback",
+            &["127.0.0.1"],
+        )
+        .unwrap();
+        assert!(url.starts_with("https://platform.deepseek.com/oauth/authorize?"));
+        assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback"));
+        let (_program, args) =
+            page_host_request(std::path::Path::new("/opt/minicon-web-host"), &url).unwrap();
+        assert_eq!(args[0], "--load");
+        assert_eq!(args[1], url);
+        assert_eq!(
+            oauth_authorize_load(
+                "https://platform.deepseek.com/oauth/authorize",
+                "https://evil.test/callback",
+                &["127.0.0.1"]
+            ),
+            Err("redirect-rejected")
+        );
+        assert_eq!(
+            oauth_authorize_load(
+                "mailto:a@b.test",
+                "http://127.0.0.1/callback",
+                &["127.0.0.1"]
+            ),
+            Err("not-http")
+        );
+        assert_eq!(
+            host_reply(&["--load".into(), url]),
+            Err("webkit-host-not-linked")
+        );
     }
 
     #[test]
