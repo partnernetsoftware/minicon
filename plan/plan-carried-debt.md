@@ -101,6 +101,11 @@ mechanism lives with its code and test).
 │        included). open: the heap-corruption one-off deserves a trigger
 │        hunt (suspect: parallel suite load on a busy host); do not treat a
 │        local wait-text timeout alone as a product regression.
+│      consequence evidence (2026-10-22): a crashed fixture host leaks its
+│        console-agent children — the owner's process audit found exactly two
+│        orphaned cmd.exe (created 2026-10-21 16:40, parent PID dead) matching
+│        that day's gate-run crash window; fixture crashes cost real orphans,
+│        raising the trigger hunt's priority.
 ├── G5 minicon_throughput budget misses on macos-15-intel runners (2026-10-21)
 │      state: `sustained_long_output_keeps_control_and_sibling_responsive`
 │        measured 36.4s for 32MiB against the 30s budget on the shared

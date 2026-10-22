@@ -300,6 +300,20 @@ requested selection; the opened session identity is separately observable throug
   console, spawns the child into it, and polls the screen buffer with
   `ReadConsoleOutputW`, synthesizing a terminal stream from what changed. The
   agent is this product, not a third-party binary — nothing extra is deployed.
+- [v] **measured per-tab process cost by backend (2026-10-22, Windows x64
+  build 20348, 0.2.19+ source).** The default console-agent path costs two
+  extra processes per tab beside the shell: one `minicon --internal-console-agent`
+  and the hidden console's `conhost.exe` — an owner running a four-tab 0.2.18
+  GUI showed exactly 4 agents + 4 conhost + 4 shells, which reads as "minicon
+  multiplied my cmd/conhost count" in a process list and is this path's cost,
+  not a leak. The explicit `--feature rust-console` backend hosts the ConDrv
+  service in-process: the same journey showed `minicon.exe → cmd.exe` only
+  (one tab = one shell, two tabs = two shells, zero conhost, zero agent), and
+  `close-window` reaped the GUI and both shells with zero survivors. This
+  process-count difference is 0.2.20 default-decision evidence
+  ([roadmap](../plan/plan-v0.2.x-product-roadmap.md) scorecard: "session
+  failures and orphaned processes"); the mouse-input gap that keeps the agent
+  default is the bullet above.
 - [v] the agent argument carries no product name. This adapter is shared with
   `agenterm`, so any product name in it would appear in some other product's
   command line, and a process list is public.
