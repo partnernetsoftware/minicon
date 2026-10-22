@@ -68,6 +68,10 @@ pub struct DriverRequest<'session> {
     payload: [u8; 4096],
     payload_length: usize,
     completed: bool,
+    /// Bytes of a raw write already published when the request is processed
+    /// in bounded chunks across output-ready turns. Travels with the request
+    /// through the deferral queue, so a retired request takes it along.
+    pub(crate) write_progress: u32,
 }
 
 #[repr(C)]
@@ -276,6 +280,7 @@ impl DriverSession {
             payload: packet.payload,
             payload_length: bytes as usize - size_of::<RequestDescriptor>(),
             completed: false,
+            write_progress: 0,
         })
     }
 

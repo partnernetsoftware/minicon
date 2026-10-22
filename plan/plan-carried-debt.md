@@ -115,6 +115,9 @@ mechanism lives with its code and test).
 │        not invent a cross-machine threshold from one host — decide whether
 │        the osx-x86_64 cell gets its own measured budget or the claim names
 │        the cell as unqualified for the throughput bound.
+│      update 2026-10-22: the court now drives a release product binary
+│        (throughput is an artifact property); osx-x86_64 passed the debug
+│        run at ae10da1 too. Close once a release-product run passes there.
 └── R1 CI action/runner migration debt (observed 2026-10-10)
       warnings, not failures yet: pinned actions on Node 20 shims
         (checkout/upload/download-artifact/setup-python) and

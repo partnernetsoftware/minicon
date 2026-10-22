@@ -30,6 +30,9 @@ const INVALID_HANDLE: i32 = 0xc000_0008_u32 as i32;
 const NOT_SUPPORTED: i32 = 0xc000_00bb_u32 as i32;
 const MAX_CLIENTS: usize = 64;
 const MAX_DEFERRED_OUTPUT: usize = 64;
+/// Largest slice of one raw write read and published per output-ready turn.
+/// Bounds the allocation and the terminal bytes staged at once.
+const RAW_WRITE_CHUNK: u32 = 256 * 1024;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum HandleKind {
@@ -610,14 +613,34 @@ impl<'session> ConsoleHost<'session> {
                 if receipt.status != SUCCESS {
                     request.complete(receipt.status, 0, &[])?;
                 } else {
-                    let bytes = request.read_input(0, descriptor.input_size as usize)?;
+                    // A raw write of any size is published in bounded chunks:
+                    // each output-ready turn reads at most RAW_WRITE_CHUNK
+                    // bytes, and an unfinished request returns to the front
+                    // of the deferral queue so later calls keep their order.
+                    // Reading the whole payload at once once failed for writes
+                    // over 1 MiB and ended the session (a .NET Stream.Write of
+                    // 1 MiB never returned, 2026-10-22).
+                    let done = request.write_progress;
+                    let chunk = descriptor
+                        .input_size
+                        .saturating_sub(done)
+                        .min(RAW_WRITE_CHUNK);
+                    let bytes = request.read_input(done, chunk as usize)?;
                     receipt.status = output::write_status(self.write_ansi(&bytes, output))?;
+                    let published = done.saturating_add(chunk);
+                    if receipt.status == SUCCESS && published < descriptor.input_size {
+                        let mut request = request;
+                        request.write_progress = published;
+                        self.deferred_output.push_front(request);
+                        receipt.pending = true;
+                        return Ok(receipt);
+                    }
                     request.complete(
                         receipt.status,
                         if receipt.status == SUCCESS {
-                            bytes.len()
+                            descriptor.input_size as usize
                         } else {
-                            0
+                            done as usize
                         },
                         &[],
                     )?;

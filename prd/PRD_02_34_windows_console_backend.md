@@ -890,6 +890,16 @@ and log identities are in `key-break-negative-audit.json`.
 
 ## Bounded input transport and controls under input pressure
 
+Raw writes of any size (0.2.20): a raw `WriteFile` is published in bounded
+256 KiB chunks, one per output-ready turn, with the unfinished request
+returned to the front of the deferral queue so later calls keep their order
+and staged terminal bytes stay far below the 4 MiB adapter budget. Before,
+the whole payload was read at once; a write over the 1 MiB transport budget
+failed that read and ended the session's service, so the client's
+`WriteFile` never returned (a .NET 1 MiB `Stream.Write` hung, measured
+2026-10-22). Evidence: the 32 MiB sustained-output journey and 1/3 MiB
+single-write timings in PRD 24's cost court.
+
 Console window (0.2.20): `GetConsoleWindow` (L3 `0x0300001F`) now answers
 with a per-session pseudo-console window the adapter owns
 (`adapters/windows/pty/pseudo_window.rs`): a message-only window

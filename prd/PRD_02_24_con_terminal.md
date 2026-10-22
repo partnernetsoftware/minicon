@@ -344,6 +344,14 @@ requested selection; the opened session identity is separately observable throug
   | ConPTY | 7 | 57.3 MB | 69.9 / 76.8 ms | 0 |
   | rust-console | 4 | 35.4 MB | 65.1 / 71.2 ms | 0 |
 
+  Sustained output, release builds, `minicon_throughput` 32 MiB journey:
+  rust-console 9.9 s (3.39 MB/s) delivering all 33.4 MB to the terminal;
+  the console agent 6.6 s but only 7.6 KB delivered — it scrapes the final
+  screen, so the intermediate output never reaches scrollback. The
+  rust-console figure meets the 30 s budget with 3x headroom; in a debug
+  build the provider's full second parse took 56 s, so the dev-loop court
+  now measures throughput on a release product binary.
+
   rust-console is best or equal on every axis; all three reap their trees on
   a crash-shaped kill. The first run's ConPTY cell was invalid — the court
   inherited a host tab's `AGENTERM_FORCE_CONSOLE_AGENT=1` (the S5 leak fixed
