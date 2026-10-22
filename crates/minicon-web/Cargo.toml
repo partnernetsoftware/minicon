@@ -3,7 +3,7 @@ name = "minicon-web"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
-description = "Browser content-panel API. WebView backends are replaceable; this crate does not link wry."
+description = "Browser content-panel API. The default build does not link wry; feature wry-host is the optional page loader."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/partnernetsoftware/minicon"
 
@@ -13,3 +13,13 @@ path = "src/lib.rs"
 [[bin]]
 name = "minicon-web-host"
 path = "src/bin/minicon-web-host.rs"
+
+[features]
+default = []
+# Optional page loader. Core `minicon` must not enable this. Without it,
+# `minicon-web-host --probe` and `--load` stay Unavailable (exit 69).
+wry-host = ["dep:wry", "dep:tao"]
+
+[dependencies]
+tao = { version = "0.36.0", optional = true, default-features = false, features = ["rwh_06"] }
+wry = { version = "0.56.0", optional = true, default-features = false, features = ["os-webview"] }

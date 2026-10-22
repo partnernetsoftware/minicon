@@ -313,21 +313,54 @@ impl Drop for ProcessPageHost {
     }
 }
 
-/// Reply from `minicon-web-host`. No WebView is linked in the default host,
-/// so `--probe` and `--load` are `Unavailable` (exit 69) instead of opening
-/// a system browser.
+/// True only when this build was compiled with `--features wry-host`.
+/// The default build, including core `minicon`, is false.
+pub fn webview_backend_linked() -> bool {
+    cfg!(feature = "wry-host")
+}
+
+/// Reply from `minicon-web-host`.
+///
+/// `--probe` and `--load` stay Unavailable (exit 69) unless `wry-host` is
+/// on and the system WebView accepts the call. Neither path opens the OS browser.
 pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
     match args {
-        [flag] if flag == "--probe" => Err("webkit-host-not-linked"),
+        [flag] if flag == "--probe" => probe_webview(),
         [flag, url] if flag == "--load" => {
             let _ = http_url_at(url, 0)
                 .filter(|canonical| canonical == url)
                 .ok_or("not-http")?;
-            Err("webkit-host-not-linked")
+            load_webview(url)
         }
         _ => Err("usage"),
     }
 }
+
+fn probe_webview() -> Result<(), &'static str> {
+    #[cfg(feature = "wry-host")]
+    {
+        wry_host::probe()
+    }
+    #[cfg(not(feature = "wry-host"))]
+    {
+        Err("webkit-host-not-linked")
+    }
+}
+
+fn load_webview(url: &str) -> Result<(), &'static str> {
+    #[cfg(feature = "wry-host")]
+    {
+        wry_host::load(url)
+    }
+    #[cfg(not(feature = "wry-host"))]
+    {
+        let _ = url;
+        Err("webkit-host-not-linked")
+    }
+}
+
+#[cfg(feature = "wry-host")]
+mod wry_host;
 
 fn usable_proxy_value(value: String) -> Option<String> {
     let trimmed = value.trim();
@@ -449,6 +482,7 @@ mod tests {
 
     #[test]
     fn default_host_reports_unavailable_without_a_webview() {
+        assert!(!webview_backend_linked());
         assert_eq!(
             host_reply(&["--probe".into()]),
             Err("webkit-host-not-linked")
