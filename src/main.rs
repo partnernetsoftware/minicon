@@ -4467,8 +4467,16 @@ mod tests {
         .expect("allowlisted redirect");
         let mut workspace = workspace::Workspace::default();
         let mut browsers = SessionStore::default();
-        assert!(ConApp::handoff_http_link(&mut workspace, &mut browsers, &url));
-        assert!(ConApp::handoff_http_link(&mut workspace, &mut browsers, &url));
+        assert!(ConApp::handoff_http_link(
+            &mut workspace,
+            &mut browsers,
+            &url
+        ));
+        assert!(ConApp::handoff_http_link(
+            &mut workspace,
+            &mut browsers,
+            &url
+        ));
         let browser_tabs: Vec<_> = workspace
             .nodes()
             .iter()

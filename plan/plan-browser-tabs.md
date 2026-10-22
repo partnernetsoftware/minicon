@@ -194,7 +194,9 @@ changing meaning.
        browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
        shell and installed on the page-host process at `--load`.
        `webkit_proxy_env` maps that hook onto `http_proxy` / `https_proxy` /
-       `no_proxy` for a `wry-host` build. Exit 69 stays Unavailable.
+       `no_proxy` for a `wry-host` build. Absent fields are removed
+       (`webkit_proxy_clear`) so a parent proxy cannot leak. Exit 69 stays
+       Unavailable.
        Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`,
        `exit_69_is_unavailable_and_proxy_maps_onto_webkit_names`
 [-] B3 OAuth vertical: authorize URL is https and loads with `--load` on
