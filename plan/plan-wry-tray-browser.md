@@ -14,12 +14,21 @@ discovery only — no create/navigate yet).
 ```text
 built-in browser surface
 ├── [ ] OAuth login flow (must honor HTTP proxy settings)
+│         including AI provider OAuth (default: DeepSeek)
 ├── [ ] large-screen dashboard
 ├── [ ] file preview
 ├── [ ] wasm / rich GUI pages
 ├── [ ] system tray entry (show/hide, quit, open dashboard)
 └── [ ] terminal → browser: "open in browser" and Ctrl+click link
          MUST open this built-in wry host, NEVER the OS default browser
+
+composer / input AI assist (future)
+├── [ ] provider registry: OAuth and/or API key per vendor
+├── [ ] default provider: DeepSeek via OAuth
+├── [ ] login / consent opens a tab in the built-in wry host
+│         (same process as dashboard; never OS default browser)
+└── [ ] API key entry stays in MiniCon settings (no browser required);
+         OAuth tokens land via bridge from the wry tab
 ```
 
 HTTP proxy **UI** placement is deferred (commissioner: later). Design must
@@ -106,6 +115,43 @@ three-platform runtime evidence before B0 receipts exist.
 - Do not start renderer feature work that blocks Ctrl+B / Linux qualify
   fixes; those remain higher priority for landable commits.
 
+## AI provider auth (composer assist) — commissioner 2026-10-23
+
+The composer / input box is expected to grow AI assist. Auth is part of the
+browser leaf because **OAuth must run inside the built-in wry host**, not the
+system browser (same rule as terminal Ctrl+click).
+
+```text
+composer "Connect AI" / first-use assist
+  → pick provider (default DeepSeek)
+  → if OAuth: minicon-browser tab → provider authorize URL
+       → redirect allowlist → bridge returns code/token to core
+  → if API key: MiniCon settings field only (no wry tab)
+  → both paths honor browser.http_proxy hook when set
+```
+
+### Defaults and hooks
+
+| Item | Choice |
+| --- | --- |
+| Default provider | **DeepSeek OAuth** |
+| Other providers | registry entries (OAuth and/or API key); not overnight scope |
+| OAuth UI surface | tab inside `minicon-browser` (tray process) |
+| API key UI surface | MiniCon settings (later); stored under config, never in tray labels |
+| Proxy | same `browser.http_proxy` / env hook; UI later |
+| Token hand-back | bridge-v1 style message, origin-bound, size-capped |
+
+### Leaf addendum
+
+```text
+[_ ] B3a DeepSeek OAuth vertical on wry tab (authorize → redirect → bridge)
+[_ ] B3b provider registry stub + API-key config schema (no UI chrome yet)
+[_ ] B3c composer entry point calls B3a by default when assist is enabled
+```
+
+Non-goal overnight: shipping a working DeepSeek login, storing production
+secrets, or enabling assist in the composer UI. Design + hooks only.
+
 ## Overnight decision log
 
 | Decision | Choice |
@@ -115,5 +161,7 @@ three-platform runtime evidence before B0 receipts exist.
 | System default browser | not used for terminal-originated http(s) |
 | Proxy UI | deferred; config/env hook required in design |
 | Tray | browser process |
+| AI assist default auth | DeepSeek OAuth in wry tab |
+| AI API key | settings/config path (no wry); schema hook only overnight |
 | This doc | design only — no release |
 
