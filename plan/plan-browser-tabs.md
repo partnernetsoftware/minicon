@@ -192,9 +192,11 @@ changing meaning.
        `spawn_page_host_passes_the_url_to_the_helper`
 [-] B2 proxy hook: browser.http_proxy / browser.https_proxy /
        browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
-       shell and installed on the page-host process at `--load`. Not yet
-       applied inside a wry/WebKit network session.
-       Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`
+       shell and installed on the page-host process at `--load`.
+       `webkit_proxy_env` maps that hook onto `http_proxy` / `https_proxy` /
+       `no_proxy` for a `wry-host` build. Exit 69 stays Unavailable.
+       Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`,
+       `exit_69_is_unavailable_and_proxy_maps_onto_webkit_names`
 [_ ] B3 OAuth vertical: one provider login page + redirect allowlist +
        token hand-back to core via bridge (no token in UI chrome labels)
 [_ ] B4 dashboard + file preview + wasm host pages (assets/, include_bytes!)

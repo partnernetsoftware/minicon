@@ -2079,12 +2079,17 @@ impl ConApp {
         let proxy = self.browser_proxy();
         match browser::spawn_page_host_with_proxy(std::path::Path::new(&program), url, Some(&proxy))
         {
-            Ok(child) => {
-                self.browser_page = Some(child);
-                self.note_page_load(browser::PageLoad::Loading {
-                    url: url.to_owned(),
-                });
-            }
+            Ok(mut child) => match child.try_wait() {
+                Ok(Some(status)) => {
+                    self.note_page_load(browser::page_load_from_exit(url, status.code()));
+                }
+                _ => {
+                    self.browser_page = Some(child);
+                    self.note_page_load(browser::PageLoad::Loading {
+                        url: url.to_owned(),
+                    });
+                }
+            },
             Err(reason) => {
                 self.note_page_load(browser::PageLoad::Unavailable {
                     url: url.to_owned(),

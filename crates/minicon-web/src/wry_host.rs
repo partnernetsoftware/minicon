@@ -15,6 +15,12 @@ pub fn probe() -> Result<(), &'static str> {
 }
 
 pub fn load(url: &str) -> Result<(), &'static str> {
+    // The parent installed MINICON_BROWSER_*. WebKit reads http_proxy.
+    let proxy = crate::resolve_proxy_from_process(&crate::BrowserProxyConfig::default());
+    for (key, value) in crate::webkit_proxy_env(&proxy) {
+        // The host process is single-threaded until the event loop starts.
+        unsafe { std::env::set_var(key, value) };
+    }
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("MiniCon")

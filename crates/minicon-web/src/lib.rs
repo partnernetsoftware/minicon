@@ -251,6 +251,42 @@ fn apply_proxy_env(command: &mut std::process::Command, proxy: &BrowserProxy) {
     apply_proxy_var(command, "MINICON_BROWSER_NO_PROXY", &proxy.no_proxy);
 }
 
+/// Environment pairs a WebKit/wry backend should see for this hook.
+///
+/// `MINICON_BROWSER_*` stays the product key. This maps a resolved hook onto
+/// the names the system WebView already reads. It does not open a browser.
+pub fn webkit_proxy_env(proxy: &BrowserProxy) -> Vec<(&'static str, String)> {
+    let mut pairs = Vec::new();
+    if let Some(value) = &proxy.http {
+        pairs.push(("http_proxy", value.clone()));
+    }
+    if let Some(value) = &proxy.https {
+        pairs.push(("https_proxy", value.clone()));
+    }
+    if let Some(value) = &proxy.no_proxy {
+        pairs.push(("no_proxy", value.clone()));
+    }
+    pairs
+}
+
+/// A finished page-host status. Exit 69 is the Unavailable contract.
+/// `None` means the host is still running.
+pub fn page_load_from_exit(url: &str, code: Option<i32>) -> PageLoad {
+    match code {
+        None => PageLoad::Loading {
+            url: url.to_owned(),
+        },
+        Some(69) => PageLoad::Unavailable {
+            url: url.to_owned(),
+            reason: "webkit-host-not-linked".to_owned(),
+        },
+        Some(code) => PageLoad::Unavailable {
+            url: url.to_owned(),
+            reason: format!("host-exit-{code}"),
+        },
+    }
+}
+
 fn apply_proxy_var(command: &mut std::process::Command, key: &str, value: &Option<String>) {
     match value {
         Some(value) => {
@@ -477,6 +513,49 @@ mod tests {
             std::fs::read_to_string(&log).unwrap().trim(),
             "http://127.0.0.1:9||localhost"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exit_69_is_unavailable_and_proxy_maps_onto_webkit_names() {
+        assert!(matches!(
+            page_load_from_exit("https://example.test/a", Some(69)),
+            PageLoad::Unavailable { reason, .. } if reason == "webkit-host-not-linked"
+        ));
+        assert!(matches!(
+            page_load_from_exit("https://example.test/a", None),
+            PageLoad::Loading { .. }
+        ));
+        let pairs = webkit_proxy_env(&BrowserProxy {
+            http: Some("http://127.0.0.1:9".into()),
+            https: None,
+            no_proxy: Some("localhost".into()),
+        });
+        assert_eq!(
+            pairs,
+            vec![
+                ("http_proxy", "http://127.0.0.1:9".into()),
+                ("no_proxy", "localhost".into()),
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_host_that_exits_69_is_unavailable_not_a_system_browser() {
+        let dir = std::env::temp_dir().join(format!("minicon-exit69-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let program = dir.join("minicon-page-host");
+        std::fs::write(&program, "#!/bin/sh\nexit 69\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut child = spawn_page_host(&program, "https://example.test/a").unwrap();
+        let status = child.wait().unwrap();
+        assert!(matches!(
+            page_load_from_exit("https://example.test/a", status.code()),
+            PageLoad::Unavailable { reason, .. } if reason == "webkit-host-not-linked"
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
