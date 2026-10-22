@@ -24,7 +24,9 @@ impl FontFile {
         // in place while mapped (normal package replacement renames the inode).
         // Mmap owns/unmaps the region; FontRef cannot outlive its borrowed data.
         let data = unsafe { memmap2::Mmap::map(&file) }.ok()?;
-        FontRef::try_from_slice(&data).ok()?;
+        // Collections (Noto CJK .ttc) fail try_from_slice; index 0 is enough
+        // to accept the file. face_for walks the remaining faces.
+        FontRef::try_from_slice_and_index(&data, 0).ok()?;
         Some(Self {
             name: candidate.name,
             data,

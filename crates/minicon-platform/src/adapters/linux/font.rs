@@ -253,7 +253,7 @@ pub(crate) fn primary_face_report(
         .find(|candidate| candidate.exists())
         .ok_or(FontError::Unavailable)?;
     let data = std::fs::read(candidate.absolute_path()).map_err(|_| FontError::MetricsFailed)?;
-    let font = FontRef::try_from_slice(&data).map_err(|_| FontError::MetricsFailed)?;
+    let font = FontRef::try_from_slice_and_index(&data, 0).map_err(|_| FontError::MetricsFailed)?;
     let size_px = size_px.clamp(8, 72);
     let scaled = font.as_scaled(f32::from(size_px));
     let ascii = scaled.h_advance(scaled.glyph_id('M'));
@@ -265,16 +265,14 @@ pub(crate) fn primary_face_report(
         return Err(FontError::MetricsFailed);
     }
     let ascii_u = crate::numeric::ceil_f32(ascii).max(1.0) as u32;
-    let full_u = full_width_advance_px(&font, size_px, ascii).or_else(|| {
-        fallback_candidates()
-            .iter()
-            .copied()
-            .find(|candidate| candidate.exists())
-            .and_then(|fallback| {
-                let data = std::fs::read(fallback.absolute_path()).ok()?;
-                let face = FontRef::try_from_slice(&data).ok()?;
-                full_width_advance_px(&face, size_px, ascii)
-            })
+    let full_u = full_width_advance_px(&data, size_px, ascii).or_else(|| {
+        fallback_candidates().iter().copied().find_map(|fallback| {
+            if !fallback.exists() {
+                return None;
+            }
+            let bytes = std::fs::read(fallback.absolute_path()).ok()?;
+            full_width_advance_px(&bytes, size_px, ascii)
+        })
     });
     Ok(crate::font::PrimaryFaceReport {
         face: candidate.name.to_owned(),
@@ -285,25 +283,26 @@ pub(crate) fn primary_face_report(
     })
 }
 
-fn full_width_advance_px(font: &FontRef<'_>, size_px: u16, ascii: f32) -> Option<u32> {
+fn full_width_advance_px(data: &[u8], size_px: u16, ascii: f32) -> Option<u32> {
     const FULL_WIDTH_PROBE: char = '\u{4e2d}';
-    let scaled = font.as_scaled(f32::from(size_px));
-    let glyph = scaled.glyph_id(FULL_WIDTH_PROBE);
-    // Reject missing-glyph substitutes that share the ascii cell width.
-    if glyph.0 == 0 {
-        return None;
+    // Noto CJK is a .ttc. Index 0 is not always the face that covers 中, and
+    // try_from_slice rejects collections outright.
+    for index in 0..32u32 {
+        let Ok(font) = FontRef::try_from_slice_and_index(data, index) else {
+            break;
+        };
+        let scaled = font.as_scaled(f32::from(size_px));
+        let glyph = scaled.glyph_id(FULL_WIDTH_PROBE);
+        // .notdef (id 0) or a Latin mono stub at ~1 cell is not a real CJK advance.
+        if glyph.0 == 0 {
+            continue;
+        }
+        let full = scaled.h_advance(glyph);
+        if full.is_finite() && full > ascii * 1.25 {
+            return Some(crate::numeric::ceil_f32(full).max(1.0) as u32);
+        }
     }
-    let full = scaled.h_advance(glyph);
-    if !full.is_finite() || full <= 0.0 {
-        return None;
-    }
-    // A Latin mono face often still returns a positive advance for an
-    // uncovered CJK codepoint via .notdef at ~1 cell; treat "not wider than
-    // ascii" as unmeasured so callers do not claim a false double-width fail.
-    if full <= ascii * 1.25 {
-        return None;
-    }
-    Some(crate::numeric::ceil_f32(full).max(1.0) as u32)
+    None
 }
 
 pub(crate) fn probe_capability() -> Result<(), FontError> {
@@ -378,5 +377,25 @@ mod tests {
             .expect("primary family must map to an existing candidate")
             .absolute_path();
         assert_eq!(primary_path, PathBuf::from(expected_file));
+    }
+
+    #[test]
+    fn cjk_fallback_reports_a_wider_advance_than_ascii() {
+        if !fallback_candidates()
+            .iter()
+            .any(|candidate| candidate.exists())
+        {
+            return;
+        }
+        let report = primary_face_report(16).expect("primary face");
+        let ascii = report.ascii_advance.expect("ascii advance");
+        let full = report
+            .full_width_advance
+            .expect("CJK fallback must measure U+4E2D");
+        assert!(
+            full > ascii,
+            "full {full} ascii {ascii} face {}",
+            report.face
+        );
     }
 }
