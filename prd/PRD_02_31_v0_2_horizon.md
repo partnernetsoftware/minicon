@@ -636,21 +636,27 @@ peers of terminal tabs in the same strip; **now** 1 tab ↔ 1 **content panel**,
 settings / panel toggle) stay chrome — see PRD_02_25 Terminology; do not
 conflate them with content panels. Renderer rule on this page still holds:
 prefer direct-wry via a helper / shared adapter, never link wry/tao into core
-`minicon`, never OS-default-browser for terminal-originated http(s). Sequencing
+`minicon`, never OS-default-browser for terminal-originated http(s). The
+stable function boundary is workspace member `crates/minicon-web`
+(`PageHost`, `BrowserTab`, `http_url_at`, `resolve_proxy`, `page_host_request`,
+`spawn_page_host`). `src/browser.rs` re-exports it. `minicon-web-host` is the
+replaceable process body (`--load`); with no WebView linked it reports
+Unavailable and does not call the OS browser. Sequencing
 and leaf status live in [plan-browser-tabs.md](../plan/plan-browser-tabs.md);
 workspace owns the tab/content-panel requirements and evidence.
 
 **`minicon-web` (adopted 2026-10-23).** Encapsulate the browser surface as
-workspace crate **`crates/minicon-web`**: library API plus an optional host
-process / subcommand. Responsibilities: unified browser function interface
-(open/load URL, proxy hook, staged OAuth / dashboard / preview / wasm);
-isolate wry/WebView so the underlying stack can change without rewriting
-product callers. Core `minicon` and `minicon-core` **do not** depend on wry —
-they talk to minicon-web only. Size-boundary rule above is unchanged: a missing
-WebView runtime must not take down the terminal. Product face stays Tab /
-content panel (PRD_02_25); no tray. Tip has not created the crate yet; the
-target interface inventory lives in plan-browser-tabs until `0:grk` lands
-source paths.
+workspace crate **`crates/minicon-web`**: library API plus host binary
+`minicon-web-host` (`--probe` / `--load`). Responsibilities: unified browser
+function interface (open/load URL, `PageHost` trait, proxy hook, staged OAuth /
+dashboard / preview / wasm); isolate wry/WebView so the underlying stack can
+change without rewriting product callers. Core `minicon` and `minicon-core`
+**do not** depend on wry — they talk to minicon-web only (`src/browser.rs`
+re-exports). Size-boundary rule above is unchanged: a missing WebView runtime
+must not take down the terminal. Product face stays Tab / content panel
+(PRD_02_25); no tray. The crate is a workspace member. The default host
+body does not link wry and exits 69 Unavailable. Target interface inventory:
+[plan-browser-tabs.md](../plan/plan-browser-tabs.md).
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the

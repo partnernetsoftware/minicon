@@ -1078,6 +1078,7 @@ dependencies = [
  "minicon-core",
  "minicon-platform",
  "minicon-ui-core",
+ "minicon-web",
  "object",
  "png 0.17.16",
  "serde",
@@ -1148,6 +1149,10 @@ dependencies = [
  "minicon-core",
  "vt100",
 ]
+
+[[package]]
+name = "minicon-web"
+version = "0.1.0"
 
 [[package]]
 name = "miniz_oxide"

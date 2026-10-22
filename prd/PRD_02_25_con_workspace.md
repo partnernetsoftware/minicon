@@ -80,7 +80,7 @@ would collide with a tab-internal layout cell.
 | Term | Meaning | Not |
 | --- | --- | --- |
 | **Tab** | A work unit in the host strip: peer to a terminal tab or a browser tab. Stable id, open/close/switch/title lifecycle. | A layout cell inside a tab; a chrome sidebar |
-| **Content panel** (alias **Workspace panel**) | A layout cell *inside* one tab. **Now:** exactly one per tab (1:1). **Future:** one tab may hold many (split / side-by-side). A terminal tab's content panel is its PTY view; a browser tab's is its page surface (`BrowserPanel` in `src/browser.rs`). | Host chrome sidebars; the header "panel toggle" |
+| **Content panel** (alias **Workspace panel**) | A layout cell *inside* one tab. **Now:** exactly one per tab (1:1). **Future:** one tab may hold many (split / side-by-side). A terminal tab's content panel is its PTY view; a browser tab's is its page surface (`BrowserPanel` via `minicon_web`, re-exported from `src/browser.rs`). | Host chrome sidebars; the header "panel toggle" |
 | **Chrome panel** | A host-chrome sidebar or overlay owned by the window, not by a tab's layout: the **sent-history panel**, the **settings panel**, and the header **panel toggle** that opens the history column. When older prose says bare "panel" for these, read it as chrome/host. Snapshot and code keys stay `history_panel` / `settings_panel` / `panel_toggle`. | A content panel inside a tab |
 | **pane** (code / mux) | tmux-shaped address for a tab's terminal content area: `capture-pane`, `list-panes`, target `.pane`. **Today** pane 0 **is** that tab's single content panel (PTY view). A nonzero pane index is still a bounded error until a multi-content-panel layout engine exists. Not a synonym for chrome panel. | Chrome sent-history / settings |
 
@@ -111,28 +111,27 @@ names above.
   a peer of a terminal tab and stores an http(s) URL for a later page
   surface. Ctrl+click on an http(s) token in the terminal opens or focuses
   that one browser content panel and does not call `host_open` / the OS
-  default browser. Evidence: `browser::tests::http_links_are_browser_urls_and_other_schemes_are_not_opened`;
+  default browser. Evidence: `minicon-web` `http_links_are_browser_urls_and_other_schemes_are_not_opened`;
   `tests::http_handoff_reuses_one_browser_content_panel`. The same panel
-  then asks a page host (`MINICON_BROWSER_BIN --load <url>` today; target
-  owner **`crates/minicon-web`**) to navigate; core `minicon` does not link
+  then asks `MINICON_BROWSER_BIN --load <url>` (`minicon_web::spawn_page_host`)
+  to navigate. Owner is **`crates/minicon-web`**; core `minicon` does not link
   wry. A missing host is `PageLoad::Unavailable`
   (`browser-host-not-configured`), not `host_open`. Evidence:
-  `browser::tests::page_host_request_is_the_helper_not_the_system_browser`,
-  `browser::tests::spawn_page_host_passes_the_url_to_the_helper`.
+  `page_host_request_is_the_helper_not_the_system_browser`,
+  `spawn_page_host_passes_the_url_to_the_helper`.
   A linked wry surface, OAuth, dashboard and multi-content-panel layout
   remain follow-ups in
   [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
   Renderer / crate boundary (minicon-web lib + optional host; no wry in core
   `minicon`) stays recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
-- [_] **`minicon-web` module (adopted 2026-10-23).** Unified browser function
+- [-] **`minicon-web` module (adopted 2026-10-23).** Unified browser function
   interface (open/load URL, proxy hook application, staged OAuth / dashboard /
   file preview / wasm) and the only place wry/WebView implementation may live.
   Product face remains **Tab / content panel** (now 1:1, future 1:N); **no
   tray**. Chrome panels (sent-history / settings / panel toggle) stay chrome —
-  c48a6a0. Workspace owns tab strip and content-panel shell evidence; the crate
-  path and host binary land under PRD_02_31 / plan-browser-tabs. Tip has no
-  `crates/minicon-web` yet — docs nail the boundary; implementation is a
-  separate leaf.
+  c48a6a0. Path: `crates/minicon-web/` (lib + `minicon-web-host`);
+  `src/browser.rs` re-exports. The crate is a workspace member. A linked wry
+  body is still a later leaf — see PRD_02_31 / plan-browser-tabs.
 - [v] **chrome panels stay chrome.** The right-side **sent-history panel**,
   the **settings panel**, and the header **panel toggle** / `Ctrl+Shift+H`
   continue to mean host chrome (see Host UI below). Their evidence strings and

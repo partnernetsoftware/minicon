@@ -44,7 +44,7 @@ MiniCon — one-file local terminal
 │   ├── minicon-platform — capability contracts and native OS/ISA/ABI adapters
 │   ├── [-] minicon-console — independent terminal library and native service
 │   │   └── prd/PRD_02_35_terminal_library.md
-│   └── [_] minicon-web — browser function API + wry/WebView isolation
+│   └── [-] minicon-web — browser function API + wry/WebView isolation (workspace member; wry body later)
 │       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
 │           · plan/plan-browser-tabs.md
 ├── Qualification and delivery
@@ -178,10 +178,10 @@ flowchart LR
   [delivery](prd/PRD_02_27_con_delivery.md).
 - [-] **Built-in browser tabs (content panels) via `minicon-web`.** Tab shell
   and proxy hook reserved; Ctrl+click http(s) → browser content panel (not OS
-  default). Adopted boundary: `crates/minicon-web` (lib + optional host)
-  unifies open/load URL, proxy, staged OAuth/dashboard/preview/wasm and
-  isolates wry; core `minicon` does not link wry. Crate source not on tip yet.
-  wry navigation and 1:N content-panel layout are later. No tray.
+  default). Adopted boundary: `crates/minicon-web` (lib + `minicon-web-host`)
+  unifies open/load URL, `PageHost`, proxy, staged OAuth/dashboard/preview/wasm
+  and isolates wry; core `minicon` does not link wry (`src/browser.rs`
+  re-exports). wry navigation and 1:N content-panel layout are later. No tray.
   Names: [Workspace terminology](prd/PRD_02_25_con_workspace.md#terminology-naming-decision-2026-10-23);
   sequence / target API: [plan-browser-tabs](plan/plan-browser-tabs.md);
   renderer: [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).

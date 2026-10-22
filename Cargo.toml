@@ -5,6 +5,7 @@ members = [
     "crates/minicon-core",
     "crates/minicon-platform",
     "crates/minicon-ui-core",
+    "crates/minicon-web",
 ]
 
 [package]
@@ -81,6 +82,7 @@ minicon-platform = { path = "crates/minicon-platform", default-features = false,
 minicon-ui-core = { path = "crates/minicon-ui-core", features = ["terminal-selection"] }
 itoa = "1"
 minicon-core = { path = "crates/minicon-core" }
+minicon-web = { path = "crates/minicon-web" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 unicode-width = "0.2"

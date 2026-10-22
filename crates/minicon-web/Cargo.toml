@@ -1,0 +1,15 @@
+[package]
+name = "minicon-web"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+description = "Browser content-panel API. WebView backends are replaceable; this crate does not link wry."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/partnernetsoftware/minicon"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "minicon-web-host"
+path = "src/bin/minicon-web-host.rs"
