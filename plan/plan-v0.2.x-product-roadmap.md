@@ -82,11 +82,15 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 │     demonstration (PRD 35); no profile menu shipped; osx-x86_64 throughput
 │     bound and the TERM runtime probe stay open by name (carried debt)
 │   non-goal: automatic platform-crate merger (unchanged)
-└── [_] 0.2.20 — evidence-based Windows default and product-cost decision
+└── [-] 0.2.20 — evidence-based Windows default and product-cost decision
     invariant: any default change improves user journeys without hidden regression
     evidence: exact-artifact real apps, reliability, latency/RSS and rollback courts
     safe failure: retain explicit preview if a gate is missing
     dependency: all preceding gates and PRD 27; non-goal: a date-driven switch
+    plan: follow [the dedicated 0.2.20 plan](plan-v0.2.20.md) — {BUG} attribution,
+    {BACKEND-KEY}, {MOUSE}, exact-artifact {COURTS}, bounded {CRASH} hunt, then
+    the decision; per-tab process cost (3 agent-path vs 1 rust-console) is
+    already measured in PRD 24
     └── [_] owner-reported file-tool output misalignment in Claude Code
         sessions (2026-10-21) — reproduce and attribute before the default
         decision; record owned by PRD 24.01 "Open compatibility contracts"
