@@ -61,15 +61,16 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │     PRD 24 backend selection. Honest scope: the spawn wiring is exercised
 │     through the same initial-session path the proven `term` key uses; no
 │     live user-config journey was run (config injection has no test seam)
-├── [_] {MOUSE} Qualify mouse input under rust-console
-│   invariant: a TUI that enables mouse reporting receives clicks/wheel through
-│     the rust-console backend at least as faithfully as through the agent
-│   evidence: scripted mouse journey against a real mouse-aware TUI on both
-│     backends, same court; named per-event comparison
-│   safe failure: a mouse gap on rust-console is a named blocker for the
-│     default flip, exactly like the ConPTY mouse gap that set today's default
-│   dependency: PRD 34 input-record leaves (write/read/coalescing are [v]);
-│     non-goal: full terminal mouse-protocol matrix beyond what agents use
+├── [v] {MOUSE} Qualify mouse input under rust-console
+│   done 2026-10-22: the court found a real defect — rust-console delivered
+│     zero mouse records while agent and ConPTY delivered identical
+│     press/release/wheel records; the provider's VT-to-record decoder had no
+│     mouse branch. Fixed by moving the SGR decoder + record mapping out of
+│     the console agent into the shared console_input module (F1-shaped
+│     seam: one decision, two transports). After: field-identical records on
+│     all three backends. Evidence: tests/support/mouse-court/ before/after
+│     runs, rust_console_sgr_mouse_reports_become_native_mouse_records;
+│     record in PRD 24 backend selection
 ├── [_] {COURTS} Exact-artifact decision courts
 │   invariant: every default-decision claim names exact artifact, cell and court
 │   evidence: (a) visible three-agent matrix (Claude Code / Grok / Codex) on the

@@ -640,6 +640,18 @@ impl ConTerminal {
             command = command.rust_console();
         }
 
+        // MiniCon sets AGENTERM_FORCE_CONSOLE_AGENT process-wide to pick its
+        // own default backend; a tab's programs must not inherit that choice.
+        // An inherited "1" silently forced any agenterm-platform program run
+        // in a tab onto the console agent, and one that skipped the agent
+        // re-exec hook re-executed itself without bound (carried debt S5).
+        // The platform predicate only honors "1", so "0" neutralizes it in
+        // the child's block without touching this process's selection.
+        #[cfg(windows)]
+        {
+            command = command.env("AGENTERM_FORCE_CONSOLE_AGENT", "0");
+        }
+
         if let Some(endpoint) = &self.control_endpoint {
             command = command.env("MINICON_CONTROL", endpoint);
         }

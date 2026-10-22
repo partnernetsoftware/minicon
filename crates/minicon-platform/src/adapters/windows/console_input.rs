@@ -225,3 +225,149 @@ mod response_key_tests {
         }
     }
 }
+
+/// One mouse report decoded from the SGR (DECSET 1006) form a terminal emits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct MouseReport {
+    /// The SGR button code, including the modifier, motion and wheel bits.
+    pub(super) code: u32,
+    /// Zero-based cell coordinates; the wire form is one-based.
+    pub(super) column: i16,
+    pub(super) row: i16,
+    /// `M` is a press, `m` a release.
+    pub(super) pressed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SgrMouse {
+    Report(MouseReport, usize),
+    /// A prefix of a report: wait for more bytes rather than delivering the
+    /// escape literally.
+    Incomplete,
+    /// Not a mouse report; let the key decoder have it.
+    Other,
+}
+
+/// Decodes `ESC [ < code ; column ; row (M|m)`.
+///
+/// Both console transports translate the terminal's SGR bytes into the
+/// `MOUSE_EVENT_RECORD` a console delivers natively — the same thing a program
+/// receives when it runs in a plain conhost window. One owner, two consumers:
+/// the console agent and the rust-console provider (the latter silently
+/// dropped every mouse report until this decoder was shared, 2026-10-22).
+pub(super) fn decode_sgr_mouse(bytes: &[u8]) -> SgrMouse {
+    const PREFIX: [u8; 3] = [0x1b, b'[', b'<'];
+    for (offset, want) in PREFIX.iter().enumerate() {
+        match bytes.get(offset) {
+            None => return SgrMouse::Incomplete,
+            Some(byte) if byte == want => {}
+            Some(_) => return SgrMouse::Other,
+        }
+    }
+    let mut index = PREFIX.len();
+    let mut fields = [0_u32; 3];
+    for (slot, field) in fields.iter_mut().enumerate() {
+        let start = index;
+        while let Some(byte) = bytes.get(index) {
+            if !byte.is_ascii_digit() {
+                break;
+            }
+            *field = field
+                .saturating_mul(10)
+                .saturating_add(u32::from(byte - b'0'));
+            index += 1;
+        }
+        if index == start {
+            // No digits yet. With bytes still to come this is a report that has
+            // not finished arriving, and calling it `Other` here delivered the
+            // prefix to the child as a literal ESC -- the very thing this
+            // decoder exists to prevent. Only a non-digit that is actually
+            // present makes it something else.
+            return match bytes.get(index) {
+                None => SgrMouse::Incomplete,
+                Some(_) => SgrMouse::Other,
+            };
+        }
+        match bytes.get(index) {
+            None => return SgrMouse::Incomplete,
+            Some(b';') if slot < 2 => index += 1,
+            Some(b'M' | b'm') if slot == 2 => {}
+            Some(_) => return SgrMouse::Other,
+        }
+    }
+    let pressed = bytes[index] == b'M';
+    let cell = |value: u32| i16::try_from(value.saturating_sub(1)).unwrap_or(i16::MAX);
+    SgrMouse::Report(
+        MouseReport {
+            code: fields[0],
+            column: cell(fields[1]),
+            row: cell(fields[2]),
+            pressed,
+        },
+        index + 1,
+    )
+}
+
+/// The record fields for one decoded mouse report, as plain integers so each
+/// transport builds its own native record (`INPUT_RECORD` for the agent,
+/// `ConsoleInput::Mouse` for the rust-console provider) from one mapping.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct NativeMouse {
+    pub(super) column: i16,
+    pub(super) row: i16,
+    pub(super) buttons: u32,
+    pub(super) controls: u32,
+    pub(super) flags: u32,
+}
+
+/// Maps one decoded SGR report onto console mouse-record semantics: button
+/// state, the signed wheel delta in the high word, motion and modifiers.
+pub(super) fn native_mouse(report: MouseReport) -> NativeMouse {
+    use windows_sys::Win32::System::Console::{
+        FROM_LEFT_1ST_BUTTON_PRESSED, FROM_LEFT_2ND_BUTTON_PRESSED, LEFT_ALT_PRESSED,
+        LEFT_CTRL_PRESSED, MOUSE_MOVED, MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED, SHIFT_PRESSED,
+    };
+    const SHIFT_BIT: u32 = 4;
+    const ALT_BIT: u32 = 8;
+    const CTRL_BIT: u32 = 16;
+    const MOTION_BIT: u32 = 32;
+    const WHEEL_BIT: u32 = 64;
+
+    let mut buttons = 0_u32;
+    let mut flags = 0_u32;
+    if report.code & WHEEL_BIT != 0 {
+        flags |= MOUSE_WHEELED;
+        // The wheel delta rides in the high word, signed: SGR 64 scrolls up.
+        let delta: i16 = if report.code & 0x03 == 0 { 120 } else { -120 };
+        buttons |= (delta as u16 as u32) << 16;
+    } else {
+        if report.pressed {
+            buttons |= match report.code & 0x03 {
+                0 => FROM_LEFT_1ST_BUTTON_PRESSED,
+                1 => FROM_LEFT_2ND_BUTTON_PRESSED,
+                2 => RIGHTMOST_BUTTON_PRESSED,
+                _ => 0,
+            };
+        }
+        if report.code & MOTION_BIT != 0 {
+            flags |= MOUSE_MOVED;
+        }
+    }
+    let mut controls = 0_u32;
+    if report.code & SHIFT_BIT != 0 {
+        controls |= SHIFT_PRESSED;
+    }
+    if report.code & ALT_BIT != 0 {
+        controls |= LEFT_ALT_PRESSED;
+    }
+    if report.code & CTRL_BIT != 0 {
+        controls |= LEFT_CTRL_PRESSED;
+    }
+    NativeMouse {
+        column: report.column,
+        row: report.row,
+        buttons,
+        controls,
+        flags,
+    }
+}

@@ -489,6 +489,48 @@ fn minicon_binary() -> PathBuf {
     path
 }
 
+/// A tab's programs must not inherit MiniCon's own backend-forcing variable
+/// (carried debt S5): MiniCon sets AGENTERM_FORCE_CONSOLE_AGENT=1 in its own
+/// process to pick its default, and before the fix every tab child saw "1",
+/// which forced any agenterm-platform program in a tab onto the console agent
+/// and let one without the re-exec hook re-execute itself without bound.
+#[cfg(windows)]
+#[test]
+fn tab_children_do_not_inherit_the_backend_forcing_variable() {
+    let exe = minicon_binary();
+    let exe = exe.as_path();
+    let suffix = unique_suffix();
+    let endpoint = control_endpoint(&suffix);
+    let trace = HostTrace(std::env::temp_dir().join(format!("minicon-force-env-{suffix}.log")));
+    let mut host = Command::new(exe);
+    host.arg("--no-activate")
+        .arg("--control")
+        .arg(&endpoint)
+        .arg("-e")
+        .arg("cmd.exe")
+        .arg("/d")
+        .arg("/k")
+        .arg("echo FORCE=[%AGENTERM_FORCE_CONSOLE_AGENT%]");
+    host.stdout(std::process::Stdio::null())
+        .stderr(fs::File::create(&trace.0).expect("create host diagnostic file"));
+    let child = host.spawn().expect("minicon GUI must start");
+    let mut gui = OwnedGui {
+        child,
+        screenshot: std::env::temp_dir().join(format!("minicon-force-env-{suffix}.png")),
+    };
+    wait_until_ready_for(exe, &endpoint, Duration::from_secs(15), Some(&mut gui.child));
+    cli_json(
+        exe,
+        &endpoint,
+        &["wait-text", "--target", "@1", "--timeout-ms", "15000", "FORCE=["],
+    );
+    let pane = cli_text(exe, &endpoint, &["capture-pane", "--target", "@1"]);
+    assert!(
+        pane.contains("FORCE=[0]"),
+        "a tab child must see the neutralized value, not MiniCon's own: {pane}"
+    );
+}
+
 #[test]
 fn child_shortcut_inserts_beneath_the_active_root_or_child() {
     let exe = minicon_binary();

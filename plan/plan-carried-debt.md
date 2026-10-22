@@ -115,17 +115,6 @@ mechanism lives with its code and test).
 │        not invent a cross-machine threshold from one host — decide whether
 │        the osx-x86_64 cell gets its own measured budget or the claim names
 │        the cell as unqualified for the throughput bound.
-├── S5 AGENTERM_FORCE_CONSOLE_AGENT leaks into every tab child (2026-10-22)
-│      MiniCon sets the variable process-wide at startup (src/main.rs, the
-│        classic-default selector), so every program a tab hosts inherits it:
-│        any agenterm-platform binary that opens PTYs inside a MiniCon tab is
-│        silently forced onto the console-agent backend, and one that skips
-│        the run_if_console_agent hook re-executes itself unboundedly
-│        (observed: the wide-overwrite court's wire probe fork-bombed until
-│        the hook was added). Fix shape: keep the variable for this process's
-│        own selection but strip it from spawned children's environments in
-│        spawn_pty; needs a test that a child sees it absent. Owner:
-│        PRD_02_24 backend selection.
 └── R1 CI action/runner migration debt (observed 2026-10-10)
       warnings, not failures yet: pinned actions on Node 20 shims
         (checkout/upload/download-artifact/setup-python) and

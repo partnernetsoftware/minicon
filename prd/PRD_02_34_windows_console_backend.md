@@ -890,6 +890,13 @@ and log identities are in `key-break-negative-audit.json`.
 
 ## Bounded input transport and controls under input pressure
 
+Mouse input (0.2.20): the provider's VT-to-record decoder now turns terminal
+SGR mouse reports into native `MOUSE_EVENT` records through the decoder and
+mapping shared with the console agent (`adapters/windows/console_input.rs`);
+before this, reports fell through the key decoder and were lost. A partial
+report waits under the existing escape budget. Cross-backend parity evidence
+belongs to [PRD 24](PRD_02_24_con_terminal.md#pty-backend-selection).
+
 The experimental Windows adapter now owns its input staging in Rust instead
 of sending its own input through an anonymous kernel pipe. The existing PTY
 facade delegates to either `PipeInputWriter` for the previous Windows providers

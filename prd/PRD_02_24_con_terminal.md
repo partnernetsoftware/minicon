@@ -300,6 +300,29 @@ requested selection; the opened session identity is separately observable throug
   console, spawns the child into it, and polls the screen buffer with
   `ReadConsoleOutputW`, synthesizing a terminal stream from what changed. The
   agent is this product, not a third-party binary — nothing extra is deployed.
+- [v] **mouse delivery parity across all three backends (2026-10-22,
+  Windows x64 20348).** The same-court mouse journey
+  (`tests/support/mouse-court/`: SGR reporting requested, records read with
+  `ReadConsoleInputW`) first showed agent and ConPTY delivering identical
+  press / release / wheel records while **rust-console delivered none** — its
+  VT-to-record input path had no mouse branch, so every SGR report fell
+  through the key decoder and was lost. The SGR decoder and record mapping
+  moved from the console agent into the shared Windows `console_input`
+  module (one owner, two transports); after the fix all three backends
+  deliver field-identical records (column/row, button state, signed wheel
+  delta, flags). Evidence: the court's before/after runs and
+  `rust_console_sgr_mouse_reports_become_native_mouse_records` plus the
+  retained agent decoder tests. This removes the mouse gap as a default-flip
+  blocker for rust-console; the historical ConPTY mouse note above concerns
+  a different, older path.
+- [v] a tab's programs no longer inherit MiniCon's own backend forcing
+  (0.2.20). MiniCon sets `AGENTERM_FORCE_CONSOLE_AGENT=1` in its own process to
+  choose its default; `spawn_pty` now hands each Windows tab child `"0"` (the
+  platform predicate honors only `"1"`), so an agenterm-platform program run
+  inside a tab picks its own backend and cannot re-execute itself unboundedly
+  through an inherited forced agent path. Evidence:
+  `tab_children_do_not_inherit_the_backend_forcing_variable`
+  (tests/minicon_control.rs), observed red at `FORCE=[1]` with the fix removed.
 - [v] a persisted per-user backend preference exists (0.2.20): the validated
   `backend` key in `minicon.json` selects conpty / rust-console / agent for
   new sessions, with CLI `--feature` winning per invocation and

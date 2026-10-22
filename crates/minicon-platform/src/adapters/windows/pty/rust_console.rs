@@ -421,6 +421,38 @@ fn serve(
                     // an outstanding query; ordinary keys retain their decoder.
                     valid = length;
                     escape_wait = None;
+                } else if let Some(outcome) = mouse_record_for(&pending[..valid]) {
+                    // SGR mouse reports become native MOUSE_EVENT records, the
+                    // same mapping the console agent applies; without this the
+                    // report fell through the key decoder and was lost.
+                    match outcome {
+                        Some((event, used)) => match host.enqueue_input(&[event], &mut sink) {
+                            Ok(_) => {
+                                pending.drain(..used);
+                                input_progress = true;
+                                previous_cr = false;
+                                escape_wait = None;
+                            }
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                            Err(error) => settle_native_result(
+                                Err::<(), _>(error),
+                                child,
+                                &mut driver_closed,
+                            )?,
+                        },
+                        // A partial report waits for its remaining bytes; the
+                        // escape budget below still bounds a report that never
+                        // completes.
+                        None => {
+                            if pending.len() > 128 {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "console escape sequence budget exceeded",
+                                ));
+                            }
+                        }
+                    }
+                    valid = 0;
                 } else {
                     let decoded = crate::selected::console_input::decode_key(&pending[..valid]);
                     if let Some((key, used)) = decoded {
@@ -542,10 +574,70 @@ fn serve(
     Ok(())
 }
 
+/// Decodes an SGR mouse report at the front of `bytes` into the native
+/// record a console reader receives, through the decoder and mapping shared
+/// with the console agent. `None` means not a mouse report (let the key
+/// decoder have it); `Some(None)` a report still arriving; `Some(Some(..))` a
+/// complete report and the bytes it used.
+fn mouse_record_for(bytes: &[u8]) -> Option<Option<(ConsoleInput, usize)>> {
+    use crate::selected::console_input::{SgrMouse, decode_sgr_mouse, native_mouse};
+    match decode_sgr_mouse(bytes) {
+        SgrMouse::Other => None,
+        SgrMouse::Incomplete => Some(None),
+        SgrMouse::Report(report, used) => {
+            let mouse = native_mouse(report);
+            Some(Some((
+                ConsoleInput::Mouse {
+                    x: mouse.column,
+                    y: mouse.row,
+                    buttons: mouse.buttons,
+                    controls: mouse.controls,
+                    flags: mouse.flags,
+                },
+                used,
+            )))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write as _;
+
+    /// SGR reports reach the provider as native mouse records with the same
+    /// mapping the console agent uses: one-based wire cells become zero-based
+    /// coordinates, press/release set and clear the left button, and a wheel
+    /// tick carries its signed delta in the high word. Before 2026-10-22 this
+    /// provider had no mouse branch at all and every report was lost.
+    #[test]
+    fn rust_console_sgr_mouse_reports_become_native_mouse_records() {
+        use windows_sys::Win32::System::Console::{FROM_LEFT_1ST_BUTTON_PRESSED, MOUSE_WHEELED};
+        let record = |bytes: &[u8]| match mouse_record_for(bytes) {
+            Some(Some((
+                ConsoleInput::Mouse {
+                    x,
+                    y,
+                    buttons,
+                    flags,
+                    ..
+                },
+                used,
+            ))) => (x, y, buttons, flags, used),
+            other => panic!("not a complete mouse record: {other:?}"),
+        };
+        let press = record(b"[<0;11;6M");
+        assert_eq!((press.0, press.1), (10, 5));
+        assert_eq!(press.2, FROM_LEFT_1ST_BUTTON_PRESSED);
+        assert_eq!(press.4, b"[<0;11;6M".len());
+        assert_eq!(record(b"[<0;11;6m").2, 0, "release clears the button");
+        let wheel = record(b"[<65;21;7Mtail");
+        assert_eq!(wheel.3 & MOUSE_WHEELED, MOUSE_WHEELED);
+        assert_eq!(wheel.2 >> 16, u32::from((-120_i16) as u16));
+
+        assert!(matches!(mouse_record_for(b"[<0;11"), Some(None)));
+        assert!(mouse_record_for(b"[A").is_none(), "cursor keys stay keys");
+    }
 
     #[test]
     fn rust_console_pty_response_tracking_follows_output_admission() {

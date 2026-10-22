@@ -21,7 +21,9 @@
 //! which backend it got, which is the whole point — the difference is sealed
 //! here and not spread through the terminal.
 
-use super::console_input::{Key, decode_key};
+use super::console_input::{
+    Key, MouseReport, SgrMouse, decode_key, decode_sgr_mouse, native_mouse,
+};
 use std::ffi::c_void;
 use std::io;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -36,11 +38,10 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::Console::{
     AllocConsole, CHAR_INFO, CHAR_INFO_0, CONSOLE_SCREEN_BUFFER_INFO, COORD, CTRL_BREAK_EVENT,
-    CTRL_C_EVENT, ENABLE_MOUSE_INPUT, FROM_LEFT_1ST_BUTTON_PRESSED, FROM_LEFT_2ND_BUTTON_PRESSED,
-    FreeConsole, GenerateConsoleCtrlEvent, GetConsoleMode, GetConsoleScreenBufferInfo,
-    GetConsoleTitleW, GetConsoleWindow, GetLargestConsoleWindowSize, INPUT_RECORD, INPUT_RECORD_0,
-    KEY_EVENT, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, MOUSE_EVENT, MOUSE_EVENT_RECORD, MOUSE_MOVED,
-    MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED, ReadConsoleOutputW, SMALL_RECT, SetConsoleCtrlHandler,
+    CTRL_C_EVENT, ENABLE_MOUSE_INPUT, FreeConsole, GenerateConsoleCtrlEvent, GetConsoleMode,
+    GetConsoleScreenBufferInfo, GetConsoleTitleW, GetConsoleWindow, GetLargestConsoleWindowSize,
+    INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, MOUSE_EVENT,
+    MOUSE_EVENT_RECORD, ReadConsoleOutputW, SMALL_RECT, SetConsoleCtrlHandler,
     SetConsoleScreenBufferSize, SetConsoleWindowInfo, WriteConsoleInputW,
 };
 use windows_sys::Win32::System::JobObjects::{
@@ -1316,10 +1317,6 @@ fn flush_records(console_input: HANDLE, records: &mut Vec<INPUT_RECORD>) {
     records.clear();
 }
 
-const LEFT_CTRL_PRESSED: u32 = 0x0008;
-const LEFT_ALT_PRESSED: u32 = 0x0002;
-const SHIFT_PRESSED: u32 = 0x0010;
-
 /// Tells the terminal when the child turns console mouse input on or off.
 ///
 /// On this path a program asks for the mouse through `SetConsoleMode`
@@ -1390,136 +1387,20 @@ fn announce_console_title(output: HANDLE, last: &mut Option<String>) {
     let _ = write_all(output, &sequence);
 }
 
-/// One mouse report decoded from the SGR (DECSET 1006) form a terminal emits.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct MouseReport {
-    /// The SGR button code, including the modifier, motion and wheel bits.
-    code: u32,
-    /// Zero-based cell coordinates; the wire form is one-based.
-    column: i16,
-    row: i16,
-    /// `M` is a press, `m` a release.
-    pressed: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SgrMouse {
-    Report(MouseReport, usize),
-    /// A prefix of a report: wait for more bytes rather than delivering the
-    /// escape literally.
-    Incomplete,
-    /// Not a mouse report; let the key decoder have it.
-    Other,
-}
-
-/// Decodes `ESC [ < code ; column ; row (M|m)`.
-///
-/// ConPTY refuses to carry mouse reports to a child, so on the console-agent
-/// path the terminal's SGR bytes are translated into the `MOUSE_EVENT_RECORD`
-/// a console delivers natively — which is the same thing a program receives
-/// when it runs in a plain conhost window.
-fn decode_sgr_mouse(bytes: &[u8]) -> SgrMouse {
-    const PREFIX: [u8; 3] = [0x1b, b'[', b'<'];
-    for (offset, want) in PREFIX.iter().enumerate() {
-        match bytes.get(offset) {
-            None => return SgrMouse::Incomplete,
-            Some(byte) if byte == want => {}
-            Some(_) => return SgrMouse::Other,
-        }
-    }
-    let mut index = PREFIX.len();
-    let mut fields = [0_u32; 3];
-    for (slot, field) in fields.iter_mut().enumerate() {
-        let start = index;
-        while let Some(byte) = bytes.get(index) {
-            if !byte.is_ascii_digit() {
-                break;
-            }
-            *field = field
-                .saturating_mul(10)
-                .saturating_add(u32::from(byte - b'0'));
-            index += 1;
-        }
-        if index == start {
-            // No digits yet. With bytes still to come this is a report that has
-            // not finished arriving, and calling it `Other` here delivered the
-            // prefix to the child as a literal ESC -- the very thing this
-            // decoder exists to prevent. Only a non-digit that is actually
-            // present makes it something else.
-            return match bytes.get(index) {
-                None => SgrMouse::Incomplete,
-                Some(_) => SgrMouse::Other,
-            };
-        }
-        match bytes.get(index) {
-            None => return SgrMouse::Incomplete,
-            Some(b';') if slot < 2 => index += 1,
-            Some(b'M' | b'm') if slot == 2 => {}
-            Some(_) => return SgrMouse::Other,
-        }
-    }
-    let pressed = bytes[index] == b'M';
-    let cell = |value: u32| i16::try_from(value.saturating_sub(1)).unwrap_or(i16::MAX);
-    SgrMouse::Report(
-        MouseReport {
-            code: fields[0],
-            column: cell(fields[1]),
-            row: cell(fields[2]),
-            pressed,
-        },
-        index + 1,
-    )
-}
-
-/// Builds the console record for one decoded report.
+/// Builds the console record for one decoded report from the shared mapping.
 fn mouse_record(report: MouseReport) -> INPUT_RECORD {
-    const SHIFT_BIT: u32 = 4;
-    const ALT_BIT: u32 = 8;
-    const CTRL_BIT: u32 = 16;
-    const MOTION_BIT: u32 = 32;
-    const WHEEL_BIT: u32 = 64;
-
-    let mut buttons = 0_u32;
-    let mut flags = 0_u32;
-    if report.code & WHEEL_BIT != 0 {
-        flags |= MOUSE_WHEELED;
-        // The wheel delta rides in the high word, signed: SGR 64 scrolls up.
-        let delta: i16 = if report.code & 0x03 == 0 { 120 } else { -120 };
-        buttons |= (delta as u16 as u32) << 16;
-    } else {
-        if report.pressed {
-            buttons |= match report.code & 0x03 {
-                0 => FROM_LEFT_1ST_BUTTON_PRESSED,
-                1 => FROM_LEFT_2ND_BUTTON_PRESSED,
-                2 => RIGHTMOST_BUTTON_PRESSED,
-                _ => 0,
-            };
-        }
-        if report.code & MOTION_BIT != 0 {
-            flags |= MOUSE_MOVED;
-        }
-    }
-    let mut modifiers = 0_u32;
-    if report.code & SHIFT_BIT != 0 {
-        modifiers |= SHIFT_PRESSED;
-    }
-    if report.code & ALT_BIT != 0 {
-        modifiers |= LEFT_ALT_PRESSED;
-    }
-    if report.code & CTRL_BIT != 0 {
-        modifiers |= LEFT_CTRL_PRESSED;
-    }
+    let mouse = native_mouse(report);
     INPUT_RECORD {
         EventType: MOUSE_EVENT as u16,
         Event: INPUT_RECORD_0 {
             MouseEvent: MOUSE_EVENT_RECORD {
                 dwMousePosition: COORD {
-                    X: report.column,
-                    Y: report.row,
+                    X: mouse.column,
+                    Y: mouse.row,
                 },
-                dwButtonState: buttons,
-                dwControlKeyState: modifiers,
-                dwEventFlags: flags,
+                dwButtonState: mouse.buttons,
+                dwControlKeyState: mouse.controls,
+                dwEventFlags: mouse.flags,
             },
         },
     }
@@ -1612,6 +1493,10 @@ use std::os::windows::ffi::OsStrExt;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows_sys::Win32::System::Console::{
+        FROM_LEFT_1ST_BUTTON_PRESSED, FROM_LEFT_2ND_BUTTON_PRESSED, LEFT_CTRL_PRESSED, MOUSE_MOVED,
+        MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED,
+    };
 
     /// The title announce must be a single, well-formed OSC 0 sequence: a
     /// program's title can contain an ESC or BEL, and either one leaking
