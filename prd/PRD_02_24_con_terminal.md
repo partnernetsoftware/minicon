@@ -321,14 +321,20 @@ requested selection; the opened session identity is separately observable throug
 - [v] **mouse delivery parity across all three backends (2026-10-22,
   Windows x64 20348).** The same-court mouse journey
   (`tests/support/mouse-court/`: SGR reporting requested, records read with
-  `ReadConsoleInputW`) first showed agent and ConPTY delivering identical
+  `ReadConsoleInputW`) first showed the console agent delivering
   press / release / wheel records while **rust-console delivered none** — its
   VT-to-record input path had no mouse branch, so every SGR report fell
   through the key decoder and was lost. The SGR decoder and record mapping
   moved from the console agent into the shared Windows `console_input`
-  module (one owner, two transports); after the fix all three backends
+  module (one owner, two transports); after the fix agent and rust-console
   deliver field-identical records (column/row, button state, signed wheel
-  delta, flags). Evidence: the court's before/after runs and
+  delta, flags). ConPTY, measured cleanly once the court stopped inheriting
+  a host tab's forcing variable, passes the terminal's SGR bytes through as
+  VT key characters (`ESC[<0;11;6M`) rather than synthesizing records — a
+  VT-input reader sees the mouse, a record reader does not; the older note
+  that ConPTY "drops" the mouse no longer describes this path. (An earlier
+  run's "ConPTY" row was the agent in disguise — the inherited-variable flaw
+  recorded under the cost court.) Evidence: the court's before/after runs and
   `rust_console_sgr_mouse_reports_become_native_mouse_records` plus the
   retained agent decoder tests. This removes the mouse gap as a default-flip
   blocker for rust-console; the historical ConPTY mouse note above concerns

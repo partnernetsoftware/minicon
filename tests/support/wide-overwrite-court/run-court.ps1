@@ -1,10 +1,15 @@
 # Same-court comparison: run the misalignment fixture under each backend,
 # wait for the sentinel, capture parser state and pixels, kill the window.
 param([string]$Backend)  # "agent" | "conpty" | "rust-console"
-$exe = "D:\dev\partnernetsoftware\minicon\target\debug\minicon.exe"
-$fix = "$PSScriptRoot\misalign-fixture.ps1"
+# A court run from inside an older MiniCon tab inherits that host's
+# AGENTERM_FORCE_CONSOLE_AGENT=1, which silently turns the conpty cell into an
+# agent cell. Clear it so each cell measures the backend it names.
+Remove-Item Env:AGENTERM_FORCE_CONSOLE_AGENT -ErrorAction SilentlyContinue
+Remove-Item Env:FORCE_CONSOLE_AGENT -ErrorAction SilentlyContinue
+$exe = (Resolve-Path "$PSScriptRoot\..\..\..\target\debug\minicon.exe").Path
+$fix = "$PSScriptRoot\fixture.ps1"
 $ep  = "pipe:\\.\pipe\minicon-misalign-$Backend"
-$outdir = "$PSScriptRoot\court-$Backend"
+$outdir = Join-Path $env:TEMP "minicon-court-wide-$Backend"
 New-Item -ItemType Directory -Force $outdir | Out-Null
 
 $args = @()

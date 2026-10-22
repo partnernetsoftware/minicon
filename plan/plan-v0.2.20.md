@@ -63,12 +63,14 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │     live user-config journey was run (config injection has no test seam)
 ├── [v] {MOUSE} Qualify mouse input under rust-console
 │   done 2026-10-22: the court found a real defect — rust-console delivered
-│     zero mouse records while agent and ConPTY delivered identical
-│     press/release/wheel records; the provider's VT-to-record decoder had no
+│     zero mouse records while the agent delivered press/release/wheel
+│     records (clean ConPTY passes SGR through as VT key characters instead;
+│     an earlier ConPTY row was the agent via an inherited forcing variable,
+│     corrected); the provider's VT-to-record decoder had no
 │     mouse branch. Fixed by moving the SGR decoder + record mapping out of
 │     the console agent into the shared console_input module (F1-shaped
-│     seam: one decision, two transports). After: field-identical records on
-│     all three backends. Evidence: tests/support/mouse-court/ before/after
+│     seam: one decision, two transports). After: agent and rust-console
+│     deliver field-identical records. Evidence: tests/support/mouse-court/ before/after
 │     runs, rust_console_sgr_mouse_reports_become_native_mouse_records;
 │     record in PRD 24 backend selection
 ├── [_] {COURTS} Exact-artifact decision courts

@@ -1,10 +1,15 @@
 # Mouse court: drive the mouse fixture under one backend, inject press,
 # release and wheel at known cells, capture what the child received.
 param([string]$Backend)
-$exe = "D:\dev\partnernetsoftware\minicon\target\debug\minicon.exe"
-$fix = "$PSScriptRoot\mouse-fixture.ps1"
+# A court run from inside an older MiniCon tab inherits that host's
+# AGENTERM_FORCE_CONSOLE_AGENT=1, which silently turns the conpty cell into an
+# agent cell. Clear it so each cell measures the backend it names.
+Remove-Item Env:AGENTERM_FORCE_CONSOLE_AGENT -ErrorAction SilentlyContinue
+Remove-Item Env:FORCE_CONSOLE_AGENT -ErrorAction SilentlyContinue
+$exe = (Resolve-Path "$PSScriptRoot\..\..\..\target\debug\minicon.exe").Path
+$fix = "$PSScriptRoot\fixture.ps1"
 $ep  = "pipe:\\.\pipe\minicon-mouse-$Backend"
-$outdir = "$PSScriptRoot\mouse-$Backend"
+$outdir = Join-Path $env:TEMP "minicon-court-mouse-$Backend"
 New-Item -ItemType Directory -Force $outdir | Out-Null
 
 $args = @()

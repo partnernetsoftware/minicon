@@ -307,7 +307,10 @@ rewrite hits — ran under all three backends on Windows x64 build 20348:
   continuation blanked — columns stay where the application put them.
   Correct.
 - classic ConPTY and the console agent (same console-buffer semantics):
-  parser state `#########取rest` — the following text shifted left one cell.
+  parser state shifted — the agent cell `#########取rest`, the ConPTY cell
+  (re-measured with the court no longer inheriting a host tab's
+  `AGENTERM_FORCE_CONSOLE_AGENT=1`, which had silently turned the first
+  ConPTY run into a second agent run) `#########读取rest`, matching the wire.
 - the raw ConPTY wire, captured through `minicon-platform::pty` directly
   (`wide-overwrite-court/wire-probe`), contains
   `\r\n#########读取rest\x1b[K`: the repaint **resurrects the overwritten
