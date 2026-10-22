@@ -4456,6 +4456,36 @@ mod tests {
         );
     }
 
+    /// DeepSeek OAuth uses the same one content panel as Ctrl+click.
+    #[test]
+    fn oauth_authorize_reuses_the_browser_content_panel() {
+        let url = browser::oauth_authorize_load(
+            "https://platform.deepseek.com/oauth/authorize",
+            "http://127.0.0.1/callback",
+            &["127.0.0.1"],
+        )
+        .expect("allowlisted redirect");
+        let mut workspace = workspace::Workspace::default();
+        let mut browsers = SessionStore::default();
+        assert!(ConApp::handoff_http_link(&mut workspace, &mut browsers, &url));
+        assert!(ConApp::handoff_http_link(&mut workspace, &mut browsers, &url));
+        let browser_tabs: Vec<_> = workspace
+            .nodes()
+            .iter()
+            .filter(|node| node.kind == workspace::TabKind::Browser)
+            .collect();
+        assert_eq!(browser_tabs.len(), 1);
+        assert_eq!(
+            browsers
+                .get(&browser_tabs[0].id)
+                .unwrap()
+                .panel()
+                .url
+                .as_deref(),
+            Some(url.as_str())
+        );
+    }
+
     /// The advanced TERM override is validated on load (terminfo-name
     /// alphabet, bounded length), survives the config document round trip,
     /// and an unusable value falls back to the absent default.
