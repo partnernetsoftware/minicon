@@ -297,6 +297,41 @@ versus `screenshot-pane` must be compared to split parser-state loss from
 paint-path loss. Reproduction belongs to the 0.2.20 default-decision
 evidence in [the roadmap](../plan/plan-v0.2.x-product-roadmap.md).
 
+**Attributed 2026-10-22 (classic-path wire, not `minicon-console` and not
+this product's parser).** A distilled same-court fixture
+(`tests/support/wide-overwrite-court/`) that overwrites the lead cell of a
+wide character with ASCII — the shape every CJK/box-drawing status-line
+rewrite hits — ran under all three backends on Windows x64 build 20348:
+
+- `rust-console`: parser state `######### 取rest` with the orphaned
+  continuation blanked — columns stay where the application put them.
+  Correct.
+- classic ConPTY and the console agent (same console-buffer semantics):
+  parser state `#########取rest` — the following text shifted left one cell.
+- the raw ConPTY wire, captured through `minicon-platform::pty` directly
+  (`wide-overwrite-court/wire-probe`), contains
+  `\r\n#########读取rest\x1b[K`: the repaint **resurrects the overwritten
+  wide character** from its orphaned trailing cell, so the stream disagrees
+  with what the application drew. Fed byte-for-byte to the owned parser, that
+  wire renders exactly as sent (pinned by
+  `overwriting_a_wide_lead_blanks_the_orphan_and_keeps_columns` in
+  `third_party/vt100/src/row.rs`, which fails under a wide-detection
+  mutation), and the application's own bytes render correctly — the parser is
+  faithful at both boundaries; the corruption enters on the classic path's
+  wire.
+
+Repeated partial wide-cell overwrites therefore accumulate column drift on
+the classic path, which reproduces all three symptom classes (stale
+right-column chars, merged/dropped glyphs, shifted indents) in an
+application that constantly rewrites CJK/box-drawing lines — the owner's
+Claude Code workload. Scope honesty: the fixture is a distilled proxy, not
+the owner's exact session, and the exact conhost repaint framing varies
+run to run; the defect class and its boundary are established, the specific
+upstream conhost mechanism is not ours to fix. Consequence: no MiniCon
+parser or paint fix applies; the repair path is backend selection — this
+record is direct evidence for the 0.2.20 default decision, and the
+`rust-console` preview is the workaround today (`--feature rust-console`).
+
 Source audit at 56b3b67: MiniCon uses the owned `vt100` screen/parser and `vte`
 grammar. The name does not restrict the implementation to the original VT100:
 the screen includes alternate buffers, cursor addressing, scrolling, bracketed

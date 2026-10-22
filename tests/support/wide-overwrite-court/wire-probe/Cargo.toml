@@ -1,0 +1,11 @@
+[package]
+name = "wire-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+minicon-platform = { path = "../../../../crates/minicon-platform", default-features = false, features = ["pty"] }
+vt100 = { path = "../../../../third_party/vt100" }

@@ -37,16 +37,20 @@ it does not pre-decide the switch.
 
 ```text
 Outcome: users get the best evidenced Windows backend default, with a named recovery path
-├── [_] {BUG} Reproduce and attribute the file-tool output misalignment
-│   invariant: symptoms stay UNKNOWN until attributed at original-bytes / wire /
-│     parser-state / pixel; classic and rust-console compared in the same court
-│   evidence: ui-snapshot backend identity + capture-pane vs screenshot-pane split
-│     (parser-state loss vs paint-path loss), fixture distilled from the owner
-│     screenshot symptoms; a fix carries a failing-first test in the owning layer
-│   safe failure: an unreproduced symptom stays recorded UNKNOWN with its
-│     negative-control evidence; the default decision then weighs it explicitly
-│   dependency: PRD 24.01 TRACE discipline; non-goal: guess-fixes in paint code
-│     without a boundary attribution
+├── [v] {BUG} Reproduce and attribute the file-tool output misalignment
+│   done 2026-10-22: attributed to the classic-path WIRE — ConPTY/agent
+│     repaints resurrect a half-overwritten wide character from its orphaned
+│     trailing cell (raw wire capture `#########读取rest` for an app that
+│     wrote nine `#` over 读's lead), shifting following columns; the owned
+│     parser is faithful at both boundaries (app bytes render correctly,
+│     wire bytes render as sent) and rust-console is correct end to end.
+│     Evidence: tests/support/wide-overwrite-court/ (fixture, three-backend
+│     court, wire probe) + mutation-proven parser pin
+│     overwriting_a_wide_lead_blanks_the_orphan_and_keeps_columns
+│     (third_party/vt100/src/row.rs); record upserted in PRD 24.01.
+│     Scope honesty: distilled proxy of the owner's session; the defect class
+│     and boundary are established, the upstream conhost mechanism is not
+│     ours to fix — the repair path is backend selection ({DECIDE} evidence)
 ├── [_] {BACKEND-KEY} Persisted backend preference for new sessions
 │   invariant: `backend` key in minicon.json selects the backend for NEW
 │     sessions only; invalid or unavailable values fall back to the product

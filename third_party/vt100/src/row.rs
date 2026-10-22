@@ -532,3 +532,35 @@ impl Row {
         (prev_pos, prev_attrs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Parser;
+
+    /// Overwriting a wide character's lead cell must blank the orphaned
+    /// continuation cell, never resurrect or shift the pair. This is the
+    /// parser half of the 2026-10-22 misalignment attribution: the classic
+    /// Windows path's repaint re-emits a half-overwritten wide character
+    /// (`#########读取rest` on the ConPTY wire for an application that wrote
+    /// nine `#` over the lead of `读`), while this parser — fed the
+    /// application's own bytes — must produce the blank-orphan layout that
+    /// keeps every following column where the application put it. The guarded
+    /// mechanism is the overwrite branch in `Screen`'s text write that blanks
+    /// the continuation neighbour.
+    #[test]
+    fn overwriting_a_wide_lead_blanks_the_orphan_and_keeps_columns() {
+        let mut parser = Parser::new(4, 88, 0);
+        parser.process("ow-cjk :读取rest".as_bytes());
+        parser.process(b"\x1b[1;1H#########");
+        let row: String = parser.screen().rows(0, 88).next().unwrap();
+        assert_eq!(row, "######### 取rest");
+
+        // The faithful rendering of the corrupted classic-path wire is also
+        // pinned: the defect is upstream of this parser, and normalizing it
+        // here would hide a wire bug instead of fixing one.
+        let mut wire = Parser::new(4, 88, 0);
+        wire.process("#########读取rest".as_bytes());
+        let wire_row: String = wire.screen().rows(0, 88).next().unwrap();
+        assert_eq!(wire_row, "#########读取rest");
+    }
+}
