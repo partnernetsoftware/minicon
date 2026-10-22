@@ -13,11 +13,16 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ```text
 minicon workspace and input
+├── Terminology (Tab · Content/Workspace panel · Chrome panel · pane)
 ├── Tab and window naming (user name vs derived label vs OSC title)
 ├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
-├── Host UI
+├── Tab kinds and content panels (1 tab ↔ 1 content panel now; 1:N later)
+│   ├── terminal tab → one terminal content panel (PTY view)
+│   └── [-] browser tab → one browser content panel (shell + URL handoff; wry later)
+├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
-│   ├── sent-history panel (0.2.6)
+│   │     (panel toggle = chrome sent-history column — not a content panel)
+│   ├── sent-history panel (chrome; 0.2.6) · settings panel (chrome)
 │   ├── Updates section (0.2.7 check-for-updates; 0.2.8 correctness leaves)
 │   └── composer + status bar
 ├── External composer input (exactly one focus owner)
@@ -53,7 +58,67 @@ flowchart LR
     Term["planned terminal profile / advanced TERM choice"] --> Contract["PRD 35 identity / implemented capabilities"]
     Contract --> Spawn["new session environment / truthful query replies"]
     Term --> Save
+    Strip["Tab strip"] --> TermTab["terminal tab"]
+    Strip --> BrTab["browser tab"]
+    TermTab -->|"now 1:1"| TermCP["content panel = PTY view"]
+    BrTab -->|"now 1:1"| BrCP["content panel = page surface"]
+    TermTab -.->|"future 1:N"| Multi["split content panels"]
+    Chrome["chrome panels"] --> Hist["sent-history panel"]
+    Chrome --> Sett["settings panel"]
+    Hist -.->|"not a content panel"| Strip
 ```
+
+## Terminology (naming decision, 2026-10-23)
+
+Commissioner re-nail and machine-room steer: the word **panel** had two live
+meanings. This glossary is the explicit ruling. Do not silently rename shipped
+chrome identifiers (`history_panel`, `panel_toggle`, `settings_panel`,
+`paint_history_panel`, …) — qualify them as **chrome** when the bare word
+would collide with a tab-internal layout cell.
+
+| Term | Meaning | Not |
+| --- | --- | --- |
+| **Tab** | A work unit in the host strip: peer to a terminal tab or a browser tab. Stable id, open/close/switch/title lifecycle. | A layout cell inside a tab; a chrome sidebar |
+| **Content panel** (alias **Workspace panel**) | A layout cell *inside* one tab. **Now:** exactly one per tab (1:1). **Future:** one tab may hold many (split / side-by-side). A terminal tab's content panel is its PTY view; a browser tab's is its page surface (`BrowserPanel` in `src/browser.rs`). | Host chrome sidebars; the header "panel toggle" |
+| **Chrome panel** | A host-chrome sidebar or overlay owned by the window, not by a tab's layout: the **sent-history panel**, the **settings panel**, and the header **panel toggle** that opens the history column. When older prose says bare "panel" for these, read it as chrome/host. Snapshot and code keys stay `history_panel` / `settings_panel` / `panel_toggle`. | A content panel inside a tab |
+| **pane** (code / mux) | tmux-shaped address for a tab's terminal content area: `capture-pane`, `list-panes`, target `.pane`. **Today** pane 0 **is** that tab's single content panel (PTY view). A nonzero pane index is still a bounded error until a multi-content-panel layout engine exists. Not a synonym for chrome panel. | Chrome sent-history / settings |
+
+Invariant: a chrome panel never becomes a content panel by renaming, and a
+content panel never borrows the chrome `history_panel` / `settings_panel`
+identifiers. Plan leaf:
+[plan-browser-tabs.md](../plan/plan-browser-tabs.md). Mux pane mapping stays
+owned by [PRD_02_31](PRD_02_31_v0_2_horizon.md); this module owns the product
+names above.
+
+## Tab kinds and content panels
+
+- [v] a **tab** is the work unit. Terminal tabs and browser tabs share one
+  strip and the same open / close / switch / title lifecycle
+  (`workspace::TabKind::{Terminal, Browser}`). There is **no** system tray
+  entry for show/hide/quit or for opening a browser surface.
+- [v] **now (default model): 1 tab ↔ 1 content panel.** A terminal tab hosts
+  exactly one terminal content panel (its PTY view). A browser tab hosts
+  exactly one browser content panel (`BrowserTab` / `BrowserPanel`). Evidence:
+  `workspace` kind tests; `browser::tests::a_browser_tab_hosts_exactly_one_panel`;
+  Ctrl+Shift+O / `list-tabs` `kind=browser` on tip `89c404f`.
+- [_] **future: 1 tab → many content panels** (split / side-by-side inside one
+  tab). The layout engine is a later leaf (`Bx` in the browser-tabs plan), not
+  a second windowing model and not a chrome-panel change. Until it ships,
+  mux/control still refuse nonzero pane indices
+  ([PRD_02_31](PRD_02_31_v0_2_horizon.md)).
+- [-] **browser content panel — shell and URL handoff.** The tab shell paints
+  a peer of a terminal tab and can store an http(s) URL for a later wry
+  surface. Ctrl+click on an http(s) token in the terminal opens or focuses
+  that one browser content panel and **must not** call `host_open` / the OS
+  default browser. wry navigation, OAuth, dashboard and multi-panel layout
+  remain follow-ups in [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
+  Renderer choice (direct-wry helper, no wry linked into core `minicon`) stays
+  recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
+- [v] **chrome panels stay chrome.** The right-side **sent-history panel**,
+  the **settings panel**, and the header **panel toggle** / `Ctrl+Shift+H`
+  continue to mean host chrome (see Host UI below). Their evidence strings and
+  snapshot keys are unchanged; only the glossary above disambiguates them from
+  content panels.
 
 ## Tab and window naming
 
@@ -184,9 +249,12 @@ flowchart LR
 
 ## Host UI
 
-Host UI is MiniCon-drawn controls around the terminal grid: the tab tree, the
-header tools, and the composer. It is not the browser, and it is not layout.
-`Layout` is only the geometry of those regions.
+Host UI is MiniCon-drawn **chrome** around the active tab's content panel(s):
+the tab tree, the header tools, and the composer. It is not the tab-internal
+layout engine, and a browser tab's page surface is a **content panel**, not
+Host UI. `Layout` is only the geometry of the chrome regions (and today the
+single content-panel inset). See **Terminology** above: bare "panel" in this
+section means a **chrome panel** unless it says content/workspace panel.
 
 - [v] the host UI owns a vertically scrollable left tree with three row-level
   buttons on the active or hovered row — edit (rename), new child and close,
@@ -195,7 +263,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   clicked row (owner request 2026-10-22, evidence
   `a_collapsed_rail_never_closes_a_tab_by_a_row_click` ordering asserts in
   src/ui.rs) — and a header of four tools: New, Settings, and the pair of
-  chrome toggles for the left sidebar and the right panel. A distinct bottom
+  chrome toggles for the left sidebar and the right chrome panel (sent-history). A distinct bottom
   composer owns input, Send and Newline, and a bottom status bar shows a
   fixed-width `L###:C###` readout that follows the grid crosshair (the hovered
   cell) and falls back to the text cursor. Two decisions here each have one
@@ -237,13 +305,13 @@ header tools, and the composer. It is not the browser, and it is not layout.
   Turning `objc2` on for the unix pixel-window feature would drag it into Linux
   builds, so it is a manifest-and-size decision for its own change, not a
   rider on this one. Recorded as a named gap, not a claim.
-- [v] a collapsible right-side **sent-history panel** (0.2.6) lists the newest
+- [v] a collapsible right-side **sent-history panel** (chrome panel; 0.2.6) lists the newest
   lines the composer has sent and refills the composer when a row is clicked.
   The list is a view over the composer's one sent-history store — a row and an
   Up/Down recall at the same offset are the same line — and a click uses that
   same recall contract (keeps a half-typed draft). It toggles from the header's
-  panel control or `Ctrl+Shift+H`; both toggles read left-to-right as the
-  columns they control. The panel takes a real column and the terminal is
+  chrome panel control or `Ctrl+Shift+H`; both toggles read left-to-right as the
+  columns they control. The chrome panel takes a real column and the terminal is
   re-inset, never overlaid; a blank area below the list is reserved for future
   `{LOOP}`/goal controls. `ui-snapshot` publishes `history_panel` and the
   `panel_toggle` rect.
@@ -267,7 +335,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   (`{NOTES-FEEDBACK}`) — deferred with this note because the harness
   context plan's `{CTX}` leaf it would ride is still open; it returns as an
   explicit Send-only affordance when that design lands.
-- [v] the sent-history panel's two follow-ups landed in 0.2.9. A row now carries
+- [v] the sent-history chrome panel's two follow-ups landed in 0.2.9. A row now carries
   the **destination** it was sent to: the composer records the tab's tree label
   with each line (`ComposerState::remember(entry, destination)`), so the row says
   which tab a command came from even after that tab is gone; the label is painted
@@ -277,7 +345,7 @@ header tools, and the composer. It is not the browser, and it is not layout.
   against the same clamped window the paint used — `ui-snapshot` publishes the
   effective offset as `history_panel.scroll`. The notes scratchpad shipped
   later in 0.2.13; GitHub #5 still tracks its unimplemented per-tab context.
-- [v] the settings icon opens a lightweight in-app panel, anchored under the
+- [v] the settings icon opens a lightweight in-app **settings panel** (chrome), anchored under the
   header on the sidebar rather than a centered modal. It carries four sections:
   interface language (English / 简 / 繁, the active one filled with the accent),
   font size (−/100%/+), a theme picker of four swatches (Neutral / Docs Ink /

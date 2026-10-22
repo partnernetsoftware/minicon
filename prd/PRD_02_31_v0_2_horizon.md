@@ -42,10 +42,12 @@ process, exactly like the existing `--control` endpoint.
 │   │   ├── model mapping: the running MiniCon instance IS the one tmux
 │   │   │     session (a name to compare against, not a lookup -- there is
 │   │   │     exactly one, and it is this process); a tmux "window" is a
-│   │   │     MiniCon tab; a tmux "pane" is that tab's own terminal content
-│   │   │     area -- pane 0 always exists and IS the tab's PTY view, but
-│   │   │     `split-window` (a second pane inside one window) is not
-│   │   │     implemented, so addressing tops out at pane 0
+│   │   │     MiniCon tab; a tmux "pane" is that tab's **content panel**
+│   │   │     (PRD_02_25 Terminology) -- today pane 0 always exists and IS
+│   │   │     the tab's single terminal content panel / PTY view, but
+│   │   │     `split-window` (a second content panel inside one tab) is not
+│   │   │     implemented, so addressing tops out at pane 0. Chrome panels
+│   │   │     (sent-history / settings) are not mux panes
 │   │   ├── reuses PRD_02_26's process-lifetime --control endpoint
 │   │   └── #decision not a new daemon; no session store outside the
 │   │         process; not a tmux control-mode (`-C`) server
@@ -54,9 +56,10 @@ process, exactly like the existing `--control` endpoint.
 │   │   ├── [no] persistent session independent of the MiniCon process
 │   │   ├── [no] a general multiplexing config language (tmux.conf-equivalent)
 │   │   ├── [no] pane splits/layout verbs (`split-window`, `select-pane`,
-│   │   │     resize) -- each tab has exactly one pane (its own terminal
-│   │   │     area, index 0); a target naming a nonzero pane is a bounded
-│   │   │     error, not silently remapped
+│   │   │     resize) -- each tab has exactly one content panel / pane
+│   │   │     (terminal PTY view, index 0) until PRD_02_25's future 1:N
+│   │   │     content-panel layout ships; a target naming a nonzero pane
+│   │   │     is a bounded error, not silently remapped
 │   │   ├── [no] multiple named sessions -- a `-t` target's session component
 │   │   │     must match the one implicit session name or is a bounded error
 │   │   └── [no] tmux's full `-F` format-string language -- only the
@@ -623,6 +626,18 @@ horizon yet.
   bounded tools + tmux-shaped mux" product boundary in this horizon. No work
   starts on it until a materially broader product mandate exists; recorded
   here only so it is not re-proposed from a blank slate.
+
+**Browser tabs and content panels (product names owned by PRD_02_25; 2026-10-23).**
+The overnight browser direction is **not** the 0.3.x workbench GUI above and
+does **not** reopen tray or CDP. Product surface: browser tabs are first-class
+peers of terminal tabs in the same strip; **now** 1 tab ↔ 1 **content panel**,
+**future** 1 tab → many content panels. Host **chrome panels** (sent-history /
+settings / panel toggle) stay chrome — see PRD_02_25 Terminology; do not
+conflate them with content panels. Renderer rule on this page still holds:
+prefer direct-wry via a helper / shared adapter, never link wry/tao into core
+`minicon`, never OS-default-browser for terminal-originated http(s). Sequencing
+and leaf status live in [plan-browser-tabs.md](../plan/plan-browser-tabs.md);
+workspace owns the tab/content-panel requirements and evidence.
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the

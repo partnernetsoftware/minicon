@@ -1,6 +1,8 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: design, plus a tab shell and proxy hook (2026-10-23). **Commissioner re-nail:** no tray; browser = terminal tab peer; panel composition later. wry navigation is not in this cut. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
+Status: design, plus a tab shell and proxy hook (2026-10-23). **Commissioner re-nail:** no tray; browser = terminal tab peer; content-panel composition later. wry navigation is not in this cut. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
+
+**Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
 Renamed from `plan-wry-tray-browser.md` (tray-era title/content retired).
 
@@ -32,9 +34,9 @@ composer / input AI assist (future)
 └── [ ] API key entry stays in MiniCon settings (no browser required);
          OAuth tokens land via bridge from the wry tab
 
-panel composition (direction only — not this leaf)
-├── [ ] **now (default model):** 1 tab ↔ 1 panel (tab and panel are 1:1)
-└── [ ] **future:** 1 tab → many panels (split / side-by-side inside one tab)
+content-panel composition (direction only — not this leaf)
+├── [ ] **now (default model):** 1 tab ↔ 1 content panel (1:1)
+└── [ ] **future:** 1 tab → many content panels (split / side-by-side inside one tab)
 ```
 
 **废 tray（硬规则）：** 不设系统托盘入口；show / hide / quit **不靠托盘**。
@@ -61,8 +63,8 @@ minicon (main UI — tab strip owns lifecycle)
   │ OSC-8 / Ctrl+click / "open browser"
   │   → open or focus a browser tab (never xdg-open / ShellExecute for http(s))
   │
-  │ [now]  each tab hosts exactly one panel (1:1)
-  │ [later] one tab may host multiple panels (split / side-by-side)
+  │ [now]  each tab hosts exactly one content panel (1:1)
+  │ [later] one tab may host multiple content panels (split / side-by-side)
   │
   └─ optional: minicon-browser helper process (direct-wry, not linked into core)
        IPC / embed bridge back into the tab shell — UX is tab, not tray+外窗
@@ -83,10 +85,12 @@ minicon (main UI — tab strip owns lifecycle)
 3. **Ctrl+click / open link / OAuth login** still open **built-in wry**
    (never the OS default browser). Landing point is **open or focus a
    browser tab**, symmetric with opening a terminal tab.
-4. **Panel direction (staged; this leaf does not ship a panel layout engine).**
-   - **Now (default):** one tab ↔ one panel (1:1).
-   - **Future:** one tab may hold multiple panels (split / side-by-side) so
+4. **Content-panel direction (staged; this leaf does not ship a layout engine).**
+   - **Now (default):** one tab ↔ one content panel (1:1).
+   - **Future:** one tab may hold multiple content panels (split / side-by-side) so
      the capability surface can grow without a second windowing model.
+   - Host **chrome panels** (sent-history / settings) are out of this rule —
+     they stay chrome (PRD_02_25).
 5. **Separate process / subcommand OK for isolation.** Candidate name:
    `minicon browser` or sibling `minicon-browser`. Core `minicon` stays free
    of wry/tao linkage so a missing WebView runtime cannot take down the
@@ -122,10 +126,10 @@ minicon (main UI — tab strip owns lifecycle)
 
 ```text
 [-] B0 shell: browser tab is a root peer of a terminal tab (Ctrl+Shift+O;
-       list-tabs kind=browser). One panel. No tray. wry surface still absent
-[_ ] B1 URL handoff: core minicon Ctrl+click / open-browser → open or focus
-       a browser tab (IPC/argv to wry helper if used); prove http URL never
-       hits xdg-open in that path
+       list-tabs kind=browser). One content panel. No tray. wry surface still absent
+[-] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
+       one browser content panel and stores the URL. That path does not call
+       host_open. Non-http is ignored. wry navigation still absent
 [-] B2 proxy hook reserved: browser.http_proxy / browser.https_proxy /
        browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
        shell. Not yet applied to a wry/WebKit network session
@@ -133,8 +137,8 @@ minicon (main UI — tab strip owns lifecycle)
        token hand-back to core via bridge (no token in UI chrome labels)
 [_ ] B4 dashboard + file preview + wasm host pages (assets/, include_bytes!)
 [_ ] B5 upsert PRD_02_3x when streaming/workbench blockers clear
-[_ ] Bx later (not this leaf): panel layout engine — still 1:1 tab↔panel by
-       default; then multi-panel inside one tab
+[_ ] Bx later (not this leaf): content-panel layout engine — still 1:1
+       tab↔content panel by default; then multi-content-panel inside one tab
 ```
 
 Non-goals for this overnight leaf: system tray of any kind, shipping a signed
@@ -199,8 +203,9 @@ secrets, or enabling assist in the composer UI. Design + hooks only.
 | Renderer | direct-wry; helper process OK; core does not link wry/tao (PRD_02_31) |
 | Product surface | **browser tabs peer to terminal tabs** (same bar / lifecycle) |
 | System tray | **none** — show/hide/quit not tray-driven |
-| Panel model now | **1 tab ↔ 1 panel** |
-| Panel model future | **1 tab → many panels** (layout engine later; not this leaf) |
+| Content-panel model now | **1 tab ↔ 1 content panel** |
+| Content-panel model future | **1 tab → many content panels** (layout engine later; not this leaf) |
+| Chrome panels | sent-history / settings — host chrome; not content panels (PRD_02_25) |
 | Terminal Ctrl+click / open browser | built-in wry **browser tab** only for http(s) |
 | System default browser | not used for terminal-originated http(s) |
 | Proxy UI | deferred; config/env hook required in design |

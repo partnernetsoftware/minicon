@@ -33,7 +33,7 @@ MiniCon — one-file local terminal
 │   │       └── [-] modern TUI compatibility → prd/PRD_02_24_01_tui_compatibility.md
 │   ├── [-] owned Rust Windows console backend: minicon-console
 │   │   └── prd/PRD_02_34_windows_console_backend.md
-│   ├── tab tree, composer, IME, selection, notes, settings and manual update
+│   ├── tab tree, content panels, composer, IME, selection, notes, settings and manual update
 │   │   └── prd/PRD_02_25_con_workspace.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
@@ -117,7 +117,7 @@ flowchart LR
 | Run and render real local shells | [Terminal](prd/PRD_02_24_con_terminal.md) | real-child/rendering journeys; fail only the affected session |
 | Keep modern agent TUIs readable | [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md) | versioned real agents, bounded source/wire/state/pixel traces and provider-specific claims |
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
-| Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, notes/settings and input journeys; no stale targeting |
+| Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
@@ -171,6 +171,12 @@ flowchart LR
   open. The 10 MiB intent is not achieved by this release. Measurements and
   retained-frame/native-host investigations belong to
   [delivery](prd/PRD_02_27_con_delivery.md).
+- [-] **Built-in browser tabs (content panels).** Tab shell and proxy hook
+  reserved; Ctrl+click http(s) → browser content panel (not OS default).
+  wry navigation and 1:N content-panel layout are later.
+  Names: [Workspace terminology](prd/PRD_02_25_con_workspace.md#terminology-naming-decision-2026-10-23);
+  sequence: [plan-browser-tabs](plan/plan-browser-tabs.md); renderer choice:
+  [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).
 - [-] **macOS host-UI readability** remains open, including tab/header and
   composer-button text. [Workspace](prd/PRD_02_25_con_workspace.md) owns the
   zoom/text/padding follow-up.
