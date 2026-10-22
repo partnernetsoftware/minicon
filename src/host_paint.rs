@@ -1017,7 +1017,7 @@ impl ConApp {
     }
 
     /// Browser tab shell: same sidebar as the terminal host, one content panel.
-    /// wry is not created. The proxy line is the reserved hook, not a setting.
+    /// wry is not linked here. The proxy line is the reserved hook, not a setting.
     pub(crate) fn paint_browser_shell(
         &self,
         pixels: &mut [u32],
@@ -1137,18 +1137,23 @@ impl ConApp {
             &mut surface,
             x,
             140,
-            "wry page loads are not linked yet",
+            "page host: wry lives in MINICON_BROWSER_BIN, not this process",
             t.muted,
             body,
             content_width,
         );
-        let url = self
+        let tab = self
             .workspace
             .active()
-            .and_then(|id| self.browsers.get(&id))
+            .and_then(|id| self.browsers.get(&id));
+        let url = tab
             .and_then(|tab| tab.panel().url.clone())
             .unwrap_or_else(|| "(no url)".to_owned());
+        let load = tab
+            .map(|tab| tab.load_summary())
+            .unwrap_or_else(|| "page: idle".to_owned());
         paint_host_ui_text(&mut surface, x, 176, &url, t.text, body, content_width);
+        paint_host_ui_text(&mut surface, x, 204, &load, t.muted, body, content_width);
     }
 
     pub(crate) fn paint_empty_workspace(

@@ -820,6 +820,9 @@ struct ConApp {
     /// Browser tabs have no PTY. Keyed by the same [`workspace::TabId`] as
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
+    /// Child wry page host for the one browser content panel.
+    /// `MINICON_BROWSER_BIN` names it. Unset stays Unavailable, not `host_open`.
+    browser_page: Option<std::process::Child>,
     /// Settings inherited when an empty workspace creates its next terminal.
     /// Closing the final tab updates this before the terminal is dropped, so
     /// the greeting page is a lifecycle boundary rather than a settings reset.
@@ -994,6 +997,10 @@ impl Drop for ConApp {
         }
         self.pending_control
             .cancel_all("terminal window closed while control request was pending");
+        if let Some(mut child) = self.browser_page.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -1301,6 +1308,7 @@ impl ConApp {
             workspace,
             sessions,
             browsers: SessionStore::default(),
+            browser_page: None,
             session_seed,
             notes: composer::ComposerState::default(),
             notes_focused: false,
@@ -2050,8 +2058,47 @@ impl ConApp {
         if !Self::handoff_http_link(&mut self.workspace, &mut self.browsers, url) {
             return false;
         }
+        self.launch_page_host(url);
         self.mark_host_ui_full();
         true
+    }
+
+    /// Ask the wry page host to load `url` into the active browser content panel.
+    fn launch_page_host(&mut self, url: &str) {
+        if let Some(mut child) = self.browser_page.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let Some(program) = std::env::var_os("MINICON_BROWSER_BIN") else {
+            self.note_page_load(browser::PageLoad::Unavailable {
+                url: url.to_owned(),
+                reason: "browser-host-not-configured".to_owned(),
+            });
+            return;
+        };
+        match browser::spawn_page_host(std::path::Path::new(&program), url) {
+            Ok(child) => {
+                self.browser_page = Some(child);
+                self.note_page_load(browser::PageLoad::Loading {
+                    url: url.to_owned(),
+                });
+            }
+            Err(reason) => {
+                self.note_page_load(browser::PageLoad::Unavailable {
+                    url: url.to_owned(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    fn note_page_load(&mut self, load: browser::PageLoad) {
+        let Some(id) = self.workspace.active() else {
+            return;
+        };
+        if let Some(tab) = self.browsers.get_mut(&id) {
+            tab.note_load(load);
+        }
     }
 
     fn open_browser_tab_contained(&mut self, window: &PixelWindow) {

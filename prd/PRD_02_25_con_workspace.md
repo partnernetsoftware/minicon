@@ -111,8 +111,14 @@ names above.
   surface. Ctrl+click on an http(s) token in the terminal opens or focuses
   that one browser content panel and does not call `host_open` / the OS
   default browser. Evidence: `browser::tests::http_links_are_browser_urls_and_other_schemes_are_not_opened`;
-  `tests::http_handoff_reuses_one_browser_content_panel`. wry navigation,
-  OAuth, dashboard and multi-content-panel layout remain follow-ups in
+  `tests::http_handoff_reuses_one_browser_content_panel`. The same panel
+  then asks `MINICON_BROWSER_BIN --load <url>` to navigate; core `minicon`
+  does not link wry. A missing host is `PageLoad::Unavailable`
+  (`browser-host-not-configured`), not `host_open`. Evidence:
+  `browser::tests::page_host_request_is_the_helper_not_the_system_browser`,
+  `browser::tests::spawn_page_host_passes_the_url_to_the_helper`.
+  A linked wry surface, OAuth, dashboard and multi-content-panel layout
+  remain follow-ups in
   [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
   Renderer choice (direct-wry helper, no wry linked into core `minicon`) stays
   recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
