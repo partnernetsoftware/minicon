@@ -36,7 +36,7 @@ COMMON_TESTS = (
     "minicon_control",
     "minicon_blackbox",
 )
-LINUX_TESTS = COMMON_TESTS + ("minicon_accessibility_linux",)
+LINUX_TESTS = COMMON_TESTS
 THROUGHPUT_TEST = ("minicon_throughput",)
 MAX_CELL_ARCHIVE_BYTES = 64 * 1024 * 1024
 

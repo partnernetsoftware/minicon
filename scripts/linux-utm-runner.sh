@@ -67,8 +67,7 @@ case "$MODE" in
   status) ;;
   test)
     for prefix in minicon minicon_core minicon_alignment minicon_console_agent \
-      minicon_load_portability minicon_control minicon_blackbox \
-      minicon_accessibility_linux; do
+      minicon_load_portability minicon_control minicon_blackbox; do
       copy_test_prefix "$prefix"
     done
     ;;

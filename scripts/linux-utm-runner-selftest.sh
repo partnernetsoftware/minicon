@@ -20,7 +20,7 @@ make_executable() {
 make_executable "$target/minicon"
 for name in minicon minicon_core minicon_alignment minicon_console_agent \
   minicon_load_portability minicon_control minicon_blackbox \
-  minicon_accessibility_linux minicon_throughput minicon_unowned; do
+  minicon_throughput minicon_unowned; do
   make_executable "$target/deps/$name-abcdef"
 done
 
@@ -50,8 +50,7 @@ PAYLOAD_LIST="$scratch/test.list" MINICON_REPO_ROOT="$scratch/repo" \
   MINICON_UTM_COURT_CLI="$scratch/court" \
   "$SCRIPT_DIR/linux-utm-runner.sh" lnx-x86_64 "$target_rel" test
 for name in minicon minicon_core minicon_alignment minicon_console_agent \
-  minicon_load_portability minicon_control minicon_blackbox \
-  minicon_accessibility_linux; do
+  minicon_load_portability minicon_control minicon_blackbox; do
   grep -qx "./target/debug/deps/$name-abcdef" "$scratch/test.list"
 done
 if grep -Eq 'minicon_(throughput|unowned)-' "$scratch/test.list"; then

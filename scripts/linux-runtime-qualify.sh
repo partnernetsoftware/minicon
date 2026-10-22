@@ -96,7 +96,8 @@ case "$MODE" in
     run_test minicon_load_portability
     run_gui_test minicon_control
     run_gui_test minicon_blackbox
-    run_gui_test minicon_accessibility_linux
+    # minicon_accessibility_linux removed with AT-SPI publisher (8629309);
+    # keeping the name here made qualify fail missing-harness (false red).
     ;;
   rss)
     run_gui_test_exact minicon_control host_process_rss_stays_within_named_budget
