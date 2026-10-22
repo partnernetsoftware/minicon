@@ -269,6 +269,22 @@ pub fn webkit_proxy_env(proxy: &BrowserProxy) -> Vec<(&'static str, String)> {
     pairs
 }
 
+/// WebKit proxy names the resolved hook does not set. A wry host must remove
+/// these so a parent `http_proxy` cannot leak into the content panel.
+pub fn webkit_proxy_clear(proxy: &BrowserProxy) -> Vec<&'static str> {
+    let mut clear = Vec::new();
+    if proxy.http.is_none() {
+        clear.push("http_proxy");
+    }
+    if proxy.https.is_none() {
+        clear.push("https_proxy");
+    }
+    if proxy.no_proxy.is_none() {
+        clear.push("no_proxy");
+    }
+    clear
+}
+
 /// A finished page-host status. Exit 69 is the Unavailable contract.
 /// `None` means the host is still running.
 pub fn page_load_from_exit(url: &str, code: Option<i32>) -> PageLoad {
@@ -569,6 +585,14 @@ mod tests {
         std::fs::write(&program, script).unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        struct ClearParentHttps;
+        impl Drop for ClearParentHttps {
+            fn drop(&mut self) {
+                unsafe { std::env::remove_var("MINICON_BROWSER_HTTPS_PROXY") };
+            }
+        }
+        unsafe { std::env::set_var("MINICON_BROWSER_HTTPS_PROXY", "http://leak.test:9") };
+        let _clear = ClearParentHttps;
         let proxy = BrowserProxy {
             http: Some("http://127.0.0.1:9".into()),
             https: None,
@@ -605,6 +629,14 @@ mod tests {
                 ("http_proxy", "http://127.0.0.1:9".into()),
                 ("no_proxy", "localhost".into()),
             ]
+        );
+        assert_eq!(
+            webkit_proxy_clear(&BrowserProxy {
+                http: Some("http://127.0.0.1:9".into()),
+                https: None,
+                no_proxy: Some("localhost".into()),
+            }),
+            vec!["https_proxy"]
         );
     }
 
@@ -668,6 +700,7 @@ mod tests {
         let source = include_str!("wry_host.rs");
         assert!(source.contains(".with_url(url)"));
         assert!(source.contains("webkit_proxy_env"));
+        assert!(source.contains("webkit_proxy_clear"));
         assert!(!source.contains("xdg-open"));
         assert!(!source.contains("host_open"));
     }
