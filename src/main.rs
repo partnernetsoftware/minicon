@@ -301,6 +301,72 @@ struct ConConfig {
     /// the truthful modern default. It describes capabilities to applications
     /// and never selects a parser or native backend.
     term: Option<String>,
+    /// Windows backend preference for new sessions: `conpty`, `rust-console`
+    /// or `agent`. CLI `--feature` wins for its invocation; an unknown value
+    /// behaves as absent; a valid-but-unavailable choice keeps the default
+    /// and surfaces a visible notice (PRD 02.24 backend selection).
+    backend: Option<String>,
+}
+
+/// The backend vocabulary `minicon.json` accepts. Anything else behaves as
+/// absent — the same rule as `term`.
+fn valid_backend_choice(value: String) -> Option<String> {
+    matches!(value.as_str(), "conpty" | "rust-console" | "agent").then_some(value)
+}
+
+/// What the startup backend selection decided, as one testable value.
+#[derive(Debug, Eq, PartialEq)]
+struct BackendSelection {
+    /// Leave ConPTY selectable (do not force the console agent).
+    wants_conpty: bool,
+    /// New sessions select the owned rust-console provider.
+    wants_rust: bool,
+    /// A visible refusal for a valid-but-unusable preference.
+    notice: Option<String>,
+}
+
+/// One owner for "which Windows backend do new sessions get": CLI `--feature`
+/// wins, then the validated config `backend` key, then the classic default.
+/// `rust_available`/`windows` arrive as arguments so the decision is testable
+/// off-target; the caller passes the build facts.
+fn backend_selection(
+    cli_conpty: bool,
+    cli_rust: bool,
+    config_backend: Option<&str>,
+    rust_available: bool,
+    windows: bool,
+) -> BackendSelection {
+    let mut selection = BackendSelection {
+        wants_conpty: cli_conpty,
+        wants_rust: cli_rust,
+        notice: None,
+    };
+    if cli_conpty || cli_rust {
+        return selection;
+    }
+    let Some(choice) = config_backend else {
+        return selection;
+    };
+    if !windows {
+        selection.notice = Some(format!(
+            "config backend \"{choice}\" applies to Windows only; using this platform's default"
+        ));
+        return selection;
+    }
+    match choice {
+        "conpty" => selection.wants_conpty = true,
+        "rust-console" if rust_available => selection.wants_rust = true,
+        "rust-console" => {
+            selection.notice = Some(
+                "config backend \"rust-console\" is not available in this build; \
+                 using the default backend"
+                    .to_owned(),
+            );
+        }
+        // "agent" is the explicit spelling of the default.
+        _ => {}
+    }
+    selection
 }
 
 /// A usable TERM value: 1–64 bytes of the terminfo-name alphabet
@@ -358,6 +424,7 @@ fn config_from_bytes(bytes: &[u8]) -> ConConfig {
             .and_then(ui::UiLanguage::from_tag),
         notes: config.notes,
         term: config.term.and_then(valid_term_override),
+        backend: config.backend.and_then(valid_backend_choice),
     }
 }
 
@@ -389,6 +456,9 @@ fn config_document(config: &ConConfig) -> json::JsonValue {
     }
     if let Some(term) = &config.term {
         fields.push(("term", term.as_str().into()));
+    }
+    if let Some(backend) = &config.backend {
+        fields.push(("backend", backend.as_str().into()));
     }
     json::object(fields)
 }
@@ -497,26 +567,34 @@ fn main() {
         features,
         headless,
     } = parsed;
+    // Load config file: CLI flags override config, config overrides defaults.
+    // Loaded before backend selection so the `backend` key can take part.
+    let config = load_config();
+
     // The classic Windows console is the default host because mouse input does
     // not survive our ConPTY path today, which left every hosted TUI blind to
     // clicks — confirmed on a real machine, where the same program answered the
     // mouse only once this path was selected. Upstream ConPTY has supported the
     // mouse since 2021, so this default is "the path we have proven", not a
-    // verdict on ConPTY; `--feature conpty` selects it back.
-    //
+    // verdict on ConPTY; `--feature conpty` (or the validated config `backend`
+    // key, when no CLI backend was named) selects another path.
+    let selection = backend_selection(
+        features.conpty,
+        features.rust_console,
+        config.backend.as_deref(),
+        cfg!(all(windows, feature = "experimental-rust-console")),
+        cfg!(windows),
+    );
     // Applied here, and only here, because `set_var` is sound only while the
     // process is single-threaded: this runs before any window, PTY or reader
     // thread exists, and after argument parsing so the flag can be read.
     #[cfg(windows)]
-    if !features.conpty {
+    if !selection.wants_conpty {
         // SAFETY: nothing has been spawned yet; this is still single-threaded.
         unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
     }
     no_activate |=
         minicon_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
-
-    // Load config file: CLI flags override config, config overrides defaults.
-    let config = load_config();
 
     let mut app = ConApp::new(working_dir.clone(), control_endpoint);
     // Before the window: the endpoint belongs to the process, so a bind failure
@@ -529,9 +607,12 @@ fn main() {
         std::process::exit(1);
     }
     app.no_activate = no_activate;
+    // A valid-but-unusable backend preference is a visible refusal on the
+    // status strip, never a silent fallback.
+    app.host_notice = selection.notice.clone();
     let session = app.active_session_mut().expect("initial terminal session");
     session.command = command;
-    session.rust_console = features.rust_console;
+    session.rust_console = selection.wants_rust;
     session.snapshot_path = snapshot_path;
     // CLI flags override config, config overrides defaults.
     session.apply_startup_size(
@@ -4069,6 +4150,86 @@ mod tests {
         }
     }
 
+    /// The `backend` key accepts exactly the documented vocabulary, round-trips
+    /// the config document, and an unknown value behaves as absent.
+    #[test]
+    fn backend_preference_is_validated_and_round_trips_the_config_document() {
+        let config = config_from_bytes(br#"{"backend":"rust-console"}"#);
+        assert_eq!(config.backend.as_deref(), Some("rust-console"));
+        let written = json::to_vec_pretty(&config_document(&config));
+        assert_eq!(
+            config_from_bytes(&written).backend.as_deref(),
+            Some("rust-console")
+        );
+        for bad in [
+            br#"{"backend":""}"#.as_slice(),
+            br#"{"backend":"conhost"}"#.as_slice(),
+            br#"{"backend":"RUST-CONSOLE"}"#.as_slice(),
+        ] {
+            assert_eq!(config_from_bytes(bad).backend, None, "accepted {bad:?}");
+        }
+        assert_eq!(
+            config_from_bytes(br#"{"backend":"conpty"}"#)
+                .backend
+                .as_deref(),
+            Some("conpty")
+        );
+        assert_eq!(
+            config_from_bytes(br#"{"backend":"agent"}"#)
+                .backend
+                .as_deref(),
+            Some("agent")
+        );
+    }
+
+    /// The one owner of startup backend selection: CLI wins, then the config
+    /// key, then the classic default; a valid-but-unavailable choice keeps the
+    /// default and carries a visible notice.
+    #[test]
+    fn backend_selection_orders_cli_config_and_default_with_visible_refusals() {
+        let pick = |cli_conpty, cli_rust, cfg: Option<&str>, avail, win| {
+            backend_selection(cli_conpty, cli_rust, cfg, avail, win)
+        };
+        // Default: agent (nothing wanted, no notice).
+        let d = pick(false, false, None, true, true);
+        assert_eq!(
+            (d.wants_conpty, d.wants_rust, d.notice.is_none()),
+            (false, false, true)
+        );
+        // CLI wins over config.
+        let c = pick(true, false, Some("rust-console"), true, true);
+        assert_eq!((c.wants_conpty, c.wants_rust), (true, false));
+        // Config selects when CLI is silent.
+        let r = pick(false, false, Some("rust-console"), true, true);
+        assert_eq!(
+            (r.wants_conpty, r.wants_rust, r.notice.is_none()),
+            (false, true, true)
+        );
+        let p = pick(false, false, Some("conpty"), true, true);
+        assert_eq!((p.wants_conpty, p.wants_rust), (true, false));
+        let a = pick(false, false, Some("agent"), true, true);
+        assert_eq!(
+            (a.wants_conpty, a.wants_rust, a.notice.is_none()),
+            (false, false, true)
+        );
+        // Valid but unavailable: default plus a visible notice.
+        let u = pick(false, false, Some("rust-console"), false, true);
+        assert_eq!((u.wants_conpty, u.wants_rust), (false, false));
+        assert!(
+            u.notice
+                .as_deref()
+                .is_some_and(|n| n.contains("not available"))
+        );
+        // Non-Windows: the key names Windows backends; notice, defaults kept.
+        let x = pick(false, false, Some("conpty"), true, false);
+        assert_eq!((x.wants_conpty, x.wants_rust), (false, false));
+        assert!(
+            x.notice
+                .as_deref()
+                .is_some_and(|n| n.contains("Windows only"))
+        );
+    }
+
     /// `terminal_inset_widths` is the one owner of the terminal's side insets.
     /// A collapsed sidebar must inset by the rail, not the stored expanded
     /// width — the drift `apply_active_geometry` carried until 2026-10-21.
@@ -5546,6 +5707,7 @@ mod tests {
             language: Some(ui::UiLanguage::ChineseTraditional),
             notes: Some("scratch\npad".to_owned()),
             term: Some("xterm-direct".to_owned()),
+            backend: Some("rust-console".to_owned()),
         };
         write_config_to(&path, &saved).expect("the preference is published");
 
@@ -5563,6 +5725,7 @@ mod tests {
         // verbatim, because a scratchpad's structure is the user's own.
         assert_eq!(reloaded.notes, Some("scratch\npad".to_owned()));
         assert_eq!(reloaded.term, Some("xterm-direct".to_owned()));
+        assert_eq!(reloaded.backend, Some("rust-console".to_owned()));
         let _ = std::fs::remove_dir_all(&directory);
     }
 

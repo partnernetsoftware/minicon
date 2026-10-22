@@ -51,16 +51,16 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │     Scope honesty: distilled proxy of the owner's session; the defect class
 │     and boundary are established, the upstream conhost mechanism is not
 │     ours to fix — the repair path is backend selection ({DECIDE} evidence)
-├── [_] {BACKEND-KEY} Persisted backend preference for new sessions
-│   invariant: `backend` key in minicon.json selects the backend for NEW
-│     sessions only; invalid or unavailable values fall back to the product
-│     default — unavailable with a visible refusal, never a silent
-│     half-selection; CLI `--feature` still wins for its invocation
-│   evidence: config round-trip and validation tests (the `term` key pattern),
-│     plus a spawn-path test that the preference reaches backend selection
-│   safe failure: an unknown key value behaves as absent (same rule as `term`)
-│   dependency: the `term` key precedent (PRD 25 Configuration); non-goal:
-│     changing the product default or rewriting a running session
+├── [v] {BACKEND-KEY} Persisted backend preference for new sessions
+│   done 2026-10-22: validated `backend` key (conpty/rust-console/agent)
+│     decodes through the core scanner, round-trips the document, and feeds
+│     one testable decision owner (backend_selection in src/main.rs: CLI >
+│     config > classic default; valid-but-unavailable → default + visible
+│     status-strip notice). Evidence: the two named unit tests in src/main.rs
+│     plus the core codec test; owner records PRD 25 "Configuration" and
+│     PRD 24 backend selection. Honest scope: the spawn wiring is exercised
+│     through the same initial-session path the proven `term` key uses; no
+│     live user-config journey was run (config injection has no test seam)
 ├── [_] {MOUSE} Qualify mouse input under rust-console
 │   invariant: a TUI that enables mouse reporting receives clicks/wheel through
 │     the rust-console backend at least as faithfully as through the agent

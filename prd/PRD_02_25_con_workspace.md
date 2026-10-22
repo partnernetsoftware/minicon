@@ -944,6 +944,19 @@ emulation menu**: a profile beyond the default is not offered until its
 capability evidence exists (roadmap cross-version rule 1). Reusable semantics
 are owned by [PRD 35](PRD_02_35_terminal_library.md#dependency-and-public-api-boundary).
 
+`minicon.json` also accepts a `backend` key (0.2.20): `conpty`,
+`rust-console` or `agent`, applied to **new sessions** at startup. CLI
+`--feature` wins for its invocation; an unknown value behaves as absent (the
+`term` rule); a valid-but-unavailable choice (rust-console in a build without
+`experimental-rust-console`, or any value off Windows) keeps the default and
+surfaces a visible status-strip notice, never a silent half-selection. The
+decision has one testable owner, `backend_selection` in src/main.rs
+(evidence `backend_selection_orders_cli_config_and_default_with_visible_refusals`,
+`backend_preference_is_validated_and_round_trips_the_config_document`); the
+selection semantics themselves belong to
+[PRD 24](PRD_02_24_con_terminal.md#pty-backend-selection). This key is also
+the one-line rollback story for the 0.2.20 default decision.
+
 - [v] the user configuration root is selected through the platform runtime
   facade: Windows calls `SHGetFolderPathW(CSIDL_APPDATA)` into caller-owned
   UTF-16 storage, avoiding both environment-path policy in the product and the

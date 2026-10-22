@@ -87,6 +87,10 @@ pub struct ConfigValues {
     /// theme/language, kept as the decoded string: the product validates the
     /// value and gives it meaning; this codec only validates JSON shape.
     pub term: Option<String>,
+    /// The Windows backend preference for new sessions, as written. Same
+    /// contract as `term`: shape-validated here, vocabulary owned by the
+    /// product.
+    pub backend: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -114,6 +118,7 @@ enum ConfigField {
     Language,
     Notes,
     Term,
+    Backend,
 }
 
 pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
@@ -134,6 +139,7 @@ pub fn parse_config(bytes: &[u8]) -> Result<ConfigValues, String> {
         language: None,
         notes: None,
         term: None,
+        backend: None,
     };
     let kind = parser.value(0, Some(&mut config))?;
     parser.whitespace();
@@ -254,6 +260,9 @@ impl ConfigParser<'_> {
                     ConfigField::Term => {
                         config.term = self.string_value(value, "term")?;
                     }
+                    ConfigField::Backend => {
+                        config.backend = self.string_value(value, "backend")?;
+                    }
                 }
             }
             keys.push(key);
@@ -342,6 +351,8 @@ impl ConfigParser<'_> {
             Some(ConfigField::Notes)
         } else if self.key_equals(key, "term") {
             Some(ConfigField::Term)
+        } else if self.key_equals(key, "backend") {
+            Some(ConfigField::Backend)
         } else {
             None
         }
@@ -865,6 +876,14 @@ mod tests {
         assert_eq!(config.term.as_deref(), Some("xterm"));
         let absent = parse_config(br#"{"term":null}"#).expect("null clears");
         assert_eq!(absent.term, None);
+    }
+
+    #[test]
+    fn config_parser_extracts_the_backend_preference_as_written() {
+        let config = parse_config(br#"{"backend":"rust-console"}"#).expect("parse config");
+        assert_eq!(config.backend.as_deref(), Some("rust-console"));
+        let absent = parse_config(br#"{"backend":null}"#).expect("null clears");
+        assert_eq!(absent.backend, None);
     }
 
     /// The codec reports JSON *shape*; it does not know the tag vocabulary. An

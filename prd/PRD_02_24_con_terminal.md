@@ -300,6 +300,12 @@ requested selection; the opened session identity is separately observable throug
   console, spawns the child into it, and polls the screen buffer with
   `ReadConsoleOutputW`, synthesizing a terminal stream from what changed. The
   agent is this product, not a third-party binary — nothing extra is deployed.
+- [v] a persisted per-user backend preference exists (0.2.20): the validated
+  `backend` key in `minicon.json` selects conpty / rust-console / agent for
+  new sessions, with CLI `--feature` winning per invocation and
+  valid-but-unavailable choices refused visibly. Key semantics and evidence
+  are owned by [workspace configuration](PRD_02_25_con_workspace.md#configuration);
+  this section owns what each backend is.
 - [v] **measured per-tab process cost by backend (2026-10-22, Windows x64
   build 20348, 0.2.19+ source).** The default console-agent path costs two
   extra processes per tab beside the shell: one `minicon --internal-console-agent`
