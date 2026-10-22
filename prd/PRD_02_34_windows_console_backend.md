@@ -890,6 +890,33 @@ and log identities are in `key-break-negative-audit.json`.
 
 ## Bounded input transport and controls under input pressure
 
+Console window (0.2.20): `GetConsoleWindow` (L3 `0x0300001F`) now answers
+with a per-session pseudo-console window the adapter owns
+(`adapters/windows/pty/pseudo_window.rs`): a message-only window
+(`HWND_MESSAGE` parent) on its own pump thread, so a client's `ShowWindow`
+cannot surface it and `EnumWindows` never lists it — the first version was an
+ordinary hidden top-level window, and per-process window lookups (native
+screenshot and input journeys) picked it instead of MiniCon's terminal. Without it the MSYS2/Cygwin runtime treated the console as
+absent and silently stopped writing (Git for Windows `less` exited at once,
+`bash` printed nothing). Evidence:
+`rust_console_pty_reports_a_hidden_pseudo_console_window` (red under a
+no-window mutation and under an ordinary-top-level-window mutation) and the
+black-box `less` journeys.
+Other L3 queries observed unimplemented in the same probe and left open by
+name: mouse-button count `0x01`, display mode `0x11`, keyboard layout name
+`0x1E`, selection info `0x28`. `MINICON_CONSOLE_TRACE=<file>` appends every
+non-success request (function, API, NTSTATUS) for this kind of diagnosis.
+
+Terminal-driven resize (0.2.20): a resize from the terminal side now posts
+`WINDOW_BUFFER_SIZE_EVENT` regardless of the reader's `ENABLE_WINDOW_INPUT`,
+including same-size resizes, matching conhost as measured through the agent
+(a reader at input mode `0x1F7`, no window-input bit, received the events).
+A full input queue drops that notification rather than failing the resize.
+Client-API-driven size changes keep their reference-qualified gate.
+Evidence: the black-box resize-event and settled-nudge journeys. Open by
+name: the provider's default input mode is `0x7` where conhost reports
+`0x1F7`.
+
 Mouse input (0.2.20): the provider's VT-to-record decoder now turns terminal
 SGR mouse reports into native `MOUSE_EVENT` records through the decoder and
 mapping shared with the console agent (`adapters/windows/console_input.rs`);

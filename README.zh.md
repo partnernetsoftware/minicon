@@ -127,11 +127,14 @@ minicon --help                   # 其余全部
 
 ## 配置
 
-用户配置目录下可选的 `minicon.json`：`font_size`、`cols`、`rows`。
+用户配置目录下可选的 `minicon.json`：`font_size`、`cols`、`rows`，以及
+`backend`（`rust-console`、`console-agent` 或 `conpty`；仅 Windows）。
 
-**Windows 鼠标：** 对多数程序开箱即用。MiniCon 默认用经典控制台宿主，因为
-Windows 自带的 ConPTY 会把一次点击变成游离按键，打扰读控制台事件的程序（大多数
-agent CLI）；`--feature conpty` 可切到它，供 Vim 类程序使用。
+**Windows 后端：** 自 0.2.20 起 MiniCon 用自己的控制台（`rust-console`）承载
+shell：每个 tab 一个进程而不是三个，没有额外的 `conhost.exe`，鼠标以控制台记录
+送达。若某程序表现异常，`--feature console-agent`（或 `"backend": "console-agent"`）
+可回到经典控制台；`--feature conpty` 可切到 ConPTY，供 Vim 类程序使用。
+`minicon --status` 会显示本次运行用哪个后端。
 
 **备用屏与缩放：** 在 Windows 上，使用备用屏的全屏 TUI 无法跟随窗口缩放；缩放
 后程序仍按旧尺寸重绘，界面会错位。原因是系统控制台在备用屏激活时改不动子进程

@@ -171,6 +171,18 @@ mod tests {
     fn rust_console_geometry_bounds_events_and_transactional_viewport() {
         let mut host = ConsoleHost::new();
         host.resize(16, 8, &mut Vec::new()).unwrap();
+        // Initial sizing posts nothing; only a terminal-driven resize
+        // notifies a reader without ENABLE_WINDOW_INPUT.
+        assert!(host.input.events.is_empty());
+        host.terminal_resize(16, 8, &mut Vec::new()).unwrap();
+        assert!(matches!(
+            host.input.events.iter().collect::<Vec<_>>().as_slice(),
+            [ConsoleInput::Resize {
+                columns: 16,
+                rows: 8
+            }]
+        ));
+        host.input.events.clear();
         host.input_mode |= 8;
         host.set_output_mode(7, &mut Vec::new()).unwrap();
         host.write_ansi(b"seed\x1b[3", &mut Vec::new()).unwrap();

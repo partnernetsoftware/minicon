@@ -141,12 +141,14 @@ minicon --help                   # everything else
 ## Configuration
 
 Optional `minicon.json` in your user config directory: `font_size`, `cols`,
-`rows`.
+`rows`, and `backend` (`rust-console`, `console-agent` or `conpty`; Windows).
 
-**Windows mouse:** works out of the box for most programs. MiniCon uses the
-classic console host by default because the ConPTY copy Windows ships turns a
-click into stray keystrokes for console-event readers (most agent CLIs);
-`--feature conpty` selects it for Vim-style programs.
+**Windows backend:** since 0.2.20 MiniCon hosts shells in its own console
+(`rust-console`): one process per tab instead of three, no extra `conhost.exe`,
+and mouse delivered as console records. If a program misbehaves,
+`--feature console-agent` (or `"backend": "console-agent"`) returns to the
+classic console; `--feature conpty` selects ConPTY for Vim-style programs.
+`minicon --status` shows which one a run will use.
 
 **Alternate screen and resize:** full-screen TUIs that use the alternate screen
 do not follow a window resize on Windows. After a resize they redraw at the old

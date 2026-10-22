@@ -60,6 +60,9 @@ use crate::contract::pty::{
 
 use super::console_agent;
 #[cfg(feature = "rust-console")]
+#[path = "pty/pseudo_window.rs"]
+mod pseudo_window;
+#[cfg(feature = "rust-console")]
 #[path = "pty/rust_console.rs"]
 mod rust_console;
 

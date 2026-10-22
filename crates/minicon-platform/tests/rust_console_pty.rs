@@ -3921,6 +3921,30 @@ fn rust_console_pty_facade_reports_real_initial_and_resized_console_dimensions()
     );
 }
 
+/// GetConsoleWindow names a real window that stays hidden even when the
+/// client shows it — a message-only window, which also keeps it out of
+/// `EnumWindows`, where a per-process window lookup once picked it instead of
+/// MiniCon's terminal. MSYS2/Cygwin's runtime treats a failed
+/// GetConsoleWindow as "no real console" and silently stops writing: before
+/// this window existed, Git for Windows' `less` exited at once and bash
+/// printed nothing.
+#[test]
+fn rust_console_pty_reports_a_hidden_pseudo_console_window() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("console-window")
+            .arg(report.0.as_os_str())
+            .rust_console(),
+    );
+    fixture.finish(0);
+    assert_eq!(
+        std::fs::read_to_string(&report.0).unwrap(),
+        "1,0,0",
+        "window exists, starts hidden, stays hidden after ShowWindow"
+    );
+}
+
 #[test]
 fn rust_console_pty_facade_delivers_native_key_identity_without_console_attach() {
     let report = Report::new();
@@ -4544,7 +4568,19 @@ fn ansi_input_cases(rust: bool) {
         };
         // Explicit old-build differences: modern pinned source preserves lead
         // identity on CP change and skips non-key trails without union casts.
-        assert_eq!(observed, expected, "ANSI records: rust={rust}, kind={kind}");
+        //
+        // The `bad` row writes through an invalid handle, which the client's
+        // kernelbase rejects before any request reaches a console server, so
+        // its count out-parameter is client-library behavior, not the
+        // provider's: build 20348 leaves the caller's sentinel (4294967295),
+        // newer builds (CI windows-2025 and windows-11-arm, 2026-10-22) zero
+        // it. Both name the same FALSE + ERROR_INVALID_HANDLE outcome; any
+        // other count is still a failure.
+        let newer_client = expected.replace("bad=0,6,4294967295,0\n", "bad=0,6,0,0\n");
+        assert!(
+            observed == expected || (kind == "rights" && observed == newer_client),
+            "ANSI records: rust={rust}, kind={kind}\n  left: {observed:?}\n right: {expected:?}"
+        );
     }
 }
 

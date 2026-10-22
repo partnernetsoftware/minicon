@@ -3000,13 +3000,17 @@ fn status_follows_the_backend_the_machine_will_actually_use() {
         .expect("run --status --feature conpty");
     let default_text = String::from_utf8_lossy(&default.stdout);
     let conpty_text = String::from_utf8_lossy(&with_conpty.stdout);
+    // Since 0.2.20 the default Windows run hosts the owned Rust console (this
+    // suite drives the default build, which carries it), and the status names
+    // the rollback paths.
     assert!(
-        default_text.contains("console-agent"),
-        "the default Windows run hosts the classic console: {default_text}"
+        default_text.contains("rust-console"),
+        "the default Windows run hosts the owned Rust console: {default_text}"
     );
     assert!(
-        default_text.contains("--feature conpty"),
-        "the default status must name the way across: {default_text}"
+        default_text.contains("--feature console-agent")
+            && default_text.contains("--feature conpty"),
+        "the default status must name the ways across: {default_text}"
     );
     assert!(
         with_conpty.status.success(),

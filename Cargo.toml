@@ -68,6 +68,11 @@ name = "signing_workflow_policy"
 path = "tests/signing_workflow_policy.rs"
 
 [features]
+# The owned Rust console is the Windows default backend since 0.2.20, so the
+# default build carries it; `--no-default-features` builds the classic-only
+# product (its default then falls back to the console agent). The feature name
+# keeps its historical spelling so existing build scripts stay valid.
+default = ["experimental-rust-console"]
 experimental-rust-console = ["minicon-platform/rust-console"]
 
 [dependencies]

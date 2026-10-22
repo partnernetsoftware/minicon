@@ -40,23 +40,37 @@ pub(crate) struct ConArgs {
 /// another flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Features {
-    /// Host the shell through ConPTY instead of the classic Windows console.
-    ///
-    /// Default off because mouse input does not currently survive our ConPTY
-    /// path in either direction: measured on the court, the child's
-    /// `ESC[?1000h` never reaches the host and the host's SGR reports are
-    /// dropped coming back, so a hosted TUI never sees a click. The classic
-    /// console owns a real console and delivers them — confirmed on a real
-    /// machine, where the same program answered the mouse only on this path.
-    ///
-    /// The cause is NOT that ConPTY lacks mouse support: upstream added it in
-    /// 2021 (microsoft/terminal#376, PR #9970 relays the child's mouse-mode
-    /// request to the host). So the gap is on our side and is expected to be
-    /// fixable — note that `ENABLE_MOUSE_INPUT` appears nowhere in our ConPTY
-    /// setup. This flag keeps ConPTY reachable meanwhile, and is how you get
-    /// back to the Microsoft-blessed path once it carries the mouse.
+    /// Host the shell through ConPTY. Mouse input on this path arrives at the
+    /// child as the terminal's SGR bytes passed through as VT key characters
+    /// (measured 2026-10-22), not as synthesized console mouse records, so a
+    /// record-reading program sees no clicks here.
     pub(crate) conpty: bool,
+    /// Host the shell through the owned Rust console (minicon-console). The
+    /// Windows default since 0.2.20 where the build carries it.
     pub(crate) rust_console: bool,
+    /// Host the shell through the classic console agent. The pre-0.2.20
+    /// default, kept selectable as the rollback path.
+    pub(crate) console_agent: bool,
+}
+
+/// The Windows terminal backends a session can be hosted by.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Backend {
+    ConsoleAgent,
+    Conpty,
+    RustConsole,
+}
+
+impl Backend {
+    /// The spelling shared by `--feature`, `minicon.json`'s `backend` key and
+    /// `--status`.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::ConsoleAgent => "console-agent",
+            Self::Conpty => "conpty",
+            Self::RustConsole => "rust-console",
+        }
+    }
 }
 
 /// Every name `--feature` accepts, with the one-line help shown in usage.
@@ -64,20 +78,37 @@ pub(crate) struct Features {
 pub(crate) const FEATURES: &[(&str, &str)] = &[
     (
         "conpty",
-        "Windows: host the shell through ConPTY instead of the classic\n\
-     \x20                    console. Pick by what the program uses: the default\n\
-     \x20                    carries the mouse to agent CLIs, this carries it to\n\
-     \x20                    Vim-style programs. No terminal can do both — see\n\
-     \x20                    microsoft/terminal#15083. Inert off Windows.",
+        "Windows: host the shell through ConPTY. Mouse reaches the program\n\
+     \x20                    as VT bytes rather than console records. Inert off\n\
+     \x20                    Windows.",
     ),
     (
         "rust-console",
-        "Windows: experimental owned Rust console; requires a build with\n\
-     \x20                    experimental-rust-console. Later backend selections win.",
+        "Windows: the owned Rust console (minicon-console) -- the default on\n\
+     \x20                    builds that carry it. Later backend selections win.",
+    ),
+    (
+        "console-agent",
+        "Windows: the classic console through a hidden console agent; the\n\
+     \x20                    pre-0.2.20 default, kept as the rollback path.",
     ),
 ];
 
 impl Features {
+    /// The backend this command line names, if any. The three backend words
+    /// are mutually exclusive in `apply`, so at most one is set.
+    pub(crate) fn explicit_backend(self) -> Option<Backend> {
+        if self.rust_console {
+            Some(Backend::RustConsole)
+        } else if self.conpty {
+            Some(Backend::Conpty)
+        } else if self.console_agent {
+            Some(Backend::ConsoleAgent)
+        } else {
+            None
+        }
+    }
+
     /// Applies one `--feature` word. `no-<name>` turns a feature off, so a
     /// script can state its intent instead of relying on today's defaults.
     fn apply(&mut self, word: &str) -> Result<(), String> {
@@ -90,12 +121,21 @@ impl Features {
                 self.conpty = enable;
                 if enable {
                     self.rust_console = false;
+                    self.console_agent = false;
                 }
             }
             "rust-console" => {
                 self.rust_console = enable;
                 if enable {
                     self.conpty = false;
+                    self.console_agent = false;
+                }
+            }
+            "console-agent" => {
+                self.console_agent = enable;
+                if enable {
+                    self.conpty = false;
+                    self.rust_console = false;
                 }
             }
             _ => {
@@ -278,9 +318,10 @@ const USAGE_CONFIG_LOCATION: &str = "Configuration: create minicon.json under th
 /// `status_text`, which reports whatever the environment already says.
 #[cfg(all(test, windows))]
 pub(crate) fn offline_status_text_for_test() -> String {
-    // SAFETY: the test harness runs this before any PTY or window exists.
-    unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
-    status_text()
+    let selection = crate::resolved_backend(Features::default(), &crate::ConConfig::default());
+    #[cfg(windows)]
+    crate::apply_backend_environment(selection.backend);
+    status_text_for(selection.backend)
 }
 
 /// The host-interface contract version this binary speaks. Independent of
@@ -360,11 +401,15 @@ fn status_feature_request(args: &[String]) -> Option<()> {
     Some(())
 }
 
+/// The status of a run with no `--feature` and no saved preference: the
+/// product default, which is what this pure form reports.
+#[cfg(test)]
 pub(crate) fn status_text() -> String {
-    status_text_for(Features::default())
+    let selection = crate::resolved_backend(Features::default(), &crate::ConConfig::default());
+    status_text_for(selection.backend)
 }
 
-fn status_text_for(features: Features) -> String {
+fn status_text_for(selected: Backend) -> String {
     use std::fmt::Write as _;
 
     let mut text = String::with_capacity(512);
@@ -372,33 +417,34 @@ fn status_text_for(features: Features) -> String {
     let _ = writeln!(text);
 
     let backend = minicon_platform::pty::backend_report();
+    let rust = selected == Backend::RustConsole;
     let _ = writeln!(
         text,
         "  pty backend    {}",
-        if features.rust_console {
-            "rust-console"
-        } else {
-            backend.kind
-        }
+        if rust { "rust-console" } else { backend.kind }
     );
-    if features.rust_console {
+    if rust {
         let _ = writeln!(
             text,
-            "                 experimental owned Rust console; explicit selection"
+            "                 owned Rust console (minicon-console); MiniCon's default on Windows"
+        );
+        let _ = writeln!(
+            text,
+            "                 `--feature console-agent` or `--feature conpty` selects another backend"
         );
     } else if !backend.detail.is_empty() {
         let _ = writeln!(text, "                 {}", backend.detail);
     }
     // The platform reports the mechanism ("forced by ...=1"); a user needs the
-    // product's reason. MiniCon picks the classic console by default because
-    // mouse input is proven on it, and that choice also costs the wheel its
-    // scrollback, so say both and name the way out.
+    // product's reason and the way back to the default.
     #[cfg(windows)]
-    if !features.rust_console && backend.kind == "console-agent" {
-        let _ = writeln!(
-            text,
-            "                 MiniCon's default on Windows; `--feature conpty` selects ConPTY"
-        );
+    if !rust {
+        let way = if crate::RUST_CONSOLE_AVAILABLE {
+            "`--feature rust-console` selects MiniCon's default"
+        } else {
+            "this build carries no rust-console; `--feature conpty` selects ConPTY"
+        };
+        let _ = writeln!(text, "                 {way}");
     }
 
     match minicon_platform::font::primary_face_report(DEFAULT_FONT_PX as u16) {
@@ -609,30 +655,20 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
                     return Some(2);
                 }
             };
-            // MiniCon hosts the classic console on Windows unless a feature
-            // asks for ConPTY, and that switch is an environment variable the
-            // startup path sets after this point -- so `--status` used to
-            // report "conpty" while every session it described ran on the
-            // console agent (measured in the Windows ARM court, 2026-09-23).
-            // Reading the flags beside it is what makes the answer describe
-            // the run those same flags would produce.
+            // `--status` describes the run these same flags (and the saved
+            // preference) would produce, through the same decision startup
+            // uses. It once reported "conpty" while every session ran on the
+            // console agent (measured in the Windows ARM court, 2026-09-23),
+            // because it computed the answer its own way.
+            let selection = crate::resolved_backend(features, &crate::load_config());
+            // The offline CLI runs before any window, PTY or reader thread
+            // exists, so the environment edit is sound here.
             #[cfg(windows)]
-            {
-                // SAFETY: the offline CLI runs before any window, PTY or
-                // reader thread exists, so the process is single-threaded.
-                unsafe {
-                    if features.conpty {
-                        std::env::remove_var("AGENTERM_FORCE_CONSOLE_AGENT");
-                    } else {
-                        std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1");
-                    }
-                }
+            crate::apply_backend_environment(selection.backend);
+            let mut status = status_text_for(selection.backend);
+            if let Some(notice) = selection.notice {
+                status.push_str(&format!("  notice         {notice}\n"));
             }
-            let status = if features.rust_console {
-                status_text_for(features)
-            } else {
-                status_text()
-            };
             let _ = minicon_platform::parent_console::write_stdout(&status);
             Some(0)
         }
@@ -828,7 +864,16 @@ mod hostif_tests {
         if cfg!(all(windows, feature = "experimental-rust-console")) {
             let features = enabled.unwrap().features;
             assert!(features.rust_console && !features.conpty);
-            assert!(status_text_for(features).contains("pty backend    rust-console"));
+            assert_eq!(features.explicit_backend(), Some(Backend::RustConsole));
+            assert!(status_text_for(Backend::RustConsole).contains("pty backend    rust-console"));
+            let agent = parse_args(&args(&["--feature=rust-console,console-agent"]))
+                .unwrap()
+                .features;
+            assert_eq!(
+                agent.explicit_backend(),
+                Some(Backend::ConsoleAgent),
+                "the rollback word is selectable and later words win"
+            );
             for words in [
                 vec!["--feature=rust-console,conpty"],
                 vec!["--feature", "rust-console", "--feature", "conpty"],

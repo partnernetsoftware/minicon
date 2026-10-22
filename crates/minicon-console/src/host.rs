@@ -90,6 +90,9 @@ pub struct ConsoleHost<'session> {
     original_title: Vec<u16>,
     title: Vec<u16>,
     deferred_output: VecDeque<DriverRequest<'session>>,
+    /// The window `GetConsoleWindow` reports, supplied by the hosting adapter
+    /// (a hidden pseudo-console window, as ConPTY provides). Zero until set.
+    console_window: u64,
 }
 
 impl Default for ConsoleHost<'_> {
@@ -122,6 +125,7 @@ impl Default for ConsoleHost<'_> {
             original_title: Vec::new(),
             title: Vec::new(),
             deferred_output: VecDeque::new(),
+            console_window: 0,
         }
     }
 }
@@ -129,6 +133,15 @@ impl Default for ConsoleHost<'_> {
 impl<'session> ConsoleHost<'session> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the window handle `GetConsoleWindow` returns to clients. Many
+    /// console runtimes (the MSYS2/Cygwin runtime among them) treat a failed
+    /// `GetConsoleWindow` as "no real console" and silently stop writing, so
+    /// an adapter supplies a hidden pseudo-console window the way ConPTY does.
+    /// The host never touches the window; ownership stays with the adapter.
+    pub fn set_console_window(&mut self, window: u64) {
+        self.console_window = window;
     }
 
     /// Enable control delivery only to clients admitted from this private Job.
@@ -195,6 +208,61 @@ impl<'session> ConsoleHost<'session> {
         }
         self.terminal.screen_mut().set_size(rows, columns);
         Ok(())
+    }
+
+    /// Resize driven by the terminal (the user resized the window), as opposed
+    /// to initial sizing or a client's own API call. It always notifies the
+    /// reader with WINDOW_BUFFER_SIZE_EVENT, whatever the client's
+    /// ENABLE_WINDOW_INPUT bit says, as the classic console does: measured
+    /// 2026-10-22 on Windows x64 20348, a console-agent session whose reader
+    /// had input mode 0x1F7 (no window-input bit) received the events, and
+    /// crossterm/ratatui programs such as codex-cli redraw only on them. A
+    /// same-size resize notifies too — MiniCon's settled-geometry nudge relies
+    /// on that second chance. Initial sizing keeps using `resize`, which posts
+    /// nothing a client could mistake for a user resize.
+    pub fn terminal_resize(
+        &mut self,
+        columns: u16,
+        rows: u16,
+        output: &mut impl Write,
+    ) -> io::Result<()> {
+        let projected = self.viewport.is_some();
+        let changed = self.terminal.screen().size() != (rows, columns);
+        let window_input = self.input_mode & 8 != 0;
+        self.resize(columns, rows, output)?;
+        // Whether `resize` already posted the record on its own gate.
+        let posted = if projected {
+            changed && window_input && self.current_buffer == self.active_buffer
+        } else {
+            window_input
+        };
+        if !posted && self.current_buffer == self.active_buffer {
+            self.notify_terminal_resize(columns, rows, output)?;
+        }
+        Ok(())
+    }
+
+    /// Posts the terminal-driven WINDOW_BUFFER_SIZE_EVENT. It is a
+    /// notification: when the reader has left the input queue full, this one
+    /// is dropped rather than failing the resize, whose geometry must still
+    /// apply. Adjacent resize records already coalesce to the latest size.
+    pub(super) fn notify_terminal_resize(
+        &mut self,
+        columns: u16,
+        rows: u16,
+        output: &mut impl Write,
+    ) -> io::Result<()> {
+        match self.enqueue_input(
+            &[ConsoleInput::Resize {
+                columns: columns as i16,
+                rows: rows as i16,
+            }],
+            output,
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     pub fn input_mode(&self) -> u32 {
@@ -273,6 +341,7 @@ impl<'session> ConsoleHost<'session> {
                         | 0x0300_0003
                         | 0x0300_0004
                         | 0x0300_0029
+                        | 0x0300_001f
                         | 0x0300_0012..=0x0300_0017
                         | 0x0300_0018..=0x0300_001b
                         | 0x0300_002a..=0x0300_002b,
@@ -621,6 +690,11 @@ impl<'session> ConsoleHost<'session> {
             }
             0x0200_0003 => {
                 receipt.status = self.flush_input(descriptor.process, descriptor.object)?;
+            }
+            // GetConsoleWindow: report the adapter's pseudo-console window.
+            // Without one the request stays NOT_SUPPORTED, as before.
+            0x0300_001f if body.len() >= 8 && self.console_window != 0 => {
+                body[..8].copy_from_slice(&self.console_window.to_le_bytes());
             }
             0x0300_0029 if body.len() >= 4 => {
                 // Native connection registry only; neither global process

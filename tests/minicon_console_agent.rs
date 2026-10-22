@@ -71,8 +71,15 @@ impl Session {
             r"pipe:\\.\pipe\minicon-agent-{}-{label}",
             std::process::id()
         );
+        // Name the backend on the command line: since 0.2.20 MiniCon's own
+        // default is the owned Rust console, and the environment variable
+        // alone no longer selects the agent for a MiniCon session. A suite
+        // named for a backend must select it explicitly, or it silently tests
+        // another one.
         let child = Command::new(binary())
             .arg("--no-activate")
+            .arg("--feature")
+            .arg("console-agent")
             .arg("--control")
             .arg(&endpoint)
             .env("AGENTERM_FORCE_CONSOLE_AGENT", "1")

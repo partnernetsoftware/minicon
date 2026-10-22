@@ -85,7 +85,13 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │   dependency: 0.2.19 Candidate chain mechanics (rerun on 0.2.20 source);
 │     PRD 27 owns runners and costs; non-goal: re-running courts that exist
 │     with matching source/features (inventory receipts first)
-├── [_] {CRASH} G4 fixture-host heap-corruption trigger hunt (bounded)
+├── [-] {CRASH} G4 fixture-host heap-corruption trigger hunt (bounded)
+│   state 2026-10-22: one bounded round under parallel load (minicon_control
+│     concurrent with minicon_blackbox, 0.2.20 source before the default
+│     flip): 3 clean control rounds + 4 clean blackbox rounds, zero
+│     0xC0000374 exits, zero failures; later rounds were contaminated by
+│     concurrent source edits (mid-run rebuilds) and are excluded, not
+│     counted. Not reproduced; G4 stays open with this matrix recorded
 │   invariant: the hunt produces either a reproducing trigger or a named
 │     narrowed suspect list with negative controls — not a shrug
 │   evidence: WER/dump or instrumented rerun of the 2026-10-21 crash shape;
@@ -93,7 +99,16 @@ Outcome: users get the best evidenced Windows backend default, with a named reco
 │   safe failure: if not reproduced within the box's budget, record the
 │     attempted matrix and keep G4 open with sharper triggers
 │   dependency: carried debt G4; non-goal: rewriting the test harness
-├── [_] {DECIDE} The default decision itself
+├── [-] {DECIDE} The default decision itself
+│   state 2026-10-22: decided — rust-console becomes the Windows default
+│     (decision section in PRD 24 "Backend default decision (0.2.20)").
+│     Flipping the default made every GUI black-box journey run on
+│     rust-console and surfaced three real gaps, all fixed with tests:
+│     MSYS2 output (GetConsoleWindow pseudo window), resize notification
+│     without ENABLE_WINDOW_INPUT, unstartable program as the tab's failure.
+│     Rollback: `--feature console-agent` / `"backend": "console-agent"`.
+│     open: exact-Candidate visible three-agent matrix and the six-cell
+│     Candidate courts on the flipped source
 │   invariant: any default change improves the named user journeys without a
 │     hidden regression, and the rollback path is a one-line user action
 │     ({BACKEND-KEY} or --feature), stated in the release notes

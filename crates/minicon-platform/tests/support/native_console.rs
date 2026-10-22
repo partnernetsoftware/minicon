@@ -109,6 +109,29 @@ fn run() -> std::io::Result<()> {
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let mode = arguments[0].to_str().unwrap_or("");
+    if mode == "console-window" {
+        // Reports whether GetConsoleWindow names a window, whether it is
+        // visible, and whether it is still hidden after this client asks to
+        // show it — the contract console runtimes (MSYS2/Cygwin) depend on.
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsWindowVisible, SW_SHOW, ShowWindow};
+        // SAFETY: plain Win32 queries on this process's console window.
+        let report = unsafe {
+            let window = GetConsoleWindow();
+            let before = !window.is_null() && IsWindowVisible(window) != 0;
+            if !window.is_null() {
+                ShowWindow(window, SW_SHOW);
+            }
+            let after = !window.is_null() && IsWindowVisible(window) != 0;
+            format!(
+                "{},{},{}",
+                u8::from(!window.is_null()),
+                u8::from(before),
+                u8::from(after)
+            )
+        };
+        return std::fs::write(&arguments[1], report);
+    }
     if let Some(kind) = mode.strip_prefix("synchronized-output-") {
         return synchronized_output::run(kind, std::path::Path::new(&arguments[1]));
     }
@@ -397,7 +420,20 @@ fn run() -> std::io::Result<()> {
                 return Err(std::io::Error::last_os_error());
             }
         }
-        if ReadConsoleInputW(
+        if matches!(mode, "key" | "vt-key") {
+            // Terminal-driven resizes post WINDOW_BUFFER_SIZE_EVENT to every
+            // reader whatever its ENABLE_WINDOW_INPUT bit, as conhost does;
+            // a key reader skips them, as real programs do, and the court
+            // still proves the key itself arrives intact.
+            loop {
+                if ReadConsoleInputW(input, records.as_mut_ptr(), 1, &mut count) == 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if records[0].EventType != 4 {
+                    break;
+                }
+            }
+        } else if ReadConsoleInputW(
             input,
             records.as_mut_ptr(),
             records.len() as u32,

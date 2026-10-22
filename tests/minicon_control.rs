@@ -518,11 +518,23 @@ fn tab_children_do_not_inherit_the_backend_forcing_variable() {
         child,
         screenshot: std::env::temp_dir().join(format!("minicon-force-env-{suffix}.png")),
     };
-    wait_until_ready_for(exe, &endpoint, Duration::from_secs(15), Some(&mut gui.child));
+    wait_until_ready_for(
+        exe,
+        &endpoint,
+        Duration::from_secs(15),
+        Some(&mut gui.child),
+    );
     cli_json(
         exe,
         &endpoint,
-        &["wait-text", "--target", "@1", "--timeout-ms", "15000", "FORCE=["],
+        &[
+            "wait-text",
+            "--target",
+            "@1",
+            "--timeout-ms",
+            "15000",
+            "FORCE=[",
+        ],
     );
     let pane = cli_text(exe, &endpoint, &["capture-pane", "--target", "@1"]);
     assert!(

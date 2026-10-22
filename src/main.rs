@@ -309,64 +309,128 @@ struct ConConfig {
 }
 
 /// The backend vocabulary `minicon.json` accepts. Anything else behaves as
-/// absent — the same rule as `term`.
+/// absent — the same rule as `term`. `agent` is kept as the 0.2.20-preview
+/// spelling of `console-agent`.
 fn valid_backend_choice(value: String) -> Option<String> {
-    matches!(value.as_str(), "conpty" | "rust-console" | "agent").then_some(value)
+    matches!(
+        value.as_str(),
+        "conpty" | "rust-console" | "console-agent" | "agent"
+    )
+    .then_some(value)
 }
 
 /// What the startup backend selection decided, as one testable value.
 #[derive(Debug, Eq, PartialEq)]
 struct BackendSelection {
-    /// Leave ConPTY selectable (do not force the console agent).
-    wants_conpty: bool,
-    /// New sessions select the owned rust-console provider.
-    wants_rust: bool,
-    /// A visible refusal for a valid-but-unusable preference.
+    /// The backend new sessions get (meaningful on Windows only).
+    backend: cli::Backend,
+    /// A visible refusal for a valid-but-unusable choice.
     notice: Option<String>,
 }
 
-/// One owner for "which Windows backend do new sessions get": CLI `--feature`
-/// wins, then the validated config `backend` key, then the classic default.
-/// `rust_available`/`windows` arrive as arguments so the decision is testable
-/// off-target; the caller passes the build facts.
+/// One owner for "which Windows backend do new sessions get", shared by
+/// startup and `--status`: CLI `--feature` wins, then the validated config
+/// `backend` key, then the product default — the owned Rust console where this
+/// build carries it (since 0.2.20), else the classic console agent. The
+/// default decision and its evidence are owned by PRD 02.24 ("backend default
+/// decision"). `rust_available`/`windows` arrive as arguments so the decision
+/// is testable off-target; callers pass the build facts.
 fn backend_selection(
-    cli_conpty: bool,
-    cli_rust: bool,
+    cli_choice: Option<cli::Backend>,
     config_backend: Option<&str>,
     rust_available: bool,
     windows: bool,
 ) -> BackendSelection {
-    let mut selection = BackendSelection {
-        wants_conpty: cli_conpty,
-        wants_rust: cli_rust,
-        notice: None,
+    use cli::Backend;
+    let default = if windows && rust_available {
+        Backend::RustConsole
+    } else {
+        Backend::ConsoleAgent
     };
-    if cli_conpty || cli_rust {
-        return selection;
+    let unavailable = |origin: &str| {
+        Some(format!(
+            "{origin} backend \"rust-console\" is not available in this build; \
+             using {}",
+            default.name()
+        ))
+    };
+    if let Some(choice) = cli_choice {
+        // An explicit CLI rust-console on a build without it is refused by
+        // argument parsing before this point; keep the decision total anyway.
+        if choice == Backend::RustConsole && !rust_available {
+            return BackendSelection {
+                backend: default,
+                notice: unavailable("requested"),
+            };
+        }
+        return BackendSelection {
+            backend: choice,
+            notice: None,
+        };
     }
     let Some(choice) = config_backend else {
-        return selection;
+        return BackendSelection {
+            backend: default,
+            notice: None,
+        };
     };
     if !windows {
-        selection.notice = Some(format!(
-            "config backend \"{choice}\" applies to Windows only; using this platform's default"
-        ));
-        return selection;
+        return BackendSelection {
+            backend: default,
+            notice: Some(format!(
+                "config backend \"{choice}\" applies to Windows only; using this platform's default"
+            )),
+        };
     }
     match choice {
-        "conpty" => selection.wants_conpty = true,
-        "rust-console" if rust_available => selection.wants_rust = true,
-        "rust-console" => {
-            selection.notice = Some(
-                "config backend \"rust-console\" is not available in this build; \
-                 using the default backend"
-                    .to_owned(),
-            );
-        }
-        // "agent" is the explicit spelling of the default.
-        _ => {}
+        "conpty" => BackendSelection {
+            backend: Backend::Conpty,
+            notice: None,
+        },
+        "rust-console" if rust_available => BackendSelection {
+            backend: Backend::RustConsole,
+            notice: None,
+        },
+        "rust-console" => BackendSelection {
+            backend: default,
+            notice: unavailable("config"),
+        },
+        // `console-agent`, or its preview spelling `agent`.
+        _ => BackendSelection {
+            backend: Backend::ConsoleAgent,
+            notice: None,
+        },
     }
-    selection
+}
+
+/// Whether this build carries the owned Rust console.
+const RUST_CONSOLE_AVAILABLE: bool = cfg!(all(windows, feature = "experimental-rust-console"));
+
+/// The startup decision for this process: argument features plus the user's
+/// saved preference, through the one owner above.
+fn resolved_backend(features: cli::Features, config: &ConConfig) -> BackendSelection {
+    backend_selection(
+        features.explicit_backend(),
+        config.backend.as_deref(),
+        RUST_CONSOLE_AVAILABLE,
+        cfg!(windows),
+    )
+}
+
+/// Applies a backend decision to this process's environment: everything but
+/// ConPTY needs the platform's automatic selection forced off ConPTY (the
+/// rust-console provider is then chosen explicitly per session). Sound only
+/// while the process is still single-threaded.
+#[cfg(windows)]
+fn apply_backend_environment(backend: cli::Backend) {
+    // SAFETY: callers run this before any window, PTY or reader thread exists.
+    unsafe {
+        if backend == cli::Backend::Conpty {
+            std::env::remove_var("AGENTERM_FORCE_CONSOLE_AGENT");
+        } else {
+            std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1");
+        }
+    }
 }
 
 /// A usable TERM value: 1–64 bytes of the terminfo-name alphabet
@@ -571,28 +635,14 @@ fn main() {
     // Loaded before backend selection so the `backend` key can take part.
     let config = load_config();
 
-    // The classic Windows console is the default host because mouse input does
-    // not survive our ConPTY path today, which left every hosted TUI blind to
-    // clicks — confirmed on a real machine, where the same program answered the
-    // mouse only once this path was selected. Upstream ConPTY has supported the
-    // mouse since 2021, so this default is "the path we have proven", not a
-    // verdict on ConPTY; `--feature conpty` (or the validated config `backend`
-    // key, when no CLI backend was named) selects another path.
-    let selection = backend_selection(
-        features.conpty,
-        features.rust_console,
-        config.backend.as_deref(),
-        cfg!(all(windows, feature = "experimental-rust-console")),
-        cfg!(windows),
-    );
-    // Applied here, and only here, because `set_var` is sound only while the
-    // process is single-threaded: this runs before any window, PTY or reader
-    // thread exists, and after argument parsing so the flag can be read.
+    // Which backend hosts new sessions: CLI, then config, then the product
+    // default (the owned Rust console where this build carries it). Applied
+    // here, and only here, because the environment edit is sound only while
+    // the process is single-threaded: no window, PTY or reader thread exists
+    // yet, and argument parsing has finished.
+    let selection = resolved_backend(features, &config);
     #[cfg(windows)]
-    if !selection.wants_conpty {
-        // SAFETY: nothing has been spawned yet; this is still single-threaded.
-        unsafe { std::env::set_var("AGENTERM_FORCE_CONSOLE_AGENT", "1") };
-    }
+    apply_backend_environment(selection.backend);
     no_activate |=
         minicon_platform::runtime::ascii_environment_variable_present("AGENTERM_NO_ACTIVATE");
 
@@ -612,7 +662,7 @@ fn main() {
     app.host_notice = selection.notice.clone();
     let session = app.active_session_mut().expect("initial terminal session");
     session.command = command;
-    session.rust_console = selection.wants_rust;
+    session.rust_console = selection.backend == cli::Backend::RustConsole;
     session.snapshot_path = snapshot_path;
     // CLI flags override config, config overrides defaults.
     session.apply_startup_size(
@@ -4187,42 +4237,44 @@ mod tests {
     /// default and carries a visible notice.
     #[test]
     fn backend_selection_orders_cli_config_and_default_with_visible_refusals() {
-        let pick = |cli_conpty, cli_rust, cfg: Option<&str>, avail, win| {
-            backend_selection(cli_conpty, cli_rust, cfg, avail, win)
-        };
-        // Default: agent (nothing wanted, no notice).
-        let d = pick(false, false, None, true, true);
+        use crate::cli::Backend::{Conpty, ConsoleAgent, RustConsole};
+        let pick = |cli, cfg: Option<&str>, avail, win| backend_selection(cli, cfg, avail, win);
+        // Default since 0.2.20: the owned Rust console where the build has it.
+        let d = pick(None, None, true, true);
+        assert_eq!((d.backend, d.notice), (RustConsole, None));
+        // A build without it keeps the classic console agent as its default.
+        assert_eq!(pick(None, None, false, true).backend, ConsoleAgent);
+        // CLI wins over config, including the explicit rollback word.
         assert_eq!(
-            (d.wants_conpty, d.wants_rust, d.notice.is_none()),
-            (false, false, true)
+            pick(Some(Conpty), Some("rust-console"), true, true).backend,
+            Conpty
         );
-        // CLI wins over config.
-        let c = pick(true, false, Some("rust-console"), true, true);
-        assert_eq!((c.wants_conpty, c.wants_rust), (true, false));
-        // Config selects when CLI is silent.
-        let r = pick(false, false, Some("rust-console"), true, true);
         assert_eq!(
-            (r.wants_conpty, r.wants_rust, r.notice.is_none()),
-            (false, true, true)
+            pick(Some(ConsoleAgent), None, true, true).backend,
+            ConsoleAgent
         );
-        let p = pick(false, false, Some("conpty"), true, true);
-        assert_eq!((p.wants_conpty, p.wants_rust), (true, false));
-        let a = pick(false, false, Some("agent"), true, true);
+        // Config selects when CLI is silent; both agent spellings work.
+        assert_eq!(pick(None, Some("conpty"), true, true).backend, Conpty);
         assert_eq!(
-            (a.wants_conpty, a.wants_rust, a.notice.is_none()),
-            (false, false, true)
+            pick(None, Some("console-agent"), true, true).backend,
+            ConsoleAgent
         );
-        // Valid but unavailable: default plus a visible notice.
-        let u = pick(false, false, Some("rust-console"), false, true);
-        assert_eq!((u.wants_conpty, u.wants_rust), (false, false));
+        assert_eq!(pick(None, Some("agent"), true, true).backend, ConsoleAgent);
+        assert_eq!(
+            pick(None, Some("rust-console"), true, true).backend,
+            RustConsole
+        );
+        // Valid but unavailable: the build's default plus a visible notice.
+        let u = pick(None, Some("rust-console"), false, true);
+        assert_eq!(u.backend, ConsoleAgent);
         assert!(
             u.notice
                 .as_deref()
                 .is_some_and(|n| n.contains("not available"))
         );
-        // Non-Windows: the key names Windows backends; notice, defaults kept.
-        let x = pick(false, false, Some("conpty"), true, false);
-        assert_eq!((x.wants_conpty, x.wants_rust), (false, false));
+        // Non-Windows: the key names Windows backends; notice, default kept.
+        let x = pick(None, Some("conpty"), true, false);
+        assert_eq!(x.backend, ConsoleAgent);
         assert!(
             x.notice
                 .as_deref()
@@ -5617,7 +5669,7 @@ mod tests {
     fn status_names_a_real_pty_backend() {
         let status = status_text();
         assert!(
-            ["conpty", "console-agent", "unix-pty"]
+            ["conpty", "console-agent", "unix-pty", "rust-console"]
                 .iter()
                 .any(|kind| status.contains(kind)),
             "no known backend named: {status}"
@@ -5633,14 +5685,21 @@ mod tests {
     #[test]
     fn status_names_the_backend_a_default_windows_run_uses() {
         let status = crate::cli::offline_status_text_for_test();
-        assert!(
-            status.contains("console-agent"),
-            "a default Windows run hosts the classic console: {status}"
-        );
-        assert!(
-            status.contains("--feature conpty"),
-            "the status must name the way to ConPTY: {status}"
-        );
+        if RUST_CONSOLE_AVAILABLE {
+            assert!(
+                status.contains("rust-console"),
+                "a default Windows run hosts the owned Rust console: {status}"
+            );
+            assert!(
+                status.contains("--feature console-agent"),
+                "the status must name the rollback path: {status}"
+            );
+        } else {
+            assert!(
+                status.contains("console-agent"),
+                "a build without rust-console hosts the classic console: {status}"
+            );
+        }
     }
 
     /// The font line reports a measurement, not just a name. The name alone

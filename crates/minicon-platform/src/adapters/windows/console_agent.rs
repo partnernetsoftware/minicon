@@ -1494,8 +1494,8 @@ use std::os::windows::ffi::OsStrExt;
 mod tests {
     use super::*;
     use windows_sys::Win32::System::Console::{
-        FROM_LEFT_1ST_BUTTON_PRESSED, FROM_LEFT_2ND_BUTTON_PRESSED, LEFT_CTRL_PRESSED, MOUSE_MOVED,
-        MOUSE_WHEELED, RIGHTMOST_BUTTON_PRESSED,
+        FROM_LEFT_1ST_BUTTON_PRESSED, LEFT_CTRL_PRESSED, MOUSE_MOVED, MOUSE_WHEELED,
+        RIGHTMOST_BUTTON_PRESSED,
     };
 
     /// The title announce must be a single, well-formed OSC 0 sequence: a

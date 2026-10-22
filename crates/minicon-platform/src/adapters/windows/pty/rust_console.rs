@@ -297,7 +297,25 @@ fn serve(
     size: TerminalSize,
 ) -> io::Result<()> {
     let mut host = ConsoleHost::for_child(child)?;
+    // Held for the whole session; dropping it closes the window. A failure
+    // to create one leaves GetConsoleWindow unsupported rather than ending
+    // the session.
+    let pseudo_window = super::pseudo_window::PseudoWindow::create().ok();
+    if let Some(window) = &pseudo_window {
+        host.set_console_window(window.handle_value());
+    }
     let mut sink = QueueWriter::new(output);
+    // Compatibility diagnostics: `MINICON_CONSOLE_TRACE=<file>` appends every
+    // console request the provider did not complete with success, so a client
+    // that silently degrades (an unsupported API it gives up on) names the
+    // call. Off unless set; open failure simply leaves tracing off.
+    let mut trace = std::env::var_os("MINICON_CONSOLE_TRACE").and_then(|path| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+    });
     // System ConPTY starts output in processed, wrapping VT mode (0x07).
     host.set_output_mode(7, &mut sink)?;
     host.resize(size.cols, size.rows, &mut sink)?;
@@ -342,7 +360,7 @@ fn serve(
                 }
                 Control::Resize(size, reply) => (
                     if sink.ready() && !host.has_pending_output() {
-                        host.resize(size.cols, size.rows, &mut sink)
+                        host.terminal_resize(size.cols, size.rows, &mut sink)
                     } else {
                         Err(io::ErrorKind::WouldBlock.into())
                     },
@@ -557,11 +575,11 @@ fn serve(
         }
         match driver.receive(Duration::from_millis(5)) {
             Ok(request) => {
-                settle_native_result(
-                    host.dispatch_with_output_ready(request, sink.ready(), &mut sink),
-                    child,
-                    &mut driver_closed,
-                )?;
+                let dispatched = host.dispatch_with_output_ready(request, sink.ready(), &mut sink);
+                if let (Some(trace), Ok(receipt)) = (trace.as_mut(), dispatched.as_ref()) {
+                    trace_receipt(trace, receipt);
+                }
+                settle_native_result(dispatched, child, &mut driver_closed)?;
                 mode.store(host.input_mode(), Ordering::Release);
                 // API-level rejection was completed to the requesting client;
                 // it is not a transport failure or authority to kill siblings.
@@ -572,6 +590,23 @@ fn serve(
     }
     host.cancel_pending_reads()?;
     Ok(())
+}
+
+/// One trace line per non-success console request: driver function, console
+/// API number (for function 7), and the NTSTATUS returned to the client.
+fn trace_receipt(trace: &mut std::fs::File, receipt: &minicon_console::DispatchReceipt) {
+    use std::io::Write as _;
+    if receipt.status == 0 || receipt.pending {
+        return;
+    }
+    let api = receipt
+        .api
+        .map_or_else(|| "-".to_owned(), |api| format!("{api:#010x}"));
+    let _ = writeln!(
+        trace,
+        "function={} api={api} status={:#010x}",
+        receipt.function, receipt.status as u32
+    );
 }
 
 /// Decodes an SGR mouse report at the front of `bytes` into the native

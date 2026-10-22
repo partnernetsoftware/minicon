@@ -682,11 +682,29 @@ impl ConTerminal {
         self.program_label = program_stem(&program);
         self.current_title = self.program_label.clone();
 
-        let spawned = command.spawn().map_err(|error| {
+        let spawned = match command.spawn() {
+            Ok(spawned) => spawned,
+            // On Windows a program that cannot start is the tab's failure, not
+            // the host's: the tab stays, reports a dead child with a non-zero
+            // code under the program's name, and says why. ConPTY and the
+            // console agent produced that shape on their own (they start a
+            // console host first); the owned Rust console fails the spawn
+            // synchronously, so the product states the same contract itself.
+            #[cfg(windows)]
+            Err(error) => {
+                self.record_spawn_failure(&format!("{program}: {error}"), waker);
+                return Ok(());
+            }
             // Name the program: "failed to spawn" with no subject is the kind
             // of error message that costs a user ten minutes.
-            PixelWindowError::failed("cmd_spawn_failed", format!("{program}: {error}"))
-        })?;
+            #[cfg(not(windows))]
+            Err(error) => {
+                return Err(PixelWindowError::failed(
+                    "cmd_spawn_failed",
+                    format!("{program}: {error}"),
+                ));
+            }
+        };
         let (mut master, child) = spawned.into_parts();
 
         // Reader thread: blocking read loop (the platform read polls internally),
@@ -773,6 +791,21 @@ impl ConTerminal {
         self.child_exit_code_encoded = child_exit_code_encoded;
 
         Ok(())
+    }
+
+    /// Presents a program that could not start as this tab's exited child:
+    /// the reason on screen, a dead child with exit code 1, and the usual exit
+    /// path (`drain_pty` observes it like any other exit).
+    #[cfg(windows)]
+    fn record_spawn_failure(&mut self, reason: &str, waker: &WindowWaker) {
+        self.parser
+            .process(format!("minicon: cannot start {reason}\r\n").as_bytes());
+        self.presentation_output_pending = true;
+        let exit_code = Arc::new(AtomicU64::new(encode_child_exit_code(Some(1))));
+        let exit_pending = Arc::new(AtomicBool::new(true));
+        self.child_exit_code_encoded = exit_code;
+        self.child_exit_pending = exit_pending;
+        let _ = waker.wake();
     }
 
     pub(super) fn drain_pty(&mut self) -> DrainOutcome {

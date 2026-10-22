@@ -250,11 +250,42 @@ and other programmatic editing operations remain to be qualified.
 
 ## PTY backend selection
 
-The owner's investigation of an owned Windows console implementation is tracked
-in [PRD 02.34](PRD_02_34_windows_console_backend.md). It has not changed the
-shipped backend selection or established that conhost caused a reported failure.
+### Backend default decision (0.2.20)
 
-An explicit experimental GUI opt-in is implemented: `--feature rust-console`
+**Decision: the owned Rust console (`minicon-console`) is the Windows default
+backend from 0.2.20**, on every Windows build that carries it (the default
+build now does: `experimental-rust-console` is a default Cargo feature). The
+console agent stays one word away — `--feature console-agent` or
+`"backend": "console-agent"` in `minicon.json` — and ConPTY stays
+selectable with `--feature conpty`. One owner decides for startup and
+`--status` alike: `backend_selection` in src/main.rs (CLI, then config, then
+this default; a build without rust-console falls back to the console agent).
+
+Evidence weighed, each recorded below or in its owner:
+
+| Gate | Verdict |
+|---|---|
+| Owner-reported misalignment ({BUG}) | Attributed to the classic-path wire; rust-console renders the court correctly ([PRD 24.01](PRD_02_24_01_tui_compatibility.md)) |
+| Mouse ({MOUSE}) | Fixed and at parity with the agent (records) — see the mouse bullet below |
+| Process / memory / latency / crash cleanup ({COURTS}, local) | rust-console best or equal on every axis — cost court below |
+| Native runtime on Windows ARM64 ({COURTS}) | dev-loop-crosscheck runs the native `rust_console_pty` suite on win-x86_64 and win-aarch64 |
+| Default-build black-box suites | Every GUI journey now runs on rust-console; the flip surfaced and fixed three real gaps: MSYS2 programs (Git for Windows `less`/`bash`) wrote nothing because `GetConsoleWindow` was unimplemented — a hidden pseudo-console window now answers it; terminal resizes did not notify readers without `ENABLE_WINDOW_INPUT`, which conhost does (measured) — codex-cli/ratatui redraw only on that event; and a program that cannot start now stays the tab's failure on Windows instead of ending the host |
+| Rollback | One CLI word or one config key; documented in `--status` |
+
+Known differences kept open by name, not hidden: the default console input
+mode the provider reports is `0x7` where conhost reports `0x1F7` (PRD 02.34
+owns the mode contract); the exact-Candidate visible three-agent matrix is
+recorded with the release. A suite named for a backend must select it
+explicitly — `minicon_console_agent` now passes `--feature console-agent`,
+because the environment variable alone no longer selects the agent for a
+MiniCon session.
+
+### Selection mechanics
+
+The owner's investigation of an owned Windows console implementation is tracked
+in [PRD 02.34](PRD_02_34_windows_console_backend.md).
+
+An explicit GUI selection is implemented: `--feature rust-console`
 requires a Windows build with `experimental-rust-console`, selects the existing
 `ChildCommand::rust_console()` path and is inherited by new session seeds.
 Positive backend selections are exclusive and later selections win; `no-`
