@@ -200,7 +200,7 @@ pub fn load(
     if ipc {
         use gtk::prelude::WidgetExt;
         use tao::platform::unix::WindowExtUnix;
-        use webkit2gtk::prelude::WebViewExt;
+        use webkit2gtk::WebViewExt;
         use wry::WebViewExtUnix;
         let failures = event_loop.create_proxy();
         webview

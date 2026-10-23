@@ -566,6 +566,16 @@ child pixels are omitted. Owner approval of these interactions is the
   aarch64 Linux `c_char`; the passing rerun uses the module-qualified test name
   and ABI-correct `c_char`.
 
+## Browser workspace qualification follow-up (2026-10-24)
+
+- Dev-loop run `39991263519` did not compile the product: dispatch passed
+  abbreviated `d4ab1f2`, which checkout interpreted as a branch/tag pattern.
+  Subsequent exact-source dispatches must use the full 40-character SHA.
+- One-pack run `39991301975` reached both native Linux helper builds and
+  rejected `webkit2gtk::prelude::WebViewExt` (E0432/E0599). The crate exports
+  `WebViewExt` at its root; correcting that import still requires both native
+  builds and runtime courts. Neither failed run is qualification evidence.
+
 ## Non-goals
 
 - A date-driven patch of 0.2.20, or publishing unqualified 0.2.21 artifacts.
