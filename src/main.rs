@@ -2164,6 +2164,18 @@ impl ConApp {
         }
     }
 
+    /// Load the default DeepSeek authorize page into the one browser panel.
+    fn start_deepseek_oauth(&mut self, window: &PixelWindow) {
+        match browser::deepseek_oauth_authorize() {
+            Ok(url) => {
+                self.present_http_link(window, &url);
+            }
+            Err(reason) => {
+                self.note_host_notice(format!("DeepSeek OAuth refused: {reason}"), window);
+            }
+        }
+    }
+
     fn open_browser_tab_contained(&mut self, window: &PixelWindow) {
         if let Err(error) = self.open_browser_tab(window) {
             self.note_host_notice(format!("could not open a browser tab: {error}"), window);
@@ -2365,6 +2377,12 @@ impl ConApp {
         // Browser tab, peer of Ctrl+Shift+T. Not a tray popup.
         if text.eq_ignore_ascii_case("o") {
             self.open_browser_tab_contained(window);
+            return Ok(true);
+        }
+        // DeepSeek OAuth in the one content panel. Same host as Ctrl+click,
+        // so MINICON_BROWSER_HTTP_PROXY is installed. Not a system browser.
+        if text.eq_ignore_ascii_case("d") {
+            self.start_deepseek_oauth(window);
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("n") {
@@ -4515,12 +4533,7 @@ mod tests {
     /// DeepSeek OAuth uses the same one content panel as Ctrl+click.
     #[test]
     fn oauth_authorize_reuses_the_browser_content_panel() {
-        let url = browser::oauth_authorize_load(
-            "https://platform.deepseek.com/oauth/authorize",
-            "http://127.0.0.1/callback",
-            &["127.0.0.1"],
-        )
-        .expect("allowlisted redirect");
+        let url = browser::deepseek_oauth_authorize().expect("allowlisted redirect");
         let mut workspace = workspace::Workspace::default();
         let mut browsers = SessionStore::default();
         assert!(ConApp::handoff_http_link(

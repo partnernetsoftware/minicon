@@ -651,6 +651,26 @@ pub fn webview_backend_linked() -> bool {
     cfg!(feature = "wry-host")
 }
 
+/// Default DeepSeek authorize endpoint. The login flow loads this in the
+/// built-in content panel. It is not an OS-browser URL.
+pub const DEEPSEEK_AUTHORIZE_URL: &str = "https://platform.deepseek.com/oauth/authorize";
+
+/// Loopback redirect for the DeepSeek authorize page. The host must stay on
+/// the allowlist. This does not store a token.
+pub const DEEPSEEK_OAUTH_REDIRECT: &str = "http://127.0.0.1/minicon/oauth";
+
+/// DeepSeek authorize URL for the one content panel.
+///
+/// The caller loads the result with the page host. That host already
+/// installs `MINICON_BROWSER_HTTP_PROXY`. No system browser, no token.
+pub fn deepseek_oauth_authorize() -> Result<String, &'static str> {
+    oauth_authorize_load(
+        DEEPSEEK_AUTHORIZE_URL,
+        DEEPSEEK_OAUTH_REDIRECT,
+        &["127.0.0.1"],
+    )
+}
+
 /// HTTPS authorize URL for the built-in content panel.
 ///
 /// `redirect_uri` must be loopback or https, and its host must be in
@@ -1024,6 +1044,42 @@ mod tests {
             page_load_from_exit("https://example.test/a", status.code()),
             PageLoad::Unavailable { reason, .. } if reason == "webkit-host-not-linked"
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deepseek_oauth_authorize_uses_the_browser_proxy_hook() {
+        let url = deepseek_oauth_authorize().unwrap();
+        assert!(url.starts_with("https://platform.deepseek.com/oauth/authorize?"));
+        assert!(url.contains("redirect_uri="));
+        let proxy = BrowserProxy {
+            http: Some("http://127.0.0.1:9".into()),
+            https: None,
+            no_proxy: None,
+        };
+        assert_eq!(
+            wry_proxy_endpoint(&proxy),
+            Some(("127.0.0.1".into(), "9".into()))
+        );
+        let dir = std::env::temp_dir().join(format!("minicon-oauth-proxy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("log");
+        let program = dir.join("minicon-page-host");
+        let script = format!(
+            "#!/bin/sh\nprintf '%s|%s\\n' \"$2\" \"$MINICON_BROWSER_HTTP_PROXY\" > '{}'\n",
+            log.display()
+        );
+        std::fs::write(&program, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut child = spawn_page_host_with_proxy(&program, &url, Some(&proxy)).unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap().trim(),
+            format!("{url}|http://127.0.0.1:9")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
