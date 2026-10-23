@@ -181,7 +181,8 @@ changing meaning.
 [-] B0 shell: browser tab is a root peer of a terminal tab (Ctrl+Shift+O;
        list-tabs kind=browser). One content panel. No tray. wry surface still absent
 [v] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
-       one browser content panel and stores the URL. That path does not call
+       one browser content panel and stores the canonical URL. A non-http
+       token does not change the panel. That path does not call
        host_open. Non-http is ignored. wry navigation still absent.
        Evidence: `http_handoff_reuses_one_browser_content_panel`
 [-] Bw page load: the content panel asks **minicon-web** (or today's

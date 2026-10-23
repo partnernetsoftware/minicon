@@ -75,8 +75,18 @@ impl BrowserTab {
     }
 
     /// Replace the one content panel's URL. Does not add a second panel.
-    pub fn show_http(&mut self, url: &str) {
-        self.panel.url = Some(url.to_owned());
+    ///
+    /// Only a canonical http(s) token is stored. Anything else leaves the
+    /// panel unchanged and returns false. This is not an OS browser open.
+    pub fn show_http(&mut self, url: &str) -> bool {
+        let Some(canonical) = http_url_at(url, 0) else {
+            return false;
+        };
+        if canonical != url {
+            return false;
+        }
+        self.panel.url = Some(canonical);
+        true
     }
 
     pub fn note_load(&mut self, load: PageLoad) {
@@ -514,7 +524,9 @@ mod tests {
     #[test]
     fn a_browser_tab_hosts_exactly_one_panel() {
         let mut tab = BrowserTab::shell();
-        tab.show_http("https://example.test/a");
+        assert!(tab.show_http("https://example.test/a"));
+        assert!(!tab.show_http("mailto:a@b.test"));
+        assert!(!tab.show_http("https://example.test/a)"));
         assert_eq!(tab.panel_count(), 1);
         assert_eq!(tab.panel().url.as_deref(), Some("https://example.test/a"));
     }

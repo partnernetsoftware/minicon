@@ -2037,10 +2037,15 @@ impl ConApp {
             id
         };
         if let Some(tab) = browsers.get_mut(&id) {
-            tab.show_http(url);
+            if !tab.show_http(url) {
+                return false;
+            }
         } else {
             let mut tab = browser::BrowserTab::shell();
-            tab.show_http(url);
+            if !tab.show_http(url) {
+                workspace.close(id);
+                return false;
+            }
             if browsers.insert(id, tab).is_err() {
                 workspace.close(id);
                 return false;
