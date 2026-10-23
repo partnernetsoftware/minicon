@@ -218,10 +218,10 @@ fn ctrl_letter_c0(event: &NormalizedKeyEvent) -> Option<u8> {
             return Some(byte);
         }
     }
-    if let Some(text) = event.text.as_deref() {
-        if let Some(byte) = already_encoded_c0(text.chars().next()) {
-            return Some(byte);
-        }
+    if let Some(text) = event.text.as_deref()
+        && let Some(byte) = already_encoded_c0(text.chars().next())
+    {
+        return Some(byte);
     }
     if let PhysicalKeyCode::Letter(letter) = event.physical {
         return ascii_letter_to_c0(Some(letter));

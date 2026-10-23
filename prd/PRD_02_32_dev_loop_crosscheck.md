@@ -78,6 +78,21 @@ that stats a guessed path and treats "not found" as "nothing to run" reports
 a false green with zero suites executed. This is not hypothetical: it is
 exactly what happened and was caught below.
 
+From v0.2.21, each cell also runs the portable `minicon-console` library
+(`--lib`) and its host-neutral integration tests `synchronized_presentation`
+and `presentation_allocations`. An unfiltered run that logs `running 0 tests`
+for one of those suites fails the cell. The Windows console service
+(`minicon_console_agent`, `rust_console_pty`) stays inside `win-*`. Linux
+cells additionally run the POSIX PTY session tests, the two native X11
+clipboard unit tests, and `minicon_load_portability_linux`. After Xvfb is
+up, the Linux job sets `MINICON_REQUIRE_DISPLAY=1`; an X11 test that would
+have returned success with no `DISPLAY` fails instead. Those Linux suites
+are not implied by a green macOS or Windows cell. Receipts from that court
+are still required before the plan's leaves close. The PTY invocation names
+feature `pty` and the X11 invocation names feature `clipboard`; omitting those
+features compiles the target tests out, so the unfiltered nonzero-test guard
+would correctly reject the court rather than certify a no-op.
+
 From v0.2.15 preparation, each cell also runs the UI-core library suite and
 `scripts/check-reuse.sh`. The latter sets `CARGO_BUILD_TARGET` to the matrix
 triple, checks minimal core/UI dependency edges in an isolated workspace and

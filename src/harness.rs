@@ -59,8 +59,12 @@ impl Backend {
 }
 
 /// Private file the GUI writes after a DeepSeek code exchange.
+///
+/// `HOME` wins. Windows profiles often have `USERPROFILE` and no `HOME`.
 pub fn oauth_bearer_path() -> Option<std::path::PathBuf> {
-    let home = std::env::var_os("HOME")?;
+    let home = std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()))?;
     Some(
         std::path::PathBuf::from(home)
             .join(".minicon-embed")
@@ -70,46 +74,27 @@ pub fn oauth_bearer_path() -> Option<std::path::PathBuf> {
 
 pub fn store_oauth_bearer(token: &str) -> Result<(), String> {
     let path = oauth_bearer_path().ok_or_else(|| "HOME is unset".to_owned())?;
+    store_oauth_bearer_at(&path, token)
+}
+
+fn store_oauth_bearer_at(path: &std::path::Path, token: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
-        }
-    }
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&path)
+        minicon_platform::filesystem::protect_private_directory(parent)
             .map_err(|error| error.to_string())?;
-        file.write_all(token.as_bytes())
-            .map_err(|error| error.to_string())?;
-        Ok(())
     }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(&path, token).map_err(|error| error.to_string())
-    }
+    minicon_platform::filesystem::write_private_atomic(path, token.as_bytes())
+        .map_err(|error| error.to_string())
 }
 
 pub fn load_oauth_bearer() -> Option<String> {
     let path = oauth_bearer_path()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&path).ok()?.permissions().mode();
-        if mode & 0o077 != 0 {
-            return None;
-        }
-    }
-    let token = std::fs::read_to_string(path).ok()?;
+    load_oauth_bearer_at(&path)
+}
+
+fn load_oauth_bearer_at(path: &std::path::Path) -> Option<String> {
+    let bytes = minicon_platform::filesystem::read_private_bounded(path, 4096).ok()?;
+    let token = String::from_utf8(bytes).ok()?;
     let token = token.trim();
     if token.is_empty() || token.len() > 256 || !token.is_ascii() {
         None
@@ -1165,6 +1150,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("fixture root");
         std::fs::canonicalize(&root).expect("canonical fixture root")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bearer_file_stays_private_and_refuses_a_symlink() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let root = fixture("bearer");
+        let path = root.join("deepseek-bearer");
+        std::fs::write(&path, b"old").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        store_oauth_bearer_at(&path, "token-value").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(load_oauth_bearer_at(&path).as_deref(), Some("token-value"));
+
+        let elsewhere = root.join("elsewhere");
+        std::fs::write(&elsewhere, b"secret").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        symlink(&elsewhere, &path).unwrap();
+        let error = store_oauth_bearer_at(&path, "new-token").unwrap_err();
+        assert!(!error.is_empty());
+        assert_eq!(std::fs::read(&elsewhere).unwrap(), b"secret");
+        assert!(load_oauth_bearer_at(&path).is_none());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

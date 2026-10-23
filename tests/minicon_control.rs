@@ -191,7 +191,9 @@ fn control_endpoint(suffix: &str) -> String {
         format!(r"pipe:\\.\pipe\minicon-test-{suffix}")
     } else {
         let base = minicon_platform::ipc::native_runtime_directory();
-        let _ = fs::create_dir_all(&base);
+        fs::create_dir_all(&base).expect("create private runtime root");
+        minicon_platform::filesystem::protect_private_directory(&base)
+            .expect("protect private runtime root");
         let dir = base.join(format!("ct-{suffix}"));
         let _ = fs::create_dir_all(&dir);
         #[cfg(unix)]
@@ -2113,6 +2115,10 @@ fn composer_send_delivers_paste_then_submit_to_raw_application() {
 #[test]
 fn composer_paste_of_a_clipboard_image_inserts_its_temp_file_path() {
     if std::env::var_os("DISPLAY").is_none() {
+        assert!(
+            std::env::var_os("MINICON_REQUIRE_DISPLAY").is_none(),
+            "MINICON_REQUIRE_DISPLAY is set but DISPLAY is unset; refusing a silent skip"
+        );
         eprintln!("DIAGNOSTIC: no DISPLAY; X11 clipboard image paste cannot be driven here");
         return;
     }

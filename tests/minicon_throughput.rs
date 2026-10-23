@@ -50,7 +50,9 @@ fn control_endpoint(suffix: &str) -> String {
         format!(r"pipe:\\.\pipe\minicon-throughput-{suffix}")
     } else {
         let base = minicon_platform::ipc::native_runtime_directory();
-        let _ = std::fs::create_dir_all(&base);
+        std::fs::create_dir_all(&base).expect("create private runtime root");
+        minicon_platform::filesystem::protect_private_directory(&base)
+            .expect("protect private runtime root");
         let dir = base.join(format!("tp-{suffix}"));
         let _ = std::fs::create_dir_all(&dir);
         #[cfg(unix)]

@@ -44,7 +44,18 @@ pub fn load(url: &str, smoke: bool, slot: Option<crate::PanelSlot>) -> Result<()
     if let Some(slot) = slot {
         size_embedded_view(&window, slot);
     }
-    let mut builder = WebViewBuilder::new().with_url(url);
+    let mut builder = WebViewBuilder::new()
+        .with_url(url)
+        .with_navigation_handler(|next| {
+            // ProxyConfig::Http cannot list ignore hosts. A loopback redirect
+            // would otherwise leave this process and miss the OAuth bridge.
+            if crate::webview_must_bypass_proxy(&next) {
+                let _ = crate::deliver_loopback_get(&next);
+                false
+            } else {
+                true
+            }
+        });
     if smoke {
         builder = builder.with_on_page_load_handler(move |event, _loaded| {
             if matches!(event, wry::PageLoadEvent::Finished) {

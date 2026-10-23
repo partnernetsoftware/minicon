@@ -119,19 +119,35 @@ names above.
   (`browser-host-not-configured`), not `host_open`. Evidence:
   `page_host_request_is_the_helper_not_the_system_browser`,
   `spawn_page_host_passes_the_url_to_the_helper`.
-  A linked wry surface, OAuth, dashboard and multi-content-panel layout
-  remain follow-ups in
-  [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
-  Renderer / crate boundary (minicon-web lib + optional host; no wry in core
-  `minicon`) stays recorded in [PRD_02_31](PRD_02_31_v0_2_horizon.md).
-- [-] **`minicon-web` module (adopted 2026-10-23).** Unified browser function
-  interface (open/load URL, proxy hook application, staged OAuth / dashboard /
-  file preview / wasm) and the only place wry/WebView implementation may live.
-  Product face remains **Tab / content panel** (now 1:1, future 1:N); **no
-  tray**. Chrome panels (sent-history / settings / panel toggle) stay chrome —
-  c48a6a0. Path: `crates/minicon-web/` (lib + `minicon-web-host`);
-  `src/browser.rs` re-exports. The crate is a workspace member. A linked wry
-  body is still a later leaf — see PRD_02_31 / plan-browser-tabs.
+  Feature `wry-host` does navigate, inside `minicon-web-host` only. On tip
+  `be99a86` that host reparents into the main window on X11 and unmaps while
+  a terminal tab is active. One Linux WebKitGTK `--probe` 0 is not a
+  six-cell receipt. Dashboard, preview, wasm and 1:N layout remain follow-ups
+  in [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Renderer boundary stays in
+  [PRD_02_31](PRD_02_31_v0_2_horizon.md).
+- [v] **one browser root, and the embed slot is the content column (0.2.21).**
+  `add_browser_root` inserts one browser root; a second call returns `None`
+  and leaves the strip and the selection unchanged. `Layout::content_column`
+  is the rectangle under the tab header, above the composer, inset by the
+  sidebar and the history chrome. Evidence:
+  `a_browser_tab_is_a_root_peer_of_a_terminal_tab`,
+  `content_column_is_the_terminal_rectangle` (macOS arm64). Live resize of an
+  already-reparented X child is BLOCKED. Owner:
+  [plan-v0.2.21](../plan/plan-v0.2.21.md) `{PANEL}`.
+- [-] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
+  API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
+  **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
+  `minicon-web-host`); `src/browser.rs` re-exports. wry, tao and gtk are
+  linked only when the host is built with `wry-host`. Core `minicon` does
+  not enable that feature.
+- [-] **OAuth bearer storage stays behind the platform filesystem seam.**
+  The product names the `.minicon-embed/deepseek-bearer` state, while
+  `minicon-platform::filesystem` owns protected-directory setup, atomic
+  private publication, link-like path refusal and bounded private reads.
+  Unix local evidence proves mode `0600` and refusal to write through a
+  symlink. The Windows adapter installs a protected current-user ACL, but a
+  Windows native receipt is still `BLOCKED`; the OAuth vertical is not marked
+  complete from the macOS result.
 - [v] **chrome panels stay chrome.** The right-side **sent-history panel**,
   the **settings panel**, and the header **panel toggle** / `Ctrl+Shift+H`
   continue to mean host chrome (see Host UI below). Their evidence strings and

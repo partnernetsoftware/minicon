@@ -1860,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "minicon"
-version = "0.2.20"
+version = "0.2.21"
 dependencies = [
  "flate2",
  "itoa",
@@ -1946,6 +1946,7 @@ name = "minicon-web"
 version = "0.1.0"
 dependencies = [
  "gtk",
+ "sha2 0.11.0",
  "tao",
  "wry",
 ]

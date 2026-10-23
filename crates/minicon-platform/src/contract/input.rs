@@ -154,6 +154,28 @@ pub struct NormalizedKeyEvent {
     pub modifiers: ModifierState,
 }
 
+/// Letter of a Ctrl+Shift workspace chord.
+///
+/// xkb reports Control with `logical: Unidentified` and the letter only on
+/// the physical key. Callers that look only at `LogicalKey::Character` miss
+/// the chord and the terminal then encodes it as C0.
+pub fn chord_letter(event: &NormalizedKeyEvent) -> Option<char> {
+    if let LogicalKey::Character(text) = &event.logical
+        && let Some(letter) = text
+            .chars()
+            .next()
+            .filter(|letter| letter.is_ascii_alphabetic())
+    {
+        return Some(letter.to_ascii_lowercase());
+    }
+    if let PhysicalKeyCode::Letter(letter) = event.physical
+        && letter.is_ascii_alphabetic()
+    {
+        return Some(letter.to_ascii_lowercase());
+    }
+    None
+}
+
 impl ModifierState {
     pub const fn empty() -> Self {
         Self {
@@ -253,6 +275,30 @@ impl Utf16TextDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chord_letter_uses_the_physical_key_when_logical_is_unidentified() {
+        let event = NormalizedKeyEvent {
+            logical: LogicalKey::Unidentified,
+            physical: PhysicalKeyCode::Letter('D'),
+            text: None,
+            state: KeyPressState::Pressed,
+            repeat: false,
+            modifiers: ModifierState {
+                control: true,
+                shift: true,
+                alt: false,
+                meta: false,
+            },
+        };
+        assert_eq!(chord_letter(&event), Some('d'));
+        let named = NormalizedKeyEvent {
+            logical: LogicalKey::Character("O".to_owned()),
+            physical: PhysicalKeyCode::Other,
+            ..event
+        };
+        assert_eq!(chord_letter(&named), Some('o'));
+    }
 
     #[test]
     fn committed_text_and_named_controls_stay_distinct() {

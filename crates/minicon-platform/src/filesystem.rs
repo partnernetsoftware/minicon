@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::{
     ffi::OsString,
     fs::OpenOptions,
-    io::{self, Write as _},
+    io::{self, Read as _, Write as _},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -190,6 +190,19 @@ pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
             "private atomic target requires a file name",
         )
     })?;
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata)
+            if !crate::filesystem_entry::metadata_entry_facts(&metadata).is_real_file() =>
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "private atomic target must be a real regular file entry",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
     let mut created = None;
     for _ in 0..32 {
         let mut temporary_name = OsString::from(".");
@@ -232,6 +245,35 @@ pub fn write_private_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     replace_file(&temporary, path).map_err(|e| step("replace", e))?;
     cleanup.disarm();
     sync_parent(parent).map_err(|e| step("sync-parent", e))
+}
+
+/// Read an owner-private regular file without following link-like path entries.
+///
+/// Every ancestor and the final entry are opened component by component. Unix
+/// additionally requires that group/other mode bits are clear. Windows relies
+/// on the protected current-user-only parent ACL established by
+/// [`protect_private_directory`].
+#[cfg(feature = "filesystem")]
+pub fn read_private_bounded(path: &Path, max_bytes: usize) -> io::Result<Vec<u8>> {
+    let mut file = crate::filesystem_open::open_existing_path(
+        path,
+        crate::filesystem_open::ExistingEntryType::File,
+    )?;
+    selected::filesystem::validate_private_file(&file)?;
+    let limit = u64::try_from(max_bytes)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    let mut bytes = Vec::new();
+    std::io::Read::by_ref(&mut file)
+        .take(limit)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("private file exceeds {max_bytes} byte limit"),
+        ));
+    }
+    Ok(bytes)
 }
 
 #[cfg(feature = "filesystem")]
@@ -489,6 +531,16 @@ mod tests {
         write_private_atomic(&path, b"first").expect("publish first value");
         write_private_atomic(&path, b"second").expect("replace value");
         assert_eq!(std::fs::read(&path).expect("read value"), b"second");
+        assert_eq!(
+            read_private_bounded(&path, 6).expect("read private value"),
+            b"second"
+        );
+        assert_eq!(
+            read_private_bounded(&path, 5)
+                .expect_err("private read is bounded")
+                .kind(),
+            std::io::ErrorKind::InvalidData
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;

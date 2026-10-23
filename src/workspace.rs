@@ -117,7 +117,20 @@ impl Workspace {
 
     /// A browser tab at the root of the strip: same open/close/switch identity
     /// as a terminal tab, and no child of a tray window.
+    /// The one browser tab. A second root is not the current panel model.
+    pub fn browser_tab(&self) -> Option<TabId> {
+        self.nodes
+            .iter()
+            .find(|node| node.kind == TabKind::Browser)
+            .map(|node| node.id)
+    }
+
+    /// Insert the single browser root. A second call returns `None` and does
+    /// not move the selection: one page host is shared by that one tab.
     pub fn add_browser_root(&mut self) -> Option<TabId> {
+        if self.browser_tab().is_some() {
+            return None;
+        }
         self.add(
             None,
             "browser".to_owned(),
@@ -249,7 +262,22 @@ mod tests {
         assert_eq!(workspace.node(browser).unwrap().kind, TabKind::Browser);
         assert_eq!(workspace.node(browser).unwrap().parent, None);
         assert_eq!(workspace.active(), Some(browser));
+        assert_eq!(workspace.browser_tab(), Some(browser));
+        let count = workspace.nodes().len();
+        assert_eq!(workspace.add_browser_root(), None);
+        assert_eq!(workspace.nodes().len(), count);
+        assert_eq!(
+            workspace
+                .nodes()
+                .iter()
+                .filter(|node| node.kind == TabKind::Browser)
+                .count(),
+            1
+        );
+        assert_eq!(workspace.browser_tab(), Some(browser));
+        assert_eq!(workspace.active(), Some(browser));
         workspace.close(browser).unwrap();
+        assert_eq!(workspace.browser_tab(), None);
         assert_eq!(workspace.active(), Some(terminal));
     }
 

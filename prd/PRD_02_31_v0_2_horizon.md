@@ -640,10 +640,13 @@ prefer direct-wry via a helper / shared adapter, never link wry/tao into core
 stable function boundary is workspace member `crates/minicon-web`
 (`PageHost`, `BrowserTab`, `http_url_at`, `resolve_proxy`, `page_host_request`,
 `spawn_page_host`). `src/browser.rs` re-exports it. `minicon-web-host` is the
-replaceable process body (`--load`); with no WebView linked it reports
-Unavailable and does not call the OS browser. Sequencing
-and leaf status live in [plan-browser-tabs.md](../plan/plan-browser-tabs.md);
-workspace owns the tab/content-panel requirements and evidence.
+replaceable process body (`--probe` / `--load` / `--smoke`). With no WebView
+linked it reports Unavailable and does not call the OS browser. Feature
+`wry-host` links wry and tao into that binary only and, on Linux, packs the
+page into tao's default vbox. Sequencing of the remaining holes is
+[plan-v0.2.21.md](../plan/plan-v0.2.21.md); the boundary list stays in
+[plan-browser-tabs.md](../plan/plan-browser-tabs.md). Workspace owns the
+tab/content-panel requirements and evidence.
 
 **`minicon-web` (adopted 2026-10-23).** Encapsulate the browser surface as
 workspace crate **`crates/minicon-web`**: library API plus host binary
@@ -655,8 +658,16 @@ change without rewriting product callers. Core `minicon` and `minicon-core`
 re-exports). Size-boundary rule above is unchanged: a missing WebView runtime
 must not take down the terminal. Product face stays Tab / content panel
 (PRD_02_25); no tray. The crate is a workspace member. The default host
-body does not link wry and exits 69 Unavailable. Target interface inventory:
+body does not link wry and exits 69 Unavailable. `wry-host` is opt-in.
+Target interface inventory:
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
+
+OAuth credentials do not add a product-layer native filesystem exception.
+MiniCon owns the bearer path and `minicon-platform::filesystem` owns private
+directory protection, atomic private publication and bounded no-follow reads.
+The local Unix test proves 0600 plus symlink refusal. The Windows adapter's
+protected current-user ACL implementation remains `BLOCKED` as a runtime claim
+until a Windows court executes it.
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the

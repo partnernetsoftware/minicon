@@ -44,7 +44,7 @@ MiniCon — one-file local terminal
 │   ├── minicon-platform — capability contracts and native OS/ISA/ABI adapters
 │   ├── [-] minicon-console — independent terminal library and native service
 │   │   └── prd/PRD_02_35_terminal_library.md
-│   └── [-] minicon-web — browser function API + wry/WebView isolation (workspace member; wry body later)
+│   └── [-] minicon-web — browser content-panel API; wry+tao only inside minicon-web-host
 │       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
 │           · plan/plan-browser-tabs.md
 ├── Qualification and delivery
@@ -54,6 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
+    ├── [-] v0.2.21 console runtime on every cell, Linux divergence fails Linux → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -134,12 +135,30 @@ flowchart LR
 
 ## Current frontier
 
+- [-] **v0.2.21: console courts, and the browser content panel.** Portable
+  `minicon-console` tests must run on every shipped cell, and a Linux-only
+  path must fail `lnx-*` even when Windows and macOS are green. Separately,
+  a browser tab's content panel is `minicon-web` (wry + tao only in
+  `minicon-web-host`); a terminal tab's panel stays the PTY. Tip `be99a86`
+  loads a page on one Linux WebKitGTK host and exchanges a DeepSeek code.
+  That is not a six-cell claim. An http loopback redirect is fetched by the
+  page host, not left in wry's empty proxy ignore list. The bearer file is
+  forced to mode `0600` and a symlink is refused; `HOME` falls back to
+  `USERPROFILE`. The authorize URL carries `state` and an S256 challenge, and
+  a wrong loopback request does not consume the listener. `wry-host` pulls gtk
+  only on Linux. One browser root is refused on a second `add_browser_root`,
+  and the embed slot is `Layout::content_column` (macOS unit tests only).
+  Live resize of an already-reparented X child is BLOCKED. The Windows bearer
+  path now uses the platform's protected current-user ACL implementation, but
+  its native runtime evidence is BLOCKED. G4 and G6 stay carried debt.
+  [Plan](plan/plan-v0.2.21.md).
 - [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
   limited Win32 I/O/records and job cleanup are implemented. The explicit
   experimental PTY and GUI choice is packaged in v0.2.18; scoped PowerShell/Node
   and Ctrl+C evidence exists. Broader API/runtime compatibility, especially
   Windows ARM64 Rust-provider execution and a visible exact-Candidate agent
-  matrix, remain open. The classic Windows provider is still the default.
+  matrix, remain open. From v0.2.20 the owned Rust console is the Windows
+  default; the classic agent remains the one-word rollback.
   [Owner](prd/PRD_02_34_windows_console_backend.md) and
   [sequence](plan/plan-windows-console-backend.md).
 - [v] **v0.2.20 published**, `2026-10-22T16:04:27Z`, source
@@ -176,15 +195,16 @@ flowchart LR
   open. The 10 MiB intent is not achieved by this release. Measurements and
   retained-frame/native-host investigations belong to
   [delivery](prd/PRD_02_27_con_delivery.md).
-- [-] **Built-in browser tabs (content panels) via `minicon-web`.** Tab shell
-  and proxy hook reserved; Ctrl+click http(s) → browser content panel (not OS
-  default). Adopted boundary: `crates/minicon-web` (lib + `minicon-web-host`)
-  unifies open/load URL, `PageHost`, proxy, staged OAuth/dashboard/preview/wasm
-  and isolates wry; core `minicon` does not link wry (`src/browser.rs`
-  re-exports). wry navigation and 1:N content-panel layout are later. No tray.
-  Names: [Workspace terminology](prd/PRD_02_25_con_workspace.md#terminology-naming-decision-2026-10-23);
-  sequence / target API: [plan-browser-tabs](plan/plan-browser-tabs.md);
-  renderer: [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).
+- [-] **Built-in browser tabs (content panels) via `minicon-web`.** One
+  browser tab peers a terminal tab. Its content panel is the page;
+  `minicon-console` stays the terminal panel. Feature `wry-host` links
+  wry/tao/gtk only into `minicon-web-host`. Core `minicon` does not. Ctrl+click
+  http(s) and DeepSeek authorize use that panel, not the OS browser. No tray.
+  1:N panels, dashboard, preview and wasm are later.
+  Names: [Workspace](prd/PRD_02_25_con_workspace.md);
+  next holes: [plan-v0.2.21](plan/plan-v0.2.21.md);
+  boundary: [plan-browser-tabs](plan/plan-browser-tabs.md) and
+  [horizon](prd/PRD_02_31_v0_2_horizon.md).
 - [-] **macOS host-UI readability** remains open, including tab/header and
   composer-button text. [Workspace](prd/PRD_02_25_con_workspace.md) owns the
   zoom/text/padding follow-up.

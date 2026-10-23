@@ -97,3 +97,16 @@ pub fn private_create_new_options() -> OpenOptions {
     options.write(true).create_new(true).mode(0o600);
     options
 }
+
+#[cfg(feature = "filesystem")]
+pub fn validate_private_file(file: &std::fs::File) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    if file.metadata()?.permissions().mode() & 0o077 != 0 {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "private file is readable by group or other users",
+        ))
+    } else {
+        Ok(())
+    }
+}

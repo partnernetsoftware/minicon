@@ -241,7 +241,9 @@ pub fn request(request: &NetworkHttpRequest) -> Result<NetworkHttpResponse, Netw
         })?;
         agent_config.proxy(Some(proxy)).build()
     } else {
-        agent_config.build()
+        // `None` means direct. Do not let ureq rediscover process proxy
+        // variables behind the caller's resolved proxy policy.
+        agent_config.proxy(None).build()
     };
     let agent: ureq::Agent = config.into();
 
@@ -672,7 +674,12 @@ mod tests {
     fn a_broken_socket_mid_body_stays_a_transport_failure() {
         let mut source = FailingReader(std::io::ErrorKind::ConnectionReset);
         let failure = read_bounded(&mut source, 100).unwrap_err();
-        assert_eq!(failure.kind(), NetworkHttpErrorKind::Transport);
+        assert_eq!(
+            failure.kind(),
+            NetworkHttpErrorKind::Transport,
+            "broken body detail: {}",
+            failure.detail()
+        );
         assert!(failure.detail().contains("body stalled at byte 0"));
     }
 
@@ -862,7 +869,12 @@ mod tests {
         let failure =
             request(&get(&format!("http://127.0.0.1:{port}/gone")).timeout(Duration::from_secs(5)))
                 .unwrap_err();
-        assert_eq!(failure.kind(), NetworkHttpErrorKind::Transport);
+        assert_eq!(
+            failure.kind(),
+            NetworkHttpErrorKind::Transport,
+            "closed loopback detail: {}",
+            failure.detail()
+        );
         assert!(!failure.detail().is_empty());
     }
 }

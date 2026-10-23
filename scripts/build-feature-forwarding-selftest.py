@@ -31,10 +31,13 @@ def main():
     env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
     try:
         cases = [
-            ["--features", "experimental-rust-console", "rust_console_", "--", "--exact", "--features"],
-            ["--features=one", "-Ftwo", "-F", "three", "rust_console_", "--", "--exact"],
+            ([], []),
+            (["--features", "experimental-rust-console", "rust_console_", "--", "--exact", "--features"],
+             ["rust_console_", "--", "--exact", "--features"]),
+            (["--features=one", "-Ftwo", "-F", "three", "rust_console_", "--", "--exact"],
+             ["rust_console_", "--", "--exact"]),
         ]
-        for arguments in cases:
+        for arguments, forwarded in cases:
             log = fixture / "calls.log"
             if log.exists():
                 log.unlink()
@@ -44,13 +47,14 @@ def main():
             calls = [part.strip().splitlines() for part in log.read_text().split("CALL\n")[1:]]
             assert len(calls) == 3, calls
             workspace, terminal, lexer = [call[:-1] for call in calls]
-            assert workspace[-len(arguments):] == arguments, workspace
+            if arguments:
+                assert workspace[-len(arguments):] == arguments, workspace
             lint_config='build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]'
             for name, fork in [("vt100", terminal), ("vte", lexer)]:
                 assert fork == ["test", "--locked", "--manifest-path", f"third_party/{name}/Cargo.toml",
-                                "--config",lint_config,"--lib", "rust_console_", "--", "--exact", *(["--features"] if arguments is cases[0] else [])], fork
+                                "--config", lint_config, "--lib", *forwarded], fork
             assert "build.rustflags=[\"-D\",\"dead_code\",\"-D\",\"unused_variables\",\"-D\",\"unused_must_use\"]" in workspace
-        print("build feature forwarding: 2 black-box cases passed")
+        print("build feature forwarding: 3 black-box cases passed")
     finally:
         # Explicit owned files/directories only; never recursively remove paths.
         for path in [fixture / "calls.log", script, python_stub, cargo_stub]:

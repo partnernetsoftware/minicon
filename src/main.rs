@@ -88,6 +88,7 @@ use std::time::{Duration, Instant};
 use agent_interface::ScreenSnapshot;
 use minicon_platform::input::{
     KeyPressState, LogicalKey, ModifierState, NamedKey, NormalizedKeyEvent, PhysicalKeyCode,
+    chord_letter,
 };
 use minicon_platform::pty::{BoundedOutputPipe, ChildCommand, PtyChild, PtyMaster, TerminalSize};
 use minicon_platform::terminal_input::{self, TerminalKeyMode};
@@ -830,6 +831,8 @@ struct ConApp {
     oauth_code: Option<String>,
     /// Loopback redirect that the code was issued for.
     oauth_redirect: Option<String>,
+    /// PKCE verifier for that redirect. It is not put on the authorize URL.
+    oauth_verifier: Option<String>,
     /// In-flight code-for-token exchange. The access token is not the code.
     oauth_exchange: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Settings inherited when an empty workspace creates its next terminal.
@@ -1318,6 +1321,7 @@ impl ConApp {
             oauth_bridge: None,
             oauth_code: None,
             oauth_redirect: None,
+            oauth_verifier: None,
             oauth_exchange: None,
             session_seed,
             notes: composer::ComposerState::default(),
@@ -2019,10 +2023,21 @@ impl ConApp {
         self.refresh_title(window)
     }
 
-    /// Opens a browser tab beside terminal tabs. No PTY, no tray, no wry
-    /// navigation yet: the shell is the panel, and proxy is read when painted.
+    /// Focus the one browser tab, or open it. A second root would share the
+    /// single page host and leave the new tab's page unmapped.
     fn open_browser_tab(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         self.cancel_pointer_gestures_for_activation(window);
+        if let Some(id) = self.workspace.browser_tab() {
+            if self.workspace.active() != Some(id) {
+                self.select_tab(id);
+            }
+            self.sync_embedded_page(window);
+            self.mark_host_ui_full();
+            self.reveal_active_tree_row(window)?;
+            self.refresh_title(window)?;
+            window.request_redraw();
+            return Ok(());
+        }
         let id = self.workspace.add_browser_root().ok_or_else(|| {
             PixelWindowError::failed("con_tab_create", "browser tab limit reached")
         })?;
@@ -2037,6 +2052,7 @@ impl ConApp {
                 "stable tab id is already in use",
             ));
         }
+        self.sync_embedded_page(window);
         self.mark_host_ui_full();
         self.reveal_active_tree_row(window)?;
         self.refresh_title(window)?;
@@ -2056,11 +2072,7 @@ impl ConApp {
         if browser::http_url_at(url, 0).as_deref() != Some(url) {
             return false;
         }
-        let existing = workspace
-            .nodes()
-            .iter()
-            .find(|node| node.kind == workspace::TabKind::Browser)
-            .map(|node| node.id);
+        let existing = workspace.browser_tab();
         let id = if let Some(id) = existing {
             workspace.set_active(id);
             id
@@ -2109,19 +2121,19 @@ impl ConApp {
         if !metrics.is_drawable() {
             return None;
         }
-        let x = (self.effective_sidebar_dip() * metrics.scale_factor)
-            .round()
-            .max(0.0) as i32;
-        let width = metrics.physical_width.saturating_sub(x as u32);
-        if width == 0 {
-            return None;
-        }
+        let column = self
+            .layout(
+                metrics.physical_width,
+                metrics.physical_height,
+                metrics.scale_factor,
+            )
+            .content_column()?;
         Some(browser::PanelSlot {
             parent,
-            x,
-            y: 0,
-            width,
-            height: metrics.physical_height,
+            x: i32::try_from(column.x).unwrap_or(0),
+            y: i32::try_from(column.y).unwrap_or(0),
+            width: column.width,
+            height: column.height,
         })
     }
 
@@ -2187,7 +2199,7 @@ impl ConApp {
                 return;
             }
         };
-        let url = match browser::deepseek_oauth_authorize_redirect(&bridge.redirect_uri()) {
+        let url = match bridge.authorize_url() {
             Ok(url) => url,
             Err(reason) => {
                 self.note_host_notice(format!("DeepSeek OAuth refused: {reason}"), window);
@@ -2197,21 +2209,22 @@ impl ConApp {
         self.oauth_code = None;
         self.oauth_exchange = None;
         self.oauth_redirect = Some(bridge.redirect_uri());
+        self.oauth_verifier = Some(bridge.code_verifier().to_owned());
         self.oauth_bridge = Some(bridge);
         self.present_http_link(window, &url);
     }
 
     fn start_oauth_exchange(&mut self, code: String) {
         let redirect = self.oauth_redirect.clone().unwrap_or_default();
-        let proxy = std::env::var("MINICON_BROWSER_HTTP_PROXY")
-            .ok()
-            .filter(|value| !value.is_empty());
+        let verifier = self.oauth_verifier.clone();
+        let proxy = self.browser_proxy().http.filter(|value| !value.is_empty());
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = tx.send(crate::harness_wire::exchange_deepseek_code(
                 &code,
                 &redirect,
                 proxy.as_deref(),
+                verifier.as_deref(),
             ));
         });
         self.oauth_exchange = Some(rx);
@@ -2466,7 +2479,15 @@ impl ConApp {
         if key.state != KeyPressState::Pressed || !key.modifiers.control || !key.modifiers.shift {
             return Ok(false);
         }
-        let LogicalKey::Character(text) = &key.logical else {
+        // Physical letter covers Linux xkb reporting logical Unidentified.
+        // `[`, `]` and `,` stay on the logical character; they are not letters.
+        let physical_letter;
+        let text = if let LogicalKey::Character(text) = &key.logical {
+            text.as_str()
+        } else if let Some(letter) = chord_letter(key) {
+            physical_letter = letter.to_string();
+            physical_letter.as_str()
+        } else {
             return Ok(false);
         };
         if text.eq_ignore_ascii_case("t") {
@@ -2478,8 +2499,8 @@ impl ConApp {
             self.open_browser_tab_contained(window);
             return Ok(true);
         }
-        // DeepSeek OAuth in the one content panel. Same host as Ctrl+click,
-        // so MINICON_BROWSER_HTTP_PROXY is installed. Not a system browser.
+        // DeepSeek OAuth in the one content panel. Same host as Ctrl+click.
+        // Not a system browser.
         if text.eq_ignore_ascii_case("d") {
             self.start_deepseek_oauth(window);
             return Ok(true);
@@ -3738,21 +3759,15 @@ impl PixelWindowApplication for ConApp {
             && modifiers.control
             && !modifiers.shift
             && !modifiers.alt
+            && let Some(url) = self.active_session().ok().and_then(|session| {
+                let point = session.hit_test(position);
+                session.http_link_at(point)
+            })
+            && self.present_http_link(window, &url)
         {
-            if let Some(url) = self
-                .active_session()
-                .ok()
-                .map(|session| {
-                    let point = session.hit_test(position);
-                    session.http_link_at(point)
-                })
-                .flatten()
-                && self.present_http_link(window, &url)
-            {
-                self.refresh_title(window)?;
-                window.request_redraw();
-                return Ok(PixelWindowDirective::Continue);
-            }
+            self.refresh_title(window)?;
+            window.request_redraw();
+            return Ok(PixelWindowDirective::Continue);
         }
         if let PixelWindowEvent::PointerButton {
             button: PointerButton::Left,

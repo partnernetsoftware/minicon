@@ -1372,7 +1372,7 @@ const MINICON_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
             "clipboard",
             "contained-process-spawn",
             "entropy",
-            "filesystem-publish",
+            "filesystem",
             "filesystem-read",
             "font",
             "host-open",

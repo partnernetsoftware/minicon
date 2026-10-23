@@ -89,7 +89,7 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
 │     demonstration (PRD 35); no profile menu shipped; osx-x86_64 throughput
 │     bound and the TERM runtime probe stay open by name (carried debt)
 │   non-goal: automatic platform-crate merger (unchanged)
-└── [v] 0.2.20 — evidence-based Windows default and product-cost decision (decided: rust-console default)
+├── [v] 0.2.20 — evidence-based Windows default and product-cost decision (decided: rust-console default)
     invariant: any default change improves user journeys without hidden regression
     evidence: exact-artifact real apps, reliability, latency/RSS and rollback courts
     safe failure: retain explicit preview if a gate is missing
@@ -99,9 +99,16 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
     {BACKEND-KEY}, {MOUSE}, exact-artifact {COURTS}, bounded {CRASH} hunt, then
     the decision; per-tab process cost (3 agent-path vs 1 rust-console) is
     already measured in PRD 24
-    └── [_] owner-reported file-tool output misalignment in Claude Code
-        sessions (2026-10-21) — reproduce and attribute before the default
-        decision; record owned by PRD 24.01 "Open compatibility contracts"
+    └── [v] owner-reported file-tool output misalignment — attributed to the
+        classic-path wire; the rust-console default renders the court
+        correctly. Record owned by PRD 24.01 and the
+        [0.2.20 release history](../prd/archive/v0.2.20-release-history.md)
+└── [-] 0.2.21 — console courts, and the browser content panel beside the terminal
+    invariant: portable minicon-console tests execute on all six cells; a Linux-only divergence fails lnx-*; the browser content panel is minicon-web and does not link wry into the product binary
+    evidence: dev-loop receipts for the console suites; one browser tab whose slot is the terminal column; token POST is https and uses the same proxy hook
+    safe failure: one Mac run is not a six-cell claim; one Linux --probe 0 is not either; loopback-through-WebView-proxy, OAuth state, and bearer-file mode stay open; G4 and G6 stay carried debt
+    dependency: PRD 25, PRD 31, PRD 35; non-goal: 1:N panels, dashboard, page-heap of G4
+    plan: [plan-v0.2.21](plan-v0.2.21.md)
 ```
 
 ```mermaid
@@ -118,6 +125,7 @@ flowchart LR
     APP & PREVIEW & CONTRACT & PROFILE --> DECIDE["0.2.20 default and cost decision"]
     DECIDE -->|"gate met"| RELEASE["exact signed artifact promotion / PRD 27"]
     DECIDE -->|"gate missing"| KEEP["stable default + explicit preview; named open gap"]
+    RELEASE --> COURT["0.2.21 console courts + browser content panel"]
 ```
 
 ## Version decisions and acceptance
@@ -128,14 +136,19 @@ flowchart LR
 | 0.2.17 — modern agent quality | A user can select a named provider that keeps Claude Code, Grok Build and Codex CLI readable and usable through repeated output and resize. | Follow [the dedicated 0.2.17 plan](plan-v0.2.17.md): locate each failure across original output, backend wire, shared state and pixels; fix representable classic-path defects, qualify Unicode/SGR color fixtures and repeated real-agent sessions, and include an explicit Rust selection in the exact Windows candidate only if its native/lifecycle courts pass. State failed default-path behavior and provider-specific coverage. A developer-only feature is not a user-facing result; no default promotion or positive 2026 claim without its separate gate. |
 | 0.2.18 — bounded Windows backend preview | The packaged explicit Rust choice is available while the classic backend remains default. | [Published with exact signed Candidate, Defender and no-rebuild Promotion](../prd/archive/v0.2.18-release-history.md). Windows x64 current-source shell/agent journeys and direct common-library consumption are scoped passes. Exact-Candidate visible three-agent acceptance, Rust runtime on Windows ARM64, broader native API coverage, source/wire attribution and latency/RSS remain open. Carry them to the next qualification decision; the published version makes no broad compatibility or default-promotion claim. |
 | 0.2.19 — integrated terminal library | Shipped 2026-10-21 with a bounded claim: the session contract vocabulary is console-owned with one type identity through the platform facade, the POSIX PTY mechanism has one home with five-cell native runtime passes, four drifted product decisions were unified, and a validated advanced `term` override applies to new sessions only. | [Release history](../prd/archive/v0.2.19-release-history.md) owns the receipts; [the archived plan](archive/plan-v0.2.19.md) records leaf outcomes. The claim was narrowed exactly as this row's safe failure required: the portable session trait awaits both-provider demonstration (PRD 35 integration acceptance), no compatibility-profile menu shipped (no second profile has capability evidence), and the osx-x86_64 throughput bound plus the TERM child-environment probe stay open by name in carried debt. |
-| 0.2.20 — default decision and product cost | Users receive the best evidenced Windows backend choice with a known path to recover from failures. | Decide whether to make the owned backend the Windows default using exact packaged artifacts and versioned real-app journeys, comparison of failure/cleanup, input latency, sustained redraw and total process RSS. Include product GUI pixel/snapshot consistency and rollback/selection evidence. A failed or unavailable criterion keeps the stable default and explicit preview. Track the 10 MiB idle-host intent, build/pack latency and artifact size separately; do not exchange correctness or signed-artifact requirements for a speed claim. |
+| 0.2.20 — default decision and product cost | The owned Rust console is the Windows default, with a one-word rollback to the console agent. | [Published 2026-10-22](../prd/archive/v0.2.20-release-history.md), source `bd881e3`. The decision and its narrowed claim live there. G4 and G6 shipped still open. |
+| 0.2.21 — console courts and the browser content panel | Portable `minicon-console` runs on every shipped cell, a Linux-only miss fails Linux, and the browser tab's page is `minicon-web` beside the terminal panel. | Follow [plan-v0.2.21](plan-v0.2.21.md). `cargo check`, one Mac run, and one Linux `--probe` do not close it. Do not publish. |
 
 These version numbers express priority and dependencies. The skipped 0.2.17
 number did not deliver its full modern-agent gate. The public 0.2.18 release
 provides a bounded explicit preview without changing the Windows default or
 claiming that the three-agent use case is solved.
 0.2.19 may ship the common contract before every adapter is consolidated.
-0.2.20 is a decision point, not a promise that the default will switch.
+0.2.20 did switch the Windows default; its release history owns the narrowed
+claim. 0.2.21 does not pick up that release's open paste and disconnect
+defects. It runs the portable console library on every shipped cell, fails
+Linux when a Linux-only path diverges, and keeps the browser content panel
+(`minicon-web`) beside the terminal panel.
 
 ## Cross-version product rules
 

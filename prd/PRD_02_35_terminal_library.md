@@ -617,7 +617,11 @@ constructs `TerminalStream`, publishes bytes, reads the screen and consumes
 the final stream through public APIs. The Windows x64 host run passed. Explicit
 all-target `cargo check --locked -p minicon-console` runs passed for Linux
 x64/ARM64, macOS x64 and Windows ARM64. These verify common-library API and
-target compilation only. A standalone POSIX terminal session is still not
+target compilation only. v0.2.21's court
+([plan](../plan/plan-v0.2.21.md)) runs the portable library tests on every
+dev-loop cell; until those receipts exist, the lines above are still not
+runtime claims. One macOS execution of the library does not close the other
+five cells. A standalone POSIX terminal session is still not
 provided by `minicon-console`; the macOS/Linux PTY implementation remains in
 `minicon-platform` until a real portable session contract is qualified.
 The generated external consumer itself also passed `cargo check --locked`

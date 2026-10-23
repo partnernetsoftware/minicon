@@ -173,8 +173,17 @@ fn interpret_http_response(
 pub const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEEPSEEK_MODEL: &str = "deepseek-chat";
 /// Authorization-code exchange for the default DeepSeek provider.
-/// `MINICON_DEEPSEEK_TOKEN_URL` overrides it for a test double.
+/// `MINICON_DEEPSEEK_TOKEN_URL` overrides it for a test double. The override
+/// must still be `https`. A plain `http` URL is refused before any POST.
 pub const DEEPSEEK_TOKEN_URL: &str = "https://platform.deepseek.com/oauth/token";
+
+pub fn https_token_url(url: &str) -> Result<&str, &'static str> {
+    if url.len() >= 8 && url[..8].eq_ignore_ascii_case("https://") {
+        Ok(url)
+    } else {
+        Err("token-url-not-https")
+    }
+}
 
 /// Bearer from a token-endpoint JSON body. Oversized or non-ascii values
 /// are rejected. This does not open a browser.
@@ -222,13 +231,18 @@ pub fn exchange_oauth_code(
     code: &str,
     redirect: &str,
     proxy: Option<&str>,
+    code_verifier: Option<&str>,
 ) -> Result<String, String> {
     use minicon_platform::network_http::{self, NetworkHttpMethod};
-    let body = format!(
+    let mut body = format!(
         "grant_type=authorization_code&code={}&redirect_uri={}",
         form_encode(code),
         form_encode(redirect)
     );
+    if let Some(verifier) = code_verifier.filter(|value| !value.is_empty()) {
+        body.push_str("&code_verifier=");
+        body.push_str(&form_encode(verifier));
+    }
     let mut request = network_http::NetworkHttpRequest::new(NetworkHttpMethod::Post, token_url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
@@ -251,12 +265,14 @@ pub fn exchange_deepseek_code(
     code: &str,
     redirect: &str,
     proxy: Option<&str>,
+    code_verifier: Option<&str>,
 ) -> Result<String, String> {
     let url = std::env::var("MINICON_DEEPSEEK_TOKEN_URL")
         .ok()
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEEPSEEK_TOKEN_URL.to_owned());
-    exchange_oauth_code(&url, code, redirect, proxy)
+    let url = https_token_url(&url).map_err(str::to_owned)?;
+    exchange_oauth_code(url, code, redirect, proxy, code_verifier)
 }
 
 /// API key wins. The OAuth access token is the DeepSeek bearer when the key
@@ -621,6 +637,11 @@ mod tests {
         assert_eq!(resolve_deepseek_bearer(None, Some("tok")), Ok("tok"));
         assert_eq!(resolve_deepseek_bearer(Some(""), Some("tok")), Ok("tok"));
         assert!(resolve_deepseek_bearer(None, None).is_err());
+        assert_eq!(https_token_url(DEEPSEEK_TOKEN_URL), Ok(DEEPSEEK_TOKEN_URL));
+        assert_eq!(
+            https_token_url("http://127.0.0.1/token"),
+            Err("token-url-not-https")
+        );
         assert_eq!(
             oauth_access_token(r#"{"access_token":"tok-1"}"#).as_deref(),
             Ok("tok-1")
@@ -632,10 +653,33 @@ mod tests {
     fn exchange_oauth_code_reads_the_token_and_rejects_a_bad_proxy() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
+        let (seen_tx, seen_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 2048];
-            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 512];
+            let request_is_complete = |bytes: &[u8]| {
+                let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+                else {
+                    return false;
+                };
+                let headers = String::from_utf8_lossy(&bytes[..header_end]);
+                let content_length = headers.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                });
+                content_length.is_some_and(|length| bytes.len() >= header_end + 4 + length)
+            };
+            while buf.len() < 4096 && !request_is_complete(&buf) {
+                match std::io::Read::read(&mut stream, &mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => buf.extend_from_slice(&chunk[..n]),
+                }
+            }
+            let _ = seen_tx.send(String::from_utf8_lossy(&buf).into_owned());
             let body = br#"{"access_token":"tok-live"}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -644,20 +688,24 @@ mod tests {
             use std::io::Write;
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.write_all(body);
+            let _ = stream.flush();
         });
         let token = exchange_oauth_code(
             &format!("http://127.0.0.1:{port}/token"),
             "from-live",
             "http://127.0.0.1/minicon/oauth",
             None,
+            Some("verifier-1"),
         )
         .unwrap();
         assert_eq!(token, "tok-live");
+        assert!(seen_rx.recv().unwrap().contains("code_verifier=verifier-1"));
         let refused = exchange_oauth_code(
             "http://127.0.0.1:9/token",
             "from-live",
             "http://127.0.0.1/cb",
             Some("not a proxy"),
+            None,
         );
         assert!(refused.unwrap_err().to_ascii_lowercase().contains("proxy"));
     }

@@ -117,6 +117,23 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Terminal column: under the tab header, above the composer, inset by
+    /// the sidebar and the history chrome. The browser page uses the same
+    /// rectangle so it does not cover the tab strip.
+    #[must_use]
+    pub fn content_column(self) -> Option<Rect> {
+        let height = self.composer.y.saturating_sub(self.tree_header_height);
+        if self.composer.width == 0 || height == 0 {
+            return None;
+        }
+        Some(Rect {
+            x: self.composer.x,
+            y: self.tree_header_height,
+            width: self.composer.width,
+            height,
+        })
+    }
+
     #[cfg(test)]
     pub fn new(width: u32, height: u32, scale: f64) -> Self {
         Self::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, false)
@@ -2035,6 +2052,40 @@ mod tests {
         assert_eq!(layout.status.y, 776);
         assert_eq!(layout.status.y + layout.status.height, 800);
         assert_eq!(layout.composer.y + layout.composer.height, layout.status.y);
+        let column = layout.content_column().expect("content column");
+        assert_eq!(column.x, layout.sidebar.width);
+        assert_eq!(column.y, layout.tree_header_height);
+        assert_eq!(column.width, layout.composer.width);
+        assert_eq!(column.y + column.height, layout.composer.y);
+        assert!(column.y > 0);
+        assert!(column.height < layout.sidebar.height);
+    }
+
+    /// The browser embed slot is the terminal rectangle: under the tab header,
+    /// above the composer, clear of the sidebar and the history chrome.
+    #[test]
+    fn content_column_is_the_terminal_rectangle() {
+        let layout = Layout::with_chrome(
+            1200,
+            800,
+            1.0,
+            SIDEBAR_WIDTH_DIP,
+            false,
+            true,
+            HISTORY_PANEL_WIDTH_DIP,
+        );
+        let column = layout.content_column().expect("content column");
+        assert!(layout.panel_open);
+        assert_eq!(column.x, layout.composer.x);
+        assert_eq!(column.x, layout.sidebar.width);
+        assert_eq!(column.y, layout.tree_header_height);
+        assert!(column.y > 0);
+        assert_eq!(column.width, layout.composer.width);
+        assert_eq!(column.y + column.height, layout.composer.y);
+        assert_eq!(column.x + column.width, layout.panel.x);
+        assert!(layout.panel.x >= layout.sidebar.width);
+        let flat = Layout::with_chrome(1200, 1, 1.0, SIDEBAR_WIDTH_DIP, false, false, 0.0);
+        assert_eq!(flat.content_column(), None);
     }
 
     /// The terminal viewport's reserved bottom inset must land exactly on the

@@ -412,8 +412,12 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn current_user_group_leader_can_be_adopted_by_exact_identity() {
-        let mut command = std::process::Command::new("/bin/sh");
-        command.args(["-c", "sleep 30"]);
+        // Spawn the long-lived process directly. A shell may publish a child
+        // between fork and exec while the group snapshot is being retained,
+        // which correctly invalidates exact-member termination authority but
+        // does not exercise this test's stable-group contract.
+        let mut command = std::process::Command::new("/bin/sleep");
+        command.arg("30");
         crate::process::configure_owned_command(&mut command).expect("configure process group");
         let mut child = command.spawn().expect("spawn adoptable process group");
         let identity = crate::process_observation::start_identity(child.id())

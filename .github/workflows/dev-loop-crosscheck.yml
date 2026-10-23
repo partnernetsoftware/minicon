@@ -98,9 +98,13 @@ jobs:
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get install -y --no-install-recommends xvfb binutils
           Xvfb :99 -screen 0 1280x1024x24 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          # Linux X11 tests used to `return` when DISPLAY was unset and still
+          # report ok. This job exists to run those paths; a missing display
+          # must fail them. See plan/plan-v0.2.21.md {LNX}.
+          echo "MINICON_REQUIRE_DISPLAY=1" >> "$GITHUB_ENV"
           for _ in $(seq 20); do
             if DISPLAY=:99 xdpyinfo >/dev/null 2>&1; then break; fi
             sleep 0.5
@@ -145,6 +149,30 @@ jobs:
           }
           echo "== minicon-core (lib unit tests) ${{ inputs.test_filter }}"
           run_suite minicon-core cargo test --locked --target "$triple" -p minicon-core -- --test-threads 2 ${{ inputs.test_filter }}
+          # An explicit filter may legally match nothing. Unfiltered portable
+          # console suites may not.
+          filter='${{ inputs.test_filter }}'
+          # Portable minicon-console library. cfg(windows) service code is
+          # absent on lnx-* and osx-*; an unfiltered run must still execute
+          # tests. A hashed-path guess that matches nothing is a false pass
+          # (plan/plan-v0.2.21.md {LIB}). Cargo locates the binary.
+          echo "== minicon-console (portable library) ${{ inputs.test_filter }}"
+          run_suite minicon-console cargo test --locked --target "$triple" -p minicon-console --lib -- --test-threads 2 ${{ inputs.test_filter }}
+          echo "== minicon-console synchronized_presentation ${{ inputs.test_filter }}"
+          run_suite minicon-console-synchronized-presentation cargo test --locked --target "$triple" -p minicon-console --test synchronized_presentation -- --test-threads 2 ${{ inputs.test_filter }}
+          echo "== minicon-console presentation_allocations ${{ inputs.test_filter }}"
+          run_suite minicon-console-presentation-allocations cargo test --locked --target "$triple" -p minicon-console --test presentation_allocations -- --test-threads 2 ${{ inputs.test_filter }}
+          if [ -z "$filter" ]; then
+            for suite in minicon-console minicon-console-synchronized-presentation minicon-console-presentation-allocations; do
+              if ! grep -Eq 'running [1-9][0-9]* tests?' "$LOG_DIR/$suite.log"; then
+                echo "SUITE $suite executed no tests" | tee -a "$LOG_DIR/summary.log"
+                case " $failed " in
+                  *" $suite "*) ;;
+                  *) failed="$failed $suite" ;;
+                esac
+              fi
+            done
+          fi
           echo "== minicon-ui-core (shared types and pixel kernels) ${{ inputs.test_filter }}"
           run_suite minicon-ui-core cargo test --locked --target "$triple" -p minicon-ui-core --lib -- --test-threads 2 ${{ inputs.test_filter }}
           # Keep this outside workspace feature unification. An explicit native
@@ -171,7 +199,6 @@ jobs:
           # release binary met it with 3x headroom (2026-10-22).
           # A filtered run that does not name throughput skips the release
           # build entirely: it costs minutes and selects no test.
-          filter='${{ inputs.test_filter }}'
           if [ -z "$filter" ] || [ "${filter#*throughput}" != "$filter" ] || [ "${filter#*sustained}" != "$filter" ]; then
             echo "== release product build for throughput"
             run_suite throughput-release-build cargo build --locked --release --target "$triple" --bin minicon
@@ -192,6 +219,44 @@ jobs:
               # evidence BLOCKED for the 0.2.20 default decision.
               echo "== rust_console_pty (feature rust-console) ${{ inputs.test_filter }}"
               run_suite rust_console_pty cargo test --locked --target "$triple" -p minicon-platform --features rust-console --test rust_console_pty -- --test-threads 1 ${{ inputs.test_filter }}
+              ;;
+            lnx-*)
+              # Linux-only product paths. A macOS build never compiles the
+              # /proc session walk, and these X11 tests are not part of
+              # blackbox/control. Do not run the whole platform lib.
+              # plan/plan-v0.2.21.md {LNX}.
+              echo "== linux pty session ${{ inputs.test_filter }}"
+              # A filter is a substring of these names, not a license to run
+              # the rest of the platform lib. An unrelated filter skips the
+              # suite instead of selecting hundreds of other tests.
+              pty_names="openpty_spawn_write_read_round_trip forced_cleanup_empties_the_owned_session_with_resistant_children retained_master_signals_and_verifies_its_foreground_group"
+              if [ -z "$filter" ]; then
+                # shellcheck disable=SC2086
+                run_suite linux-pty cargo test --locked --target "$triple" -p minicon-platform --features pty --lib -- --test-threads 1 $pty_names
+              elif case "$pty_names" in *"$filter"*) true ;; *) false ;; esac; then
+                run_suite linux-pty cargo test --locked --target "$triple" -p minicon-platform --features pty --lib -- --test-threads 1 "$filter"
+              fi
+              echo "== linux x11 clipboard ${{ inputs.test_filter }}"
+              x11_names="native_x11_available_types_when_display_is_set native_x11_clipboard_round_trip_when_display_is_set"
+              if [ -z "$filter" ]; then
+                # shellcheck disable=SC2086
+                run_suite linux-x11-clipboard cargo test --locked --target "$triple" -p minicon-platform --features clipboard --lib -- --test-threads 1 $x11_names
+              elif case "$x11_names" in *"$filter"*) true ;; *) false ;; esac; then
+                run_suite linux-x11-clipboard cargo test --locked --target "$triple" -p minicon-platform --features clipboard --lib -- --test-threads 1 "$filter"
+              fi
+              echo "== linux elf load-time gate ${{ inputs.test_filter }}"
+              run_suite linux-elf-needed cargo test --locked --target "$triple" --test minicon_load_portability_linux -- --test-threads 1 ${{ inputs.test_filter }}
+              if [ -z "$filter" ]; then
+                for suite in linux-pty linux-x11-clipboard linux-elf-needed; do
+                  if ! grep -Eq 'running [1-9][0-9]* tests?' "$LOG_DIR/$suite.log"; then
+                    echo "SUITE $suite executed no tests" | tee -a "$LOG_DIR/summary.log"
+                    case " $failed " in
+                      *" $suite "*) ;;
+                      *) failed="$failed $suite" ;;
+                    esac
+                  fi
+                done
+              fi
               ;;
           esac
           # Written before the failure exit below, so a red run still ships a

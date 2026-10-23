@@ -2,7 +2,7 @@
 
 pub use crate::contract::input::{
     KeyClassification, KeyPressState, LogicalKey, ModifierState, NamedKey, NormalizedKeyEvent,
-    PhysicalKeyCode, Utf16TextDecoder,
+    PhysicalKeyCode, Utf16TextDecoder, chord_letter,
 };
 
 /// Adapter extension implemented for a native key-event type without exposing

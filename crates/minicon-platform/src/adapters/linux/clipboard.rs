@@ -1287,6 +1287,10 @@ mod tests {
     #[test]
     fn native_x11_clipboard_round_trip_when_display_is_set() {
         if std::env::var_os("DISPLAY").is_none() {
+            assert!(
+                std::env::var_os("MINICON_REQUIRE_DISPLAY").is_none(),
+                "MINICON_REQUIRE_DISPLAY is set but DISPLAY is unset; refusing a silent skip"
+            );
             return;
         }
         let marker = format!(

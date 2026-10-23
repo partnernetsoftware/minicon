@@ -18,9 +18,14 @@ path = "src/bin/minicon-web-host.rs"
 default = []
 # Optional page loader. Core `minicon` must not enable this. Without it,
 # `minicon-web-host --probe` and `--load` stay Unavailable (exit 69).
+# gtk is Linux-only (below). Naming it here must not pull gtk onto macOS or
+# Windows; Cargo drops a target-specific optional dep on other targets.
 wry-host = ["dep:wry", "dep:tao", "dep:gtk"]
 
 [dependencies]
-gtk = { version = "0.18.2", optional = true }
+sha2 = { version = "0.11", default-features = false }
 tao = { version = "0.36.0", optional = true, default-features = false, features = ["rwh_06"] }
 wry = { version = "0.56.0", optional = true, default-features = false, features = ["os-webview"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18.2", optional = true }

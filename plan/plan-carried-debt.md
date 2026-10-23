@@ -140,6 +140,11 @@ mechanism lives with its code and test).
 │      update 2026-10-22: the court now drives a release product binary
 │        (throughput is an artifact property); osx-x86_64 passed the debug
 │        run at ae10da1 too. Close once a release-product run passes there.
+├── K1 minicon-console code review findings (2026-10-22, shipped v0.2.20)
+│      state: recorded, not scheduled; session-fatal error classification,
+│        rust-console default fallback, 2026 sync hold, key identity, DBCS,
+│        POSIX SIGPIPE/SIGHUP and more. Leaves, file:line and order live in
+│        [plan-console-review.md](plan-console-review.md)
 └── R1 CI action/runner migration debt (observed 2026-10-10)
       warnings, not failures yet: pinned actions on Node 20 shims
         (checkout/upload/download-artifact/setup-python) and

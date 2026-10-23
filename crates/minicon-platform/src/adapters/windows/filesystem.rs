@@ -121,6 +121,13 @@ pub fn private_create_new_options() -> OpenOptions {
 }
 
 #[cfg(feature = "filesystem")]
+pub fn validate_private_file(_file: &std::fs::File) -> std::io::Result<()> {
+    // The private directory carries a protected current-user-only ACL which
+    // child files inherit. Windows mode bits do not express that ACL.
+    Ok(())
+}
+
+#[cfg(feature = "filesystem")]
 fn win32_error(code: u32) -> std::io::Error {
     std::io::Error::from_raw_os_error(code as i32)
 }

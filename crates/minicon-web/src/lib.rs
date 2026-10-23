@@ -7,9 +7,8 @@
 //! # Boundary
 //!
 //! [`PageHost`] is the swappable surface: [`ProcessPageHost`] speaks
-//! `--load <url>` to a helper process today. A later wry/WebView backend
-//! implements the same trait inside the host binary (`minicon-web-host`).
-//! Core `minicon` depends on this crate and does **not** link wry or tao.
+//! `--load <url>` to a helper process. Feature `wry-host` links wry and tao
+//! inside `minicon-web-host` only. Core `minicon` does not enable it.
 //!
 //! Stable names: [`BrowserTab`], [`BrowserPanel`], [`PageLoad`], [`PageHost`],
 //! [`http_url_at`], [`resolve_proxy`], [`page_host_request`], [`spawn_page_host`].
@@ -735,12 +734,20 @@ fn hex_nibble(byte: u8) -> Option<u8> {
     }
 }
 
+/// How many loopback connections a bridge will answer before giving up.
+/// A request with the wrong `state` does not consume the login.
+const OAUTH_ACCEPT_LIMIT: usize = 8;
+
 /// Loopback listener for the OAuth redirect. Binds `127.0.0.1` only.
 ///
-/// The accept thread answers the browser immediately. [`Self::poll`] is what
-/// the GUI reads. This does not call the OS browser.
+/// The accept thread answers each browser request. A missing or wrong `state`
+/// is refused and the listener keeps waiting, up to [`OAUTH_ACCEPT_LIMIT`].
+/// [`Self::poll`] is what the GUI reads. This does not call the OS browser.
 pub struct OAuthBridge {
     redirect_uri: String,
+    state: String,
+    verifier: String,
+    challenge: String,
     incoming: std::sync::mpsc::Receiver<Result<String, &'static str>>,
     taken: std::sync::atomic::AtomicBool,
 }
@@ -753,17 +760,29 @@ impl OAuthBridge {
             .local_addr()
             .map_err(|error| error.to_string())?
             .port();
+        let state = oauth_token()?;
+        let (verifier, challenge) = oauth_pkce()?;
+        let expect = state.clone();
         let (tx, incoming) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let Ok((mut stream, _)) = listener.accept() else {
-                let _ = tx.send(Err("oauth-rejected"));
-                return;
-            };
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-            let _ = tx.send(read_oauth_request(&mut stream, port));
+            for _ in 0..OAUTH_ACCEPT_LIMIT {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    let _ = tx.send(Err("oauth-rejected"));
+                    return;
+                };
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                if let Ok(code) = read_oauth_request(&mut stream, port, &expect) {
+                    let _ = tx.send(Ok(code));
+                    return;
+                }
+            }
+            let _ = tx.send(Err("oauth-rejected"));
         });
         Ok(Self {
             redirect_uri: format!("http://127.0.0.1:{port}/minicon/oauth"),
+            state,
+            verifier,
+            challenge,
             incoming,
             taken: std::sync::atomic::AtomicBool::new(false),
         })
@@ -771,6 +790,27 @@ impl OAuthBridge {
 
     pub fn redirect_uri(&self) -> String {
         self.redirect_uri.clone()
+    }
+
+    /// Unpredictable `state` this bridge will accept on the redirect.
+    pub fn state(&self) -> &str {
+        &self.state
+    }
+
+    /// PKCE verifier. It stays in this process and is sent only to the token endpoint.
+    pub fn code_verifier(&self) -> &str {
+        &self.verifier
+    }
+
+    /// DeepSeek authorize URL for this bridge: redirect, `state`, and S256 challenge.
+    pub fn authorize_url(&self) -> Result<String, &'static str> {
+        oauth_authorize_with_proof(
+            DEEPSEEK_AUTHORIZE_URL,
+            &self.redirect_uri,
+            &["127.0.0.1"],
+            &self.state,
+            &self.challenge,
+        )
     }
 
     /// One pending redirect. `None` means nothing arrived yet.
@@ -792,13 +832,30 @@ impl OAuthBridge {
     }
 }
 
-fn read_oauth_request(stream: &mut std::net::TcpStream, port: u16) -> Result<String, &'static str> {
-    let mut buf = [0u8; 2048];
-    let n = std::io::Read::read(stream, &mut buf).map_err(|_| "oauth-rejected")?;
-    if n == 0 {
+fn read_oauth_request(
+    stream: &mut std::net::TcpStream,
+    port: u16,
+    expected_state: &str,
+) -> Result<String, &'static str> {
+    let mut buf = Vec::with_capacity(512);
+    let mut chunk = [0u8; 512];
+    while buf.len() < 2048 && !buf.windows(4).any(|window| window == b"\r\n\r\n") {
+        match std::io::Read::read(stream, &mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                break;
+            }
+            Err(_) => return Err("oauth-rejected"),
+        }
+    }
+    if buf.is_empty() {
         return Err("oauth-rejected");
     }
-    let text = String::from_utf8_lossy(&buf[..n]);
+    let text = String::from_utf8_lossy(&buf);
     let Some(request) = text.lines().next() else {
         let _ = write_oauth_reply(stream, false);
         return Err("oauth-rejected");
@@ -825,6 +882,20 @@ fn read_oauth_request(stream: &mut std::net::TcpStream, port: u16) -> Result<Str
     }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     if path != "/minicon/oauth" {
+        let _ = write_oauth_reply(stream, false);
+        return Err("oauth-rejected");
+    }
+    let states = query_values(query, "state");
+    let decoded = states
+        .first()
+        .and_then(|value| percent_decode(value))
+        .unwrap_or_default();
+    if states.len() != 1 || !tokens_match(&decoded, expected_state) {
+        let _ = write_oauth_reply(stream, false);
+        return Err("oauth-state");
+    }
+    let codes = query_values(query, "code").len() + query_values(query, "access_token").len();
+    if codes != 1 {
         let _ = write_oauth_reply(stream, false);
         return Err("oauth-rejected");
     }
@@ -886,6 +957,121 @@ pub fn oauth_authorize_load(
     }
     let join = if authorize.contains('?') { '&' } else { '?' };
     Ok(format!("{authorize}{join}redirect_uri={encoded}"))
+}
+
+/// Authorize URL plus this attempt's `state` and S256 `code_challenge`.
+///
+/// `state` and `code_challenge` must be short URL-safe tokens. The verifier
+/// that produced the challenge is not placed on this URL.
+pub fn oauth_authorize_with_proof(
+    authorize_url: &str,
+    redirect_uri: &str,
+    allowed_hosts: &[&str],
+    state: &str,
+    code_challenge: &str,
+) -> Result<String, &'static str> {
+    if !oauth_token_ok(state) || !oauth_token_ok(code_challenge) {
+        return Err("oauth-rejected");
+    }
+    let base = oauth_authorize_load(authorize_url, redirect_uri, allowed_hosts)?;
+    Ok(format!(
+        "{base}&state={}&code_challenge={}&code_challenge_method=S256",
+        percent_encode(state),
+        percent_encode(code_challenge)
+    ))
+}
+
+fn oauth_token_ok(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+fn query_values<'a>(query: &'a str, key: &str) -> Vec<&'a str> {
+    query
+        .split('&')
+        .filter_map(|pair| {
+            let (name, value) = pair.split_once('=')?;
+            (name == key).then_some(value)
+        })
+        .collect()
+}
+
+fn tokens_match(left: &str, right: &str) -> bool {
+    if left.len() != right.len() || left.is_empty() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in left.bytes().zip(right.bytes()) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
+
+fn oauth_token() -> Result<String, String> {
+    let mut bytes = [0u8; 32];
+    fill_random(&mut bytes)?;
+    Ok(base64url(&bytes))
+}
+
+fn oauth_pkce() -> Result<(String, String), String> {
+    let verifier = oauth_token()?;
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(verifier.as_bytes());
+    Ok((verifier, base64url(&digest)))
+}
+
+fn base64url(bytes: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::new();
+    let mut index = 0;
+    while index + 3 <= bytes.len() {
+        let n = (u32::from(bytes[index]) << 16)
+            | (u32::from(bytes[index + 1]) << 8)
+            | u32::from(bytes[index + 2]);
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(TABLE[((n >> 6) & 63) as usize] as char);
+        out.push(TABLE[(n & 63) as usize] as char);
+        index += 3;
+    }
+    let rest = bytes.len() - index;
+    if rest == 1 {
+        let n = u32::from(bytes[index]) << 16;
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+    } else if rest == 2 {
+        let n = (u32::from(bytes[index]) << 16) | (u32::from(bytes[index + 1]) << 8);
+        out.push(TABLE[((n >> 18) & 63) as usize] as char);
+        out.push(TABLE[((n >> 12) & 63) as usize] as char);
+        out.push(TABLE[((n >> 6) & 63) as usize] as char);
+    }
+    out
+}
+
+fn fill_random(out: &mut [u8]) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        let mut file = std::fs::File::open("/dev/urandom").map_err(|error| error.to_string())?;
+        file.read_exact(out).map_err(|error| error.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        #[link(name = "advapi32")]
+        unsafe extern "system" {
+            fn SystemFunction036(random_buffer: *mut u8, random_buffer_length: u32) -> u8;
+        }
+        let ok = unsafe { SystemFunction036(out.as_mut_ptr(), out.len() as u32) };
+        if ok == 0 {
+            Err("oauth-random-unavailable".to_owned())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn redirect_host(redirect_uri: &str) -> Option<String> {
@@ -986,6 +1172,85 @@ pub fn wry_proxy_endpoint(proxy: &BrowserProxy) -> Option<(String, String)> {
         return None;
     }
     Some((host.to_owned(), port.to_owned()))
+}
+
+/// True when `url` is an http loopback the WebView proxy must not carry.
+///
+/// wry 0.56 `ProxyConfig::Http` builds WebKit `NetworkProxySettings` with an
+/// empty ignore list, so `no_proxy` does not exempt `127.0.0.1`. The page host
+/// cancels that navigation and [`deliver_loopback_get`] fetches it directly.
+pub fn webview_must_bypass_proxy(url: &str) -> bool {
+    loopback_http_target(url).is_some()
+}
+
+/// GET `url` on `127.0.0.1` with `TcpStream`. Does not read `http_proxy`.
+pub fn deliver_loopback_get(url: &str) -> Result<(), &'static str> {
+    let target = loopback_http_target(url).ok_or("not-loopback")?;
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], target.port));
+    let mut stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2))
+        .map_err(|_| "loopback-refused")?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .map_err(|_| "loopback-refused")?;
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+        .map_err(|_| "loopback-refused")?;
+    use std::io::{Read, Write};
+    write!(
+        stream,
+        "GET {} HTTP/1.1\r\nHost: {}:{}\r\nConnection: close\r\n\r\n",
+        target.path_and_query, target.host, target.port
+    )
+    .map_err(|_| "loopback-refused")?;
+    stream.flush().map_err(|_| "loopback-refused")?;
+    let mut buf = [0u8; 2048];
+    let _ = stream.read(&mut buf);
+    Ok(())
+}
+
+struct LoopbackHttp {
+    host: String,
+    port: u16,
+    path_and_query: String,
+}
+
+/// `http://127.0.0.1` or `http://localhost` only. `localhost` is connected as
+/// `127.0.0.1`, never resolved. Userinfo and any other host are refused.
+fn loopback_http_target(url: &str) -> Option<LoopbackHttp> {
+    let rest = url
+        .get(..7)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("http://"))
+        .map(|_| &url[7..])?;
+    if rest.contains('@') || rest.is_empty() {
+        return None;
+    }
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    if authority.is_empty() {
+        return None;
+    }
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port))
+            if !host.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            (host, port.parse::<u16>().ok().filter(|port| *port != 0)?)
+        }
+        Some(_) => return None,
+        None => (authority, 80),
+    };
+    if !host.eq_ignore_ascii_case("127.0.0.1") && !host.eq_ignore_ascii_case("localhost") {
+        return None;
+    }
+    let path = path.split('#').next().unwrap_or("");
+    let path_and_query = if path.is_empty() {
+        "/".to_owned()
+    } else {
+        format!("/{path}")
+    };
+    Some(LoopbackHttp {
+        host: host.to_owned(),
+        port,
+        path_and_query,
+    })
 }
 
 #[cfg(feature = "wry-host")]
@@ -1286,6 +1551,10 @@ mod tests {
         let bridge = OAuthBridge::bind().unwrap();
         assert!(bridge.redirect_uri().starts_with("http://127.0.0.1:"));
         assert!(bridge.redirect_uri().ends_with("/minicon/oauth"));
+        let authorize = bridge.authorize_url().unwrap();
+        assert!(authorize.contains(&format!("state={}", bridge.state())));
+        assert!(authorize.contains("code_challenge_method=S256"));
+        assert!(!authorize.contains(bridge.code_verifier()));
         let uri = bridge.redirect_uri();
         let port = uri
             .trim_start_matches("http://127.0.0.1:")
@@ -1295,7 +1564,19 @@ mod tests {
             .unwrap()
             .write_all(
                 format!(
-                    "GET /minicon/oauth?code=from-loop HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
+                    "GET /minicon/oauth?code=stolen HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        assert!(bridge.poll().is_none());
+        std::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .unwrap()
+            .write_all(
+                format!(
+                    "GET /minicon/oauth?code=from-loop&state={} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n",
+                    bridge.state()
                 )
                 .as_bytes(),
             )
@@ -1385,6 +1666,9 @@ mod tests {
         assert!(source.contains("webkit_proxy_env"));
         assert!(source.contains("webkit_proxy_clear"));
         assert!(source.contains("with_proxy_config"));
+        assert!(source.contains("with_navigation_handler"));
+        assert!(source.contains("webview_must_bypass_proxy"));
+        assert!(source.contains("deliver_loopback_get"));
         assert!(!source.contains("xdg-open"));
         assert!(!source.contains("host_open"));
     }
@@ -1404,6 +1688,42 @@ mod tests {
             host_reply(&["--load".into(), "mailto:a@b.test".into()]),
             Err("not-http")
         );
+    }
+
+    #[test]
+    fn loopback_oauth_redirect_is_delivered_without_the_webview_proxy() {
+        assert!(!webview_must_bypass_proxy(
+            "https://platform.deepseek.com/oauth/authorize"
+        ));
+        assert!(!webview_must_bypass_proxy(
+            "http://example.test/minicon/oauth?code=abc"
+        ));
+        assert!(!webview_must_bypass_proxy(
+            "http://user:pw@127.0.0.1/minicon/oauth?code=abc"
+        ));
+        assert!(!webview_must_bypass_proxy(
+            "http://127.0.0.1.evil.test/minicon/oauth?code=abc"
+        ));
+        let bridge = OAuthBridge::bind().expect("bridge");
+        let url = format!(
+            "{}?code=from-loopback&state={}",
+            bridge.redirect_uri(),
+            bridge.state()
+        );
+        assert!(webview_must_bypass_proxy(&url));
+        deliver_loopback_get(&url).expect("direct get");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let code = loop {
+            if let Some(result) = bridge.poll() {
+                break result.expect("code");
+            }
+            assert!(
+                deadline > std::time::Instant::now(),
+                "oauth code did not arrive"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(code, "from-loopback");
     }
 
     #[test]

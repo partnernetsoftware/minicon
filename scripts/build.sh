@@ -74,8 +74,8 @@ case "$mode" in
         esac
       fi
     done
-    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --config "$test_lints" --lib "${fork_args[@]}"
+    cargo test --locked --manifest-path third_party/vt100/Cargo.toml --config "$test_lints" --lib ${fork_args[@]+"${fork_args[@]}"}
     # The shared grammar boundary oracle belongs to the owned VTE lexer.
-    cargo test --locked --manifest-path third_party/vte/Cargo.toml --config "$test_lints" --lib "${fork_args[@]}" ;;
+    cargo test --locked --manifest-path third_party/vte/Cargo.toml --config "$test_lints" --lib ${fork_args[@]+"${fork_args[@]}"} ;;
   *) echo "usage: scripts/build.sh [release|dev|check|test|test-suite] [cargo arguments...]" >&2; exit 2 ;;
 esac

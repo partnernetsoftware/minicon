@@ -1,6 +1,6 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: design, plus a tab shell and proxy hook (2026-10-23). **Commissioner re-nail:** no tray; browser = terminal tab peer; content-panel composition later. **2026-10-23 adopt:** browser surface crate = **`minicon-web`** (lib + optional host); core `minicon` never links wry. Path: `crates/minicon-web/` (`Cargo.toml`, `src/lib.rs`, bin `minicon-web-host`); `src/browser.rs` re-exports the crate. The crate is a workspace member. The wry loader is feature `wry-host` (off by default). Without it, `--probe` and `--load` stay exit 69. With it, `--probe` exits 0 when WebKit answers, and `--smoke <url>` exits 0 after the page finishes. `--load` keeps the window open. Ctrl+click spawns that host for the one content panel: `MINICON_BROWSER_BIN` or the sibling `minicon-web-host`, with `--parent` and `--bounds` when the main window has an X11 id. The host reparents that window into the rectangle and packs the WebView into tao's default vbox so the page fills it. The page is unmapped while another tab is active, so the terminal can take clicks again. Ctrl+click of an https authorize URL uses that same panel. A system opener is not selected. This plan keeps the boundary and API list aligned. The default build still does not navigate. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
+Status: boundary plus a Linux wry host on tip `be99a86` (2026-10-23). **Not a release claim.** Remaining 0.2.21 holes are in [plan-v0.2.21.md](plan-v0.2.21.md). **Commissioner re-nail:** no tray; browser = terminal tab peer. **Adopt:** browser surface crate = **`minicon-web`** (lib + optional host); core `minicon` never links wry. Path: `crates/minicon-web/` (`Cargo.toml`, `src/lib.rs`, bin `minicon-web-host`); `src/browser.rs` re-exports the crate. The crate is a workspace member. The wry loader is feature `wry-host` (off by default). Without it, `--probe` and `--load` stay exit 69. With it, `--probe` exits 0 when WebKit answers, and `--smoke <url>` exits 0 after the page finishes. `--load` keeps the window open. Ctrl+click spawns that host for the one content panel: `MINICON_BROWSER_BIN` or the sibling `minicon-web-host`, with `--parent` and `--bounds` when the main window has an X11 id. The host reparents that window into the rectangle and packs the WebView into tao's default vbox so the page fills it. The page is unmapped while another tab is active, so the terminal can take clicks again. Ctrl+click of an https authorize URL uses that same panel. A system opener is not selected. This plan keeps the boundary and API list aligned. The default build still does not navigate. **Not a release claim.** No Draft / Latest / signed package / public ship from this leaf.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
@@ -137,7 +137,7 @@ not a second windowing model.
 | Layer | Owns | Does not own |
 | --- | --- | --- |
 | `src/` workspace + `src/browser.rs` | Tab strip, `TabKind::Browser`, Ctrl+click wiring. `browser.rs` re-exports `minicon-web` | wry create/navigate; tray |
-| **`crates/minicon-web`** | `PageHost`, panel state, `--load` handoff, proxy hook, `minicon-web-host`. A wry backend replaces the host body later | Tab tree; chrome `history_panel` / `settings_panel`; OS browser for http(s); linking wry into core `minicon` |
+| **`crates/minicon-web`** | `PageHost`, panel state, `--load` handoff, proxy hook, `minicon-web-host`. Feature `wry-host` is the wry/tao body | Tab tree; chrome `history_panel` / `settings_panel`; OS browser for http(s); linking wry into core `minicon` |
 | `minicon-platform` `webview` feature | Passive `probe_system_webview()` only | create / navigate / tray |
 
 **Crate status (align with `0:grk` WIP):** `crates/minicon-web/Cargo.toml`
@@ -145,11 +145,11 @@ declares lib + bin `minicon-web-host`. Public API in `src/lib.rs`:
 `BrowserPanel` / `PageLoad` / `BrowserTab` / `BrowserProxy*` /
 `resolve_proxy` / `http_url_at` / `page_host_request` / `spawn_page_host` /
 `PageHost` / `ProcessPageHost` / `host_reply`. `src/browser.rs` is a
-re-export adapter. Host argv: `--probe` | `--load <http-url>` (exit 69 =
-Unavailable; never OS browser). Crate description: does **not** link wry
-yet — WebView backend replaces the host body and keeps argv. The crate is a
-workspace member and a dependency of core `minicon`. Do not invent a
-parallel API in `src/` that bypasses minicon-web.
+re-export adapter. Host argv: `--probe` | `--load <http-url>` | `--smoke`
+(exit 69 = Unavailable when `wry-host` is off; never OS browser). Feature
+`wry-host` links wry/tao into the host only. The crate is a workspace
+member and a dependency of core `minicon`. Do not invent a parallel API in
+`src/` that bypasses minicon-web.
 
 ### Target function interface (library)
 
@@ -179,11 +179,14 @@ changing meaning.
 
 ```text
 [-] B0 shell: browser tab is a root peer of a terminal tab (Ctrl+Shift+O;
-       list-tabs kind=browser). One content panel. No tray. wry surface still absent
+       list-tabs kind=browser). One content panel. No tray. A second
+       Ctrl+Shift+O must focus that tab, not insert another (0.2.21 {PANEL}:
+       second add_browser_root is None; content_column_is_the_terminal_rectangle.
+       Live X resize of an already-reparented child stays BLOCKED)
 [v] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
        one browser content panel and stores the canonical URL. A non-http
        token does not change the panel. That path does not call
-       host_open. Non-http is ignored. wry navigation still absent.
+       host_open. Non-http is ignored.
        Evidence: `http_handoff_reuses_one_browser_content_panel`
 [-] Bw page load: the content panel asks **minicon-web** (or today's
        `MINICON_BROWSER_BIN` stand-in) `--load URL`. Core does not link
@@ -202,10 +205,18 @@ changing meaning.
        Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`,
        `exit_69_is_unavailable_and_proxy_maps_onto_webkit_names`
 [-] B3 OAuth vertical: authorize URL is https and loads with `--load` on
-       the one content panel. Redirect host must be allowlisted. No token
-       stored, no OS browser. DeepSeek uses this hook.
+       the one content panel. Redirect host must be allowlisted. No OS
+       browser. DeepSeek uses this hook.
        Evidence: `deepseek_oauth_authorize_loads_in_the_content_panel_only`
-       Token hand-back is still later.
+       Tip `be99a86` also exchanges the code. The page host GETs an http
+       loopback redirect itself (`deliver_loopback_get`) because wry's
+       ignore list is empty. An existing bearer file is forced to `0600`
+       and a symlink is refused. The bridge requires `state`, sends an S256
+       challenge, and keeps listening after a wrong request. Bearer storage
+       goes through minicon-platform's protected private-directory and atomic
+       file seam; Unix 0600/no-follow evidence is local. The Windows adapter
+       installs a protected current-user ACL, but its native evidence remains
+       BLOCKED (0.2.21 {STILL}).
 [_ ] B4 dashboard + file preview + wasm host pages (assets/, include_bytes!)
 [_ ] B5 upsert PRD_02_3x when streaming/workbench blockers clear
 [_ ] Bx later (not this leaf): content-panel layout engine — still 1:1
@@ -261,11 +272,11 @@ composer "Connect AI" / first-use assist
 ```text
 [-] B3a DeepSeek OAuth starts as an https authorize URL on the content panel
        (`deepseek_oauth_authorize`, Ctrl+Shift+D). Redirect host is allowlisted.
-       The page host eats `MINICON_BROWSER_HTTP_PROXY`. The redirect is
-       `127.0.0.1` only (`OAuthBridge`). The code is exchanged at the
-       DeepSeek token URL through `MINICON_BROWSER_HTTP_PROXY` when set.
-       The access token is the harness bearer when `MINICON_DEEPSEEK_API_KEY`
-       is unset. The notice reports the byte count.
+       The page host receives the resolved browser proxy hook. The redirect is
+       `127.0.0.1` only (`OAuthBridge`). The code is exchanged at an https
+       token URL through that same hook. The access token is the harness
+       bearer when `MINICON_DEEPSEEK_API_KEY` is unset. The notice reports
+       the byte count. Not closed: see 0.2.21 {STILL}.
 [_ ] B3b provider registry stub + API-key config schema (no UI chrome yet)
 [_ ] B3c composer entry point calls B3a by default when assist is enabled
 ```
@@ -289,4 +300,3 @@ secrets, or enabling assist in the composer UI. Design + hooks only.
 | AI assist default auth | DeepSeek OAuth in wry browser tab |
 | AI API key | settings/config path (no wry); schema hook only overnight |
 | This doc | design only — no release |
-

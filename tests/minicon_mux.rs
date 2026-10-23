@@ -55,7 +55,9 @@ fn control_endpoint(suffix: &str) -> String {
         format!(r"pipe:\\.\pipe\minicon-mux-{suffix}")
     } else {
         let base = minicon_platform::ipc::native_runtime_directory();
-        let _ = fs::create_dir_all(&base);
+        fs::create_dir_all(&base).expect("create private runtime root");
+        minicon_platform::filesystem::protect_private_directory(&base)
+            .expect("protect private runtime root");
         let dir = base.join(format!("mx-{suffix}"));
         let _ = fs::create_dir_all(&dir);
         #[cfg(unix)]
