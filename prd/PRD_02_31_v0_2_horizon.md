@@ -594,7 +594,10 @@ horizon yet.
   same-process WKWebView child owned by `minicon-web`; Linux retains its
   qualified helper. This is an architecture decision, not UI/UX acceptance:
   owner use rejected the current macOS prototype, and PRD 25's accepted
-  workspace UX gate precedes Windows parity. The bridge invariants remain
+  workspace UX gate precedes Candidate. Owner decision 2026-10-23 puts
+  Windows adapter bring-up before the UX proposal; current receipts and the
+  pending proposal are in [plan-v0.2.21](../plan/plan-v0.2.21.md).
+  The bridge invariants remain
   origin binding, a 64 KiB message cap, at most 8 concurrent requests and replay
   protection, per `PRD_02_28_shared_core.md`'s "consume at the git pin, no
   mandatory dependency inversion". `~/agenterm/research/agenterm-webview/`

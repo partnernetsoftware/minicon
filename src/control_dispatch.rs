@@ -64,6 +64,35 @@ impl ConApp {
                                 .into(),
                             ),
                             (
+                                "browser",
+                                self.browsers
+                                    .get(&node.id)
+                                    .map_or(json::JsonValue::Null, |tab| {
+                                        let panel = tab.panel();
+                                        let (load, reason) = match &panel.load {
+                                            browser::PageLoad::Idle => ("idle", None),
+                                            browser::PageLoad::Loading { .. } => ("loading", None),
+                                            browser::PageLoad::Unavailable { reason, .. } => {
+                                                ("unavailable", Some(reason.as_str()))
+                                            }
+                                        };
+                                        json::object(vec![
+                                            (
+                                                "url",
+                                                panel
+                                                    .url
+                                                    .as_deref()
+                                                    .map_or(json::JsonValue::Null, Into::into),
+                                            ),
+                                            ("load", load.into()),
+                                            (
+                                                "reason",
+                                                reason.map_or(json::JsonValue::Null, Into::into),
+                                            ),
+                                        ])
+                                    }),
+                            ),
+                            (
                                 "child_alive",
                                 session.is_some_and(|session| !session.child_gone).into(),
                             ),
@@ -199,12 +228,17 @@ impl ConApp {
                     Ok(single_field_json("active", tab_id_json(Some(target))))
                 }
             }
-            CliCommand::CloseTab { target } => self.control_target(Some(target)).and_then(|id| {
-                self.activate_session(window, id);
+            CliCommand::CloseTab { target } => (|| {
+                // Lifecycle belongs to every tab; PTY-only targeting would
+                // reject a browser row that list-tabs just returned.
+                if self.workspace.node(target).is_none() {
+                    return Err(format!("terminal @{} does not exist", target.get()));
+                }
+                self.activate_session(window, target);
                 self.close_active_session(window)
                     .map_err(|error| error.to_string())?;
-                Ok(single_field_json("closed", tab_id_json(Some(id))))
-            }),
+                Ok(single_field_json("closed", tab_id_json(Some(target))))
+            })(),
 
             CliCommand::SendPaste { target, text } => {
                 self.send_to_control_terminal(target, "sent_bytes", |session| {

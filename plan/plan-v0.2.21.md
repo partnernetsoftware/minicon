@@ -182,7 +182,7 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   dependency: {SHELL}, {ARCH} and direct Windows/macOS adapter use as disposable prototypes; non-goal: dashboard/preview/wasm, 1:N panels or a whole-terminal visual rewrite
 ├── [-] {WIN-PANEL} Bring up the Windows content panel, then qualify both ISAs
 │   invariant: the Windows release either provides the same tab/content-panel outcome or 0.2.21 explicitly narrows its browser platform claim before Candidate; silent Unavailable is not parity
-│   evidence: local Windows x86_64 canonical dev build and visible open/URL/switch/resize/maximize/reopen journeys; native arm64 remains BLOCKED
+│   evidence: local Windows x86_64 canonical dev build and visible open/URL/switch/resize/maximize/reopen journeys, plus public-CLI missing-runtime and native proxy courts; native arm64 remains BLOCKED
 │   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence; missing runtime is typed Unavailable
 │   dependency: {ARCH}, canonical Windows {ARTIFACT}; accepted {UX-BASELINE} remains required for release; non-goal: changing the Windows console backend or accepting the diagnostic home as final UX
 ├── [v] {AUTH-CORE} Proxy, PKCE/state, loopback and private bearer mechanisms
@@ -266,7 +266,7 @@ child pixels are omitted. Owner approval of these interactions is the
 
 - `./scripts/build.sh dev` (Git Bash on Windows) built the canonical
   `target/debug/minicon.exe` with the GUI-only `native-page-host` feature.
-  The visible executable was 9,629,696 bytes. The first link exposed an
+  The initial visible executable was 9,629,696 bytes. The first link exposed an
   incompatibility between WebView2's static loader and dynamic UCRT; selecting
   static UCRT plus explicit `__acrt_initialize` in the custom entry made the
   canonical build and the visible page journey pass. `dumpbin /dependents`
@@ -296,7 +296,7 @@ child pixels are omitted. Owner approval of these interactions is the
   (`target/browser-win-url.json`) named the active browser tab, but its
   `geometry` was null; this CLI coverage gap remains open. These ignored
   local files are diagnostic receipts, not published artifacts.
-- On the final Windows source, `cargo fmt --all`,
+- On the initial Windows adapter source (`0f3f887`), `cargo fmt --all`,
   `cargo clippy --all-targets -- -D warnings`, `./scripts/build.sh test`,
   and `cargo build --locked --no-default-features` passed. The first full
   test run hit a timing failure in the pre-existing owned-console GUI cleanup
@@ -307,11 +307,65 @@ child pixels are omitted. Owner approval of these interactions is the
   Win32 parent and focus/visibility tests ran as five `native_page` tests;
   replacing the typed HWND or restoring early return on focus error made
   the respective test fail before the implementation was restored.
-- The native adapter passes the resolved browser proxy endpoint to wry's
-  WebView2 builder; the proxy mapping and override tests passed. A separate
-  live proxy failure journey was attempted, but automatic command approval
-  rejected launching that proxy-configured GUI, so there is no live proxy
-  receipt from this host. Keep that runtime claim open.
+- `browser_windows::missing_webview2_runtime_is_unavailable_and_keeps_terminal_usable`
+  forces only the child process's runtime folder to an absent directory. The
+  canonical dev GUI reports typed `browser.load=unavailable` through
+  `list-tabs`, retains one browser root, and still executes a real terminal
+  command. Replacing the creation-error state with Idle made the test fail.
+  This court also exposed `close-tab` incorrectly requiring a PTY session;
+  it failed on the browser row before the lifecycle guard was fixed, then
+  passed. Browser rows' public observation schema is owned by PRD 26.
+- The earlier interactive proxy GUI launch was rejected by automatic command
+  approval. A controlled local-only alternative subsequently passed:
+  `./scripts/build.sh test-suite -p minicon --test minicon_control browser_windows::native_webview2_navigation_uses_the_browser_proxy -- --exact --ignored`.
+  It starts the canonical dev executable without activating the window and
+  drives the public OAuth shortcut. A loopback proxy observes the real
+  WebView2 CONNECT request and rejects the tunnel, so the court never
+  contacts the provider. Both an HTTP-hook fallback and a distinct HTTPS
+  override reach that proxy. Replacing the configured endpoint with a closed
+  loopback port made the test fail; restoring it passed. This court is
+  explicitly ignored in the ordinary gate because it needs WebView2; absence
+  in a native qualification run is BLOCKED, not a pass.
+- Windows proxy scheme/bypass formatting and invalid-value tests pass as
+  part of seven native adapter tests. Swapping the scheme endpoints and
+  accepting a zero port made the respective new tests fail. The separate
+  `python scripts/minicon-web-windows-bypass-smoke.py target/debug/minicon.exe`
+  court uses a real Ctrl+click on a terminal URL. WebView2 reaches the local
+  page server directly, while a recording proxy receives no request for that
+  URL. Removing the bypass argument makes this court fail. The script restores
+  foreground/pointer state and records CLI JSON and the shell PNG below
+  `target/debug/browser-court/`. Proxy behavior ownership is in PRD 25.
+- The first complete gate after the additional browser courts hit existing
+  G4 in `gui_control_surface_isolated_multitab_black_box`: at the async
+  clipboard wait, its host exited with `0xC0000374`. This matches the named
+  carried-debt signature; the focused rerun passed. The new missing-runtime
+  court passed in that same full run. G4 attribution stays outside this goal.
+- Static-CRT handoff review found the initialization return declarations
+  used `i32` despite the SDK's C++ `bool` ABI. The x86_64
+  `pe_entry_observes_the_crt_boolean_return_abi` court builds tiny PE fixtures
+  containing the actual product entry and CRT stubs. A false low byte with
+  nonzero unused upper bits originally entered main (exit 42); the test failed.
+  Matching the declared bool ABI now exits 254 on either runtime's failure,
+  while true initialization still reaches main. The ISA initializer's int
+  return declaration also matches its header. PRD 27 owns this startup fact.
+- Final follow-up gates passed: `cargo fmt --all`,
+  `cargo clippy --all-targets -- -D warnings`,
+  `cargo build --locked --no-default-features`, and the complete
+  `./scripts/build.sh test` (`target/browser-followup-final-test.log`). The
+  full gate records 476 passed/one ignored main test, 16 passed/one explicitly
+  ignored control test, the new native PE-entry test, 20 web tests and the PE
+  import gate. The earlier G4 failure remains recorded above. Browser fixtures
+  additionally isolate `MINICON_CONFIG_DIR` and WebView2 profile state; both
+  selected browser tests and the direct-bypass script passed after that
+  fixture-only adjustment.
+- Final exact-byte confirmation rebuilt canonical `build.sh dev` output,
+  then used the already compiled control-test executable printed by
+  `build.sh test-suite`, with `MINICON_TEST_BINARY` pointing at
+  `target/debug/minicon.exe`. Both browser tests and the direct-bypass script
+  passed without another compilation replacing those bytes. That dev
+  executable is 9,655,808 bytes, SHA-256
+  `7bb5959939aa52febb1794d2d6f5447aad743eb8a8f91a21cb983fbdbc57df86`.
+  This is a local dev receipt, not a release artifact identity.
 - Windows ARM64 WebView2 runtime, a real DPI transition, release artifact
   inventory, owner UX acceptance and cross-platform Candidate gates remain
   open. This x86_64 dev receipt does not imply them.

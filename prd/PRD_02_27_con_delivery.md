@@ -142,6 +142,13 @@ machines new enough to satisfy the import.
   `__vcrt_initialize` at its custom entry. A canonical Windows x86_64 dev
   build and visible page journey prove this locally; the native ARM64 and
   release artifact courts remain open. `panic = "unwind"` is preserved.
+  MSVC `vcruntime/initialization.cpp` and UCRT `internal/initialization.cpp`
+  declare the initialization results as C++ `bool` (`__crt_bool` in
+  `corecrt.h`), not a 32-bit Win32 BOOL. Rust's imports match that ABI;
+  [unused upper return bits are undefined on x64](https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention).
+  `pe_entry_observes_the_crt_boolean_return_abi` loads the actual PE entry
+  with true/false CRT stubs and verifies failure stops before main even when
+  those unused bits are nonzero. This is native x86_64 evidence only.
 - [v] a custom PE entry (`/ENTRY`) obliges the program to run the CRT
   initialization the MSVC startup object would have. `__vcrt_initialize` is
   required and is not reachable through the `.CRT$XI*` table this product walks;

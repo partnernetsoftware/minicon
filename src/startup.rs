@@ -48,13 +48,13 @@ unsafe extern "C" {
     /// caught — a failure that looks like a corrupt stack and is really a
     /// missing constructor.
     ///
-    /// Returns zero on failure.
-    fn __vcrt_initialize() -> i32;
+    /// MSVC declares a C++ bool, not a Win32 BOOL: upper return bits are unspecified.
+    fn __vcrt_initialize() -> bool;
     /// Static UCRT is required by the statically linked WebView2 loader.
     /// MSVC's `__scrt_initialize_crt` calls this after `__vcrt_initialize`.
-    fn __acrt_initialize() -> i32;
-    fn __acrt_uninitialize(is_terminating: bool) -> i32;
-    fn __isa_available_init();
+    fn __acrt_initialize() -> bool;
+    fn __acrt_uninitialize(is_terminating: bool) -> bool;
+    fn __isa_available_init() -> i32;
 }
 
 type CInitializer = unsafe extern "C" fn() -> i32;
@@ -138,16 +138,16 @@ fn run_initializers(start: &'static Option<Initializer>, end: &'static Option<In
 pub extern "system" fn minicon_entry() -> ! {
     // Before the `.CRT$XI*` walk: those initializers may already unwind, and
     // unwinding is one of the things this call makes work.
-    // SAFETY: no arguments, called exactly once, first in the process.
     // SAFETY: this is MSVC's own process-start order, before any CRT use.
-    unsafe { __isa_available_init() };
-    if unsafe { __vcrt_initialize() } == 0 {
+    let _ = unsafe { __isa_available_init() };
+    // SAFETY: called once before static initialization or Rust main.
+    if !unsafe { __vcrt_initialize() } {
         // SAFETY: without the VC runtime there is no exception handling, so
         // there is no way to report this except by not continuing.
         unsafe { ExitProcess(254) }
     }
     // SAFETY: the VC runtime is initialized; the UCRT must precede XI/XC.
-    if unsafe { __acrt_initialize() } == 0 {
+    if !unsafe { __acrt_initialize() } {
         unsafe { ExitProcess(254) }
     }
     let initialization = run_c_initializers();

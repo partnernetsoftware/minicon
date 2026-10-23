@@ -150,7 +150,7 @@ names above.
   Dashboard, preview, wasm and 1:N layout remain follow-ups
   in [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Renderer boundary stays in
   [PRD_02_31](PRD_02_31_v0_2_horizon.md).
-- [_] **browser workspace UX baseline (0.2.21).** The accepted product surface
+- [-] **browser workspace UX baseline (0.2.21).** The accepted product surface
   must make open, current state, real URL navigation, terminal switch/return,
   resize/fullscreen and close/reopen coherent; browser/terminal hierarchy,
   focus and status must be legible without treating the bounded diagnostic
@@ -159,6 +159,18 @@ names above.
   2026-10-23 owner verdict that the current UI/UX is poor is negative evidence;
   it blocks Candidate and acceptance of the current shell as Windows UI. Owner:
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{UX-BASELINE}`.
+- [-] **Windows native proxy settings (0.2.21).** A single HTTP or HTTPS hook
+  supplies the native page's proxy; when both are supplied, each URL scheme
+  uses its own endpoint. `browser.no_proxy` is passed as Chromium bypass
+  rules. Malformed endpoints or switch-bearing values fail as
+  `browser-proxy-invalid`, rather than silently navigating directly.
+  WebView2 arguments use the documented
+  [Chromium manual proxy format](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md).
+  The local Windows x86_64 courts observe the HTTP fallback, distinct HTTPS
+  override and an actual direct load under `no_proxy`. The bypass court uses
+  a real terminal Ctrl+click and fails when the bypass argument is removed.
+  Other Windows ISAs remain BLOCKED. Evidence and exact court commands:
+  [plan-v0.2.21](../plan/plan-v0.2.21.md).
 - [v] **one browser root, and the embed slot is the content column (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`

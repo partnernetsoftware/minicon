@@ -101,9 +101,15 @@ impl NativePageHost {
                     true
                 }
             });
+        #[cfg(target_os = "macos")]
         if let Some((host, port)) = crate::wry_proxy_endpoint(proxy) {
             builder = builder
                 .with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host, port }));
+        }
+        #[cfg(windows)]
+        if let Some(arguments) = windows_proxy_arguments(proxy)? {
+            use wry::WebViewBuilderExtWindows;
+            builder = builder.with_additional_browser_args(arguments);
         }
         let webview = builder
             .build_as_child(&parent)
@@ -142,6 +148,59 @@ impl NativePageHost {
             },
         )
     }
+}
+
+#[cfg(windows)]
+fn windows_proxy_arguments(proxy: &BrowserProxy) -> Result<Option<String>, String> {
+    let endpoint = |raw: &Option<String>| -> Result<Option<String>, String> {
+        let Some(raw) = raw else { return Ok(None) };
+        let parsed = crate::wry_proxy_endpoint(&BrowserProxy {
+            http: Some(raw.clone()),
+            ..BrowserProxy::default()
+        });
+        let (host, port) = parsed.ok_or_else(|| "browser-proxy-invalid".to_owned())?;
+        if !host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".-".contains(&byte))
+            || port.parse::<u16>().ok().is_none_or(|port| port == 0)
+        {
+            return Err("browser-proxy-invalid".to_owned());
+        }
+        Ok(Some(format!("http://{host}:{port}")))
+    };
+    let http = endpoint(&proxy.http)?;
+    let https = endpoint(&proxy.https)?;
+    let server = match (http, https) {
+        (None, None) => return Ok(None),
+        (Some(one), None) | (None, Some(one)) => one,
+        (Some(http), Some(https)) => format!("http={http};https={https}"),
+    };
+    // This API replaces wry's default arguments, so retain its feature flags.
+    let mut arguments = format!(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --proxy-server={server}"
+    );
+    if let Some(bypass) = &proxy.no_proxy {
+        let rules = bypass
+            .split([',', ';'])
+            .map(str::trim)
+            .filter(|rule| !rule.is_empty());
+        let mut accepted = Vec::new();
+        for rule in rules {
+            if rule != "<local>"
+                && !rule
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b".-_:*[]/".contains(&byte))
+            {
+                return Err("browser-proxy-invalid".to_owned());
+            }
+            accepted.push(rule);
+        }
+        if !accepted.is_empty() {
+            arguments.push_str(" --proxy-bypass-list=");
+            arguments.push_str(&accepted.join(";"));
+        }
+    }
+    Ok(Some(arguments))
 }
 
 fn apply_visibility(
@@ -239,5 +298,61 @@ mod tests {
         let parent = native_parent(PanelSlot { parent: 7, ..slot }).unwrap();
         let handle = parent.window_handle().unwrap();
         assert!(matches!(handle.as_raw(), RawWindowHandle::Win32(raw) if raw.hwnd.get() == 7));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_proxy_preserves_scheme_overrides_and_bypass_rules() {
+        let args = windows_proxy_arguments(&BrowserProxy {
+            http: Some("http://127.0.0.1:8001".into()),
+            https: Some("http://127.0.0.1:8002".into()),
+            no_proxy: Some("localhost, *.example.test; 127.0.0.1".into()),
+        })
+        .unwrap()
+        .unwrap();
+        assert!(
+            args.contains("--proxy-server=http=http://127.0.0.1:8001;https=http://127.0.0.1:8002")
+        );
+        assert!(args.contains("--proxy-bypass-list=localhost;*.example.test;127.0.0.1"));
+        let fallback = windows_proxy_arguments(&BrowserProxy {
+            http: Some("http://127.0.0.1:8001".into()),
+            ..BrowserProxy::default()
+        })
+        .unwrap()
+        .unwrap();
+        assert!(fallback.ends_with("--proxy-server=http://127.0.0.1:8001"));
+        assert!(
+            windows_proxy_arguments(&BrowserProxy::default())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_proxy_refuses_malformed_endpoints_and_browser_switches() {
+        for raw in [
+            "http://host --flag:80",
+            "http://host:0",
+            "http://host:65536",
+            "socks5://host:80",
+        ] {
+            assert!(
+                windows_proxy_arguments(&BrowserProxy {
+                    http: Some(raw.into()),
+                    ..BrowserProxy::default()
+                })
+                .is_err(),
+                "{raw}"
+            );
+        }
+        assert!(
+            windows_proxy_arguments(&BrowserProxy {
+                http: Some("http://127.0.0.1:8001".into()),
+                no_proxy: Some("host --flag".into()),
+                ..BrowserProxy::default()
+            })
+            .is_err()
+        );
     }
 }

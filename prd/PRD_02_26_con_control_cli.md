@@ -98,6 +98,17 @@ flowchart LR
   press/release/move/click, `send-wheel`, bounded `wait-text`, bounded
   `wait-tab-exit`, logical-client `resize-window`, and process-lifetime
   `close-window`.
+- [v] `list-tabs` exposes a nullable `browser` object on each row. Browser
+  rows publish `url`, typed `load` (`idle`, `loading`, `unavailable`) and a
+  nullable failure `reason`; terminal rows publish null. This is the last
+  adapter request/result, not confirmation that network loading finished.
+  The Windows missing-runtime and local-proxy courts in
+  `tests/support/browser_windows.rs` guard the native failure and navigation
+  observations; execution evidence belongs to
+  [plan-v0.2.21](../plan/plan-v0.2.21.md).
+  `close-tab` uses workspace identity for both terminal and browser rows;
+  terminal traffic commands continue to require a PTY session. The same
+  missing-runtime court failed at browser close before this lifecycle fix.
 - [v] cross-tab read and write have file endpoints. `send-text` and
   `send-paste` accept `--file PATH` instead of a literal `TEXT`, and
   `capture-pane` accepts `--output PATH` instead of returning the text on

@@ -44,7 +44,7 @@ MiniCon — one-file local terminal
 │   ├── minicon-platform — capability contracts and native OS/ISA/ABI adapters
 │   ├── [-] minicon-console — independent terminal library and native service
 │   │   └── prd/PRD_02_35_terminal_library.md
-│   └── [-] minicon-web — browser content-panel API; wry+tao only inside minicon-web-host
+│   └── [-] minicon-web — browser content-panel API; native adapter ownership → PRD 28
 │       └── product face: Tab / content panel (PRD_02_25); renderer: PRD_02_31
 │           · plan/plan-browser-tabs.md
 ├── Qualification and delivery
@@ -142,8 +142,8 @@ flowchart LR
 - [-] **v0.2.21: console courts complete; browser content panel reopened.** Portable
   `minicon-console` tests must run on every shipped cell, and a Linux-only
   path must fail `lnx-*` even when Windows and macOS are green. Separately,
-  a browser tab's content panel is `minicon-web` (wry + tao only in
-  `minicon-web-host`); a terminal tab's panel stays the PTY. An http loopback redirect is fetched by the
+  a browser tab's content panel is `minicon-web` (platform adapter ownership
+  is mapped in PRD 28); a terminal tab's panel stays the PTY. An http loopback redirect is fetched by the
   page host, not left in wry's empty proxy ignore list. The bearer file is
   forced to mode `0600` and a symlink is refused; `HOME` falls back to
   `USERPROFILE`. The authorize URL carries `state` and an S256 challenge, and

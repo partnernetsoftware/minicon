@@ -1,6 +1,6 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: partial (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. The reopened `{ARCH}` boundary is now selected: platform WebView adapters stay inside **`minicon-web`**; macOS links `native-page-host` into the GUI binary for one child WKWebView while `minicon-core`, `minicon-console` and headless paths remain WebView-free. Direct arm64 Computer Use from canonical `build.sh dev` output proves the bounded offline home, hide/restore, focus release and fullscreen resize in the same content column, but subsequent owner use rejected the UI/UX as poor. The current macOS surface is therefore a disposable engineering prototype, not the design to reproduce on Windows. `{UX-BASELINE}` redesign and explicit owner acceptance now precede Windows WebView2 in [plan-v0.2.21.md](plan-v0.2.21.md). `build.sh dev` also emits a distinct local-test app wrapper. Automated/second-ISA macOS and Linux canonical packaging remain open. **Not a release claim.** Browser remains a terminal-tab peer; no tray, system opener or floating helper. No Draft / Latest / signed package / public ship from this leaf.
+Status: partial (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. Platform WebView ownership is selected in [PRD 28](../prd/PRD_02_28_shared_core.md); local canonical macOS arm64 and Windows x86_64 journeys are recorded in [plan-v0.2.21.md](plan-v0.2.21.md). Owner decision 2026-10-23 puts Windows adapter bring-up before the UX proposal. The proposal is now written and awaits owner confirmation; the current engineering shell is not accepted UX. Automated/second-ISA macOS, Windows ARM64 and canonical cross-platform packaging remain open. **Not a release claim.** Browser remains a terminal-tab peer; no tray, system opener or floating helper. No Draft / Latest / signed package / public ship from this leaf.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
@@ -148,8 +148,9 @@ declares lib + bin `minicon-web-host`. Public API in `src/lib.rs`:
 `PageHost` / `ProcessPageHost` / `host_reply`. `src/browser.rs` is a
 re-export adapter. Host argv: `--probe` | `--load <http-url>` | `--smoke`
 (exit 69 = Unavailable when `wry-host` is off; never OS browser). Feature
-`wry-host` links wry/tao into the host only. The crate is a workspace
-member and a dependency of core `minicon`. Do not invent a parallel API in
+`wry-host` links wry/tao into the Linux helper; GUI-only native feature
+ownership is mapped in [PRD 28](../prd/PRD_02_28_shared_core.md). The crate is a
+workspace member and a dependency of the MiniCon GUI composition. Do not invent a parallel API in
 `src/` that bypasses minicon-web.
 
 ### Target function interface (library)
@@ -162,8 +163,8 @@ changing meaning.
 | --- | --- | --- | --- |
 | `open_url` / load URL | Open or navigate http(s) in the built-in surface; never `host_open` / xdg-open / ShellExecute for terminal-originated http(s) | `PageHost::load` / `ProcessPageHost`; `page_host_request` → `--load <url>`; `spawn_page_host`; `BrowserTab::show_http` + `PageLoad` | B1 shell [v]; Bw cross-platform load [-] |
 | `http_url_at` | Recognize http(s) tokens for Ctrl+click; non-http → no open | `minicon_web::http_url_at` (re-exported from `src/browser.rs`) | [v] |
-| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); pass them to the page host | `resolve_proxy`; Linux live court passed; macOS/Windows visible surface has no receipt | B2 [-] |
-| Host/artifact contract | Canonical dev/release output can navigate without manual feature flags or `MINICON_BROWSER_BIN`; reject system opener names; missing runtime → typed Unavailable | Current helper contract exists but `build.sh dev` emits no helper and the same-window design is Linux-only | Bw [-] |
+| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); pass them to the page host | `resolve_proxy`; Linux and Windows x86_64 live receipts are in plan-v0.2.21; macOS native proxy receipt remains open | B2 [-] |
+| Host/artifact contract | Canonical dev/release output can navigate without manual feature flags or `MINICON_BROWSER_BIN`; reject system opener names; missing runtime → typed Unavailable | Local canonical macOS arm64 and Windows x86_64 dev receipts are in plan-v0.2.21; release/cross-platform inventory remains open | Bw [-] |
 | `PageHost` trait | Swappable surface: process host today; in-process WebView later without new product traits | `PageHost` / `ProcessPageHost` in `crates/minicon-web/src/lib.rs` | [v] |
 | OAuth bridge | Provider authorize URL in a browser **tab**; redirect allowlist; origin-bound, size-capped token hand-back | Core mechanism and Linux adapter evidence exist; macOS/Windows page-surface evidence is open | B3 [-] |
 | Dashboard / file preview / wasm pages | First-party packaged origins under `assets/` / `include_bytes!`; deny-by-default foreign navigation | later `PageHost` callers | B4 [_] |
@@ -186,9 +187,11 @@ changing meaning.
        Run 39925651159 proves exact X child resize on Linux; direct macOS
        arm64 Computer Use proves the child WKWebView in the same column,
        hide/restore, focus release and fullscreen resize. Automated/second-ISA
-       macOS and Windows surface evidence remain open)
-[_] B0-UX accepted workspace: redesign the current owner-rejected macOS
-       prototype before adding Windows parity. Acceptance covers open, real URL
+       macOS and Windows ARM64 surface evidence remain open; Windows x86_64
+       canonical journeys are recorded in plan-v0.2.21)
+[-] B0-UX accepted workspace: Windows adapter bring-up precedes the proposal
+       by owner decision 2026-10-23. The proposal in plan-v0.2.21 awaits owner
+       confirmation before a large redesign. Acceptance covers open, real URL
        navigation, tab switch/return, resize/fullscreen and close/reopen, with
        legible hierarchy, focus and state. A visible native child alone is not
        evidence. Owner: plan-v0.2.21 {UX-BASELINE}.
@@ -213,6 +216,8 @@ changing meaning.
        Unavailable.
        Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`,
        `exit_69_is_unavailable_and_proxy_maps_onto_webkit_names`
+       Native Windows settings are owned in PRD 25, with local proxy and
+       direct-bypass receipts in plan-v0.2.21.
 [-] B3 OAuth vertical: authorize URL is https and loads with `--load` on
        the one content panel. Redirect host must be allowlisted. No OS
        browser. DeepSeek uses this hook.
