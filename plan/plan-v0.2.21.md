@@ -568,6 +568,96 @@ child pixels are omitted. Owner approval of these interactions is the
 
 ## Browser workspace qualification follow-up (2026-10-24)
 
+```text
+{CLOSE-ACK} — preserve the public close-window reply at process shutdown
+├── invariant: an active response owns its lifetime through transport finish
+├── evidence: held-response real IPC and mutation controls, then all existing public GUI cleanup assertions and the full gate
+├── safe failure: reject new work and cap response draining at one second; no unbounded worker join
+├── dependency: existing four-worker local control server; owner: PRD 26
+└── non-goal: masking CLI failures in fixtures, changing G4/G6, or extending endpoint lifetime beyond the process
+```
+
+```mermaid
+flowchart LR
+    C["close-window request"] --> W["worker retains response ownership"]
+    W --> G["GUI queues reply and exits"]
+    G --> D["server: reject new work; bounded drain"]
+    W --> F["frame write + native finish"]
+    F --> D
+    D --> E["process exits after finish or deadline"]
+```
+
+- The complete local gate on `59cd665` passed the product, alignment,
+  black-box and console-agent suites, then failed the final `wide-eof`
+  teardown in `gui_owned_console_native_window_queries_frames_seed_and_cleanup`:
+  `close-window` reported missing endpoint while the host exited normally (0).
+  The same-source focused replay passed (1 test, 10.58 s). The relevant server,
+  client and fixture paths match published v0.2.20; this is an independently
+  observed shutdown-acknowledgement risk, not G4 or G6 qualification.
+  Keep the public fixture's success assertion and repair bounded response
+  ownership; a retry alone does not close the full-gate failure.
+- The response drain now passes four Windows focused tests (three on Unix):
+  accepted GUI handoff, native pipe consumption, unwind retirement and bounded
+  stalled exchange. Mutation controls removed draining, removed ownership or
+  broke the deadline; each failed its intended assertion. Restored production
+  passed all four; the unchanged public owned-console journey passed in 9.25 s.
+  Logs: `target/browser-nav-icons/control-drain-final-green.log`,
+  `control-drain-red-no-wait.log`, `control-drain-red-no-guard.log`,
+  `control-drain-red-ack-flush-unwind.log`, `control-drain-red-deadline.log`
+  and `control-drain-owned-console-green.log` in the same directory.
+- The subsequent full gate passed 480 product tests (one ignored), 17 alignment,
+  39 black-box (one ignored) and eight console-agent tests, then exposed a
+  different owned-console fixture assumption: its expensive native row readback
+  preceded held-frame observations and could consume the PRD 24.01 deadline.
+  This is not a shutdown ACK recurrence. Reordering to the existing atomic
+  query-reply marker retained strict native reply checks; one PNG completed
+  at 250.30 ms and was explicitly BLOCKED, not accepted as a held frame.
+  Public text/PNG observations now overlap their CLI startup, recording each
+  completion separately; product deadlines and pixel/state assertions remain fixed.
+  Logs: `target/browser-nav-icons/full-test-with-response-drain.log` and
+  `target/browser-nav-icons/owned-console-early-query-blocked.log`.
+- With concurrent public observations, the first four-case run passed, with
+  the slowest PNG at 201.58 ms. A single mutation changed the public screen
+  accessor from presented to active state; the fixture failed its original
+  `MAIN-BASE` assertion (actual `SYNC-FRAME`), not setup or timeout. Restoring
+  exact product bytes passed all four cases again (1 test, 10.25 s), slowest
+  PNG 209.05 ms. Logs: `target/browser-nav-icons/owned-console-parallel-no-hold-red.log`
+  and `owned-console-parallel-restored-green.log` in the same directory.
+  No retry harness or product hold extension was added; full-gate qualification
+  remains required.
+- The default parallel full gate still reports this fixture BLOCKED: its
+  `wide/end` text observation completed at 420.59 ms under concurrent GUI
+  journeys (the two earlier cases passed). No late frame was accepted.
+  A full gate with `RUST_TEST_THREADS=1` preserved all suite members and
+  assertions but also reported BLOCKED: first-case PNG completion 262.74 ms.
+  The single-thread schedule did not alone remove CLI/encoding timing cost. PRD 33 owns shared-resource scheduling; this is a
+  named serial qualification, not a claim that the parallel schedule passed.
+  Logs: `target/browser-nav-icons/full-test-final-response-drain.log` and
+  `full-test-final-serial.log` in the same directory.
+
+- The fixture now uses a public 640x400 logical resize before baseline capture,
+  waits for the frame and PTY grid to agree, and verifies the SDK's minimum
+  three rows/ten columns. The focused four-case run passed with PNG completions
+  157.63, 158.84, 214.46 and 128.18 ms. Default parallel whole-control still
+  reported BLOCKED: `wide/end` query reply itself took 249.33 ms, then text
+  287.97 ms. Small images bound encoding cost but do not isolate shared desktop
+  scheduling. No retry harness was added; the final small-frame source requires
+  a named serial full gate. Logs: `target/browser-nav-icons/owned-console-small-frame-settled-focused.log`
+  and `owned-console-small-frame-whole-control.log` in that directory.
+
+- Final small-frame source passed `cargo fmt --all`, strict all-target Clippy
+  and `RUST_TEST_THREADS=1 ./scripts/build.sh test` (exit 0), including the
+  workspace and separately owned vt100 fork. The product suite ran 480 passed /
+  one ignored, alignment 17 passed, black-box 39 passed / one ignored,
+  console-agent eight passed, control 16 passed / two explicitly opt-in browser
+  courts ignored, and native rust-console PTY 96 passed / 69 explicitly opt-in
+  external-client courts ignored. The required browser court remains separate.
+  The owned-console journey passed with every original state/pixel/SDK/cleanup
+  assertion. Log: `target/browser-nav-icons/full-test-small-frame-serial.log`.
+  This is the named serial schedule; earlier parallel BLOCKED records remain,
+  and this observation does not close G4/G6's separately scoped debt.
+  New six-platform shutdown-response court results remain pending.
+
 - Dev-loop run `39991263519` did not compile the product: dispatch passed
   abbreviated `d4ab1f2`, which checkout interpreted as a branch/tag pattern.
   Subsequent exact-source dispatches must use the full 40-character SHA.
@@ -595,12 +685,16 @@ child pixels are omitted. Owner approval of these interactions is the
   Cargo started: APT fetched 58.0 MB from the Azure Ubuntu mirror in 24m53s
   (38.8 kB/s). Provisioning now has its own five-minute bound, uses Ubuntu's
   main mirror on x86_64, and retains the existing package-signature trust.
-  Actual performance of the corrected prerequisite remains to be measured.
+  On run `39996324398`, the two prerequisite steps completed in 22 s and 38 s;
+  that run completed successfully. Artifact identities and qualification scope
+  are owned by PRD 27.
 - The geometry-based navigation marks passed the canonical local Windows
   physical browser journey (`target/browser-nav-icons/physical/receipt.json`,
   executable SHA-256 `13c66546abe06084ba564fc314ec5e81f288a743c888dca96ece35fbfa5a6275`).
   The new Reload mark was inspected in the native window capture; this is
-  Windows evidence, with a fresh macOS capture still required.
+  Windows evidence. Mac arm64 run `39996333498` on `59cd665` subsequently
+  captured four real window PNGs; inspection confirmed the Reload mark is visible.
+  Owner UX acceptance remains pending.
 
 ## Non-goals
 

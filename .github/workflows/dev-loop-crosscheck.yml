@@ -159,6 +159,26 @@ jobs:
             2>&1 | tee probe-logs/browser-workspace-test.log
           python3 scripts/browser-workspace-smoke.py "$binary" --output probe-logs/browser-workspace
 
+      - name: Qualify bounded control shutdown responses
+        # Required on every cell, independently of the optional suite filter.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe-logs
+          bash scripts/build.sh test-suite --target '${{ matrix.triple }}' --bin minicon \
+            control::shutdown_response_tests -- --test-threads 1 \
+            2>&1 | tee probe-logs/control-shutdown-response.log
+          python3 - '${{ matrix.cell }}' <<'PY'
+          import re, sys
+          from pathlib import Path
+          text = Path('probe-logs/control-shutdown-response.log').read_text(encoding='utf-8')
+          expected = 4 if sys.argv[1].startswith('win-') else 3
+          summaries = re.findall(r'^test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', text, re.MULTILINE)
+          if summaries != [('ok', str(expected), '0', '0')]:
+              raise SystemExit(f'control shutdown court requires exactly {expected} passed, 0 failed/ignored; observed {summaries}')
+          print(f'control shutdown court: exactly {expected} passed, 0 failed/ignored')
+          PY
+
       - name: Run each suite, capturing every result before failing the job
         # These are Cargo integration/unit tests, not standalone binaries --
         # their real names on disk are hashed (target/<triple>/debug/deps/
@@ -383,6 +403,7 @@ jobs:
           path: |
             probe-logs/test-receipt.json
             probe-logs/browser-workspace-test.log
+            probe-logs/control-shutdown-response.log
             probe-logs/browser-workspace/
           if-no-files-found: ignore
           retention-days: 14

@@ -18,6 +18,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   ├── inputs: ref, cells, test_filter
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
+│   ├── mandatory browser artifact and shutdown-response courts, independent of test_filter
 │   └── permissions: contents: read only
 ├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
 └── Validation record (real hosted runners, run 36313213803)
@@ -67,7 +68,7 @@ Inputs: `ref` (defaults to the dispatched branch), `cells` (space-separated;
 empty runs the four non-macOS cells — macOS runners bill roughly 10x Linux
 and queue longest, so opt in explicitly with `all` or the `osx-*` names when
 a macOS-specific question needs it), `test_filter` (a Rust test-name
-substring, applied to every suite).
+substring, applied to ordinary suites; the mandatory courts below stay active).
 
 Per cell: `cargo build --locked --workspace --all-targets --target <triple>`,
 then each suite is run with `cargo test --locked --target <triple> --test
@@ -77,6 +78,21 @@ test binaries live hashed under `target/<triple>/debug/deps/`; a workflow
 that stats a guessed path and treats "not found" as "nothing to run" reports
 a false green with zero suites executed. This is not hypothetical: it is
 exactly what happened and was caught below.
+
+The 0.2.21 browser stage qualifies a canonical native artifact and records its
+byte identity, native browser test and public-CLI journey, independently of the
+optional suite filter. Product behavior belongs to
+[PRD 25](PRD_02_25_con_workspace.md); release-artifact qualification remains
+with [PRD 27](PRD_02_27_con_delivery.md).
+
+The shutdown-response court also ignores that filter. It runs
+`control::shutdown_response_tests` through `build.sh test-suite --bin minicon`,
+requiring exactly four passed tests on Windows and three on Unix, with no
+failed or ignored tests. The passing receipt includes
+`probe-logs/control-shutdown-response.log`; failure logs retain it too.
+[PRD 26](PRD_02_26_con_control_cli.md) owns response lifetime and bounds.
+Static workflow validation is not native runtime evidence; all six new court
+results remain required in the active 0.2.21 plan.
 
 From v0.2.21, each cell also runs the portable `minicon-console` library
 (`--lib`) and its host-neutral integration tests `synchronized_presentation`

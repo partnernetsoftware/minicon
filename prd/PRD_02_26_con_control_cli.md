@@ -18,6 +18,7 @@ minicon control protocol and public CLI
 ├── Self-description
 ├── Public command set
 ├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
+│   └── [-] Bounded completion of active replies during shutdown
 ├── JSON contract
 └── Evidence publication (snapshots, screenshots)
 ```
@@ -27,6 +28,9 @@ flowchart LR
     S["script / harness"] -->|"minicon cli --control …"| C["ATC1 client<br/>short-lived"]
     C -->|local pipe / socket| H["minicon GUI process<br/>bound before the window, dies with it"]
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
+    H --> D["shutdown: reject new work<br/>bounded active-response drain"]
+    D -->|"complete transport response"| C
+    D --> E["process exit by deadline"]
     H -. omitted verbs .-> X["no workbench server,<br/>no default port, no remote"]
     AW["agenterm cli<br/>separate contract"] -. shares verb spellings only .-> H
 ```
@@ -339,6 +343,17 @@ flowchart LR
   Condvar slot carries each reply. Closing the GUI atomically rejects new queue
   entries, drops pending senders and wakes reply waiters rather than making them
   consume the full timeout.
+- [-] **Shutdown response completion.** The active worker owns its response
+  through both frame writing and the native transport's finish operation.
+  After rejecting new work and releasing queued requests, server destruction
+  allows at most one second for those active responses to finish. A client
+  that does not consume its reply cannot hold the process indefinitely.
+  A normal `close-window` must receive its acknowledgement before process
+  termination, rather than relying on a retry after the endpoint disappears.
+  The 0.2.21 full-gate observation and required negative controls are owned by
+  [the active plan](../plan/plan-v0.2.21.md)'s `{CLOSE-ACK}` leaf; qualification
+  has passed the Windows mutation controls and named serial public/full gate.
+  Native six-platform response-court results remain open.
 - [v] six synchronous control commands share non-generic session lookup and
   terminal-cell validation helpers while preserving each command's local
   `Result` propagation, screenshot and wait reply ownership, and active-tab

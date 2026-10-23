@@ -28,6 +28,7 @@ Outcome: relevant development feedback without lost release obligations
 ├── [-] Fixture and resource lifecycle
 │   ├── [v] cancellable journey sleeps and owned process teardown
 │   ├── [-] opt-in native window diagnostics; profile wiring pending
+│   ├── [-] named serial desktop gate for deadline-bound public observations
 │   └── [_] isolate shared resources before enabling concurrency
 └── Observable evidence
     ├── planned/observed names and counts, phase costs and final verdicts
@@ -86,6 +87,25 @@ Run inexpensive static checks over changed test code before a mutation batch.
 If a protected test changes, refresh its dependent guard cases and final affected
 profiles; retain other evidence only when its source and guarded test scope still
 match. This avoids repeating unrelated native courts after a test-only lint fix.
+
+### Time-sensitive desktop qualification
+
+The 0.2.21 owned-console held-frame journey must complete its text and PNG
+observations inside the presentation window owned by PRD 24.01. Its fixture
+uses the native query reply as the ready marker and starts independent public
+CLI observations together; each records its own completion time. Before that
+window, the public resize sets a 640x400 logical frame and waits for both frame
+and PTY grid to settle; at least three rows and ten columns preserve every SDK
+coordinate while bounding PNG work. A late
+observation is `BLOCKED`, never a passed state assertion. The SDK's expensive
+row readback is verified afterward. Product behavior and pixel assertions are
+unchanged. Concurrent GUI journeys can exhaust that window on the shared test
+host. `RUST_TEST_THREADS=1 ./scripts/build.sh test` names a serial schedule,
+not a passing verdict; that schedule alone also exceeded the observation
+window before the frame-size setup was bounded. Preserve the actual schedule
+and outcome with each receipt; a serial pass does not certify a parallel run.
+The actual failed/passing receipts belong to
+[the active plan](../plan/plan-v0.2.21.md#browser-workspace-qualification-follow-up-2026-10-24).
 
 ### Inventory and selection
 

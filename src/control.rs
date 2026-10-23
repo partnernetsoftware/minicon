@@ -32,6 +32,7 @@ const RESPONSE_REPLAY_CACHE_CAPACITY: usize = 1024;
 const RESPONSE_REPLAY_CACHE_MAX_BYTES: usize = 8 * 1024 * 1024;
 const RESPONSE_REPLAY_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 const LOST_REPLY_ATTEMPTS: usize = 3;
+const SHUTDOWN_RESPONSE_DRAIN: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RequestId(u128);
@@ -1162,9 +1163,54 @@ pub struct IncomingRequest {
     pub reply: ReplySender,
 }
 
+#[derive(Default)]
+struct ResponseDrain {
+    active: Mutex<usize>,
+    idle: std::sync::Condvar,
+}
+
+struct ResponseGuard(Arc<ResponseDrain>);
+
+impl ResponseDrain {
+    fn begin(self: &Arc<Self>) -> ResponseGuard {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *active += 1;
+        ResponseGuard(Arc::clone(self))
+    }
+
+    fn wait(&self, timeout: Duration) {
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = self
+            .idle
+            .wait_timeout_while(active, timeout, |active| *active != 0)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+}
+
+impl Drop for ResponseGuard {
+    fn drop(&mut self) {
+        let mut active = self
+            .0
+            .active
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *active -= 1;
+        if *active == 0 {
+            self.0.idle.notify_all();
+        }
+    }
+}
+
 pub struct ControlServer {
     requests: Arc<RequestQueue>,
     connections: Arc<ConnectionQueue>,
+    responses: Arc<ResponseDrain>,
 }
 
 impl ControlServer {
@@ -1174,6 +1220,7 @@ impl ControlServer {
         let alive = Arc::new(AtomicBool::new(true));
         let requests = Arc::new(RequestQueue::new(Arc::clone(&alive)));
         let connections = Arc::new(ConnectionQueue::new(Arc::clone(&alive)));
+        let responses = Arc::new(ResponseDrain::default());
         let replay_cache = Arc::new(ResponseReplayCache::default());
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
         for _ in 0..CONTROL_WORKERS {
@@ -1181,10 +1228,15 @@ impl ControlServer {
             let request_tx = Arc::clone(&requests);
             let worker_wake = Arc::clone(&wake);
             let worker_replay_cache = Arc::clone(&replay_cache);
+            let worker_responses = Arc::clone(&responses);
             if let Err(error) = minicon_platform::threading::spawn_named_detached(
                 "minicon-control-worker",
                 Box::new(move || {
                     while let Some(stream) = worker_connections.pop() {
+                        // Count before the request can reach the GUI, and hold
+                        // through the native response flush inside serve_one.
+                        // RAII also retires a panicking or failed exchange.
+                        let _response = worker_responses.begin();
                         let result = catch_unwind(AssertUnwindSafe(|| {
                             serve_one(
                                 stream,
@@ -1247,6 +1299,7 @@ impl ControlServer {
         Ok(Self {
             requests,
             connections,
+            responses,
         })
     }
 
@@ -1259,6 +1312,164 @@ impl Drop for ControlServer {
     fn drop(&mut self) {
         self.requests.close();
         self.connections.close();
+        // Stop admission first. Existing GUI replies may still be travelling
+        // through a worker and (on Windows) waiting for the client to consume
+        // its pipe buffer. A stalled peer must not turn this into a thread join
+        // for the full GUI-response timeout.
+        self.responses.wait(SHUTDOWN_RESPONSE_DRAIN);
+    }
+}
+
+#[cfg(test)]
+mod shutdown_response_tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    fn endpoint() -> String {
+        let unique = RequestId::fresh().unwrap().0;
+        if cfg!(windows) {
+            format!(
+                r"pipe:\\.\pipe\minicon-drain-{}-{unique:x}",
+                std::process::id()
+            )
+        } else {
+            let directory = minicon_platform::ipc::native_runtime_directory();
+            std::fs::create_dir_all(&directory).unwrap();
+            minicon_platform::filesystem::protect_private_directory(&directory).unwrap();
+            let directory = std::fs::canonicalize(directory).unwrap();
+            format!("unix:{}/drain-{unique:x}.sock", directory.display())
+        }
+    }
+
+    fn accepted_close() -> (ControlServer, IncomingRequest, NativeStream) {
+        let endpoint = endpoint();
+        let (wake, woken) = mpsc::sync_channel(1);
+        let server = ControlServer::bind(&endpoint, move || {
+            let _ = wake.try_send(());
+        })
+        .unwrap();
+        let mut client =
+            NativeStream::connect(&parse_native_endpoint(&endpoint).unwrap(), CONNECT_TIMEOUT)
+                .unwrap();
+        client.set_io_timeout(CONNECT_TIMEOUT).unwrap();
+        let payload =
+            encode_wire_request(RequestId::fresh().unwrap(), CliCommand::CloseWindow).unwrap();
+        write_frame(&mut client, &payload, REQUEST_MAX_BYTES).unwrap();
+        woken.recv_timeout(CONNECT_TIMEOUT).unwrap();
+        let (mut requests, backlog) = server.recv_batch(1);
+        assert!(!backlog);
+        let request = requests.pop().unwrap();
+        assert!(matches!(request.command, CliCommand::CloseWindow));
+        assert_eq!(
+            *server.responses.active.lock().unwrap(),
+            1,
+            "the response must be counted before its request reaches the GUI"
+        );
+        (server, request, client)
+    }
+
+    #[test]
+    fn shutdown_waits_for_the_accepted_gui_reply() {
+        let (server, request, mut client) = accepted_close();
+        let (dropping, started) = mpsc::sync_channel(1);
+        let (finished, done) = mpsc::sync_channel(1);
+        let shutdown = std::thread::spawn(move || {
+            dropping.send(()).unwrap();
+            drop(server);
+            finished.send(()).unwrap();
+        });
+        started.recv_timeout(CONNECT_TIMEOUT).unwrap();
+        assert!(
+            matches!(
+                done.recv_timeout(Duration::from_millis(50)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "shutdown retired an accepted request before the GUI supplied its reply"
+        );
+        request
+            .reply
+            .send(Ok(json::object(vec![("closing", true.into())])))
+            .unwrap();
+        let reply = read_frame(&mut client, RESPONSE_MAX_BYTES).unwrap();
+        let reply: serde_json::Value =
+            serde_json::from_str(&decode_response(&reply).unwrap()).unwrap();
+        assert_eq!(reply["closing"], true);
+        done.recv_timeout(CONNECT_TIMEOUT).unwrap();
+        shutdown.join().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shutdown_waits_for_the_client_to_consume_the_pipe_reply() {
+        use std::io::Read as _;
+        let (server, request, mut client) = accepted_close();
+        request
+            .reply
+            .send(Ok(json::object(vec![("closing", true.into())])))
+            .unwrap();
+        let mut header = [0; 8];
+        client.read_exact(&mut header).unwrap();
+        assert_eq!(&header[..4], &WIRE_MAGIC);
+        let length = u32::from_le_bytes(header[4..].try_into().unwrap()) as usize;
+        assert!(length > 1 && length <= RESPONSE_MAX_BYTES);
+        let mut reply = vec![0; length];
+        client.read_exact(&mut reply[..length - 1]).unwrap();
+        // The short reply fits in the native pipe buffer. Withholding its last
+        // byte keeps FlushFileBuffers pending after the writes have completed.
+        let (dropping, started) = mpsc::sync_channel(1);
+        let (finished, done) = mpsc::sync_channel(1);
+        let shutdown = std::thread::spawn(move || {
+            dropping.send(()).unwrap();
+            drop(server);
+            finished.send(()).unwrap();
+        });
+        started.recv_timeout(CONNECT_TIMEOUT).unwrap();
+        assert!(
+            matches!(
+                done.recv_timeout(Duration::from_millis(50)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "shutdown retired the response before the client consumed its final byte"
+        );
+        client.read_exact(&mut reply[length - 1..]).unwrap();
+        assert!(decode_response(&reply).unwrap().contains("closing"));
+        done.recv_timeout(CONNECT_TIMEOUT).unwrap();
+        shutdown.join().unwrap();
+    }
+
+    #[test]
+    fn shutdown_response_guard_retires_after_unwind() {
+        let responses = Arc::new(ResponseDrain::default());
+        let guarded = Arc::clone(&responses);
+        assert!(
+            catch_unwind(move || {
+                let _response = guarded.begin();
+                panic!("controlled response failure");
+            })
+            .is_err()
+        );
+        assert_eq!(*responses.active.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn shutdown_response_drain_is_bounded_for_a_stalled_exchange() {
+        let responses = Arc::new(ResponseDrain::default());
+        let response = responses.begin();
+        let (release, held) = mpsc::sync_channel(1);
+        let stalled = std::thread::spawn(move || {
+            // A broken unbounded drain still gets a controlled release, so
+            // its assertion fails instead of hanging the entire test gate.
+            let _ = held.recv_timeout(Duration::from_secs(1));
+            drop(response);
+        });
+        responses.wait(Duration::from_millis(20));
+        let still_active = *responses.active.lock().unwrap();
+        let _ = release.send(());
+        stalled.join().unwrap();
+        assert_eq!(
+            still_active, 1,
+            "the deadline must leave the stalled exchange active rather than waiting for it forever"
+        );
     }
 }
 

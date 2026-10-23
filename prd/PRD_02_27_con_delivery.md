@@ -1459,8 +1459,18 @@ pack must provision same-source, ISA/hash-checked helper receipts under
 `target/browser-helpers/` (or `MINICON_BROWSER_HELPERS`) before rebuilding Linux
 payloads; an absent prerequisite fails instead of packing a silent fallback.
 Missing WebKitGTK/runtime or an unavailable executable-file facility is typed
-Unavailable and leaves terminals usable. Exact-source native journeys and pack
-receipts remain required; this addition is not yet qualified.
+Unavailable and leaves terminals usable. The first unsigned baseline is qualified:
+run `39996324398`, attempt 1, source
+`59cd665dc599f797adad24e97323395b9cf645d5`, clean tree, packed
+`minicon.com` SHA-256
+`8219f4fec20c3e0d00bbd6814dfee91c56840f8dade1aa877aa13788fb6df622`.
+All six native runtime receipts name that run/source/pack hash and successful
+browser journeys. Independently hashing every extracted ZIP payload matched
+its runtime and browser receipt's native executable hash; the receipt set is
+exactly the six required cells. The raw pack is 13,969,271 bytes, above the
+current Candidate ceiling; owner budget review remains open. This baseline
+precedes the shutdown-response repair and does not qualify its final source,
+signed transformations, Candidate or public download.
 The unsigned six-cell court executes the independently extracted native payload
 after checking its pack receipt SHA. Transformed Windows native executables and
 both signed macOS forms have their own after-signing browser journeys; unchanged

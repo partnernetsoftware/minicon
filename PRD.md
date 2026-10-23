@@ -54,7 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [-] v0.2.21 browser workspace implemented locally; native six-cell qualification and owner UX review open → plan/plan-v0.2.21.md
+    ├── [-] v0.2.21 first unsigned browser six-cell baseline qualified; final-source qualification and owner UX review open → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md

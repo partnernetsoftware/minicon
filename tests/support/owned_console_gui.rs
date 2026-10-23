@@ -227,9 +227,50 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
             let tab = tab_id(&listed["tabs"][0]["id"]).to_owned();
             checkpoint(&report, 0);
             cli_json(&exe, &endpoint, &["wait-text", "MAIN-BASE"]);
-            let ui = wait_for_geometry(&exe, &endpoint);
+            // Keep PNG work bounded without changing the presentation policy.
+            // The SDK uses actual viewport dimensions and needs three rows
+            // and ten columns for its fixed coordinates/readback.
+            cli_json(
+                &exe,
+                &endpoint,
+                &["resize-window", "--width", "640", "--height", "400"],
+            );
+            let resize_deadline = Instant::now() + Duration::from_secs(8);
+            let ui = loop {
+                let ui = cli_json(&exe, &endpoint, &["ui-snapshot"]);
+                let geometry = &ui["geometry"];
+                let scale = geometry["scale_permille"].as_u64().unwrap_or(0);
+                let width = geometry["frame"]["width"].as_u64().unwrap_or(0);
+                let height = geometry["frame"]["height"].as_u64().unwrap_or(0);
+                let cols = geometry["grid"]["cols"].as_u64().unwrap_or(0);
+                let rows = geometry["grid"]["rows"].as_u64().unwrap_or(0);
+                let cell_w = geometry["grid"]["cell_w"].as_u64().unwrap_or(0);
+                let cell_h = geometry["grid"]["cell_h"].as_u64().unwrap_or(0);
+                if scale > 0
+                    && (width * 1000 + scale / 2) / scale == 640
+                    && (height * 1000 + scale / 2) / scale == 400
+                    && cols >= 10
+                    && rows >= 3
+                    && cell_w > 0
+                    && cell_h > 0
+                    && cols * cell_w <= geometry["terminal_viewport"]["width"].as_u64().unwrap_or(0)
+                    && rows * cell_h
+                        <= geometry["terminal_viewport"]["height"]
+                            .as_u64()
+                            .unwrap_or(0)
+                {
+                    break ui;
+                }
+                assert!(
+                    Instant::now() < resize_deadline,
+                    "owned fixture resize did not settle at 640x400 logical pixels: {ui}"
+                );
+                thread::sleep(Duration::from_millis(10));
+            };
             let geometry = &ui["geometry"];
             assert_eq!(geometry["pty_backend"], "rust-console");
+            assert!(geometry["grid"]["rows"].as_u64().unwrap() >= 3);
+            assert!(geometry["grid"]["cols"].as_u64().unwrap() >= 10);
             fs::write(
                 folder.join("geometry.json"),
                 serde_json::to_vec_pretty(&ui).unwrap(),
@@ -249,33 +290,89 @@ fn gui_owned_console_native_window_queries_frames_seed_and_cleanup() {
                 &["screenshot-pane", "--output", before.to_str().unwrap()],
             );
             let before_row = row_pixels(&before, geometry);
+            let expected: Vec<u16> = b"\x1b[3;6R\x1b[?2026;0$y"
+                .iter()
+                .copied()
+                .map(u16::from)
+                .collect();
+            let expected_replies = format!("api={api};units={expected:?}\n");
+            let replies = report.with_extension("replies");
+            // PRD 24.01's bounded hold is an observation window, not a wait
+            // for the SDK's slower per-row native readback to finish.
+            let observation_window = Duration::from_millis(250);
+            let started = Instant::now();
             cli_json(&exe, &endpoint, &["send-text", "a"]);
-            checkpoint(&report, 1);
-            let text = cli_text(&exe, &endpoint, &["capture-pane"]);
+            while !replies.is_file() {
+                assert!(
+                    started.elapsed() < observation_window,
+                    "BLOCKED: SDK query reply missed the held-frame observation window;api={api};kind={kind};elapsed={:?};archive={}",
+                    started.elapsed(),
+                    folder.display()
+                );
+                thread::sleep(Duration::from_millis(1));
+            }
+            // These native reads prove the GUI parsed the new active frame.
+            // The producer publishes this marker before its row-by-row SDK
+            // snapshot, which is checked after the time-sensitive captures.
+            assert_eq!(fs::read_to_string(&replies).unwrap(), expected_replies);
+            let reply_elapsed = started.elapsed();
+            // Both are public, read-only observations. Start their CLI
+            // processes together; each records its own completion, while the
+            // GUI retains ownership of request ordering and frame state.
+            let ((text, text_elapsed), png_elapsed) = thread::scope(|scope| {
+                let text = scope.spawn(|| {
+                    let text = cli_text(&exe, &endpoint, &["capture-pane"]);
+                    (text, started.elapsed())
+                });
+                let png = scope.spawn(|| {
+                    cli_json(
+                        &exe,
+                        &endpoint,
+                        &["screenshot-pane", "--output", held.to_str().unwrap()],
+                    );
+                    started.elapsed()
+                });
+                (text.join().unwrap(), png.join().unwrap())
+            });
+            assert!(
+                text_elapsed < observation_window,
+                "BLOCKED: text capture missed the held-frame observation window;api={api};kind={kind};reply={reply_elapsed:?};capture={text_elapsed:?};archive={}",
+                folder.display()
+            );
             assert!(text.starts_with("MAIN-BASE"), "{text}");
-            fs::write(
-                folder.join("held.json"),
-                serde_json::to_vec_pretty(&text).unwrap(),
-            )
-            .unwrap();
-            cli_json(
-                &exe,
-                &endpoint,
-                &["screenshot-pane", "--output", held.to_str().unwrap()],
+            eprintln!(
+                "held-observation api={api};kind={kind};reply={reply_elapsed:?};capture={text_elapsed:?};png={png_elapsed:?};bound={observation_window:?}"
+            );
+            assert!(
+                png_elapsed < observation_window,
+                "BLOCKED: PNG capture missed the held-frame observation window;api={api};kind={kind};elapsed={png_elapsed:?};archive={}",
+                folder.display()
             );
             assert_eq!(
                 row_pixels(&held, geometry),
                 before_row,
                 "held terminal row exposed active state"
             );
-            let expected: Vec<u16> = b"\x1b[3;6R\x1b[?2026;0$y"
-                .iter()
-                .copied()
-                .map(u16::from)
-                .collect();
+            fs::write(
+                folder.join("held.json"),
+                serde_json::to_vec_pretty(&text).unwrap(),
+            )
+            .unwrap();
+            fs::write(
+                folder.join("hold-observation.json"),
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "query_reply_ms": reply_elapsed.as_secs_f64() * 1000.0,
+                    "capture_ms": text_elapsed.as_secs_f64() * 1000.0,
+                    "held_png_ms": png_elapsed.as_secs_f64() * 1000.0,
+                    "bound_ms": observation_window.as_millis(),
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            checkpoint(&report, 1);
             assert_eq!(
                 fs::read_to_string(report.with_extension("replies")).unwrap(),
-                format!("api={api};units={expected:?}\n")
+                expected_replies
             );
             if kind == "end" {
                 cli_json(&exe, &endpoint, &["send-text", "e"]);

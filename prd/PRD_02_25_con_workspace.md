@@ -142,9 +142,10 @@ names above.
   visual baseline remain required before Candidate. Local canonical Windows
   x86_64 dev use now proves a visible WebView2 child, real URL navigation,
   hide/restore, resize/maximize and close/reopen mechanics; `screenshot-pane`
-  omits its child HWND pixels. This is adapter evidence only. Canonical
-  cross-platform artifacts and native automated/second-ISA macOS plus Windows
-  ARM64 page courts remain open in
+  omits its child HWND pixels. This is adapter evidence only. The initial
+  unsigned six-cell artifact and native page courts are recorded in
+  [PRD 27](PRD_02_27_con_delivery.md#what-runs-where-in-one-look-02x-routine-release);
+  final-source/signed qualification and owner UX acceptance remain open in
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{ARCH}` / `{ARTIFACT}` /
   `{UX-BASELINE}` / `{MAC-PANEL}` / `{WIN-PANEL}`.
   Dashboard, preview, wasm and 1:N layout remain follow-ups
@@ -171,8 +172,9 @@ names above.
   with page focus. Remote page scripts cannot dispatch host commands.
   Local Windows native address/redirect/title/back/forward/failure evidence is
   `native_browser_address_redirect_history_and_failure`; the canonical artifact
-  journey is `scripts/browser-workspace-smoke.py`. Other cells and owner review
-  remain open. Owner:
+  journey is `scripts/browser-workspace-smoke.py`. The initial unsigned six-cell
+  result is owned by [PRD 27](PRD_02_27_con_delivery.md#what-runs-where-in-one-look-02x-routine-release).
+  Final-source qualification and explicit owner review remain open. Owner:
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{UX-BASELINE}`.
 - [-] **Windows native proxy settings (0.2.21).** A single HTTP or HTTPS hook
   supplies the native page's proxy; when both are supplied, each URL scheme
