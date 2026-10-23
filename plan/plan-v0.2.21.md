@@ -130,9 +130,19 @@ Outcome: the one browser content panel stays in the terminal's column and the OA
 │   evidence: `windows-private-filesystem` is nonzero and green on win-x86_64 and win-aarch64 receipts
 │   safe failure: keep the Windows bearer claim BLOCKED; do not infer ACL safety from Unix 0600 or from a green neighboring suite
 │   dependency: minicon-platform `filesystem`; non-goal: running every platform unit test on Windows
+├── [-] {RESIZE} Keep the embedded X child on the current content-column bounds
+│   invariant: window geometry, sidebar width, history-panel width and browser-tab activation all apply the same `Layout::content_column` rectangle to the already-reparented child
+│   evidence: a native X11 court creates a classed child, calls the public resize seam and observes exact x/y/width/height; Linux product dispatch calls that seam on each owning geometry transition
+│   safe failure: keep the browser surface partial; never paint stale terminal chrome over a child left at old bounds
+│   dependency: X11 embed parent; non-goal: Wayland embedding or the future 1:N layout engine
+├── [-] {WEBKIT} Run the real WebKit OAuth navigation handler on both Linux cells
+│   invariant: an ordinary page reaches WebKit through the configured HTTP proxy, its loopback OAuth redirect is cancelled inside WebKit and delivered directly to 127.0.0.1, and the host exits only after that direct callback succeeds
+│   evidence: nonzero `minicon-web-x11` plus `minicon-web-live-oauth` suites on lnx-x86_64 and lnx-aarch64, built with feature `wry-host` under Xvfb/WebKitGTK
+│   safe failure: missing WebKitGTK, a proxy-bypassed initial page, a callback sent through the proxy, zero tests or a timeout fails the Linux cell
+│   dependency: {RESIZE}, WebKitGTK 4.1 and Xvfb; non-goal: a real provider account or production token
 └── [_] {STILL} Named holes not closed by the leaves above
     state: `state` and S256 PKCE are on the current authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. Run `39919403513` proves the protected current-user ACL on both Windows ISAs. A live WebKit handler run and live resize of the reparented X child remain open; `wry-host` names gtk only as a Linux dependency.
-    dependency: do not mark the OAuth vertical [v] while these are open; {ACL} names the executable Windows portion
+    dependency: do not mark the OAuth vertical [v] while these are open; {ACL}, {RESIZE} and {WEBKIT} name the executable portions
 ```
 
 ```mermaid

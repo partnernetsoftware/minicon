@@ -98,7 +98,8 @@ jobs:
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb binutils
+          sudo apt-get install -y --no-install-recommends \
+            xvfb binutils libgtk-3-dev libwebkit2gtk-4.1-dev
           Xvfb :99 -screen 0 1280x1024x24 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
           # Linux X11 tests used to `return` when DISPLAY was unset and still
@@ -261,6 +262,15 @@ jobs:
               fi
               echo "== linux elf load-time gate ${{ inputs.test_filter }}"
               run_suite linux-elf-needed cargo test --locked --target "$triple" --test minicon_load_portability_linux -- --test-threads 1 ${{ inputs.test_filter }}
+              # Browser content-panel runtime courts. Keep them independent of
+              # a generic Rust filter: a focused rerun must not erase native X
+              # resize or real WebKit OAuth evidence.
+              echo "== native X embedded-page resize"
+              run_suite minicon-web-x11 cargo test --locked --target "$triple" -p minicon-web --lib embedded_page_resize_moves_and_sizes_a_classed_x_child -- --exact --test-threads 1
+              echo "== build the optional wry/WebKitGTK page host"
+              run_suite minicon-web-wry-build cargo build --locked --target "$triple" -p minicon-web --features wry-host --bin minicon-web-host
+              echo "== real WebKit proxy + OAuth loopback navigation"
+              run_suite minicon-web-live-oauth python3 scripts/minicon-web-live-smoke.py "$PWD/target/$triple/debug/minicon-web-host"
               if [ -z "$filter" ]; then
                 for suite in linux-pty linux-x11-clipboard linux-elf-needed; do
                   if ! grep -Eq 'running [1-9][0-9]* tests?' "$LOG_DIR/$suite.log"; then
@@ -271,6 +281,13 @@ jobs:
                     esac
                   fi
                 done
+              fi
+              if ! grep -Eq 'running [1-9][0-9]* tests?' "$LOG_DIR/minicon-web-x11.log"; then
+                echo "SUITE minicon-web-x11 executed no tests" | tee -a "$LOG_DIR/summary.log"
+                case " $failed " in
+                  *" minicon-web-x11 "*) ;;
+                  *) failed="$failed minicon-web-x11" ;;
+                esac
               fi
               ;;
           esac

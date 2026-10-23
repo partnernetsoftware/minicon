@@ -14,7 +14,12 @@ pub fn probe() -> Result<(), &'static str> {
         .map_err(|_| "webkit-host-not-linked")
 }
 
-pub fn load(url: &str, smoke: bool, slot: Option<crate::PanelSlot>) -> Result<(), &'static str> {
+pub fn load(
+    url: &str,
+    smoke: bool,
+    slot: Option<crate::PanelSlot>,
+    redirect_smoke: Option<&str>,
+) -> Result<(), &'static str> {
     // The parent installed MINICON_BROWSER_*. WebKit reads http_proxy.
     let proxy = crate::resolve_proxy_from_process(&crate::BrowserProxyConfig::default());
     // The host process is single-threaded until the event loop starts.
@@ -26,37 +31,47 @@ pub fn load(url: &str, smoke: bool, slot: Option<crate::PanelSlot>) -> Result<()
     }
     let event_loop = EventLoop::new();
     let page_loaded = event_loop.create_proxy();
-    let mut builder_window = WindowBuilder::new()
+    let redirect_delivered = event_loop.create_proxy();
+    let builder_window = WindowBuilder::new()
         .with_title("MiniCon")
         .with_decorations(slot.is_none())
         .with_visible(!smoke);
     #[cfg(target_os = "linux")]
-    if slot.is_some() {
+    let builder_window = if slot.is_some() {
         use tao::platform::unix::WindowBuilderExtUnix;
         // Keep tao's default vbox. wry packs the WebView into that box with
         // expand+fill. Adding it onto the ApplicationWindow leaves WebKit's
         // X window at 1×1 inside the reparented frame.
-        builder_window = builder_window.with_skip_taskbar(true);
-    }
+        builder_window.with_skip_taskbar(true)
+    } else {
+        builder_window
+    };
     let window = builder_window
         .build(&event_loop)
         .map_err(|_| "webkit-host-not-linked")?;
     if let Some(slot) = slot {
         size_embedded_view(&window, slot);
     }
+    let initial_url = url.to_owned();
+    let expected_redirect = redirect_smoke.map(str::to_owned);
     let mut builder = WebViewBuilder::new()
         .with_url(url)
-        .with_navigation_handler(|next| {
+        .with_navigation_handler(move |next| {
             // ProxyConfig::Http cannot list ignore hosts. A loopback redirect
             // would otherwise leave this process and miss the OAuth bridge.
-            if crate::webview_must_bypass_proxy(&next) {
-                let _ = crate::deliver_loopback_get(&next);
+            // The initial URL remains a valid localhost page for live smoke
+            // and preview use; only a later loopback navigation is a redirect.
+            if next != initial_url && crate::webview_must_bypass_proxy(&next) {
+                let delivered = crate::deliver_loopback_get(&next).is_ok();
+                if delivered && expected_redirect.as_deref() == Some(next.as_str()) {
+                    let _ = redirect_delivered.send_event(());
+                }
                 false
             } else {
                 true
             }
         });
-    if smoke {
+    if smoke && redirect_smoke.is_none() {
         builder = builder.with_on_page_load_handler(move |event, _loaded| {
             if matches!(event, wry::PageLoadEvent::Finished) {
                 let _ = page_loaded.send_event(());

@@ -9,7 +9,9 @@ fn main() {
     match minicon_web::host_reply(&args) {
         Ok(()) => {}
         Err("usage") => {
-            eprintln!("usage: minicon-web-host --probe | --load <http-url> | --smoke <http-url>");
+            eprintln!(
+                "usage: minicon-web-host --probe | --load <http-url> | --smoke <http-url> | --oauth-smoke <http-url> <loopback-url>"
+            );
             std::process::exit(64);
         }
         Err(reason) => {

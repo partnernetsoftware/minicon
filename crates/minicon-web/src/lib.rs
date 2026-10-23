@@ -386,7 +386,7 @@ pub fn embedded_page_class(name: &str) -> bool {
 pub fn set_embedded_page_visible(parent: u64, visible: bool) {
     #[cfg(target_os = "linux")]
     unsafe {
-        x_set_embedded_visible(parent, visible);
+        x_update_embedded_page(parent, Some(visible), None);
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -394,8 +394,24 @@ pub fn set_embedded_page_visible(parent: u64, visible: bool) {
     }
 }
 
+/// Apply the current content-column bounds to the already-reparented page.
+///
+/// The child is found by its page-host X class, not by process-global state,
+/// so tab activation and every layout owner can call the same seam. No-op on
+/// a host without X11 or when the page has not reached the parent yet.
+pub fn resize_embedded_page(slot: PanelSlot) {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        x_update_embedded_page(slot.parent, None, Some(slot));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = slot;
+    }
+}
+
 #[cfg(target_os = "linux")]
-unsafe fn x_set_embedded_visible(parent: u64, visible: bool) {
+unsafe fn x_update_embedded_page(parent: u64, visible: Option<bool>, slot: Option<PanelSlot>) {
     use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
     unsafe extern "C" {
         fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
@@ -425,6 +441,7 @@ unsafe fn x_set_embedded_visible(parent: u64, visible: bool) {
     ) -> c_int;
     type ClassHint = unsafe extern "C" fn(*mut c_void, u64, *mut *mut c_char) -> c_int;
     type Map = unsafe extern "C" fn(*mut c_void, u64) -> c_int;
+    type MoveResize = unsafe extern "C" fn(*mut c_void, u64, i32, i32, u32, u32) -> c_int;
     type Free = unsafe extern "C" fn(*mut c_void) -> c_int;
     type Flush = unsafe extern "C" fn(*mut c_void) -> c_int;
     type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
@@ -437,17 +454,26 @@ unsafe fn x_set_embedded_visible(parent: u64, visible: bool) {
     let Some(class_hint): Option<ClassHint> = (unsafe { sym(handle, c"XGetClassHint") }) else {
         return;
     };
-    let Some(map): Option<Map> = (unsafe {
-        sym(
-            handle,
-            if visible {
-                c"XMapWindow"
-            } else {
-                c"XUnmapWindow"
-            },
-        )
-    }) else {
-        return;
+    let map: Option<Map> = if let Some(visible) = visible {
+        let symbol = if visible {
+            c"XMapWindow"
+        } else {
+            c"XUnmapWindow"
+        };
+        let Some(map) = (unsafe { sym(handle, symbol) }) else {
+            return;
+        };
+        Some(map)
+    } else {
+        None
+    };
+    let move_resize: Option<MoveResize> = if slot.is_some() {
+        let Some(move_resize) = (unsafe { sym(handle, c"XMoveResizeWindow") }) else {
+            return;
+        };
+        Some(move_resize)
+    } else {
+        None
     };
     let Some(xfree): Option<Free> = (unsafe { sym(handle, c"XFree") }) else {
         return;
@@ -499,7 +525,12 @@ unsafe fn x_set_embedded_visible(parent: u64, visible: bool) {
                 }
             }
             if matches {
-                unsafe { map(display, child) };
+                if let (Some(move_resize), Some(slot)) = (move_resize, slot) {
+                    unsafe { move_resize(display, child, slot.x, slot.y, slot.width, slot.height) };
+                }
+                if let Some(map) = map {
+                    unsafe { map(display, child) };
+                }
             }
         }
         unsafe { xfree(children.cast()) };
@@ -1117,7 +1148,14 @@ pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
             let _ = http_url_at(url, 0)
                 .filter(|canonical| canonical == url)
                 .ok_or("not-http")?;
-            load_webview(url, flag == "--smoke", None)
+            load_webview(url, flag == "--smoke", None, None)
+        }
+        [flag, url, redirect] if flag == "--oauth-smoke" => {
+            let _ = http_url_at(url, 0)
+                .filter(|canonical| canonical == url)
+                .ok_or("not-http")?;
+            let _ = loopback_http_target(redirect).ok_or("not-loopback")?;
+            load_webview(url, true, None, Some(redirect))
         }
         [flag, url, parent_flag, parent, bounds_flag, bounds]
             if flag == "--load" && parent_flag == "--parent" && bounds_flag == "--bounds" =>
@@ -1126,7 +1164,7 @@ pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
                 .filter(|canonical| canonical == url)
                 .ok_or("not-http")?;
             let slot = parse_slot(parent, bounds)?;
-            load_webview(url, false, Some(slot))
+            load_webview(url, false, Some(slot), None)
         }
         _ => Err("usage"),
     }
@@ -1143,14 +1181,19 @@ fn probe_webview() -> Result<(), &'static str> {
     }
 }
 
-fn load_webview(url: &str, smoke: bool, slot: Option<PanelSlot>) -> Result<(), &'static str> {
+fn load_webview(
+    url: &str,
+    smoke: bool,
+    slot: Option<PanelSlot>,
+    redirect_smoke: Option<&str>,
+) -> Result<(), &'static str> {
     #[cfg(feature = "wry-host")]
     {
-        wry_host::load(url, smoke, slot)
+        wry_host::load(url, smoke, slot, redirect_smoke)
     }
     #[cfg(not(feature = "wry-host"))]
     {
-        let _ = (url, smoke, slot);
+        let _ = (url, smoke, slot, redirect_smoke);
         Err("webkit-host-not-linked")
     }
 }
@@ -1656,6 +1699,22 @@ mod tests {
             host_reply(&["--smoke".into(), url]),
             Err("webkit-host-not-linked")
         );
+        assert_eq!(
+            host_reply(&[
+                "--oauth-smoke".into(),
+                "http://minicon.invalid/start".into(),
+                "http://127.0.0.1:54321/minicon/oauth?code=live".into(),
+            ]),
+            Err("webkit-host-not-linked")
+        );
+        assert_eq!(
+            host_reply(&[
+                "--oauth-smoke".into(),
+                "http://minicon.invalid/start".into(),
+                "https://example.test/not-loopback".into(),
+            ]),
+            Err("not-loopback")
+        );
     }
 
     #[test]
@@ -1724,6 +1783,125 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
         assert_eq!(code, "from-loopback");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn embedded_page_resize_moves_and_sizes_a_classed_x_child() {
+        use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_ulong, c_void};
+
+        if std::env::var_os("DISPLAY").is_none() {
+            assert!(
+                std::env::var_os("MINICON_REQUIRE_DISPLAY").is_none(),
+                "native X resize court requires DISPLAY"
+            );
+            return;
+        }
+        unsafe extern "C" {
+            fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
+            fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        }
+        unsafe fn symbol<T>(handle: *mut c_void, name: &CStr) -> T {
+            let pointer = unsafe { dlsym(handle, name.as_ptr()) };
+            assert!(!pointer.is_null(), "missing X11 symbol {name:?}");
+            unsafe { std::mem::transmute_copy(&pointer) }
+        }
+        type Open = unsafe extern "C" fn(*const c_char) -> *mut c_void;
+        type Root = unsafe extern "C" fn(*mut c_void) -> c_ulong;
+        type Create = unsafe extern "C" fn(
+            *mut c_void,
+            c_ulong,
+            c_int,
+            c_int,
+            c_uint,
+            c_uint,
+            c_uint,
+            c_ulong,
+            c_ulong,
+        ) -> c_ulong;
+        type Class = unsafe extern "C" fn(*mut c_void, c_ulong, *mut *mut c_char) -> c_int;
+        type Map = unsafe extern "C" fn(*mut c_void, c_ulong) -> c_int;
+        type Sync = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
+        type Geometry = unsafe extern "C" fn(
+            *mut c_void,
+            c_ulong,
+            *mut c_ulong,
+            *mut c_int,
+            *mut c_int,
+            *mut c_uint,
+            *mut c_uint,
+            *mut c_uint,
+            *mut c_uint,
+        ) -> c_int;
+        type Destroy = unsafe extern "C" fn(*mut c_void, c_ulong) -> c_int;
+        type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
+
+        let handle = unsafe { dlopen(c"libX11.so.6".as_ptr(), 1) };
+        assert!(!handle.is_null(), "open libX11");
+        let open: Open = unsafe { symbol(handle, c"XOpenDisplay") };
+        let root: Root = unsafe { symbol(handle, c"XDefaultRootWindow") };
+        let create: Create = unsafe { symbol(handle, c"XCreateSimpleWindow") };
+        let set_class: Class = unsafe { symbol(handle, c"XSetClassHint") };
+        let map: Map = unsafe { symbol(handle, c"XMapWindow") };
+        let sync: Sync = unsafe { symbol(handle, c"XSync") };
+        let geometry: Geometry = unsafe { symbol(handle, c"XGetGeometry") };
+        let destroy: Destroy = unsafe { symbol(handle, c"XDestroyWindow") };
+        let close: Close = unsafe { symbol(handle, c"XCloseDisplay") };
+        let display = unsafe { open(std::ptr::null()) };
+        assert!(!display.is_null(), "open DISPLAY");
+        let root = unsafe { root(display) };
+        let parent = unsafe { create(display, root, 0, 0, 640, 480, 0, 0, 0) };
+        let child = unsafe { create(display, parent, 1, 2, 3, 4, 0, 0, 0) };
+        assert_ne!(parent, 0);
+        assert_ne!(child, 0);
+        let name = CString::new("minicon-web-host").unwrap();
+        let class = CString::new("minicon-web-host").unwrap();
+        let mut hint = [name.as_ptr().cast_mut(), class.as_ptr().cast_mut()];
+        assert_ne!(unsafe { set_class(display, child, hint.as_mut_ptr()) }, 0);
+        unsafe {
+            map(display, parent);
+            map(display, child);
+            sync(display, 0);
+        }
+
+        let slot = PanelSlot {
+            parent,
+            x: 17,
+            y: 29,
+            width: 311,
+            height: 197,
+        };
+        resize_embedded_page(slot);
+        unsafe { sync(display, 0) };
+        let mut geometry_root = 0;
+        let mut x = 0;
+        let mut y = 0;
+        let mut width = 0;
+        let mut height = 0;
+        let mut border = 0;
+        let mut depth = 0;
+        assert_ne!(
+            unsafe {
+                geometry(
+                    display,
+                    child,
+                    &mut geometry_root,
+                    &mut x,
+                    &mut y,
+                    &mut width,
+                    &mut height,
+                    &mut border,
+                    &mut depth,
+                )
+            },
+            0
+        );
+        assert_eq!((x, y, width, height), (17, 29, 311, 197));
+        unsafe {
+            destroy(display, parent);
+            sync(display, 0);
+            close(display);
+        }
     }
 
     #[test]

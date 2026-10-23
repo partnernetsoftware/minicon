@@ -1500,9 +1500,13 @@ impl ConApp {
     }
 
     /// The page host is a child of this window. Show it only while the
-    /// browser tab is the one content panel on screen.
+    /// browser tab is the one content panel on screen, and apply the current
+    /// content-column geometry before mapping it.
     fn sync_embedded_page(&self, window: &PixelWindow) {
         if let Some(parent) = window.embed_parent() {
+            if let Some(slot) = self.content_panel_slot(window) {
+                browser::resize_embedded_page(slot);
+            }
             browser::set_embedded_page_visible(parent, self.active_is_browser());
         }
     }
@@ -1686,6 +1690,10 @@ impl ConApp {
     /// Re-applies the terminal inset after the sidebar's width changed, so the
     /// terminal reclaims (or yields) the column in the same frame as the rail.
     fn apply_sidebar_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        if self.active_is_browser() {
+            self.sync_embedded_page(window);
+            return Ok(());
+        }
         let metrics = window.metrics()?;
         let (sidebar_width, panel_width) = self.terminal_inset_widths();
         if let Ok(session) = self.active_session_mut() {
@@ -1702,6 +1710,10 @@ impl ConApp {
     /// Re-applies the terminal inset after the history panel opened or closed,
     /// so the terminal reclaims (or yields) the column in the same frame.
     fn apply_panel_width(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
+        if self.active_is_browser() {
+            self.sync_embedded_page(window);
+            return Ok(());
+        }
         let metrics = window.metrics()?;
         let (sidebar_width, panel_width) = self.terminal_inset_widths();
         if let Ok(session) = self.active_session_mut() {
@@ -3616,6 +3628,9 @@ impl PixelWindowApplication for ConApp {
         }
         if let PixelWindowEvent::GeometryChanged { metrics, .. } = &event {
             self.mark_host_ui_full();
+            if self.active_is_browser() {
+                self.sync_embedded_page(window);
+            }
             let (sidebar_width, panel_width) = self.terminal_inset_widths();
             if let Ok(session) = self.active_session_mut() {
                 Self::configure_host_ui(session, metrics.scale_factor, sidebar_width, panel_width);
