@@ -252,6 +252,16 @@ flowchart LR
   named local-network failure evidence, not a Windows product result; the
   exact source must therefore run on GitHub's native Windows court before the
   Windows browser leaf can move.
+- Native Windows run `39964649501` then checked out exact commit `d28a1a7` on
+  `windows-2025` x86_64 and `windows-11-arm` arm64. Both cells passed the
+  workspace all-target build (including the Windows `minicon-web` dependency
+  graph) and every ordinary core, console, black-box, control, throughput,
+  console-agent and private-filesystem suite. Both jobs remained red only in
+  the two already-carried G6 `rust_console_pty` disconnect observations
+  (`queued_reads...disconnect-file` and `read_retirement...disconnect`): 94
+  passed, 2 failed and 69 ignored in that suite on each ISA. This rules out a
+  Windows compile/link regression from the macOS adapter; it is not visible
+  WebView2 content-panel evidence, so `{WIN-PANEL}` remains open.
 - `cargo test --locked -p minicon-console --lib --test synchronized_presentation --test presentation_allocations`: 19 + 8 + 1 passed. This proves only the local portable-library cell.
 - `cargo test --locked -p minicon-web`: 17 passed, including loopback delivery, proxy mapping, authorize URL and state/PKCE checks.
 - The physical-letter contract test executed as one test with `minicon-platform` features `input,portable-pixel-window`; a featureless invocation selected zero tests and was rejected as evidence.
