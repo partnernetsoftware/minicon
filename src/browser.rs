@@ -12,5 +12,5 @@ pub use minicon_web::{
     BrowserPanel, BrowserProxy, BrowserProxyConfig, BrowserTab, PageHost, PageLoad,
     ProcessPageHost, host_reply, http_url_at, oauth_authorize_load, page_host_request,
     page_load_from_exit, resolve_proxy, resolve_proxy_from_process, spawn_page_host,
-    spawn_page_host_with_proxy, webkit_proxy_clear, webkit_proxy_env,
+    spawn_page_host_with_proxy, webkit_proxy_clear, webkit_proxy_env, wry_proxy_endpoint,
 };

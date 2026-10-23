@@ -470,11 +470,11 @@ fn percent_encode(value: &str) -> String {
 pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
     match args {
         [flag] if flag == "--probe" => probe_webview(),
-        [flag, url] if flag == "--load" => {
+        [flag, url] if flag == "--load" || flag == "--smoke" => {
             let _ = http_url_at(url, 0)
                 .filter(|canonical| canonical == url)
                 .ok_or("not-http")?;
-            load_webview(url)
+            load_webview(url, flag == "--smoke")
         }
         _ => Err("usage"),
     }
@@ -491,16 +491,35 @@ fn probe_webview() -> Result<(), &'static str> {
     }
 }
 
-fn load_webview(url: &str) -> Result<(), &'static str> {
+fn load_webview(url: &str, smoke: bool) -> Result<(), &'static str> {
     #[cfg(feature = "wry-host")]
     {
-        wry_host::load(url)
+        wry_host::load(url, smoke)
     }
     #[cfg(not(feature = "wry-host"))]
     {
-        let _ = url;
+        let _ = (url, smoke);
         Err("webkit-host-not-linked")
     }
+}
+
+/// `http://host:port` from the resolved hook, for wry `ProxyConfig::Http`.
+/// Socks and userinfo are refused. `None` means a direct WebView load.
+pub fn wry_proxy_endpoint(proxy: &BrowserProxy) -> Option<(String, String)> {
+    let raw = proxy.http.as_deref().or(proxy.https.as_deref())?;
+    let rest = raw
+        .trim()
+        .strip_prefix("http://")
+        .or_else(|| raw.trim().strip_prefix("https://"))?;
+    if rest.contains('@') {
+        return None;
+    }
+    let (host, port) = rest.split_once(':')?;
+    let port = port.split(['/', '?', '#']).next().unwrap_or("");
+    if host.is_empty() || port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some((host.to_owned(), port.to_owned()))
 }
 
 #[cfg(feature = "wry-host")]
@@ -673,6 +692,22 @@ mod tests {
                 "https_proxy",
             ]
         );
+        assert_eq!(
+            wry_proxy_endpoint(&BrowserProxy {
+                http: Some("http://127.0.0.1:9".into()),
+                https: None,
+                no_proxy: None,
+            }),
+            Some(("127.0.0.1".into(), "9".into()))
+        );
+        assert_eq!(
+            wry_proxy_endpoint(&BrowserProxy {
+                http: Some("socks5://127.0.0.1:9".into()),
+                https: None,
+                no_proxy: None,
+            }),
+            None
+        );
     }
 
     #[cfg(unix)]
@@ -725,7 +760,11 @@ mod tests {
             Err("not-http")
         );
         assert_eq!(
-            host_reply(&["--load".into(), url]),
+            host_reply(&["--load".into(), url.clone()]),
+            Err("webkit-host-not-linked")
+        );
+        assert_eq!(
+            host_reply(&["--smoke".into(), url]),
             Err("webkit-host-not-linked")
         );
     }
@@ -736,6 +775,7 @@ mod tests {
         assert!(source.contains(".with_url(url)"));
         assert!(source.contains("webkit_proxy_env"));
         assert!(source.contains("webkit_proxy_clear"));
+        assert!(source.contains("with_proxy_config"));
         assert!(!source.contains("xdg-open"));
         assert!(!source.contains("host_open"));
     }
