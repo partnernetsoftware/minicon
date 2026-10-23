@@ -1,8 +1,10 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
 Status: in progress; console scope and the Linux browser adapter are qualified,
-and the repaired canonical macOS arm64 dev build now visibly hosts WKWebView in
-the same content column. Automated/second-ISA macOS, cross-platform artifacts
+and the canonical macOS arm64 dev build visibly hosts WKWebView in the same
+content column. Owner use on 2026-10-23 rejected the current browser UI/UX;
+the macOS build is an engineering spike, not an accepted product surface.
+UX redesign/acceptance, automated/second-ISA macOS, cross-platform artifacts
 and Windows remain open. No publish.
 Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
@@ -42,6 +44,14 @@ distinct unsigned local-test app wrapper around the same `target/debug/minicon`
 bytes. Direct Computer Use proves the bounded home, hide/restore, focus release
 and fullscreen resize on this arm64 Mac. This does not close automated/x86_64
 macOS or Windows runtime evidence.
+
+**Owner UX rejection, 2026-10-23.** Direct use of that repaired app found the
+browser UI/UX poor. The earlier Computer Use receipt proves only native child
+creation, geometry and lifecycle; it does not prove that the surface is clear,
+coherent or pleasant to use. The current home/shell is retained as a diagnostic
+scaffold, not a design baseline. `{UX-BASELINE}` now precedes Windows surface
+work so the project does not duplicate a rejected interaction model in
+WebView2. The owner rejection is named evidence and keeps Candidate closed.
 
 No historical incident is renamed into a fix here. The detection hole is
 visible in the current court, and one recorded Linux-only hang
@@ -158,14 +168,19 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   dependency: {ARCH}; non-goal: selecting a binary by modification time
 ├── [-] {MAC-PANEL} Make the browser visibly testable inside this macOS MiniCon window
 │   invariant: WKWebView occupies Layout::content_column in the active browser tab, follows Retina/window/sidebar/history geometry, hides behind terminal tabs and never appears as an independent window
-│   evidence: direct Computer Use observation from canonical `build.sh dev` output: local page visible and exposed as HTML content, terminal-tab click hides it, Ctrl+Shift+O restores it after focus release, and fullscreen resize remains inside the content column; automated and x86_64 runtime receipts remain open
-│   safe failure: no helper, exit 69, a blank shell or a floating WKWebView is failure; unavailable evidence is BLOCKED
-│   dependency: {ARCH}, {ARTIFACT}; non-goal: production provider credentials
+│   evidence: direct Computer Use observation from canonical `build.sh dev` output proves local page visibility, hide/restore, focus release and fullscreen geometry; owner use rejects the current UI/UX, so these mechanics do not close the leaf
+│   safe failure: no helper, exit 69, a blank shell, a floating WKWebView or an owner-rejected surface is failure; unavailable evidence is BLOCKED
+│   dependency: {ARCH}, {ARTIFACT}, {UX-BASELINE}; non-goal: production provider credentials
+├── [_] {UX-BASELINE} Redesign and accept the browser workspace before copying it to Windows
+│   invariant: opening, understanding current state, navigating, switching to a terminal, returning, resizing and closing/reopening form one coherent workflow; browser/terminal hierarchy, focus and status are legible without relying on an undocumented shortcut or diagnostic placeholder
+│   evidence: named owner journeys on the canonical macOS app with before/after screenshots or observations for open, real URL navigation, tab switch/return, resize/fullscreen and close/reopen; explicit owner acceptance is required
+│   safe failure: “the WebView is visible” is insufficient; awkward pasted-on chrome, unclear state/navigation, wasted or colliding layout, surprising focus, or another owner rejection keeps this leaf open and kills Candidate
+│   dependency: {SHELL}, {ARCH} and the current macOS spike as a disposable prototype; non-goal: dashboard/preview/wasm, 1:N panels or a whole-terminal visual rewrite
 ├── [_] {WIN-PANEL} Close the same user-visible surface on WebView2
 │   invariant: the Windows release either provides the same tab/content-panel outcome or 0.2.21 explicitly narrows its browser platform claim before Candidate; silent Unavailable is not parity
 │   evidence: visible native x86_64 and arm64 journeys from canonical artifacts
 │   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence
-│   dependency: {ARCH}, {ARTIFACT}; non-goal: changing the Windows console backend
+│   dependency: accepted {UX-BASELINE}, {ARCH}, {ARTIFACT}; non-goal: changing the Windows console backend or cloning the rejected macOS prototype
 ├── [v] {AUTH-CORE} Proxy, PKCE/state, loopback and private bearer mechanisms
 │   invariant: authorize and token paths use BrowserProxy; token URL is https; redirect is 127.0.0.1; state/PKCE and bounded private publication remain enforced
 │   evidence: minicon-web unit tests, run 39925651159 Linux live navigation and run 39919403513 Windows private-filesystem court
@@ -173,9 +188,9 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   dependency: minicon-platform filesystem; non-goal: provider registry or composer Connect AI UI
 └── [-] {CLOSE} Close 0.2.21 browser scope and authorize Candidate consideration
     invariant: every claimed desktop can exercise the browser from canonical output; Linux-only adapter success is not cross-platform completion
-    evidence: {ARTIFACT}, {MAC-PANEL}, the explicit {WIN-PANEL} decision/evidence, full gates and owner-visible macOS acceptance
+    evidence: {ARTIFACT}, accepted {UX-BASELINE}, {MAC-PANEL}, the explicit {WIN-PANEL} decision/evidence, full gates and owner-visible macOS acceptance
     safe failure: keep PRD/root/plan at [-] and do not dispatch release.sh 0.2.21
-    dependency: {SHELL}, {LNX-PANEL}, {ARCH}, {ARTIFACT}, {MAC-PANEL}, {WIN-PANEL} decision and {AUTH-CORE}; non-goal: dashboard/preview/wasm, 1:N panels or production provider account
+    dependency: {SHELL}, {LNX-PANEL}, {ARCH}, {ARTIFACT}, {UX-BASELINE}, {MAC-PANEL}, {WIN-PANEL} decision and {AUTH-CORE}; non-goal: dashboard/preview/wasm, 1:N panels or production provider account
 ```
 
 ```mermaid
@@ -185,9 +200,12 @@ flowchart LR
     CANON["build.sh dev / release"] --> ART["{ARTIFACT}<br/>runnable browser bytes"]
     ART --> ARCH{"{ARCH}<br/>portable same-window boundary"}
     ARCH --> LNX["{LNX-PANEL} [v]<br/>X11 + WebKitGTK"]
-    ARCH --> MAC["{MAC-PANEL} [-]<br/>local arm64 visible; courts open"]
-    ARCH --> WIN["{WIN-PANEL} [_]<br/>WebView2 or narrowed claim"]
+    ARCH --> PROTO["macOS engineering prototype<br/>mechanics visible; UX rejected"]
+    PROTO --> UX["{UX-BASELINE} [_]<br/>redesign + owner acceptance"]
+    UX --> MAC["{MAC-PANEL} [-]<br/>accepted macOS surface + courts"]
+    UX --> WIN["{WIN-PANEL} [_]<br/>WebView2 after UX acceptance"]
     LNX --> WEB
+    PROTO --> WEB
     MAC --> WEB
     WIN --> WEB
     WEB -->|"loopback code"| BRIDGE["OAuthBridge 127.0.0.1"]
@@ -197,7 +215,8 @@ flowchart LR
     LAYOUT --> WIN
     COURT["run 39925651159<br/>Linux adapter only"] --> LNX
     FLOAT["floating helper / OS browser"] -->|"kill path"| REJECT["not a content panel"]
-    MAC --> CLOSE["{CLOSE}<br/>Candidate consideration"]
+    REJECTUX["owner: UI/UX poor"] -->|"kill path"| UX
+    UX --> CLOSE["{CLOSE}<br/>Candidate consideration"]
     WIN --> CLOSE
     ART --> CLOSE
 ```
@@ -213,9 +232,10 @@ flowchart LR
 | 5 — LNX-PANEL | [v] Apply `Layout::content_column` through the X resize seam and drive real WebKitGTK proxy/direct-loopback navigation. | Run `39925651159` records nonzero `minicon-web-x11`, `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs. |
 | 6 — ARCH | [v] Use platform adapters inside `minicon-web`: GUI-only same-process child WKWebView/WebView2 where portable reparenting is unavailable, retaining the qualified Linux helper. `minicon-core`, `minicon-console` and headless paths remain WebView-free. | The macOS spike visibly proves the boundary. A floating helper, OS browser, captured pixels or forwarded synthetic input still fails it. |
 | 7 — ARTIFACT | [-] `build.sh dev` now links the macOS native page host and emits `target/debug/MiniCon 0.2.21 Dev.app` with a distinct local-test identity; prove release output and close Linux/Windows packaging. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS. Missing bytes on any claimed platform keep the leaf open. |
-| 8 — MAC-PANEL | [-] WKWebView now runs inside the active content column on this macOS arm64 host. Add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves visible home, hide/restore, focus release and fullscreen resize; do not inflate one host into both macOS architectures. |
-| 9 — WIN-PANEL | [_] Implement and qualify WebView2 same-window behavior on both Windows ISAs, or explicitly narrow the 0.2.21 browser platform claim before Candidate. | ACL evidence and compile-only results are not page-surface evidence. |
-| 10 — CLOSE | [-] Re-run complete gates, record owner-visible macOS acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
+| 8 — UX-BASELINE | [_] Treat the current macOS page as a disposable prototype; redesign the browser workspace around the named open/navigate/switch/return/resize/close journeys, then obtain explicit owner acceptance. | Owner use on 2026-10-23 rejected the current UI/UX. Geometry screenshots cannot override that evidence, and Windows work must not clone it. |
+| 9 — MAC-PANEL | [-] Rework the WKWebView surface to the accepted UX baseline, then add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
+| 10 — WIN-PANEL | [_] After `{UX-BASELINE}` is accepted, implement and qualify the same interaction model with WebView2 on both Windows ISAs, or explicitly narrow the 0.2.21 browser platform claim before Candidate. | ACL/compile evidence and duplication of the rejected macOS prototype are not page-surface evidence. |
+| 11 — CLOSE | [-] Re-run complete gates, record explicit owner macOS UX acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
 
 ## Local evidence — 2026-10-23, macOS arm64
 
@@ -234,6 +254,10 @@ flowchart LR
   fullscreen without covering the tab tree or composer band. This closes
   `{ARCH}` and supplies local `{MAC-PANEL}` evidence, not an automated or
   x86_64 court.
+- The owner then used that exact macOS app and rejected its browser UI/UX as
+  poor. This supersedes any inference that the mechanical Computer Use receipt
+  was product acceptance. It opens `{UX-BASELINE}`, keeps `{MAC-PANEL}` partial
+  and places Windows page-surface implementation after the redesign.
 - `./scripts/build.sh release` links the same macOS adapter without a helper or
   environment override and produces `target/release/minicon` at 3,421,824
   bytes on this arm64 Mac (the debug executable/app payload is 24,499,544

@@ -54,7 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [-] v0.2.21 console courts complete; cross-platform browser content panel reopened → plan/plan-v0.2.21.md
+    ├── [-] v0.2.21 console courts complete; browser adapter works, owner rejected current UI/UX → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -78,6 +78,9 @@ flowchart LR
     MC --> UI["minicon-ui-core<br/>UI mechanisms"]
     MC --> P["minicon-platform<br/>native capabilities"]
     MC -.->|"browser content panel"| WEB["minicon-web<br/>browser API / wry isolate"]
+    WEB --> UX["browser workspace UX<br/>owner acceptance gate / PRD 25"]
+    UX -->|"only after acceptance"| WWEB["Windows WebView2 surface"]
+    BADUX["owner: current UI/UX poor"] -->|"kill Candidate"| UX
     UI -->|tree compatibility exports| C
     P -->|numeric compatibility exports| C
     UI --> I["internal ISA kernels"]
@@ -155,7 +158,12 @@ flowchart LR
   closed locally: macOS uses a GUI-only `minicon-web` WKWebView child attached
   to `Layout::content_column`; `Ctrl+Shift+O` opens its bounded offline home,
   tab switching hides/restores it, and fullscreen resize follows the column.
-  `{ARTIFACT}` remains cross-platform partial, `{MAC-PANEL}` still needs its
+  This closes only the adapter boundary. Direct owner use on 2026-10-23
+  rejected the current browser UI/UX as poor, so the surface is a disposable
+  engineering prototype rather than an accepted product design.
+  `{UX-BASELINE}` must redesign and receive explicit owner acceptance before
+  Windows WebView2 copies the interaction model. `{ARTIFACT}` remains
+  cross-platform partial, `{MAC-PANEL}` still needs the accepted UX plus its
   automated/second-architecture receipt, and Windows remains open;
   Candidate/public release is therefore forbidden. Six-cell dev-loop run `39917026302`
   at `3db5710` passed the portable console suites on every cell and the

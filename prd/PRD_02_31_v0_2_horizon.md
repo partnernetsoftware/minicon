@@ -592,8 +592,10 @@ horizon yet.
   to `minicon-web` and the GUI binary.** `minicon-core`, `minicon-console` and
   headless paths stay WebView-free. macOS now proves that boundary with a
   same-process WKWebView child owned by `minicon-web`; Linux retains its
-  qualified helper. The bridge invariants remain origin
-  binding, a 64 KiB message cap, at most 8 concurrent requests and replay
+  qualified helper. This is an architecture decision, not UI/UX acceptance:
+  owner use rejected the current macOS prototype, and PRD 25's accepted
+  workspace UX gate precedes Windows parity. The bridge invariants remain
+  origin binding, a 64 KiB message cap, at most 8 concurrent requests and replay
   protection, per `PRD_02_28_shared_core.md`'s "consume at the git pin, no
   mandatory dependency inversion". `~/agenterm/research/agenterm-webview/`
   already ran the
@@ -695,7 +697,13 @@ shape. The selected boundary is a GUI-only platform adapter inside
 WebView-free. The macOS implementation uses `build_as_child` on the owning
 NSView, bounded local HTML for `Ctrl+Shift+O`, and focus release before hiding;
 direct arm64 Computer Use proves visible content, hide/restore and fullscreen
-resize. Remaining artifact/platform courts stay open. Floating
+resize. That receipt closes the adapter feasibility question only. Subsequent
+direct owner use rejected the browser UI/UX as poor, so the current shell is a
+disposable engineering prototype and not the interaction model to carry into
+WebView2. Workspace UX ownership is in PRD 25; 0.2.21 `{UX-BASELINE}` requires
+named open/navigate/switch/return/resize/close journeys plus explicit owner
+acceptance before Windows surface work. Remaining artifact/platform courts
+stay open. Floating
 helper windows, OS-default-browser fallback, screenshot streaming and
 synthetic-input forwarding remain rejected substitutes for a content panel.
 

@@ -18,7 +18,9 @@ minicon workspace and input
 ├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
 ├── Tab kinds and content panels (1 tab ↔ 1 content panel now; 1:N later)
 │   ├── terminal tab → one terminal content panel (PTY view)
-│   └── [-] browser tab → one browser content panel (shell complete; page surface Linux-only)
+│   └── [-] browser tab → one browser content panel
+│       ├── [v] adapter mechanics: Linux qualified; macOS arm64 child visible
+│       └── [_] accepted workspace UX: current macOS prototype owner-rejected
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -63,6 +65,9 @@ flowchart LR
     TermTab -->|"now 1:1"| TermCP["content panel = PTY view"]
     BrTab -->|"now 1:1"| BrCP["content panel = page surface"]
     BrCP -->|"via minicon-web"| Web["minicon-web lib / optional host"]
+    BrCP --> UX["UX baseline: open / navigate / switch / resize / close"]
+    BadUX["owner rejection: current UI/UX poor"] -->|"redesign gate"| UX
+    UX -->|"accepted before parity"| WinWeb["Windows WebView2 surface"]
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
     Chrome --> Sett["settings panel"]
@@ -128,14 +133,27 @@ names above.
   macOS hole is now implemented: `native-page-host` creates one WKWebView child
   inside `Layout::content_column`, and the canonical dev build assembles a
   distinct `MiniCon 0.2.21 Dev.app` for unambiguous UI qualification. Direct
-  arm64 use proves visible home, hide/restore, focus release and fullscreen
-  resize. Canonical cross-platform artifacts and native automated/second-ISA
-  macOS plus Windows page courts remain open in
+  arm64 observation proves visible home, hide/restore, focus release and
+  fullscreen resize. Direct owner use then rejected the UI/UX as poor: those
+  mechanics are adapter evidence, not product acceptance. The current surface
+  is a disposable prototype; an accepted browser-workspace interaction and
+  visual baseline must precede Windows parity. Canonical cross-platform
+  artifacts and native automated/second-ISA macOS plus Windows page courts
+  remain open in
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{ARCH}` / `{ARTIFACT}` /
-  `{MAC-PANEL}` / `{WIN-PANEL}`.
+  `{UX-BASELINE}` / `{MAC-PANEL}` / `{WIN-PANEL}`.
   Dashboard, preview, wasm and 1:N layout remain follow-ups
   in [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Renderer boundary stays in
   [PRD_02_31](PRD_02_31_v0_2_horizon.md).
+- [_] **browser workspace UX baseline (0.2.21).** The accepted product surface
+  must make open, current state, real URL navigation, terminal switch/return,
+  resize/fullscreen and close/reopen coherent; browser/terminal hierarchy,
+  focus and status must be legible without treating the bounded diagnostic
+  home or an undocumented shortcut as the experience. Evidence requires named
+  journeys on the canonical macOS app and explicit owner acceptance. The
+  2026-10-23 owner verdict that the current UI/UX is poor is negative evidence;
+  it blocks Candidate and Windows UI duplication. Owner:
+  [plan-v0.2.21](../plan/plan-v0.2.21.md) `{UX-BASELINE}`.
 - [v] **one browser root, and the embed slot is the content column (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`

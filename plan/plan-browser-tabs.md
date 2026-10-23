@@ -1,6 +1,6 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: partial (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. The reopened `{ARCH}` boundary is now selected: platform WebView adapters stay inside **`minicon-web`**; macOS links `native-page-host` into the GUI binary for one child WKWebView while `minicon-core`, `minicon-console` and headless paths remain WebView-free. Direct arm64 Computer Use from canonical `build.sh dev` output proves the bounded offline home, hide/restore, focus release and fullscreen resize in the same content column. `build.sh dev` also emits a distinct local-test app wrapper. Automated/second-ISA macOS, Linux canonical packaging and Windows WebView2 remain open in [plan-v0.2.21.md](plan-v0.2.21.md). **Not a release claim.** Browser remains a terminal-tab peer; no tray, system opener or floating helper. No Draft / Latest / signed package / public ship from this leaf.
+Status: partial (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. The reopened `{ARCH}` boundary is now selected: platform WebView adapters stay inside **`minicon-web`**; macOS links `native-page-host` into the GUI binary for one child WKWebView while `minicon-core`, `minicon-console` and headless paths remain WebView-free. Direct arm64 Computer Use from canonical `build.sh dev` output proves the bounded offline home, hide/restore, focus release and fullscreen resize in the same content column, but subsequent owner use rejected the UI/UX as poor. The current macOS surface is therefore a disposable engineering prototype, not the design to reproduce on Windows. `{UX-BASELINE}` redesign and explicit owner acceptance now precede Windows WebView2 in [plan-v0.2.21.md](plan-v0.2.21.md). `build.sh dev` also emits a distinct local-test app wrapper. Automated/second-ISA macOS and Linux canonical packaging remain open. **Not a release claim.** Browser remains a terminal-tab peer; no tray, system opener or floating helper. No Draft / Latest / signed package / public ship from this leaf.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
@@ -187,6 +187,11 @@ changing meaning.
        arm64 Computer Use proves the child WKWebView in the same column,
        hide/restore, focus release and fullscreen resize. Automated/second-ISA
        macOS and Windows surface evidence remain open)
+[_] B0-UX accepted workspace: redesign the current owner-rejected macOS
+       prototype before adding Windows parity. Acceptance covers open, real URL
+       navigation, tab switch/return, resize/fullscreen and close/reopen, with
+       legible hierarchy, focus and state. A visible native child alone is not
+       evidence. Owner: plan-v0.2.21 {UX-BASELINE}.
 [v] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
        one browser content panel and stores the canonical URL. A non-http
        token does not change the panel. That path does not call
