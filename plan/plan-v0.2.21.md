@@ -575,6 +575,12 @@ child pixels are omitted. Owner approval of these interactions is the
   rejected `webkit2gtk::prelude::WebViewExt` (E0432/E0599). The crate exports
   `WebViewExt` at its root; correcting that import still requires both native
   builds and runtime courts. Neither failed run is qualification evidence.
+- Dev-loop `39992029968` passed both Linux and both Windows cell jobs.
+  macOS arm64 passed the explicit Rust browser journey (1 test, 33.36 s),
+  then the Python journey was rejected before navigation because its temporary
+  `/var` socket ancestry includes a symlink. Resolve the existing temporary
+  directory before constructing the endpoint; retain the product's no-follow
+  safety check. The corrected script still requires native macOS evidence.
 
 ## Non-goals
 

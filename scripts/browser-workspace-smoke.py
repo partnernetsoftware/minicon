@@ -61,7 +61,7 @@ def main() -> int:
     origin = f"http://127.0.0.1:{server.server_port}"
     windows = sys.platform == "win32"
     scratch = tempfile.TemporaryDirectory(prefix="minicon-browser-")
-    endpoint = rf"pipe:\\.\pipe\minicon-browser-{os.getpid()}" if windows else f"unix:{Path(scratch.name) / 'control.sock'}"
+    endpoint = rf"pipe:\\.\pipe\minicon-browser-{os.getpid()}" if windows else f"unix:{Path(scratch.name).resolve(strict=True) / 'control.sock'}"
     env = os.environ.copy()
     env["MINICON_CONFIG_DIR"] = str(output / "config")
     env["WEBVIEW2_USER_DATA_FOLDER"] = str(output / "profile")
