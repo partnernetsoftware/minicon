@@ -20,6 +20,22 @@ use wry::{
 };
 
 use crate::{BrowserProxy, PanelSlot};
+use std::{cell::RefCell, rc::Rc};
+
+#[cfg(target_os = "macos")]
+mod macos_shortcuts;
+
+#[derive(Clone, Debug, Default)]
+pub struct NativePageState {
+    pub url: String,
+    pub title: String,
+    pub loading: bool,
+    pub can_back: bool,
+    pub can_forward: bool,
+    pub changed: bool,
+    pub error: Option<String>,
+    pub shortcuts: Vec<char>,
+}
 
 const HOME_HTML: &str = r#"<!doctype html>
 <html lang="en">
@@ -30,9 +46,9 @@ const HOME_HTML: &str = r#"<!doctype html>
 <title>MiniCon Browser</title>
 <style>
 :root { color-scheme: light dark; font: 16px -apple-system, BlinkMacSystemFont, sans-serif; }
-body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f2eb; color: #262421; }
-main { width: min(34rem, calc(100% - 4rem)); }
-h1 { font-size: 2rem; margin: 0 0 .5rem; }
+body { margin: 0; min-height: 100vh; background: #f5f2eb; color: #262421; }
+main { padding: 2rem; }
+h1 { font-size: 1.1rem; margin: 0 0 .5rem; font-weight: 500; }
 p { line-height: 1.55; color: #615d56; }
 code { color: #275f55; }
 @media (prefers-color-scheme: dark) {
@@ -42,7 +58,7 @@ code { color: #275f55; }
 }
 </style>
 </head>
-<body><main><h1>MiniCon Browser</h1><p>The native content panel is ready.</p><p><code>Ctrl+click</code> an http(s) link in a terminal to navigate here.</p></main></body>
+<body><main><h1>Browse beside your terminal</h1><p>Enter a URL above, or <code>Ctrl+click</code> a link in a terminal.</p></main></body>
 </html>"#;
 
 #[cfg(target_os = "macos")]
@@ -83,21 +99,72 @@ fn native_parent(slot: PanelSlot) -> Result<NativeParent, String> {
 
 /// One native WebView child owned by MiniCon's active browser content panel.
 pub struct NativePageHost {
+    // Remove the AppKit monitor before dropping its child view.
+    #[cfg(target_os = "macos")]
+    _shortcuts: macos_shortcuts::ShortcutMonitor,
     webview: WebView,
+    state: Rc<RefCell<NativePageState>>,
+    local_origin: Rc<RefCell<Option<String>>>,
 }
 
 impl NativePageHost {
     /// Create the visible, bounded first-party home surface.
-    pub fn new(slot: PanelSlot, proxy: &BrowserProxy) -> Result<Self, String> {
+    pub fn new(
+        slot: PanelSlot,
+        proxy: &BrowserProxy,
+        wake: impl Fn() + 'static,
+    ) -> Result<Self, String> {
         let parent = native_parent(slot)?;
+        let state = Rc::new(RefCell::new(NativePageState::default()));
+        let title_state = state.clone();
+        let load_state = state.clone();
+        let wake = Rc::new(wake);
+        let title_wake = wake.clone();
+        let navigation_wake = wake.clone();
+        let navigation_state = state.clone();
+        let local_origin = Rc::new(RefCell::new(None::<String>));
+        let navigation_origin = local_origin.clone();
+        let native_wake = wake.clone();
         let mut builder = WebViewBuilder::new()
             .with_html(HOME_HTML)
             .with_bounds(bounds(slot))
-            .with_navigation_handler(|next| {
-                if crate::webview_must_bypass_proxy(&next) {
+            .with_focused(false)
+            .with_document_title_changed_handler(move |title| {
+                let mut state = title_state.borrow_mut();
+                state.title = title
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(256)
+                    .collect();
+                state.changed = true;
+                title_wake();
+            })
+            .with_on_page_load_handler(move |event, url| {
+                let mut state = load_state.borrow_mut();
+                if url.len() <= 8192 {
+                    state.url = url;
+                }
+                state.loading = matches!(event, wry::PageLoadEvent::Started);
+                state.changed = true;
+                wake();
+            })
+            .with_navigation_handler(move |next| {
+                let explicitly_local = navigation_origin
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|origin| next.starts_with(origin));
+                if crate::webview_must_bypass_proxy(&next) && !explicitly_local {
                     let _ = crate::deliver_loopback_get(&next);
                     false
                 } else {
+                    let mut state = navigation_state.borrow_mut();
+                    state.error = None;
+                    state.loading = true;
+                    if next.len() <= 8192 {
+                        state.url.clone_from(&next);
+                    }
+                    state.changed = true;
+                    navigation_wake();
                     true
                 }
             });
@@ -114,7 +181,58 @@ impl NativePageHost {
         let webview = builder
             .build_as_child(&parent)
             .map_err(|_| "browser-native-create-failed".to_owned())?;
-        Ok(Self { webview })
+        #[cfg(windows)]
+        install_windows_events(&webview, state.clone(), native_wake)
+            .map_err(|_| "browser-native-events-failed".to_owned())?;
+        #[cfg(target_os = "macos")]
+        let shortcuts =
+            macos_shortcuts::ShortcutMonitor::install(&webview, state.clone(), native_wake)?;
+        Ok(Self {
+            #[cfg(target_os = "macos")]
+            _shortcuts: shortcuts,
+            webview,
+            state,
+            local_origin,
+        })
+    }
+
+    pub fn take_state(&self) -> Option<NativePageState> {
+        let mut state = self.state.borrow_mut();
+        if !state.changed {
+            return None;
+        }
+        state.changed = false;
+        state.can_back = self.webview.can_go_back().unwrap_or(false);
+        state.can_forward = self.webview.can_go_forward().unwrap_or(false);
+        let result = state.clone();
+        state.shortcuts.clear();
+        Some(result)
+    }
+
+    pub fn back(&self) -> Result<(), String> {
+        self.webview
+            .go_back()
+            .map_err(|_| "browser-native-back-failed".to_owned())
+    }
+
+    pub fn forward(&self) -> Result<(), String> {
+        self.webview
+            .go_forward()
+            .map_err(|_| "browser-native-forward-failed".to_owned())
+    }
+
+    pub fn reload(&self) -> Result<(), String> {
+        self.webview
+            .reload()
+            .map_err(|_| "browser-native-reload-failed".to_owned())
+    }
+
+    pub fn focus(&self) {
+        let _ = self.webview.focus();
+    }
+
+    pub fn focus_parent(&self) {
+        let _ = self.webview.focus_parent();
     }
 
     pub fn load_url(&self, url: &str) -> Result<(), String> {
@@ -122,6 +240,15 @@ impl NativePageHost {
         if canonical != url {
             return Err("not-http".to_owned());
         }
+        self.state.borrow_mut().error = None;
+        *self.local_origin.borrow_mut() = if crate::webview_must_bypass_proxy(url) {
+            url.strip_prefix("http://").map(|rest| {
+                let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+                format!("http://{authority}/")
+            })
+        } else {
+            None
+        };
         self.webview
             .load_url(url)
             .map_err(|_| "browser-native-load-failed".to_owned())
@@ -148,6 +275,104 @@ impl NativePageHost {
             },
         )
     }
+}
+
+#[cfg(windows)]
+fn install_windows_events(
+    webview: &WebView,
+    state: Rc<RefCell<NativePageState>>,
+    wake: Rc<impl Fn() + 'static>,
+) -> Result<(), String> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN;
+    use webview2_com::{AcceleratorKeyPressedEventHandler, NavigationCompletedEventHandler};
+    use wry::WebViewExtWindows;
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetKeyState(key: i32) -> i16;
+    }
+    let key_state = state.clone();
+    let key_wake = wake.clone();
+    let mut token = 0;
+    unsafe {
+        webview
+            .controller()
+            .add_AcceleratorKeyPressed(
+                &AcceleratorKeyPressedEventHandler::create(Box::new(move |_, args| {
+                    let Some(args) = args else {
+                        return Ok(());
+                    };
+                    let mut kind = Default::default();
+                    let mut key = 0;
+                    args.KeyEventKind(&mut kind)?;
+                    args.VirtualKey(&mut key)?;
+                    let control = GetKeyState(0x11) < 0;
+                    let shift = GetKeyState(0x10) < 0;
+                    let reserved = control
+                        && ((shift
+                            && matches!(
+                                key,
+                                0x54 | 0x4F
+                                    | 0x44
+                                    | 0x4E
+                                    | 0x57
+                                    | 0x42
+                                    | 0x48
+                                    | 0x49
+                                    | 0x50
+                                    | 0x47
+                                    | 0xBC
+                                    | 0xDB
+                                    | 0xDD
+                            ))
+                            || key == 0x4C);
+                    if reserved {
+                        args.SetHandled(true)?;
+                        if kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN {
+                            let mut state = key_state.borrow_mut();
+                            if state.shortcuts.len() < 16 {
+                                state.shortcuts.push(match key {
+                                    0xDB => '[',
+                                    0xDD => ']',
+                                    0xBC => ',',
+                                    _ => char::from_u32(key).unwrap_or(' '),
+                                });
+                                state.changed = true;
+                                key_wake();
+                            }
+                        }
+                    }
+                    Ok(())
+                })),
+                &mut token,
+            )
+            .map_err(|_| "browser-native-shortcuts-failed".to_owned())?;
+        webview
+            .webview()
+            .add_NavigationCompleted(
+                &NavigationCompletedEventHandler::create(Box::new(move |_, args| {
+                    let Some(args) = args else {
+                        return Ok(());
+                    };
+                    let mut success = Default::default();
+                    args.IsSuccess(&mut success)?;
+                    let mut state = state.borrow_mut();
+                    state.error = if success.as_bool() {
+                        None
+                    } else {
+                        let mut status = Default::default();
+                        args.WebErrorStatus(&mut status)?;
+                        Some(format!("browser-navigation-error-{}", status.0))
+                    };
+                    state.loading = false;
+                    state.changed = true;
+                    wake();
+                    Ok(())
+                })),
+                &mut token,
+            )
+            .map_err(|_| "browser-native-load-events-failed".to_owned())?;
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -232,7 +457,7 @@ mod tests {
     fn home_is_a_bounded_first_party_smoke_surface() {
         assert!(HOME_HTML.len() < 4096);
         assert!(HOME_HTML.contains("MiniCon Browser"));
-        assert!(HOME_HTML.contains("native content panel is ready"));
+        assert!(HOME_HTML.contains("Enter a URL above"));
         assert!(HOME_HTML.contains("default-src 'none'"));
         assert!(!HOME_HTML.contains("http://"));
         assert!(!HOME_HTML.contains("https://"));

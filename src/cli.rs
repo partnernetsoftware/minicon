@@ -544,11 +544,13 @@ send-ui-mouse coordinates are window logical pixels and follow the real event
 path: hover, click targets and focus all resolve exactly as with a real mouse.
 
   Ctrl+Shift+T       New root terminal
+  Ctrl+Shift+O       Open or return to the browser tab
   Ctrl+Shift+N       New child terminal below the active tab
-  Ctrl+Shift+W       Close active terminal (children are promoted)
+  Ctrl+Shift+W       Close active tab (children are promoted)
   Ctrl+Shift+B       Collapse the tab sidebar to a rail, or expand it again
-  Ctrl+Shift+[ / ]   Switch terminal tabs
-  Ctrl+Shift+I       Focus the external input area
+  Ctrl+Shift+[ / ]   Switch tabs
+  Ctrl+Shift+I       Focus terminal input or the browser address field
+  Ctrl+L / Cmd+L     Edit the browser address; Enter navigates, Escape returns to page
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper / Dark)
   Ctrl+Shift+,       Open or close the settings panel
   Ctrl+Shift+G       Toggle the grid crosshair

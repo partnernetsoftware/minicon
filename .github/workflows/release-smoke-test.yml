@@ -28,6 +28,10 @@ jobs:
     # stuck download or a wedged binary, not a slow build.
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
       - name: Download release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -35,6 +39,8 @@ jobs:
           set -euo pipefail
           gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
             --pattern 'minicon-*-linux-x86_64.tar.gz*' --dir dl
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
+            --pattern candidate-manifest.json --pattern build-receipt.json --dir dl
       - name: Verify checksum and extract
         run: |
           set -euo pipefail
@@ -51,18 +57,52 @@ jobs:
           cd dl
           "$BIN" --status
           "$BIN" --version
+      - name: Browser workspace from the public Linux archive
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libxkbcommon-x11-0 libgtk-3-0t64 libwebkit2gtk-4.1-0
+          cd dl
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          manifest = json.loads(Path('candidate-manifest.json').read_text())
+          assert manifest['source_sha'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          raw = Path('build-receipt.json').read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == manifest['receipts']['build']['sha256']
+          build = json.loads(raw)
+          assert hashlib.sha256(Path(os.environ['BIN']).read_bytes()).hexdigest() == build['payloads']['lnx-x86_64']['sha256']
+          archive = next(Path('.').glob('*.tar.gz'))
+          expected = next(row for row in manifest['assets'] if row['name'] == archive.name)
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected['sha256']
+          PY
+          xvfb-run -a python3 ../scripts/browser-workspace-smoke.py "$BIN" --output ../browser-workspace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: public-browser-linux-x86_64
+          path: |
+            browser-workspace/
+            dl/candidate-manifest.json
+          retention-days: 7
 
   windows:
     name: smoke / windows-x86_64
     runs-on: windows-2025
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
       - name: Download release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" `
             --pattern 'minicon-*-windows-x86_64.zip*' --dir dl
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" `
+            --pattern candidate-manifest.json --dir dl
       - name: Verify checksum and extract
         run: |
           Set-Location dl
@@ -80,12 +120,53 @@ jobs:
           $exe = Get-ChildItem -Recurse -Filter minicon.exe | Select-Object -First 1
           & $exe.FullName --status
           & $exe.FullName --version
+      - name: Provision native WebView2 Runtime on the Windows court
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $roots = @("${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application", "$env:LOCALAPPDATA\Microsoft\EdgeWebView\Application")
+          $runtime = @($roots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter msedgewebview2.exe -Recurse -ErrorAction SilentlyContinue })
+          if ($runtime.Count -eq 0) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Untrusted WebView2 installer' }
+            $process = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -PassThru -WindowStyle Hidden
+            if (-not $process.WaitForExit(240000)) { $process.Kill(); throw 'WebView2 installation timed out' }
+            if ($process.ExitCode -ne 0) { throw "WebView2 installer exited $($process.ExitCode)" }
+          }
+      - name: Browser workspace from the public Windows archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content dl/candidate-manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.source_sha -ne (git rev-parse HEAD).Trim()) { throw 'Public release source mismatch' }
+          $zip = Get-ChildItem dl -Filter *.zip | Select-Object -First 1
+          $identity = $manifest.assets | Where-Object { $_.name -eq $zip.Name }
+          if ((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.sha256) { throw 'Public archive manifest mismatch' }
+          $exe = Get-ChildItem dl -Recurse -Filter minicon.exe | Select-Object -First 1
+          $expected = $manifest.signing.signed_after_sha256.'win-x86_64'
+          if ((Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Public signed executable mismatch' }
+          python scripts/browser-workspace-smoke.py $exe.FullName --output browser-workspace
+          if ($LASTEXITCODE -ne 0) { throw 'Public Windows browser workspace failed' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: public-browser-windows-x86_64
+          path: |
+            browser-workspace/
+            dl/candidate-manifest.json
+          retention-days: 7
 
   macos:
     name: smoke / macos-universal
     runs-on: macos-15
     timeout-minutes: 8
     steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
       - name: Download release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,6 +174,8 @@ jobs:
           set -euo pipefail
           gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
             --pattern 'minicon-*-macos-universal.dmg*' --dir dl
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" \
+            --pattern candidate-manifest.json --pattern macos-signing-receipt.json --dir dl
       - name: Verify checksum
         run: |
           set -euo pipefail
@@ -104,6 +187,7 @@ jobs:
           cd dl
           DMG="$(ls ./*.dmg)"
           MOUNT_DIR="$(mktemp -d)"
+          trap 'hdiutil detach "$MOUNT_DIR" -quiet || true; rmdir "$MOUNT_DIR" || true' EXIT
           hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -quiet
           APP="$(find "$MOUNT_DIR" -maxdepth 1 -name '*.app' | head -1)"
           [ -n "$APP" ] || { echo "no .app found inside dmg"; exit 1; }
@@ -112,4 +196,25 @@ jobs:
           BIN="$APP/Contents/MacOS/minicon"
           "$BIN" --status
           "$BIN" --version
-          hdiutil detach "$MOUNT_DIR" -quiet
+          export BIN
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          manifest = json.loads(Path('candidate-manifest.json').read_text())
+          assert manifest['source_sha'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          raw = Path('macos-signing-receipt.json').read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == manifest['receipts']['macos_signing']['sha256']
+          receipt = json.loads(raw)
+          assert hashlib.sha256(Path(os.environ['BIN']).read_bytes()).hexdigest() == receipt['assets']['macos-universal-app']['binary_sha256']
+          dmg = next(Path('.').glob('*.dmg'))
+          assert hashlib.sha256(dmg.read_bytes()).hexdigest() == manifest['signing']['macos']['dmg_sha256']
+          PY
+          python3 ../scripts/browser-workspace-smoke.py "$BIN" --output ../browser-workspace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: public-browser-macos-universal
+          path: |
+            browser-workspace/
+            dl/candidate-manifest.json
+          retention-days: 7

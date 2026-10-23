@@ -21,6 +21,36 @@ fn main() {
     }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         let arch = std::env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo must provide arch");
+        println!("cargo:rerun-if-env-changed=MINICON_BROWSER_EMBEDDED_HOST");
+        let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"));
+        let helper = if let Some(path) = std::env::var_os("MINICON_BROWSER_EMBEDDED_HOST") {
+            println!(
+                "cargo:rerun-if-changed={}",
+                std::path::Path::new(&path).display()
+            );
+            let bytes = std::fs::read(path).expect("canonical Linux browser helper is missing");
+            assert!(
+                bytes.len() >= 64
+                    && bytes.starts_with(b"\x7fELF\x02\x01\x01")
+                    && bytes.len() <= 32 * 1024 * 1024,
+                "Linux browser helper must be a little-endian ELF64 within 32 MiB"
+            );
+            let machine = u16::from_le_bytes([bytes[18], bytes[19]]);
+            let expected_machine = match arch.as_str() {
+                "x86_64" => 62,
+                "aarch64" => 183,
+                _ => panic!("unsupported embedded Linux browser architecture: {arch}"),
+            };
+            assert_eq!(
+                machine, expected_machine,
+                "Linux browser helper ISA mismatch"
+            );
+            bytes
+        } else {
+            Vec::new()
+        };
+        std::fs::write(output.join("minicon-web-host.bin"), helper)
+            .expect("stage embedded browser helper");
         for (environment, soname) in [
             ("MINICON_BUNDLED_XKB_X11_PATH", "libxkbcommon-x11.so.0"),
             ("MINICON_BUNDLED_XCB_XKB_PATH", "libxcb-xkb.so.1"),

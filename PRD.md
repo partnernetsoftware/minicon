@@ -54,7 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [-] v0.2.21 console courts complete; Windows x64 browser adapter works locally, owner rejected current UI/UX → plan/plan-v0.2.21.md
+    ├── [-] v0.2.21 browser workspace implemented locally; native six-cell qualification and owner UX review open → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -139,41 +139,17 @@ flowchart LR
 
 ## Current frontier
 
-- [-] **v0.2.21: console courts complete; browser content panel reopened.** Portable
-  `minicon-console` tests must run on every shipped cell, and a Linux-only
-  path must fail `lnx-*` even when Windows and macOS are green. Separately,
-  a browser tab's content panel is `minicon-web` (platform adapter ownership
-  is mapped in PRD 28); a terminal tab's panel stays the PTY. An http loopback redirect is fetched by the
-  page host, not left in wry's empty proxy ignore list. The bearer file is
-  forced to mode `0600` and a symlink is refused; `HOME` falls back to
-  `USERPROFILE`. The authorize URL carries `state` and an S256 challenge, and
-  a wrong loopback request does not consume the listener. `wry-host` pulls gtk
-  only on Linux. One browser root is refused on a second `add_browser_root`,
-  and the embed slot is `Layout::content_column`. The Windows bearer
-  path uses the platform's protected current-user ACL implementation; native
-  x86_64 and arm64 ACL courts passed in run `39919403513`. Linux run
-  `39925651159` at `4577c9c` passed the nonzero native X resize court, built
-  the optional WebKitGTK host and passed the real proxy/direct-loopback OAuth
-  smoke on x86_64 and aarch64. That is Linux adapter evidence, not the
-  cross-platform browser product outcome. The reopened `{ARCH}` gate is now
-  closed locally: macOS uses a GUI-only `minicon-web` WKWebView child attached
-  to `Layout::content_column`; `Ctrl+Shift+O` opens its bounded offline home,
-  tab switching hides/restores it, and fullscreen resize follows the column.
-  This closes only the adapter boundary. Direct owner use on 2026-10-23
-  rejected the current browser UI/UX as poor, so the surface is a disposable
-  engineering prototype rather than an accepted product design.
-  By owner decision on 2026-10-23, Windows WebView2 adapter bring-up precedes
-  the `{UX-BASELINE}` proposal. A local canonical Windows x86_64 dev build now
-  opens a same-window child and exercises URL, tab, resize and reopen journeys;
-  this engineering prototype is not accepted UX. `{ARTIFACT}` remains
-  cross-platform partial, `{MAC-PANEL}` still needs the accepted UX plus its
-  automated/second-architecture receipt, and Windows ARM64 runtime remains open;
-  Candidate/public release is therefore forbidden. Six-cell dev-loop run `39917026302`
-  at `3db5710` passed the portable console suites on every cell and the
-  Linux-only PTY/X11/ELF courts on both Linux cells. Windows arm64 passed all
-  suites; Windows x64 stayed red only on the two already-carried G6
-  FreeConsole/unread-output cases. G4 and G6 stay carried debt.
-  [Plan](plan/plan-v0.2.21.md).
+- [-] **v0.2.21: browser workspace and publication qualification.** The owner
+  authorized completion through public release after rejecting the diagnostic
+  scaffold. The replacement address/navigation/shared-sidebar interaction has
+  local Windows x86_64 canonical native-page evidence; owner review and fresh
+  native six-cell evidence remain open. [Workspace](prd/PRD_02_25_con_workspace.md)
+  owns the interaction and acceptance boundary, [reuse](prd/PRD_02_28_shared_core.md)
+  owns native adapters and bounded Linux helper transport, and
+  [delivery](prd/PRD_02_27_con_delivery.md) owns the one-file artifact chain.
+  Earlier console/ACL/Linux adapter receipts retain their original source and
+  scope; they cannot qualify the replacement's bytes. G4/G6 remain carried debt.
+  [Current sequence and evidence](plan/plan-v0.2.21.md).
 - [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
   limited Win32 I/O/records and job cleanup are implemented. The explicit
   experimental PTY and GUI choice is packaged in v0.2.18; scoped PowerShell/Node

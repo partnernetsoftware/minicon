@@ -1439,6 +1439,51 @@ in this repository that contradicts it is out of date, not an alternative.
 
 ### What runs where, in one look (0.2.x routine release)
 
+**0.2.21 browser helper addition (in progress).** The Linux WebKitGTK helper
+requires native GTK development metadata. Two native Linux prerequisite jobs
+build it from the same source SHA; the Mac pack embeds those exact helper bytes
+inside each Linux payload before packing. This preserves the single executable
+download and the no-compile runtime matrix. The Linux GUI launches the embedded
+helper through an anonymous executable file; no sibling installation is required.
+Canonical Linux `build.sh dev/release` builds and embeds that helper as well.
+The CI helper is built on Ubuntu 24.04 and requires GTK 3 / WebKitGTK 4.1;
+its browser-runtime compatibility is narrower than the terminal's Linux ELF
+baseline. Those libraries are loaded by the helper, so missing browser runtime
+does not add an unconditional GUI load-time dependency. A local Mac six-cell
+pack must provision same-source, ISA/hash-checked helper receipts under
+`target/browser-helpers/` (or `MINICON_BROWSER_HELPERS`) before rebuilding Linux
+payloads; an absent prerequisite fails instead of packing a silent fallback.
+Missing WebKitGTK/runtime or an unavailable executable-file facility is typed
+Unavailable and leaves terminals usable. Exact-source native journeys and pack
+receipts remain required; this addition is not yet qualified.
+The unsigned six-cell court executes the independently extracted native payload
+after checking its pack receipt SHA. Transformed Windows native executables and
+both signed macOS forms have their own after-signing browser journeys; unchanged
+Linux/macOS payloads inside the Windows-signed APE retain their unsigned native
+evidence. The separate public-release smoke runs downloaded archive/DMG bytes.
+Workflow wiring and static checks do not close these runtime evidence leaves.
+
+```text
+One Linux executable with a usable browser panel
+└── [-] Native helper bytes → target-specific payload → sealed Candidate
+    invariant: helper and GUI share source SHA; no manual binary path required
+    evidence: native build receipts plus canonical/public page journeys
+    safe failure: typed Unavailable, terminal survives
+    dependency: GTK3/WebKitGTK 4.1 and Linux executable anonymous files
+    non-goal: bundling a browser engine or changing signing/Promotion ownership
+```
+
+```mermaid
+flowchart LR
+    SHA[Exact source] --> LX[Linux x64 helper]
+    SHA --> LA[Linux arm64 helper]
+    LX --> PACK[Mac cross-compile and pack]
+    LA --> PACK
+    PACK --> CELLS[Six runtime cells; no compilation]
+    CELLS --> SIGN[Existing signing and Candidate chain]
+    MISS[Missing native helper receipt] --> STOP[BLOCKED]
+```
+
 Added 2026-10-10 after the first release driven end to end from a Windows
 host, because the mental model "build locally, upload a draft, then let CI
 sign and publish" is wrong for this repository and cost a round of confusion.

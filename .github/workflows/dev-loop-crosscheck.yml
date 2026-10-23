@@ -112,9 +112,52 @@ jobs:
           done
           DISPLAY=:99 xdpyinfo | head -3
 
+      - name: Provision native WebView2 Runtime on the Windows court
+        if: startsWith(matrix.cell, 'win-')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # PRD 27: disposable court setup, never a bundled product runtime.
+          $roots = @("${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application", "$env:LOCALAPPDATA\Microsoft\EdgeWebView\Application")
+          $runtime = @($roots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter msedgewebview2.exe -Recurse -ErrorAction SilentlyContinue })
+          if ($runtime.Count -eq 0) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Untrusted WebView2 installer' }
+            $process = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -PassThru -WindowStyle Hidden
+            if (-not $process.WaitForExit(240000)) { $process.Kill(); throw 'WebView2 installation timed out' }
+            if ($process.ExitCode -ne 0) { throw "WebView2 installer exited $($process.ExitCode)" }
+          }
+
       - name: Build the cell's product and harnesses
         shell: bash
         run: cargo build --locked --workspace --all-targets --target "${{ matrix.triple }}"
+
+      - name: Qualify the canonical native browser workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple='${{ matrix.triple }}'
+          extension=''
+          if [[ '${{ matrix.cell }}' == win-* ]]; then extension='.exe'; fi
+          if [[ '${{ matrix.cell }}' == lnx-* ]]; then
+            cargo build --locked --target "$triple" -p minicon-web --features wry-host --bin minicon-web-host
+            mkdir -p target/browser-helpers
+            cp "target/$triple/debug/minicon-web-host" target/browser-helpers/minicon-web-host
+            strip target/browser-helpers/minicon-web-host
+            export MINICON_BROWSER_EMBEDDED_HOST="$PWD/target/browser-helpers/minicon-web-host"
+          fi
+          cargo build --locked --target "$triple" --bin minicon
+          mkdir -p target/browser-canonical
+          cp "target/$triple/debug/minicon$extension" "target/browser-canonical/minicon$extension"
+          binary="$PWD/target/browser-canonical/minicon$extension"
+          if [[ '${{ matrix.cell }}' == win-* ]]; then binary=$(cygpath -w "$binary"); fi
+          mkdir -p probe-logs
+          MINICON_TEST_BINARY="$binary" bash scripts/build.sh test-suite --target "$triple" \
+            --test minicon_control browser_windows::native_browser_address_redirect_history_and_failure -- --exact --ignored \
+            2>&1 | tee probe-logs/browser-workspace-test.log
+          python3 scripts/browser-workspace-smoke.py "$binary" --output probe-logs/browser-workspace
 
       - name: Run each suite, capturing every result before failing the job
         # These are Cargo integration/unit tests, not standalone binaries --
@@ -337,6 +380,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: crosscheck-receipt-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
-          path: probe-logs/test-receipt.json
+          path: |
+            probe-logs/test-receipt.json
+            probe-logs/browser-workspace-test.log
+            probe-logs/browser-workspace/
           if-no-files-found: ignore
           retention-days: 14

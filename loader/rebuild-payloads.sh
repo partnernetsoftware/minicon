@@ -41,7 +41,11 @@ build_one() {
       ;;
     zig)
       # Linux .text + DWARF unwind dominate size; LTO belongs on this cell.
-      CARGO_TARGET_DIR="$dir" cargo zigbuild --locked --profile release --bin minicon --target "$target"
+      helper_root="${MINICON_BROWSER_HELPERS:-$ROOT/target/browser-helpers}"
+      helper="$helper_root/$cell/minicon-web-host"
+      [[ -f "$helper" ]] || { echo "missing native browser helper: $cell" >&2; return 1; }
+      MINICON_BROWSER_EMBEDDED_HOST="$helper" \
+        CARGO_TARGET_DIR="$dir" cargo zigbuild --locked --profile release --bin minicon --target "$target"
       ;;
     xwin)
       MINICON_RELEASE_PATHS_REDACTED=1 \

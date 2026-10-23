@@ -14,8 +14,8 @@ behind.
 | | |
 | --- | --- |
 | Runs on | Windows, Linux, macOS — x86_64 and aarch64 (Windows back to Server 2016) |
-| Size | one file: ~660 KB (Windows), 1.4 MB (macOS), 5 MB (Linux) — measured |
-| Depends on | operating-system libraries only |
+| Packaging | one executable per platform; release archives include SHA-256 checksums |
+| Depends on | native OS libraries; browser pages use WebView2 (Windows), WebKit (macOS), or GTK 3 / WebKitGTK 4.1 (Linux) |
 | Licence | MIT OR Apache-2.0 |
 
 ## Your input has its own line.
@@ -40,8 +40,8 @@ burst of output tangle together. MiniCon gives input a line of its own.
 
 Sending a keystroke is easy — but blind. The control command reads back what the
 window actually shows — text, screenshots, focus, tabs — so automation waits for
-a real result instead of guessing with a sleep. All local: no server, and no
-network traffic unless you press the update check yourself.
+a real result instead of guessing with a sleep. Control stays local, with no
+server. Network access follows your browser navigation, sign-in or manual update check.
 
 ```
 # start a session with a local control endpoint
@@ -65,8 +65,8 @@ compose CJK through the same paths a person's input takes.
 
 ## Small, open, signed — on purpose.
 
-- **Genuinely mini.** ~660 KB on Windows, 1.4 MB on macOS, 5 MB on Linux —
-  measured, not estimated. No installer, no bundled runtime.
+- **One executable.** No installer or bundled browser engine. Artifact sizes
+  and platform measurements are maintained in [the delivery requirements](prd/PRD_02_27_con_delivery.md).
 - **Permanently open source.** MIT OR Apache-2.0. No telemetry, no account, no
   auto-updater — the settings panel's update check is manual, per-press, and
   never runs on its own. The source is the product.
@@ -79,9 +79,10 @@ compose CJK through the same paths a person's input takes.
   left behind: a download that was never installed is cleared the next time
   MiniCon starts.
 - **Signed and notarized.** Windows and macOS, as PARTNERNET SOFTWARE PTY LTD.
-  It uses only the libraries your OS already ships.
-- **Low on purpose.** One process, no background service, no daemon; close the
-  window and nothing keeps running. Keeping idle memory small is a goal we work
+  Browser pages require the native runtime listed above; a missing runtime
+  leaves the terminal usable and reports a browser error.
+- **Low on purpose.** No background service or daemon; close the window and its
+  owned terminal/browser processes stop. Keeping idle memory small is a goal we work
   on, not a side effect.
 
 Three built-in themes — Neutral, Docs Ink and Paper Ink — recolour chrome and
@@ -120,11 +121,13 @@ minicon --help                   # everything else
 | Key | |
 | --- | --- |
 | `Ctrl+Shift+T` | new terminal |
+| `Ctrl+Shift+O` | open or return to the browser tab |
 | `Ctrl+Shift+N` | new terminal below the active tab |
-| `Ctrl+Shift+W` | close the active terminal; children are promoted |
+| `Ctrl+Shift+W` | close the active tab; children are promoted |
 | `Ctrl+Shift+B` | collapse the tab sidebar to a rail, or expand it again |
 | `Ctrl+Shift+[` / `]` | switch tabs |
-| `Ctrl+Shift+I` | focus the input area |
+| `Ctrl+Shift+I` | focus terminal input, or the browser address field |
+| `Ctrl+L` / `Cmd+L` | in the browser tab, edit its address; Enter navigates and Escape returns to the page |
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |
 | `Ctrl+Shift+,` | open or close the settings panel |
 | `Ctrl+Shift+G` | toggle the grid crosshair |

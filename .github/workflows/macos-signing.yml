@@ -305,8 +305,10 @@ jobs:
           mkdir -p signed
           cp work/minicon signed/minicon
           cp work/minicon-macos-universal.dmg "signed/minicon-$VERSION-macos-universal.dmg"
+          cp scripts/browser-workspace-smoke.py signed/
           python3 - <<PY
-          import json
+          import hashlib, json
+          from pathlib import Path
           receipt = {
             "schema": 2,
             "kind": "minicon-macos-signing-court",
@@ -334,6 +336,7 @@ jobs:
               # staplable and passes `spctl -t exec`, which is what makes a
               # plain double-click open without a Gatekeeper warning.
               "macos-universal-app": {
+                "binary_sha256": hashlib.sha256(Path("work/MiniCon.app/Contents/MacOS/minicon").read_bytes()).hexdigest(),
                 "notarization_id": open("work/app_notary_id.txt").read().strip(),
                 "hardened_runtime": True,
                 "stapled": True,
@@ -363,3 +366,80 @@ jobs:
           kc="$(cat "$RUNNER_TEMP/keychain-path" 2>/dev/null || true)"
           [ -n "$kc" ] && security delete-keychain "$kc" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/devid.p12" "$RUNNER_TEMP/asc_api_key.p8" 2>/dev/null || true
+
+  test:
+    name: signed native browser / ${{ matrix.cell }}
+    needs: [preflight, sign]
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: osx-x86_64, runner: macos-15-intel, arch: X64}
+          - {cell: osx-aarch64, runner: macos-15, arch: ARM64}
+    runs-on: ${{ matrix.runner }}
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      VERSION: ${{ needs.preflight.outputs.version }}
+      EXPECTED_UNIVERSAL_SHA256: ${{ needs.sign.outputs.universal_after_sha256 }}
+      EXPECTED_DMG_SHA256: ${{ needs.sign.outputs.dmg_sha256 }}
+      CELL: ${{ matrix.cell }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: macos-signed-minicon
+          path: signed
+      - name: Execute the signed universal and packaged app browser (no compile)
+        run: |
+          set -euo pipefail
+          [[ "$RUNNER_OS" == macOS && "$RUNNER_ARCH" == "$EXPECTED_ARCH" ]]
+          receipt=signed/macos-signing-receipt.json
+          [[ "$(jq -r .source_sha "$receipt")" == "$SOURCE_SHA" ]]
+          [[ "$(jq -r .version "$receipt")" == "$VERSION" ]]
+          [[ "$(shasum -a 256 signed/minicon | cut -d' ' -f1)" == "$EXPECTED_UNIVERSAL_SHA256" ]]
+          [[ "$(jq -r '.assets["macos-universal"].after_sha256' "$receipt")" == "$EXPECTED_UNIVERSAL_SHA256" ]]
+          dmg="signed/minicon-$VERSION-macos-universal.dmg"
+          [[ "$(shasum -a 256 "$dmg" | cut -d' ' -f1)" == "$EXPECTED_DMG_SHA256" ]]
+          chmod +x signed/minicon
+          codesign --verify --strict --verbose=2 signed/minicon
+          python3 signed/browser-workspace-smoke.py signed/minicon --output browser-bare
+          mount="$(mktemp -d "$RUNNER_TEMP/minicon-browser.XXXXXX")"
+          trap 'hdiutil detach "$mount" -quiet || true; rmdir "$mount" || true' EXIT
+          hdiutil attach "$dmg" -mountpoint "$mount" -nobrowse -quiet
+          app="$mount/MiniCon.app"
+          codesign --verify --strict --deep --verbose=2 "$app"
+          spctl -a -t exec -vv "$app"
+          app_binary="$app/Contents/MacOS/minicon"
+          [[ "$(shasum -a 256 "$app_binary" | cut -d' ' -f1)" == "$(jq -r '.assets["macos-universal-app"].binary_sha256' "$receipt")" ]]
+          python3 signed/browser-workspace-smoke.py "$app_binary" --output browser-app
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          signing = json.loads(Path('signed/macos-signing-receipt.json').read_text())
+          journeys = {}
+          for name, expected in (
+              ('bare', signing['assets']['macos-universal']['after_sha256']),
+              ('app', signing['assets']['macos-universal-app']['binary_sha256']),
+          ):
+              raw = Path(f'browser-{name}/receipt.json').read_bytes()
+              journey = json.loads(raw)
+              assert journey['status'] == 'passed' and journey['binary_sha256'] == expected
+              journeys[name] = {'binary_sha256': expected, 'status': 'passed',
+                                'receipt_sha256': hashlib.sha256(raw).hexdigest()}
+          receipt = {'schema': 1, 'kind': 'minicon-macos-signed-browser-runtime',
+                     'source_sha': os.environ['SOURCE_SHA'], 'cell': os.environ['CELL'],
+                     'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+                     'journeys': journeys}
+          Path('runtime-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: macos-signed-browser-${{ matrix.cell }}-attempt-${{ github.run_attempt }}
+          path: |
+            runtime-receipt.json
+            browser-bare/
+            browser-app/
+          if-no-files-found: error
+          retention-days: 7

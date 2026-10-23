@@ -13,8 +13,8 @@
 | | |
 | --- | --- |
 | 支持 | Windows、Linux、macOS × x86_64、aarch64（Windows 最低到 Server 2016） |
-| 体积 | 单文件：Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB——实测 |
-| 依赖 | 仅操作系统库 |
+| 分发 | 每个平台一个可执行文件；发布压缩包附 SHA-256 校验值 |
+| 依赖 | 原生系统库；浏览器页面使用 WebView2（Windows）、WebKit（macOS）或 GTK 3 / WebKitGTK 4.1（Linux） |
 | 许可 | MIT 或 Apache-2.0 |
 
 ## 输入有自己的一行。
@@ -36,7 +36,7 @@
 
 发一个按键很简单，但那是「瞎发」。控制命令能把窗口实际显示的内容读回来——文字、
 截图、焦点、标签页——让自动化等一个真实结果，而不是靠 sleep 瞎猜。全程本地，
-无服务；唯一的对外请求是你在设置面板里亲手按下的更新检查。
+无服务；网络访问由你的浏览器导航、登录或手动更新检查触发。
 
 ```
 # 用本地控制端点开一个会话
@@ -59,8 +59,8 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
 
 ## 迷你、开源、已签名——都是刻意为之。
 
-- **真的迷你。** Windows 约 660 KB、macOS 约 1.4 MB、Linux 约 5 MB——实测，非估
-  算。免安装，不捆绑运行时。
+- **一个可执行文件。** 免安装，不捆绑浏览器引擎。各平台产物体积和测量记录见
+  [交付要求](prd/PRD_02_27_con_delivery.md)。
 - **永久开源。** MIT 或 Apache-2.0。无遥测、无账号、无自动更新——设置面板里的更新
   检查是手动、逐次点击的，绝不会自行运行。源码就是产品。
 - **更新是手动的，而且可以退回去。** 面板能去发布页查版本并就地替换这一个文件；被
@@ -68,9 +68,9 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
   `minicon.backup`——所以万一新版本起不来，改一个名字就能退回；Linux 上如果拿到一个
   跑不起来的 `minicon`，`chmod +x minicon` 或重新下载即可。除此之外不留东西：
   下载了却没安装的那份，会在下次启动 MiniCon 时被清掉。
-- **已签名并公证。** Windows 与 macOS，主体 PARTNERNET SOFTWARE PTY LTD。只用
-  系统自带的库。
-- **极省资源。** 只有一个进程，没有后台服务、没有守护进程；关窗后什么都不再运行。把
+- **已签名并公证。** Windows 与 macOS，主体 PARTNERNET SOFTWARE PTY LTD。浏览器
+  页面需要上表中的原生运行时；缺失时显示浏览器错误，终端仍可用。
+- **极省资源。** 没有后台服务、没有守护进程；关窗后所属终端及浏览器进程退出。把
   内存控制得小是我们在持续投入的目标，不是副产品。
 
 三款内置主题——Neutral、Docs Ink、Paper Ink——窗框与终端一起换色，`Ctrl+Shift+P`
@@ -107,11 +107,13 @@ minicon --help                   # 其余全部
 | 按键 | |
 | --- | --- |
 | `Ctrl+Shift+T` | 新建终端 |
+| `Ctrl+Shift+O` | 打开或返回浏览器标签页 |
 | `Ctrl+Shift+N` | 在当前标签页下方新建终端 |
-| `Ctrl+Shift+W` | 关闭当前终端；子节点会被提升 |
+| `Ctrl+Shift+W` | 关闭当前标签页；子节点会被提升 |
 | `Ctrl+Shift+B` | 把标签侧栏收成细条，或再展开 |
 | `Ctrl+Shift+[` / `]` | 切换标签页 |
-| `Ctrl+Shift+I` | 聚焦输入区 |
+| `Ctrl+Shift+I` | 聚焦终端输入区或浏览器地址栏 |
+| `Ctrl+L` / `Cmd+L` | 浏览器标签页中编辑地址；Enter 导航，Escape 返回页面 |
 | `Ctrl+Shift+P` | 循环切换配色主题（Neutral / Docs / Paper） |
 | `Ctrl+Shift+,` | 打开或关闭设置面板 |
 | `Ctrl+Shift+G` | 开关网格准星 |

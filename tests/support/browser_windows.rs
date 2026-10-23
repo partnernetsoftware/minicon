@@ -1,4 +1,4 @@
-//! Public-CLI evidence for the Windows native browser adapter (PRD 25 / 26).
+//! Public-CLI evidence for native browser adapters (PRD 25 / 26).
 use super::*;
 
 struct BrowserGui {
@@ -17,16 +17,15 @@ impl BrowserGui {
         fs::create_dir_all(&root).unwrap();
         let trace = HostTrace(root.join("host.log"));
         let mut command = Command::new(&exe);
+        command.args(["--no-activate", "--control", &endpoint, "-e"]);
+        #[cfg(windows)]
+        command.args(["cmd.exe", "/d", "/k"]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.arg("/bin/sh").process_group(0);
+        }
         command
-            .args([
-                "--no-activate",
-                "--control",
-                &endpoint,
-                "-e",
-                "cmd.exe",
-                "/d",
-                "/k",
-            ])
             .env("MINICON_CONFIG_DIR", root.join("config"))
             .env("WEBVIEW2_USER_DATA_FOLDER", root.join("profile"))
             .env_remove("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER")
@@ -84,6 +83,7 @@ impl BrowserGui {
 }
 
 #[test]
+#[cfg(windows)]
 fn missing_webview2_runtime_is_unavailable_and_keeps_terminal_usable() {
     let mut host = BrowserGui::spawn(true, None, None);
     host.cli(&["send-ui-keys", "Ctrl+Shift+O"]);
@@ -120,6 +120,7 @@ fn missing_webview2_runtime_is_unavailable_and_keeps_terminal_usable() {
 }
 
 #[test]
+#[cfg(windows)]
 #[ignore = "requires WebView2 runtime; run the explicit native Windows browser court"]
 fn native_webview2_navigation_uses_the_browser_proxy() {
     for https_override in [false, true] {
@@ -127,6 +128,7 @@ fn native_webview2_navigation_uses_the_browser_proxy() {
     }
 }
 
+#[cfg(windows)]
 fn proxy_navigation(https_override: bool) {
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -173,4 +175,128 @@ fn proxy_navigation(https_override: bool) {
         observed.is_ok(),
         "WebView2 navigation did not reach the configured local proxy"
     );
+}
+
+#[test]
+#[ignore = "requires a native desktop/WebView runtime; run the explicit browser court"]
+fn native_browser_address_redirect_history_and_failure() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let server = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    server.set_nonblocking(true).unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopped = stop.clone();
+    let worker = thread::spawn(move || {
+        while !stopped.load(Ordering::Relaxed) {
+            if let Ok((mut stream, _)) = server.accept() {
+                // Winsock accepts inherit the listener's nonblocking mode.
+                // Wait for a complete request before replying or closing:
+                // otherwise Chromium observes CONNECTION_ABORTED under load.
+                stream.set_nonblocking(false).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let mut chunk = [0; 1024];
+                while bytes.len() < 8192 && !bytes.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(count) => bytes.extend_from_slice(&chunk[..count]),
+                    }
+                }
+                if !bytes.ends_with(b"\r\n\r\n") {
+                    continue;
+                }
+                let request = String::from_utf8_lossy(&bytes);
+                if request.starts_with("GET /redirect ") {
+                    let _ = stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /second\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                } else {
+                    let body = if request.starts_with("GET /second ") {
+                        "<title>Second page</title><h1>Second page</h1>"
+                    } else {
+                        "<title>First page</title><a href='/redirect'>Next page</a>"
+                    };
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            } else {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    });
+    let host = BrowserGui::spawn(false, None, None);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+O"]);
+    let navigate = |url: &str| {
+        host.cli(&["send-ui-keys", "Ctrl+l"]);
+        host.cli(&["send-ui-ime", "commit", url]);
+        host.cli(&["send-ui-keys", "Enter"]);
+    };
+    let wait = |url: &str, load: &str, title: Option<&str>| {
+        let deadline = Instant::now() + Duration::from_secs(45);
+        loop {
+            let row = host.browser();
+            if row["browser"]["url"] == url
+                && row["browser"]["load"] == load
+                && title.is_none_or(|title| row["browser"]["title"] == title)
+            {
+                return row;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "expected {load} {url}, got {row}"
+            );
+            thread::sleep(Duration::from_millis(40));
+        }
+    };
+    navigate(&format!("{origin}/first"));
+    let first = wait(&format!("{origin}/first"), "ready", Some("First page"));
+    assert_eq!(first["browser"]["title"], "First page");
+    navigate(&format!("{origin}/redirect"));
+    let second = wait(&format!("{origin}/second"), "ready", Some("Second page"));
+    assert_eq!(second["browser"]["title"], "Second page");
+    assert_eq!(second["browser"]["can_back"], true);
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let toolbar = &snapshot["geometry"]["browser_toolbar"];
+    let scale = snapshot["geometry"]["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+    let x = (((toolbar["x"].as_u64().unwrap() as f64 / scale) + 16.0).round() as u32).to_string();
+    host.cli(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &x,
+        "--row",
+        "20",
+    ]);
+    wait(&format!("{origin}/first"), "ready", Some("First page"));
+    assert_eq!(host.browser()["browser"]["can_forward"], true);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+["]);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+O"]);
+    assert_eq!(host.browser()["browser"]["url"], format!("{origin}/first"));
+    let port = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let failed = format!("http://{}/unavailable", port.local_addr().unwrap());
+    drop(port);
+    navigate(&failed);
+    let failure = wait(&failed, "unavailable", None);
+    assert!(
+        failure["browser"]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("browser-navigation-")
+    );
+    stop.store(true, Ordering::Relaxed);
+    worker.join().unwrap();
 }

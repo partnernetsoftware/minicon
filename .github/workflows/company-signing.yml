@@ -156,6 +156,7 @@ jobs:
           Copy-Item loader/ci-control.sh signed/
           Copy-Item loader/ci-control.ps1 signed/
           Copy-Item release/signing_receipt.py signed/
+          Copy-Item scripts/browser-workspace-smoke.py signed/
           # actions/checkout on a Windows runner may materialize tracked shell
           # scripts with CRLF. These files execute later on Linux/macOS, so
           # publish deterministic LF bytes instead of a host-checkout accident.
@@ -392,6 +393,35 @@ jobs:
           & bundle/ci-status.ps1 -Binary (Join-Path $PWD 'bundle/minicon-ape.exe') `
             -Receipt (Join-Path $PWD 'bundle/build-receipt.json') *>&1 | Tee-Object runtime-body.log
           & bundle/ci-control.ps1 -Binary (Join-Path $PWD 'bundle/minicon-ape.exe') *>&1 | Tee-Object runtime-body.log -Append
+      - name: Provision native WebView2 Runtime on the Windows court
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $roots = @("${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application", "$env:LOCALAPPDATA\Microsoft\EdgeWebView\Application")
+          $runtime = @($roots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter msedgewebview2.exe -Recurse -ErrorAction SilentlyContinue })
+          if ($runtime.Count -eq 0) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Untrusted WebView2 installer' }
+            $process = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -PassThru -WindowStyle Hidden
+            if (-not $process.WaitForExit(240000)) { $process.Kill(); throw 'WebView2 installation timed out' }
+            if ($process.ExitCode -ne 0) { throw "WebView2 installer exited $($process.ExitCode)" }
+          }
+      - name: Browser workspace on the signed native Windows executable (no compile)
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $receipt = Get-Content bundle/signing-receipt.json -Raw | ConvertFrom-Json
+          $identity = $receipt.assets.($env:CELL)
+          $binary = Join-Path 'bundle' $identity.path
+          if ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -ne $identity.after_sha256) { throw 'Signed native browser digest mismatch' }
+          New-Item -ItemType Directory -Force browser-native | Out-Null
+          Copy-Item -LiteralPath $binary -Destination browser-native/minicon.exe
+          python bundle/browser-workspace-smoke.py browser-native/minicon.exe --output browser-workspace
+          if ($LASTEXITCODE -ne 0) { throw 'Signed native browser workspace failed' }
       - name: Runtime receipt
         if: always()
         shell: bash
@@ -413,6 +443,14 @@ jobs:
           }
           if log.is_file():
               raw = log.read_bytes(); data.update(log_sha256=hashlib.sha256(raw).hexdigest(), log_bytes=len(raw))
+          if os.environ['FAMILY'] == 'windows' and os.environ['JOB_STATUS'] == 'success':
+              raw = Path('browser-workspace/receipt.json').read_bytes()
+              journey = json.loads(raw)
+              signing = json.loads(Path('bundle/signing-receipt.json').read_text(encoding='utf-8-sig'))
+              assert journey['status'] == 'passed'
+              assert journey['binary_sha256'] == signing['assets'][os.environ['CELL']]['after_sha256']
+              data.update(native_browser_sha256=journey['binary_sha256'], native_browser_status=journey['status'],
+                          native_browser_receipt_sha256=hashlib.sha256(raw).hexdigest())
           Path("runtime-receipt.json").write_text(json.dumps(data, indent=2) + "\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -422,6 +460,7 @@ jobs:
           path: |
             runtime-receipt.json
             runtime-body.log
+            browser-workspace/
           if-no-files-found: error
           retention-days: 14
 
@@ -454,6 +493,8 @@ jobs:
           cells = [r.get("cell") for r in rows]
           if len(rows) != 6 or set(cells) != wanted or len(set(cells)) != 6: raise SystemExit(f"cell set mismatch: {cells}")
           if any(r.get("job_status") != "success" for r in rows): raise SystemExit("one or more signed runtime courts failed")
+          if any(r.get('native_browser_status') != 'passed' for r in rows if r['cell'].startswith('win-')):
+              raise SystemExit('signed native Windows browser court missing or failed')
           for field, expected in (("minicon_com_sha256", os.environ["EXPECTED_COM_SHA256"]),
                                   ("source_sha", os.environ["EXPECTED_SOURCE_SHA"]),
                                   ("source_tree_digest", os.environ["EXPECTED_SOURCE_TREE_DIGEST"])):

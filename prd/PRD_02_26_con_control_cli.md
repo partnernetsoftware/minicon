@@ -99,9 +99,16 @@ flowchart LR
   `wait-tab-exit`, logical-client `resize-window`, and process-lifetime
   `close-window`.
 - [v] `list-tabs` exposes a nullable `browser` object on each row. Browser
-  rows publish `url`, typed `load` (`idle`, `loading`, `unavailable`) and a
-  nullable failure `reason`; terminal rows publish null. This is the last
-  adapter request/result, not confirmation that network loading finished.
+  rows publish `url`, `title`, typed `load` (`idle`, `loading`, `ready`,
+  `unavailable`), `can_back`, `can_forward` and a nullable failure `reason`;
+  terminal rows publish null. `ready` records the native engine's finished
+  navigation event; it does not assert application-specific page readiness.
+  Windows uses the engine's success flag to distinguish its network error page.
+  `ui-snapshot.geometry` on a browser tab publishes `browser_page`,
+  `browser_toolbar`, `browser_address`, `address_focused`, sidebar/history
+  bounds and scale. These are host geometry, not a page DOM or pixel capture.
+  `send-ui-ime` routes to the focused browser address editor as
+  `browser_address`; it requires no PTY in that case.
   The Windows missing-runtime and local-proxy courts in
   `tests/support/browser_windows.rs` guard the native failure and navigation
   observations; execution evidence belongs to

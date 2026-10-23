@@ -117,6 +117,40 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Browser pages have navigation chrome and no terminal composer.
+    pub fn browser_toolbar(self, scale: f64) -> Rect {
+        Rect {
+            x: self.composer.x,
+            y: 0,
+            width: self.composer.width,
+            height: dip(44.0, scale).min(self.status.y + self.status.height),
+        }
+    }
+
+    pub fn browser_page(self, scale: f64) -> Option<Rect> {
+        let column = self.content_column()?;
+        let toolbar = self.browser_toolbar(scale);
+        let bottom = self.status.y.saturating_add(self.status.height);
+        let height = bottom.saturating_sub(toolbar.height);
+        (toolbar.width > 0 && height > 0).then_some(Rect {
+            x: column.x,
+            y: toolbar.height,
+            width: toolbar.width,
+            height,
+        })
+    }
+
+    pub fn browser_address(self, scale: f64) -> Rect {
+        let toolbar = self.browser_toolbar(scale);
+        let inset = dip(112.0, scale).min(toolbar.width);
+        Rect {
+            x: toolbar.x + inset,
+            y: dip(6.0, scale),
+            width: toolbar.width.saturating_sub(inset + dip(8.0, scale)),
+            height: dip(32.0, scale).min(toolbar.height),
+        }
+    }
+
     /// Terminal column: under the tab header, above the composer, inset by
     /// the sidebar and the history chrome. The browser page uses the same
     /// rectangle so it does not cover the tab strip.

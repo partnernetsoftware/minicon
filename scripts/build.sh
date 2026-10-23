@@ -68,6 +68,26 @@ PY
   echo "[build] macOS dev app: $dev_app"
 }
 
+build_linux_browser() {
+  [ "$(uname -s)" = Linux ] || return 0
+  profile="$1"
+  helper_profile=release-fast
+  [ "$profile" != release ] || helper_profile=release
+  cargo build --locked -p minicon-web --features wry-host --bin minicon-web-host --profile "$helper_profile"
+  output_root="${CARGO_TARGET_DIR:-$repo_root/target}"
+  if [ -n "${CARGO_BUILD_TARGET:-}" ]; then
+    output_root="$output_root/$CARGO_BUILD_TARGET"
+  fi
+  export MINICON_BROWSER_EMBEDDED_HOST="$output_root/$helper_profile/minicon-web-host"
+}
+
+if [ "$#" -eq 0 ]; then
+  case "$mode" in
+    dev) build_linux_browser debug ;;
+    release) build_linux_browser release ;;
+  esac
+fi
+
 case "$mode" in
   release) cargo build --locked --release "$@" ;;
   dev) cargo build --locked "$@"

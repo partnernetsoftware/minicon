@@ -22,8 +22,63 @@ env:
   ZIG_SHA256: "b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489"
 
 jobs:
+  linux-browser-helpers:
+    name: native browser helper (${{ matrix.cell }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cell: lnx-x86_64, runner: ubuntu-24.04}
+          - {cell: lnx-aarch64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          persist-credentials: false
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+          key: browser-helper-${{ matrix.cell }}-${{ hashFiles('Cargo.lock', 'crates/minicon-web/**') }}
+          restore-keys: browser-helper-${{ matrix.cell }}-
+      - name: Build exact-source WebKitGTK adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+          RUSTFLAGS="--remap-path-prefix=$HOME=~" cargo build --locked --release -p minicon-web --features wry-host --bin minicon-web-host
+          mkdir -p helper
+          cp target/release/minicon-web-host helper/
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          binary = Path('helper/minicon-web-host')
+          raw = binary.read_bytes()
+          expected_machine = 62 if '${{ matrix.cell }}' == 'lnx-x86_64' else 183
+          assert 64 <= len(raw) <= 32 * 1024 * 1024
+          assert raw[:7] == b'\x7fELF\x02\x01\x01'
+          assert int.from_bytes(raw[18:20], 'little') == expected_machine
+          Path('helper/receipt.json').write_text(json.dumps({
+              'source_sha': os.environ['GITHUB_SHA'],
+              'cell': '${{ matrix.cell }}',
+              'sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+              'bytes': binary.stat().st_size,
+          }, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: browser-helper-${{ matrix.cell }}
+          path: helper/
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: pack once (macos-15)
+    needs: linux-browser-helpers
     runs-on: macos-15
     timeout-minutes: 60
     outputs:
@@ -78,6 +133,33 @@ jobs:
             COSMOCC_VERSION="$COSMOCC_VERSION" \
             bash loader/install-cosmocc.sh
           echo "$HOME/cosmocc/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: browser-helper-*
+          path: target/browser-helpers-download
+      - name: Verify native helper identities
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, shutil
+          from pathlib import Path
+          for cell in ('lnx-x86_64', 'lnx-aarch64'):
+              root = Path('target/browser-helpers-download') / f'browser-helper-{cell}'
+              receipt = json.loads((root / 'receipt.json').read_text())
+              binary = root / 'minicon-web-host'
+              assert receipt['source_sha'] == os.environ['GITHUB_SHA']
+              assert receipt['cell'] == cell
+              assert receipt['sha256'] == hashlib.sha256(binary.read_bytes()).hexdigest()
+              assert receipt['bytes'] == binary.stat().st_size
+              raw = binary.read_bytes()
+              assert 64 <= len(raw) <= 32 * 1024 * 1024
+              assert raw[:7] == b'\x7fELF\x02\x01\x01'
+              assert int.from_bytes(raw[18:20], 'little') == (62 if cell == 'lnx-x86_64' else 183)
+              destination = Path('target/browser-helpers') / cell
+              destination.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(binary, destination / 'minicon-web-host')
+              shutil.copy2(root / 'receipt.json', destination / 'receipt.json')
+          PY
 
       - name: Pack minicon.com
         id: pack
@@ -164,6 +246,7 @@ jobs:
           cp loader/ci-status.ps1 artifact/
           cp loader/ci-control.sh artifact/
           cp loader/ci-control.ps1 artifact/
+          cp scripts/browser-workspace-smoke.py artifact/
           cp -R loader/dist/g3 artifact/
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -238,6 +321,28 @@ jobs:
           assert rec["source_tree_digest"] == os.environ["EXPECTED_SOURCE_TREE_DIGEST"]
           PY
 
+      - name: Extract and verify the exact native browser artifact (no compile)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          receipt = json.loads(Path('bundle/build-receipt.json').read_text())
+          cell = os.environ['CELL']
+          filename = 'minicon.exe' if os.environ['FAMILY'] == 'windows' else 'minicon'
+          entry = f'cells/{cell}/{filename}'
+          with zipfile.ZipFile('bundle/minicon.com') as archive:
+              assert archive.namelist().count(entry) == 1
+              raw = archive.read(entry)
+          identity = receipt['payloads'][cell]
+          assert hashlib.sha256(raw).hexdigest() == identity['sha256']
+          assert len(raw) == identity['bytes']
+          destination = Path('browser-native') / filename
+          destination.parent.mkdir(exist_ok=True)
+          destination.write_bytes(raw)
+          destination.chmod(0o755)
+          PY
+
       - name: version+passthrough+status (unix)
         if: matrix.family != 'windows'
         shell: bash
@@ -247,11 +352,40 @@ jobs:
           bundle/ci-status.sh "$FAMILY" bundle/minicon.com bundle/build-receipt.json | tee runtime-body.log
           if [[ "$FAMILY" == linux ]]; then
             sudo apt-get update -qq
-            sudo apt-get install -y xvfb libxkbcommon-x11-0
+            sudo apt-get install -y xvfb libxkbcommon-x11-0 libgtk-3-0t64 libwebkit2gtk-4.1-0
             xvfb-run -a bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
           else
             bash bundle/ci-control.sh bundle/minicon.com | tee -a runtime-body.log
           fi
+
+      - name: Native browser workspace (unix; no compile)
+        if: matrix.family != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$FAMILY" == linux ]]; then
+            xvfb-run -a python3 bundle/browser-workspace-smoke.py browser-native/minicon --output browser-workspace
+          else
+            python3 bundle/browser-workspace-smoke.py browser-native/minicon --output browser-workspace
+          fi
+
+      - name: Provision native WebView2 Runtime on the Windows court
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # PRD 27: disposable court setup, never a bundled product runtime.
+          $roots = @("${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application", "$env:LOCALAPPDATA\Microsoft\EdgeWebView\Application")
+          $runtime = @($roots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter msedgewebview2.exe -Recurse -ErrorAction SilentlyContinue })
+          if ($runtime.Count -eq 0) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Untrusted WebView2 installer' }
+            $process = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -PassThru -WindowStyle Hidden
+            if (-not $process.WaitForExit(240000)) { $process.Kill(); throw 'WebView2 installation timed out' }
+            if ($process.ExitCode -ne 0) { throw "WebView2 installer exited $($process.ExitCode)" }
+          }
 
       - name: version+passthrough+status (windows)
         if: matrix.family == 'windows'
@@ -264,6 +398,13 @@ jobs:
             Tee-Object -FilePath runtime-body.log
           & bundle/ci-control.ps1 -Binary (Join-Path $PWD "bundle/minicon-ape.exe") *>&1 |
             Tee-Object -FilePath runtime-body.log -Append
+
+      - name: Native browser workspace (windows; no compile)
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          python bundle/browser-workspace-smoke.py browser-native/minicon.exe --output browser-workspace
+          if ($LASTEXITCODE -ne 0) { throw 'Native browser workspace failed' }
 
       - name: Receipt
         if: always()
@@ -295,6 +436,14 @@ jobs:
               raw = log.read_bytes()
               data["log_sha256"] = hashlib.sha256(raw).hexdigest()
               data["log_bytes"] = len(raw)
+          browser = Path('browser-workspace/receipt.json')
+          if browser.is_file():
+              raw = browser.read_bytes()
+              journey = json.loads(raw)
+              assert journey['binary_sha256'] == build['payloads'][os.environ['CELL']]['sha256']
+              data['native_browser_sha256'] = journey['binary_sha256']
+              data['native_browser_status'] = journey['status']
+              data['native_browser_receipt_sha256'] = hashlib.sha256(raw).hexdigest()
           Path("runtime-receipt.json").write_text(json.dumps(data, indent=2) + "\n")
           PY
 
@@ -305,6 +454,7 @@ jobs:
           path: |
             runtime-receipt.json
             runtime-body.log
+            browser-workspace/
           if-no-files-found: error
           retention-days: 14
 
@@ -360,6 +510,9 @@ jobs:
           bad = [r for r in rows if r.get("job_status") != "success"]
           if bad:
               print("bad", bad); sys.exit(1)
+          if any(r.get('native_browser_status') != 'passed' or not r.get('native_browser_sha256')
+                 or not r.get('native_browser_receipt_sha256') for r in rows):
+              print('missing native browser qualification'); sys.exit(1)
           out = {
               "schema": 2,
               "kind": "minicon-six-cell-aggregate",

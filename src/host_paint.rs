@@ -38,8 +38,6 @@ impl ConApp {
         let scale = session.scale.max(1.0);
         let layout = self.layout(width, height, scale);
         let tree_width = layout.sidebar.width;
-        let header_height = layout.tree_header_height;
-        let row_height = layout.tree_row_height;
         let host_ui_size = |nominal| scaled_host_ui_font(nominal, session.font_size_logical, scale);
         // The host UI (sidebar, tabs, composer, borders) is themed; the
         // terminal body keeps its ANSI/xterm colors regardless. Only these
@@ -47,7 +45,6 @@ impl ConApp {
         let t = theme::Theme::for_choice(self.ui_theme);
         let tree_bg = t.sidebar_bg;
         let tree_rule = t.border;
-        let branch = t.branch;
         let active_bg = t.surface;
         let accent = t.accent;
         let error_accent = t.error;
@@ -85,383 +82,14 @@ impl ConApp {
             tree_rule.to_xrgb(),
         );
 
-        let header_icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
-        paint_header_icon_button(
+        self.paint_workspace_chrome(
             &mut surface,
-            layout.new_root,
-            HeaderIcon::NewRoot,
-            accent,
-            self.hovered_header == Some(HeaderIcon::NewRoot),
-            t.surface,
-            header_icon_size,
+            layout,
+            width,
+            height,
             scale,
+            session.font_size_logical,
         );
-        paint_header_icon_button(
-            &mut surface,
-            layout.settings,
-            HeaderIcon::Settings,
-            accent,
-            self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
-            t.surface,
-            header_icon_size,
-            scale,
-        );
-        let toggle_icon = HeaderIcon::SidebarToggle {
-            collapsed: layout.sidebar_collapsed,
-        };
-        paint_header_icon_button(
-            &mut surface,
-            layout.sidebar_toggle,
-            toggle_icon,
-            accent,
-            self.hovered_header == Some(toggle_icon),
-            t.surface,
-            header_icon_size,
-            scale,
-        );
-        let panel_icon = HeaderIcon::PanelToggle {
-            open: layout.panel_open,
-        };
-        paint_header_icon_button(
-            &mut surface,
-            layout.panel_toggle,
-            panel_icon,
-            accent,
-            self.hovered_header == Some(panel_icon),
-            t.surface,
-            header_icon_size,
-            scale,
-        );
-        if layout.panel_open {
-            self.paint_history_panel(
-                &mut surface,
-                layout,
-                scale,
-                t,
-                host_ui_size(HOST_UI_STATUS_SIZE_PX),
-            );
-        }
-        // A rail row shows `@N` and nothing else, so the hovered row's full
-        // label has to be drawn somewhere; collected here and painted after the
-        // rows so it floats above them.
-        let mut rail_tooltip: Option<(u32, String)> = None;
-
-        let nodes = self.workspace.nodes();
-        let depths = self.workspace.depths();
-        for (visible_index, (node_index, node)) in nodes
-            .iter()
-            .enumerate()
-            .skip(self.tree_scroll_offset)
-            .enumerate()
-        {
-            let y = header_height + visible_index as u32 * row_height;
-            if y >= height {
-                break;
-            }
-            let depth = depths.get(node_index).copied().unwrap_or(0).min(8);
-            let indent = 14 + depth * 18;
-            if self.workspace.active() == Some(node.id) {
-                surface.fill_rect(0, y, tree_width, row_height, active_bg.to_xrgb());
-                surface.fill_rect(0, y, 3, row_height, accent.to_xrgb());
-            }
-            if depth > 0 {
-                let branch_x = indent.saturating_sub(10);
-                surface.fill_rect(branch_x, y, 1, row_height / 2 + 1, branch.to_xrgb());
-                surface.fill_rect(branch_x, y + row_height / 2, 8, 1, branch.to_xrgb());
-            }
-            let session = self.session_for(node.id);
-            // Two lines per row. The name line is the tab's own label: the
-            // user's name when set, otherwise the program it runs (`cmd`, ...),
-            // and finally the node's creation-time label. The title line below
-            // is the terminal's OSC title — what `title` (Windows) or
-            // `printf '\e]0;…'` sets — which is a separate thing and tracks the
-            // shell live.
-            let name = tree_row_name(
-                node.custom_title.as_deref(),
-                session.map(|terminal| terminal.program_label()),
-                node.title.as_str(),
-            );
-            let title = tree_row_title(session.map(|terminal| terminal.current_title.as_str()));
-            // A child that exited leaves its tab in place (remain-on-exit), so
-            // the row is the only thing that can say the shell is gone. Dim the
-            // label: it reads as inert next to a live tab without moving or
-            // recolouring the row a user is aiming at.
-            // A tab whose shell exited non-zero reads in the error color so a
-            // crash is visible at a glance; a clean exit dims to muted; a live
-            // shell uses the normal text color.
-            let label_color = match session {
-                Some(terminal) if terminal.child_gone => {
-                    if terminal.child_exit_code.unwrap_or(0) != 0 {
-                        error_accent
-                    } else {
-                        muted
-                    }
-                }
-                _ => text,
-            };
-            let mut id = itoa::Buffer::new();
-            let row_active = self.workspace.active() == Some(node.id);
-            let row_hovered = self.hovered_tree_row == Some(node_index);
-            if layout.sidebar_collapsed {
-                // The rail identifies a tab by its stable `@ID` — the same
-                // handle the control CLI uses — so what a user reads here is
-                // what they would type. Depth, branch lines and the close
-                // button are dropped: none of them survive a 44dip column
-                // legibly, and a half-drawn close button is worse than none.
-                let label = ["@", id.format(node.id.get())].concat();
-                let font_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
-                let text_width = host_ui_text_width(&label, font_size);
-                let x = tree_width.saturating_sub(text_width) / 2;
-                let text_h = font::cell_metrics(font_size).height.max(1);
-                paint_host_ui_text(
-                    &mut surface,
-                    x,
-                    y.saturating_add(row_height.saturating_sub(text_h) / 2),
-                    &label,
-                    label_color,
-                    font_size,
-                    tree_width,
-                );
-                if row_hovered {
-                    rail_tooltip = Some((visible_index as u32, name.to_owned()));
-                }
-                continue;
-            }
-            // While this row is being renamed, the label gives way to an inline
-            // editor and the row buttons are hidden so the text gets the width.
-            if let Some(rename) = self
-                .rename
-                .as_ref()
-                .filter(|rename| rename.target == node.id)
-            {
-                let font_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
-                let metrics = font::cell_metrics(font_size);
-                let cell_w = metrics.width.max(1);
-                let cell_h = metrics.height.max(1);
-                let editor_right = tree_width.saturating_sub(8);
-                let avail = editor_right.saturating_sub(indent);
-                if avail > 0 {
-                    let editor = &rename.editor;
-                    let cells = (avail / cell_w).max(1) as usize;
-                    let window = composer::visible_window(
-                        &editor.text,
-                        &editor.preedit,
-                        editor.caret,
-                        1,
-                        cells,
-                    );
-                    let caret = editor.caret.clamp(window.text, editor.text.len());
-                    let plate_h = cell_h.saturating_add(6);
-                    // Centre the single-line editor in the taller row; while the
-                    // rename is live there is no title line to sit under.
-                    let plate_y = y.saturating_add(row_height.saturating_sub(plate_h) / 2);
-                    let text_y = plate_y.saturating_add(3);
-                    surface.fill_rect(
-                        indent.saturating_sub(3),
-                        plate_y,
-                        avail.saturating_add(6),
-                        plate_h,
-                        composer_bg.to_xrgb(),
-                    );
-                    let lead = usize::from(window.truncated);
-                    let cell_x = |cells_used: usize| {
-                        indent.saturating_add(cell_w.saturating_mul((lead + cells_used) as u32))
-                    };
-                    if window.truncated {
-                        paint_host_ui_text(
-                            &mut surface,
-                            indent,
-                            text_y,
-                            "…",
-                            text,
-                            font_size,
-                            cell_w,
-                        );
-                    }
-                    // A selection is drawn as an inverted span — accent plate
-                    // with the text in the editor background color — rather than
-                    // the composer's subtle bg fill, because on entry the whole
-                    // name is selected and a low-contrast tint read as "nothing
-                    // happened". The inversion is theme-independent (accent vs
-                    // bg always contrast). The IME preedit suppresses it, since
-                    // the span offsets would no longer line up.
-                    let selection = editor
-                        .preedit
-                        .is_empty()
-                        .then(|| composer::selection_bounds(editor))
-                        .flatten();
-                    match selection {
-                        Some((sel_start, sel_end)) => {
-                            let vs = sel_start.max(window.text).min(editor.text.len());
-                            let ve = sel_end.max(window.text).min(editor.text.len());
-                            let head = &editor.text[window.text..vs];
-                            let mid = &editor.text[vs..ve];
-                            let tail = &editor.text[ve..];
-                            let head_cells = composer::cells(head);
-                            let mid_cells = composer::cells(mid);
-                            if !head.is_empty() {
-                                paint_host_ui_text(
-                                    &mut surface,
-                                    cell_x(0),
-                                    text_y,
-                                    head,
-                                    text,
-                                    font_size,
-                                    avail,
-                                );
-                            }
-                            if mid_cells > 0 {
-                                let sx = cell_x(head_cells);
-                                let width = cell_w.saturating_mul(mid_cells as u32);
-                                surface.fill_rect(sx, plate_y, width, plate_h, accent.to_xrgb());
-                                paint_host_ui_text(
-                                    &mut surface,
-                                    sx,
-                                    text_y,
-                                    mid,
-                                    composer_bg,
-                                    font_size,
-                                    width,
-                                );
-                            }
-                            if !tail.is_empty() {
-                                paint_host_ui_text(
-                                    &mut surface,
-                                    cell_x(head_cells.saturating_add(mid_cells)),
-                                    text_y,
-                                    tail,
-                                    text,
-                                    font_size,
-                                    avail,
-                                );
-                            }
-                        }
-                        None => {
-                            paint_host_ui_text_parts(
-                                &mut surface,
-                                indent,
-                                text_y,
-                                &[
-                                    &editor.text[window.text..caret],
-                                    &editor.preedit[window.preedit..],
-                                    &editor.text[caret..],
-                                ],
-                                text,
-                                font_size,
-                                avail,
-                            );
-                        }
-                    }
-                    // The caret is a rule, not a character, so text columns stay
-                    // exact — the same choice the composer makes.
-                    let caret_cells = lead
-                        + composer::cells(&editor.text[window.text..caret])
-                        + composer::cells(&editor.preedit[window.preedit..]);
-                    let offset = cell_w
-                        .saturating_mul(caret_cells as u32)
-                        .min(avail.saturating_sub(1));
-                    surface.fill_rect(
-                        indent.saturating_add(offset),
-                        plate_y,
-                        2,
-                        plate_h,
-                        accent.to_xrgb(),
-                    );
-                }
-            } else {
-                // Two stacked lines, centred as a block in the row: the name on
-                // top, the terminal's title under it in the muted color.
-                let name_font = host_ui_size(HOST_UI_TAB_SIZE_PX);
-                let title_font = host_ui_size(HOST_UI_SUBTITLE_SIZE_PX);
-                let name_h = font::cell_metrics(name_font).height.max(1);
-                let title_h = font::cell_metrics(title_font).height.max(1);
-                let block_h = name_h.saturating_add(if title.is_some() { title_h } else { 0 });
-                let top = y.saturating_add(row_height.saturating_sub(block_h) / 2);
-                // Three row buttons (edit, new-child, close) now sit at the
-                // right edge; keep the label clipped clear of all of them.
-                let text_width = tree_width.saturating_sub(indent).saturating_sub(82);
-                paint_host_ui_text_parts_clipped(
-                    &mut surface,
-                    indent,
-                    top,
-                    &["@", id.format(node.id.get()), "  ", name],
-                    label_color,
-                    name_font,
-                    text_width,
-                );
-                if let Some(title) = title {
-                    paint_host_ui_text_parts_clipped(
-                        &mut surface,
-                        indent,
-                        top.saturating_add(name_h),
-                        &[title],
-                        muted,
-                        title_font,
-                        text_width,
-                    );
-                }
-                if row_active || row_hovered {
-                    let edit = layout.tree_edit_rect(visible_index, scale);
-                    let child = layout.tree_child_rect(visible_index, scale);
-                    let close = layout.tree_close_rect(visible_index, scale);
-                    // A hover plate behind each glyph so it reads as a button,
-                    // not floating text.
-                    if row_hovered {
-                        for plate in [edit, child, close] {
-                            surface.fill_rect(
-                                plate.x,
-                                plate.y,
-                                plate.width,
-                                plate.height,
-                                active_bg.to_xrgb(),
-                            );
-                        }
-                    }
-                    paint_edit_glyph(&mut surface, edit, text, scale);
-                    // The new-child button between edit and close: the same
-                    // "+" the header's New uses, scoped to this row
-                    // (Ctrl+Shift+N's pointer twin).
-                    paint_host_ui_text(
-                        &mut surface,
-                        child.x + 6,
-                        child.y + 3,
-                        "+",
-                        text,
-                        host_ui_size(HOST_UI_CLOSE_SIZE_PX),
-                        child.width.saturating_sub(6),
-                    );
-                    paint_host_ui_text(
-                        &mut surface,
-                        close.x + 6,
-                        close.y + 3,
-                        "x",
-                        text,
-                        host_ui_size(HOST_UI_CLOSE_SIZE_PX),
-                        close.width.saturating_sub(6),
-                    );
-                }
-            }
-        }
-
-        if let Some((visible_row, title)) = rail_tooltip {
-            let tip_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
-            let text_width = host_ui_text_width(&title, tip_size);
-            if let Some(tip) = ui::rail_tooltip_rect(layout, visible_row, text_width, width, scale)
-            {
-                surface.fill_rect(tip.x, tip.y, tip.width, tip.height, active_bg.to_xrgb());
-                stroke_rect(&mut surface, tip, 1, tree_rule);
-                let padding = tip.width.saturating_sub(text_width) / 2;
-                paint_host_ui_text(
-                    &mut surface,
-                    tip.x.saturating_add(padding),
-                    tip.y.saturating_add(tip.height / 2).saturating_sub(7),
-                    &title,
-                    text,
-                    tip_size,
-                    tip.width.saturating_sub(padding),
-                );
-            }
-        }
 
         let active_id = self.workspace.active().map(|id| id.get()).unwrap_or(0);
         let input_y = layout.composer.y;
@@ -1016,6 +644,413 @@ impl ConApp {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn paint_workspace_chrome(
+        &self,
+        surface: &mut Surface<'_>,
+        layout: ui::Layout,
+        width: u32,
+        height: u32,
+        scale: f64,
+        font_logical: f64,
+    ) {
+        let t = theme::Theme::for_choice(self.ui_theme);
+        let tree_width = layout.sidebar.width;
+        let header_height = layout.tree_header_height;
+        let row_height = layout.tree_row_height;
+        let host_ui_size = |nominal| scaled_host_ui_font(nominal, font_logical, scale);
+        let tree_rule = t.border;
+        let branch = t.branch;
+        let composer_bg = t.composer_bg;
+        let active_bg = t.surface;
+        let accent = t.accent;
+        let error_accent = t.error;
+        let text = t.text;
+        let muted = t.muted;
+        let header_icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
+        paint_header_icon_button(
+            surface,
+            layout.new_root,
+            HeaderIcon::NewRoot,
+            accent,
+            self.hovered_header == Some(HeaderIcon::NewRoot),
+            t.surface,
+            header_icon_size,
+            scale,
+        );
+        paint_header_icon_button(
+            surface,
+            layout.settings,
+            HeaderIcon::Settings,
+            accent,
+            self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
+            t.surface,
+            header_icon_size,
+            scale,
+        );
+        let toggle_icon = HeaderIcon::SidebarToggle {
+            collapsed: layout.sidebar_collapsed,
+        };
+        paint_header_icon_button(
+            surface,
+            layout.sidebar_toggle,
+            toggle_icon,
+            accent,
+            self.hovered_header == Some(toggle_icon),
+            t.surface,
+            header_icon_size,
+            scale,
+        );
+        let panel_icon = HeaderIcon::PanelToggle {
+            open: layout.panel_open,
+        };
+        paint_header_icon_button(
+            surface,
+            layout.panel_toggle,
+            panel_icon,
+            accent,
+            self.hovered_header == Some(panel_icon),
+            t.surface,
+            header_icon_size,
+            scale,
+        );
+        if layout.panel_open {
+            self.paint_history_panel(
+                surface,
+                layout,
+                scale,
+                t,
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
+            );
+        }
+        // A rail row shows `@N` and nothing else, so the hovered row's full
+        // label has to be drawn somewhere; collected here and painted after the
+        // rows so it floats above them.
+        let mut rail_tooltip: Option<(u32, String)> = None;
+
+        let nodes = self.workspace.nodes();
+        let depths = self.workspace.depths();
+        for (visible_index, (node_index, node)) in nodes
+            .iter()
+            .enumerate()
+            .skip(self.tree_scroll_offset)
+            .enumerate()
+        {
+            let y = header_height + visible_index as u32 * row_height;
+            if y >= height {
+                break;
+            }
+            let depth = depths.get(node_index).copied().unwrap_or(0).min(8);
+            let indent = 14 + depth * 18;
+            if self.workspace.active() == Some(node.id) {
+                surface.fill_rect(0, y, tree_width, row_height, active_bg.to_xrgb());
+                surface.fill_rect(0, y, 3, row_height, accent.to_xrgb());
+            }
+            if depth > 0 {
+                let branch_x = indent.saturating_sub(10);
+                surface.fill_rect(branch_x, y, 1, row_height / 2 + 1, branch.to_xrgb());
+                surface.fill_rect(branch_x, y + row_height / 2, 8, 1, branch.to_xrgb());
+            }
+            let session = self.session_for(node.id);
+            // Two lines per row. The name line is the tab's own label: the
+            // user's name when set, otherwise the program it runs (`cmd`, ...),
+            // and finally the node's creation-time label. The title line below
+            // is the terminal's OSC title — what `title` (Windows) or
+            // `printf '\e]0;…'` sets — which is a separate thing and tracks the
+            // shell live.
+            let browser_title = self.browsers.get(&node.id).map(|tab| {
+                let title = if tab.panel().title.is_empty() {
+                    "Browser"
+                } else {
+                    &tab.panel().title
+                };
+                let status = match tab.panel().load {
+                    browser::PageLoad::Loading { .. } => "◌",
+                    browser::PageLoad::Unavailable { .. } => "!",
+                    _ => "◎",
+                };
+                format!("{status} {title}")
+            });
+            let name = tree_row_name(
+                node.custom_title.as_deref(),
+                session.map(|terminal| terminal.program_label()),
+                browser_title.as_deref().unwrap_or(node.title.as_str()),
+            );
+            let title = tree_row_title(session.map(|terminal| terminal.current_title.as_str()));
+            // A child that exited leaves its tab in place (remain-on-exit), so
+            // the row is the only thing that can say the shell is gone. Dim the
+            // label: it reads as inert next to a live tab without moving or
+            // recolouring the row a user is aiming at.
+            // A tab whose shell exited non-zero reads in the error color so a
+            // crash is visible at a glance; a clean exit dims to muted; a live
+            // shell uses the normal text color.
+            let label_color = match session {
+                Some(terminal) if terminal.child_gone => {
+                    if terminal.child_exit_code.unwrap_or(0) != 0 {
+                        error_accent
+                    } else {
+                        muted
+                    }
+                }
+                _ => text,
+            };
+            let mut id = itoa::Buffer::new();
+            let row_active = self.workspace.active() == Some(node.id);
+            let row_hovered = self.hovered_tree_row == Some(node_index);
+            if layout.sidebar_collapsed {
+                // The rail identifies a tab by its stable `@ID` — the same
+                // handle the control CLI uses — so what a user reads here is
+                // what they would type. Depth, branch lines and the close
+                // button are dropped: none of them survive a 44dip column
+                // legibly, and a half-drawn close button is worse than none.
+                let label = ["@", id.format(node.id.get())].concat();
+                let font_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
+                let text_width = host_ui_text_width(&label, font_size);
+                let x = tree_width.saturating_sub(text_width) / 2;
+                let text_h = font::cell_metrics(font_size).height.max(1);
+                paint_host_ui_text(
+                    surface,
+                    x,
+                    y.saturating_add(row_height.saturating_sub(text_h) / 2),
+                    &label,
+                    label_color,
+                    font_size,
+                    tree_width,
+                );
+                if row_hovered {
+                    rail_tooltip = Some((visible_index as u32, name.to_owned()));
+                }
+                continue;
+            }
+            // While this row is being renamed, the label gives way to an inline
+            // editor and the row buttons are hidden so the text gets the width.
+            if let Some(rename) = self
+                .rename
+                .as_ref()
+                .filter(|rename| rename.target == node.id)
+            {
+                let font_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
+                let metrics = font::cell_metrics(font_size);
+                let cell_w = metrics.width.max(1);
+                let cell_h = metrics.height.max(1);
+                let editor_right = tree_width.saturating_sub(8);
+                let avail = editor_right.saturating_sub(indent);
+                if avail > 0 {
+                    let editor = &rename.editor;
+                    let cells = (avail / cell_w).max(1) as usize;
+                    let window = composer::visible_window(
+                        &editor.text,
+                        &editor.preedit,
+                        editor.caret,
+                        1,
+                        cells,
+                    );
+                    let caret = editor.caret.clamp(window.text, editor.text.len());
+                    let plate_h = cell_h.saturating_add(6);
+                    // Centre the single-line editor in the taller row; while the
+                    // rename is live there is no title line to sit under.
+                    let plate_y = y.saturating_add(row_height.saturating_sub(plate_h) / 2);
+                    let text_y = plate_y.saturating_add(3);
+                    surface.fill_rect(
+                        indent.saturating_sub(3),
+                        plate_y,
+                        avail.saturating_add(6),
+                        plate_h,
+                        composer_bg.to_xrgb(),
+                    );
+                    let lead = usize::from(window.truncated);
+                    let cell_x = |cells_used: usize| {
+                        indent.saturating_add(cell_w.saturating_mul((lead + cells_used) as u32))
+                    };
+                    if window.truncated {
+                        paint_host_ui_text(surface, indent, text_y, "…", text, font_size, cell_w);
+                    }
+                    // A selection is drawn as an inverted span — accent plate
+                    // with the text in the editor background color — rather than
+                    // the composer's subtle bg fill, because on entry the whole
+                    // name is selected and a low-contrast tint read as "nothing
+                    // happened". The inversion is theme-independent (accent vs
+                    // bg always contrast). The IME preedit suppresses it, since
+                    // the span offsets would no longer line up.
+                    let selection = editor
+                        .preedit
+                        .is_empty()
+                        .then(|| composer::selection_bounds(editor))
+                        .flatten();
+                    match selection {
+                        Some((sel_start, sel_end)) => {
+                            let vs = sel_start.max(window.text).min(editor.text.len());
+                            let ve = sel_end.max(window.text).min(editor.text.len());
+                            let head = &editor.text[window.text..vs];
+                            let mid = &editor.text[vs..ve];
+                            let tail = &editor.text[ve..];
+                            let head_cells = composer::cells(head);
+                            let mid_cells = composer::cells(mid);
+                            if !head.is_empty() {
+                                paint_host_ui_text(
+                                    surface,
+                                    cell_x(0),
+                                    text_y,
+                                    head,
+                                    text,
+                                    font_size,
+                                    avail,
+                                );
+                            }
+                            if mid_cells > 0 {
+                                let sx = cell_x(head_cells);
+                                let width = cell_w.saturating_mul(mid_cells as u32);
+                                surface.fill_rect(sx, plate_y, width, plate_h, accent.to_xrgb());
+                                paint_host_ui_text(
+                                    surface,
+                                    sx,
+                                    text_y,
+                                    mid,
+                                    composer_bg,
+                                    font_size,
+                                    width,
+                                );
+                            }
+                            if !tail.is_empty() {
+                                paint_host_ui_text(
+                                    surface,
+                                    cell_x(head_cells.saturating_add(mid_cells)),
+                                    text_y,
+                                    tail,
+                                    text,
+                                    font_size,
+                                    avail,
+                                );
+                            }
+                        }
+                        None => {
+                            paint_host_ui_text_parts(
+                                surface,
+                                indent,
+                                text_y,
+                                &[
+                                    &editor.text[window.text..caret],
+                                    &editor.preedit[window.preedit..],
+                                    &editor.text[caret..],
+                                ],
+                                text,
+                                font_size,
+                                avail,
+                            );
+                        }
+                    }
+                    // The caret is a rule, not a character, so text columns stay
+                    // exact — the same choice the composer makes.
+                    let caret_cells = lead
+                        + composer::cells(&editor.text[window.text..caret])
+                        + composer::cells(&editor.preedit[window.preedit..]);
+                    let offset = cell_w
+                        .saturating_mul(caret_cells as u32)
+                        .min(avail.saturating_sub(1));
+                    surface.fill_rect(
+                        indent.saturating_add(offset),
+                        plate_y,
+                        2,
+                        plate_h,
+                        accent.to_xrgb(),
+                    );
+                }
+            } else {
+                // Two stacked lines, centred as a block in the row: the name on
+                // top, the terminal's title under it in the muted color.
+                let name_font = host_ui_size(HOST_UI_TAB_SIZE_PX);
+                let title_font = host_ui_size(HOST_UI_SUBTITLE_SIZE_PX);
+                let name_h = font::cell_metrics(name_font).height.max(1);
+                let title_h = font::cell_metrics(title_font).height.max(1);
+                let block_h = name_h.saturating_add(if title.is_some() { title_h } else { 0 });
+                let top = y.saturating_add(row_height.saturating_sub(block_h) / 2);
+                // Three row buttons (edit, new-child, close) now sit at the
+                // right edge; keep the label clipped clear of all of them.
+                let text_width = tree_width.saturating_sub(indent).saturating_sub(82);
+                paint_host_ui_text_parts_clipped(
+                    surface,
+                    indent,
+                    top,
+                    &["@", id.format(node.id.get()), "  ", name],
+                    label_color,
+                    name_font,
+                    text_width,
+                );
+                if let Some(title) = title {
+                    paint_host_ui_text_parts_clipped(
+                        surface,
+                        indent,
+                        top.saturating_add(name_h),
+                        &[title],
+                        muted,
+                        title_font,
+                        text_width,
+                    );
+                }
+                if row_active || row_hovered {
+                    let edit = layout.tree_edit_rect(visible_index, scale);
+                    let child = layout.tree_child_rect(visible_index, scale);
+                    let close = layout.tree_close_rect(visible_index, scale);
+                    // A hover plate behind each glyph so it reads as a button,
+                    // not floating text.
+                    if row_hovered {
+                        for plate in [edit, child, close] {
+                            surface.fill_rect(
+                                plate.x,
+                                plate.y,
+                                plate.width,
+                                plate.height,
+                                active_bg.to_xrgb(),
+                            );
+                        }
+                    }
+                    paint_edit_glyph(surface, edit, text, scale);
+                    // The new-child button between edit and close: the same
+                    // "+" the header's New uses, scoped to this row
+                    // (Ctrl+Shift+N's pointer twin).
+                    paint_host_ui_text(
+                        surface,
+                        child.x + 6,
+                        child.y + 3,
+                        "+",
+                        text,
+                        host_ui_size(HOST_UI_CLOSE_SIZE_PX),
+                        child.width.saturating_sub(6),
+                    );
+                    paint_host_ui_text(
+                        surface,
+                        close.x + 6,
+                        close.y + 3,
+                        "x",
+                        text,
+                        host_ui_size(HOST_UI_CLOSE_SIZE_PX),
+                        close.width.saturating_sub(6),
+                    );
+                }
+            }
+        }
+
+        if let Some((visible_row, title)) = rail_tooltip {
+            let tip_size = host_ui_size(HOST_UI_TAB_SIZE_PX);
+            let text_width = host_ui_text_width(&title, tip_size);
+            if let Some(tip) = ui::rail_tooltip_rect(layout, visible_row, text_width, width, scale)
+            {
+                surface.fill_rect(tip.x, tip.y, tip.width, tip.height, active_bg.to_xrgb());
+                stroke_rect(surface, tip, 1, tree_rule);
+                let padding = tip.width.saturating_sub(text_width) / 2;
+                paint_host_ui_text(
+                    surface,
+                    tip.x.saturating_add(padding),
+                    tip.y.saturating_add(tip.height / 2).saturating_sub(7),
+                    &title,
+                    text,
+                    tip_size,
+                    tip.width.saturating_sub(padding),
+                );
+            }
+        }
+    }
+
     /// Browser tab shell: same sidebar as the terminal host, one content panel.
     /// A native child WebView covers the content rectangle when available; this
     /// paint remains the typed Unavailable surface. The proxy line is the
@@ -1047,115 +1082,149 @@ impl ConApp {
             height,
             t.border.to_xrgb(),
         );
-        let icon_size = host_ui_size(HOST_UI_HEADER_SIZE_PX);
-        for (button, icon, selected) in [
-            (
-                layout.new_root,
-                HeaderIcon::NewRoot,
-                self.hovered_header == Some(HeaderIcon::NewRoot),
-            ),
-            (
-                layout.settings,
-                HeaderIcon::Settings,
-                self.settings_open || self.hovered_header == Some(HeaderIcon::Settings),
-            ),
+        self.paint_workspace_chrome(
+            &mut surface,
+            layout,
+            width,
+            height,
+            scale,
+            self.session_seed.font_size_logical(),
+        );
+        let toolbar = layout.browser_toolbar(scale);
+        let address = layout.browser_address(scale);
+        surface.fill_rect(
+            toolbar.x,
+            toolbar.y,
+            toolbar.width,
+            toolbar.height,
+            t.sidebar_bg.to_xrgb(),
+        );
+        let size = host_ui_size(14);
+        for (index, label, enabled) in [
+            (0, "←", self.browser_can_back),
+            (1, "→", self.browser_can_forward),
+            (2, "↻", true),
         ] {
-            paint_header_icon_button(
-                &mut surface,
-                button,
-                icon,
-                t.text,
-                selected,
-                t.surface,
-                icon_size,
-                scale,
-            );
-        }
-        let row_height = layout.tree_row_height;
-        let label_size = host_ui_size(13);
-        for (visible_index, node) in self
-            .workspace
-            .nodes()
-            .iter()
-            .skip(self.tree_scroll_offset)
-            .enumerate()
-        {
-            let y = layout.tree_header_height + visible_index as u32 * row_height;
-            if y >= height {
-                break;
-            }
-            if self.workspace.active() == Some(node.id) {
-                surface.fill_rect(0, y, layout.sidebar.width, row_height, t.surface.to_xrgb());
-                surface.fill_rect(0, y, 3, row_height, t.accent.to_xrgb());
-            }
-            let session = self.session_for(node.id);
-            let name = tree_row_name(
-                node.custom_title.as_deref(),
-                session.map(|terminal| terminal.program_label()),
-                node.title.as_str(),
-            );
             paint_host_ui_text(
                 &mut surface,
-                16,
-                y + 4,
-                name,
-                t.text,
-                label_size,
-                layout.sidebar.width.saturating_sub(24),
+                toolbar.x + ((index * 34 + 10) as f64 * scale) as u32,
+                (12.0 * scale) as u32,
+                label,
+                if enabled { t.text } else { t.muted },
+                size,
+                (24.0 * scale) as u32,
             );
         }
-        let proxy = self.browser_proxy();
-        let body = host_ui_size(16);
-        let x = layout.sidebar.width.saturating_add(24);
-        let content_width = width.saturating_sub(x).saturating_sub(16);
-        paint_host_ui_text(
-            &mut surface,
-            x,
-            48,
-            "Browser",
-            t.text,
-            host_ui_size(20),
-            content_width,
-        );
-        paint_host_ui_text(
-            &mut surface,
-            x,
-            84,
-            "1 tab · 1 panel",
-            t.muted,
-            body,
-            content_width,
-        );
-        paint_host_ui_text(
-            &mut surface,
-            x,
-            112,
-            &proxy.summary(),
-            t.muted,
-            body,
-            content_width,
-        );
-        paint_host_ui_text(
-            &mut surface,
-            x,
-            140,
-            "page host: native content panel",
-            t.muted,
-            body,
-            content_width,
+        surface.fill_rect(
+            address.x,
+            address.y,
+            address.width,
+            address.height,
+            t.canvas_bg.to_xrgb(),
         );
         let tab = self
             .workspace
             .active()
             .and_then(|id| self.browsers.get(&id));
-        let url = tab
-            .and_then(|tab| tab.panel().url.clone())
-            .unwrap_or_else(|| "(no url)".to_owned());
-        let load = tab
-            .map(|tab| tab.load_summary())
-            .unwrap_or_else(|| "page: idle".to_owned());
-        paint_host_ui_text(&mut surface, x, 176, &url, t.text, body, content_width);
-        paint_host_ui_text(&mut surface, x, 204, &load, t.muted, body, content_width);
+        let url = tab.and_then(|tab| tab.panel().url.as_deref()).unwrap_or("");
+        let text_x = address.x + (8.0 * scale) as u32;
+        let text_y = address.y + (7.0 * scale) as u32;
+        let avail = address.width.saturating_sub((16.0 * scale) as u32);
+        if let Some(editor) = &self.browser_address {
+            let cell_w = font::cell_metrics(size).width.max(1);
+            let view = composer::visible_window(
+                &editor.text,
+                &editor.preedit,
+                editor.caret,
+                1,
+                (avail / cell_w).max(1) as usize,
+            );
+            if let Some((start, end)) = composer::selection_bounds(editor) {
+                let start = start.max(view.text);
+                let end = end.max(view.text);
+                let x =
+                    (composer::cells(&editor.text[view.text..start]) as u32 * cell_w).min(avail);
+                let width = (composer::cells(&editor.text[start..end]) as u32 * cell_w)
+                    .min(avail.saturating_sub(x));
+                surface.fill_rect(
+                    text_x + x,
+                    text_y,
+                    width,
+                    (18.0 * scale) as u32,
+                    t.surface.to_xrgb(),
+                );
+            }
+            let caret = editor.caret.clamp(view.text, editor.text.len());
+            let displayed = format!(
+                "{}{}{}",
+                &editor.text[view.text..caret],
+                &editor.preedit[view.preedit..],
+                &editor.text[caret..]
+            );
+            paint_host_ui_text(
+                &mut surface,
+                text_x,
+                text_y,
+                &displayed,
+                t.text,
+                size,
+                avail,
+            );
+            let caret = editor.caret.clamp(view.text, editor.text.len());
+            let cells = composer::cells(&editor.text[view.text..caret])
+                + composer::cells(&editor.preedit[view.preedit..]);
+            surface.fill_rect(
+                text_x + (cells as u32 * cell_w).min(avail),
+                text_y,
+                1.max(scale as u32),
+                (18.0 * scale) as u32,
+                t.accent.to_xrgb(),
+            );
+        } else {
+            paint_host_ui_text(
+                &mut surface,
+                text_x,
+                text_y,
+                if url.is_empty() { "Enter a URL" } else { url },
+                if url.is_empty() { t.muted } else { t.text },
+                size,
+                avail,
+            );
+        }
+        if let Some(tab) = tab {
+            let message = match &tab.panel().load {
+                browser::PageLoad::Unavailable { reason, .. } => {
+                    format!("Unable to open this page · {reason} · Reload to retry")
+                }
+                browser::PageLoad::Loading { .. } => "Loading…".to_owned(),
+                _ => "Enter a URL above, or Ctrl+click a link in a terminal.".to_owned(),
+            };
+            paint_host_ui_text(
+                &mut surface,
+                toolbar.x + 24,
+                toolbar.height + 28,
+                &message,
+                t.muted,
+                size,
+                toolbar.width.saturating_sub(48),
+            );
+        }
+        if self.settings_open {
+            let restart_cost = self.ui_language.restart_cost(self.workspace.nodes().len());
+            paint_settings_panel(
+                &mut surface,
+                layout,
+                scale,
+                t,
+                self.ui_language,
+                self.ui_theme,
+                self.ui_language.help_lines(),
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
+                self.font_zoom_percent(),
+                &self.update,
+                &restart_cost,
+            );
+        }
     }
 
     pub(crate) fn paint_empty_workspace(

@@ -22,6 +22,11 @@
 /// unbounded header.
 const PROXY_VALUE_MAX_BYTES: usize = 512;
 
+#[cfg(target_os = "linux")]
+mod embedded_program;
+#[cfg(target_os = "linux")]
+pub use embedded_program::EmbeddedPageProgram;
+
 #[cfg(all(feature = "native-page-host", any(target_os = "macos", windows)))]
 mod native_page;
 #[cfg(all(feature = "native-page-host", any(target_os = "macos", windows)))]
@@ -49,6 +54,9 @@ pub enum PageLoad {
     Idle,
     /// `program --load url` was spawned. The page itself is in that process.
     Loading {
+        url: String,
+    },
+    Ready {
         url: String,
     },
     /// No host, or the host refused. The OS browser is not a fallback.
@@ -95,7 +103,25 @@ impl BrowserTab {
     }
 
     pub fn note_load(&mut self, load: PageLoad) {
+        match &load {
+            PageLoad::Loading { url }
+            | PageLoad::Ready { url }
+            | PageLoad::Unavailable { url, .. }
+                if !url.is_empty() =>
+            {
+                self.panel.url = Some(url.clone());
+            }
+            _ => {}
+        }
         self.panel.load = load;
+    }
+
+    pub fn note_title(&mut self, title: &str) {
+        self.panel.title = title
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(256)
+            .collect();
     }
 
     /// One line for the content panel. The chrome sent-history panel does not use this.
@@ -103,6 +129,7 @@ impl BrowserTab {
         match &self.panel.load {
             PageLoad::Idle => "page: idle".to_owned(),
             PageLoad::Loading { url } => format!("page: loading {url}"),
+            PageLoad::Ready { url } => format!("page: ready {url}"),
             PageLoad::Unavailable { url, reason } => {
                 format!("page: unavailable ({reason}) {url}")
             }
@@ -368,11 +395,23 @@ pub fn spawn_page_host_in_panel(
         );
     }
     let mut command = std::process::Command::new(program);
+    let ipc = slot.is_some();
     command
         .args(args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
+        .stdin(if ipc {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
+        .stdout(if ipc {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
         .stderr(std::process::Stdio::null());
+    if ipc {
+        command.env("MINICON_BROWSER_HOST_IPC", "1");
+    }
     if let Some(proxy) = proxy {
         apply_proxy_env(&mut command, proxy);
     }

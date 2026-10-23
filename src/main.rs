@@ -20,6 +20,9 @@
 mod a11y;
 mod agent_interface;
 mod browser;
+#[cfg(target_os = "linux")]
+mod browser_process;
+mod browser_ui;
 use minicon_core::{composer, json, keymap};
 
 mod host_paint;
@@ -821,9 +824,18 @@ struct ConApp {
     /// Browser tabs have no PTY. Keyed by the same [`workspace::TabId`] as
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
+    browser_address: Option<composer::ComposerState>,
+    browser_can_back: bool,
+    browser_can_forward: bool,
+    browser_load_deadline: Option<Instant>,
+    browser_visible: Option<bool>,
     /// Child wry page host for the one browser content panel.
     /// `MINICON_BROWSER_BIN` names it. Unset stays Unavailable, not `host_open`.
     browser_page: Option<std::process::Child>,
+    #[cfg(target_os = "linux")]
+    browser_process: Option<browser_process::BrowserProcess>,
+    #[cfg(target_os = "linux")]
+    browser_embedded_program: Option<browser::EmbeddedPageProgram>,
     /// Native WebView attached directly below this window's browser tab.
     /// The WebView implementation stays inside `minicon-web`; core/headless
     /// code never sees or links its native types.
@@ -1325,7 +1337,16 @@ impl ConApp {
             workspace,
             sessions,
             browsers: SessionStore::default(),
+            browser_address: None,
+            browser_can_back: false,
+            browser_can_forward: false,
+            browser_load_deadline: None,
+            browser_visible: None,
             browser_page: None,
+            #[cfg(target_os = "linux")]
+            browser_process: None,
+            #[cfg(target_os = "linux")]
+            browser_embedded_program: None,
             #[cfg(any(target_os = "macos", windows))]
             native_browser_page: None,
             #[cfg(any(target_os = "macos", windows))]
@@ -1485,6 +1506,15 @@ impl ConApp {
     }
 
     fn stop_page_host(&mut self) {
+        self.browser_visible = None;
+        self.browser_load_deadline = None;
+        self.browser_address = None;
+        self.browser_can_back = false;
+        self.browser_can_forward = false;
+        #[cfg(target_os = "linux")]
+        {
+            self.browser_process = None;
+        }
         #[cfg(any(target_os = "macos", windows))]
         {
             self.native_browser_page = None;
@@ -1492,6 +1522,10 @@ impl ConApp {
         if let Some(mut child) = self.browser_page.take() {
             let _ = child.kill();
             let _ = child.wait();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            self.browser_embedded_program = None;
         }
     }
 
@@ -1525,13 +1559,25 @@ impl ConApp {
         #[cfg(any(target_os = "macos", windows))]
         if let Some(page) = self.native_browser_page.as_ref() {
             let _ = page.set_slot(slot);
-            let _ = page.set_visible(self.active_is_browser());
+            let _ = page.set_visible(self.browser_page_visible());
         }
         #[cfg(all(unix, not(target_os = "macos")))]
         {
             browser::resize_embedded_page(slot);
-            browser::set_embedded_page_visible(slot.parent, self.active_is_browser());
+            browser::set_embedded_page_visible(slot.parent, self.browser_page_visible());
         }
+    }
+
+    fn browser_page_visible(&self) -> bool {
+        self.active_is_browser()
+            && !self.settings_open
+            && !self
+                .workspace
+                .browser_tab()
+                .and_then(|id| self.browsers.get(&id))
+                .is_some_and(|tab| {
+                    matches!(tab.panel().load, browser::PageLoad::Unavailable { .. })
+                })
     }
 
     fn host_font_logical(&self) -> f64 {
@@ -1558,7 +1604,14 @@ impl ConApp {
 
     fn refresh_title(&mut self, window: &PixelWindow) -> Result<(), PixelWindowError> {
         if self.active_is_browser() {
-            let title = "MiniCon — browser".to_owned();
+            let page_title = self
+                .workspace
+                .browser_tab()
+                .and_then(|id| self.browsers.get(&id))
+                .map(|tab| tab.panel().title.as_str())
+                .filter(|title| !title.is_empty())
+                .unwrap_or("Browser");
+            let title = format!("MiniCon — {page_title}");
             window.set_title(&title);
             self.current_window_title = title;
             self.mark_a11y_dirty();
@@ -2170,7 +2223,7 @@ impl ConApp {
                 metrics.physical_height,
                 metrics.scale_factor,
             )
-            .content_column()?;
+            .browser_page(metrics.scale_factor)?;
         Some(browser::PanelSlot {
             parent,
             x: i32::try_from(column.x).unwrap_or(0),
@@ -2195,7 +2248,10 @@ impl ConApp {
             });
             return;
         };
-        match browser::NativePageHost::new(slot, &self.browser_proxy()) {
+        let waker = window.waker();
+        match browser::NativePageHost::new(slot, &self.browser_proxy(), move || {
+            let _ = waker.wake();
+        }) {
             Ok(page) => {
                 let _ = page.set_visible(self.active_is_browser());
                 self.native_browser_page = Some(page);
@@ -2231,6 +2287,20 @@ impl ConApp {
     /// Ask the wry page host to load `url` into the active browser content panel.
     #[cfg(all(unix, not(target_os = "macos")))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
+        #[cfg(target_os = "linux")]
+        if let Some(process) = &self.browser_process {
+            let load = match process.send("load", Some(url)) {
+                Ok(()) => browser::PageLoad::Loading {
+                    url: url.to_owned(),
+                },
+                Err(reason) => browser::PageLoad::Unavailable {
+                    url: url.to_owned(),
+                    reason,
+                },
+            };
+            self.note_page_load(load);
+            return;
+        }
         if let Some(mut child) = self.browser_page.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -2238,7 +2308,27 @@ impl ConApp {
         let explicit = std::env::var_os("MINICON_BROWSER_BIN").map(std::path::PathBuf::from);
         let current_exe =
             std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("minicon"));
-        let Some(program) = browser::page_host_program(explicit.as_deref(), &current_exe) else {
+        let mut program = browser::page_host_program(explicit.as_deref(), &current_exe);
+        #[cfg(target_os = "linux")]
+        {
+            let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/minicon-web-host.bin"));
+            if program.is_none() || (explicit.is_none() && !bytes.is_empty()) {
+                match browser::EmbeddedPageProgram::new(bytes) {
+                    Ok(embedded) => {
+                        program = Some(embedded.path());
+                        self.browser_embedded_program = Some(embedded);
+                    }
+                    Err(reason) => {
+                        self.note_page_load(browser::PageLoad::Unavailable {
+                            url: url.to_owned(),
+                            reason,
+                        });
+                        return;
+                    }
+                }
+            }
+        }
+        let Some(program) = program else {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: url.to_owned(),
                 reason: "browser-host-not-configured".to_owned(),
@@ -2246,17 +2336,32 @@ impl ConApp {
             return;
         };
         let proxy = self.browser_proxy();
+        let Some(slot) = self.content_panel_slot(window) else {
+            self.note_page_load(browser::PageLoad::Unavailable {
+                url: url.to_owned(),
+                reason: "browser-parent-unavailable".to_owned(),
+            });
+            return;
+        };
         match browser::spawn_page_host_in_panel(
             std::path::Path::new(&program),
             url,
             Some(&proxy),
-            self.content_panel_slot(window),
+            Some(slot),
         ) {
             Ok(mut child) => match child.try_wait() {
                 Ok(Some(status)) => {
                     self.note_page_load(browser::page_load_from_exit(url, status.code()));
                 }
                 _ => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        let waker = window.waker();
+                        self.browser_process =
+                            browser_process::BrowserProcess::attach(&mut child, move || {
+                                let _ = waker.wake();
+                            });
+                    }
                     self.browser_page = Some(child);
                     self.note_page_load(browser::PageLoad::Loading {
                         url: url.to_owned(),
@@ -2273,6 +2378,11 @@ impl ConApp {
     }
 
     fn note_page_load(&mut self, load: browser::PageLoad) {
+        self.browser_load_deadline = if matches!(load, browser::PageLoad::Loading { .. }) {
+            Some(Instant::now() + Duration::from_secs(30))
+        } else {
+            None
+        };
         let Some(id) = self.workspace.active() else {
             return;
         };
@@ -2620,6 +2730,10 @@ impl ConApp {
             return Ok(true);
         }
         if text.eq_ignore_ascii_case("i") {
+            if self.active_is_browser() {
+                self.focus_browser_address(window);
+                return Ok(true);
+            }
             if self.workspace.active().is_none() {
                 return Ok(true);
             }
@@ -3124,7 +3238,7 @@ impl ConApp {
         window: &PixelWindow,
         event: &PixelWindowEvent,
     ) -> Option<TextInputOutcome> {
-        if !self.composer.focused {
+        if self.active_is_browser() || !self.composer.focused {
             return None;
         }
         match event {
@@ -3726,6 +3840,9 @@ impl PixelWindowApplication for ConApp {
         {
             return Ok(PixelWindowDirective::Continue);
         }
+        if self.route_browser_input(window, &event)? {
+            return Ok(PixelWindowDirective::Continue);
+        }
         // Escape closes the settings panel — the expected modal dismissal —
         // before the key reaches the composer or terminal.
         if self.settings_open
@@ -4007,6 +4124,9 @@ impl PixelWindowApplication for ConApp {
                 return Ok(PixelWindowDirective::Continue);
             }
             if self.handle_tree_pointer(window, position)? {
+                return Ok(PixelWindowDirective::Continue);
+            }
+            if self.active_is_browser() {
                 return Ok(PixelWindowDirective::Continue);
             }
             if self.workspace.active().is_none() {
@@ -4462,6 +4582,16 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Exit);
         }
         #[cfg(any(target_os = "macos", windows))]
+        self.drain_browser_state(window);
+        #[cfg(target_os = "linux")]
+        self.drain_browser_process(window);
+        self.expire_browser_load(window, now);
+        let visible = self.browser_page_visible();
+        if self.browser_visible != Some(visible) {
+            self.browser_visible = Some(visible);
+            self.sync_embedded_page(window);
+        }
+        #[cfg(any(target_os = "macos", windows))]
         if self.browser_geometry_dirty {
             self.browser_geometry_dirty = false;
             self.sync_embedded_page(window);
@@ -4499,6 +4629,7 @@ impl PixelWindowApplication for ConApp {
         let control_deadline = control_deadline
             .into_iter()
             .chain(presentation_deadline)
+            .chain(self.browser_load_deadline)
             .min();
         if self.workspace.active().is_none() || self.active_is_browser() {
             return Ok(control_deadline

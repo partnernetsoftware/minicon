@@ -72,6 +72,7 @@ impl ConApp {
                                         let (load, reason) = match &panel.load {
                                             browser::PageLoad::Idle => ("idle", None),
                                             browser::PageLoad::Loading { .. } => ("loading", None),
+                                            browser::PageLoad::Ready { .. } => ("ready", None),
                                             browser::PageLoad::Unavailable { reason, .. } => {
                                                 ("unavailable", Some(reason.as_str()))
                                             }
@@ -85,6 +86,9 @@ impl ConApp {
                                                     .map_or(json::JsonValue::Null, Into::into),
                                             ),
                                             ("load", load.into()),
+                                            ("title", panel.title.as_str().into()),
+                                            ("can_back", self.browser_can_back.into()),
+                                            ("can_forward", self.browser_can_forward.into()),
                                             (
                                                 "reason",
                                                 reason.map_or(json::JsonValue::Null, Into::into),
@@ -308,6 +312,7 @@ impl ConApp {
                 if matches!(event, minicon_platform::ime::ImeEvent::Commit(_))
                     && self.rename.is_none()
                     && !self.composer.focused
+                    && self.browser_address.is_none()
                 {
                     let session = self.active_session().map_err(|error| error.to_string())?;
                     session.ensure_pty_input_open()?;
@@ -327,6 +332,8 @@ impl ConApp {
                 // it.
                 let route = if self.rename.is_some() {
                     "rename"
+                } else if self.browser_address.is_some() {
+                    "browser_address"
                 } else if self.composer.focused {
                     "composer"
                 } else {

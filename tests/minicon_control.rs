@@ -12,7 +12,6 @@ static UNIQUE: AtomicU64 = AtomicU64::new(1);
 #[path = "support/owned_console_gui.rs"]
 mod owned_console_gui;
 
-#[cfg(windows)]
 #[path = "support/browser_windows.rs"]
 mod browser_windows;
 

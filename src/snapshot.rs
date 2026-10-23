@@ -36,112 +36,142 @@ impl ConApp {
                 // composer top with no overlap" — verifiable from the
                 // control plane on any live window, including a headless
                 // session with no GPU where a screenshot never rasterizes.
-                let geometry = self.active_session_opt().map(|session| {
-                    let scrollbar = ui::terminal_scrollbar_width(metrics.scale_factor);
-                    // Frame extent comes from the live window metrics, not
-                    // the session's paint-time `frame_*` fields: those stay
-                    // zero until the first present, so a headless or
-                    // not-yet-painted window would otherwise report a
-                    // zero-size viewport and defeat the very check this
-                    // exists for. Content insets are set at layout time
-                    // (not paint time), so pairing them with live metrics
-                    // yields the true viewport in every state.
-                    let frame_w = metrics.physical_width;
-                    let frame_h = metrics.physical_height;
-                    let viewport = ui::Rect {
-                        x: session.content_left_px,
-                        y: session.content_top_px,
-                        width: frame_w
-                            .saturating_sub(session.content_left_px)
-                            .saturating_sub(scrollbar)
-                            .saturating_sub(session.content_right_px),
-                        height: frame_h
-                            .saturating_sub(session.content_top_px)
-                            .saturating_sub(session.content_bottom_px),
-                    };
-                    json::object(vec![
-                        (
-                            "pty_backend",
-                            session
-                                .pty_backend()
-                                .map_or(json::JsonValue::Null, Into::into),
-                        ),
-                        // Integer permille (1500 == 1.5x) to keep float
-                        // formatting out of the release binary, matching
-                        // the delivery module's f64-removal discipline.
-                        (
-                            "scale_permille",
-                            (minicon_core::numeric::round_f64(session.scale * 1000.0) as u64)
-                                .into(),
-                        ),
-                        (
-                            "frame",
-                            json::object(vec![
-                                ("width", frame_w.into()),
-                                ("height", frame_h.into()),
-                            ]),
-                        ),
-                        ("terminal_viewport", rect_obj(viewport)),
-                        ("composer_band", rect_obj(layout.composer)),
-                        ("status_band", rect_obj(layout.status)),
-                        ("history_panel_band", rect_obj(layout.panel)),
-                        // Where the notes scratchpad sits inside the
-                        // open panel, physical pixels — the notes
-                        // journey clicks this instead of re-deriving
-                        // the panel's section math.
-                        (
-                            "notes_area",
-                            if layout.panel_open {
-                                let p = layout.history_panel(metrics.scale_factor);
-                                rect_obj(p.notes.area)
-                            } else {
-                                json::JsonValue::Null
-                            },
-                        ),
-                        ("panel_toggle", rect_obj(layout.panel_toggle)),
-                        ("sidebar", rect_obj(layout.sidebar)),
-                        ("tree_header_height", layout.tree_header_height.into()),
-                        ("tree_row_height", layout.tree_row_height.into()),
-                        (
-                            "tree_edit_button",
-                            // Where the active row's rename (pencil)
-                            // button sits, in window physical pixels —
-                            // or null with no active row or when that
-                            // row is scrolled out of the tree. The
-                            // rename journey clicks this instead of
-                            // re-deriving the tree's button math, the
-                            // same way terminal_viewport spares tests
-                            // the inset arithmetic.
-                            self.workspace
-                                .active()
-                                .map_or(json::JsonValue::Null, |active| {
-                                    self.workspace
-                                        .nodes()
-                                        .iter()
-                                        .position(|node| node.id == active)
-                                        .and_then(|index| {
-                                            index.checked_sub(self.tree_scroll_offset)
-                                        })
-                                        .filter(|visible| *visible < layout.tree_capacity())
-                                        .map_or(json::JsonValue::Null, |visible| {
-                                            rect_obj(
-                                                layout
-                                                    .tree_edit_rect(visible, metrics.scale_factor),
-                                            )
-                                        })
-                                }),
-                        ),
-                        (
-                            "grid",
-                            json::object(vec![
-                                ("cols", session.cols.into()),
-                                ("rows", session.rows.into()),
-                                ("cell_w", session.cell_w.into()),
-                                ("cell_h", session.cell_h.into()),
-                            ]),
-                        ),
-                    ])
-                });
+                let geometry = self
+                    .active_session_opt()
+                    .map(|session| {
+                        let scrollbar = ui::terminal_scrollbar_width(metrics.scale_factor);
+                        // Frame extent comes from the live window metrics, not
+                        // the session's paint-time `frame_*` fields: those stay
+                        // zero until the first present, so a headless or
+                        // not-yet-painted window would otherwise report a
+                        // zero-size viewport and defeat the very check this
+                        // exists for. Content insets are set at layout time
+                        // (not paint time), so pairing them with live metrics
+                        // yields the true viewport in every state.
+                        let frame_w = metrics.physical_width;
+                        let frame_h = metrics.physical_height;
+                        let viewport = ui::Rect {
+                            x: session.content_left_px,
+                            y: session.content_top_px,
+                            width: frame_w
+                                .saturating_sub(session.content_left_px)
+                                .saturating_sub(scrollbar)
+                                .saturating_sub(session.content_right_px),
+                            height: frame_h
+                                .saturating_sub(session.content_top_px)
+                                .saturating_sub(session.content_bottom_px),
+                        };
+                        json::object(vec![
+                            (
+                                "pty_backend",
+                                session
+                                    .pty_backend()
+                                    .map_or(json::JsonValue::Null, Into::into),
+                            ),
+                            // Integer permille (1500 == 1.5x) to keep float
+                            // formatting out of the release binary, matching
+                            // the delivery module's f64-removal discipline.
+                            (
+                                "scale_permille",
+                                (minicon_core::numeric::round_f64(session.scale * 1000.0) as u64)
+                                    .into(),
+                            ),
+                            (
+                                "frame",
+                                json::object(vec![
+                                    ("width", frame_w.into()),
+                                    ("height", frame_h.into()),
+                                ]),
+                            ),
+                            ("terminal_viewport", rect_obj(viewport)),
+                            ("composer_band", rect_obj(layout.composer)),
+                            ("status_band", rect_obj(layout.status)),
+                            ("history_panel_band", rect_obj(layout.panel)),
+                            // Where the notes scratchpad sits inside the
+                            // open panel, physical pixels — the notes
+                            // journey clicks this instead of re-deriving
+                            // the panel's section math.
+                            (
+                                "notes_area",
+                                if layout.panel_open {
+                                    let p = layout.history_panel(metrics.scale_factor);
+                                    rect_obj(p.notes.area)
+                                } else {
+                                    json::JsonValue::Null
+                                },
+                            ),
+                            ("panel_toggle", rect_obj(layout.panel_toggle)),
+                            ("sidebar", rect_obj(layout.sidebar)),
+                            ("tree_header_height", layout.tree_header_height.into()),
+                            ("tree_row_height", layout.tree_row_height.into()),
+                            (
+                                "tree_edit_button",
+                                // Where the active row's rename (pencil)
+                                // button sits, in window physical pixels —
+                                // or null with no active row or when that
+                                // row is scrolled out of the tree. The
+                                // rename journey clicks this instead of
+                                // re-deriving the tree's button math, the
+                                // same way terminal_viewport spares tests
+                                // the inset arithmetic.
+                                self.workspace
+                                    .active()
+                                    .map_or(json::JsonValue::Null, |active| {
+                                        self.workspace
+                                            .nodes()
+                                            .iter()
+                                            .position(|node| node.id == active)
+                                            .and_then(|index| {
+                                                index.checked_sub(self.tree_scroll_offset)
+                                            })
+                                            .filter(|visible| *visible < layout.tree_capacity())
+                                            .map_or(json::JsonValue::Null, |visible| {
+                                                rect_obj(
+                                                    layout.tree_edit_rect(
+                                                        visible,
+                                                        metrics.scale_factor,
+                                                    ),
+                                                )
+                                            })
+                                    }),
+                            ),
+                            (
+                                "grid",
+                                json::object(vec![
+                                    ("cols", session.cols.into()),
+                                    ("rows", session.rows.into()),
+                                    ("cell_w", session.cell_w.into()),
+                                    ("cell_h", session.cell_h.into()),
+                                ]),
+                            ),
+                        ])
+                    })
+                    .or_else(|| {
+                        if !self.active_is_browser() {
+                            return None;
+                        }
+                        let page = layout.browser_page(metrics.scale_factor)?;
+                        Some(json::object(vec![
+                            ("browser_page", rect_obj(page)),
+                            (
+                                "browser_toolbar",
+                                rect_obj(layout.browser_toolbar(metrics.scale_factor)),
+                            ),
+                            (
+                                "browser_address",
+                                rect_obj(layout.browser_address(metrics.scale_factor)),
+                            ),
+                            ("address_focused", self.browser_address.is_some().into()),
+                            ("sidebar", rect_obj(layout.sidebar)),
+                            ("history_panel_band", rect_obj(layout.panel)),
+                            (
+                                "scale_permille",
+                                (minicon_core::numeric::round_f64(metrics.scale_factor * 1000.0)
+                                    as u64)
+                                    .into(),
+                            ),
+                        ]))
+                    });
                 json::object(vec![
                     ("active", tab_id_json(self.workspace.active())),
                     ("workspace_empty", self.workspace.active().is_none().into()),

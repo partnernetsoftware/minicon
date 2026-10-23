@@ -1,12 +1,12 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: in progress; console scope and the Linux browser adapter are qualified,
-and the canonical macOS arm64 dev build visibly hosts WKWebView in the same
-content column. Owner use on 2026-10-23 rejected the current browser UI/UX;
-the macOS build is an engineering spike, not an accepted product surface.
-UX redesign/acceptance, automated/second-ISA macOS, cross-platform artifacts
-and Windows arm64 runtime evidence remain open. A local Windows x86_64 dev
-journey is recorded below. No publish. Owner decision
+Status: in progress. The replacement browser workspace is implemented and has
+local Windows x86_64 address/navigation/failure evidence. Native qualification
+of its current cross-platform artifacts and owner UX review remain open.
+The owner has authorized completing 0.2.21 through public publication; see
+"Publication continuation" below. The earlier macOS diagnostic scaffold was
+rejected, and its mechanical receipts are not acceptance of the replacement.
+Owner decision
 (2026-10-23): Windows adapter bring-up precedes the `{UX-BASELINE}` proposal;
 UX acceptance remains a separate Candidate gate.
 Opened 2026-10-23. v0.2.20 shipped
@@ -15,7 +15,8 @@ has two tracks on `main`; implementation commits `960853b` and `ade9a4d`
 carry them, run `39917026302` qualifies the six-cell console scope at
 `3db5710`, and run `39925651159` qualifies the Linux native browser runtime at
 `4577c9c`.
-G4 and G6 stay in [carried debt](plan-carried-debt.md). Do not publish.
+G4 and G6 stay in [carried debt](plan-carried-debt.md). Publication follows the
+qualified exact-source chain after the open gates close.
 
 Track A: `minicon-console` runs on every shipped cell, and a Linux-only
 path fails the Linux cell even when Windows and macOS are green.
@@ -150,9 +151,9 @@ preview, wasm, and 1:N panels stay later
 
 ```text
 Outcome: a canonical MiniCon build opens one interactive browser page inside the active tab's content column on every desktop 0.2.21 claims, and OAuth loopback stays local
-├── [v] {SHELL} One browser tab, one content-panel rectangle
-│   invariant: Ctrl+Shift+O focuses the existing browser tab instead of inserting another; Layout::content_column stays below the header, above the composer and clear of sidebar/history chrome
-│   evidence: a_browser_tab_is_a_root_peer_of_a_terminal_tab; content_column_is_the_terminal_rectangle
+├── [-] {SHELL} One browser tab, one content-panel rectangle
+│   invariant: Ctrl+Shift+O reuses the browser tab; Layout::browser_page fills the height below its toolbar and stays clear of sidebar/history chrome, with no terminal composer
+│   evidence: earlier identity/terminal geometry tests remain scoped; replacement native layout journey is browser-workspace-smoke.py and needs each native cell
 │   safe failure: shell-only UI says Unavailable and cannot be called a working browser surface
 │   dependency: PRD 25; non-goal: a split layout inside one tab
 ├── [v] {LNX-PANEL} Linux/X11 page, resize and OAuth adapter
@@ -171,7 +172,7 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   safe failure: missing helper/feature is typed Unavailable and keeps this leaf open; do not accept a manually feature-built lab binary
 │   dependency: {ARCH}; non-goal: selecting a binary by modification time
 ├── [-] {MAC-PANEL} Make the browser visibly testable inside this macOS MiniCon window
-│   invariant: WKWebView occupies Layout::content_column in the active browser tab, follows Retina/window/sidebar/history geometry, hides behind terminal tabs and never appears as an independent window
+│   invariant: WKWebView occupies Layout::browser_page in the active browser tab, follows Retina/window/sidebar/history geometry, hides behind terminal tabs and never appears as an independent window
 │   evidence: direct Computer Use observation from canonical `build.sh dev` output proves local page visibility, hide/restore, focus release and fullscreen geometry; owner use rejects the current UI/UX, so these mechanics do not close the leaf
 │   safe failure: no helper, exit 69, a blank shell, a floating WKWebView or an owner-rejected surface is failure; unavailable evidence is BLOCKED
 │   dependency: {ARCH}, {ARTIFACT}, {UX-BASELINE}; non-goal: production provider credentials
@@ -193,7 +194,7 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 └── [-] {CLOSE} Close 0.2.21 browser scope and authorize Candidate consideration
     invariant: every claimed desktop can exercise the browser from canonical output; Linux-only adapter success is not cross-platform completion
     evidence: {ARTIFACT}, accepted {UX-BASELINE}, {MAC-PANEL}, the explicit {WIN-PANEL} decision/evidence, full gates and owner-visible macOS acceptance
-    safe failure: keep PRD/root/plan at [-] and do not dispatch release.sh 0.2.21
+    safe failure: keep PRD/root/plan at [-] and stop Candidate/Promotion while required evidence is missing
     dependency: {SHELL}, {LNX-PANEL}, {ARCH}, {ARTIFACT}, {UX-BASELINE}, {MAC-PANEL}, {WIN-PANEL} decision and {AUTH-CORE}; non-goal: dashboard/preview/wasm, 1:N panels or production provider account
 ```
 
@@ -206,7 +207,7 @@ flowchart LR
     ARCH --> LNX["{LNX-PANEL} [v]<br/>X11 + WebKitGTK"]
     ARCH --> PROTO["macOS engineering prototype<br/>mechanics visible; UX rejected"]
     PROTO --> WIN["{WIN-PANEL} [-]<br/>WebView2 bring-up and courts"]
-    WIN --> UX["{UX-BASELINE} [_]<br/>proposal + owner acceptance"]
+    WIN --> UX["{UX-BASELINE} [-]<br/>replacement implemented; owner review open"]
     UX --> MAC["{MAC-PANEL} [-]<br/>accepted macOS surface + courts"]
     LNX --> WEB
     PROTO --> WEB
@@ -214,7 +215,7 @@ flowchart LR
     WIN --> WEB
     WEB -->|"loopback code"| BRIDGE["OAuthBridge 127.0.0.1"]
     BRIDGE --> POST["https token POST<br/>same BrowserProxy"]
-    LAYOUT["Layout::content_column"] --> LNX
+    LAYOUT["Layout::browser_page"] --> LNX
     LAYOUT --> MAC
     LAYOUT --> WIN
     COURT["run 39925651159<br/>Linux adapter only"] --> LNX
@@ -237,22 +238,70 @@ flowchart LR
 | 6 — ARCH | [v] Use platform adapters inside `minicon-web`: GUI-only same-process child WKWebView/WebView2 where portable reparenting is unavailable, retaining the qualified Linux helper. `minicon-core`, `minicon-console` and headless paths remain WebView-free. | The macOS spike visibly proves the boundary. A floating helper, OS browser, captured pixels or forwarded synthetic input still fails it. |
 | 7 — ARTIFACT | [-] `build.sh dev` links the macOS and Windows native page hosts; the Windows x86_64 canonical `target/debug/minicon.exe` opened a visible WebView2 child on 2026-10-23. The macOS dev wrapper remains `target/debug/MiniCon 0.2.21 Dev.app`; release output and full cross-platform inventory remain open. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS/Windows. Missing bytes on any claimed platform keep the leaf open. |
 | 8 — WIN-PANEL | [-] Owner decision 2026-10-23 brings up the Windows WebView2 adapter from canonical `build.sh dev` output before the UX proposal. Record native x86_64 journeys and separately qualify arm64. | The current home/shell is an engineering scaffold. Compile-only and ACL receipts cannot prove the page surface. |
-| 9 — UX-BASELINE | [-] A proposal from actual Windows and macOS journeys now covers address/status/back, tab hierarchy, focus, home, loading and error states; obtain explicit owner acceptance before redesign and Candidate. | Owner use on 2026-10-23 rejected the current UI/UX. Geometry screenshots cannot override that evidence. |
+| 9 — UX-BASELINE | [-] Implement the replacement under the publication continuation; qualify address/navigation, shared chrome, focus and failure states, then obtain explicit owner acceptance before Candidate. | The 2026-10-23 rejected scaffold remains historical evidence; local replacement screenshots await owner review. |
 | 10 — MAC-PANEL | [-] Rework the WKWebView surface to the accepted UX baseline, then add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
 | 11 — CLOSE | [-] Re-run complete gates, record explicit owner macOS UX acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
 
-## Browser workspace UX proposal — pending owner confirmation
+## Publication continuation — owner instruction, 2026-10-23
 
-This is a proposal from the macOS arm64 direct-use rejection and the Windows
-x86_64 journeys below, not accepted product scope. Do not implement the large
-redesign until the owner confirms it.
+The owner now requests completion of 0.2.21 through public publication. This
+supersedes the earlier no-publish handoff and authorizes implementation of the
+workspace proposal below. The rejected scaffold is still not acceptance evidence.
+
+```text
+Outcome: publish a usable 0.2.21 browser workspace as sealed, qualified bytes
+├── [-] Workspace interaction — PRD 25
+│   invariant: visible address/navigation, accurate state, one focus owner
+│   evidence: canonical native navigation/failure/switch/resize journeys
+│   safe failure: preserve attempted URL and terminal access; dependency: adapters
+│   non-goal: dashboard, preview, wasm or multiple browser panels
+├── [_] Platform artifacts — PRD 27/28
+│   invariant: canonical outputs contain their required adapter/helper
+│   evidence: six native cells and artifact inventory at the frozen source
+│   safe failure: unavailable court is BLOCKED; dependency: workspace completion
+│   non-goal: substituting compilation for runtime evidence
+└── [_] Public release — PRD 27
+    invariant: exact-source Candidate, required signatures, Defender and reputation
+    evidence: named CI receipts, public tag/assets and downloaded-byte smoke
+    safe failure: stop Promotion on any failed gate; dependency: qualified artifacts
+    non-goal: rebuilding or resigning during Promotion
+```
+
+```mermaid
+flowchart LR
+    UX[Workspace interaction] --> N[Native journeys]
+    A[Canonical adapter/helper inventory] --> N
+    N --> F[Freeze exact source]
+    F --> SIX[Six-cell pack]
+    SIX --> W[Windows signing]
+    SIX --> M[macOS signing]
+    W --> C[Sealed Candidate]
+    M --> C
+    C --> D[Defender] --> R[Reputation] --> P[No-rebuild Promotion]
+    P --> S[Public downloaded-byte smoke]
+    E[Missing or failed evidence] --> K[Stop publication]
+```
+
+Shared prerequisites/hot files: `src/main.rs` input/lifecycle, `src/ui.rs`
+geometry, `src/host_paint.rs` chrome, `crates/minicon-web` adapter events and
+Linux helper transport. Owner-approved team execution assigns disjoint native
+adapter, Linux helper and delivery files; the integrator owns product input,
+dependency lock updates and final gates. Adjust assignments when interface
+dependencies appear; integrate shared artifacts serially before freezing source.
+G4/G6 remain carried debt with their existing claim boundary.
+
+## Browser workspace UX implementation baseline
+
+This baseline follows the macOS arm64 rejection and Windows x86_64 journeys.
+Implementation proceeds under the publication continuation above; native
+journeys must demonstrate the completed interaction before Candidate selection.
 
 | Area | Proposed behavior | Observation driving it |
 | --- | --- | --- |
 | Address and back | Put a compact URL field and Back/Forward/Reload controls at the top of the active browser content panel. Show the current URL after page redirects; Enter navigates the same panel. Disable Back/Forward when history has no entry. Ctrl+click continues to reuse the single browser tab. | The current panel has no in-window way to see or edit the URL, nor to return after navigation. |
 | Tab hierarchy | Keep browser and terminal tabs as peers in the one sidebar. Use a browser icon, site title and loading/error mark in the browser row; keep history/settings as window chrome, never a second content panel. Do not print diagnostic `1 tab · 1 panel` text in normal use. | The engineering home is visually pasted into a terminal-shaped shell, and the tab name remains the generic `browser`. |
 | Focus | On tab switch, hide the native child and restore terminal/host keyboard focus. Clicking the URL field selects its text; Escape returns focus to the page or terminal. Reserve host Ctrl+Shift shortcuts at the native WebView boundary so they work even after clicking a page. | Windows initially left an invisible child focused and swallowed host shortcuts; the hide fix closes that mechanics defect, not the full focus design. |
-| Home and vertical space | Replace the large centered diagnostic home with a quiet start surface containing the address field, one sentence of guidance and no fake content. A browser tab has no terminal composer, so let its page fill the remaining height below the browser toolbar; this would revise the current `Layout::content_column` geometry only after acceptance. | Both macOS owner use and Windows screenshots show large unused browser space below the page and no obvious navigation control. |
+| Home and vertical space | Replace the large centered diagnostic home with a quiet start surface, an address field and one sentence of guidance. A browser tab has no terminal composer; `Layout::browser_page` fills the remaining height below its toolbar under the authorized implementation baseline. | Both macOS owner use and Windows screenshots show large unused browser space below the page and no obvious navigation control. |
 | Loading and errors | Show a bounded loading indicator tied to navigation events, then the page title/URL. Keep the attempted URL and offer Retry plus a short typed reason when the runtime, proxy, TLS or navigation fails; never silently hand the URL to the OS browser. | The current `page: loading` shell text remains beneath the child even after the real page visibly loads, and an unavailable runtime would otherwise look like a dead blank page. |
 
 Acceptance journey: on canonical macOS and Windows builds, open home; navigate
@@ -263,6 +312,43 @@ child pixels are omitted. Owner approval of these interactions is the
 `{UX-BASELINE}` gate; it is not inferred from adapter mechanics.
 
 ## Local evidence — 2026-10-23, Windows x86_64
+
+### Replacement workspace — 2026-10-24
+
+- The canonical `build.sh dev` executable, copied without rebuilding to the
+  isolated `target/browser-workspace-final/minicon.exe`, has SHA-256
+  `54e45413e3e500c22ea4fe8cae3a5aeb576bda8d771b88dbf640d7decf5f0595`.
+  `scripts/browser-workspace-smoke.py --physical` passed local navigation,
+  redirect/title/history, reload, chrome/resize, terminal switch/return,
+  explicit failure, recovery and close/reopen. Real page-focused Ctrl+L reached
+  the address editor and real Ctrl+Shift+[ selected the terminal. Receipt and
+  window captures: `target/browser-workspace-final/physical/`.
+- Replacing the native Ready update with Loading made the same public journey
+  fail waiting for its first loaded page. The source was restored and canonical
+  dev bytes rebuilt before the passing run. Negative-control logs:
+  `target/browser-workspace-mutation/`. A deliberately nonexistent workflow path
+  also failed the path guard after fixing its `target/release` prefix parser.
+- All three explicit Windows browser integration courts passed against that
+  same copied executable (`target/browser-workspace-final/browser-tests.log`).
+  Their first concurrent run exposed `CONNECTION_ABORTED` in the new local HTTP
+  fixture; the isolated journey passed. The fixture now explicitly uses blocking
+  accepted streams and consumes complete bounded request headers before replying,
+  and the concurrent three-test replay passed. This is fixture evidence, not a
+  product networking fix.
+- Complete `build.sh test` passed: 476 main tests, 17 alignment tests, 39
+  black-box tests, 16 control tests (two explicit native courts ignored in the
+  ordinary gate), 20 web tests and the remaining workspace/PE-import gates.
+  Log: `target/browser-workspace-full-test.log`. `cargo fmt --all`, strict
+  all-target Clippy, the no-default-features build, and all seven requested
+  offline script self-tests passed. Self-test log:
+  `target/browser-workspace-selftest.log`; optional VM courts were not requested.
+- Browser geometry is now present in `ui-snapshot`, and the window title tracks
+  the loaded page. These replace the null-geometry/static-title observations in
+  the earlier adapter receipt below. Native child pixels still require a window
+  capture instead of `screenshot-pane`. Other OS/ISA runtime evidence and owner
+  UX acceptance remain open; local Windows evidence does not close them.
+
+### Earlier adapter receipts
 
 - `./scripts/build.sh dev` (Git Bash on Windows) built the canonical
   `target/debug/minicon.exe` with the GUI-only `native-page-host` feature.
@@ -482,7 +568,7 @@ child pixels are omitted. Owner approval of these interactions is the
 
 ## Non-goals
 
-- Publishing 0.2.21, or a date-driven patch of 0.2.20.
+- A date-driven patch of 0.2.20, or publishing unqualified 0.2.21 artifacts.
 - Page-heap attribution of G4, or changing `close_may_publish` for G6.
 - A portable session trait, or relocating the macOS/Linux PTY into `minicon-console` (PRD 35).
 - Running every `minicon-platform` test on Linux. The accessibility tree and the other adapters are not this court.

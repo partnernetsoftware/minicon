@@ -20,7 +20,7 @@ minicon workspace and input
 │   ├── terminal tab → one terminal content panel (PTY view)
 │   └── [-] browser tab → one browser content panel
 │       ├── [v] adapter mechanics: Linux qualified; macOS arm64 child visible
-│       └── [_] accepted workspace UX: current macOS prototype owner-rejected
+│       └── [-] address/navigation workspace: native journeys and owner review
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -137,7 +137,7 @@ names above.
   arm64 observation proves visible home, hide/restore, focus release and
   fullscreen resize. Direct owner use then rejected the UI/UX as poor: those
   mechanics are adapter evidence, not product acceptance. The current surface
-  is a disposable prototype. Owner decision 2026-10-23 brings up the Windows
+  was a disposable prototype. Owner decision 2026-10-23 brings up the Windows
   adapter before the UX proposal; an accepted browser-workspace interaction and
   visual baseline remain required before Candidate. Local canonical Windows
   x86_64 dev use now proves a visible WebView2 child, real URL navigation,
@@ -156,8 +156,21 @@ names above.
   focus and status must be legible without treating the bounded diagnostic
   home or an undocumented shortcut as the experience. Evidence requires named
   journeys on canonical macOS/Windows apps and explicit owner acceptance. The
-  2026-10-23 owner verdict that the current UI/UX is poor is negative evidence;
-  it blocks Candidate and acceptance of the current shell as Windows UI. Owner:
+  2026-10-23 owner verdict rejected the diagnostic scaffold. The subsequent
+  instruction to finish 0.2.21 through publication authorizes implementing the
+  proposed workspace. The replacement now has a URL editor (click or Ctrl+L),
+  Back/Forward/Reload, native title/URL/loading/error events, a quiet home and
+  one shared sidebar with the terminal view. Enter navigates the same panel;
+  Escape returns page focus. The address editor reuses the composer's selection,
+  clipboard and IME rules, with its own focus and candidate anchor. The terminal
+  composer receives no browser input. A navigation still pending at 30 seconds
+  becomes `browser-navigation-timeout`; the attempted URL remains editable.
+  Windows native accelerator handling reserves host tab/chrome shortcuts even
+  with page focus. Remote page scripts cannot dispatch host commands.
+  Local Windows native address/redirect/title/back/forward/failure evidence is
+  `native_browser_address_redirect_history_and_failure`; the canonical artifact
+  journey is `scripts/browser-workspace-smoke.py`. Other cells and owner review
+  remain open. Owner:
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{UX-BASELINE}`.
 - [-] **Windows native proxy settings (0.2.21).** A single HTTP or HTTPS hook
   supplies the native page's proxy; when both are supplied, each URL scheme
@@ -171,11 +184,13 @@ names above.
   a real terminal Ctrl+click and fails when the bypass argument is removed.
   Other Windows ISAs remain BLOCKED. Evidence and exact court commands:
   [plan-v0.2.21](../plan/plan-v0.2.21.md).
-- [v] **one browser root, and the embed slot is the content column (0.2.21).**
+- [-] **one browser root, and separate page/composer geometry (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`
-  is the rectangle under the tab header, above the composer, inset by the
-  sidebar and the history chrome. Evidence:
+  retains terminal geometry above its composer. A browser instead uses
+  `Layout::browser_page`: below a 44 DIP navigation toolbar, extending to the
+  bottom, inset by sidebar/history chrome. It has no terminal composer. A
+  settings overlay temporarily hides the native child. Earlier adapter evidence:
   `a_browser_tab_is_a_root_peer_of_a_terminal_tab`,
   `content_column_is_the_terminal_rectangle` (macOS arm64) and the nonzero
   `minicon-web-x11` suite on both Linux ISAs in run `39925651159`. Window,

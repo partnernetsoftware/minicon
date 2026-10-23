@@ -18,17 +18,27 @@ path = "src/bin/minicon-web-host.rs"
 default = []
 # Same-process child WebView for a GUI-owned content panel. The MiniCon macOS/Windows
 # binary enables this; core/headless consumers do not.
-native-page-host = ["dep:wry", "wry/mac-proxy"]
+native-page-host = ["dep:wry", "wry/mac-proxy", "dep:webview2-com", "dep:block2", "dep:objc2", "dep:objc2-app-kit"]
 # Optional page loader. Core `minicon` must not enable this. Without it,
 # `minicon-web-host --probe` and `--load` stay Unavailable (exit 69).
 # gtk is Linux-only (below). Naming it here must not pull gtk onto macOS or
 # Windows; Cargo drops a target-specific optional dep on other targets.
-wry-host = ["dep:wry", "dep:tao", "dep:gtk"]
+wry-host = ["dep:wry", "dep:tao", "dep:gtk", "dep:webkit2gtk", "dep:serde_json"]
 
 [dependencies]
 sha2 = { version = "0.11", default-features = false }
+serde_json = { version = "1", optional = true }
 tao = { version = "0.36.0", optional = true, default-features = false, features = ["rwh_06"] }
 wry = { version = "0.56.0", optional = true, default-features = false, features = ["os-webview"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18.2", optional = true }
+webkit2gtk = { version = "2.0.2", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = { version = "0.6", optional = true }
+objc2 = { version = "0.6.4", optional = true }
+objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "block2", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = { version = "0.38.2", optional = true }

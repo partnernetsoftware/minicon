@@ -1334,7 +1334,8 @@ fn every_path_a_workflow_names_exists() {
 /// Tokens that look like repository paths under a top-level directory the
 /// workflows actually use, without pulling in a regex dependency.
 fn regex_lite_paths() -> impl Fn(&str) -> Vec<String> {
-    const ROOTS: [&str; 9] = [
+    const ROOTS: [&str; 10] = [
+        "target/",
         "research/",
         "loader/",
         "release/",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import struct
 import subprocess
@@ -92,9 +93,10 @@ def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
     out = {}
     for cell, path in mapping.items():
         if path.is_file():
+            payload_bytes = path.read_bytes()
             markers = sorted(set(
                 match.decode("ascii")
-                for match in re.findall(rb"minicon 0\.[0-9]+\.[0-9]+", path.read_bytes())
+                for match in re.findall(rb"minicon 0\.[0-9]+\.[0-9]+", payload_bytes)
             ))
             expected_marker = f"minicon {expected_version}"
             if markers != [expected_marker]:
@@ -105,6 +107,24 @@ def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
                 "bytes": path.stat().st_size,
                 "product_version": expected_version,
             }
+            if cell.startswith("lnx-"):
+                helper_base = Path(os.environ.get("MINICON_BROWSER_HELPERS", str(ROOT / "target" / "browser-helpers")))
+                if not helper_base.is_absolute():
+                    helper_base = ROOT / helper_base
+                helper_root = helper_base / cell
+                helper = helper_root / "minicon-web-host"
+                receipt = json.loads((helper_root / "receipt.json").read_text())
+                raw = helper.read_bytes()
+                expected_machine = 62 if cell == "lnx-x86_64" else 183
+                if (receipt["source_sha"] != git_sha() or receipt["cell"] != cell
+                        or receipt["sha256"] != sha256(helper)
+                        or receipt["bytes"] != helper.stat().st_size
+                        or not 64 <= len(raw) <= 32 * 1024 * 1024
+                        or raw[:7] != b"\x7fELF\x02\x01\x01"
+                        or int.from_bytes(raw[18:20], "little") != expected_machine
+                        or raw not in payload_bytes):
+                    raise SystemExit(f"{cell}: browser helper identity mismatch")
+                out[cell]["embedded_browser_helper"] = receipt
     return out
 
 
