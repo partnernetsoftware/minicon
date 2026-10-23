@@ -160,7 +160,9 @@ names above.
   instruction to finish 0.2.21 through publication authorizes implementing the
   proposed workspace. The replacement now has a URL editor (click or Ctrl+L),
   Back/Forward/Reload, native title/URL/loading/error events, a quiet home and
-  one shared sidebar with the terminal view. Enter navigates the same panel;
+  one shared sidebar with the terminal view. Navigation marks use geometry,
+  following the header icon family, rather than relying on native font symbol
+  coverage. Enter navigates the same panel;
   Escape returns page focus. The address editor reuses the composer's selection,
   clipboard and IME rules, with its own focus and candidate anchor. The terminal
   composer receives no browser input. A navigation still pending at 30 seconds

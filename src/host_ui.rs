@@ -486,6 +486,64 @@ pub(crate) fn stroke_rect(surface: &mut Surface<'_>, rect: ui::Rect, stroke: u32
     );
 }
 
+/// Browser navigation marks use geometry so native font coverage cannot hide
+/// an otherwise clickable control. The order matches the toolbar hit targets.
+pub(crate) fn paint_browser_navigation_icon(
+    surface: &mut Surface<'_>,
+    button: ui::Rect,
+    index: usize,
+    color: Rgb,
+    scale: f64,
+) {
+    let segments = match index {
+        0 => &[((10, 3), (5, 8)), ((5, 8), (10, 13)), ((5, 8), (14, 8))][..],
+        1 => &[((6, 3), (11, 8)), ((11, 8), (6, 13)), ((2, 8), (11, 8))][..],
+        2 => &[
+            ((13, 5), (10, 2)),
+            ((10, 2), (6, 2)),
+            ((6, 2), (3, 5)),
+            ((3, 5), (3, 10)),
+            ((3, 10), (6, 13)),
+            ((6, 13), (10, 13)),
+            ((10, 13), (13, 10)),
+            ((13, 0), (13, 5)),
+            ((8, 5), (13, 5)),
+        ][..],
+        _ => return,
+    };
+    let scale = scale.clamp(1.0, 4.0);
+    let unit = minicon_core::numeric::round_f64(scale).max(1.0) as u32;
+    let extent = (16.0 * scale) as u32;
+    let left = button.x + button.width.saturating_sub(extent) / 2;
+    let top = button.y + button.height.saturating_sub(extent) / 2;
+    for &((x0, y0), (x1, y1)) in segments {
+        let mut x = (f64::from(x0) * scale) as i32;
+        let mut y = (f64::from(y0) * scale) as i32;
+        let end_x = (f64::from(x1) * scale) as i32;
+        let end_y = (f64::from(y1) * scale) as i32;
+        let dx = (end_x - x).abs();
+        let dy = -(end_y - y).abs();
+        let step_x = if x < end_x { 1 } else { -1 };
+        let step_y = if y < end_y { 1 } else { -1 };
+        let mut error = dx + dy;
+        loop {
+            surface.fill_rect(left + x as u32, top + y as u32, unit, unit, color.to_xrgb());
+            if x == end_x && y == end_y {
+                break;
+            }
+            let doubled = error * 2;
+            if doubled >= dy {
+                error += dy;
+                x += step_x;
+            }
+            if doubled <= dx {
+                error += dx;
+                y += step_y;
+            }
+        }
+    }
+}
+
 /// Paints the header as one aligned, borderless icon family.
 ///
 /// The full 24-DIP rectangles remain the hit targets, but no permanent box is

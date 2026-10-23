@@ -1100,19 +1100,21 @@ impl ConApp {
             t.sidebar_bg.to_xrgb(),
         );
         let size = host_ui_size(14);
-        for (index, label, enabled) in [
-            (0, "←", self.browser_can_back),
-            (1, "→", self.browser_can_forward),
-            (2, "↻", true),
-        ] {
-            paint_host_ui_text(
+        for (index, enabled) in [self.browser_can_back, self.browser_can_forward, true]
+            .into_iter()
+            .enumerate()
+        {
+            host_ui::paint_browser_navigation_icon(
                 &mut surface,
-                toolbar.x + ((index * 34 + 10) as f64 * scale) as u32,
-                (12.0 * scale) as u32,
-                label,
+                ui::Rect {
+                    x: toolbar.x + (index as f64 * 34.0 * scale) as u32,
+                    y: toolbar.y,
+                    width: (34.0 * scale) as u32,
+                    height: toolbar.height,
+                },
+                index,
                 if enabled { t.text } else { t.muted },
-                size,
-                (24.0 * scale) as u32,
+                scale,
             );
         }
         surface.fill_rect(

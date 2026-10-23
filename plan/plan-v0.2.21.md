@@ -586,6 +586,21 @@ child pixels are omitted. Owner approval of these interactions is the
   mechanism. Per-image `screenshots.json` records actual capture or `BLOCKED`;
   JSON snapshots and successful behavior tests do not replace missing pixels
   for owner UX review. Native execution of this capture path remains open.
+- Mac arm64 run `39994864505` on `6abf559` passed the complete browser stage
+  and captured four actual window PNGs, including WKWebView pixels. The normal,
+  resized and failure views were inspected. They exposed an invisible Reload
+  glyph under the native Mac font; navigation marks now use geometry shared
+  with the host icon approach. These captures prove the defect, not the fix.
+- One-pack run `39992042381` reached the helper job's 25-minute limit before
+  Cargo started: APT fetched 58.0 MB from the Azure Ubuntu mirror in 24m53s
+  (38.8 kB/s). Provisioning now has its own five-minute bound, uses Ubuntu's
+  main mirror on x86_64, and retains the existing package-signature trust.
+  Actual performance of the corrected prerequisite remains to be measured.
+- The geometry-based navigation marks passed the canonical local Windows
+  physical browser journey (`target/browser-nav-icons/physical/receipt.json`,
+  executable SHA-256 `13c66546abe06084ba564fc314ec5e81f288a743c888dca96ece35fbfa5a6275`).
+  The new Reload mark was inspected in the native window capture; this is
+  Windows evidence, with a fresh macOS capture still required.
 
 ## Non-goals
 
