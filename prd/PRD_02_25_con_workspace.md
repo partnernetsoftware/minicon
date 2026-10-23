@@ -170,6 +170,12 @@ names above.
   becomes `browser-navigation-timeout`; the attempted URL remains editable.
   Windows native accelerator handling reserves host tab/chrome shortcuts even
   with page focus. Remote page scripts cannot dispatch host commands.
+  The macOS adapter installs an AppKit local monitor for reserved host
+  shortcuts, scoped to the owning window and native page focus. The current
+  automated `send-ui-keys` journey enters host routing directly and does not
+  prove that physical WKWebView-focus interception. Preserve that distinction
+  in the same owner UX journey; PNGs prove presentation, while an actual
+  keyboard observation establishes this event path.
   Local Windows native address/redirect/title/back/forward/failure evidence is
   `native_browser_address_redirect_history_and_failure`; the canonical artifact
   journey is `scripts/browser-workspace-smoke.py`. The initial unsigned six-cell

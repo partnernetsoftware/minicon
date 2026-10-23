@@ -1,8 +1,12 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: in progress. The replacement browser workspace is implemented and has
-local Windows x86_64 address/navigation/failure evidence. Native qualification
-of its current cross-platform artifacts and owner UX review remain open.
+Status: in progress. The replacement browser workspace and bounded shutdown
+response courts have native six-cell development evidence in
+[PRD 32](../prd/PRD_02_32_dev_loop_crosscheck.md); the first unsigned one-file
+baseline and its over-budget measurement are owned by
+[PRD 27](../prd/PRD_02_27_con_delivery.md). Owner UX acceptance and a Candidate
+budget decision remain open, followed by final-source artifact/signing,
+Candidate, reputation and public-download qualification.
 The owner has authorized completing 0.2.21 through public publication; see
 "Publication continuation" below. The earlier macOS diagnostic scaffold was
 rejected, and its mechanical receipts are not acceptance of the replacement.
@@ -23,9 +27,9 @@ path fails the Linux cell even when Windows and macOS are green.
 
 Track B: a browser tab's content panel is `minicon-web`. The Linux/X11
 temporary backend (wry + tao, feature `wry-host`, separate
-`minicon-web-host`) is qualified, but it is not yet the cross-platform product
-surface. A terminal tab's content panel stays the PTY / `minicon-console`
-view. Same tab strip, one content panel per tab.
+`minicon-web-host`) and the macOS/Windows native adapters now have the
+six-cell browser evidence linked above. Product UX acceptance remains open. A
+terminal tab's content panel stays the PTY / `minicon-console` view. Same tab strip, one content panel per tab.
 Leaf detail that is not a 0.2.21 gate stays in
 [plan-browser-tabs.md](plan-browser-tabs.md).
 
@@ -183,7 +187,7 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   dependency: {SHELL}, {ARCH} and direct Windows/macOS adapter use as disposable prototypes; non-goal: dashboard/preview/wasm, 1:N panels or a whole-terminal visual rewrite
 ├── [-] {WIN-PANEL} Bring up the Windows content panel, then qualify both ISAs
 │   invariant: the Windows release either provides the same tab/content-panel outcome or 0.2.21 explicitly narrows its browser platform claim before Candidate; silent Unavailable is not parity
-│   evidence: local Windows x86_64 canonical dev build and visible open/URL/switch/resize/maximize/reopen journeys, plus public-CLI missing-runtime and native proxy courts; native arm64 remains BLOCKED
+│   evidence: local Windows x86_64 canonical dev build and visible open/URL/switch/resize/maximize/reopen journeys, plus public-CLI missing-runtime and scoped native proxy courts; native browser journeys now pass both Windows ISAs (PRD 32), with proxy evidence scope still owned by PRD 25
 │   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence; missing runtime is typed Unavailable
 │   dependency: {ARCH}, canonical Windows {ARTIFACT}; accepted {UX-BASELINE} remains required for release; non-goal: changing the Windows console backend or accepting the diagnostic home as final UX
 ├── [v] {AUTH-CORE} Proxy, PKCE/state, loopback and private bearer mechanisms
@@ -236,10 +240,10 @@ flowchart LR
 | 4 — RELEASE-GATE | [-] Version is 0.2.21 and owners point here, but Candidate consideration stays closed until the canonical browser surface is visible on every claimed desktop. | No tag, Candidate or `release.sh 0.2.21`; unavailable native evidence stays BLOCKED. The console `{GATE}` remains valid only for its own completed track. |
 | 5 — LNX-PANEL | [v] Apply `Layout::content_column` through the X resize seam and drive real WebKitGTK proxy/direct-loopback navigation. | Run `39925651159` records nonzero `minicon-web-x11`, `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs. |
 | 6 — ARCH | [v] Use platform adapters inside `minicon-web`: GUI-only same-process child WKWebView/WebView2 where portable reparenting is unavailable, retaining the qualified Linux helper. `minicon-core`, `minicon-console` and headless paths remain WebView-free. | The macOS spike visibly proves the boundary. A floating helper, OS browser, captured pixels or forwarded synthetic input still fails it. |
-| 7 — ARTIFACT | [-] `build.sh dev` links the macOS and Windows native page hosts; the Windows x86_64 canonical `target/debug/minicon.exe` opened a visible WebView2 child on 2026-10-23. The macOS dev wrapper remains `target/debug/MiniCon 0.2.21 Dev.app`; release output and full cross-platform inventory remain open. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS/Windows. Missing bytes on any claimed platform keep the leaf open. |
+| 7 — ARTIFACT | [-] `build.sh dev` links the macOS and Windows native page hosts; the Windows x86_64 canonical `target/debug/minicon.exe` opened a visible WebView2 child on 2026-10-23. The macOS dev wrapper remains `target/debug/MiniCon 0.2.21 Dev.app`; PRD 27 records the first unsigned one-file six-cell inventory, while final-source/signed qualification remains open. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS/Windows. Missing bytes on any claimed platform keep the leaf open. |
 | 8 — WIN-PANEL | [-] Owner decision 2026-10-23 brings up the Windows WebView2 adapter from canonical `build.sh dev` output before the UX proposal. Record native x86_64 journeys and separately qualify arm64. | The current home/shell is an engineering scaffold. Compile-only and ACL receipts cannot prove the page surface. |
 | 9 — UX-BASELINE | [-] Implement the replacement under the publication continuation; qualify address/navigation, shared chrome, focus and failure states, then obtain explicit owner acceptance before Candidate. | The 2026-10-23 rejected scaffold remains historical evidence; local replacement screenshots await owner review. |
-| 10 — MAC-PANEL | [-] Rework the WKWebView surface to the accepted UX baseline, then add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
+| 10 — MAC-PANEL | [-] Automated native journeys and real window PNGs now exist on both ISAs (PRD 32); explicit UX acceptance and signed/public qualification remain open. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
 | 11 — CLOSE | [-] Re-run complete gates, record explicit owner macOS UX acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
 
 ## Publication continuation — owner instruction, 2026-10-23
@@ -255,9 +259,9 @@ Outcome: publish a usable 0.2.21 browser workspace as sealed, qualified bytes
 │   evidence: canonical native navigation/failure/switch/resize journeys
 │   safe failure: preserve attempted URL and terminal access; dependency: adapters
 │   non-goal: dashboard, preview, wasm or multiple browser panels
-├── [_] Platform artifacts — PRD 27/28
+├── [-] Platform artifacts — PRD 27/28
 │   invariant: canonical outputs contain their required adapter/helper
-│   evidence: six native cells and artifact inventory at the frozen source
+│   evidence: first unsigned six-cell baseline in PRD 27; final frozen-source/signed qualification remains open
 │   safe failure: unavailable court is BLOCKED; dependency: workspace completion
 │   non-goal: substituting compilation for runtime evidence
 └── [_] Public release — PRD 27
@@ -310,6 +314,14 @@ resize, maximize and toggle chrome; close/reopen; then exercise one failed load.
 Capture the presented page separately from `screenshot-pane` wherever native
 child pixels are omitted. Owner approval of these interactions is the
 `{UX-BASELINE}` gate; it is not inferred from adapter mechanics.
+
+The native focus boundary belongs to this same UX journey. Host-injected
+`send-ui-keys` and window PNGs do not demonstrate physical keys while WKWebView
+owns focus. Keep that evidence scoped as described by PRD 25; an actual Mac
+keyboard observation may be recorded with the owner journey, without inventing
+a separate mandatory CI court. Windows ARM proxy modes and real DPI transitions
+retain their existing partial scope; the new ARM page-runtime evidence does not
+silently certify them.
 
 ## Local evidence — 2026-10-23, Windows x86_64
 
@@ -656,7 +668,8 @@ flowchart LR
   assertion. Log: `target/browser-nav-icons/full-test-small-frame-serial.log`.
   This is the named serial schedule; earlier parallel BLOCKED records remain,
   and this observation does not close G4/G6's separately scoped debt.
-  New six-platform shutdown-response court results remain pending.
+  The six-platform shutdown-response courts subsequently passed; exact-source
+  provenance, counts and filter scope are owned by PRD 32.
 
 - Dev-loop run `39991263519` did not compile the product: dispatch passed
   abbreviated `d4ab1f2`, which checkout interpreted as a branch/tag pattern.
@@ -675,7 +688,8 @@ flowchart LR
   capture using the existing CoreGraphics window lookup and `screencapture`
   mechanism. Per-image `screenshots.json` records actual capture or `BLOCKED`;
   JSON snapshots and successful behavior tests do not replace missing pixels
-  for owner UX review. Native execution of this capture path remains open.
+  for owner UX review. Native execution and captured PNGs on both macOS ISAs
+  are now recorded in PRD 32.
 - Mac arm64 run `39994864505` on `6abf559` passed the complete browser stage
   and captured four actual window PNGs, including WKWebView pixels. The normal,
   resized and failure views were inspected. They exposed an invisible Reload

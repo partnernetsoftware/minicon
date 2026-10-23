@@ -343,7 +343,7 @@ flowchart LR
   Condvar slot carries each reply. Closing the GUI atomically rejects new queue
   entries, drops pending senders and wakes reply waiters rather than making them
   consume the full timeout.
-- [-] **Shutdown response completion.** The active worker owns its response
+- [v] **Shutdown response completion.** The active worker owns its response
   through both frame writing and the native transport's finish operation.
   After rejecting new work and releasing queued requests, server destruction
   allows at most one second for those active responses to finish. A client
@@ -353,7 +353,8 @@ flowchart LR
   The 0.2.21 full-gate observation and required negative controls are owned by
   [the active plan](../plan/plan-v0.2.21.md)'s `{CLOSE-ACK}` leaf; qualification
   has passed the Windows mutation controls and named serial public/full gate.
-  Native six-platform response-court results remain open.
+  [PRD 32](PRD_02_32_dev_loop_crosscheck.md) records the successful native
+  six-platform response courts and their exact-count evidence.
 - [v] six synchronous control commands share non-generic session lookup and
   terminal-cell validation helpers while preserving each command's local
   `Result` propagation, screenshot and wait reply ownership, and active-tab

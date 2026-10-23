@@ -18,7 +18,7 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   ├── inputs: ref, cells, test_filter
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
-│   ├── mandatory browser artifact and shutdown-response courts, independent of test_filter
+│   ├── [v] mandatory browser artifact and shutdown-response courts, independent of test_filter
 │   └── permissions: contents: read only
 ├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
 └── Validation record (real hosted runners, run 36313213803)
@@ -30,8 +30,8 @@ flowchart LR
     W --> C1["lnx-x86_64 runner<br/>native build + test"]
     W --> C2["lnx-aarch64 runner"]
     W --> C3["win / osx cells<br/>when requested"]
-    C1 --> L["real per-cell logs"]
-    C2 & C3 --> L
+    C1 & C2 & C3 --> M["mandatory browser + shutdown courts<br/>independent of suite filter"]
+    M --> L["real per-cell logs"]
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -91,8 +91,22 @@ requiring exactly four passed tests on Windows and three on Unix, with no
 failed or ignored tests. The passing receipt includes
 `probe-logs/control-shutdown-response.log`; failure logs retain it too.
 [PRD 26](PRD_02_26_con_control_cli.md) owns response lifetime and bounds.
-Static workflow validation is not native runtime evidence; all six new court
-results remain required in the active 0.2.21 plan.
+**2026-10-24 qualification.** [Run `40003029035`](https://github.com/partnernetsoftware/minicon/actions/runs/40003029035),
+at exact source `329a30d7c64b9f1cd0c41f14cefcc53779b5f98e`, attempt 1,
+completed all six cell jobs successfully. Each cell actually ran one explicit
+native browser test, its public-CLI workspace journey and the required
+shutdown-response count above, all with zero failed or ignored tests in those
+mandatory courts. The six downloaded `crosscheck-receipt-<cell>-attempt-1`
+artifacts were independently checked for source/cell/status and exact log
+summaries; both macOS ISAs supplied all four real window PNGs. Local inspection
+confirmed the geometric Reload icon in both Mac captures.
+
+This dispatch used `test_filter=browser_windows` for ordinary suites. Its green
+suite labels do not certify unfiltered console/library coverage; that earlier
+scope retains its separately named receipts below. These native development
+bytes also do not replace PRD 27's final-source pack, signed or public bytes.
+The host-injection and native page-focus acceptance boundaries remain owned
+by [PRD 25](PRD_02_25_con_workspace.md#tab-kinds-and-content-panels).
 
 From v0.2.21, each cell also runs the portable `minicon-console` library
 (`--lib`) and its host-neutral integration tests `synchronized_presentation`
