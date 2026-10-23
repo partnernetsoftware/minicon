@@ -664,11 +664,198 @@ pub const DEEPSEEK_OAUTH_REDIRECT: &str = "http://127.0.0.1/minicon/oauth";
 /// The caller loads the result with the page host. That host already
 /// installs `MINICON_BROWSER_HTTP_PROXY`. No system browser, no token.
 pub fn deepseek_oauth_authorize() -> Result<String, &'static str> {
-    oauth_authorize_load(
-        DEEPSEEK_AUTHORIZE_URL,
-        DEEPSEEK_OAUTH_REDIRECT,
-        &["127.0.0.1"],
-    )
+    deepseek_oauth_authorize_redirect(DEEPSEEK_OAUTH_REDIRECT)
+}
+
+/// Same authorize URL with a caller-chosen loopback redirect.
+///
+/// The redirect host must be `127.0.0.1`. Anything else is rejected. The
+/// result is what the built-in page host loads. No system browser.
+pub fn deepseek_oauth_authorize_redirect(redirect_uri: &str) -> Result<String, &'static str> {
+    oauth_authorize_load(DEEPSEEK_AUTHORIZE_URL, redirect_uri, &["127.0.0.1"])
+}
+
+const OAUTH_CODE_MAX_BYTES: usize = 256;
+
+/// Authorization code from a loopback redirect query.
+///
+/// Accepts `code` or `access_token`. Empty, oversized, or non-ascii values
+/// are rejected. This does not open a browser.
+pub fn oauth_code_from_query(query: &str) -> Result<String, &'static str> {
+    let mut found = None;
+    for pair in query.split('&') {
+        let Some((key, raw)) = pair.split_once('=') else {
+            continue;
+        };
+        if key != "code" && key != "access_token" {
+            continue;
+        }
+        let value = percent_decode(raw).ok_or("oauth-rejected")?;
+        if value.is_empty()
+            || value.len() > OAUTH_CODE_MAX_BYTES
+            || !value.is_ascii()
+            || value
+                .bytes()
+                .any(|byte| byte.is_ascii_control() || byte == b' ')
+        {
+            return Err("oauth-rejected");
+        }
+        found = Some(value);
+    }
+    found.ok_or("oauth-rejected")
+}
+
+fn percent_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return None;
+            }
+            let high = hex_nibble(bytes[index + 1])?;
+            let low = hex_nibble(bytes[index + 2])?;
+            out.push((high << 4) | low);
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Loopback listener for the OAuth redirect. Binds `127.0.0.1` only.
+///
+/// The accept thread answers the browser immediately. [`Self::poll`] is what
+/// the GUI reads. This does not call the OS browser.
+pub struct OAuthBridge {
+    redirect_uri: String,
+    incoming: std::sync::mpsc::Receiver<Result<String, &'static str>>,
+    taken: std::sync::atomic::AtomicBool,
+}
+
+impl OAuthBridge {
+    pub fn bind() -> Result<Self, String> {
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").map_err(|error| error.to_string())?;
+        let port = listener
+            .local_addr()
+            .map_err(|error| error.to_string())?
+            .port();
+        let (tx, incoming) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                let _ = tx.send(Err("oauth-rejected"));
+                return;
+            };
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+            let _ = tx.send(read_oauth_request(&mut stream, port));
+        });
+        Ok(Self {
+            redirect_uri: format!("http://127.0.0.1:{port}/minicon/oauth"),
+            incoming,
+            taken: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    pub fn redirect_uri(&self) -> String {
+        self.redirect_uri.clone()
+    }
+
+    /// One pending redirect. `None` means nothing arrived yet.
+    pub fn poll(&self) -> Option<Result<String, &'static str>> {
+        match self.incoming.try_recv() {
+            Ok(result) => {
+                self.taken.store(true, std::sync::atomic::Ordering::Relaxed);
+                Some(result)
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                if self.taken.load(std::sync::atomic::Ordering::Relaxed) {
+                    None
+                } else {
+                    Some(Err("oauth-rejected"))
+                }
+            }
+        }
+    }
+}
+
+fn read_oauth_request(stream: &mut std::net::TcpStream, port: u16) -> Result<String, &'static str> {
+    let mut buf = [0u8; 2048];
+    let n = std::io::Read::read(stream, &mut buf).map_err(|_| "oauth-rejected")?;
+    if n == 0 {
+        return Err("oauth-rejected");
+    }
+    let text = String::from_utf8_lossy(&buf[..n]);
+    let Some(request) = text.lines().next() else {
+        let _ = write_oauth_reply(stream, false);
+        return Err("oauth-rejected");
+    };
+    let mut parts = request.split(' ');
+    let method = parts.next().unwrap_or("");
+    let target = parts.next().unwrap_or("");
+    if method != "GET" {
+        let _ = write_oauth_reply(stream, false);
+        return Err("oauth-rejected");
+    }
+    let host_ok = text.lines().any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.eq_ignore_ascii_case("host")
+            && value
+                .trim()
+                .eq_ignore_ascii_case(&format!("127.0.0.1:{port}"))
+    });
+    if !host_ok {
+        let _ = write_oauth_reply(stream, false);
+        return Err("oauth-rejected");
+    }
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if path != "/minicon/oauth" {
+        let _ = write_oauth_reply(stream, false);
+        return Err("oauth-rejected");
+    }
+    match oauth_code_from_query(query) {
+        Ok(code) => {
+            let _ = write_oauth_reply(stream, true);
+            Ok(code)
+        }
+        Err(reason) => {
+            let _ = write_oauth_reply(stream, false);
+            Err(reason)
+        }
+    }
+}
+
+fn write_oauth_reply(stream: &mut std::net::TcpStream, ok: bool) -> std::io::Result<()> {
+    use std::io::Write;
+    let body = if ok {
+        "<html><body>MiniCon received the sign-in.</body></html>"
+    } else {
+        "<html><body>MiniCon refused the sign-in.</body></html>"
+    };
+    let status = if ok { "200 OK" } else { "400 Bad Request" };
+    write!(
+        stream,
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )?;
+    stream.flush()?;
+    let _ = stream.shutdown(std::net::Shutdown::Both);
+    Ok(())
 }
 
 /// HTTPS authorize URL for the built-in content panel.
@@ -1081,6 +1268,50 @@ mod tests {
             format!("{url}|http://127.0.0.1:9")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn oauth_code_comes_only_from_the_loopback_query() {
+        assert_eq!(oauth_code_from_query("code=abc").as_deref(), Ok("abc"));
+        assert_eq!(
+            oauth_code_from_query("access_token=tok"),
+            Ok("tok".to_owned())
+        );
+        assert_eq!(oauth_code_from_query("code="), Err("oauth-rejected"));
+        assert_eq!(
+            oauth_code_from_query(&format!("code={}", "x".repeat(257))),
+            Err("oauth-rejected")
+        );
+        assert_eq!(oauth_code_from_query("code=a%20b"), Err("oauth-rejected"));
+        let bridge = OAuthBridge::bind().unwrap();
+        assert!(bridge.redirect_uri().starts_with("http://127.0.0.1:"));
+        assert!(bridge.redirect_uri().ends_with("/minicon/oauth"));
+        let uri = bridge.redirect_uri();
+        let port = uri
+            .trim_start_matches("http://127.0.0.1:")
+            .trim_end_matches("/minicon/oauth");
+        use std::io::Write;
+        std::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .unwrap()
+            .write_all(
+                format!(
+                    "GET /minicon/oauth?code=from-loop HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        let code = (0..50)
+            .find_map(|_| {
+                let got = bridge.poll();
+                if got.is_none() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                got
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(code, "from-loop");
+        assert!(bridge.poll().is_none());
     }
 
     #[test]

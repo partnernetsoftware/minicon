@@ -823,6 +823,11 @@ struct ConApp {
     /// Child wry page host for the one browser content panel.
     /// `MINICON_BROWSER_BIN` names it. Unset stays Unavailable, not `host_open`.
     browser_page: Option<std::process::Child>,
+    /// Loopback `127.0.0.1` catcher for the OAuth redirect. Absent after the
+    /// code is taken or refused. Not a system browser.
+    oauth_bridge: Option<browser::OAuthBridge>,
+    /// Authorization code from that redirect. Not written into the terminal.
+    oauth_code: Option<String>,
     /// Settings inherited when an empty workspace creates its next terminal.
     /// Closing the final tab updates this before the terminal is dropped, so
     /// the greeting page is a lifecycle boundary rather than a settings reset.
@@ -1306,6 +1311,8 @@ impl ConApp {
             sessions,
             browsers: SessionStore::default(),
             browser_page: None,
+            oauth_bridge: None,
+            oauth_code: None,
             session_seed,
             notes: composer::ComposerState::default(),
             notes_focused: false,
@@ -2165,13 +2172,47 @@ impl ConApp {
     }
 
     /// Load the default DeepSeek authorize page into the one browser panel.
+    /// The redirect is this process's `127.0.0.1` listener.
     fn start_deepseek_oauth(&mut self, window: &PixelWindow) {
-        match browser::deepseek_oauth_authorize() {
-            Ok(url) => {
-                self.present_http_link(window, &url);
-            }
+        let bridge = match browser::OAuthBridge::bind() {
+            Ok(bridge) => bridge,
             Err(reason) => {
                 self.note_host_notice(format!("DeepSeek OAuth refused: {reason}"), window);
+                return;
+            }
+        };
+        let url = match browser::deepseek_oauth_authorize_redirect(&bridge.redirect_uri()) {
+            Ok(url) => url,
+            Err(reason) => {
+                self.note_host_notice(format!("DeepSeek OAuth refused: {reason}"), window);
+                return;
+            }
+        };
+        self.oauth_code = None;
+        self.oauth_bridge = Some(bridge);
+        self.present_http_link(window, &url);
+    }
+
+    /// Take one loopback redirect into the product, if it has arrived.
+    /// The notice names the byte count, not the code.
+    fn poll_oauth_bridge(&mut self) -> bool {
+        let Some(bridge) = self.oauth_bridge.take() else {
+            return false;
+        };
+        match bridge.poll() {
+            None => {
+                self.oauth_bridge = Some(bridge);
+                false
+            }
+            Some(Ok(code)) => {
+                let bytes = code.len();
+                self.oauth_code = Some(code);
+                self.host_notice = Some(format!("DeepSeek sign-in received ({bytes} bytes)"));
+                true
+            }
+            Some(Err(reason)) => {
+                self.host_notice = Some(format!("DeepSeek sign-in refused: {reason}"));
+                true
             }
         }
     }
@@ -4002,6 +4043,9 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Exit);
         }
         self.perf_stats.sync_present_stats(window.present_stats());
+        if self.poll_oauth_bridge() {
+            self.mark_host_ui_full();
+        }
         if let Some(target) = self
             .pending_control
             .prepare_screenshot(self.workspace.active())

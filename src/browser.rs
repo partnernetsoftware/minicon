@@ -9,10 +9,11 @@
 // `host_reply`) so callers in this binary do not import `minicon_web` directly.
 #[allow(unused_imports)]
 pub use minicon_web::{
-    BrowserPanel, BrowserProxy, BrowserProxyConfig, BrowserTab, PageHost, PageLoad, PanelSlot,
-    ProcessPageHost, deepseek_oauth_authorize, embedded_page_class, host_reply, http_url_at,
-    oauth_authorize_load, page_host_embed_args, page_host_program, page_host_request,
-    page_load_from_exit, resolve_proxy, resolve_proxy_from_process, set_embedded_page_visible,
-    spawn_page_host, spawn_page_host_in_panel, spawn_page_host_with_proxy, webkit_proxy_clear,
-    webkit_proxy_env, wry_proxy_endpoint,
+    BrowserPanel, BrowserProxy, BrowserProxyConfig, BrowserTab, OAuthBridge, PageHost, PageLoad,
+    PanelSlot, ProcessPageHost, deepseek_oauth_authorize, deepseek_oauth_authorize_redirect,
+    embedded_page_class, host_reply, http_url_at, oauth_authorize_load, oauth_code_from_query,
+    page_host_embed_args, page_host_program, page_host_request, page_load_from_exit, resolve_proxy,
+    resolve_proxy_from_process, set_embedded_page_visible, spawn_page_host,
+    spawn_page_host_in_panel, spawn_page_host_with_proxy, webkit_proxy_clear, webkit_proxy_env,
+    wry_proxy_endpoint,
 };

@@ -128,6 +128,9 @@ impl ConApp {
     fn dispatch_control(&mut self, window: &PixelWindow, request: control::IncomingRequest) {
         use control::CliCommand;
         self.perf_stats.sync_present_stats(window.present_stats());
+        if self.poll_oauth_bridge() {
+            self.mark_host_ui_full_and_repaint(window);
+        }
         if matches!(&request.command, CliCommand::UiSnapshot) && self.refresh_ime_status() {
             self.request_dirty_redraw(window);
         }

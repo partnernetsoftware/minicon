@@ -261,7 +261,9 @@ composer "Connect AI" / first-use assist
 ```text
 [-] B3a DeepSeek OAuth starts as an https authorize URL on the content panel
        (`deepseek_oauth_authorize`, Ctrl+Shift+D). Redirect host is allowlisted.
-       The page host eats `MINICON_BROWSER_HTTP_PROXY`. No token bridge yet.
+       The page host eats `MINICON_BROWSER_HTTP_PROXY`. The redirect is
+       `127.0.0.1` only (`OAuthBridge`); the code stays in the process and
+       the notice reports the byte count.
 [_ ] B3b provider registry stub + API-key config schema (no UI chrome yet)
 [_ ] B3c composer entry point calls B3a by default when assist is enabled
 ```
