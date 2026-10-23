@@ -7,8 +7,8 @@
 //! # Boundary
 //!
 //! [`PageHost`] is the swappable surface: [`ProcessPageHost`] speaks
-//! `--load <url>` to a helper process. On macOS, feature `native-page-host`
-//! owns a same-process child WKWebView for the GUI binary while core/headless
+//! `--load <url>` to a helper process. On macOS/Windows, feature `native-page-host`
+//! owns a same-process child WKWebView/WebView2 for the GUI binary while core/headless
 //! consumers stay WebView-free. Feature `wry-host` retains the Linux helper.
 //!
 //! Stable names: [`BrowserTab`], [`BrowserPanel`], [`PageLoad`], [`PageHost`],
@@ -22,9 +22,9 @@
 /// unbounded header.
 const PROXY_VALUE_MAX_BYTES: usize = 512;
 
-#[cfg(all(feature = "native-page-host", target_os = "macos"))]
+#[cfg(all(feature = "native-page-host", any(target_os = "macos", windows)))]
 mod native_page;
-#[cfg(all(feature = "native-page-host", target_os = "macos"))]
+#[cfg(all(feature = "native-page-host", any(target_os = "macos", windows)))]
 pub use native_page::NativePageHost;
 
 /// The single content panel a browser tab hosts today.

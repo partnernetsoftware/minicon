@@ -52,11 +52,11 @@ fn main() {
         // The MSVC runtime is three separable pieces: the C startup files, the
         // VC runtime, and the Universal CRT. They normally have to share a
         // linkage model, with one documented exception -- startup and VC
-        // runtime static, UCRT dynamic -- which is exactly the combination
-        // this product wants. The UCRT is a Windows component and is present
-        // on every supported system; VCRUNTIME140.dll is a redistributable
-        // and is not, so a dynamic reference to it makes a clean Windows
-        // Server 2016 refuse to start the program.
+        // runtime static, UCRT dynamic. WebView2's static loader pulls
+        // `libcmt.lib(utility.obj)`, whose private `__acrt_*` initialization
+        // symbols are absent from the dynamic UCRT import library. Since the
+        // loader must stay inside this one-file executable, select the static
+        // UCRT as well. `startup.rs` initializes both runtimes explicitly.
         //
         // Mixing the models is what fails loudly: leaving msvcrt.lib (the
         // dynamic startup) alongside libvcruntime.lib links, then dies at
@@ -76,12 +76,12 @@ fn main() {
             "libcmtd.lib",
             "msvcrt.lib",
             "msvcrtd.lib",
-            "libucrt.lib",
+            "ucrt.lib",
             "libucrtd.lib",
         ] {
             println!("cargo:rustc-link-arg=/NODEFAULTLIB:{library}");
         }
-        for library in ["libcmt.lib", "libvcruntime.lib", "ucrt.lib"] {
+        for library in ["libcmt.lib", "libvcruntime.lib", "libucrt.lib"] {
             println!("cargo:rustc-link-arg=/DEFAULTLIB:{library}");
         }
         println!("cargo:rustc-link-arg-bin=minicon=/ENTRY:minicon_entry");
@@ -122,8 +122,9 @@ fn main() {
 /// Shadows rustc's hard-coded `msvcrt.lib` directive with an empty COFF
 /// object. `/NODEFAULTLIB` alone is insufficient on newer MSVC toolsets: the
 /// unresolved default can still make `libcmt` contribute startup objects that
-/// require private static-UCRT symbols, defeating the deliberate dynamic-UCRT
-/// boundary above.
+/// require private static-UCRT symbols. The WebView2 static loader now requires
+/// that complete static UCRT boundary; this override still excludes the
+/// incompatible dynamic startup object.
 ///
 /// The compact COFF archive technique is adapted from Chris Denton's
 /// `static_vcruntime` implementation, also distributed under MIT/Apache-2.0.

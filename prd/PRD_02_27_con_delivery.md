@@ -135,9 +135,13 @@ machines new enough to satisfy the import.
   `KernelBase.dll` and the `kernel32` forwarder arrived in 1703. SDK header
   guards do not catch this. Only the target machine settles it.
 - [v] **no Visual C++ redistributable.** The VC runtime is linked statically and
-  every remaining module is a Windows component; the Universal CRT is an
-  operating-system component, not a redistributable. `panic = "unwind"` is
-  preserved — panic containment is not traded away for the dependency.
+  every remaining module is a Windows component. The 0.2.21 same-process
+  WebView2 adapter requires the static WebView2 loader; that loader pulls
+  `libcmt.lib(utility.obj)` and its private static-UCRT initialization symbols.
+  Windows now links the static UCRT too and calls `__acrt_initialize` after
+  `__vcrt_initialize` at its custom entry. A canonical Windows x86_64 dev
+  build and visible page journey prove this locally; the native ARM64 and
+  release artifact courts remain open. `panic = "unwind"` is preserved.
 - [v] a custom PE entry (`/ENTRY`) obliges the program to run the CRT
   initialization the MSVC startup object would have. `__vcrt_initialize` is
   required and is not reachable through the `.CRT$XI*` table this product walks;

@@ -61,10 +61,10 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── terminal::TerminalStream / Utf16Decoder: OS/ISA-neutral state, framing, viewport follow/activation, typed projection limits, bounded text/recovery and per-producer decoding
 │   ├── terminal::TerminalPresentation: active/presented frames and bounded synchronization; GUI consumes through a private clock adapter (PRD 24.01)
 │   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
-├── [-] Browser surface — crates/minicon-web (workspace member; wry only in the host; PRD_02_25 + PRD_02_31)
+├── [-] Browser surface — crates/minicon-web (workspace member; native adapters stay here; PRD_02_25 + PRD_02_31)
 │   ├── library: open/load URL, proxy application, staged OAuth/dashboard/preview/wasm
-│   ├── optional host binary / subcommand; sole wry/WebView link site
-│   └── product face remains Tab / content panel; no tray; core minicon does not link wry
+│   ├── Linux optional helper owns wry/tao; macOS/Windows GUI feature owns native child WebView
+│   └── product face remains Tab / content panel; no tray; core/headless crates do not link wry
 ├── Owned dependencies — third_party/
 │   ├── vte: authoritative VT/UTF-8 grammar and side-effect-free boundary preview
 │   ├── vt100: VT parsing, literal cell/style writes, damage, shared row snapshots and bounded OutputFramer
@@ -91,7 +91,7 @@ flowchart LR
     GRAM["owned vte: common VT/UTF-8 grammar"]
     FRAME["vt100 OutputFramer: OS-neutral framing"]
     CON["minicon-console: common terminal / Windows native semantics"]
-    WEB["minicon-web: browser content panel; wry in the host"]
+    WEB["minicon-web: browser content panel; Linux helper or GUI-only native child"]
     RESP["common response grammar / finite CPR query windows"]
     SB["owned softbuffer fork"]
     E["Exact source + enabled features + OS/ISA + build/runtime evidence"]
@@ -153,7 +153,7 @@ than duplicating the full platform feature catalog.
 | `third_party/vt100` | VT screen/parser API including damage, DECAWM, `auto_wrap()`, `CellStyle`, programmatic literal cell/style fills and full/diff replay | Shared OS/ISA-neutral parser state; dependencies may specialize internally | Own fork required by terminal rendering and the optional Windows console service, which consumes the cell-edit API; upstream vt100 is not interchangeable; behavior owner [terminal](PRD_02_24_con_terminal.md) |
 | `third_party/vte` | VT/UTF-8 grammar, `at_boundary()` and side-effect-free `preview_byte()` exposed through the owned vt100 parser | OS/ISA-neutral grammar; memchr may specialize internally | Exact lexer state, not a second boundary scanner; shared by terminal parsing and the optional Windows service; owner [terminal](PRD_02_24_con_terminal.md) |
 | `crates/minicon-console` | Common `terminal::TerminalPresentation` / `TerminalResponses` / `csi_query_reply` / `TerminalStream` / `Utf16Decoder` / `CellRect` and screen region/literal-span, absolute cursor placement/replay and viewport projection operations; Windows ConDrv server/clients, aggregate read-retention/admission observation, typed APIs, per-buffer stream composition and native output ordering | Common state/stream is OS/ISA-neutral; native buffer identities/handles and service are Windows-only, native ABI/ISA qualification stays separate | GUI directly consumes common query replies and presentation through `src/terminal/presentation.rs`; product owns clock/budget, all-tab timer folding and raster (PRD 24.01); optional `rust-console` provider in platform; direct paths to owned vt100/VTE preserve required APIs for external repository consumers; owners [terminal library](PRD_02_35_terminal_library.md) and [Windows backend](PRD_02_34_windows_console_backend.md) |
-| `crates/minicon-web` | Browser content-panel API (`PageHost`, open/load URL, proxy hook, DeepSeek authorize/code exchange); bin `minicon-web-host` | Default features link no wry. Feature `wry-host` links wry/tao into that host only, and gtk only on Linux. Core `minicon` must not enable it | Workspace member. Missing WebView is Unavailable / exit 69, never the OS browser. Product face is Tab / content panel (PRD_02_25); no tray; `src/browser.rs` re-exports |
+| `crates/minicon-web` | Browser content-panel API (`PageHost`, open/load URL, proxy hook, DeepSeek authorize/code exchange); bin `minicon-web-host` | Default features link no wry. Feature `wry-host` links wry/tao into the Linux host; gtk is Linux-only. Feature `native-page-host` links wry into the macOS/Windows GUI only. Core/headless crates remain WebView-free | Workspace member. Missing WebView is typed Unavailable / helper exit 69, never the OS browser. Product face is Tab / content panel (PRD_02_25); no tray; `src/browser.rs` re-exports |
 | `third_party/softbuffer` | Native pixel presentation consumed by platform's portable window host | Backend selected by OS/window system; not a native-free UI rule | Own fork carries macOS presentation changes; backend failures remain native results |
 | `src/terminal.rs`, `terminal_paint.rs`, `raster_surface.rs`, `font.rs` | Terminal lifecycle and renderer composition | Shared composition over native facades; behavior may select by OS | Binary-private modules, not an independently exported terminal engine; owner [terminal](PRD_02_24_con_terminal.md) |
 | `src/workspace.rs`, `ui.rs`, `rename.rs`, `notes.rs`, `session_store.rs`, `update*.rs`, `browser.rs` | Tab identity, layout, editable surfaces, persistence, manual update policy; `browser.rs` re-exports `minicon_web` | Product composition; page-host load goes through `minicon-web` | Do not export product state merely because a helper is pure; browser shell owner [workspace](PRD_02_25_con_workspace.md); wry isolation [horizon](PRD_02_31_v0_2_horizon.md) |
@@ -243,7 +243,7 @@ gaps were ownership overlap, incomplete boundary enforcement and stale descripti
 | `minicon-core` | Shared host-neutral rules | Reasonable umbrella name, but not the whole terminal engine. The package description now covers all rule families and the source header points here. Core keymap is an opinionated composer rule set, not a universal keyboard policy for consumers. |
 | `minicon-ui-core` | Host-neutral UI mechanisms, including internal ISA kernels | Appropriate name; host-neutral does not mean ISA-free. The description now includes rendering primitives; tree exports forward core; terminal selection remains optional. |
 | `minicon-platform` | Native capability contracts and adapters with explicit feature selection | Appropriate umbrella for OS and machine mechanisms, but not a promise that every capability exists on every host. Its broad optional feature surface needs consumer-feature evidence. `native-pixel-window` versus `portable-pixel-window` describes implementation backends, not the overall portability of the crate. |
-| `minicon-web` | Browser content-panel API (lib + `minicon-web-host`) | Name matches the adopted boundary (2026-10-23). Not a tray host and not chrome UI. Passive WebView probe stays on `minicon-platform`. The default host does not link wry and exits Unavailable. `wry-host` is the optional loader. |
+| `minicon-web` | Browser content-panel API (lib + `minicon-web-host`) | Name matches the adopted boundary (2026-10-23). Not a tray host and not chrome UI. Passive WebView probe stays on `minicon-platform`. The default helper does not link wry and exits Unavailable; `wry-host` is Linux's optional loader, while `native-page-host` links the GUI-only macOS/Windows child. |
 
 Core owns tree and numeric implementation. UI-core/platform depend on core
 with defaults disabled, preserving old public import paths and UI/core tree

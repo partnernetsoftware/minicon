@@ -61,20 +61,10 @@ const LOAD_TIME_BLOCKERS: &[(&str, &str)] = &[
 /// Modules the operating system itself provides on the oldest Windows this
 /// product claims to run on, Windows Server 2016 (build 14393).
 ///
-/// The `api-ms-win-*` entries are UCRT and Win32 API sets, which are OS
-/// components from Windows 10 RTM onward — not a redistributable.
+/// The `api-ms-win-*` entry is a Win32 API set provided by the OS.
 const OS_PROVIDED_MODULES: &[&str] = &[
     "advapi32.dll",
     "api-ms-win-core-synch-l1-2-0.dll",
-    // The Universal CRT. Deliberately still dynamic: it ships with Windows,
-    // so linking it statically would cost bytes to duplicate something the
-    // target already has.
-    "api-ms-win-crt-heap-l1-1-0.dll",
-    "api-ms-win-crt-locale-l1-1-0.dll",
-    "api-ms-win-crt-math-l1-1-0.dll",
-    "api-ms-win-crt-runtime-l1-1-0.dll",
-    "api-ms-win-crt-stdio-l1-1-0.dll",
-    "api-ms-win-crt-string-l1-1-0.dll",
     // BCryptGenRandom is the fail-closed request-id entropy source. bcrypt.dll
     // is an OS component from Windows Vista / Server 2008 onward, so Server
     // 2016 does not need a redistributable for it.
@@ -85,6 +75,7 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     "bcryptprimitives.dll",
     // CryptoAPI, the same schannel TLS chain. Present since Windows 2000.
     "crypt32.dll",
+    "comctl32.dll",
     "gdi32.dll",
     // Production pin 745f52b2 still imports this at load time. The Windows
     // RSS research copy delay-loads it via LoadLibraryW on screenshot encode
@@ -94,10 +85,13 @@ const OS_PROVIDED_MODULES: &[&str] = &[
     "imm32.dll",
     "kernel32.dll",
     "ntdll.dll",
+    "ole32.dll",
+    "oleaut32.dll",
     // Security Support Provider interface, again the schannel TLS chain.
     // Present since Windows NT 4.
     "secur32.dll",
     "shell32.dll",
+    "shlwapi.dll",
     "user32.dll",
     // Winsock 2, needed by the same TLS/network stack. An OS component since
     // Windows 95 / NT 4.

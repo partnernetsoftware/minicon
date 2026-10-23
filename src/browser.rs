@@ -5,7 +5,7 @@
 //! links wry for its child WKWebView; core/headless crates do not. There is no
 //! system tray. Chrome sent-history stays outside this module.
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 pub use minicon_web::NativePageHost;
 
 // The GUI calls a subset. The rest is the same adapter surface (`PageHost`,

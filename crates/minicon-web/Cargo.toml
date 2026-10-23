@@ -16,7 +16,7 @@ path = "src/bin/minicon-web-host.rs"
 
 [features]
 default = []
-# Same-process child WebView for a GUI-owned content panel. The MiniCon macOS
+# Same-process child WebView for a GUI-owned content panel. The MiniCon macOS/Windows
 # binary enables this; core/headless consumers do not.
 native-page-host = ["dep:wry", "wry/mac-proxy"]
 # Optional page loader. Core `minicon` must not enable this. Without it,

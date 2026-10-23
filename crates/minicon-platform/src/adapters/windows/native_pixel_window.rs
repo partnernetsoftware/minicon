@@ -680,6 +680,11 @@ impl Backend {
 }
 
 impl PixelWindowBackend for Backend {
+    fn embed_parent(&self) -> Option<u64> {
+        let hwnd = self.hwnd.get();
+        (!hwnd.is_null()).then_some(hwnd as usize as u64)
+    }
+
     fn request_redraw(&self) {
         let hwnd = self.hwnd.get();
         if !hwnd.is_null() {

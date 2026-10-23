@@ -5,7 +5,10 @@ and the canonical macOS arm64 dev build visibly hosts WKWebView in the same
 content column. Owner use on 2026-10-23 rejected the current browser UI/UX;
 the macOS build is an engineering spike, not an accepted product surface.
 UX redesign/acceptance, automated/second-ISA macOS, cross-platform artifacts
-and Windows remain open. No publish.
+and Windows arm64 runtime evidence remain open. A local Windows x86_64 dev
+journey is recorded below. No publish. Owner decision
+(2026-10-23): Windows adapter bring-up precedes the `{UX-BASELINE}` proposal;
+UX acceptance remains a separate Candidate gate.
 Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
 has two tracks on `main`; implementation commits `960853b` and `ade9a4d`
@@ -49,9 +52,10 @@ macOS or Windows runtime evidence.
 browser UI/UX poor. The earlier Computer Use receipt proves only native child
 creation, geometry and lifecycle; it does not prove that the surface is clear,
 coherent or pleasant to use. The current home/shell is retained as a diagnostic
-scaffold, not a design baseline. `{UX-BASELINE}` now precedes Windows surface
-work so the project does not duplicate a rejected interaction model in
-WebView2. The owner rejection is named evidence and keeps Candidate closed.
+scaffold, not a design baseline. The owner subsequently requested Windows
+adapter bring-up before the UX proposal (2026-10-23); this scaffold is not
+an accepted interaction model on either platform. The rejection keeps
+Candidate closed.
 
 No historical incident is renamed into a fix here. The detection hole is
 visible in the current court, and one recorded Linux-only hang
@@ -171,16 +175,16 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   evidence: direct Computer Use observation from canonical `build.sh dev` output proves local page visibility, hide/restore, focus release and fullscreen geometry; owner use rejects the current UI/UX, so these mechanics do not close the leaf
 │   safe failure: no helper, exit 69, a blank shell, a floating WKWebView or an owner-rejected surface is failure; unavailable evidence is BLOCKED
 │   dependency: {ARCH}, {ARTIFACT}, {UX-BASELINE}; non-goal: production provider credentials
-├── [_] {UX-BASELINE} Redesign and accept the browser workspace before copying it to Windows
+├── [-] {UX-BASELINE} Propose and accept the browser workspace after Windows adapter bring-up
 │   invariant: opening, understanding current state, navigating, switching to a terminal, returning, resizing and closing/reopening form one coherent workflow; browser/terminal hierarchy, focus and status are legible without relying on an undocumented shortcut or diagnostic placeholder
 │   evidence: named owner journeys on the canonical macOS app with before/after screenshots or observations for open, real URL navigation, tab switch/return, resize/fullscreen and close/reopen; explicit owner acceptance is required
 │   safe failure: “the WebView is visible” is insufficient; awkward pasted-on chrome, unclear state/navigation, wasted or colliding layout, surprising focus, or another owner rejection keeps this leaf open and kills Candidate
-│   dependency: {SHELL}, {ARCH} and the current macOS spike as a disposable prototype; non-goal: dashboard/preview/wasm, 1:N panels or a whole-terminal visual rewrite
-├── [_] {WIN-PANEL} Close the same user-visible surface on WebView2
+│   dependency: {SHELL}, {ARCH} and direct Windows/macOS adapter use as disposable prototypes; non-goal: dashboard/preview/wasm, 1:N panels or a whole-terminal visual rewrite
+├── [-] {WIN-PANEL} Bring up the Windows content panel, then qualify both ISAs
 │   invariant: the Windows release either provides the same tab/content-panel outcome or 0.2.21 explicitly narrows its browser platform claim before Candidate; silent Unavailable is not parity
-│   evidence: visible native x86_64 and arm64 journeys from canonical artifacts
-│   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence
-│   dependency: accepted {UX-BASELINE}, {ARCH}, {ARTIFACT}; non-goal: changing the Windows console backend or cloning the rejected macOS prototype
+│   evidence: local Windows x86_64 canonical dev build and visible open/URL/switch/resize/maximize/reopen journeys; native arm64 remains BLOCKED
+│   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence; missing runtime is typed Unavailable
+│   dependency: {ARCH}, canonical Windows {ARTIFACT}; accepted {UX-BASELINE} remains required for release; non-goal: changing the Windows console backend or accepting the diagnostic home as final UX
 ├── [v] {AUTH-CORE} Proxy, PKCE/state, loopback and private bearer mechanisms
 │   invariant: authorize and token paths use BrowserProxy; token URL is https; redirect is 127.0.0.1; state/PKCE and bounded private publication remain enforced
 │   evidence: minicon-web unit tests, run 39925651159 Linux live navigation and run 39919403513 Windows private-filesystem court
@@ -201,9 +205,9 @@ flowchart LR
     ART --> ARCH{"{ARCH}<br/>portable same-window boundary"}
     ARCH --> LNX["{LNX-PANEL} [v]<br/>X11 + WebKitGTK"]
     ARCH --> PROTO["macOS engineering prototype<br/>mechanics visible; UX rejected"]
-    PROTO --> UX["{UX-BASELINE} [_]<br/>redesign + owner acceptance"]
+    PROTO --> WIN["{WIN-PANEL} [-]<br/>WebView2 bring-up and courts"]
+    WIN --> UX["{UX-BASELINE} [_]<br/>proposal + owner acceptance"]
     UX --> MAC["{MAC-PANEL} [-]<br/>accepted macOS surface + courts"]
-    UX --> WIN["{WIN-PANEL} [_]<br/>WebView2 after UX acceptance"]
     LNX --> WEB
     PROTO --> WEB
     MAC --> WEB
@@ -231,11 +235,86 @@ flowchart LR
 | 4 — RELEASE-GATE | [-] Version is 0.2.21 and owners point here, but Candidate consideration stays closed until the canonical browser surface is visible on every claimed desktop. | No tag, Candidate or `release.sh 0.2.21`; unavailable native evidence stays BLOCKED. The console `{GATE}` remains valid only for its own completed track. |
 | 5 — LNX-PANEL | [v] Apply `Layout::content_column` through the X resize seam and drive real WebKitGTK proxy/direct-loopback navigation. | Run `39925651159` records nonzero `minicon-web-x11`, `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs. |
 | 6 — ARCH | [v] Use platform adapters inside `minicon-web`: GUI-only same-process child WKWebView/WebView2 where portable reparenting is unavailable, retaining the qualified Linux helper. `minicon-core`, `minicon-console` and headless paths remain WebView-free. | The macOS spike visibly proves the boundary. A floating helper, OS browser, captured pixels or forwarded synthetic input still fails it. |
-| 7 — ARTIFACT | [-] `build.sh dev` now links the macOS native page host and emits `target/debug/MiniCon 0.2.21 Dev.app` with a distinct local-test identity; prove release output and close Linux/Windows packaging. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS. Missing bytes on any claimed platform keep the leaf open. |
-| 8 — UX-BASELINE | [_] Treat the current macOS page as a disposable prototype; redesign the browser workspace around the named open/navigate/switch/return/resize/close journeys, then obtain explicit owner acceptance. | Owner use on 2026-10-23 rejected the current UI/UX. Geometry screenshots cannot override that evidence, and Windows work must not clone it. |
-| 9 — MAC-PANEL | [-] Rework the WKWebView surface to the accepted UX baseline, then add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
-| 10 — WIN-PANEL | [_] After `{UX-BASELINE}` is accepted, implement and qualify the same interaction model with WebView2 on both Windows ISAs, or explicitly narrow the 0.2.21 browser platform claim before Candidate. | ACL/compile evidence and duplication of the rejected macOS prototype are not page-surface evidence. |
+| 7 — ARTIFACT | [-] `build.sh dev` links the macOS and Windows native page hosts; the Windows x86_64 canonical `target/debug/minicon.exe` opened a visible WebView2 child on 2026-10-23. The macOS dev wrapper remains `target/debug/MiniCon 0.2.21 Dev.app`; release output and full cross-platform inventory remain open. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS/Windows. Missing bytes on any claimed platform keep the leaf open. |
+| 8 — WIN-PANEL | [-] Owner decision 2026-10-23 brings up the Windows WebView2 adapter from canonical `build.sh dev` output before the UX proposal. Record native x86_64 journeys and separately qualify arm64. | The current home/shell is an engineering scaffold. Compile-only and ACL receipts cannot prove the page surface. |
+| 9 — UX-BASELINE | [-] A proposal from actual Windows and macOS journeys now covers address/status/back, tab hierarchy, focus, home, loading and error states; obtain explicit owner acceptance before redesign and Candidate. | Owner use on 2026-10-23 rejected the current UI/UX. Geometry screenshots cannot override that evidence. |
+| 10 — MAC-PANEL | [-] Rework the WKWebView surface to the accepted UX baseline, then add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
 | 11 — CLOSE | [-] Re-run complete gates, record explicit owner macOS UX acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
+
+## Browser workspace UX proposal — pending owner confirmation
+
+This is a proposal from the macOS arm64 direct-use rejection and the Windows
+x86_64 journeys below, not accepted product scope. Do not implement the large
+redesign until the owner confirms it.
+
+| Area | Proposed behavior | Observation driving it |
+| --- | --- | --- |
+| Address and back | Put a compact URL field and Back/Forward/Reload controls at the top of the active browser content panel. Show the current URL after page redirects; Enter navigates the same panel. Disable Back/Forward when history has no entry. Ctrl+click continues to reuse the single browser tab. | The current panel has no in-window way to see or edit the URL, nor to return after navigation. |
+| Tab hierarchy | Keep browser and terminal tabs as peers in the one sidebar. Use a browser icon, site title and loading/error mark in the browser row; keep history/settings as window chrome, never a second content panel. Do not print diagnostic `1 tab · 1 panel` text in normal use. | The engineering home is visually pasted into a terminal-shaped shell, and the tab name remains the generic `browser`. |
+| Focus | On tab switch, hide the native child and restore terminal/host keyboard focus. Clicking the URL field selects its text; Escape returns focus to the page or terminal. Reserve host Ctrl+Shift shortcuts at the native WebView boundary so they work even after clicking a page. | Windows initially left an invisible child focused and swallowed host shortcuts; the hide fix closes that mechanics defect, not the full focus design. |
+| Home and vertical space | Replace the large centered diagnostic home with a quiet start surface containing the address field, one sentence of guidance and no fake content. A browser tab has no terminal composer, so let its page fill the remaining height below the browser toolbar; this would revise the current `Layout::content_column` geometry only after acceptance. | Both macOS owner use and Windows screenshots show large unused browser space below the page and no obvious navigation control. |
+| Loading and errors | Show a bounded loading indicator tied to navigation events, then the page title/URL. Keep the attempted URL and offer Retry plus a short typed reason when the runtime, proxy, TLS or navigation fails; never silently hand the URL to the OS browser. | The current `page: loading` shell text remains beneath the child even after the real page visibly loads, and an unavailable runtime would otherwise look like a dead blank page. |
+
+Acceptance journey: on canonical macOS and Windows builds, open home; navigate
+a real URL and go back; switch to a terminal and return with shortcuts working;
+resize, maximize and toggle chrome; close/reopen; then exercise one failed load.
+Capture the presented page separately from `screenshot-pane` wherever native
+child pixels are omitted. Owner approval of these interactions is the
+`{UX-BASELINE}` gate; it is not inferred from adapter mechanics.
+
+## Local evidence — 2026-10-23, Windows x86_64
+
+- `./scripts/build.sh dev` (Git Bash on Windows) built the canonical
+  `target/debug/minicon.exe` with the GUI-only `native-page-host` feature.
+  The visible executable was 9,629,696 bytes. The first link exposed an
+  incompatibility between WebView2's static loader and dynamic UCRT; selecting
+  static UCRT plus explicit `__acrt_initialize` in the custom entry made the
+  canonical build and the visible page journey pass. `dumpbin /dependents`
+  reported OS DLLs only, including the new WebView2 COM/system DLLs; the PE
+  import gate passed in the final `build.sh test` run.
+- CLI `send-ui-keys Ctrl+Shift+O` opened one browser root. A second invocation
+  left the tab count unchanged. Physical Ctrl+click on a public documentation
+  URL printed by the terminal activated that same browser tab and loaded the
+  real page inside its child HWND. Switching to a terminal tab hid the child
+  and `Ctrl+Shift+O` restored it. An initial version failed to hide because a
+  `focus_parent()` error returned before `set_visible(false)`; the fixed
+  canonical build visibly hid the child and kept host shortcuts responsive.
+- CLI `resize-window` changed the main client from 944×561 to 1100×740.
+  The first version left the WebView2 rectangle stale until tab reselection;
+  deferring native child bounds until after host resize dispatch fixed the
+  direct resize. Win32 maximize grew the page to the full content-column
+  width. With the history chrome open, the child HWND shrank to its left
+  edge; with the sidebar collapsed, its left edge moved from 224 to 44 in
+  screen coordinates on the maximized window. CLI close/reopen removed the
+  browser tab and created a fresh one. The single local display reports 100%
+  scale; a real DPI transition remains BLOCKED.
+- `screenshot-pane --target @1` while the browser was active produced
+  `target/browser-win-url-cli.png`: its pixels contain only MiniCon's own
+  browser shell and URL/load state. The WebView2 page is a child HWND and does
+  not appear in that PNG. The corresponding window capture
+  `target/browser-win-url-desktop.png` shows the real page. `ui-snapshot`
+  (`target/browser-win-url.json`) named the active browser tab, but its
+  `geometry` was null; this CLI coverage gap remains open. These ignored
+  local files are diagnostic receipts, not published artifacts.
+- On the final Windows source, `cargo fmt --all`,
+  `cargo clippy --all-targets -- -D warnings`, `./scripts/build.sh test`,
+  and `cargo build --locked --no-default-features` passed. The first full
+  test run hit a timing failure in the pre-existing owned-console GUI cleanup
+  fixture after its temporary control pipe had already exited; its isolated
+  rerun and the complete second test run passed. The full gate recorded 476
+  passed and one ignored main test, 15 passed control tests, and a passed PE
+  import check. The new
+  Win32 parent and focus/visibility tests ran as five `native_page` tests;
+  replacing the typed HWND or restoring early return on focus error made
+  the respective test fail before the implementation was restored.
+- The native adapter passes the resolved browser proxy endpoint to wry's
+  WebView2 builder; the proxy mapping and override tests passed. A separate
+  live proxy failure journey was attempted, but automatic command approval
+  rejected launching that proxy-configured GUI, so there is no live proxy
+  receipt from this host. Keep that runtime claim open.
+- Windows ARM64 WebView2 runtime, a real DPI transition, release artifact
+  inventory, owner UX acceptance and cross-platform Candidate gates remain
+  open. This x86_64 dev receipt does not imply them.
 
 ## Local evidence — 2026-10-23, macOS arm64
 
@@ -257,7 +336,8 @@ flowchart LR
 - The owner then used that exact macOS app and rejected its browser UI/UX as
   poor. This supersedes any inference that the mechanical Computer Use receipt
   was product acceptance. It opens `{UX-BASELINE}`, keeps `{MAC-PANEL}` partial
-  and places Windows page-surface implementation after the redesign.
+  and initially placed Windows page-surface implementation after the redesign;
+  the owner's later 2026-10-23 decision reversed that ordering.
 - `./scripts/build.sh release` links the same macOS adapter without a helper or
   environment override and produces `target/release/minicon` at 3,421,824
   bytes on this arm64 Mac (the debug executable/app payload is 24,499,544

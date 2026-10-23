@@ -50,6 +50,11 @@ unsafe extern "C" {
     ///
     /// Returns zero on failure.
     fn __vcrt_initialize() -> i32;
+    /// Static UCRT is required by the statically linked WebView2 loader.
+    /// MSVC's `__scrt_initialize_crt` calls this after `__vcrt_initialize`.
+    fn __acrt_initialize() -> i32;
+    fn __acrt_uninitialize(is_terminating: bool) -> i32;
+    fn __isa_available_init();
 }
 
 type CInitializer = unsafe extern "C" fn() -> i32;
@@ -134,9 +139,15 @@ pub extern "system" fn minicon_entry() -> ! {
     // Before the `.CRT$XI*` walk: those initializers may already unwind, and
     // unwinding is one of the things this call makes work.
     // SAFETY: no arguments, called exactly once, first in the process.
+    // SAFETY: this is MSVC's own process-start order, before any CRT use.
+    unsafe { __isa_available_init() };
     if unsafe { __vcrt_initialize() } == 0 {
         // SAFETY: without the VC runtime there is no exception handling, so
         // there is no way to report this except by not continuing.
+        unsafe { ExitProcess(254) }
+    }
+    // SAFETY: the VC runtime is initialized; the UCRT must precede XI/XC.
+    if unsafe { __acrt_initialize() } == 0 {
         unsafe { ExitProcess(254) }
     }
     let initialization = run_c_initializers();
@@ -150,6 +161,8 @@ pub extern "system" fn minicon_entry() -> ! {
     let exit_code = unsafe { minicon_invoke_main(0, core::ptr::null()) };
     run_initializers(&PRE_TERMINATORS_START, &PRE_TERMINATORS_END);
     run_initializers(&TERMINATORS_START, &TERMINATORS_END);
+    // SAFETY: all product and CRT terminators have run.
+    let _ = unsafe { __acrt_uninitialize(true) };
     // SAFETY: `lang_start` has completed Rust runtime cleanup; returning from
     // a PE loader entry has no defined process-exit contract.
     unsafe { ExitProcess(exit_code as u32) }

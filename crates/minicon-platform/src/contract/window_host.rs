@@ -669,8 +669,8 @@ pub(crate) trait PixelWindowBackend {
 
     /// Opaque native parent for a content-panel WebView.
     ///
-    /// Linux reports the X11 window id and macOS reports the owning `NSView`
-    /// pointer. Consumers must interpret it only for the current target.
+    /// Linux reports the X11 window id, macOS the owning `NSView` pointer, and
+    /// Windows the owning HWND. Consumers interpret it only for the target.
     fn embed_parent(&self) -> Option<u64> {
         None
     }

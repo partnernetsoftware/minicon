@@ -108,7 +108,7 @@ png = "0.17"
 
 [target.'cfg(windows)'.dependencies]
 minicon-platform = { path = "crates/minicon-platform", default-features = false, features = ["native-pixel-window"] }
-minicon-web = { path = "crates/minicon-web" }
+minicon-web = { path = "crates/minicon-web", features = ["native-page-host"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 minicon-web = { path = "crates/minicon-web", features = ["native-page-host"] }

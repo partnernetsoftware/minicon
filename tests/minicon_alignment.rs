@@ -651,6 +651,18 @@ fn which_bash() -> Result<PathBuf, ()> {
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(if cfg!(windows) { "bash.exe" } else { "bash" });
         if candidate.is_file() {
+            // Windows ships a WSL launcher named bash.exe in System32. It is
+            // not a shell when WSL is absent, and must not shadow Git Bash.
+            if cfg!(windows)
+                && !Command::new(&candidate)
+                    .arg("--version")
+                    .output()
+                    .is_ok_and(|output| {
+                        output.status.success() && output.stdout.starts_with(b"GNU bash")
+                    })
+            {
+                continue;
+            }
             return Ok(candidate);
         }
     }

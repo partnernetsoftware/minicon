@@ -67,7 +67,8 @@ flowchart LR
     BrCP -->|"via minicon-web"| Web["minicon-web lib / optional host"]
     BrCP --> UX["UX baseline: open / navigate / switch / resize / close"]
     BadUX["owner rejection: current UI/UX poor"] -->|"redesign gate"| UX
-    UX -->|"accepted before parity"| WinWeb["Windows WebView2 surface"]
+    WinWeb["Windows WebView2 adapter bring-up"] --> UX
+    UX -->|"accepted before release"| BrCP
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
     Chrome --> Sett["settings panel"]
@@ -136,10 +137,14 @@ names above.
   arm64 observation proves visible home, hide/restore, focus release and
   fullscreen resize. Direct owner use then rejected the UI/UX as poor: those
   mechanics are adapter evidence, not product acceptance. The current surface
-  is a disposable prototype; an accepted browser-workspace interaction and
-  visual baseline must precede Windows parity. Canonical cross-platform
-  artifacts and native automated/second-ISA macOS plus Windows page courts
-  remain open in
+  is a disposable prototype. Owner decision 2026-10-23 brings up the Windows
+  adapter before the UX proposal; an accepted browser-workspace interaction and
+  visual baseline remain required before Candidate. Local canonical Windows
+  x86_64 dev use now proves a visible WebView2 child, real URL navigation,
+  hide/restore, resize/maximize and close/reopen mechanics; `screenshot-pane`
+  omits its child HWND pixels. This is adapter evidence only. Canonical
+  cross-platform artifacts and native automated/second-ISA macOS plus Windows
+  ARM64 page courts remain open in
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{ARCH}` / `{ARTIFACT}` /
   `{UX-BASELINE}` / `{MAC-PANEL}` / `{WIN-PANEL}`.
   Dashboard, preview, wasm and 1:N layout remain follow-ups
@@ -150,9 +155,9 @@ names above.
   resize/fullscreen and close/reopen coherent; browser/terminal hierarchy,
   focus and status must be legible without treating the bounded diagnostic
   home or an undocumented shortcut as the experience. Evidence requires named
-  journeys on the canonical macOS app and explicit owner acceptance. The
+  journeys on canonical macOS/Windows apps and explicit owner acceptance. The
   2026-10-23 owner verdict that the current UI/UX is poor is negative evidence;
-  it blocks Candidate and Windows UI duplication. Owner:
+  it blocks Candidate and acceptance of the current shell as Windows UI. Owner:
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{UX-BASELINE}`.
 - [v] **one browser root, and the embed slot is the content column (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
@@ -169,8 +174,9 @@ names above.
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
   `minicon-web-host`); `src/browser.rs` re-exports. wry, tao and gtk are
-  linked into the Linux host under `wry-host`; on macOS, `native-page-host`
-  links WKWebView support into the GUI binary only. The accepted `{ARCH}`
+  linked into the Linux host under `wry-host`; on macOS and Windows,
+  `native-page-host` links WKWebView/WebView2 support into the GUI binary only.
+  The accepted `{ARCH}`
   boundary never moves WebView calls outside `minicon-web` or into
   core/headless crates.
 - [v] **OAuth bearer storage stays behind the platform filesystem seam.**

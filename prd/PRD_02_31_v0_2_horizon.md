@@ -702,7 +702,11 @@ direct owner use rejected the browser UI/UX as poor, so the current shell is a
 disposable engineering prototype and not the interaction model to carry into
 WebView2. Workspace UX ownership is in PRD 25; 0.2.21 `{UX-BASELINE}` requires
 named open/navigate/switch/return/resize/close journeys plus explicit owner
-acceptance before Windows surface work. Remaining artifact/platform courts
+acceptance before Candidate; owner decision 2026-10-23 brings up the Windows
+adapter before the UX proposal. A local canonical Windows x86_64 dev build
+now visibly hosts WebView2 in the content column, with real URL, tab,
+resize/maximize and reopen mechanics. It does not qualify Windows ARM64,
+release bytes or UX. Remaining artifact/platform courts
 stay open. Floating
 helper windows, OS-default-browser fallback, screenshot streaming and
 synthetic-input forwarding remain rejected substitutes for a content panel.
