@@ -955,6 +955,7 @@ mod tests {
     fn wry_host_source_loads_with_wry_and_not_the_os_browser() {
         let source = include_str!("wry_host.rs");
         assert!(source.contains(".with_url(url)"));
+        assert!(source.contains("default_vbox"));
         assert!(source.contains("webkit_proxy_env"));
         assert!(source.contains("webkit_proxy_clear"));
         assert!(source.contains("with_proxy_config"));

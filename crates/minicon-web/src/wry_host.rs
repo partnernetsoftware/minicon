@@ -33,15 +33,16 @@ pub fn load(url: &str, smoke: bool, slot: Option<crate::PanelSlot>) -> Result<()
     #[cfg(target_os = "linux")]
     if slot.is_some() {
         use tao::platform::unix::WindowBuilderExtUnix;
-        builder_window = builder_window
-            .with_default_vbox(false)
-            .with_skip_taskbar(true);
+        // Keep tao's default vbox. wry packs the WebView into that box with
+        // expand+fill. Adding it onto the ApplicationWindow leaves WebKit's
+        // X window at 1×1 inside the reparented frame.
+        builder_window = builder_window.with_skip_taskbar(true);
     }
     let window = builder_window
         .build(&event_loop)
         .map_err(|_| "webkit-host-not-linked")?;
     if let Some(slot) = slot {
-        embed_into_parent(&window, slot);
+        size_embedded_view(&window, slot);
     }
     let mut builder = WebViewBuilder::new().with_url(url);
     if smoke {
@@ -59,14 +60,23 @@ pub fn load(url: &str, smoke: bool, slot: Option<crate::PanelSlot>) -> Result<()
     let webview = {
         use tao::platform::unix::WindowExtUnix;
         use wry::WebViewBuilderExtUnix;
-        builder
-            .build_gtk(window.gtk_window())
-            .map_err(|_| "webkit-host-not-linked")?
+        let built = if let Some(vbox) = window.default_vbox() {
+            builder.build_gtk(vbox)
+        } else {
+            builder.build_gtk(window.gtk_window())
+        };
+        built.map_err(|_| "webkit-host-not-linked")?
     };
     #[cfg(not(target_os = "linux"))]
     let webview = builder
         .build(&window)
         .map_err(|_| "webkit-host-not-linked")?;
+    if let Some(slot) = slot {
+        // Size after the WebView is packed, then reparent the outer frame.
+        size_embedded_view(&window, slot);
+        embed_into_parent(&window, slot);
+        size_embedded_view(&window, slot);
+    }
     // `EventLoop::run` does not return. Close ends the process.
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -85,6 +95,33 @@ pub fn load(url: &str, smoke: bool, slot: Option<crate::PanelSlot>) -> Result<()
         }
     });
 }
+
+#[cfg(target_os = "linux")]
+fn size_embedded_view(window: &tao::window::Window, slot: crate::PanelSlot) {
+    use gtk::prelude::{ContainerExt, GtkWindowExt, WidgetExt};
+    use tao::platform::unix::WindowExtUnix;
+    let gtk_window = window.gtk_window();
+    let width = slot.width as i32;
+    let height = slot.height as i32;
+    window.set_inner_size(tao::dpi::PhysicalSize::new(slot.width, slot.height));
+    gtk_window.set_default_size(width, height);
+    gtk_window.resize(width, height);
+    if let Some(vbox) = window.default_vbox() {
+        vbox.set_size_request(width, height);
+        let allocation = gtk::Allocation::new(0, 0, width, height);
+        vbox.foreach(|child| {
+            child.set_size_request(width, height);
+            child.set_hexpand(true);
+            child.set_vexpand(true);
+            child.size_allocate(&allocation);
+        });
+        vbox.size_allocate(&allocation);
+    }
+    gtk_window.show_all();
+}
+
+#[cfg(not(target_os = "linux"))]
+fn size_embedded_view(_window: &tao::window::Window, _slot: crate::PanelSlot) {}
 
 #[cfg(target_os = "linux")]
 fn embed_into_parent(window: &tao::window::Window, slot: crate::PanelSlot) {
