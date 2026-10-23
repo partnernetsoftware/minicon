@@ -220,7 +220,7 @@ const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::Rustls;
 pub fn request(request: &NetworkHttpRequest) -> Result<NetworkHttpResponse, NetworkHttpError> {
     validate(request)?;
 
-    let config = ureq::Agent::config_builder()
+    let agent_config = ureq::Agent::config_builder()
         .tls_config(
             ureq::tls::TlsConfig::builder()
                 .provider(TLS_PROVIDER)
@@ -231,8 +231,18 @@ pub fn request(request: &NetworkHttpRequest) -> Result<NetworkHttpResponse, Netw
         .max_redirects_will_error(true)
         // A 4xx/5xx is a delivered response this capability hands back with its
         // body, not a transport failure. Product policy interprets the status.
-        .http_status_as_error(false)
-        .build();
+        .http_status_as_error(false);
+    let config = if let Some(proxy) = &request.proxy {
+        let proxy = ureq::Proxy::new(proxy).map_err(|failure| {
+            error(
+                NetworkHttpErrorKind::Proxy,
+                redact_detail(&failure.to_string()),
+            )
+        })?;
+        agent_config.proxy(Some(proxy)).build()
+    } else {
+        agent_config.build()
+    };
     let agent: ureq::Agent = config.into();
 
     let mut builder = ureq::http::Request::builder()

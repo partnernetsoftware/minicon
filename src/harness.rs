@@ -58,22 +58,88 @@ impl Backend {
     }
 }
 
+/// Private file the GUI writes after a DeepSeek code exchange.
+pub fn oauth_bearer_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(
+        std::path::PathBuf::from(home)
+            .join(".minicon-embed")
+            .join("deepseek-bearer"),
+    )
+}
+
+pub fn store_oauth_bearer(token: &str) -> Result<(), String> {
+    let path = oauth_bearer_path().ok_or_else(|| "HOME is unset".to_owned())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|error| error.to_string())?;
+        file.write_all(token.as_bytes())
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&path, token).map_err(|error| error.to_string())
+    }
+}
+
+pub fn load_oauth_bearer() -> Option<String> {
+    let path = oauth_bearer_path()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&path).ok()?.permissions().mode();
+        if mode & 0o077 != 0 {
+            return None;
+        }
+    }
+    let token = std::fs::read_to_string(path).ok()?;
+    let token = token.trim();
+    if token.is_empty() || token.len() > 256 || !token.is_ascii() {
+        None
+    } else {
+        Some(token.to_owned())
+    }
+}
+
 pub fn run_harness(args: &[String]) -> Result<String, String> {
     let request = parse_harness(args)?;
     // Refuse a missing credential first. Finding it here means no tool ever runs
     // for a task that could not have reached a model anyway, and the refusal
     // names the one variable the backend reads.
     let key_var = request.backend.key_var();
-    let key = match std::env::var(key_var) {
-        Ok(key) if !key.is_empty() => key,
-        _ => {
-            return Err(format!(
-                "harness: {key_var} is unset or empty; --backend {} reads its key from that \
-                 environment variable only",
-                request.backend.flag_name()
-            ));
-        }
+    let env_key = std::env::var(key_var).ok();
+    let oauth_token = if request.backend == Backend::DeepSeek {
+        load_oauth_bearer()
+    } else {
+        None
     };
+    let key =
+        crate::harness_wire::resolve_deepseek_bearer(env_key.as_deref(), oauth_token.as_deref())
+            .map(str::to_owned)
+            .map_err(|()| {
+                format!(
+                    "harness: {key_var} is unset or empty; --backend {} reads its key from that \
+                 environment variable only",
+                    request.backend.flag_name()
+                )
+            })?;
     // Resolve the file tool's bound now, so an unusable --root is a bounded
     // error up front rather than a surprise on the model's first tool call.
     let file_tool = FileTool::new(&request.root)?;

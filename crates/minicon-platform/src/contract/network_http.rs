@@ -105,6 +105,8 @@ pub struct NetworkHttpRequest {
     pub timeout: Duration,
     pub max_redirects: u32,
     pub max_response_bytes: usize,
+    /// Optional `http://host:port` proxy. `None` connects directly.
+    pub proxy: Option<String>,
 }
 
 impl NetworkHttpRequest {
@@ -118,6 +120,7 @@ impl NetworkHttpRequest {
             timeout: NETWORK_HTTP_DEFAULT_TIMEOUT,
             max_redirects: NETWORK_HTTP_DEFAULT_REDIRECTS,
             max_response_bytes: NETWORK_HTTP_DEFAULT_RESPONSE_BYTES,
+            proxy: None,
         }
     }
 
@@ -148,6 +151,12 @@ impl NetworkHttpRequest {
     #[must_use]
     pub const fn max_response_bytes(mut self, max_response_bytes: usize) -> Self {
         self.max_response_bytes = max_response_bytes;
+        self
+    }
+
+    #[must_use]
+    pub fn proxy(mut self, proxy: impl Into<String>) -> Self {
+        self.proxy = Some(proxy.into());
         self
     }
 }

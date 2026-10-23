@@ -172,6 +172,104 @@ fn interpret_http_response(
 /// `minicon-platform`'s `network-http` capability, which links rustls.
 pub const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEEPSEEK_MODEL: &str = "deepseek-chat";
+/// Authorization-code exchange for the default DeepSeek provider.
+/// `MINICON_DEEPSEEK_TOKEN_URL` overrides it for a test double.
+pub const DEEPSEEK_TOKEN_URL: &str = "https://platform.deepseek.com/oauth/token";
+
+/// Bearer from a token-endpoint JSON body. Oversized or non-ascii values
+/// are rejected. This does not open a browser.
+pub fn oauth_access_token(body: &str) -> Result<String, &'static str> {
+    let key = "\"access_token\"";
+    let Some(at) = body.find(key) else {
+        return Err("token-rejected");
+    };
+    let rest = body[at + key.len()..].trim_start();
+    let rest = rest.strip_prefix(':').ok_or("token-rejected")?.trim_start();
+    let rest = rest.strip_prefix('"').ok_or("token-rejected")?;
+    let end = rest.find('"').ok_or("token-rejected")?;
+    let token = &rest[..end];
+    if token.is_empty()
+        || token.len() > 256
+        || !token.is_ascii()
+        || token
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == b' ')
+    {
+        return Err("token-rejected");
+    }
+    Ok(token.to_owned())
+}
+
+fn form_encode(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// POST the authorization code to `token_url` and return the access token.
+///
+/// `proxy` is `MINICON_BROWSER_HTTP_PROXY` when the browser hook is set.
+/// Redirects are not followed. No system browser.
+pub fn exchange_oauth_code(
+    token_url: &str,
+    code: &str,
+    redirect: &str,
+    proxy: Option<&str>,
+) -> Result<String, String> {
+    use minicon_platform::network_http::{self, NetworkHttpMethod};
+    let body = format!(
+        "grant_type=authorization_code&code={}&redirect_uri={}",
+        form_encode(code),
+        form_encode(redirect)
+    );
+    let mut request = network_http::NetworkHttpRequest::new(NetworkHttpMethod::Post, token_url)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "application/json")
+        .body(body.into_bytes())
+        .timeout(std::time::Duration::from_secs(15))
+        .max_redirects(0)
+        .max_response_bytes(8192);
+    if let Some(proxy) = proxy.filter(|value| !value.is_empty()) {
+        request = request.proxy(proxy);
+    }
+    let response = network_http::request(&request).map_err(|error| error.to_string())?;
+    if !response.is_success() {
+        return Err(format!("token endpoint status {}", response.status));
+    }
+    let text = String::from_utf8(response.body).map_err(|_| "token-rejected".to_owned())?;
+    oauth_access_token(&text).map_err(|error| error.to_owned())
+}
+
+pub fn exchange_deepseek_code(
+    code: &str,
+    redirect: &str,
+    proxy: Option<&str>,
+) -> Result<String, String> {
+    let url = std::env::var("MINICON_DEEPSEEK_TOKEN_URL")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEEPSEEK_TOKEN_URL.to_owned());
+    exchange_oauth_code(&url, code, redirect, proxy)
+}
+
+/// API key wins. The OAuth access token is the DeepSeek bearer when the key
+/// is absent. Neither value is written to the terminal.
+pub fn resolve_deepseek_bearer<'a>(
+    env_key: Option<&'a str>,
+    oauth_token: Option<&'a str>,
+) -> Result<&'a str, ()> {
+    if let Some(key) = env_key.filter(|value| !value.is_empty()) {
+        return Ok(key);
+    }
+    oauth_token.filter(|value| !value.is_empty()).ok_or(())
+}
 
 /// One tool call the model asked for, with its arguments still unparsed.
 ///
@@ -516,6 +614,53 @@ mod tests {
 
     use super::*;
     use crate::harness::{ExecTool, FileTool};
+
+    #[test]
+    fn api_key_wins_and_the_oauth_token_is_the_fallback() {
+        assert_eq!(resolve_deepseek_bearer(Some("key"), Some("tok")), Ok("key"));
+        assert_eq!(resolve_deepseek_bearer(None, Some("tok")), Ok("tok"));
+        assert_eq!(resolve_deepseek_bearer(Some(""), Some("tok")), Ok("tok"));
+        assert!(resolve_deepseek_bearer(None, None).is_err());
+        assert_eq!(
+            oauth_access_token(r#"{"access_token":"tok-1"}"#).as_deref(),
+            Ok("tok-1")
+        );
+        assert!(oauth_access_token(r#"{"access_token":""}"#).is_err());
+    }
+
+    #[test]
+    fn exchange_oauth_code_reads_the_token_and_rejects_a_bad_proxy() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 2048];
+            let _ = std::io::Read::read(&mut stream, &mut buf);
+            let body = br#"{"access_token":"tok-live"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            use std::io::Write;
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.write_all(body);
+        });
+        let token = exchange_oauth_code(
+            &format!("http://127.0.0.1:{port}/token"),
+            "from-live",
+            "http://127.0.0.1/minicon/oauth",
+            None,
+        )
+        .unwrap();
+        assert_eq!(token, "tok-live");
+        let refused = exchange_oauth_code(
+            "http://127.0.0.1:9/token",
+            "from-live",
+            "http://127.0.0.1/cb",
+            Some("not a proxy"),
+        );
+        assert!(refused.unwrap_err().to_ascii_lowercase().contains("proxy"));
+    }
 
     /// A fresh empty directory under the system temp dir, unique per test.
     fn fixture(tag: &str) -> std::path::PathBuf {

@@ -826,8 +826,12 @@ struct ConApp {
     /// Loopback `127.0.0.1` catcher for the OAuth redirect. Absent after the
     /// code is taken or refused. Not a system browser.
     oauth_bridge: Option<browser::OAuthBridge>,
-    /// Authorization code from that redirect. Not written into the terminal.
+    /// Authorization code from that redirect, until it is exchanged.
     oauth_code: Option<String>,
+    /// Loopback redirect that the code was issued for.
+    oauth_redirect: Option<String>,
+    /// In-flight code-for-token exchange. The access token is not the code.
+    oauth_exchange: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Settings inherited when an empty workspace creates its next terminal.
     /// Closing the final tab updates this before the terminal is dropped, so
     /// the greeting page is a lifecycle boundary rather than a settings reset.
@@ -1313,6 +1317,8 @@ impl ConApp {
             browser_page: None,
             oauth_bridge: None,
             oauth_code: None,
+            oauth_redirect: None,
+            oauth_exchange: None,
             session_seed,
             notes: composer::ComposerState::default(),
             notes_focused: false,
@@ -2189,13 +2195,65 @@ impl ConApp {
             }
         };
         self.oauth_code = None;
+        self.oauth_exchange = None;
+        self.oauth_redirect = Some(bridge.redirect_uri());
         self.oauth_bridge = Some(bridge);
         self.present_http_link(window, &url);
     }
 
+    fn start_oauth_exchange(&mut self, code: String) {
+        let redirect = self.oauth_redirect.clone().unwrap_or_default();
+        let proxy = std::env::var("MINICON_BROWSER_HTTP_PROXY")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::harness_wire::exchange_deepseek_code(
+                &code,
+                &redirect,
+                proxy.as_deref(),
+            ));
+        });
+        self.oauth_exchange = Some(rx);
+    }
+
+    fn poll_oauth_exchange(&mut self) -> bool {
+        let Some(incoming) = self.oauth_exchange.take() else {
+            return false;
+        };
+        match incoming.try_recv() {
+            Ok(Ok(token)) => {
+                let bytes = token.len();
+                self.host_notice = match crate::harness::store_oauth_bearer(&token) {
+                    Ok(()) => {
+                        self.oauth_code = None;
+                        Some(format!("DeepSeek token ready ({bytes} bytes)"))
+                    }
+                    Err(error) => Some(format!("DeepSeek token refused: {error}")),
+                };
+                true
+            }
+            Ok(Err(error)) => {
+                self.host_notice = Some(format!("DeepSeek token refused: {error}"));
+                true
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                self.oauth_exchange = Some(incoming);
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.host_notice = Some("DeepSeek token refused: exchange dropped".to_owned());
+                true
+            }
+        }
+    }
+
     /// Take one loopback redirect into the product, if it has arrived.
-    /// The notice names the byte count, not the code.
+    /// The notice names the byte count, not the code or the token.
     fn poll_oauth_bridge(&mut self) -> bool {
+        if self.poll_oauth_exchange() {
+            return true;
+        }
         let Some(bridge) = self.oauth_bridge.take() else {
             return false;
         };
@@ -2205,9 +2263,9 @@ impl ConApp {
                 false
             }
             Some(Ok(code)) => {
-                let bytes = code.len();
-                self.oauth_code = Some(code);
-                self.host_notice = Some(format!("DeepSeek sign-in received ({bytes} bytes)"));
+                self.oauth_code = Some(code.clone());
+                self.start_oauth_exchange(code);
+                self.host_notice = Some("DeepSeek sign-in exchanging".to_owned());
                 true
             }
             Some(Err(reason)) => {
