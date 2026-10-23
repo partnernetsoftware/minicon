@@ -997,10 +997,7 @@ impl Drop for ConApp {
         }
         self.pending_control
             .cancel_all("terminal window closed while control request was pending");
-        if let Some(mut child) = self.browser_page.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        self.stop_page_host();
     }
 }
 
@@ -1447,7 +1444,22 @@ impl ConApp {
         }
         self.browsers.remove(&id);
         self.workspace.close(id);
+        if !self
+            .workspace
+            .nodes()
+            .iter()
+            .any(|node| node.kind == workspace::TabKind::Browser)
+        {
+            self.stop_page_host();
+        }
         self.workspace.active().is_none()
+    }
+
+    fn stop_page_host(&mut self) {
+        if let Some(mut child) = self.browser_page.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 
     /// Makes `id` the active tab and reports whether that changed anything. A
@@ -1467,6 +1479,15 @@ impl ConApp {
         }
         self.cancel_pointer_gestures_for_activation(window);
         self.select_tab(id);
+        self.sync_embedded_page(window);
+    }
+
+    /// The page host is a child of this window. Show it only while the
+    /// browser tab is the one content panel on screen.
+    fn sync_embedded_page(&self, window: &PixelWindow) {
+        if let Some(parent) = window.embed_parent() {
+            browser::set_embedded_page_visible(parent, self.active_is_browser());
+        }
     }
 
     fn host_font_logical(&self) -> f64 {

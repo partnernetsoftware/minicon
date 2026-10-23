@@ -15,7 +15,7 @@
 //! [`http_url_at`], [`resolve_proxy`], [`page_host_request`], [`spawn_page_host`].
 //!
 //! Proxy is a settings hook only. Environment wins over `minicon.json`.
-//! The hook is not applied to a WebView session yet. OAuth, dashboard,
+//! The page host applies that hook when it loads. OAuth, dashboard,
 //! preview and wasm are later [`PageHost`] callers, not extra traits.
 
 /// Hard cap so a hand-edited config cannot hand the future network stack an
@@ -374,6 +374,143 @@ pub fn spawn_page_host_in_panel(
     command.spawn().map_err(|error| error.to_string())
 }
 
+/// True when an X window class is the page host we reparented.
+pub fn embedded_page_class(name: &str) -> bool {
+    name.eq_ignore_ascii_case("minicon-web-host")
+}
+
+/// Map or unmap the reparented page inside `parent`.
+///
+/// The host window stays a child of the main window. Hiding it is what lets
+/// a terminal tab receive clicks again. No-op without X11. Does not open a
+/// browser.
+pub fn set_embedded_page_visible(parent: u64, visible: bool) {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        x_set_embedded_visible(parent, visible);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (parent, visible);
+    }
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn x_set_embedded_visible(parent: u64, visible: bool) {
+    use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
+    unsafe extern "C" {
+        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+    let lib = c"libX11.so.6";
+    let handle = unsafe { dlopen(lib.as_ptr(), 1) };
+    if handle.is_null() {
+        return;
+    }
+    unsafe fn sym<T>(handle: *mut c_void, name: &CStr) -> Option<T> {
+        let ptr = unsafe { dlsym(handle, name.as_ptr()) };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { std::mem::transmute_copy(&ptr) })
+        }
+    }
+    type Open = unsafe extern "C" fn(*const c_char) -> *mut c_void;
+    type Query = unsafe extern "C" fn(
+        *mut c_void,
+        u64,
+        *mut u64,
+        *mut u64,
+        *mut *mut u64,
+        *mut c_uint,
+    ) -> c_int;
+    type ClassHint = unsafe extern "C" fn(*mut c_void, u64, *mut *mut c_char) -> c_int;
+    type Map = unsafe extern "C" fn(*mut c_void, u64) -> c_int;
+    type Free = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type Flush = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type Close = unsafe extern "C" fn(*mut c_void) -> c_int;
+    let Some(open): Option<Open> = (unsafe { sym(handle, c"XOpenDisplay") }) else {
+        return;
+    };
+    let Some(query): Option<Query> = (unsafe { sym(handle, c"XQueryTree") }) else {
+        return;
+    };
+    let Some(class_hint): Option<ClassHint> = (unsafe { sym(handle, c"XGetClassHint") }) else {
+        return;
+    };
+    let Some(map): Option<Map> = (unsafe {
+        sym(
+            handle,
+            if visible {
+                c"XMapWindow"
+            } else {
+                c"XUnmapWindow"
+            },
+        )
+    }) else {
+        return;
+    };
+    let Some(xfree): Option<Free> = (unsafe { sym(handle, c"XFree") }) else {
+        return;
+    };
+    let Some(flush): Option<Flush> = (unsafe { sym(handle, c"XFlush") }) else {
+        return;
+    };
+    let Some(close): Option<Close> = (unsafe { sym(handle, c"XCloseDisplay") }) else {
+        return;
+    };
+    let display = unsafe { open(std::ptr::null()) };
+    if display.is_null() {
+        return;
+    }
+    let mut root = 0u64;
+    let mut parent_ret = 0u64;
+    let mut children: *mut u64 = std::ptr::null_mut();
+    let mut count = 0u32;
+    let ok = unsafe {
+        query(
+            display,
+            parent,
+            &mut root,
+            &mut parent_ret,
+            &mut children,
+            &mut count,
+        )
+    };
+    if ok != 0 && !children.is_null() {
+        for index in 0..count as isize {
+            let child = unsafe { *children.offset(index) };
+            // XClassHint { res_name, res_class }, two pointers.
+            let mut hint = [std::ptr::null_mut::<c_char>(); 2];
+            if unsafe { class_hint(display, child, hint.as_mut_ptr()) } == 0 {
+                continue;
+            }
+            let matches = hint.iter().any(|ptr| {
+                if ptr.is_null() {
+                    return false;
+                }
+                unsafe { CStr::from_ptr(*ptr) }
+                    .to_str()
+                    .ok()
+                    .is_some_and(embedded_page_class)
+            });
+            for ptr in hint {
+                if !ptr.is_null() {
+                    unsafe { xfree(ptr.cast()) };
+                }
+            }
+            if matches {
+                unsafe { map(display, child) };
+            }
+        }
+        unsafe { xfree(children.cast()) };
+    }
+    unsafe {
+        flush(display);
+        close(display);
+    }
+}
+
 fn apply_proxy_env(command: &mut std::process::Command, proxy: &BrowserProxy) {
     apply_proxy_var(command, "MINICON_BROWSER_HTTP_PROXY", &proxy.http);
     apply_proxy_var(command, "MINICON_BROWSER_HTTPS_PROXY", &proxy.https);
@@ -546,23 +683,17 @@ pub fn oauth_authorize_load(
 
 fn redirect_host(redirect_uri: &str) -> Option<String> {
     let lower = redirect_uri.to_ascii_lowercase();
-    let rest = if let Some(rest) = lower.strip_prefix("https://") {
-        rest
-    } else if let Some(rest) = lower.strip_prefix("http://") {
-        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-        let host = host.split('@').next_back().unwrap_or(host);
-        let host = host.split(':').next().unwrap_or(host);
-        if host == "127.0.0.1" || host == "localhost" {
-            return Some(host.to_owned());
-        }
-        return None;
+    let https = lower.strip_prefix("https://");
+    let http = lower.strip_prefix("http://");
+    let (rest, loopback_only) = if let Some(rest) = https {
+        (rest, false)
     } else {
-        return None;
+        (http?, true)
     };
     let host = rest.split(['/', '?', '#']).next().unwrap_or("");
     let host = host.split('@').next_back().unwrap_or(host);
     let host = host.split(':').next().unwrap_or(host);
-    if host.is_empty() {
+    if host.is_empty() || (loopback_only && host != "127.0.0.1" && host != "localhost") {
         None
     } else {
         Some(host.to_owned())
@@ -676,6 +807,14 @@ mod tests {
         assert!(!tab.show_http("https://example.test/a)"));
         assert_eq!(tab.panel_count(), 1);
         assert_eq!(tab.panel().url.as_deref(), Some("https://example.test/a"));
+    }
+
+    #[test]
+    fn the_reparented_host_class_is_the_only_window_we_hide() {
+        assert!(embedded_page_class("minicon-web-host"));
+        assert!(embedded_page_class("Minicon-web-host"));
+        assert!(!embedded_page_class("minicon"));
+        assert!(!embedded_page_class("xdg-open"));
     }
 
     #[test]

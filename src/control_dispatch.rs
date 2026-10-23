@@ -186,12 +186,16 @@ impl ConApp {
                     ("parent", tab_id_json(parent)),
                 ]))
             })(),
-            CliCommand::SelectTab { target } => self.control_target(Some(target)).map(|id| {
-                self.mark_host_ui_full();
-                self.activate_session(window, id);
-                window.request_redraw();
-                single_field_json("active", tab_id_json(Some(id)))
-            }),
+            CliCommand::SelectTab { target } => {
+                if self.workspace.node(target).is_none() {
+                    Err(format!("terminal @{} does not exist", target.get()))
+                } else {
+                    self.mark_host_ui_full();
+                    self.activate_session(window, target);
+                    window.request_redraw();
+                    Ok(single_field_json("active", tab_id_json(Some(target))))
+                }
+            }
             CliCommand::CloseTab { target } => self.control_target(Some(target)).and_then(|id| {
                 self.activate_session(window, id);
                 self.close_active_session(window)
