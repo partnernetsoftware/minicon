@@ -667,6 +667,11 @@ pub(crate) trait PixelWindowBackend {
         }
     }
 
+    /// Native parent id for a content-panel WebView. Linux reports the X11 window.
+    fn embed_parent(&self) -> Option<u64> {
+        None
+    }
+
     fn metrics(&self) -> Result<PixelWindowMetrics, PixelWindowError>;
     fn semantic_flags(&self) -> WindowSemanticFlags;
     fn set_minimized(&self, minimized: bool);
@@ -740,6 +745,11 @@ impl PixelWindow {
 
     pub fn last_present(&self) -> Option<PixelPresentReceipt> {
         self.backend.last_present()
+    }
+
+    /// X11 window id on Linux. `None` when the backend has no embed parent.
+    pub fn embed_parent(&self) -> Option<u64> {
+        self.backend.embed_parent()
     }
 
     pub fn metrics(&self) -> Result<PixelWindowMetrics, PixelWindowError> {

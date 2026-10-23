@@ -257,6 +257,73 @@ pub fn page_host_request(
     Ok((program.to_path_buf(), vec!["--load".to_owned(), canonical]))
 }
 
+/// Where the one content panel sits inside the main window, in parent pixels.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PanelSlot {
+    pub parent: u64,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// `--load` argv, plus the main-window slot when the GUI has an embed parent.
+pub fn page_host_embed_args(
+    url: &str,
+    slot: Option<PanelSlot>,
+) -> Result<Vec<String>, &'static str> {
+    let canonical = http_url_at(url, 0).ok_or("not-http")?;
+    if canonical != url {
+        return Err("not-http");
+    }
+    let mut args = vec!["--load".to_owned(), canonical];
+    if let Some(slot) = slot {
+        args.push("--parent".to_owned());
+        args.push(slot.parent.to_string());
+        args.push("--bounds".to_owned());
+        args.push(format!(
+            "{},{},{},{}",
+            slot.x, slot.y, slot.width, slot.height
+        ));
+    }
+    Ok(args)
+}
+
+fn parse_slot(parent: &str, bounds: &str) -> Result<PanelSlot, &'static str> {
+    let parent = parent.parse::<u64>().map_err(|_| "usage")?;
+    let mut parts = bounds.split(',');
+    let x = parts
+        .next()
+        .ok_or("usage")?
+        .parse::<i32>()
+        .map_err(|_| "usage")?;
+    let y = parts
+        .next()
+        .ok_or("usage")?
+        .parse::<i32>()
+        .map_err(|_| "usage")?;
+    let width = parts
+        .next()
+        .ok_or("usage")?
+        .parse::<u32>()
+        .map_err(|_| "usage")?;
+    let height = parts
+        .next()
+        .ok_or("usage")?
+        .parse::<u32>()
+        .map_err(|_| "usage")?;
+    if parts.next().is_some() || width == 0 || height == 0 {
+        return Err("usage");
+    }
+    Ok(PanelSlot {
+        parent,
+        x,
+        y,
+        width,
+        height,
+    })
+}
+
 /// Spawn the page host. Does not wait, and does not call `host_open`.
 /// The child inherits the parent environment, including any proxy hook.
 pub fn spawn_page_host(
@@ -275,7 +342,26 @@ pub fn spawn_page_host_with_proxy(
     url: &str,
     proxy: Option<&BrowserProxy>,
 ) -> Result<std::process::Child, String> {
-    let (program, args) = page_host_request(program, url).map_err(str::to_owned)?;
+    spawn_page_host_in_panel(program, url, proxy, None)
+}
+
+/// Spawn `--load` for the one content panel. `slot` asks the host to embed
+/// in the main window. Still does not call `host_open`.
+pub fn spawn_page_host_in_panel(
+    program: &std::path::Path,
+    url: &str,
+    proxy: Option<&BrowserProxy>,
+    slot: Option<PanelSlot>,
+) -> Result<std::process::Child, String> {
+    let (program, mut args) = page_host_request(program, url).map_err(str::to_owned)?;
+    if let Some(slot) = slot {
+        args.extend(
+            page_host_embed_args(url, Some(slot))
+                .map_err(str::to_owned)?
+                .into_iter()
+                .skip(2),
+        );
+    }
     let mut command = std::process::Command::new(program);
     command
         .args(args)
@@ -507,7 +593,16 @@ pub fn host_reply(args: &[String]) -> Result<(), &'static str> {
             let _ = http_url_at(url, 0)
                 .filter(|canonical| canonical == url)
                 .ok_or("not-http")?;
-            load_webview(url, flag == "--smoke")
+            load_webview(url, flag == "--smoke", None)
+        }
+        [flag, url, parent_flag, parent, bounds_flag, bounds]
+            if flag == "--load" && parent_flag == "--parent" && bounds_flag == "--bounds" =>
+        {
+            let _ = http_url_at(url, 0)
+                .filter(|canonical| canonical == url)
+                .ok_or("not-http")?;
+            let slot = parse_slot(parent, bounds)?;
+            load_webview(url, false, Some(slot))
         }
         _ => Err("usage"),
     }
@@ -524,14 +619,14 @@ fn probe_webview() -> Result<(), &'static str> {
     }
 }
 
-fn load_webview(url: &str, smoke: bool) -> Result<(), &'static str> {
+fn load_webview(url: &str, smoke: bool, slot: Option<PanelSlot>) -> Result<(), &'static str> {
     #[cfg(feature = "wry-host")]
     {
-        wry_host::load(url, smoke)
+        wry_host::load(url, smoke, slot)
     }
     #[cfg(not(feature = "wry-host"))]
     {
-        let _ = (url, smoke);
+        let _ = (url, smoke, slot);
         Err("webkit-host-not-linked")
     }
 }
@@ -807,6 +902,29 @@ mod tests {
             page_host_request(std::path::Path::new("/opt/minicon-web-host"), &url).unwrap();
         assert_eq!(args[0], "--load");
         assert_eq!(args[1], url);
+        let embedded = page_host_embed_args(
+            &url,
+            Some(PanelSlot {
+                parent: 7,
+                x: 40,
+                y: 0,
+                width: 200,
+                height: 100,
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            embedded,
+            vec![
+                "--load".to_owned(),
+                url.clone(),
+                "--parent".to_owned(),
+                "7".to_owned(),
+                "--bounds".to_owned(),
+                "40,0,200,100".to_owned(),
+            ]
+        );
+        assert_eq!(host_reply(&embedded), Err("webkit-host-not-linked"));
         assert_eq!(
             oauth_authorize_load(
                 "https://platform.deepseek.com/oauth/authorize",

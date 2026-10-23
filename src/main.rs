@@ -2059,17 +2059,40 @@ impl ConApp {
     /// Reuses the existing browser tab when one is already in the strip.
     /// Does not call `host_open`. A non-http string is ignored. The chrome
     /// sent-history panel is not involved.
-    fn present_http_link(&mut self, url: &str) -> bool {
+    fn present_http_link(&mut self, window: &PixelWindow, url: &str) -> bool {
         if !Self::handoff_http_link(&mut self.workspace, &mut self.browsers, url) {
             return false;
         }
-        self.launch_page_host(url);
+        self.launch_page_host(window, url);
         self.mark_host_ui_full();
         true
     }
 
+    /// The one content panel, to the right of the sidebar, in parent pixels.
+    fn content_panel_slot(&self, window: &PixelWindow) -> Option<browser::PanelSlot> {
+        let parent = window.embed_parent()?;
+        let metrics = window.metrics().ok()?;
+        if !metrics.is_drawable() {
+            return None;
+        }
+        let x = (self.effective_sidebar_dip() * metrics.scale_factor)
+            .round()
+            .max(0.0) as i32;
+        let width = metrics.physical_width.saturating_sub(x as u32);
+        if width == 0 {
+            return None;
+        }
+        Some(browser::PanelSlot {
+            parent,
+            x,
+            y: 0,
+            width,
+            height: metrics.physical_height,
+        })
+    }
+
     /// Ask the wry page host to load `url` into the active browser content panel.
-    fn launch_page_host(&mut self, url: &str) {
+    fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
         if let Some(mut child) = self.browser_page.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -2085,8 +2108,12 @@ impl ConApp {
             return;
         };
         let proxy = self.browser_proxy();
-        match browser::spawn_page_host_with_proxy(std::path::Path::new(&program), url, Some(&proxy))
-        {
+        match browser::spawn_page_host_in_panel(
+            std::path::Path::new(&program),
+            url,
+            Some(&proxy),
+            self.content_panel_slot(window),
+        ) {
             Ok(mut child) => match child.try_wait() {
                 Ok(Some(status)) => {
                     self.note_page_load(browser::page_load_from_exit(url, status.code()));
@@ -3582,7 +3609,7 @@ impl PixelWindowApplication for ConApp {
                     session.http_link_at(point)
                 })
                 .flatten()
-                && self.present_http_link(&url)
+                && self.present_http_link(window, &url)
             {
                 self.refresh_title(window)?;
                 window.request_redraw();

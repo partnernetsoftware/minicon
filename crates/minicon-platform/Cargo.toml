@@ -26,7 +26,7 @@ rust-console = [
     "windows-sys/Win32_UI_WindowsAndMessaging",
 ]
 native-pixel-window = ["window"]
-portable-pixel-window = ["window", "dep:winit", "dep:softbuffer"]
+portable-pixel-window = ["window", "dep:winit", "dep:softbuffer", "dep:raw-window-handle"]
 chassis-present = ["dep:x11rb"]
 serde = ["dep:serde"]
 hardware = []
@@ -627,6 +627,7 @@ ab_glyph = { version = "0.2.32", optional = true }
 png = { version = "0.18", optional = true }
 winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 vt100 = "0.16"

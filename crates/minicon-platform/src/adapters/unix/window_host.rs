@@ -165,6 +165,23 @@ impl PixelWindowBackend for NativeWindowBackend {
         self.window.request_redraw();
     }
 
+    fn embed_parent(&self) -> Option<u64> {
+        #[cfg(target_os = "linux")]
+        {
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            let handle = self.window.window_handle().ok()?;
+            match handle.as_raw() {
+                RawWindowHandle::Xlib(window) => Some(window.window as u64),
+                RawWindowHandle::Xcb(window) => Some(u64::from(window.window.get())),
+                _ => None,
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+
     fn set_window_attached(&self, attached: bool) -> Result<(), PixelWindowError> {
         self.attach_request.set(Some(attached));
         // Without a wake the loop may be parked in `Wait` with nothing else due,
