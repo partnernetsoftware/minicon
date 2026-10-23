@@ -1,11 +1,10 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: implementation landed; exact-tip six-cell dev-loop qualification is in
-progress. Opened 2026-10-23. v0.2.20 shipped
+Status: implementation and scoped six-cell dev-loop qualification recorded.
+Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
 has two tracks on `main`; implementation commit `960853b` includes both tracks,
-and the following court-only liveness-window adjustment awaits its exact-tip
-receipts.
+and run `39917026302` qualifies their six-cell console scope at `3db5710`.
 G4 and G6 stay in [carried debt](plan-carried-debt.md). Do not publish.
 
 Track A: `minicon-console` runs on every shipped cell, and a Linux-only
@@ -53,24 +52,25 @@ a false portability claim.
   stand in for it.
 
 This Mac (macOS arm64) can execute the portable library and nothing else in
-this plan. Linux and Windows receipts stay `BLOCKED` until those cells run.
-Do not publish.
+this plan. Run `39917026302` supplied the other five native receipts. Do not
+publish: its Windows x64 job is deliberately still red for the pre-existing G6
+FreeConsole/unread-output debt, which this version does not claim to fix.
 
 ## Outcome tree — console
 
 ```text
 Outcome: the portable console library runs on every shipped cell, and a Linux-only divergence fails the Linux cell even when Windows and macOS are green
-├── [-] {LIB} Run the portable minicon-console tests on all six cells
+├── [v] {LIB} Run the portable minicon-console tests on all six cells
 │   invariant: an unfiltered cell executes minicon-console --lib, synchronized_presentation and presentation_allocations, and the log says running N tests with N > 0; cargo check is not this evidence
 │   evidence: the dev-loop receipt for lnx-x86_64, lnx-aarch64, win-x86_64, win-aarch64, osx-aarch64 and osx-x86_64, each naming those suites
 │   safe failure: a cell that does not run is BLOCKED; this Mac's pass is osx-aarch64 of the library only and does not close the leaf
 │   dependency: PRD 35 and dev-loop-crosscheck.yml; non-goal: treating the Windows service or a 0-test binary as a pass
-├── [-] {WIN} Keep the Windows service on the two Windows cells only
+├── [v] {WIN} Keep the Windows service on the two Windows cells only
 │   invariant: rust_console_pty and other cfg(windows) service tests are not invoked on lnx-* or osx-*; their green result is not a portable-library result
 │   evidence: the existing win-* branch in dev-loop-crosscheck.yml
 │   safe failure: a red G6 court stays red in carried debt; this leaf does not edit close_may_publish
 │   dependency: PRD 34; non-goal: running the Windows console service on Linux
-├── [-] {LNX} Fail the Linux cell when its own path is skipped or diverges
+├── [v] {LNX} Fail the Linux cell when its own path is skipped or diverges
 │   invariant: lnx-x86_64 and lnx-aarch64 execute the POSIX PTY session tests (so the /proc walk is the code under test), the two native X11 clipboard tests, and the Linux ELF load-time gate; a missing DISPLAY under MINICON_REQUIRE_DISPLAY is a failure, not a return
 │   evidence: those three suite names on both Linux receipts; a macOS or Windows receipt does not satisfy this leaf
 │   safe failure: a red Linux court stays red; do not delete the test or skip it because the other four cells passed
@@ -120,14 +120,19 @@ Outcome: the one browser content panel stays in the terminal's column and the OA
 │   evidence: https_token_url rejects plain http; loopback_oauth_redirect_is_delivered_without_the_webview_proxy
 │   safe failure: wry 0.56 ProxyConfig::Http still has an empty ignore list, so the host cancels that navigation instead of asking wry to exempt it; a live WebKit run of the handler is not this Mac
 │   dependency: PRD 31; non-goal: a provider registry or composer "Connect AI" button
-├── [-] {KEY} Ctrl+Shift letter chords see the physical key
+├── [v] {KEY} Ctrl+Shift letter chords see the physical key
 │   invariant: Linux xkb events with logical Unidentified and PhysicalKeyCode::Letter still open the browser tab or start OAuth instead of becoming C0
 │   evidence: chord_letter_uses_the_physical_key_when_logical_is_unidentified
 │   safe failure: this does not change Ctrl+letter encoding for the terminal
 │   dependency: the Linux Ctrl+letter fix in contract/terminal_input.rs
+├── [-] {ACL} Run the private bearer filesystem court on both Windows cells
+│   invariant: the protected directory DACL is current-user-only, inheritance-protected, inherited by new children, and a junction is refused without touching its target; a compile is not runtime evidence
+│   evidence: `windows-private-filesystem` is nonzero and green on win-x86_64 and win-aarch64 receipts
+│   safe failure: keep the Windows bearer claim BLOCKED; do not infer ACL safety from Unix 0600 or from a green neighboring suite
+│   dependency: minicon-platform `filesystem`; non-goal: running every platform unit test on Windows
 └── [_] {STILL} Named holes not closed by the leaves above
     state: `state` and S256 PKCE are on the current authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. The Windows adapter installs a protected current-user ACL, but its native runtime evidence is BLOCKED. `wry-host` names gtk only as a Linux dependency.
-    dependency: do not mark the OAuth vertical [v] while these are open
+    dependency: do not mark the OAuth vertical [v] while these are open; {ACL} names the executable Windows portion
 ```
 
 ```mermaid
@@ -146,7 +151,7 @@ flowchart LR
 
 | Order | Work and observable acceptance | Failure boundary |
 | --- | --- | --- |
-| 1 — LIB | `dev-loop-crosscheck.yml` runs `cargo test --locked --target <triple> -p minicon-console --lib` and the two host-neutral integration tests on every cell. An unfiltered log must contain `running N tests` with N > 0. Let Cargo find the binary; do not stat a hashed path. | This Mac ran that command on 2026-10-23: 19 lib + 8 synchronized_presentation + 1 presentation_allocations, all passed. That is `aarch64-apple-darwin` only. The other five cells are BLOCKED until their receipts exist. |
+| 1 — LIB | `dev-loop-crosscheck.yml` runs `cargo test --locked --target <triple> -p minicon-console --lib` and the two host-neutral integration tests on every cell. An unfiltered log must contain `running N tests` with N > 0. Let Cargo find the binary; do not stat a hashed path. | Run `39917026302` records all three suites `ok` on all six cells at exact source `3db5710`. |
 | 2 — WIN | Leave `rust_console_pty` and `minicon_console_agent` inside `case win-*`. Do not add them to Linux. | G6 stays carried debt. No edit to the unread-output barrier in this version. |
 | 3 — LNX | On `lnx-*` only, run the three POSIX PTY session tests with feature `pty`, the two X11 tests with feature `clipboard`, and `minicon_load_portability_linux`. The Linux job exports `MINICON_REQUIRE_DISPLAY=1` after Xvfb is up, and those X11 tests plus the control image-paste test panic instead of returning when `DISPLAY` is missing. | A green `osx-*` or `win-*` cell does not close this. Omitting the features compiles the named tests out and is a failed court, not evidence. Do not move the PTY into `minicon-console`. |
 | 4 — GATE | [v] Version is 0.2.21. Index and owners point at this plan. G4/G6 are unclaimed. No publish. | `Cargo.toml`, `Cargo.lock`, `release-policy.json`, this plan and owner links are the named source evidence. Unavailable cell evidence stays BLOCKED. |
@@ -165,12 +170,24 @@ flowchart LR
   both Linux cells. Windows x86_64 failed two `rust_console_pty` liveness
   observations at their exact 10-second deadline (`disconnect-file` and
   `disconnect`); Windows arm64 failed the asynchronous clipboard observation
-  at the same 10-second deadline. These checks prove eventual retirement and
-  delivery rather than a 10-second product latency promise, so their finite
-  observation windows are 30 seconds without changing product behavior or
-  suppressing a failure. The complete local product gate passed after this
-  court-only change, and the pre-push six-cell receipt is again 31 PASS,
-  0 FAIL, 14 BLOCKED. Exact-tip six-cell dev-loop receipts remain pending.
+  at the same 10-second deadline. A diagnostic 30-second rerun proved the x64
+  disconnect cases are the named G6 debt, not scheduler delay, so that
+  ineffective G6 timeout edit was removed. The asynchronous clipboard
+  observation retains 30 seconds: it passed on Windows arm64 in the next run.
+  The complete local product gate passed after the court-only change, and the
+  pre-push six-cell receipt was again 31 PASS, 0 FAIL, 14 BLOCKED.
+- Six-cell dev-loop run `39917026302` checked out exact source
+  `3db57108e568564806dc96371ba25e8667940e98`. Every cell reports `ok` for
+  `minicon-console`, `minicon-console-synchronized-presentation`, and
+  `minicon-console-presentation-allocations`, closing {LIB}. Both Linux
+  receipts additionally report `ok` for `linux-pty`, `linux-x11-clipboard`,
+  and `linux-elf-needed`, closing {LNX}. Both Windows receipts keep
+  `minicon_console_agent` and `rust_console_pty` out of non-Windows cells,
+  closing {WIN}; Windows arm64 passed every suite. Windows x64 passed all
+  12 scoped/non-G6 suites but its overall job stayed red because the same two
+  unread-output `FreeConsole` disconnect tests failed (94 passed, 2 failed),
+  preserving rather than hiding G6 carried debt. The other five cell jobs and
+  the matrix plan job passed.
 
 ## Non-goals
 

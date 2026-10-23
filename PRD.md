@@ -54,7 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [-] v0.2.21 console runtime on every cell, Linux divergence fails Linux → plan/plan-v0.2.21.md
+    ├── [v] v0.2.21 console runtime on every cell, Linux divergence fails Linux → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -150,10 +150,11 @@ flowchart LR
   and the embed slot is `Layout::content_column` (macOS unit tests only).
   Live resize of an already-reparented X child is BLOCKED. The Windows bearer
   path now uses the platform's protected current-user ACL implementation, but
-  its native runtime evidence is BLOCKED. Implementation commit `960853b`
-  passed both Linux dev-loop cells; its two Windows cells exposed three
-  10-second liveness-observation expiries, now retained as bounded 30-second
-  courts pending exact-tip receipts. G4 and G6 stay carried debt.
+  its native runtime evidence is BLOCKED. Six-cell dev-loop run `39917026302`
+  at `3db5710` passed the portable console suites on every cell and the
+  Linux-only PTY/X11/ELF courts on both Linux cells. Windows arm64 passed all
+  suites; Windows x64 stayed red only on the two already-carried G6
+  FreeConsole/unread-output cases. G4 and G6 stay carried debt.
   [Plan](plan/plan-v0.2.21.md).
 - [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
   limited Win32 I/O/records and job cleanup are implemented. The explicit

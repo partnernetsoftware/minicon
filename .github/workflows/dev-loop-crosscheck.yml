@@ -219,6 +219,21 @@ jobs:
               # evidence BLOCKED for the 0.2.20 default decision.
               echo "== rust_console_pty (feature rust-console) ${{ inputs.test_filter }}"
               run_suite rust_console_pty cargo test --locked --target "$triple" -p minicon-platform --features rust-console --test rust_console_pty -- --test-threads 1 ${{ inputs.test_filter }}
+              # OAuth bearer publication delegates its security boundary to
+              # minicon-platform. Compile-only Windows evidence cannot prove
+              # that the installed DACL is protected and current-user-only.
+              # Keep this security court independent of the general test-name
+              # filter, as check-reuse is: an unrelated focused run must not
+              # erase the Windows ACL evidence.
+              echo "== Windows private filesystem ACL"
+              run_suite windows-private-filesystem cargo test --locked --target "$triple" -p minicon-platform --features filesystem --lib -- private_ --test-threads 1
+              if ! grep -Eq 'running [1-9][0-9]* tests?' "$LOG_DIR/windows-private-filesystem.log"; then
+                echo "SUITE windows-private-filesystem executed no tests" | tee -a "$LOG_DIR/summary.log"
+                case " $failed " in
+                  *" windows-private-filesystem "*) ;;
+                  *) failed="$failed windows-private-filesystem" ;;
+                esac
+              fi
               ;;
             lnx-*)
               # Linux-only product paths. A macOS build never compiles the

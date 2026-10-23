@@ -5478,11 +5478,7 @@ fn cancelled_buffer_cases(rust: bool) {
             // Processed Ctrl+C is its existing actual keyboard interruption path.
             fixture.master.write_all(&[3]).unwrap();
         }
-        // Hosted Windows runners can take more than ten seconds to retire a
-        // disconnected read under full-suite load. This is a liveness oracle,
-        // not a latency budget; keep it bounded without conflating scheduler
-        // delay with a leaked native read.
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while !report.0.with_extension("cancelled").exists() {
             assert!(
                 Instant::now() < deadline,
@@ -5538,10 +5534,7 @@ fn retiring_buffer_cases(rust: bool) {
             Fixture::open_backend(command, "conpty")
         };
         fixture.until("cooked-retire-ready:");
-        // Disconnect completion is a liveness property. The hosted Windows
-        // court has exceeded ten seconds under full-suite load, so retain a
-        // finite bound with enough scheduler headroom.
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while !report.0.exists() {
             assert!(
                 Instant::now() < deadline,

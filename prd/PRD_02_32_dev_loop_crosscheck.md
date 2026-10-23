@@ -87,11 +87,28 @@ cells additionally run the POSIX PTY session tests, the two native X11
 clipboard unit tests, and `minicon_load_portability_linux`. After Xvfb is
 up, the Linux job sets `MINICON_REQUIRE_DISPLAY=1`; an X11 test that would
 have returned success with no `DISPLAY` fails instead. Those Linux suites
-are not implied by a green macOS or Windows cell. Receipts from that court
-are still required before the plan's leaves close. The PTY invocation names
+are not implied by a green macOS or Windows cell. Run `39917026302` at exact
+source `3db5710` records all three portable-console suites `ok` on all six
+cells and records `linux-pty`, `linux-x11-clipboard`, and `linux-elf-needed`
+`ok` on both Linux cells. The PTY invocation names
 feature `pty` and the X11 invocation names feature `clipboard`; omitting those
 features compiles the target tests out, so the unfiltered nonzero-test guard
 would correctly reject the court rather than certify a no-op.
+
+That run is intentionally not presented as an all-green Windows-service
+receipt: Windows arm64 passed every suite, while Windows x64 retained the two
+known G6 unread-output `FreeConsole` failures in `rust_console_pty` (94 passed,
+2 failed). All portable suites on that same x64 receipt passed. A red carried
+debt court remains red; it does not erase the independently named portable or
+Linux receipts and is not silently converted to a skip.
+
+The Windows branch also owns a focused `windows-private-filesystem` suite from
+v0.2.21. It runs `minicon-platform`'s `private_` library tests with feature
+`filesystem` on both Windows ISAs and fails if Cargo reports zero tests. It is
+independent of `test_filter`, like the minimal-reuse court: a focused product
+rerun must not silently erase the native DACL evidence. This is the runtime
+owner for the OAuth bearer's protected current-user-only directory ACL; it is
+not permission to run every platform unit test in the dev loop.
 
 From v0.2.15 preparation, each cell also runs the UI-core library suite and
 `scripts/check-reuse.sh`. The latter sets `CARGO_BUILD_TARGET` to the matrix
