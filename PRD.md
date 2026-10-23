@@ -150,7 +150,10 @@ flowchart LR
   and the embed slot is `Layout::content_column` (macOS unit tests only).
   Live resize of an already-reparented X child is BLOCKED. The Windows bearer
   path now uses the platform's protected current-user ACL implementation, but
-  its native runtime evidence is BLOCKED. G4 and G6 stay carried debt.
+  its native runtime evidence is BLOCKED. Implementation commit `960853b`
+  passed both Linux dev-loop cells; its two Windows cells exposed three
+  10-second liveness-observation expiries, now retained as bounded 30-second
+  courts pending exact-tip receipts. G4 and G6 stay carried debt.
   [Plan](plan/plan-v0.2.21.md).
 - [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
   limited Win32 I/O/records and job cleanup are implemented. The explicit

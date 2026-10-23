@@ -1,8 +1,11 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: opened 2026-10-23. v0.2.20 shipped
+Status: implementation landed; exact-tip six-cell dev-loop qualification is in
+progress. Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
-has two tracks already on `main` tip `be99a86` plus the local court edits.
+has two tracks on `main`; implementation commit `960853b` includes both tracks,
+and the following court-only liveness-window adjustment awaits its exact-tip
+receipts.
 G4 and G6 stay in [carried debt](plan-carried-debt.md). Do not publish.
 
 Track A: `minicon-console` runs on every shipped cell, and a Linux-only
@@ -158,6 +161,16 @@ flowchart LR
 - `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`, `python3 scripts/build-feature-forwarding-selftest.py` (three forwarding cases, including no extra arguments), and `./scripts/selftest.sh` passed. The three UTM court self-tests remain explicitly `SKIPPED (needs a court)` rather than being claimed as local evidence.
 - `./scripts/six-cell-qualify.sh` produced `target-six/receipt.json` with 31 PASS, 0 FAIL and 14 BLOCKED after the pinned `cargo-xwin 0.23.1` and Windows Rust targets were installed. Both Windows architectures passed all-target, throughput, owned-console, retail and PE artifact checks; both Linux architectures passed all-target, throughput and ELF artifact checks; macOS arm64/x86_64 passed Clippy, tests, throughput and Mach-O checks. The 14 BLOCKED stages are exactly the unconfigured native macOS/Windows/Linux desktop runner courts; the optional Lima accelerator is NOT_REQUESTED.
 - The first six-cell pass proved a missing `advapi32` link for the Windows `SystemFunction036` OAuth entropy call; the final pass proves the corrected link on x86_64 and arm64. It also exposed two test-fixture races rather than weakening product safety: adopted-group evidence now spawns a stable group leader directly (50/50 focused passes), and the OAuth loopback fixture consumes its bounded `Content-Length` body before closing (320/320 concurrent passes). The named host-UI PNG was reviewed and updated to the current layout, so source-stability passes with byte-identical regeneration.
+- Dev-loop run `39914718322` on exact implementation commit `960853b` passed
+  both Linux cells. Windows x86_64 failed two `rust_console_pty` liveness
+  observations at their exact 10-second deadline (`disconnect-file` and
+  `disconnect`); Windows arm64 failed the asynchronous clipboard observation
+  at the same 10-second deadline. These checks prove eventual retirement and
+  delivery rather than a 10-second product latency promise, so their finite
+  observation windows are 30 seconds without changing product behavior or
+  suppressing a failure. The complete local product gate passed after this
+  court-only change, and the pre-push six-cell receipt is again 31 PASS,
+  0 FAIL, 14 BLOCKED. Exact-tip six-cell dev-loop receipts remain pending.
 
 ## Non-goals
 

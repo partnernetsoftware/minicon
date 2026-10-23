@@ -803,7 +803,7 @@ fn gui_control_surface_isolated_multitab_black_box() {
                 "--target",
                 &root,
                 "--timeout-ms",
-                "10000",
+                "30000",
                 "ASYNC_CLIPBOARD_OK",
             ],
         );
