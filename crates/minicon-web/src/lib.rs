@@ -201,6 +201,46 @@ pub fn http_url_at(line: &str, char_index: usize) -> Option<String> {
     }
 }
 
+const SYSTEM_OPENERS: &[&str] = &[
+    "xdg-open",
+    "open",
+    "gio",
+    "gtk-launch",
+    "explorer",
+    "cmd",
+    "start",
+];
+
+fn is_system_opener(program: &std::path::Path) -> bool {
+    program
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| SYSTEM_OPENERS.contains(&name))
+}
+
+/// The wry host for the one content panel.
+///
+/// `explicit` is `MINICON_BROWSER_BIN`. When it is unset, the sibling
+/// `minicon-web-host` next to `current_exe` is used if that file exists.
+/// A system opener is never selected.
+pub fn page_host_program(
+    explicit: Option<&std::path::Path>,
+    current_exe: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    if let Some(program) = explicit {
+        if is_system_opener(program) {
+            return None;
+        }
+        return Some(program.to_path_buf());
+    }
+    let sibling = current_exe.parent()?.join("minicon-web-host");
+    if sibling.is_file() && !is_system_opener(&sibling) {
+        Some(sibling)
+    } else {
+        None
+    }
+}
+
 /// Argv for the wry page host. The program must be the helper, never the
 /// system opener (`xdg-open`, `open`, `gio`, `gtk-launch`).
 pub fn page_host_request(
@@ -211,14 +251,7 @@ pub fn page_host_request(
     if canonical != url {
         return Err("not-http");
     }
-    let name = program
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("host-name")?;
-    if matches!(
-        name,
-        "xdg-open" | "open" | "gio" | "gtk-launch" | "explorer" | "cmd" | "start"
-    ) {
+    if is_system_opener(program) {
         return Err("system-browser");
     }
     Ok((program.to_path_buf(), vec!["--load".to_owned(), canonical]))
@@ -565,6 +598,37 @@ mod tests {
             http_url_at("http://ok.test", 0).as_deref(),
             Some("http://ok.test")
         );
+    }
+
+    #[test]
+    fn page_host_program_is_the_panel_helper_not_the_system_browser() {
+        assert_eq!(
+            page_host_program(
+                Some(std::path::Path::new("/usr/bin/xdg-open")),
+                std::path::Path::new("/opt/minicon")
+            ),
+            None
+        );
+        assert_eq!(
+            page_host_program(
+                Some(std::path::Path::new("/opt/minicon-web-host")),
+                std::path::Path::new("/opt/minicon")
+            )
+            .as_deref(),
+            Some(std::path::Path::new("/opt/minicon-web-host"))
+        );
+        let dir = std::env::temp_dir().join(format!("minicon-host-bin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("minicon");
+        let host = dir.join("minicon-web-host");
+        std::fs::write(&exe, b"exe").unwrap();
+        std::fs::write(&host, b"host").unwrap();
+        assert_eq!(
+            page_host_program(None, &exe).as_deref(),
+            Some(host.as_path())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

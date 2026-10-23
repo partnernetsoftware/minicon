@@ -2074,7 +2074,10 @@ impl ConApp {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let Some(program) = std::env::var_os("MINICON_BROWSER_BIN") else {
+        let explicit = std::env::var_os("MINICON_BROWSER_BIN").map(std::path::PathBuf::from);
+        let current_exe =
+            std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("minicon"));
+        let Some(program) = browser::page_host_program(explicit.as_deref(), &current_exe) else {
             self.note_page_load(browser::PageLoad::Unavailable {
                 url: url.to_owned(),
                 reason: "browser-host-not-configured".to_owned(),
