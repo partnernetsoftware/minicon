@@ -1,10 +1,13 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: implementation and scoped six-cell dev-loop qualification recorded.
+Status: development scope complete; implementation and scoped native evidence
+recorded. No publish.
 Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
-has two tracks on `main`; implementation commit `960853b` includes both tracks,
-and run `39917026302` qualifies their six-cell console scope at `3db5710`.
+has two tracks on `main`; implementation commits `960853b` and `ade9a4d`
+carry them, run `39917026302` qualifies the six-cell console scope at
+`3db5710`, and run `39925651159` qualifies the Linux native browser runtime at
+`4577c9c`.
 G4 and G6 stay in [carried debt](plan-carried-debt.md). Do not publish.
 
 Track A: `minicon-console` runs on every shipped cell, and a Linux-only
@@ -115,10 +118,10 @@ Outcome: the one browser content panel stays in the terminal's column and the OA
 │   evidence: a_browser_tab_is_a_root_peer_of_a_terminal_tab (second add_browser_root returns None); content_column_is_the_terminal_rectangle. macOS arm64 unit tests only
 │   safe failure: a live resize that does not move the already-reparented X window stays open and is BLOCKED (no XMoveResizeWindow); Wayland has no embed_parent and is not called embedded
 │   dependency: PRD 25; non-goal: a split layout inside one tab
-├── [-] {OAUTH} The token POST uses the same proxy hook as the page, and only https
+├── [v] {OAUTH} The token POST uses the same proxy hook as the page, and only https
 │   invariant: exchange reads BrowserProxy from config plus MINICON_BROWSER_*, not the raw env alone; MINICON_DEEPSEEK_TOKEN_URL must be https; an http loopback redirect is fetched by the page host on 127.0.0.1 and is not left to the WebView proxy
-│   evidence: https_token_url rejects plain http; loopback_oauth_redirect_is_delivered_without_the_webview_proxy
-│   safe failure: wry 0.56 ProxyConfig::Http still has an empty ignore list, so the host cancels that navigation instead of asking wry to exempt it; a live WebKit run of the handler is not this Mac
+│   evidence: https_token_url rejects plain http; loopback_oauth_redirect_is_delivered_without_the_webview_proxy; run 39925651159 executes the real WebKit handler on both Linux ISAs
+│   safe failure: wry 0.56 ProxyConfig::Http still has an empty ignore list, so the host cancels that navigation and delivers loopback directly instead of asking wry to exempt it
 │   dependency: PRD 31; non-goal: a provider registry or composer "Connect AI" button
 ├── [v] {KEY} Ctrl+Shift letter chords see the physical key
 │   invariant: Linux xkb events with logical Unidentified and PhysicalKeyCode::Letter still open the browser tab or start OAuth instead of becoming C0
@@ -130,19 +133,19 @@ Outcome: the one browser content panel stays in the terminal's column and the OA
 │   evidence: `windows-private-filesystem` is nonzero and green on win-x86_64 and win-aarch64 receipts
 │   safe failure: keep the Windows bearer claim BLOCKED; do not infer ACL safety from Unix 0600 or from a green neighboring suite
 │   dependency: minicon-platform `filesystem`; non-goal: running every platform unit test on Windows
-├── [-] {RESIZE} Keep the embedded X child on the current content-column bounds
+├── [v] {RESIZE} Keep the embedded X child on the current content-column bounds
 │   invariant: window geometry, sidebar width, history-panel width and browser-tab activation all apply the same `Layout::content_column` rectangle to the already-reparented child
 │   evidence: a native X11 court creates a classed child, calls the public resize seam and observes exact x/y/width/height; Linux product dispatch calls that seam on each owning geometry transition
 │   safe failure: keep the browser surface partial; never paint stale terminal chrome over a child left at old bounds
 │   dependency: X11 embed parent; non-goal: Wayland embedding or the future 1:N layout engine
-├── [-] {WEBKIT} Run the real WebKit OAuth navigation handler on both Linux cells
+├── [v] {WEBKIT} Run the real WebKit OAuth navigation handler on both Linux cells
 │   invariant: an ordinary page reaches WebKit through the configured HTTP proxy, its loopback OAuth redirect is cancelled inside WebKit and delivered directly to 127.0.0.1, and the host exits only after that direct callback succeeds
 │   evidence: nonzero `minicon-web-x11` plus `minicon-web-live-oauth` suites on lnx-x86_64 and lnx-aarch64, built with feature `wry-host` under Xvfb/WebKitGTK
 │   safe failure: missing WebKitGTK, a proxy-bypassed initial page, a callback sent through the proxy, zero tests or a timeout fails the Linux cell
 │   dependency: {RESIZE}, WebKitGTK 4.1 and Xvfb; non-goal: a real provider account or production token
-└── [_] {STILL} Named holes not closed by the leaves above
-    state: `state` and S256 PKCE are on the current authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. Run `39919403513` proves the protected current-user ACL on both Windows ISAs. A live WebKit handler run and live resize of the reparented X child remain open; `wry-host` names gtk only as a Linux dependency.
-    dependency: do not mark the OAuth vertical [v] while these are open; {ACL}, {RESIZE} and {WEBKIT} name the executable portions
+└── [v] {CLOSE} Close every named 0.2.21 browser hole without widening scope
+    state: `state` and S256 PKCE are on the authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. Run `39919403513` proves the protected current-user ACL on both Windows ISAs. Run `39925651159` proves the live resize seam and real WebKit proxy/loopback handler on both Linux ISAs.
+    dependency: {ACL}, {RESIZE} and {WEBKIT}; non-goal: Wayland embedding, a production provider account, dashboard/preview/wasm, 1:N panels or publish
 ```
 
 ```mermaid
@@ -155,6 +158,8 @@ flowchart LR
     BRIDGE --> POST["https token POST<br/>same BrowserProxy"]
     PROXY["ProxyConfig::Http<br/>ignore list empty"] -.->|"loopback cancelled"| HOST
     HOST -->|"direct GET 127.0.0.1"| BRIDGE
+    LAYOUT["Layout::content_column"] -->|"XMoveResizeWindow"| HOST
+    COURT["run 39925651159<br/>lnx-x86_64 + lnx-aarch64"] --> HOST
 ```
 
 ## Ordered work
@@ -165,6 +170,8 @@ flowchart LR
 | 2 — WIN | Leave `rust_console_pty` and `minicon_console_agent` inside `case win-*`. Do not add them to Linux. | G6 stays carried debt. No edit to the unread-output barrier in this version. |
 | 3 — LNX | On `lnx-*` only, run the three POSIX PTY session tests with feature `pty`, the two X11 tests with feature `clipboard`, and `minicon_load_portability_linux`. The Linux job exports `MINICON_REQUIRE_DISPLAY=1` after Xvfb is up, and those X11 tests plus the control image-paste test panic instead of returning when `DISPLAY` is missing. | A green `osx-*` or `win-*` cell does not close this. Omitting the features compiles the named tests out and is a failed court, not evidence. Do not move the PTY into `minicon-console`. |
 | 4 — GATE | [v] Version is 0.2.21. Index and owners point at this plan. G4/G6 are unclaimed. No publish. | `Cargo.toml`, `Cargo.lock`, `release-policy.json`, this plan and owner links are the named source evidence. Unavailable cell evidence stays BLOCKED. |
+| 5 — RESIZE | [v] Apply `Layout::content_column` through one X resize seam on geometry, sidebar, history-panel and browser-tab activation transitions. | `minicon-web-x11` must run a nonzero native X test on both Linux ISAs and observe exact x/y/width/height. |
+| 6 — WEBKIT/OAUTH | [v] Build the optional wry host and drive a real WebKit initial page through the configured proxy, then cancel and directly deliver its loopback redirect. | Run `39925651159` records `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs; no production provider account is claimed. |
 
 ## Local evidence — 2026-10-23, macOS arm64
 
@@ -216,6 +223,17 @@ flowchart LR
   scrolled view to the live tail. The court now waits for that prompt before
   injecting the wheel; the focused black-box journey passed 20/20 without
   changing product scroll behavior.
+- Browser native run `39925651159` checked out exact source
+  `4577c9c2d446ee43f5af0a4a53699d3ae3c960b5`. Both Linux receipts are
+  successful and independently name `minicon-web-x11`,
+  `minicon-web-wry-build` and `minicon-web-live-oauth` as `ok`. The workflow's
+  nonzero guard proves the exact X11 resize test ran; the WebKit smoke proves
+  the initial ordinary page traversed the configured proxy while the later
+  OAuth loopback navigation was cancelled in WebKit and delivered directly to
+  `127.0.0.1`. The first attempt (`39924034160`) was correctly red: the exact
+  filter ran zero X11 tests on both cells, and `*const i8` did not match
+  aarch64 Linux `c_char`; the passing rerun uses the module-qualified test name
+  and ABI-correct `c_char`.
 
 ## Non-goals
 

@@ -54,7 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [v] v0.2.21 console runtime on every cell, Linux divergence fails Linux → plan/plan-v0.2.21.md
+    ├── [v] v0.2.21 console courts + browser content panel/OAuth runtime → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -135,22 +135,22 @@ flowchart LR
 
 ## Current frontier
 
-- [-] **v0.2.21: console courts, and the browser content panel.** Portable
+- [v] **v0.2.21 development scope: console courts, and the browser content panel.** Portable
   `minicon-console` tests must run on every shipped cell, and a Linux-only
   path must fail `lnx-*` even when Windows and macOS are green. Separately,
   a browser tab's content panel is `minicon-web` (wry + tao only in
-  `minicon-web-host`); a terminal tab's panel stays the PTY. Tip `be99a86`
-  loads a page on one Linux WebKitGTK host and exchanges a DeepSeek code.
-  That is not a six-cell claim. An http loopback redirect is fetched by the
+  `minicon-web-host`); a terminal tab's panel stays the PTY. An http loopback redirect is fetched by the
   page host, not left in wry's empty proxy ignore list. The bearer file is
   forced to mode `0600` and a symlink is refused; `HOME` falls back to
   `USERPROFILE`. The authorize URL carries `state` and an S256 challenge, and
   a wrong loopback request does not consume the listener. `wry-host` pulls gtk
   only on Linux. One browser root is refused on a second `add_browser_root`,
-  and the embed slot is `Layout::content_column` (macOS unit tests only).
-  Live resize of an already-reparented X child is BLOCKED. The Windows bearer
+  and the embed slot is `Layout::content_column`. The Windows bearer
   path uses the platform's protected current-user ACL implementation; native
-  x86_64 and arm64 ACL courts passed in run `39919403513`. Six-cell dev-loop run `39917026302`
+  x86_64 and arm64 ACL courts passed in run `39919403513`. Linux run
+  `39925651159` at `4577c9c` passed the nonzero native X resize court, built
+  the optional WebKitGTK host and passed the real proxy/direct-loopback OAuth
+  smoke on x86_64 and aarch64. Six-cell dev-loop run `39917026302`
   at `3db5710` passed the portable console suites on every cell and the
   Linux-only PTY/X11/ELF courts on both Linux cells. Windows arm64 passed all
   suites; Windows x64 stayed red only on the two already-carried G6
@@ -206,7 +206,7 @@ flowchart LR
   http(s) and DeepSeek authorize use that panel, not the OS browser. No tray.
   1:N panels, dashboard, preview and wasm are later.
   Names: [Workspace](prd/PRD_02_25_con_workspace.md);
-  next holes: [plan-v0.2.21](plan/plan-v0.2.21.md);
+  completed 0.2.21 evidence: [plan-v0.2.21](plan/plan-v0.2.21.md);
   boundary: [plan-browser-tabs](plan/plan-browser-tabs.md) and
   [horizon](prd/PRD_02_31_v0_2_horizon.md).
 - [-] **macOS host-UI readability** remains open, including tab/header and

@@ -640,11 +640,13 @@ prefer direct-wry via a helper / shared adapter, never link wry/tao into core
 stable function boundary is workspace member `crates/minicon-web`
 (`PageHost`, `BrowserTab`, `http_url_at`, `resolve_proxy`, `page_host_request`,
 `spawn_page_host`). `src/browser.rs` re-exports it. `minicon-web-host` is the
-replaceable process body (`--probe` / `--load` / `--smoke`). With no WebView
+replaceable process body (`--probe` / `--load` / `--smoke` /
+`--oauth-smoke`). With no WebView
 linked it reports Unavailable and does not call the OS browser. Feature
 `wry-host` links wry and tao into that binary only and, on Linux, packs the
-page into tao's default vbox. Sequencing of the remaining holes is
-[plan-v0.2.21.md](../plan/plan-v0.2.21.md); the boundary list stays in
+page into tao's default vbox. The completed 0.2.21 acceptance record is
+[plan-v0.2.21.md](../plan/plan-v0.2.21.md); the broader boundary and later
+dashboard/preview/wasm/1:N leaves stay in
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Workspace owns the
 tab/content-panel requirements and evidence.
 
@@ -661,6 +663,15 @@ must not take down the terminal. Product face stays Tab / content panel
 body does not link wry and exits 69 Unavailable. `wry-host` is opt-in.
 Target interface inventory:
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
+
+The scoped 0.2.21 native browser runtime is closed by dev-loop run
+`39925651159` at exact source `4577c9c2d446ee43f5af0a4a53699d3ae3c960b5`.
+On both Linux ISAs, its nonzero X11 suite observes the exact moved/resized
+embedded child rectangle, the optional wry/WebKitGTK host builds, and a real
+WebKit page reaches a synthetic origin through the configured HTTP proxy before
+its OAuth loopback redirect is cancelled and delivered directly to
+`127.0.0.1`. This is runtime evidence for the adapter seam, not a production
+provider-account or Wayland-embedding claim.
 
 OAuth credentials do not add a product-layer native filesystem exception.
 MiniCon owns the bearer path and `minicon-platform::filesystem` owns private

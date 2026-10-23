@@ -18,7 +18,7 @@ minicon workspace and input
 ├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
 ├── Tab kinds and content panels (1 tab ↔ 1 content panel now; 1:N later)
 │   ├── terminal tab → one terminal content panel (PTY view)
-│   └── [-] browser tab → one browser content panel (shell + URL handoff; page load via minicon-web)
+│   └── [v] browser tab → one browser content panel (shell + URL handoff; page load via minicon-web)
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -119,10 +119,11 @@ names above.
   (`browser-host-not-configured`), not `host_open`. Evidence:
   `page_host_request_is_the_helper_not_the_system_browser`,
   `spawn_page_host_passes_the_url_to_the_helper`.
-  Feature `wry-host` does navigate, inside `minicon-web-host` only. On tip
-  `be99a86` that host reparents into the main window on X11 and unmaps while
-  a terminal tab is active. One Linux WebKitGTK `--probe` 0 is not a
-  six-cell receipt. Dashboard, preview, wasm and 1:N layout remain follow-ups
+  Feature `wry-host` does navigate, inside `minicon-web-host` only. The host
+  reparents into the main window on X11, follows the current content-column
+  bounds and unmaps while a terminal tab is active. Run `39925651159` proves
+  the native X resize and real WebKit proxy/loopback path on both Linux ISAs.
+  Dashboard, preview, wasm and 1:N layout remain follow-ups
   in [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Renderer boundary stays in
   [PRD_02_31](PRD_02_31_v0_2_horizon.md).
 - [v] **one browser root, and the embed slot is the content column (0.2.21).**
@@ -131,23 +132,25 @@ names above.
   is the rectangle under the tab header, above the composer, inset by the
   sidebar and the history chrome. Evidence:
   `a_browser_tab_is_a_root_peer_of_a_terminal_tab`,
-  `content_column_is_the_terminal_rectangle` (macOS arm64). Live resize of an
-  already-reparented X child is BLOCKED. Owner:
-  [plan-v0.2.21](../plan/plan-v0.2.21.md) `{PANEL}`.
-- [-] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
+  `content_column_is_the_terminal_rectangle` (macOS arm64) and the nonzero
+  `minicon-web-x11` suite on both Linux ISAs in run `39925651159`. Window,
+  sidebar and history geometry changes plus tab activation all call the same
+  resize seam. Owner: [plan-v0.2.21](../plan/plan-v0.2.21.md) `{PANEL}` /
+  `{RESIZE}`.
+- [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
   `minicon-web-host`); `src/browser.rs` re-exports. wry, tao and gtk are
   linked only when the host is built with `wry-host`. Core `minicon` does
   not enable that feature.
-- [-] **OAuth bearer storage stays behind the platform filesystem seam.**
+- [v] **OAuth bearer storage stays behind the platform filesystem seam.**
   The product names the `.minicon-embed/deepseek-bearer` state, while
   `minicon-platform::filesystem` owns protected-directory setup, atomic
   private publication, link-like path refusal and bounded private reads.
   Unix local evidence proves mode `0600` and refusal to write through a
-  symlink. The Windows adapter installs a protected current-user ACL, but a
-  Windows native receipt is still `BLOCKED`; the OAuth vertical is not marked
-  complete from the macOS result.
+  symlink. Run `39919403513` proves the Windows adapter's protected
+  current-user ACL on x86_64 and arm64; run `39925651159` separately proves
+  the live WebKit proxy/direct-loopback navigation on both Linux ISAs.
 - [v] **chrome panels stay chrome.** The right-side **sent-history panel**,
   the **settings panel**, and the header **panel toggle** / `Ctrl+Shift+H`
   continue to mean host chrome (see Host UI below). Their evidence strings and
