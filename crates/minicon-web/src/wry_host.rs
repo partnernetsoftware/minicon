@@ -170,9 +170,9 @@ fn embed_into_parent(_window: &tao::window::Window, _slot: crate::PanelSlot) {}
 
 #[cfg(target_os = "linux")]
 fn gdk_x11_xid(gdk_window: *mut std::ffi::c_void) -> Option<u64> {
-    use std::ffi::{CStr, c_void};
+    use std::ffi::{CStr, c_char, c_void};
     unsafe extern "C" {
-        fn dlsym(handle: *mut c_void, symbol: *const i8) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     }
     let symbol = CStr::from_bytes_with_nul(b"gdk_x11_window_get_xid\0").ok()?;
     let symbol = unsafe { dlsym(std::ptr::null_mut(), symbol.as_ptr()) };
@@ -187,9 +187,10 @@ fn gdk_x11_xid(gdk_window: *mut std::ffi::c_void) -> Option<u64> {
 
 #[cfg(target_os = "linux")]
 unsafe fn x_reparent(child: u64, slot: crate::PanelSlot) {
+    use std::ffi::c_char;
     #[link(name = "X11")]
     unsafe extern "C" {
-        fn XOpenDisplay(name: *const i8) -> *mut std::ffi::c_void;
+        fn XOpenDisplay(name: *const c_char) -> *mut std::ffi::c_void;
         fn XReparentWindow(
             display: *mut std::ffi::c_void,
             window: u64,

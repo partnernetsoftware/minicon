@@ -266,7 +266,7 @@ jobs:
               # a generic Rust filter: a focused rerun must not erase native X
               # resize or real WebKit OAuth evidence.
               echo "== native X embedded-page resize"
-              run_suite minicon-web-x11 cargo test --locked --target "$triple" -p minicon-web --lib embedded_page_resize_moves_and_sizes_a_classed_x_child -- --exact --test-threads 1
+              run_suite minicon-web-x11 cargo test --locked --target "$triple" -p minicon-web --lib tests::embedded_page_resize_moves_and_sizes_a_classed_x_child -- --exact --test-threads 1
               echo "== build the optional wry/WebKitGTK page host"
               run_suite minicon-web-wry-build cargo build --locked --target "$triple" -p minicon-web --features wry-host --bin minicon-web-host
               echo "== real WebKit proxy + OAuth loopback navigation"
