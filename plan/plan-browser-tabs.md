@@ -1,15 +1,15 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: partial at `9ceb285` (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. Direct macOS use of the canonical dev output found no page host and no same-window embedding path, so the cross-platform shell/load/proxy/OAuth vertical is reopened in [plan-v0.2.21.md](plan-v0.2.21.md). **Not a release claim.** **Commissioner re-nail:** no tray; browser = terminal tab peer. **Adopted boundary under review:** browser API = **`minicon-web`**; `minicon-core`, `minicon-console` and headless paths remain WebView-free. The earlier stronger rule that the GUI can never link a WebView adapter conflicts with same-window WKWebView/WebView2 plus a separate helper; `{ARCH}` must select and evidence the portable boundary. Path today: `crates/minicon-web/` (`Cargo.toml`, `src/lib.rs`, bin `minicon-web-host`); `src/browser.rs` re-exports the crate. The wry loader is feature `wry-host` (off by default). The X11 host reparents and resizes correctly, but neither that host nor its feature is present in `build.sh dev`, and X11 reparenting is not a macOS/Windows design. A system opener and floating helper window remain rejected. No Draft / Latest / signed package / public ship from this leaf.
+Status: partial (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. The reopened `{ARCH}` boundary is now selected: platform WebView adapters stay inside **`minicon-web`**; macOS links `native-page-host` into the GUI binary for one child WKWebView while `minicon-core`, `minicon-console` and headless paths remain WebView-free. Direct arm64 Computer Use from canonical `build.sh dev` output proves the bounded offline home, hide/restore, focus release and fullscreen resize in the same content column. `build.sh dev` also emits a distinct local-test app wrapper. Automated/second-ISA macOS, Linux canonical packaging and Windows WebView2 remain open in [plan-v0.2.21.md](plan-v0.2.21.md). **Not a release claim.** Browser remains a terminal-tab peer; no tray, system opener or floating helper. No Draft / Latest / signed package / public ship from this leaf.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
 Renamed from `plan-wry-tray-browser.md` (tray-era title/content retired).
 
 Points into: [PRD_02_31 renderer choice](../prd/PRD_02_31_v0_2_horizon.md)
-(reuse the shared WebView security shape / prefer-direct-wry; the earlier
-separate-process/no-GUI-link constraint is reopened by `{ARCH}`, while **UX is
-still same-window tabs**), and the existing passive
+(reuse the shared WebView security shape / prefer-direct-wry; `{ARCH}` permits
+GUI-only platform linkage inside `minicon-web`, while **UX is still same-window
+tabs**), and the existing passive
 probe in `crates/minicon-platform` `webview` (WebView2 / WKWebView / WebKitGTK
 discovery only — no create/navigate yet).
 
@@ -53,7 +53,7 @@ WebView windows. Process isolation may still use a sibling binary / subcommand
 for wry; the main process owns the tab chrome and bridges content back.
 
 ```text
-minicon (main UI — tab strip owns lifecycle; WebView linkage decided by {ARCH})
+minicon (main UI — tab strip owns lifecycle; GUI-only linkage accepted by {ARCH})
   │
   │  terminal tabs  │  browser tabs   ← same bar, open/close/switch/title
   │       │                │
@@ -95,8 +95,8 @@ minicon (main UI — tab strip owns lifecycle; WebView linkage decided by {ARCH}
      they stay chrome (PRD_02_25).
 5. **`minicon-web` owns isolation.** Path `crates/minicon-web` remains the
    only browser API/implementation boundary. `minicon-core`, `minicon-console`
-   and headless paths stay WebView-free; whether the GUI binary feature-links
-   the adapter is the explicit `{ARCH}` decision
+   and headless paths stay WebView-free; the GUI binary may feature-link only
+   that adapter, as selected by `{ARCH}`
    ([PRD_02_31](../prd/PRD_02_31_v0_2_horizon.md)).
    The host binary is **`minicon-web-host`** (crate bin); `MINICON_BROWSER_BIN`
    remains an accepted stand-in path. Product face stays **tab /
@@ -183,8 +183,10 @@ changing meaning.
        list-tabs kind=browser). One content panel. No tray. A second
        Ctrl+Shift+O must focus that tab, not insert another (0.2.21 {PANEL}:
        second add_browser_root is None; content_column_is_the_terminal_rectangle.
-       Run 39925651159 proves exact X child resize on Linux only. Canonical
-       macOS output currently shows a shell with no page host)
+       Run 39925651159 proves exact X child resize on Linux; direct macOS
+       arm64 Computer Use proves the child WKWebView in the same column,
+       hide/restore, focus release and fullscreen resize. Automated/second-ISA
+       macOS and Windows surface evidence remain open)
 [v] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
        one browser content panel and stores the canonical URL. A non-http
        token does not change the panel. That path does not call
@@ -295,7 +297,7 @@ native court qualifies the adapter path without claiming a provider account.
 
 | Decision | Choice |
 | --- | --- |
-| Renderer | **minicon-web** boundary; direct-wry candidate; portable GUI linkage is the open `{ARCH}` decision (PRD_02_31) |
+| Renderer | **minicon-web** boundary; direct-wry platform adapter; GUI-only linkage accepted by `{ARCH}` while core/headless remain WebView-free (PRD_02_31) |
 | Product surface | **browser tabs peer to terminal tabs** (same bar / lifecycle) |
 | System tray | **none** — show/hide/quit not tray-driven |
 | Content-panel model now | **1 tab ↔ 1 content panel** |

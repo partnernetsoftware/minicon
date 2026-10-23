@@ -34,9 +34,46 @@ trap cleanup EXIT HUP INT TERM
 
 test_lints='build.rustflags=["-D","dead_code","-D","unused_variables","-D","unused_must_use"]'
 
+assemble_macos_dev_app() {
+  [ "$(uname -s)" = Darwin ] || return 0
+  dev_app="target/debug/MiniCon 0.2.21 Dev.app"
+  dev_contents="$dev_app/Contents"
+  # This is an ignored local test wrapper, never a release/signing artifact.
+  # Keep its identity distinct so Computer Use does not select an installed
+  # MiniCon while qualifying the binary that was just built.
+  rm -rf "$dev_app"
+  mkdir -p "$dev_contents/MacOS" "$dev_contents/Resources"
+  cp target/debug/minicon "$dev_contents/MacOS/minicon"
+  cp assets/minicon.icns "$dev_contents/Resources/minicon.icns"
+  "$python_bin" - "$dev_contents/Info.plist" <<'PY'
+import plistlib
+import sys
+
+payload = {
+    "CFBundleName": "MiniCon 0.2.21 Dev",
+    "CFBundleDisplayName": "MiniCon 0.2.21 Dev",
+    "CFBundleIdentifier": "com.partnernetsoftware.minicon.dev-0-2-21",
+    "CFBundleExecutable": "minicon",
+    "CFBundleIconFile": "minicon",
+    "CFBundlePackageType": "APPL",
+    "CFBundleShortVersionString": "0.2.21",
+    "CFBundleVersion": "0.2.21",
+    "LSMinimumSystemVersion": "11.0",
+    "NSHighResolutionCapable": True,
+}
+with open(sys.argv[1], "wb") as output:
+    plistlib.dump(payload, output, sort_keys=True)
+PY
+  plutil -lint "$dev_contents/Info.plist" >/dev/null
+  echo "[build] macOS dev app: $dev_app"
+}
+
 case "$mode" in
   release) cargo build --locked --release "$@" ;;
-  dev) cargo build --locked "$@" ;;
+  dev) cargo build --locked "$@"
+    if [ "$#" -eq 0 ]; then
+      assemble_macos_dev_app
+    fi ;;
   check) cargo check --locked --workspace --all-targets "$@" ;;
   # A selected suite uses the same dangerous-test-lint gate as the full run,
   # without compiling or executing unrelated workspace/fork test binaries.

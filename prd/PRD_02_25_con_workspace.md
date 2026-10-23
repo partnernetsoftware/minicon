@@ -124,11 +124,13 @@ names above.
   reparents into the main window on X11, follows the current content-column
   bounds and unmaps while a terminal tab is active. Run `39925651159` proves
   the native X resize and real WebKit proxy/loopback path on both Linux ISAs.
-  This remains partial as a product surface: the canonical macOS dev build
-  emits no page-host binary, the macOS window backend exposes no embed parent,
-  and an independent helper window would violate the same-tab/content-panel
-  invariant. The portable same-window boundary, canonical artifact and native
-  macOS/Windows page courts are open in
+  This remains partial as a cross-platform product surface, but the local
+  macOS hole is now implemented: `native-page-host` creates one WKWebView child
+  inside `Layout::content_column`, and the canonical dev build assembles a
+  distinct `MiniCon 0.2.21 Dev.app` for unambiguous UI qualification. Direct
+  arm64 use proves visible home, hide/restore, focus release and fullscreen
+  resize. Canonical cross-platform artifacts and native automated/second-ISA
+  macOS plus Windows page courts remain open in
   [plan-v0.2.21](../plan/plan-v0.2.21.md) `{ARCH}` / `{ARTIFACT}` /
   `{MAC-PANEL}` / `{WIN-PANEL}`.
   Dashboard, preview, wasm and 1:N layout remain follow-ups
@@ -149,9 +151,10 @@ names above.
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
   `minicon-web-host`); `src/browser.rs` re-exports. wry, tao and gtk are
-  linked only when the host is built with `wry-host` today. The portable
-  same-window `{ARCH}` decision may move feature linkage into the GUI binary,
-  but not outside the `minicon-web` boundary or into core/headless crates.
+  linked into the Linux host under `wry-host`; on macOS, `native-page-host`
+  links WKWebView support into the GUI binary only. The accepted `{ARCH}`
+  boundary never moves WebView calls outside `minicon-web` or into
+  core/headless crates.
 - [v] **OAuth bearer storage stays behind the platform filesystem seam.**
   The product names the `.minicon-embed/deepseek-bearer` state, while
   `minicon-platform::filesystem` owns protected-directory setup, atomic

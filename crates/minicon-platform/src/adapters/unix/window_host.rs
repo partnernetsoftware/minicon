@@ -176,7 +176,18 @@ impl PixelWindowBackend for NativeWindowBackend {
                 _ => None,
             }
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        {
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            let handle = self.window.window_handle().ok()?;
+            match handle.as_raw() {
+                RawWindowHandle::AppKit(window) => {
+                    u64::try_from(window.ns_view.as_ptr() as usize).ok()
+                }
+                _ => None,
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             None
         }

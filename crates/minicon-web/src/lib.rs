@@ -7,8 +7,9 @@
 //! # Boundary
 //!
 //! [`PageHost`] is the swappable surface: [`ProcessPageHost`] speaks
-//! `--load <url>` to a helper process. Feature `wry-host` links wry and tao
-//! inside `minicon-web-host` only. Core `minicon` does not enable it.
+//! `--load <url>` to a helper process. On macOS, feature `native-page-host`
+//! owns a same-process child WKWebView for the GUI binary while core/headless
+//! consumers stay WebView-free. Feature `wry-host` retains the Linux helper.
 //!
 //! Stable names: [`BrowserTab`], [`BrowserPanel`], [`PageLoad`], [`PageHost`],
 //! [`http_url_at`], [`resolve_proxy`], [`page_host_request`], [`spawn_page_host`].
@@ -21,6 +22,11 @@
 /// unbounded header.
 const PROXY_VALUE_MAX_BYTES: usize = 512;
 
+#[cfg(all(feature = "native-page-host", target_os = "macos"))]
+mod native_page;
+#[cfg(all(feature = "native-page-host", target_os = "macos"))]
+pub use native_page::NativePageHost;
+
 /// The single content panel a browser tab hosts today.
 ///
 /// This is the tab's own page surface. It is not the chrome sent-history
@@ -32,8 +38,8 @@ pub struct BrowserPanel {
     pub url: Option<String>,
     /// What the content panel last asked the page host to do.
     ///
-    /// The wry WebView lives in that host process, not in this one. `Idle`
-    /// means no navigation has been requested.
+    /// The wry WebView lives behind this crate's native/process host boundary,
+    /// never in core/headless callers. `Idle` means no navigation was requested.
     pub load: PageLoad,
 }
 
@@ -675,8 +681,9 @@ impl Drop for ProcessPageHost {
     }
 }
 
-/// True only when this build was compiled with `--features wry-host`.
-/// The default build, including core `minicon`, is false.
+/// True only when this build carries the process helper's `wry-host` body.
+/// The macOS GUI's separate `native-page-host` feature does not change this
+/// helper probe.
 pub fn webview_backend_linked() -> bool {
     cfg!(feature = "wry-host")
 }

@@ -667,7 +667,10 @@ pub(crate) trait PixelWindowBackend {
         }
     }
 
-    /// Native parent id for a content-panel WebView. Linux reports the X11 window.
+    /// Opaque native parent for a content-panel WebView.
+    ///
+    /// Linux reports the X11 window id and macOS reports the owning `NSView`
+    /// pointer. Consumers must interpret it only for the current target.
     fn embed_parent(&self) -> Option<u64> {
         None
     }
@@ -747,7 +750,8 @@ impl PixelWindow {
         self.backend.last_present()
     }
 
-    /// X11 window id on Linux. `None` when the backend has no embed parent.
+    /// Opaque native content-panel parent for the current target.
+    /// `None` when the backend has no supported embed parent.
     pub fn embed_parent(&self) -> Option<u64> {
         self.backend.embed_parent()
     }

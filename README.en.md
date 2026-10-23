@@ -162,9 +162,15 @@ alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
 
 ```bash
 ./scripts/build.sh release     # target/release/minicon
+./scripts/build.sh dev         # target/debug/minicon
 ./scripts/build.sh test        # unit + GUI black-box + gates
 ./scripts/six-cell-qualify.sh  # all six OS/ISA binaries (needs a macOS host; CI runs these as .github/workflows/minicon-com.yml)
 ```
+
+On macOS, the canonical dev build also assembles the unsigned local-test wrapper
+`target/debug/MiniCon 0.2.21 Dev.app`; it has a distinct development bundle id
+so it cannot be confused with an installed release during UI qualification.
+The executable under test remains `target/debug/minicon`.
 
 Rust 1.97. Linux needs `libxkbcommon.so.0` and `libwayland-client.so.0` (no
 `-dev` packages). See [PRD.md](PRD.md) and the `plan/` notes.

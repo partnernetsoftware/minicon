@@ -146,9 +146,15 @@ shell：每个 tab 一个进程而不是三个，没有额外的 `conhost.exe`�
 
 ```bash
 ./scripts/build.sh release     # target/release/minicon
+./scripts/build.sh dev         # target/debug/minicon
 ./scripts/build.sh test        # 单元 + GUI 黑盒 + 各道门禁
 ./scripts/six-cell-qualify.sh  # 六种 OS/ISA 二进制（需 macOS 主机；CI 里由 .github/workflows/minicon-com.yml 跑）
 ```
+
+在 macOS 上，规范 dev 构建还会组装未签名的本地测试包装
+`target/debug/MiniCon 0.2.21 Dev.app`；它使用独立的开发 bundle id，避免 UI
+验收时误选机器上已安装的发行版。实际接受测试的可执行文件仍是
+`target/debug/minicon`。
 
 Rust 1.97。Linux 需要 `libxkbcommon.so.0` 和 `libwayland-client.so.0`（无需
 `-dev` 包）。见 [PRD.md](PRD.md) 与 `plan/` 下的笔记。

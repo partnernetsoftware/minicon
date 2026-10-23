@@ -824,6 +824,11 @@ struct ConApp {
     /// Child wry page host for the one browser content panel.
     /// `MINICON_BROWSER_BIN` names it. Unset stays Unavailable, not `host_open`.
     browser_page: Option<std::process::Child>,
+    /// macOS WKWebView attached directly below this window's browser tab.
+    /// The WebView implementation stays inside `minicon-web`; core/headless
+    /// code never sees or links its native types.
+    #[cfg(target_os = "macos")]
+    native_browser_page: Option<browser::NativePageHost>,
     /// Loopback `127.0.0.1` catcher for the OAuth redirect. Absent after the
     /// code is taken or refused. Not a system browser.
     oauth_bridge: Option<browser::OAuthBridge>,
@@ -1318,6 +1323,8 @@ impl ConApp {
             sessions,
             browsers: SessionStore::default(),
             browser_page: None,
+            #[cfg(target_os = "macos")]
+            native_browser_page: None,
             oauth_bridge: None,
             oauth_code: None,
             oauth_redirect: None,
@@ -1473,6 +1480,10 @@ impl ConApp {
     }
 
     fn stop_page_host(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            self.native_browser_page = None;
+        }
         if let Some(mut child) = self.browser_page.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -1503,11 +1514,18 @@ impl ConApp {
     /// browser tab is the one content panel on screen, and apply the current
     /// content-column geometry before mapping it.
     fn sync_embedded_page(&self, window: &PixelWindow) {
-        if let Some(parent) = window.embed_parent() {
-            if let Some(slot) = self.content_panel_slot(window) {
-                browser::resize_embedded_page(slot);
-            }
-            browser::set_embedded_page_visible(parent, self.active_is_browser());
+        let Some(slot) = self.content_panel_slot(window) else {
+            return;
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(page) = self.native_browser_page.as_ref() {
+            let _ = page.set_slot(slot);
+            let _ = page.set_visible(self.active_is_browser());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            browser::resize_embedded_page(slot);
+            browser::set_embedded_page_visible(slot.parent, self.active_is_browser());
         }
     }
 
@@ -2043,6 +2061,8 @@ impl ConApp {
             if self.workspace.active() != Some(id) {
                 self.select_tab(id);
             }
+            #[cfg(target_os = "macos")]
+            self.ensure_native_page(window);
             self.sync_embedded_page(window);
             self.mark_host_ui_full();
             self.reveal_active_tree_row(window)?;
@@ -2064,6 +2084,8 @@ impl ConApp {
                 "stable tab id is already in use",
             ));
         }
+        #[cfg(target_os = "macos")]
+        self.ensure_native_page(window);
         self.sync_embedded_page(window);
         self.mark_host_ui_full();
         self.reveal_active_tree_row(window)?;
@@ -2123,6 +2145,10 @@ impl ConApp {
         }
         self.launch_page_host(window, url);
         self.mark_host_ui_full();
+        if let Err(error) = self.refresh_title(window) {
+            self.note_host_notice(format!("could not focus the browser tab: {error}"), window);
+        }
+        window.request_redraw();
         true
     }
 
@@ -2149,7 +2175,56 @@ impl ConApp {
         })
     }
 
+    /// Create the one macOS child WebView on demand from an explicit browser
+    /// tab gesture. The first surface is bounded local HTML, so Ctrl+Shift+O
+    /// is visibly testable without network access or an OAuth credential.
+    #[cfg(target_os = "macos")]
+    fn ensure_native_page(&mut self, window: &PixelWindow) {
+        if self.native_browser_page.is_some() {
+            return;
+        }
+        let Some(slot) = self.content_panel_slot(window) else {
+            self.note_page_load(browser::PageLoad::Unavailable {
+                url: String::new(),
+                reason: "browser-parent-unavailable".to_owned(),
+            });
+            return;
+        };
+        match browser::NativePageHost::new(slot, &self.browser_proxy()) {
+            Ok(page) => {
+                let _ = page.set_visible(self.active_is_browser());
+                self.native_browser_page = Some(page);
+            }
+            Err(reason) => self.note_page_load(browser::PageLoad::Unavailable {
+                url: String::new(),
+                reason,
+            }),
+        }
+    }
+
     /// Ask the wry page host to load `url` into the active browser content panel.
+    #[cfg(target_os = "macos")]
+    fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
+        self.ensure_native_page(window);
+        let result = self
+            .native_browser_page
+            .as_ref()
+            .ok_or_else(|| "browser-native-unavailable".to_owned())
+            .and_then(|page| page.load_url(url));
+        match result {
+            Ok(()) => self.note_page_load(browser::PageLoad::Loading {
+                url: url.to_owned(),
+            }),
+            Err(reason) => self.note_page_load(browser::PageLoad::Unavailable {
+                url: url.to_owned(),
+                reason,
+            }),
+        }
+        self.sync_embedded_page(window);
+    }
+
+    /// Ask the wry page host to load `url` into the active browser content panel.
+    #[cfg(not(target_os = "macos"))]
     fn launch_page_host(&mut self, window: &PixelWindow, url: &str) {
         if let Some(mut child) = self.browser_page.take() {
             let _ = child.kill();

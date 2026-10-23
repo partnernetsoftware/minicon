@@ -586,11 +586,13 @@ horizon yet.
 
 **Renderer choice, decided in advance so it is not re-litigated per session:**
 
-- **[-] Renderer integration is reopened at `{ARCH}`: reuse
+- **[v] Renderer integration is decided at `{ARCH}`:** reuse
   `agenterm-platform`'s adapter and bridge-v1 security state machine where its
   public seam fits; otherwise keep any direct `wry`/`tao` integration confined
   to `minicon-web` and the GUI binary.** `minicon-core`, `minicon-console` and
-  headless paths stay WebView-free. The bridge invariants remain origin
+  headless paths stay WebView-free. macOS now proves that boundary with a
+  same-process WKWebView child owned by `minicon-web`; Linux retains its
+  qualified helper. The bridge invariants remain origin
   binding, a 64 KiB message cap, at most 8 concurrent requests and replay
   protection, per `PRD_02_28_shared_core.md`'s "consume at the git pin, no
   mandatory dependency inversion". `~/agenterm/research/agenterm-webview/`
@@ -619,8 +621,9 @@ horizon yet.
   reparenting did not generalize to a same-window WKWebView/WebView2 surface.
   `minicon-web` remains the isolation boundary and `minicon-core`,
   `minicon-console` plus headless paths remain WebView-free. Whether the GUI
-  binary feature-links the adapter is now `{ARCH}`; size/process/runtime
-  evidence must decide it instead of preserving an unusable helper boundary.
+  binary feature-links the adapter is now decided by `{ARCH}`: permitted only
+  through `minicon-web` for a same-window platform child. Size and remaining
+  platform evidence stay explicit instead of preserving an unusable helper boundary.
 - **Deferred, not rejected: a from-scratch `minicon-surf` browser engine.**
   Raised in an earlier discussion, not previously written down anywhere in
   this repository (checked: no `minicon-surf` hits before this entry). A
@@ -641,7 +644,7 @@ settings / panel toggle) stay chrome — see PRD_02_25 Terminology; do not
 conflate them with content panels. Renderer rule on this page still holds:
 prefer direct-wry through the `minicon-web` boundary, keep core crates/headless
 paths WebView-free, never OS-default-browser for terminal-originated http(s).
-GUI-binary linkage is the open `{ARCH}` decision. The
+GUI-binary linkage is the closed `{ARCH}` decision above. The
 stable function boundary is workspace member `crates/minicon-web`
 (`PageHost`, `BrowserTab`, `http_url_at`, `resolve_proxy`, `page_host_request`,
 `spawn_page_host`). `src/browser.rs` re-exports it. `minicon-web-host` is the
@@ -660,8 +663,8 @@ workspace crate **`crates/minicon-web`**: library API plus host binary
 `minicon-web-host` (`--probe` / `--load`). Responsibilities: unified browser
 function interface (open/load URL, `PageHost` trait, proxy hook, staged OAuth /
 dashboard / preview / wasm); isolate wry/WebView so the underlying stack can
-change without rewriting product callers. Today `minicon` and `minicon-core`
-do not enable wry; `{ARCH}` may change only the GUI binary side while
+change without rewriting product callers. On macOS the GUI `minicon` enables
+`native-page-host`; `{ARCH}` changed only that GUI-binary side while
 `minicon-core`, `minicon-console` and headless remain free of it. A missing
 WebView runtime must still fail softly without taking down the terminal.
 Product face stays Tab / content panel
@@ -687,9 +690,12 @@ WKWebView or WebView2 can occupy the same tab content panel. The three wishes
 "same-window native view", "separate helper process" and "no WebView adapter
 linked into the GUI" now form an explicit `{ARCH}` decision gate in
 [plan-v0.2.21.md](../plan/plan-v0.2.21.md), rather than an assumed solved
-shape. The recommended first spike permits a GUI-only `minicon-web` adapter
-while keeping `minicon-core`, `minicon-console` and headless paths WebView-free;
-it is not accepted until size/process/runtime evidence is recorded. Floating
+shape. The selected boundary is a GUI-only platform adapter inside
+`minicon-web`, while `minicon-core`, `minicon-console` and headless paths stay
+WebView-free. The macOS implementation uses `build_as_child` on the owning
+NSView, bounded local HTML for `Ctrl+Shift+O`, and focus release before hiding;
+direct arm64 Computer Use proves visible content, hide/restore and fullscreen
+resize. Remaining artifact/platform courts stay open. Floating
 helper windows, OS-default-browser fallback, screenshot streaming and
 synthetic-input forwarding remain rejected substitutes for a content panel.
 

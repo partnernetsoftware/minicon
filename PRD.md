@@ -151,11 +151,13 @@ flowchart LR
   `39925651159` at `4577c9c` passed the nonzero native X resize court, built
   the optional WebKitGTK host and passed the real proxy/direct-loopback OAuth
   smoke on x86_64 and aarch64. That is Linux adapter evidence, not the
-  cross-platform browser product outcome: a direct macOS test of the canonical
-  `build.sh dev` output found no `minicon-web-host`, and the macOS window backend
-  has no same-window embed path. `{ARCH}`, `{ARTIFACT}`, `{MAC-PANEL}` and the
-  explicit Windows platform decision are therefore open; Candidate/public
-  release remains forbidden. Six-cell dev-loop run `39917026302`
+  cross-platform browser product outcome. The reopened `{ARCH}` gate is now
+  closed locally: macOS uses a GUI-only `minicon-web` WKWebView child attached
+  to `Layout::content_column`; `Ctrl+Shift+O` opens its bounded offline home,
+  tab switching hides/restores it, and fullscreen resize follows the column.
+  `{ARTIFACT}` remains cross-platform partial, `{MAC-PANEL}` still needs its
+  automated/second-architecture receipt, and Windows remains open;
+  Candidate/public release is therefore forbidden. Six-cell dev-loop run `39917026302`
   at `3db5710` passed the portable console suites on every cell and the
   Linux-only PTY/X11/ELF courts on both Linux cells. Windows arm64 passed all
   suites; Windows x64 stayed red only on the two already-carried G6
@@ -207,8 +209,9 @@ flowchart LR
 - [-] **Built-in browser tabs (content panels) via `minicon-web`.** One
   browser tab peers a terminal tab. Its content panel is the page;
   `minicon-console` stays the terminal panel. Linux currently uses the
-  feature-gated `minicon-web-host`; the portable same-window boundary is
-  reopened because that X11 helper shape does not provide WKWebView/WebView2.
+  feature-gated `minicon-web-host`; macOS now uses an in-process WKWebView child
+  through the same `minicon-web` boundary because X11 reparenting does not
+  provide WKWebView/WebView2.
   Core crates/headless remain WebView-free. Ctrl+click http(s) and DeepSeek
   authorize must use that panel, not the OS browser. No tray or floating helper.
   1:N panels, dashboard, preview and wasm are later.

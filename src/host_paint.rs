@@ -1017,7 +1017,9 @@ impl ConApp {
     }
 
     /// Browser tab shell: same sidebar as the terminal host, one content panel.
-    /// wry is not linked here. The proxy line is the reserved hook, not a setting.
+    /// A native child WebView covers the content rectangle when available; this
+    /// paint remains the typed Unavailable surface. The proxy line is the
+    /// reserved hook, not a setting.
     pub(crate) fn paint_browser_shell(
         &self,
         pixels: &mut [u32],
@@ -1137,7 +1139,7 @@ impl ConApp {
             &mut surface,
             x,
             140,
-            "page host: wry lives in MINICON_BROWSER_BIN, not this process",
+            "page host: native content panel",
             t.muted,
             body,
             content_width,

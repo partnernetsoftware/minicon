@@ -1,8 +1,9 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
 Status: in progress; console scope and the Linux browser adapter are qualified,
-but the browser product outcome was reopened after direct macOS use found no
-page host and no same-window WebView. No publish.
+and the repaired canonical macOS arm64 dev build now visibly hosts WKWebView in
+the same content column. Automated/second-ISA macOS, cross-platform artifacts
+and Windows remain open. No publish.
 Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
 has two tracks on `main`; implementation commits `960853b` and `ade9a4d`
@@ -32,6 +33,15 @@ explicitly not a browser content panel. Run `39925651159` remains valid Linux
 adapter evidence; it never proved a macOS-visible product path. The earlier
 `[v]` completion claim therefore crossed its evidence boundary and is
 withdrawn.
+
+**Repaired locally 2026-10-23.** `{ARCH}` selects platform adapters inside
+`minicon-web`: macOS feature-links `native-page-host` into the GUI binary and
+builds one WKWebView as a child of the existing NSView; core/headless paths stay
+WebView-free and Linux retains its qualified helper. `build.sh dev` creates a
+distinct unsigned local-test app wrapper around the same `target/debug/minicon`
+bytes. Direct Computer Use proves the bounded home, hide/restore, focus release
+and fullscreen resize on this arm64 Mac. This does not close automated/x86_64
+macOS or Windows runtime evidence.
 
 No historical incident is renamed into a fix here. The detection hole is
 visible in the current court, and one recorded Linux-only hang
@@ -136,11 +146,11 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   evidence: run 39925651159 records nonzero minicon-web-x11 plus minicon-web-wry-build and minicon-web-live-oauth ok on both Linux ISAs
 │   safe failure: missing DISPLAY/WebKitGTK, zero tests, stale bounds, proxy leakage or timeout fails the Linux cell
 │   dependency: X11 + WebKitGTK 4.1; non-goal: treating this as macOS or Windows evidence
-├── [-] {ARCH} Choose a portable same-window host boundary
+├── [v] {ARCH} Choose a portable same-window host boundary
 │   invariant: the selected design preserves the visible Tab/content-panel product face on macOS, Windows and Linux; it must name which earlier constraint is relaxed because same-window native views, a separate helper process and never linking a WebView adapter into the GUI cannot all be assumed from the X11 reparent trick
-│   evidence: PRD 31 records the decision and a spike proves create/navigate/hide/show/resize before product integration
+│   evidence: minicon-web native-page-host plus direct macOS use proves create, bounded offline home, hide/show/restore and fullscreen resize as one WKWebView child; the GUI-only adapter is the selected boundary
 │   safe failure: reject a floating helper window, OS default browser, screenshot streaming or synthetic input forwarding as substitutes for an interactive content panel
-│   dependency: recommended direction is a GUI-only minicon-web adapter while minicon-core/minicon-console and headless paths remain WebView-free; non-goal: Electron/CDP or a new browser engine
+│   dependency: platform adapters stay inside minicon-web while minicon-core/minicon-console and headless paths remain WebView-free; Linux may retain its qualified helper; non-goal: Electron/CDP or a new browser engine
 ├── [-] {ARTIFACT} Make the canonical dev/release output runnable without hidden setup
 │   invariant: ./scripts/build.sh dev and release produce every component/feature the browser path needs; the app does not depend on manual cargo flags or MINICON_BROWSER_BIN
 │   evidence: a clean-output black box opens a local test page from the canonical artifact, and release inventory names every shipped byte
@@ -148,7 +158,7 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   dependency: {ARCH}; non-goal: selecting a binary by modification time
 ├── [-] {MAC-PANEL} Make the browser visibly testable inside this macOS MiniCon window
 │   invariant: WKWebView occupies Layout::content_column in the active browser tab, follows Retina/window/sidebar/history geometry, hides behind terminal tabs and never appears as an independent window
-│   evidence: automated macOS native journey plus owner observation from the canonical dev .app/binary: local page visible, terminal-tab switch hides it, return restores it, resize remains exact
+│   evidence: direct Computer Use observation from canonical `build.sh dev` output: local page visible and exposed as HTML content, terminal-tab click hides it, Ctrl+Shift+O restores it after focus release, and fullscreen resize remains inside the content column; automated and x86_64 runtime receipts remain open
 │   safe failure: no helper, exit 69, a blank shell or a floating WKWebView is failure; unavailable evidence is BLOCKED
 │   dependency: {ARCH}, {ARTIFACT}; non-goal: production provider credentials
 ├── [_] {WIN-PANEL} Close the same user-visible surface on WebView2
@@ -175,7 +185,7 @@ flowchart LR
     CANON["build.sh dev / release"] --> ART["{ARTIFACT}<br/>runnable browser bytes"]
     ART --> ARCH{"{ARCH}<br/>portable same-window boundary"}
     ARCH --> LNX["{LNX-PANEL} [v]<br/>X11 + WebKitGTK"]
-    ARCH --> MAC["{MAC-PANEL} [-]<br/>WKWebView same window"]
+    ARCH --> MAC["{MAC-PANEL} [-]<br/>local arm64 visible; courts open"]
     ARCH --> WIN["{WIN-PANEL} [_]<br/>WebView2 or narrowed claim"]
     LNX --> WEB
     MAC --> WEB
@@ -201,9 +211,9 @@ flowchart LR
 | 3 — LNX | On `lnx-*` only, run the three POSIX PTY session tests with feature `pty`, the two X11 tests with feature `clipboard`, and `minicon_load_portability_linux`. The Linux job exports `MINICON_REQUIRE_DISPLAY=1` after Xvfb is up, and those X11 tests plus the control image-paste test panic instead of returning when `DISPLAY` is missing. | A green `osx-*` or `win-*` cell does not close this. Omitting the features compiles the named tests out and is a failed court, not evidence. Do not move the PTY into `minicon-console`. |
 | 4 — RELEASE-GATE | [-] Version is 0.2.21 and owners point here, but Candidate consideration stays closed until the canonical browser surface is visible on every claimed desktop. | No tag, Candidate or `release.sh 0.2.21`; unavailable native evidence stays BLOCKED. The console `{GATE}` remains valid only for its own completed track. |
 | 5 — LNX-PANEL | [v] Apply `Layout::content_column` through the X resize seam and drive real WebKitGTK proxy/direct-loopback navigation. | Run `39925651159` records nonzero `minicon-web-x11`, `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs. |
-| 6 — ARCH | [-] Spike and select the portable same-window host boundary. Recommended first spike: a GUI-only `minicon-web` adapter, keeping `minicon-core`, `minicon-console` and headless paths WebView-free. | A floating helper, OS browser, captured pixels or forwarded synthetic input fails the product boundary. Record size/process/runtime effects before accepting the choice. |
-| 7 — ARTIFACT | [-] Make `build.sh dev` and `release` produce a runnable browser path without manual feature flags or environment variables. | Clean output must contain every required byte; absence or exit 69 keeps the leaf open. |
-| 8 — MAC-PANEL | [-] Run WKWebView inside the active content column on this macOS host and both macOS CI architectures. | Owner can visibly exercise a local page from the canonical output; automated courts prove show/hide/restore and exact layout across resize/sidebar/history transitions. |
+| 6 — ARCH | [v] Use platform adapters inside `minicon-web`: GUI-only same-process child WKWebView/WebView2 where portable reparenting is unavailable, retaining the qualified Linux helper. `minicon-core`, `minicon-console` and headless paths remain WebView-free. | The macOS spike visibly proves the boundary. A floating helper, OS browser, captured pixels or forwarded synthetic input still fails it. |
+| 7 — ARTIFACT | [-] `build.sh dev` now links the macOS native page host and emits `target/debug/MiniCon 0.2.21 Dev.app` with a distinct local-test identity; prove release output and close Linux/Windows packaging. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS. Missing bytes on any claimed platform keep the leaf open. |
+| 8 — MAC-PANEL | [-] WKWebView now runs inside the active content column on this macOS arm64 host. Add an automated native journey and x86_64 runtime receipt. | Direct Computer Use proves visible home, hide/restore, focus release and fullscreen resize; do not inflate one host into both macOS architectures. |
 | 9 — WIN-PANEL | [_] Implement and qualify WebView2 same-window behavior on both Windows ISAs, or explicitly narrow the 0.2.21 browser platform claim before Candidate. | ACL evidence and compile-only results are not page-surface evidence. |
 | 10 — CLOSE | [-] Re-run complete gates, record owner-visible macOS acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
 
@@ -215,6 +225,33 @@ flowchart LR
   page, and the macOS pixel-window backend has no embed parent. This is named
   negative evidence for `{ARTIFACT}` and `{MAC-PANEL}`, not a user mistake and
   not a reason to weaken same-window tabs into a floating helper.
+- The repaired canonical dev output now also assembles
+  `target/debug/MiniCon 0.2.21 Dev.app` with a distinct development bundle id.
+  Direct Computer Use on this macOS arm64 host observed a single browser root
+  beside `bash`; its WKWebView exposed `MiniCon Browser` as HTML content inside
+  the content column, hid completely on a terminal-tab click, restored through
+  `Ctrl+Shift+O` after releasing first-responder focus, and resized in place in
+  fullscreen without covering the tab tree or composer band. This closes
+  `{ARCH}` and supplies local `{MAC-PANEL}` evidence, not an automated or
+  x86_64 court.
+- `./scripts/build.sh release` links the same macOS adapter without a helper or
+  environment override and produces `target/release/minicon` at 3,421,824
+  bytes on this arm64 Mac (the debug executable/app payload is 24,499,544
+  bytes). That is concrete `{ARTIFACT}` and size evidence for macOS only; the
+  prior ~1.4 MiB public size statement must not be reused for 0.2.21, and Linux
+  canonical helper plus Windows output remain open.
+- On the repaired browser source, `./scripts/build.sh test` passed again
+  (476 product tests, 31 black-box tests and 20 `minicon-web` tests among the
+  complete gate), and `./scripts/selftest.sh` passed with only its three
+  explicitly court-dependent checks skipped. The subsequent local six-cell
+  run produced 23 PASS, 8 FAIL and 14 BLOCKED: both macOS architectures and
+  both Linux architectures passed their compile/test/artifact stages, while
+  every Windows link invocation stopped in crates.io downloads
+  (`windows-core`, `windows`, `windows-strings` or WebView2 crates) after the
+  low-speed retry limit. No Rust or linker diagnostic was emitted. This is
+  named local-network failure evidence, not a Windows product result; the
+  exact source must therefore run on GitHub's native Windows court before the
+  Windows browser leaf can move.
 - `cargo test --locked -p minicon-console --lib --test synchronized_presentation --test presentation_allocations`: 19 + 8 + 1 passed. This proves only the local portable-library cell.
 - `cargo test --locked -p minicon-web`: 17 passed, including loopback delivery, proxy mapping, authorize URL and state/PKCE checks.
 - The physical-letter contract test executed as one test with `minicon-platform` features `input,portable-pixel-window`; a featureless invocation selected zero tests and was rejected as evidence.
