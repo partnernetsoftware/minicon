@@ -450,8 +450,18 @@ mod tests {
             8,
         )
         .expect("retain exact termination authority");
+        // An adopted process normally has another owner which reaps it. Do
+        // that concurrently here too: retaining Child until after terminate
+        // can leave a killed direct child observable as a zombie and turn the
+        // product's exit wait into a test-only parent/reaper deadlock.
+        let reaper = thread::spawn(move || child.wait().expect("reap adopted test root"));
         group.terminate().expect("terminate adopted test group");
-        child.wait().expect("reap adopted test root");
+        assert!(
+            !reaper
+                .join()
+                .expect("adopted test reaper panicked")
+                .success()
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]

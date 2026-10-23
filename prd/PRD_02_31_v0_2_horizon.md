@@ -666,13 +666,13 @@ OAuth credentials do not add a product-layer native filesystem exception.
 MiniCon owns the bearer path and `minicon-platform::filesystem` owns private
 directory protection, atomic private publication and bounded no-follow reads.
 The local Unix test proves 0600 plus symlink refusal. The Windows adapter's
-protected current-user ACL implementation remains `BLOCKED` as a runtime claim
-until a Windows court executes it. Dev-loop run `39917026302` at `3db5710`
-does prove the surrounding Windows product paths after the OAuth landing:
-`minicon_control` passed on x86_64 and arm64, including the arm64 asynchronous
-clipboard observation that had expired at 10 seconds in run `39914718322`.
-That is not silently promoted into ACL evidence because this workflow does not
-run the filesystem unit court.
+protected current-user ACL implementation has native runtime evidence:
+dev-loop run `39919403513`, exact source `c09e999`, records the independent
+nonzero `windows-private-filesystem` suite `ok` on x86_64 (6 seconds) and arm64
+(8 seconds). Dev-loop run `39917026302` at `3db5710` separately proves the
+surrounding Windows product paths: `minicon_control` passed on both ISAs,
+including the arm64 asynchronous clipboard observation that had expired at
+10 seconds in run `39914718322`. Neither receipt is substituted for the other.
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the

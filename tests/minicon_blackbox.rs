@@ -1964,6 +1964,18 @@ fn controlled_wheel_moves_the_real_scrollback_offset_up_then_down() {
         ready,
         "the wheel fixture must produce at least five real history rows: {last_seed:?}"
     );
+    // Seeing the last marker does not prove the shell's following prompt has
+    // reached the mirror. If that final output arrives after the wheel, the
+    // real terminal correctly snaps a scrolled view back to the live tail and
+    // the fixture mislabels that behavior as a dropped wheel event.
+    session.wait_for(Duration::from_secs(10), |snapshot| {
+        if snapshot["max_scrollback"].as_u64().unwrap_or(0) < 5 {
+            return false;
+        }
+        let text = ConSession::screen_text(snapshot);
+        let tail = text.trim_end();
+        tail.ends_with('$') || tail.ends_with('>')
+    });
     invoke_control(
         &session.endpoint,
         &[

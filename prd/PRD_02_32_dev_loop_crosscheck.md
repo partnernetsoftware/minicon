@@ -110,6 +110,13 @@ rerun must not silently erase the native DACL evidence. This is the runtime
 owner for the OAuth bearer's protected current-user-only directory ACL; it is
 not permission to run every platform unit test in the dev loop.
 
+Run `39919403513`, exact source `c09e999`, records that suite `ok` on Windows
+x86_64 (6 seconds) and arm64 (8 seconds), with a nonzero test count on each.
+Both overall jobs remained red solely on the two already-carried G6
+`rust_console_pty` disconnect cases (94 passed, 2 failed per ISA). The
+independent receipt therefore closes the ACL runtime claim without relabeling
+or suppressing the service debt.
+
 From v0.2.15 preparation, each cell also runs the UI-core library suite and
 `scripts/check-reuse.sh`. The latter sets `CARGO_BUILD_TARGET` to the matrix
 triple, checks minimal core/UI dependency edges in an isolated workspace and

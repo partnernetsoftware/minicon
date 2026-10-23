@@ -149,8 +149,8 @@ flowchart LR
   only on Linux. One browser root is refused on a second `add_browser_root`,
   and the embed slot is `Layout::content_column` (macOS unit tests only).
   Live resize of an already-reparented X child is BLOCKED. The Windows bearer
-  path now uses the platform's protected current-user ACL implementation, but
-  its native runtime evidence is BLOCKED. Six-cell dev-loop run `39917026302`
+  path uses the platform's protected current-user ACL implementation; native
+  x86_64 and arm64 ACL courts passed in run `39919403513`. Six-cell dev-loop run `39917026302`
   at `3db5710` passed the portable console suites on every cell and the
   Linux-only PTY/X11/ELF courts on both Linux cells. Windows arm64 passed all
   suites; Windows x64 stayed red only on the two already-carried G6

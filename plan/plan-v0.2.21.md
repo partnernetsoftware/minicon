@@ -125,13 +125,13 @@ Outcome: the one browser content panel stays in the terminal's column and the OA
 │   evidence: chord_letter_uses_the_physical_key_when_logical_is_unidentified
 │   safe failure: this does not change Ctrl+letter encoding for the terminal
 │   dependency: the Linux Ctrl+letter fix in contract/terminal_input.rs
-├── [-] {ACL} Run the private bearer filesystem court on both Windows cells
+├── [v] {ACL} Run the private bearer filesystem court on both Windows cells
 │   invariant: the protected directory DACL is current-user-only, inheritance-protected, inherited by new children, and a junction is refused without touching its target; a compile is not runtime evidence
 │   evidence: `windows-private-filesystem` is nonzero and green on win-x86_64 and win-aarch64 receipts
 │   safe failure: keep the Windows bearer claim BLOCKED; do not infer ACL safety from Unix 0600 or from a green neighboring suite
 │   dependency: minicon-platform `filesystem`; non-goal: running every platform unit test on Windows
 └── [_] {STILL} Named holes not closed by the leaves above
-    state: `state` and S256 PKCE are on the current authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. The Windows adapter installs a protected current-user ACL, but its native runtime evidence is BLOCKED. `wry-host` names gtk only as a Linux dependency.
+    state: `state` and S256 PKCE are on the current authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. Run `39919403513` proves the protected current-user ACL on both Windows ISAs. A live WebKit handler run and live resize of the reparented X child remain open; `wry-host` names gtk only as a Linux dependency.
     dependency: do not mark the OAuth vertical [v] while these are open; {ACL} names the executable Windows portion
 ```
 
@@ -188,6 +188,24 @@ flowchart LR
   unread-output `FreeConsole` disconnect tests failed (94 passed, 2 failed),
   preserving rather than hiding G6 carried debt. The other five cell jobs and
   the matrix plan job passed.
+- Windows ACL run `39919403513` checked out exact source
+  `c09e999c148e38527d32d0a16621081154feef15`. Its independently named,
+  nonzero `windows-private-filesystem` suite passed on x86_64 in 6 seconds and
+  arm64 in 8 seconds, closing {ACL}. Both overall jobs stayed red only because
+  the same two G6 `rust_console_pty` disconnect tests failed (94 passed,
+  2 failed on each ISA); the receipt preserves that debt separately instead
+  of hiding it behind the green ACL result.
+- A final local six-cell replay exposed one macOS adopted-group fixture race:
+  the test retained its direct child's `Child` until after the product waited
+  for complete exit, so a killed child could remain observable as a zombie.
+  The fixture now starts its owner/reaper concurrently before invoking the
+  unchanged product termination path. The focused court passed 100/100, then
+  strict Clippy and the complete `./scripts/build.sh test` gate passed. Its
+  next replay exposed an independent wheel-fixture race: the last marker could
+  precede the shell's trailing prompt, whose real output correctly resets a
+  scrolled view to the live tail. The court now waits for that prompt before
+  injecting the wheel; the focused black-box journey passed 20/20 without
+  changing product scroll behavior.
 
 ## Non-goals
 
