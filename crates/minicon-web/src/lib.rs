@@ -249,6 +249,12 @@ fn apply_proxy_env(command: &mut std::process::Command, proxy: &BrowserProxy) {
     apply_proxy_var(command, "MINICON_BROWSER_HTTP_PROXY", &proxy.http);
     apply_proxy_var(command, "MINICON_BROWSER_HTTPS_PROXY", &proxy.https);
     apply_proxy_var(command, "MINICON_BROWSER_NO_PROXY", &proxy.no_proxy);
+    for key in webkit_proxy_clear(proxy) {
+        command.env_remove(key);
+    }
+    for (key, value) in webkit_proxy_env(proxy) {
+        command.env(key, value);
+    }
 }
 
 /// Environment pairs a WebKit/wry backend should see for this hook.
@@ -272,7 +278,15 @@ pub fn webkit_proxy_env(proxy: &BrowserProxy) -> Vec<(&'static str, String)> {
 /// WebKit proxy names the resolved hook does not set. A wry host must remove
 /// these so a parent `http_proxy` cannot leak into the content panel.
 pub fn webkit_proxy_clear(proxy: &BrowserProxy) -> Vec<&'static str> {
-    let mut clear = Vec::new();
+    // Upper-case and all_proxy are not the product hook. Always drop them so
+    // a parent shell cannot override the content panel.
+    let mut clear = vec![
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+        "NO_PROXY",
+    ];
     if proxy.http.is_none() {
         clear.push("http_proxy");
     }
@@ -579,7 +593,7 @@ mod tests {
         let log = dir.join("log");
         let program = dir.join("minicon-page-host");
         let script = format!(
-            "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$MINICON_BROWSER_HTTP_PROXY\" \"$MINICON_BROWSER_HTTPS_PROXY\" \"$MINICON_BROWSER_NO_PROXY\" > '{}'\n",
+            "#!/bin/sh\nprintf '%s|%s|%s|%s|%s\\n' \"$MINICON_BROWSER_HTTP_PROXY\" \"$MINICON_BROWSER_HTTPS_PROXY\" \"$MINICON_BROWSER_NO_PROXY\" \"$HTTP_PROXY\" \"$http_proxy\" > '{}'\n",
             log.display()
         );
         std::fs::write(&program, script).unwrap();
@@ -589,9 +603,11 @@ mod tests {
         impl Drop for ClearParentHttps {
             fn drop(&mut self) {
                 unsafe { std::env::remove_var("MINICON_BROWSER_HTTPS_PROXY") };
+                unsafe { std::env::remove_var("HTTP_PROXY") };
             }
         }
         unsafe { std::env::set_var("MINICON_BROWSER_HTTPS_PROXY", "http://leak.test:9") };
+        unsafe { std::env::set_var("HTTP_PROXY", "http://leak.test:9") };
         let _clear = ClearParentHttps;
         let proxy = BrowserProxy {
             http: Some("http://127.0.0.1:9".into()),
@@ -603,7 +619,7 @@ mod tests {
         assert!(child.wait().unwrap().success());
         assert_eq!(
             std::fs::read_to_string(&log).unwrap().trim(),
-            "http://127.0.0.1:9||localhost"
+            "http://127.0.0.1:9||localhost||http://127.0.0.1:9"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -636,7 +652,14 @@ mod tests {
                 https: None,
                 no_proxy: Some("localhost".into()),
             }),
-            vec!["https_proxy"]
+            vec![
+                "HTTP_PROXY",
+                "HTTPS_PROXY",
+                "ALL_PROXY",
+                "all_proxy",
+                "NO_PROXY",
+                "https_proxy",
+            ]
         );
     }
 
