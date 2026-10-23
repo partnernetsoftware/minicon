@@ -18,7 +18,7 @@ minicon workspace and input
 ├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
 ├── Tab kinds and content panels (1 tab ↔ 1 content panel now; 1:N later)
 │   ├── terminal tab → one terminal content panel (PTY view)
-│   └── [v] browser tab → one browser content panel (shell + URL handoff; page load via minicon-web)
+│   └── [-] browser tab → one browser content panel (shell complete; page surface Linux-only)
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -107,15 +107,16 @@ names above.
   a second windowing model and not a chrome-panel change. Until it ships,
   mux/control still refuse nonzero pane indices
   ([PRD_02_31](PRD_02_31_v0_2_horizon.md)).
-- [v] **browser content panel — shell and URL handoff.** The tab shell paints
+- [-] **browser content panel — shell and URL handoff.** The tab shell paints
   a peer of a terminal tab and stores an http(s) URL for a later page
   surface. Ctrl+click on an http(s) token in the terminal opens or focuses
   that one browser content panel and does not call `host_open` / the OS
   default browser. Evidence: `minicon-web` `http_links_are_browser_urls_and_other_schemes_are_not_opened`;
   `tests::http_handoff_reuses_one_browser_content_panel`. The same panel
   then asks `MINICON_BROWSER_BIN --load <url>` (`minicon_web::spawn_page_host_with_proxy`)
-  to navigate, with the resolved proxy hook installed on that process. Owner is **`crates/minicon-web`**; core `minicon` does not link
-  wry. A missing host is `PageLoad::Unavailable`
+  to navigate, with the resolved proxy hook installed on that process. Owner is
+  **`crates/minicon-web`**; `minicon-core`, `minicon-console` and headless paths
+  stay WebView-free while PRD 31 decides GUI-binary linkage. A missing host is `PageLoad::Unavailable`
   (`browser-host-not-configured`), not `host_open`. Evidence:
   `page_host_request_is_the_helper_not_the_system_browser`,
   `spawn_page_host_passes_the_url_to_the_helper`.
@@ -123,6 +124,13 @@ names above.
   reparents into the main window on X11, follows the current content-column
   bounds and unmaps while a terminal tab is active. Run `39925651159` proves
   the native X resize and real WebKit proxy/loopback path on both Linux ISAs.
+  This remains partial as a product surface: the canonical macOS dev build
+  emits no page-host binary, the macOS window backend exposes no embed parent,
+  and an independent helper window would violate the same-tab/content-panel
+  invariant. The portable same-window boundary, canonical artifact and native
+  macOS/Windows page courts are open in
+  [plan-v0.2.21](../plan/plan-v0.2.21.md) `{ARCH}` / `{ARTIFACT}` /
+  `{MAC-PANEL}` / `{WIN-PANEL}`.
   Dashboard, preview, wasm and 1:N layout remain follow-ups
   in [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Renderer boundary stays in
   [PRD_02_31](PRD_02_31_v0_2_horizon.md).
@@ -141,8 +149,9 @@ names above.
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +
   `minicon-web-host`); `src/browser.rs` re-exports. wry, tao and gtk are
-  linked only when the host is built with `wry-host`. Core `minicon` does
-  not enable that feature.
+  linked only when the host is built with `wry-host` today. The portable
+  same-window `{ARCH}` decision may move feature linkage into the GUI binary,
+  but not outside the `minicon-web` boundary or into core/headless crates.
 - [v] **OAuth bearer storage stays behind the platform filesystem seam.**
   The product names the `.minicon-embed/deepseek-bearer` state, while
   `minicon-platform::filesystem` owns protected-directory setup, atomic

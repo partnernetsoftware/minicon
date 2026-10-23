@@ -1,7 +1,8 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: development scope complete; implementation and scoped native evidence
-recorded. No publish.
+Status: in progress; console scope and the Linux browser adapter are qualified,
+but the browser product outcome was reopened after direct macOS use found no
+page host and no same-window WebView. No publish.
 Opened 2026-10-23. v0.2.20 shipped
 ([release history](../prd/archive/v0.2.20-release-history.md)). This version
 has two tracks on `main`; implementation commits `960853b` and `ade9a4d`
@@ -13,12 +14,24 @@ G4 and G6 stay in [carried debt](plan-carried-debt.md). Do not publish.
 Track A: `minicon-console` runs on every shipped cell, and a Linux-only
 path fails the Linux cell even when Windows and macOS are green.
 
-Track B: a browser tab's content panel is `minicon-web` (temporary backend
-wry + tao, feature `wry-host`, separate `minicon-web-host` process). A
-terminal tab's content panel stays the PTY / `minicon-console` view. Same
-tab strip, one content panel per tab. Core `minicon` does not link wry.
+Track B: a browser tab's content panel is `minicon-web`. The Linux/X11
+temporary backend (wry + tao, feature `wry-host`, separate
+`minicon-web-host`) is qualified, but it is not yet the cross-platform product
+surface. A terminal tab's content panel stays the PTY / `minicon-console`
+view. Same tab strip, one content panel per tab.
 Leaf detail that is not a 0.2.21 gate stays in
 [plan-browser-tabs.md](plan-browser-tabs.md).
+
+**Reopened 2026-10-23 from direct macOS use.** `./scripts/build.sh dev`
+produces `target/debug/minicon` but no sibling `minicon-web-host`, so
+`page_host_program` returns no configured host. The ordinary helper build also
+has `wry-host` disabled. Even a manually feature-built helper cannot satisfy
+the product outcome: `PixelWindow::embed_parent()` returns a native parent only
+on Linux/X11, while macOS returns `None`, and a standalone WKWebView window is
+explicitly not a browser content panel. Run `39925651159` remains valid Linux
+adapter evidence; it never proved a macOS-visible product path. The earlier
+`[v]` completion claim therefore crossed its evidence boundary and is
+withdrawn.
 
 No historical incident is renamed into a fix here. The detection hole is
 visible in the current court, and one recorded Linux-only hang
@@ -112,54 +125,71 @@ preview, wasm, and 1:N panels stay later
 ([plan-browser-tabs.md](plan-browser-tabs.md)).
 
 ```text
-Outcome: the one browser content panel stays in the terminal's column and the OAuth code does not leave the loopback
-├── [v] {PANEL} One browser tab, column matches the terminal
-│   invariant: Ctrl+Shift+O focuses the existing browser tab instead of inserting another; the embed slot is the content column (below the tab header, above the composer, clear of the sidebar and the history chrome)
-│   evidence: a_browser_tab_is_a_root_peer_of_a_terminal_tab (second add_browser_root returns None); content_column_is_the_terminal_rectangle. macOS arm64 unit tests only
-│   safe failure: a live resize that does not move the already-reparented X window stays open and is BLOCKED (no XMoveResizeWindow); Wayland has no embed_parent and is not called embedded
+Outcome: a canonical MiniCon build opens one interactive browser page inside the active tab's content column on every desktop 0.2.21 claims, and OAuth loopback stays local
+├── [v] {SHELL} One browser tab, one content-panel rectangle
+│   invariant: Ctrl+Shift+O focuses the existing browser tab instead of inserting another; Layout::content_column stays below the header, above the composer and clear of sidebar/history chrome
+│   evidence: a_browser_tab_is_a_root_peer_of_a_terminal_tab; content_column_is_the_terminal_rectangle
+│   safe failure: shell-only UI says Unavailable and cannot be called a working browser surface
 │   dependency: PRD 25; non-goal: a split layout inside one tab
-├── [v] {OAUTH} The token POST uses the same proxy hook as the page, and only https
-│   invariant: exchange reads BrowserProxy from config plus MINICON_BROWSER_*, not the raw env alone; MINICON_DEEPSEEK_TOKEN_URL must be https; an http loopback redirect is fetched by the page host on 127.0.0.1 and is not left to the WebView proxy
-│   evidence: https_token_url rejects plain http; loopback_oauth_redirect_is_delivered_without_the_webview_proxy; run 39925651159 executes the real WebKit handler on both Linux ISAs
-│   safe failure: wry 0.56 ProxyConfig::Http still has an empty ignore list, so the host cancels that navigation and delivers loopback directly instead of asking wry to exempt it
-│   dependency: PRD 31; non-goal: a provider registry or composer "Connect AI" button
-├── [v] {KEY} Ctrl+Shift letter chords see the physical key
-│   invariant: Linux xkb events with logical Unidentified and PhysicalKeyCode::Letter still open the browser tab or start OAuth instead of becoming C0
-│   evidence: chord_letter_uses_the_physical_key_when_logical_is_unidentified
-│   safe failure: this does not change Ctrl+letter encoding for the terminal
-│   dependency: the Linux Ctrl+letter fix in contract/terminal_input.rs
-├── [v] {ACL} Run the private bearer filesystem court on both Windows cells
-│   invariant: the protected directory DACL is current-user-only, inheritance-protected, inherited by new children, and a junction is refused without touching its target; a compile is not runtime evidence
-│   evidence: `windows-private-filesystem` is nonzero and green on win-x86_64 and win-aarch64 receipts
-│   safe failure: keep the Windows bearer claim BLOCKED; do not infer ACL safety from Unix 0600 or from a green neighboring suite
-│   dependency: minicon-platform `filesystem`; non-goal: running every platform unit test on Windows
-├── [v] {RESIZE} Keep the embedded X child on the current content-column bounds
-│   invariant: window geometry, sidebar width, history-panel width and browser-tab activation all apply the same `Layout::content_column` rectangle to the already-reparented child
-│   evidence: a native X11 court creates a classed child, calls the public resize seam and observes exact x/y/width/height; Linux product dispatch calls that seam on each owning geometry transition
-│   safe failure: keep the browser surface partial; never paint stale terminal chrome over a child left at old bounds
-│   dependency: X11 embed parent; non-goal: Wayland embedding or the future 1:N layout engine
-├── [v] {WEBKIT} Run the real WebKit OAuth navigation handler on both Linux cells
-│   invariant: an ordinary page reaches WebKit through the configured HTTP proxy, its loopback OAuth redirect is cancelled inside WebKit and delivered directly to 127.0.0.1, and the host exits only after that direct callback succeeds
-│   evidence: nonzero `minicon-web-x11` plus `minicon-web-live-oauth` suites on lnx-x86_64 and lnx-aarch64, built with feature `wry-host` under Xvfb/WebKitGTK
-│   safe failure: missing WebKitGTK, a proxy-bypassed initial page, a callback sent through the proxy, zero tests or a timeout fails the Linux cell
-│   dependency: {RESIZE}, WebKitGTK 4.1 and Xvfb; non-goal: a real provider account or production token
-└── [v] {CLOSE} Close every named 0.2.21 browser hole without widening scope
-    state: `state` and S256 PKCE are on the authorize URL and token POST; the listener keeps accepting until that `state` matches. Private bearer publication uses minicon-platform's protected directory + atomic 0600/no-follow seam. Run `39919403513` proves the protected current-user ACL on both Windows ISAs. Run `39925651159` proves the live resize seam and real WebKit proxy/loopback handler on both Linux ISAs.
-    dependency: {ACL}, {RESIZE} and {WEBKIT}; non-goal: Wayland embedding, a production provider account, dashboard/preview/wasm, 1:N panels or publish
+├── [v] {LNX-PANEL} Linux/X11 page, resize and OAuth adapter
+│   invariant: the classed WebKitGTK child is reparented, mapped only for the browser tab and resized on window/sidebar/history/tab transitions; loopback navigation bypasses the proxy
+│   evidence: run 39925651159 records nonzero minicon-web-x11 plus minicon-web-wry-build and minicon-web-live-oauth ok on both Linux ISAs
+│   safe failure: missing DISPLAY/WebKitGTK, zero tests, stale bounds, proxy leakage or timeout fails the Linux cell
+│   dependency: X11 + WebKitGTK 4.1; non-goal: treating this as macOS or Windows evidence
+├── [-] {ARCH} Choose a portable same-window host boundary
+│   invariant: the selected design preserves the visible Tab/content-panel product face on macOS, Windows and Linux; it must name which earlier constraint is relaxed because same-window native views, a separate helper process and never linking a WebView adapter into the GUI cannot all be assumed from the X11 reparent trick
+│   evidence: PRD 31 records the decision and a spike proves create/navigate/hide/show/resize before product integration
+│   safe failure: reject a floating helper window, OS default browser, screenshot streaming or synthetic input forwarding as substitutes for an interactive content panel
+│   dependency: recommended direction is a GUI-only minicon-web adapter while minicon-core/minicon-console and headless paths remain WebView-free; non-goal: Electron/CDP or a new browser engine
+├── [-] {ARTIFACT} Make the canonical dev/release output runnable without hidden setup
+│   invariant: ./scripts/build.sh dev and release produce every component/feature the browser path needs; the app does not depend on manual cargo flags or MINICON_BROWSER_BIN
+│   evidence: a clean-output black box opens a local test page from the canonical artifact, and release inventory names every shipped byte
+│   safe failure: missing helper/feature is typed Unavailable and keeps this leaf open; do not accept a manually feature-built lab binary
+│   dependency: {ARCH}; non-goal: selecting a binary by modification time
+├── [-] {MAC-PANEL} Make the browser visibly testable inside this macOS MiniCon window
+│   invariant: WKWebView occupies Layout::content_column in the active browser tab, follows Retina/window/sidebar/history geometry, hides behind terminal tabs and never appears as an independent window
+│   evidence: automated macOS native journey plus owner observation from the canonical dev .app/binary: local page visible, terminal-tab switch hides it, return restores it, resize remains exact
+│   safe failure: no helper, exit 69, a blank shell or a floating WKWebView is failure; unavailable evidence is BLOCKED
+│   dependency: {ARCH}, {ARTIFACT}; non-goal: production provider credentials
+├── [_] {WIN-PANEL} Close the same user-visible surface on WebView2
+│   invariant: the Windows release either provides the same tab/content-panel outcome or 0.2.21 explicitly narrows its browser platform claim before Candidate; silent Unavailable is not parity
+│   evidence: visible native x86_64 and arm64 journeys from canonical artifacts
+│   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence
+│   dependency: {ARCH}, {ARTIFACT}; non-goal: changing the Windows console backend
+├── [v] {AUTH-CORE} Proxy, PKCE/state, loopback and private bearer mechanisms
+│   invariant: authorize and token paths use BrowserProxy; token URL is https; redirect is 127.0.0.1; state/PKCE and bounded private publication remain enforced
+│   evidence: minicon-web unit tests, run 39925651159 Linux live navigation and run 39919403513 Windows private-filesystem court
+│   safe failure: platform-visible OAuth remains partial until its page surface court runs; core mechanism evidence does not prove a user can see it
+│   dependency: minicon-platform filesystem; non-goal: provider registry or composer Connect AI UI
+└── [-] {CLOSE} Close 0.2.21 browser scope and authorize Candidate consideration
+    invariant: every claimed desktop can exercise the browser from canonical output; Linux-only adapter success is not cross-platform completion
+    evidence: {ARTIFACT}, {MAC-PANEL}, the explicit {WIN-PANEL} decision/evidence, full gates and owner-visible macOS acceptance
+    safe failure: keep PRD/root/plan at [-] and do not dispatch release.sh 0.2.21
+    dependency: {SHELL}, {LNX-PANEL}, {ARCH}, {ARTIFACT}, {MAC-PANEL}, {WIN-PANEL} decision and {AUTH-CORE}; non-goal: dashboard/preview/wasm, 1:N panels or production provider account
 ```
 
 ```mermaid
 flowchart LR
     TAB["tab strip"] --> TERM["terminal content panel<br/>PTY / minicon-console"]
     TAB --> WEB["browser content panel<br/>minicon-web"]
-    WEB --> HOST["minicon-web-host<br/>wry-host: wry + tao"]
-    CORE["minicon binary"] -->|"no wry link"| WEB
-    HOST -->|"loopback code"| BRIDGE["OAuthBridge 127.0.0.1"]
+    CANON["build.sh dev / release"] --> ART["{ARTIFACT}<br/>runnable browser bytes"]
+    ART --> ARCH{"{ARCH}<br/>portable same-window boundary"}
+    ARCH --> LNX["{LNX-PANEL} [v]<br/>X11 + WebKitGTK"]
+    ARCH --> MAC["{MAC-PANEL} [-]<br/>WKWebView same window"]
+    ARCH --> WIN["{WIN-PANEL} [_]<br/>WebView2 or narrowed claim"]
+    LNX --> WEB
+    MAC --> WEB
+    WIN --> WEB
+    WEB -->|"loopback code"| BRIDGE["OAuthBridge 127.0.0.1"]
     BRIDGE --> POST["https token POST<br/>same BrowserProxy"]
-    PROXY["ProxyConfig::Http<br/>ignore list empty"] -.->|"loopback cancelled"| HOST
-    HOST -->|"direct GET 127.0.0.1"| BRIDGE
-    LAYOUT["Layout::content_column"] -->|"XMoveResizeWindow"| HOST
-    COURT["run 39925651159<br/>lnx-x86_64 + lnx-aarch64"] --> HOST
+    LAYOUT["Layout::content_column"] --> LNX
+    LAYOUT --> MAC
+    LAYOUT --> WIN
+    COURT["run 39925651159<br/>Linux adapter only"] --> LNX
+    FLOAT["floating helper / OS browser"] -->|"kill path"| REJECT["not a content panel"]
+    MAC --> CLOSE["{CLOSE}<br/>Candidate consideration"]
+    WIN --> CLOSE
+    ART --> CLOSE
 ```
 
 ## Ordered work
@@ -169,12 +199,22 @@ flowchart LR
 | 1 — LIB | `dev-loop-crosscheck.yml` runs `cargo test --locked --target <triple> -p minicon-console --lib` and the two host-neutral integration tests on every cell. An unfiltered log must contain `running N tests` with N > 0. Let Cargo find the binary; do not stat a hashed path. | Run `39917026302` records all three suites `ok` on all six cells at exact source `3db5710`. |
 | 2 — WIN | Leave `rust_console_pty` and `minicon_console_agent` inside `case win-*`. Do not add them to Linux. | G6 stays carried debt. No edit to the unread-output barrier in this version. |
 | 3 — LNX | On `lnx-*` only, run the three POSIX PTY session tests with feature `pty`, the two X11 tests with feature `clipboard`, and `minicon_load_portability_linux`. The Linux job exports `MINICON_REQUIRE_DISPLAY=1` after Xvfb is up, and those X11 tests plus the control image-paste test panic instead of returning when `DISPLAY` is missing. | A green `osx-*` or `win-*` cell does not close this. Omitting the features compiles the named tests out and is a failed court, not evidence. Do not move the PTY into `minicon-console`. |
-| 4 — GATE | [v] Version is 0.2.21. Index and owners point at this plan. G4/G6 are unclaimed. No publish. | `Cargo.toml`, `Cargo.lock`, `release-policy.json`, this plan and owner links are the named source evidence. Unavailable cell evidence stays BLOCKED. |
-| 5 — RESIZE | [v] Apply `Layout::content_column` through one X resize seam on geometry, sidebar, history-panel and browser-tab activation transitions. | `minicon-web-x11` must run a nonzero native X test on both Linux ISAs and observe exact x/y/width/height. |
-| 6 — WEBKIT/OAUTH | [v] Build the optional wry host and drive a real WebKit initial page through the configured proxy, then cancel and directly deliver its loopback redirect. | Run `39925651159` records `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs; no production provider account is claimed. |
+| 4 — RELEASE-GATE | [-] Version is 0.2.21 and owners point here, but Candidate consideration stays closed until the canonical browser surface is visible on every claimed desktop. | No tag, Candidate or `release.sh 0.2.21`; unavailable native evidence stays BLOCKED. The console `{GATE}` remains valid only for its own completed track. |
+| 5 — LNX-PANEL | [v] Apply `Layout::content_column` through the X resize seam and drive real WebKitGTK proxy/direct-loopback navigation. | Run `39925651159` records nonzero `minicon-web-x11`, `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs. |
+| 6 — ARCH | [-] Spike and select the portable same-window host boundary. Recommended first spike: a GUI-only `minicon-web` adapter, keeping `minicon-core`, `minicon-console` and headless paths WebView-free. | A floating helper, OS browser, captured pixels or forwarded synthetic input fails the product boundary. Record size/process/runtime effects before accepting the choice. |
+| 7 — ARTIFACT | [-] Make `build.sh dev` and `release` produce a runnable browser path without manual feature flags or environment variables. | Clean output must contain every required byte; absence or exit 69 keeps the leaf open. |
+| 8 — MAC-PANEL | [-] Run WKWebView inside the active content column on this macOS host and both macOS CI architectures. | Owner can visibly exercise a local page from the canonical output; automated courts prove show/hide/restore and exact layout across resize/sidebar/history transitions. |
+| 9 — WIN-PANEL | [_] Implement and qualify WebView2 same-window behavior on both Windows ISAs, or explicitly narrow the 0.2.21 browser platform claim before Candidate. | ACL evidence and compile-only results are not page-surface evidence. |
+| 10 — CLOSE | [-] Re-run complete gates, record owner-visible macOS acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
 
 ## Local evidence — 2026-10-23, macOS arm64
 
+- Direct owner test after `./scripts/build.sh dev` exposed the missing product
+  path: `target/debug/minicon` reports 0.2.21, but no
+  `target/debug/minicon-web-host` exists, the browser shell cannot launch a
+  page, and the macOS pixel-window backend has no embed parent. This is named
+  negative evidence for `{ARTIFACT}` and `{MAC-PANEL}`, not a user mistake and
+  not a reason to weaken same-window tabs into a floating helper.
 - `cargo test --locked -p minicon-console --lib --test synchronized_presentation --test presentation_allocations`: 19 + 8 + 1 passed. This proves only the local portable-library cell.
 - `cargo test --locked -p minicon-web`: 17 passed, including loopback delivery, proxy mapping, authorize URL and state/PKCE checks.
 - The physical-letter contract test executed as one test with `minicon-platform` features `input,portable-pixel-window`; a featureless invocation selected zero tests and was rejected as evidence.

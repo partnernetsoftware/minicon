@@ -586,12 +586,15 @@ horizon yet.
 
 **Renderer choice, decided in advance so it is not re-litigated per session:**
 
-- **[v] If/when a renderer is built: reuse `agenterm-platform`'s webview
-  adapter and bridge-v1 security state machine (origin binding, 64 KiB
-  message cap, 8 concurrent requests, replay protection), per
-  `PRD_02_28_shared_core.md`'s "consume at the git pin, no mandatory
-  dependency inversion".** Do not pull `wry`/`tao` directly into MiniCon.
-  `~/agenterm/research/agenterm-webview/` already ran the
+- **[-] Renderer integration is reopened at `{ARCH}`: reuse
+  `agenterm-platform`'s adapter and bridge-v1 security state machine where its
+  public seam fits; otherwise keep any direct `wry`/`tao` integration confined
+  to `minicon-web` and the GUI binary.** `minicon-core`, `minicon-console` and
+  headless paths stay WebView-free. The bridge invariants remain origin
+  binding, a 64 KiB message cap, at most 8 concurrent requests and replay
+  protection, per `PRD_02_28_shared_core.md`'s "consume at the git pin, no
+  mandatory dependency inversion". `~/agenterm/research/agenterm-webview/`
+  already ran the
   direct-WRY-vs-Tauri comparison end to end (direct-WRY 520,704 B vs Tauri
   8,763,392 B on Windows) and decided `prefer-direct-wry-if-webview`; MiniCon
   gets that evidence for free by consuming the shared crate instead of
@@ -611,12 +614,13 @@ horizon yet.
   further margin, and its own build toolchain is exactly what the direct-WRY
   approach and this repo's asset model (`assets/`: static HTML/CSS/JS,
   embedded with `include_bytes!`, no Node/npm required) were chosen to avoid.
-- **Size boundary, decided in advance:** any future GUI ships as a separate
-  subcommand/process (as AgenTerm's own plan keeps CC's webview dependency out
-  of `agenterm-cc`/`agenterm.exe`'s 4 MiB budget), never linked into the core
-  `minicon` binary, so a missing/broken WebView runtime on one platform cannot
-  take down the CLI. The adopted home for that isolation is **`minicon-web`**
-  (library + optional host); core interacts only through that boundary.
+- **Earlier size boundary, reopened by direct macOS use:** the separate
+  subcommand/process kept WebView dependencies out of `minicon`, but X11
+  reparenting did not generalize to a same-window WKWebView/WebView2 surface.
+  `minicon-web` remains the isolation boundary and `minicon-core`,
+  `minicon-console` plus headless paths remain WebView-free. Whether the GUI
+  binary feature-links the adapter is now `{ARCH}`; size/process/runtime
+  evidence must decide it instead of preserving an unusable helper boundary.
 - **Deferred, not rejected: a from-scratch `minicon-surf` browser engine.**
   Raised in an earlier discussion, not previously written down anywhere in
   this repository (checked: no `minicon-surf` hits before this entry). A
@@ -635,8 +639,9 @@ peers of terminal tabs in the same strip; **now** 1 tab ↔ 1 **content panel**,
 **future** 1 tab → many content panels. Host **chrome panels** (sent-history /
 settings / panel toggle) stay chrome — see PRD_02_25 Terminology; do not
 conflate them with content panels. Renderer rule on this page still holds:
-prefer direct-wry via a helper / shared adapter, never link wry/tao into core
-`minicon`, never OS-default-browser for terminal-originated http(s). The
+prefer direct-wry through the `minicon-web` boundary, keep core crates/headless
+paths WebView-free, never OS-default-browser for terminal-originated http(s).
+GUI-binary linkage is the open `{ARCH}` decision. The
 stable function boundary is workspace member `crates/minicon-web`
 (`PageHost`, `BrowserTab`, `http_url_at`, `resolve_proxy`, `page_host_request`,
 `spawn_page_host`). `src/browser.rs` re-exports it. `minicon-web-host` is the
@@ -644,7 +649,7 @@ replaceable process body (`--probe` / `--load` / `--smoke` /
 `--oauth-smoke`). With no WebView
 linked it reports Unavailable and does not call the OS browser. Feature
 `wry-host` links wry and tao into that binary only and, on Linux, packs the
-page into tao's default vbox. The completed 0.2.21 acceptance record is
+page into tao's default vbox on Linux/X11. The reopened 0.2.21 acceptance record is
 [plan-v0.2.21.md](../plan/plan-v0.2.21.md); the broader boundary and later
 dashboard/preview/wasm/1:N leaves stay in
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Workspace owns the
@@ -655,23 +660,38 @@ workspace crate **`crates/minicon-web`**: library API plus host binary
 `minicon-web-host` (`--probe` / `--load`). Responsibilities: unified browser
 function interface (open/load URL, `PageHost` trait, proxy hook, staged OAuth /
 dashboard / preview / wasm); isolate wry/WebView so the underlying stack can
-change without rewriting product callers. Core `minicon` and `minicon-core`
-**do not** depend on wry — they talk to minicon-web only (`src/browser.rs`
-re-exports). Size-boundary rule above is unchanged: a missing WebView runtime
-must not take down the terminal. Product face stays Tab / content panel
+change without rewriting product callers. Today `minicon` and `minicon-core`
+do not enable wry; `{ARCH}` may change only the GUI binary side while
+`minicon-core`, `minicon-console` and headless remain free of it. A missing
+WebView runtime must still fail softly without taking down the terminal.
+Product face stays Tab / content panel
 (PRD_02_25); no tray. The crate is a workspace member. The default host
 body does not link wry and exits 69 Unavailable. `wry-host` is opt-in.
 Target interface inventory:
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
 
-The scoped 0.2.21 native browser runtime is closed by dev-loop run
+The Linux/X11 adapter portion of the 0.2.21 native browser runtime is closed by dev-loop run
 `39925651159` at exact source `4577c9c2d446ee43f5af0a4a53699d3ae3c960b5`.
 On both Linux ISAs, its nonzero X11 suite observes the exact moved/resized
 embedded child rectangle, the optional wry/WebKitGTK host builds, and a real
 WebKit page reaches a synthetic origin through the configured HTTP proxy before
 its OAuth loopback redirect is cancelled and delivered directly to
 `127.0.0.1`. This is runtime evidence for the adapter seam, not a production
-provider-account or Wayland-embedding claim.
+provider-account, macOS, Windows or Wayland-embedding claim.
+
+Direct macOS use then exposed a boundary contradiction that the Linux court
+cannot answer. The canonical dev build does not emit `minicon-web-host`; the
+feature is opt-in; and `PixelWindow::embed_parent()` is X11-only. More
+fundamentally, cross-process X11 reparenting is not a portable proof that a
+WKWebView or WebView2 can occupy the same tab content panel. The three wishes
+"same-window native view", "separate helper process" and "no WebView adapter
+linked into the GUI" now form an explicit `{ARCH}` decision gate in
+[plan-v0.2.21.md](../plan/plan-v0.2.21.md), rather than an assumed solved
+shape. The recommended first spike permits a GUI-only `minicon-web` adapter
+while keeping `minicon-core`, `minicon-console` and headless paths WebView-free;
+it is not accepted until size/process/runtime evidence is recorded. Floating
+helper windows, OS-default-browser fallback, screenshot streaming and
+synthetic-input forwarding remain rejected substitutes for a content panel.
 
 OAuth credentials do not add a product-layer native filesystem exception.
 MiniCon owns the bearer path and `minicon-platform::filesystem` owns private

@@ -54,7 +54,7 @@ MiniCon — one-file local terminal
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
 └── Current delivery
-    ├── [v] v0.2.21 console courts + browser content panel/OAuth runtime → plan/plan-v0.2.21.md
+    ├── [-] v0.2.21 console courts complete; cross-platform browser content panel reopened → plan/plan-v0.2.21.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -135,7 +135,7 @@ flowchart LR
 
 ## Current frontier
 
-- [v] **v0.2.21 development scope: console courts, and the browser content panel.** Portable
+- [-] **v0.2.21: console courts complete; browser content panel reopened.** Portable
   `minicon-console` tests must run on every shipped cell, and a Linux-only
   path must fail `lnx-*` even when Windows and macOS are green. Separately,
   a browser tab's content panel is `minicon-web` (wry + tao only in
@@ -150,7 +150,12 @@ flowchart LR
   x86_64 and arm64 ACL courts passed in run `39919403513`. Linux run
   `39925651159` at `4577c9c` passed the nonzero native X resize court, built
   the optional WebKitGTK host and passed the real proxy/direct-loopback OAuth
-  smoke on x86_64 and aarch64. Six-cell dev-loop run `39917026302`
+  smoke on x86_64 and aarch64. That is Linux adapter evidence, not the
+  cross-platform browser product outcome: a direct macOS test of the canonical
+  `build.sh dev` output found no `minicon-web-host`, and the macOS window backend
+  has no same-window embed path. `{ARCH}`, `{ARTIFACT}`, `{MAC-PANEL}` and the
+  explicit Windows platform decision are therefore open; Candidate/public
+  release remains forbidden. Six-cell dev-loop run `39917026302`
   at `3db5710` passed the portable console suites on every cell and the
   Linux-only PTY/X11/ELF courts on both Linux cells. Windows arm64 passed all
   suites; Windows x64 stayed red only on the two already-carried G6
@@ -201,12 +206,15 @@ flowchart LR
   [delivery](prd/PRD_02_27_con_delivery.md).
 - [-] **Built-in browser tabs (content panels) via `minicon-web`.** One
   browser tab peers a terminal tab. Its content panel is the page;
-  `minicon-console` stays the terminal panel. Feature `wry-host` links
-  wry/tao/gtk only into `minicon-web-host`. Core `minicon` does not. Ctrl+click
-  http(s) and DeepSeek authorize use that panel, not the OS browser. No tray.
+  `minicon-console` stays the terminal panel. Linux currently uses the
+  feature-gated `minicon-web-host`; the portable same-window boundary is
+  reopened because that X11 helper shape does not provide WKWebView/WebView2.
+  Core crates/headless remain WebView-free. Ctrl+click http(s) and DeepSeek
+  authorize must use that panel, not the OS browser. No tray or floating helper.
   1:N panels, dashboard, preview and wasm are later.
   Names: [Workspace](prd/PRD_02_25_con_workspace.md);
-  completed 0.2.21 evidence: [plan-v0.2.21](plan/plan-v0.2.21.md);
+  reopened 0.2.21 evidence and closure gates:
+  [plan-v0.2.21](plan/plan-v0.2.21.md);
   boundary: [plan-browser-tabs](plan/plan-browser-tabs.md) and
   [horizon](prd/PRD_02_31_v0_2_horizon.md).
 - [-] **macOS host-UI readability** remains open, including tab/header and
