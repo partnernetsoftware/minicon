@@ -73,6 +73,9 @@ def main() -> int:
     native = None
     foreground = None
     pointer = None
+    mac_window_id = None
+    mac_capture_error = None
+    screenshots: dict[str, dict] = {}
 
     def cli(*arguments: str) -> dict:
         response = subprocess.check_output([str(binary), "cli", "--control", endpoint, *arguments],
@@ -112,12 +115,56 @@ def main() -> int:
         cli("send-ui-mouse", "--action", "click", "--button", "left", "--column", str(round(x)), "--row", "20")
 
     def capture(name: str):
+        nonlocal mac_window_id, mac_capture_error
         (output / f"{name}.json").write_text(json.dumps({"tabs": cli("list-tabs"), "ui": cli("ui-snapshot")}, indent=2), encoding="utf-8")
         if native is not None:
             from PIL import ImageGrab
             rectangle = wintypes.RECT()
             native.GetWindowRect(hwnd, ctypes.byref(rectangle))
             ImageGrab.grab(bbox=(rectangle.left, rectangle.top, rectangle.right, rectangle.bottom), all_screens=True).save(output / f"{name}.png")
+        elif sys.platform == "darwin":
+            # Capture this fixture's window, including WKWebView pixels. Never
+            # fall back to the whole desktop or an interactive permission flow.
+            try:
+                path = output / f"{name}.png"
+                path.unlink(missing_ok=True)
+                if mac_capture_error is not None:
+                    raise RuntimeError(mac_capture_error)
+                if mac_window_id is None:
+                    probe = subprocess.run(["/usr/bin/swift", "-", str(child.pid)], input="""
+import CoreGraphics
+import Foundation
+let pid = Int32(CommandLine.arguments[1]) ?? -1
+if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+    for row in rows {
+        if let owner = row[kCGWindowOwnerPID as String] as? Int32, owner == pid,
+           let layer = row[kCGWindowLayer as String] as? Int, layer == 0,
+           let bounds = row[kCGWindowBounds as String] as? [String: Any],
+           let width = bounds["Width"] as? Double, width > 0,
+           let height = bounds["Height"] as? Double, height > 0,
+           let number = row[kCGWindowNumber as String] as? Int {
+            print(number); break
+        }
+    }
+}
+""", text=True, capture_output=True, timeout=30)
+                    if probe.returncode != 0 or not probe.stdout.strip().isdigit():
+                        raise RuntimeError("owned-window-id-unavailable")
+                    mac_window_id = int(probe.stdout.strip())
+                captured = subprocess.run(["/usr/sbin/screencapture", "-o", "-x", "-t", "png", f"-l{mac_window_id}", str(path)],
+                                          capture_output=True, timeout=10)
+                if captured.returncode != 0:
+                    raise RuntimeError("owned-window-capture-unavailable")
+                raw = path.read_bytes()
+                if len(raw) < 24 or raw[:16] != b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" or not all(
+                        int.from_bytes(raw[start:start + 4], "big") > 0 for start in (16, 20)):
+                    raise RuntimeError("owned-window-png-invalid")
+                screenshots[name] = {"status": "captured", "file": path.name}
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                reason = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+                mac_capture_error = reason
+                screenshots[name] = {"status": "BLOCKED", "reason": reason}
+            (output / "screenshots.json").write_text(json.dumps(screenshots, indent=2) + "\n", encoding="utf-8")
 
     try:
         with (output / "host.log").open("wb") as trace:
@@ -225,7 +272,7 @@ def main() -> int:
             child.wait(timeout=10)
         receipt = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "platform": sys.platform,
                    "physical_page_ctrl_l": args.physical, "physical_page_tab_switch": args.physical,
-                   "requests": counts, "status": "passed"}
+                   "requests": counts, "status": "passed", "screenshots": screenshots}
         (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(receipt))
         return 0

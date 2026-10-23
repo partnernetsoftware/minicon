@@ -581,6 +581,11 @@ child pixels are omitted. Owner approval of these interactions is the
   `/var` socket ancestry includes a symlink. Resolve the existing temporary
   directory before constructing the endpoint; retain the product's no-follow
   safety check. The corrected script still requires native macOS evidence.
+- The canonical browser script also attempts bounded, owned-window macOS PNG
+  capture using the existing CoreGraphics window lookup and `screencapture`
+  mechanism. Per-image `screenshots.json` records actual capture or `BLOCKED`;
+  JSON snapshots and successful behavior tests do not replace missing pixels
+  for owner UX review. Native execution of this capture path remains open.
 
 ## Non-goals
 
