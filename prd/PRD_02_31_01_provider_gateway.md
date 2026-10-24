@@ -148,7 +148,9 @@ First use: Harness -> Add provider -> supported login -> select model/account
 Enable Login once the supported initialization contract is established; keep
 account readiness pending until its real grant and inference probe succeed.
 Never use guessed endpoints or a successful-login badge for an anonymous
-challenge. Account labels are user chosen; diagnostics use opaque account IDs.
+challenge. The first connection uses provider-generated labels plus a stable
+short account ID to distinguish accounts from the same provider. Custom label
+editing is deferred; diagnostics use opaque account IDs.
 
 Settings opens without a listener, account probe or paid model request. Saving
 configuration does not start the service. A deliberate Connect/Test action may

@@ -504,7 +504,11 @@ impl ConApp {
                     button(
                         surface,
                         cell(0, 2),
-                        &format!("{} / {state}", account.label),
+                        &format!(
+                            "{} [{}] / {state}",
+                            account.label,
+                            account.id.get(..8).unwrap_or(&account.id)
+                        ),
                         settings.view.selected_account.as_ref() == Some(&account.id),
                     );
                     button(surface, cell(1, 2), "Remove account", false);

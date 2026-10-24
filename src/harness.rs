@@ -1893,6 +1893,7 @@ mod worker_exec_tests {
                 }
             }
             "leader" => {
+                eprintln!("leader probe entered; pid={}", std::process::id());
                 let nested = std::env::current_dir().unwrap().join("descendant");
                 std::fs::create_dir_all(&nested).unwrap();
                 std::fs::write(nested.join("worker-probe-mode"), "hold").unwrap();
@@ -1904,7 +1905,8 @@ mod worker_exec_tests {
                     .args(probe_args())
                     .current_dir(&nested)
                     .spawn()
-                    .unwrap();
+                    .unwrap_or_else(|error| panic!("leader nested probe spawn failed: {error}"));
+                eprintln!("leader nested probe spawned; pid={}", descendant.id());
                 // Keep the native child handle alive until the root exits.
                 // Inherit both stdout and stderr, so the parent must not treat
                 // leader exit as completion of output draining.
@@ -2049,7 +2051,22 @@ mod worker_exec_tests {
                 Duration::from_secs(2),
             )
         });
-        wait_for(&root.join("leader-ready"));
+        let ready = root.join("leader-ready");
+        let setup_deadline = Instant::now() + Duration::from_secs(10);
+        while !ready.is_file() {
+            if worker.is_finished() && !ready.is_file() {
+                let outcome = worker.join();
+                panic!(
+                    "leader setup ended before ready; child outcome (including stdout/stderr): {outcome:?}"
+                );
+            }
+            assert!(
+                Instant::now() < setup_deadline,
+                "leader setup did not become ready and the exec owner is still running: {}",
+                ready.display()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
         let descendant = retain_owned_process(&root.join("descendant/ready"));
         let outcome = worker.join().unwrap().unwrap();
         assert!(
