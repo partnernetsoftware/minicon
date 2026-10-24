@@ -490,6 +490,14 @@ are included in public observation metadata.
   Receipt: `target-six/v0.2.23-provider/real-deepseek-anthropic-tool-1/receipt.json`.
   The gateway performed no tool execution; this is development account/protocol
   evidence, not final artifact or worker cleanup qualification.
+- [v] Actual Chat Completions and Anthropic Messages streams occupied the two
+  account leases, and a third request returned `429/account_busy`. After both
+  real client sockets closed, short requests succeeded 797 ms and 1703 ms after
+  disconnect, within the five-second observation window. Receipt:
+  `target-six/v0.2.23-provider/real-stream-disconnect-20261025-032147/receipt.json`.
+  This used development GUI binary `e830e773e5cb0acd3e86e98ef2c026854828ff8d221dd72a3e4167465824b474`;
+  it proves local I/O/lease recovery, not remote compute/billing termination
+  or final Candidate behavior. No request key or response body was recorded.
 - [-] Actual worker tasks through that account did not qualify file+exec.
   `real-deepseek-worker-1` exhausted the model-turn budget after file access;
   `real-deepseek-worker-2` isolated a CMD working-directory failure. Both

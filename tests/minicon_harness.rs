@@ -88,6 +88,18 @@ fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
             .as_nanos()
     ));
     std::fs::create_dir_all(&root).unwrap();
+    // A literal echo cannot distinguish the task root from CMD's silent
+    // Windows-directory fallback. Only a relative read can return this value;
+    // the command and model prompt never carry the challenge contents.
+    let exec_nonce = format!(
+        "EXEC-CWD-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    std::fs::write(root.join("exec-challenge.txt"), exec_nonce.as_bytes()).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -156,10 +168,10 @@ fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
                 if observed.0 == 1 {
                     #[cfg(windows)]
                     let argv = serde_json::json!(["cmd.exe", "/d", "/c",
-                        "if defined MINICON_LOCAL_API_KEY (exit /b 9) else (echo EXEC-OK)"]);
+                        "if defined MINICON_LOCAL_API_KEY (exit /b 9) else (type exec-challenge.txt)"]);
                     #[cfg(unix)]
                     let argv = serde_json::json!(["sh", "-c",
-                        "test -z \"$MINICON_LOCAL_API_KEY\" && printf EXEC-OK"]);
+                        "test -z \"$MINICON_LOCAL_API_KEY\" && cat exec-challenge.txt"]);
                     serde_json::json!({"choices":[{"message":{"role":"assistant","content":null,
                         "tool_calls":[
                             {"id":"file-1","type":"function","function":{"name":"file",
@@ -172,7 +184,7 @@ fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
                         let messages = request["messages"].as_array().unwrap();
                         let results: Vec<_> = messages.iter().filter(|message| message["role"] == "tool").collect();
                         assert_eq!(results.len(), 2);
-                        assert!(results.iter().any(|result| result["content"].as_str().unwrap().contains("EXEC-OK")));
+                        assert!(results.iter().any(|result| result["content"].as_str().unwrap().contains(&exec_nonce)), "exec must read the controlled relative file from the task root");
                         assert!(!results.iter().any(|result| result["content"].as_str().unwrap().contains("synthetic-local-key")));
                         observed.2 = true;
                     }
