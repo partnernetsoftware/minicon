@@ -20,7 +20,8 @@ minicon workspace and input
 │   ├── terminal tab → one terminal content panel (PTY view)
 │   └── [v] browser tab → one browser content panel (0.2.21)
 │       ├── [v] canonical native page journeys on the six shipped cells
-│       └── [v] address/navigation workspace; owner released the UX gate
+│       ├── [v] address/navigation workspace; owner released the UX gate
+│       └── [-] macOS daily-use refinement (0.2.22): draft editing, native navigation keys and close/reopen focus
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -175,6 +176,30 @@ names above.
   Windows ARM64 proxy-mode evidence remains BLOCKED; its successful ordinary
   native page journey does not close this proxy-specific scope. Evidence and
   exact court commands: [archived plan](../plan/archive/plan-v0.2.21.md).
+- [-] **macOS browser daily-use refinement (0.2.22).** The canonical Mac
+  baseline was observed through Computer Use on 2026-10-24: page text survives
+  terminal switch/return, and Cmd+L and Ctrl+Shift+[ work while a WKWebView text
+  field owns focus. These are native window events on this arm64 Mac; they do
+  not qualify Intel macOS or every reserved shortcut. The same run reproduced
+  an address-editing defect: clicking an unsubmitted draft replaced it with
+  the loaded URL. The new editor must retain that draft on click or Cmd/Ctrl+L;
+  the first focus selects all, subsequent clicks place the caret, drag/Shift
+  extend selection, and double/triple click follow the existing composer's
+  token/all-selection rules. Escape discards the edit and returns page focus;
+  Enter navigates the edited URL. Product pointer/edit semantics stay in
+  `src/browser_ui.rs`, reusing core composer/click rules. Sequencing and new
+  evidence: [0.2.22 plan](../plan/plan-v0.2.22.md).
+  The same baseline also ignored Cmd+[ with a page text field focused.
+  macOS now reserves Cmd+[, Cmd+] and Cmd+R for browser back, forward and reload
+  in both page and address focus. Ctrl+Shift+[ / ] retain tab switching;
+  ordinary page editing shortcuts remain with WKWebView. The AppKit monitor
+  continues to be scoped to the owning window and native page focus.
+  A further physical negative control found that closing a page-focused tab
+  stranded keyboard focus: Ctrl+Shift+O worked only after a terminal click.
+  `stop_page_host` now returns focus to the parent before dropping the native
+  page. Repeating page-input focus -> Ctrl+Shift+W -> Ctrl+Shift+O succeeds
+  without an intervening click on this Mac. This observation qualifies that
+  arm64 path only; the prior unmeasured-path caveat for 0.2.21 remains history.
 - [v] **one browser root, and separate page/composer geometry (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`

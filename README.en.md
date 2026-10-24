@@ -129,6 +129,7 @@ minicon --help                   # everything else
 | `Ctrl+Shift+I` | focus terminal input, or the browser address field |
 | `Ctrl+L` / `Cmd+L` | in the browser tab, edit its address; Enter navigates and Escape returns to the page |
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |
+| `Cmd+[` / `Cmd+]` / `Cmd+R` | on macOS, browser Back / Forward / Reload |
 | `Ctrl+Shift+,` | open or close the settings panel |
 | `Ctrl+Shift+G` | toggle the grid crosshair |
 | `Ctrl+Shift+H` | open or close the sent-history panel |
@@ -171,7 +172,7 @@ alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
 ```
 
 On macOS, the canonical dev build also assembles the unsigned local-test wrapper
-`target/debug/MiniCon 0.2.21 Dev.app`; it has a distinct development bundle id
+`target/debug/MiniCon 0.2.22 Dev.app`; its version follows `Cargo.toml` and it has a distinct development bundle id
 so it cannot be confused with an installed release during UI qualification.
 The executable under test remains `target/debug/minicon`.
 

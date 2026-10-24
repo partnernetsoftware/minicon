@@ -3,16 +3,7 @@ use super::*;
 
 impl ConApp {
     pub(super) fn focus_browser_address(&mut self, window: &PixelWindow) {
-        let mut editor = composer::ComposerState::default();
-        editor.text = self
-            .workspace
-            .browser_tab()
-            .and_then(|id| self.browsers.get(&id))
-            .and_then(|tab| tab.panel().url.clone())
-            .unwrap_or_default();
-        editor.caret = editor.text.len();
-        composer::select_all(&mut editor);
-        self.browser_address = Some(editor);
+        self.begin_browser_address();
         self.composer.focused = false;
         #[cfg(any(target_os = "macos", windows))]
         if let Some(page) = &self.native_browser_page {
@@ -24,6 +15,90 @@ impl ConApp {
         self.mark_host_ui_full_and_repaint(window);
     }
 
+    fn begin_browser_address(&mut self) {
+        // Re-focusing an existing editor must preserve its unsubmitted draft.
+        let editor = self.browser_address.get_or_insert_with(|| {
+            let mut editor = composer::ComposerState::default();
+            editor.text = self
+                .workspace
+                .browser_tab()
+                .and_then(|id| self.browsers.get(&id))
+                .and_then(|tab| tab.panel().url.clone())
+                .unwrap_or_default();
+            editor.caret = editor.text.len();
+            editor
+        });
+        composer::select_all(editor);
+        self.browser_address_drag = None;
+        self.browser_address_clicks = Default::default();
+    }
+
+    fn press_browser_address(&mut self, offset: usize, shift: bool) {
+        let Some(editor) = self.browser_address.as_mut() else {
+            return;
+        };
+        let anchor = if shift {
+            editor
+                .anchor
+                .unwrap_or(if editor.select_all { 0 } else { editor.caret })
+        } else {
+            offset
+        };
+        editor.select_all = false;
+        editor.anchor = Some(anchor);
+        editor.caret = offset;
+        if shift {
+            self.browser_address_drag = Some(anchor);
+            return;
+        }
+        let clicks = self.browser_address_clicks.register(offset, Instant::now());
+        match clicks {
+            1 => self.browser_address_drag = Some(offset),
+            2 => {
+                let (start, end) = composer::word_bounds(&editor.text, offset);
+                editor.anchor = Some(start);
+                editor.caret = end;
+                self.browser_address_drag = None;
+            }
+            _ => {
+                composer::select_all(editor);
+                self.browser_address_drag = None;
+            }
+        }
+    }
+
+    fn browser_address_offset_at(
+        &self,
+        window: &PixelWindow,
+        position: &LogicalPoint,
+    ) -> Result<usize, PixelWindowError> {
+        let Some(editor) = &self.browser_address else {
+            return Ok(0);
+        };
+        let metrics = window.metrics()?;
+        let scale = metrics.scale_factor.max(1.0);
+        let rect = self
+            .layout(metrics.physical_width, metrics.physical_height, scale)
+            .browser_address(scale);
+        let size = scaled_host_ui_font(14, self.session_seed.font_size_logical(), scale);
+        let cell = font::cell_metrics(size).width.max(1);
+        let width = rect.width.saturating_sub((16.0 * scale) as u32);
+        let visible = composer::visible_window(
+            &editor.text,
+            &editor.preedit,
+            editor.caret,
+            1,
+            (width / cell).max(1) as usize,
+        );
+        let origin = rect.x.saturating_add((8.0 * scale) as u32);
+        let column = ((position.x * scale).max(0.0) as u32).saturating_sub(origin) / cell;
+        Ok(composer::caret_at_cell(
+            &editor.text,
+            visible.text,
+            column as usize,
+        ))
+    }
+
     pub(super) fn route_browser_input(
         &mut self,
         window: &PixelWindow,
@@ -31,7 +106,37 @@ impl ConApp {
     ) -> Result<bool, PixelWindowError> {
         if !self.active_is_browser() {
             self.browser_address = None;
+            self.browser_address_drag = None;
             return Ok(false);
+        }
+        if matches!(
+            event,
+            PixelWindowEvent::PointerCaptureLost | PixelWindowEvent::FocusChanged(false)
+        ) {
+            self.browser_address_drag = None;
+        }
+        if let PixelWindowEvent::PointerMoved { position, .. } = event
+            && let Some(anchor) = self.browser_address_drag
+        {
+            let offset = self.browser_address_offset_at(window, position)?;
+            if let Some(editor) = self.browser_address.as_mut() {
+                editor.select_all = false;
+                editor.anchor = Some(anchor);
+                editor.caret = offset;
+            }
+            self.update_browser_ime_anchor(window);
+            self.mark_host_ui_full_and_repaint(window);
+            return Ok(true);
+        }
+        if let PixelWindowEvent::PointerButton {
+            state: PointerButtonState::Released,
+            button: PointerButton::Left,
+            ..
+        } = event
+            && self.browser_address_drag.take().is_some()
+        {
+            let _ = window.set_pointer_capture(false);
+            return Ok(true);
         }
         if let PixelWindowEvent::Keyboard(key) = event
             && key.state == KeyPressState::Pressed
@@ -41,11 +146,29 @@ impl ConApp {
             self.focus_browser_address(window);
             return Ok(true);
         }
+        #[cfg(target_os = "macos")]
+        if let PixelWindowEvent::Keyboard(key) = event
+            && key.state == KeyPressState::Pressed
+            && key.modifiers.meta
+            && !key.modifiers.control
+            && !key.modifiers.alt
+            && !key.modifiers.shift
+            && let LogicalKey::Character(text) = &key.logical
+            && let Some(control) = match text.as_str() {
+                "[" => Some(0),
+                "]" => Some(1),
+                "r" | "R" => Some(2),
+                _ => None,
+            }
+        {
+            self.browser_navigation(window, control);
+            return Ok(true);
+        }
         if let PixelWindowEvent::PointerButton {
             state: PointerButtonState::Pressed,
             button: PointerButton::Left,
             position: Some(position),
-            ..
+            modifiers,
         } = event
         {
             let metrics = window.metrics()?;
@@ -55,7 +178,17 @@ impl ConApp {
             let y = (position.y * scale).max(0.0) as u32;
             if layout.browser_toolbar(scale).contains(x, y) {
                 if layout.browser_address(scale).contains(x, y) {
-                    self.focus_browser_address(window);
+                    if self.browser_address.is_none() {
+                        self.focus_browser_address(window);
+                        let offset = self.browser_address_offset_at(window, position)?;
+                        self.browser_address_clicks.register(offset, Instant::now());
+                    } else {
+                        let offset = self.browser_address_offset_at(window, position)?;
+                        self.press_browser_address(offset, modifiers.shift);
+                        let _ = window.set_pointer_capture(self.browser_address_drag.is_some());
+                        self.update_browser_ime_anchor(window);
+                        self.mark_host_ui_full_and_repaint(window);
+                    }
                 } else {
                     let control =
                         ((x.saturating_sub(layout.composer.x)) as f64 / (34.0 * scale)) as u32;
@@ -64,6 +197,7 @@ impl ConApp {
                 return Ok(true);
             }
             self.browser_address = None;
+            self.browser_address_drag = None;
         }
         let Some(editor) = self.browser_address.as_mut() else {
             return Ok(false);
@@ -282,6 +416,13 @@ impl ConApp {
         for shortcut in state.shortcuts {
             if shortcut == 'L' {
                 self.focus_browser_address(window);
+            } else if let Some(control) = match shortcut {
+                '<' => Some(0),
+                '>' => Some(1),
+                'R' => Some(2),
+                _ => None,
+            } {
+                self.browser_navigation(window, control);
             } else {
                 let key = injected_key_event(
                     InjectedKey::Char(shortcut.to_ascii_lowercase()),
@@ -427,5 +568,72 @@ impl ConApp {
             self.sync_embedded_page(window);
             self.mark_host_ui_full_and_repaint(window);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refocusing_browser_address_preserves_the_unsubmitted_draft() {
+        let mut app = ConApp::new(None, None);
+        app.begin_browser_address();
+        composer::insert(
+            app.browser_address.as_mut().unwrap(),
+            "https://example.test/draft",
+        );
+        app.begin_browser_address();
+        let editor = app.browser_address.as_ref().unwrap();
+        assert_eq!(editor.text, "https://example.test/draft");
+        assert_eq!(composer::selection_text(editor), Some(editor.text.as_str()));
+    }
+
+    #[test]
+    fn browser_address_click_inserts_at_the_caret_without_replacing_the_draft() {
+        let mut app = ConApp::new(None, None);
+        app.begin_browser_address();
+        composer::insert(
+            app.browser_address.as_mut().unwrap(),
+            "https://example.test/path",
+        );
+        app.press_browser_address(21, false);
+        let editor = app.browser_address.as_mut().unwrap();
+        assert_eq!(composer::selection_text(editor), None);
+        composer::insert(editor, "new/");
+        assert_eq!(editor.text, "https://example.test/new/path");
+    }
+
+    #[test]
+    fn browser_address_shift_click_extends_from_the_existing_caret() {
+        let mut app = ConApp::new(None, None);
+        app.begin_browser_address();
+        composer::insert(
+            app.browser_address.as_mut().unwrap(),
+            "https://example.test/path",
+        );
+        app.press_browser_address(21, false);
+        app.press_browser_address(25, true);
+        assert_eq!(
+            composer::selection_text(app.browser_address.as_ref().unwrap()),
+            Some("path")
+        );
+    }
+
+    #[test]
+    fn browser_address_double_click_selects_a_token_and_ends_dragging() {
+        let mut app = ConApp::new(None, None);
+        app.begin_browser_address();
+        composer::insert(
+            app.browser_address.as_mut().unwrap(),
+            "https://example.test/path",
+        );
+        app.press_browser_address(10, false);
+        app.press_browser_address(10, false);
+        assert_eq!(
+            composer::selection_text(app.browser_address.as_ref().unwrap()),
+            Some("https://example.test/path")
+        );
+        assert!(app.browser_address_drag.is_none());
     }
 }

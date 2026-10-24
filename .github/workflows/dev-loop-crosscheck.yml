@@ -104,7 +104,7 @@ jobs:
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
           # Linux X11 tests used to `return` when DISPLAY was unset and still
           # report ok. This job exists to run those paths; a missing display
-          # must fail them. See plan/plan-v0.2.21.md {LNX}.
+          # must fail them. See plan/archive/plan-v0.2.21.md {LNX}.
           echo "MINICON_REQUIRE_DISPLAY=1" >> "$GITHUB_ENV"
           for _ in $(seq 20); do
             if DISPLAY=:99 xdpyinfo >/dev/null 2>&1; then break; fi
@@ -219,7 +219,7 @@ jobs:
           # Portable minicon-console library. cfg(windows) service code is
           # absent on lnx-* and osx-*; an unfiltered run must still execute
           # tests. A hashed-path guess that matches nothing is a false pass
-          # (plan/plan-v0.2.21.md {LIB}). Cargo locates the binary.
+          # (plan/archive/plan-v0.2.21.md {LIB}). Cargo locates the binary.
           echo "== minicon-console (portable library) ${{ inputs.test_filter }}"
           run_suite minicon-console cargo test --locked --target "$triple" -p minicon-console --lib -- --test-threads 2 ${{ inputs.test_filter }}
           echo "== minicon-console synchronized_presentation ${{ inputs.test_filter }}"
@@ -303,7 +303,7 @@ jobs:
               # Linux-only product paths. A macOS build never compiles the
               # /proc session walk, and these X11 tests are not part of
               # blackbox/control. Do not run the whole platform lib.
-              # plan/plan-v0.2.21.md {LNX}.
+              # plan/archive/plan-v0.2.21.md {LNX}.
               echo "== linux pty session ${{ inputs.test_filter }}"
               # A filter is a substring of these names, not a license to run
               # the rest of the platform lib. An unrelated filter skips the

@@ -56,7 +56,7 @@ MiniCon — one-file local terminal
 │           └── [_] native command-line installation after 0.2.21 → prd/PRD_02_27_01_install.md
 └── Current delivery
     ├── [v] v0.2.21 → prd/archive/v0.2.21-release-history.md
-    ├── [_] v0.2.22 Mac handoff: native installation and size follow-up → plan/plan-v0.2.22.md
+    ├── [-] v0.2.22 macOS browser daily-use refinement → plan/plan-v0.2.22.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -147,11 +147,12 @@ flowchart LR
   signed/Candidate/public qualification and the owner's release decision.
   [Workspace](prd/PRD_02_25_con_workspace.md) retains unobserved physical-focus,
   proxy and DPI limits; G4/G6 remain carried debt.
-- [_] **v0.2.22 Mac handoff.** Implement the accepted native installation branch
-  and matching README/site guidance; measure size contributions before bounded
-  optimization. [Sequence](plan/plan-v0.2.22.md),
-  [installation owner](prd/PRD_02_27_01_install.md),
-  [budget/delivery owner](prd/PRD_02_27_con_delivery.md).
+- [-] **v0.2.22 macOS browser daily-use refinement.** Observe and improve
+  page/address focus, physical shortcuts and navigation on the current Mac.
+  Installation is deferred to later coordinated AgenTerm planning; size work
+  retains its separate owner. [Sequence](plan/plan-v0.2.22.md),
+  [workspace owner](prd/PRD_02_25_con_workspace.md),
+  [deferred installation](prd/PRD_02_27_01_install.md).
 - [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
   limited Win32 I/O/records and job cleanup are implemented. The explicit
   experimental PTY and GUI choice is packaged in v0.2.18; scoped PowerShell/Node

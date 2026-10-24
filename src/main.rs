@@ -825,6 +825,8 @@ struct ConApp {
     /// terminal sessions, and only present when the node kind is Browser.
     browsers: SessionStore<browser::BrowserTab>,
     browser_address: Option<composer::ComposerState>,
+    browser_address_drag: Option<usize>,
+    browser_address_clicks: minicon_core::click::ClickCounter<usize>,
     browser_can_back: bool,
     browser_can_forward: bool,
     browser_load_deadline: Option<Instant>,
@@ -1338,6 +1340,8 @@ impl ConApp {
             sessions,
             browsers: SessionStore::default(),
             browser_address: None,
+            browser_address_drag: None,
+            browser_address_clicks: Default::default(),
             browser_can_back: false,
             browser_can_forward: false,
             browser_load_deadline: None,
@@ -1509,6 +1513,7 @@ impl ConApp {
         self.browser_visible = None;
         self.browser_load_deadline = None;
         self.browser_address = None;
+        self.browser_address_drag = None;
         self.browser_can_back = false;
         self.browser_can_forward = false;
         #[cfg(target_os = "linux")]
@@ -1517,7 +1522,11 @@ impl ConApp {
         }
         #[cfg(any(target_os = "macos", windows))]
         {
-            self.native_browser_page = None;
+            if let Some(page) = self.native_browser_page.take() {
+                // WKWebView removal does not restore AppKit's first responder.
+                // Return keyboard ownership before its view and monitor die.
+                page.focus_parent();
+            }
         }
         if let Some(mut child) = self.browser_page.take() {
             let _ = child.kill();

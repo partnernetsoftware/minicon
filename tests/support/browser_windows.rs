@@ -262,6 +262,42 @@ fn native_browser_address_redirect_history_and_failure() {
     navigate(&format!("{origin}/first"));
     let first = wait(&format!("{origin}/first"), "ready", Some("First page"));
     assert_eq!(first["browser"]["title"], "First page");
+    // Clicking an already-edited address must place the caret in the draft,
+    // rather than resetting it to the loaded page. Submit the resulting URL
+    // so this public black box observes actual navigation, not editor internals.
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-ime", "commit", &format!("{origin}/draft")]);
+    let geometry = host.cli(&["ui-snapshot"]);
+    let address = &geometry["geometry"]["browser_address"];
+    let scale = geometry["geometry"]["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+    let x = ((address["x"].as_u64().unwrap() + address["width"].as_u64().unwrap() - 4) as f64
+        / scale)
+        .round()
+        .to_string();
+    let y = ((address["y"].as_u64().unwrap() + address["height"].as_u64().unwrap() / 2) as f64
+        / scale)
+        .round()
+        .to_string();
+    host.cli(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &x,
+        "--row",
+        &y,
+    ]);
+    host.cli(&["send-ui-ime", "commit", "?edited=1"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    wait(
+        &format!("{origin}/draft?edited=1"),
+        "ready",
+        Some("First page"),
+    );
+    navigate(&format!("{origin}/first"));
+    wait(&format!("{origin}/first"), "ready", Some("First page"));
     navigate(&format!("{origin}/redirect"));
     let second = wait(&format!("{origin}/second"), "ready", Some("Second page"));
     assert_eq!(second["browser"]["title"], "Second page");
