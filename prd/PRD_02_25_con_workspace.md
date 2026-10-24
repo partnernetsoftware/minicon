@@ -21,8 +21,9 @@ minicon workspace and input
 │   └── [v] browser tab → one browser content panel (0.2.21)
 │       ├── [v] canonical native page journeys on the six shipped cells
 │       ├── [v] address/navigation workspace; owner released the UX gate
-│       ├── [v] current-Mac local-preview workflow (0.2.22): visible entry, readable chrome, recovery and terminal draft continuity
-│       └── [-] proxy editing and Console/Web preferences → PRD_02_25_01_browser_preferences.md
+│       ├── [v] released local-preview workflow (0.2.22): visible entry, readable chrome, recovery and terminal draft continuity
+│       ├── [v] proxy editing and Console/Web preferences → PRD_02_25_01_browser_preferences.md
+│       └── [_] consistent browser control editing/menu operation → PRD_02_25_02_browser_controls.md
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -174,11 +175,15 @@ names above.
   artifact evidence and its qualification scope. The earlier rejection and
   replacement sequence remain in the
   [archived plan](../plan/archive/plan-v0.2.21.md) `{UX-BASELINE}`.
-- [-] **Browser proxy and Console/Web preferences (0.2.22).** The active
-  override, saved candidates, settings routes, combobox behavior and evidence
-  are owned by [PRD 25.01](PRD_02_25_01_browser_preferences.md). Current macOS
-  arm64 development is qualified; other new native preference courts remain
-  BLOCKED. Existing Windows proxy-hook evidence remains below.
+- [v] **Browser proxy and Console/Web preferences (0.2.22).** Active override,
+  saved candidates, routes and combobox behavior belong to
+  [PRD 25.01](PRD_02_25_01_browser_preferences.md); exact released artifact
+  scope belongs to [release history](archive/v0.2.22-release-history.md).
+  Broader physical input and legacy per-scheme/bypass coverage retain their
+  named limits. Existing Windows proxy-hook evidence remains below.
+- [_] **Consistent browser controls (0.2.23).** Shared editing, keyboard menus,
+  content-sized menu geometry and native focus acceptance are planned in
+  [PRD 25.02](PRD_02_25_02_browser_controls.md). The release plan sequences work.
 - [-] **Windows native proxy settings (0.2.21).** A single HTTP or HTTPS hook
   supplies the native page's proxy; when both are supplied, each URL scheme
   uses its own endpoint. `browser.no_proxy` is passed as Chromium bypass
@@ -204,7 +209,7 @@ names above.
   token/all-selection rules. Escape discards the edit and returns page focus;
   Enter navigates the edited URL. Product pointer/edit semantics stay in
   `src/browser_ui.rs`, reusing core composer/click rules. Sequencing and new
-  evidence: [0.2.22 plan](../plan/plan-v0.2.22.md).
+  evidence: [0.2.22 plan](../plan/archive/plan-v0.2.22.md).
   The same baseline also ignored Cmd+[ with a page text field focused.
   macOS now reserves Cmd+[, Cmd+] and Cmd+R for browser back, forward and reload
   in both page and address focus. Ctrl+Shift+[ / ] retain tab switching;
@@ -216,7 +221,7 @@ names above.
   page. Repeating page-input focus -> Ctrl+Shift+W -> Ctrl+Shift+O succeeds
   without an intervening click on this Mac. This observation qualifies that
   arm64 path only; the prior unmeasured-path caveat for 0.2.21 remains history.
-- [v] **Current-Mac local-preview workspace (0.2.22, owner 2026-10-24).** A visible header
+- [v] **Released local-preview workspace (0.2.22, owner 2026-10-24).** A visible header
   New menu offers Terminal and Browser; opening Browser reuses the one root,
   while a terminal row's child-creation action retains its meaning. Shared
   chrome must keep text readable and pointer regions disjoint at normal,
@@ -227,14 +232,15 @@ names above.
   generic failure. Restarting a local service and retrying must recover in the
   same tab, and returning to the terminal must preserve its draft. The delivery
   evidence is a real local HTTP-service journey with state and visible pixels,
-  owned in [0.2.22 plan](../plan/plan-v0.2.22.md). Multiple browser tabs, split
+  owned by [release history](archive/v0.2.22-release-history.md); the original
+  current-Mac development trial remains in its archived plan. Multiple browser tabs, split
   panels, persistent workspaces, downloads, dashboard/wasm, installation and
   provider-login UI are outside this delivery.
 - [v] **one browser root, and separate page/composer geometry (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`
   retains terminal geometry above its composer. A browser instead uses
-  `Layout::browser_page`: below a 44 DIP navigation toolbar, extending to the
+  `Layout::browser_page`: below its responsive navigation toolbar, extending to the
   bottom, inset by sidebar/history chrome. It has no terminal composer. A
   settings overlay temporarily hides the native child. Window, sidebar and
   history geometry changes plus tab activation call the same resize seam.
@@ -394,6 +400,14 @@ names above.
   geometry. Only explicit window close / quit exits the application.
 
 ## Host UI
+
+Regenerable Q1 host-UI frames are written beneath the nonempty
+`CARGO_TARGET_DIR`, or `target/` by default, as
+`host-ui-frame/q1-host-ui-frame.png`. The existing
+`a_host_ui_frame_renders_without_a_window` test retains its pixel/PNG assertions;
+its output is diagnostic build data. The exact released 0.2.22 image is
+preserved at [the archive](../archive/research/host-ui-frames/v0.2.22.png).
+This keeps routine tests from rewriting tracked research evidence.
 
 Host UI is MiniCon-drawn **chrome** around the active tab's content panel(s):
 the tab tree, the header tools, and the composer. It is not the tab-internal
@@ -825,7 +839,7 @@ items in "Host UI". The mockups are working material, not product truth.
 `Minicon Prototype.dc.html` and `Terminal Styles.dc.html` record turns 1–4.
 `NewAgent Create.dc.html` / `NewAgent Running.dc.html` are the parked
 GUI-workbench exploration owned by `prd/PRD_02_31_v0_2_horizon.md` and
-`plan/plan-newagent-config.md`; `support.js` is the mockups' runtime. Nothing
+`plan/archive/plan-newagent-config.md`; `support.js` is the mockups' runtime. Nothing
 in `archive/ui-design/` is built or run.
 
 ## External composer input

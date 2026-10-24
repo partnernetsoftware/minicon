@@ -1,4 +1,4 @@
-//! Product rules for the browser's saved proxy candidates.
+//! Saved browser proxy candidates; owner: prd/PRD_02_25_01_browser_preferences.md.
 
 pub(super) const MAX_PROXY_OPTIONS: usize = 8;
 

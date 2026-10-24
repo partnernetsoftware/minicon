@@ -1,4 +1,4 @@
-//! Process-local browser proxy editing. Product owner: PRD 25.
+//! Process-local browser proxy editing. Product owner: PRD 25.01.
 use super::*;
 
 impl ConApp {

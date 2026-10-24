@@ -449,7 +449,5 @@ conflicting configuration. See Microsoft's [environment creation contract](https
 Product editing, candidate persistence and page-reset meaning remain in
 [PRD 25.01](PRD_02_25_01_browser_preferences.md).
 
-Negative evidence: exact-source CI `40075261513` passed both macOS and Linux
-native preference journeys but both Windows cells failed proxy view creation
-with the shared default profile. The replacement isolated-context source needs
-fresh exact-source native execution; compilation does not close that gate.
+Released Windows proxy-environment qualification and the earlier failed-source
+observation are owned by [0.2.22 release history](archive/v0.2.22-release-history.md).

@@ -127,6 +127,7 @@ case "$mode" in
         skip_feature_value=false
       else
         case "$argument" in
+          --lib) ;; # Already selected by the separately owned fork below.
           --) libtest_args=true; fork_args+=("$argument") ;;
           --features|-F) skip_feature_value=true ;;
           --features=*|-F?*) ;;

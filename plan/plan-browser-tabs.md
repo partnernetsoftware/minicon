@@ -13,8 +13,6 @@ release authority and exact-artifact qualification remain with PRD 27.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
-Renamed from `plan-wry-tray-browser.md` (tray-era title/content retired).
-
 Points into: [PRD_02_31 renderer choice](../prd/PRD_02_31_v0_2_horizon.md)
 (reuse the shared WebView security shape / prefer-direct-wry; `{ARCH}` permits
 GUI-only platform linkage inside `minicon-web`, while **UX is still same-window

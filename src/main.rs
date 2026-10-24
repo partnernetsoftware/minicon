@@ -6291,9 +6291,13 @@ mod tests {
             "terminal cells raster into a plain buffer with no window"
         );
 
-        // §3④: named evidence — dump the frame so a reviewer can see it.
-        let dir = std::path::Path::new("research/frame-channel");
-        std::fs::create_dir_all(dir).expect("create the evidence directory");
+        // Regenerable frame output; owner and historical image: PRD 25 Host UI.
+        let dir = std::env::var_os("CARGO_TARGET_DIR")
+            .filter(|value| !value.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("target"))
+            .join("host-ui-frame");
+        std::fs::create_dir_all(&dir).expect("create the evidence directory");
         let path = dir.join("q1-host-ui-frame.png");
         agent_interface::write_png_atomic(&path, &pixels, width, height)
             .expect("write the Q1 frame as PNG");

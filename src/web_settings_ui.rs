@@ -1,4 +1,4 @@
-//! Web settings and saved proxy choices. Product owner: PRD 25.
+//! Web settings and saved proxy choices. Product owner: PRD 25.01.
 use super::*;
 
 impl ConApp {

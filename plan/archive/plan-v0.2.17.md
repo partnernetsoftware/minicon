@@ -1,15 +1,18 @@
+> Archived on 2026-10-24. Incomplete proposal, not a shipped version or a completion claim. Modern-agent TRACE/REPAIR/STYLE/ACCEPT and native provider/session gates remain in PRD 24.01/34/35. Later releases changed the Windows default; original proposal text below is historical.
+> The original status and observations below are preserved as history.
+
 # v0.2.17 — modern agent terminal quality
 
 Status: unfinished modern-agent gate, updated 2026-10-21. A scoped
 current-source three-agent Rust-provider interaction passed; v0.2.18 is now
-[public](../prd/archive/v0.2.18-release-history.md) with a narrower explicit
+[public](../../prd/archive/v0.2.18-release-history.md) with a narrower explicit
 preview. The visible exact-Candidate three-agent matrix and source/wire/style
 attribution were not completed. The behavior and
 evidence owner is
-[modern TUI compatibility](../prd/PRD_02_24_01_tui_compatibility.md);
-[terminal selection](../prd/PRD_02_24_con_terminal.md#pty-backend-selection)
-owns the classic adapter and [the Windows backend](../prd/PRD_02_34_windows_console_backend.md)
-owns the Rust service. [The 0.2.x roadmap](plan-v0.2.x-product-roadmap.md)
+[modern TUI compatibility](../../prd/PRD_02_24_01_tui_compatibility.md);
+[terminal selection](../../prd/PRD_02_24_con_terminal.md#pty-backend-selection)
+owns the classic adapter and [the Windows backend](../../prd/PRD_02_34_windows_console_backend.md)
+owns the Rust service. [The 0.2.x roadmap](plan-v0.2.x-product-roadmap-2026-10-24.md)
 owns cross-version decisions.
 
 ## Outcome tree
@@ -65,7 +68,7 @@ flowchart LR
 On Windows x64 build 20348, current-source Claude Code 2.1.304, Grok Build
 1.0.62 and Codex CLI 0.162.1 sessions expose default `console-agent` Unicode,
 spacing, redraw or resize defects. The explicit `rust-console` sessions preserve
-the scoped Unicode and layout journeys. [The owning evidence record](../prd/PRD_02_24_01_tui_compatibility.md#report-and-current-evidence)
+the scoped Unicode and layout journeys. [The owning evidence record](../../prd/PRD_02_24_01_tui_compatibility.md#report-and-current-evidence)
 links the actual panes, product screenshots and source receipts. The owner's
 exact 0.2.14 sequence, original application bytes, hue fidelity, broad native
 API support, unexplained Grok exit 1 and Claude exit 251 remain open.

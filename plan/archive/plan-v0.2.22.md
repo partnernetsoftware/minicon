@@ -1,3 +1,6 @@
+> Archived on 2026-10-24. Released 0.2.22; final exact-source outcome and gate receipts are owned by [release history](../../prd/archive/v0.2.22-release-history.md).
+> The original status and observations below are preserved as history.
+
 # v0.2.22 — terminal-to-browser preview workflow
 
 Status: `[-]` current-Mac implementation and local validation complete;
@@ -9,7 +12,7 @@ delivery. The owner approved a parallel development trial for the complete
 visible-entry, readable-chrome and local-preview recovery workflow. Prior
 input/navigation repairs remain the baseline, not the whole delivery.
 The published baseline and exact evidence belong to the
-[0.2.21 release history](../prd/archive/v0.2.21-release-history.md).
+[0.2.21 release history](../../prd/archive/v0.2.21-release-history.md).
 
 ## Outcome tree DAG
 
@@ -84,7 +87,7 @@ flowchart LR
 ## Starting sequence and owners
 
 1. Read `AGENTS.md`, then `PRD.md`. Product priority belongs to
-   [PRD 23](../prd/PRD_02_23_minicon.md#distribution-priority): native MiniCon
+   [PRD 23](../../prd/PRD_02_23_minicon.md#distribution-priority): native MiniCon
    is primary, `minicon.com` is the secondary packaging example.
 2. Exercise page text input, Cmd/Ctrl+L, address selection/edit/cancel/submit,
    host tab shortcuts, toolbar navigation, resize and terminal switch/return.
@@ -92,19 +95,19 @@ flowchart LR
 3. Follow the ownership/parallel contract below. Integrate shared focus/state
    changes and final gates serially. Prove new regression tests by removing
    the behavior they guard before trusting their pass.
-4. Use [delivery](../prd/PRD_02_27_con_delivery.md) for budgets and the release
+4. Use [delivery](../../prd/PRD_02_27_con_delivery.md) for budgets and the release
    chain; invoke the registered signing/release skills for operations. Do not
    copy their procedures into this handoff. No 0.2.22 publish decision is implied.
 5. If the work touches browser UX or keyboard focus, start at
-   [workspace](../prd/PRD_02_25_con_workspace.md); shared/native adapters belong
-   to [reuse](../prd/PRD_02_28_shared_core.md) and the
-   [horizon](../prd/PRD_02_31_v0_2_horizon.md). CLI/shutdown belongs to
-   [control](../prd/PRD_02_26_con_control_cli.md), native evidence to
-   [dev courts](../prd/PRD_02_32_dev_loop_crosscheck.md), and resource scheduling
-   to [test orchestration](../prd/PRD_02_33_test_orchestration.md).
+   [workspace](../../prd/PRD_02_25_con_workspace.md); shared/native adapters belong
+   to [reuse](../../prd/PRD_02_28_shared_core.md) and the
+   [horizon](../../prd/PRD_02_31_v0_2_horizon.md). CLI/shutdown belongs to
+   [control](../../prd/PRD_02_26_con_control_cli.md), native evidence to
+   [dev courts](../../prd/PRD_02_32_dev_loop_crosscheck.md), and resource scheduling
+   to [test orchestration](../../prd/PRD_02_33_test_orchestration.md).
 
 Native installation and matching README/site commands are deferred to later
-owner-led AgenTerm planning ([PRD 27.01](../prd/PRD_02_27_01_install.md)). Size
+owner-led AgenTerm planning ([PRD 27.01](../../prd/PRD_02_27_01_install.md)). Size
 attribution stays open under PRD 27, outside this browser pass. G4/G6, ARM
 proxy/DPI and the remaining browser horizon retain their owners and status.
 Current-Mac evidence does not close another platform/ISA. The Mac agent owns
@@ -251,7 +254,7 @@ Additional settings evidence:
   did not by itself protect the shared build root.
 
 Proxy and settings product facts now have one material-branch owner:
-[PRD 25.01](../prd/PRD_02_25_01_browser_preferences.md). PRD 25 remains the
+[PRD 25.01](../../prd/PRD_02_25_01_browser_preferences.md). PRD 25 remains the
 workspace index and native hook history; mechanisms remain in PRD 28.
 
 ## Parallel trial result and final qualification

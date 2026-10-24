@@ -1,10 +1,12 @@
 # Test orchestration and evidence scope
 
 Owner of test selection, profile composition, fixture lifetime and feedback-cost
-measurement. Parent: [product requirements](../PRD.md). Initial design targets
-v0.2.16; fixture lifetime and an initial explicit-profile planner are partial,
-while automatic changed-path execution remains unqualified. Sequencing:
-[v0.2.16 plan](../plan/plan-v0.2.16.md).
+measurement. Parent: [product requirements](../PRD.md). The initial 0.2.16
+proposal is historical; fixture lifetime and an initial explicit-profile planner
+are partial, while automatic changed-path execution remains unqualified. The
+[archived proposal](../plan/archive/plan-v0.2.16.md) preserves its original sequence.
+INVENTORY, SELECT, COMPOSE, MEASURE and LIFETIME remain open at the statuses
+below; archiving an obsolete version proposal neither completes nor abandons them.
 
 [Module ownership](PRD_02_28_shared_core.md) owns abstraction boundaries.
 [Native development court](PRD_02_32_dev_loop_crosscheck.md) owns the hosted
@@ -232,7 +234,7 @@ root run serially under one controller. A worker waits for missing root
 interfaces rather than repeatedly compiling an incomplete composition.
 Separate artifact copies do not supply desktop/clipboard isolation by
 themselves. The trial's actual overlap, rework and receipts belong to
-[its plan](../plan/plan-v0.2.22.md); no serial comparison or speedup is inferred.
+[its plan](../plan/archive/plan-v0.2.22.md); no serial comparison or speedup is inferred.
 
 ### Receipts and measurements
 
@@ -307,3 +309,22 @@ no bare Cargo test entry point or release-policy change is implied. Evidence is
 in the console leaf's ignored `title-vt-owned-parsers.log`. Future profile work
 must use actual Cargo discovery and receipts rather than assuming a source-name
 inventory proves coverage; the zero-filter result establishes the scope here.
+
+### Local context and observation interference
+
+A moved checkout may leave cached source-bound test programs with their old
+`CARGO_MANIFEST_DIR`. Refresh the local source compilation before trusting its
+path-dependent checks; preserve dependency caches and inherited edits. Native
+fixture profile isolation is owned by PRD 28; a global runtime override must
+not accidentally force distinct proxy environments into one folder.
+
+Browser observation predicates use one public snapshot per poll and a bounded
+rate, preserving the control owner's replay-cache budget while retaining actual
+proxy-request and persistence assertions. Resource-sensitive local qualification
+names its build schedule; [PRD 27](PRD_02_27_con_delivery.md#local-qualification-resource-budget)
+owns the resource history and the release archive preserves failed runs.
+
+The canonical build wrapper applies a caller's `--lib` selector to workspace
+packages and avoids forwarding a duplicate to the separately owned fork, which
+already selects its library. The complete standard product gate remains the
+final development obligation; a filtered/failed wrapper call is not a full pass.

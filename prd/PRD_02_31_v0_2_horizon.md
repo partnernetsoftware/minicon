@@ -202,7 +202,7 @@ process, exactly like the existing `--control` endpoint.
 │   │     AGENTS.md's planning method; this is `BLOCKED` on design work, not
 │   │     skipped, and is not part of 0.2.x's own closing scope
 │   └── early design input, not an answer to the open questions above
-│         (2026-09-27): `plan/plan-newagent-config.md` (template layer for a
+│         (2026-09-27): `plan/archive/plan-newagent-config.md` (template layer for a
 │         "NewAgent" configuration flow) plus its accepted-but-unfiled
 │         `AgentProfile{name,steps:[Step],topology}`/`Step{harness,provider,
 │         model,params:{effort}}` data model and two visual mockups
@@ -216,7 +216,7 @@ process, exactly like the existing `--control` endpoint.
 │         specifically), and it assumes a GUI dialog/canvas, which is the
 │         harness-GUI-workbench leaf below's territory, not this node's. Design
 │         only, no `src/` change; not filed as this node's own answer, and
-│         not 0.2.x scope. `plan/plan-newagent-config.md`'s own "Scope decision"
+│         not 0.2.x scope. `plan/archive/plan-newagent-config.md`'s own "Scope decision"
 │         states the same boundary from the other side.
 └── Shared constraints
     ├── one file, no bundled runtime, no installer
@@ -708,7 +708,7 @@ statefulness leaf above is done and the concrete task set is written up
 separately. Do not start renderer code before that.
 
 **Early screen-level design exploration exists, ahead of this leaf being
-unblocked (2026-09-27).** `plan/plan-newagent-config.md` and its two visual
+unblocked (2026-09-27).** `plan/archive/plan-newagent-config.md` and its two visual
 mockups (`archive/ui-design/NewAgent Create.dc.html`, `archive/ui-design/NewAgent
 Running.dc.html`) sketch a concrete "NewAgent" dialog/canvas — multi-step
 `AgentProfile`/`Step` configuration, a template chooser, and a running-state

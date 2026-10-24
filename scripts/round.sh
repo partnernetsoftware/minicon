@@ -1,27 +1,9 @@
 #!/bin/bash
-# One development round across the six cells: build here, run each cell where
-# it answers fastest, write one receipt.
-#
-#   scripts/round.sh                       # every cell, default suites
-#   scripts/round.sh lnx-x86_64 win-aarch64
-#   MINICON_ROUND_SUITES="minicon_core minicon" scripts/round.sh
-#
-# Routing (measured 2026-09-23, plan/plan-v0.1.23.md §2):
-#   osx-aarch64, osx-x86_64  -> this Mac (native, and x86_64 under Rosetta)
-#   lnx-*, win-*             -> GitHub runners: they download what was built
-#                               here and run it; no checkout, no toolchain,
-#                               no build in CI.
-# GitHub first, utm-court as the local fallback: a hosted Windows runner has
-# a real logged-in desktop (runneradmin, session 2, Active, 1024x768), and
-# MiniCon's GUI suites run there -- minicon_control 9/9 in 8.5 s against
-# 20 s and a hot Mac in the local court. The court stays for the Defender
-# scan, legacy images, offline work and many-iteration debugging.
-# The bundle goes through a *tagged prerelease*, deleted afterwards: a draft
-# release is not reachable from a job ("release not found"), and the tags
-# endpoint can answer with an empty asset list while the release's own
-# assets endpoint has the file, so the job fetches by release id.
-# A cell whose backend cannot answer is BLOCKED. It is never a silent pass,
-# and this script never signs, publishes, or touches the release chain.
+# One bounded development round; routing, transport and measured history:
+# prd/PRD_02_27_con_delivery.md, "Where a test runs, and what that costs".
+# Usage: scripts/round.sh [cell ...]
+# MINICON_ROUND_SUITES selects suites; MINICON_ROUND_OUT selects receipt output.
+# Missing courts are BLOCKED. This never signs or promotes a product release.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -333,13 +315,9 @@ print(json.dumps(tally, sort_keys=True))
 print(f"[round] receipt: {receipt}  total {seconds}s")
 PY
 
-# D3: the baseline table is generated from the receipt that was just written,
-# not edited by hand. A round comment claiming "measured 8.5s" goes stale the
-# first time the fixture, the runner image, or the suite changes; a generated
-# table can only be as stale as the last round actually run. Only a PASS
-# timing is a baseline -- a BLOCKED or FAILed stage measures how long it took
-# to not answer, which is not a number anyone should target.
-python3 scripts/render-round-baseline.py "$RECEIPT" plan/round-baseline.md || true
+# Generate the receipt view beside owned output. Timing semantics and history:
+# prd/PRD_02_27_con_delivery.md, round receipts.
+python3 scripts/render-round-baseline.py "$RECEIPT" "$OUT_DIR/round-baseline.md" || true
 
 case "$results" in *"	FAIL	"*) exit 1 ;; esac
 case "$results" in *"	BLOCKED	"*) exit 3 ;; esac
