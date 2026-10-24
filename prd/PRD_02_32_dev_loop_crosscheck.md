@@ -481,7 +481,19 @@ output, and that same peer is then admitted and reads a real native key.
 The peer must not change the shared input mode while output is blocked; an
 initial fixture did so and stalled before submitting its read. The record-reader
 fixture removes that unrelated prerequisite. Both replacement tests passed on
-the interactive Windows x86_64 host; both CI ISAs remain pending at this source.
+the interactive Windows x86_64 host. Both Windows CI ISAs subsequently passed
+their selected native PTY scope in
+[`40118153544`](https://github.com/partnernetsoftware/minicon/actions/runs/40118153544)
+at `8c0c7c3a75f32d70baa7aa65c68597548cd7c7cb`: each executed 98 tests with
+0 failures, 1 ignored and 71 filtered out. Both new process-exit tests appear
+as executed passes in each job's raw log. The ignored case is the explicit
+external Windows PowerShell cooked-read court; it is not qualified by this run.
+The `rust_console_pty_` filter left other ordinary suite rows with zero selected
+tests; their `ok` labels do not establish a full workspace or six-cell pass.
+The separately mandatory native browser baseline passed one test per ISA,
+bounded control shutdown passed four, and private-filesystem scope passed seven.
+Browser receipts report no physical keyboard check or screenshots, so they do
+not replace the new controls/Harness/IME acceptance matrix or real OAuth.
 Disabling the shared retirement predicate made both tests fail at runtime;
 adding global cancellation after the actual caller's disconnect also made both
 fail because the live peer was lost. Byte-exact restoration passed both again
