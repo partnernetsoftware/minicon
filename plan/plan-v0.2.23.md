@@ -1,146 +1,170 @@
-# v0.2.23 — consistent browser controls and quieter development context
+# v0.2.23 — consistent browser controls
 
-Status: `[_]` proposed scope after the public 0.2.22 closeout. The owner
-requested planning, documentation/code cleanup and preservation of valuable
-history. This plan does not start new product features or authorize another
-public version. Installation remains deferred to coordinated AgenTerm planning.
+Status: `[_]` feature implementation not started. Planning refined at the
+owner's request on 2026-10-24, using exploration of public 0.2.22. This plan
+does not authorize another public version. Installation remains deferred for
+coordinated AgenTerm planning.
 
-Behavior owners: [browser controls](../prd/PRD_02_25_02_browser_controls.md),
-[workspace](../prd/PRD_02_25_con_workspace.md),
-[browser preferences](../prd/PRD_02_25_01_browser_preferences.md),
-[shared ownership](../prd/PRD_02_28_shared_core.md),
-[control](../prd/PRD_02_26_con_control_cli.md), and
-[test orchestration](../prd/PRD_02_33_test_orchestration.md).
+Behavior belongs to [browser controls](../prd/PRD_02_25_02_browser_controls.md)
+and [preferences](../prd/PRD_02_25_01_browser_preferences.md). Public observation
+belongs to [control](../prd/PRD_02_26_con_control_cli.md), reusable mechanisms to
+[PRD 28](../prd/PRD_02_28_shared_core.md), qualification to
+[PRD 32](../prd/PRD_02_32_dev_loop_crosscheck.md), resource scheduling to
+[PRD 33](../prd/PRD_02_33_test_orchestration.md), and delivery to
+[PRD 27](../prd/PRD_02_27_con_delivery.md). This file owns sequencing and gates.
 
 ## Outcome tree DAG
 
 ```text
-Outcome: edit browser controls predictably, choose a proxy with mouse or keyboard, and continue work from a compact current specification
-├── [_] EDIT — consistent address, active-proxy and candidate editors
-│   invariant: one editing mechanism; field-specific limits and Submit/Cancel actions; selection, clipboard and IME keep the correct draft/focus and readable value/caret
-│   evidence: real page input -> each host editor -> submit/cancel -> terminal/browser return, with public state and physical native input
-│   safe failure: an invalid field stays editable; input never reaches a different field or the terminal PTY
-│   dependency: workspace focus ownership and current composer rules; non-goal: merging notes/composer semantics or rewriting the terminal renderer
-├── [_] MENU — complete keyboard and pointer operation
-│   invariant: New and proxy menus expose current selection, Up/Down/Enter/Escape, outside-click dismissal and predictable focus return
-│   evidence: mouse/keyboard-equivalent actions, zero/one/eight proxy candidates, narrow/collapsed/Retina windows and rendered page after dismissal
-│   safe failure: dismissal cannot navigate, apply a proxy or send input behind the overlay
-│   dependency: frozen control contracts and existing chrome geometry; non-goal: a menu framework outside MiniCon or extra browser roots
-├── [_] LAYOUT — content-sized menus and bounded overflow
-│   invariant: preserve released toolbar wrapping; menus follow actual option count, readable row targets and the available viewport
-│   evidence: normal/narrow/collapsed/Retina resize, zero/one/eight candidates, preserved drafts and native page alignment
-│   safe failure: below supported minimum show bounded feedback; no clipped/overlapping action or resize submitting an edit
-│   dependency: shared Layout and frozen control/count contracts; non-goal: another dialog or a whole-host layout rewrite
-├── [_] NATIVE — verify the actual daily-use path
-│   invariant: native page pixels, state, address and active proxy agree; loaded pages survive switch/return; proxy changes retain their documented page-reset semantics
-│   evidence: local service + real loopback proxy, restart/persistence/error recovery and physical key/IME observations per claimed OS/ISA
-│   safe failure: missing native evidence is BLOCKED; compile or injected keys do not qualify an unobserved input path
-│   dependency: EDIT/MENU, PRD 28 adapters and exact artifacts; non-goal: provider OAuth, dashboard, downloads or 1:N panels
-├── [-] HYGIENE — current truth stays small and history stays reachable
-│   invariant: current PRDs own behavior; plans sequence work; release histories own receipts; old plans/proposals/experiments are archived with explicit disposition
-│   evidence: closed 0.2.22 archive, current 0.2.23 entry, live-link/ownership checks, ignored regenerable frame output and preserved historical PNG
-│   safe failure: preserve unresolved requirements in their PRD owners before archiving; never delete inherited user work or frozen evidence
-│   dependency: release closeout, PRD series and bounded build-state policy; non-goal: speculative dead-code deletion or blanket cargo clean
-└── [_] QUALIFY — source and artifact evidence remain explicit
-    invariant: complete local checks and policy-required exact-source/artifact gates; no inference from a passing neighboring platform
-    evidence: named regression/mutation results, full product gate, six-cell receipt and separate release decision
-    safe failure: failed or absent courts block their claim; retain the public 0.2.22 baseline
-    dependency: all selected leaves; non-goal: automatic publication of 0.2.23
+Outcome: edit browser controls and choose actions predictably with keys or pointer
+├── [v] BASELINE — public 0.2.22 and compact current context
+│   invariant: released evidence and unresolved scope retain their original owners
+│   evidence: 0.2.22 release history, archived implementation plan and current PRD index
+│   safe failure: no older receipt qualifies changed source
+│   dependency: release closeout; non-goal: repeating completed publication gates
+├── [_] CONTRACT — compile the control and observation seams
+│   invariant: field effects, event consumption, focus return, menu state and geometry share one contract
+│   evidence: compilable caller seam and focused pure transition checks
+│   safe failure: retain existing callers until the seam compiles
+│   dependency: PRD 25.02 and PRD 26; non-goal: a generic UI framework
+├── [_] DISMISS — first complete public regression
+│   invariant: closing a proxy menu cannot activate the underlying Back action
+│   evidence: B22-MENU-DISMISS becomes an assertion-bearing red/green public journey
+│   safe failure: stop at the failing focus/routing boundary
+│   dependency: CONTRACT and explicit gesture ownership; non-goal: native overlay redesign
+├── [_] EDIT — consistent bounded editing with field-specific actions
+│   invariant: PRD 25.02 draft, selection, bounds and IME rules hold for all three fields
+│   evidence: field matrix below, including selected-text replacement at the bound
+│   safe failure: rejected edits preserve the prior draft and cannot reach the PTY
+│   dependency: CONTRACT/DISMISS; non-goal: merging composer/notes policy
+├── [_] MENU / LAYOUT — complete entry, navigation and viewport handling
+│   invariant: PRD 25.02 keyboard entry, distinct highlight/applied state and readable rows agree
+│   evidence: keyboard-only entry; zero/one/eight candidates; shared geometry observations
+│   safe failure: dismissal never commits; no usable viewport means bounded feedback
+│   dependency: CONTRACT, EDIT integration seam and existing responsive toolbar
+│   non-goal: extra Browser roots, another dialog or a whole-host layout rewrite
+├── [_] NATIVE — actual page/control boundary
+│   invariant: rendered page, state, focus and proxy effects agree within each measured scope
+│   evidence: native input matrix, real service/proxy requests, restart and error recovery
+│   safe failure: unavailable required evidence is BLOCKED for that claim
+│   dependency: EDIT/MENU/LAYOUT, PRD 26 observations and PRD 28 adapters
+│   non-goal: provider OAuth, downloads, defaults, dashboard/wasm or 1:N panels
+└── [_] QUALIFY — integrate, qualify exact source, then seek a release decision
+    invariant: mechanism tests, native input and signed/public artifact evidence stay distinct
+    evidence: mutation results, full product gate and six-cell qualification
+    safe failure: retain the public baseline when a selected gate fails
+    dependency: all delivery leaves; non-goal: automatic 0.2.23 publication
 ```
 
 ## Memory palace
 
 ```mermaid
 flowchart LR
-    B[Public 0.2.22 baseline] --> H[Closeout and archive old context]
-    H --> C[Compile shared editor/menu contracts before delegation]
-    C --> E[One bounded host-editor mechanism]
-    C --> M[Menu navigation and actual-count geometry]
-    C --> L[Content-sized menus, bounded scroll and native viewport]
+    B[Public baseline and preserved failures] --> C[Compile control and observation contracts]
+    C --> D[Red/green dismissal and focus slice]
+    D --> E[Existing editor extraction and caller integration]
+    E --> M[Pure menu transitions]
+    E --> L[Actual-count geometry and scrolling]
+    M --> I[Serial input, focus and native-page integration]
     L --> I
-    E --> I[Serial focus/input integration]
-    M --> I
-    I --> N[Native daily-use journeys and rendered pixels]
-    N --> Q[Full product and six-cell checks]
-    Q --> D[Separate release decision]
-    A[Historical plans, failed controls and receipts] -. explain decisions .-> H
-    G[Shared build-root or guard mutation] --> O[Exclusive controller lease]
+    I --> N[Native input and real page/proxy journeys]
+    N --> Q[Full product and six-cell qualification]
+    Q --> R[Separate release decision and exact-artifact chain]
+    S[Shared Cargo output, desktop, clipboard or guard mutation] --> O[One exclusive controller]
+    O --> D
+    O --> N
     O --> Q
-    X[Unavailable native input/court] --> K[BLOCKED for that claim]
-    R[Installation coordinated by AgenTerm] -. outside scope .-> B
+    X[Missing required court] --> K[BLOCKED claim]
+    H[Historical receipts and decisions] -. explain scope .-> B
 ```
 
-## Product decisions and scope limits
+## Starting evidence and scope
 
-- Keep one Browser root, the existing native adapters, saved proxy candidates
-  and empty initial active override. Saved choices do not become an automatic
-  default. An optional default proxy remains a later explicit product decision.
-- Extract common host editing before aligning behavior. Address/active proxy/
-  candidate submission, URL validation, proxy application and atomic saving
-  remain product-specific actions. Do not make the shared platform depend on
-  MiniCon preferences or AgenTerm product state.
-- Console/Web settings routes remain. Language/theme/update controls keep their
-  documented scope; this pass addresses predictable input and focus rather than
-  adding another settings hierarchy.
-- Preserve the 0.2.22 page-recreation contract when applying a proxy; do not
-  silently promise retained login/history or direct fallback on proxy failure.
-- Modern-agent compatibility, Windows G4/G6, terminal-library qualification,
-  RSS and automatic test-selection coverage retain their existing PRD owners.
-  Archiving old version proposals neither closes nor abandons those tracks.
+- [v] Public 0.2.22, exact source/signatures/Defender/download smoke and retained
+  failures are owned by its [release history](../prd/archive/v0.2.22-release-history.md).
+  Its [archived plan](archive/plan-v0.2.22.md) preserves implementation and trial
+  evidence. Do not schedule that closeout again.
+- The new menu observations and their input-method limits belong to
+  [PRD 25.02's baseline section](../prd/PRD_02_25_02_browser_controls.md#observed-0222-starting-failures--windows-x86_64-2026-10-24).
+  B22-MENU-DISMISS is the first regression; B22-MENU-KEYS anchors keyboard work.
+  The selected-replacement size issue is still a source-inspection hypothesis.
+- Retain one Browser root, existing adapters and proxy page-recreation/refusal
+  semantics. Saved candidates do not become defaults. Keep terminal connectivity,
+  drafts and existing language/theme/update scope intact.
+- G4/G6, modern-agent/session qualification, RSS/size work and broader browser
+  features retain their existing owners. Cleanup and this plan do not close them.
 
-## Sequence, shared prerequisites and hot files
+## Delivery sequence and stop conditions
 
-1. Finish public 0.2.22 verification, upsert its final scope into the owners,
-   preserve receipts/negative controls, then archive its implementation plan.
-2. Establish one editor event result (`edited`, `submit`, `cancel`, `ignored`),
-   field limits and view/IME metrics. Land a compilable contract before workers
-   start targeted builds. Bump Cargo/lock/policy and canonical Dev.app README
-   examples together when feature work starts; verify the wrapper payload identity.
-3. Extract the existing field-editing mechanism with unchanged submission rules;
-   verify current public journeys before extending selection and menu behavior.
-4. Run selected native browser/preference courts early on both Windows ISAs
-   and Linux, including profile isolation; reserve the release pack for final
-   exact artifacts. A filtered ordinary suite does not execute ignored native tests.
-5. Work independent pure editor/geometry/test leaves only after interfaces and
-   exclusive file sets are frozen. Integrate focus, page visibility and settings
-   persistence serially. One controller owns builds and guard mutations.
-6. Capture physical/native input separately from CLI injection, then run final
-   checks on the actual source. Record observed scope and unavailable cells.
-
-| Surface / hot file | Responsibility |
-| --- | --- |
-| `src/browser_ui.rs`, `src/browser_proxy_ui.rs`, `src/web_settings_ui.rs` | editor callers, field-specific actions and focus boundaries |
-| proposed `src/host_editor.rs` | bounded common editing/event outcome, not product navigation or persistence |
-| `src/ui.rs`, `src/host_ui.rs`, `src/host_paint.rs` | geometry, presentation and explicit selection/focus feedback |
-| `src/main.rs`, `src/new_tab_menu.rs`, `src/snapshot.rs`, `src/control_dispatch.rs` | shared host routing, overlays and public observation; root integration ownership |
-| `tests/support/browser_windows.rs`, `scripts/browser-workspace-smoke.py` | stable public test identities, real page/proxy requests and restart evidence |
-
-Proposed exclusive lanes after the contract compiles:
-
-| Lane | Exclusive source | Handoff evidence |
+| Step | Deliverable / evidence | Gate before proceeding |
 | --- | --- | --- |
-| Editor mechanism | proposed `src/host_editor.rs` | pure edit/selection/IME outcomes with deliberate guard failure |
-| Menu mechanism | proposed `src/browser_menu.rs` | bounded navigation/commit/dismiss transitions without native side effects |
-| Geometry | `src/ui.rs` | option-count/viewport/scroll geometry and readable target invariants |
-| Root integration | existing field callers, `src/main.rs`, `src/new_tab_menu.rs`, painters, snapshots and native fixtures | real page, applied proxy, focus and rendered state agree |
+| 0 — inventory | Name the source, native artifacts, current runner/input availability and public regression identities | Distinguish planned work from unavailable evidence; no stale-source reuse |
+| 1 — CONTRACT | Compile shared event ownership/effect, focus return and menu/geometry observation seams; reconcile complete injected chords through PRD 26; keep navigation/save/application in callers | An ignored/unchanged edit cannot imply routing the key to another owner; freeze public schema and press/release lifecycle before consumers |
+| 2 — DISMISS | Reproduce B22-MENU-DISMISS through the public CLI; add the failing assertion, then integrate dismissal and native focus return | Same click cannot navigate; restoring old fall-through behavior or removing the new gesture-consumption guard makes the same assertion fail again |
+| 3 — EDIT | Extract existing dispatch with behavior preserved, integrate one field, then the other two; prove the field matrix | Each field still owns Submit/Cancel and native IME; reproduce boundary hypotheses before claiming fixes |
+| 4 — MENU / LAYOUT | Implement pure transitions and actual-count geometry against the frozen seam | Assign independent lanes only if file ownership and evidence are independent |
+| 5 — integration | Serial caller/paint/snapshot/native visibility integration; keyboard-only entry and real proxy journeys | Highlight is not application; dismissal/repeat/resize cannot leak an extra action |
+| 6 — QUALIFY | Format, strict Clippy, named failing-first/mutation courts, full product gate, six-cell evidence | Record schedule, source, features, counts and unavailable courts; filtered suites do not imply ignored native tests ran |
+| 7 — release consideration | Upsert observed behavior/status into owners and present remaining scope | Separate owner decision before Candidate/publication; follow PRD 27 and registered skills |
 
-A worker does not edit a root-owned hot file to unblock its build. The root
-integrates caller changes and serializes builds/guard mutations; final gates
-run after all source handoffs. This plan does not launch these lanes itself.
+The implementation owner bumps Cargo/lock/policy and canonical Dev.app examples
+together when feature work starts. Verify wrapper payload identity. This
+planning change does not bump the version or generate a new product binary.
+Run selected Windows (both ISAs) and Linux native browser/preference courts early,
+including profile isolation, before spending time on the final pack.
 
-Independent source ownership does not isolate the canonical binary path,
-clipboard or desktop. Serialize a build with any black box spawning that same
-binary; serialize guard mutations across all consumers of the changed source.
+## Regression and evidence matrix
 
-## Hygiene acceptance
+| Court | Observable acceptance | Evidence method |
+| --- | --- | --- |
+| DISMISS | Menu -> outside Back/Reload/another trigger dismisses only; Escape restores the recorded field/selection or page | Public state and real navigation observations; native focus separately |
+| FIELD | All three fields: refocus, selection/copy/cut/paste, Submit/Cancel, invalid input and independent terminal draft | Pure mechanism plus public CLI; field actions follow the PRD 25.02 table |
+| BOUND | Normalized input below/at/above each field bound; whole/partial selected replacement; no destructive rejection | Public reproduction, focused guard mutation and unchanged prior state |
+| IME | Preedit/commit stays at the active field; confirming composition does not also Submit; anchors survive focus/resize | Actual native input on each claimed path; CLI IME injection is separate evidence |
+| MENU | Page -> keyboard-only entry -> navigation -> one commit/cancel; no mouse-assisted opening; hover/highlight does not apply | Pure action-count checks, public state and native keyboard path |
+| GEOMETRY | Zero/one/eight candidates, normal/narrow/short windows, sidebar collapse and scale 1/1.5/2; readable scrolling, retained drafts | Shared geometry checks plus actual owned-window pixels and pointer hits |
+| PREFERENCES | Real proxy applies/clears/refuses, saved choices restart/delete, manual non-list value and failed-save rollback retain released semantics | Public local service/proxy and isolated config/profile; no provider credentials |
+| ARTIFACT | Selected control/browser behavior runs on all six exact native payloads and policy-required signed transformations | PRD 27/32 courts; development bytes do not qualify release bytes |
 
-- Current entrypoints expose the latest released baseline, the next plan and
-  still-open capability owners, rather than several obsolete future versions.
-- Preserve the original 0.2.16/0.2.17 proposals as archived incomplete plans;
-  carry their open obligations in PRD 33 and PRD 24.01/28/34/35.
-- Archive the older roadmap and repo-hygiene ledger; keep current decision
-  pointers and unresolved ownership questions in compact live documents.
-- Preserve the released host-UI PNG as an archive artifact; regenerate new
-  diagnostic frames under ignored build output so tests do not edit source.
-- Keep inherited harness changes outside cleanup commits. Do not prune remote
-  work, historical data, vendor runtime bytes or build caches by assumption.
+Unit checks count menu effects; black boxes observe real connection/page state.
+Use PRD 26's complete logical chord contract for public menu keys; the old
+Pressed-only injection cannot qualify release-sensitive gesture ownership.
+Do not equate one application action with exactly one HTTP request: an engine
+may make favicon or other subrequests. Use bounded polling within the replay
+cache and retain the final failed observation.
+
+For every native-input result, name OS/ISA, binary/source, native keyboard vs
+host injection, IME method, scale and observed scope. All new-version rows start
+`[_]`; mark a required unavailable court `BLOCKED`, never skipped. A neighboring
+ISA, successful CLI injection or PNG cannot certify that input path. Inventory
+missing access early and obtain an explicit scope decision before release
+consideration; do not silently lower the selected acceptance.
+
+## Ownership and dynamic parallel work
+
+| Lane | Exclusive source / integration boundary | Join evidence |
+| --- | --- | --- |
+| Controller | `src/main.rs`, field callers (`browser_ui.rs`, `browser_proxy_ui.rs`, `web_settings_ui.rs`), `new_tab_menu.rs`, painters, snapshots and native fixtures | Compiled shared seam, first dismissal slice and final native integration |
+| Editing mechanism, when independent | Proposed `src/host_editor.rs`; reuse existing composer/keymap mechanisms | Bounded effects and selection/IME behavior; no navigation, save or proxy side effects |
+| Menu mechanism, when independent | Proposed `src/browser_menu.rs` | Entry/highlight/commit/dismiss transitions and consumed gestures |
+| Geometry, when independent | `src/ui.rs` | Actual-count/viewport/scroll geometry consumed by paint, hits, IME and snapshot |
+
+Start with the controller's vertical slice. Add workers only after the seam
+compiles and exclusive files are agreed; combine tiny leaves when delegation
+would cost more than it saves. Workers hand off source and evidence without
+editing controller-owned callers to make their build pass. The controller
+serializes integration, guard mutations and final gates.
+
+Separate files do not isolate the Cargo output root, canonical executable,
+desktop or clipboard. One controller schedules builds and any black box that
+spawns those bytes; native UI/input and mutation courts hold that resource
+exclusively. PRD 33 owns the durable scheduling rules.
+
+## Documentation closeout
+
+Update behavior and observed status in the owning PRD before archiving this
+plan. Keep current entrypoints compact, preserve historical failures/PNG and
+leave unresolved obligations with their owners. Diagnostic output belongs in
+ignored build state. Do not use planning cleanup to delete inherited work,
+vendor runtime bytes or caches, or to change the independent Surf/PageSession
+consumer boundary in PRD 28.

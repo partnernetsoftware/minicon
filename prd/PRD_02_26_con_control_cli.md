@@ -118,6 +118,23 @@ flowchart LR
   the conversion to `send-ui-mouse` logical pixels. The snapshot's top-level
   key set is unchanged. Presence of an action rectangle does not imply the
   action is currently visible: callers also inspect menu state or page load.
+  Planned 0.2.23 observation is additive: identify the focused host control,
+  its draft/selection/preedit, the applied proxy choice separately from menu
+  highlight, and the menu scroll/visible-row range. Existing fields and their
+  units remain compatible. Field and menu behavior is owned by
+  [PRD 25.02](PRD_02_25_02_browser_controls.md); this observation surface must
+  distinguish navigation from dismissal and highlight from application without
+  treating an internal handler return or a CLI-injected event as native proof.
+  Exact schema names are frozen at the integration-contract step before
+  consumers are delegated; none of these additions is claimed implemented.
+  Planned menu regression support also treats each `send-ui-keys` chord as a
+  complete logical gesture, delivering paired press/release through the same
+  host event router. The current implementation emits only Pressed, so this
+  lifecycle must be reconciled before testing a menu that consumes its opening
+  key until release. Keep whole-sequence validation and the `sent_keys` chord
+  count stable; do not create a test-only menu routing path. Paired CLI chords
+  still do not prove native focus interception, held-key repeat or IME behavior;
+  those retain separate native courts. This is a planned contract change.
   `send-ui-ime` routes to the focused browser address editor as
   `browser_address`; it requires no PTY in that case.
   The Windows missing-runtime and local-proxy courts in
