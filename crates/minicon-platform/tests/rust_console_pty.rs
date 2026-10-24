@@ -694,6 +694,13 @@ impl Drop for Report {
             "signal",
             "retire-ready",
             "retired",
+            "disconnect-before",
+            "disconnect-after",
+            "reader-returned",
+            "read-error-tmp",
+            "disconnect-before-tmp",
+            "disconnect-after-tmp",
+            "reader-returned-tmp",
             "retire-tmp",
             "closed",
             "queue-tmp",
@@ -5521,6 +5528,69 @@ fn rust_console_client_cancelled_read_buffers_compare_system_conpty() {
     cancelled_buffer_cases(false);
 }
 
+fn native_report_failure_details(
+    report: &Report,
+    child: &PtyChild,
+    owned: &minicon_platform::process_reference::ProcessReference,
+) -> String {
+    use minicon_platform::process_reference::{ProcessWait, exit_code_handle};
+    use std::os::windows::io::AsHandle;
+    let process = match owned.wait_for_exit(Some(Duration::ZERO)) {
+        Ok(ProcessWait::Exited) => format!("exited:{:?}", exit_code_handle(owned.as_handle())),
+        Ok(ProcessWait::TimedOut) => "running".to_owned(),
+        Err(error) => format!("observation-error:{error}"),
+    };
+    let stages: Vec<_> = [
+        "ready",
+        "go",
+        "retire-ready",
+        "retired",
+        "disconnect-before",
+        "disconnect-after",
+        "reader-returned",
+        "read-error",
+    ]
+    .into_iter()
+    .map(|name| (name, std::fs::read_to_string(report.0.with_extension(name))))
+    .collect();
+    // This existing facade query is bounded. Only failure diagnostics ask it;
+    // it is never evidence that a stalled native operation completed.
+    format!(
+        "pid={};process={process};stages={stages:?};native_reads={:?}",
+        owned.id(),
+        child.native_input_read_state()
+    )
+}
+
+fn wait_native_report(
+    report: &Report,
+    child: &PtyChild,
+    owned: &minicon_platform::process_reference::ProcessReference,
+    deadline: Instant,
+    label: &str,
+) {
+    use minicon_platform::process_reference::ProcessWait;
+    while !report.0.exists() {
+        let failed = report.0.with_extension("read-error").exists();
+        let exited = owned
+            .wait_for_exit(Some(Duration::ZERO))
+            .expect("observe the exact owned probe process")
+            == ProcessWait::Exited;
+        if (failed || exited) && !report.0.exists() {
+            panic!(
+                "{label} ended before its receipt; {}",
+                native_report_failure_details(report, child, owned)
+            );
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{label} stalled; {}",
+            native_report_failure_details(report, child, owned)
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
 fn retiring_buffer_cases(rust: bool) {
     for kind in ["input-close", "disconnect"] {
         let report = Report::new();
@@ -5533,15 +5603,19 @@ fn retiring_buffer_cases(rust: bool) {
         } else {
             Fixture::open_backend(command, "conpty")
         };
+        let owned = minicon_platform::process_reference::ProcessReference::open(
+            fixture.child.pid().as_u32(),
+        )
+        .expect("retain exact retirement probe process");
         fixture.until("cooked-retire-ready:");
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !report.0.exists() {
-            assert!(
-                Instant::now() < deadline,
-                "retirement {rust}/{kind} stalled"
-            );
-            std::thread::sleep(Duration::from_millis(2));
-        }
+        wait_native_report(
+            &report,
+            &fixture.child,
+            &owned,
+            deadline,
+            &format!("retirement {rust}/{kind}"),
+        );
         let value = std::fs::read_to_string(&report.0).unwrap();
         assert_eq!(
             value,
@@ -5730,6 +5804,9 @@ fn queued_read_pressure_cases(rust: bool) {
             master.backend_kind(),
             if rust { "rust-console" } else { "conpty" }
         );
+        let owned =
+            minicon_platform::process_reference::ProcessReference::open(child.pid().as_u32())
+                .expect("retain exact queued-read probe process");
         report.wait_ready();
         if rust {
             let state = wait_native_read(&child, kind.ends_with("records"), false);
@@ -5782,13 +5859,18 @@ fn queued_read_pressure_cases(rust: bool) {
             None
         };
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !report.0.exists() {
-            assert!(
-                Instant::now() < deadline,
-                "queued pressure {rust}/{kind} stalled"
-            );
-            std::thread::sleep(Duration::from_millis(2));
-        }
+        let probe = draining
+            .as_ref()
+            .map(|fixture| &fixture.child)
+            .or_else(|| parts.as_ref().map(|(_, child)| child))
+            .unwrap();
+        wait_native_report(
+            &report,
+            probe,
+            &owned,
+            deadline,
+            &format!("queued pressure {rust}/{kind}"),
+        );
         let value = std::fs::read_to_string(&report.0).unwrap();
         let (body, pending) = value.rsplit_once(",\"writer_pending\":").unwrap();
         eprintln!("queued-read rust={rust};kind={kind}: {value}");

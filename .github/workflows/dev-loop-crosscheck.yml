@@ -274,6 +274,13 @@ jobs:
           if [ -z "$filter" ] || [[ "$filter" == *network* ]]; then
             run_suite minicon-network bash scripts/build.sh test-suite --target "$triple" -p minicon-platform --features network-http-stream,network-loopback --lib network_ -- --test-threads 2
           fi
+          case "$CELL" in
+            osx-*)
+              if [ -z "$filter" ] || [[ "$filter" == *harness* ]] || [[ "$filter" == *provider* ]] || [[ "$filter" == *retained_group* ]]; then
+                run_suite macos-retained-group python3 scripts/retained-group-native-court.py --target "$triple" --output "$LOG_DIR/retained-group"
+              fi
+              ;;
+          esac
           # Throughput is a property of the shipped artifact, so the suite
           # drives an optimized product binary. A debug build measures the
           # unoptimized parser instead: the owned Windows console streams and

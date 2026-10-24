@@ -593,6 +593,28 @@ impl ContainedChild {
         }
         if unsafe { libc::killpg(group, libc::SIGKILL) } != 0 {
             let error = io::Error::last_os_error();
+            #[cfg(target_os = "macos")]
+            if error.raw_os_error() == Some(libc::EPERM) && self.root.peek_exit()? {
+                // Darwin's killpg1 skips SZOMB members and returns EPERM when
+                // none remain eligible. EPERM also represents real permission
+                // failures, so neither errno nor an exited leader proves the
+                // whole group dead. Keep the unreaped child as the PID/PGID
+                // anchor throughout a complete native group inventory.
+                // Apple XNU: bsd/kern/kern_sig.c, killpg1 (xnu-11215.81.4).
+                let deadline = self
+                    .cleanup_deadline
+                    .unwrap_or_else(|| Instant::now() + ROOT_TERMINATE_TIMEOUT);
+                match macos_group_has_only_zombies(group, deadline, 10_000) {
+                    Ok(true) if self.root.peek_exit()? => return Ok(()),
+                    Ok(_) => {}
+                    Err(observation) => {
+                        return Err(io::Error::new(
+                            error.kind(),
+                            format!("{error}; retained group state unavailable: {observation}"),
+                        ));
+                    }
+                }
+            }
             if error.raw_os_error() != Some(libc::ESRCH) {
                 return Err(error);
             }
@@ -660,6 +682,116 @@ impl ContainedChild {
     }
 }
 
+/// Read only the retained group's native BSD states, including zombies.
+/// Never infer absence from executable-path lookup or the general live-process
+/// facade: both can omit zombies, denied members and short-lived processes.
+#[cfg(target_os = "macos")]
+fn macos_group_has_only_zombies(
+    group: libc::pid_t,
+    deadline: Instant,
+    max_members: usize,
+) -> io::Result<bool> {
+    // <libproc.h>, also used by the macOS ProcessTreeGuard inventory.
+    const PROC_PGRP_ONLY: u32 = 2;
+    if group <= 1 || !(1..=10_000).contains(&max_members) {
+        return Err(io::Error::other(
+            "invalid retained process group or inventory bound",
+        ));
+    }
+    if Instant::now() >= deadline {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "retained group inventory deadline expired",
+        ));
+    }
+    // An extra slot distinguishes the maximum admitted inventory from a full,
+    // potentially truncated native reply. No unbounded sizing/retry loop.
+    let mut ids = vec![0 as libc::pid_t; max_members + 1];
+    let buffer_size = libc::c_int::try_from(std::mem::size_of_val(ids.as_slice()))
+        .map_err(|_| io::Error::other("retained group buffer exceeds c_int"))?;
+    let bytes = unsafe {
+        libc::proc_listpids(
+            PROC_PGRP_ONLY,
+            group as u32,
+            ids.as_mut_ptr().cast(),
+            buffer_size,
+        )
+    };
+    if bytes <= 0 {
+        // The retained, unreaped leader must still be represented. In
+        // particular a zero reply is not an empty-group proof.
+        return Err(io::Error::other(format!(
+            "retained group inventory failed: {}",
+            io::Error::last_os_error()
+        )));
+    }
+    if bytes >= buffer_size || !(bytes as usize).is_multiple_of(std::mem::size_of::<libc::pid_t>())
+    {
+        return Err(io::Error::other(
+            "retained group inventory is truncated or malformed",
+        ));
+    }
+    ids.truncate(bytes as usize / std::mem::size_of::<libc::pid_t>());
+    if ids.len() > max_members || !ids.contains(&group) {
+        return Err(io::Error::other(
+            "retained group inventory omitted its leader or exceeds its bound",
+        ));
+    }
+    ids.sort_unstable();
+    if ids.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(io::Error::other(
+            "retained group inventory contains duplicate members",
+        ));
+    }
+    let info_size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>())
+        .map_err(|_| io::Error::other("BSD process info exceeds c_int"))?;
+    for pid in ids {
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "retained group inventory deadline expired",
+            ));
+        }
+        if pid <= 1 {
+            return Err(io::Error::other(
+                "retained group inventory contains an invalid member",
+            ));
+        }
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        // arg=1 explicitly includes zombies. The default arg=0 reports ESRCH
+        // for a zombie, which cannot distinguish it from an already-reaped PID.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                1,
+                (&raw mut info).cast(),
+                info_size,
+            )
+        };
+        if read != info_size {
+            let error = io::Error::last_os_error();
+            if read == 0 && error.raw_os_error() == Some(libc::ESRCH) && pid != group {
+                // A non-root member can have been reaped since the complete
+                // inventory. The root itself must survive until our own reap.
+                continue;
+            }
+            return Err(io::Error::other(format!(
+                "retained member state read failed: {error}"
+            )));
+        }
+        if info.pbi_pid != pid as u32 || info.pbi_pgid != group as u32 {
+            return Err(io::Error::other(
+                "retained group member identity or membership changed",
+            ));
+        }
+        if info.pbi_status != libc::SZOMB {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Merge every cleanup failure into one typed error.
 ///
 /// Pure so the merge rule is testable without a real process: all reasons are
@@ -683,14 +815,14 @@ impl Drop for ContainedChild {
         // `Drop` cannot report, so the failures are dropped, but it must still be
         // bounded and must never panic: there is no `unwrap`, no unbounded
         // `waitpid`/`Child::wait`, and the deadline is fixed.
+        let deadline = self
+            .cleanup_deadline
+            .unwrap_or_else(|| Instant::now() + ROOT_TERMINATE_TIMEOUT);
+        self.cleanup_deadline = Some(deadline);
         let _ = self.tree.terminate();
         let _ = self.terminate_retained_group();
         let mut failures = Vec::new();
-        self.root.terminate_bounded(
-            self.cleanup_deadline
-                .unwrap_or_else(|| Instant::now() + ROOT_TERMINATE_TIMEOUT),
-            &mut failures,
-        );
+        self.root.terminate_bounded(deadline, &mut failures);
         let _ = merge_cleanup_failures(false, &failures);
     }
 }
@@ -1341,6 +1473,183 @@ mod macos_frozen {
         }
         // SAFETY: each descriptor is owned exactly once and wrapped exactly once.
         Ok(unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) })
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod retained_group_cleanup_tests {
+    use super::*;
+    use crate::process_reference::{ProcessReference, ProcessWait};
+
+    fn launch(
+        spec: &ContainedHeadlessCommand,
+        frozen: bool,
+    ) -> crate::contained_process::ContainedChild {
+        if frozen {
+            spec.spawn_suspended_frozen()
+                .expect("launch frozen contained root")
+                .0
+        } else {
+            spec.spawn().expect("launch contained root")
+        }
+    }
+
+    fn wait_for_retained_exit(child: &mut crate::contained_process::ContainedChild) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !child.exit_observed().expect("observe root without reaping") {
+            assert!(Instant::now() < deadline, "contained root did not exit");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn assert_already_reaped(pid: u32) {
+        let mut status = 0;
+        assert_eq!(
+            unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) },
+            -1,
+            "cleanup must already have reaped the exact root"
+        );
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+    }
+
+    /// Both native root representations encounter the real Darwin zombie-only
+    /// EPERM before cleanup. Removing its guarded native-state exception must
+    /// fail the public terminate_and_wait assertion, without a mocked errno.
+    #[test]
+    fn normal_exit_with_retained_zombie_group_preserves_status_and_reaps() {
+        for frozen in [false, true] {
+            for _ in 0..8 {
+                let mut command = ContainedHeadlessCommand::new("/bin/sh");
+                command.args(["-c", "exit 23"]);
+                let mut child = launch(&command, frozen);
+                let pid = child.id();
+                wait_for_retained_exit(&mut child);
+                let group = pid as libc::pid_t;
+                assert_eq!(
+                    unsafe { libc::killpg(group, 0) },
+                    -1,
+                    "Darwin zombie-only group must exercise the real signal failure"
+                );
+                assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::EPERM));
+                assert!(
+                    macos_group_has_only_zombies(group, Instant::now() + Duration::from_secs(2), 8)
+                        .expect("inspect the retained zombie group")
+                );
+                child
+                    .terminate_and_wait(Duration::from_secs(5))
+                    .expect("normal exit cleanup must accept only the proven zombie-only group");
+                assert_eq!(
+                    child.try_wait().expect("replay original root status"),
+                    Some(ProcessExit::Code(23))
+                );
+                assert_already_reaped(pid);
+            }
+        }
+    }
+
+    struct ReadyFile(std::path::PathBuf);
+    impl Drop for ReadyFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    struct Descendant(ProcessReference);
+    impl Drop for Descendant {
+        fn drop(&mut self) {
+            // A failed/mutated court still cleans only the exact retained
+            // native process object, never a possibly reused numeric PID.
+            if self.0.is_alive().unwrap_or(false) {
+                let _ = self
+                    .0
+                    .terminate(crate::process_control::TerminationMode::Forceful);
+                let _ = self.0.wait_for_exit(Some(Duration::from_secs(5)));
+            }
+        }
+    }
+
+    #[test]
+    fn exited_leader_does_not_hide_a_live_descendant_or_a_truncated_inventory() {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        for frozen in [false, true] {
+            let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "minicon-retained-group-{}-{serial}.pid",
+                std::process::id()
+            ));
+            let output = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .expect("create an exclusive descendant readiness file");
+            let ready = ReadyFile(path);
+            let mut command = ContainedHeadlessCommand::new("/bin/sh");
+            command.args(["-c", "/bin/sleep 30 & printf '%s\\n' \"$!\"; exit 31"]);
+            command.stdout_file(output);
+            let mut child = launch(&command, frozen);
+            let group = child.id() as libc::pid_t;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let descendant = loop {
+                if let Ok(text) = std::fs::read_to_string(&ready.0)
+                    && let Some(line) = text.strip_suffix('\n')
+                    && let Ok(pid) = line.parse::<u32>()
+                {
+                    break pid;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "descendant did not publish complete readiness"
+                );
+                thread::sleep(Duration::from_millis(5));
+            };
+            assert_eq!(
+                unsafe { libc::getpgid(descendant as libc::pid_t) },
+                group,
+                "the live descendant must belong to this root's retained group"
+            );
+            let identity = crate::process_observation::start_identity(descendant)
+                .expect("observe the owned descendant identity before retaining it");
+            let reference = ProcessReference::open_for_termination(descendant)
+                .expect("retain the exact descendant for native exit evidence and failure cleanup");
+            assert_eq!(
+                crate::process_observation::verify_identity(descendant, &identity),
+                crate::process_observation::IdentityVerdict::Live,
+                "the retained reference must name the same owned descendant"
+            );
+            assert_eq!(unsafe { libc::getpgid(descendant as libc::pid_t) }, group);
+            let descendant = Descendant(reference);
+            assert!(descendant.0.is_alive().expect("observe exact descendant"));
+            wait_for_retained_exit(&mut child);
+            assert!(
+                !macos_group_has_only_zombies(group, Instant::now() + Duration::from_secs(2), 8)
+                    .expect("inspect an exited leader plus its live descendant"),
+                "an exited root alone cannot prove the whole group dead"
+            );
+            assert!(
+                macos_group_has_only_zombies(group, Instant::now() + Duration::from_secs(2), 1)
+                    .is_err(),
+                "a truncated native inventory must never count as zombie-only"
+            );
+            child
+                .terminate_and_wait(Duration::from_secs(5))
+                .expect("cleanup must terminate the live descendant after leader exit");
+            assert_eq!(
+                descendant
+                    .0
+                    .wait_for_exit(Some(Duration::from_secs(2)))
+                    .expect("wait for exact descendant exit"),
+                ProcessWait::Exited,
+                "the descendant must actually exit, not merely disappear from a lossy list"
+            );
+            assert_eq!(
+                child.try_wait().expect("replay leader status"),
+                Some(ProcessExit::Code(31))
+            );
+            assert_already_reaped(child.id());
+        }
     }
 }
 

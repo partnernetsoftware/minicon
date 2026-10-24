@@ -365,7 +365,26 @@ pub(crate) fn run_cancel(kind: &str, path: &Path, controlled: bool) -> io::Resul
     Ok(())
 }
 
+fn probe_diagnostic(path: &Path, stage: &str, text: &str) {
+    let temporary = path.with_extension(format!("{stage}-tmp"));
+    // A detached client cannot rely on stderr to report a native SDK failure.
+    let _ = std::fs::write(&temporary, text)
+        .and_then(|()| std::fs::rename(&temporary, path.with_extension(stage)));
+}
+
 pub(crate) fn run_retire(kind: &str, path: &Path, controlled: bool) -> io::Result<()> {
+    let result = run_retire_impl(kind, path, controlled);
+    if let Err(error) = &result {
+        probe_diagnostic(
+            path,
+            "read-error",
+            &format!("cooked-retire {kind}: {error:?}"),
+        );
+    }
+    result
+}
+
+fn run_retire_impl(kind: &str, path: &Path, controlled: bool) -> io::Result<()> {
     use windows_sys::Win32::Foundation::{GetHandleInformation, GetLastError, SetLastError};
     if kind == "peer" {
         return retire_peer(path);
@@ -418,6 +437,7 @@ pub(crate) fn run_retire(kind: &str, path: &Path, controlled: bool) -> io::Resul
         check(SetConsoleActiveScreenBuffer(created))?;
     }
     write(created, "\x1b[2J\x1b[HA>")?;
+    let reader_path = path.to_owned();
     let reader = std::thread::spawn(move || {
         let mut text = [0_u16; 32];
         let mut count = 0;
@@ -430,7 +450,13 @@ pub(crate) fn run_retire(kind: &str, path: &Path, controlled: bool) -> io::Resul
                 &mut count,
                 std::ptr::null_mut(),
             ) != 0;
-            (ok, GetLastError(), count, text)
+            let error = GetLastError();
+            probe_diagnostic(
+                &reader_path,
+                "reader-returned",
+                &format!("ok={ok};error={error};count={count}"),
+            );
+            (ok, error, count, text)
         }
     });
     if controlled {
@@ -448,9 +474,11 @@ pub(crate) fn run_retire(kind: &str, path: &Path, controlled: bool) -> io::Resul
     std::fs::write(path.with_extension("retire-ready"), b"retire")?;
     let mut detached = false;
     let closer = if kind != "input-close" {
+        probe_diagnostic(path, "disconnect-before", "calling FreeConsole");
         unsafe {
             check(FreeConsole())?;
         }
+        probe_diagnostic(path, "disconnect-after", "FreeConsole returned success");
         detached = true;
         None
     } else {

@@ -453,7 +453,26 @@ pub(crate) fn observe_read(kind: &str, report: &Path) -> io::Result<()> {
     std::process::exit(34)
 }
 
+fn probe_diagnostic(report: &Path, stage: &str, text: &str) {
+    let temporary = report.with_extension(format!("{stage}-tmp"));
+    // Best-effort diagnostics must not change the SDK operation or its result.
+    let _ = std::fs::write(&temporary, text)
+        .and_then(|()| std::fs::rename(&temporary, report.with_extension(stage)));
+}
+
 pub(crate) fn run(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
+    let result = run_impl(kind, report, controlled);
+    if let Err(error) = &result {
+        probe_diagnostic(
+            report,
+            "read-error",
+            &format!("queued-read {kind}: {error:?}"),
+        );
+    }
+    result
+}
+
+fn run_impl(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
     let (kind, observed) = kind
         .strip_prefix("observed-")
         .map_or((kind, false), |kind| (kind, true));
@@ -518,7 +537,12 @@ pub(crate) fn run(kind: &str, report: &Path, controlled: bool) -> io::Result<()>
         wait(deadline, || Ok(report.with_extension("first").exists()))?;
     }
     let token = input as usize;
-    let reader = std::thread::spawn(move || read(token as HANDLE, api));
+    let reader_report = report.to_owned();
+    let reader = std::thread::spawn(move || {
+        let result = read(token as HANDLE, api);
+        probe_diagnostic(&reader_report, "reader-returned", &format!("{result:?}"));
+        result
+    });
     if controlled {
         wait(deadline, || Ok(report.with_extension("go").exists()))?;
     } else {
@@ -537,9 +561,11 @@ pub(crate) fn run(kind: &str, report: &Path, controlled: bool) -> io::Result<()>
         wait(deadline, || Ok(report.with_extension("go").exists()))?;
     }
     if matches!(action, "disconnect" | "other") {
+        probe_diagnostic(report, "disconnect-before", "calling FreeConsole");
         unsafe {
             check(FreeConsole())?;
         }
+        probe_diagnostic(report, "disconnect-after", "FreeConsole returned success");
     }
     let keyboard_records =
         action == "signal" || matches!(api, Api::Records) && !controlled && action == "interrupt";

@@ -1323,7 +1323,10 @@ impl ExecTool {
                 memory_bytes: Some(EXEC_TOOL_MEMORY_BYTES),
                 file_size_bytes: cfg!(unix).then_some(EXEC_TOOL_FILE_SIZE_BYTES),
                 open_files: cfg!(unix).then_some(EXEC_TOOL_OPEN_FILES),
-                active_processes: Some(EXEC_TOOL_ACTIVE_PROCESSES),
+                // Unix RLIMIT_NPROC counts the whole real UID, including
+                // unrelated tasks. It cannot enforce this command's group
+                // quota; the product's native limits are owned in PRD 31.
+                active_processes: cfg!(windows).then_some(EXEC_TOOL_ACTIVE_PROCESSES),
             });
         for name in EXEC_TOOL_ENVIRONMENT {
             if let Some(value) = std::env::var_os(name) {
@@ -1937,6 +1940,20 @@ mod worker_exec_tests {
                 std::fs::write(nested.join("worker-probe-mode"), "environment-child").unwrap();
                 let exe = std::env::current_exe().unwrap();
                 let basename = exe.file_name().unwrap().to_str().unwrap();
+                #[cfg(all(windows, target_arch = "aarch64"))]
+                {
+                    // This is the isolated --exact fixture subprocess, not
+                    // the shared parent test runner. Windows environment
+                    // mutation is thread-safe; poison this native metadata
+                    // before ExecTool constructs its explicitly cleared block.
+                    unsafe {
+                        std::env::set_var("PROCESSOR_ARCHITECTURE", "synthetic-parent-sentinel");
+                    }
+                    assert_eq!(
+                        std::env::var("PROCESSOR_ARCHITECTURE").as_deref(),
+                        Ok("synthetic-parent-sentinel")
+                    );
+                }
                 let tool = ExecTool::new(&nested, &[basename.to_owned()]);
                 let outcome = tool.run(basename, &probe_args()).unwrap();
                 assert_eq!(outcome.exit_code, Some(0), "{}", outcome.stderr);
@@ -1946,7 +1963,26 @@ mod worker_exec_tests {
                 for name in SECRETS {
                     assert!(std::env::var_os(name).is_none(), "forwarded {name}");
                 }
-                for (name, _) in std::env::vars_os() {
+                for (name, value) in std::env::vars_os() {
+                    if cfg!(all(windows, target_arch = "aarch64"))
+                        && name
+                            .to_string_lossy()
+                            .eq_ignore_ascii_case("PROCESSOR_ARCHITECTURE")
+                    {
+                        // Native startup metadata is distinct from parent
+                        // forwarding. Only this exact non-secret ARM64 pair
+                        // is accepted; absence is also a valid cleared block.
+                        // Microsoft documents architecture metadata rewriting:
+                        // https://learn.microsoft.com/windows/win32/winprog64/wow64-implementation-details
+                        // Its WOW64 case does not establish this native
+                        // ARM64-to-ARM64 loader path; the CI court observes it.
+                        assert_eq!(
+                            value.as_os_str(),
+                            std::ffi::OsStr::new("ARM64"),
+                            "unexpected Windows ARM64 startup architecture value"
+                        );
+                        continue;
+                    }
                     assert!(
                         EXEC_TOOL_ENVIRONMENT
                             .iter()

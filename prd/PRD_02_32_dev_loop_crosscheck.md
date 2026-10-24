@@ -99,6 +99,15 @@ mechanism suites retain their existing parallel test setting. The provider filte
 the separately invoked pinned-Pi court ignored; a green ordinary run does not
 claim that external dependency executed.
 
+Both macOS cells additionally run `scripts/retained-group-native-court.py`
+for an unfiltered, provider, harness or retained_group scope. It exercises real
+normal/zombie-only and leader-exits-first process groups, removes each actual
+production guard in turn, requires a runtime assertion failure, restores the
+exact source bytes and reruns both positive cases. Compiler failure or zero
+selected tests is not counterevidence. Its finite logs and source-restoration
+receipt join the cell output; this is a native mechanism court, not a VM lease.
+The producer remains [the platform owner](PRD_02_28_shared_core.md).
+
 These scopes exercise controlled model peers, worker-owned tools, routing,
 streaming and cancellation mechanisms. They cannot establish a real account
 grant or hosted inference entitlement. Those delivery claims remain with
@@ -359,6 +368,36 @@ It stays `#[ignore]`d on purpose — CI must not depend on GitHub being reachabl
 — so nothing will ever run it for us. The Unix arm of the same fix is still
 unexercised: no host here can execute a Linux/macOS binary, so it rests on
 reading `ureq`'s own feature tree rather than a live call.
+
+## First-gateway native findings (2026-10-25)
+
+The initial unfiltered six-cell run
+[`40110164630`](https://github.com/partnernetsoftware/minicon/actions/runs/40110164630)
+at `891ad5f4c8ff00b40bc4585a289150964dfdcb90` failed; it is not qualification.
+Both Linux cells passed provider, gateway CLI and HTTP courts but exposed a
+nested exec failure. The diagnostic run
+[`40111350019`](https://github.com/partnernetsoftware/minicon/actions/runs/40111350019)
+at `cb0dc680d3de14edb48314792f27e2faa3ee5215` captured actual EAGAIN from the
+second spawn under the UID-wide NPROC32 limit. Worker native policy belongs to
+[PRD 31](PRD_02_31_v0_2_horizon.md#worker-requirements-for-the-first-gateway-connection).
+Both macOS cells exposed zombie-group EPERM and two missing-root fixtures with symlinked
+temporary ancestors; owned cleanup belongs to PRD 28 and private-file policy
+is preserved. Both Windows cells' existing native queued-read/retirement
+disconnect courts stalled despite their already serial execution; the next
+source captures native FreeConsole/read-return stages and exact process exit,
+without a larger timeout or removed assertion. Windows ARM additionally exposed
+PROCESSOR_ARCHITECTURE after startup despite the explicitly cleared native
+block. Its next fixture poisons the parent value and accepts only the exact
+non-secret ARM64 pair; the actual value and native mechanism remain pending
+that cell's rerun, and no provider/client secret may be inherited.
+The next source must rerun its selected scopes before any release claim.
+
+The local repair checkpoint passed strict Clippy, all eight offline script
+self-tests and the canonical dangerous-lint main-binary gate (573 passed,
+2 ignored, including one new version-producer case). The two Windows native
+disconnect cases passed individually with rust-console/parent-console/runtime
+features under the same dangerous-lint wrapper. Those local development scopes
+do not replace either Windows CI cell or the required macOS/Linux reruns.
 
 ## Permission walls, disambiguated
 

@@ -140,8 +140,8 @@ process-lifetime listener boundary in PRD 31.01; it cannot execute these tools.
 │       [v] closed 2026-09-26, plan/archive/plan-v0.2.1.md leaf HB. `ExecTool::
 │       spawn_contained` now builds a `ContainedHeadlessCommand` (argv
 │       vector, no shell, same as before) with `capture_output()` and hard
-│       `ContainedProcessLimits` (512 MiB memory on Linux/Windows, 64 MiB file size, 256 open
-│       files, 32 active processes, cpu seconds = `EXEC_TOOL_TIMEOUT`); a
+│       `ContainedProcessLimits` (current OS scope is owned by the worker
+│       requirements below, including the 0.2.23 Unix quota correction); a
 │       timed-out child is reaped with `terminate_and_wait`, which owns the
 │       whole native containment group (Windows Job Object / Unix process
 │       group), not just the root pid. Evidence: `cargo build --bin
@@ -441,15 +441,18 @@ backend receipts below retain their original scope.
 | --- | --- | --- |
 | Invocation budget | A single counter/deadline spans all outer and backend turns: initially 16 model turns, 64 total tool calls and 10 minutes per invocation; a public task that attempts to exceed it stops at the same bound across backend re-entry | Bounded terminal result; depends on single-turn extraction; no quota accumulated across separate session resumes |
 | Exec output and shutdown | Existing 30-second exec deadline also covers output draining and descendant-held pipes; cap combined stdout/stderr at 1 MiB, mark truncation, cancel/reap owned processes and finish pipe cleanup within a further 5 seconds | Output flood, leader-exits-first and cancel black boxes; depends on native containment and cancellable reads; no unbounded read_to_end/join |
+| Native execution limits | CPU 30 seconds per process; 512 MiB address-space/memory cap on Linux/Windows, with no macOS address-space request; Unix file size 64 MiB and 256 open files; Windows Job hard cap of 32 active processes. Unix requests no per-group process-count quota because the available NPROC limit counts the whole real UID | Typed spawn/cleanup failure; existing time/output bounds and owned process-group termination still apply. Linux native leader/descendant probes caught the old NPROC mapping; this is not an OS sandbox or a claim of a Unix process-count hard cap |
 | Credential environment | Spawn with a documented minimal native/locale/path/temp environment; do not forward provider/client secrets or OAuth state to exec; required extras must be explicitly named | Child environment probe with synthetic sentinel secrets; depends on platform process seam; no general permission-policy engine |
 | Execution boundary | File read/write retains root/symlink bounds; exec retains argv, command allow-list and cwd, without claiming that cwd isolates filesystem or network access | Public denied-file/denied-command and real allowed-command journeys; depends on existing file/exec mechanisms; no OS sandbox claim |
 | Model API consumer | Existing worker invokes the shared HTTP inference path, executes tool descriptions locally and returns results; cancellation ends both model work and owned child work | Real tool-result round trip and missing-auth/no-tool-effect court; depends on PRD 31.01 API; no gateway-to-worker execution endpoint |
 
-The current source has no output byte cap, can block joining pipe readers after
-the leader exits, inherits the parent environment, and resets codec budgets
-across outer-loop calls. These are source-inspection findings, not completed
-exploit or runtime receipts. Reproduce each relevant failure before claiming
-its repair. Preserve existing explicit `--root`, `--allow-cmd`, session flags
+The pre-implementation audit found missing output caps, blocking reader joins,
+inherited credentials and codec counters reset across outer calls. Their
+controlled development repairs and guard-removal evidence are indexed by
+[the gateway owner](PRD_02_31_01_provider_gateway.md#scoped-first-connection-development-evidence).
+The first native Unix run additionally exposed the UID-wide quota mapping and
+Darwin zombie-group cleanup; the follow-up native qualification remains open.
+Preserve existing explicit `--root`, `--allow-cmd`, session flags
 and no-shell argv semantics. Streaming was deferred in the 2026-09-26 session
 delivery; new streaming contracts and protocol qualification belong to PRD 31.01.
 

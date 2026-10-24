@@ -814,6 +814,12 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    fn temporary_parent() -> std::path::PathBuf {
+        // Resolve the existing host temp ancestry before adding a still-missing
+        // account root. The account store must keep its no-follow protection.
+        std::fs::canonicalize(std::env::temp_dir()).expect("resolve temporary parent")
+    }
+
     #[test]
     fn callback_requires_loopback_host_exact_path_and_unique_decoded_fields() {
         let valid =
@@ -885,7 +891,7 @@ mod tests {
             ("", "en_US"),
         ] {
             let root =
-                std::env::temp_dir().join(format!("minicon-login-locale-{}", device_id().unwrap()));
+                temporary_parent().join(format!("minicon-login-locale-{}", device_id().unwrap()));
             let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let mut login = LoginCoordinator::with_transport(
                 Arc::new(AccountStore::new(root.clone()).unwrap()),
@@ -953,7 +959,7 @@ mod tests {
 
     #[test]
     fn cancel_during_network_interrupts_transport_and_joins_actual_worker() {
-        let root = std::env::temp_dir().join(format!("minicon-login-{}", device_id().unwrap()));
+        let root = temporary_parent().join(format!("minicon-login-{}", device_id().unwrap()));
         let store = Arc::new(AccountStore::new(root.clone()).unwrap());
         let (entered_tx, entered_rx) = mpsc::sync_channel(1);
         let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -991,8 +997,7 @@ mod tests {
 
     #[test]
     fn drop_interrupts_transport_and_waits_for_the_owned_worker_to_exit() {
-        let root =
-            std::env::temp_dir().join(format!("minicon-login-drop-{}", device_id().unwrap()));
+        let root = temporary_parent().join(format!("minicon-login-drop-{}", device_id().unwrap()));
         let (entered_tx, entered_rx) = mpsc::sync_channel(1);
         let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let mut login = LoginCoordinator::with_transport(
@@ -1017,8 +1022,7 @@ mod tests {
 
     #[test]
     fn shutdown_timeout_keeps_worker_ownership_until_a_later_successful_join() {
-        let root =
-            std::env::temp_dir().join(format!("minicon-login-join-{}", device_id().unwrap()));
+        let root = temporary_parent().join(format!("minicon-login-join-{}", device_id().unwrap()));
         let mut login = LoginCoordinator::new(
             Arc::new(AccountStore::new(root).unwrap()),
             LoginMetadata {
@@ -1079,7 +1083,7 @@ mod tests {
 
     #[test]
     fn device_challenge_uses_the_actual_attempt_deadline_and_can_cancel_immediately() {
-        let root = std::env::temp_dir().join(format!(
+        let root = temporary_parent().join(format!(
             "minicon-login-device-expiry-{}",
             device_id().unwrap()
         ));
@@ -1131,7 +1135,7 @@ mod tests {
     #[test]
     fn synthetic_device_grant_persists_unready_then_logout_removes_local_credentials() {
         let root =
-            std::env::temp_dir().join(format!("minicon-login-success-{}", device_id().unwrap()));
+            temporary_parent().join(format!("minicon-login-success-{}", device_id().unwrap()));
         std::fs::create_dir_all(&root).unwrap();
         let root = std::fs::canonicalize(root).unwrap();
         let store = Arc::new(AccountStore::new(root.clone()).unwrap());
@@ -1214,7 +1218,7 @@ mod tests {
         assert_eq!(error, LoginError::Auth(AuthError::Cancelled));
         drop(client);
         let root =
-            std::env::temp_dir().join(format!("minicon-login-commit-{}", device_id().unwrap()));
+            temporary_parent().join(format!("minicon-login-commit-{}", device_id().unwrap()));
         let mut login = LoginCoordinator::new(
             Arc::new(AccountStore::new(root).unwrap()),
             LoginMetadata {
@@ -1237,7 +1241,7 @@ mod tests {
     #[test]
     fn queued_challenge_is_not_presented_after_cancellation() {
         let root =
-            std::env::temp_dir().join(format!("minicon-login-queued-{}", device_id().unwrap()));
+            temporary_parent().join(format!("minicon-login-queued-{}", device_id().unwrap()));
         let mut login = LoginCoordinator::new(
             Arc::new(AccountStore::new(root).unwrap()),
             LoginMetadata {
@@ -1271,7 +1275,7 @@ mod tests {
     #[test]
     fn completion_page_is_released_only_after_successful_account_commit() {
         let root =
-            std::env::temp_dir().join(format!("minicon-login-completion-{}", device_id().unwrap()));
+            temporary_parent().join(format!("minicon-login-completion-{}", device_id().unwrap()));
         std::fs::create_dir_all(&root).unwrap();
         let root = std::fs::canonicalize(root).unwrap();
         let store = Arc::new(AccountStore::new(root.clone()).unwrap());
@@ -1332,8 +1336,7 @@ mod tests {
 
     #[test]
     fn failed_events_must_match_the_active_attempt_and_generation() {
-        let root =
-            std::env::temp_dir().join(format!("minicon-login-stale-{}", device_id().unwrap()));
+        let root = temporary_parent().join(format!("minicon-login-stale-{}", device_id().unwrap()));
         let mut login = LoginCoordinator::new(
             Arc::new(AccountStore::new(root).unwrap()),
             LoginMetadata {

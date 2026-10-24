@@ -13,8 +13,8 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Current release evolution
 
-The current public baseline is v0.2.21 (receipts in
-[its release history](archive/v0.2.21-release-history.md)). The per-release
+The current public baseline is v0.2.22 (receipts in
+[its release history](archive/v0.2.22-release-history.md)). The per-release
 evolution record from v0.1.2 forward — cell coverage, signing-mode changes,
 candidate/court/promotion receipts and the lessons each release bought — is
 frozen in [the delivery-history archive](archive/PRD_02_27-delivery-history.md)
@@ -119,8 +119,10 @@ to the current Candidate and do not change its asset/signing policy.
   workbench crate.
 - [v] the Windows production graph contains no winit or softbuffer: that cell
   uses `native-pixel-window` (Win32). Unix cells use `portable-pixel-window`
-  and **do** link winit/softbuffer. No cell links Rhai, HTTP/TLS or a script
-  engine. `serde_json`, `hashbrown`/`RandomState`, ab_glyph and ttf_parser are
+  and **do** link winit/softbuffer. No cell links Rhai or a script
+  engine. Native HTTP/TLS mechanisms and their product consumers are mapped
+  in [PRD 28](PRD_02_28_shared_core.md); they are part of the current provider
+  connection. `serde_json`, `hashbrown`/`RandomState`, ab_glyph and ttf_parser are
   absent from the Windows production graph and survive only as dev-only
   oracles where noted. A size or graph claim must name the target.
 - [v] the platform `pty` feature declares its own `Win32_Security` dependency
@@ -135,6 +137,25 @@ to the current Candidate and do not change its asset/signing policy.
   `minicon-native.exe` alias both before and after publication, alongside
   earlier retired executable names. `dist/minicon.exe` is the sole Windows
   con artifact users can accidentally select after a successful build.
+
+### Native version identity
+
+The native CLI version and status banner share one canonical LF-terminated
+production literal. `loader/write-build-receipt.py` requires every embedded
+numeric product-version candidate to have that terminator, then requires its
+complete version set to equal the selected version. Missing, unterminated,
+stale, longer and mixed candidates fail; neither prefix matching nor truncation
+is allowed. Actual native `--version` courts retain their exact comparison.
+`scripts/build-receipt-version-selftest.py` owns the offline producer/parser
+fixtures; removing termination validation or replacing exact comparison with
+a prefix comparison produced runtime RED before exact restoration and PASS.
+
+Pack run [`40110168563`](https://github.com/partnernetsoftware/minicon/actions/runs/40110168563)
+at `891ad5f4c8ff00b40bc4585a289150964dfdcb90` compiled all six native payloads
+but rejected Linux ARM candidates `0.2.23` and `0.2.231`. String pooling at an
+unterminated banner is the source-supported explanation; that failed run had
+no sealed payload receipt and cannot establish mixed-source bytes or qualify
+an artifact. The explicit producer/parser boundary requires a new-source pack.
 
 ## Load-time portability
 

@@ -10,6 +10,10 @@ use minicon_core::json;
 use crate::DEFAULT_FONT_PX;
 use crate::control;
 
+// Keep the LF inside the production literal: the receipt scanner reads complete
+// version records from foreign-ISA payloads without executing them.
+const VERSION_BANNER: &str = concat!("minicon ", env!("CARGO_PKG_VERSION"), "\n");
+
 /// Command-line options, parsed out of `main` so the precedence and
 /// passthrough rules are unit-testable rather than only observable by
 /// launching a window.
@@ -413,7 +417,7 @@ fn status_text_for(selected: Backend) -> String {
     use std::fmt::Write as _;
 
     let mut text = String::with_capacity(512);
-    let _ = writeln!(text, "minicon {}", env!("CARGO_PKG_VERSION"));
+    text.push_str(VERSION_BANNER);
     let _ = writeln!(text);
 
     let backend = minicon_platform::pty::backend_report();
@@ -652,10 +656,10 @@ pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
     let alone = args.len() == 1;
     match args.first().map(String::as_str) {
         Some("--version" | "-V") if alone => {
-            let _ = minicon_platform::parent_console::write_stdout(&format!(
-                "minicon {}",
-                env!("CARGO_PKG_VERSION")
-            ));
+            // The parent-console service appends the output line's LF.
+            let _ = minicon_platform::parent_console::write_stdout(
+                VERSION_BANNER.trim_end_matches('\n'),
+            );
             Some(0)
         }
         Some("--version" | "-V") if args.len() == 2 && args[1] == "--json" => {
@@ -862,6 +866,14 @@ fn composer_key_help() -> String {
 #[cfg(test)]
 mod hostif_tests {
     use super::*;
+
+    #[test]
+    fn status_starts_with_the_complete_terminated_version_banner() {
+        let expected = format!("minicon {}\n", env!("CARGO_PKG_VERSION"));
+        assert_eq!(VERSION_BANNER, expected);
+        let status = status_text_for(Backend::ConsoleAgent);
+        assert_eq!(status.split_inclusive('\n').next(), Some(expected.as_str()));
+    }
 
     #[test]
     fn gui_owned_console_feature_selection_is_build_gated_and_exclusive() {

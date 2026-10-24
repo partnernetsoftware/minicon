@@ -81,6 +81,19 @@ def product_version() -> str:
     return match.group(1)
 
 
+def validate_payload_version(payload: bytes, expected_version: str, cell: str) -> None:
+    """Require every production version candidate to be a complete LF record."""
+    markers = set()
+    for match in re.finditer(rb"minicon [0-9]+\.[0-9]+\.[0-9]+", payload):
+        if payload[match.end():match.end() + 1] != b"\n":
+            raise SystemExit(f"{cell}: unterminated product version marker")
+        markers.add(match.group().decode("ascii"))
+    markers = sorted(markers)
+    expected_marker = f"minicon {expected_version}"
+    if markers != [expected_marker]:
+        raise SystemExit(f"{cell}: stale or mixed version markers {markers}, expected {expected_marker}")
+
+
 def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
     mapping = {
         "osx-aarch64": CELLS / "osx-aarch64" / "minicon",
@@ -94,13 +107,7 @@ def payload_digests(expected_version: str) -> dict[str, dict[str, object]]:
     for cell, path in mapping.items():
         if path.is_file():
             payload_bytes = path.read_bytes()
-            markers = sorted(set(
-                match.decode("ascii")
-                for match in re.findall(rb"minicon 0\.[0-9]+\.[0-9]+", payload_bytes)
-            ))
-            expected_marker = f"minicon {expected_version}"
-            if markers != [expected_marker]:
-                raise SystemExit(f"{cell}: stale or mixed version markers {markers}, expected {expected_marker}")
+            validate_payload_version(payload_bytes, expected_version, cell)
             out[cell] = {
                 "path": path.relative_to(HERE).as_posix(),
                 "sha256": sha256(path),

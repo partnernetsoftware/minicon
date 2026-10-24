@@ -18,6 +18,8 @@ pub struct ContainedProcessLimits {
     pub memory_bytes: Option<u64>,
     pub file_size_bytes: Option<u64>,
     pub open_files: Option<u64>,
+    /// Native OS quota; group-only Unix callers must leave this unset.
+    /// Scope and consumer policy: prd/PRD_02_28_shared_core.md.
     pub active_processes: Option<u32>,
 }
 
