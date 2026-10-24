@@ -22,6 +22,11 @@
 /// unbounded header.
 const PROXY_VALUE_MAX_BYTES: usize = 512;
 
+mod session;
+pub use session::{
+    NodeReference, PageCommand, PageError, PageSession, PageState, PageView, SemanticNode,
+};
+
 #[cfg(target_os = "linux")]
 mod embedded_program;
 #[cfg(target_os = "linux")]

@@ -107,6 +107,46 @@ pub struct NativePageHost {
     local_origin: Rc<RefCell<Option<String>>>,
 }
 
+impl crate::PageSession for NativePageHost {
+    fn dispatch(
+        &mut self,
+        command: crate::PageCommand,
+    ) -> Result<crate::PageView, crate::PageError> {
+        use crate::{PageCommand, PageError, PageState, PageView};
+        let result = match command {
+            PageCommand::Navigate(url) => self.load_url(&url),
+            PageCommand::Back => self.back(),
+            PageCommand::Forward => self.forward(),
+            PageCommand::Reload => self.reload(),
+            PageCommand::Inspect => Ok(()),
+            PageCommand::Click(_) => {
+                return Err(PageError::new(
+                    "unsupported_operation",
+                    "native WebView semantic actions are unavailable",
+                ));
+            }
+        };
+        result.map_err(|message| PageError::new("page_operation_failed", message))?;
+        let state = self
+            .take_state()
+            .unwrap_or_else(|| self.state.borrow().clone());
+        if let Some(message) = state.error {
+            return Err(PageError::new("page_load_failed", message));
+        }
+        Ok(PageView {
+            state: PageState {
+                url: state.url,
+                title: state.title,
+                loading: state.loading,
+                can_back: state.can_back,
+                can_forward: state.can_forward,
+            },
+            nodes: None,
+            truncated: false,
+        })
+    }
+}
+
 impl NativePageHost {
     /// Create the visible, bounded first-party home surface.
     pub fn new(

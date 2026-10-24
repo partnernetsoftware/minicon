@@ -245,6 +245,14 @@ gaps were ownership overlap, incomplete boundary enforcement and stale descripti
 | `minicon-platform` | Native capability contracts and adapters with explicit feature selection | Appropriate umbrella for OS and machine mechanisms, but not a promise that every capability exists on every host. Its broad optional feature surface needs consumer-feature evidence. `native-pixel-window` versus `portable-pixel-window` describes implementation backends, not the overall portability of the crate. |
 | `minicon-web` | Browser content-panel API (lib + `minicon-web-host`) | Name matches the adopted boundary (2026-10-23). Not a tray host and not chrome UI. Passive WebView probe stays on `minicon-platform`. The default helper does not link wry and exits Unavailable; `wry-host` is Linux's optional loader, while `native-page-host` links the GUI-only macOS/Windows child. |
 
+The sibling Surf `labs/web-shell` experiment additionally consumes the additive
+`PageSession` command/state contract (`Navigate`, back/forward/reload, inspect,
+revision-scoped click). Its Surf adapter retains target authority in the engine
+process; the native Wry child implements navigation/state and explicitly refuses
+semantic click. `PageHost` and existing MiniCon GUI call sites remain compatible.
+This is a development path consumer, not a released cross-repository pin or a
+new claim about memory, headless WebView support, or platform qualification.
+
 Core owns tree and numeric implementation. UI-core/platform depend on core
 with defaults disabled, preserving old public import paths and UI/core tree
 type identity without pulling editor/codec dependencies into minimal consumers.
