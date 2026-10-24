@@ -1,7 +1,7 @@
 # Browser control editing and menu operation
 
 Parent: [workspace](PRD_02_25_con_workspace.md). Status: `[_]` planned for
-0.2.23; the owner requested planning after the public 0.2.22 closeout.
+0.2.23; planning refined by owner request on 2026-10-24. Delivery has not started.
 The workspace owns tab/page lifetime and existing address semantics;
 [browser preferences](PRD_02_25_01_browser_preferences.md) owns proxy validation,
 application and saved choices. This child owns consistent control operation,
@@ -18,7 +18,7 @@ Outcome: edit browser controls predictably and choose an action using mouse or k
 │   dependency: existing core composer/click rules and workspace focus ownership
 │   non-goal: merging multiline composer/notes semantics or rewriting the terminal renderer
 ├── [_] MENU — complete New/proxy menu operation
-│   invariant: current selection, Up/Down/Enter/Escape, outside-click dismissal and focus return work consistently
+│   invariant: keyboard entry, distinct highlight/applied state, single activation, dismissal and focus return follow the menu contract below
 │   evidence: mouse and keyboard choose equivalent actions with zero/one/eight saved proxies at normal/narrow/collapsed/Retina geometry
 │   safe failure: dismissal cannot navigate, apply a proxy or send input behind the overlay
 │   dependency: EDIT event ownership, existing shared Layout and native page visibility
@@ -33,7 +33,7 @@ Outcome: edit browser controls predictably and choose an action using mouse or k
     invariant: visible page pixels, state, edited address and active proxy agree; switch/return preserves the documented draft and page state
     evidence: local service and loopback proxy, restart/error recovery, native physical key/IME observations per claimed OS/ISA
     safe failure: unavailable input or native court is BLOCKED; injected CLI keys do not certify native interception
-    dependency: EDIT/MENU and the PRD 28 browser adapters
+    dependency: EDIT/MENU/LAYOUT, public observation and the PRD 28 browser adapters
     non-goal: provider OAuth/dashboard/downloads, default proxy, new page-persistence promises or 1:N panels
 ```
 
@@ -45,9 +45,12 @@ flowchart LR
     P[Preferences validation/application/save] --> A[Field-specific Submit and Cancel]
     E --> A
     E --> M[New/proxy menu navigation]
+    F[Recorded focus owner and consumed input gesture] --> M
     A --> I[Serial host/native integration]
     M --> I
     L[Content-sized menus, scrolling and existing viewport] --> I
+    I --> S[Public control state / PRD 26]
+    S --> N
     I --> N[Actual page pixels and request observations]
     K[Physical native key/IME court] --> N
     N --> Q[Scoped OS/ISA evidence]
@@ -60,6 +63,36 @@ flowchart LR
 An unsubmitted draft survives refocus. Clipboard actions and IME preedit/commit
 update only the focused field and its own caret anchor. Submit and Cancel remain
 field-specific: shared editing cannot navigate, apply a proxy or save settings.
+Editing outcome and event ownership are separate: an unchanged or unsupported
+editor action does not authorize forwarding that key to the PTY or native page.
+A retained draft does not itself mark a field as focused. Exactly one input
+owner receives a gesture, independently of how many field drafts are retained.
+
+### Field actions and bounds
+
+| Field | Committed-text bound | Submit | Cancel |
+| --- | --- | --- | --- |
+| Address | Existing 8,192 UTF-8 bytes | Delegate normalization/navigation to workspace | Discard this draft and return to the current page; the loaded URL is unchanged |
+| Active proxy | Existing 2,048 UTF-8 bytes | Delegate application and page recreation to PRD 25.01, including its invalid-proxy refusal | Restore the applied value and return to the page |
+| Saved candidate | Existing 2,048 UTF-8 bytes | Delegate validation and atomic Add to PRD 25.01 | Dismiss Web settings without Add, retaining the unsubmitted candidate draft |
+
+Ordinary refocus preserves each unsubmitted draft. Explicit Cancel is different
+from refocus; reopening a cancelled field starts from its field-specific baseline.
+Candidate Cancel keeps the released Escape-to-dismiss and draft behavior. It
+never removes an already saved choice. The existing bounded preedit policy is retained.
+
+Compute the prospective size after single-line normalization and replacement of
+the selected range. At the bound, replacing selected text with a shorter value
+must work. An over-limit edit preserves the original text, selection and caret;
+it cannot partially cut the selection. Caret/selection offsets remain valid
+UTF-8 boundaries. Clipboard and IME commits use this same rule.
+
+IME candidate confirmation does not also Submit the field. Once composition
+finishes, a separate Submit gesture may navigate/apply/Add. A blur or menu
+transition ends or cancels preedit through the native input contract before
+another field receives input. Invalid *edits* and invalid *submitted proxies*
+are distinct: PRD 25.01 still drops the previous page and blocks direct access
+when a submitted proxy is invalid. Editing reuse must not retain that old route.
 
 Apply the workspace's existing address/composer selection rules consistently
 across the three fields; the workspace retains the current address baseline.
@@ -84,6 +117,35 @@ returns focus predictably and restores the native page after the overlay.
 Selected rows and hit regions must match the actual list, including an empty
 saved list's configured-behavior row. A missing page never disables Terminal.
 
+### Keyboard entry and focus return
+
+The minimum Browser chrome traversal is New trigger -> address -> active proxy
+-> proxy-menu trigger, cycling with Tab and reversing with Shift+Tab while the
+host chrome owns focus. The existing page-to-address shortcut provides entry
+from a focused native page. Page and terminal Tab behavior remains with their
+own input owners. This is not a new global shortcut or whole-host focus rewrite.
+
+Enter or Space on a focused trigger opens its menu. Opening does not activate
+the highlighted action: consume the opening gesture through its release.
+New initially highlights Terminal. Proxy initially highlights the matching
+applied row, or row zero when the applied manual endpoint has no list entry.
+The latter is a navigation starting point, not an applied marker. Up/Down clamp
+to the first/last row; pointer hover and keys update the same highlight. A
+separate Enter/Space or pointer selection activates once, including under key
+repeat. Keyboard navigation keeps the highlighted row visible.
+
+| Closing cause | Connection/action | Focus and draft |
+| --- | --- | --- |
+| Escape or trigger toggle | No activation | Restore the recorded pre-menu trigger, field/selection or page focus |
+| Outside pointer click, including Back/Reload/another trigger | Dismiss only; consume press/release so the same gesture cannot reach underlying UI | Restore the pre-menu owner; a subsequent gesture may use the other control |
+| Explicit choice | Commit one selected action | New selects the resulting work surface; proxy application follows PRD 25.01 |
+| App deactivation | Dismiss without activation | Retain drafts and a logical return target; never steal foreground focus |
+| Resize | No activation | Keep draft/highlight and reveal it; if no row fits, dismiss with bounded feedback |
+
+The menu owns routing until dismissal is complete. Hiding or restoring the native
+child, clearing an open flag, or returning from a handler must not re-dispatch
+the same gesture to a page, toolbar action or PTY.
+
 Retain the responsive toolbar wrapping already owned by PRD 25.01; it is a
 released baseline, not a new 0.2.23 feature. Size the proxy menu to one configured
 row plus the actual saved choices, avoiding unused blank rows. When all choices
@@ -91,6 +153,12 @@ do not fit, retain readable row targets and scroll within the available frame;
 keyboard movement keeps the highlighted row visible. Resizing preserves drafts
 and the native page alignment. Painting, hit testing, IME anchors and public
 snapshots consume the same geometry.
+
+Retain full-size targets: proxy rows are 32 DIP and New actions 40 DIP. Fit the
+actual row count to the available viewport; use bounded scrolling rather than
+shrinking rows to fit a fixed nine-row budget. If even one row cannot fit, do
+not open an unusable menu. Keep the existing overlay/native-child visibility
+model; this pass does not add an overlay window or a new native composition path.
 
 Distinguish the applied proxy from keyboard highlight: opening or moving in a
 menu does not apply a choice. A manually entered endpoint absent from the list
@@ -103,6 +171,31 @@ deferred for coordinated AgenTerm planning. The next plan selects work and
 exclusive hot-file ownership; PRD 33 owns build/fixture serialization rules.
 
 ## Evidence frontier
+
+### Observed 0.2.22 starting failures — Windows x86_64, 2026-10-24
+
+Exploration used the checksum-verified public native ZIP referenced by the
+[0.2.22 release history](archive/v0.2.22-release-history.md). Its complete
+browser journey passed, including native page-focused address/tab shortcuts,
+real loopback proxy requests, refusal and saved-choice restart/delete behavior.
+These observations do not qualify another OS/ISA or the new controls.
+
+| Observation | Reproduction and result | Required new regression |
+| --- | --- | --- |
+| B22-MENU-KEYS | With zero saved candidates, open the proxy menu and inject ArrowDown/Enter through the public CLI: it stays open | Enter from the defined keyboard entry path and commit once |
+| B22-MENU-DISMISS | Load two pages; open the proxy menu, then click the outside Back button: the menu closes and the URL also moves to the previous page | Dismissal consumes the gesture; URL, applied proxy and terminal draft stay unchanged |
+
+Local observations: `target-six/explore-v0.2.22/menu-observations/menu-observations.json`;
+full native journey: `target-six/explore-v0.2.22/physical/receipt.json`.
+These are exploratory records, not assertion-bearing regression tests. Capture
+the failures in named public black boxes before implementing their fixes.
+The menu keys above were host-injected; native menu input remains unqualified.
+The empty menu paints one actual row; do not describe the nine-row geometry
+budget as nine visibly painted blank rows.
+
+Source inspection also finds all three editors checking old length plus insertion
+without subtracting selected content. This is an unconfirmed boundary defect;
+first reproduce it through public input before assigning it a passing/failing court.
 
 No new 0.2.23 implementation or native input qualification is claimed. Retain
 0.2.22 receipts in its release history and archived plan as the starting scope.
