@@ -398,7 +398,7 @@ const LOOP_REDRAFT_MARKER: &str = "PLAN: REDRAFT";
 /// model that believes the task is done must say so with this exact phrase;
 /// anything else is read as "not yet", bounded by `LOOP_MAX_ITERATIONS` so a
 /// model that never says it is never trusted to loop forever either.
-const LOOP_STOP_PHRASE: &str = "TASK COMPLETE";
+pub(crate) const LOOP_STOP_PHRASE: &str = "TASK COMPLETE";
 
 /// One of `{LOOP}`'s five states. Every transition between them is logged as
 /// a tree node (`run_loop`'s `trace`), so a session replay shows *why* the
@@ -1497,10 +1497,13 @@ mod invocation_budget_tests {
         time::{Duration, Instant},
     };
 
+    #[derive(Clone, Copy)]
     enum ReplyMode {
         Redraft,
         WriteBatch,
         Cancel,
+        Complete,
+        IntermediateThenComplete,
     }
 
     struct ModelFixture {
@@ -1538,6 +1541,43 @@ mod invocation_budget_tests {
             self.requests.set(self.requests.get() + 1);
             match self.mode {
                 ReplyMode::Redraft => Ok(text_reply(LOOP_REDRAFT_MARKER)),
+                ReplyMode::Complete | ReplyMode::IntermediateThenComplete => {
+                    let request: serde_json::Value = serde_json::from_str(body).unwrap();
+                    let messages = request["messages"].as_array().unwrap();
+                    assert_eq!(messages[0]["role"], "system");
+                    let system = messages[0]["content"].as_str().unwrap();
+                    if messages.last().unwrap()["role"] == "tool" {
+                        assert!(
+                            messages.last().unwrap()["content"]
+                                .as_str()
+                                .unwrap()
+                                .starts_with("file: wrote "),
+                            "completion must follow the actual successful tool result"
+                        );
+                        let intermediate = matches!(self.mode, ReplyMode::IntermediateThenComplete)
+                            && self.offered_tools.get() == 1;
+                        // This controlled peer follows the completion instruction
+                        // actually sent by the codec. Without it, an ordinary
+                        // final text has no private stop phrase to return.
+                        let done = system.contains("TASK COMPLETE") && !intermediate;
+                        return Ok(text_reply(if done {
+                            "The requested note is written.\nTASK COMPLETE"
+                        } else {
+                            "The current step is written."
+                        }));
+                    }
+                    let index = self.offered_tools.get();
+                    self.offered_tools.set(index + 1);
+                    Ok(serde_json::json!({"choices":[{"message":{
+                        "role":"assistant", "content":null, "tool_calls":[{
+                            "id":format!("completion-{index}"), "type":"function", "function":{
+                                "name":"file", "arguments":serde_json::json!({
+                                    "op":"write", "path":format!("effect-{index}"), "contents":"bounded effect"
+                                }).to_string()
+                            }
+                        }]
+                    }}]}).to_string())
+                }
                 ReplyMode::WriteBatch | ReplyMode::Cancel => {
                     let request: serde_json::Value = serde_json::from_str(body).unwrap();
                     if request["messages"].as_array().unwrap().last().unwrap()["role"] == "tool" {
@@ -1643,6 +1683,50 @@ mod invocation_budget_tests {
         stopped
             .get()
             .expect("a typed fatal stop, not a codec or tool string")
+    }
+
+    fn check_codec_completion(mode: ReplyMode, expected_steps: usize) {
+        for backend in [Backend::DeepSeek, Backend::OpencodeGo] {
+            let (root, file, exec) = tools("completion", backend);
+            let cancellation = Arc::new(AtomicBool::new(false));
+            let budget = InvocationBudget::new(cancellation.clone());
+            let model = ModelFixture::new(mode, cancellation);
+            let task = "Write the requested note and report the result.";
+            assert!(!task.contains("TASK COMPLETE"));
+            let mut trace = Vec::new();
+            let answer = run_loop(
+                &mut |step| {
+                    call(backend, &model, &budget, &file, &exec, step)
+                        .map_err(|error| error.to_string())
+                },
+                task,
+                &mut trace,
+            )
+            .expect("the actual codec and tool loop must finish the ordinary task");
+            assert_eq!(answer, "The requested note is written.\nTASK COMPLETE");
+            assert_eq!(model.requests.get(), expected_steps * 2);
+            assert_eq!(budget.model_turns.get(), expected_steps * 2);
+            assert_eq!(model.offered_tools.get(), expected_steps);
+            assert_eq!(trace.len(), expected_steps * 5);
+            for index in 0..expected_steps {
+                assert_eq!(
+                    std::fs::read_to_string(root.join(format!("effect-{index}"))).unwrap(),
+                    "bounded effect",
+                );
+            }
+            assert!(!root.join(format!("effect-{expected_steps}")).exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn codec_completion_protocol_finishes_an_ordinary_task_without_outer_reentry() {
+        check_codec_completion(ReplyMode::Complete, 1);
+    }
+
+    #[test]
+    fn codec_intermediate_text_continues_until_the_completion_protocol() {
+        check_codec_completion(ReplyMode::IntermediateThenComplete, 2);
     }
 
     #[test]

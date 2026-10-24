@@ -91,6 +91,11 @@ impl ContainedHeadlessCommand {
         self
     }
 
+    /// Sets the child's working directory without changing the caller's cwd.
+    /// Windows simplifies a compatible extended path only after checking its
+    /// filesystem identity. A `cmd.exe` launch with an unrepresentable cwd
+    /// fails with `Unsupported` instead of silently running in Windows' folder;
+    /// other programs retain extended-only spellings they may support.
     pub fn current_dir(&mut self, path: impl Into<PathBuf>) -> &mut Self {
         self.current_dir = Some(path.into());
         self

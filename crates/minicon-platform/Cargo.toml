@@ -252,13 +252,15 @@ native-messaging-registry = [
 simulator = ["contained-process-spawn"]
 contained-process-spawn = [
     "process",
+    "file-identity",
+    "dep:dunce",
     "windows-sys/Win32_System_JobObjects",
     "windows-sys/Win32_System_Threading",
 ]
 # `ureq` is portable, so this capability has no per-OS adapter: the only host
 # difference is the TLS provider, expressed as the target-specific feature trees
 # in the two `[target.…]` dependency tables below. See
-# `prd/PRD_02_20_native_platform.md` ("Windows NativeTls/platform roots, Unix
+# `prd/PRD_02_28_shared_core.md` ("Windows NativeTls/platform roots, Unix
 # Rustls/WebPKI") and the module doc comment in `src/network_http.rs`.
 network-http = ["dep:ureq"]
 network-http-stream = ["network-http", "contained-process-spawn"]
@@ -618,7 +620,7 @@ full = [
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }
 # `network-http` outbound client. Unix uses Rustls with WebPKI roots, the house
-# TLS provider choice recorded in `prd/PRD_02_20_native_platform.md`. This
+# TLS provider choice recorded in `prd/PRD_02_28_shared_core.md`. This
 # mirrors the root `Cargo.toml` declaration exactly; `default-features = false`
 # keeps ureq's own `gzip` default out of the graph so the enabled set stays the
 # declared one.
@@ -667,9 +669,10 @@ sha2 = { version = "0.11", optional = true, default-features = false }
 cc = "1"
 
 [target.'cfg(windows)'.dependencies]
+dunce = { version = "1.0.5", optional = true }
 # `network-http` outbound client. Windows uses NativeTls, which verifies through
 # SChannel and the platform certificate stores, per
-# `prd/PRD_02_20_native_platform.md`. Mirrors the root `Cargo.toml` declaration.
+# `prd/PRD_02_28_shared_core.md`. Mirrors the root `Cargo.toml` declaration.
 ureq = { version = "3.3", optional = true, default-features = false, features = ["native-tls"] }
 windows-sys = { version = "0.61", optional = true }
 winit = { version = "0.30", optional = true }

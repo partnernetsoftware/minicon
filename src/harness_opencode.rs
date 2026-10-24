@@ -409,9 +409,13 @@ fn opencode_system_prompt(root: &std::path::Path) -> String {
         "You are MiniCon's bounded harness agent. You have exactly two tools, `file` and \
          `exec`, and no others. Every path is relative to the task root {root}; paths outside \
          it are refused, not rewritten. `exec` runs one allow-listed command per call with no \
-         shell. A refusal is information: read it, adjust, and continue. When the task is done, \
-         answer with plain text and no tool call.",
-        root = root.display()
+         shell. A refusal is information: read it, adjust, and continue. Only after all \
+         requested work has succeeded, answer with final plain text and no tool call, ending \
+         with the standalone line `{completion}`. Put any requested result before that line; \
+         this is the harness completion protocol and the user need not supply it. Do not emit \
+         that line for intermediate progress, unresolved tool refusals, or incomplete work.",
+        root = root.display(),
+        completion = crate::harness::LOOP_STOP_PHRASE,
     )
 }
 

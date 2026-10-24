@@ -1909,6 +1909,7 @@ dependencies = [
  "atspi",
  "cc",
  "core-foundation 0.10.1",
+ "dunce",
  "httparse",
  "libc",
  "memmap2",

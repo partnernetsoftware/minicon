@@ -212,7 +212,7 @@ fn spawn_suspended_into(
     let directory = spec
         .current_dir
         .as_deref()
-        .map(|path| nul_terminated(path.as_os_str()))
+        .map(|path| working_directory(&program, path))
         .transpose()?;
     let mut environment = environment_block(spec)?;
     let stdio = PreparedStdio::new(spec)?;
@@ -836,6 +836,45 @@ fn nul_terminated(value: &OsStr) -> io::Result<Vec<u16>> {
     Ok(wide)
 }
 
+/// Prepare the spelling passed to CreateProcessW, independently of argv.
+/// CMD interprets every remaining UNC/device prefix as an unsupported cwd and
+/// silently switches to Windows instead. Refuse that launch before user code.
+/// Other executables retain extended paths they may support. This does not
+/// turn a working directory into a filesystem sandbox or prevent path races.
+fn working_directory(
+    program: &std::path::Path,
+    directory: &std::path::Path,
+) -> io::Result<Vec<u16>> {
+    use std::path::{Component, Prefix};
+
+    let compatible = dunce::simplified(directory);
+    let cmd = program
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"));
+    let non_dos_prefix = matches!(compatible.components().next(),
+        Some(Component::Prefix(prefix)) if !matches!(prefix.kind(), Prefix::Disk(_)));
+    // Reserve the terminating NUL and the current-directory separator within
+    // MAX_PATH. Long-path-capable non-CMD clients keep their original spelling.
+    if cmd && (non_dos_prefix || compatible.as_os_str().encode_wide().count() > 258) {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cmd.exe cannot preserve this Windows working-directory spelling",
+        ));
+    }
+    if compatible != directory {
+        let original = crate::file_identity::path_identity(directory)?;
+        let simplified = crate::file_identity::path_identity(compatible)?;
+        if !original.same_object(simplified) {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Windows working-directory simplification changed filesystem identity",
+            ));
+        }
+    }
+    nul_terminated(compatible.as_os_str())
+}
+
 fn windows_command_line(program: &std::path::Path, args: &[OsString]) -> io::Result<Vec<u16>> {
     let mut line = Vec::new();
     push_argument(&mut line, program.as_os_str(), true)?;
@@ -998,6 +1037,230 @@ mod tests {
                 Some(exit) => panic!("contained probe failed: {exit:?}"),
                 None if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
                 None => panic!("contained probe timed out"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod working_directory_tests {
+    use super::*;
+    use std::{
+        path::{Path, PathBuf},
+        thread,
+        time::{Instant, SystemTime, UNIX_EPOCH},
+    };
+
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new() -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static NEXT: AtomicU64 = AtomicU64::new(1);
+            let path = std::env::temp_dir().join(format!(
+                "minicon-contained-cwd-{}-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir(&path).expect("create private cwd fixture");
+            Self(path)
+        }
+
+        fn extended_child(&self, name: &str) -> PathBuf {
+            // Joining on a verbatim Path can normalize trailing dots/spaces.
+            // Preserve the literal UTF-16 filename for this identity oracle.
+            let mut path = std::fs::canonicalize(&self.0).unwrap().into_os_string();
+            path.push("\\");
+            path.push(name);
+            let path = PathBuf::from(path);
+            std::fs::create_dir(&path).expect("create exact extended-only directory");
+            path
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            // Only this exclusively created directory and its exact children.
+            if let (Ok(parent), Ok(entries)) =
+                (std::fs::canonicalize(&self.0), std::fs::read_dir(&self.0))
+            {
+                for entry in entries.flatten() {
+                    let mut path = parent.as_os_str().to_owned();
+                    path.push("\\");
+                    path.push(entry.file_name());
+                    let path = PathBuf::from(path);
+                    if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                        let _ = std::fs::remove_dir(path);
+                    } else {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir(&self.0);
+        }
+    }
+
+    fn cmd() -> PathBuf {
+        PathBuf::from(std::env::var_os("SystemRoot").expect("native Windows SystemRoot"))
+            .join("System32")
+            .join("CmD.ExE")
+    }
+
+    fn bounded_capture(mut output: crate::contained_process::ContainedChildOutput) -> Vec<u8> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut bytes = Vec::new();
+        let mut chunk = [0; 1024];
+        loop {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .expect("bounded CMD pipe deadline");
+            match output
+                .read_timeout(&mut chunk, remaining)
+                .expect("read bounded native CMD pipe")
+            {
+                0 => return bytes,
+                count => bytes.extend_from_slice(&chunk[..count]),
+            }
+            assert!(bytes.len() <= 4096, "native CMD fixture output is bounded");
+        }
+    }
+
+    #[test]
+    fn canonical_cwd_keeps_native_cmd_relative_nonce() {
+        let scratch = Scratch::new();
+        let workspace = scratch.0.join("work space");
+        std::fs::create_dir(&workspace).unwrap();
+        let canonical = std::fs::canonicalize(&workspace).unwrap();
+        assert!(
+            canonical
+                .as_os_str()
+                .as_encoded_bytes()
+                .starts_with(br"\\?\")
+        );
+        let nonce = format!(
+            "minicon-cwd-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        std::fs::write(scratch.0.join("cwd-challenge.txt"), nonce.as_bytes()).unwrap();
+        for frozen in [false, true] {
+            let mut command = ContainedHeadlessCommand::new(cmd());
+            command
+                .args(["/d", "/c", "type", r"..\cwd-challenge.txt"])
+                .current_dir(&canonical)
+                .env_clear()
+                .env("SystemRoot", std::env::var_os("SystemRoot").unwrap())
+                .capture_output();
+            let mut child = if frozen {
+                let (child, identity) = command
+                    .spawn_suspended_frozen()
+                    .expect("frozen CMD with canonical cwd");
+                assert_eq!(child.id(), identity.pid);
+                child
+            } else {
+                command.spawn().expect("CMD with canonical cwd")
+            };
+            let stdout = child.take_stdout().unwrap();
+            let stderr = child.take_stderr().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let exit = loop {
+                if let Some(exit) = child.try_wait().unwrap() {
+                    break exit;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "native CMD must finish inside deadline"
+                );
+                thread::sleep(Duration::from_millis(5));
+            };
+            let stdout = bounded_capture(stdout);
+            let stderr = bounded_capture(stderr);
+            assert_eq!(
+                exit,
+                ProcessExit::Code(0),
+                "CMD must read the controlled relative file, frozen={frozen}"
+            );
+            assert_eq!(
+                stdout,
+                nonce.as_bytes(),
+                "cwd must preserve relative file identity, frozen={frozen}"
+            );
+            assert!(
+                stderr.is_empty(),
+                "CMD must not silently reject cwd and fall back"
+            );
+        }
+    }
+
+    #[test]
+    fn cmd_extended_only_cwd_is_refused_before_process_start() {
+        let scratch = Scratch::new();
+        std::fs::create_dir(scratch.0.join("lookalike")).unwrap();
+        for suffix in ["lookalike.", "lookalike "] {
+            let directory = scratch.extended_child(suffix);
+            assert!(
+                !crate::file_identity::path_identity(&directory)
+                    .unwrap()
+                    .same_object(
+                        crate::file_identity::path_identity(&scratch.0.join("lookalike")).unwrap()
+                    )
+            );
+            for frozen in [false, true] {
+                let mut command = ContainedHeadlessCommand::new(cmd());
+                command
+                    .args(["/d", "/c", "exit", "0"])
+                    .current_dir(&directory);
+                let error = if frozen {
+                    command.spawn_suspended_frozen().err()
+                } else {
+                    command.spawn().err()
+                }
+                .expect("CMD cannot preserve this exact directory; no child may run");
+                assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+            }
+        }
+    }
+
+    #[test]
+    fn cmd_unc_device_and_long_cwd_refuse_without_path_lookup() {
+        let long = format!(r"C:\{}", "x".repeat(260));
+        for directory in [
+            r"\\server.invalid\share\directory",
+            r"\\?\UNC\server.invalid\share\directory",
+            r"\\.\C:\directory",
+            r"\\?\Volume{synthetic}\directory",
+            &long,
+        ] {
+            let error = working_directory(
+                Path::new(r"C:\Windows\System32\CMD.EXE"),
+                Path::new(directory),
+            )
+            .expect_err("CMD must refuse unsupported cwd before filesystem/network lookup");
+            assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        }
+    }
+
+    #[test]
+    fn non_cmd_clients_keep_extended_only_cwd_identity() {
+        let scratch = Scratch::new();
+        let directory = scratch.extended_child("exact.");
+        let long = PathBuf::from(format!(r"\\?\C:\{}", "x".repeat(270)));
+        for program in [
+            r"C:\tools\model.exe",
+            r"C:\tools\notcmd.exe",
+            r"C:\tools\cmd.exe.helper",
+        ] {
+            for path in [&directory, &long] {
+                assert_eq!(
+                    working_directory(Path::new(program), path).unwrap(),
+                    nul_terminated(path.as_os_str()).unwrap(),
+                    "an ordinary executable keeps its extended path"
+                );
             }
         }
     }
