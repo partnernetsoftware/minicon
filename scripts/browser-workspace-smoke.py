@@ -121,8 +121,10 @@ def main() -> int:
     env = os.environ.copy()
     # Reuse this isolated config only across the process restarts in this run.
     env["MINICON_CONFIG_DIR"] = str(Path(scratch.name) / "config")
-    env["WEBVIEW2_USER_DATA_FOLDER"] = str(Path(scratch.name) / "profile")
-    for key in ("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "MINICON_BROWSER_HTTP_PROXY", "MINICON_BROWSER_HTTPS_PROXY",
+    env["MINICON_BROWSER_PROFILE_ROOT"] = str(Path(scratch.name) / "profile")
+    # WebView2's global folder override would force different proxy environments
+    # back into one incompatible directory, overriding the native API argument.
+    for key in ("WEBVIEW2_USER_DATA_FOLDER", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "MINICON_BROWSER_HTTP_PROXY", "MINICON_BROWSER_HTTPS_PROXY",
                 "MINICON_BROWSER_NO_PROXY", "MINICON_BROWSER_BIN"):
         env.pop(key, None)
     shell = ["cmd.exe", "/d", "/k"] if windows else ["/bin/sh"]

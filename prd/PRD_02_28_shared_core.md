@@ -438,6 +438,14 @@ without exposing endpoints in directory names. Proxied controllers use InPrivate
 mode; ordinary direct contexts retain their existing profile. This cache is
 native WebView data, not saved proxy-choice persistence or a bundled runtime.
 Creation/storage failure remains typed and never falls back to direct routing.
+The optional native-court hook `MINICON_BROWSER_PROFILE_ROOT` places proxied
+keys and the ordinary `direct/` context beneath one owned fixture root. It
+selects storage only, never an active proxy or a saved candidate. Native courts
+clear `WEBVIEW2_USER_DATA_FOLDER`: that WebView2 override would replace the API's
+per-environment directory and recreate the incompatibility. MiniCon does not
+mutate the process environment while creating views. External WebView2 policy
+or environment overrides retain their native precedence and may reject a
+conflicting configuration. See Microsoft's [environment creation contract](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions).
 Product editing, candidate persistence and page-reset meaning remain in
 [PRD 25.01](PRD_02_25_01_browser_preferences.md).
 

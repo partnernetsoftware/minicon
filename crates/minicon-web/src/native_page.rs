@@ -185,10 +185,7 @@ impl NativePageHost {
         #[cfg(windows)]
         let windows_arguments = windows_proxy_arguments(proxy)?;
         #[cfg(windows)]
-        let mut windows_context = windows_arguments
-            .as_deref()
-            .map(windows_proxy_context)
-            .transpose()?;
+        let mut windows_context = windows_page_context(windows_arguments.as_deref())?;
         #[cfg(windows)]
         let builder = match windows_context.as_mut() {
             Some(context) => WebViewBuilder::new_with_web_context(context),
@@ -484,19 +481,29 @@ fn install_windows_events(
 }
 
 #[cfg(windows)]
-fn windows_proxy_context(arguments: &str) -> Result<wry::WebContext, String> {
+fn windows_page_context(arguments: Option<&str>) -> Result<Option<wry::WebContext>, String> {
     use sha2::Digest;
+    let root = std::env::var_os("MINICON_BROWSER_PROFILE_ROOT")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from);
     // WebView2 environments with different options cannot share a data folder,
     // even while the previous view's browser process is still shutting down.
     // Key all native arguments, including bypass rules; never put endpoints in
     // directory names. Equal options reuse one cache rather than accumulating
     // a new folder on every apply. Product lifetime/choice rules: PRD 25.01.
-    let key = crate::base64url(&sha2::Sha256::digest(arguments.as_bytes()));
-    let path = std::env::temp_dir()
-        .join("minicon-webview2-proxy")
-        .join(key);
+    let path = match arguments {
+        Some(arguments) => {
+            let key = crate::base64url(&sha2::Sha256::digest(arguments.as_bytes()));
+            root.unwrap_or_else(|| std::env::temp_dir().join("minicon-webview2-proxy"))
+                .join(key)
+        }
+        None => match root {
+            Some(root) => root.join("direct"),
+            None => return Ok(None),
+        },
+    };
     std::fs::create_dir_all(&path).map_err(|_| "browser-native-profile-unavailable".to_owned())?;
-    Ok(wry::WebContext::new(Some(path)))
+    Ok(Some(wry::WebContext::new(Some(path))))
 }
 
 #[cfg(windows)]

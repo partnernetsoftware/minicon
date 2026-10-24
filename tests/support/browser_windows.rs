@@ -38,7 +38,8 @@ impl BrowserGui {
         }
         command
             .env("MINICON_CONFIG_DIR", &config_root)
-            .env("WEBVIEW2_USER_DATA_FOLDER", root.join("profile"))
+            .env("MINICON_BROWSER_PROFILE_ROOT", root.join("profile"))
+            .env_remove("WEBVIEW2_USER_DATA_FOLDER")
             .env_remove("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER")
             .env_remove("MINICON_BROWSER_HTTP_PROXY")
             .env_remove("MINICON_BROWSER_HTTPS_PROXY")
