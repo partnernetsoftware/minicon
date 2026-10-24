@@ -1,27 +1,7 @@
-//! Bounded outbound HTTP/HTTPS client capability.
-//!
-//! # Why this capability has no per-OS adapter
-//!
-//! Every other `network-*` capability in this crate reads native host state and
-//! therefore owns `adapters/{windows,linux,macos}` files plus a `selected.rs`
-//! arm. This one deliberately does **not**, and its absence is not an
-//! oversight. `ureq` is a portable pure-Rust client; the only difference
-//! between the hosts is which TLS provider verifies the peer, and that
-//! difference is expressed entirely as target-specific Cargo features in this
-//! crate's manifest — Windows `native-tls` (SChannel/platform roots), Unix
-//! `rustls` (WebPKI), both with `default-features = false`, exactly as 0.1.9
-//! shipped it and as `prd/PRD_02_20_native_platform.md` records under
-//! "target-specific ureq feature trees". There is no OS call for an adapter to
-//! own, so only the contract and facade halves of the house pattern exist here.
-//! Adding an adapter layer would mean three identical files selecting nothing.
-//!
-//! # Shape
-//!
-//! Every caller-supplied bound is validated before a socket is opened. A
-//! non-2xx status is a delivered response, not an error — a model API's 429 or
-//! 503 carries a body the caller must read. Response bodies are read through a
-//! bounded reader that reports truncation explicitly rather than either
-//! allocating without limit or presenting a cut body as complete.
+//! Bounded outbound HTTP/HTTPS through ureq, with request validation,
+//! explicit response limits and redacted typed failures.
+//! Buffered and streaming callers share the target TLS configuration.
+//! Ownership, trust-root policy and evidence: prd/PRD_02_28_shared_core.md.
 
 use std::io::Read;
 
@@ -228,6 +208,17 @@ pub(crate) const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::
 #[cfg(unix)]
 pub(crate) const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::Rustls;
 
+/// One TLS policy for buffered and streaming requests. Selecting NativeTls
+/// alone does not select platform roots: ureq defaults to its WebPKI bundle,
+/// which makes native-tls disable built-in Windows roots. Keep the documented
+/// SChannel/platform-verifier contract explicit, without relaxing verification.
+pub(crate) fn tls_config() -> ureq::tls::TlsConfig {
+    let builder = ureq::tls::TlsConfig::builder().provider(TLS_PROVIDER);
+    #[cfg(windows)]
+    let builder = builder.root_certs(ureq::tls::RootCerts::PlatformVerifier);
+    builder.build()
+}
+
 /// Perform one bounded exchange.
 ///
 /// Validation runs first and completely; nothing below is reached by an invalid
@@ -236,11 +227,7 @@ pub fn request(request: &NetworkHttpRequest) -> Result<NetworkHttpResponse, Netw
     validate(request)?;
 
     let agent_config = ureq::Agent::config_builder()
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .provider(TLS_PROVIDER)
-                .build(),
-        )
+        .tls_config(tls_config())
         .timeout_global(Some(request.timeout))
         .max_redirects(request.max_redirects)
         .max_redirects_will_error(true)
@@ -375,6 +362,13 @@ pub(crate) fn map_ureq_error(failure: &ureq::Error) -> NetworkHttpError {
         ureq::Error::Timeout(_) => NetworkHttpErrorKind::Timeout,
         ureq::Error::HostNotFound => NetworkHttpErrorKind::HostNotFound,
         ureq::Error::Tls(_) => NetworkHttpErrorKind::Tls,
+        ureq::Error::Pem(_) => NetworkHttpErrorKind::Tls,
+        // Match providers enabled by this crate's target dependency table;
+        // their concrete certificate/handshake errors remain TLS failures.
+        #[cfg(windows)]
+        ureq::Error::NativeTls(_) | ureq::Error::Der(_) => NetworkHttpErrorKind::Tls,
+        #[cfg(unix)]
+        ureq::Error::Rustls(_) => NetworkHttpErrorKind::Tls,
         ureq::Error::InvalidProxyUrl => NetworkHttpErrorKind::Proxy,
         ureq::Error::TooManyRedirects | ureq::Error::RedirectFailed => {
             NetworkHttpErrorKind::Redirect
@@ -709,6 +703,101 @@ mod tests {
             failure.to_string(),
             "network HTTP transport: socket refused"
         );
+    }
+
+    #[test]
+    fn tls_policy_uses_the_documented_provider_roots_and_verification() {
+        let config = tls_config();
+        assert_eq!(config.provider(), TLS_PROVIDER);
+        assert!(
+            !config.disable_verification(),
+            "certificate verification must stay enabled"
+        );
+        assert!(config.use_sni(), "hostname SNI must stay enabled");
+        #[cfg(windows)]
+        assert!(matches!(
+            config.root_certs(),
+            ureq::tls::RootCerts::PlatformVerifier
+        ));
+        #[cfg(unix)]
+        assert!(matches!(config.root_certs(), ureq::tls::RootCerts::WebPki));
+    }
+
+    #[test]
+    fn tls_category_for_malformed_pem() {
+        let failure = ureq::tls::Certificate::from_pem(
+            b"-----BEGIN CERTIFICATE-----\n!not-base64!\n-----END CERTIFICATE-----\n",
+        )
+        .expect_err("invalid PEM must fail before use");
+        assert!(
+            matches!(failure, ureq::Error::Pem(_)),
+            "fixture must exercise the actual PEM error variant"
+        );
+        assert_eq!(map_ureq_error(&failure).kind(), NetworkHttpErrorKind::Tls);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn tls_category_for_native_tls_and_der_errors() {
+        use ureq::tls::{Certificate, ClientCert, PrivateKey};
+        // Both providers parse these client materials before the handshake.
+        // The local peer exists only to satisfy the preceding TCP connector;
+        // no provider request, certificate trust bypass or credentials exist.
+        for (material, expect_der) in [(b"not-der".as_slice(), true), (b"\x30\0".as_slice(), false)]
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let address = listener.local_addr().unwrap();
+            let peer = std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + Duration::from_secs(2);
+                loop {
+                    match listener.accept() {
+                        Ok(_) => return,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && std::time::Instant::now() < deadline =>
+                        {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("bounded local TLS fixture accept: {error}"),
+                    }
+                }
+            });
+            let client = ClientCert::new_with_certs(
+                &[Certificate::from_der(material)],
+                PrivateKey::from_pem(
+                    b"-----BEGIN PRIVATE KEY-----\nMAA=\n-----END PRIVATE KEY-----\n",
+                )
+                .expect("synthetic empty-sequence private-key container"),
+            );
+            let config = ureq::Agent::config_builder()
+                .tls_config(
+                    ureq::tls::TlsConfig::builder()
+                        .provider(TLS_PROVIDER)
+                        .client_cert(Some(client))
+                        .build(),
+                )
+                .proxy(None)
+                .timeout_global(Some(Duration::from_secs(2)))
+                .build();
+            let failure = ureq::Agent::new_with_config(config)
+                .get(format!("https://{address}/"))
+                .call()
+                .unwrap_err();
+            peer.join().expect("join actual local TLS fixture");
+            if expect_der {
+                assert!(
+                    matches!(failure, ureq::Error::Der(_)),
+                    "fixture must produce DER error"
+                );
+            } else {
+                assert!(
+                    matches!(failure, ureq::Error::NativeTls(_)),
+                    "fixture must produce native TLS error"
+                );
+            }
+            assert_eq!(map_ureq_error(&failure).kind(), NetworkHttpErrorKind::Tls);
+        }
     }
 
     #[test]

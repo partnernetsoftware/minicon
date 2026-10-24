@@ -258,11 +258,7 @@ fn exchange(
 ) -> Result<NetworkHttpStreamOutcome, NetworkHttpError> {
     let input = &request.request;
     let mut config = ureq::Agent::config_builder()
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .provider(network_http::TLS_PROVIDER)
-                .build(),
-        )
+        .tls_config(network_http::tls_config())
         .timeout_global(Some(input.timeout))
         .max_redirects(0)
         .max_redirects_will_error(true)
