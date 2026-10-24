@@ -1,12 +1,20 @@
-# v0.2.23 — consistent browser controls
+# v0.2.23 — browser controls and the first harness connection
 
-Status: `[_]` feature implementation not started. Planning refined at the
-owner's request on 2026-10-24, using exploration of public 0.2.22. This plan
-does not authorize another public version. Installation remains deferred for
+Status: `[-]` implementation active. Planning refined at the
+owner's request on 2026-10-24, using exploration of public 0.2.22 and the
+subsequent Harness/provider-pool direction. Scope is the first working model
+connection, with manual account selection; future llm-gate/ujs/tinyvm scheduling
+is outside this version. The owner's subsequent goal explicitly authorizes
+development through **public 0.2.23**, subject to the selected evidence gates;
+no second publication approval is needed for that named version. Installation remains deferred for
 coordinated AgenTerm planning.
 
 Behavior belongs to [browser controls](../prd/PRD_02_25_02_browser_controls.md)
-and [preferences](../prd/PRD_02_25_01_browser_preferences.md). Public observation
+and [preferences](../prd/PRD_02_25_01_browser_preferences.md). Harness settings,
+provider accounts, the inference API and the future selection seam belong to
+[provider gateway](../prd/PRD_02_31_01_provider_gateway.md); the existing worker
+and its tool budgets belong to [horizon](../prd/PRD_02_31_v0_2_horizon.md).
+Public observation
 belongs to [control](../prd/PRD_02_26_con_control_cli.md), reusable mechanisms to
 [PRD 28](../prd/PRD_02_28_shared_core.md), qualification to
 [PRD 32](../prd/PRD_02_32_dev_loop_crosscheck.md), resource scheduling to
@@ -16,44 +24,50 @@ belongs to [control](../prd/PRD_02_26_con_control_cli.md), reusable mechanisms t
 ## Outcome tree DAG
 
 ```text
-Outcome: edit browser controls and choose actions predictably with keys or pointer
+Outcome: operate browser controls predictably and connect a model account to a local harness
 ├── [v] BASELINE — public 0.2.22 and compact current context
 │   invariant: released evidence and unresolved scope retain their original owners
 │   evidence: 0.2.22 release history, archived implementation plan and current PRD index
 │   safe failure: no older receipt qualifies changed source
 │   dependency: release closeout; non-goal: repeating completed publication gates
-├── [_] CONTRACT — compile the control and observation seams
+├── [-] CONTRACT — compile the control and observation seams
 │   invariant: field effects, event consumption, focus return, menu state and geometry share one contract
 │   evidence: compilable caller seam and focused pure transition checks
 │   safe failure: retain existing callers until the seam compiles
 │   dependency: PRD 25.02 and PRD 26; non-goal: a generic UI framework
-├── [_] DISMISS — first complete public regression
+├── [v] DISMISS — first complete public regression
 │   invariant: closing a proxy menu cannot activate the underlying Back action
-│   evidence: B22-MENU-DISMISS becomes an assertion-bearing red/green public journey
+│   evidence: B22-MENU-DISMISS public baseline RED, development GREEN, guard removal RED and restored GREEN (PRD 25.02)
 │   safe failure: stop at the failing focus/routing boundary
 │   dependency: CONTRACT and explicit gesture ownership; non-goal: native overlay redesign
-├── [_] EDIT — consistent bounded editing with field-specific actions
+├── [-] EDIT — consistent bounded editing with field-specific actions
 │   invariant: PRD 25.02 draft, selection, bounds and IME rules hold for all three fields
 │   evidence: field matrix below, including selected-text replacement at the bound
 │   safe failure: rejected edits preserve the prior draft and cannot reach the PTY
 │   dependency: CONTRACT/DISMISS; non-goal: merging composer/notes policy
-├── [_] MENU / LAYOUT — complete entry, navigation and viewport handling
+├── [-] MENU / LAYOUT — complete entry, navigation and viewport handling
 │   invariant: PRD 25.02 keyboard entry, distinct highlight/applied state and readable rows agree
 │   evidence: keyboard-only entry; zero/one/eight candidates; shared geometry observations
 │   safe failure: dismissal never commits; no usable viewport means bounded feedback
 │   dependency: CONTRACT, EDIT integration seam and existing responsive toolbar
 │   non-goal: extra Browser roots, another dialog or a whole-host layout rewrite
-├── [_] NATIVE — actual page/control boundary
+├── [-] NATIVE — actual page/control boundary
 │   invariant: rendered page, state, focus and proxy effects agree within each measured scope
 │   evidence: native input matrix, real service/proxy requests, restart and error recovery
 │   safe failure: unavailable required evidence is BLOCKED for that claim
 │   dependency: EDIT/MENU/LAYOUT, PRD 26 observations and PRD 28 adapters
 │   non-goal: provider OAuth, downloads, defaults, dashboard/wasm or 1:N panels
-└── [_] QUALIFY — integrate, qualify exact source, then seek a release decision
+├── [-] HARNESS-CONNECT — first shared inference path, not a scheduler
+│   invariant: PRD 31.01 settings/auth/manual-binding/API contracts share one existing worker
+│   evidence: verified provider login/inference; both model protocols; real file/exec and one named external client
+│   safe failure: unverified OAuth is BLOCKED; transport-only API-key evidence is labeled separately
+│   dependency: auth feasibility, single-turn/streaming seam and worker lifecycle repairs
+│   non-goal: automatic pool rotation, llm-gate, ujs/tinyvm integration or all-client compatibility
+└── [_] QUALIFY — integrate, qualify exact source, then publish authorized 0.2.23
     invariant: mechanism tests, native input and signed/public artifact evidence stay distinct
     evidence: mutation results, full product gate and six-cell qualification
     safe failure: retain the public baseline when a selected gate fails
-    dependency: all delivery leaves; non-goal: automatic 0.2.23 publication
+    dependency: all delivery leaves; non-goal: publishing incomplete or unqualified selected scope
 ```
 
 ## Memory palace
@@ -65,11 +79,20 @@ flowchart LR
     D --> E[Existing editor extraction and caller integration]
     E --> M[Pure menu transitions]
     E --> L[Actual-count geometry and scrolling]
+    B --> A[Provider identity and OAuth feasibility]
+    A --> F[Single-turn and selection contracts]
+    F --> G[Loopback API / manual pool / worker repairs]
+    G --> HS[Harness settings and first worker tool cycle]
+    HS --> EC[Named external client and both protocol courts]
+    A -->|unverified grant| AB[BLOCKED OAuth claim; record scope]
     M --> I[Serial input, focus and native-page integration]
     L --> I
     I --> N[Native input and real page/proxy journeys]
     N --> Q[Full product and six-cell qualification]
-    Q --> R[Separate release decision and exact-artifact chain]
+    EC --> Q
+    AB --> RD[Resolve selected scope before qualification/release]
+    RD --> Q
+    Q --> R[Authorized 0.2.23 exact-artifact chain and public verification]
     S[Shared Cargo output, desktop, clipboard or guard mutation] --> O[One exclusive controller]
     O --> D
     O --> N
@@ -87,14 +110,49 @@ flowchart LR
 - The new menu observations and their input-method limits belong to
   [PRD 25.02's baseline section](../prd/PRD_02_25_02_browser_controls.md#observed-0222-starting-failures--windows-x86_64-2026-10-24).
   B22-MENU-DISMISS is the first regression; B22-MENU-KEYS anchors keyboard work.
-  The selected-replacement size issue is still a source-inspection hypothesis.
+  The selected-replacement size issue is now a reproduced mechanism failure with a passing shared editor and public three-field journey; scoped evidence is retained by that owner.
 - Retain one Browser root, existing adapters and proxy page-recreation/refusal
   semantics. Saved candidates do not become defaults. Keep terminal connectivity,
   drafts and existing language/theme/update scope intact.
 - G4/G6, modern-agent/session qualification, RSS/size work and broader browser
   features retain their existing owners. Cleanup and this plan do not close them.
 
-## Delivery sequence and stop conditions
+## Version sequence and scope gates
+
+| Stage | Deliverable / decision | Exit evidence |
+| --- | --- | --- |
+| 0 — identity and feasibility | Confirm DeepSeek API and hosted OpenCode Console/Go service identities; establish supported OAuth client/grant/refresh, or record why unavailable | A provider-specific feasibility record: official contract and real inference where available, otherwise a named BLOCKED OAuth requirement; independent mechanism work can continue |
+| 1 — shared contracts | Freeze a single model-turn request/event seam, manual selector, account identity and worker/API authority separation | Compiling seams; no gateway path can invoke file/exec; future selector replacement needs no protocol rewrite |
+| 2 — first vertical slice | One account/model -> local Chat Completions -> existing worker -> one file/exec task; explicit Start/Stop and local client key | Real supported provider response and tool-result round trip; refusal/cancel/output/descendant courts |
+| 3 — complete the small product | Add Harness route, second provider adapter, account list/manual selection and Anthropic Messages; real SSE and connection recipe | Both protocol black boxes; account/login lifecycle; real named external client; native route/focus/state/pixels |
+| 4 — integrate selected scope | Join browser control work and Harness settings serially; reconcile carried auth/client limitations | No regression in Console/Web or terminal drafts; every selected capability has named evidence |
+| 5 — qualification | Format/Clippy, required product gates, six-cell and native account/settings/network courts on selected scope | Exact source, counts, native scopes, no credential leakage, bounded idle/active cost; absent court stays BLOCKED |
+| 6 — publish and closeout | Update owners, run the skill-directed exact-artifact release chain for authorized 0.2.23, verify public downloads and archive evidence | All selected scope qualified; no claim that a transport demonstration completes OAuth; no rebuild during Promotion |
+
+Stages 0 and the first browser dismissal slice may progress independently.
+An unavailable grant blocks that provider's delivery claim, not synthetic
+protocol work or contract compilation after service identity is established.
+After Stage 1, protocol/selection work can progress without owning the desktop;
+GUI settings waits for the common editor/route seam. One controller owns the
+worker single-turn extraction, CLI dispatch, shared callers and final joins.
+Do not create workers for tiny leaves or parallelize against the same hot files.
+
+**Release scope rule:** the connection target includes both named providers and
+their requested OAuth experience. If a grant cannot be established, record the
+exact missing contract and finish independent mechanism/control work; report
+the incomplete auth scope before release selection. A reduced API-key-only
+demonstration or moving connection work to a later version is a scope change,
+not something this plan silently decides. The user need not design endpoints,
+PKCE, streaming or selection details to let feasibility work proceed.
+
+**First-path cut:** omit automatic failover/rotation, billing dashboards,
+cross-provider model substitution, all-client presets, Responses/Codex claims,
+dynamic engine packaging and OS services. Do not omit cancellation, private
+credentials, real streaming/tool linkage or worker cleanup merely to obtain a
+successful hello-world response. Behavior and initial limits have one owner
+in PRD 31.01 and the worker module, rather than another contract in this plan.
+
+## Browser control delivery sequence and stop conditions
 
 | Step | Deliverable / evidence | Gate before proceeding |
 | --- | --- | --- |
@@ -105,11 +163,11 @@ flowchart LR
 | 4 — MENU / LAYOUT | Implement pure transitions and actual-count geometry against the frozen seam | Assign independent lanes only if file ownership and evidence are independent |
 | 5 — integration | Serial caller/paint/snapshot/native visibility integration; keyboard-only entry and real proxy journeys | Highlight is not application; dismissal/repeat/resize cannot leak an extra action |
 | 6 — QUALIFY | Format, strict Clippy, named failing-first/mutation courts, full product gate, six-cell evidence | Record schedule, source, features, counts and unavailable courts; filtered suites do not imply ignored native tests ran |
-| 7 — release consideration | Upsert observed behavior/status into owners and present remaining scope | Separate owner decision before Candidate/publication; follow PRD 27 and registered skills |
+| 7 — release integration | Upsert observed behavior/status into owners and join the Harness branch | Apply the existing 0.2.23 publication authority after all selected gates; follow PRD 27 and registered skills |
 
-The implementation owner bumps Cargo/lock/policy and canonical Dev.app examples
-together when feature work starts. Verify wrapper payload identity. This
-planning change does not bump the version or generate a new product binary.
+Cargo/lock/policy and canonical Dev.app examples are aligned for this development
+version. Verify wrapper payload identity and finish source edits before the
+exact-source release qualification.
 Run selected Windows (both ISAs) and Linux native browser/preference courts early,
 including profile isolation, before spending time on the final pack.
 
@@ -124,6 +182,7 @@ including profile isolation, before spending time on the final pack.
 | MENU | Page -> keyboard-only entry -> navigation -> one commit/cancel; no mouse-assisted opening; hover/highlight does not apply | Pure action-count checks, public state and native keyboard path |
 | GEOMETRY | Zero/one/eight candidates, normal/narrow/short windows, sidebar collapse and scale 1/1.5/2; readable scrolling, retained drafts | Shared geometry checks plus actual owned-window pixels and pointer hits |
 | PREFERENCES | Real proxy applies/clears/refuses, saved choices restart/delete, manual non-list value and failed-save rollback retain released semantics | Public local service/proxy and isolated config/profile; no provider credentials |
+| HARNESS | Three settings routes, listener lifecycle, manual account binding, two protocols, real worker tools and one external client | PRD 31.01 acceptance; synthetic mechanism courts separate from real provider grants and native settings evidence |
 | ARTIFACT | Selected control/browser behavior runs on all six exact native payloads and policy-required signed transformations | PRD 27/32 courts; development bytes do not qualify release bytes |
 
 Unit checks count menu effects; black boxes observe real connection/page state.
@@ -145,9 +204,12 @@ consideration; do not silently lower the selected acceptance.
 | Lane | Exclusive source / integration boundary | Join evidence |
 | --- | --- | --- |
 | Controller | `src/main.rs`, field callers (`browser_ui.rs`, `browser_proxy_ui.rs`, `web_settings_ui.rs`), `new_tab_menu.rs`, painters, snapshots and native fixtures | Compiled shared seam, first dismissal slice and final native integration |
-| Editing mechanism, when independent | Proposed `src/host_editor.rs`; reuse existing composer/keymap mechanisms | Bounded effects and selection/IME behavior; no navigation, save or proxy side effects |
-| Menu mechanism, when independent | Proposed `src/browser_menu.rs` | Entry/highlight/commit/dismiss transitions and consumed gestures |
+| Editing mechanism, when independent | `crates/minicon-core/src/field_editor.rs`; existing composer/keymap mechanisms | Bounded effects and selection/IME behavior; no navigation, save or proxy side effects |
+| Menu mechanism, when independent | `src/browser_menu.rs` | Entry/highlight/commit/dismiss transitions and consumed gestures |
 | Geometry, when independent | `src/ui.rs` | Actual-count/viewport/scroll geometry consumed by paint, hits, IME and snapshot |
+| Provider protocol, after the seam compiles | `src/provider_protocol.rs`, `provider_auth.rs` and `provider_login.rs`; no edits to worker/GUI callers | Text/tool/SSE/error/cancel contract; no tool executor dependency |
+| Account selection, when independent | `src/provider_accounts.rs`, `provider_runtime.rs` and `provider_server.rs`; product-private policy | Private storage/auth lifecycle, manual conversation binding and substitutable selector |
+| Controller: Harness integration | `src/harness.rs`, `harness_wire.rs`, `harness_opencode.rs`, CLI dispatch, settings routes, snapshots and shared HTTP mechanism joins | Existing worker reused; budget/output/reaping repairs; real provider and native integration |
 
 Start with the controller's vertical slice. Add workers only after the seam
 compiles and exclusive files are agreed; combine tiny leaves when delegation

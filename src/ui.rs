@@ -62,6 +62,79 @@ impl Rect {
     }
 }
 
+/// One geometry owner for menu paint, input, keyboard reveal and snapshots.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MenuLayout {
+    pub rect: Rect,
+    pub count: usize,
+    pub start: usize,
+    pub visible_rows: usize,
+    row_height: u32,
+    pad: u32,
+}
+
+impl MenuLayout {
+    fn fit(available: Rect, row_height: u32, pad: u32, count: usize, start: usize) -> Self {
+        let visible_rows = ((available.height.saturating_sub(pad.saturating_mul(2))
+            / row_height.max(1)) as usize)
+            .min(count);
+        let start = start.min(count.saturating_sub(visible_rows));
+        Self {
+            rect: Rect {
+                height: if visible_rows == 0 {
+                    0
+                } else {
+                    (visible_rows as u32)
+                        .saturating_mul(row_height)
+                        .saturating_add(pad.saturating_mul(2))
+                },
+                ..available
+            },
+            count,
+            start,
+            visible_rows,
+            row_height,
+            pad,
+        }
+    }
+
+    pub fn row(self, index: usize) -> Rect {
+        if index < self.start || index >= self.start.saturating_add(self.visible_rows) {
+            return Rect {
+                width: 0,
+                height: 0,
+                ..self.rect
+            };
+        }
+        Rect {
+            x: self.rect.x.saturating_add(self.pad),
+            y: self
+                .rect
+                .y
+                .saturating_add(self.pad)
+                .saturating_add(((index - self.start) as u32).saturating_mul(self.row_height)),
+            width: self.rect.width.saturating_sub(self.pad.saturating_mul(2)),
+            height: self.row_height,
+        }
+    }
+
+    pub fn reveal(self, selected: usize) -> usize {
+        if selected < self.start {
+            selected
+        } else if selected >= self.start.saturating_add(self.visible_rows) {
+            selected.saturating_add(1).saturating_sub(self.visible_rows)
+        } else {
+            self.start
+        }
+        .min(self.count.saturating_sub(self.visible_rows))
+    }
+
+    pub fn hit(self, x: u32, y: u32) -> Option<usize> {
+        (self.start..self.start.saturating_add(self.visible_rows))
+            .find(|&index| self.row(index).contains(x, y))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Layout {
     pub sidebar: Rect,
@@ -205,9 +278,9 @@ impl Layout {
         }
     }
 
-    /// Creation stays in the sidebar when expanded; the collapsed rail opens
-    /// the same readable menu over the content column instead of clipping it.
-    pub fn new_tab_menu(self, scale: f64) -> Rect {
+    /// Creation stays in the sidebar when expanded; a narrow viewport shows
+    /// whole 40-DIP actions with bounded scrolling rather than shrinking them.
+    pub fn new_tab_choices(self, scale: f64, start: usize) -> MenuLayout {
         let frame_width = self
             .sidebar
             .width
@@ -226,35 +299,18 @@ impl Layout {
         } else {
             self.sidebar.width.saturating_sub(pad.saturating_mul(2))
         };
-        Rect {
-            x,
-            y,
-            width: desired.min(frame_width.saturating_sub(x).saturating_sub(pad)),
-            height: dip(96.0, scale).min(self.sidebar.height.saturating_sub(y)),
-        }
-    }
-
-    pub fn new_terminal_action(self, scale: f64) -> Rect {
-        self.new_tab_menu_action(scale, false)
-    }
-
-    pub fn new_browser_action(self, scale: f64) -> Rect {
-        self.new_tab_menu_action(scale, true)
-    }
-
-    fn new_tab_menu_action(self, scale: f64, second: bool) -> Rect {
-        let menu = self.new_tab_menu(scale);
-        let pad = dip(8.0, scale).min(menu.width / 2).min(menu.height / 4);
-        let row = menu.height.saturating_sub(pad.saturating_mul(2)) / 2;
-        Rect {
-            x: menu.x.saturating_add(pad),
-            y: menu
-                .y
-                .saturating_add(pad)
-                .saturating_add(if second { row } else { 0 }),
-            width: menu.width.saturating_sub(pad.saturating_mul(2)),
-            height: row,
-        }
+        MenuLayout::fit(
+            Rect {
+                x,
+                y,
+                width: desired.min(frame_width.saturating_sub(x).saturating_sub(pad)),
+                height: self.sidebar.height.saturating_sub(y),
+            },
+            dip(40.0, scale),
+            dip(8.0, scale),
+            2,
+            start,
+        )
     }
 
     pub fn browser_recovery_card(self, scale: f64) -> Rect {
@@ -1338,12 +1394,31 @@ pub enum SettingsSection {
     #[default]
     Console,
     Web,
+    Harness,
+}
+
+impl SettingsSection {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Console => 0,
+            Self::Web => 1,
+            Self::Harness => 2,
+        }
+    }
+
+    pub const fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::Console,
+            1 => Self::Web,
+            _ => Self::Harness,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WebSettingsLayout {
     pub panel: Rect,
-    pub routes: [Rect; 2],
+    pub routes: [Rect; 3],
     pub proxy_input: Rect,
     pub proxy_add: Rect,
     pub proxy_rows: [Rect; 8],
@@ -1355,12 +1430,40 @@ pub struct WebSettingsLayout {
     pub notice: Rect,
 }
 
+/// Fixed-height scrolling Harness rows. Product state chooses row contents;
+/// this geometry is shared by paint, hit testing and public observations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HarnessSettingsLayout {
+    pub panel: Rect,
+    pub routes: [Rect; 3],
+    pub rows: MenuLayout,
+    pub previous: Rect,
+    pub next: Rect,
+}
+
+impl HarnessSettingsLayout {
+    pub fn cell(self, row: usize, column: usize, columns: usize, scale: f64) -> Rect {
+        let rect = self.rows.row(row);
+        let columns = columns.max(1) as u32;
+        let gap = dip(6.0, scale);
+        let width = rect.width.saturating_sub(gap * (columns - 1)) / columns;
+        Rect {
+            x: rect
+                .x
+                .saturating_add((column as u32).saturating_mul(width + gap)),
+            width,
+            height: rect.height.saturating_sub(dip(4.0, scale)),
+            ..rect
+        }
+    }
+}
+
 /// Geometry of the settings panel and its interactive controls. Computed on
 /// demand from the `Layout` + scale so paint and hit-testing agree exactly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SettingsLayout {
     pub panel: Rect,
-    pub routes: [Rect; 2],
+    pub routes: [Rect; 3],
     /// Interface-language options: English, Simplified, Traditional (in order).
     pub language: [Rect; 3],
     pub font_down: Rect,
@@ -1407,10 +1510,54 @@ pub enum SettingsHit {
 }
 
 impl Layout {
-    fn settings_routes(self, panel: Rect, scale: f64) -> [Rect; 2] {
-        let route_width = panel.width.min(dip(SIDEBAR_WIDTH_DIP, scale));
+    pub fn harness_settings(self, scale: f64, count: usize, start: usize) -> HarnessSettingsLayout {
+        let panel = self.web_settings(scale, 0).panel;
+        let pad = dip(12.0, scale);
+        let top = panel.y.saturating_add(dip(48.0, scale));
+        let footer_y = panel
+            .y
+            .saturating_add(panel.height)
+            .saturating_sub(dip(40.0, scale));
+        let rows = MenuLayout::fit(
+            Rect {
+                x: panel.x + pad,
+                y: top,
+                width: panel.width.saturating_sub(pad * 2),
+                height: footer_y.saturating_sub(top),
+            },
+            dip(36.0, scale),
+            0,
+            count,
+            start,
+        );
+        let width = panel.width.saturating_sub(pad * 3) / 2;
+        let previous = Rect {
+            x: panel.x + pad,
+            y: footer_y.max(top),
+            width,
+            height: dip(28.0, scale).min(
+                panel
+                    .y
+                    .saturating_add(panel.height)
+                    .saturating_sub(footer_y.max(top)),
+            ),
+        };
+        HarnessSettingsLayout {
+            panel,
+            routes: self.settings_routes(panel, scale),
+            rows,
+            previous,
+            next: Rect {
+                x: previous.x + width + pad,
+                ..previous
+            },
+        }
+    }
+
+    fn settings_routes(self, panel: Rect, scale: f64) -> [Rect; 3] {
+        let route_width = panel.width.min(dip(300.0, scale));
         let pad = dip(12.0, scale).min(route_width / 4);
-        let width = route_width.saturating_sub(pad * 3) / 2;
+        let width = route_width.saturating_sub(pad * 4) / 3;
         std::array::from_fn(|i| Rect {
             x: panel.x + pad + i as u32 * (width + pad),
             y: panel.y + dip(8.0, scale),
@@ -1420,7 +1567,7 @@ impl Layout {
     }
 
     pub fn settings_route(self, section: SettingsSection, scale: f64) -> Rect {
-        self.settings_panel(scale).routes[usize::from(section == SettingsSection::Web)]
+        self.settings_panel(scale).routes[section.index()]
     }
 
     pub fn web_settings(self, scale: f64, list_start: usize) -> WebSettingsLayout {
@@ -1524,34 +1671,23 @@ impl Layout {
         }
     }
 
-    pub fn browser_proxy_choices(self, scale: f64) -> Rect {
+    pub fn browser_proxy_menu(self, scale: f64, count: usize, start: usize) -> MenuLayout {
         let field = self.browser_proxy(scale);
-        let frame_right = self.status.x + self.status.width;
+        let frame_right = self.status.x.saturating_add(self.status.width);
         let width = dip(320.0, scale).max(field.width).min(frame_right);
-        let y = field.y + field.height;
-        Rect {
-            x: (field.x + field.width).saturating_sub(width),
-            y,
-            width,
-            height: dip(32.0 * 9.0, scale).min(self.status.y.saturating_sub(y)),
-        }
-    }
-
-    pub fn browser_proxy_choice(self, index: usize, scale: f64) -> Rect {
-        let menu = self.browser_proxy_choices(scale);
-        let row_h = (menu.height / 9).min(dip(32.0, scale));
-        if index >= 9 {
-            return Rect {
-                width: 0,
-                height: 0,
-                ..menu
-            };
-        }
-        Rect {
-            y: menu.y + index as u32 * row_h,
-            height: row_h,
-            ..menu
-        }
+        let y = field.y.saturating_add(field.height);
+        MenuLayout::fit(
+            Rect {
+                x: field.x.saturating_add(field.width).saturating_sub(width),
+                y,
+                width,
+                height: self.status.y.saturating_sub(y),
+            },
+            dip(32.0, scale),
+            dip(4.0, scale),
+            count.min(9),
+            start,
+        )
     }
 
     /// Compute the settings panel geometry. Anchored under the header on the
@@ -1567,7 +1703,7 @@ impl Layout {
         let panel_width = self
             .sidebar
             .width
-            .max(dip(SIDEBAR_WIDTH_DIP, scale))
+            .max(dip(300.0, scale))
             .min(self.status.x + self.status.width);
         let inner_x = self.sidebar.x.saturating_add(pad);
         let inner_w = panel_width.saturating_sub(pad.saturating_mul(2));
@@ -1823,11 +1959,7 @@ pub fn settings_hit(layout: Layout, x: u32, y: u32, scale: f64) -> SettingsHit {
     let s = layout.settings_panel(scale);
     for (index, rect) in s.routes.iter().enumerate() {
         if rect.contains(x, y) {
-            return SettingsHit::Route(if index == 0 {
-                SettingsSection::Console
-            } else {
-                SettingsSection::Web
-            });
+            return SettingsHit::Route(SettingsSection::from_index(index));
         }
     }
     if !s.panel.contains(x, y) {
@@ -2070,22 +2202,30 @@ mod tests {
     }
 
     #[test]
-    fn browser_proxy_choices_have_distinct_dropdown_and_nine_actions() {
+    fn browser_proxy_menu_preserves_full_targets_for_actual_counts_and_scrolls() {
         for scale in [1.0, 1.5, 2.0] {
-            for (width, height) in [(420.0, 360.0), (800.0, 600.0), (1200.0, 900.0)] {
+            for (width, height) in [
+                (420.0, 180.0),
+                (420.0, 360.0),
+                (800.0, 600.0),
+                (1200.0, 900.0),
+            ] {
                 let layout = Layout::new(dip(width, scale), dip(height, scale), scale);
-                let text = layout.browser_proxy_text(scale);
-                let dropdown = layout.browser_proxy_dropdown(scale);
-                assert_eq!(text.x + text.width, dropdown.x);
-                assert_eq!(dropdown.width, dip(32.0, scale));
-                let menu = layout.browser_proxy_choices(scale);
-                for index in 0..9 {
-                    let row = layout.browser_proxy_choice(index, scale);
-                    assert!(row.height > 0);
-                    assert!(row.y >= menu.y && row.y + row.height <= menu.y + menu.height);
-                    if index > 0 {
-                        let previous = layout.browser_proxy_choice(index - 1, scale);
-                        assert_eq!(previous.y + previous.height, row.y);
+                for count in [1, 2, 9] {
+                    let menu = layout.browser_proxy_menu(scale, count, 0);
+                    assert!(menu.visible_rows <= count);
+                    for index in 0..menu.visible_rows {
+                        let row = menu.row(index);
+                        assert_eq!(row.height, dip(32.0, scale));
+                        assert!(row.y + row.height <= menu.rect.y + menu.rect.height);
+                    }
+                    if menu.visible_rows > 0 {
+                        let last = layout.browser_proxy_menu(scale, count, menu.reveal(count - 1));
+                        assert_eq!(last.row(count - 1).height, dip(32.0, scale));
+                        assert_eq!(
+                            last.rect.height,
+                            (last.visible_rows as u32) * dip(32.0, scale) + dip(8.0, scale)
+                        );
                     }
                 }
             }
@@ -2147,9 +2287,10 @@ mod tests {
             for collapsed in [false, true] {
                 let layout =
                     Layout::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, collapsed);
-                let menu = layout.new_tab_menu(scale);
-                let terminal = layout.new_terminal_action(scale);
-                let browser = layout.new_browser_action(scale);
+                let choices = layout.new_tab_choices(scale, 0);
+                let menu = choices.rect;
+                let terminal = choices.row(0);
+                let browser = choices.row(1);
                 assert!(menu.x + menu.width <= width && menu.y + menu.height <= height);
                 assert!(terminal.width > 0 && terminal.height > 0);
                 assert!(browser.width > 0 && browser.height > 0);

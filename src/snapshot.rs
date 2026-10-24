@@ -161,7 +161,7 @@ impl ConApp {
                                 "browser_address",
                                 rect_obj(layout.browser_address(metrics.scale_factor)),
                             ),
-                            ("address_focused", self.browser_address.is_some().into()),
+                            ("address_focused", self.browser_address_focused.into()),
                             (
                                 "browser_proxy",
                                 rect_obj(layout.browser_proxy_text(metrics.scale_factor)),
@@ -179,30 +179,179 @@ impl ConApp {
                     })
                     .map(|mut geometry| {
                         if let json::JsonValue::Object(fields) = &mut geometry {
+                            let new_choices =
+                                layout.new_tab_choices(metrics.scale_factor, self.new_menu_scroll);
                             fields.extend([
+                                ("new_menu_highlight", self.new_menu_highlight.into()),
+                                ("new_menu_scroll", new_choices.start.into()),
+                                (
+                                    "new_menu_option_indices",
+                                    json::JsonValue::Array(
+                                        (new_choices.start
+                                            ..new_choices.start + new_choices.visible_rows)
+                                            .map(Into::into)
+                                            .collect(),
+                                    ),
+                                ),
+                                (
+                                    "new_menu_option_rows",
+                                    json::JsonValue::Array(
+                                        (new_choices.start
+                                            ..new_choices.start + new_choices.visible_rows)
+                                            .map(|index| rect_obj(new_choices.row(index)))
+                                            .collect(),
+                                    ),
+                                ),
+                                (
+                                    "menu_return_focus",
+                                    match self.menu_return_focus {
+                                        Some(super::browser_menu::MenuFocus::Address) => "address",
+                                        Some(super::browser_menu::MenuFocus::Proxy) => "proxy",
+                                        Some(super::browser_menu::MenuFocus::Candidate) => {
+                                            "candidate"
+                                        }
+                                        Some(super::browser_menu::MenuFocus::Settings) => {
+                                            "settings"
+                                        }
+                                        Some(super::browser_menu::MenuFocus::NewTrigger) => {
+                                            "new_trigger"
+                                        }
+                                        Some(super::browser_menu::MenuFocus::ProxyTrigger) => {
+                                            "proxy_trigger"
+                                        }
+                                        Some(super::browser_menu::MenuFocus::Page) => "page",
+                                        Some(super::browser_menu::MenuFocus::Composer) => {
+                                            "composer"
+                                        }
+                                        Some(super::browser_menu::MenuFocus::Notes) => "notes",
+                                        Some(super::browser_menu::MenuFocus::Terminal) => {
+                                            "terminal"
+                                        }
+                                        None => "none",
+                                    }
+                                    .into(),
+                                ),
+                                (
+                                    "browser_input_owner",
+                                    if self.new_tab_menu_open {
+                                        "new_menu"
+                                    } else if self.browser_proxy_menu_open {
+                                        "proxy_menu"
+                                    } else if self.settings_open
+                                        && self.settings_section == ui::SettingsSection::Harness
+                                    {
+                                        self.harness_input_owner()
+                                    } else if self.settings_open && self.settings_proxy_focused {
+                                        "candidate"
+                                    } else if self.settings_open {
+                                        "settings"
+                                    } else if !self.active_is_browser() {
+                                        if self.notes_focused {
+                                            "notes"
+                                        } else if self.composer.focused {
+                                            "composer"
+                                        } else {
+                                            "terminal"
+                                        }
+                                    } else if self.browser_address_focused {
+                                        "address"
+                                    } else if self.browser_proxy_focused {
+                                        "proxy"
+                                    } else if self.browser_chrome_trigger
+                                        == Some(super::browser_menu::ChromeTrigger::New)
+                                    {
+                                        "new_trigger"
+                                    } else if self.browser_chrome_trigger
+                                        == Some(super::browser_menu::ChromeTrigger::Proxy)
+                                    {
+                                        "proxy_trigger"
+                                    } else {
+                                        "page"
+                                    }
+                                    .into(),
+                                ),
+                                (
+                                    "browser_chrome_trigger",
+                                    match self.browser_chrome_trigger {
+                                        Some(super::browser_menu::ChromeTrigger::New) => "new",
+                                        Some(super::browser_menu::ChromeTrigger::Proxy) => "proxy",
+                                        None => "none",
+                                    }
+                                    .into(),
+                                ),
                                 ("new_root", rect_obj(layout.new_root)),
                                 ("new_tab_menu_open", self.new_tab_menu_open.into()),
-                                (
-                                    "new_tab_menu",
-                                    rect_obj(layout.new_tab_menu(metrics.scale_factor)),
-                                ),
-                                (
-                                    "new_terminal_action",
-                                    rect_obj(layout.new_terminal_action(metrics.scale_factor)),
-                                ),
-                                (
-                                    "new_browser_action",
-                                    rect_obj(layout.new_browser_action(metrics.scale_factor)),
-                                ),
+                                ("new_tab_menu", rect_obj(new_choices.rect)),
+                                ("new_terminal_action", rect_obj(new_choices.row(0))),
+                                ("new_browser_action", rect_obj(new_choices.row(1))),
                             ]);
                             let scale = metrics.scale_factor;
+                            let editor_state =
+                                |editor: Option<&composer::ComposerState>, focused: bool| {
+                                    let empty = composer::ComposerState::default();
+                                    let editor = editor.unwrap_or(&empty);
+                                    let redacted =
+                                        super::browser_ui::is_authorization_page(&editor.text);
+                                    let text = super::browser_ui::public_browser_url(&editor.text);
+                                    let selection = composer::selection_bounds(editor)
+                                        .filter(|_| !redacted)
+                                        .map_or(json::JsonValue::Null, |(start, end)| {
+                                            json::JsonValue::Array(vec![start.into(), end.into()])
+                                        });
+                                    json::object(vec![
+                                        ("text", text.into()),
+                                        ("caret", editor.caret.min(text.len()).into()),
+                                        ("selection", selection),
+                                        (
+                                            "preedit",
+                                            if redacted {
+                                                ""
+                                            } else {
+                                                editor.preedit.as_str()
+                                            }
+                                            .into(),
+                                        ),
+                                        ("focused", focused.into()),
+                                        ("redacted", redacted.into()),
+                                    ])
+                                };
+                            let menu_owns_focus =
+                                self.browser_proxy_menu_open || self.new_tab_menu_open;
+                            fields.extend([
+                                (
+                                    "browser_address_editor",
+                                    editor_state(
+                                        self.browser_address.as_ref(),
+                                        self.browser_address_focused
+                                            && !menu_owns_focus
+                                            && !self.settings_open,
+                                    ),
+                                ),
+                                (
+                                    "browser_proxy_editor",
+                                    editor_state(
+                                        Some(&self.browser_proxy_input),
+                                        self.browser_proxy_focused
+                                            && !menu_owns_focus
+                                            && !self.settings_open,
+                                    ),
+                                ),
+                                (
+                                    "web_proxy_candidate_editor",
+                                    editor_state(
+                                        Some(&self.settings_proxy_input),
+                                        self.settings_proxy_focused && self.settings_open,
+                                    ),
+                                ),
+                            ]);
                             let web = layout.web_settings(scale, self.settings_proxy_list_start);
-                            let routes = if self.settings_section == ui::SettingsSection::Web {
+                            let routes = if self.settings_section != ui::SettingsSection::Console {
                                 web.routes
                             } else {
                                 [
                                     layout.settings_route(ui::SettingsSection::Console, scale),
                                     layout.settings_route(ui::SettingsSection::Web, scale),
+                                    layout.settings_route(ui::SettingsSection::Harness, scale),
                                 ]
                             };
                             let rows = web.visible_rows.min(
@@ -216,15 +365,20 @@ impl ConApp {
                                 ("settings_open", self.settings_open.into()),
                                 (
                                     "settings_section",
-                                    if self.settings_section == ui::SettingsSection::Web {
-                                        "web"
-                                    } else {
-                                        "console"
+                                    match self.settings_section {
+                                        ui::SettingsSection::Console => "console",
+                                        ui::SettingsSection::Web => "web",
+                                        ui::SettingsSection::Harness => "harness",
                                     }
                                     .into(),
                                 ),
                                 ("settings_console_route", rect_obj(routes[0])),
                                 ("settings_web_route", rect_obj(routes[1])),
+                                ("settings_harness_route", rect_obj(routes[2])),
+                                (
+                                    "harness_settings",
+                                    self.harness_settings_snapshot(layout, scale),
+                                ),
                                 ("web_proxy_input", rect_obj(web.proxy_input)),
                                 ("web_proxy_add", rect_obj(web.proxy_add)),
                                 ("web_proxy_previous", rect_obj(web.previous)),
@@ -262,7 +416,40 @@ impl ConApp {
                                 ),
                             ]);
                             if self.active_is_browser() {
+                                let proxy_choices = layout.browser_proxy_menu(
+                                    scale,
+                                    self.config.browser_proxy_options.len() + 1,
+                                    self.proxy_menu_scroll,
+                                );
                                 fields.extend([
+                                    ("proxy_menu_highlight", self.proxy_menu_highlight.into()),
+                                    (
+                                        "proxy_menu_applied_index",
+                                        if self.browser_proxy_applied.is_empty() {
+                                            0usize.into()
+                                        } else {
+                                            self.config
+                                                .browser_proxy_options
+                                                .iter()
+                                                .position(|value| {
+                                                    value == &self.browser_proxy_applied
+                                                })
+                                                .map_or(json::JsonValue::Null, |index| {
+                                                    (index + 1).into()
+                                                })
+                                        },
+                                    ),
+                                    ("proxy_menu_scroll", proxy_choices.start.into()),
+                                    ("browser_proxy_menu", rect_obj(proxy_choices.rect)),
+                                    (
+                                        "browser_proxy_option_indices",
+                                        json::JsonValue::Array(
+                                            (proxy_choices.start
+                                                ..proxy_choices.start + proxy_choices.visible_rows)
+                                                .map(Into::into)
+                                                .collect(),
+                                        ),
+                                    ),
                                     (
                                         "browser_proxy_dropdown",
                                         rect_obj(layout.browser_proxy_dropdown(scale)),
@@ -274,12 +461,9 @@ impl ConApp {
                                     (
                                         "browser_proxy_option_rows",
                                         json::JsonValue::Array(
-                                            (0..=self.config.browser_proxy_options.len())
-                                                .map(|index| {
-                                                    rect_obj(
-                                                        layout.browser_proxy_choice(index, scale),
-                                                    )
-                                                })
+                                            (proxy_choices.start
+                                                ..proxy_choices.start + proxy_choices.visible_rows)
+                                                .map(|index| rect_obj(proxy_choices.row(index)))
                                                 .collect(),
                                         ),
                                     ),
@@ -365,7 +549,11 @@ impl ConApp {
                         "host_notice",
                         self.host_notice
                             .as_deref()
-                            .map_or(json::JsonValue::Null, Into::into),
+                            .map_or(json::JsonValue::Null, |text| {
+                                super::browser_ui::public_browser_text(text)
+                                    .into_owned()
+                                    .into()
+                            }),
                     ),
                     (
                         "control_pointer_owner",

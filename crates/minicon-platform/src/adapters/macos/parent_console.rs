@@ -1,5 +1,11 @@
 //! macOS parent-console output adapter.
 
+pub(crate) struct Session;
+
+pub(crate) fn attach_session() -> Option<Session> {
+    Some(Session)
+}
+
 pub(crate) fn write_stderr(message: &str) -> bool {
     use std::io::Write as _;
     let mut stderr = std::io::stderr().lock();

@@ -10,7 +10,7 @@ members = [
 
 [package]
 name = "minicon"
-version = "0.2.22"
+version = "0.2.23"
 edition = "2024"
 rust-version = "1.97"
 description = "Lightweight standalone terminal host (PuTTY-style micro terminal)"
@@ -34,6 +34,10 @@ path = "tests/minicon_control.rs"
 [[test]]
 name = "minicon_mux"
 path = "tests/minicon_mux.rs"
+
+[[test]]
+name = "minicon_harness"
+path = "tests/minicon_harness.rs"
 
 [[test]]
 name = "minicon_alignment"
@@ -78,7 +82,7 @@ experimental-rust-console = ["minicon-platform/rust-console"]
 
 [dependencies]
 minicon-console = { path = "crates/minicon-console" }
-minicon-platform = { path = "crates/minicon-platform", default-features = false, features = ["clipboard", "contained-process-spawn", "entropy", "filesystem", "filesystem-read", "font", "host-open", "ime", "input", "ipc", "network-http", "parent-console", "pty", "runtime", "screenshot", "window"] }
+minicon-platform = { path = "crates/minicon-platform", default-features = false, features = ["clipboard", "console-interrupt", "contained-process-spawn", "entropy", "filesystem", "filesystem-read", "font", "host-open", "ime", "input", "ipc", "network-http", "network-http-stream", "network-loopback", "parent-console", "pty", "runtime", "screenshot", "window"] }
 minicon-ui-core = { path = "crates/minicon-ui-core", features = ["terminal-selection"] }
 itoa = "1"
 minicon-core = { path = "crates/minicon-core" }

@@ -1,10 +1,166 @@
 //! Browser workspace chrome and address editing. Product behavior: PRD 25.
 use super::*;
+use minicon_core::field_editor::{self, Command, Intent, Limits, Outcome};
+
+/// Authorization addresses remain usable in the real address bar, while
+/// automation and diagnostics expose only their origin/path.
+pub(super) fn is_authorization_page(url: &str) -> bool {
+    let base = url.split(['?', '#']).next().unwrap_or(url);
+    let Some((scheme, rest)) = base.split_once("://") else {
+        return false;
+    };
+    let Some((authority, path)) = rest.split_once('/') else {
+        return false;
+    };
+    if scheme.eq_ignore_ascii_case("https") {
+        let authority = authority.to_ascii_lowercase();
+        let authority = authority.strip_suffix(":443").unwrap_or(&authority);
+        return (authority == "platform.deepseek.com"
+            && matches!(path, "dsh/authorize" | "dsh/authorized" | "oauth/authorize"))
+            || (authority == "opencode.ai" && path == "console/device");
+    }
+    if !scheme.eq_ignore_ascii_case("http") || !matches!(path, "oauth/callback" | "minicon/oauth") {
+        return false;
+    }
+    let authority = authority.to_ascii_lowercase();
+    let port = authority
+        .strip_prefix("127.0.0.1:")
+        .or_else(|| authority.strip_prefix("localhost:"))
+        .or_else(|| authority.strip_prefix("[::1]:"));
+    matches!(authority.as_str(), "127.0.0.1" | "localhost" | "[::1]")
+        || port.is_some_and(|value| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
+}
+
+pub(super) fn public_browser_url(url: &str) -> &str {
+    if is_authorization_page(url) {
+        url.split(['?', '#']).next().unwrap_or(url)
+    } else {
+        url
+    }
+}
+
+pub(super) fn public_browser_text(text: &str) -> std::borrow::Cow<'_, str> {
+    let mut output = String::new();
+    let mut rest = text;
+    let mut changed = false;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        let Some(start) = lower
+            .find("http://")
+            .into_iter()
+            .chain(lower.find("https://"))
+            .min()
+        else {
+            break;
+        };
+        output.push_str(&rest[..start]);
+        let token = &rest[start..];
+        let end = token
+            .find(|ch: char| ch.is_whitespace() || matches!(ch, '\'' | '"' | '<' | '>'))
+            .unwrap_or(token.len());
+        let token = &token[..end];
+        let public = public_browser_url(token);
+        changed |= public.len() != token.len();
+        output.push_str(public);
+        rest = &rest[start + end..];
+    }
+    if changed {
+        output.push_str(rest);
+        std::borrow::Cow::Owned(output)
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
+/// Convert host input once; field ownership is decided by the caller even
+/// when the reducer reports no change or refuses an oversized insertion.
+pub(super) fn edit_host_field(
+    editor: &mut composer::ComposerState,
+    event: &PixelWindowEvent,
+    limits: Limits,
+) -> Option<Outcome> {
+    let outcome = match event {
+        PixelWindowEvent::Keyboard(key) => {
+            if key.state != KeyPressState::Pressed {
+                return Some(Outcome::default());
+            }
+            let Some(action) = composer_chord(key).and_then(|chord| {
+                keymap::action(chord, CLIPBOARD_MODIFIER, keymap::Draft::single_line())
+            }) else {
+                return Some(Outcome::default());
+            };
+            let pasted = if action == keymap::Action::Paste {
+                composer_paste_text_or_image_path()
+            } else {
+                None
+            };
+            let typed = if let LogicalKey::Character(text) = &key.logical {
+                Some(text.as_str())
+            } else {
+                None
+            };
+            field_editor::apply(
+                editor,
+                Command::Action {
+                    action,
+                    text: if action == keymap::Action::Paste {
+                        pasted.as_deref()
+                    } else {
+                        typed
+                    },
+                },
+                limits,
+            )
+        }
+        PixelWindowEvent::Ime(ime) => {
+            use minicon_platform::ime::{ImeAction, classify_event};
+            match classify_event(ime.clone(), true) {
+                ImeAction::UpdatePreedit { text, .. } => {
+                    field_editor::apply(editor, Command::Preedit(&text), limits)
+                }
+                ImeAction::ClearPreedit => {
+                    field_editor::apply(editor, Command::ClearPreedit, limits)
+                }
+                ImeAction::CommitText(text) => {
+                    field_editor::apply(editor, Command::Commit(&text), limits)
+                }
+                ImeAction::None => Outcome::default(),
+                _ => Outcome::default(),
+            }
+        }
+        _ => return None,
+    };
+    if let Some(text) = &outcome.clipboard {
+        let _ = clipboard_status::set_text(text);
+    }
+    Some(outcome)
+}
+
+pub(super) fn host_field_offset(
+    editor: &composer::ComposerState,
+    rect: ui::Rect,
+    position: &LogicalPoint,
+    scale: f64,
+    size: u16,
+) -> usize {
+    let cell = font::cell_metrics(size).width.max(1);
+    let columns = (rect.width.saturating_sub((16.0 * scale) as u32) / cell).max(1) as usize;
+    let visible = composer::visible_window(&editor.text, &editor.preedit, editor.caret, 1, columns);
+    let column = ((position.x * scale).max(0.0) as u32)
+        .saturating_sub(rect.x.saturating_add((8.0 * scale) as u32))
+        / cell;
+    composer::caret_at_cell(&editor.text, visible.text, column as usize)
+}
 
 impl ConApp {
     pub(super) fn focus_browser_address(&mut self, window: &PixelWindow) {
+        self.browser_chrome_trigger = None;
         self.browser_proxy_focused = false;
+        self.settings_proxy_focused = false;
+        field_editor::apply(&mut self.browser_proxy_input, Command::Blur, Limits::PROXY);
+        field_editor::apply(&mut self.settings_proxy_input, Command::Blur, Limits::PROXY);
         self.begin_browser_address();
+        self.browser_address_focused = true;
         self.composer.focused = false;
         #[cfg(any(target_os = "macos", windows))]
         if let Some(page) = &self.native_browser_page {
@@ -38,34 +194,8 @@ impl ConApp {
         let Some(editor) = self.browser_address.as_mut() else {
             return;
         };
-        let anchor = if shift {
-            editor
-                .anchor
-                .unwrap_or(if editor.select_all { 0 } else { editor.caret })
-        } else {
-            offset
-        };
-        editor.select_all = false;
-        editor.anchor = Some(anchor);
-        editor.caret = offset;
-        if shift {
-            self.browser_address_drag = Some(anchor);
-            return;
-        }
         let clicks = self.browser_address_clicks.register(offset, Instant::now());
-        match clicks {
-            1 => self.browser_address_drag = Some(offset),
-            2 => {
-                let (start, end) = composer::word_bounds(&editor.text, offset);
-                editor.anchor = Some(start);
-                editor.caret = end;
-                self.browser_address_drag = None;
-            }
-            _ => {
-                composer::select_all(editor);
-                self.browser_address_drag = None;
-            }
-        }
+        self.browser_address_drag = field_editor::press(editor, offset, shift, clicks);
     }
 
     fn browser_address_offset_at(
@@ -112,7 +242,10 @@ impl ConApp {
             return Ok(true);
         }
         if !self.active_is_browser() {
-            self.browser_address = None;
+            self.browser_address_focused = false;
+            if let Some(editor) = &mut self.browser_address {
+                field_editor::apply(editor, Command::Blur, Limits::ADDRESS);
+            }
             self.browser_address_drag = None;
             return Ok(false);
         }
@@ -123,13 +256,12 @@ impl ConApp {
             self.browser_address_drag = None;
         }
         if let PixelWindowEvent::PointerMoved { position, .. } = event
+            && self.browser_address_focused
             && let Some(anchor) = self.browser_address_drag
         {
             let offset = self.browser_address_offset_at(window, position)?;
             if let Some(editor) = self.browser_address.as_mut() {
-                editor.select_all = false;
-                editor.anchor = Some(anchor);
-                editor.caret = offset;
+                field_editor::drag(editor, anchor, offset);
             }
             self.update_browser_ime_anchor(window);
             self.mark_host_ui_full_and_repaint(window);
@@ -140,6 +272,7 @@ impl ConApp {
             button: PointerButton::Left,
             ..
         } = event
+            && self.browser_address_focused
             && self.browser_address_drag.take().is_some()
         {
             let _ = window.set_pointer_capture(false);
@@ -185,7 +318,7 @@ impl ConApp {
             let y = (position.y * scale).max(0.0) as u32;
             if layout.browser_toolbar(scale).contains(x, y) {
                 if layout.browser_address(scale).contains(x, y) {
-                    if self.browser_address.is_none() {
+                    if !self.browser_address_focused {
                         self.focus_browser_address(window);
                         let offset = self.browser_address_offset_at(window, position)?;
                         self.browser_address_clicks.register(offset, Instant::now());
@@ -207,112 +340,57 @@ impl ConApp {
                 }
                 return Ok(true);
             }
-            self.browser_address = None;
+            self.browser_address_focused = false;
+            if let Some(editor) = &mut self.browser_address {
+                field_editor::apply(editor, Command::Blur, Limits::ADDRESS);
+            }
             self.browser_address_drag = None;
+        }
+        if !self.browser_address_focused {
+            return Ok(false);
         }
         let Some(editor) = self.browser_address.as_mut() else {
             return Ok(false);
         };
-        match event {
-            PixelWindowEvent::Keyboard(key) => {
-                if key.state != KeyPressState::Pressed {
-                    return Ok(true);
-                }
-                let Some(chord) = composer_chord(key) else {
-                    return Ok(true);
+        let Some(outcome) = edit_host_field(editor, event, Limits::ADDRESS) else {
+            return Ok(false);
+        };
+        match outcome.intent {
+            Intent::Submit => {
+                let text = editor.text.trim().to_owned();
+                let url = if text.contains("://") {
+                    text
+                } else {
+                    format!("https://{text}")
                 };
-                let Some(action) =
-                    keymap::action(chord, CLIPBOARD_MODIFIER, keymap::Draft::single_line())
-                else {
-                    return Ok(true);
-                };
-                match action {
-                    keymap::Action::SoftNewline | keymap::Action::Send => {
-                        let text = editor.text.trim().to_owned();
-                        let url = if text.contains("://") {
-                            text
-                        } else {
-                            format!("https://{text}")
-                        };
-                        if browser::http_url_at(&url, 0).as_deref() == Some(url.as_str()) {
-                            self.browser_address = None;
-                            self.present_http_link(window, &url);
-                            self.sync_embedded_page(window);
-                            #[cfg(any(target_os = "macos", windows))]
-                            if let Some(page) = &self.native_browser_page {
-                                page.focus();
-                            }
-                            #[cfg(target_os = "linux")]
-                            if let Some(process) = &self.browser_process {
-                                let _ = process.send("focus", None);
-                            }
-                        }
+                if browser::http_url_at(&url, 0).as_deref() == Some(url.as_str()) {
+                    self.browser_address = None;
+                    self.browser_address_focused = false;
+                    self.present_http_link(window, &url);
+                    self.sync_embedded_page(window);
+                    #[cfg(any(target_os = "macos", windows))]
+                    if let Some(page) = &self.native_browser_page {
+                        page.focus();
                     }
-                    keymap::Action::CancelFocus => {
-                        self.browser_address = None;
-                        #[cfg(any(target_os = "macos", windows))]
-                        if let Some(page) = &self.native_browser_page {
-                            page.focus();
-                        }
-                        #[cfg(target_os = "linux")]
-                        if let Some(process) = &self.browser_process {
-                            let _ = process.send("focus", None);
-                        }
+                    #[cfg(target_os = "linux")]
+                    if let Some(process) = &self.browser_process {
+                        let _ = process.send("focus", None);
                     }
-                    keymap::Action::SelectAll => composer::select_all(editor),
-                    keymap::Action::Copy => {
-                        if let Some(text) = composer::selection_text(editor) {
-                            let _ = clipboard_status::set_text(text);
-                        }
-                    }
-                    keymap::Action::Cut => {
-                        if let Some(text) = composer::cut(editor) {
-                            let _ = clipboard_status::set_text(&text);
-                        }
-                    }
-                    keymap::Action::Paste => {
-                        if let Some(text) = composer_paste_text_or_image_path() {
-                            let text = single_line_label(&text);
-                            if editor.text.len() + text.len() <= 8192 {
-                                composer::insert(editor, &text);
-                            }
-                        }
-                    }
-                    keymap::Action::Backspace => composer::backspace(editor),
-                    keymap::Action::DeleteForward => composer::delete_forward(editor),
-                    keymap::Action::DeleteWordBack => composer::delete_word_back(editor),
-                    keymap::Action::DeleteWordForward => composer::delete_word_forward(editor),
-                    keymap::Action::Move(movement) => composer::move_caret(editor, movement),
-                    keymap::Action::Extend(movement) => {
-                        composer::extend_selection(editor, movement)
-                    }
-                    keymap::Action::Insert => {
-                        if let LogicalKey::Character(text) = &key.logical
-                            && editor.text.len() + text.len() <= 8192
-                        {
-                            composer::insert(editor, &single_line_label(text));
-                        }
-                    }
-                    _ => {}
                 }
             }
-            PixelWindowEvent::Ime(ime) => {
-                use minicon_platform::ime::{ImeAction, classify_event};
-                match classify_event(ime.clone(), true) {
-                    ImeAction::UpdatePreedit { text, .. } => {
-                        editor.preedit = text.chars().take(512).collect()
-                    }
-                    ImeAction::ClearPreedit => editor.preedit.clear(),
-                    ImeAction::CommitText(text) => {
-                        editor.preedit.clear();
-                        if editor.text.len() + text.len() <= 8192 {
-                            composer::insert(editor, &single_line_label(&text));
-                        }
-                    }
-                    _ => {}
+            Intent::Cancel => {
+                self.browser_address = None;
+                self.browser_address_focused = false;
+                #[cfg(any(target_os = "macos", windows))]
+                if let Some(page) = &self.native_browser_page {
+                    page.focus();
+                }
+                #[cfg(target_os = "linux")]
+                if let Some(process) = &self.browser_process {
+                    let _ = process.send("focus", None);
                 }
             }
-            _ => return Ok(false),
+            Intent::None => {}
         }
         self.update_browser_ime_anchor(window);
         self.mark_host_ui_full_and_repaint(window);
@@ -320,6 +398,9 @@ impl ConApp {
     }
 
     pub(super) fn update_browser_ime_anchor(&self, window: &PixelWindow) {
+        if !self.browser_address_focused {
+            return;
+        }
         let Some(editor) = &self.browser_address else {
             return;
         };
@@ -367,6 +448,7 @@ impl ConApp {
             return;
         }
         self.browser_address = None;
+        self.browser_address_focused = false;
         self.browser_load_deadline = Some(Instant::now() + Duration::from_secs(30));
         #[cfg(target_os = "linux")]
         if let Some(process) = &self.browser_process {
@@ -438,6 +520,7 @@ impl ConApp {
             return;
         }
         self.browser_address = None;
+        self.browser_address_focused = false;
         self.browser_address_drag = None;
         if let Some(url) = self.prepare_browser_retry() {
             self.launch_page_host(window, &url);

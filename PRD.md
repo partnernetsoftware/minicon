@@ -1,7 +1,8 @@
 # MiniCon product requirements
 
-MiniCon is a terminal that is one file: no required installer, no bundled runtime, and
-no authority beyond local terminal hosting. This compact index links each
+MiniCon is a terminal that is one file: no required installer or bundled runtime.
+Its authority is limited to local hosting and explicitly scoped extensions.
+This compact index links each
 capability to its owning PRD. Machine alignment is `alignment-contract.json`,
 public evidence identities are in `evidence-registry.json`, and artifact
 selection and signing requirements are in `release-policy.json`.
@@ -18,7 +19,8 @@ CLI. Failure in one child, tab, parser, callback or request must stay local.
 MiniCon has no AgenTerm workbench server, Fleet, MCP, plugin host or Agent
 permission policy. Its control endpoint belongs to the GUI process lifetime.
 The bounded `mux`/`harness` subcommands have their own scope in PRD 02.31;
-settings and notes persistence belong to the workspace owner.
+the planned explicit local model listener is owned by PRD 02.31.01.
+Settings and notes persistence belong to the workspace owner.
 
 ## Markdown-tree DAG PRD
 
@@ -36,10 +38,11 @@ MiniCon — one-file local terminal
 │   ├── tab tree, content panels, composer, IME, selection, notes, settings and manual update
 │   │   └── prd/PRD_02_25_con_workspace.md
 │   │       ├── [v] Browser proxy preferences / Console-Web routes → prd/PRD_02_25_01_browser_preferences.md
-│   │       └── [_] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
+│   │       └── [-] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
+│       └── [-] Harness settings / provider-pool / model API → prd/PRD_02_31_01_provider_gateway.md
 ├── Reusable foundations → prd/PRD_02_28_shared_core.md
 │   ├── minicon-core — shared rules; not a complete terminal engine
 │   ├── minicon-ui-core — host-neutral UI mechanisms with internal ISA kernels
@@ -58,7 +61,7 @@ MiniCon — one-file local terminal
 │           └── [_] deferred native command-line installation → prd/PRD_02_27_01_install.md
 └── Current delivery
     ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
-    ├── [_] v0.2.23 browser control consistency → plan/plan-v0.2.23.md
+    ├── [-] v0.2.23 browser controls and first harness connection → plan/plan-v0.2.23.md
     ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
     └── historical outcomes and receipts → prd/archive/README.md
 ```
@@ -81,6 +84,11 @@ flowchart LR
     WEB --> UX["browser workspace UX<br/>owner acceptance gate / PRD 25"]
     WWEB["Native browser adapters and per-OS qualification"] --> UX
     CTRL["PRD 25.02: browser control consistency"] --> UX
+    GW["PRD 31.01: local model API / manual account pool"] --> AUTH{Verified inference authorization?}
+    AUTH -->|yes| HC[Existing worker and named external client]
+    AUTH -->|no| BLOCK[BLOCKED auth claim]
+    HC --> D
+    FUT[Future llm-gate / ujs + tinyvm] -. selection seam only .-> GW
     UX -->|"only after acceptance"| R
     BADUX["owner rejection or missing UX decision"] -->|"kill Candidate"| UX
     UI -->|tree compatibility exports| C
@@ -129,10 +137,11 @@ flowchart LR
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
 | Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
-| Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Planned shared editing, keyboard menus, compact geometry and scoped native focus |
+| Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Development shared editing, keyboard menus, compact geometry and scoped native focus; final qualification open |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
+| Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md) | Development Harness settings, manual pool and OpenAI/Anthropic inference API; real grants/inference pending; gateway cannot execute tools |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
 | Abstract and reuse existing mechanisms | [Module/reuse map](prd/PRD_02_28_shared_core.md) | feature graphs, type identity, source boundaries and kernel oracles; keep product policy local |
 | Native developer feedback | [Dev court](prd/PRD_02_32_dev_loop_crosscheck.md) | observed native suite execution; unavailable courts stay BLOCKED |
@@ -148,11 +157,16 @@ flowchart LR
   signed/Candidate/Defender/public qualification, retained failures and scope.
   [Workspace](prd/PRD_02_25_con_workspace.md) and
   [preferences](prd/PRD_02_25_01_browser_preferences.md) own behavior.
-- [_] **v0.2.23: predictable browser control operation.**
+- [-] **v0.2.23: browser controls and first harness connection.**
   [Controls owner](prd/PRD_02_25_02_browser_controls.md) defines consistent
   editing, compact menu geometry, keyboard/pointer menus and native focus evidence;
-  [the plan](plan/plan-v0.2.23.md) sequences work. Feature implementation and
-  another public version have not started. Installation remains
+  [provider gateway](prd/PRD_02_31_01_provider_gateway.md) owns Harness settings,
+  a manual account pool, local OpenAI/Anthropic model API and the future
+  llm-gate selection seam. Both providers' MiniCon login initialization has
+  anonymous endpoint evidence; user grants and inference remain unqualified;
+  initial scope is connection, not dynamic scheduling.
+  [The plan](plan/plan-v0.2.23.md) sequences both branches. Implementation is
+  active under the owner's public-0.2.23 goal. Installation remains
   [deferred for coordinated AgenTerm planning](prd/PRD_02_27_01_install.md).
 - [-] **Modern-agent and terminal-library qualification.** Owned Rust console
   is the Windows default from 0.2.20; classic remains the explicit rollback.

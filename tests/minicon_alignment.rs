@@ -1383,6 +1383,7 @@ const MINICON_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
         "dependencies",
         &[
             "clipboard",
+            "console-interrupt",
             "contained-process-spawn",
             "entropy",
             "filesystem",
@@ -1393,6 +1394,8 @@ const MINICON_PLATFORM_FEATURES: &[(&str, &[&str])] = &[
             "input",
             "ipc",
             "network-http",
+            "network-http-stream",
+            "network-loopback",
             "parent-console",
             "pty",
             "runtime",

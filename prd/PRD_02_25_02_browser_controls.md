@@ -1,7 +1,8 @@
 # Browser control editing and menu operation
 
-Parent: [workspace](PRD_02_25_con_workspace.md). Status: `[_]` planned for
-0.2.23; planning refined by owner request on 2026-10-24. Delivery has not started.
+Parent: [workspace](PRD_02_25_con_workspace.md). Status: `[-]` implementing
+0.2.23; owner goal authorizes development through public release. Current
+mechanism/native development observations below do not qualify release bytes.
 The workspace owns tab/page lifetime and existing address semantics;
 [browser preferences](PRD_02_25_01_browser_preferences.md) owns proxy validation,
 application and saved choices. This child owns consistent control operation,
@@ -11,25 +12,25 @@ not another preferences model. Sequencing: [0.2.23](../plan/plan-v0.2.23.md).
 
 ```text
 Outcome: edit browser controls predictably and choose an action using mouse or keyboard
-├── [_] EDIT — one bounded host editing mechanism
+├── [-] EDIT — one bounded host editing mechanism
 │   invariant: address, active proxy and candidate fields share caret, selection, clipboard and IME rules; each keeps its own draft, limits and Submit/Cancel action
 │   evidence: real page input -> each editor -> submit/cancel -> terminal/browser return; guard removal must break the selected public regression
 │   safe failure: invalid input stays editable; no key reaches an unrelated field or PTY
 │   dependency: existing core composer/click rules and workspace focus ownership
 │   non-goal: merging multiline composer/notes semantics or rewriting the terminal renderer
-├── [_] MENU — complete New/proxy menu operation
+├── [-] MENU — complete New/proxy menu operation
 │   invariant: keyboard entry, distinct highlight/applied state, single activation, dismissal and focus return follow the menu contract below
 │   evidence: mouse and keyboard choose equivalent actions with zero/one/eight saved proxies at normal/narrow/collapsed/Retina geometry
 │   safe failure: dismissal cannot navigate, apply a proxy or send input behind the overlay
 │   dependency: EDIT event ownership, existing shared Layout and native page visibility
 │   non-goal: a general external menu framework or extra Browser roots
-├── [_] LAYOUT — size menus to their content and available viewport
+├── [-] LAYOUT — size menus to their content and available viewport
 │   invariant: preserve the existing responsive toolbar; menu height follows actual option count, rows retain readable targets and overflow uses bounded scrolling
 │   evidence: normal/narrow/collapsed/Retina resize with zero/one/eight candidates, preserved drafts and a correctly aligned native page
 │   safe failure: below supported minimum geometry show resize feedback; do not offer overlapping/zero-width hit targets or route input behind clipped chrome
 │   dependency: shared Layout, preference candidate count and workspace native-page viewport contract
 │   non-goal: a new dialog or a whole-host theme/layout rewrite
-└── [_] NATIVE — observe the actual control/page boundary
+└── [-] NATIVE — observe the actual control/page boundary
     invariant: visible page pixels, state, edited address and active proxy agree; switch/return preserves the documented draft and page state
     evidence: local service and loopback proxy, restart/error recovery, native physical key/IME observations per claimed OS/ISA
     safe failure: unavailable input or native court is BLOCKED; injected CLI keys do not certify native interception
@@ -193,11 +194,32 @@ The menu keys above were host-injected; native menu input remains unqualified.
 The empty menu paints one actual row; do not describe the nine-row geometry
 budget as nine visibly painted blank rows.
 
-Source inspection also finds all three editors checking old length plus insertion
-without subtracting selected content. This is an unconfirmed boundary defect;
-first reproduce it through public input before assigning it a passing/failing court.
+The original three editors checked old length plus insertion without subtracting selected content. The selected-replacement assertion reproduced that defect before the shared reducer replaced those checks.
 
-No new 0.2.23 implementation or native input qualification is claimed. Retain
+Current development evidence (Windows x86_64, 2026-10-24):
+
+- `field_editor::tests` has five passing mechanism oracles, including bounded
+  selected replacement, atomic rejection, UTF-8 pointer selection, composition
+  and collapsed-anchor typing. The prior old-length guard was run first and
+  failed the selected-replacement assertion. Removing the preedit guard caused Submit during composition; removing collapsed-anchor cleanup reselected inserted text. Both negative controls failed their real assertions, and all five tests passed after exact source restoration.
+- `host_browser_editors_replace_selected_text_with_bounded_atomic_edits`
+  passes through public CLI against a missing-runtime fixture, covering all
+  three fields; this is host-input evidence, not physical IME qualification.
+- `native_browser_proxy_menu_outside_click_dismisses_without_navigation`
+  fails against checksum-verified public 0.2.22, passes against development
+  bytes, fails again when dismissal consumption is removed, then passes after
+  exact source restoration. This is real WebView2 navigation plus host-injected
+  input, not a physical pointer interception claim. Local mutation records:
+  `target-six/v0.2.23-controls/dismiss-mutation.json` and `.log`.
+
+The three public journeys for keyboard entry/traversal/single activation,
+original UTF-8 editor selection on dismissal, and zero/one/eight proxy choices
+with readable rows/scrolling pass on development bytes. Native WebView2
+composition, outside-click navigation, address/history/error, proxy persistence
+and terminal-draft journeys also pass. The native two-window reactivation
+court first reached actual page/menu focus, then failed Windows foreground
+eligibility while activating its second owned window; the corrected fixture subsequently passed actual foreground, child-page focus, background non-activation and reactivation assertions. Physical input and final artifact qualification
+remain open. Retain
 0.2.22 receipts in its release history and archived plan as the starting scope.
 A new source must qualify independently; physical keyboard, IME, injected CLI
 and rendered-state observations remain separate claims.

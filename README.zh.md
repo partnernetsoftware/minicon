@@ -61,7 +61,7 @@ minicon cli --control unix:/tmp/minicon-build/control.sock screenshot-pane --out
 
 - **一个可执行文件。** 免安装，不捆绑浏览器引擎。各平台产物体积和测量记录见
   [交付要求](prd/PRD_02_27_con_delivery.md)。
-- **永久开源。** MIT 或 Apache-2.0。无遥测、无账号、无自动更新——设置面板里的更新
+- **永久开源。** MIT 或 Apache-2.0。无遥测、无需 MiniCon 账号、无自动更新——设置面板里的更新
   检查是手动、逐次点击的，绝不会自行运行。源码就是产品。
 - **更新是手动的，而且可以退回去。** 面板能去发布页查版本并就地替换这一个文件；被
   替换掉的旧文件会留在旁边——Windows 上是 `minicon.exe.backup`，其他平台是
@@ -158,7 +158,7 @@ shell：每个 tab 一个进程而不是三个，没有额外的 `conhost.exe`�
 ```
 
 在 macOS 上，规范 dev 构建还会组装未签名的本地测试包装
-`target/debug/MiniCon 0.2.22 Dev.app`；版本跟随 `Cargo.toml`，使用独立的开发 bundle id，避免 UI
+`target/debug/MiniCon 0.2.23 Dev.app`；版本跟随 `Cargo.toml`，使用独立的开发 bundle id，避免 UI
 验收时误选机器上已安装的发行版。实际接受测试的可执行文件仍是
 `target/debug/minicon`。
 
@@ -189,6 +189,9 @@ Rust 1.97。Linux 需要 `libxkbcommon.so.0` 和 `libwayland-client.so.0`（无�
 Enter 应用并重新加载（重置页面会话和历史），Escape 取消编辑。在
 **设置 → Web** 增删保存的候选项，**Console** 保留终端设置；选择
 **使用配置的代理** 可清除本次覆盖。
+
+0.2.23 开发版增加 **设置 → Harness**，可按需连接模型服务账号，并手动启动本地模型 API。
+连接步骤与当前验证范围见 [Harness 需求](prd/PRD_02_31_01_provider_gateway.md)。
 
 ---
 

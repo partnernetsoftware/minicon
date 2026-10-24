@@ -106,6 +106,22 @@ impl BrowserGui {
         self.click_rect(&geometry[name][index], name, geometry);
     }
 
+    fn click_browser_back(&self) {
+        let snapshot = self.cli(&["ui-snapshot"]);
+        let geometry = &snapshot["geometry"];
+        // 0.2.22 publishes its toolbar rather than individual navigation
+        // buttons. Its first 34-DIP column is Back; keep the same regression
+        // runnable against that exact released baseline.
+        let scale = geometry["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+        let back = serde_json::json!({
+            "x": geometry["browser_toolbar"]["x"],
+            "y": geometry["browser_toolbar"]["y"],
+            "width": (34.0 * scale) as u64,
+            "height": (44.0 * scale) as u64,
+        });
+        self.click_rect(&back, "browser_back", geometry);
+    }
+
     fn click_rect(&self, rect: &Value, name: &str, geometry: &Value) {
         let width = rect["width"].as_u64().expect("published hit-target width");
         let height = rect["height"]
@@ -400,6 +416,46 @@ fn native_browser_visible_entry_retry_and_terminal_draft() {
     );
     assert_eq!(host.open_browser_from_menu()["id"], browser_id);
     assert_eq!(host.browser()["browser"]["url"], next_url);
+}
+
+#[test]
+#[ignore = "requires a native desktop/WebView runtime; run the explicit visible proxy court"]
+fn native_browser_proxy_menu_outside_click_dismisses_without_navigation() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    host.open_browser_from_menu();
+    let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
+    let first = format!("http://{}/first", origin.address);
+    let second = format!("http://{}/second", origin.address);
+    for url in [&first, &second] {
+        host.cli(&["send-ui-keys", "Ctrl+l"]);
+        host.cli(&["send-ui-ime", "commit", url]);
+        host.cli(&["send-ui-keys", "Enter"]);
+        host.wait_browser(url, "ready", None);
+    }
+    host.click_geometry("browser_proxy_dropdown");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_menu_open"],
+        true
+    );
+    host.click_browser_back();
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_menu_open"],
+        false
+    );
+    // A fall-through navigation may finish after the input reply. Observe the
+    // real engine for a bounded interval instead of trusting one immediate frame.
+    let deadline = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < deadline {
+        assert_eq!(
+            host.browser()["browser"]["url"],
+            second,
+            "an outside Back click must dismiss only, not navigate behind the menu"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    host.click_browser_back();
+    host.wait_browser(&first, "ready", None);
+    host.close_and_wait();
 }
 
 #[test]
@@ -832,4 +888,1006 @@ fn native_browser_address_redirect_history_and_failure() {
     );
     stop.store(true, Ordering::Relaxed);
     worker.join().unwrap();
+}
+
+fn host_editor_state(host: &BrowserGui, name: &str) -> Value {
+    host.cli(&["ui-snapshot"])["geometry"][name].clone()
+}
+
+fn click_editor_end(host: &BrowserGui, target: &str) {
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let geometry = &snapshot["geometry"];
+    let rect = &geometry[target];
+    let scale = geometry["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+    let x = ((rect["x"].as_u64().unwrap() + rect["width"].as_u64().unwrap() - 4) as f64 / scale)
+        .round()
+        .to_string();
+    let y = ((rect["y"].as_u64().unwrap() + rect["height"].as_u64().unwrap() / 2) as f64 / scale)
+        .round()
+        .to_string();
+    host.cli(&[
+        "send-ui-mouse",
+        "--action",
+        "click",
+        "--button",
+        "left",
+        "--column",
+        &x,
+        "--row",
+        &y,
+    ]);
+}
+
+#[test]
+fn host_browser_editors_replace_selected_text_with_bounded_atomic_edits() {
+    // No network or usable browser engine is needed to exercise host editors.
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.open_browser_from_menu();
+    for (name, target, limit) in [
+        ("browser_address_editor", "browser_address", 8192),
+        ("browser_proxy_editor", "browser_proxy", 2048),
+        ("web_proxy_candidate_editor", "web_proxy_input", 2048),
+    ] {
+        if name == "web_proxy_candidate_editor" {
+            host.open_web_settings();
+        }
+        host.click_geometry(target);
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", &"a".repeat(limit)]);
+        assert_eq!(
+            host_editor_state(&host, name)["text"]
+                .as_str()
+                .unwrap()
+                .len(),
+            limit
+        );
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-keys", "z"]);
+        assert_eq!(
+            host_editor_state(&host, name)["text"],
+            "z",
+            "{name}: keyboard replacement at the bound"
+        );
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", &"a".repeat(limit)]);
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", "短"]);
+        let replaced = host_editor_state(&host, name);
+        assert_eq!(
+            replaced["text"], "短",
+            "{name}: IME replacement at the bound"
+        );
+        assert_eq!(replaced["caret"], 3);
+        assert!(replaced["selection"].is_null());
+
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", &"a".repeat(limit)]);
+        host.cli(&["send-ui-keys", "Home"]);
+        host.cli(&["send-ui-keys", "Right"]);
+        host.cli(&["send-ui-keys", "Shift+Right"]);
+        let before = host_editor_state(&host, name);
+        assert_eq!(before["selection"], serde_json::json!([1, 2]));
+        host.cli(&["send-ui-ime", "commit", "中字"]);
+        let rejected = host_editor_state(&host, name);
+        assert_eq!(
+            rejected["text"], before["text"],
+            "{name}: oversized text changed the draft"
+        );
+        assert_eq!(
+            rejected["caret"], before["caret"],
+            "{name}: oversized text moved the caret"
+        );
+        assert_eq!(
+            rejected["selection"], before["selection"],
+            "{name}: oversized text cut the selection"
+        );
+
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", "a中z"]);
+        host.cli(&["send-ui-keys", "Home"]);
+        host.cli(&["send-ui-keys", "Right"]);
+        host.cli(&["send-ui-keys", "Shift+Right"]);
+        assert_eq!(
+            host_editor_state(&host, name)["selection"],
+            serde_json::json!([1, 4])
+        );
+        host.cli(&["send-ui-ime", "commit", "XY"]);
+        let partial = host_editor_state(&host, name);
+        assert_eq!(partial["text"], "aXYz");
+        assert_eq!(partial["caret"], 3);
+        assert!(partial["selection"].is_null());
+
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", "http://127.0.0.1:65535"]);
+        host.cli(&["send-ui-ime", "preedit", "ni"]);
+        host.cli(&["send-ui-keys", "Enter"]);
+        let composing = host_editor_state(&host, name);
+        assert_eq!(
+            composing["focused"], true,
+            "{name}: composition Enter changed ownership"
+        );
+        assert_eq!(
+            composing["text"], "http://127.0.0.1:65535",
+            "{name}: composition Enter submitted the draft"
+        );
+        assert_eq!(composing["preedit"], "ni");
+        if name == "browser_address_editor" {
+            host.click_geometry("browser_proxy");
+        } else if name == "browser_proxy_editor" {
+            host.cli(&["send-ui-keys", "Ctrl+l"]);
+        } else {
+            host.click_geometry("settings_console_route");
+        }
+        let blurred = host_editor_state(&host, name);
+        assert_eq!(blurred["focused"], false);
+        assert_eq!(blurred["preedit"], "", "{name}: blur retained a preedit");
+        assert_eq!(
+            blurred["text"], composing["text"],
+            "{name}: blur discarded its draft"
+        );
+        if name == "web_proxy_candidate_editor" {
+            host.click_geometry("settings_web_route");
+        }
+        host.click_geometry(target);
+        assert_eq!(
+            host_editor_state(&host, name)["text"],
+            composing["text"],
+            "{name}: refocus replaced its draft"
+        );
+
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", "xy"]);
+        click_editor_end(&host, target);
+        host.cli(&["send-ui-ime", "commit", "a"]);
+        host.cli(&["send-ui-ime", "commit", "b"]);
+        let typed = host_editor_state(&host, name);
+        assert_eq!(
+            typed["text"], "xyab",
+            "{name}: a collapsed click anchor replaced the previous character"
+        );
+        assert!(typed["selection"].is_null());
+    }
+    host.close_and_wait();
+}
+
+#[test]
+#[ignore = "requires a native desktop/WebView runtime; run the explicit editor composition court"]
+fn native_browser_editor_composition_requires_a_separate_submit() {
+    let mut host = BrowserGui::spawn(false, None, None);
+    host.open_browser_from_menu();
+    let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
+    let first = format!("http://{}/first", origin.address);
+    let second = format!("http://{}/second", origin.address);
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-ime", "commit", &first]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    host.wait_browser(&first, "ready", Some("Local preview ready"));
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-ime", "commit", &second]);
+    host.cli(&["send-ui-ime", "preedit", "ni"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(host.browser()["browser"]["url"], first);
+    assert_eq!(
+        host_editor_state(&host, "browser_address_editor")["preedit"],
+        "ni"
+    );
+    host.cli(&["send-ui-ime", "disabled"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    host.wait_browser(&second, "ready", Some("Local preview ready"));
+
+    let proxy = LocalPreviewServer::start_proxy();
+    let endpoint = format!("http://{}", proxy.address);
+    host.click_geometry("browser_proxy");
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", &endpoint]);
+    host.cli(&["send-ui-ime", "preedit", "ni"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        host_editor_state(&host, "browser_proxy_editor")["focused"],
+        true
+    );
+    assert_eq!(
+        proxy.requests.load(Ordering::Relaxed),
+        0,
+        "composition confirmation applied a proxy"
+    );
+    host.cli(&["send-ui-ime", "disabled"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    let remote = "http://preview.minicon.invalid/editor";
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-ime", "commit", remote]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    host.wait_browser(remote, "ready", Some("Proxy preview"));
+    assert!(proxy.requests.load(Ordering::Relaxed) > 0);
+
+    host.open_web_settings();
+    host.click_geometry("web_proxy_input");
+    host.cli(&["send-ui-ime", "commit", &endpoint]);
+    host.cli(&["send-ui-ime", "preedit", "ni"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["web_proxy_options_count"],
+        0
+    );
+    assert_eq!(
+        host_editor_state(&host, "web_proxy_candidate_editor")["text"],
+        endpoint
+    );
+    host.cli(&["send-ui-ime", "disabled"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["web_proxy_options_count"],
+        1
+    );
+    host.close_and_wait();
+}
+
+#[test]
+fn host_browser_menus_keyboard_entry_traversal_and_single_activation() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    let browser_id = host.open_browser_from_menu()["id"].clone();
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    let opened = host.cli(&["ui-snapshot"]);
+    assert_eq!(
+        opened["geometry"]["new_tab_menu_open"], true,
+        "keyboard traversal from address must reach and open New without activating its default action"
+    );
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        2,
+        "the opening Enter must not create a terminal"
+    );
+    assert_eq!(opened["geometry"]["new_menu_highlight"], 0);
+    host.cli(&["send-ui-keys", "Down"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["new_menu_highlight"],
+        1
+    );
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert_eq!(
+        host.browser()["id"],
+        browser_id,
+        "choosing Browser must reuse its root"
+    );
+    assert_eq!(
+        host.cli(&["list-tabs"])["tabs"].as_array().unwrap().len(),
+        2
+    );
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-keys", "Tab"]);
+    assert_eq!(
+        host_editor_state(&host, "browser_proxy_editor")["focused"],
+        true
+    );
+    host.cli(&["send-ui-keys", "Tab"]);
+    host.cli(&["send-ui-keys", "Space"]);
+    let proxy = host.cli(&["ui-snapshot"]);
+    assert_eq!(proxy["geometry"]["browser_proxy_menu_open"], true);
+    assert_eq!(proxy["geometry"]["proxy_menu_highlight"], 0);
+    assert_eq!(
+        proxy["geometry"]["browser_proxy_option_rows"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    host.cli(&["send-ui-keys", "Down"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["proxy_menu_highlight"],
+        0,
+        "Down must clamp to the only configured-behavior row"
+    );
+    host.cli(&["send-ui-keys", "Escape"]);
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_menu_open"],
+        false
+    );
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host_editor_state(&host, "browser_proxy_editor")["focused"],
+        true,
+        "dismissal must restore the trigger as the keyboard traversal owner"
+    );
+    host.cli(&["send-ui-keys", "Shift+Tab"]);
+    assert_eq!(
+        host_editor_state(&host, "browser_address_editor")["focused"],
+        true
+    );
+    host.close_and_wait();
+}
+
+#[test]
+fn host_browser_proxy_menu_counts_keep_readable_rows_and_reveal_the_last_choice() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.open_browser_from_menu();
+    let mut saved = 0;
+    for desired in [0usize, 1, 8] {
+        if saved < desired {
+            host.open_web_settings();
+            while saved < desired {
+                host.click_geometry("web_proxy_input");
+                host.cli(&["send-ui-keys", "Ctrl+a"]);
+                let endpoint = format!("http://127.0.0.1:{}", 35000 + saved);
+                host.cli(&["send-ui-ime", "commit", &endpoint]);
+                host.cli(&["send-ui-keys", "Enter"]);
+                saved += 1;
+                assert_eq!(
+                    host.cli(&["ui-snapshot"])["geometry"]["web_proxy_options_count"],
+                    saved
+                );
+            }
+            host.cli(&["send-ui-keys", "Escape"]);
+        }
+        for (width, height) in [(540, 300), (1000, 700)] {
+            host.cli(&[
+                "resize-window",
+                "--width",
+                &width.to_string(),
+                "--height",
+                &height.to_string(),
+            ]);
+            host.click_geometry("browser_proxy_dropdown");
+            let opened = host.cli(&["ui-snapshot"]);
+            let geometry = &opened["geometry"];
+            assert_eq!(geometry["browser_proxy_menu_open"], true);
+            let rows = geometry["browser_proxy_option_rows"].as_array().unwrap();
+            assert!(!rows.is_empty());
+            let scale = geometry["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+            // This contract assertion also detects the released nine-row
+            // shrink-to-fit defect without relying on new observation keys.
+            for row in rows {
+                let actual = row["height"].as_u64().unwrap() as f64 / scale;
+                assert!(
+                    (actual - 32.0).abs() <= 1.0,
+                    "proxy choices must retain a readable 32-DIP target, got {actual}"
+                );
+            }
+            assert!(rows.len() <= desired + 1);
+            if desired <= 1 {
+                assert_eq!(rows.len(), desired + 1);
+            }
+            let menu = &geometry["browser_proxy_menu"];
+            assert_eq!(
+                menu["height"].as_u64().unwrap(),
+                rows.iter()
+                    .map(|row| row["height"].as_u64().unwrap())
+                    .sum::<u64>()
+                    + (8.0 * scale).round() as u64,
+                "menu height must follow the actual visible choices with no unused choice rows"
+            );
+            for _ in 0..desired + 2 {
+                host.cli(&["send-ui-keys", "Down"]);
+            }
+            let moved = host.cli(&["ui-snapshot"]);
+            assert_eq!(moved["geometry"]["proxy_menu_highlight"], desired);
+            let visible = moved["geometry"]["browser_proxy_option_indices"]
+                .as_array()
+                .unwrap();
+            assert!(
+                visible
+                    .iter()
+                    .any(|index| index.as_u64() == Some(desired as u64)),
+                "keyboard movement must reveal the last saved choice"
+            );
+            if desired == 8 && height == 300 {
+                assert!(moved["geometry"]["proxy_menu_scroll"].as_u64().unwrap() > 0);
+            }
+            host.cli(&["resize-window", "--width", "760", "--height", "420"]);
+            let resized = host.cli(&["ui-snapshot"]);
+            assert_eq!(
+                resized["geometry"]["proxy_menu_highlight"], desired,
+                "resize changed the user's highlighted action"
+            );
+            assert!(
+                resized["geometry"]["browser_proxy_option_indices"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|index| index.as_u64() == Some(desired as u64))
+            );
+            host.cli(&["send-ui-keys", "Escape"]);
+            assert_eq!(
+                host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_menu_open"],
+                false
+            );
+        }
+    }
+    host.close_and_wait();
+}
+
+#[test]
+fn host_browser_menu_dismiss_restores_the_original_editor_selection() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.open_browser_from_menu();
+    for trigger in ["browser_proxy_dropdown", "new_root"] {
+        host.cli(&["send-ui-keys", "Ctrl+l"]);
+        host.cli(&["send-ui-ime", "commit", "a中z"]);
+        host.cli(&["send-ui-keys", "Home"]);
+        host.cli(&["send-ui-keys", "Right"]);
+        host.cli(&["send-ui-keys", "Shift+Right"]);
+        let original = host_editor_state(&host, "browser_address_editor");
+        assert_eq!(original["selection"], serde_json::json!([1, 4]));
+        host.cli(&["send-ui-ime", "preedit", "ni"]);
+        host.click_geometry(trigger);
+        let menu = host.cli(&["ui-snapshot"]);
+        assert_eq!(menu["geometry"]["menu_return_focus"], "address");
+        assert_eq!(
+            host_editor_state(&host, "browser_address_editor")["focused"],
+            false
+        );
+        host.cli(&["send-ui-keys", "Escape"]);
+        let restored = host_editor_state(&host, "browser_address_editor");
+        for key in ["text", "caret", "selection"] {
+            assert_eq!(
+                restored[key], original[key],
+                "{trigger} lost the previous field {key}"
+            );
+        }
+        assert_eq!(restored["focused"], true);
+        assert_eq!(restored["preedit"], "");
+        host.cli(&["send-ui-ime", "commit", "Q"]);
+        assert_eq!(
+            host_editor_state(&host, "browser_address_editor")["text"],
+            "aQz",
+            "after dismissal the next edit must replace the original selected UTF-8 range"
+        );
+    }
+    host.close_and_wait();
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires interactive foreground activation and WebView2; run the explicit native focus court"]
+fn native_browser_menu_reactivation_restores_the_page_focus_without_background_activation() {
+    use std::ffi::c_void;
+    type Hwnd = *mut c_void;
+    #[repr(C)]
+    struct GuiInfo {
+        size: u32,
+        flags: u32,
+        active: Hwnd,
+        focus: Hwnd,
+        capture: Hwnd,
+        menu: Hwnd,
+        move_size: Hwnd,
+        caret: Hwnd,
+        rect: [i32; 4],
+    }
+    struct Find {
+        pid: u32,
+        window: Hwnd,
+    }
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn EnumWindows(callback: unsafe extern "system" fn(Hwnd, isize) -> i32, data: isize)
+        -> i32;
+        fn GetWindowThreadProcessId(window: Hwnd, pid: *mut u32) -> u32;
+        fn IsWindowVisible(window: Hwnd) -> i32;
+        fn GetForegroundWindow() -> Hwnd;
+        fn SetForegroundWindow(window: Hwnd) -> i32;
+        fn GetGUIThreadInfo(thread: u32, info: *mut GuiInfo) -> i32;
+        fn IsChild(parent: Hwnd, child: Hwnd) -> i32;
+        fn AttachThreadInput(from: u32, to: u32, attach: i32) -> i32;
+        fn PeekMessageW(message: *mut c_void, window: Hwnd, min: u32, max: u32, remove: u32)
+        -> i32;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentThreadId() -> u32;
+    }
+    unsafe extern "system" fn visit(window: Hwnd, data: isize) -> i32 {
+        let find = unsafe { &mut *(data as *mut Find) };
+        let mut pid = 0;
+        unsafe { GetWindowThreadProcessId(window, &mut pid) };
+        if pid == find.pid && unsafe { IsWindowVisible(window) } != 0 {
+            find.window = window;
+            0
+        } else {
+            1
+        }
+    }
+    fn owned_window(pid: u32) -> Hwnd {
+        let mut find = Find {
+            pid,
+            window: std::ptr::null_mut(),
+        };
+        unsafe { EnumWindows(visit, &mut find as *mut Find as isize) };
+        assert!(
+            !find.window.is_null(),
+            "the owned court GUI must have a visible native window"
+        );
+        find.window
+    }
+    fn focus() -> Hwnd {
+        let mut info: GuiInfo = unsafe { std::mem::zeroed() };
+        info.size = std::mem::size_of::<GuiInfo>() as u32;
+        assert_ne!(
+            unsafe { GetGUIThreadInfo(0, &mut info) },
+            0,
+            "observe actual foreground keyboard focus"
+        );
+        info.focus
+    }
+    struct InputAttachment {
+        from: u32,
+        to: u32,
+    }
+    impl Drop for InputAttachment {
+        fn drop(&mut self) {
+            assert_ne!(
+                unsafe { AttachThreadInput(self.from, self.to, 0) },
+                0,
+                "detach only the owned court input queues"
+            );
+        }
+    }
+    fn activate_owned(target: Hwnd, first: Hwnd, second: Hwnd) {
+        assert!(target == first || target == second);
+        // The test runner loses foreground eligibility once its first owned
+        // GUI has activated. Temporarily join only these two owned GUI queues;
+        // never attach to an unrelated foreground application or inject keys.
+        let current = unsafe { GetCurrentThreadId() };
+        let mut message = [0usize; 8];
+        unsafe { PeekMessageW(message.as_mut_ptr().cast(), std::ptr::null_mut(), 0, 0, 0) };
+        let mut attachments = Vec::new();
+        for window in [first, second] {
+            let thread = unsafe { GetWindowThreadProcessId(window, std::ptr::null_mut()) };
+            assert_ne!(thread, 0);
+            if current != thread
+                && !attachments
+                    .iter()
+                    .any(|attachment: &InputAttachment| attachment.to == thread)
+            {
+                assert_ne!(
+                    unsafe { AttachThreadInput(current, thread, 1) },
+                    0,
+                    "attach the test queue to an owned GUI queue"
+                );
+                attachments.push(InputAttachment {
+                    from: current,
+                    to: thread,
+                });
+            }
+        }
+        assert_ne!(
+            unsafe { SetForegroundWindow(target) },
+            0,
+            "activate an owned court GUI through its attached input queue"
+        );
+        // RAII detaches on both success and panic; product code must perform
+        // keyboard focus restoration itself, without a fixture SetFocus call.
+        drop(attachments);
+    }
+    struct RestoreForeground(Hwnd);
+    impl Drop for RestoreForeground {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe { SetForegroundWindow(self.0) };
+            }
+        }
+    }
+    let _restore = RestoreForeground(unsafe { GetForegroundWindow() });
+    let mut host = BrowserGui::spawn(false, None, None);
+    let mut other = BrowserGui::spawn(true, None, None);
+    let first = owned_window(host.gui.child.id());
+    let second = owned_window(other.gui.child.id());
+    let wait = |predicate: &dyn Fn() -> bool, label: &str| {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !predicate() {
+            assert!(Instant::now() < deadline, "{label}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
+    activate_owned(first, first, second);
+    wait(
+        &|| unsafe { GetForegroundWindow() == first },
+        "activate browser court GUI",
+    );
+    host.open_browser_from_menu();
+    let origin = LocalPreviewServer::start("127.0.0.1:0".parse().unwrap());
+    let url = format!("http://{}/focus", origin.address);
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-ime", "commit", &url]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    host.wait_browser(&url, "ready", Some("Local preview ready"));
+    wait(
+        &|| {
+            let focused = focus();
+            focused != first && unsafe { IsChild(first, focused) } != 0
+        },
+        "the real native page must own keyboard focus before opening its menu",
+    );
+    host.click_geometry("browser_proxy_dropdown");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_menu_open"],
+        true
+    );
+    wait(
+        &|| focus() == first,
+        "the open host menu must own the real window focus",
+    );
+    activate_owned(second, first, second);
+    wait(
+        &|| unsafe { GetForegroundWindow() == second },
+        "activate the other owned court GUI",
+    );
+    wait(
+        &|| host.cli(&["ui-snapshot"])["geometry"]["browser_proxy_menu_open"] == false,
+        "app deactivation must dismiss the menu",
+    );
+    let deadline = Instant::now() + Duration::from_millis(250);
+    while Instant::now() < deadline {
+        assert_eq!(
+            unsafe { GetForegroundWindow() },
+            second,
+            "a background menu close stole foreground activation"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["menu_return_focus"],
+        "page"
+    );
+    activate_owned(first, first, second);
+    wait(
+        &|| {
+            let focused = focus();
+            focused != first && unsafe { IsChild(first, focused) } != 0
+        },
+        "reactivation must return actual keyboard focus to the embedded page",
+    );
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["menu_return_focus"],
+        "none"
+    );
+    host.close_and_wait();
+    other.close_and_wait();
+}
+
+fn harness_snapshot(host: &BrowserGui) -> Value {
+    host.cli(&["ui-snapshot"])["geometry"]["harness_settings"].clone()
+}
+
+fn wait_harness(host: &BrowserGui, condition: impl Fn(&Value) -> bool) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(12);
+    loop {
+        let state = harness_snapshot(host);
+        if condition(&state) {
+            return state;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Harness condition timed out: {state}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn open_harness(host: &BrowserGui) -> Value {
+    if host.cli(&["ui-snapshot"])["settings_open"] != true {
+        host.click_geometry("settings");
+    }
+    host.click_geometry("settings_harness_route");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["settings_section"],
+        "harness"
+    );
+    wait_harness(host, |state| state["busy"] == false)
+}
+
+fn click_harness(host: &BrowserGui, id: &str, column: usize) {
+    // Find a published target by navigating the real panel. The court never
+    // re-derives product row order, position, count or hit geometry.
+    for _ in 0..80 {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        let geometry = &snapshot["geometry"];
+        let harness = &geometry["harness_settings"];
+        if harness["scroll"] == 0 {
+            break;
+        }
+        host.click_rect(&harness["previous"], "Harness Previous", geometry);
+    }
+    for _ in 0..80 {
+        let snapshot = host.cli(&["ui-snapshot"]);
+        let geometry = &snapshot["geometry"];
+        let harness = &geometry["harness_settings"];
+        if let Some(row) = harness["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+        {
+            host.click_rect(&row["cells"][column], id, geometry);
+            return;
+        }
+        host.click_rect(&harness["next"], "Harness Next", geometry);
+    }
+    panic!("Harness target {id} never became reachable");
+}
+
+fn harness_private_file(path: &std::path::Path, bytes: &[u8]) {
+    let parent = path.parent().unwrap();
+    fs::create_dir_all(parent).unwrap();
+    minicon_platform::filesystem::protect_private_directory(parent).unwrap();
+    minicon_platform::filesystem::write_private_atomic(path, bytes).unwrap();
+}
+
+fn harness_synthetic_profile(root: &std::path::Path, port: u16, key: &str, token: &str) {
+    // This private synthetic binding qualifies local UI/listener behavior.
+    // No upstream request or provider authorization evidence is claimed.
+    let harness = root.join("harness");
+    harness_private_file(
+        &harness.join("gateway.json"),
+        &serde_json::to_vec(&serde_json::json!({
+            "version":1,"port":port,"selected_account":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "model":"deepseek/fixture-model","identity":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "models":[{"id":"deepseek/fixture-model","model_id":"fixture-model",
+                "provider":"deepseek","protocol":"Messages",
+                "url":"https://api.deepseek.com/anthropic/v1/messages","headers":[]}]
+        }))
+        .unwrap(),
+    );
+    harness_private_file(&harness.join("accounts/accounts.json"), br#"{"version":1,"accounts":[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","provider":"deepseek","label":"Synthetic court","state":"AccountReady"}]}"#);
+    harness_private_file(
+        &harness.join("accounts/credentials/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"),
+        &serde_json::to_vec(&serde_json::json!({"version":1,"provider":"deepseek",
+            "access_token":token,"refresh_token":null,"expires_unix_ms":null,"organization":null}))
+        .unwrap(),
+    );
+    harness_private_file(&harness.join("client-key"), key.as_bytes());
+}
+
+#[test]
+fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.cli(&["send-ui-keys", "Ctrl+Shift+I"]);
+    host.cli(&["send-ui-ime", "commit", "terminal draft survives Harness"]);
+    assert!(
+        harness_snapshot(&host).is_null(),
+        "runtime must remain lazy before the first Harness entry"
+    );
+    host.open_web_settings();
+    host.click_geometry("web_proxy_input");
+    host.cli(&["send-ui-ime", "commit", "http://127.0.0.1:22123"]);
+    let initial = open_harness(&host);
+    assert_eq!(initial["listener"], "stopped");
+    assert_eq!(initial["login_active"], false);
+    assert_eq!(initial["local_key_exists"], false);
+    assert_eq!(initial["accounts"], serde_json::json!([]));
+    assert_eq!(initial["model"], "");
+    click_harness(&host, "model_input", 0);
+    host.cli(&["send-ui-ime", "commit", "provider/中-draft"]);
+    host.cli(&["send-ui-ime", "preedit", "composing"]);
+    host.cli(&["send-ui-keys", "Enter"]);
+    assert!(
+        harness_snapshot(&host)["status"].is_null(),
+        "preedit Enter must not apply a model"
+    );
+    host.click_geometry("settings_console_route");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["geometry"]["settings_section"],
+        "console"
+    );
+    host.click_geometry("settings_web_route");
+    assert_eq!(
+        host_editor_state(&host, "web_proxy_candidate_editor")["text"],
+        "http://127.0.0.1:22123"
+    );
+    open_harness(&host);
+    let retained = harness_snapshot(&host);
+    assert_eq!(retained["model_editor"]["text"], "provider/中-draft");
+    assert_eq!(retained["model_editor"]["preedit"], "");
+    assert_eq!(
+        host.cli(&["ui-snapshot"])["composer_text"],
+        "terminal draft survives Harness"
+    );
+    host.cli(&["resize-window", "--width", "420", "--height", "300"]);
+    click_harness(&host, "key_actions", 0);
+    let saved = wait_harness(&host, |state| state["local_key_exists"] == true);
+    assert!(
+        saved["scroll"].as_u64().unwrap() > 0,
+        "short windows must scroll to reach connection controls"
+    );
+    let snapshot = host.cli(&["ui-snapshot"]);
+    let geometry = &snapshot["geometry"];
+    let scale = geometry["scale_permille"].as_u64().unwrap() as f64 / 1000.0;
+    let harness = &geometry["harness_settings"];
+    let rows = harness["rows"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert!(
+            (row["rect"]["height"].as_u64().unwrap() as f64 / scale - 36.0).abs() <= 1.0,
+            "Harness rows must retain readable targets after resize"
+        );
+        assert!(
+            row["rect"]["y"].as_u64().unwrap() + row["rect"]["height"].as_u64().unwrap()
+                <= harness["previous"]["y"].as_u64().unwrap()
+        );
+    }
+    assert_eq!(
+        harness["listener"], "stopped",
+        "creating a local key must not start a listener"
+    );
+    host.close_and_wait();
+}
+
+#[test]
+fn host_harness_failed_port_save_retains_the_prior_port_and_editable_draft() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    let initial = open_harness(&host);
+    let old_port = initial["port"].clone();
+    // After loading succeeds, replace the configuration destination with a
+    // directory. This forces the real atomic publish to fail on every OS.
+    let target = host.config_root.join("harness/gateway.json");
+    if target.is_file() {
+        fs::remove_file(&target).unwrap();
+    }
+    fs::create_dir(&target).unwrap();
+    click_harness(&host, "port", 0);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", "30127"]);
+    click_harness(&host, "port", 1);
+    let failed = wait_harness(&host, |state| {
+        state["status"]
+            .as_str()
+            .is_some_and(|text| text.contains("Storage"))
+    });
+    assert_eq!(
+        failed["port"], old_port,
+        "failed save must not publish a new configured port"
+    );
+    assert_eq!(
+        failed["port_editor"]["text"], "30127",
+        "failed save must retain the user's correction"
+    );
+    fs::remove_dir(&target).unwrap();
+    click_harness(&host, "port", 1);
+    let saved = wait_harness(&host, |state| state["port"] == 30127);
+    assert_eq!(saved["port_editor"]["text"], "30127");
+    host.close_and_wait();
+}
+
+#[test]
+fn host_harness_port_collision_reports_error_and_retries_without_changing_identity() {
+    let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = occupied.local_addr().unwrap().port();
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    harness_synthetic_profile(
+        &root,
+        port,
+        "synthetic-local-collision-key",
+        "synthetic-upstream-not-authorized",
+    );
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    let before = open_harness(&host);
+    assert_eq!(before["port"], port);
+    assert_eq!(before["listener"], "stopped");
+    click_harness(&host, "listener_actions", 0);
+    let failed = wait_harness(&host, |state| state["listener"] == "error");
+    assert_eq!(
+        failed["actual_port"],
+        Value::Null,
+        "bind conflict must never claim Listening"
+    );
+    assert!(!failed["status"].is_null());
+    assert_eq!(failed["selected_account"], before["selected_account"]);
+    assert_eq!(failed["model"], before["model"]);
+    drop(occupied);
+    click_harness(&host, "listener_actions", 0);
+    let listening = wait_harness(&host, |state| state["listener"] == "listening");
+    assert_eq!(
+        listening["actual_port"], port,
+        "retry must bind the explicitly configured port"
+    );
+    click_harness(&host, "listener_actions", 1);
+    wait_harness(&host, |state| {
+        state["listener"] == "stopped" && state["actual_port"].is_null()
+    });
+    let rebound =
+        std::net::TcpListener::bind(("127.0.0.1", port)).expect("Stop must release the listener");
+    drop(rebound);
+    host.close_and_wait();
+}
+
+#[test]
+fn host_harness_public_observations_redact_local_and_upstream_credentials() {
+    let reservation = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    let root = minicon_binary()
+        .parent()
+        .unwrap()
+        .join("browser-court")
+        .join(unique_suffix())
+        .join("config");
+    let key = "SYNTHETIC-LOCAL-KEY-MUST-STAY-PRIVATE";
+    let token = "SYNTHETIC-UPSTREAM-GRANT-MUST-STAY-PRIVATE";
+    harness_synthetic_profile(&root, port, key, token);
+    let mut host = BrowserGui::spawn_with_config(true, None, None, Some(root));
+    let state = open_harness(&host);
+    assert_eq!(state["local_key_exists"], true);
+    for response in [host.cli(&["ui-snapshot"]), host.cli(&["list-tabs"])] {
+        let encoded = response.to_string();
+        for secret in [key, token] {
+            assert!(
+                !encoded.contains(secret),
+                "public observation leaked a private credential"
+            );
+        }
+    }
+    click_harness(&host, "key_actions", 0);
+    wait_harness(&host, |state| {
+        state["status"]
+            .as_str()
+            .is_some_and(|text| text.contains("InvalidAction"))
+    });
+    assert_eq!(
+        fs::read_to_string(host.config_root.join("harness/client-key")).unwrap(),
+        key,
+        "Create must not silently rotate an existing key"
+    );
+    click_harness(&host, "key_actions", 2);
+    wait_harness(&host, |state| state["local_key_exists"] == false);
+    assert!(!host.config_root.join("harness/client-key").exists());
+    let trace = fs::read_to_string(&host._trace.0).unwrap();
+    for secret in [key, token] {
+        assert!(
+            !trace.contains(secret),
+            "host trace leaked a private credential"
+        );
+    }
+    host.close_and_wait();
+}
+
+#[test]
+fn host_browser_authorization_queries_are_private_in_public_observations() {
+    let mut host = BrowserGui::spawn(true, None, None);
+    host.open_browser_from_menu();
+    for base in [
+        "https://platform.deepseek.com/dsh/authorize",
+        "https://platform.deepseek.com/oauth/authorize",
+        "https://opencode.ai/console/device",
+        "http://127.0.0.1:19999/oauth/callback",
+        "http://127.0.0.1:19999/minicon/oauth",
+    ] {
+        let url = format!(
+            "{base}?state=SYNTHETIC-STATE-PRIVATE&code=SYNTHETIC-CODE-PRIVATE#SYNTHETIC-FRAGMENT-PRIVATE"
+        );
+        host.cli(&["send-ui-keys", "Ctrl+l"]);
+        host.cli(&["send-ui-keys", "Ctrl+a"]);
+        host.cli(&["send-ui-ime", "commit", &url]);
+        let draft = host_editor_state(&host, "browser_address_editor");
+        assert_eq!(draft["text"], base);
+        assert_eq!(draft["redacted"], true);
+        host.cli(&["send-ui-keys", "Enter"]);
+        for response in [host.cli(&["ui-snapshot"]), host.cli(&["list-tabs"])] {
+            let encoded = response.to_string();
+            for secret in [
+                "SYNTHETIC-STATE-PRIVATE",
+                "SYNTHETIC-CODE-PRIVATE",
+                "SYNTHETIC-FRAGMENT-PRIVATE",
+            ] {
+                assert!(
+                    !encoded.contains(secret),
+                    "authorization query/fragment leaked in public browser observation"
+                );
+            }
+        }
+    }
+    let normal = "http://127.0.0.1:19999/search?q=ordinary#result";
+    host.cli(&["send-ui-keys", "Ctrl+l"]);
+    host.cli(&["send-ui-keys", "Ctrl+a"]);
+    host.cli(&["send-ui-ime", "commit", normal]);
+    assert_eq!(
+        host_editor_state(&host, "browser_address_editor")["text"],
+        normal,
+        "ordinary web query/fragment observations must retain their existing behavior"
+    );
+    host.close_and_wait();
 }

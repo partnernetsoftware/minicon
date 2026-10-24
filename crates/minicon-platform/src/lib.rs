@@ -328,8 +328,12 @@ pub mod proxy_env;
 pub mod network_dns;
 #[cfg(feature = "network-http")]
 pub mod network_http;
+#[cfg(feature = "network-http-stream")]
+pub mod network_http_stream;
 #[cfg(feature = "network-interfaces")]
 pub mod network_interfaces;
+#[cfg(feature = "network-loopback")]
+pub mod network_loopback;
 #[cfg(feature = "network-routes")]
 pub mod network_routes;
 

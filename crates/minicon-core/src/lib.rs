@@ -16,6 +16,8 @@
 pub mod click;
 #[cfg(feature = "composer")]
 pub mod composer;
+#[cfg(feature = "keymap")]
+pub mod field_editor;
 #[cfg(feature = "json")]
 pub mod json;
 #[cfg(feature = "keymap")]

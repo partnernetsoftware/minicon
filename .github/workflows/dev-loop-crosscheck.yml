@@ -253,8 +253,27 @@ jobs:
           run_suite minicon_alignment cargo test --locked --target "$triple" --test minicon_alignment -- --test-threads 2 ${{ inputs.test_filter }}
           for suite in minicon_blackbox minicon_control; do
             echo "== $suite ${{ inputs.test_filter }}"
-            run_suite "$suite" cargo test --locked --target "$triple" --test "$suite" -- --test-threads 2 ${{ inputs.test_filter }}
+            test_threads=2
+            # The control target owns shared desktop/clipboard gestures.
+            # Browser editors and composer image paste must not race each other.
+            if [ "$suite" = minicon_control ]; then test_threads=1; fi
+            run_suite "$suite" cargo test --locked --target "$triple" --test "$suite" -- --test-threads "$test_threads" ${{ inputs.test_filter }}
           done
+          # This headless CLI court uses a controlled model peer; it proves
+          # worker-owned tools and resume binding on this native cell without
+          # claiming an OAuth account or hosted-provider entitlement.
+          if [ -z "$filter" ] || [[ "$filter" == *gateway* ]] || [[ "$filter" == *harness* ]]; then
+            run_suite minicon_harness_gateway bash scripts/build.sh test-suite --target "$triple" --test minicon_harness gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding -- --exact --test-threads 2
+          fi
+          if [ -z "$filter" ] || [[ "$filter" == *provider* ]]; then
+            run_suite minicon-provider bash scripts/build.sh test-suite --target "$triple" --bin minicon provider_ -- --test-threads 2
+          fi
+          if [ -z "$filter" ] || [[ "$filter" == *harness* ]]; then
+            run_suite minicon-worker bash scripts/build.sh test-suite --target "$triple" --bin minicon harness:: -- --test-threads 2
+          fi
+          if [ -z "$filter" ] || [[ "$filter" == *network* ]]; then
+            run_suite minicon-network bash scripts/build.sh test-suite --target "$triple" -p minicon-platform --features network-http-stream,network-loopback --lib network_ -- --test-threads 2
+          fi
           # Throughput is a property of the shipped artifact, so the suite
           # drives an optimized product binary. A debug build measures the
           # unoptimized parser instead: the owned Windows console streams and

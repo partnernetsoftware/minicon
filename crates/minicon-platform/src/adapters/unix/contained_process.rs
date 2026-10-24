@@ -23,6 +23,8 @@ pub struct ContainedChild {
     /// `std::process::Child` keeps its own, so these stay `None` there.
     stdout: Option<ContainedChildOutput>,
     stderr: Option<ContainedChildOutput>,
+    cleanup_deadline: Option<Instant>,
+    root_reaped: bool,
 }
 
 /// The native owner of the contained root.
@@ -73,6 +75,30 @@ impl Root {
                 }
                 Ok(status)
             }
+        }
+    }
+
+    /// `WNOWAIT` proves this is still our own unreaped child even when it
+    /// has exited. Its PID cannot be reused while this ownership is held.
+    fn peek_exit(&self) -> io::Result<bool> {
+        let pid = libc::id_t::try_from(self.id())
+            .map_err(|_| io::Error::other("child pid exceeds id_t"))?;
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        if unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid,
+                &raw mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        } != 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        match unsafe { info.si_pid() } {
+            0 => Ok(false),
+            observed if observed as u32 == self.id() => Ok(true),
+            _ => Err(io::Error::other("waitid observed another child")),
         }
     }
 
@@ -334,6 +360,55 @@ impl Read for ContainedChildOutput {
     }
 }
 
+impl ContainedChildOutput {
+    pub(crate) fn read_timeout(
+        &mut self,
+        buffer: &mut [u8],
+        timeout: Duration,
+    ) -> io::Result<usize> {
+        use std::os::fd::AsRawFd as _;
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let millis = remaining
+                .as_millis()
+                .saturating_add(u128::from(!remaining.is_zero()));
+            let mut descriptor = libc::pollfd {
+                fd: self.0.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ready =
+                unsafe { libc::poll(&raw mut descriptor, 1, millis.min(i32::MAX as u128) as i32) };
+            if ready > 0 {
+                if descriptor.revents & libc::POLLNVAL != 0 {
+                    return Err(io::Error::other("contained output descriptor is invalid"));
+                }
+                // This owned stream has one reader: readiness cannot be
+                // consumed by a competing reader before this read.
+                match self.0.read(buffer) {
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                    result => return result,
+                }
+            } else if ready < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "contained output read timed out",
+                ));
+            }
+        }
+    }
+}
+
 pub(crate) fn spawn(spec: &ContainedHeadlessCommand) -> io::Result<ContainedChild> {
     let mut command = Command::new(&spec.program);
     command.args(&spec.args).stdin(match &spec.stdin {
@@ -344,6 +419,9 @@ pub(crate) fn spawn(spec: &ContainedHeadlessCommand) -> io::Result<ContainedChil
     command.stderr(output_stdio(&spec.stderr)?);
     if let Some(directory) = &spec.current_dir {
         command.current_dir(directory);
+    }
+    if spec.clear_env {
+        command.env_clear();
     }
     for (key, value) in &spec.env {
         match value {
@@ -392,6 +470,8 @@ pub(crate) fn spawn(spec: &ContainedHeadlessCommand) -> io::Result<ContainedChil
         stdin,
         stdout: None,
         stderr: None,
+        cleanup_deadline: None,
+        root_reaped: false,
     })
 }
 
@@ -482,7 +562,42 @@ impl ContainedChild {
     }
 
     pub(crate) fn try_wait(&mut self) -> io::Result<Option<ProcessExit>> {
-        self.root.try_wait()
+        let status = self.root.try_wait()?;
+        self.root_reaped |= status.is_some();
+        Ok(status)
+    }
+
+    pub(crate) fn exit_observed(&mut self) -> io::Result<bool> {
+        if self.root_reaped {
+            self.root.try_wait().map(|exit| exit.is_some())
+        } else {
+            self.root.peek_exit()
+        }
+    }
+
+    /// Only this adapter can enter this path, while still owning Root and
+    /// before any successful reap. Both spawn paths establish pgrp=root pid
+    /// before user code. `waitid(WNOWAIT)` validates direct-child ownership;
+    /// the unreaped root reserves that numeric PID/PGID across this signal,
+    /// so an unrelated reused group can never receive it. The general
+    /// ProcessTreeGuard deliberately retains its stricter live-root rule.
+    fn terminate_retained_group(&self) -> io::Result<()> {
+        if self.root_reaped {
+            return Ok(());
+        }
+        self.root.peek_exit()?;
+        let group = libc::pid_t::try_from(self.root.id())
+            .map_err(|_| io::Error::other("child pid exceeds pid_t"))?;
+        if group <= 1 {
+            return Err(io::Error::other("invalid owned process group"));
+        }
+        if unsafe { libc::killpg(group, libc::SIGKILL) } != 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error);
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn containment_process_ids(&self, max_members: usize) -> io::Result<Vec<u32>> {
@@ -528,12 +643,19 @@ impl ContainedChild {
     /// failure is reported -- a failing reap never hides a failing tree
     /// termination, and the root's own signal failure is kept beside both.
     pub(crate) fn terminate_and_wait(&mut self, timeout: Duration) -> io::Result<()> {
+        let deadline = Instant::now() + timeout;
+        self.cleanup_deadline = Some(deadline);
         let mut failures = Vec::new();
         if let Err(error) = self.tree.terminate() {
             failures.push(format!("tree_terminate_failed:{error}"));
         }
-        let deadline = Instant::now() + timeout;
+        if let Err(error) = self.terminate_retained_group() {
+            failures.push(format!("retained_group_terminate_failed:{error}"));
+        }
         let timed_out = self.root.terminate_bounded(deadline, &mut failures);
+        // terminate_bounded caches a successful reap inside Root. A timeout
+        // keeps ownership for Drop's final signal under this same deadline.
+        self.root_reaped |= !timed_out && self.root.try_wait().is_ok_and(|exit| exit.is_some());
         merge_cleanup_failures(timed_out, &failures)
     }
 }
@@ -562,9 +684,13 @@ impl Drop for ContainedChild {
         // bounded and must never panic: there is no `unwrap`, no unbounded
         // `waitpid`/`Child::wait`, and the deadline is fixed.
         let _ = self.tree.terminate();
+        let _ = self.terminate_retained_group();
         let mut failures = Vec::new();
-        self.root
-            .terminate_bounded(Instant::now() + ROOT_TERMINATE_TIMEOUT, &mut failures);
+        self.root.terminate_bounded(
+            self.cleanup_deadline
+                .unwrap_or_else(|| Instant::now() + ROOT_TERMINATE_TIMEOUT),
+            &mut failures,
+        );
         let _ = merge_cleanup_failures(false, &failures);
     }
 }
@@ -819,6 +945,8 @@ mod macos_frozen {
                 stdin,
                 stdout: stdio.stdout.take(),
                 stderr: stdio.stderr.take(),
+                cleanup_deadline: None,
+                root_reaped: false,
             },
             FrozenProcessIdentity {
                 pid: child_pid,
@@ -932,7 +1060,11 @@ mod macos_frozen {
     fn effective_environment(
         spec: &ContainedHeadlessCommand,
     ) -> io::Result<Vec<(OsString, OsString)>> {
-        let mut entries: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+        let mut entries: Vec<(OsString, OsString)> = if spec.clear_env {
+            Vec::new()
+        } else {
+            std::env::vars_os().collect()
+        };
         for (key, value) in &spec.env {
             entries.retain(|(existing, _)| existing != key);
             if let Some(value) = value {

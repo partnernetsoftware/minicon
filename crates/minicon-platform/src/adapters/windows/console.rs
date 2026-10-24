@@ -48,7 +48,7 @@ impl ConsoleGuard {
     /// Like `attach_parent`, but leaves the default console control
     /// behavior in place so `Ctrl+C` terminates this process — the contract
     /// a CLI worker must honor for parity with a console-subsystem binary.
-    #[cfg(feature = "process")]
+    #[cfg(any(feature = "process", feature = "parent-console"))]
     pub(crate) fn attach_parent_with_default_interrupts() -> io::Result<Self> {
         Self::attach_parent_impl(false)
     }

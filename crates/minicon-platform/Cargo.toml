@@ -261,6 +261,8 @@ contained-process-spawn = [
 # `prd/PRD_02_20_native_platform.md` ("Windows NativeTls/platform roots, Unix
 # Rustls/WebPKI") and the module doc comment in `src/network_http.rs`.
 network-http = ["dep:ureq"]
+network-http-stream = ["network-http", "contained-process-spawn"]
+network-loopback = ["dep:httparse"]
 network-interfaces = [
     "dep:libc",
     "dep:windows-sys",
@@ -646,6 +648,7 @@ objc2-foundation = { version = "0.2.2", optional = true }
 security-framework-sys = { version = "2.17", optional = true }
 
 [dependencies]
+httparse = { version = "1", optional = true }
 minicon-core = { path = "../minicon-core", default-features = false }
 # Owns the portable session contract vocabulary re-exported by contract::pty,
 # so it must resolve on every OS; its native service modules stay

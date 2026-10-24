@@ -1,0 +1,1925 @@
+//! Product-owned local model routing. This module never executes model tools.
+
+use crate::{
+    provider_accounts::{AccountState, AccountStore},
+    provider_auth::{self, AuthClient, Provider, Secret, TokenGrant, TokenLifecycle},
+    provider_protocol::{self as protocol, Protocol, SseBridge},
+};
+use minicon_platform::{
+    network_http::{NetworkHttpMethod, NetworkHttpRequest, NetworkHttpResponse},
+    network_http_stream::{
+        self as http, NetworkHttpCancel, NetworkHttpStreamControl as Control,
+        NetworkHttpStreamRequest,
+    },
+    network_loopback::{
+        self as local, Handler, Reply, Request, RequestContext, RequestHead, Response,
+    },
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
+    sync::{Arc, Mutex, Weak},
+    time::{Duration, Instant},
+};
+
+pub const MODEL_ALIAS: &str = "minicon-selected";
+const NON_STREAM_BYTES: usize = 8 * 1024 * 1024;
+const CATALOG_BYTES: usize = 2 * 1024 * 1024;
+const MAX_MODELS: usize = 512;
+const MAX_SESSIONS: usize = 256;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServerError {
+    InvalidConfig,
+    Storage,
+    MissingAccount,
+    MissingModel,
+    MissingKey,
+    NeedsLogin,
+    Busy,
+    BindingChanged,
+    Upstream,
+    Http(u16),
+    Protocol(protocol::ProtocolError),
+    Cancelled,
+}
+impl std::fmt::Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "model service: {self:?}")
+    }
+}
+impl std::error::Error for ServerError {}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum WireProtocol {
+    Chat,
+    Messages,
+}
+impl WireProtocol {
+    fn protocol(self) -> Protocol {
+        match self {
+            Self::Chat => Protocol::OpenAiChat,
+            Self::Messages => Protocol::AnthropicMessages,
+        }
+    }
+}
+
+/// Catalog-derived, non-secret metadata. Authorization is injected only from
+/// the selected grant immediately before the native request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelRoute {
+    pub id: String,
+    pub model_id: String,
+    pub provider: Provider,
+    pub protocol: WireProtocol,
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    pub version: u8,
+    pub port: u16,
+    pub selected_account: Option<String>,
+    pub model: String,
+    pub identity: String,
+    #[serde(default)]
+    pub models: Vec<ModelRoute>,
+}
+
+impl Config {
+    pub fn fresh() -> Result<Self, ServerError> {
+        Ok(Self {
+            version: 1,
+            port: 28789,
+            selected_account: None,
+            model: String::new(),
+            identity: random_id()?,
+            models: Vec::new(),
+        })
+    }
+    pub fn validate(&self) -> Result<(), ServerError> {
+        if self.version != 1
+            || self.port < 1024
+            || !opaque_id(&self.identity)
+            || self
+                .selected_account
+                .as_ref()
+                .is_some_and(|id| !opaque_id(id))
+            || !safe_model(&self.model, true)
+            || self.models.len() > MAX_MODELS
+        {
+            return Err(ServerError::InvalidConfig);
+        }
+        let mut ids = HashSet::new();
+        for model in &self.models {
+            validate_route(model)?;
+            if !ids.insert(&model.id) {
+                return Err(ServerError::InvalidConfig);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Binding {
+    pub profile: &'static str,
+    pub provider: Provider,
+    pub account: String,
+    pub model: String,
+    pub generation: String,
+}
+
+struct Session {
+    name: String,
+    binding: Binding,
+    upstream: String,
+}
+struct Active {
+    account: String,
+    cancel: Weak<NetworkHttpCancel>,
+}
+struct State {
+    config: Config,
+    key: Option<Secret>,
+    sessions: VecDeque<Session>,
+    disabled: HashSet<String>,
+    leases: HashMap<String, usize>,
+    active: Vec<Active>,
+    draining: bool,
+    generation: String,
+}
+
+pub struct Gateway {
+    store: Arc<AccountStore>,
+    executable: PathBuf,
+    state: Mutex<State>,
+    refresh: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    #[cfg(test)]
+    fixture_upstream: Mutex<Option<String>>,
+}
+
+impl Gateway {
+    pub fn new(
+        store: Arc<AccountStore>,
+        config: Config,
+        key: Option<Secret>,
+    ) -> Result<Arc<Self>, ServerError> {
+        config.validate()?;
+        let executable = std::env::current_exe().map_err(|_| ServerError::Storage)?;
+        Ok(Arc::new(Self {
+            store,
+            executable,
+            state: Mutex::new(State {
+                config,
+                key,
+                sessions: VecDeque::new(),
+                disabled: HashSet::new(),
+                leases: HashMap::new(),
+                active: Vec::new(),
+                draining: false,
+                generation: random_id()?,
+            }),
+            refresh: Mutex::new(HashMap::new()),
+            #[cfg(test)]
+            fixture_upstream: Mutex::new(None),
+        }))
+    }
+
+    pub fn update(&self, config: Config) -> Result<(), ServerError> {
+        config.validate()?;
+        let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        let selected = |config: &Config| {
+            config
+                .models
+                .iter()
+                .find(|route| route.id == config.model)
+                .cloned()
+        };
+        if selected(&state.config) != selected(&config) {
+            state.generation = random_id()?;
+        }
+        state.config = config;
+        // Keep existing mappings: their old generation must produce 409 rather
+        // than silently starting a replacement upstream conversation.
+        Ok(())
+    }
+
+    pub fn set_key(&self, key: Option<Secret>) -> Result<(), ServerError> {
+        let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        if state.key == key {
+            return Ok(());
+        }
+        let generation = random_id()?;
+        state.key = key;
+        state.generation = generation;
+        state.sessions.clear();
+        for active in &state.active {
+            if let Some(cancel) = active.cancel.upgrade() {
+                cancel.cancel();
+            }
+        }
+        Ok(())
+    }
+
+    /// First close admission, then cancel every currently owned exchange. The
+    /// caller joins its operation and listener only after this fan-out.
+    pub fn begin_stop(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.draining = true;
+            for active in &state.active {
+                if let Some(cancel) = active.cancel.upgrade() {
+                    cancel.cancel();
+                }
+            }
+        }
+    }
+    pub fn forget_account(&self, account: &str) {
+        if let Ok(mut state) = self.state.lock() {
+            state.disabled.remove(account);
+        }
+        if let Ok(mut refresh) = self.refresh.lock() {
+            refresh.remove(account);
+        }
+    }
+    pub fn disable_account(&self, account: &str) {
+        if let Ok(mut state) = self.state.lock() {
+            state.disabled.insert(account.to_owned());
+            for active in &state.active {
+                if active.account == account
+                    && let Some(cancel) = active.cancel.upgrade()
+                {
+                    cancel.cancel();
+                }
+            }
+        }
+    }
+
+    pub fn start(self: &Arc<Self>, port: u16) -> Result<local::Server, ServerError> {
+        let (binding, _) = self.current_binding()?;
+        self.store
+            .load_grant(&binding.account)
+            .map_err(|_| ServerError::NeedsLogin)?;
+        if self
+            .state
+            .lock()
+            .map_err(|_| ServerError::Storage)?
+            .key
+            .is_none()
+        {
+            return Err(ServerError::MissingKey);
+        }
+        let server = local::Server::start(port, self.clone()).map_err(|_| ServerError::Busy)?;
+        self.state
+            .lock()
+            .map_err(|_| ServerError::Storage)?
+            .draining = false;
+        Ok(server)
+    }
+
+    fn current_binding(&self) -> Result<(Binding, ModelRoute), ServerError> {
+        let state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        let account = state
+            .config
+            .selected_account
+            .as_ref()
+            .ok_or(ServerError::MissingAccount)?;
+        if state.disabled.contains(account) {
+            return Err(ServerError::NeedsLogin);
+        }
+        let accounts = self.store.list().map_err(|_| ServerError::Storage)?;
+        let summary = accounts
+            .iter()
+            .find(|entry| &entry.id == account)
+            .ok_or(ServerError::MissingAccount)?;
+        if summary.state != AccountState::AccountReady {
+            return Err(ServerError::NeedsLogin);
+        }
+        let route = state
+            .config
+            .models
+            .iter()
+            .find(|model| model.id == state.config.model && model.provider == summary.provider)
+            .ok_or(ServerError::MissingModel)?
+            .clone();
+        Ok((
+            Binding {
+                profile: "default",
+                provider: summary.provider,
+                account: account.clone(),
+                model: route.model_id.clone(),
+                generation: state.generation.clone(),
+            },
+            route,
+        ))
+    }
+
+    fn sticky(&self, head: &RequestHead) -> Result<(Binding, ModelRoute, String), ServerError> {
+        let (binding, route) = self.current_binding()?;
+        let name = head
+            .header("x-minicon-session")
+            .map_err(|_| ServerError::InvalidConfig)?
+            .unwrap_or("no-session");
+        if name.is_empty()
+            || name.len() > 128
+            || !name.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
+            })
+        {
+            return Err(ServerError::InvalidConfig);
+        }
+        let mut state = self.state.lock().map_err(|_| ServerError::Storage)?;
+        if let Some(session) = state
+            .sessions
+            .iter_mut()
+            .find(|session| session.name == name)
+        {
+            if session.binding != binding {
+                return Err(ServerError::BindingChanged);
+            }
+            return Ok((binding, route, session.upstream.clone()));
+        }
+        if state.sessions.len() >= MAX_SESSIONS {
+            return Err(ServerError::Busy);
+        }
+        let upstream = random_id()?;
+        state.sessions.push_back(Session {
+            name: name.to_owned(),
+            binding: binding.clone(),
+            upstream: upstream.clone(),
+        });
+        Ok((binding, route, upstream))
+    }
+
+    fn authorized(&self, head: &RequestHead) -> bool {
+        let Ok(state) = self.state.lock() else {
+            return false;
+        };
+        let Some(key) = &state.key else {
+            return false;
+        };
+        supplied_key(head).is_some_and(|value| same_key(key.expose(), value))
+    }
+
+    fn grant(&self, account: &str, cancel: &NetworkHttpCancel) -> Result<TokenGrant, ServerError> {
+        if cancel.is_cancelled() {
+            return Err(ServerError::Cancelled);
+        }
+        let lock = self
+            .refresh
+            .lock()
+            .map_err(|_| ServerError::Storage)?
+            .entry(account.to_owned())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _guard = loop {
+            if cancel.is_cancelled() {
+                return Err(ServerError::Cancelled);
+            }
+            match lock.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    std::thread::sleep(Duration::from_millis(20))
+                }
+                Err(_) => return Err(ServerError::Storage),
+            }
+        };
+        let mut grant = self
+            .store
+            .load_grant(account)
+            .map_err(|_| ServerError::NeedsLogin)?;
+        if let TokenLifecycle::ExpiringRefresh { expires_at, .. } = &grant.lifecycle
+            && *expires_at <= Instant::now() + Duration::from_secs(30)
+        {
+            let request =
+                provider_auth::opencode_refresh(&AuthClient::available(Provider::OpenCode), &grant)
+                    .map_err(|_| ServerError::NeedsLogin)?;
+            let response = self.collect(request, cancel, provider_auth::AUTH_MAX_RESPONSE_BYTES)?;
+            let mut fresh = provider_auth::parse_opencode_refresh(&response, Instant::now())
+                .map_err(|_| ServerError::NeedsLogin)?;
+            if fresh.organization.is_none() {
+                fresh.organization = grant.organization.take();
+            }
+            self.store
+                .replace_grant_if_present(account, fresh)
+                .map_err(|_| ServerError::NeedsLogin)?;
+            grant = self
+                .store
+                .load_grant(account)
+                .map_err(|_| ServerError::NeedsLogin)?;
+        }
+        Ok(grant)
+    }
+
+    fn stream_request(&self, request: NetworkHttpRequest) -> NetworkHttpStreamRequest {
+        #[cfg(test)]
+        let request = {
+            let mut request = request;
+            if let Some(url) = self.fixture_upstream.lock().unwrap().as_ref() {
+                request.url = url.clone();
+            }
+            request
+        };
+        NetworkHttpStreamRequest::new(request, &self.executable)
+    }
+    fn collect(
+        &self,
+        mut request: NetworkHttpRequest,
+        cancel: &NetworkHttpCancel,
+        limit: usize,
+    ) -> Result<NetworkHttpResponse, ServerError> {
+        request.max_redirects = 0;
+        request.max_response_bytes = limit;
+        let mut status = 0;
+        let mut headers = Vec::new();
+        let mut body = Vec::new();
+        http::request_stream(
+            &self.stream_request(request),
+            cancel,
+            |head| {
+                status = head.status;
+                headers = head.headers.clone();
+                Control::Continue
+            },
+            |bytes| {
+                body.extend_from_slice(bytes);
+                Control::Continue
+            },
+        )
+        .map_err(|error| match error {
+            http::NetworkHttpStreamError::Cancelled => ServerError::Cancelled,
+            _ => ServerError::Upstream,
+        })?;
+        Ok(NetworkHttpResponse {
+            status,
+            headers,
+            body,
+            truncated: false,
+        })
+    }
+
+    pub fn catalog(
+        &self,
+        account: &str,
+        cancel: &Arc<NetworkHttpCancel>,
+    ) -> Result<Vec<ModelRoute>, ServerError> {
+        let _lease = BorrowedLease::acquire(self, account, cancel, None)?;
+        let mut grant = self.grant(account, cancel)?;
+        match grant.provider {
+            Provider::DeepSeek => {
+                let response = self.collect(
+                    account_request(
+                        NetworkHttpMethod::Get,
+                        "https://api.deepseek.com/models",
+                        &grant,
+                        "",
+                        "",
+                    ),
+                    cancel,
+                    CATALOG_BYTES,
+                )?;
+                check_status(response.status)?;
+                parse_deepseek_catalog(&response.body)
+            }
+            Provider::OpenCode => {
+                let user = self.collect(
+                    account_request(
+                        NetworkHttpMethod::Get,
+                        "https://opencode.ai/console/api/user",
+                        &grant,
+                        "",
+                        "",
+                    ),
+                    cancel,
+                    CATALOG_BYTES,
+                )?;
+                check_status(user.status)?;
+                let user: Value =
+                    serde_json::from_slice(&user.body).map_err(|_| ServerError::Upstream)?;
+                if user.get("id").and_then(Value::as_str).is_none()
+                    || user.get("email").and_then(Value::as_str).is_none()
+                {
+                    return Err(ServerError::Upstream);
+                }
+                let orgs = self.collect(
+                    account_request(
+                        NetworkHttpMethod::Get,
+                        "https://opencode.ai/console/api/orgs",
+                        &grant,
+                        "",
+                        "",
+                    ),
+                    cancel,
+                    CATALOG_BYTES,
+                )?;
+                check_status(orgs.status)?;
+                let selected = select_organization(&orgs.body, grant.organization.as_deref())?;
+                if grant.organization != selected {
+                    grant.organization = selected;
+                    self.store
+                        .replace_grant_if_present(account, grant)
+                        .map_err(|_| ServerError::NeedsLogin)?;
+                    grant = self
+                        .store
+                        .load_grant(account)
+                        .map_err(|_| ServerError::NeedsLogin)?;
+                }
+                let response = self.collect(
+                    account_request(
+                        NetworkHttpMethod::Get,
+                        "https://opencode.ai/console/api/v2/config",
+                        &grant,
+                        "",
+                        "",
+                    ),
+                    cancel,
+                    CATALOG_BYTES,
+                )?;
+                check_status(response.status)?;
+                parse_opencode_catalog(&response.body, grant.organization.as_deref())
+            }
+        }
+    }
+
+    pub fn probe(
+        &self,
+        account: &str,
+        route: &ModelRoute,
+        identity: &str,
+        cancel: &Arc<NetworkHttpCancel>,
+    ) -> Result<(), ServerError> {
+        validate_route(route)?;
+        let _lease = BorrowedLease::acquire(self, account, cancel, None)?;
+        let grant = self.grant(account, cancel)?;
+        if grant.provider != route.provider {
+            return Err(ServerError::InvalidConfig);
+        }
+        let body = match route.protocol {
+            WireProtocol::Chat => {
+                json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false})
+            }
+            WireProtocol::Messages => {
+                json!({"model":route.model_id,"messages":[{"role":"user","content":"Reply OK."}],"max_tokens":8,"stream":false,"thinking":{"type":"disabled"}})
+            }
+        };
+        let mut request = route_request(route, &grant, identity, &random_id()?);
+        request.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
+        let response = self.collect(request, cancel, NON_STREAM_BYTES)?;
+        check_status(response.status)?;
+        protocol::convert_response(
+            route.protocol.protocol(),
+            route.protocol.protocol(),
+            &response.body,
+            &route.model_id,
+        )
+        .map_err(ServerError::Protocol)?;
+        self.store
+            .mark_ready(account)
+            .map_err(|_| ServerError::NeedsLogin)?;
+        Ok(())
+    }
+}
+
+impl Handler for Gateway {
+    fn admit(&self, head: &RequestHead) -> Result<(), Response> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| error_response(None, 503, "internal_error"))?;
+        if state.draining {
+            return Err(error_response(protocol_for(head), 503, "listener_stopping"));
+        }
+        let port = state.config.port;
+        drop(state);
+        if head.header("host").ok().flatten() != Some(format!("127.0.0.1:{port}").as_str())
+            || !matches!(head.header("origin"), Ok(None))
+        {
+            return Err(error_response(protocol_for(head), 403, "invalid_origin"));
+        }
+        if !self.authorized(head) {
+            return Err(error_response(
+                protocol_for(head),
+                401,
+                "authentication_error",
+            ));
+        }
+        match (head.method.as_str(), head.path.as_str()) {
+            ("GET", "/v1/models" | "/v1/minicon/binding") if head.content_length == 0 => Ok(()),
+            ("POST", "/v1/chat/completions" | "/v1/messages") => Ok(()),
+            _ => Err(error_response(protocol_for(head), 404, "not_found")),
+        }
+    }
+
+    fn handle(
+        &self,
+        request: Request,
+        context: &RequestContext,
+        reply: &mut Reply,
+    ) -> Result<(), local::Failure> {
+        // Authority is checked again after body collection, so a revoked key
+        // cannot execute work merely because its header was admitted earlier.
+        if let Err(response) = self.admit(&request.head) {
+            return reply.send(response);
+        }
+        let downstream = protocol_for(&request.head);
+        let result = self.handle_model(request, context, reply);
+        if let Err(error) = result {
+            if reply.started() {
+                let event = stream_error(downstream, error);
+                reply.write(event.as_bytes())?;
+            } else {
+                reply.send(server_error_response(downstream, error))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn failure(&self, failure: local::Failure) -> Response {
+        let status = match failure {
+            local::Failure::QueueFull | local::Failure::QueueTimeout => 503,
+            local::Failure::BodyTooLarge => 413,
+            _ => 400,
+        };
+        error_response(None, status, "request_error")
+    }
+}
+
+impl Gateway {
+    fn handle_model(
+        &self,
+        request: Request,
+        context: &RequestContext,
+        reply: &mut Reply,
+    ) -> Result<(), ServerError> {
+        let (binding, route, upstream_session) = self.sticky(&request.head)?;
+        if request.head.path == "/v1/models" {
+            return reply.send(Response { status: 200, content_type: "application/json", body: serde_json::to_vec(&json!({"object":"list","data":[{"id":MODEL_ALIAS,"object":"model","owned_by":"minicon"}],"binding":binding})).map_err(|_| ServerError::InvalidConfig)? }).map_err(|_| ServerError::Cancelled);
+        }
+        if request.head.path == "/v1/minicon/binding" {
+            return reply
+                .send(Response {
+                    status: 200,
+                    content_type: "application/json",
+                    body: serde_json::to_vec(&binding).map_err(|_| ServerError::InvalidConfig)?,
+                })
+                .map_err(|_| ServerError::Cancelled);
+        }
+        let downstream = protocol_for(&request.head).ok_or(ServerError::InvalidConfig)?;
+        let value: Value = serde_json::from_slice(&request.body)
+            .map_err(|_| ServerError::Protocol(protocol::ProtocolError::InvalidJson))?;
+        if value
+            .get("model")
+            .and_then(Value::as_str)
+            .is_some_and(|model| {
+                model != MODEL_ALIAS && model != route.model_id && model != route.id
+            })
+        {
+            return Err(ServerError::MissingModel);
+        }
+        let prepared = protocol::prepare_request(
+            downstream,
+            route.protocol.protocol(),
+            &request.body,
+            &route.model_id,
+        )
+        .map_err(ServerError::Protocol)?;
+        let cancel = Arc::new(NetworkHttpCancel::new());
+        let hook_cancel = cancel.clone();
+        context.on_cancel(Arc::new(move || hook_cancel.cancel()));
+        if context.is_cancelled() {
+            return Err(ServerError::Cancelled);
+        }
+        // The Handler receives &self; retain a lease through a narrow borrowed
+        // guard rather than transferring tool or route authority elsewhere.
+        let _lease = BorrowedLease::acquire(self, &binding.account, &cancel, Some(&request.head))?;
+        let grant = self.grant(&binding.account, &cancel)?;
+        let identity = self
+            .state
+            .lock()
+            .map_err(|_| ServerError::Storage)?
+            .config
+            .identity
+            .clone();
+        let mut upstream = route_request(&route, &grant, &identity, &upstream_session);
+        upstream.body = prepared.body;
+        if prepared.requires_thinking_disabled {
+            let mut body: Value =
+                serde_json::from_slice(&upstream.body).map_err(|_| ServerError::InvalidConfig)?;
+            body["thinking"] = json!({"type":"disabled"});
+            upstream.body = serde_json::to_vec(&body).map_err(|_| ServerError::InvalidConfig)?;
+        }
+        if !prepared.streaming {
+            let response = self.collect(upstream, &cancel, NON_STREAM_BYTES)?;
+            check_status(response.status)?;
+            let body = protocol::convert_response(
+                downstream,
+                route.protocol.protocol(),
+                &response.body,
+                MODEL_ALIAS,
+            )
+            .map_err(ServerError::Protocol)?;
+            return reply
+                .send(Response {
+                    status: 200,
+                    content_type: "application/json",
+                    body,
+                })
+                .map_err(|_| ServerError::Cancelled);
+        }
+        upstream.max_response_bytes = protocol::MAX_STREAM_BYTES;
+        let mut bridge = SseBridge::new(downstream, route.protocol.protocol(), MODEL_ALIAS)
+            .map_err(ServerError::Protocol)?
+            .with_include_usage(prepared.include_usage);
+        let mut error = None;
+        let mut status = 0;
+        // Headers are published only after the first successfully decoded event,
+        // keeping early semantic failures in the protocol's ordinary error shape.
+        let result = http::request_stream(
+            &self.stream_request(upstream),
+            &cancel,
+            |head| {
+                status = head.status;
+                if !(200..300).contains(&head.status) {
+                    Control::Stop
+                } else {
+                    Control::Continue
+                }
+            },
+            |bytes| {
+                match bridge.push(bytes) {
+                    Ok(events) => {
+                        for event in events {
+                            if !reply.started() && reply.start(200, "text/event-stream").is_err() {
+                                error = Some(ServerError::Cancelled);
+                                return Control::Stop;
+                            }
+                            if reply.write(&event).is_err() {
+                                error = Some(ServerError::Cancelled);
+                                return Control::Stop;
+                            }
+                        }
+                    }
+                    Err(failure) => {
+                        error = Some(ServerError::Protocol(failure));
+                        return Control::Stop;
+                    }
+                }
+                Control::Continue
+            },
+        );
+        if let Some(error) = error {
+            return Err(error);
+        }
+        result.map_err(|error| match error {
+            http::NetworkHttpStreamError::Cancelled => ServerError::Cancelled,
+            _ => ServerError::Upstream,
+        })?;
+        check_status(status)?;
+        for event in bridge.finish().map_err(ServerError::Protocol)? {
+            if !reply.started() {
+                reply
+                    .start(200, "text/event-stream")
+                    .map_err(|_| ServerError::Cancelled)?;
+            }
+            reply.write(&event).map_err(|_| ServerError::Cancelled)?;
+        }
+        Ok(())
+    }
+}
+
+struct BorrowedLease<'a> {
+    gateway: &'a Gateway,
+    account: String,
+}
+impl<'a> BorrowedLease<'a> {
+    fn acquire(
+        gateway: &'a Gateway,
+        account: &str,
+        cancel: &Arc<NetworkHttpCancel>,
+        head: Option<&RequestHead>,
+    ) -> Result<Self, ServerError> {
+        let mut state = gateway.state.lock().map_err(|_| ServerError::Storage)?;
+        if state.disabled.contains(account) {
+            return Err(ServerError::NeedsLogin);
+        }
+        if head.is_some() && state.draining {
+            return Err(ServerError::Busy);
+        }
+        if head.is_some_and(|head| {
+            !state.key.as_ref().is_some_and(|key| {
+                supplied_key(head).is_some_and(|supplied| same_key(key.expose(), supplied))
+            })
+        }) {
+            return Err(ServerError::MissingKey);
+        }
+        if state.leases.values().sum::<usize>() >= 8 {
+            return Err(ServerError::Busy);
+        }
+        let count = state.leases.entry(account.to_owned()).or_default();
+        if *count >= 2 {
+            return Err(ServerError::Busy);
+        }
+        *count += 1;
+        state
+            .active
+            .retain(|active| active.cancel.strong_count() != 0);
+        state.active.push(Active {
+            account: account.to_owned(),
+            cancel: Arc::downgrade(cancel),
+        });
+        Ok(Self {
+            gateway,
+            account: account.to_owned(),
+        })
+    }
+}
+impl Drop for BorrowedLease<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.gateway.state.lock()
+            && let Some(count) = state.leases.get_mut(&self.account)
+        {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                state.leases.remove(&self.account);
+            }
+        }
+    }
+}
+
+fn account_request(
+    method: NetworkHttpMethod,
+    url: &str,
+    grant: &TokenGrant,
+    identity: &str,
+    session: &str,
+) -> NetworkHttpRequest {
+    let mut request = NetworkHttpRequest::new(method, url)
+        .timeout(Duration::from_secs(600))
+        .max_redirects(0)
+        .header("User-Agent", concat!("MiniCon/", env!("CARGO_PKG_VERSION")))
+        .header("Accept", "application/json");
+    match grant.provider {
+        Provider::DeepSeek => {
+            request = request.header("x-dsh-auth-token", grant.access_token.expose());
+            if !identity.is_empty() {
+                request = request.header("x-deepseek-harness-user-id", identity);
+            }
+        }
+        Provider::OpenCode => {
+            request = request.header(
+                "Authorization",
+                format!("Bearer {}", grant.access_token.expose()),
+            );
+            if let Some(org) = &grant.organization {
+                request = request.header("x-org-id", org);
+            }
+            if !session.is_empty() {
+                request = request.header("x-opencode-session", session);
+            }
+        }
+    }
+    request
+}
+
+fn route_request(
+    route: &ModelRoute,
+    grant: &TokenGrant,
+    identity: &str,
+    session: &str,
+) -> NetworkHttpRequest {
+    let mut request = account_request(
+        NetworkHttpMethod::Post,
+        &route.url,
+        grant,
+        identity,
+        session,
+    )
+    .header("Content-Type", "application/json");
+    if route.protocol == WireProtocol::Messages {
+        request = request.header("anthropic-version", "2023-06-01");
+    }
+    for (name, value) in &route.headers {
+        if !name.eq_ignore_ascii_case("x-org-id") && !name.eq_ignore_ascii_case("anthropic-version")
+        {
+            request = request.header(name, value);
+        }
+    }
+    request
+}
+
+fn parse_deepseek_catalog(body: &[u8]) -> Result<Vec<ModelRoute>, ServerError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| ServerError::Upstream)?;
+    let data = value
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or(ServerError::Upstream)?;
+    if data.len() > MAX_MODELS {
+        return Err(ServerError::Upstream);
+    }
+    let mut result = Vec::new();
+    for model in data {
+        let Some(id) = model.get("id").and_then(Value::as_str) else {
+            return Err(ServerError::Upstream);
+        };
+        if !model["api_capabilities"]["anthropic_messages"].is_object() {
+            continue;
+        }
+        let route = ModelRoute {
+            id: format!("deepseek/{id}"),
+            model_id: id.to_owned(),
+            provider: Provider::DeepSeek,
+            protocol: WireProtocol::Messages,
+            url: "https://api.deepseek.com/anthropic/v1/messages".into(),
+            headers: Vec::new(),
+        };
+        validate_route(&route)?;
+        result.push(route);
+    }
+    if result.is_empty() {
+        return Err(ServerError::MissingModel);
+    }
+    Ok(result)
+}
+
+fn parse_opencode_catalog(
+    body: &[u8],
+    organization: Option<&str>,
+) -> Result<Vec<ModelRoute>, ServerError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| ServerError::Upstream)?;
+    let providers = value
+        .get("providers")
+        .and_then(Value::as_object)
+        .ok_or(ServerError::Upstream)?;
+    let mut result = Vec::new();
+    for (provider_id, provider) in providers {
+        let models = provider
+            .get("models")
+            .and_then(Value::as_object)
+            .ok_or(ServerError::Upstream)?;
+        for (id, model) in models {
+            if model.get("disabled").and_then(Value::as_bool) == Some(true) {
+                continue;
+            }
+            let package = model
+                .get("package")
+                .or_else(|| provider.get("package"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let protocol = match package {
+                "@opencode/ai/providers/anthropic-compatible" => WireProtocol::Messages,
+                "@opencode/ai/providers/openai-compatible" => WireProtocol::Chat,
+                _ => continue,
+            };
+            let base = model
+                .get("settings")
+                .and_then(|settings| settings.get("baseURL"))
+                .or_else(|| {
+                    provider
+                        .get("settings")
+                        .and_then(|settings| settings.get("baseURL"))
+                })
+                .and_then(Value::as_str)
+                .ok_or(ServerError::Upstream)?;
+            let mut headers = Vec::new();
+            for source in [provider.get("headers"), model.get("headers")]
+                .into_iter()
+                .flatten()
+            {
+                let source = source.as_object().ok_or(ServerError::Upstream)?;
+                for (name, value) in source {
+                    let value = value.as_str().ok_or(ServerError::Upstream)?;
+                    if name.eq_ignore_ascii_case("x-org-id") {
+                        if Some(value) != organization {
+                            return Err(ServerError::InvalidConfig);
+                        }
+                    } else {
+                        return Err(ServerError::InvalidConfig);
+                    }
+                    headers.retain(|(key, _): &(String, String)| !key.eq_ignore_ascii_case(name));
+                    headers.push((name.clone(), value.to_owned()));
+                }
+            }
+            let route = ModelRoute {
+                id: format!("opencode/{provider_id}/{id}"),
+                model_id: model
+                    .get("modelID")
+                    .and_then(Value::as_str)
+                    .unwrap_or(id)
+                    .to_owned(),
+                provider: Provider::OpenCode,
+                protocol,
+                url: format!(
+                    "{}/{}",
+                    base.trim_end_matches('/'),
+                    if protocol == WireProtocol::Chat {
+                        "chat/completions"
+                    } else {
+                        "messages"
+                    }
+                ),
+                headers,
+            };
+            validate_route(&route)?;
+            result.push(route);
+            if result.len() > MAX_MODELS {
+                return Err(ServerError::InvalidConfig);
+            }
+        }
+    }
+    if result.is_empty() {
+        return Err(ServerError::MissingModel);
+    }
+    Ok(result)
+}
+
+fn select_organization(body: &[u8], expected: Option<&str>) -> Result<Option<String>, ServerError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| ServerError::Upstream)?;
+    let mut organizations: Vec<_> = value
+        .as_array()
+        .ok_or(ServerError::Upstream)?
+        .iter()
+        .map(|entry| {
+            Ok((
+                entry
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or(ServerError::Upstream)?
+                    .to_owned(),
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or(ServerError::Upstream)?
+                    .to_owned(),
+            ))
+        })
+        .collect::<Result<_, ServerError>>()?;
+    if organizations.len() > 256
+        || organizations.iter().any(|(name, id)| {
+            name.len() > 256 || id.is_empty() || id.len() > 128 || id.chars().any(char::is_control)
+        })
+    {
+        return Err(ServerError::Upstream);
+    }
+    if let Some(expected) = expected {
+        return organizations
+            .iter()
+            .find(|(_, id)| id == expected)
+            .map(|(_, id)| Some(id.clone()))
+            .ok_or(ServerError::NeedsLogin);
+    }
+    organizations.sort();
+    Ok(organizations.first().map(|(_, id)| id.clone()))
+}
+
+fn validate_route(route: &ModelRoute) -> Result<(), ServerError> {
+    if !safe_model(&route.id, false)
+        || !safe_model(&route.model_id, false)
+        || route.headers.len() > 8
+    {
+        return Err(ServerError::InvalidConfig);
+    }
+    let uri: minicon_platform::network_http::NetworkHttpRequest =
+        NetworkHttpRequest::new(NetworkHttpMethod::Get, &route.url);
+    minicon_platform::network_http::validate(&uri).map_err(|_| ServerError::InvalidConfig)?;
+    let allowed = match route.provider {
+        Provider::DeepSeek => {
+            route.url == "https://api.deepseek.com/anthropic/v1/messages"
+                && route.protocol == WireProtocol::Messages
+        }
+        Provider::OpenCode => {
+            route.url.starts_with("https://opencode.ai/inference/")
+                && !route.url.contains(['?', '#', '@', '%'])
+                && !route.url.contains("..")
+                && route
+                    .url
+                    .ends_with(if route.protocol == WireProtocol::Chat {
+                        "/chat/completions"
+                    } else {
+                        "/messages"
+                    })
+        }
+    };
+    if !allowed
+        || route.headers.iter().any(|(key, value)| {
+            !key.eq_ignore_ascii_case("x-org-id")
+                || value.len() > 128
+                || value.chars().any(char::is_control)
+        })
+    {
+        return Err(ServerError::InvalidConfig);
+    }
+    Ok(())
+}
+
+fn protocol_for(head: &RequestHead) -> Option<Protocol> {
+    match head.path.as_str() {
+        "/v1/messages" => Some(Protocol::AnthropicMessages),
+        "/v1/chat/completions" => Some(Protocol::OpenAiChat),
+        _ => None,
+    }
+}
+fn check_status(status: u16) -> Result<(), ServerError> {
+    match status {
+        200..=299 => Ok(()),
+        401 | 403 => Err(ServerError::NeedsLogin),
+        _ => Err(ServerError::Http(status)),
+    }
+}
+fn same_key(expected: &str, supplied: &str) -> bool {
+    let mut difference = expected.len() ^ supplied.len();
+    for (a, b) in expected.bytes().zip(supplied.bytes()) {
+        difference |= usize::from(a ^ b);
+    }
+    difference == 0
+}
+fn opaque_id(value: &str) -> bool {
+    value.len() == 32 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+fn safe_model(value: &str, empty: bool) -> bool {
+    (empty || !value.is_empty()) && value.len() <= 200 && !value.chars().any(char::is_control)
+}
+pub fn random_id() -> Result<String, ServerError> {
+    minicon_platform::entropy::secure_random_array::<16>()
+        .map(|bytes| bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+        .map_err(|_| ServerError::Storage)
+}
+fn error_response(protocol: Option<Protocol>, status: u16, kind: &str) -> Response {
+    Response {
+        status,
+        content_type: "application/json",
+        body: serde_json::to_vec(&match protocol {
+            Some(Protocol::AnthropicMessages) => {
+                json!({"type":"error","error":{"type":kind,"message":kind}})
+            }
+            _ => json!({"error":{"type":kind,"message":kind,"code":kind}}),
+        })
+        .expect("bounded fixed error schema"),
+    }
+}
+fn server_error_response(protocol: Option<Protocol>, error: ServerError) -> Response {
+    let (status, kind) = match error {
+        ServerError::BindingChanged => (409, "binding_changed"),
+        ServerError::NeedsLogin | ServerError::MissingKey => (401, "needs_login"),
+        ServerError::MissingModel => (400, "model_unavailable"),
+        ServerError::Busy => (429, "account_busy"),
+        ServerError::Protocol(_) => (400, "unsupported_model_request"),
+        ServerError::Cancelled => (499, "cancelled"),
+        _ => (502, "upstream_error"),
+    };
+    error_response(protocol, status, kind)
+}
+fn stream_error(protocol: Option<Protocol>, _error: ServerError) -> String {
+    match protocol { Some(Protocol::AnthropicMessages)=>"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"model_stream_failed\"}}\n\n".into(), _=>"data: {\"error\":{\"type\":\"api_error\",\"message\":\"model_stream_failed\"}}\n\n".into() }
+}
+
+fn supplied_key(head: &RequestHead) -> Option<&str> {
+    if head.path == "/v1/messages" {
+        head.header("x-api-key").ok().flatten()
+    } else {
+        head.header("authorization")
+            .ok()
+            .flatten()
+            .and_then(|value| value.strip_prefix("Bearer "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider_auth::{Secret, TokenGrant, TokenLifecycle};
+    use std::{
+        io::{Read, Write},
+        net::{TcpListener, TcpStream},
+        sync::mpsc,
+        thread,
+    };
+
+    struct Fixture {
+        root: PathBuf,
+        gateway: Arc<Gateway>,
+        account: String,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let root =
+                std::env::temp_dir().join(format!("minicon-gateway-{}", random_id().unwrap()));
+            std::fs::create_dir_all(&root).unwrap();
+            let root = root.canonicalize().unwrap();
+            let store = Arc::new(AccountStore::new(root.join("accounts")).unwrap());
+            let account = store
+                .insert(
+                    "Synthetic fixture",
+                    TokenGrant {
+                        provider: Provider::OpenCode,
+                        access_token: Secret::new("synthetic-access").unwrap(),
+                        lifecycle: TokenLifecycle::ExpiringRefresh {
+                            refresh_token: Secret::new("synthetic-refresh").unwrap(),
+                            expires_at: Instant::now() + Duration::from_secs(3600),
+                        },
+                        organization: None,
+                    },
+                )
+                .unwrap();
+            store.mark_ready(&account.id).unwrap();
+            let mut config = Config::fresh().unwrap();
+            config.selected_account = Some(account.id.clone());
+            config.model = "opencode/remote/fixture".into();
+            config.models = vec![ModelRoute {
+                id: config.model.clone(),
+                model_id: "fixture-wire".into(),
+                provider: Provider::OpenCode,
+                protocol: WireProtocol::Chat,
+                url: "https://opencode.ai/inference/openai/v1/chat/completions".into(),
+                headers: vec![],
+            }];
+            let gateway =
+                Gateway::new(store, config, Some(Secret::new("synthetic-local").unwrap())).unwrap();
+            Self {
+                root,
+                gateway,
+                account: account.id,
+            }
+        }
+        fn server(&self) -> ServerFixture {
+            let server = local::Server::start(0, self.gateway.clone()).unwrap();
+            self.gateway.state.lock().unwrap().config.port = server.address().port();
+            ServerFixture { server }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+    struct ServerFixture {
+        server: local::Server,
+    }
+    impl ServerFixture {
+        fn request(&self, path: &str, extra: &str, body: Option<&str>) -> TcpStream {
+            let mut stream = TcpStream::connect(self.server.address()).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(4)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(4)))
+                .unwrap();
+            let body = body.unwrap_or("");
+            write!(stream,"{} {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: Bearer synthetic-local\r\n{extra}Content-Length: {}\r\n\r\n{body}",if body.is_empty(){"GET"}else{"POST"},self.server.address(),body.len()).unwrap();
+            stream
+        }
+        fn get(&self, path: &str, extra: &str) -> String {
+            let mut stream = self.request(path, extra, None);
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        }
+    }
+    fn head(key: &str) -> RequestHead {
+        RequestHead {
+            method: "POST".into(),
+            path: "/v1/chat/completions".into(),
+            headers: vec![("authorization".into(), format!("Bearer {key}"))],
+            content_length: 0,
+        }
+    }
+    fn read_headers(stream: &mut TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut byte = [0];
+        while !bytes.ends_with(b"\r\n\r\n") {
+            assert!(bytes.len() < 65536);
+            stream.read_exact(&mut byte).unwrap();
+            bytes.push(byte[0]);
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+    fn upstream_request(stream: &mut TcpStream) -> String {
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(4)))
+            .unwrap();
+        let headers = read_headers(stream);
+        let length = headers
+            .lines()
+            .find_map(|line| {
+                line.split_once(':')
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                    .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+            })
+            .unwrap();
+        let mut body = vec![0; length];
+        stream.read_exact(&mut body).unwrap();
+        assert!(
+            headers
+                .to_lowercase()
+                .contains("authorization: bearer synthetic-access")
+        );
+        assert!(headers.to_lowercase().contains("x-opencode-session:"));
+        assert!(String::from_utf8(body).unwrap().contains("fixture-wire"));
+        headers
+    }
+    const FIRST: &str = "data: {\"id\":\"synthetic\",\"model\":\"fixture-wire\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"},\"finish_reason\":null}]}\n\n";
+    const END: &str = "data: {\"id\":\"synthetic\",\"model\":\"fixture-wire\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+    const BODY: &str = r#"{"model":"minicon-selected","stream":true,"messages":[{"role":"user","content":"test"}]}"#;
+
+    #[test]
+    fn loopback_admission_and_binding_stay_authenticated_and_sticky() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        assert!(server.get("/v1/models", "").contains(MODEL_ALIAS));
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: stable\r\n")
+                .starts_with("HTTP/1.1 200")
+        );
+        assert!(
+            server
+                .get("/v1/models", "Origin: https://untrusted.invalid\r\n")
+                .starts_with("HTTP/1.1 403")
+        );
+        assert!(
+            server
+                .get("/v1/models", "Authorization: Bearer another\r\n")
+                .starts_with("HTTP/1.1 401")
+        );
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        config.models[0].model_id = "changed-wire".into();
+        fixture.gateway.update(config).unwrap();
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: stable\r\n")
+                .starts_with("HTTP/1.1 409")
+        );
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: fresh\r\n")
+                .contains("changed-wire")
+        );
+        let binding_json = |response: String| -> Value {
+            serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
+        };
+        let before =
+            binding_json(server.get("/v1/minicon/binding", "x-minicon-session: fresh\r\n"));
+        fixture
+            .gateway
+            .set_key(Some(Secret::new("synthetic-local").unwrap()))
+            .unwrap();
+        let unchanged =
+            binding_json(server.get("/v1/minicon/binding", "x-minicon-session: fresh\r\n"));
+        assert_eq!(before["generation"], unchanged["generation"]);
+        fixture.gateway.set_key(None).unwrap();
+        fixture
+            .gateway
+            .set_key(Some(Secret::new("synthetic-local").unwrap()))
+            .unwrap();
+        let after = binding_json(server.get("/v1/minicon/binding", "x-minicon-session: fresh\r\n"));
+        assert_ne!(
+            before["generation"], after["generation"],
+            "lost upstream session mapping must invalidate worker resume even when account/model are unchanged"
+        );
+        for field in ["profile", "provider", "account", "model"] {
+            assert_eq!(before[field], after[field]);
+        }
+    }
+
+    #[test]
+    fn selected_full_route_identity_invalidates_binding_but_unselected_changes_do_not() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let read_binding = |response: String| -> Value {
+            assert!(response.starts_with("HTTP/1.1 200"));
+            serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
+        };
+        let before =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: route-stable\r\n"));
+        let mut config = fixture.gateway.state.lock().unwrap().config.clone();
+        let mut alternative = config.models[0].clone();
+        alternative.id = "opencode/other/fixture".into();
+        alternative.protocol = WireProtocol::Messages;
+        alternative.url = "https://opencode.ai/inference/anthropic/v1/messages".into();
+        config.models.push(alternative.clone());
+        fixture.gateway.update(config.clone()).unwrap();
+        let unchanged =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: route-stable\r\n"));
+        assert_eq!(before, unchanged);
+        config.models[1].url = "https://opencode.ai/inference/go/anthropic/v1/messages".into();
+        fixture.gateway.update(config.clone()).unwrap();
+        let unchanged =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: route-stable\r\n"));
+        assert_eq!(before, unchanged);
+        config.model = alternative.id;
+        fixture.gateway.update(config).unwrap();
+        assert!(
+            server
+                .get("/v1/minicon/binding", "x-minicon-session: route-stable\r\n")
+                .starts_with("HTTP/1.1 409")
+        );
+        let after =
+            read_binding(server.get("/v1/minicon/binding", "x-minicon-session: route-fresh\r\n"));
+        assert_ne!(before["generation"], after["generation"]);
+        for field in ["profile", "provider", "account", "model"] {
+            assert_eq!(before[field], after[field]);
+        }
+    }
+    #[test]
+    fn account_lease_is_bounded_and_revoke_cancels_registered_io() {
+        let fixture = Fixture::new();
+        let one = Arc::new(NetworkHttpCancel::new());
+        let two = Arc::new(NetworkHttpCancel::new());
+        let first = BorrowedLease::acquire(
+            &fixture.gateway,
+            &fixture.account,
+            &one,
+            Some(&head("synthetic-local")),
+        )
+        .unwrap();
+        let second =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &two, None).unwrap();
+        assert!(matches!(
+            BorrowedLease::acquire(
+                &fixture.gateway,
+                &fixture.account,
+                &Arc::new(NetworkHttpCancel::new()),
+                None
+            ),
+            Err(ServerError::Busy)
+        ));
+        fixture.gateway.set_key(None).unwrap();
+        assert!(one.is_cancelled());
+        assert!(two.is_cancelled());
+        drop(first);
+        drop(second);
+        assert!(matches!(
+            BorrowedLease::acquire(
+                &fixture.gateway,
+                &fixture.account,
+                &Arc::new(NetworkHttpCancel::new()),
+                Some(&head("synthetic-local"))
+            ),
+            Err(ServerError::MissingKey)
+        ));
+    }
+
+    #[test]
+    fn catalog_authority_and_capability_are_not_inferred_from_login() {
+        let models=parse_deepseek_catalog(br#"{"data":[{"id":"supported","api_capabilities":{"anthropic_messages":{}}},{"id":"unknown"}]}"#).unwrap();
+        assert_eq!(models.len(), 1);
+        assert!(parse_deepseek_catalog(br#"{"data":[{"id":"unknown"}]}"#).is_err());
+        let mut route = models[0].clone();
+        route.url = "https://api.deepseek.com.attacker.invalid/anthropic/v1/messages".into();
+        assert!(validate_route(&route).is_err());
+        let fixture = Fixture::new();
+        let mut route = fixture.gateway.state.lock().unwrap().config.models[0].clone();
+        route.url = "https://opencode.ai/inference/%2e%2e/console/chat/completions".into();
+        assert!(validate_route(&route).is_err());
+        assert_eq!(
+            select_organization(br#"[{"id":"z","name":"Z"},{"id":"a","name":"A"}]"#, None).unwrap(),
+            Some("a".into())
+        );
+        assert_eq!(
+            select_organization(br#"[{"id":"a","name":"A"}]"#, Some("missing")),
+            Err(ServerError::NeedsLogin)
+        );
+        let config=br#"{"providers":{"remote":{"package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"https://opencode.ai/inference/openai/v1"},"headers":{"x-org-id":"org"},"models":{"catalog":{"modelID":"wire"}}}}}"#;
+        assert_eq!(
+            parse_opencode_catalog(config, Some("org")).unwrap()[0].model_id,
+            "wire"
+        );
+        assert!(parse_opencode_catalog(config, Some("other")).is_err());
+    }
+
+    fn sse_event(stream: &mut TcpStream) -> Value {
+        let mut bytes = Vec::new();
+        let mut byte = [0];
+        while !bytes.ends_with(b"\n\n") {
+            assert!(bytes.len() < protocol::MAX_EVENT_BYTES);
+            stream.read_exact(&mut byte).unwrap();
+            bytes.push(byte[0]);
+        }
+        let text = std::str::from_utf8(&bytes).unwrap();
+        let data = text.strip_prefix("data: ").unwrap().trim_end();
+        serde_json::from_str(data).unwrap()
+    }
+    fn accept_upstream(listener: &TcpListener) -> TcpStream {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => return stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "upstream request did not arrive");
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("upstream accept failed: {error}"),
+            }
+        }
+    }
+    #[test]
+    fn native_sse_delivers_before_upstream_finishes_without_buffering() {
+        let fixture = Fixture::new();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let (release, wait) = mpsc::channel();
+        thread::scope(|scope| {
+            let worker=scope.spawn(move || {
+                let mut stream=accept_upstream(&upstream);upstream_request(&mut stream);
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{FIRST}",FIRST.len()+END.len()).unwrap();stream.flush().unwrap();
+                // The terminal event cannot be sent until the client observes
+                // and validates the first event through the real gateway.
+                wait.recv_timeout(Duration::from_secs(4)).unwrap();stream.write_all(END.as_bytes()).unwrap();
+            });
+            let server = fixture.server();
+            let mut client = server.request(
+                "/v1/chat/completions",
+                "x-minicon-session: stream\r\n",
+                Some(BODY),
+            );
+            assert!(read_headers(&mut client).starts_with("HTTP/1.1 200"));
+            let first = sse_event(&mut client);
+            assert_eq!(first["id"], "synthetic");
+            assert_eq!(first["model"], "fixture-wire");
+            assert_eq!(first["choices"][0]["delta"]["content"], "hello");
+            assert!(first["choices"][0]["finish_reason"].is_null());
+            release.send(()).unwrap();
+            let finish = sse_event(&mut client);
+            assert_eq!(finish["choices"][0]["finish_reason"], "stop");
+            let mut tail = Vec::new();
+            client.read_to_end(&mut tail).unwrap();
+            assert_eq!(tail, b"data: [DONE]\n\n");
+            worker.join().unwrap();
+        });
+    }
+
+    #[test]
+    fn downstream_disconnect_shuts_real_upstream_and_releases_lease() {
+        let fixture = Fixture::new();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let (closed, observed) = mpsc::channel();
+        thread::scope(|scope| {
+            let worker = scope.spawn(move || {
+            let mut stream = accept_upstream(&upstream);
+            upstream_request(&mut stream);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n{FIRST}"
+            )
+            .unwrap();
+            stream.flush().unwrap();
+            let mut byte = [0];
+            let result = stream.read(&mut byte);
+            closed.send(matches!(result,Ok(0)) || matches!(result,Err(ref error) if matches!(error.kind(),std::io::ErrorKind::ConnectionReset|std::io::ErrorKind::ConnectionAborted))).unwrap();
+        });
+            let server = fixture.server();
+            let mut client = server.request("/v1/chat/completions", "", Some(BODY));
+            read_headers(&mut client);
+            let mut first = vec![0; FIRST.len()];
+            client.read_exact(&mut first).unwrap();
+            let start = Instant::now();
+            drop(client);
+            assert!(observed.recv_timeout(Duration::from_secs(5)).unwrap());
+            worker.join().unwrap();
+            while fixture
+                .gateway
+                .state
+                .lock()
+                .unwrap()
+                .leases
+                .values()
+                .sum::<usize>()
+                != 0
+            {
+                assert!(start.elapsed() < Duration::from_secs(5));
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+    }
+    #[test]
+    fn draining_cancels_owned_io_and_refuses_incoming_but_allows_explicit_probe() {
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let network = Arc::new(NetworkHttpCancel::new());
+        let lease =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &network, None).unwrap();
+        fixture.gateway.begin_stop();
+        assert!(network.is_cancelled());
+        assert!(server.get("/v1/models", "").starts_with("HTTP/1.1 503"));
+        assert!(matches!(
+            BorrowedLease::acquire(
+                &fixture.gateway,
+                &fixture.account,
+                &Arc::new(NetworkHttpCancel::new()),
+                Some(&head("synthetic-local"))
+            ),
+            Err(ServerError::Busy)
+        ));
+        drop(lease);
+        let probe = Arc::new(NetworkHttpCancel::new());
+        let _probe_lease =
+            BorrowedLease::acquire(&fixture.gateway, &fixture.account, &probe, None).unwrap();
+        assert!(!probe.is_cancelled());
+    }
+    /// Real external client; synthetic upstream only. This does not qualify a
+    /// provider account, OAuth flow or paid inference. See the pinned Pi court.
+    #[test]
+    #[ignore = "requires pinned Pi 1.4.0 via absolute MINICON_PI_CLI; missing dependency is BLOCKED"]
+    fn external_pi_1_4_0_uses_real_gateway_sse_and_usage() {
+        use minicon_platform::contained_process::{ContainedChild, ContainedHeadlessCommand};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct OwnedPi {
+            child: ContainedChild,
+            cleaned: bool,
+        }
+        impl Drop for OwnedPi {
+            fn drop(&mut self) {
+                if !self.cleaned {
+                    let _ = self.child.terminate_and_wait(Duration::from_secs(5));
+                }
+            }
+        }
+        struct StopPeer(Arc<AtomicBool>);
+        impl Drop for StopPeer {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let cli=std::env::var_os("MINICON_PI_CLI").map(PathBuf::from)
+            .filter(|path|path.is_absolute() && path.is_file())
+            .expect("BLOCKED: MINICON_PI_CLI must name the installed pinned Pi 1.4.0 CLI by absolute path");
+        let package = cli
+            .parent()
+            .and_then(|path| path.parent())
+            .and_then(|path| path.parent())
+            .expect("BLOCKED: Pi CLI must use the installed package dist/bundle/cli.js layout")
+            .join("package.json");
+        let mut package_bytes = Vec::new();
+        std::fs::File::open(package)
+            .expect("BLOCKED: Pi package metadata unavailable")
+            .take(64 * 1024 + 1)
+            .read_to_end(&mut package_bytes)
+            .unwrap();
+        assert!(
+            package_bytes.len() <= 64 * 1024,
+            "BLOCKED: oversized Pi package metadata"
+        );
+        let package: Value =
+            serde_json::from_slice(&package_bytes).expect("BLOCKED: invalid Pi package metadata");
+        assert_eq!(
+            package["name"], "@earendil-works/pi-coding-agent",
+            "BLOCKED: unexpected Pi package"
+        );
+        assert_eq!(
+            package["version"], "1.4.0",
+            "BLOCKED: this court pins Pi 1.4.0"
+        );
+        let node = std::env::var_os("MINICON_PI_NODE")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("PATH").and_then(|paths| {
+                    std::env::split_paths(&paths)
+                        .map(|path| path.join(if cfg!(windows) { "node.exe" } else { "node" }))
+                        .find(|path| path.is_absolute() && path.is_file())
+                })
+            })
+            .filter(|path| path.is_absolute() && path.is_file())
+            .expect("BLOCKED: an absolute Node.js executable is required");
+
+        let fixture = Fixture::new();
+        let server = fixture.server();
+        let agent = fixture.root.join("pi-agent");
+        let workspace = fixture.root.join("pi-workspace");
+        let home = fixture.root.join("pi-home");
+        for directory in [&agent, &workspace, &home] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        // Compatibility choices are pinned to the checked Pi 1.4.0 contract:
+        // keep real streaming usage, exclude unsupported request semantics.
+        let models = json!({"providers":{"minicon":{
+            "baseUrl":format!("http://{}/v1",server.server.address()),
+            "api":"openai-completions","apiKey":"$MINICON_LOCAL_API_KEY","authHeader":true,
+            "headers":{"User-Agent":"pi/1.4.0 (minicon-synthetic-court)","x-minicon-session":"$MINICON_PI_SESSION"},
+            "compat":{"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"supportsStrictMode":false,"supportsUsageInStreaming":true,"maxTokensField":"max_tokens","sendSessionAffinityHeaders":true,"sessionAffinityFormat":"openai"},
+            "models":[{"id":MODEL_ALIAS,"name":"MiniCon synthetic selected model","reasoning":false,"input":["text"],"contextWindow":16384,"maxTokens":256}]
+        }}});
+        std::fs::write(
+            agent.join("models.json"),
+            serde_json::to_vec(&models).unwrap(),
+        )
+        .unwrap();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        upstream.set_nonblocking(true).unwrap();
+        *fixture.gateway.fixture_upstream.lock().unwrap() =
+            Some(format!("http://{}/", upstream.local_addr().unwrap()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = stop.clone();
+        thread::scope(|scope| {
+            let _stop = StopPeer(stop);
+            let peer=scope.spawn(move || {
+                let deadline=Instant::now()+Duration::from_secs(30);
+                let mut stream=loop {
+                    if stopping.load(Ordering::Acquire) {return None;}
+                    match upstream.accept() {
+                        Ok((stream,_))=>break stream,
+                        Err(error) if error.kind()==std::io::ErrorKind::WouldBlock=>{
+                            assert!(Instant::now()<deadline,"Pi never reached the real gateway upstream");thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(error)=>panic!("Pi upstream accept failed: {error}"),
+                    }
+                };
+                stream.set_nonblocking(false).unwrap();stream.set_read_timeout(Some(Duration::from_secs(4))).unwrap();stream.set_write_timeout(Some(Duration::from_secs(4))).unwrap();
+                let headers=read_headers(&mut stream);assert!(headers.starts_with("POST / HTTP/1.1"));
+                assert!(headers.to_ascii_lowercase().contains("authorization: bearer synthetic-access"));
+                assert!(headers.to_ascii_lowercase().contains("x-opencode-session:"));
+                let length=headers.lines().find_map(|line|line.split_once(':').filter(|(name,_)|name.eq_ignore_ascii_case("content-length")).map(|(_,value)|value.trim().parse::<usize>().unwrap())).unwrap();
+                assert!(length<=64*1024,"Pi request unexpectedly exceeds the court's bounded prompt");
+                let mut body=vec![0;length];stream.read_exact(&mut body).unwrap();let body:Value=serde_json::from_slice(&body).unwrap();
+                assert_eq!(body["model"],"fixture-wire");assert_eq!(body["stream"],true);assert_eq!(body["stream_options"]["include_usage"],true);
+                assert!(body.get("store").is_none());
+                let first=json!({"id":"pi-synthetic","object":"chat.completion.chunk","model":"fixture-wire","choices":[{"index":0,"delta":{"role":"assistant","content":"MINICON_PI_OK"},"finish_reason":null}]});
+                let finish=json!({"id":"pi-synthetic","object":"chat.completion.chunk","model":"fixture-wire","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]});
+                let usage=json!({"id":"pi-synthetic","object":"chat.completion.chunk","model":"fixture-wire","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}});
+                let first=format!("data: {first}\n\n");let tail=format!("data: {finish}\n\ndata: {usage}\n\ndata: [DONE]\n\n");
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{first}",first.len()+tail.len()).unwrap();stream.flush().unwrap();
+                thread::sleep(Duration::from_millis(100));stream.write_all(tail.as_bytes()).unwrap();
+                Some(body)
+            });
+            let mut command = ContainedHeadlessCommand::new(node);
+            command.env_clear().current_dir(&workspace).capture_output();
+            for name in [
+                "PATH",
+                "SystemRoot",
+                "WINDIR",
+                "TEMP",
+                "TMP",
+                "LANG",
+                "LC_ALL",
+            ] {
+                if let Some(value) = std::env::var_os(name) {
+                    command.env(name, value);
+                }
+            }
+            command
+                .env("HOME", home.as_os_str())
+                .env("USERPROFILE", home.as_os_str())
+                .env("XDG_CONFIG_HOME", home.join(".config"))
+                .env("PI_CODING_AGENT_DIR", agent.as_os_str())
+                .env("PI_OFFLINE", "1")
+                .env("PI_TELEMETRY", "0")
+                .env("DO_NOT_TRACK", "1")
+                .env("CI", "1")
+                .env("NO_COLOR", "1")
+                .env("MINICON_LOCAL_API_KEY", "synthetic-local")
+                .env("MINICON_PI_SESSION", "minicon-pi-1.4.0-synthetic-court");
+            command.arg(cli).args([
+                "--print",
+                "--mode",
+                "json",
+                "--provider",
+                "minicon",
+                "--model",
+                MODEL_ALIAS,
+                "--thinking",
+                "off",
+                "--no-session",
+                "--no-tools",
+                "--no-extensions",
+                "--no-mcp",
+                "--no-skills",
+                "--no-prompt-templates",
+                "--no-themes",
+                "--no-context-files",
+                "--no-approve",
+                "--offline",
+                "--system-prompt",
+                "Reply concisely to compatibility probes. No tool use.",
+                "Reply exactly MINICON_PI_OK.",
+            ]);
+            let mut process = OwnedPi {
+                child: command.spawn().expect("BLOCKED: Pi/Node launch failed"),
+                cleaned: false,
+            };
+            let mut stdout = process.child.take_stdout().unwrap();
+            let mut stderr = process.child.take_stderr().unwrap();
+            let mut out = Vec::new();
+            let mut err = Vec::new();
+            let mut eof = [false; 2];
+            let mut captured = 0usize;
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
+                for (index, pipe, target) in
+                    [(0, &mut stdout, &mut out), (1, &mut stderr, &mut err)]
+                {
+                    if eof[index] {
+                        continue;
+                    }
+                    let mut bytes = [0; 8192];
+                    match pipe.read_timeout(&mut bytes, Duration::from_millis(5)) {
+                        Ok(0) => eof[index] = true,
+                        Ok(count) => {
+                            captured += count;
+                            assert!(
+                                captured <= 1024 * 1024,
+                                "Pi output exceeds cumulative 1 MiB bound"
+                            );
+                            target.extend_from_slice(&bytes[..count]);
+                        }
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::TimedOut
+                                    | std::io::ErrorKind::WouldBlock
+                                    | std::io::ErrorKind::Interrupted
+                            ) => {}
+                        Err(error) => panic!("Pi captured output failed: {error}"),
+                    }
+                }
+                assert!(
+                    out.len() + err.len() <= 1024 * 1024,
+                    "Pi output exceeds cumulative 1 MiB bound"
+                );
+                if process.child.exit_observed().unwrap() && eof.iter().all(|eof| *eof) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "Pi did not exit within 30 seconds; stderr={}",
+                    String::from_utf8_lossy(&err)
+                );
+            }
+            process
+                .child
+                .terminate_and_wait(Duration::from_secs(5))
+                .unwrap();
+            process.cleaned = true;
+            let status = process.child.try_wait().unwrap().unwrap();
+            assert_eq!(
+                status,
+                minicon_platform::contained_process::ProcessExit::Code(0),
+                "Pi failed: stderr={}; stdout={}",
+                String::from_utf8_lossy(&err),
+                String::from_utf8_lossy(&out)
+            );
+            let text = std::str::from_utf8(&out).unwrap();
+            let events: Vec<Value> = text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| {
+                    serde_json::from_str(line).expect("Pi JSON mode emitted a non-JSON event")
+                })
+                .collect();
+            let message = events
+                .iter()
+                .rev()
+                .find(|event| {
+                    event["type"] == "message_end" && event["message"]["role"] == "assistant"
+                })
+                .expect("Pi emitted no final assistant message")["message"]
+                .clone();
+            let answer: String = message["content"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|block| block["type"] == "text")
+                .map(|block| block["text"].as_str().unwrap())
+                .collect();
+            assert_eq!(answer, "MINICON_PI_OK");
+            assert_eq!(message["stopReason"], "stop");
+            assert_eq!(message["usage"]["input"], 7);
+            assert_eq!(message["usage"]["output"], 3);
+            assert_eq!(message["usage"]["totalTokens"], 10);
+            let observed = peer
+                .join()
+                .unwrap()
+                .expect("Pi never performed real upstream inference");
+            assert_eq!(observed["model"], "fixture-wire");
+            assert_eq!(
+                fixture
+                    .gateway
+                    .state
+                    .lock()
+                    .unwrap()
+                    .sessions
+                    .front()
+                    .unwrap()
+                    .name,
+                "minicon-pi-1.4.0-synthetic-court"
+            );
+            println!(
+                "{}",
+                json!({"client":"Pi","version":"1.4.0","upstream":"synthetic-loopback-not-provider-authorization","model":observed["model"],"stream":observed["stream"],"text":answer,"stop_reason":message["stopReason"],"usage":message["usage"],"exit":0})
+            );
+        });
+    }
+}

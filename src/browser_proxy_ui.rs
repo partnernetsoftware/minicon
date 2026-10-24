@@ -1,5 +1,6 @@
 //! Process-local browser proxy editing. Product owner: PRD 25.01.
 use super::*;
+use minicon_core::field_editor::{self, Command, Intent, Limits};
 
 impl ConApp {
     pub(super) fn effective_browser_proxy(&self) -> Result<browser::BrowserProxy, String> {
@@ -49,9 +50,16 @@ impl ConApp {
     }
 
     pub(super) fn focus_browser_proxy(&mut self, window: &PixelWindow) {
+        self.browser_chrome_trigger = None;
         self.browser_proxy_focused = true;
-        self.browser_address = None;
+        self.browser_address_focused = false;
+        if let Some(editor) = &mut self.browser_address {
+            field_editor::apply(editor, Command::Blur, Limits::ADDRESS);
+        }
+        self.settings_proxy_focused = false;
+        field_editor::apply(&mut self.settings_proxy_input, Command::Blur, Limits::PROXY);
         self.browser_address_drag = None;
+        self.browser_address_clicks = Default::default();
         self.composer.focused = false;
         composer::select_all(&mut self.browser_proxy_input);
         #[cfg(any(target_os = "macos", windows))]
@@ -64,7 +72,7 @@ impl ConApp {
         self.mark_host_ui_full_and_repaint(window);
     }
 
-    fn update_proxy_ime_anchor(&self, window: &PixelWindow) {
+    pub(super) fn update_proxy_ime_anchor(&self, window: &PixelWindow) {
         let Ok(metrics) = window.metrics() else {
             return;
         };
@@ -96,7 +104,49 @@ impl ConApp {
     ) -> Result<bool, PixelWindowError> {
         if !self.active_is_browser() {
             self.browser_proxy_focused = false;
+            field_editor::apply(&mut self.browser_proxy_input, Command::Blur, Limits::PROXY);
             return Ok(false);
+        }
+        if matches!(
+            event,
+            PixelWindowEvent::PointerCaptureLost | PixelWindowEvent::FocusChanged(false)
+        ) && self.browser_proxy_focused
+        {
+            self.browser_address_drag = None;
+            field_editor::apply(&mut self.browser_proxy_input, Command::Blur, Limits::PROXY);
+        }
+        if let PixelWindowEvent::PointerMoved { position, .. } = event
+            && self.browser_proxy_focused
+            && let Some(anchor) = self.browser_address_drag
+        {
+            let metrics = window.metrics()?;
+            let scale = metrics.scale_factor.max(1.0);
+            let rect = self
+                .layout(metrics.physical_width, metrics.physical_height, scale)
+                .browser_proxy_text(scale);
+            let size = scaled_host_ui_font(16, self.session_seed.font_size_logical(), scale);
+            let offset = super::browser_ui::host_field_offset(
+                &self.browser_proxy_input,
+                rect,
+                position,
+                scale,
+                size,
+            );
+            field_editor::drag(&mut self.browser_proxy_input, anchor, offset);
+            self.update_proxy_ime_anchor(window);
+            self.mark_host_ui_full_and_repaint(window);
+            return Ok(true);
+        }
+        if let PixelWindowEvent::PointerButton {
+            state: PointerButtonState::Released,
+            button: PointerButton::Left,
+            ..
+        } = event
+            && self.browser_proxy_focused
+            && self.browser_address_drag.take().is_some()
+        {
+            let _ = window.set_pointer_capture(false);
+            return Ok(true);
         }
         if let PixelWindowEvent::PointerButton {
             state: PointerButtonState::Pressed,
@@ -115,48 +165,34 @@ impl ConApp {
                 (position.y * scale).max(0.0) as u32,
             ) {
                 let was_focused = self.browser_proxy_focused;
-                self.browser_proxy_focused = true;
-                self.browser_address = None;
-                self.browser_address_drag = None;
-                self.composer.focused = false;
+                let size = scaled_host_ui_font(16, self.session_seed.font_size_logical(), scale);
+                let offset = super::browser_ui::host_field_offset(
+                    &self.browser_proxy_input,
+                    rect,
+                    position,
+                    scale,
+                    size,
+                );
                 if was_focused {
-                    let editor = &mut self.browser_proxy_input;
-                    let size =
-                        scaled_host_ui_font(16, self.session_seed.font_size_logical(), scale);
-                    let cell = font::cell_metrics(size).width.max(1);
-                    let columns =
-                        (rect.width.saturating_sub((16.0 * scale) as u32) / cell).max(1) as usize;
-                    let visible = composer::visible_window(
-                        &editor.text,
-                        &editor.preedit,
-                        editor.caret,
-                        1,
-                        columns,
+                    let clicks = self.browser_address_clicks.register(offset, Instant::now());
+                    self.browser_address_drag = field_editor::press(
+                        &mut self.browser_proxy_input,
+                        offset,
+                        modifiers.shift,
+                        clicks,
                     );
-                    let column = ((position.x * scale).max(0.0) as u32)
-                        .saturating_sub(rect.x + (8.0 * scale) as u32)
-                        / cell;
-                    let offset =
-                        composer::caret_at_cell(&editor.text, visible.text, column as usize);
-                    let anchor =
-                        editor
-                            .anchor
-                            .unwrap_or(if editor.select_all { 0 } else { editor.caret });
-                    editor.select_all = false;
-                    editor.anchor = if modifiers.shift { Some(anchor) } else { None };
-                    editor.caret = offset;
+                    let _ = window.set_pointer_capture(self.browser_address_drag.is_some());
                 } else {
-                    composer::select_all(&mut self.browser_proxy_input);
+                    self.focus_browser_proxy(window);
+                    self.browser_address_clicks.register(offset, Instant::now());
                 }
-                #[cfg(any(target_os = "macos", windows))]
-                if let Some(page) = &self.native_browser_page {
-                    page.focus_parent();
-                }
-                #[cfg(target_os = "linux")]
-                window.focus();
                 self.update_proxy_ime_anchor(window);
                 self.mark_host_ui_full_and_repaint(window);
                 return Ok(true);
+            }
+            if self.browser_proxy_focused {
+                self.browser_address_drag = None;
+                field_editor::apply(&mut self.browser_proxy_input, Command::Blur, Limits::PROXY);
             }
             self.browser_proxy_focused = false;
         }
@@ -164,99 +200,39 @@ impl ConApp {
             return Ok(false);
         }
         if let PixelWindowEvent::Keyboard(key) = event
+            && key.state == KeyPressState::Pressed
             && (key.modifiers.meta || key.modifiers.control)
             && matches!(&key.logical, LogicalKey::Character(text) if text.eq_ignore_ascii_case("l"))
         {
             self.browser_proxy_focused = false;
+            field_editor::apply(&mut self.browser_proxy_input, Command::Blur, Limits::PROXY);
             return Ok(false);
         }
-        let editor = &mut self.browser_proxy_input;
-        match event {
-            PixelWindowEvent::Keyboard(key) => {
-                if key.state != KeyPressState::Pressed {
-                    return Ok(true);
+        let Some(outcome) =
+            super::browser_ui::edit_host_field(&mut self.browser_proxy_input, event, Limits::PROXY)
+        else {
+            return Ok(false);
+        };
+        match outcome.intent {
+            Intent::Submit => {
+                self.apply_browser_proxy(window);
+                return Ok(true);
+            }
+            Intent::Cancel => {
+                self.browser_proxy_input = composer::ComposerState::default();
+                self.browser_proxy_input.text = self.browser_proxy_applied.clone();
+                self.browser_proxy_input.caret = self.browser_proxy_input.text.len();
+                self.browser_proxy_focused = false;
+                #[cfg(any(target_os = "macos", windows))]
+                if let Some(page) = &self.native_browser_page {
+                    page.focus();
                 }
-                let Some(chord) = composer_chord(key) else {
-                    return Ok(true);
-                };
-                let Some(action) =
-                    keymap::action(chord, CLIPBOARD_MODIFIER, keymap::Draft::single_line())
-                else {
-                    return Ok(true);
-                };
-                match action {
-                    keymap::Action::Send | keymap::Action::SoftNewline => {
-                        self.apply_browser_proxy(window);
-                        return Ok(true);
-                    }
-                    keymap::Action::CancelFocus => {
-                        *editor = composer::ComposerState::default();
-                        editor.text = self.browser_proxy_applied.clone();
-                        editor.caret = editor.text.len();
-                        self.browser_proxy_focused = false;
-                        #[cfg(any(target_os = "macos", windows))]
-                        if let Some(page) = &self.native_browser_page {
-                            page.focus();
-                        }
-                        #[cfg(target_os = "linux")]
-                        if let Some(process) = &self.browser_process {
-                            let _ = process.send("focus", None);
-                        }
-                    }
-                    keymap::Action::SelectAll => composer::select_all(editor),
-                    keymap::Action::Copy => {
-                        if let Some(text) = composer::selection_text(editor) {
-                            let _ = clipboard_status::set_text(text);
-                        }
-                    }
-                    keymap::Action::Cut => {
-                        if let Some(text) = composer::cut(editor) {
-                            let _ = clipboard_status::set_text(&text);
-                        }
-                    }
-                    keymap::Action::Paste => {
-                        if let Some(text) = composer_paste_text_or_image_path() {
-                            let text = single_line_label(&text);
-                            if editor.text.len() + text.len() <= 2048 {
-                                composer::insert(editor, &text);
-                            }
-                        }
-                    }
-                    keymap::Action::Backspace => composer::backspace(editor),
-                    keymap::Action::DeleteForward => composer::delete_forward(editor),
-                    keymap::Action::DeleteWordBack => composer::delete_word_back(editor),
-                    keymap::Action::DeleteWordForward => composer::delete_word_forward(editor),
-                    keymap::Action::Move(movement) => composer::move_caret(editor, movement),
-                    keymap::Action::Extend(movement) => {
-                        composer::extend_selection(editor, movement)
-                    }
-                    keymap::Action::Insert => {
-                        if let LogicalKey::Character(text) = &key.logical
-                            && editor.text.len() + text.len() <= 2048
-                        {
-                            composer::insert(editor, &single_line_label(text));
-                        }
-                    }
-                    _ => {}
+                #[cfg(target_os = "linux")]
+                if let Some(process) = &self.browser_process {
+                    let _ = process.send("focus", None);
                 }
             }
-            PixelWindowEvent::Ime(ime) => {
-                use minicon_platform::ime::{ImeAction, classify_event};
-                match classify_event(ime.clone(), true) {
-                    ImeAction::UpdatePreedit { text, .. } => {
-                        editor.preedit = text.chars().take(512).collect()
-                    }
-                    ImeAction::ClearPreedit => editor.preedit.clear(),
-                    ImeAction::CommitText(text) => {
-                        editor.preedit.clear();
-                        if editor.text.len() + text.len() <= 2048 {
-                            composer::insert(editor, &single_line_label(&text));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => return Ok(false),
+            Intent::None => {}
         }
         self.update_proxy_ime_anchor(window);
         self.mark_host_ui_full_and_repaint(window);

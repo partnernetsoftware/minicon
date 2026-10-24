@@ -422,6 +422,7 @@ fn opencode_system_prompt(root: &std::path::Path) -> String {
 /// them** -- a path outside the root or an unlisted command goes back to the
 /// model as an ordinary tool result so it can correct itself, and it neither
 /// aborts the run nor buys another turn.
+#[cfg(test)]
 pub fn opencode_run_task(
     transport: &dyn Transport,
     url: &str,
@@ -431,6 +432,26 @@ pub fn opencode_run_task(
     file_tool: &crate::harness::FileTool,
     exec_tool: &crate::harness::ExecTool,
 ) -> Result<String, String> {
+    let budget = crate::harness::InvocationBudget::new(std::sync::Arc::new(
+        std::sync::atomic::AtomicBool::new(false),
+    ));
+    opencode_run_task_with_budget(
+        transport, url, bearer, model, task, file_tool, exec_tool, &budget,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn opencode_run_task_with_budget(
+    transport: &dyn Transport,
+    url: &str,
+    bearer: &str,
+    model: &str,
+    task: &str,
+    file_tool: &crate::harness::FileTool,
+    exec_tool: &crate::harness::ExecTool,
+    budget: &crate::harness::InvocationBudget,
+) -> Result<String, crate::harness::HarnessFailure> {
     let mut messages = vec![
         serde_json::json!({
             "role": "system",
@@ -442,12 +463,16 @@ pub fn opencode_run_task(
 
     for _turn in 0..OPENCODE_MAX_TURNS {
         let body = opencode_request_body(model, &messages);
-        let reply = transport.post_json(
+        let remaining = budget.take_model_turn()?;
+        let reply = transport.post_json_with_timeout(
             url,
             bearer,
             &body,
             &[("x-opencode-session", OPENCODE_SESSION_ID)],
-        )?;
+            remaining,
+        );
+        budget.check()?;
+        let reply = reply?;
         match opencode_parse_reply(&reply)? {
             OpencodeReply::Text(text) => return Ok(text),
             OpencodeReply::ToolCalls(calls) => {
@@ -457,7 +482,8 @@ pub fn opencode_run_task(
                          turn's {} more would pass the bound of {OPENCODE_MAX_TOOL_CALLS} \
                          (OPENCODE_MAX_TOOL_CALLS); the task did not finish",
                         calls.len()
-                    ));
+                    )
+                    .into());
                 }
                 // Echo the assistant turn back before its results: a result
                 // whose call is absent from the history has nothing to answer.
@@ -474,11 +500,13 @@ pub fn opencode_run_task(
                         .collect::<Vec<_>>(),
                 }));
                 for call in &calls {
+                    budget.take_tool_call()?;
                     tool_calls_spent += 1;
                     // A refusal is a result, not an early return: both arms
                     // hand the model a string.
                     let result = opencode_dispatch(file_tool, exec_tool, call)
                         .unwrap_or_else(|refusal| refusal);
+                    budget.check()?;
                     messages.push(serde_json::json!({
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -491,7 +519,8 @@ pub fn opencode_run_task(
     Err(format!(
         "harness: stopped after the bound of {OPENCODE_MAX_TURNS} opencode-go model turns \
          (OPENCODE_MAX_TURNS) without a final answer; the task did not finish"
-    ))
+    )
+    .into())
 }
 
 /// Runs one tool call. `Err` is still something to tell the model, not a reason

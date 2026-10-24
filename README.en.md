@@ -67,7 +67,7 @@ compose CJK through the same paths a person's input takes.
 
 - **One executable.** No installer or bundled browser engine. Artifact sizes
   and platform measurements are maintained in [the delivery requirements](prd/PRD_02_27_con_delivery.md).
-- **Permanently open source.** MIT OR Apache-2.0. No telemetry, no account, no
+- **Permanently open source.** MIT OR Apache-2.0. No telemetry, no required MiniCon account, no
   auto-updater — the settings panel's update check is manual, per-press, and
   never runs on its own. The source is the product.
 - **Updates are manual, and reversible.** The panel can check the release page
@@ -176,7 +176,7 @@ alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
 ```
 
 On macOS, the canonical dev build also assembles the unsigned local-test wrapper
-`target/debug/MiniCon 0.2.22 Dev.app`; its version follows `Cargo.toml` and it has a distinct development bundle id
+`target/debug/MiniCon 0.2.23 Dev.app`; its version follows `Cargo.toml` and it has a distinct development bundle id
 so it cannot be confused with an installed release during UI qualification.
 The executable under test remains `target/debug/minicon`.
 
@@ -210,6 +210,11 @@ The editable proxy dropdown beside a Browser address accepts an HTTP proxy
 resetting its session/history; Escape cancels editing. Manage saved choices
 in **Settings → Web**; **Console** keeps the terminal settings. Select
 **Use configured proxy** to clear the override.
+
+The 0.2.23 development build adds **Settings → Harness** for optional provider
+accounts and an explicitly started local model API. Its connection steps and
+current qualification limits are owned by the
+[Harness requirements](prd/PRD_02_31_01_provider_gateway.md).
 
 ---
 

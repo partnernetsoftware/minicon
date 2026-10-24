@@ -1,5 +1,15 @@
 //! Windows parent-console output adapter.
 
+pub(crate) struct Session {
+    _inner: super::console::ConsoleGuard,
+}
+
+pub(crate) fn attach_session() -> Option<Session> {
+    super::console::ConsoleGuard::attach_parent_with_default_interrupts()
+        .ok()
+        .map(|inner| Session { _inner: inner })
+}
+
 pub(crate) fn write_stderr(message: &str) -> bool {
     write(message, true)
 }

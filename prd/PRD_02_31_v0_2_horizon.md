@@ -3,8 +3,11 @@
 Owner decision, 2026-09-24: `AGENTS.md`'s product-boundary exclusion of "mux"
 and "script runtime, plugin host or Agent permission policy" is narrowed (not
 removed) to admit exactly the two subcommands below. This module is their
-scope statement; it does not yet contain implementation evidence, because
-neither has shipped. Legend: `[v]` shipped, `[-]` partial, `[_]` planned,
+scope statement; dated evidence below records implemented mux/worker scope.
+The 2026-10-24 local model-listener amendment is separately owned by
+[PRD 31.01](PRD_02_31_01_provider_gateway.md), including Harness settings,
+provider accounts and the future llm-gate seam. Legend: `[v]` shipped,
+`[-]` partial, `[_]` planned,
 `[no]` explicit non-goal.
 
 ## Product outcome
@@ -13,11 +16,15 @@ A MiniCon user can drive their own already-running tabs the way a `tmux` user
 drives panes, from a script or another program, and can hand a narrowly
 scoped local task — read/write these files, run this command — to a model
 without leaving the terminal or installing a separate agent CLI. Neither
-capability turns MiniCon into a server: both still live and die with the one
-process, exactly like the existing `--control` endpoint.
+capability creates a persistent service identity: both still live and die with
+their owning process. The newly planned model API has its own explicit
+process-lifetime listener boundary in PRD 31.01; it cannot execute these tools.
 
 ```text
 0.2.x horizon — mux and harness
+├── [_] Local model gateway / Harness settings / manual provider-pool
+│   invariant, evidence, safe failure, dependencies and non-goals: PRD_02_31_01_provider_gateway.md
+│   worker execution remains here; ujs/tinyvm scheduling is future, not first-delivery scope
 ├── mux {m}
 │   ├── outcome: tmux-CLI-compatible tab control -- same verbs and flag
 │   │   shape as `tmux`'s own client, so a script or agent that already
@@ -220,8 +227,8 @@ process, exactly like the existing `--control` endpoint.
 │         states the same boundary from the other side.
 └── Shared constraints
     ├── one file, no bundled runtime, no installer
-    ├── every other AGENTS.md exclusion still applies (no server, no
-    │   persistent workspace, no Fleet, no MCP, no general plugin host)
+    ├── charter exclusions still apply outside PRD 31.01's explicit model-listener exception
+    │   no daemon, persistent workspace, Fleet, MCP or general plugin host
     └── black-box CLI evidence only, per AGENTS.md's test discipline
 ```
 
@@ -232,7 +239,11 @@ flowchart TB
     MUX --> PROC["one MiniCon process<br/>same lifetime as --control"]
     HAR --> PROC
     HAR --> BE["model backends [-] <br/>DeepSeek API · opencode-go"]
-    PROC -. "no server, no persistence, no plugin host" .-> X["excluded"]
+    HAR -. planned inference client .-> G["PRD 31.01: loopback model API<br/>manual account binding"]
+    EXT[Named local external client] --> G
+    G --> BE
+    G -. cannot invoke .-> TOOLS[Worker-owned file / exec]
+    PROC -. "no daemon, manager or plugin host" .-> X["excluded"]
 ```
 
 ## mux — detail
@@ -410,11 +421,40 @@ used to carry):
   a load/save round trip with bound eviction, and the corrupt-file safe
   failure; `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, all
   pass.
-- **Credential storage.** Environment variable only:
-  `MINICON_DEEPSEEK_API_KEY` for `--backend deepseek`,
-  `MINICON_OPENCODE_API_KEY` for `--backend opencode-go`. A config-file
-  credential store is deferred so MiniCon does not grow a general
-  secrets-management feature for this one CLI mode.
+- **Current credential inputs (source audit, 2026-10-24).**
+  `MINICON_DEEPSEEK_API_KEY` for `--backend deepseek` and
+  `MINICON_OPENCODE_API_KEY` for `--backend opencode-go` remain supported.
+  DeepSeek additionally retains a read-only compatibility fallback to an existing private bearer file at
+  `~/.minicon-embed/deepseek-bearer`; the earlier env-only description no longer
+  matches `run_harness`. That fallback is mechanism wiring, not qualification
+  of an official inference OAuth grant. New Harness login never writes that legacy file. Pooled accounts, credential
+  lifecycle and explicit legacy-input handling belong to
+  [PRD 31.01](PRD_02_31_01_provider_gateway.md).
+
+### Worker requirements for the first gateway connection
+
+Status `[-]`, source audit and implementation dated 2026-10-24; these are repairs/acceptance for the
+existing worker, not a new execution framework. The historical session and
+backend receipts below retain their original scope.
+
+| Delivery leaf | Invariant and observable evidence | Safe failure / dependency / non-goal |
+| --- | --- | --- |
+| Invocation budget | A single counter/deadline spans all outer and backend turns: initially 16 model turns, 64 total tool calls and 10 minutes per invocation; a public task that attempts to exceed it stops at the same bound across backend re-entry | Bounded terminal result; depends on single-turn extraction; no quota accumulated across separate session resumes |
+| Exec output and shutdown | Existing 30-second exec deadline also covers output draining and descendant-held pipes; cap combined stdout/stderr at 1 MiB, mark truncation, cancel/reap owned processes and finish pipe cleanup within a further 5 seconds | Output flood, leader-exits-first and cancel black boxes; depends on native containment and cancellable reads; no unbounded read_to_end/join |
+| Credential environment | Spawn with a documented minimal native/locale/path/temp environment; do not forward provider/client secrets or OAuth state to exec; required extras must be explicitly named | Child environment probe with synthetic sentinel secrets; depends on platform process seam; no general permission-policy engine |
+| Execution boundary | File read/write retains root/symlink bounds; exec retains argv, command allow-list and cwd, without claiming that cwd isolates filesystem or network access | Public denied-file/denied-command and real allowed-command journeys; depends on existing file/exec mechanisms; no OS sandbox claim |
+| Model API consumer | Existing worker invokes the shared HTTP inference path, executes tool descriptions locally and returns results; cancellation ends both model work and owned child work | Real tool-result round trip and missing-auth/no-tool-effect court; depends on PRD 31.01 API; no gateway-to-worker execution endpoint |
+
+The current source has no output byte cap, can block joining pipe readers after
+the leader exits, inherits the parent environment, and resets codec budgets
+across outer-loop calls. These are source-inspection findings, not completed
+exploit or runtime receipts. Reproduce each relevant failure before claiming
+its repair. Preserve existing explicit `--root`, `--allow-cmd`, session flags
+and no-shell argv semantics. Streaming was deferred in the 2026-09-26 session
+delivery; new streaming contracts and protocol qualification belong to PRD 31.01.
+
+### Historical HTTP transport decision
+
 **Decided by the owner, 2026-09-25 (was open during H4).** MiniCon could not
 make an HTTPS request at all, and neither could its platform crate: the
 `agenterm-platform` features it enabled were `network-dns`,
@@ -479,6 +519,14 @@ minicon_mux` does not rebuild the binary it drives, so `cargo build --bin
 minicon` must precede it or a stale binary is what gets tested.
 
 ### harness — what is built and what is owed
+
+**Current-source qualification note (2026-10-24).** The historical hosted
+OpenCode evidence below does not describe the current default configuration:
+`harness_opencode.rs` defaults to a local `127.0.0.1:4096` base and the placeholder
+model `opencode`, with explicit HTTPS/model overrides available. The new hosted
+service/account identity must be reconciled and requalified under
+[PRD 31.01](PRD_02_31_01_provider_gateway.md); neither those defaults nor an
+OpenCode agent server establish a hosted inference or OAuth contract.
 
 **Built, with named evidence.** The two tools are `[v]`. Both backends are
 `[v]`, wired and dispatched from `run_harness` on `--backend`, each running

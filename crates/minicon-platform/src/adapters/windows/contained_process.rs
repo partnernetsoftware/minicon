@@ -11,9 +11,9 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, HANDLE},
+    Foundation::{CloseHandle, ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED, GetLastError, HANDLE},
     System::{
-        Pipes::CreatePipe,
+        Pipes::{CreatePipe, PeekNamedPipe},
         Threading::{
             CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW, CREATE_SUSPENDED,
             CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
@@ -61,6 +61,54 @@ impl Write for ContainedChildInput {
 impl Read for ContainedChildOutput {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.0.read(buffer)
+    }
+}
+
+impl ContainedChildOutput {
+    pub(crate) fn read_timeout(
+        &mut self,
+        buffer: &mut [u8],
+        timeout: Duration,
+    ) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let mut available = 0;
+            let ok = unsafe {
+                PeekNamedPipe(
+                    self.0.as_raw_handle(),
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &raw mut available,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                let error = io::Error::last_os_error();
+                if matches!(error.raw_os_error(), Some(code) if code == ERROR_BROKEN_PIPE as i32 || code == ERROR_PIPE_NOT_CONNECTED as i32)
+                {
+                    return Ok(0);
+                }
+                return Err(error);
+            }
+            if available != 0 {
+                // One reader owns this pipe. Read only bytes PeekNamedPipe
+                // observed, so synchronous ReadFile cannot wait for more.
+                let count = buffer.len().min(available as usize);
+                return self.0.read(&mut buffer[..count]);
+            }
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "contained output read timed out",
+                ));
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(1)));
+        }
     }
 }
 
@@ -145,11 +193,19 @@ fn spawn_suspended_into(
     // this spawn sets it so a mis-resolved image names itself in diagnostics.
     // Resolve a bare name (`rustc`, `cargo`, `git`) first; without this every
     // PATH-only program fails with ERROR_FILE_NOT_FOUND.
+    let mut search_env = Vec::new();
+    if spec.clear_env {
+        search_env.extend([
+            (OsString::from("PATH"), None),
+            (OsString::from("PATHEXT"), None),
+        ]);
+    }
+    search_env.extend(spec.env.iter().cloned());
     let program = crate::selected::application_search::resolve_application_path(
         &spec.program,
         "contained process executable",
         spec.current_dir.as_deref(),
-        &spec.env,
+        &search_env,
     )?;
     let application = nul_terminated(program.as_os_str())?;
     let mut command_line = windows_command_line(&program, &spec.args)?;
@@ -344,6 +400,10 @@ impl ContainedChild {
 
     pub(crate) fn take_stdout(&mut self) -> Option<ContainedChildOutput> {
         self.stdout.take()
+    }
+
+    pub(crate) fn exit_observed(&mut self) -> io::Result<bool> {
+        self.try_wait().map(|exit| exit.is_some())
     }
 
     pub(crate) fn take_stderr(&mut self) -> Option<ContainedChildOutput> {
@@ -549,10 +609,13 @@ fn output_handles(output: &ContainedOutput) -> io::Result<(OwnedHandle, Option<O
 }
 
 fn environment_block(spec: &ContainedHeadlessCommand) -> io::Result<Option<Vec<u16>>> {
-    if spec.env.is_empty() {
+    if spec.env.is_empty() && !spec.clear_env {
         return Ok(None);
     }
     let overrides = EnvironmentOverrides::from_spec(spec)?;
+    if spec.clear_env {
+        return Ok(Some(merge_environment_block(&[0, 0], &overrides)));
+    }
     let inherited = crate::selected::environment::InheritedEnvironment::capture()?;
     Ok(Some(merge_environment_block(
         inherited.units()?,

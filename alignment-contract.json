@@ -161,6 +161,16 @@
       "commands": []
     },
     {
+      "id": "con.harness.gateway-worker",
+      "kind": "behavior",
+      "status": "shipped",
+      "evidence_mode": "black-box",
+      "prd": "prd/PRD_02_31_01_provider_gateway.md",
+      "prd_anchor": "- [v] The gateway worker preserves its own file/exec authority and refuses a changed resume binding against a controlled model peer.",
+      "evidence": ["minicon_harness::gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding"],
+      "commands": []
+    },
+    {
       "id": "con.delivery.alignment",
       "kind": "architecture",
       "status": "shipped",

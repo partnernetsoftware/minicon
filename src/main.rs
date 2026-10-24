@@ -21,6 +21,7 @@ mod a11y;
 mod agent_interface;
 mod browser;
 mod browser_feedback;
+mod browser_menu;
 #[cfg(target_os = "linux")]
 mod browser_process;
 mod browser_proxy_ui;
@@ -39,6 +40,7 @@ use host_ui::{
     paint_two_line_button_label, scaled_host_ui_font, stroke_rect,
 };
 mod cli;
+mod cli_interrupt;
 mod pointer;
 mod rename;
 mod snapshot;
@@ -53,7 +55,9 @@ mod control_dispatch;
 mod control_pending;
 mod font;
 mod harness;
+mod harness_gateway;
 mod harness_opencode;
+mod harness_settings_ui;
 mod harness_wire;
 mod ime_mode;
 #[cfg(target_os = "linux")]
@@ -62,6 +66,13 @@ mod mux;
 mod notes;
 mod palette;
 mod perf;
+mod provider_accounts;
+mod provider_auth;
+mod provider_cli;
+mod provider_login;
+mod provider_protocol;
+mod provider_runtime;
+mod provider_server;
 mod raster_surface;
 mod session_store;
 #[cfg(windows)]
@@ -642,7 +653,20 @@ fn main() {
         }
     };
 
-    // Before anything else, including argument parsing. On a Windows build
+    // The HTTP stream's bounded resolver is a contained invocation of these
+    // same native bytes. It must never initialize a GUI or console agent.
+    if args.len() == 1 && args[0] == "--platform-http-resolve" {
+        let code = match minicon_platform::network_http_stream::run_resolver_helper() {
+            Ok(()) => 0,
+            Err(_) => {
+                let _ = minicon_platform::parent_console::write_stderr("HTTP resolver failed\n");
+                2
+            }
+        };
+        std::process::exit(code);
+    }
+
+    // Before product argument parsing. On a Windows build
     // without a pseudoconsole this binary re-executes itself to host a
     // child's hidden console; in that mode the process is not the terminal,
     // it only shares the file, and must not open a window or a control
@@ -849,6 +873,7 @@ struct ConApp {
     browser_proxy_focused: bool,
     browser_proxy_applied: String,
     browser_address: Option<composer::ComposerState>,
+    browser_address_focused: bool,
     browser_address_drag: Option<usize>,
     browser_address_clicks: minicon_core::click::ClickCounter<usize>,
     browser_can_back: bool,
@@ -870,17 +895,6 @@ struct ConApp {
     /// Apply native child bounds after the host finishes dispatching a resize.
     #[cfg(any(target_os = "macos", windows))]
     browser_geometry_dirty: bool,
-    /// Loopback `127.0.0.1` catcher for the OAuth redirect. Absent after the
-    /// code is taken or refused. Not a system browser.
-    oauth_bridge: Option<browser::OAuthBridge>,
-    /// Authorization code from that redirect, until it is exchanged.
-    oauth_code: Option<String>,
-    /// Loopback redirect that the code was issued for.
-    oauth_redirect: Option<String>,
-    /// PKCE verifier for that redirect. It is not put on the authorize URL.
-    oauth_verifier: Option<String>,
-    /// In-flight code-for-token exchange. The access token is not the code.
-    oauth_exchange: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Settings inherited when an empty workspace creates its next terminal.
     /// Closing the final tab updates this before the terminal is dropped, so
     /// the greeting page is a lifecycle boundary rather than a settings reset.
@@ -936,12 +950,21 @@ struct ConApp {
     hovered_header: Option<HeaderIcon>,
     settings_open: bool,
     settings_section: ui::SettingsSection,
+    harness_settings: Option<harness_settings_ui::HarnessSettings>,
     settings_proxy_input: composer::ComposerState,
     settings_proxy_focused: bool,
     settings_proxy_error: Option<String>,
     settings_proxy_list_start: usize,
     browser_proxy_menu_open: bool,
     new_tab_menu_open: bool,
+    menu_pointer_latch: Option<PointerButton>,
+    menu_key_latch: Option<NamedKey>,
+    browser_chrome_trigger: Option<browser_menu::ChromeTrigger>,
+    menu_return_focus: Option<browser_menu::MenuFocus>,
+    new_menu_highlight: usize,
+    new_menu_scroll: usize,
+    proxy_menu_highlight: usize,
+    proxy_menu_scroll: usize,
     tree_scroll_offset: usize,
     sidebar_width_logical: f64,
     /// The sidebar is showing as a rail. Session-scoped on purpose: it is a
@@ -1374,6 +1397,7 @@ impl ConApp {
             browser_proxy_focused: false,
             browser_proxy_applied: String::new(),
             browser_address: None,
+            browser_address_focused: false,
             browser_address_drag: None,
             browser_address_clicks: Default::default(),
             browser_can_back: false,
@@ -1389,11 +1413,6 @@ impl ConApp {
             native_browser_page: None,
             #[cfg(any(target_os = "macos", windows))]
             browser_geometry_dirty: false,
-            oauth_bridge: None,
-            oauth_code: None,
-            oauth_redirect: None,
-            oauth_verifier: None,
-            oauth_exchange: None,
             session_seed,
             notes: composer::ComposerState::default(),
             notes_focused: false,
@@ -1411,12 +1430,21 @@ impl ConApp {
             hovered_header: None,
             settings_open: false,
             settings_section: ui::SettingsSection::default(),
+            harness_settings: None,
             settings_proxy_input: Default::default(),
             settings_proxy_focused: false,
             settings_proxy_error: None,
             settings_proxy_list_start: 0,
             browser_proxy_menu_open: false,
             new_tab_menu_open: false,
+            menu_pointer_latch: None,
+            menu_key_latch: None,
+            browser_chrome_trigger: None,
+            menu_return_focus: None,
+            new_menu_highlight: 0,
+            new_menu_scroll: 0,
+            proxy_menu_highlight: 0,
+            proxy_menu_scroll: 0,
             tree_scroll_offset: 0,
             sidebar_width_logical: ui::SIDEBAR_WIDTH_DIP,
             sidebar_collapsed: false,
@@ -1551,10 +1579,17 @@ impl ConApp {
     }
 
     fn stop_page_host(&mut self) {
+        self.browser_proxy_menu_open = false;
+        self.menu_return_focus = None;
+        self.browser_chrome_trigger = None;
         self.browser_proxy_focused = false;
         self.browser_visible = None;
         self.browser_load_deadline = None;
-        self.browser_address = None;
+        self.blur_browser_composition();
+        if self.workspace.browser_tab().is_none() {
+            self.browser_address = None;
+        }
+        self.browser_address_focused = false;
         self.browser_address_drag = None;
         self.browser_can_back = false;
         self.browser_can_forward = false;
@@ -1588,7 +1623,17 @@ impl ConApp {
         if self.workspace.active() == Some(id) {
             return false;
         }
-        self.workspace.set_active(id)
+        if !self.workspace.set_active(id) {
+            return false;
+        }
+        self.blur_browser_composition();
+        self.browser_address_focused = false;
+        self.browser_proxy_focused = false;
+        self.browser_chrome_trigger = None;
+        self.browser_proxy_menu_open = false;
+        self.new_tab_menu_open = false;
+        self.menu_return_focus = None;
+        true
     }
 
     fn activate_session(&mut self, window: &PixelWindow, id: workspace::TabId) {
@@ -1661,7 +1706,18 @@ impl ConApp {
                 .workspace
                 .browser_tab()
                 .and_then(|id| self.browsers.get(&id))
-                .map(|tab| tab.panel().title.as_str())
+                .map(|tab| {
+                    if tab
+                        .panel()
+                        .url
+                        .as_deref()
+                        .is_some_and(browser_ui::is_authorization_page)
+                    {
+                        "Authorization page"
+                    } else {
+                        tab.panel().title.as_str()
+                    }
+                })
                 .filter(|title| !title.is_empty())
                 .unwrap_or("Browser");
             let title = format!("MiniCon — {page_title}");
@@ -2480,103 +2536,9 @@ impl ConApp {
         }
     }
 
-    /// Load the default DeepSeek authorize page into the one browser panel.
-    /// The redirect is this process's `127.0.0.1` listener.
+    /// The existing shortcut uses the same account-login owner as Settings.
     fn start_deepseek_oauth(&mut self, window: &PixelWindow) {
-        let bridge = match browser::OAuthBridge::bind() {
-            Ok(bridge) => bridge,
-            Err(reason) => {
-                self.note_host_notice(format!("DeepSeek OAuth refused: {reason}"), window);
-                return;
-            }
-        };
-        let url = match bridge.authorize_url() {
-            Ok(url) => url,
-            Err(reason) => {
-                self.note_host_notice(format!("DeepSeek OAuth refused: {reason}"), window);
-                return;
-            }
-        };
-        self.oauth_code = None;
-        self.oauth_exchange = None;
-        self.oauth_redirect = Some(bridge.redirect_uri());
-        self.oauth_verifier = Some(bridge.code_verifier().to_owned());
-        self.oauth_bridge = Some(bridge);
-        self.present_http_link(window, &url);
-    }
-
-    fn start_oauth_exchange(&mut self, code: String) {
-        let redirect = self.oauth_redirect.clone().unwrap_or_default();
-        let verifier = self.oauth_verifier.clone();
-        let proxy = self.browser_proxy().http.filter(|value| !value.is_empty());
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(crate::harness_wire::exchange_deepseek_code(
-                &code,
-                &redirect,
-                proxy.as_deref(),
-                verifier.as_deref(),
-            ));
-        });
-        self.oauth_exchange = Some(rx);
-    }
-
-    fn poll_oauth_exchange(&mut self) -> bool {
-        let Some(incoming) = self.oauth_exchange.take() else {
-            return false;
-        };
-        match incoming.try_recv() {
-            Ok(Ok(token)) => {
-                let bytes = token.len();
-                self.host_notice = match crate::harness::store_oauth_bearer(&token) {
-                    Ok(()) => {
-                        self.oauth_code = None;
-                        Some(format!("DeepSeek token ready ({bytes} bytes)"))
-                    }
-                    Err(error) => Some(format!("DeepSeek token refused: {error}")),
-                };
-                true
-            }
-            Ok(Err(error)) => {
-                self.host_notice = Some(format!("DeepSeek token refused: {error}"));
-                true
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                self.oauth_exchange = Some(incoming);
-                false
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                self.host_notice = Some("DeepSeek token refused: exchange dropped".to_owned());
-                true
-            }
-        }
-    }
-
-    /// Take one loopback redirect into the product, if it has arrived.
-    /// The notice names the byte count, not the code or the token.
-    fn poll_oauth_bridge(&mut self) -> bool {
-        if self.poll_oauth_exchange() {
-            return true;
-        }
-        let Some(bridge) = self.oauth_bridge.take() else {
-            return false;
-        };
-        match bridge.poll() {
-            None => {
-                self.oauth_bridge = Some(bridge);
-                false
-            }
-            Some(Ok(code)) => {
-                self.oauth_code = Some(code.clone());
-                self.start_oauth_exchange(code);
-                self.host_notice = Some("DeepSeek sign-in exchanging".to_owned());
-                true
-            }
-            Some(Err(reason)) => {
-                self.host_notice = Some(format!("DeepSeek sign-in refused: {reason}"));
-                true
-            }
-        }
+        self.begin_harness_login(window, provider_auth::Provider::DeepSeek);
     }
 
     fn open_browser_tab_contained(&mut self, window: &PixelWindow) {
@@ -3811,6 +3773,7 @@ impl PixelWindowApplication for ConApp {
         // used to sit here and shadowed that handler entirely (2026-10-21
         // inventory), which made Ctrl+Esc and Alt+Esc dismiss the panel.
         if matches!(event, PixelWindowEvent::Wake) {
+            self.poll_harness_settings(window);
             self.drain_a11y_actions(window)?;
             self.drain_terminal_clipboard_paste(window);
             self.drain_terminal_paste_review(window);
@@ -3879,6 +3842,7 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Continue);
         }
         if matches!(event, PixelWindowEvent::PointerCaptureLost) {
+            self.cancel_harness_pointer();
             self.cancel_pointer_gestures_for_activation(window);
             return Ok(PixelWindowDirective::Continue);
         }
@@ -3905,9 +3869,11 @@ impl PixelWindowApplication for ConApp {
         {
             self.request_dirty_redraw(window);
         }
-        if self.route_proxy_choices(window, &event)?
-            || self.route_web_settings(window, &event)?
+        if self.consume_menu_gesture(&event)
+            || self.route_proxy_choices(window, &event)?
             || self.handle_new_tab_menu(window, &event)?
+            || self.route_web_settings(window, &event)?
+            || self.route_harness_settings(window, &event)?
             || self.handle_browser_recovery_pointer(window, &event)?
         {
             return Ok(PixelWindowDirective::Continue);
@@ -3936,7 +3902,7 @@ impl PixelWindowApplication for ConApp {
         {
             return Ok(PixelWindowDirective::Continue);
         }
-        if self.route_browser_input(window, &event)? {
+        if self.route_browser_chrome(window, &event)? || self.route_browser_input(window, &event)? {
             return Ok(PixelWindowDirective::Continue);
         }
         // Escape closes the settings panel — the expected modal dismissal —
@@ -4400,7 +4366,13 @@ impl PixelWindowApplication for ConApp {
         {
             return Ok(PixelWindowDirective::Continue);
         }
-        if self.injected_ui_keys_live {
+        if self.injected_ui_keys_live
+            && !matches!(&event, PixelWindowEvent::Keyboard(key) if key.state == KeyPressState::Released)
+        {
+            // A completed host press may have changed focus or opened an
+            // exited tab. Its release must still traverse normal routing
+            // without retroactively rejecting the host action. The terminal
+            // encoder owns release semantics; terminal-bound presses are checked.
             // PRD 02.26: injected input rejects a retained exited tab with
             // the explicit contract message, while physical keys stay
             // best-effort — a typist has no client to report to, a control
@@ -4440,9 +4412,7 @@ impl PixelWindowApplication for ConApp {
             return Ok(PixelWindowDirective::Exit);
         }
         self.perf_stats.sync_present_stats(window.present_stats());
-        if self.poll_oauth_bridge() {
-            self.mark_host_ui_full();
-        }
+        self.poll_harness_settings(window);
         if let Some(target) = self
             .pending_control
             .prepare_screenshot(self.workspace.active())
@@ -4685,6 +4655,7 @@ impl PixelWindowApplication for ConApp {
         if self.exit {
             return Ok(PixelWindowDirective::Exit);
         }
+        self.poll_harness_settings(window);
         #[cfg(any(target_os = "macos", windows))]
         self.drain_browser_state(window);
         #[cfg(target_os = "linux")]

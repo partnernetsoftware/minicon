@@ -43,16 +43,25 @@ impl ConApp {
                     .iter()
                     .map(|node| {
                         let session = self.session_for(node.id);
+                        let authorization_page = self.browsers.get(&node.id).is_some_and(|tab| {
+                            tab.panel()
+                                .url
+                                .as_deref()
+                                .is_some_and(browser_ui::is_authorization_page)
+                        });
                         json::object(vec![
                             ("id", tab_id_json(Some(node.id))),
                             ("parent", tab_id_json(node.parent)),
                             (
                                 "title",
-                                session
-                                    .map_or(node.title.as_str(), |session| {
+                                if authorization_page {
+                                    "Authorization page"
+                                } else {
+                                    session.map_or(node.title.as_str(), |session| {
                                         session.current_title.as_str()
                                     })
-                                    .into(),
+                                }
+                                .into(),
                             ),
                             ("active", (active == Some(node.id)).into()),
                             (
@@ -83,15 +92,33 @@ impl ConApp {
                                                 panel
                                                     .url
                                                     .as_deref()
+                                                    .map(browser_ui::public_browser_url)
                                                     .map_or(json::JsonValue::Null, Into::into),
                                             ),
+                                            ("url_redacted", authorization_page.into()),
                                             ("load", load.into()),
-                                            ("title", panel.title.as_str().into()),
+                                            (
+                                                "title",
+                                                if authorization_page {
+                                                    "Authorization page"
+                                                } else {
+                                                    panel.title.as_str()
+                                                }
+                                                .into(),
+                                            ),
                                             ("can_back", self.browser_can_back.into()),
                                             ("can_forward", self.browser_can_forward.into()),
                                             (
                                                 "reason",
-                                                reason.map_or(json::JsonValue::Null, Into::into),
+                                                reason.map_or(json::JsonValue::Null, |reason| {
+                                                    if authorization_page {
+                                                        "authorization-page-unavailable".into()
+                                                    } else {
+                                                        browser_ui::public_browser_text(reason)
+                                                            .as_ref()
+                                                            .into()
+                                                    }
+                                                }),
                                             ),
                                         ])
                                     }),
@@ -161,9 +188,7 @@ impl ConApp {
     fn dispatch_control(&mut self, window: &PixelWindow, request: control::IncomingRequest) {
         use control::CliCommand;
         self.perf_stats.sync_present_stats(window.present_stats());
-        if self.poll_oauth_bridge() {
-            self.mark_host_ui_full_and_repaint(window);
-        }
+        self.poll_harness_settings(window);
         if matches!(&request.command, CliCommand::UiSnapshot) && self.refresh_ime_status() {
             self.request_dirty_redraw(window);
         }
@@ -284,9 +309,14 @@ impl ConApp {
                 self.injected_ui_keys_live = true;
                 let delivered: Result<(), String> = (|| {
                     for (key, ctrl, alt, shift) in parsed {
-                        let event =
-                            PixelWindowEvent::Keyboard(injected_key_event(key, ctrl, alt, shift));
-                        self.event(window, event)
+                        let mut event = injected_key_event(key, ctrl, alt, shift);
+                        self.event(window, PixelWindowEvent::Keyboard(event.clone()))
+                            .map_err(|error| error.to_string())?;
+                        // A logical chord owns press through release, just as
+                        // native input does. Keep sent_keys counting chords.
+                        event.state = KeyPressState::Released;
+                        event.text = None;
+                        self.event(window, PixelWindowEvent::Keyboard(event))
                             .map_err(|error| error.to_string())?;
                     }
                     Ok(())
@@ -312,7 +342,7 @@ impl ConApp {
                 if matches!(event, minicon_platform::ime::ImeEvent::Commit(_))
                     && self.rename.is_none()
                     && !self.composer.focused
-                    && self.browser_address.is_none()
+                    && !self.browser_address_focused
                     && !self.browser_proxy_focused
                     && !self.settings_proxy_focused
                 {

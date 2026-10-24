@@ -25,7 +25,7 @@ discovery only — no create/navigate yet).
 ```text
 built-in browser surface (first-class tab, same bar as terminal tabs)
 ├── [-] OAuth login flow (core + Linux live path; macOS/Windows OAuth vertical unqualified)
-│         including AI provider OAuth (default: DeepSeek)
+│         mechanism only; provider inference grants → PRD 31.01
 ├── [_] large-screen dashboard
 ├── [_] file preview
 ├── [_] wasm / rich GUI pages
@@ -35,7 +35,7 @@ built-in browser surface (first-class tab, same bar as terminal tabs)
 
 composer / input AI assist (future)
 ├── [_] provider registry: OAuth and/or API key per vendor
-├── [v] default provider hook: DeepSeek via OAuth
+├── [-] DeepSeek authorize/code-exchange hook exists; actual inference OAuth grant is unqualified → PRD 31.01
 ├── [-] login / consent opens a **browser tab** in the same tab strip
 │         (never OS default browser; never tray-driven popup)
 └── [_] API key entry stays in MiniCon settings (no browser required);
@@ -49,9 +49,11 @@ content-panel composition (direction only — not this leaf)
 **废 tray（硬规则）：** 不设系统托盘入口；show / hide / quit **不靠托盘**。
 窗口生命周期跟主 UI / tab 栏走，不是 tray 宿主进程外挂窗。
 
-HTTP proxy **UI** placement is deferred (commissioner: later). Design must
-still leave a **settings hook** so OAuth and page loads read proxy from one
-named config path when the UI lands.
+Browser proxy UI is released in 0.2.22 under
+[PRD 25.01](../prd/PRD_02_25_01_browser_preferences.md). Provider account/auth
+policy is now owned by [PRD 31.01](../prd/PRD_02_31_01_provider_gateway.md);
+the browser bridge here remains a presentation/transport mechanism. Browser
+navigation or a synthetic callback is not a model-inference OAuth receipt.
 
 ## Architecture (decided shape)
 

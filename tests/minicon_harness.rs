@@ -66,6 +66,172 @@ fn stderr_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
+/// A real CLI invocation, native loopback HTTP, both real tools and persisted
+/// resume identity. The fixture is a model endpoint, never a tool executor.
+#[test]
+fn gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::{Duration, Instant},
+    };
+    let root = std::env::temp_dir().join(format!(
+        "minicon-gateway-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let changed = Arc::new(AtomicBool::new(false));
+    let done = Arc::new(AtomicBool::new(false));
+    let observed = Arc::new(Mutex::new((0usize, Vec::<String>::new(), false)));
+    let changed_worker = changed.clone();
+    let done_worker = done.clone();
+    let observed_worker = observed.clone();
+    let peer = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !done_worker.load(Ordering::Acquire) && Instant::now() < deadline {
+            let (mut socket, _) = match listener.accept() {
+                Ok(pair) => pair,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+                Err(error) => panic!("model fixture accept: {error}"),
+            };
+            socket.set_nonblocking(false).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            while !bytes.ends_with(b"\r\n\r\n") {
+                assert!(bytes.len() < 16384);
+                let mut byte = [0];
+                socket.read_exact(&mut byte).unwrap();
+                bytes.push(byte[0]);
+            }
+            let head = String::from_utf8(bytes).unwrap();
+            let headers: Vec<_> = head
+                .lines()
+                .skip(1)
+                .filter_map(|line| line.split_once(':'))
+                .collect();
+            let header = |name: &str| {
+                headers
+                    .iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, value)| value.trim())
+                    .unwrap_or("")
+            };
+            assert_eq!(header("authorization"), "Bearer synthetic-local-key");
+            let session = header("x-minicon-session").to_owned();
+            assert_eq!(session.len(), 32);
+            let size: usize = header("content-length").parse().unwrap_or(0);
+            assert!(size < 1024 * 1024);
+            let mut body = vec![0; size];
+            socket.read_exact(&mut body).unwrap();
+            let mut observed = observed_worker.lock().unwrap();
+            observed.1.push(session);
+            let reply = if head.starts_with("GET /v1/minicon/binding ") {
+                serde_json::json!({"profile":"default", "provider":"deepseek",
+                    "account":if changed_worker.load(Ordering::Acquire) {"account-b"} else {"account-a"},
+                    "model":"fixture-model", "generation":"fixture-generation"})
+            } else {
+                assert!(head.starts_with("POST /v1/chat/completions "), "{head}");
+                let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(request["model"], "minicon-selected");
+                observed.0 += 1;
+                if observed.0 == 1 {
+                    #[cfg(windows)]
+                    let argv = serde_json::json!(["cmd.exe", "/d", "/c",
+                        "if defined MINICON_LOCAL_API_KEY (exit /b 9) else (echo EXEC-OK)"]);
+                    #[cfg(unix)]
+                    let argv = serde_json::json!(["sh", "-c",
+                        "test -z \"$MINICON_LOCAL_API_KEY\" && printf EXEC-OK"]);
+                    serde_json::json!({"choices":[{"message":{"role":"assistant","content":null,
+                        "tool_calls":[
+                            {"id":"file-1","type":"function","function":{"name":"file",
+                                "arguments":serde_json::json!({"op":"write","path":"result.txt","contents":"FILE-OK"}).to_string()}},
+                            {"id":"exec-1","type":"function","function":{"name":"exec",
+                                "arguments":serde_json::json!({"argv":argv}).to_string()}}
+                        ]},"finish_reason":"tool_calls"}]})
+                } else {
+                    if observed.0 == 2 {
+                        let messages = request["messages"].as_array().unwrap();
+                        let results: Vec<_> = messages.iter().filter(|message| message["role"] == "tool").collect();
+                        assert_eq!(results.len(), 2);
+                        assert!(results.iter().any(|result| result["content"].as_str().unwrap().contains("EXEC-OK")));
+                        assert!(!results.iter().any(|result| result["content"].as_str().unwrap().contains("synthetic-local-key")));
+                        observed.2 = true;
+                    }
+                    serde_json::json!({"choices":[{"message":{"role":"assistant",
+                        "content":"TASK COMPLETE"},"finish_reason":"stop"}]})
+                }
+            }.to_string();
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len()).unwrap();
+        }
+    });
+    #[cfg(windows)]
+    let program = "cmd.exe";
+    #[cfg(unix)]
+    let program = "sh";
+    let invoke = |resume: bool| {
+        harness(
+            &[
+                "--root",
+                root.to_str().unwrap(),
+                "--task",
+                "local tools",
+                "--gateway",
+                &base,
+                "--allow-cmd",
+                program,
+                if resume { "--continue" } else { "--session" },
+                "bound-session",
+            ],
+            Some(("MINICON_LOCAL_API_KEY", "synthetic-local-key")),
+        )
+    };
+    let first = invoke(false);
+    let second = invoke(true);
+    changed.store(true, Ordering::Release);
+    let third = invoke(true);
+    done.store(true, Ordering::Release);
+    peer.join().unwrap();
+    assert!(first.status.success(), "{}", stderr_of(&first));
+    assert!(second.status.success(), "{}", stderr_of(&second));
+    assert_eq!(third.status.code(), Some(2));
+    assert!(
+        stderr_of(&third).contains("binding changed"),
+        "{}",
+        stderr_of(&third)
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("result.txt")).unwrap(),
+        "FILE-OK"
+    );
+    let observed = observed.lock().unwrap();
+    assert_eq!(
+        observed.0, 3,
+        "changed binding must not make another model request"
+    );
+    assert!(observed.2, "real exec result must reach the model");
+    assert!(observed.1.iter().all(|session| session == &observed.1[0]));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// The ordering invariant. The root here is unresolvable AND the key is
 /// absent; only the key may be named, because a task that cannot reach a
 /// model must not cause a bound to be resolved first.

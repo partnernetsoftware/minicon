@@ -53,6 +53,8 @@ pub mod native_virtualization;
 pub mod network_dns;
 #[cfg(feature = "network-http")]
 pub mod network_http;
+#[cfg(feature = "network-http-stream")]
+pub mod network_http_stream;
 #[cfg(feature = "network-interfaces")]
 pub mod network_interfaces;
 #[cfg(feature = "network-routes")]

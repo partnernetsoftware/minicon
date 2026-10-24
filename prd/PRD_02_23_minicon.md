@@ -30,7 +30,8 @@ minicon — one-file local terminal (product root)
 ├── Product boundary
 │   ├── Shipped and owned here
 │   ├── Distribution priority — native product; APE packaging demonstration
-│   └── Explicit non-goals (no server, persistence, Fleet, mux, MCP, scripts, Agent policy)
+│   ├── Explicit non-goals and the narrowed mux/harness exception
+│   └── [_] Explicit local model listener exception → PRD_02_31_01_provider_gateway.md
 ├── Governing invariants
 ├── Observable success evidence
 ├── Safe failure result
@@ -49,6 +50,7 @@ flowchart TB
     ROOT --> C["[26] Control protocol and public CLI"]
     ROOT --> D["[27] Package, budget and delivery"]
     ROOT --> S["[28] Shared core and reuse boundary"]
+    ROOT --> G["[31.01] Planned local model gateway<br/>no remote tool execution"]
     ROOT -. "capability sinks into" .-> MC["MiniCon"]
     ROOT -. "plugin / app gathers in" .-> AG["agenterm (workbench)"]
     MC -. "versioned capability contract" .- AG
@@ -100,8 +102,9 @@ post-0.2.21 installation work are owned by
   text/paste/key/mouse/wheel input, deterministic waits, resize, performance
   evidence, and bounded shutdown.
 - Process-lifetime local control only. The endpoint is bound before any window
-  and dies with the process — never a server, daemon, listening network
-  interface, persistent workspace, shared session or background auto-start.
+  and dies with the process. That control endpoint is not a network listener,
+  daemon, persistent workspace, shared session or background auto-start. The
+  separately planned model-listener exception is defined below.
 
 ### Explicit non-goals
 
@@ -149,6 +152,15 @@ post-0.2.21 installation work are owned by
   layer). Every other exclusion above still holds, and anything broader than
   these two subcommands needs its own owner decision. Full scope, non-goals
   and open design questions: [`PRD_02_31_v0_2_horizon.md`](PRD_02_31_v0_2_horizon.md).
+- **Amendment (2026-10-24, owner direction; planned).** Admit an explicitly
+  started, process-lifetime **loopback model inference API**, account connection
+  and Harness settings for MiniCon's worker and compatible local clients.
+  This narrows the network-listener exclusion for model inference only; it
+  does not admit a daemon, remote task queue, tool-execution API, manager,
+  general plugin host or background auto-start. Initial delivery is manual
+  connection and account selection. Future llm-gate/ujs/tinyvm scheduling is
+  a separate horizon, not a runtime added by this amendment. Behavior, auth
+  feasibility and evidence: [PRD 31.01](PRD_02_31_01_provider_gateway.md).
 
 ## Governing invariants
 

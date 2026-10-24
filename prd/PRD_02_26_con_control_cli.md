@@ -20,6 +20,7 @@ minicon control protocol and public CLI
 ├── Transport and bounds (ATC1 frame; local pipe/socket; process-lifetime)
 │   └── [-] Bounded completion of active replies during shutdown
 ├── JSON contract
+│   └── [_] Harness settings observations → behavior in PRD 31.01
 └── Evidence publication (snapshots, screenshots)
 ```
 
@@ -28,6 +29,7 @@ flowchart LR
     S["script / harness"] -->|"minicon cli --control …"| C["ATC1 client<br/>short-lived"]
     C -->|local pipe / socket| H["minicon GUI process<br/>bound before the window, dies with it"]
     H --> V["visible GUI<br/>capture · screenshot · ui-snapshot · send-*"]
+    V -. planned redacted settings observation .-> G["PRD 31.01 Harness route<br/>separate inference listener"]
     H --> D["shutdown: reject new work<br/>bounded active-response drain"]
     D -->|"complete transport response"| C
     D --> E["process exit by deadline"]
@@ -82,6 +84,21 @@ flowchart LR
 
 ## Public command set
 
+### Planned Harness observation boundary
+
+`[_]` Extend settings observations additively for the Console/Web/Harness route,
+visible field/action geometry, listener state/actual port, opaque account IDs,
+readiness, selected model/binding and bounded reason codes. Never expose
+credential bytes, authorization codes, PKCE material or client keys through
+`ui-snapshot`, captures, logs or generic config export. Masked secret controls
+must remain masked in screenshots. Account labels are not required diagnostics.
+The inference HTTP routes and planned `minicon provider serve` do not become
+ATC1 tab-control verbs or a second route to local tools. Freeze actual schema
+and register command identities during implementation, not in this planning
+change. Behavior belongs to [PRD 31.01](PRD_02_31_01_provider_gateway.md).
+
+### Existing command evidence
+
 - [-] `docs/control-cli.html` is the public mirror of this section's command set
   and was owned by nothing until 2026-10-13; it is owned here now. It is not a
   second source: when a verb, a flag or a bound changes in this PRD, that page
@@ -125,16 +142,20 @@ flowchart LR
   [PRD 25.02](PRD_02_25_02_browser_controls.md); this observation surface must
   distinguish navigation from dismissal and highlight from application without
   treating an internal handler return or a CLI-injected event as native proof.
-  Exact schema names are frozen at the integration-contract step before
-  consumers are delegated; none of these additions is claimed implemented.
-  Planned menu regression support also treats each `send-ui-keys` chord as a
-  complete logical gesture, delivering paired press/release through the same
-  host event router. The current implementation emits only Pressed, so this
-  lifecycle must be reconciled before testing a menu that consumes its opening
-  key until release. Keep whole-sequence validation and the `sent_keys` chord
-  count stable; do not create a test-only menu routing path. Paired CLI chords
-  still do not prove native focus interception, held-key repeat or IME behavior;
-  those retain separate native courts. This is a planned contract change.
+  The development implementation exposes these observations and delivers each
+  `send-ui-keys` chord as a paired press/release through the same host event
+  router. Whole-sequence validation and the `sent_keys` chord count stay stable.
+  A host-consumed press may change focus or open an exited tab; its release
+  does not retroactively reject that host action as failed PTY input. Releases
+  still traverse the terminal router, whose encoder owns release semantics.
+  The public dismissal, keyboard-menu and retained-exit journeys guard this lifecycle.
+  Paired CLI chords do not prove native focus interception, held-key repeat or
+  IME behavior; those retain separate native courts and final qualification.
+  On Windows x86_64 the first complete gate exposed two release-time
+  `con_terminal_exited` failures in the existing failed-tab and multitab
+  journeys. Correcting the host-release check made both original assertions
+  pass; the complete control target then passed 25 tests with eight separately
+  invoked native courts still reported ignored.
   `send-ui-ime` routes to the focused browser address editor as
   `browser_address`; it requires no PTY in that case.
   The Windows missing-runtime and local-proxy courts in

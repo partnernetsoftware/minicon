@@ -154,6 +154,15 @@
       "test_target": "minicon_control",
       "test_name": "a_new_tab_that_cannot_start_is_a_notice_not_an_exit",
       "source": "tests/minicon_control.rs"
+    },
+    {
+      "id": "minicon_harness::gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding",
+      "kind": "public-black-box",
+      "emitter": "cargo-test-harness",
+      "platform": "windows-x86_64",
+      "test_target": "minicon_harness",
+      "test_name": "gateway_worker_runs_its_own_tools_and_refuses_changed_resume_binding",
+      "source": "tests/minicon_harness.rs"
     }
   ]
 }

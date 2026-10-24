@@ -28,6 +28,8 @@ minicon workspace and input
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
 │   ├── sent-history panel (chrome; 0.2.6) · settings panel (chrome)
+│   │   └── [_] Console / Web / Harness routes → PRD_02_25_01_browser_preferences.md
+│   │       Harness model/accounts/API content → PRD_02_31_01_provider_gateway.md
 │   ├── Updates section (0.2.7 check-for-updates; 0.2.8 correctness leaves)
 │   └── composer + status bar
 ├── External composer input (exactly one focus owner)
@@ -259,7 +261,9 @@ names above.
   boundary never moves WebView calls outside `minicon-web` or into
   core/headless crates.
 - [v] **OAuth bearer storage stays behind the platform filesystem seam.**
-  The product names the `.minicon-embed/deepseek-bearer` state, while
+  Current credential layout and legacy compatibility belong to
+  [provider gateway](PRD_02_31_01_provider_gateway.md). Historical storage
+  evidence below remains scoped to its original bytes.
   `minicon-platform::filesystem` owns protected-directory setup, atomic
   private publication, link-like path refusal and bounded private reads.
   Unix local evidence proves mode `0600` and refusal to write through a

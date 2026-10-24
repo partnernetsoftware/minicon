@@ -18,6 +18,11 @@ dev-loop-crosscheck — agent cross-arch dev/test loop
 │   ├── inputs: ref, cells, test_filter
 │   ├── core and UI library tests, including each native ISA kernel
 │   ├── isolated minimal consumer; no workspace feature leakage
+│   ├── [-] provider / worker / HTTP mechanism and real CLI gateway courts (0.2.23)
+│   │   invariant: each named native scope actually executes its selected tests
+│   │   evidence: per-cell suite logs; first hosted dispatch of added scopes pending
+│   │   safe failure: fail that cell and retain logs; absent authorization stays unqualified
+│   │   dependency: first-gateway source and native build; non-goal: OAuth entitlement or release receipts
 │   ├── [v] mandatory browser artifact and shutdown-response courts, independent of test_filter
 │   └── permissions: contents: read only
 ├── Permission walls, disambiguated from the release / GHCR / local-artifact paths
@@ -32,6 +37,8 @@ flowchart LR
     W --> C3["win / osx cells<br/>when requested"]
     C1 & C2 & C3 --> M["mandatory browser + shutdown courts<br/>independent of suite filter"]
     M --> L["real per-cell logs"]
+    C1 & C2 & C3 --> G["scoped provider / worker / HTTP + CLI gateway courts"]
+    G --> L
     W -. never .-> R["release / GHCR / tag / version"]
 ```
 
@@ -78,6 +85,35 @@ test binaries live hashed under `target/<triple>/debug/deps/`; a workflow
 that stats a guessed path and treats "not found" as "nothing to run" reports
 a false green with zero suites executed. This is not hypothetical: it is
 exactly what happened and was caught below.
+
+### First-gateway development scopes (0.2.23)
+
+Unfiltered runs additionally execute main-binary `provider_` and `harness::`
+unit filters, platform `network_` with `network-http-stream,network-loopback`,
+and the actual `minicon_harness` CLI gateway journey through the strict test lints in
+`build.sh test-suite`. A filter containing `provider`, `harness`,
+`network` or `gateway` selects its corresponding scope; the existing mandatory
+browser/shutdown courts remain independent. The control integration target runs serially because browser-editor clipboard
+and composer-image journeys share the native desktop and clipboard. Independent
+mechanism suites retain their existing parallel test setting. The provider filter still reports
+the separately invoked pinned-Pi court ignored; a green ordinary run does not
+claim that external dependency executed.
+
+These scopes exercise controlled model peers, worker-owned tools, routing,
+streaming and cancellation mechanisms. They cannot establish a real account
+grant or hosted inference entitlement. Those delivery claims remain with
+[the gateway owner](PRD_02_31_01_provider_gateway.md). The first hosted run of
+these added scopes is pending; earlier six-cell receipts predate them.
+
+**Local Windows x86_64 development gate (2026-10-25).**
+`build.sh test -- --test-threads=1` completed the workspace and both owned lexer
+forks with exit 0; the runner summaries reported 1691 passed and 82 ignored.
+The original full attempt exposed two control-release regressions; the restored
+complete gate passed both unchanged journeys after the host-routing fix.
+This is local development qualification. Ignored native/network courts and
+credential-gated legacy tests do not establish account authorization, live
+inference, another OS/ISA or final release bytes. Named first-gateway and
+external-client scopes stay with their product owner above.
 
 The 0.2.21 browser stage qualifies a canonical native artifact and records its
 byte identity, native browser test and public-CLI journey, independently of the

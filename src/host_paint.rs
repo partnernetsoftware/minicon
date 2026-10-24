@@ -10,6 +10,39 @@
 
 use super::*;
 
+fn paint_menu_scrollbar(
+    surface: &mut Surface<'_>,
+    choices: ui::MenuLayout,
+    scale: f64,
+    color: palette::Rgb,
+) {
+    if choices.visible_rows == 0 || choices.visible_rows >= choices.count {
+        return;
+    }
+    let width = (3.0 * scale).max(1.0) as u32;
+    let track = choices.rect.height.saturating_sub((4.0 * scale) as u32);
+    let height = ((u64::from(track) * choices.visible_rows as u64) / choices.count as u64) as u32;
+    let y = choices
+        .rect
+        .y
+        .saturating_add((2.0 * scale) as u32)
+        .saturating_add(
+            ((u64::from(track.saturating_sub(height)) * choices.start as u64)
+                / (choices.count - choices.visible_rows) as u64) as u32,
+        );
+    surface.fill_rect(
+        choices
+            .rect
+            .x
+            .saturating_add(choices.rect.width)
+            .saturating_sub(width + 1),
+        y,
+        width,
+        height.max(1),
+        color.to_xrgb(),
+    );
+}
+
 impl ConApp {
     /// The zoom level the status bar reports, as a percentage of the session's
     /// starting font size.
@@ -36,7 +69,8 @@ impl ConApp {
             return;
         }
         let theme = theme::Theme::for_choice(self.ui_theme);
-        let menu = layout.new_tab_menu(scale);
+        let choices = layout.new_tab_choices(scale, self.new_menu_scroll);
+        let menu = choices.rect;
         surface.fill_rect(
             menu.x,
             menu.y,
@@ -52,10 +86,22 @@ impl ConApp {
         };
         let label_size = scaled_host_ui_font(16, font_logical, scale);
         let hint_size = scaled_host_ui_font(11, font_logical, scale);
-        for (rect, label, hint) in [
-            (layout.new_terminal_action(scale), terminal, "Ctrl+Shift+T"),
-            (layout.new_browser_action(scale), browser, "Ctrl+Shift+O"),
-        ] {
+        for index in choices.start..choices.start + choices.visible_rows {
+            let rect = choices.row(index);
+            let (label, hint) = if index == 0 {
+                (terminal, "Ctrl+Shift+T")
+            } else {
+                (browser, "Ctrl+Shift+O")
+            };
+            if index == self.new_menu_highlight {
+                surface.fill_rect(
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    theme.surface.to_xrgb(),
+                );
+            }
             let pad = (8.0 * scale) as u32;
             let x = rect.x.saturating_add(pad);
             let width = rect.width.saturating_sub(pad.saturating_mul(2));
@@ -83,6 +129,7 @@ impl ConApp {
                 );
             }
         }
+        paint_menu_scrollbar(surface, choices, scale, theme.accent);
     }
 
     fn paint_browser_recovery(
@@ -552,6 +599,12 @@ impl ConApp {
                 &self.config.browser_proxy_options,
                 self.settings_proxy_list_start,
             );
+            self.paint_harness_settings(
+                &mut surface,
+                layout,
+                scale,
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
+            );
         }
         self.paint_new_tab_menu(&mut surface, layout, scale, session.font_size_logical);
         Ok(())
@@ -826,7 +879,9 @@ impl ConApp {
             surface,
             layout.new_root,
             self.ui_language,
-            self.new_tab_menu_open || self.hovered_header == Some(HeaderIcon::NewRoot),
+            self.new_tab_menu_open
+                || self.browser_chrome_trigger == Some(super::browser_menu::ChromeTrigger::New)
+                || self.hovered_header == Some(HeaderIcon::NewRoot),
             t,
             header_icon_size,
             scale,
@@ -1307,7 +1362,10 @@ impl ConApp {
             &mut surface,
             address,
             (scale as u32).max(1),
-            if self.browser_address.is_some() {
+            if self.browser_address_focused
+                && !self.new_tab_menu_open
+                && !self.browser_proxy_menu_open
+            {
                 t.accent
             } else {
                 t.border
@@ -1325,7 +1383,11 @@ impl ConApp {
                 .saturating_sub(font::cell_metrics(size).height)
                 / 2;
         let avail = address.width.saturating_sub((16.0 * scale) as u32);
-        if let Some(editor) = &self.browser_address {
+        if let Some(editor) = &self.browser_address
+            && self.browser_address_focused
+            && !self.new_tab_menu_open
+            && !self.browser_proxy_menu_open
+        {
             let cell_w = font::cell_metrics(size).width.max(1);
             let view = composer::visible_window(
                 &editor.text,
@@ -1395,7 +1457,10 @@ impl ConApp {
             &mut surface,
             layout.browser_proxy_text(scale),
             &self.browser_proxy_input,
-            self.browser_proxy_focused,
+            self.browser_proxy_focused
+                && !self.browser_proxy_menu_open
+                && !self.new_tab_menu_open
+                && !self.settings_open,
             proxy_placeholder,
             t,
             size,
@@ -1418,6 +1483,12 @@ impl ConApp {
             size,
             dropdown.width.saturating_sub((8.0 * scale) as u32),
         );
+        if self.browser_chrome_trigger == Some(super::browser_menu::ChromeTrigger::Proxy)
+            && !self.browser_proxy_menu_open
+            && !self.new_tab_menu_open
+        {
+            stroke_rect(&mut surface, dropdown, scale.max(1.0) as u32, t.accent);
+        }
         if let Some(tab) = tab {
             let feedback = browser_feedback::for_load(&tab.panel().load, self.ui_language);
             if feedback.failed {
@@ -1440,15 +1511,12 @@ impl ConApp {
             }
         }
         if self.browser_proxy_menu_open {
-            let mut menu = layout.browser_proxy_choices(scale);
-            let last =
-                layout.browser_proxy_choice(self.config.browser_proxy_options.len().min(8), scale);
-            menu.height = last
-                .y
-                .saturating_add(last.height)
-                .saturating_sub(menu.y)
-                .saturating_add((4.0 * scale) as u32)
-                .min(menu.height);
+            let choices = layout.browser_proxy_menu(
+                scale,
+                self.config.browser_proxy_options.len() + 1,
+                self.proxy_menu_scroll,
+            );
+            let menu = choices.rect;
             surface.fill_rect(
                 menu.x,
                 menu.y,
@@ -1462,23 +1530,33 @@ impl ConApp {
                 ui::UiLanguage::ChineseSimplified => "使用配置的代理",
                 ui::UiLanguage::ChineseTraditional => "使用設定的代理",
             };
-            for index in 0..=self.config.browser_proxy_options.len().min(8) {
-                let row = layout.browser_proxy_choice(index, scale);
+            for index in choices.start..choices.start + choices.visible_rows {
+                let row = choices.row(index);
+                if index == self.proxy_menu_highlight {
+                    surface.fill_rect(row.x, row.y, row.width, row.height, t.surface.to_xrgb());
+                }
                 let text = if index == 0 {
                     configured
                 } else {
                     &self.config.browser_proxy_options[index - 1]
                 };
+                let applied = if index == 0 {
+                    self.browser_proxy_applied.is_empty()
+                } else {
+                    self.config.browser_proxy_options[index - 1] == self.browser_proxy_applied
+                };
+                let label = format!("{}{}", if applied { "✓ " } else { "  " }, text);
                 paint_host_ui_text(
                     &mut surface,
                     row.x + (8.0 * scale) as u32,
                     row.y + row.height.saturating_sub(font::cell_metrics(size).height) / 2,
-                    text,
+                    &label,
                     t.text,
                     size,
                     row.width.saturating_sub((16.0 * scale) as u32),
                 );
             }
+            paint_menu_scrollbar(&mut surface, choices, scale, t.accent);
         }
         if self.settings_open {
             let restart_cost = self.ui_language.restart_cost(self.workspace.nodes().len());
@@ -1500,6 +1578,12 @@ impl ConApp {
                 self.settings_proxy_error.as_deref(),
                 &self.config.browser_proxy_options,
                 self.settings_proxy_list_start,
+            );
+            self.paint_harness_settings(
+                &mut surface,
+                layout,
+                scale,
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
             );
         }
         self.paint_new_tab_menu(
@@ -1684,6 +1768,12 @@ impl ConApp {
                 self.settings_proxy_error.as_deref(),
                 &self.config.browser_proxy_options,
                 self.settings_proxy_list_start,
+            );
+            self.paint_harness_settings(
+                &mut surface,
+                layout,
+                scale,
+                host_ui_size(HOST_UI_STATUS_SIZE_PX),
             );
         }
         self.paint_new_tab_menu(

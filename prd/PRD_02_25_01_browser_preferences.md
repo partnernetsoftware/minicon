@@ -1,7 +1,7 @@
 # Browser proxy preferences and settings routes
 
-Owner of Browser proxy editing, saved candidate behavior and Console/Web
-settings navigation. Parent: [workspace](PRD_02_25_con_workspace.md).
+Owner of Browser proxy editing, saved candidate behavior and settings
+navigation. Parent: [workspace](PRD_02_25_con_workspace.md).
 Native adapter policy and config-codec mechanisms belong to
 [shared ownership](PRD_02_28_shared_core.md); public geometry belongs to
 [control](PRD_02_26_con_control_cli.md). Sequencing and the parallel trial are
@@ -26,6 +26,11 @@ Outcome: choose an optional Browser proxy and reuse saved choices without changi
 │   evidence: web_proxy_settings_page_keeps_controls_and_pagination_inside_panel; browser_proxy_choices_have_distinct_dropdown_and_nine_actions; Computer Use captures
 │   safe failure: overlays preserve terminal access and return native page visibility on dismissal
 │   dependency: workspace geometry/input (PRD 25), public observation (PRD 26); non-goal: another settings window
+├── [_] Three settings routes
+│   invariant: stable Console / Web / Harness destinations in the same panel; terminal and browser drafts survive route changes
+│   evidence: public route/focus/short-window journey and native page visibility restoration
+│   safe failure: unavailable Harness actions explain their state without interrupting another route
+│   dependency: shared control seam and PRD 31.01; non-goal: duplicating provider/account rules here
 ├── [v] Six released artifact courts
 │   invariant: source, native bytes and real page/proxy/persistence observations agree
 │   evidence: final signed/Candidate/public runs in the 0.2.22 release history
@@ -43,6 +48,7 @@ Outcome: choose an optional Browser proxy and reuse saved choices without changi
 ```mermaid
 flowchart LR
     C[Console settings: existing shared preferences] --- W[Web settings: proxy candidates]
+    C --- H[Planned Harness settings: PRD 31.01]
     W --> V[Validate / normalize / deduplicate / bound]
     V --> S[Atomic local save]
     S -->|restart| L[Saved choices]
@@ -96,7 +102,19 @@ flowchart LR
   to PRD 26, released evidence to the release history, and the development
   sequence to the archived 0.2.22 plan.
 
-## Evidence scope
+## Planned settings navigation (0.2.23)
+
+`[_]` Extend the current panel to **Console / Web / Harness**, with stable
+route IDs and keyboard/pointer entry, no second window and no hidden first-use
+listener start. Preserve each route's unsubmitted draft when switching routes;
+Escape closes the panel through the shared focus-return contract. Global
+language/theme/update controls retain their current Console placement in this
+first delivery. Harness fields, authentication, account readiness and API
+lifecycle are owned only by [PRD 31.01](PRD_02_31_01_provider_gateway.md).
+Public observation belongs to PRD 26. The dated Console/Web requirements above
+describe released 0.2.22 rather than the planned three-route state.
+
+## Released evidence scope
 
 [v] Public 0.2.22 signed, packaged and downloaded-artifact evidence is owned by
 [its release history](archive/v0.2.22-release-history.md). Six OS/ISA artifact

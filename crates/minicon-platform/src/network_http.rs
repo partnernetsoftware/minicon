@@ -48,6 +48,21 @@ fn error(kind: NetworkHttpErrorKind, detail: impl Into<String>) -> NetworkHttpEr
 /// malformed request without network access and a test can prove each bound in
 /// isolation.
 pub fn validate(request: &NetworkHttpRequest) -> Result<(), NetworkHttpError> {
+    validate_bounds(
+        request,
+        NETWORK_HTTP_MAX_REQUEST_BODY_BYTES,
+        NETWORK_HTTP_MAX_RESPONSE_BYTES,
+    )
+}
+
+/// Shared shape checks with explicit exchange-specific body ceilings. The
+/// buffered public API keeps its original 8 MiB bounds; a streaming consumer
+/// can admit a larger cumulative response without buffering it in memory.
+pub(crate) fn validate_bounds(
+    request: &NetworkHttpRequest,
+    max_request_bytes: usize,
+    max_response_bytes: usize,
+) -> Result<(), NetworkHttpError> {
     validate_url(&request.url)?;
     validate_headers(&request.headers)?;
 
@@ -61,11 +76,11 @@ pub fn validate(request: &NetworkHttpRequest) -> Result<(), NetworkHttpError> {
             ),
         ));
     }
-    if request.body.len() > NETWORK_HTTP_MAX_REQUEST_BODY_BYTES {
+    if request.body.len() > max_request_bytes {
         return Err(error(
             NetworkHttpErrorKind::InvalidLimit,
             format!(
-                "request body of {} bytes exceeds {NETWORK_HTTP_MAX_REQUEST_BODY_BYTES}",
+                "request body of {} bytes exceeds {max_request_bytes}",
                 request.body.len()
             ),
         ));
@@ -89,11 +104,11 @@ pub fn validate(request: &NetworkHttpRequest) -> Result<(), NetworkHttpError> {
             ),
         ));
     }
-    if !(1..=NETWORK_HTTP_MAX_RESPONSE_BYTES).contains(&request.max_response_bytes) {
+    if !(1..=max_response_bytes).contains(&request.max_response_bytes) {
         return Err(error(
             NetworkHttpErrorKind::InvalidLimit,
             format!(
-                "max_response_bytes must be between 1 and {NETWORK_HTTP_MAX_RESPONSE_BYTES}, got {}",
+                "max_response_bytes must be between 1 and {max_response_bytes}, got {}",
                 request.max_response_bytes
             ),
         ));
@@ -148,7 +163,7 @@ fn validate_url(url: &str) -> Result<(), NetworkHttpError> {
     Ok(())
 }
 
-fn validate_headers(headers: &[(String, String)]) -> Result<(), NetworkHttpError> {
+pub(crate) fn validate_headers(headers: &[(String, String)]) -> Result<(), NetworkHttpError> {
     if headers.len() > NETWORK_HTTP_MAX_HEADERS {
         return Err(error(
             NetworkHttpErrorKind::InvalidLimit,
@@ -209,9 +224,9 @@ fn validate_headers(headers: &[(String, String)]) -> Result<(), NetworkHttpError
 /// pinned provider below is what the manifest already promised; the panic was
 /// the manifest and the runtime disagreeing.
 #[cfg(windows)]
-const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::NativeTls;
+pub(crate) const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::NativeTls;
 #[cfg(unix)]
-const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::Rustls;
+pub(crate) const TLS_PROVIDER: ureq::tls::TlsProvider = ureq::tls::TlsProvider::Rustls;
 
 /// Perform one bounded exchange.
 ///
@@ -321,7 +336,7 @@ fn read_bounded(
 /// socket failure worth retrying. So the io error kind is inspected, and a
 /// `ureq::Error` that the transport wrapped in an `io::Error` is unwrapped and
 /// classified by the same table the pre-header path uses.
-fn map_body_read_error(failure: &std::io::Error) -> NetworkHttpError {
+pub(crate) fn map_body_read_error(failure: &std::io::Error) -> NetworkHttpError {
     if let Some(wrapped) = failure
         .get_ref()
         .and_then(|source| source.downcast_ref::<ureq::Error>())
@@ -340,7 +355,7 @@ fn map_body_read_error(failure: &std::io::Error) -> NetworkHttpError {
     )
 }
 
-fn map_http_error(failure: &ureq::http::Error) -> NetworkHttpError {
+pub(crate) fn map_http_error(failure: &ureq::http::Error) -> NetworkHttpError {
     // `http::Error` at this point can only come from the method, URI or a
     // header field, all of which validation already accepted in shape; a
     // remaining rejection is the `http` crate's own stricter grammar.
@@ -354,7 +369,7 @@ fn map_http_error(failure: &ureq::http::Error) -> NetworkHttpError {
 ///
 /// The `kind` is for programs; the detail is for humans. See the contract's
 /// `NetworkHttpError` docs for why both exist and why the detail is redacted.
-fn map_ureq_error(failure: &ureq::Error) -> NetworkHttpError {
+pub(crate) fn map_ureq_error(failure: &ureq::Error) -> NetworkHttpError {
     let detail = redact_detail(&failure.to_string());
     let kind = match failure {
         ureq::Error::Timeout(_) => NetworkHttpErrorKind::Timeout,
@@ -380,7 +395,7 @@ fn map_ureq_error(failure: &ureq::Error) -> NetworkHttpError {
 /// variants echo the request URL, which for an explicit proxy can embed
 /// credentials. That is the one thing worth dropping; the rest of the text is
 /// the diagnostic value the same item said had been thrown away.
-fn redact_detail(detail: &str) -> String {
+pub(crate) fn redact_detail(detail: &str) -> String {
     let mut out = String::with_capacity(detail.len());
     let mut rest = detail;
     while let Some(position) = rest.find("://") {

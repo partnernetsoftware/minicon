@@ -501,10 +501,16 @@ Usage: minicon [--no-activate] [--headless] [--working-dir DIR]
        minicon --status
        minicon --help
        minicon cli --control ENDPOINT COMMAND [ARGS...]
+       minicon harness --root PATH --task TEXT [--backend deepseek|opencode-go]
+       minicon harness --root PATH --task TEXT --gateway http://127.0.0.1:PORT/v1
+                       [--client-key-env NAME] [--allow-cmd NAME]...
+       minicon provider serve [--port PORT]
        minicon install-cli [--prefix DIR]     (link `minicon` onto PATH)
        minicon uninstall-cli [--prefix DIR]
 
-A standalone console host (conhost equivalent). No server, mux, or Fleet.
+A standalone console host with bounded local mux/harness commands.
+Explicit provider serve exposes model inference on loopback; configure its
+account, model and independent client key in Settings > Harness first.
 
 Features select which implementation hosts the shell, as opposed to the user
 preferences in minicon.json. Repeatable and comma-separated; prefix a name with
@@ -592,6 +598,15 @@ fn write_offline_stderr(text: &str) {
 
 /// Flags that must not open a window. Returns `Some(exit_code)` when handled.
 pub(crate) fn offline_cli_exit(args: &[String]) -> Option<i32> {
+    if args.first().is_some_and(|arg| arg == "provider") {
+        return Some(match crate::provider_cli::serve(args) {
+            Ok(()) => 0,
+            Err(error) => {
+                write_offline_stderr(&format!("minicon provider: {error}\n"));
+                2
+            }
+        });
+    }
     if args.first().is_some_and(|arg| arg == "cli") {
         return Some(match control::run_cli(args) {
             Ok(output) => {

@@ -35,6 +35,20 @@ pub trait Transport {
         body: &str,
         extra_headers: &[(&str, &str)],
     ) -> Result<String, String>;
+
+    /// Compatibility for existing caller-owned transports. Such transports
+    /// retain their own blocking policy; native NetworkHttp overrides this
+    /// method to enforce the invocation's remaining time on the exchange.
+    fn post_json_with_timeout(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &str,
+        extra_headers: &[(&str, &str)],
+        _timeout: std::time::Duration,
+    ) -> Result<String, String> {
+        self.post_json(url, bearer, body, extra_headers)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +92,17 @@ impl Transport for NetworkHttp {
         body: &str,
         extra_headers: &[(&str, &str)],
     ) -> Result<String, String> {
+        self.post_json_with_timeout(url, bearer, body, extra_headers, HARNESS_HTTP_TIMEOUT)
+    }
+
+    fn post_json_with_timeout(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &str,
+        extra_headers: &[(&str, &str)],
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
         use minicon_platform::network_http;
 
         let mut request =
@@ -86,7 +111,7 @@ impl Transport for NetworkHttp {
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .body(body.as_bytes().to_vec())
-                .timeout(HARNESS_HTTP_TIMEOUT);
+                .timeout(timeout.min(HARNESS_HTTP_TIMEOUT));
         for (name, value) in extra_headers {
             request = request.header(*name, *value);
         }
@@ -172,109 +197,6 @@ fn interpret_http_response(
 /// `minicon-platform`'s `network-http` capability, which links rustls.
 pub const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const DEEPSEEK_MODEL: &str = "deepseek-chat";
-/// Authorization-code exchange for the default DeepSeek provider.
-/// `MINICON_DEEPSEEK_TOKEN_URL` overrides it for a test double. The override
-/// must still be `https`. A plain `http` URL is refused before any POST.
-pub const DEEPSEEK_TOKEN_URL: &str = "https://platform.deepseek.com/oauth/token";
-
-pub fn https_token_url(url: &str) -> Result<&str, &'static str> {
-    if url.len() >= 8 && url[..8].eq_ignore_ascii_case("https://") {
-        Ok(url)
-    } else {
-        Err("token-url-not-https")
-    }
-}
-
-/// Bearer from a token-endpoint JSON body. Oversized or non-ascii values
-/// are rejected. This does not open a browser.
-pub fn oauth_access_token(body: &str) -> Result<String, &'static str> {
-    let key = "\"access_token\"";
-    let Some(at) = body.find(key) else {
-        return Err("token-rejected");
-    };
-    let rest = body[at + key.len()..].trim_start();
-    let rest = rest.strip_prefix(':').ok_or("token-rejected")?.trim_start();
-    let rest = rest.strip_prefix('"').ok_or("token-rejected")?;
-    let end = rest.find('"').ok_or("token-rejected")?;
-    let token = &rest[..end];
-    if token.is_empty()
-        || token.len() > 256
-        || !token.is_ascii()
-        || token
-            .bytes()
-            .any(|byte| byte.is_ascii_control() || byte == b' ')
-    {
-        return Err("token-rejected");
-    }
-    Ok(token.to_owned())
-}
-
-fn form_encode(value: &str) -> String {
-    let mut out = String::new();
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
-}
-
-/// POST the authorization code to `token_url` and return the access token.
-///
-/// `proxy` is `MINICON_BROWSER_HTTP_PROXY` when the browser hook is set.
-/// Redirects are not followed. No system browser.
-pub fn exchange_oauth_code(
-    token_url: &str,
-    code: &str,
-    redirect: &str,
-    proxy: Option<&str>,
-    code_verifier: Option<&str>,
-) -> Result<String, String> {
-    use minicon_platform::network_http::{self, NetworkHttpMethod};
-    let mut body = format!(
-        "grant_type=authorization_code&code={}&redirect_uri={}",
-        form_encode(code),
-        form_encode(redirect)
-    );
-    if let Some(verifier) = code_verifier.filter(|value| !value.is_empty()) {
-        body.push_str("&code_verifier=");
-        body.push_str(&form_encode(verifier));
-    }
-    let mut request = network_http::NetworkHttpRequest::new(NetworkHttpMethod::Post, token_url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Accept", "application/json")
-        .body(body.into_bytes())
-        .timeout(std::time::Duration::from_secs(15))
-        .max_redirects(0)
-        .max_response_bytes(8192);
-    if let Some(proxy) = proxy.filter(|value| !value.is_empty()) {
-        request = request.proxy(proxy);
-    }
-    let response = network_http::request(&request).map_err(|error| error.to_string())?;
-    if !response.is_success() {
-        return Err(format!("token endpoint status {}", response.status));
-    }
-    let text = String::from_utf8(response.body).map_err(|_| "token-rejected".to_owned())?;
-    oauth_access_token(&text).map_err(|error| error.to_owned())
-}
-
-pub fn exchange_deepseek_code(
-    code: &str,
-    redirect: &str,
-    proxy: Option<&str>,
-    code_verifier: Option<&str>,
-) -> Result<String, String> {
-    let url = std::env::var("MINICON_DEEPSEEK_TOKEN_URL")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEEPSEEK_TOKEN_URL.to_owned());
-    let url = https_token_url(&url).map_err(str::to_owned)?;
-    exchange_oauth_code(url, code, redirect, proxy, code_verifier)
-}
-
 /// API key wins. The OAuth access token is the DeepSeek bearer when the key
 /// is absent. Neither value is written to the terminal.
 pub fn resolve_deepseek_bearer<'a>(
@@ -485,6 +407,7 @@ fn harness_system_prompt(root: &std::path::Path) -> String {
 /// is none of them** -- a path outside the root or an unlisted command comes
 /// back to the model as an ordinary tool result so it can correct itself, and
 /// it neither aborts the run nor buys another turn.
+#[cfg(test)]
 pub fn run_task(
     transport: &dyn Transport,
     url: &str,
@@ -494,6 +417,26 @@ pub fn run_task(
     file_tool: &crate::harness::FileTool,
     exec_tool: &crate::harness::ExecTool,
 ) -> Result<String, String> {
+    let budget = crate::harness::InvocationBudget::new(std::sync::Arc::new(
+        std::sync::atomic::AtomicBool::new(false),
+    ));
+    run_task_with_budget(
+        transport, url, bearer, model, task, file_tool, exec_tool, &budget,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_task_with_budget(
+    transport: &dyn Transport,
+    url: &str,
+    bearer: &str,
+    model: &str,
+    task: &str,
+    file_tool: &crate::harness::FileTool,
+    exec_tool: &crate::harness::ExecTool,
+    budget: &crate::harness::InvocationBudget,
+) -> Result<String, crate::harness::HarnessFailure> {
     let mut messages = vec![
         serde_json::json!({
             "role": "system",
@@ -505,7 +448,10 @@ pub fn run_task(
 
     for _turn in 0..HARNESS_MAX_TURNS {
         let body = deepseek_request_body(model, &messages);
-        let reply = transport.post_json(url, bearer, &body, &[])?;
+        let remaining = budget.take_model_turn()?;
+        let reply = transport.post_json_with_timeout(url, bearer, &body, &[], remaining);
+        budget.check()?;
+        let reply = reply?;
         match deepseek_parse_reply(&reply)? {
             ModelReply::Text(text) => return Ok(text),
             ModelReply::ToolCalls(calls) => {
@@ -515,7 +461,8 @@ pub fn run_task(
                          more would pass the bound of {HARNESS_MAX_TOOL_CALLS} \
                          (HARNESS_MAX_TOOL_CALLS); the task did not finish",
                         calls.len()
-                    ));
+                    )
+                    .into());
                 }
                 // Echo the assistant turn back before its results: the wire
                 // format matches each result to the call it answers by id, and
@@ -533,12 +480,14 @@ pub fn run_task(
                         .collect::<Vec<_>>(),
                 }));
                 for call in &calls {
+                    budget.take_tool_call()?;
                     tool_calls_spent += 1;
                     // Both arms feed the model a string either way: the point
                     // of `unwrap_or_else` here is that a refusal is a result,
                     // not an early return.
                     let result = dispatch_tool_call(file_tool, exec_tool, call)
                         .unwrap_or_else(|refusal| refusal);
+                    budget.check()?;
                     messages.push(serde_json::json!({
                         "role": "tool",
                         "tool_call_id": call.id,
@@ -551,7 +500,8 @@ pub fn run_task(
     Err(format!(
         "harness: stopped after the bound of {HARNESS_MAX_TURNS} model turns \
          (HARNESS_MAX_TURNS) without a final answer; the task did not finish"
-    ))
+    )
+    .into())
 }
 
 /// Runs one tool call. `Err` is still something to tell the model, not a
@@ -637,77 +587,6 @@ mod tests {
         assert_eq!(resolve_deepseek_bearer(None, Some("tok")), Ok("tok"));
         assert_eq!(resolve_deepseek_bearer(Some(""), Some("tok")), Ok("tok"));
         assert!(resolve_deepseek_bearer(None, None).is_err());
-        assert_eq!(https_token_url(DEEPSEEK_TOKEN_URL), Ok(DEEPSEEK_TOKEN_URL));
-        assert_eq!(
-            https_token_url("http://127.0.0.1/token"),
-            Err("token-url-not-https")
-        );
-        assert_eq!(
-            oauth_access_token(r#"{"access_token":"tok-1"}"#).as_deref(),
-            Ok("tok-1")
-        );
-        assert!(oauth_access_token(r#"{"access_token":""}"#).is_err());
-    }
-
-    #[test]
-    fn exchange_oauth_code_reads_the_token_and_rejects_a_bad_proxy() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let (seen_tx, seen_rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-            let mut buf = Vec::new();
-            let mut chunk = [0u8; 512];
-            let request_is_complete = |bytes: &[u8]| {
-                let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
-                else {
-                    return false;
-                };
-                let headers = String::from_utf8_lossy(&bytes[..header_end]);
-                let content_length = headers.lines().find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().ok())
-                        .flatten()
-                });
-                content_length.is_some_and(|length| bytes.len() >= header_end + 4 + length)
-            };
-            while buf.len() < 4096 && !request_is_complete(&buf) {
-                match std::io::Read::read(&mut stream, &mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => buf.extend_from_slice(&chunk[..n]),
-                }
-            }
-            let _ = seen_tx.send(String::from_utf8_lossy(&buf).into_owned());
-            let body = br#"{"access_token":"tok-live"}"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                body.len()
-            );
-            use std::io::Write;
-            let _ = stream.write_all(response.as_bytes());
-            let _ = stream.write_all(body);
-            let _ = stream.flush();
-        });
-        let token = exchange_oauth_code(
-            &format!("http://127.0.0.1:{port}/token"),
-            "from-live",
-            "http://127.0.0.1/minicon/oauth",
-            None,
-            Some("verifier-1"),
-        )
-        .unwrap();
-        assert_eq!(token, "tok-live");
-        assert!(seen_rx.recv().unwrap().contains("code_verifier=verifier-1"));
-        let refused = exchange_oauth_code(
-            "http://127.0.0.1:9/token",
-            "from-live",
-            "http://127.0.0.1/cb",
-            Some("not a proxy"),
-            None,
-        );
-        assert!(refused.unwrap_err().to_ascii_lowercase().contains("proxy"));
     }
 
     /// A fresh empty directory under the system temp dir, unique per test.

@@ -14,6 +14,8 @@ pub struct HarnessRequest {
     pub root: String,
     pub task: String,
     pub backend: Backend,
+    pub gateway: Option<String>,
+    pub client_key_env: String,
     /// Permitted executable basenames for the `exec` tool. Empty does **not**
     /// disable the tool -- it still gets advertised, and every call is refused
     /// naming the missing allow-list, so a model cannot tell "not allowed yet"
@@ -39,8 +41,8 @@ pub enum Backend {
 
 impl Backend {
     /// The environment variable this backend reads its key from. Environment
-    /// only, by decision: a config-file credential store would grow MiniCon a
-    /// general secrets-management feature for one CLI mode.
+    /// only for the legacy direct-provider mode. OAuth accounts and the
+    /// explicit local gateway are owned by PRD 02.31.01.
     pub fn key_var(self) -> &'static str {
         match self {
             Self::DeepSeek => "MINICON_DEEPSEEK_API_KEY",
@@ -72,11 +74,7 @@ pub fn oauth_bearer_path() -> Option<std::path::PathBuf> {
     )
 }
 
-pub fn store_oauth_bearer(token: &str) -> Result<(), String> {
-    let path = oauth_bearer_path().ok_or_else(|| "HOME is unset".to_owned())?;
-    store_oauth_bearer_at(&path, token)
-}
-
+#[cfg(all(test, unix))]
 fn store_oauth_bearer_at(path: &std::path::Path, token: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -105,30 +103,45 @@ fn load_oauth_bearer_at(path: &std::path::Path) -> Option<String> {
 
 pub fn run_harness(args: &[String]) -> Result<String, String> {
     let request = parse_harness(args)?;
+    let cancellation = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let budget = InvocationBudget::new(cancellation.clone());
     // Refuse a missing credential first. Finding it here means no tool ever runs
     // for a task that could not have reached a model anyway, and the refusal
     // names the one variable the backend reads.
-    let key_var = request.backend.key_var();
+    let key_var = if request.gateway.is_some() {
+        request.client_key_env.as_str()
+    } else {
+        request.backend.key_var()
+    };
     let env_key = std::env::var(key_var).ok();
-    let oauth_token = if request.backend == Backend::DeepSeek {
+    let oauth_token = if request.gateway.is_none() && request.backend == Backend::DeepSeek {
         load_oauth_bearer()
     } else {
         None
     };
-    let key =
-        crate::harness_wire::resolve_deepseek_bearer(env_key.as_deref(), oauth_token.as_deref())
-            .map(str::to_owned)
-            .map_err(|()| {
-                format!(
-                    "harness: {key_var} is unset or empty; --backend {} reads its key from that \
-                 environment variable only",
-                    request.backend.flag_name()
-                )
-            })?;
+    let key = crate::harness_wire::resolve_deepseek_bearer(
+        env_key.as_deref(),
+        oauth_token.as_deref(),
+    )
+    .map(str::to_owned)
+    .map_err(|()| {
+        format!(
+            "harness: {key_var} is unset or empty; {} reads its key from that environment variable",
+            if request.gateway.is_some() {
+                "--gateway"
+            } else {
+                request.backend.flag_name()
+            }
+        )
+    })?;
+    let _console = minicon_platform::parent_console::ParentConsoleSession::attach();
+    let _interrupt = crate::cli_interrupt::InterruptWatch::start(cancellation.clone())?;
     // Resolve the file tool's bound now, so an unusable --root is a bounded
     // error up front rather than a surprise on the model's first tool call.
     let file_tool = FileTool::new(&request.root)?;
-    let exec_tool = ExecTool::new(file_tool.root_path(), &request.allow_cmd);
+    let exec_tool = ExecTool::new(file_tool.root_path(), &request.allow_cmd)
+        .with_cancellation(cancellation.clone())
+        .with_deadline(budget.deadline);
 
     let session_id = request
         .new_session
@@ -153,6 +166,31 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
         }
         state = existing.unwrap_or_default();
     }
+    let gateway = if let Some(base) = &request.gateway {
+        let session = state
+            .gateway_binding
+            .as_ref()
+            .map(|binding| binding.session.clone())
+            .map(Ok)
+            .unwrap_or_else(crate::harness_gateway::new_session_id)?;
+        let transport = crate::harness_gateway::GatewayTransport {
+            base: base.clone(),
+            session,
+            cancelled: cancellation,
+        };
+        let binding =
+            transport.binding(&key, budget.check().map_err(|error| error.to_string())?)?;
+        if is_continue && state.gateway_binding.as_ref() != Some(&binding) {
+            return Err("harness: session gateway binding changed; start a new session".into());
+        }
+        state.gateway_binding = Some(binding);
+        Some(transport)
+    } else {
+        if state.gateway_binding.is_some() {
+            return Err("harness: gateway session cannot resume through a direct provider".into());
+        }
+        None
+    };
     // A session saved before the tree working memory existed carries `turns`
     // but no `tree`: rebuild it deterministically from `turns` rather than
     // starting the tree over -- lossless, so this is not the silent-fresh-
@@ -172,8 +210,21 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
     // knowing which backend it is -- the same "dumb transport" contract
     // `{WIRE}` already guards.
     let mut call = |task: &str| -> Result<String, String> {
+        if let Some(transport) = &gateway {
+            return crate::harness_wire::run_task_with_budget(
+                transport,
+                &format!("{}/chat/completions", transport.base),
+                &key,
+                "minicon-selected",
+                task,
+                &file_tool,
+                &exec_tool,
+                &budget,
+            )
+            .map_err(|error| error.to_string());
+        }
         match request.backend {
-            Backend::DeepSeek => crate::harness_wire::run_task(
+            Backend::DeepSeek => crate::harness_wire::run_task_with_budget(
                 &crate::harness_wire::NetworkHttp,
                 crate::harness_wire::DEEPSEEK_CHAT_URL,
                 &key,
@@ -181,11 +232,13 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
                 task,
                 &file_tool,
                 &exec_tool,
-            ),
+                &budget,
+            )
+            .map_err(|error| error.to_string()),
             Backend::OpencodeGo => {
                 let url = crate::harness_opencode::opencode_chat_url()?;
                 let model = crate::harness_opencode::opencode_model();
-                crate::harness_opencode::opencode_run_task(
+                crate::harness_opencode::opencode_run_task_with_budget(
                     &crate::harness_wire::NetworkHttp,
                     &url,
                     &key,
@@ -193,7 +246,9 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
                     task,
                     &file_tool,
                     &exec_tool,
+                    &budget,
                 )
+                .map_err(|error| error.to_string())
             }
         }
     };
@@ -212,6 +267,106 @@ pub fn run_harness(args: &[String]) -> Result<String, String> {
         save_session(&file_tool, id, &state)?;
     }
     Ok(answer)
+}
+
+pub const INVOCATION_MAX_MODEL_TURNS: usize = 16;
+pub const INVOCATION_MAX_TOOL_CALLS: usize = 64;
+pub const INVOCATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// A fatal invocation boundary, separate from a recoverable tool refusal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvocationStop {
+    ModelTurns,
+    ToolCalls,
+    Deadline,
+    Cancelled,
+}
+
+impl std::fmt::Display for InvocationStop {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reason = match self {
+            Self::ModelTurns => "invocation model-turn budget exhausted (16)",
+            Self::ToolCalls => "invocation tool-call budget exhausted (64)",
+            Self::Deadline => "invocation deadline exhausted (10 minutes)",
+            Self::Cancelled => "invocation cancelled",
+        };
+        write!(formatter, "harness: {reason}; the task did not finish")
+    }
+}
+
+#[derive(Debug)]
+pub enum HarnessFailure {
+    Stopped(InvocationStop),
+    Backend(String),
+}
+
+impl From<InvocationStop> for HarnessFailure {
+    fn from(stop: InvocationStop) -> Self {
+        Self::Stopped(stop)
+    }
+}
+
+impl From<String> for HarnessFailure {
+    fn from(error: String) -> Self {
+        Self::Backend(error)
+    }
+}
+
+impl std::fmt::Display for HarnessFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stopped(stop) => stop.fmt(formatter),
+            Self::Backend(error) => formatter.write_str(error),
+        }
+    }
+}
+
+/// One owner spans outer-loop re-entry and both codecs. Session resumption
+/// starts a fresh invocation; counters never reset inside a codec call.
+pub struct InvocationBudget {
+    model_turns: std::cell::Cell<usize>,
+    tool_calls: std::cell::Cell<usize>,
+    deadline: std::time::Instant,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl InvocationBudget {
+    pub fn new(cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        Self {
+            model_turns: std::cell::Cell::new(0),
+            tool_calls: std::cell::Cell::new(0),
+            deadline: std::time::Instant::now() + INVOCATION_TIMEOUT,
+            cancelled,
+        }
+    }
+
+    pub fn check(&self) -> Result<std::time::Duration, InvocationStop> {
+        if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(InvocationStop::Cancelled);
+        }
+        self.deadline
+            .checked_duration_since(std::time::Instant::now())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or(InvocationStop::Deadline)
+    }
+
+    pub fn take_model_turn(&self) -> Result<std::time::Duration, InvocationStop> {
+        let remaining = self.check()?;
+        if self.model_turns.get() >= INVOCATION_MAX_MODEL_TURNS {
+            return Err(InvocationStop::ModelTurns);
+        }
+        self.model_turns.set(self.model_turns.get() + 1);
+        Ok(remaining)
+    }
+
+    pub fn take_tool_call(&self) -> Result<(), InvocationStop> {
+        self.check()?;
+        if self.tool_calls.get() >= INVOCATION_MAX_TOOL_CALLS {
+            return Err(InvocationStop::ToolCalls);
+        }
+        self.tool_calls.set(self.tool_calls.get() + 1);
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +591,8 @@ struct SessionState {
     /// either, or `tree` without a `palace`) still deserializes.
     #[serde(default)]
     palace: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gateway_binding: Option<crate::harness_gateway::Binding>,
 }
 
 /// Loads a session's state. `Ok(None)` means no session by this name exists
@@ -482,6 +639,7 @@ fn save_session(file_tool: &FileTool, id: &str, state: &SessionState) -> Result<
         turns: state.turns[turns_start..].to_vec(),
         palace: render_palace(&bounded_tree),
         tree: bounded_tree,
+        gateway_binding: state.gateway_binding.clone(),
     };
     let relative = format!("{HARNESS_SESSION_DIR}/{id}.json");
     let contents = serde_json::to_string(&bounded)
@@ -746,6 +904,8 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
     let mut root: Option<String> = None;
     let mut task: Option<String> = None;
     let mut backend: Option<Backend> = None;
+    let mut gateway = None;
+    let mut client_key_env = None;
     let mut allow_cmd = Vec::new();
     let mut new_session: Option<String> = None;
     let mut continue_session: Option<String> = None;
@@ -761,6 +921,12 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
         match flag {
             "--root" => root = Some(value()?),
             "--task" => task = Some(value()?),
+            "--gateway" => gateway = Some(crate::harness_gateway::validate_url(&value()?)?),
+            "--client-key-env" => {
+                let name = value()?;
+                crate::harness_gateway::validate_env_name(&name)?;
+                client_key_env = Some(name);
+            }
             "--backend" => {
                 let name = value()?;
                 backend = Some(match name.as_str() {
@@ -791,6 +957,12 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
             harness_usage()
         ));
     }
+    if gateway.is_some() && backend.is_some() {
+        return Err("harness: --gateway and explicit --backend are mutually exclusive".into());
+    }
+    if gateway.is_none() && client_key_env.is_some() {
+        return Err("harness: --client-key-env requires --gateway".into());
+    }
     Ok(HarnessRequest {
         root: root.ok_or_else(|| {
             format!(
@@ -802,6 +974,8 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
         })?,
         task: task.ok_or_else(|| format!("harness requires --task TEXT\n{}", harness_usage()))?,
         backend: backend.unwrap_or_default(),
+        gateway,
+        client_key_env: client_key_env.unwrap_or_else(|| "MINICON_LOCAL_API_KEY".into()),
         allow_cmd,
         new_session,
         continue_session,
@@ -809,7 +983,8 @@ pub fn parse_harness(args: &[String]) -> Result<HarnessRequest, String> {
 }
 
 fn harness_usage() -> String {
-    "usage: minicon harness --root PATH --task TEXT [--backend deepseek|opencode-go] \
+    "usage: minicon harness --root PATH --task TEXT [--backend deepseek|opencode-go | \
+     --gateway http://127.0.0.1:PORT/v1 [--client-key-env NAME]] \
      [--allow-cmd NAME]... [--session ID | --continue ID]"
         .to_owned()
 }
@@ -966,6 +1141,30 @@ pub const EXEC_TOOL_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 /// `terminate_and_wait`, on top of `EXEC_TOOL_TIMEOUT` itself.
 const EXEC_TOOL_KILL_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
+pub const EXEC_TOOL_MAX_OUTPUT_BYTES: usize = 1024 * 1024;
+const EXEC_TOOL_TRUNCATION_MARKER: &str = "\n[exec: combined output truncated]\n";
+
+/// Exact inherited names permitted for exec. Provider/client/OAuth variables,
+/// proxies, loader hooks and shell startup variables are deliberately absent.
+/// HOME/USERPROFILE locate ordinary native user configuration; this is an
+/// environment boundary, not filesystem isolation from the current user.
+const EXEC_TOOL_ENVIRONMENT: &[&str] = &[
+    "PATH",
+    "SystemRoot",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+    "HOME",
+    "TMP",
+    "TEMP",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+];
+
 /// Hard native ceilings installed on every contained `exec` child, so a
 /// bounded local task cannot exhaust host memory, disk or process slots
 /// even if the allow-listed command itself is misbehaving.
@@ -995,6 +1194,8 @@ pub struct ExecOutcome {
 pub struct ExecTool {
     root: std::path::PathBuf,
     allow_cmd: Vec<String>,
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    deadline: Option<std::time::Instant>,
 }
 
 impl ExecTool {
@@ -1002,7 +1203,25 @@ impl ExecTool {
         Self {
             root: root.to_path_buf(),
             allow_cmd: allow_cmd.to_vec(),
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            deadline: None,
         }
+    }
+
+    /// Shares an invocation owner's cancellation signal without changing the
+    /// existing constructor or codec callers. Cancellation is terminal for an
+    /// exec call and never returns a successful partial tool result.
+    pub fn with_cancellation(
+        mut self,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
+        self.cancelled = cancelled;
+        self
+    }
+
+    fn with_deadline(mut self, deadline: std::time::Instant) -> Self {
+        self.deadline = Some(deadline);
+        self
     }
 
     /// Decides whether `program` may run, without running it.
@@ -1061,15 +1280,35 @@ impl ExecTool {
     /// child's whole descendant tree, so a runaway grandchild cannot outlive
     /// this call's own timeout kill.
     fn spawn_contained(&self, program: &str, args: &[String]) -> Result<ExecOutcome, String> {
+        self.spawn_with_timeout(program, args, EXEC_TOOL_TIMEOUT)
+    }
+
+    fn spawn_with_timeout(
+        &self,
+        program: &str,
+        args: &[String],
+        timeout: std::time::Duration,
+    ) -> Result<ExecOutcome, String> {
         use minicon_platform::contained_process::{
             ContainedHeadlessCommand, ContainedProcessLimits,
         };
-        use std::io::Read as _;
+
+        if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("exec: cancelled before spawn".to_owned());
+        }
+        let exec_deadline = std::time::Instant::now() + timeout;
+        let deadline = self
+            .deadline
+            .map_or(exec_deadline, |deadline| deadline.min(exec_deadline));
+        if std::time::Instant::now() >= deadline {
+            return Err("exec: invocation deadline exhausted before spawn".to_owned());
+        }
 
         let mut command = ContainedHeadlessCommand::new(program);
         command
             .args(args.iter().cloned())
             .current_dir(&self.root)
+            .env_clear()
             .capture_output()
             .limits(ContainedProcessLimits {
                 cpu_seconds: Some(EXEC_TOOL_TIMEOUT.as_secs()),
@@ -1082,57 +1321,814 @@ impl ExecTool {
                 memory_bytes: None,
                 #[cfg(not(target_os = "macos"))]
                 memory_bytes: Some(EXEC_TOOL_MEMORY_BYTES),
-                file_size_bytes: Some(EXEC_TOOL_FILE_SIZE_BYTES),
-                open_files: Some(EXEC_TOOL_OPEN_FILES),
+                file_size_bytes: cfg!(unix).then_some(EXEC_TOOL_FILE_SIZE_BYTES),
+                open_files: cfg!(unix).then_some(EXEC_TOOL_OPEN_FILES),
                 active_processes: Some(EXEC_TOOL_ACTIVE_PROCESSES),
             });
+        for name in EXEC_TOOL_ENVIRONMENT {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(*name, value);
+            }
+        }
 
         let mut child = command
             .spawn()
             .map_err(|error| format!("exec: {program:?} could not be started: {error}"))?;
 
-        // Drain both captured streams on their own threads. Polling for the
-        // exit while a full pipe blocks the child would deadlock the
-        // timeout this bound exists to provide.
-        let drain = |stream: Option<minicon_platform::contained_process::ContainedChildOutput>| {
-            std::thread::spawn(move || {
-                let mut buffer = Vec::new();
-                if let Some(mut stream) = stream {
-                    let _ = stream.read_to_end(&mut buffer);
-                }
-                buffer
-            })
-        };
-        let stdout = drain(child.take_stdout());
-        let stderr = drain(child.take_stderr());
-
-        let deadline = std::time::Instant::now() + EXEC_TOOL_TIMEOUT;
+        // No blocking reader workers: the same deadline owns root wait and
+        // both pipes, even if the leader exits while a descendant holds them.
+        // At most one chunk per stream per pass keeps stderr and cancellation
+        // responsive under an infinite stdout flood.
+        let mut stdout = child.take_stdout();
+        let mut stderr = child.take_stderr();
+        let mut capture = ExecCapture::default();
         let mut timed_out = false;
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break Some(status),
-                Ok(None) => {}
-                Err(error) => {
-                    return Err(format!("exec: {program:?} could not be waited on: {error}"));
-                }
+        let mut exited = false;
+        let mut failure = None;
+        loop {
+            if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                failure = Some("exec: cancelled".to_owned());
+                break;
             }
             if std::time::Instant::now() >= deadline {
                 timed_out = true;
-                let _ = child.terminate_and_wait(EXEC_TOOL_KILL_GRACE);
-                break None;
+                break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        };
-
-        let collect = |handle: std::thread::JoinHandle<Vec<u8>>| {
-            String::from_utf8_lossy(&handle.join().unwrap_or_default()).into_owned()
-        };
+            let observed = (|| -> Result<bool, String> {
+                if !exited {
+                    exited = child
+                        .exit_observed()
+                        .map_err(|error| format!("exec: wait failed: {error}"))?;
+                }
+                let out = capture.poll(&mut stdout, false)?;
+                let err = capture.poll(&mut stderr, true)?;
+                Ok(out || err)
+            })();
+            match observed {
+                Err(error) => {
+                    failure = Some(error);
+                    break;
+                }
+                Ok(_) if exited && stdout.is_none() && stderr.is_none() => break,
+                Ok(false) => std::thread::sleep(std::time::Duration::from_millis(1)),
+                Ok(true) => {}
+            }
+        }
+        // Terminate descendants on every terminal path, including successful
+        // leader exit. Reap and pipe closure share one further five-second
+        // cleanup allowance; there is no thread join or read left to finish.
+        let cleanup = child.terminate_and_wait(EXEC_TOOL_KILL_GRACE);
+        let status = child.try_wait();
+        drop(stdout);
+        drop(stderr);
+        drop(child);
+        if let Err(error) = cleanup {
+            return Err(format!(
+                "{}; exec: cleanup failed: {error}",
+                failure.as_deref().unwrap_or("exec: command finished")
+            ));
+        }
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        let status = status.map_err(|error| format!("exec: final wait failed: {error}"))?;
+        let (stdout, stderr) = capture.finish();
         Ok(ExecOutcome {
-            exit_code: status.and_then(|status| status.conventional_code().map(|code| code as i32)),
-            stdout: collect(stdout),
-            stderr: collect(stderr),
+            exit_code: if timed_out {
+                None
+            } else {
+                status.and_then(|status| status.conventional_code().map(|code| code as i32))
+            },
+            stdout,
+            stderr,
             timed_out,
         })
+    }
+}
+
+#[derive(Default)]
+struct ExecCapture {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    truncated: bool,
+}
+
+impl ExecCapture {
+    fn poll(
+        &mut self,
+        stream: &mut Option<minicon_platform::contained_process::ContainedChildOutput>,
+        is_stderr: bool,
+    ) -> Result<bool, String> {
+        let Some(source) = stream else {
+            return Ok(false);
+        };
+        let mut chunk = [0; 8192];
+        match source.read_timeout(&mut chunk, std::time::Duration::ZERO) {
+            Ok(0) => {
+                *stream = None;
+                Ok(false)
+            }
+            Ok(count) => {
+                self.append(&chunk[..count], is_stderr);
+                Ok(true)
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                        | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(format!("exec: output read failed: {error}")),
+        }
+    }
+
+    fn append(&mut self, bytes: &[u8], is_stderr: bool) {
+        let remaining =
+            EXEC_TOOL_MAX_OUTPUT_BYTES.saturating_sub(self.stdout.len() + self.stderr.len());
+        let keep = remaining.min(bytes.len());
+        self.truncated |= keep < bytes.len();
+        let target = if is_stderr {
+            &mut self.stderr
+        } else {
+            &mut self.stdout
+        };
+        target.extend_from_slice(&bytes[..keep]);
+    }
+
+    fn finish(self) -> (String, String) {
+        let mut stdout = String::from_utf8_lossy(&self.stdout).into_owned();
+        let mut stderr = String::from_utf8_lossy(&self.stderr).into_owned();
+        if self.truncated || stdout.len() + stderr.len() > EXEC_TOOL_MAX_OUTPUT_BYTES {
+            // Account for UTF-8 replacement expansion and the marker itself.
+            let available = EXEC_TOOL_MAX_OUTPUT_BYTES - EXEC_TOOL_TRUNCATION_MARKER.len();
+            truncate_utf8(&mut stdout, available);
+            truncate_utf8(&mut stderr, available - stdout.len());
+            stderr.push_str(EXEC_TOOL_TRUNCATION_MARKER);
+        }
+        (stdout, stderr)
+    }
+}
+
+fn truncate_utf8(text: &mut String, max_bytes: usize) {
+    let mut end = text.len().min(max_bytes);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+}
+
+#[cfg(test)]
+mod invocation_budget_tests {
+    use super::*;
+    use crate::harness_wire::Transport;
+    use std::{
+        cell::{Cell, RefCell},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::{Duration, Instant},
+    };
+
+    enum ReplyMode {
+        Redraft,
+        WriteBatch,
+        Cancel,
+    }
+
+    struct ModelFixture {
+        mode: ReplyMode,
+        requests: Cell<usize>,
+        offered_tools: Cell<usize>,
+        timeout: RefCell<Option<Duration>>,
+        cancellation: Arc<AtomicBool>,
+    }
+
+    impl ModelFixture {
+        fn new(mode: ReplyMode, cancellation: Arc<AtomicBool>) -> Self {
+            Self {
+                mode,
+                requests: Cell::new(0),
+                offered_tools: Cell::new(0),
+                timeout: RefCell::new(None),
+                cancellation,
+            }
+        }
+    }
+
+    fn text_reply(text: &str) -> String {
+        serde_json::json!({"choices":[{"message":{"role":"assistant","content":text}}]}).to_string()
+    }
+
+    impl Transport for ModelFixture {
+        fn post_json(
+            &self,
+            _url: &str,
+            _bearer: &str,
+            body: &str,
+            _headers: &[(&str, &str)],
+        ) -> Result<String, String> {
+            self.requests.set(self.requests.get() + 1);
+            match self.mode {
+                ReplyMode::Redraft => Ok(text_reply(LOOP_REDRAFT_MARKER)),
+                ReplyMode::WriteBatch | ReplyMode::Cancel => {
+                    let request: serde_json::Value = serde_json::from_str(body).unwrap();
+                    if request["messages"].as_array().unwrap().last().unwrap()["role"] == "tool" {
+                        return Ok(text_reply("step finished"));
+                    }
+                    let count = if matches!(self.mode, ReplyMode::Cancel) {
+                        1
+                    } else {
+                        16
+                    };
+                    let start = self.offered_tools.get();
+                    self.offered_tools.set(start + count);
+                    let calls: Vec<_> = (start..start + count).map(|index| serde_json::json!({
+                        "id":format!("call-{index}"), "type":"function", "function":{
+                            "name":"file", "arguments":serde_json::json!({"op":"write","path":format!("effect-{index}"),"contents":"bounded effect"}).to_string()
+                        }
+                    })).collect();
+                    if matches!(self.mode, ReplyMode::Cancel) {
+                        self.cancellation.store(true, Ordering::Release);
+                    }
+                    Ok(serde_json::json!({"choices":[{"message":{"role":"assistant","content":null,"tool_calls":calls}}]}).to_string())
+                }
+            }
+        }
+
+        fn post_json_with_timeout(
+            &self,
+            url: &str,
+            bearer: &str,
+            body: &str,
+            headers: &[(&str, &str)],
+            timeout: Duration,
+        ) -> Result<String, String> {
+            *self.timeout.borrow_mut() = Some(timeout);
+            self.post_json(url, bearer, body, headers)
+        }
+    }
+
+    fn tools(tag: &str, backend: Backend) -> (std::path::PathBuf, FileTool, ExecTool) {
+        let root = std::env::temp_dir().join(format!(
+            "minicon-budget-{tag}-{}-{}-{:?}",
+            backend.flag_name(),
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let file = FileTool::new(root.to_str().unwrap()).unwrap();
+        let exec = ExecTool::new(&root, &[]);
+        (root, file, exec)
+    }
+
+    fn call(
+        backend: Backend,
+        model: &dyn Transport,
+        budget: &InvocationBudget,
+        file: &FileTool,
+        exec: &ExecTool,
+        task: &str,
+    ) -> Result<String, HarnessFailure> {
+        match backend {
+            Backend::DeepSeek => crate::harness_wire::run_task_with_budget(
+                model,
+                "http://127.0.0.1/fixture",
+                "synthetic",
+                "fixture",
+                task,
+                file,
+                exec,
+                budget,
+            ),
+            Backend::OpencodeGo => crate::harness_opencode::opencode_run_task_with_budget(
+                model,
+                "http://127.0.0.1/fixture",
+                "synthetic",
+                "fixture",
+                task,
+                file,
+                exec,
+                budget,
+            ),
+        }
+    }
+
+    fn through_outer_loop(
+        backend: Backend,
+        model: &dyn Transport,
+        budget: &InvocationBudget,
+        file: &FileTool,
+        exec: &ExecTool,
+    ) -> InvocationStop {
+        let stopped = Cell::new(None);
+        let mut call = |task: &str| {
+            call(backend, model, budget, file, exec, task).map_err(|error| {
+                if let HarnessFailure::Stopped(stop) = &error {
+                    stopped.set(Some(*stop));
+                }
+                error.to_string()
+            })
+        };
+        run_loop(&mut call, "bounded task", &mut Vec::new())
+            .expect_err("outer re-entry must exhaust the shared budget");
+        stopped
+            .get()
+            .expect("a typed fatal stop, not a codec or tool string")
+    }
+
+    #[test]
+    fn global_model_turn_limit_survives_codec_and_outer_loop_reentry() {
+        for backend in [Backend::DeepSeek, Backend::OpencodeGo] {
+            let (root, file, exec) = tools("turns", backend);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let budget = InvocationBudget::new(cancel.clone());
+            let model = ModelFixture::new(ReplyMode::Redraft, cancel);
+            assert_eq!(
+                through_outer_loop(backend, &model, &budget, &file, &exec),
+                InvocationStop::ModelTurns
+            );
+            assert_eq!(model.requests.get(), 16);
+            assert_eq!(budget.model_turns.get(), 16);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn global_tool_budget_blocks_the_sixty_fifth_effect_across_reentry() {
+        for backend in [Backend::DeepSeek, Backend::OpencodeGo] {
+            let (root, file, exec) = tools("tools", backend);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let budget = InvocationBudget::new(cancel.clone());
+            let model = ModelFixture::new(ReplyMode::WriteBatch, cancel);
+            assert_eq!(
+                through_outer_loop(backend, &model, &budget, &file, &exec),
+                InvocationStop::ToolCalls
+            );
+            assert_eq!(budget.tool_calls.get(), 64);
+            for index in 0..64 {
+                assert_eq!(
+                    std::fs::read_to_string(root.join(format!("effect-{index}"))).unwrap(),
+                    "bounded effect"
+                );
+            }
+            assert!(
+                !root.join("effect-64").exists(),
+                "tool 65 ran after budget exhaustion"
+            );
+            assert_eq!(
+                model.requests.get(),
+                9,
+                "fatal exhaustion must not be fed back as another model turn"
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn cancelled_or_expired_invocations_make_no_model_request() {
+        for backend in [Backend::DeepSeek, Backend::OpencodeGo] {
+            for expired in [false, true] {
+                let (root, file, exec) =
+                    tools(if expired { "expired" } else { "cancelled" }, backend);
+                let cancel = Arc::new(AtomicBool::new(!expired));
+                let mut budget = InvocationBudget::new(cancel.clone());
+                if expired {
+                    budget.deadline = Instant::now();
+                }
+                let model = ModelFixture::new(ReplyMode::WriteBatch, cancel);
+                let error =
+                    call(backend, &model, &budget, &file, &exec, "refused task").unwrap_err();
+                assert!(
+                    matches!(error, HarnessFailure::Stopped(stop) if stop == if expired { InvocationStop::Deadline } else { InvocationStop::Cancelled })
+                );
+                assert_eq!(model.requests.get(), 0);
+                assert_eq!(budget.tool_calls.get(), 0);
+                assert!(!root.join("effect-0").exists());
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn cancellation_after_inference_is_fatal_before_any_tool_effect() {
+        for backend in [Backend::DeepSeek, Backend::OpencodeGo] {
+            let (root, file, exec) = tools("cancel-reply", backend);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let budget = InvocationBudget::new(cancel.clone());
+            let model = ModelFixture::new(ReplyMode::Cancel, cancel);
+            let error = call(
+                backend,
+                &model,
+                &budget,
+                &file,
+                &exec,
+                "cancel during model request",
+            )
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                HarnessFailure::Stopped(InvocationStop::Cancelled)
+            ));
+            assert_eq!(model.requests.get(), 1);
+            assert_eq!(budget.tool_calls.get(), 0);
+            assert!(!root.join("effect-0").exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn each_codec_passes_only_remaining_invocation_time_to_transport() {
+        for backend in [Backend::DeepSeek, Backend::OpencodeGo] {
+            let (root, file, exec) = tools("remaining", backend);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let mut budget = InvocationBudget::new(cancel.clone());
+            let model = ModelFixture::new(ReplyMode::Redraft, cancel);
+            budget.deadline = Instant::now() + Duration::from_secs(1);
+            call(backend, &model, &budget, &file, &exec, "short deadline").unwrap();
+            assert!(model.timeout.borrow().is_some_and(
+                |remaining| remaining > Duration::ZERO && remaining <= Duration::from_secs(1)
+            ));
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn native_http_exchange_cannot_outlive_remaining_invocation_time() {
+        use std::{
+            io::{Read as _, Write as _},
+            net::TcpListener,
+        };
+        let (root, file, exec) = tools("native-http", Backend::DeepSeek);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/fixture", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let peer = std::thread::spawn(move || {
+            let until = Instant::now() + Duration::from_secs(5);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < until, "native HTTP client did not connect");
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(error) => panic!("accept failed: {error}"),
+                }
+            };
+            socket.set_nonblocking(false).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut head = Vec::new();
+            let mut byte = [0];
+            while !head.ends_with(b"\r\n\r\n") {
+                assert!(head.len() < 16384);
+                assert_eq!(socket.read(&mut byte).unwrap(), 1);
+                head.push(byte[0]);
+            }
+            let reply = text_reply("late answer");
+            write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                reply.len()
+            )
+            .unwrap();
+            socket.flush().unwrap();
+            std::thread::sleep(Duration::from_secs(2));
+            let _ = socket.write_all(reply.as_bytes()); // Client has already cancelled its deadline.
+        });
+        let mut budget = InvocationBudget::new(Arc::new(AtomicBool::new(false)));
+        budget.deadline = Instant::now() + Duration::from_millis(200);
+        let start = Instant::now();
+        let result = crate::harness_wire::run_task_with_budget(
+            &crate::harness_wire::NetworkHttp,
+            &url,
+            "synthetic",
+            "fixture",
+            "bounded HTTP",
+            &file,
+            &exec,
+            &budget,
+        );
+        let elapsed = start.elapsed();
+        peer.join().unwrap();
+        assert!(
+            matches!(
+                result,
+                Err(HarnessFailure::Stopped(InvocationStop::Deadline))
+            ),
+            "{result:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "native HTTP ignored remaining deadline: {elapsed:?}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod worker_exec_tests {
+    use super::*;
+    use std::{
+        io::Write as _,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::{Duration, Instant},
+    };
+
+    const PROBE: &str = "harness::worker_exec_tests::exec_probe_child";
+    const SECRETS: &[&str] = &[
+        "MINICON_DEEPSEEK_API_KEY",
+        "MINICON_OPENCODE_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "MINICON_LOCAL_CLIENT_TOKEN",
+        "MINICON_OAUTH_STATE",
+        "CUSTOM_SECRET",
+    ];
+
+    fn fixture(tag: &str, mode: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "minicon-worker-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        let path = path.canonicalize().unwrap();
+        std::fs::write(path.join("worker-probe-mode"), mode).unwrap();
+        path
+    }
+
+    fn probe_args() -> Vec<String> {
+        ["--exact", PROBE, "--nocapture", "--test-threads=1"]
+            .map(str::to_owned)
+            .to_vec()
+    }
+
+    /// Runs only inside a deliberately selected fresh cwd. The parent tests
+    /// launch this same executable, so fixture setup needs no shell/compiler.
+    #[test]
+    fn exec_probe_child() {
+        let Ok(mode) = std::fs::read_to_string("worker-probe-mode") else {
+            return;
+        };
+        match mode.as_str() {
+            "flood" => {
+                let mut out = std::io::stdout().lock();
+                let mut err = std::io::stderr().lock();
+                for _ in 0..256 {
+                    out.write_all(&[b'o'; 8192]).unwrap();
+                    err.write_all(&[b'e'; 8192]).unwrap();
+                }
+            }
+            "leader" => {
+                let nested = std::env::current_dir().unwrap().join("descendant");
+                std::fs::create_dir_all(&nested).unwrap();
+                std::fs::write(nested.join("worker-probe-mode"), "hold").unwrap();
+                // This controlled leader must exit before its finite child.
+                // The outer court owns the native identity and proves the
+                // containment group kills it after leader exit.
+                #[allow(clippy::zombie_processes)]
+                let mut descendant = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(probe_args())
+                    .current_dir(&nested)
+                    .spawn()
+                    .unwrap();
+                // Keep the native child handle alive until the root exits.
+                // Inherit both stdout and stderr, so the parent must not treat
+                // leader exit as completion of output draining.
+                let until = Instant::now() + Duration::from_secs(5);
+                while !nested.join("ready").is_file() {
+                    assert!(
+                        descendant.try_wait().unwrap().is_none(),
+                        "descendant exited before ready"
+                    );
+                    assert!(Instant::now() < until, "descendant setup expired");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                std::fs::write("leader-ready", "ready").unwrap();
+            }
+            "hold" => {
+                let pid = std::process::id();
+                let identity = minicon_platform::process_observation::start_identity(pid).unwrap();
+                std::fs::write("ready", serde_json::to_vec(&(pid, identity)).unwrap()).unwrap();
+                // Finite even if the termination guard is mutated away.
+                std::thread::sleep(Duration::from_secs(6));
+            }
+            "environment-parent" => {
+                for name in SECRETS {
+                    assert_eq!(std::env::var(name).unwrap(), "synthetic-secret-sentinel");
+                }
+                let nested = std::env::current_dir().unwrap().join("child");
+                std::fs::create_dir_all(&nested).unwrap();
+                std::fs::write(nested.join("worker-probe-mode"), "environment-child").unwrap();
+                let exe = std::env::current_exe().unwrap();
+                let basename = exe.file_name().unwrap().to_str().unwrap();
+                let tool = ExecTool::new(&nested, &[basename.to_owned()]);
+                let outcome = tool.run(basename, &probe_args()).unwrap();
+                assert_eq!(outcome.exit_code, Some(0), "{}", outcome.stderr);
+                assert!(outcome.stdout.contains("minimal-environment-verified"));
+            }
+            "environment-child" => {
+                for name in SECRETS {
+                    assert!(std::env::var_os(name).is_none(), "forwarded {name}");
+                }
+                for (name, _) in std::env::vars_os() {
+                    assert!(
+                        EXEC_TOOL_ENVIRONMENT
+                            .iter()
+                            .any(|allowed| name.to_string_lossy().eq_ignore_ascii_case(allowed)),
+                        "unexpected child environment key {name:?}"
+                    );
+                }
+                assert!(std::env::var_os("PATH").is_some());
+                println!("minimal-environment-verified");
+            }
+            other => panic!("unknown probe {other}"),
+        }
+    }
+
+    #[test]
+    fn combined_output_flood_is_capped_and_marked() {
+        let root = fixture("flood", "flood");
+        let tool = ExecTool::new(&root, &[]);
+        let outcome = tool
+            .spawn_contained(
+                std::env::current_exe().unwrap().to_str().unwrap(),
+                &probe_args(),
+            )
+            .unwrap();
+        assert_eq!(outcome.exit_code, Some(0));
+        assert!(!outcome.timed_out);
+        assert!(outcome.stdout.contains("oooo"));
+        assert!(
+            outcome.stderr.contains("eeee"),
+            "stderr starved behind stdout"
+        );
+        assert!(outcome.stderr.ends_with(EXEC_TOOL_TRUNCATION_MARKER));
+        assert!(outcome.stdout.len() + outcome.stderr.len() <= EXEC_TOOL_MAX_OUTPUT_BYTES);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_utf8_expansion_and_marker_share_the_same_output_cap() {
+        let mut capture = ExecCapture::default();
+        capture.append(&vec![0xff; EXEC_TOOL_MAX_OUTPUT_BYTES / 2], false);
+        capture.append(&vec![0xff; EXEC_TOOL_MAX_OUTPUT_BYTES / 2], true);
+        capture.append(&[0xff; 8192], true);
+        assert!(capture.stdout.len() + capture.stderr.len() <= EXEC_TOOL_MAX_OUTPUT_BYTES);
+        assert!(capture.truncated);
+        let (out, err) = capture.finish();
+        assert!(out.len() + err.len() <= EXEC_TOOL_MAX_OUTPUT_BYTES);
+        assert!(err.ends_with(EXEC_TOOL_TRUNCATION_MARKER));
+    }
+
+    fn wait_for(path: &std::path::Path) {
+        let until = Instant::now() + Duration::from_secs(10);
+        while !path.is_file() {
+            assert!(
+                Instant::now() < until,
+                "probe did not become ready: {}",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn retain_owned_process(
+        path: &std::path::Path,
+    ) -> minicon_platform::process_reference::ProcessReference {
+        let (pid, identity): (u32, String) =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(
+            minicon_platform::process_observation::verify_identity(pid, &identity),
+            minicon_platform::process_observation::IdentityVerdict::Live
+        );
+        let reference = minicon_platform::process_reference::ProcessReference::open(pid).unwrap();
+        assert_eq!(
+            minicon_platform::process_observation::verify_identity(pid, &identity),
+            minicon_platform::process_observation::IdentityVerdict::Live
+        );
+        reference
+    }
+
+    fn assert_owned_process_exited(
+        reference: &minicon_platform::process_reference::ProcessReference,
+    ) {
+        assert_eq!(
+            reference
+                .wait_for_exit(Some(Duration::from_secs(1)))
+                .unwrap(),
+            minicon_platform::process_reference::ProcessWait::Exited,
+            "owned process survived cleanup"
+        );
+    }
+
+    #[test]
+    fn leader_exit_does_not_end_the_pipe_deadline() {
+        let root = fixture("leader", "leader");
+        let tool = ExecTool::new(&root, &[]);
+        // Retain the exact descendant before cleanup, so a vanished numeric
+        // PID or an observation failure cannot masquerade as proof of exit.
+        let start = Instant::now();
+        let worker = std::thread::spawn(move || {
+            tool.spawn_with_timeout(
+                std::env::current_exe().unwrap().to_str().unwrap(),
+                &probe_args(),
+                Duration::from_secs(2),
+            )
+        });
+        wait_for(&root.join("leader-ready"));
+        let descendant = retain_owned_process(&root.join("descendant/ready"));
+        let outcome = worker.join().unwrap().unwrap();
+        assert!(
+            root.join("leader-ready").is_file(),
+            "leader setup failed: {}",
+            outcome.stderr
+        );
+        assert!(outcome.timed_out, "leader exit hid an inherited open pipe");
+        assert_eq!(outcome.exit_code, None);
+        assert!(
+            start.elapsed() < Duration::from_secs(4),
+            "output drain escaped its deadline"
+        );
+        assert_owned_process_exited(&descendant);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancellation_terminates_and_reaps_an_owned_process() {
+        let root = fixture("cancel", "hold");
+        let cancel = Arc::new(AtomicBool::new(false));
+        let tool = ExecTool::new(&root, &[]).with_cancellation(cancel.clone());
+        let worker = std::thread::spawn(move || {
+            tool.spawn_contained(
+                std::env::current_exe().unwrap().to_str().unwrap(),
+                &probe_args(),
+            )
+        });
+        wait_for(&root.join("ready"));
+        let owned = retain_owned_process(&root.join("ready"));
+        let start = Instant::now();
+        cancel.store(true, Ordering::Release);
+        let error = worker.join().unwrap().unwrap_err();
+        assert!(error.contains("cancelled"), "{error}");
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert_owned_process_exited(&owned);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn pre_cancelled_exec_has_no_child_effect() {
+        let root = fixture("pre-cancel", "hold");
+        let tool = ExecTool::new(&root, &[]).with_cancellation(Arc::new(AtomicBool::new(true)));
+        let error = tool
+            .spawn_contained(
+                std::env::current_exe().unwrap().to_str().unwrap(),
+                &probe_args(),
+            )
+            .unwrap_err();
+        assert!(error.contains("cancelled before spawn"));
+        assert!(!root.join("ready").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn exec_minimal_environment_excludes_provider_and_client_secrets() {
+        let root = fixture("environment", "environment-parent");
+        let exe = std::env::current_exe().unwrap();
+        let path =
+            std::env::join_paths(std::iter::once(exe.parent().unwrap().to_path_buf()).chain(
+                std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+            ))
+            .unwrap();
+        let mut parent = std::process::Command::new(exe);
+        parent
+            .args(probe_args())
+            .current_dir(&root)
+            .env("PATH", path);
+        for name in SECRETS {
+            parent.env(name, "synthetic-secret-sentinel");
+        }
+        let output = parent.output().unwrap();
+        assert!(
+            output.status.success(),
+            "parent probe failed: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 
@@ -1420,6 +2416,7 @@ mod tests {
                 turns,
                 tree,
                 palace: String::new(),
+                gateway_binding: None,
             },
         )
         .expect("save");

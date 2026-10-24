@@ -524,6 +524,9 @@ pub(crate) fn paint_settings_panel(
     list_start: usize,
 ) {
     let dip = |value: f64| minicon_core::numeric::round_f64(value * scale.max(1.0)).max(0.0) as u32;
+    if section == ui::SettingsSection::Harness {
+        return;
+    }
     if section == ui::SettingsSection::Web {
         paint_web_settings(
             surface,
@@ -1282,16 +1285,16 @@ fn layout_text_parts(parts: &[&str], x: u32, cell_w: u32, limit: u32) -> Vec<Pla
     placed
 }
 
-fn paint_settings_routes(
+pub(crate) fn paint_settings_routes(
     surface: &mut Surface<'_>,
-    routes: [ui::Rect; 2],
+    routes: [ui::Rect; 3],
     section: ui::SettingsSection,
     theme: theme::Theme,
     size: u16,
     scale: f64,
 ) {
     for (index, rect) in routes.into_iter().enumerate() {
-        let active = index == usize::from(section == ui::SettingsSection::Web);
+        let active = index == section.index();
         surface.fill_rect(
             rect.x,
             rect.y,
@@ -1303,7 +1306,7 @@ fn paint_settings_routes(
             surface,
             rect.x + (8.0 * scale) as u32,
             rect.y + rect.height.saturating_sub(font::cell_metrics(size).height) / 2,
-            if index == 0 { "Console" } else { "Web" },
+            ["Console", "Web", "Harness"][index],
             if active { theme.panel_bg } else { theme.text },
             size,
             rect.width.saturating_sub((16.0 * scale) as u32),

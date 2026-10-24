@@ -32,8 +32,8 @@ impl ContainedProcessLimits {
 /// A command whose standard streams are discarded and whose complete process
 /// tree remains owned by the returned child.
 ///
-/// The environment and working directory are inherited unless `current_dir`
-/// is set. Windows creates the root suspended, assigns it to a kill-on-close
+/// The environment is inherited unless `env_clear` is set; the working
+/// directory is inherited unless `current_dir` is set. Windows creates the root suspended, assigns it to a kill-on-close
 /// Job, and only then resumes its primary thread. Unix establishes a fresh
 /// process group in the pre-exec child.
 pub struct ContainedHeadlessCommand {
@@ -41,6 +41,7 @@ pub struct ContainedHeadlessCommand {
     pub(crate) args: Vec<OsString>,
     pub(crate) current_dir: Option<PathBuf>,
     pub(crate) env: Vec<(OsString, Option<OsString>)>,
+    pub(crate) clear_env: bool,
     pub(crate) stdin: ContainedInput,
     pub(crate) stdout: ContainedOutput,
     pub(crate) stderr: ContainedOutput,
@@ -66,6 +67,7 @@ impl ContainedHeadlessCommand {
             args: Vec::new(),
             current_dir: None,
             env: Vec::new(),
+            clear_env: false,
             stdin: ContainedInput::Null,
             stdout: ContainedOutput::Null,
             stderr: ContainedOutput::Null,
@@ -101,6 +103,13 @@ impl ContainedHeadlessCommand {
     /// Removes one variable from the child's inherited environment.
     pub fn env_remove(&mut self, key: impl Into<OsString>) -> &mut Self {
         self.env.push((key.into(), None));
+        self
+    }
+
+    /// Starts the child with an empty environment. Explicit `env` mutations
+    /// still apply; the caller must name any required native variables.
+    pub fn env_clear(&mut self) -> &mut Self {
+        self.clear_env = true;
         self
     }
 
@@ -209,6 +218,16 @@ pub struct ContainedChildOutput(crate::selected::contained_process::ContainedChi
 /// on one thread and drop it exactly once when stdin is closed.
 pub struct ContainedChildInput(crate::selected::contained_process::ContainedChildInput);
 
+impl ContainedChildOutput {
+    /// Reads available bytes without waiting longer than `timeout` for data.
+    /// An empty buffer succeeds immediately; EOF returns zero. No data before
+    /// the deadline returns `TimedOut`, including a zero-duration poll.
+    /// This does not change the existing blocking `Read` implementation.
+    pub fn read_timeout(&mut self, buffer: &mut [u8], timeout: Duration) -> io::Result<usize> {
+        self.0.read_timeout(buffer, timeout)
+    }
+}
+
 impl Read for ContainedChildOutput {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.0.read(buffer)
@@ -233,6 +252,13 @@ impl ContainedChild {
 
     pub fn try_wait(&mut self) -> io::Result<Option<ProcessExit>> {
         self.0.try_wait()
+    }
+
+    /// Observes root exit without surrendering containment ownership. Unix
+    /// keeps the child unreaped, reserving its PID/original process-group ID
+    /// until `try_wait` or `terminate_and_wait`; Windows retains the Job.
+    pub fn exit_observed(&mut self) -> io::Result<bool> {
+        self.0.exit_observed()
     }
 
     /// Enumerates every current member of this child's native containment
@@ -367,6 +393,67 @@ fn validate_limits(limits: ContainedProcessLimits) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::{thread, time::Instant};
+
+    #[test]
+    fn output_timeout_keeps_the_owned_stream_readable() {
+        #[cfg(unix)]
+        let mut command = {
+            let mut command = ContainedHeadlessCommand::new("sh");
+            command.args(["-c", "read -r line; printf '%s' \"$line\""]);
+            command
+        };
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = ContainedHeadlessCommand::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::Write([Console]::ReadLine())",
+            ]);
+            command
+        };
+        command.pipe_stdin().capture_output();
+        let mut child = command.spawn().expect("spawn controlled pipe probe");
+        let mut stdout = child.take_stdout().expect("owned stdout");
+        let mut stdin = child.take_stdin().expect("owned stdin");
+        let writer = thread::spawn(move || {
+            // A bounded independent release also makes replacing read_timeout
+            // by blocking Read fail without leaving the test hung forever.
+            thread::sleep(Duration::from_millis(300));
+            stdin.write_all(b"ready\n").expect("release child writer");
+        });
+        let mut buffer = [0; 32];
+        let start = Instant::now();
+        assert_eq!(
+            stdout
+                .read_timeout(&mut buffer, Duration::from_millis(20))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert!(start.elapsed() < Duration::from_millis(200));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut bytes = Vec::new();
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(!remaining.is_zero(), "pipe probe did not finish");
+            let count = stdout
+                .read_timeout(&mut buffer, remaining)
+                .expect("bounded readable pipe");
+            if count == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buffer[..count]);
+        }
+        writer.join().expect("writer completed");
+        assert_eq!(bytes, b"ready");
+        while child.try_wait().expect("reap pipe probe").is_none() {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
 
     #[test]
     fn empty_program_and_nul_arguments_are_rejected_before_spawn() {
