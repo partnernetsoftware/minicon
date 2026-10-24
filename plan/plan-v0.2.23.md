@@ -80,6 +80,8 @@ flowchart LR
     E --> M[Pure menu transitions]
     E --> L[Actual-count geometry and scrolling]
     B --> A[Provider identity and OAuth feasibility]
+    TLS[Shared native HTTPS trust policy / PRD 28] --> A
+    PRIV[Known provider and SSO observation redaction / PRD 31.01] --> HS
     A --> F[Single-turn and selection contracts]
     F --> G[Loopback API / manual pool / worker repairs]
     G --> HS[Harness settings and first worker tool cycle]
@@ -151,6 +153,22 @@ dynamic engine packaging and OS services. Do not omit cancellation, private
 credentials, real streaming/tool linkage or worker cleanup merely to obtain a
 successful hello-world response. Behavior and initial limits have one owner
 in PRD 31.01 and the worker module, rather than another contract in this plan.
+
+### Current integration checkpoint (2026-10-25)
+
+The [provider owner](../prd/PRD_02_31_01_provider_gateway.md#real-account-checkpoint-and-worker-defects-2026-10-25)
+records the actual DeepSeek grant/probe, retained worker failures and the
+repaired ordinary-task checkpoint. Completion instructions and Windows cwd
+adaptation now have scoped development evidence. Before the next source freeze,
+join the shared native HTTPS trust-policy repair and observed SSO redaction;
+their file owners are independent. Root serializes Cargo, guard mutations and
+final integration. OpenCode account login is waiting for the owner in the
+browser; the physical keyboard court and full local workspace gate also wait
+for a preservable clipboard (the current unsupported formats were not changed).
+Finish those selected account/native interaction obligations and matching
+exact-source delivery gates. The prior
+`7694388` pack and signatures are a scoped checkpoint, not reusable proof for
+changed source. No Candidate has been sealed from that checkpoint.
 
 ## Browser control delivery sequence and stop conditions
 

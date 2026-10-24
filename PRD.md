@@ -141,7 +141,7 @@ flowchart LR
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
-| Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md) | Development Harness settings, manual pool and OpenAI/Anthropic inference API; real grants/inference pending; gateway cannot execute tools |
+| Connect model accounts to local harnesses | [Provider gateway](prd/PRD_02_31_01_provider_gateway.md) | Development Harness settings, manual pool and OpenAI/Anthropic inference API; DeepSeek development grant/probe evidence; final qualification open; gateway cannot execute tools |
 | Embed a reusable terminal library | [Terminal library](prd/PRD_02_35_terminal_library.md) | common state/stream facade; OS/ISA runtime and session composition remain explicit |
 | Abstract and reuse existing mechanisms | [Module/reuse map](prd/PRD_02_28_shared_core.md) | feature graphs, type identity, source boundaries and kernel oracles; keep product policy local |
 | Native developer feedback | [Dev court](prd/PRD_02_32_dev_loop_crosscheck.md) | observed native suite execution; unavailable courts stay BLOCKED |
@@ -162,8 +162,8 @@ flowchart LR
   editing, compact menu geometry, keyboard/pointer menus and native focus evidence;
   [provider gateway](prd/PRD_02_31_01_provider_gateway.md) owns Harness settings,
   a manual account pool, local OpenAI/Anthropic model API and the future
-  llm-gate selection seam. Both providers' MiniCon login initialization has
-  anonymous endpoint evidence; user grants and inference remain unqualified;
+  llm-gate selection seam. The provider owner records a real DeepSeek development grant/inference
+  checkpoint; OpenCode and final worker/artifact qualification remain open;
   initial scope is connection, not dynamic scheduling.
   [The plan](plan/plan-v0.2.23.md) sequences both branches. Implementation is
   active under the owner's public-0.2.23 goal. Installation remains

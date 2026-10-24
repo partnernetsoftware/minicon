@@ -375,7 +375,7 @@ does not establish either vendor's OAuth support.
 
 | Subject | Confirmed input | Consequence |
 | --- | --- | --- |
-| DeepSeek | [Official account implementation](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/src/index.ts) supplies auth_init/auth_exchange/cancel with PKCE; the separate API-key path uses Bearer | Anonymous auth_init with MiniCon metadata returned a successful business envelope and official authorize URL; user grant and inference are still unqualified |
+| DeepSeek | [Official account implementation](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/src/index.ts) supplies auth_init/auth_exchange/cancel with PKCE; the separate API-key path uses Bearer | Real owner development GUI completed the supported grant, official catalogue and inference probe; final-artifact and worker qualification remain open |
 | OpenCode | [Official device flow](https://github.com/anomalyco/opencode/blob/20a6cc72917586eb5314be075f96dbb21d16c480/packages/core/src/plugin/provider/opencode.ts) supplies device authorization and refresh; external API-key and MCP paths are distinct | Anonymous device initialization accepted client_id=minicon and returned a challenge; user grant and inference are still unqualified |
 | OpenCode service identity | The same guide distinguishes hosted inference plans, native model protocols and stable Go session headers; free chat models are limited to OpenCode | Verify the chosen hosted endpoint, account entitlement and model, not a guessed local agent server |
 | Codex | [Official custom provider configuration](https://developers.openai.com/codex/config-advanced/) includes Responses wire configuration | Chat Completions alone does not qualify this client |
@@ -423,8 +423,11 @@ Actual authorization navigation and the interactive address bar retain their
 necessary query values. Public CLI snapshots, tab listings, host notices and
 OS window titles expose a fixed authorization title and only the known page
 origin/path, with an explicit redaction marker. This covers current DeepSeek
-and OpenCode authorization/completion pages, the new loopback callback and
-known historical MiniCon callback paths. Ordinary page query strings retain
+and OpenCode authorization/completion pages, GitHub's `/login` authentication
+namespace and the observed OpenCode GitHub callback, the new loopback callback
+and known historical MiniCon callback paths. Nested SSO `return_to` and
+`redirect_uri` parameters are not exposed through those observations.
+Ordinary page query strings retain
 their existing browser semantics. Device codes stay in the expiring interactive
 prompt and explicit user clipboard action; neither codes nor grant/client keys
 are included in public observation metadata.
@@ -458,8 +461,55 @@ are included in public observation metadata.
 - Actual DeepSeek GUI initialization reached the official authorization page
   after fixing host BCP47 locale conversion at the provider boundary. The prior
   build failed before transport with InvalidInput; the corrected native build
-  initialized the flow and rendered the official origin/path. User grant and
-  inference remain pending. Public observations redact its query and fragment.
+  initialized the flow and rendered the official origin/path. Public observations
+  redact its query and fragment. The later account observation below owns the
+  grant and inference result.
+
+### Real account checkpoint and worker defects (2026-10-25)
+
+- [v] DeepSeek grant, official model catalogue and actual inference probe passed
+  in the owner development GUI. Named receipt:
+  `target-six/v0.2.23-provider/real-deepseek-account.json`, source
+  `ca51a04c4638395d1308962bdbf924b458dd8ec2`, Windows x86_64 binary SHA-256
+  `1399e9e0d84836fda5b71a108376130ebb0254d195f8eda7b5915b497c00e952`.
+  The normal official login button reused the signed-in browser session;
+  no password, OTP or cookie import was involved. The account became ready
+  after probing `deepseek/deepseek-flash`; the explicit local listener started.
+  This is development evidence, not qualification of a final signed Candidate.
+- [v] The pinned Pi 1.4.0 CLI also completed an actual DeepSeek inference
+  through that GUI's local gateway, OpenAI Chat Completions SSE, exit 0 and
+  final `MINICON_PI_REAL_OK`. Receipt:
+  `target-six/v0.2.23-provider/real-deepseek-pi-1/receipt.json` records eight
+  text deltas, stop and 69 input / 8 output / 77 total tokens. The local key
+  was supplied by environment and absent from captured output. This extends
+  the controlled-peer compatibility evidence to account-backed streaming;
+  it does not qualify live tools/cancellation or final Candidate bytes.
+- [v] An actual DeepSeek Anthropic Messages SSE tool round trip passed through
+  that gateway: `tool_use`, a controlled local tool-result nonce, then exact
+  nonce text with `end_turn`, two requests and preserved input/output usage.
+  Receipt: `target-six/v0.2.23-provider/real-deepseek-anthropic-tool-1/receipt.json`.
+  The gateway performed no tool execution; this is development account/protocol
+  evidence, not final artifact or worker cleanup qualification.
+- [-] Actual worker tasks through that account did not qualify file+exec.
+  `real-deepseek-worker-1` exhausted the model-turn budget after file access;
+  `real-deepseek-worker-2` isolated a CMD working-directory failure. Both
+  directories are under `target-six/v0.2.23-provider/`. Exit zero in the second
+  invocation did not prove task success: the model reported inability to run
+  the requested command and no result file was produced. The subsequent repair
+  and successful ordinary-task checkpoint are owned by
+  [the worker module](PRD_02_31_v0_2_horizon.md#account-backed-ordinary-worker-checkpoint-2026-10-25).
+  Final-source/artifact qualification remains open.
+- [-] OpenCode grant/inference and authorization-completion-page presentation
+  remain unqualified. A bounded same-page Retry confirmed completion-page
+  failure while the stored account stayed ready; the public generic reason
+  cannot identify its cause. Login transport errors retain only the platform
+  failure kind for diagnosis, never its potentially sensitive free-text detail.
+  The OpenCode native initialization failure was traced by a real differential
+  to the shared [Windows HTTP trust-root policy](PRD_02_28_shared_core.md);
+  fixing that mechanism does not itself establish an OpenCode account grant.
+  Preserve those boundaries while independent repairs run.
+  The successful source `7694388` pack/signing checkpoint must not be promoted
+  after these defects require a new source. PRD 27 owns matching final gates.
 
 ## Evidence and documentation closeout
 

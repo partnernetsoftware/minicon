@@ -440,6 +440,8 @@ backend receipts below retain their original scope.
 | Delivery leaf | Invariant and observable evidence | Safe failure / dependency / non-goal |
 | --- | --- | --- |
 | Invocation budget | A single counter/deadline spans all outer and backend turns: initially 16 model turns, 64 total tool calls and 10 minutes per invocation; a public task that attempts to exceed it stops at the same bound across backend re-entry | Bounded terminal result; depends on single-turn extraction; no quota accumulated across separate session resumes |
+| Completion protocol | Both real backend system prompts teach the existing `TASK COMPLETE` final-line protocol; an ordinary task does not require user-supplied control words. Intermediate text still continues within the same invocation budget | Only successful completed work declares completion; depends on existing bounded outer loop, not a new stop policy. Two real-codec consumer tests and three runtime guard-removal controls passed in `target-six/v0.2.23-provider/completion-protocol-court/receipt.json`; account-backed development checkpoint below; final-artifact qualification remains open |
+| Windows exec cwd | Canonical task-root spelling must preserve relative command access. Shared contained-process adaptation safely simplifies compatible paths and verifies directory identity; CMD refuses nonrepresentable cwd before spawning | No silent Windows-directory fallback or naive verbatim-prefix stripping. Depends on PRD 28 shared Windows adapter; real nonce and special-directory tests qualify that mechanism separately from hosted inference |
 | Exec output and shutdown | Existing 30-second exec deadline also covers output draining and descendant-held pipes; cap combined stdout/stderr at 1 MiB, mark truncation, cancel/reap owned processes and finish pipe cleanup within a further 5 seconds | Output flood, leader-exits-first and cancel black boxes; depends on native containment and cancellable reads; no unbounded read_to_end/join |
 | Native execution limits | CPU 30 seconds per process; 512 MiB address-space/memory cap on Linux/Windows, with no macOS address-space request; Unix file size 64 MiB and 256 open files; Windows Job hard cap of 32 active processes. Unix requests no per-group process-count quota because the available NPROC limit counts the whole real UID | Typed spawn/cleanup failure; existing time/output bounds and owned process-group termination still apply. Linux native leader/descendant probes caught the old NPROC mapping; this is not an OS sandbox or a claim of a Unix process-count hard cap |
 | Credential environment | Spawn with a documented minimal native/locale/path/temp environment; do not forward provider/client secrets or OAuth state to exec; required extras must be explicitly named | Child environment probe with synthetic sentinel secrets; depends on platform process seam; no general permission-policy engine |
@@ -455,6 +457,22 @@ Darwin zombie-group cleanup; the follow-up native qualification remains open.
 Preserve existing explicit `--root`, `--allow-cmd`, session flags
 and no-shell argv semantics. Streaming was deferred in the 2026-09-26 session
 delivery; new streaming contracts and protocol qualification belong to PRD 31.01.
+
+### Account-backed ordinary worker checkpoint (2026-10-25)
+
+[v] The repaired Windows x86_64 development worker completed a normal DeepSeek
+account-backed task without user-supplied stop words. It read a random file
+nonce, executed the exact allow-listed CMD argv to read a different parent-file
+nonce, and wrote both exact values to the requested JSON artifact. The CMD
+branch additionally proved that the local client key was absent from exec.
+The persisted trace contains one outer iteration; exit 0 and the artifacts
+were checked independently. Receipt:
+`target-six/v0.2.23-provider/real-deepseek-worker-3/receipt.json`, worker binary
+SHA-256 `e830e773e5cb0acd3e86e98ef2c026854828ff8d221dd72a3e4167465824b474`.
+This was a working-tree overlay on `7694388`; the receipt binds the actual
+worker source-file hashes. Its gateway was the earlier development GUI
+`ca51a04`, whose account/protocol evidence belongs to PRD 31.01. This does not
+qualify final signed bytes, other native targets or OpenCode.
 
 ### Historical HTTP transport decision
 
