@@ -491,7 +491,7 @@ fn windows_proxy_context(arguments: &str) -> Result<wry::WebContext, String> {
     // Key all native arguments, including bypass rules; never put endpoints in
     // directory names. Equal options reuse one cache rather than accumulating
     // a new folder on every apply. Product lifetime/choice rules: PRD 25.01.
-    let key = format!("{:x}", sha2::Sha256::digest(arguments.as_bytes()));
+    let key = crate::base64url(&sha2::Sha256::digest(arguments.as_bytes()));
     let path = std::env::temp_dir()
         .join("minicon-webview2-proxy")
         .join(key);
