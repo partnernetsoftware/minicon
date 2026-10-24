@@ -22,6 +22,10 @@ directory's future TODO.
 
 Entries:
 
+- [v0.2.21 release history](v0.2.21-release-history.md) — native browser
+  workspace, bounded shutdown replies and exact signed/Defender-qualified
+  public Promotion; includes the Mac 0.2.22 handoff and scoped open items.
+
 - [v0.2.18 release history](v0.2.18-release-history.md) — versioned window,
   opt-in packaged Rust console, bounded screenshot replies, staged developer
   profiles and exact signed/Defender-qualified public Promotion; records the

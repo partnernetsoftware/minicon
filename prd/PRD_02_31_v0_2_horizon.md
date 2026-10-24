@@ -590,13 +590,13 @@ horizon yet.
   `agenterm-platform`'s adapter and bridge-v1 security state machine where its
   public seam fits; otherwise keep any direct `wry`/`tao` integration confined
   to `minicon-web` and the GUI binary.** `minicon-core`, `minicon-console` and
-  headless paths stay WebView-free. macOS now proves that boundary with a
-  same-process WKWebView child owned by `minicon-web`; Linux retains its
-  qualified helper. This is an architecture decision, not UI/UX acceptance:
-  owner use rejected the current macOS prototype, and PRD 25's accepted
-  workspace UX gate precedes Candidate. Owner decision 2026-10-23 puts
-  Windows adapter bring-up before the UX proposal; current receipts and the
-  pending proposal are in [plan-v0.2.21](../plan/plan-v0.2.21.md).
+  headless paths stay WebView-free. The selected adapters and their OS/ISA
+  differences are owned by [PRD 28](PRD_02_28_shared_core.md). The native browser
+  workspace shipped in 0.2.21; [PRD 25](PRD_02_25_con_workspace.md) owns its
+  interaction and UX acceptance. The earlier prototype rejection and redesign
+  remain in the [archived plan](../plan/archive/plan-v0.2.21.md), while the
+  [release history](archive/v0.2.21-release-history.md) owns artifact receipts
+  and their precise qualification scope.
   The bridge invariants remain
   origin binding, a 64 KiB message cap, at most 8 concurrent requests and replay
   protection, per `PRD_02_28_shared_core.md`'s "consume at the git pin, no
@@ -615,8 +615,8 @@ horizon yet.
   fixed browser runtime". CDP control of an externally-sourced browser
   process is a strictly larger, less bounded surface than either.
 - **Rejected: bundling Electron.** Electron ships Node.js plus a full Chromium
-  and a parallel Node/npm build toolchain. `mux`+`harness` are already at the
-  9 MiB Candidate ceiling and the Tauri reference (~8.4 MiB) was already ruled
+  and a parallel Node/npm build toolchain. `mux`+`harness` were already at the then-current
+  Candidate ceiling and the Tauri reference (~8.4 MiB) was already ruled
   out on size in the agenterm comparison; Electron is heavier than Tauri by a
   further margin, and its own build toolchain is exactly what the direct-WRY
   approach and this repo's asset model (`assets/`: static HTML/CSS/JS,
@@ -657,8 +657,11 @@ replaceable process body (`--probe` / `--load` / `--smoke` /
 `--oauth-smoke`). With no WebView
 linked it reports Unavailable and does not call the OS browser. Feature
 `wry-host` links wry and tao into that binary only and, on Linux, packs the
-page into tao's default vbox on Linux/X11. The reopened 0.2.21 acceptance record is
-[plan-v0.2.21.md](../plan/plan-v0.2.21.md); the broader boundary and later
+page into tao's default vbox on Linux/X11. The published baseline's acceptance
+and artifact scope are linked from the
+[0.2.21 release history](archive/v0.2.21-release-history.md); its sequencing is
+preserved in the [archived plan](../plan/archive/plan-v0.2.21.md). The broader
+boundary and later
 dashboard/preview/wasm/1:N leaves stay in
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Workspace owns the
 tab/content-panel requirements and evidence.
@@ -668,8 +671,8 @@ workspace crate **`crates/minicon-web`**: library API plus host binary
 `minicon-web-host` (`--probe` / `--load`). Responsibilities: unified browser
 function interface (open/load URL, `PageHost` trait, proxy hook, staged OAuth /
 dashboard / preview / wasm); isolate wry/WebView so the underlying stack can
-change without rewriting product callers. On macOS the GUI `minicon` enables
-`native-page-host`; `{ARCH}` changed only that GUI-binary side while
+change without rewriting product callers. On macOS and Windows the GUI
+`minicon` enables `native-page-host`; `{ARCH}` changed only that GUI-binary side while
 `minicon-core`, `minicon-console` and headless remain free of it. A missing
 WebView runtime must still fail softly without taking down the terminal.
 Product face stays Tab / content panel
@@ -678,53 +681,26 @@ body does not link wry and exits 69 Unavailable. `wry-host` is opt-in.
 Target interface inventory:
 [plan-browser-tabs.md](../plan/plan-browser-tabs.md).
 
-The Linux/X11 adapter portion of the 0.2.21 native browser runtime is closed by dev-loop run
-`39925651159` at exact source `4577c9c2d446ee43f5af0a4a53699d3ae3c960b5`.
-On both Linux ISAs, its nonzero X11 suite observes the exact moved/resized
-embedded child rectangle, the optional wry/WebKitGTK host builds, and a real
-WebKit page reaches a synthetic origin through the configured HTTP proxy before
-its OAuth loopback redirect is cancelled and delivered directly to
-`127.0.0.1`. This is runtime evidence for the adapter seam, not a production
-provider-account, macOS, Windows or Wayland-embedding claim.
-
-Direct macOS use then exposed a boundary contradiction that the Linux court
-cannot answer. The canonical dev build does not emit `minicon-web-host`; the
-feature is opt-in; and `PixelWindow::embed_parent()` is X11-only. More
-fundamentally, cross-process X11 reparenting is not a portable proof that a
-WKWebView or WebView2 can occupy the same tab content panel. The three wishes
-"same-window native view", "separate helper process" and "no WebView adapter
-linked into the GUI" now form an explicit `{ARCH}` decision gate in
-[plan-v0.2.21.md](../plan/plan-v0.2.21.md), rather than an assumed solved
-shape. The selected boundary is a GUI-only platform adapter inside
-`minicon-web`, while `minicon-core`, `minicon-console` and headless paths stay
-WebView-free. The macOS implementation uses `build_as_child` on the owning
-NSView, bounded local HTML for `Ctrl+Shift+O`, and focus release before hiding;
-direct arm64 Computer Use proves visible content, hide/restore and fullscreen
-resize. That receipt closes the adapter feasibility question only. Subsequent
-direct owner use rejected the browser UI/UX as poor, so the current shell is a
-disposable engineering prototype and not the interaction model to carry into
-WebView2. Workspace UX ownership is in PRD 25; 0.2.21 `{UX-BASELINE}` requires
-named open/navigate/switch/return/resize/close journeys plus explicit owner
-acceptance before Candidate; owner decision 2026-10-23 brings up the Windows
-adapter before the UX proposal. A local canonical Windows x86_64 dev build
-now visibly hosts WebView2 in the content column, with real URL, tab,
-resize/maximize and reopen mechanics. It does not qualify Windows ARM64,
-release bytes or UX. Remaining artifact/platform courts
-stay open. Floating
-helper windows, OS-default-browser fallback, screenshot streaming and
-synthetic-input forwarding remain rejected substitutes for a content panel.
+The published 0.2.21 native browser baseline has native page journeys on the
+six shipped cells. The [release history](archive/v0.2.21-release-history.md)
+owns the separately scoped canonical, signed and public-download byte evidence.
+[PRD 25](PRD_02_25_con_workspace.md#tab-kinds-and-content-panels) owns the
+accepted workspace and the remaining input/proxy/DPI evidence boundaries.
+This baseline does not qualify a production provider-account round trip,
+macOS or Windows ARM64 proxy modes, physical WKWebView-focus interception,
+Wayland embedding, dashboard, preview, wasm or 1:N content panels. Those
+scoped leaves remain open in the browser plan. Floating helper windows,
+OS-default-browser fallback, screenshot streaming and synthetic-input
+forwarding remain rejected substitutes for an interactive content panel.
 
 OAuth credentials do not add a product-layer native filesystem exception.
 MiniCon owns the bearer path and `minicon-platform::filesystem` owns private
 directory protection, atomic private publication and bounded no-follow reads.
-The local Unix test proves 0600 plus symlink refusal. The Windows adapter's
-protected current-user ACL implementation has native runtime evidence:
-dev-loop run `39919403513`, exact source `c09e999`, records the independent
-nonzero `windows-private-filesystem` suite `ok` on x86_64 (6 seconds) and arm64
-(8 seconds). Dev-loop run `39917026302` at `3db5710` separately proves the
-surrounding Windows product paths: `minicon_control` passed on both ISAs,
-including the arm64 asynchronous clipboard observation that had expired at
-10 seconds in run `39914718322`. Neither receipt is substituted for the other.
+Private bearer behavior and its scoped filesystem evidence are owned by
+[PRD 25](PRD_02_25_con_workspace.md#tab-kinds-and-content-panels); native
+qualification conventions belong to [PRD 32](PRD_02_32_dev_loop_crosscheck.md).
+An ordinary browser navigation pass does not establish provider OAuth or
+credential-publication coverage on another platform.
 
 **Non-goal for now:** designing the workbench's actual screens or task
 vocabulary (which e-commerce tasks it surfaces) is out of scope until the

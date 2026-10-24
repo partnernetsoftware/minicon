@@ -1,6 +1,15 @@
 # Plan: built-in wry browser as first-class tabs (0.2.x overnight design)
 
-Status: partial (2026-10-23). The shell, core hooks and Linux/X11 adapter exist; run `39925651159` is valid Linux evidence only. Platform WebView ownership is selected in [PRD 28](../prd/PRD_02_28_shared_core.md); local canonical macOS arm64 and Windows x86_64 journeys are recorded in [plan-v0.2.21.md](plan-v0.2.21.md). Owner decision 2026-10-23 puts Windows adapter bring-up before the UX proposal. The proposal is now written and awaits owner confirmation; the current engineering shell is not accepted UX. Automated/second-ISA macOS, Windows ARM64 and canonical cross-platform packaging remain open. **Not a release claim.** Browser remains a terminal-tab peer; no tray, system opener or floating helper. No Draft / Latest / signed package / public ship from this leaf.
+Status: partial horizon, updated 2026-10-24. The native browser tab,
+address/navigation workspace and canonical platform baseline shipped in
+[0.2.21](../prd/archive/v0.2.21-release-history.md). The owner's explicit
+publication instruction released the replacement's UX gate. Product behavior
+is owned by [PRD 25](../prd/PRD_02_25_con_workspace.md), adapter ownership by
+[PRD 28](../prd/PRD_02_28_shared_core.md), and version-specific sequencing is
+preserved in the [archived plan](archive/plan-v0.2.21.md). Proxy/OAuth coverage,
+provider integration, dashboard, preview, wasm and 1:N composition retain their
+separate open leaves. This horizon does not authorize a future release;
+release authority and exact-artifact qualification remain with PRD 27.
 
 **Naming (PRD_02_25 Terminology):** **Tab** = work unit; **content panel** (alias workspace panel) = layout cell inside a tab (now 1:1, later 1:N); **chrome panel** = host sent-history / settings / panel toggle. Bare "panel" in this plan means **content panel** unless marked chrome. Do not rename chrome evidence ids.
 
@@ -17,12 +26,12 @@ discovery only — no create/navigate yet).
 
 ```text
 built-in browser surface (first-class tab, same bar as terminal tabs)
-├── [-] OAuth login flow (core + Linux live path; macOS/Windows surface open)
+├── [-] OAuth login flow (core + Linux live path; macOS/Windows OAuth vertical unqualified)
 │         including AI provider OAuth (default: DeepSeek)
 ├── [_] large-screen dashboard
 ├── [_] file preview
 ├── [_] wasm / rich GUI pages
-└── [-] terminal → browser: "open in browser" and Ctrl+click link
+└── [v] terminal → browser: "open in browser" and Ctrl+click link
          MUST open / focus a built-in wry **browser tab**, NEVER the OS
          default browser, NEVER a tray+external-window product surface
 
@@ -48,9 +57,10 @@ named config path when the UI lands.
 
 ## Architecture (decided shape)
 
-Product surface is **tabs in the main MiniCon window**, not tray + floating
-WebView windows. Process isolation may still use a sibling binary / subcommand
-for wry; the main process owns the tab chrome and bridges content back.
+Product surface is **tabs in the main MiniCon window**. The main process owns
+tab chrome; selected native adapters and the bounded Linux helper are owned by
+[PRD 28](../prd/PRD_02_28_shared_core.md), with canonical artifact composition
+owned by [PRD 27](../prd/PRD_02_27_con_delivery.md).
 
 ```text
 minicon (main UI — tab strip owns lifecycle; GUI-only linkage accepted by {ARCH})
@@ -108,11 +118,11 @@ minicon (main UI — tab strip owns lifecycle; GUI-only linkage accepted by {ARC
    agenterm-platform pin is ready; until then a MiniCon-local spike may
    vendor the same patterns, not re-litigate Tauri/Electron/CDP (all
    rejected in PRD_02_31).
-7. **Terminal link open is product-owned.** Today `host_open` on Linux is
-   `xdg-open` (system handler). For http(s) targets originating from the
-   terminal (OSC-8 hyperlink Ctrl+click, explicit "open browser", future
-   composer link actions), MiniCon must open/focus a browser tab via the
-   wry host — **not** call `host_open` / OS default. Non-http schemes
+7. **Terminal link open is product-owned.** For http(s) targets originating
+   from the terminal (OSC-8 hyperlink Ctrl+click, explicit "open browser",
+   future composer link actions), MiniCon opens/focuses the browser content
+   panel through `minicon-web`. That path never calls `host_open` / OS default.
+   Non-http schemes
    (mailto, local paths policy TBD) stay out of this leaf's first cut.
 8. **Proxy hook (no UI yet).** Single config key, e.g.
    `browser.http_proxy` / `browser.https_proxy` / `browser.no_proxy` under the
@@ -141,7 +151,7 @@ not a second windowing model.
 | **`crates/minicon-web`** | `PageHost`, panel state, navigation, proxy hook and the selected same-window adapter | Tab tree; chrome `history_panel` / `settings_panel`; OS browser for http(s); WebView calls outside this crate |
 | `minicon-platform` `webview` feature | Passive `probe_system_webview()` only | create / navigate / tray |
 
-**Crate status (align with `0:grk` WIP):** `crates/minicon-web/Cargo.toml`
+**Crate boundary (implementation inventory owned by PRD 28):** `crates/minicon-web/Cargo.toml`
 declares lib + bin `minicon-web-host`. Public API in `src/lib.rs`:
 `BrowserPanel` / `PageLoad` / `BrowserTab` / `BrowserProxy*` /
 `resolve_proxy` / `http_url_at` / `page_host_request` / `spawn_page_host` /
@@ -161,12 +171,12 @@ changing meaning.
 
 | API / capability | Intent | Tip code today | Stage |
 | --- | --- | --- | --- |
-| `open_url` / load URL | Open or navigate http(s) in the built-in surface; never `host_open` / xdg-open / ShellExecute for terminal-originated http(s) | `PageHost::load` / `ProcessPageHost`; `page_host_request` → `--load <url>`; `spawn_page_host`; `BrowserTab::show_http` + `PageLoad` | B1 shell [v]; Bw cross-platform load [-] |
+| `open_url` / load URL | Open or navigate http(s) in the built-in surface; never `host_open` / xdg-open / ShellExecute for terminal-originated http(s) | `PageHost::open_url` / `ProcessPageHost`; `page_host_request` → `--load <url>`; `spawn_page_host`; `BrowserTab::show_http` + `PageLoad` | B1 handoff [v]; Bw native baseline [v] |
 | `http_url_at` | Recognize http(s) tokens for Ctrl+click; non-http → no open | `minicon_web::http_url_at` (re-exported from `src/browser.rs`) | [v] |
-| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); pass them to the page host | `resolve_proxy`; Linux and Windows x86_64 live receipts are in plan-v0.2.21; macOS native proxy receipt remains open | B2 [-] |
-| Host/artifact contract | Canonical dev/release output can navigate without manual feature flags or `MINICON_BROWSER_BIN`; reject system opener names; missing runtime → typed Unavailable | Local canonical macOS arm64 and Windows x86_64 dev receipts are in plan-v0.2.21; release/cross-platform inventory remains open | Bw [-] |
-| `PageHost` trait | Swappable surface: process host today; in-process WebView later without new product traits | `PageHost` / `ProcessPageHost` in `crates/minicon-web/src/lib.rs` | [v] |
-| OAuth bridge | Provider authorize URL in a browser **tab**; redirect allowlist; origin-bound, size-capped token hand-back | Core mechanism and Linux adapter evidence exist; macOS/Windows page-surface evidence is open | B3 [-] |
+| Proxy hook | Read `browser.http_proxy` / `https_proxy` / `no_proxy` + `MINICON_BROWSER_*` (env wins); pass them to the page host | `resolve_proxy`; scoped receipts are in the [archived plan](archive/plan-v0.2.21.md); macOS and Windows ARM64 proxy runtime evidence remains open | B2 [-] |
+| Host/artifact contract | Canonical dev/release output can navigate without manual feature flags or `MINICON_BROWSER_BIN`; reject system opener names; missing runtime → typed Unavailable | Canonical native artifact scope is recorded in the [0.2.21 release history](../prd/archive/v0.2.21-release-history.md) | Bw [v] |
+| `PageHost` trait | Process-host API; native adapter inventory is owned by PRD 28 | `PageHost` / `ProcessPageHost` in `crates/minicon-web/src/lib.rs` | [v] |
+| OAuth bridge | Provider authorize URL in a browser **tab**; redirect allowlist; origin-bound, size-capped token hand-back | Core mechanism and Linux adapter evidence exist; macOS/Windows provider OAuth vertical remains unqualified | B3 [-] |
 | Dashboard / file preview / wasm pages | First-party packaged origins under `assets/` / `include_bytes!`; deny-by-default foreign navigation | later `PageHost` callers | B4 [_] |
 | Runtime probe | Soft-fail when system WebView absent | host `--probe` → `host_reply`; also `minicon_platform::webview::probe_system_webview` (passive) | [v] |
 
@@ -180,44 +190,29 @@ changing meaning.
 ## Leaf split (implementation order when unblocked)
 
 ```text
-[-] B0 product surface: browser tab is a root peer of a terminal tab (Ctrl+Shift+O;
-       list-tabs kind=browser). One content panel. No tray. A second
-       Ctrl+Shift+O must focus that tab, not insert another (0.2.21 {PANEL}:
-       second add_browser_root is None; content_column_is_the_terminal_rectangle.
-       Run 39925651159 proves exact X child resize on Linux; direct macOS
-       arm64 Computer Use proves the child WKWebView in the same column,
-       hide/restore, focus release and fullscreen resize. Automated/second-ISA
-       macOS and Windows ARM64 surface evidence remain open; Windows x86_64
-       canonical journeys are recorded in plan-v0.2.21)
-[-] B0-UX accepted workspace: Windows adapter bring-up precedes the proposal
-       by owner decision 2026-10-23. The proposal in plan-v0.2.21 awaits owner
-       confirmation before a large redesign. Acceptance covers open, real URL
-       navigation, tab switch/return, resize/fullscreen and close/reopen, with
-       legible hierarchy, focus and state. A visible native child alone is not
-       evidence. Owner: plan-v0.2.21 {UX-BASELINE}.
+[v] B0 product surface: browser tab is a root peer of a terminal tab;
+       Ctrl+Shift+O reuses its stable id and one native content panel.
+       Evidence: canonical native browser journeys in the release history above.
+       Failure stays local to the browser panel; no tray or OS browser.
+[v] B0-UX accepted workspace: address/navigation, shared chrome, state and
+       terminal switch/return form the published 0.2.21 baseline owned by PRD 25.
+       The owner's final publication instruction released the replacement's
+       UX gate; earlier prototype rejection remains in the archived plan.
 [v] B1 URL handoff: Ctrl+click on an http(s) token opens or focuses the
        one browser content panel and stores the canonical URL. A non-http
        token does not change the panel. That path does not call
        host_open. Non-http is ignored.
        Evidence: `http_handoff_reuses_one_browser_content_panel`
-[-] Bw page load: the content panel asks **minicon-web** (or today's
-       `MINICON_BROWSER_BIN` stand-in) `--load URL`. Core crates/headless do
-       not link wry/tao. A missing host or system opener is Unavailable, not
-       `host_open`. The same child carries the proxy hook into the WebView. Evidence:
-       `page_host_request_is_the_helper_not_the_system_browser`,
-       `spawn_page_host_passes_the_url_to_the_helper`
-[-] B2 proxy hook: browser.http_proxy / browser.https_proxy /
-       browser.no_proxy plus MINICON_BROWSER_* (env wins). Shown on the
-       shell and installed on the page-host process at `--load`.
-       `webkit_proxy_env` maps that hook onto `http_proxy` / `https_proxy` /
-       `no_proxy` for a `wry-host` build. Absent fields are removed
-       (`webkit_proxy_clear`, including `HTTP_PROXY` / `ALL_PROXY`) so a parent
-       proxy cannot leak. Exit 69 stays
-       Unavailable.
-       Evidence: `spawn_page_host_installs_the_proxy_hook_on_the_child`,
-       `exit_69_is_unavailable_and_proxy_maps_onto_webkit_names`
-       Native Windows settings are owned in PRD 25, with local proxy and
-       direct-bypass receipts in plan-v0.2.21.
+[v] Bw native page load: the content panel navigates through minicon-web
+       from canonical dev/release output without manual feature flags or
+       MINICON_BROWSER_BIN. Missing runtime is typed Unavailable and preserves
+       terminal access. Adapter/API ownership is in PRD 28; released artifact
+       evidence is in the 0.2.21 history above.
+[-] B2 proxy hook: configuration and native Windows behavior are owned by
+       PRD 25, and shared adapter mechanisms by PRD 28. Scoped Linux and
+       Windows x86_64 live proxy/direct-bypass receipts remain in the archived
+       0.2.21 plan. macOS and Windows ARM64 proxy modes still require their own
+       runtime evidence; the native page baseline does not close them.
 [-] B3 OAuth vertical: authorize URL is https and loads with `--load` on
        the one content panel. Redirect host must be allowlisted. No OS
        browser. DeepSeek uses this hook.
@@ -235,16 +230,17 @@ changing meaning.
 [v] B5 upsert PRD_02_3x owners with the current scope and platform evidence boundaries
 [_] Bx later (not this leaf): content-panel layout engine — still 1:1
        tab↔content panel by default; then multi-content-panel inside one tab
-[-] Bp portable platform closure: choose the same-window host boundary;
-       canonical dev/release artifacts; macOS WKWebView visible journey;
-       Windows WebView2 implementation or an explicit narrowed platform claim.
-       Owner: plan-v0.2.21 {ARCH}/{ARTIFACT}/{MAC-PANEL}/{WIN-PANEL}.
+[v] Bp shipped native platform baseline: canonical artifacts provide a
+       same-window page on the six shipped cells. Evidence and exact artifact
+       scope belong to the 0.2.21 release history, not this planning inventory.
 ```
 
-Non-goals for this overnight leaf: system tray of any kind, shipping a signed
-browser package, replacing the terminal GUI with HTML, bundling
-Chromium/Electron, implementing the multi-panel layout engine, or claiming
-three-platform runtime evidence before B0 receipts exist.
+Non-goals for this horizon: system tray, replacing the terminal GUI with HTML,
+bundling Chromium/Electron, or declaring later page types and 1:N composition
+delivered from the shipped 1:1 browser baseline. macOS physical page-focus
+shortcut interception, Windows ARM64 proxy modes and real Windows DPI
+transitions retain the qualification limits owned by PRD 25. Basic navigation
+and screenshots do not close those event-path or platform-specific courts.
 
 ## Spike notes (overnight)
 
@@ -294,7 +290,8 @@ composer "Connect AI" / first-use assist
        `127.0.0.1` only (`OAuthBridge`). The code is exchanged at an https
        token URL through that same hook. The access token is the harness
        bearer when `MINICON_DEEPSEEK_API_KEY` is unset. The notice reports
-       the byte count. Native adapter evidence is in 0.2.21 `{WEBKIT}`.
+       the byte count. Scoped adapter evidence is preserved in the archived
+       0.2.21 plan; it does not certify a production-provider account.
 [_] B3b provider registry stub + API-key config schema (no UI chrome yet)
 [_] B3c composer entry point calls B3a by default when assist is enabled
 ```
@@ -318,4 +315,4 @@ native court qualifies the adapter path without claiming a provider account.
 | Proxy UI | deferred; config/env hook required in design |
 | AI assist default auth | DeepSeek OAuth in wry browser tab |
 | AI API key | settings/config path (no wry); schema hook only overnight |
-| This doc | partial Linux implementation plus portable-boundary decision — no release |
+| This doc | sequencing for the remaining browser horizon; the native baseline shipped in 0.2.21, with evidence owned by its release history |

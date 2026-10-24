@@ -1,11 +1,10 @@
-# 0.2.21 continuation
+# 0.2.21 closeout
 
-The Windows bring-up handoff is preserved in
-[the frozen brief](archive/goal-0.2.21-windows-bringup.md). Its no-publish and
-proposal-before-implementation instructions belonged to that earlier task.
+[v] Public release completed; exact source, qualification scope and receipts
+belong to the [release history](../prd/archive/v0.2.21-release-history.md).
+The [archived plan](archive/plan-v0.2.21.md) preserves the implementation,
+owner release decision and failed observations. The earlier
+[Windows bring-up brief](archive/goal-0.2.21-windows-bringup.md) remains frozen.
 
-The owner subsequently requested completion through public publication.
-Current sequencing and open gates belong to [plan-v0.2.21.md](plan-v0.2.21.md);
-product interaction belongs to [PRD 25](../prd/PRD_02_25_con_workspace.md),
-and exact-source release authority and evidence to
-[PRD 27](../prd/PRD_02_27_con_delivery.md).
+The owner assigned the next version to a Mac agent. Start at the
+[0.2.22 handoff](plan-v0.2.22.md) and its owning PRD links.

@@ -116,7 +116,7 @@ flowchart LR
   The Windows missing-runtime and local-proxy courts in
   `tests/support/browser_windows.rs` guard the native failure and navigation
   observations; execution evidence belongs to
-  [plan-v0.2.21](../plan/plan-v0.2.21.md).
+  [plan-v0.2.21](../plan/archive/plan-v0.2.21.md).
   `close-tab` uses workspace identity for both terminal and browser rows;
   terminal traffic commands continue to require a PTY session. The same
   missing-runtime court failed at browser close before this lifecycle fix.
@@ -351,7 +351,7 @@ flowchart LR
   A normal `close-window` must receive its acknowledgement before process
   termination, rather than relying on a retry after the endpoint disappears.
   The 0.2.21 full-gate observation and required negative controls are owned by
-  [the active plan](../plan/plan-v0.2.21.md)'s `{CLOSE-ACK}` leaf; qualification
+  [the archived plan](../plan/archive/plan-v0.2.21.md)'s `{CLOSE-ACK}` leaf; qualification
   has passed the Windows mutation controls and named serial public/full gate.
   [PRD 32](PRD_02_32_dev_loop_crosscheck.md) records the successful native
   six-platform response courts and their exact-count evidence.

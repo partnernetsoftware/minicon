@@ -3,8 +3,9 @@
 Parent: [delivery](PRD_02_27_con_delivery.md). Product/distribution priority is
 owned by [PRD 23](PRD_02_23_minicon.md#distribution-priority).
 
-Status: `[_]` accepted follow-up, owner 2026-10-24. Implementation starts after
-0.2.21 is publicly released. This is not a new 0.2.21 Candidate gate.
+Status: `[_]` accepted follow-up, owner 2026-10-24. Public 0.2.21 is now
+available; implementation is handed to the Mac agent through the
+[0.2.22 sequence](../plan/plan-v0.2.22.md). This was not a 0.2.21 Candidate gate.
 
 ## Outcome tree DAG
 

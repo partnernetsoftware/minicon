@@ -18,9 +18,9 @@ minicon workspace and input
 ├── Tab tree authority (stable ids, branch-local child order, close, remain-on-exit)
 ├── Tab kinds and content panels (1 tab ↔ 1 content panel now; 1:N later)
 │   ├── terminal tab → one terminal content panel (PTY view)
-│   └── [-] browser tab → one browser content panel
-│       ├── [v] adapter mechanics: Linux qualified; macOS arm64 child visible
-│       └── [-] address/navigation workspace: native journeys and owner review
+│   └── [v] browser tab → one browser content panel (0.2.21)
+│       ├── [v] canonical native page journeys on the six shipped cells
+│       └── [v] address/navigation workspace; owner released the UX gate
 ├── Host UI (host chrome around the active tab's content panel(s))
 │   ├── header tools: New · Settings · sidebar toggle · panel toggle
 │   │     (panel toggle = chrome sent-history column — not a content panel)
@@ -66,9 +66,9 @@ flowchart LR
     BrTab -->|"now 1:1"| BrCP["content panel = page surface"]
     BrCP -->|"via minicon-web"| Web["minicon-web lib / optional host"]
     BrCP --> UX["UX baseline: open / navigate / switch / resize / close"]
-    BadUX["owner rejection: current UI/UX poor"] -->|"redesign gate"| UX
+    BadUX["earlier diagnostic scaffold rejected"] -->|"replacement"| UX
     WinWeb["Windows WebView2 adapter bring-up"] --> UX
-    UX -->|"accepted before release"| BrCP
+    UX -->|"owner release gate passed; 0.2.21"| BrCP
     TermTab -.->|"future 1:N"| Multi["split content panels"]
     Chrome["chrome panels"] --> Hist["sent-history panel"]
     Chrome --> Sett["settings panel"]
@@ -113,53 +113,32 @@ names above.
   a second windowing model and not a chrome-panel change. Until it ships,
   mux/control still refuse nonzero pane indices
   ([PRD_02_31](PRD_02_31_v0_2_horizon.md)).
-- [-] **browser content panel — shell and URL handoff.** The tab shell paints
-  a peer of a terminal tab and stores an http(s) URL for a later page
-  surface. Ctrl+click on an http(s) token in the terminal opens or focuses
-  that one browser content panel and does not call `host_open` / the OS
-  default browser. Evidence: `minicon-web` `http_links_are_browser_urls_and_other_schemes_are_not_opened`;
-  `tests::http_handoff_reuses_one_browser_content_panel`. The same panel
-  then asks `MINICON_BROWSER_BIN --load <url>` (`minicon_web::spawn_page_host_with_proxy`)
-  to navigate, with the resolved proxy hook installed on that process. Owner is
-  **`crates/minicon-web`**; `minicon-core`, `minicon-console` and headless paths
-  stay WebView-free while PRD 31 decides GUI-binary linkage. A missing host is `PageLoad::Unavailable`
-  (`browser-host-not-configured`), not `host_open`. Evidence:
-  `page_host_request_is_the_helper_not_the_system_browser`,
-  `spawn_page_host_passes_the_url_to_the_helper`.
-  Feature `wry-host` does navigate, inside `minicon-web-host` only. The host
-  reparents into the main window on X11, follows the current content-column
-  bounds and unmaps while a terminal tab is active. Run `39925651159` proves
-  the native X resize and real WebKit proxy/loopback path on both Linux ISAs.
-  This remains partial as a cross-platform product surface, but the local
-  macOS hole is now implemented: `native-page-host` creates one WKWebView child
-  inside `Layout::content_column`, and the canonical dev build assembles a
-  distinct `MiniCon 0.2.21 Dev.app` for unambiguous UI qualification. Direct
-  arm64 observation proves visible home, hide/restore, focus release and
-  fullscreen resize. Direct owner use then rejected the UI/UX as poor: those
-  mechanics are adapter evidence, not product acceptance. The current surface
-  was a disposable prototype. Owner decision 2026-10-23 brings up the Windows
-  adapter before the UX proposal; an accepted browser-workspace interaction and
-  visual baseline remain required before Candidate. Local canonical Windows
-  x86_64 dev use now proves a visible WebView2 child, real URL navigation,
-  hide/restore, resize/maximize and close/reopen mechanics; `screenshot-pane`
-  omits its child HWND pixels. This is adapter evidence only. The initial
-  unsigned six-cell artifact and native page courts are recorded in
-  [PRD 27](PRD_02_27_con_delivery.md#what-runs-where-in-one-look-02x-routine-release);
-  final-source/signed qualification and owner UX acceptance remain open in
-  [plan-v0.2.21](../plan/plan-v0.2.21.md) `{ARCH}` / `{ARTIFACT}` /
-  `{UX-BASELINE}` / `{MAC-PANEL}` / `{WIN-PANEL}`.
-  Dashboard, preview, wasm and 1:N layout remain follow-ups
-  in [plan-browser-tabs.md](../plan/plan-browser-tabs.md). Renderer boundary stays in
-  [PRD_02_31](PRD_02_31_v0_2_horizon.md).
-- [-] **browser workspace UX baseline (0.2.21).** The accepted product surface
+- [v] **browser content panel — native page and URL handoff (0.2.21).**
+  Ctrl+click on an http(s) token in the terminal opens or focuses the one
+  browser content panel and navigates there. It does not call `host_open` or
+  the OS default browser. A terminal tab keeps its PTY content and draft.
+  Canonical outputs provide the page adapter without manual feature flags or
+  `MINICON_BROWSER_BIN`; an unavailable runtime remains a typed panel failure
+  and leaves terminal access available. Adapter ownership is mapped in
+  [PRD 28](PRD_02_28_shared_core.md), and canonical artifact composition belongs
+  to [PRD 27](PRD_02_27_con_delivery.md). Named evidence includes
+  `http_handoff_reuses_one_browser_content_panel` and the native browser
+  workspace journeys linked from the
+  [0.2.21 release history](archive/v0.2.21-release-history.md).
+  Dashboard, preview, wasm and 1:N layout remain follow-ups in
+  [plan-browser-tabs.md](../plan/plan-browser-tabs.md); the renderer horizon
+  stays in [PRD 31](PRD_02_31_v0_2_horizon.md).
+- [v] **browser workspace UX baseline (0.2.21).** The accepted product surface
   must make open, current state, real URL navigation, terminal switch/return,
   resize/fullscreen and close/reopen coherent; browser/terminal hierarchy,
   focus and status must be legible without treating the bounded diagnostic
   home or an undocumented shortcut as the experience. Evidence requires named
   journeys on canonical macOS/Windows apps and explicit owner acceptance. The
-  2026-10-23 owner verdict rejected the diagnostic scaffold. The subsequent
-  instruction to finish 0.2.21 through publication authorizes implementing the
-  proposed workspace. The replacement now has a URL editor (click or Ctrl+L),
+  2026-10-23 owner verdict rejected the diagnostic scaffold. After the
+  replacement's native journeys and window captures, the owner's explicit
+  instruction to publish 0.2.21 released this UX gate. That decision does not
+  claim that the owner personally exercised every platform input path.
+  The shipped workspace has a URL editor (click or Ctrl+L),
   Back/Forward/Reload, native title/URL/loading/error events, a quiet home and
   one shared sidebar with the terminal view. Navigation marks use geometry,
   following the header icon family, rather than relying on native font symbol
@@ -174,14 +153,15 @@ names above.
   shortcuts, scoped to the owning window and native page focus. The current
   automated `send-ui-keys` journey enters host routing directly and does not
   prove that physical WKWebView-focus interception. Preserve that distinction
-  in the same owner UX journey; PNGs prove presentation, while an actual
-  keyboard observation establishes this event path.
+  in future qualification: PNGs prove presentation, while an actual keyboard
+  observation is still required to qualify this particular event path.
   Local Windows native address/redirect/title/back/forward/failure evidence is
   `native_browser_address_redirect_history_and_failure`; the canonical artifact
-  journey is `scripts/browser-workspace-smoke.py`. The initial unsigned six-cell
-  result is owned by [PRD 27](PRD_02_27_con_delivery.md#what-runs-where-in-one-look-02x-routine-release).
-  Final-source qualification and explicit owner review remain open. Owner:
-  [plan-v0.2.21](../plan/plan-v0.2.21.md) `{UX-BASELINE}`.
+  journey is `scripts/browser-workspace-smoke.py`. The
+  [0.2.21 release history](archive/v0.2.21-release-history.md) owns the released
+  artifact evidence and its qualification scope. The earlier rejection and
+  replacement sequence remain in the
+  [archived plan](../plan/archive/plan-v0.2.21.md) `{UX-BASELINE}`.
 - [-] **Windows native proxy settings (0.2.21).** A single HTTP or HTTPS hook
   supplies the native page's proxy; when both are supplied, each URL scheme
   uses its own endpoint. `browser.no_proxy` is passed as Chromium bypass
@@ -192,21 +172,22 @@ names above.
   The local Windows x86_64 courts observe the HTTP fallback, distinct HTTPS
   override and an actual direct load under `no_proxy`. The bypass court uses
   a real terminal Ctrl+click and fails when the bypass argument is removed.
-  Other Windows ISAs remain BLOCKED. Evidence and exact court commands:
-  [plan-v0.2.21](../plan/plan-v0.2.21.md).
-- [-] **one browser root, and separate page/composer geometry (0.2.21).**
+  Windows ARM64 proxy-mode evidence remains BLOCKED; its successful ordinary
+  native page journey does not close this proxy-specific scope. Evidence and
+  exact court commands: [archived plan](../plan/archive/plan-v0.2.21.md).
+- [v] **one browser root, and separate page/composer geometry (0.2.21).**
   `add_browser_root` inserts one browser root; a second call returns `None`
   and leaves the strip and the selection unchanged. `Layout::content_column`
   retains terminal geometry above its composer. A browser instead uses
   `Layout::browser_page`: below a 44 DIP navigation toolbar, extending to the
   bottom, inset by sidebar/history chrome. It has no terminal composer. A
-  settings overlay temporarily hides the native child. Earlier adapter evidence:
-  `a_browser_tab_is_a_root_peer_of_a_terminal_tab`,
-  `content_column_is_the_terminal_rectangle` (macOS arm64) and the nonzero
-  `minicon-web-x11` suite on both Linux ISAs in run `39925651159`. Window,
-  sidebar and history geometry changes plus tab activation all call the same
-  resize seam. Owner: [plan-v0.2.21](../plan/plan-v0.2.21.md) `{PANEL}` /
-  `{RESIZE}`.
+  settings overlay temporarily hides the native child. Window, sidebar and
+  history geometry changes plus tab activation call the same resize seam.
+  Evidence: the canonical browser workspace journeys and actual window captures
+  linked in the [0.2.21 release history](archive/v0.2.21-release-history.md),
+  alongside `a_browser_tab_is_a_root_peer_of_a_terminal_tab`. A real Windows
+  per-monitor DPI transition remains outside this qualification; resize
+  evidence does not certify that transition.
 - [v] **`minicon-web` module (adopted 2026-10-23).** Browser content-panel
   API. Product face remains **Tab / content panel** (now 1:1, future 1:N);
   **no tray**. Chrome panels stay chrome. Path: `crates/minicon-web/` (lib +

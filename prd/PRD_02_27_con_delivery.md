@@ -13,8 +13,8 @@ Legend: `[v]` shipped, `[-]` partial, `[_]` planned.
 
 ## Current release evolution
 
-The current public baseline is v0.2.20 (receipts in
-[its release history](archive/v0.2.20-release-history.md)). The per-release
+The current public baseline is v0.2.21 (receipts in
+[its release history](archive/v0.2.21-release-history.md)). The per-release
 evolution record from v0.1.2 forward — cell coverage, signing-mode changes,
 candidate/court/promotion receipts and the lessons each release bought — is
 frozen in [the delivery-history archive](archive/PRD_02_27-delivery-history.md)
@@ -1506,7 +1506,7 @@ in this repository that contradicts it is out of date, not an alternative.
 
 ### What runs where, in one look (0.2.x routine release)
 
-**0.2.21 browser helper addition (in progress).** The Linux WebKitGTK helper
+**0.2.21 browser helper delivery.** The Linux WebKitGTK helper
 requires native GTK development metadata. Two native Linux prerequisite jobs
 build it from the same source SHA; the Mac pack embeds those exact helper bytes
 inside each Linux payload before packing. This preserves the single executable
@@ -1517,7 +1517,7 @@ CI provisions GTK metadata in a separately named five-minute step, with bounded
 APT retries and HTTP timeouts. The x86_64 runner uses Ubuntu's main archive
 instead of the Azure mirror; the source's signature trust configuration stays
 intact. This addresses a measured package-download stall, not a Rust build
-failure (the named incident is in the active 0.2.21 plan).
+failure (the incident is preserved in the archived 0.2.21 plan).
 The CI helper is built on Ubuntu 24.04 and requires GTK 3 / WebKitGTK 4.1;
 its browser-runtime compatibility is narrower than the terminal's Linux ELF
 baseline. Those libraries are loaded by the helper, so missing browser runtime
@@ -1526,19 +1526,11 @@ pack must provision same-source, ISA/hash-checked helper receipts under
 `target/browser-helpers/` (or `MINICON_BROWSER_HELPERS`) before rebuilding Linux
 payloads; an absent prerequisite fails instead of packing a silent fallback.
 Missing WebKitGTK/runtime or an unavailable executable-file facility is typed
-Unavailable and leaves terminals usable. The first unsigned baseline is qualified:
-run `39996324398`, attempt 1, source
-`59cd665dc599f797adad24e97323395b9cf645d5`, clean tree, packed
-`minicon.com` SHA-256
-`8219f4fec20c3e0d00bbd6814dfee91c56840f8dade1aa877aa13788fb6df622`.
-All six native runtime receipts name that run/source/pack hash and successful
-browser journeys. Independently hashing every extracted ZIP payload matched
-its runtime and browser receipt's native executable hash; the receipt set is
-exactly the six required cells. The raw pack is 13,969,271 bytes, above the
-previous Candidate ceiling; the owner-approved replacement is recorded under
-"Artifact budget" above. This baseline
-precedes the shutdown-response repair and does not qualify its final source,
-signed transformations, Candidate or public download.
+Unavailable and leaves terminals usable. The final-source unsigned six-cell,
+signing, Candidate, Defender and public Promotion receipts are owned by the
+[0.2.21 release history](archive/v0.2.21-release-history.md). Its earlier
+unsigned baseline at `59cd665` preceded the shutdown-response repair and is
+not reused as qualification of final-source or signed bytes.
 The unsigned six-cell court executes the independently extracted native payload
 after checking its pack receipt SHA. Transformed Windows native executables and
 both signed macOS forms have their own after-signing browser journeys; unchanged
@@ -1548,7 +1540,7 @@ Workflow wiring and static checks do not close these runtime evidence leaves.
 
 ```text
 One Linux executable with a usable browser panel
-└── [-] Native helper bytes → target-specific payload → sealed Candidate
+└── [v] Native helper bytes → target-specific payload → sealed Candidate
     invariant: helper and GUI share source SHA; no manual binary path required
     evidence: native build receipts plus canonical/public page journeys
     safe failure: typed Unavailable, terminal survives

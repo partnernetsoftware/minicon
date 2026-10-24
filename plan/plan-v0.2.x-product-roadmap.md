@@ -1,7 +1,7 @@
 # MiniCon 0.2.x product roadmap
 
-Status: product sequence, updated 2026-10-22. v0.2.20 is the latest published
-version; [its release history](../prd/archive/v0.2.20-release-history.md) owns
+Status: product sequence, updated 2026-10-24. v0.2.21 is the latest published
+version; [its release history](../prd/archive/v0.2.21-release-history.md) owns
 the exact source, artifact and Promotion receipts. Unfinished 0.2.16
 test-orchestration and 0.2.17 agent-quality gates remain open after that
 bounded release rather than becoming shipped claims.
@@ -103,12 +103,12 @@ Outcome: a dependable, portable MiniCon terminal with a reusable engine
         classic-path wire; the rust-console default renders the court
         correctly. Record owned by PRD 24.01 and the
         [0.2.20 release history](../prd/archive/v0.2.20-release-history.md)
-└── [-] 0.2.21 — console courts, and the browser content panel beside the terminal
-    invariant: portable minicon-console tests execute on all six cells; a Linux-only divergence fails lnx-*; the browser content panel is minicon-web and does not link wry into the product binary
-    evidence: dev-loop receipts for the console suites; one browser tab whose slot is the terminal column; token POST is https and uses the same proxy hook
-    safe failure: one Mac run is not a six-cell claim; one Linux --probe 0 is not either; loopback-through-WebView-proxy, OAuth state, and bearer-file mode stay open; G4 and G6 stay carried debt
-    dependency: PRD 25, PRD 31, PRD 35; non-goal: 1:N panels, dashboard, page-heap of G4
-    plan: [plan-v0.2.21](plan-v0.2.21.md)
+└── [v] 0.2.21 — console courts and the native browser workspace
+    invariant: console and browser capabilities retain their independently scoped native evidence; product behavior and adapter boundaries belong to PRD 25/28/35
+    evidence: the 0.2.21 release history owns source, artifact and published qualification scope
+    safe failure: a basic native page journey does not certify proxy modes, provider OAuth or physical page-focus interception; G4/G6 remain carried debt
+    dependency: PRD 25, PRD 27, PRD 28, PRD 31 and PRD 35; non-goal: 1:N panels, dashboard or page-heap attribution of G4
+    plan: [archived 0.2.21 plan](archive/plan-v0.2.21.md)
 ```
 
 ```mermaid
@@ -137,7 +137,7 @@ flowchart LR
 | 0.2.18 — bounded Windows backend preview | The packaged explicit Rust choice is available while the classic backend remains default. | [Published with exact signed Candidate, Defender and no-rebuild Promotion](../prd/archive/v0.2.18-release-history.md). Windows x64 current-source shell/agent journeys and direct common-library consumption are scoped passes. Exact-Candidate visible three-agent acceptance, Rust runtime on Windows ARM64, broader native API coverage, source/wire attribution and latency/RSS remain open. Carry them to the next qualification decision; the published version makes no broad compatibility or default-promotion claim. |
 | 0.2.19 — integrated terminal library | Shipped 2026-10-21 with a bounded claim: the session contract vocabulary is console-owned with one type identity through the platform facade, the POSIX PTY mechanism has one home with five-cell native runtime passes, four drifted product decisions were unified, and a validated advanced `term` override applies to new sessions only. | [Release history](../prd/archive/v0.2.19-release-history.md) owns the receipts; [the archived plan](archive/plan-v0.2.19.md) records leaf outcomes. The claim was narrowed exactly as this row's safe failure required: the portable session trait awaits both-provider demonstration (PRD 35 integration acceptance), no compatibility-profile menu shipped (no second profile has capability evidence), and the osx-x86_64 throughput bound plus the TERM child-environment probe stay open by name in carried debt. |
 | 0.2.20 — default decision and product cost | The owned Rust console is the Windows default, with a one-word rollback to the console agent. | [Published 2026-10-22](../prd/archive/v0.2.20-release-history.md), source `bd881e3`. The decision and its narrowed claim live there. G4 and G6 shipped still open. |
-| 0.2.21 — console courts and the browser content panel | Portable `minicon-console` runs on every shipped cell, a Linux-only miss fails Linux, and the browser tab's page is `minicon-web` beside the terminal panel. | Follow [plan-v0.2.21](plan-v0.2.21.md). `cargo check`, one Mac run, and one Linux `--probe` do not close it. Do not publish. |
+| 0.2.21 — console courts and the native browser workspace | A native browser content panel shares the terminal tab tree, with address/history controls, bounded load failures and completed shutdown responses. | [Published with scoped native and exact-artifact evidence](../prd/archive/v0.2.21-release-history.md); the owner's explicit publication instruction released the replacement UX gate. Proxy/OAuth and platform-specific input gaps retain their own open scope. The [archived plan](archive/plan-v0.2.21.md) preserves earlier decisions and failures. |
 
 These version numbers express priority and dependencies. The skipped 0.2.17
 number did not deliver its full modern-agent gate. The public 0.2.18 release

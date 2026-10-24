@@ -1,25 +1,39 @@
 # v0.2.21 — console courts, and the browser content panel beside the terminal
 
-Status: in progress. The replacement browser workspace and bounded shutdown
-response courts have native six-cell development evidence in
-[PRD 32](../prd/PRD_02_32_dev_loop_crosscheck.md); the first unsigned one-file
-baseline and the owner-approved 20 MB budget are owned by
-[PRD 27](../prd/PRD_02_27_con_delivery.md). Owner UX acceptance remains open,
-followed by final-source artifact/signing,
-Candidate, reputation and public-download qualification.
-The owner has authorized completing 0.2.21 through public publication; see
-"Publication continuation" below. The earlier macOS diagnostic scaffold was
-rejected, and its mechanical receipts are not acceptance of the replacement.
-Owner decision
-(2026-10-23): Windows adapter bring-up precedes the `{UX-BASELINE}` proposal;
-UX acceptance remains a separate Candidate gate.
+Status: [v] publicly released on 2026-10-24. The final-source artifact,
+signing, Candidate, Defender, reputation and public Promotion evidence belongs
+to the [release history](../../prd/archive/v0.2.21-release-history.md).
+
+## Final release closure — 2026-10-24
+
+After receiving the replacement's six-cell and signed-artifact results, the
+owner explicitly instructed public publication and Mac-agent takeover of
+0.2.22. This releases the owner UX gate for 0.2.21; it does not claim a manual
+Mac page-focused keyboard observation. Earlier rejection, failed courts and
+intermediate open-status observations below remain historical evidence.
+
+- [v] Replacement browser surface and canonical artifact scope: final unsigned
+  six-cell and post-signing journeys named in the release history.
+- [v] Exact-source Candidate, measured clean Defender, reputation and no-rebuild
+  public Promotion: release history owns all run/attempt and byte identities.
+- [v] Owner release decision: the 2026-10-24 instruction to publish supersedes
+  the earlier no-publish handoff and the pending replacement-UX gate.
+- [_] Native install commands, README/site adoption and size optimization:
+  accepted follow-up, now handed to [0.2.22](../plan-v0.2.22.md).
+
+The scoped limits in PRD 25 and carried debt remain open. Neither the owner's
+release decision nor exact-artifact courts certify unobserved focus, proxy,
+DPI, provider OAuth or unfiltered cross-platform test coverage.
+
+## Prior sequence and observations
+
 Opened 2026-10-23. v0.2.20 shipped
-([release history](../prd/archive/v0.2.20-release-history.md)). This version
+([release history](../../prd/archive/v0.2.20-release-history.md)). This version
 has two tracks on `main`; implementation commits `960853b` and `ade9a4d`
 carry them, run `39917026302` qualifies the six-cell console scope at
 `3db5710`, and run `39925651159` qualifies the Linux native browser runtime at
 `4577c9c`.
-G4 and G6 stay in [carried debt](plan-carried-debt.md). Publication follows the
+G4 and G6 stay in [carried debt](../plan-carried-debt.md). Publication follows the
 qualified exact-source chain after the open gates close.
 
 Track A: `minicon-console` runs on every shipped cell, and a Linux-only
@@ -31,7 +45,7 @@ temporary backend (wry + tao, feature `wry-host`, separate
 six-cell browser evidence linked above. Product UX acceptance remains open. A
 terminal tab's content panel stays the PTY / `minicon-console` view. Same tab strip, one content panel per tab.
 Leaf detail that is not a 0.2.21 gate stays in
-[plan-browser-tabs.md](plan-browser-tabs.md).
+[plan-browser-tabs.md](../plan-browser-tabs.md).
 
 **Reopened 2026-10-23 from direct macOS use.** `./scripts/build.sh dev`
 produces `target/debug/minicon` but no sibling `minicon-web-host`, so
@@ -77,7 +91,7 @@ a false portability claim.
   modules plus the host-neutral integration tests
   `synchronized_presentation` and `presentation_allocations`. Nothing in
   those sources is `cfg`'d on OS or ISA. `cargo check` receipts in
-  [PRD 35](../prd/PRD_02_35_terminal_library.md) compile that library; they
+  [PRD 35](../../prd/PRD_02_35_terminal_library.md) compile that library; they
   do not run it. `dev-loop-crosscheck.yml` never named
   `cargo test -p minicon-console`, on any cell. A Mac
   `./scripts/build.sh test` runs it only for the Mac's own triple.
@@ -151,11 +165,11 @@ into tao's default vbox and reparented into the main window, a terminal tab
 unmaps that child, and DeepSeek's authorize URL is loaded in that panel.
 `be99a86` exchanges the loopback `code` for a bearer. Dashboard, file
 preview, wasm, and 1:N panels stay later
-([plan-browser-tabs.md](plan-browser-tabs.md)).
+([plan-browser-tabs.md](../plan-browser-tabs.md)).
 
 ```text
 Outcome: a canonical MiniCon build opens one interactive browser page inside the active tab's content column on every desktop 0.2.21 claims, and OAuth loopback stays local
-├── [-] {SHELL} One browser tab, one content-panel rectangle
+├── [v] {SHELL} One browser tab, one content-panel rectangle
 │   invariant: Ctrl+Shift+O reuses the browser tab; Layout::browser_page fills the height below its toolbar and stays clear of sidebar/history chrome, with no terminal composer
 │   evidence: earlier identity/terminal geometry tests remain scoped; replacement native layout journey is browser-workspace-smoke.py and needs each native cell
 │   safe failure: shell-only UI says Unavailable and cannot be called a working browser surface
@@ -170,22 +184,22 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   evidence: minicon-web native-page-host plus direct macOS use proves create, bounded offline home, hide/show/restore and fullscreen resize as one WKWebView child; the GUI-only adapter is the selected boundary
 │   safe failure: reject a floating helper window, OS default browser, screenshot streaming or synthetic input forwarding as substitutes for an interactive content panel
 │   dependency: platform adapters stay inside minicon-web while minicon-core/minicon-console and headless paths remain WebView-free; Linux may retain its qualified helper; non-goal: Electron/CDP or a new browser engine
-├── [-] {ARTIFACT} Make the canonical dev/release output runnable without hidden setup
+├── [v] {ARTIFACT} Make the canonical dev/release output runnable without hidden setup
 │   invariant: ./scripts/build.sh dev and release produce every component/feature the browser path needs; the app does not depend on manual cargo flags or MINICON_BROWSER_BIN
 │   evidence: a clean-output black box opens a local test page from the canonical artifact, and release inventory names every shipped byte
 │   safe failure: missing helper/feature is typed Unavailable and keeps this leaf open; do not accept a manually feature-built lab binary
 │   dependency: {ARCH}; non-goal: selecting a binary by modification time
-├── [-] {MAC-PANEL} Make the browser visibly testable inside this macOS MiniCon window
+├── [v] {MAC-PANEL} Make the browser visibly testable inside this macOS MiniCon window
 │   invariant: WKWebView occupies Layout::browser_page in the active browser tab, follows Retina/window/sidebar/history geometry, hides behind terminal tabs and never appears as an independent window
-│   evidence: direct Computer Use observation from canonical `build.sh dev` output proves local page visibility, hide/restore, focus release and fullscreen geometry; owner use rejects the current UI/UX, so these mechanics do not close the leaf
+│   evidence: replacement native macOS page journeys and signed bare/app courts on both ISAs; owner release decision and exact evidence are indexed in the release history
 │   safe failure: no helper, exit 69, a blank shell, a floating WKWebView or an owner-rejected surface is failure; unavailable evidence is BLOCKED
 │   dependency: {ARCH}, {ARTIFACT}, {UX-BASELINE}; non-goal: production provider credentials
-├── [-] {UX-BASELINE} Propose and accept the browser workspace after Windows adapter bring-up
+├── [v] {UX-BASELINE} Propose and accept the browser workspace after Windows adapter bring-up
 │   invariant: opening, understanding current state, navigating, switching to a terminal, returning, resizing and closing/reopening form one coherent workflow; browser/terminal hierarchy, focus and status are legible without relying on an undocumented shortcut or diagnostic placeholder
-│   evidence: named owner journeys on the canonical macOS app with before/after screenshots or observations for open, real URL navigation, tab switch/return, resize/fullscreen and close/reopen; explicit owner acceptance is required
+│   evidence: replacement native journeys and actual Mac PNGs, followed by the explicit 2026-10-24 owner release decision; no new manual keyboard observation is claimed
 │   safe failure: “the WebView is visible” is insufficient; awkward pasted-on chrome, unclear state/navigation, wasted or colliding layout, surprising focus, or another owner rejection keeps this leaf open and kills Candidate
 │   dependency: {SHELL}, {ARCH} and direct Windows/macOS adapter use as disposable prototypes; non-goal: dashboard/preview/wasm, 1:N panels or a whole-terminal visual rewrite
-├── [-] {WIN-PANEL} Bring up the Windows content panel, then qualify both ISAs
+├── [v] {WIN-PANEL} Bring up the Windows content panel, then qualify both ISAs
 │   invariant: the Windows release either provides the same tab/content-panel outcome or 0.2.21 explicitly narrows its browser platform claim before Candidate; silent Unavailable is not parity
 │   evidence: local Windows x86_64 canonical dev build and visible open/URL/switch/resize/maximize/reopen journeys, plus public-CLI missing-runtime and scoped native proxy courts; native browser journeys now pass both Windows ISAs (PRD 32), with proxy evidence scope still owned by PRD 25
 │   safe failure: compile-only or the already-green bearer ACL court cannot substitute for WebView2 runtime evidence; missing runtime is typed Unavailable
@@ -195,9 +209,9 @@ Outcome: a canonical MiniCon build opens one interactive browser page inside the
 │   evidence: minicon-web unit tests, run 39925651159 Linux live navigation and run 39919403513 Windows private-filesystem court
 │   safe failure: platform-visible OAuth remains partial until its page surface court runs; core mechanism evidence does not prove a user can see it
 │   dependency: minicon-platform filesystem; non-goal: provider registry or composer Connect AI UI
-└── [-] {CLOSE} Close 0.2.21 browser scope and authorize Candidate consideration
+└── [v] {CLOSE} Close 0.2.21 browser scope and authorize Candidate consideration
     invariant: every claimed desktop can exercise the browser from canonical output; Linux-only adapter success is not cross-platform completion
-    evidence: {ARTIFACT}, accepted {UX-BASELINE}, {MAC-PANEL}, the explicit {WIN-PANEL} decision/evidence, full gates and owner-visible macOS acceptance
+    evidence: final-source and signed native courts, named serial full gate, owner release decision and public chain indexed in the release history
     safe failure: keep PRD/root/plan at [-] and stop Candidate/Promotion while required evidence is missing
     dependency: {SHELL}, {LNX-PANEL}, {ARCH}, {ARTIFACT}, {UX-BASELINE}, {MAC-PANEL}, {WIN-PANEL} decision and {AUTH-CORE}; non-goal: dashboard/preview/wasm, 1:N panels or production provider account
 ```
@@ -211,7 +225,7 @@ flowchart LR
     ARCH --> LNX["{LNX-PANEL} [v]<br/>X11 + WebKitGTK"]
     ARCH --> PROTO["macOS engineering prototype<br/>mechanics visible; UX rejected"]
     PROTO --> WIN["{WIN-PANEL} [-]<br/>WebView2 bring-up and courts"]
-    WIN --> UX["{UX-BASELINE} [-]<br/>replacement implemented; owner review open"]
+    WIN --> UX["{UX-BASELINE} [-]<br/>replacement qualified; owner release gate passed"]
     UX --> MAC["{MAC-PANEL} [-]<br/>accepted macOS surface + courts"]
     LNX --> WEB
     PROTO --> WEB
@@ -237,14 +251,14 @@ flowchart LR
 | 1 — LIB | `dev-loop-crosscheck.yml` runs `cargo test --locked --target <triple> -p minicon-console --lib` and the two host-neutral integration tests on every cell. An unfiltered log must contain `running N tests` with N > 0. Let Cargo find the binary; do not stat a hashed path. | Run `39917026302` records all three suites `ok` on all six cells at exact source `3db5710`. |
 | 2 — WIN | Leave `rust_console_pty` and `minicon_console_agent` inside `case win-*`. Do not add them to Linux. | G6 stays carried debt. No edit to the unread-output barrier in this version. |
 | 3 — LNX | On `lnx-*` only, run the three POSIX PTY session tests with feature `pty`, the two X11 tests with feature `clipboard`, and `minicon_load_portability_linux`. The Linux job exports `MINICON_REQUIRE_DISPLAY=1` after Xvfb is up, and those X11 tests plus the control image-paste test panic instead of returning when `DISPLAY` is missing. | A green `osx-*` or `win-*` cell does not close this. Omitting the features compiles the named tests out and is a failed court, not evidence. Do not move the PTY into `minicon-console`. |
-| 4 — RELEASE-GATE | [-] Version is 0.2.21 and owners point here, but Candidate consideration stays closed until the canonical browser surface is visible on every claimed desktop. | No tag, Candidate or `release.sh 0.2.21`; unavailable native evidence stays BLOCKED. The console `{GATE}` remains valid only for its own completed track. |
+| 4 — RELEASE-GATE | [v] Owner release decision and exact-source publication are recorded in the release history. | Earlier no-publish boundaries below remain historical; missing evidence never becomes a pass. |
 | 5 — LNX-PANEL | [v] Apply `Layout::content_column` through the X resize seam and drive real WebKitGTK proxy/direct-loopback navigation. | Run `39925651159` records nonzero `minicon-web-x11`, `minicon-web-wry-build` and `minicon-web-live-oauth` `ok` on both Linux ISAs. |
 | 6 — ARCH | [v] Use platform adapters inside `minicon-web`: GUI-only same-process child WKWebView/WebView2 where portable reparenting is unavailable, retaining the qualified Linux helper. `minicon-core`, `minicon-console` and headless paths remain WebView-free. | The macOS spike visibly proves the boundary. A floating helper, OS browser, captured pixels or forwarded synthetic input still fails it. |
-| 7 — ARTIFACT | [-] `build.sh dev` links the macOS and Windows native page hosts; the Windows x86_64 canonical `target/debug/minicon.exe` opened a visible WebView2 child on 2026-10-23. The macOS dev wrapper remains `target/debug/MiniCon 0.2.21 Dev.app`; PRD 27 records the first unsigned one-file six-cell inventory, while final-source/signed qualification remains open. | No manual feature or `MINICON_BROWSER_BIN` is needed on macOS/Windows. Missing bytes on any claimed platform keep the leaf open. |
-| 8 — WIN-PANEL | [-] Owner decision 2026-10-23 brings up the Windows WebView2 adapter from canonical `build.sh dev` output before the UX proposal. Record native x86_64 journeys and separately qualify arm64. | The current home/shell is an engineering scaffold. Compile-only and ACL receipts cannot prove the page surface. |
-| 9 — UX-BASELINE | [-] Implement the replacement under the publication continuation; qualify address/navigation, shared chrome, focus and failure states, then obtain explicit owner acceptance before Candidate. | The 2026-10-23 rejected scaffold remains historical evidence; local replacement screenshots await owner review. |
-| 10 — MAC-PANEL | [-] Automated native journeys and real window PNGs now exist on both ISAs (PRD 32); explicit UX acceptance and signed/public qualification remain open. | Direct Computer Use proves only visible home, hide/restore, focus release and fullscreen mechanics; it is not product acceptance. |
-| 11 — CLOSE | [-] Re-run complete gates, record explicit owner macOS UX acceptance and reconcile PRD/root status. | Only then may 0.2.21 enter the release chain; dashboard/preview/wasm/1:N remain later. |
+| 7 — ARTIFACT | [v] Canonical final-source payloads and signed transformations passed their native courts. | Exact source, run/attempt and byte identities belong to the release history. |
+| 8 — WIN-PANEL | [v] Native browser journeys passed both Windows ISAs, including the transformed signed native executables. | Proxy/DPI scope remains partial in PRD 25; page-runtime evidence does not certify it. |
+| 9 — UX-BASELINE | [v] Replacement journeys and Mac PNGs were presented; the owner then instructed publication. | This releases the version gate without claiming unobserved physical Mac shortcut behavior. |
+| 10 — MAC-PANEL | [v] Native and signed bare/app browser journeys passed both Mac ISAs. | The earlier rejected prototype stays historical; physical focus evidence remains scoped. |
+| 11 — CLOSE | [v] Owner release gate, artifact courts and public Promotion completed. | Broader browser horizon and named debt remain open; release history owns exact evidence. |
 
 ## Publication continuation — owner instruction, 2026-10-23
 
@@ -254,17 +268,17 @@ workspace proposal below. The rejected scaffold is still not acceptance evidence
 
 ```text
 Outcome: publish a usable 0.2.21 browser workspace as sealed, qualified bytes
-├── [-] Workspace interaction — PRD 25
+├── [v] Workspace interaction — PRD 25
 │   invariant: visible address/navigation, accurate state, one focus owner
 │   evidence: canonical native navigation/failure/switch/resize journeys
 │   safe failure: preserve attempted URL and terminal access; dependency: adapters
 │   non-goal: dashboard, preview, wasm or multiple browser panels
-├── [-] Platform artifacts — PRD 27/28
+├── [v] Platform artifacts — PRD 27/28
 │   invariant: canonical outputs contain their required adapter/helper
-│   evidence: first unsigned six-cell baseline in PRD 27; final frozen-source/signed qualification remains open
+│   evidence: final-source six-cell and signed native artifacts indexed in the release history
 │   safe failure: unavailable court is BLOCKED; dependency: workspace completion
 │   non-goal: substituting compilation for runtime evidence
-└── [_] Public release — PRD 27
+└── [v] Public release — PRD 27
     invariant: exact-source Candidate, required signatures, Defender and reputation
     evidence: named CI receipts, public tag/assets and downloaded-byte smoke
     safe failure: stop Promotion on any failed gate; dependency: qualified artifacts
@@ -715,7 +729,7 @@ flowchart LR
 Owner instruction, 2026-10-24: native delivery is the primary product and the
 APE is a packaging demonstration (authority: PRD 23). After this version is
 public, implement the native command-line installation branch in
-[PRD 27.01](../prd/PRD_02_27_01_install.md), including its public Unix and
+[PRD 27.01](../../prd/PRD_02_27_01_install.md), including its public Unix and
 Windows entry points and coordinated README/site guidance. Artifact size
 optimization remains the separate follow-up owned by PRD 27. Neither follow-up
 is silently added to this version's publication prerequisites.

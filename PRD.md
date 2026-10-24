@@ -55,7 +55,8 @@ MiniCon — one-file local terminal
 │       └── prd/PRD_02_27_con_delivery.md
 │           └── [_] native command-line installation after 0.2.21 → prd/PRD_02_27_01_install.md
 └── Current delivery
-    ├── [-] v0.2.21 first unsigned browser six-cell baseline qualified; final-source qualification and owner UX review open → plan/plan-v0.2.21.md
+    ├── [v] v0.2.21 → prd/archive/v0.2.21-release-history.md
+    ├── [_] v0.2.22 Mac handoff: native installation and size follow-up → plan/plan-v0.2.22.md
     ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
     ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
     ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
@@ -82,7 +83,7 @@ flowchart LR
     WEB --> UX["browser workspace UX<br/>owner acceptance gate / PRD 25"]
     WWEB["Windows WebView2 adapter bring-up"] --> UX
     UX -->|"only after acceptance"| R
-    BADUX["owner: current UI/UX poor"] -->|"kill Candidate"| UX
+    BADUX["owner rejection or missing UX decision"] -->|"kill Candidate"| UX
     UI -->|tree compatibility exports| C
     P -->|numeric compatibility exports| C
     UI --> I["internal ISA kernels"]
@@ -141,17 +142,16 @@ flowchart LR
 
 ## Current frontier
 
-- [-] **v0.2.21: browser workspace and publication qualification.** The owner
-  authorized completion through public release after rejecting the diagnostic
-  scaffold. The replacement address/navigation/shared-sidebar interaction has
-  native six-cell browser/shutdown evidence in PRD 32; owner review and final
-  exact-source/signed artifact qualification remain open. [Workspace](prd/PRD_02_25_con_workspace.md)
-  owns the interaction and acceptance boundary, [reuse](prd/PRD_02_28_shared_core.md)
-  owns native adapters and bounded Linux helper transport, and
-  [delivery](prd/PRD_02_27_con_delivery.md) owns the one-file artifact chain.
-  Earlier console/ACL/Linux adapter receipts retain their original source and
-  scope; they cannot qualify the replacement's bytes. G4/G6 remain carried debt.
-  [Current sequence and evidence](plan/plan-v0.2.21.md).
+- [v] **v0.2.21 published: native browser workspace and bounded shutdown replies.**
+  [Release history](prd/archive/v0.2.21-release-history.md) owns exact-source,
+  signed/Candidate/public qualification and the owner's release decision.
+  [Workspace](prd/PRD_02_25_con_workspace.md) retains unobserved physical-focus,
+  proxy and DPI limits; G4/G6 remain carried debt.
+- [_] **v0.2.22 Mac handoff.** Implement the accepted native installation branch
+  and matching README/site guidance; measure size contributions before bounded
+  optimization. [Sequence](plan/plan-v0.2.22.md),
+  [installation owner](prd/PRD_02_27_01_install.md),
+  [budget/delivery owner](prd/PRD_02_27_con_delivery.md).
 - [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
   limited Win32 I/O/records and job cleanup are implemented. The explicit
   experimental PTY and GUI choice is packaged in v0.2.18; scoped PowerShell/Node
@@ -205,8 +205,8 @@ flowchart LR
   authorize must use that panel, not the OS browser. No tray or floating helper.
   1:N panels, dashboard, preview and wasm are later.
   Names: [Workspace](prd/PRD_02_25_con_workspace.md);
-  reopened 0.2.21 evidence and closure gates:
-  [plan-v0.2.21](plan/plan-v0.2.21.md);
+  0.2.21 delivery and scoped follow-up evidence:
+  [plan-v0.2.21](plan/archive/plan-v0.2.21.md);
   boundary: [plan-browser-tabs](plan/plan-browser-tabs.md) and
   [horizon](prd/PRD_02_31_v0_2_horizon.md).
 - [-] **macOS host-UI readability** remains open, including tab/header and

@@ -618,7 +618,7 @@ the final stream through public APIs. The Windows x64 host run passed. Explicit
 all-target `cargo check --locked -p minicon-console` runs passed for Linux
 x64/ARM64, macOS x64 and Windows ARM64. These verify common-library API and
 target compilation only. v0.2.21's court
-([plan](../plan/plan-v0.2.21.md)) now has native runtime receipts: dev-loop run
+([plan](../plan/archive/plan-v0.2.21.md)) now has native runtime receipts: dev-loop run
 `39917026302`, exact source `3db5710`, records the library plus
 `synchronized_presentation` and `presentation_allocations` as `ok` on Linux,
 Windows, and macOS, x86_64 and arm64. Each unfiltered suite also passed its

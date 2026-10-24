@@ -105,7 +105,7 @@ not a passing verdict; that schedule alone also exceeded the observation
 window before the frame-size setup was bounded. Preserve the actual schedule
 and outcome with each receipt; a serial pass does not certify a parallel run.
 The actual failed/passing receipts belong to
-[the active plan](../plan/plan-v0.2.21.md#browser-workspace-qualification-follow-up-2026-10-24).
+[the archived plan](../plan/archive/plan-v0.2.21.md#browser-workspace-qualification-follow-up-2026-10-24).
 
 ### Inventory and selection
 
