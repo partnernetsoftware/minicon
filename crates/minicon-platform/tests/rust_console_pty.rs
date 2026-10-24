@@ -722,6 +722,11 @@ impl Drop for Report {
             "stage5",
             "family",
             "observed",
+            "exit",
+            "peer",
+            "peer-go",
+            "peer-ready",
+            "peer-tmp",
         ] {
             let _ = std::fs::remove_file(self.0.with_extension(extension));
         }
@@ -5611,8 +5616,8 @@ fn wait_native_report(
     }
 }
 
-fn retiring_buffer_cases(rust: bool) {
-    for kind in ["input-close", "disconnect"] {
+fn retiring_buffer_cases(rust: bool, kinds: &[&str]) {
+    for &kind in kinds {
         let report = Report::new();
         let mut command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
             .arg(format!("cooked-retire-{kind}"))
@@ -5695,13 +5700,164 @@ fn retiring_buffer_cases(rust: bool) {
 
 #[test]
 fn rust_console_pty_read_retirement_reveals_the_surviving_buffer() {
-    retiring_buffer_cases(true);
+    retiring_buffer_cases(true, &["input-close"]);
+}
+
+fn wait_native_read_counts(report: &Report, child: &PtyChild, expected: [u32; 4]) {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let state = child.native_input_read_state().unwrap();
+        let actual = [
+            state.admitted_text,
+            state.admitted_records,
+            state.deferred_text,
+            state.deferred_records,
+        ];
+        if actual == expected {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "native reads {actual:?} did not reach {expected:?}; trace={}",
+            native_request_trace_tail(report),
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn finish_surviving_reader(report: &Report, fixture: &mut Fixture, expected: &str) {
+    let path = report.0.with_extension("peer");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "surviving peer failed to complete; trace={}",
+            native_request_trace_tail(report),
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(std::fs::read_to_string(path).unwrap(), expected);
+    wait_native_read_counts(report, &fixture.child, [0, 0, 0, 0]);
+    std::fs::write(report.0.with_extension("opened"), b"release-peer").unwrap();
+    fixture.finish(35);
+}
+
+#[test]
+fn rust_console_pty_exited_reader_retires_its_read_and_reveals_the_surviving_buffer() {
+    let report = Report::new();
+    let mut fixture = Fixture::open(
+        ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+            .arg("cooked-retire-exit")
+            .arg(report.0.as_os_str())
+            .env(
+                "MINICON_CONSOLE_TRACE",
+                report.0.with_extension("console-trace"),
+            )
+            .size(TerminalSize { rows: 8, cols: 16 })
+            .rust_console(),
+    );
+    fixture.until("cooked-retire-ready:");
+    wait_native_read_counts(&report, &fixture.child, [1, 0, 0, 0]);
+    std::fs::write(report.0.with_extension("peer-go"), b"admit-peer-read").unwrap();
+    // A record reader does not pin the active cooked edit buffer. Both reads
+    // must exist before the root dies, and only the peer's read may survive.
+    wait_native_read_counts(&report, &fixture.child, [1, 1, 0, 0]);
+    std::fs::write(report.0.with_extension("exit"), b"exit-reader-client").unwrap();
+    fixture.wait_exit(35);
+    wait_native_read_counts(&report, &fixture.child, [0, 1, 0, 0]);
+
+    let mut screen = vt100::Parser::new(8, 16, 0);
+    screen.process(&fixture.bytes);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while screen.screen().contents() != "B>"
+        || screen.screen().cursor_position() != (0, 2)
+        || !screen.at_boundary()
+    {
+        let chunk = fixture
+            .output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .expect("retired root must reveal the peer's surviving buffer")
+            .expect("surviving output must remain usable");
+        screen.process(&chunk);
+        fixture.bytes.extend(chunk);
+    }
+    fixture.master.write_all(b"z").unwrap();
+    finish_surviving_reader(&report, &mut fixture, "[122]");
+    eprintln!(
+        "process-disconnect admitted: root=35;surviving_records=1;buffer=B>;cursor=0,2;peer=[122];eof=true"
+    );
+}
+
+#[test]
+fn rust_console_pty_exited_readers_retire_deferred_reads_without_output_consumption() {
+    use minicon_platform::process_reference::{ProcessReference, ProcessWait, exit_code_handle};
+    use std::os::windows::io::AsHandle as _;
+    for api in ["file", "console", "records"] {
+        let report = Report::new();
+        let (master, child) =
+            ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
+                .arg(format!("queued-read-observed-exit-{api}"))
+                .arg(report.0.as_os_str())
+                .env(
+                    "MINICON_CONSOLE_TRACE",
+                    report.0.with_extension("console-trace"),
+                )
+                .rust_console()
+                .spawn()
+                .unwrap()
+                .into_parts();
+        let owned = ProcessReference::open(child.pid().as_u32()).unwrap();
+        report.wait_ready();
+        wait_native_read_counts(
+            &report,
+            &child,
+            [
+                0,
+                0,
+                u32::from(api != "records"),
+                u32::from(api == "records"),
+            ],
+        );
+        std::fs::write(report.0.with_extension("go"), b"host-retained").unwrap();
+        std::fs::write(report.0.with_extension("peer-go"), b"retain-peer-read").unwrap();
+        wait_native_read_counts(
+            &report,
+            &child,
+            [
+                0,
+                0,
+                u32::from(api != "records"),
+                1 + u32::from(api == "records"),
+            ],
+        );
+        std::fs::write(report.0.with_extension("exit"), b"exit-reader-client").unwrap();
+        assert_eq!(
+            owned.wait_for_exit(Some(Duration::from_secs(8))).unwrap(),
+            ProcessWait::Exited,
+        );
+        assert_eq!(exit_code_handle(owned.as_handle()).unwrap(), 35);
+        // No startup reader or Fixture exists yet: output remains unconsumed.
+        // The live peer keeps the host queryable, so closing the whole host
+        // cannot masquerade as successful retirement of the dead caller.
+        wait_native_read_counts(&report, &child, [0, 0, 0, 1]);
+        let mut fixture = Fixture::with_parts(master, child);
+        wait_native_read_counts(&report, &fixture.child, [0, 1, 0, 0]);
+        fixture.master.write_all(b"z").unwrap();
+        finish_surviving_reader(&report, &mut fixture, "[122]");
+        eprintln!("process-disconnect deferred {api}: root=35;peer=read-completed;eof=true");
+    }
 }
 
 #[test]
 #[ignore = "explicit system ConPTY read-retirement lifetime court"]
 fn rust_console_client_read_retirement_compares_system_conpty() {
-    retiring_buffer_cases(false);
+    retiring_buffer_cases(false, &["input-close", "disconnect"]);
+}
+
+#[test]
+#[ignore = "cross-version FreeConsole observation; detach does not promise pending synchronous read cancellation"]
+fn rust_console_client_free_console_retirement_observes_owned_host() {
+    retiring_buffer_cases(true, &["disconnect"]);
 }
 
 fn wait_native_read(child: &PtyChild, records: bool, admitted_only: bool) -> NativeInputReadState {
@@ -5794,25 +5950,7 @@ fn rust_console_client_native_read_state_is_explicitly_unsupported() {
     observe_native_read_cases(false);
 }
 
-fn queued_read_pressure_cases(rust: bool) {
-    let kinds: &[&str] = if rust {
-        &[
-            "interrupt-file",
-            "interrupt-console",
-            "interrupt-records",
-            "signal-file",
-            "disconnect-file",
-            "disconnect-console",
-            "disconnect-records",
-        ]
-    } else {
-        &[
-            "signal-file",
-            "disconnect-file",
-            "disconnect-console",
-            "disconnect-records",
-        ]
-    };
+fn queued_read_pressure_cases(rust: bool, kinds: &[&str]) {
     for &kind in kinds {
         let report = Report::new();
         let command = ChildCommand::new(env!("CARGO_BIN_EXE_minicon-platform-console-probe"))
@@ -6188,13 +6326,47 @@ fn rust_console_client_pending_text_modes_compare_system_conpty() {
 
 #[test]
 fn rust_console_pty_queued_reads_finish_under_unread_output_pressure() {
-    queued_read_pressure_cases(true);
+    queued_read_pressure_cases(
+        true,
+        &[
+            "interrupt-file",
+            "interrupt-console",
+            "interrupt-records",
+            "signal-file",
+        ],
+    );
 }
 
 #[test]
 #[ignore = "explicit stock ConPTY read-disconnect/output-pressure court"]
 fn rust_console_client_queued_read_disconnect_compares_system_conpty() {
-    queued_read_pressure_cases(false);
+    queued_read_pressure_cases(
+        false,
+        &[
+            "disconnect-file",
+            "disconnect-console",
+            "disconnect-records",
+        ],
+    );
+}
+
+#[test]
+#[ignore = "explicit stock ConPTY keyboard-control/output-pressure comparison"]
+fn rust_console_client_signal_under_output_pressure_compares_system_conpty() {
+    queued_read_pressure_cases(false, &["signal-file"]);
+}
+
+#[test]
+#[ignore = "cross-version FreeConsole observation; detach does not promise pending synchronous read cancellation"]
+fn rust_console_client_free_console_queued_reads_observe_owned_host() {
+    queued_read_pressure_cases(
+        true,
+        &[
+            "disconnect-file",
+            "disconnect-console",
+            "disconnect-records",
+        ],
+    );
 }
 
 #[test]

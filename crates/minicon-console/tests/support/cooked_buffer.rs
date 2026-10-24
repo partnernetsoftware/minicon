@@ -386,8 +386,8 @@ pub(crate) fn run_retire(kind: &str, path: &Path, controlled: bool) -> io::Resul
 
 fn run_retire_impl(kind: &str, path: &Path, controlled: bool) -> io::Result<()> {
     use windows_sys::Win32::Foundation::{GetHandleInformation, GetLastError, SetLastError};
-    if kind == "peer" {
-        return retire_peer(path);
+    if matches!(kind, "peer" | "exit-peer" | "exit-peer-records") {
+        return retire_peer(path, kind != "peer", kind == "exit-peer-records");
     }
     let deadline = Instant::now() + Duration::from_secs(15);
     let base = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
@@ -423,9 +423,13 @@ fn run_retire_impl(kind: &str, path: &Path, controlled: bool) -> io::Result<()> 
         check(SetConsoleMode(created, 15))?;
     }
     write(base, "\x1b[2J\x1b[HB>")?;
-    let mut peer = if kind == "remaining" {
+    let mut peer = if matches!(kind, "remaining" | "exit") {
         let child = std::process::Command::new(std::env::current_exe()?)
-            .arg("cooked-retire-peer")
+            .arg(if kind == "exit" {
+                "cooked-retire-exit-peer-records"
+            } else {
+                "cooked-retire-peer"
+            })
             .arg(path.with_extension("peer"))
             .spawn()?;
         wait(deadline, || Ok(path.with_extension("peer-ready").exists()))?;
@@ -472,6 +476,18 @@ fn run_retire_impl(kind: &str, path: &Path, controlled: bool) -> io::Result<()> 
     drop(buffer);
     write(base, "\x1b]2;cooked-retire-ready:\x07")?;
     std::fs::write(path.with_extension("retire-ready"), b"retire")?;
+    if kind == "exit" {
+        // Keep the pending reader and its orphaned screen alive until the
+        // controller has also admitted the independent surviving peer read.
+        wait(deadline, || Ok(path.with_extension("exit").exists()))?;
+        check(unsafe {
+            windows_sys::Win32::System::Threading::TerminateProcess(
+                windows_sys::Win32::System::Threading::GetCurrentProcess(),
+                35,
+            )
+        })?;
+        return Err(io::Error::other("self termination unexpectedly returned"));
+    }
     let mut detached = false;
     let closer = if kind != "input-close" {
         probe_diagnostic(path, "disconnect-before", "calling FreeConsole");
@@ -535,7 +551,7 @@ fn run_retire_impl(kind: &str, path: &Path, controlled: bool) -> io::Result<()> 
     Ok(())
 }
 
-fn retire_peer(path: &Path) -> io::Result<()> {
+fn retire_peer(path: &Path, hold: bool, records: bool) -> io::Result<()> {
     use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
     let input = std::fs::OpenOptions::new()
         .read(true)
@@ -554,22 +570,50 @@ fn retire_peer(path: &Path) -> io::Result<()> {
     wait(Instant::now() + Duration::from_secs(15), || {
         Ok(path.with_extension("peer-go").exists())
     })?;
+    if hold && !records {
+        check(unsafe { SetConsoleMode(input.as_raw_handle(), 7) })?;
+    }
     let mut units = [0_u16; 32];
     let mut count = 0;
     unsafe {
         SetLastError(0);
-        check(ReadConsoleW(
-            input.as_raw_handle(),
-            units.as_mut_ptr().cast(),
-            units.len() as u32,
-            &mut count,
-            std::ptr::null_mut(),
-        ))?;
+        if records {
+            let mut record = INPUT_RECORD::default();
+            check(ReadConsoleInputW(
+                input.as_raw_handle(),
+                &mut record,
+                1,
+                &mut count,
+            ))?;
+            if count != 1
+                || record.EventType != KEY_EVENT as u16
+                || record.Event.KeyEvent.bKeyDown == 0
+            {
+                return Err(io::Error::other(
+                    "peer must receive one native key-down record",
+                ));
+            }
+            units[0] = record.Event.KeyEvent.uChar.UnicodeChar;
+        } else {
+            check(ReadConsoleW(
+                input.as_raw_handle(),
+                units.as_mut_ptr().cast(),
+                units.len() as u32,
+                &mut count,
+                std::ptr::null_mut(),
+            ))?;
+        }
         if GetLastError() != 0 || count as usize > units.len() {
             return Err(io::Error::other("peer read interrupted or oversized"));
         }
     }
     let temporary = path.with_extension("peer-tmp");
     std::fs::write(&temporary, format!("{:?}", &units[..count as usize]))?;
-    std::fs::rename(temporary, path)
+    std::fs::rename(temporary, path)?;
+    if hold {
+        wait(Instant::now() + Duration::from_secs(15), || {
+            Ok(path.with_extension("opened").exists())
+        })?;
+    }
+    Ok(())
 }

@@ -455,6 +455,43 @@ ConPTY. A common SDK lifetime failure must be distinguished from a MiniCon host
 failure before changing the implementation; ordinary product pass criteria and
 original assertions remain unchanged.
 
+The installed-system comparison at
+[`40116114474`](https://github.com/partnernetsoftware/minicon/actions/runs/40116114474)
+(`08269df8d1345eb550f8fb79931e29b49e2587c8`) failed on both Windows ISAs.
+Its retirement case returned successfully from `FreeConsole` but left the
+explicit `CONIN$` reader blocked, matching the owned backend's observation.
+The queued-read comparison stopped earlier, at its keyboard-control barrier;
+it never reached a disconnect case and supplies no disconnect result.
+The [documented FreeConsole contract](https://learn.microsoft.com/en-us/windows/console/freeconsole)
+describes detachment; it does not establish completion of every already-open
+synchronous read. The separate
+[CancelSynchronousIo contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelsynchronousio)
+also distinguishes requesting cancellation from observing completion. Together
+with the same-host stock result, this invalidates the old detachment-implies-read-return
+test assumption; it is not a claim that the SDK prohibits concurrent detachment.
+
+The replacement required courts use actual root-process exit (code 35), not
+`FreeConsole`: `rust_console_pty_exited_reader_retires_its_read_and_reveals_the_surviving_buffer`
+first observes simultaneous admitted root/peer reads, then requires only the
+peer read to survive, buffer `B>`/cursor `(0,2)`, real peer input and final EOF.
+`rust_console_pty_exited_readers_retire_deferred_reads_without_output_consumption`
+covers root `ReadFile`, `ReadConsoleW` and `ReadConsoleInputW` separately:
+both callers are deferred before exit, only the peer remains without consuming
+output, and that same peer is then admitted and reads a real native key.
+The peer must not change the shared input mode while output is blocked; an
+initial fixture did so and stalled before submitting its read. The record-reader
+fixture removes that unrelated prerequisite. Both replacement tests passed on
+the interactive Windows x86_64 host; both CI ISAs remain pending at this source.
+Disabling the shared retirement predicate made both tests fail at runtime;
+adding global cancellation after the actual caller's disconnect also made both
+fail because the live peer was lost. Byte-exact restoration passed both again
+(`target-six/v0.2.23-provider/process-disconnect-guard-receipt.json`). Removing
+only process-specific retirement had still passed via independent object-close
+retirement; that trial is retained as a non-counterexample, not claimed as RED.
+Old `FreeConsole` assertions remain intact in explicitly ignored owned-host
+observations. Stock keyboard-control pressure also retains its own ignored
+comparison, so its failure cannot conceal the separate disconnect observation.
+
 Both macOS cells passed their focused provider and retained-group scopes in
 [`40115118541`](https://github.com/partnernetsoftware/minicon/actions/runs/40115118541)
 at the same source, with the raw guard/removal/restoration files now present in

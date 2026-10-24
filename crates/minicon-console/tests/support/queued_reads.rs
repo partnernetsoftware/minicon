@@ -504,10 +504,14 @@ fn run_impl(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
         .read(true)
         .write(true)
         .open("CONOUT$")?;
-    let mut peer = if action == "other" {
+    let mut peer = if matches!(action, "other" | "exit") {
         write(output, &[66, 62])?;
         let child = std::process::Command::new(std::env::current_exe()?)
-            .arg("cooked-retire-peer")
+            .arg(if action == "exit" {
+                "cooked-retire-exit-peer-records"
+            } else {
+                "cooked-retire-peer"
+            })
             .arg(report.with_extension("peer"))
             .spawn()?;
         wait(deadline, || {
@@ -559,6 +563,18 @@ fn run_impl(kind: &str, report: &Path, controlled: bool) -> io::Result<()> {
     publish(&report.with_extension("ready"), "read-submitted")?;
     if observed {
         wait(deadline, || Ok(report.with_extension("go").exists()))?;
+    }
+    if action == "exit" {
+        // The external court first observes the actual deferred native read.
+        // Exit is the DISCONNECT cause; no FreeConsole/cancel API is inferred.
+        wait(deadline, || Ok(report.with_extension("exit").exists()))?;
+        check(unsafe {
+            windows_sys::Win32::System::Threading::TerminateProcess(
+                windows_sys::Win32::System::Threading::GetCurrentProcess(),
+                35,
+            )
+        })?;
+        return Err(io::Error::other("self termination unexpectedly returned"));
     }
     if matches!(action, "disconnect" | "other") {
         probe_diagnostic(report, "disconnect-before", "calling FreeConsole");

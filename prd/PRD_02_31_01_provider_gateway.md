@@ -240,6 +240,18 @@ a runtime assertion failure; byte-exact restoration passed again.
 A retry creates new state/PKCE/callback ownership and reuses the existing browser
 profile where the native adapter persists it. Proxy/incognito environments may
 require signing in again. An expired callback never revives the old attempt.
+An expired browser wait distinguishes no loopback request, an incomplete
+request and rejected requests, using bounded counts without recording their
+URL, state, code or provider body. Expiry/cancellation during a read or state
+check remains a lifecycle failure, not a malformed-request count. Each expiry
+offers a fresh-login instruction; none proves a successful grant. A generic
+expiry alone cannot establish that no callback arrived.
+The real-loopback regression
+`provider_login::tests::callback_expiry_distinguishes_absent_incomplete_and_rejected_returns`
+passed within the 13-test login-coordinator gate. Removing in-flight expiry
+propagation made that regression fail at runtime; byte-exact restoration passed
+again (`target-six/v0.2.23-provider/callback-expiry-guard-receipt.json`). These
+are local failure-classification proofs, not provider authorization evidence.
 The callback listener is separate from the model port and closes on timeout,
 cancel or exit. Browser presentation stays in MiniCon's browser tab; an
 unsupported embedded-browser flow is explicitly unavailable. Existing WebView

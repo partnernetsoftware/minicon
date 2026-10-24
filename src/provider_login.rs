@@ -34,6 +34,10 @@ pub enum LoginError {
     Busy,
     WorkerUnavailable,
     CallbackUnavailable,
+    CallbackExpired {
+        received_requests: u8,
+        rejected_requests: u8,
+    },
 }
 
 impl From<AuthError> for LoginError {
@@ -48,7 +52,26 @@ impl From<StoreError> for LoginError {
 }
 impl std::fmt::Display for LoginError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "provider login: {self:?}")
+        match self {
+            Self::CallbackExpired {
+                received_requests: 0,
+                ..
+            } => {
+                formatter.write_str("Login expired before the browser returned. Start login again.")
+            }
+            Self::CallbackExpired {
+                rejected_requests: 0,
+                ..
+            } => formatter.write_str(
+                "Login expired while receiving the browser callback. Start login again.",
+            ),
+            Self::CallbackExpired { .. } => formatter
+                .write_str("Login expired after invalid browser callbacks. Start login again."),
+            Self::Auth(AuthError::Expired) => {
+                formatter.write_str("Login expired. Start login again.")
+            }
+            _ => write!(formatter, "provider login: {self:?}"),
+        }
     }
 }
 impl std::error::Error for LoginError {}
@@ -611,9 +634,16 @@ impl Job {
         attempt: &mut Attempt,
         proof: &Pkce,
     ) -> Result<Secret, LoginError> {
-        let mut accepted = 0;
+        let mut accepted: u8 = 0;
+        let mut rejected: u8 = 0;
         loop {
-            self.check(attempt)?;
+            self.check(attempt).map_err(|error| match error {
+                LoginError::Auth(AuthError::Expired) => LoginError::CallbackExpired {
+                    received_requests: accepted,
+                    rejected_requests: rejected,
+                },
+                other => other,
+            })?;
             match listener.accept() {
                 Ok((mut stream, peer)) => {
                     if !peer.ip().is_loopback() {
@@ -631,7 +661,26 @@ impl Job {
                                     &code,
                                 )?)
                             });
-                    let status = if parsed.is_ok() {
+                    let code = match parsed {
+                        Ok(code) => Some(code),
+                        Err(LoginError::Auth(AuthError::Expired)) => {
+                            return Err(LoginError::CallbackExpired {
+                                received_requests: accepted,
+                                rejected_requests: rejected,
+                            });
+                        }
+                        Err(
+                            error
+                            @ LoginError::Auth(AuthError::Cancelled | AuthError::StaleAttempt),
+                        ) => {
+                            return Err(error);
+                        }
+                        Err(_) => {
+                            rejected += 1;
+                            None
+                        }
+                    };
+                    let status = if code.is_some() {
                         "200 OK"
                     } else {
                         "400 Bad Request"
@@ -640,10 +689,10 @@ impl Job {
                         "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n"
                     );
                     let _ = stream.write_all(reply.as_bytes());
-                    if let Ok(code) = parsed {
+                    if let Some(code) = code {
                         return Ok(code);
                     }
-                    if accepted >= 8 {
+                    if rejected >= 8 {
                         return Err(AuthError::AuthorizationRejected.into());
                     }
                 }
@@ -1236,6 +1285,71 @@ mod tests {
         });
         assert_eq!(login.cancel(), CancelResult::Completing);
         assert_eq!(login.generation.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn callback_expiry_distinguishes_absent_incomplete_and_rejected_returns() {
+        for (kind, received_requests, rejected_requests, detail) in [
+            ("absent", 0, 0, "before the browser returned"),
+            ("incomplete", 1, 0, "while receiving the browser callback"),
+            ("rejected", 1, 1, "after invalid browser callbacks"),
+        ] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let address = listener.local_addr().unwrap();
+            let root =
+                temporary_parent().join(format!("minicon-login-expiry-{}", device_id().unwrap()));
+            let (outgoing, _incoming) = mpsc::sync_channel(4);
+            let job = Job {
+                id: AttemptId(1),
+                generation: Arc::new(AtomicU64::new(1)),
+                phase: Arc::new(AtomicU8::new(ACTIVE)),
+                store: Arc::new(AccountStore::new(root.clone()).unwrap()),
+                transport: Arc::new(SequenceTransport(Mutex::new(Default::default()))),
+                metadata: LoginMetadata {
+                    version: "0.2.23".into(),
+                    locale: "en_US".into(),
+                    timezone_offset_seconds: 0,
+                },
+                outgoing,
+                cancel: NetworkHttpCancel::new(),
+            };
+            let _client = if kind != "absent" {
+                let mut client = TcpStream::connect(address).unwrap();
+                if kind == "incomplete" {
+                    client.write_all(b"GET /oauth/callback?state=").unwrap();
+                } else {
+                    write!(client, "GET /oauth/callback?state=synthetic-wrong-state&code=synthetic-private-code HTTP/1.1\r\nHost: {address}\r\n\r\n").unwrap();
+                }
+                Some(client)
+            } else {
+                None
+            };
+            let proof = Pkce::generate().unwrap();
+            let now = Instant::now();
+            let mut attempt = Attempt::new(1, now).unwrap();
+            attempt
+                .limit_by_provider(1, now, Duration::from_secs(1))
+                .unwrap();
+            let error = job
+                .callback(&listener, address.port(), &mut attempt, &proof)
+                .unwrap_err();
+            assert_eq!(
+                error,
+                LoginError::CallbackExpired {
+                    received_requests,
+                    rejected_requests
+                }
+            );
+            let message = error.to_string();
+            assert!(message.contains(detail));
+            assert!(message.contains("Start login again"));
+            assert!(!message.contains("synthetic-private-code"));
+            assert!(
+                !root.exists(),
+                "an expired callback cannot store an account"
+            );
+        }
     }
 
     #[test]
