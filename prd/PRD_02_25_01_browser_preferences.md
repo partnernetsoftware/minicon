@@ -118,3 +118,9 @@ native evidence for this new preference flow remains BLOCKED until run.
   `target-six/release-0.2.22/fix-mac-smoke/receipt.json` passes the unchanged
   request, clear/invalid and persisted-candidate assertions on this Mac, with
   seven captured native windows; it does not certify physical key interception.
+
+- [-] Follow-up CI `40075261513` at `6ccaf56` passes both macOS and Linux
+  native preference journeys. Windows redirected titles now pass; both Windows
+  cells reach the active-proxy test and fail `browser-native-create-failed`.
+  The environment-isolation repair and its fresh qualification are owned by
+  [PRD 28](PRD_02_28_shared_core.md#native-browser-proxy-environment-isolation).

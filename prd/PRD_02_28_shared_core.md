@@ -426,3 +426,22 @@ validation, normalization, deduplication and the eight-choice product limit
 remain in MiniCon's `web_preferences` module. The core codec does not depend
 on the native page library or product editor state. Runtime candidate and
 restart evidence belongs to PRD 25 and the 0.2.22 plan.
+
+### Native browser proxy environment isolation
+
+Windows WebView2 creation options are environment-wide: distinct proxy/bypass
+arguments cannot share a user-data directory while an older browser process is
+still alive. `minicon-web` keys proxied contexts by the SHA-256 of all native
+arguments under the OS temporary `minicon-webview2-proxy/` cache directory.
+Equal options reuse a directory; different options get different directories,
+without exposing endpoints in directory names. Proxied controllers use InPrivate
+mode; ordinary direct contexts retain their existing profile. This cache is
+native WebView data, not saved proxy-choice persistence or a bundled runtime.
+Creation/storage failure remains typed and never falls back to direct routing.
+Product editing, candidate persistence and page-reset meaning remain in
+[PRD 25.01](PRD_02_25_01_browser_preferences.md).
+
+Negative evidence: exact-source CI `40075261513` passed both macOS and Linux
+native preference journeys but both Windows cells failed proxy view creation
+with the shared default profile. The replacement isolated-context source needs
+fresh exact-source native execution; compilation does not close that gate.

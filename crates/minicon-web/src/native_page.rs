@@ -182,7 +182,21 @@ impl NativePageHost {
         let local_origin = Rc::new(RefCell::new(None::<String>));
         let navigation_origin = local_origin.clone();
         let native_wake = wake.clone();
-        let mut builder = WebViewBuilder::new()
+        #[cfg(windows)]
+        let windows_arguments = windows_proxy_arguments(proxy)?;
+        #[cfg(windows)]
+        let mut windows_context = windows_arguments
+            .as_deref()
+            .map(windows_proxy_context)
+            .transpose()?;
+        #[cfg(windows)]
+        let builder = match windows_context.as_mut() {
+            Some(context) => WebViewBuilder::new_with_web_context(context),
+            None => WebViewBuilder::new(),
+        };
+        #[cfg(not(windows))]
+        let builder = WebViewBuilder::new();
+        let mut builder = builder
             .with_html(HOME_HTML)
             .with_bounds(bounds(slot))
             .with_focused(false)
@@ -229,9 +243,11 @@ impl NativePageHost {
                 .with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host, port }));
         }
         #[cfg(windows)]
-        if let Some(arguments) = windows_proxy_arguments(proxy)? {
+        if let Some(arguments) = windows_arguments {
             use wry::WebViewBuilderExtWindows;
-            builder = builder.with_additional_browser_args(arguments);
+            builder = builder
+                .with_additional_browser_args(arguments)
+                .with_incognito(true);
         }
         let webview = builder
             .build_as_child(&parent)
@@ -465,6 +481,22 @@ fn install_windows_events(
             .map_err(|_| "browser-native-load-events-failed".to_owned())?;
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn windows_proxy_context(arguments: &str) -> Result<wry::WebContext, String> {
+    use sha2::Digest;
+    // WebView2 environments with different options cannot share a data folder,
+    // even while the previous view's browser process is still shutting down.
+    // Key all native arguments, including bypass rules; never put endpoints in
+    // directory names. Equal options reuse one cache rather than accumulating
+    // a new folder on every apply. Product lifetime/choice rules: PRD 25.01.
+    let key = format!("{:x}", sha2::Sha256::digest(arguments.as_bytes()));
+    let path = std::env::temp_dir()
+        .join("minicon-webview2-proxy")
+        .join(key);
+    std::fs::create_dir_all(&path).map_err(|_| "browser-native-profile-unavailable".to_owned())?;
+    Ok(wry::WebContext::new(Some(path)))
 }
 
 #[cfg(windows)]
