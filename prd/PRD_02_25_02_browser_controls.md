@@ -224,6 +224,29 @@ remain open. Retain
 A new source must qualify independently; physical keyboard, IME, injected CLI
 and rendered-state observations remain separate claims.
 
+### Shared exact-artifact smoke coverage
+
+`scripts/browser-workspace-smoke.py` now includes the existing public control
+journeys after its native navigation/proxy checks, in another private profile.
+It checks keyboard menu entry and single activation, retained UTF-8 selection
+on dismissal, bounded replacement/rejection in all three editors, and readable
+0/1/8-choice menus across narrow/wide windows and resize. Harness route/draft,
+failed-save recovery and readable scrolling remain owned by
+[PRD 31.01](PRD_02_31_01_provider_gateway.md); their injected IME routing repair
+is recorded by [PRD 26](PRD_02_26_con_control_cli.md).
+
+The complete Windows x86_64 development run passed all 15 named host checks:
+`target-six/v0.2.23-provider/artifact-smoke-host-controls-green-2/receipt.json`,
+binary SHA-256
+`e8c3ee526156aa17b42d6b078c17eb383477b53c1e41f56f7b0572a26df406e9`.
+Its six menu-geometry rows measured 1000 permille. Input provenance is public
+CLI injection, with no physical keyboard, native IME or clipboard claim. The
+same entry is already used by unsigned, signing and public artifact courts;
+their matching-source results remain open. Canonicalizing the temporary root
+keeps macOS `/var` aliases outside the private-store no-link ancestry rule;
+the production rule is unchanged. Missing native scales/pixel/input courts
+retain their own scope below and in the release plan.
+
 ### Exact unsigned Windows native-input checkpoint
 
 The Win32 SendInput/native Microsoft Pinyin court used the receipt-verified

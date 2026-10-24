@@ -1648,6 +1648,8 @@ fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls(
         harness_snapshot(&host).is_null(),
         "runtime must remain lazy before the first Harness entry"
     );
+    let browser = host.open_browser_from_menu();
+    assert_eq!(host.cli(&["ui-snapshot"])["active"], browser["id"]);
     host.open_web_settings();
     host.click_geometry("web_proxy_input");
     host.cli(&["send-ui-ime", "commit", "http://127.0.0.1:22123"]);
@@ -1657,8 +1659,12 @@ fn host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls(
     assert_eq!(initial["local_key_exists"], false);
     assert_eq!(initial["accounts"], serde_json::json!([]));
     assert_eq!(initial["model"], "");
+    let ignored = host.cli(&["send-ui-ime", "commit", "no field owns this text"]);
+    assert_eq!(ignored["route"], "harness_settings");
+    assert_eq!(harness_snapshot(&host)["model"], "");
     click_harness(&host, "model_input", 0);
-    host.cli(&["send-ui-ime", "commit", "provider/中-draft"]);
+    let model_input = host.cli(&["send-ui-ime", "commit", "provider/中-draft"]);
+    assert_eq!(model_input["route"], "harness_model");
     host.cli(&["send-ui-ime", "preedit", "composing"]);
     host.cli(&["send-ui-keys", "Enter"]);
     assert!(

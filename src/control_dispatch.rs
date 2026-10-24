@@ -348,6 +348,8 @@ impl ConApp {
                     && !self.browser_address_focused
                     && !self.browser_proxy_focused
                     && !self.settings_proxy_focused
+                    && !(self.settings_open
+                        && self.settings_section == ui::SettingsSection::Harness)
                 {
                     let session = self.active_session().map_err(|error| error.to_string())?;
                     session.ensure_pty_input_open()?;
@@ -365,7 +367,11 @@ impl ConApp {
                 // `composer` against it. Delivery decides the owner, so the
                 // reply reads the post-delivery state instead of predicting
                 // it.
-                let route = if self.rename.is_some() {
+                let route = if self.settings_open
+                    && self.settings_section == ui::SettingsSection::Harness
+                {
+                    self.harness_input_owner()
+                } else if self.rename.is_some() {
                     "rename"
                 } else if self.settings_proxy_focused {
                     "web_proxy_candidate"

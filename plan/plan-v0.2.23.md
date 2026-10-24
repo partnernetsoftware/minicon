@@ -158,11 +158,22 @@ in PRD 31.01 and the worker module, rather than another contract in this plan.
 
 The [provider owner](../prd/PRD_02_31_01_provider_gateway.md#real-account-checkpoint-and-worker-defects-2026-10-25)
 records the actual DeepSeek grant/probe, retained worker failures and the
-repaired ordinary-task checkpoint. Completion instructions and Windows cwd
-adaptation now have scoped development evidence. Before the next source freeze,
-join the shared native HTTPS trust-policy repair and observed SSO redaction;
-their file owners are independent. Root serializes Cargo, guard mutations and
-final integration. OpenCode account login is waiting for the owner in the
+repaired ordinary-task checkpoint, including the named Pi client's actual
+tool/SSE/cancellation journey. Completion instructions, Windows cwd adaptation,
+shared native HTTPS trust policy and observed SSO redaction have joined the
+development source. The six native development cells passed at `403dbf48`;
+the scoped index is
+`target-six/v0.2.23-provider/ci-403dbf48-six-cell-index.json`. That run does not
+replace the complete product wrapper or final artifact courts. Before the next
+source freeze, include the expanded artifact browser-smoke entry, then qualify
+the selected payloads with it. Its existing control/Harness journeys now have a passing
+Windows development run, and exposed a browser-first injected-IME defect
+that the [control owner](../prd/PRD_02_26_con_control_cli.md) records with its
+repair. The `403dbf48` six-cell source checkpoint precedes that repair and is
+not final-source proof for it. Retain the cancelled `40126457516` unsigned-pack
+attempt as history; no Candidate was sealed from it.
+Root serializes Cargo, guard mutations and final integration. OpenCode account
+login is waiting for the owner in the
 browser; the physical keyboard court and full local workspace gate also wait
 for a preservable clipboard (the current unsupported formats were not changed).
 Finish those selected account/native interaction obligations and matching

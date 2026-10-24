@@ -205,6 +205,20 @@ change. Behavior belongs to [PRD 31.01](PRD_02_31_01_provider_gateway.md).
   capped at 64 KiB, its optional character cursor is range-checked, and terminal
   commit success is returned only after the complete PTY write; direct protocol
   and CLI decoding reject malformed action, cursor and payload state.
+- [-] The active Harness settings panel also owns injected IME, including when
+  the selected tab is a browser or no settings field is focused. It requires
+  no PTY and reports the existing `harness_port`, `harness_model` or
+  `harness_settings` owner. A browser-first regression exposed a preflight that
+  incorrectly required a terminal; the former terminal-first fixture had
+  hidden that defect. The strengthened public
+  `host_harness_routes_preserve_independent_drafts_and_scroll_readable_controls`
+  failed against the old development binary and passed after the dispatch
+  repair, including the unfocused-panel and focused-model routes. Logs:
+  `target-six/v0.2.23-provider/harness-ime-browser-before-red.log` and
+  `harness-ime-browser-fixed-green.log` in the same directory. This is a
+  Windows x86_64 development checkpoint; matching final artifact qualification
+  remains open. Harness behavior stays owned by
+  [the provider gateway](PRD_02_31_01_provider_gateway.md).
 - [v] `send-wheel` reports the route actually taken (`zoom`, application mouse,
   alternate-screen cursor keys, or local scrollback), the notch count actually
   applied after bounds/clamps, and whether observable state or terminal input

@@ -484,6 +484,23 @@ are included in public observation metadata.
   was supplied by environment and absent from captured output. This extends
   the controlled-peer compatibility evidence to account-backed streaming;
   it does not qualify live tools/cancellation or final Candidate bytes.
+- [v] Pi 1.4.0 subsequently completed real account-backed `read` and `write`
+  calls: a fresh input nonce was written unchanged to the result file, both
+  tool events reported success, and the client consumed SSE text and usage.
+  The tool result is recorded in
+  `target-six/v0.2.23-provider/pi-real-tool-cancel-20261025-034122/receipt.json`.
+  That first combined court retained a `BLOCKED` cancellation-recovery result:
+  its auxiliary stream ended during the recovery observation and could have
+  released the available lease. A separate bounded cancel-only court kept the
+  auxiliary stream active: Pi received real text, a third request established
+  `429/account_busy`, RPC abort reached `aborted` in 15 ms, and a short request
+  succeeded after 844 ms while the auxiliary stream was still active. The
+  latter was then closed and all readers/client processes joined. Receipt:
+  `target-six/v0.2.23-provider/pi-real-tool-cancel-20261025-034250/receipt.json`.
+  Both courts bind to development GUI SHA-256
+  `e830e773e5cb0acd3e86e98ef2c026854828ff8d221dd72a3e4167465824b474`,
+  not final Candidate bytes. They establish the named client's real tool/SSE
+  and local cancellation path; remote compute/billing termination is unproven.
 - [v] An actual DeepSeek Anthropic Messages SSE tool round trip passed through
   that gateway: `tool_use`, a controlled local tool-result nonce, then exact
   nonce text with `end_turn`, two requests and preserved input/output usage.

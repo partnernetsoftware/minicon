@@ -117,11 +117,12 @@ def main() -> int:
     origin = f"http://127.0.0.1:{server.server_port}"
     windows = sys.platform == "win32"
     scratch = tempfile.TemporaryDirectory(prefix="minicon-browser-")
-    endpoint = rf"pipe:\\.\pipe\minicon-browser-{os.getpid()}" if windows else f"unix:{Path(scratch.name).resolve(strict=True) / 'control.sock'}"
+    scratch_root = Path(scratch.name).resolve(strict=True)
+    endpoint = rf"pipe:\\.\pipe\minicon-browser-{os.getpid()}" if windows else f"unix:{scratch_root / 'control.sock'}"
     env = os.environ.copy()
     # Reuse this isolated config only across the process restarts in this run.
-    env["MINICON_CONFIG_DIR"] = str(Path(scratch.name) / "config")
-    env["MINICON_BROWSER_PROFILE_ROOT"] = str(Path(scratch.name) / "profile")
+    env["MINICON_CONFIG_DIR"] = str(scratch_root / "config")
+    env["MINICON_BROWSER_PROFILE_ROOT"] = str(scratch_root / "profile")
     # WebView2's global folder override would force different proxy environments
     # back into one incompatible directory, overriding the native API argument.
     for key in ("WEBVIEW2_USER_DATA_FOLDER", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "MINICON_BROWSER_HTTP_PROXY", "MINICON_BROWSER_HTTPS_PROXY",
@@ -135,6 +136,7 @@ def main() -> int:
     mac_window_id = None
     mac_capture_error = None
     screenshots: dict[str, dict] = {}
+    checks: dict[str, dict] = {}
 
     def cli(*arguments: str) -> dict:
         response = subprocess.check_output([str(binary), "cli", "--control", endpoint, *arguments],
@@ -178,11 +180,300 @@ def main() -> int:
     def click_geometry(name: str, index: int | None = None):
         geometry = cli("ui-snapshot")["geometry"]
         rectangle = geometry[name] if index is None else geometry[name][index]
+        click_rectangle(rectangle, geometry, name)
+
+    def click_rectangle(rectangle: dict, geometry: dict, name: str):
         assert rectangle["width"] > 0 and rectangle["height"] > 0, f"{name} has no visible hit target"
         scale = geometry["scale_permille"] / 1000
         x = (rectangle["x"] + rectangle["width"] / 2) / scale
         y = (rectangle["y"] + rectangle["height"] / 2) / scale
         cli("send-ui-mouse", "--action", "click", "--button", "left", "--column", str(round(x)), "--row", str(round(y)))
+
+    def keys(*chords: str):
+        # Each complete production chord stays one argv element, including
+        # Shift+Tab and Ctrl+Shift+[. This is public injection, not native input.
+        assert cli("send-ui-keys", *chords)["sent_keys"] == len(chords)
+
+    def editor(name: str) -> dict:
+        return cli("ui-snapshot")["geometry"][name]
+
+    def host_controls_journey():
+        """Public host checks mirrored from tests/support/browser_windows.rs.
+
+        Run after native navigation using a fresh profile; no provider login,
+        clipboard, physical key, or native IME evidence is claimed here.
+        """
+        keys("Ctrl+Shift+I")
+        draft = "terminal draft survives Harness"
+        cli("send-ui-ime", "commit", draft)
+        assert cli("ui-snapshot")["composer_text"] == draft
+        assert cli("ui-snapshot")["geometry"]["harness_settings"] is None, "Harness runtime was not lazy"
+        browser_id = open_browser_from_menu()["id"]
+
+        keys("Ctrl+l", "Shift+Tab", "Enter")
+        geometry = cli("ui-snapshot")["geometry"]
+        assert geometry["new_tab_menu_open"] and geometry["new_menu_highlight"] == 0
+        assert len(cli("list-tabs")["tabs"]) == 2, "opening New activated its default terminal action"
+        keys("Down")
+        assert cli("ui-snapshot")["geometry"]["new_menu_highlight"] == 1
+        keys("Enter")
+        assert browser()["id"] == browser_id and len(cli("list-tabs")["tabs"]) == 2, "Browser menu activation did not reuse its root exactly once"
+        assert not cli("ui-snapshot")["geometry"]["new_tab_menu_open"]
+        keys("Ctrl+l", "Tab")
+        assert editor("browser_proxy_editor")["focused"]
+        keys("Tab", "Space")
+        geometry = cli("ui-snapshot")["geometry"]
+        assert geometry["browser_proxy_menu_open"] and geometry["proxy_menu_highlight"] == 0
+        assert len(geometry["browser_proxy_option_rows"]) == 1
+        keys("Down")
+        assert cli("ui-snapshot")["geometry"]["proxy_menu_highlight"] == 0
+        keys("Escape")
+        assert not cli("ui-snapshot")["geometry"]["browser_proxy_menu_open"]
+        keys("Shift+Tab")
+        assert editor("browser_proxy_editor")["focused"], "menu dismissal did not restore its traversal owner"
+        keys("Shift+Tab")
+        assert editor("browser_address_editor")["focused"]
+        checks["menu_keyboard"] = {"status": "passed", "new_open_without_activation": True,
+                                   "browser_single_activation": True, "proxy_clamp": True,
+                                   "tab_and_shift_tab_ownership": True}
+
+        for trigger in ("browser_proxy_dropdown", "new_root"):
+            keys("Ctrl+l")
+            cli("send-ui-ime", "commit", "a中z")
+            keys("Home", "Right", "Shift+Right")
+            original = editor("browser_address_editor")
+            assert original["selection"] == [1, 4]
+            cli("send-ui-ime", "preedit", "ni")
+            click_geometry(trigger)
+            assert cli("ui-snapshot")["geometry"]["menu_return_focus"] == "address"
+            assert not editor("browser_address_editor")["focused"]
+            keys("Escape")
+            restored = editor("browser_address_editor")
+            for field in ("text", "caret", "selection"):
+                assert restored[field] == original[field], f"{trigger} changed retained {field}"
+            assert restored["focused"] and restored["preedit"] == ""
+            cli("send-ui-ime", "commit", "Q")
+            assert editor("browser_address_editor")["text"] == "aQz"
+            checks[f"menu_dismiss_selection:{trigger}"] = {"status": "passed", "utf8_selection": [1, 4], "replacement": "aQz"}
+
+        for name, target, limit in (("browser_address_editor", "browser_address", 8192),
+                                    ("browser_proxy_editor", "browser_proxy", 2048),
+                                    ("web_proxy_candidate_editor", "web_proxy_input", 2048)):
+            if name == "web_proxy_candidate_editor":
+                open_web_settings()
+            click_geometry(target)
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "a" * limit)
+            assert len(editor(name)["text"].encode("utf-8")) == limit
+            keys("Ctrl+a", "z")
+            assert editor(name)["text"] == "z", f"{name}: selected keyboard replacement failed at bound"
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "a" * limit)
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "短")
+            state = editor(name)
+            assert state["text"] == "短" and state["caret"] == 3 and state["selection"] is None
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "a" * limit)
+            keys("Home", "Right", "Shift+Right")
+            before = editor(name)
+            assert before["selection"] == [1, 2]
+            cli("send-ui-ime", "commit", "中字")
+            rejected = editor(name)
+            for field in ("text", "caret", "selection"):
+                assert rejected[field] == before[field], f"{name}: oversized commit changed {field}"
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "a中z")
+            keys("Home", "Right", "Shift+Right")
+            assert editor(name)["selection"] == [1, 4]
+            cli("send-ui-ime", "commit", "XY")
+            state = editor(name)
+            assert state["text"] == "aXYz" and state["caret"] == 3 and state["selection"] is None
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "http://127.0.0.1:65535")
+            cli("send-ui-ime", "preedit", "ni")
+            keys("Enter")
+            composing = editor(name)
+            assert composing["focused"] and composing["text"] == "http://127.0.0.1:65535" and composing["preedit"] == "ni", f"{name}: composition Enter submitted"
+            if name == "browser_address_editor":
+                click_geometry("browser_proxy")
+            elif name == "browser_proxy_editor":
+                keys("Ctrl+l")
+            else:
+                click_geometry("settings_console_route")
+            blurred = editor(name)
+            assert not blurred["focused"] and blurred["preedit"] == "" and blurred["text"] == composing["text"]
+            if name == "web_proxy_candidate_editor":
+                click_geometry("settings_web_route")
+            click_geometry(target)
+            assert editor(name)["text"] == composing["text"]
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "xy")
+            geometry = cli("ui-snapshot")["geometry"]
+            rectangle = geometry[target]
+            scale = geometry["scale_permille"] / 1000
+            cli("send-ui-mouse", "--action", "click", "--button", "left",
+                "--column", str(round((rectangle["x"] + rectangle["width"] - 4) / scale)),
+                "--row", str(round((rectangle["y"] + rectangle["height"] / 2) / scale)))
+            cli("send-ui-ime", "commit", "a")
+            cli("send-ui-ime", "commit", "b")
+            assert editor(name)["text"] == "xyab" and editor(name)["selection"] is None
+            checks[f"bounded_editor:{name}"] = {"status": "passed", "limit_bytes": limit,
+                "selected_key_and_cli_ime_replacement": True, "oversize_preserves_text_caret_selection": True,
+                "partial_utf8_replacement": True, "preedit_enter_and_blur": True, "collapsed_click_anchor": True}
+
+        def harness():
+            return cli("ui-snapshot")["geometry"]["harness_settings"]
+
+        def open_harness():
+            if not cli("ui-snapshot")["settings_open"]:
+                click_geometry("settings")
+            click_geometry("settings_harness_route")
+            assert cli("ui-snapshot")["geometry"]["settings_section"] == "harness"
+            return wait(lambda: state if (state := harness()) is not None and not state["busy"] else None,
+                        "Harness background initialization", 12)
+
+        def click_harness(row_id: str, column: int):
+            # Navigate only published rows/targets; never duplicate row order.
+            for _ in range(80):
+                geometry = cli("ui-snapshot")["geometry"]
+                state = geometry["harness_settings"]
+                if state["scroll"] == 0:
+                    break
+                click_rectangle(state["previous"], geometry, "Harness Previous")
+            for _ in range(80):
+                geometry = cli("ui-snapshot")["geometry"]
+                state = geometry["harness_settings"]
+                row = next((row for row in state["rows"] if row["id"] == row_id), None)
+                if row is not None:
+                    click_rectangle(row["cells"][column], geometry, row_id)
+                    return
+                click_rectangle(state["next"], geometry, "Harness Next")
+            raise AssertionError(f"Harness row {row_id} was not reachable")
+
+        # The Web draft is unsaved, distinct from the terminal and Harness.
+        click_geometry("web_proxy_input")
+        keys("Ctrl+a")
+        cli("send-ui-ime", "commit", "http://127.0.0.1:22123")
+        initial = open_harness()
+        assert initial["listener"] == "stopped" and not initial["login_active"] and not initial["local_key_exists"]
+        assert initial["accounts"] == [] and initial["model"] == ""
+        click_harness("model_input", 0)
+        cli("send-ui-ime", "commit", "provider/中-draft")
+        cli("send-ui-ime", "preedit", "composing")
+        keys("Enter")
+        assert harness()["status"] is None, "composition Enter applied a Harness model"
+        click_geometry("settings_console_route")
+        assert cli("ui-snapshot")["geometry"]["settings_section"] == "console"
+        click_geometry("settings_web_route")
+        assert editor("web_proxy_candidate_editor")["text"] == "http://127.0.0.1:22123"
+        retained = open_harness()
+        assert retained["model_editor"]["text"] == "provider/中-draft" and retained["model_editor"]["preedit"] == ""
+        assert cli("ui-snapshot")["composer_text"] == draft
+        checks["settings_routes_independent_drafts"] = {"status": "passed", "routes": ["console", "web", "harness"],
+                                                       "model_preedit_not_applied": True, "lazy_runtime": True}
+
+        # Force a real atomic-publish failure, then prove the same draft saves
+        # after removing the obstruction. No fake provider/account is created.
+        old_port = retained["port"]
+        target = Path(env["MINICON_CONFIG_DIR"]) / "harness" / "gateway.json"
+        if target.is_file():
+            target.unlink()
+        target.mkdir()
+        try:
+            click_harness("port", 0)
+            keys("Ctrl+a")
+            cli("send-ui-ime", "commit", "30127")
+            click_harness("port", 1)
+            failed = wait(lambda: state if (state := harness())["status"] is not None and "Storage" in state["status"] else None,
+                          "Harness failed port save is visible", 12)
+            assert failed["port"] == old_port and failed["port_editor"]["text"] == "30127"
+            assert failed["listener"] == "stopped" and failed["actual_port"] is None
+        finally:
+            target.rmdir()
+        click_harness("port", 1)
+        saved = wait(lambda: state if (state := harness())["port"] == 30127 else None,
+                     "Harness port draft saves after obstruction removal", 12)
+        assert saved["port_editor"]["text"] == "30127"
+        checks["harness_failed_port_save"] = {"status": "passed", "old_port_preserved": True,
+            "editable_draft_retained": True, "same_draft_saved_after_recovery": True, "listener_never_started": True}
+
+        cli("resize-window", "--width", "420", "--height", "300")
+        click_harness("key_actions", 0)
+        state = wait(lambda: state if (state := harness())["local_key_exists"] else None,
+                     "Harness local key creation", 12)
+        assert state["scroll"] > 0, "short window did not scroll to connection controls"
+        geometry = cli("ui-snapshot")["geometry"]
+        state = geometry["harness_settings"]
+        scale = geometry["scale_permille"] / 1000
+        assert state["rows"], "narrow Harness has no visible readable row"
+        for row in state["rows"]:
+            assert abs(row["rect"]["height"] / scale - 36) <= 1
+            assert row["rect"]["y"] + row["rect"]["height"] <= state["previous"]["y"]
+        assert state["listener"] == "stopped" and state["actual_port"] is None
+        checks["harness_narrow_readable_scroll"] = {"status": "passed", "logical_size": [420, 300],
+            "visible_rows": len(state["rows"]), "scroll": state["scroll"], "row_height_dip": 36,
+            "local_key_creation_did_not_start_listener": True}
+        keys("Escape")
+        assert not cli("ui-snapshot")["settings_open"]
+        # Explicit plan cases: actual saved counts 0/1/8, narrow and roomy
+        # menus, then resize while the last action remains highlighted.
+        saved_count = 0
+        for desired in (0, 1, 8):
+            cli("resize-window", "--width", "1000", "--height", "700")
+            if saved_count < desired:
+                assert open_web_settings()["web_proxy_options_count"] == saved_count
+                while saved_count < desired:
+                    click_geometry("web_proxy_input")
+                    keys("Ctrl+a")
+                    cli("send-ui-ime", "commit", f"http://127.0.0.1:{35000 + saved_count}")
+                    keys("Enter")
+                    saved_count += 1
+                    assert cli("ui-snapshot")["geometry"]["web_proxy_options_count"] == saved_count
+                keys("Escape")
+                assert not cli("ui-snapshot")["settings_open"]
+            for width, height in ((540, 300), (1000, 700)):
+                cli("resize-window", "--width", str(width), "--height", str(height))
+                click_geometry("browser_proxy_dropdown")
+                opened = cli("ui-snapshot")["geometry"]
+                assert opened["browser_proxy_menu_open"]
+                assert opened["web_proxy_options_count"] == desired
+                rows = opened["browser_proxy_option_rows"]
+                assert rows and len(rows) <= desired + 1
+                if desired <= 1:
+                    assert len(rows) == desired + 1
+                scale = opened["scale_permille"] / 1000
+                for row in rows:
+                    assert abs(row["height"] / scale - 32) <= 1, "proxy menu shrank readable targets"
+                assert opened["browser_proxy_menu"]["height"] == sum(row["height"] for row in rows) + round(8 * scale), "proxy menu retained unused choice rows"
+                keys(*("Down",) * (desired + 2))
+                moved = cli("ui-snapshot")["geometry"]
+                assert moved["proxy_menu_highlight"] == desired
+                assert desired in moved["browser_proxy_option_indices"], "last saved choice was not revealed"
+                if desired == 8 and height == 300:
+                    assert moved["proxy_menu_scroll"] > 0
+                cli("resize-window", "--width", "760", "--height", "420")
+                resized = cli("ui-snapshot")["geometry"]
+                assert resized["proxy_menu_highlight"] == desired, "resize changed highlighted proxy action"
+                assert desired in resized["browser_proxy_option_indices"]
+                resized_scale = resized["scale_permille"] / 1000
+                for row in resized["browser_proxy_option_rows"]:
+                    assert abs(row["height"] / resized_scale - 32) <= 1
+                snapshot_file = f"proxy-menu-count-{desired}-{width}x{height}.json"
+                (output / snapshot_file).write_text(json.dumps({"opened": opened, "last_highlighted": moved,
+                                                               "resized": resized}, indent=2), encoding="utf-8")
+                keys("Escape")
+                assert not cli("ui-snapshot")["geometry"]["browser_proxy_menu_open"]
+                checks[f"proxy_menu_count:{desired}:{width}x{height}"] = {
+                    "status": "passed", "saved_count": saved_count, "logical_size": [width, height],
+                    "scale_permille": opened["scale_permille"], "visible_rows": len(rows),
+                    "row_height_dip": 32, "highlight": moved["proxy_menu_highlight"],
+                    "visible_indices": moved["browser_proxy_option_indices"], "scroll": moved["proxy_menu_scroll"],
+                    "resized_logical_size": [760, 420], "resized_scale_permille": resized["scale_permille"],
+                    "resized_highlight": resized["proxy_menu_highlight"],
+                    "resized_visible_indices": resized["browser_proxy_option_indices"],
+                    "resized_scroll": resized["proxy_menu_scroll"], "geometry_file": snapshot_file}
+        (output / "host-controls-final.json").write_text(json.dumps({"tabs": cli("list-tabs"), "ui": cli("ui-snapshot")}, indent=2), encoding="utf-8")
 
     def open_browser_from_menu():
         click_geometry("new_root")
@@ -477,6 +768,14 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             cli("send-ui-keys", "Escape")
             cli("close-window")
             child.wait(timeout=10)
+            # Keep native navigation/proxy persistence evidence independent of
+            # host editing and failed-save setup in this fresh private profile.
+            env["MINICON_CONFIG_DIR"] = str(scratch_root / "host-controls-config")
+            env["MINICON_BROWSER_PROFILE_ROOT"] = str(scratch_root / "host-controls-profile")
+            launch(trace)
+            host_controls_journey()
+            cli("close-window")
+            child.wait(timeout=10)
         receipt = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "platform": sys.platform,
                    "physical_page_ctrl_l": args.physical, "physical_page_tab_switch": args.physical,
                    "visible_browser_entry": True, "single_browser_root_reused": True,
@@ -484,6 +783,9 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
                    "visible_proxy_applied": True, "proxy_clear_restores_direct": True,
                    "invalid_proxy_blocks_direct": True, "proxy_candidates_persisted": True,
                    "proxy_candidate_selected": True, "proxy_candidate_deletion_persisted": True,
+                   "host_controls_checks": checks,
+                   "host_controls_input": {"path": "public CLI send-ui-keys / send-ui-ime / send-ui-mouse",
+                                           "physical_keyboard": False, "native_ime": False, "clipboard": False},
                    "proxy_requests": proxy_requests,
                    "requests": counts, "status": "passed", "screenshots": screenshots}
         (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
@@ -494,6 +796,7 @@ if let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopEl
             try:
                 (output / "failure-final.json").write_text(json.dumps({
                     "tabs": cli("list-tabs"), "ui": cli("ui-snapshot"),
+                    "host_controls_checks": checks,
                     "proxy_requests": proxy_requests, "requests": counts,
                 }, indent=2) + "\n", encoding="utf-8")
             except (OSError, subprocess.SubprocessError):
