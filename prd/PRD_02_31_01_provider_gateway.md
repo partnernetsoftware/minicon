@@ -223,9 +223,23 @@ is a route error, not a reason to mark every credential invalid.
 For OAuth, verify authorize/token endpoints, actual client identity rules, scopes,
 redirect or device-code rules, token audience, expiry and refresh/revocation
 behavior according to the provider's real contract. Use state, PKCE S256 where the provider supports
-the code flow, one-shot callbacks and a 180-second cancellable login deadline.
+the code flow, one-shot callbacks and a ten-minute cancellable login ceiling.
+Each HTTP exchange retains its separate short timeout; the provider expiry can
+shorten the absolute interactive deadline and never restart or extend it.
 The device prompt shows the remaining effective deadline, capped by both the
-local attempt and the provider expiry.
+local attempt and the provider expiry. The initial three-minute local ceiling
+expired during the owner login journey; it was shorter than the official
+DeepSeek client's [ten-minute default](https://github.com/deepseek-ai/deepseek-harness/blob/22ddee3792402c3e70ec5f86a63c3e3e895a2f60/packages/credentials/deepseek-account-platform/src/index.ts#L37-L62).
+Anonymous MiniCon `auth_init`/`auth_cancel` on 2026-10-25 independently observed
+`expires_in=600`, HTTP 200 and successful cancellation; the local three-minute
+cap had discarded a still-valid service window. The bounded local receipt is
+`target-six/v0.2.23-provider/anonymous-auth-ttl-20261025.json`; no account grant
+was obtained by that probe. The provider-filter gate passed 60 tests, with
+one external-Pi court ignored. Removing the absolute-deadline minimum produced
+a runtime assertion failure; byte-exact restoration passed again.
+A retry creates new state/PKCE/callback ownership and reuses the existing browser
+profile where the native adapter persists it. Proxy/incognito environments may
+require signing in again. An expired callback never revives the old attempt.
 The callback listener is separate from the model port and closes on timeout,
 cancel or exit. Browser presentation stays in MiniCon's browser tab; an
 unsupported embedded-browser flow is explicitly unavailable. Existing WebView

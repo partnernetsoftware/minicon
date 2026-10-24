@@ -1091,7 +1091,7 @@ mod tests {
         let response = NetworkHttpResponse {
             status: 200,
             headers: vec![],
-            body: br#"{"device_code":"synthetic-device","user_code":"SYNTHETIC","verification_uri_complete":"/console/device","expires_in":600,"interval":5}"#.to_vec(),
+            body: br#"{"device_code":"synthetic-device","user_code":"SYNTHETIC","verification_uri_complete":"/console/device","expires_in":1200,"interval":5}"#.to_vec(),
             truncated: false,
         };
         let mut login = LoginCoordinator::with_transport(
@@ -1118,7 +1118,7 @@ mod tests {
         assert_eq!(attempt, id);
         assert!(expires_in > Duration::ZERO);
         assert!(expires_in <= auth::AUTH_ATTEMPT_TIMEOUT);
-        assert!(expires_in < Duration::from_secs(600));
+        assert!(expires_in < Duration::from_secs(1200));
 
         let started = Instant::now();
         assert_eq!(login.cancel(), CancelResult::Requested);

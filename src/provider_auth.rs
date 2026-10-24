@@ -16,7 +16,10 @@ use std::fmt;
 use std::time::{Duration, Instant};
 
 pub const AUTH_MAX_RESPONSE_BYTES: usize = 64 * 1024;
-pub const AUTH_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(180);
+// Interactive login includes browser sign-in and confirmation. Keep HTTP
+// exchanges short, but allow the official client's ten-minute login window.
+// A shorter provider expiry still wins in Attempt::limit_by_provider.
+pub const AUTH_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(600);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_FIELD_BYTES: usize = 4096;
 const DEEPSEEK_ORIGIN: &str = "https://platform.deepseek.com";
@@ -980,11 +983,11 @@ mod tests {
         let now = Instant::now();
         let mut attempt = Attempt::new(1, now).unwrap();
         attempt
-            .limit_by_provider(1, now + Duration::from_secs(100), Duration::from_secs(600))
+            .limit_by_provider(1, now + Duration::from_secs(100), AUTH_ATTEMPT_TIMEOUT * 2)
             .unwrap();
         assert_eq!(
             attempt.check(1, now + Duration::from_secs(100)).unwrap(),
-            Duration::from_secs(80)
+            AUTH_ATTEMPT_TIMEOUT - Duration::from_secs(100)
         );
         attempt
             .limit_by_provider(1, now + Duration::from_secs(100), Duration::from_secs(2))
