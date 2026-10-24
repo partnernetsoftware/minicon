@@ -309,6 +309,14 @@ jobs:
               # evidence BLOCKED for the 0.2.20 default decision.
               echo "== rust_console_pty (feature rust-console) ${{ inputs.test_filter }}"
               run_suite rust_console_pty cargo test --locked --target "$triple" -p minicon-platform --features rust-console --test rust_console_pty -- --test-threads 1 ${{ inputs.test_filter }}
+              # A diagnostic scope compares the same disconnect fixtures with
+              # the installed system host, without enabling every ignored SDK
+              # differential or changing the ordinary product pass criteria.
+              if [[ "$filter" == *disconnect_stock* ]]; then
+                for court in rust_console_client_queued_read_disconnect_compares_system_conpty rust_console_client_read_retirement_compares_system_conpty; do
+                  run_suite "$court" cargo test --locked --target "$triple" -p minicon-platform --features rust-console --test rust_console_pty -- "$court" --exact --ignored --test-threads 1 --nocapture
+                done
+              fi
               # OAuth bearer publication delegates its security boundary to
               # minicon-platform. Compile-only Windows evidence cannot prove
               # that the installed DACL is protected and current-user-only.

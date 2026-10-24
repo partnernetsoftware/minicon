@@ -443,8 +443,23 @@ receive/admit/defer/resume, process/object identities, admitted/deferred counts
 and actual completion errors before existing cancellation normalization. No
 console text or SDK buffer is recorded. The workflow copies at most four bounded
 trace files into its ordinary evidence directory on every Windows outcome.
-Both original cases pass locally with tracing; the CI event-order evidence is
-still pending and no speculative cancellation fix is claimed.
+Both original cases pass locally with tracing. The focused Windows run
+[`40115122092`](https://github.com/partnernetsoftware/minicon/actions/runs/40115122092)
+at `c0fac4291c22b535154984dbe9ecbcdad46e8b39` retained both complete traces.
+At the failure instant neither case had received DISCONNECT; records after the
+panic belong to fixture cleanup and cannot establish that FreeConsole delivered
+it. No speculative cancellation fix or error-code exception is justified.
+The diagnostic filter `disconnect_stock` explicitly runs only the two existing
+ignored queued-disconnect/read-retirement comparisons against installed system
+ConPTY. A common SDK lifetime failure must be distinguished from a MiniCon host
+failure before changing the implementation; ordinary product pass criteria and
+original assertions remain unchanged.
+
+Both macOS cells passed their focused provider and retained-group scopes in
+[`40115118541`](https://github.com/partnernetsoftware/minicon/actions/runs/40115118541)
+at the same source, with the raw guard/removal/restoration files now present in
+the success artifacts. The subsequent interactive-login ceiling repair belongs
+to PRD 31.01 and still requires final-source native qualification.
 
 ## Permission walls, disambiguated
 
