@@ -111,6 +111,13 @@ flowchart LR
   `ui-snapshot.geometry` on a browser tab publishes `browser_page`,
   `browser_toolbar`, `browser_address`, `address_focused`, sidebar/history
   bounds and scale. These are host geometry, not a page DOM or pixel capture.
+  The 0.2.22 preview workflow adds `new_root`, `new_tab_menu`,
+  `new_tab_menu_open`, `new_terminal_action` and `new_browser_action` within
+  terminal/browser geometry, plus `browser_proxy` (proxy editor rectangle), `proxy_focused` (editor focus), `browser_retry` and `browser_edit_address`
+  for Browser. Rectangles use physical pixels and `scale_permille` supplies
+  the conversion to `send-ui-mouse` logical pixels. The snapshot's top-level
+  key set is unchanged. Presence of an action rectangle does not imply the
+  action is currently visible: callers also inspect menu state or page load.
   `send-ui-ime` routes to the focused browser address editor as
   `browser_address`; it requires no PTY in that case.
   The Windows missing-runtime and local-proxy courts in
@@ -444,3 +451,19 @@ flowchart LR
   resolution.
 - [v] test-only journey JSON invokes the public commands and is not linked into
   the product.
+
+The browser proxy editor owns injected IME while `proxy_focused` is true;
+`send-ui-ime` reports route `browser_proxy` and does not require a terminal
+PTY for that delivery. Editor behavior belongs to PRD 25.
+
+The settings/candidate journey observes only host geometry and counts inside
+`geometry`: `settings`, `settings_open`, `settings_section` (`console`/`web`),
+`settings_console_route`, `settings_web_route`, `web_proxy_input`,
+`web_proxy_add`, `web_proxy_previous`, `web_proxy_next`, `web_proxy_rows`,
+`web_proxy_remove`, `web_proxy_options_count`, `web_proxy_list_start`, and
+`web_proxy_candidate_focused`. Browser geometry adds `browser_proxy_dropdown`,
+`browser_proxy_menu_open` and `browser_proxy_option_rows` (configured behavior
+first). Array rectangles represent visible configured options, not arbitrary
+page DOM controls. Proxy endpoint values are not included in these snapshots.
+`send-ui-ime` names a focused settings candidate editor `web_proxy_candidate`.
+Product behavior and persistence are owned by PRD 25.

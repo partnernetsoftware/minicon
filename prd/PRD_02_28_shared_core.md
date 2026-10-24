@@ -62,7 +62,7 @@ Outcome: maintain one terminal implementation with explicit reusable boundaries
 │   ├── terminal::TerminalPresentation: active/presented frames and bounded synchronization; GUI consumes through a private clock adapter (PRD 24.01)
 │   └── Windows ConDrv/object/API/input/job/control service; experimental PTY adapter
 ├── [-] Browser surface — crates/minicon-web (workspace member; native adapters stay here; PRD_02_25 + PRD_02_31)
-│   ├── library: open/load URL, proxy application, staged OAuth/dashboard/preview/wasm
+│   ├── library: open/load URL, validated proxy override and creation-time application, staged OAuth/dashboard/preview/wasm
 │   ├── Linux optional helper owns wry/tao; macOS/Windows GUI feature owns native child WebView
 │   └── product face remains Tab / content panel; no tray; core/headless crates do not link wry
 ├── Owned dependencies — third_party/
@@ -98,6 +98,8 @@ flowchart LR
     MC --> CORE & UI & PLAT & VT
     MC -->|"common terminal query replies"| CON
     MC -.->|"browser content panel"| WEB
+    MC -->|"proxy candidate product rules"| WEB
+    CORE -->|"bounded config array codec; no WebView dependency"| MC
     AG -->|"immutable revision; own feature selection"| UI & PLAT
     AG -. "prepared core consumer; own qualification" .-> CORE
     UI -->|"tree; core defaults disabled"| CORE
@@ -156,7 +158,7 @@ than duplicating the full platform feature catalog.
 | `crates/minicon-web` | Browser content-panel API (`PageHost`, URL/title/load/history events, proxy, OAuth); bin `minicon-web-host`; Linux anonymous executable carrier | Default features link no wry. `wry-host` links wry/tao/JSON into the Linux helper; GTK is Linux-only. `native-page-host` links wry into the macOS/Windows GUI only, plus Windows WebView2 native success/accelerator callbacks. Linux `memfd_create` syscall numbers are internal x86_64/aarch64 adapters. Core/headless consumers remain WebView-free | GUI consumes a bounded helper command/state pipe on Linux; canonical embedding and exact-source receipts belong to PRD 27. Missing runtime is typed Unavailable, never the OS browser. Product chrome/focus belongs to PRD 25; CLI observation to PRD 26. Native journeys still require each OS/ISA |
 | `third_party/softbuffer` | Native pixel presentation consumed by platform's portable window host | Backend selected by OS/window system; not a native-free UI rule | Own fork carries macOS presentation changes; backend failures remain native results |
 | `src/terminal.rs`, `terminal_paint.rs`, `raster_surface.rs`, `font.rs` | Terminal lifecycle and renderer composition | Shared composition over native facades; behavior may select by OS | Binary-private modules, not an independently exported terminal engine; owner [terminal](PRD_02_24_con_terminal.md) |
-| `src/workspace.rs`, `ui.rs`, `rename.rs`, `notes.rs`, `session_store.rs`, `update*.rs`, `browser.rs`, `browser_ui.rs`, `browser_process.rs` | Tab identity, layout, editable surfaces, persistence, manual update policy; `browser.rs` re-exports `minicon_web`, `browser_ui.rs` owns product address/focus/state, Linux-only `browser_process.rs` owns bounded parent pipe transport | Product composition; native WebView calls and anonymous executable carrier stay in `minicon-web`; parent process transport is GUI-only | Do not export product state merely because a helper is pure; browser shell owner [workspace](PRD_02_25_con_workspace.md); wry isolation [horizon](PRD_02_31_v0_2_horizon.md) |
+| `src/workspace.rs`, `ui.rs`, `rename.rs`, `notes.rs`, `session_store.rs`, `update*.rs`, `browser.rs`, `browser_ui.rs`, `browser_process.rs` | Tab identity, layout, editable surfaces, persistence, manual update policy; `browser.rs` re-exports `minicon_web`, `browser_ui.rs` owns product address/focus/state and pointer editing through core composer/click rules; Linux-only `browser_process.rs` owns bounded parent pipe transport | Product composition; native WebView calls and anonymous executable carrier stay in `minicon-web`; parent process transport is GUI-only | Do not export product state merely because a helper is pure; browser shell owner [workspace](PRD_02_25_con_workspace.md); wry isolation [horizon](PRD_02_31_v0_2_horizon.md) |
 | `src/control*.rs`, `snapshot.rs`, `agent_interface.rs`, `cli.rs` | Public CLI/protocol and local observation/control composition | Shared product protocol over native IPC/input/screenshot mechanisms | A CLI contract is not a reusable Rust crate; owner [control](PRD_02_26_con_control_cli.md) |
 | `src/mux.rs`, `harness*.rs` | Bounded mux/harness subcommands | Product policy over native mechanisms and transport | Keep provider/session policy out of reusable native crates; owner [0.2.x horizon](PRD_02_31_v0_2_horizon.md) |
 
@@ -398,3 +400,62 @@ compatibility descriptor. They do not depend on platform GUI font discovery or
 claim that the renderer uses that face/size. The native RawUI dependency and
 actual client evidence are owned by [PRD 02.34](PRD_02_34_windows_console_backend.md).
 The neutral cell mutation remains in the owned shared terminal library.
+
+### Browser proxy creation-time adapter (0.2.22)
+
+`proxy_override` validates the process-local product override before adapter
+creation; an invalid endpoint must never become a direct connection. Product
+editor and page-recreation semantics belong to PRD 25. macOS uses a separate
+nonpersistent WebKit data store for each explicitly proxied page to prevent a previous proxy from
+leaking into a new page after clearing the field; HTTP CONNECT proxy support
+requires macOS 14 or later. Windows uses WebView2 creation arguments and Linux
+uses the helper environment. Compilation does not qualify routing: per-platform
+proxy request receipts and missing native courts belong to the 0.2.22 plan.
+
+The native macOS executable's embedded plist and both app wrappers permit
+user-selected HTTP page content through `NSAllowsArbitraryLoadsInWebContent`.
+Without this WebView-specific setting, ATS rejects non-loopback HTTP before
+any proxy connection; loopback-only tests cannot expose the defect. This
+uses the [documented WebView policy](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowsarbitraryloadsinwebcontent).
+The HTTP proxy court requires a synthetic non-loopback target served entirely
+by a loopback proxy. HTTPS keeps the default server certificate trust checks;
+there is no certificate-exception callback.
+
+On macOS, revealing a native page explicitly places its NSView above the
+parent software surface and invalidates its display. The public AppKit
+operation prevents a recreated, successfully loaded page from staying blank
+until a terminal/browser switch. This is adapter presentation ownership;
+product visibility and error-overlay authority stay in MiniCon.
+
+The shared config codec accepts a bounded string array for candidate data
+(`browser.proxy_options`, absent/null means empty). Shape validation, JSON
+escaping and the 256-item structural bound remain in `minicon-core`; endpoint
+validation, normalization, deduplication and the eight-choice product limit
+remain in MiniCon's `web_preferences` module. The core codec does not depend
+on the native page library or product editor state. Runtime candidate and
+restart evidence belongs to PRD 25 and the 0.2.22 plan.
+
+### Native browser proxy environment isolation
+
+Windows WebView2 creation options are environment-wide: distinct proxy/bypass
+arguments cannot share a user-data directory while an older browser process is
+still alive. `minicon-web` keys proxied contexts by the SHA-256 of all native
+arguments under the OS temporary `minicon-webview2-proxy/` cache directory.
+Equal options reuse a directory; different options get different directories,
+without exposing endpoints in directory names. Proxied controllers use InPrivate
+mode; ordinary direct contexts retain their existing profile. This cache is
+native WebView data, not saved proxy-choice persistence or a bundled runtime.
+Creation/storage failure remains typed and never falls back to direct routing.
+The optional native-court hook `MINICON_BROWSER_PROFILE_ROOT` places proxied
+keys and the ordinary `direct/` context beneath one owned fixture root. It
+selects storage only, never an active proxy or a saved candidate. Native courts
+clear `WEBVIEW2_USER_DATA_FOLDER`: that WebView2 override would replace the API's
+per-environment directory and recreate the incompatibility. MiniCon does not
+mutate the process environment while creating views. External WebView2 policy
+or environment overrides retain their native precedence and may reject a
+conflicting configuration. See Microsoft's [environment creation contract](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl#createcorewebview2environmentwithoptions).
+Product editing, candidate persistence and page-reset meaning remain in
+[PRD 25.01](PRD_02_25_01_browser_preferences.md).
+
+Released Windows proxy-environment qualification and the earlier failed-source
+observation are owned by [0.2.22 release history](archive/v0.2.22-release-history.md).

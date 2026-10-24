@@ -3,9 +3,11 @@
 Parent: [delivery](PRD_02_27_con_delivery.md). Product/distribution priority is
 owned by [PRD 23](PRD_02_23_minicon.md#distribution-priority).
 
-Status: `[_]` accepted follow-up, owner 2026-10-24. Public 0.2.21 is now
-available; implementation is handed to the Mac agent through the
-[0.2.22 sequence](../plan/plan-v0.2.22.md). This was not a 0.2.21 Candidate gate.
+Status: `[_]` accepted follow-up, deferred by the owner on 2026-10-24 for
+coordinated AgenTerm planning. The current public baseline and next sequence
+are indexed in [PRD](../PRD.md); installation is outside the
+[0.2.23 plan](../plan/plan-v0.2.23.md). The original 0.2.21 closeout remains in
+its archived goal/plan records; this deferred work is not a Candidate gate.
 
 ## Outcome tree DAG
 
@@ -15,7 +17,7 @@ Outcome: users install native MiniCon with an OS-appropriate command
 │   invariant: resolve one formal release tag, then choose the matching native OS/ISA asset
 │   evidence: Windows/Linux x86_64 and arm64, plus both macOS ISAs selecting universal
 │   safe failure: unsupported target or missing formal asset fails explicitly
-│   dependency: public 0.2.21 and PRD 27 release asset names
+│   dependency: a formal public release and PRD 27 release asset names
 │   non-goal: silently substituting the secondary APE demonstration
 ├── [_] Verified staging and replacement
 │   invariant: verify the release SHA-256 sidecar before changing the installed product
@@ -47,7 +49,7 @@ Outcome: users install native MiniCon with an OS-appropriate command
 
 ```mermaid
 flowchart LR
-    P[Public 0.2.21] --> V[Resolve one formal release tag]
+    P[Formal public release] --> V[Resolve one formal release tag]
     V --> A[Select native OS and ISA asset]
     A --> H[Download and verify published SHA-256]
     H --> S[Owned temporary staging]

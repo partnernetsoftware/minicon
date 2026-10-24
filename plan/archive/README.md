@@ -128,3 +128,21 @@ the per-file text above is the authority, this list is only a map:
   `prd/PRD_02_31_v0_2_horizon.md`.
 
 Never reuse an archived run as evidence for newer source bytes.
+
+## 2026-10-24 release closeout
+
+- [0.2.22 implementation and parallel trial](plan-v0.2.22.md): public result is
+  owned by its release history; local timing, failed controls and earlier scope
+  markers remain as observed.
+- [0.2.21 goal](goal-0.2.21.md): superseded closeout sequence.
+- [0.2.16 proposal](plan-v0.2.16.md): incomplete; PRD 33 retains open obligations.
+- [0.2.17 proposal](plan-v0.2.17.md): incomplete; PRD 24.01/34/35 retain open gates.
+- [Roadmap snapshot](plan-v0.2.x-product-roadmap-2026-10-24.md) and
+  [hygiene audit ledger](plan-repo-hygiene-2026-10-24.md): preserved decisions,
+  measurements and rejected alternatives; live paths hold current sequence.
+
+- [Retired tray-era pointer](plan-wry-tray-browser.md) and
+  [blocked early NewAgent design](plan-newagent-config.md): historical input;
+  current browser and 0.3.x authority stay with PRD 25/31.
+- [Generated round view](round-baseline-2026-10-24.md): historical source/cost
+  observation. New generated views accompany ignored receipts, not live plans.

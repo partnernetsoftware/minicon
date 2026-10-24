@@ -58,8 +58,7 @@ impl ConApp {
             ui::TreeHit::Outside => return Ok(false),
             ui::TreeHit::Background => return Ok(true),
             ui::TreeHit::NewRoot => {
-                self.settings_open = false;
-                self.open_session_contained(window, false);
+                self.toggle_new_tab_menu(window);
                 return Ok(true);
             }
             ui::TreeHit::SidebarToggle => {

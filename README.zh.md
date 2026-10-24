@@ -104,6 +104,9 @@ minicon --status                 # 这台机器给了它什么
 minicon --help                   # 其余全部
 ```
 
+选择 **新建 → 网页**，即可在终端旁预览本地网址。服务暂不可用时，在终端启动
+服务后点击 **重试**；也可通过 **编辑地址** 修正网址。点击终端标签即可继续原来的草稿。
+
 | 按键 | |
 | --- | --- |
 | `Ctrl+Shift+T` | 新建终端 |
@@ -115,6 +118,7 @@ minicon --help                   # 其余全部
 | `Ctrl+Shift+I` | 聚焦终端输入区或浏览器地址栏 |
 | `Ctrl+L` / `Cmd+L` | 浏览器标签页中编辑地址；Enter 导航，Escape 返回页面 |
 | `Ctrl+Shift+P` | 循环切换配色主题（Neutral / Docs / Paper） |
+| `Cmd+[` / `Cmd+]` / `Cmd+R` | 在 macOS 浏览器页中后退 / 前进 / 刷新 |
 | `Ctrl+Shift+,` | 打开或关闭设置面板 |
 | `Ctrl+Shift+G` | 开关网格准星 |
 | `Ctrl+Shift+H` | 打开或关闭已发送历史面板 |
@@ -154,7 +158,7 @@ shell：每个 tab 一个进程而不是三个，没有额外的 `conhost.exe`�
 ```
 
 在 macOS 上，规范 dev 构建还会组装未签名的本地测试包装
-`target/debug/MiniCon 0.2.21 Dev.app`；它使用独立的开发 bundle id，避免 UI
+`target/debug/MiniCon 0.2.22 Dev.app`；版本跟随 `Cargo.toml`，使用独立的开发 bundle id，避免 UI
 验收时误选机器上已安装的发行版。实际接受测试的可执行文件仍是
 `target/debug/minicon`。
 
@@ -180,6 +184,11 @@ Rust 1.97。Linux 需要 `libxkbcommon.so.0` 和 `libwayland-client.so.0`（无�
   macOS Developer ID + 公证，主体为 PARTNERNET SOFTWARE PTY LTD，并带 RFC 3161
   时间戳。用 `scripts/inspect-authenticode.ps1` 验证 Windows 下载。细节见
   [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)。
+
+网页地址旁的代理下拉框支持手输 HTTP 代理，例如 `http://127.0.0.1:8890`。
+Enter 应用并重新加载（重置页面会话和历史），Escape 取消编辑。在
+**设置 → Web** 增删保存的候选项，**Console** 保留终端设置；选择
+**使用配置的代理** 可清除本次覆盖。
 
 ---
 

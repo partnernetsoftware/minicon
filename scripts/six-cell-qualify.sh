@@ -197,14 +197,10 @@ case "$LIMA_ACCELERATOR" in
   *) printf 'MINICON_ENABLE_LIMA_ACCELERATOR must be 0 or 1\n' >&2; exit 2 ;;
 esac
 
-# Default BUILD_JOBS core-count-aware rather than a flat 5: on a 14-core host
-# BUILD_JOBS=5 * CARGO_JOBS_PER_CELL=2 saturates every core with no headroom
-# left for the host's own scheduler, which measurably pushed
-# host_process_rss_stays_within_named_budget over its ceiling under
-# contention (17.70 MiB vs. a 16 MiB ceiling) while isolated reruns held
-# ~9 MiB; MINICON_BUILD_JOBS=2 made the run clean. Half the core count (never
-# below 2, never above the old flat default of 5) keeps that headroom
-# without a caller having to know to override it.
+# Resource controls: MINICON_BUILD_JOBS and MINICON_CARGO_JOBS_PER_CELL.
+# Lower group fan-out on a constrained host before interpreting timing-sensitive
+# native failures; retain all assertions. Owner and measurement history:
+# prd/PRD_02_27_con_delivery.md, local qualification resource budget.
 default_build_jobs() {
   local cores
   cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)

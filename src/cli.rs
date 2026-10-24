@@ -551,12 +551,14 @@ path: hover, click targets and focus all resolve exactly as with a real mouse.
   Ctrl+Shift+[ / ]   Switch tabs
   Ctrl+Shift+I       Focus terminal input or the browser address field
   Ctrl+L / Cmd+L     Edit the browser address; Enter navigates, Escape returns to page
+  Cmd+[ / ] / R     On macOS: browser Back / Forward / Reload
   Ctrl+Shift+P       Cycle the color theme (Neutral / Docs / Paper / Dark)
   Ctrl+Shift+,       Open or close the settings panel
   Ctrl+Shift+G       Toggle the grid crosshair
   Ctrl+Shift+H       Open or close the sent-history panel
 {composer_keys}
   Click a tab to select it. Closing the final tab leaves the greeting page.
+  Choose New -> Browser to preview a URL; Retry or Edit address recovers a failed page.
 
   -e, --command  Run PROGRAM instead of the default shell. Everything after
                  -e is passed through verbatim, so it must come last:

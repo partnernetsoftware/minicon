@@ -35,6 +35,8 @@ MiniCon — one-file local terminal
 │   │   └── prd/PRD_02_34_windows_console_backend.md
 │   ├── tab tree, content panels, composer, IME, selection, notes, settings and manual update
 │   │   └── prd/PRD_02_25_con_workspace.md
+│   │       ├── [v] Browser proxy preferences / Console-Web routes → prd/PRD_02_25_01_browser_preferences.md
+│   │       └── [_] Consistent browser controls → prd/PRD_02_25_02_browser_controls.md
 │   ├── local CLI, waits, structured snapshots and screenshots
 │   │   └── prd/PRD_02_26_con_control_cli.md
 │   └── bounded mux/harness composition → prd/PRD_02_31_v0_2_horizon.md
@@ -50,19 +52,15 @@ MiniCon — one-file local terminal
 ├── Qualification and delivery
 │   ├── native developer feedback → prd/PRD_02_32_dev_loop_crosscheck.md
 │   ├── [-] targeted profiles and staged composition
-│   │   └── prd/PRD_02_33_test_orchestration.md · plan/plan-v0.2.16.md
+│   │   └── prd/PRD_02_33_test_orchestration.md
 │   └── exact-source artifacts, signing, scan and no-rebuild Promotion
 │       └── prd/PRD_02_27_con_delivery.md
-│           └── [_] native command-line installation after 0.2.21 → prd/PRD_02_27_01_install.md
+│           └── [_] deferred native command-line installation → prd/PRD_02_27_01_install.md
 └── Current delivery
-    ├── [v] v0.2.21 → prd/archive/v0.2.21-release-history.md
-    ├── [_] v0.2.22 Mac handoff: native installation and size follow-up → plan/plan-v0.2.22.md
-    ├── [v] v0.2.20 → prd/archive/v0.2.20-release-history.md
-    ├── [v] v0.2.19 → prd/archive/v0.2.19-release-history.md
-    ├── [v] v0.2.18 → prd/archive/v0.2.18-release-history.md
-    ├── [-] v0.2.16 test-selection work → plan/plan-v0.2.16.md
-    ├── [-] v0.2.17 modern-agent gate → plan/plan-v0.2.17.md
-    └── [_] 0.2.x product sequence / release decisions → plan/plan-v0.2.x-product-roadmap.md
+    ├── [v] public v0.2.22 → prd/archive/v0.2.22-release-history.md
+    ├── [_] v0.2.23 browser control consistency → plan/plan-v0.2.23.md
+    ├── current independent tracks → plan/plan-v0.2.x-product-roadmap.md
+    └── historical outcomes and receipts → prd/archive/README.md
 ```
 
 The reuse map distinguishes public contracts, actual consumers, required
@@ -81,7 +79,8 @@ flowchart LR
     MC --> P["minicon-platform<br/>native capabilities"]
     MC -.->|"browser content panel"| WEB["minicon-web<br/>browser API / wry isolate"]
     WEB --> UX["browser workspace UX<br/>owner acceptance gate / PRD 25"]
-    WWEB["Windows WebView2 adapter bring-up"] --> UX
+    WWEB["Native browser adapters and per-OS qualification"] --> UX
+    CTRL["PRD 25.02: browser control consistency"] --> UX
     UX -->|"only after acceptance"| R
     BADUX["owner rejection or missing UX decision"] -->|"kill Candidate"| UX
     UI -->|tree compatibility exports| C
@@ -129,6 +128,8 @@ flowchart LR
 | Keep modern agent TUIs readable | [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md) | versioned real agents, bounded source/wire/state/pixel traces and provider-specific claims |
 | Own the Windows console implementation | [Windows backend](prd/PRD_02_34_windows_console_backend.md) | planned API/bootstrap/lifecycle proofs; source research does not certify a replacement |
 | Organize and type without corrupting drafts | [Workspace](prd/PRD_02_25_con_workspace.md) | composer, IME, tabs, content vs chrome panels, notes/settings and input journeys; no stale targeting |
+| Browser proxy preferences | [Preferences](prd/PRD_02_25_01_browser_preferences.md) | Active override, saved candidates and Console/Web settings routes |
+| Consistent browser controls | [Controls](prd/PRD_02_25_02_browser_controls.md) | Planned shared editing, keyboard menus, compact geometry and scoped native focus |
 | Built-in browser surface (not tray) | [Workspace](prd/PRD_02_25_con_workspace.md) + [horizon / minicon-web](prd/PRD_02_31_v0_2_horizon.md) | Tab / content panel; open/load via minicon-web; wry isolated; proxy hook; staged OAuth/dashboard/preview/wasm |
 | Automate what the GUI presents | [Control](prd/PRD_02_26_con_control_cli.md) | catalog, wait, snapshot and PNG black boxes; bounded typed errors |
 | Bounded mux/harness subcommands | [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md) | explicit provider/session contracts; no workbench authority inherited |
@@ -137,98 +138,50 @@ flowchart LR
 | Native developer feedback | [Dev court](prd/PRD_02_32_dev_loop_crosscheck.md) | observed native suite execution; unavailable courts stay BLOCKED |
 | Select and compose tests efficiently | [Test orchestration](prd/PRD_02_33_test_orchestration.md) | planned versus observed obligations; unknown impact expands coverage |
 | Ship portable exact artifacts and control RSS/build cost | [Delivery](prd/PRD_02_27_con_delivery.md) | native artifacts, signatures, scan, Promotion and scoped measurements; no silent weakening |
-| Install native MiniCon from a command line (after 0.2.21) | [Native installation](prd/PRD_02_27_01_install.md) | published OS-appropriate bootstrap scripts, verified native bytes and matching README/site instructions |
+| Install native MiniCon from a command line (deferred) | [Native installation](prd/PRD_02_27_01_install.md) | published OS-appropriate bootstrap scripts, verified native bytes and matching README/site instructions |
 | Deferred portable logic / foundry directions | [qjswasm](prd/PRD_02_29_qjswasm_horizon.md), [foundry](prd/PRD_02_30_foundry_horizon.md) | independent complete-product decisions; no current-version implementation claim |
 
 ## Current frontier
 
-- [v] **v0.2.21 published: native browser workspace and bounded shutdown replies.**
-  [Release history](prd/archive/v0.2.21-release-history.md) owns exact-source,
-  signed/Candidate/public qualification and the owner's release decision.
-  [Workspace](prd/PRD_02_25_con_workspace.md) retains unobserved physical-focus,
-  proxy and DPI limits; G4/G6 remain carried debt.
-- [_] **v0.2.22 Mac handoff.** Implement the accepted native installation branch
-  and matching README/site guidance; measure size contributions before bounded
-  optimization. [Sequence](plan/plan-v0.2.22.md),
-  [installation owner](prd/PRD_02_27_01_install.md),
-  [budget/delivery owner](prd/PRD_02_27_con_delivery.md).
-- [-] **Owned Rust Windows console backend: minicon-console.** Native ConDrv,
-  limited Win32 I/O/records and job cleanup are implemented. The explicit
-  experimental PTY and GUI choice is packaged in v0.2.18; scoped PowerShell/Node
-  and Ctrl+C evidence exists. Broader API/runtime compatibility, especially
-  Windows ARM64 Rust-provider execution and a visible exact-Candidate agent
-  matrix, remain open. From v0.2.20 the owned Rust console is the Windows
-  default; the classic agent remains the one-word rollback.
-  [Owner](prd/PRD_02_34_windows_console_backend.md) and
-  [sequence](plan/plan-windows-console-backend.md).
-- [v] **v0.2.20 published**, `2026-10-22T16:04:27Z`, source
-  `bd881e3fc0ff4b6913c82ec5b50df9bcb75e3575`. The owned Rust console is the
-  Windows default backend (rollback: `--feature console-agent`); MSYS2
-  output, mouse, resize notification, unstartable programs and >1 MiB writes
-  were fixed on the way. [Release history](prd/archive/v0.2.20-release-history.md)
-  owns the receipts and the named open items (G4 heap corruption, G6
-  disconnect flake on new Windows runners).
-- [v] **v0.2.19 published**, `2026-10-21T16:28:55Z`, source
-  `7e27648cb3d814187887992b3274be5d73ea38ac`. Seam consolidation (four drifted
-  decisions unified), the console-owned session contract vocabulary, the
-  `adapters/unix/pty` home with native POSIX runtime evidence, and the
-  validated advanced `term` override ship.
-  [Release history](prd/archive/v0.2.19-release-history.md) owns the exact
-  receipts; the portable session trait, the TERM runtime probe and the
-  intel-mac throughput bound stay open by name.
-- [v] **v0.2.18 published**, `2026-10-21T06:56:59Z`, source
-  `9a25ee4b55809c9118d67ab9c1904a8e800b956d`. The signed packages include
-  the explicit Rust-console choice and display the correct version; child-tab
-  targeting, bounded screenshot replies and initial staged developer profiles
-  also ship. [Release history](prd/archive/v0.2.18-release-history.md) owns the
-  exact receipts and limits. The full three-agent TUI gate was not claimed.
-- [-] **Test selection remains partial.** Explicit edit/integration profiles,
-  task deduplication and plan-only conservative path selection now work;
-  complete inventory, automatic dependency closure and comparable cost/coverage
-  measurement remain open. [Plan](plan/plan-v0.2.16.md) and
-  [owner](prd/PRD_02_33_test_orchestration.md) retain the work.
-- [-] **Modern agent and portable-session quality remain open.** The
-  [TUI plan](plan/plan-v0.2.17.md) and
-  [0.2.x roadmap](plan/plan-v0.2.x-product-roadmap.md) retain the unqualified
-  three-agent, native API, OS/ISA and default-provider decisions.
-- [-] **RSS and transient-host cost**, including carried `{AMPLIFIER-T}`, remain
-  open. The 10 MiB intent is not achieved by this release. Measurements and
-  retained-frame/native-host investigations belong to
+- [v] **Public v0.2.22: terminal-to-browser preview and proxy preferences.**
+  [Release history](prd/archive/v0.2.22-release-history.md) owns final source,
+  signed/Candidate/Defender/public qualification, retained failures and scope.
+  [Workspace](prd/PRD_02_25_con_workspace.md) and
+  [preferences](prd/PRD_02_25_01_browser_preferences.md) own behavior.
+- [_] **v0.2.23: predictable browser control operation.**
+  [Controls owner](prd/PRD_02_25_02_browser_controls.md) defines consistent
+  editing, compact menu geometry, keyboard/pointer menus and native focus evidence;
+  [the plan](plan/plan-v0.2.23.md) sequences work. Feature implementation and
+  another public version have not started. Installation remains
+  [deferred for coordinated AgenTerm planning](prd/PRD_02_27_01_install.md).
+- [-] **Modern-agent and terminal-library qualification.** Owned Rust console
+  is the Windows default from 0.2.20; classic remains the explicit rollback.
+  G4/G6 and versioned agent/provider/OS/ISA/session acceptance stay open in
+  [TUI compatibility](prd/PRD_02_24_01_tui_compatibility.md),
+  [Windows backend](prd/PRD_02_34_windows_console_backend.md),
+  [terminal library](prd/PRD_02_35_terminal_library.md), and
+  [carried debt](plan/plan-carried-debt.md).
+- [-] **Developer feedback remains scoped.** Explicit profiles work;
+  complete inventory, automatic dependency closure and comparable measurement
+  remain with [test orchestration](prd/PRD_02_33_test_orchestration.md).
+  Hosted, local, translated-userspace and optional VM courts retain separate
+  evidence in [native development](prd/PRD_02_32_dev_loop_crosscheck.md) and
   [delivery](prd/PRD_02_27_con_delivery.md).
-- [-] **Built-in browser tabs (content panels) via `minicon-web`.** One
-  browser tab peers a terminal tab. Its content panel is the page;
-  `minicon-console` stays the terminal panel. Linux currently uses the
-  feature-gated `minicon-web-host`; macOS now uses an in-process WKWebView child
-  through the same `minicon-web` boundary because X11 reparenting does not
-  provide WKWebView/WebView2.
-  Core crates/headless remain WebView-free. Ctrl+click http(s) and DeepSeek
-  authorize must use that panel, not the OS browser. No tray or floating helper.
-  1:N panels, dashboard, preview and wasm are later.
-  Names: [Workspace](prd/PRD_02_25_con_workspace.md);
-  0.2.21 delivery and scoped follow-up evidence:
-  [plan-v0.2.21](plan/archive/plan-v0.2.21.md);
-  boundary: [plan-browser-tabs](plan/plan-browser-tabs.md) and
-  [horizon](prd/PRD_02_31_v0_2_horizon.md).
-- [-] **macOS host-UI readability** remains open, including tab/header and
-  composer-button text. [Workspace](prd/PRD_02_25_con_workspace.md) owns the
-  zoom/text/padding follow-up.
-- [-] **Pack latency and artifact size** remain separate measurements. Retain
-  Linux dual-desktop support and the reputation-qualified Windows profile;
-  compacting/compiler changes need their own evidence. Owner:
-  [delivery](prd/PRD_02_27_con_delivery.md).
-- [-] **Court baselines remain independent.** Hosted native, local UTM,
-  provisional translated userspace and optional Lima results do not inherit
-  each other's verdicts. Local baselines and unavailable evidence remain with
-  [delivery](prd/PRD_02_27_con_delivery.md).
-- [-] **Windows alternate-screen resize and retained TUI findings** remain
-  scoped follow-ups. [Terminal](prd/PRD_02_24_con_terminal.md) and the
-  [resize record](plan/plan-alt-screen-resize.md) retain their evidence; the
-  0.2.15 mirror correction does not close every TUI rendering report.
-- [_] Ordinary push/PR CI remains parked. qjswasm portable logic still waits
-  for a stable AgenTerm engine and a decisive complete-product experiment.
-- Other carried work remains in [carried debt](plan/plan-carried-debt.md) and
-  [repository hygiene](plan/plan-repo-hygiene.md), not implicitly completed by
-  the new release.
+- [-] **Browser horizon and host readability.** One Browser root is the current
+  product; broader keyboard/IME/DPI, provider OAuth, dashboard/preview/wasm and
+  1:N content panels are independently scoped in
+  [workspace](prd/PRD_02_25_con_workspace.md),
+  [browser horizon](plan/plan-browser-tabs.md), and
+  [0.2.x horizon](prd/PRD_02_31_v0_2_horizon.md).
+- [-] **Resource and rendering debt.** The 10 MiB host-RSS intent is unachieved.
+  RSS/transient-host cost, artifact size, pack latency and retained TUI/resize
+  findings remain with [delivery](prd/PRD_02_27_con_delivery.md),
+  [terminal](prd/PRD_02_24_con_terminal.md), and
+  [carried debt](plan/plan-carried-debt.md).
+- [_] Ordinary push/PR CI remains parked; qjswasm awaits its own complete-product
+  decision. [Current roadmap](plan/plan-v0.2.x-product-roadmap.md) and
+  [hygiene sequence](plan/plan-repo-hygiene.md) point to open owners; archiving
+  obsolete version proposals neither completes nor abandons their obligations.
 
 ## History and evidence
 

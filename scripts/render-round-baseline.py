@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Render plan/round-baseline.md from a round-receipt.json.
+"""Render a receipt's PASS timing view to the requested output path.
 
-D3 (plan/plan-v0.1.24.md): per-stage timings already live in every receipt;
-this turns them into a table nobody has to hand-edit. Only PASS rows are a
-baseline -- a BLOCKED or FAILed stage measures how long it took to not
-answer the question, which is not a number to chase. Called from
-scripts/round.sh after every round; safe to run standalone against any
-existing receipt.
+Owner: prd/PRD_02_27_con_delivery.md. Called by scripts/round.sh; no gates run.
 """
 import json
 import sys

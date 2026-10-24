@@ -36,7 +36,8 @@ test_lints='build.rustflags=["-D","dead_code","-D","unused_variables","-D","unus
 
 assemble_macos_dev_app() {
   [ "$(uname -s)" = Darwin ] || return 0
-  dev_app="target/debug/MiniCon 0.2.21 Dev.app"
+  dev_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+  dev_app="target/debug/MiniCon $dev_version Dev.app"
   dev_contents="$dev_app/Contents"
   # This is an ignored local test wrapper, never a release/signing artifact.
   # Keep its identity distinct so Computer Use does not select an installed
@@ -45,21 +46,23 @@ assemble_macos_dev_app() {
   mkdir -p "$dev_contents/MacOS" "$dev_contents/Resources"
   cp target/debug/minicon "$dev_contents/MacOS/minicon"
   cp assets/minicon.icns "$dev_contents/Resources/minicon.icns"
-  "$python_bin" - "$dev_contents/Info.plist" <<'PY'
+  "$python_bin" - "$dev_contents/Info.plist" "$dev_version" <<'PY'
 import plistlib
 import sys
 
+version = sys.argv[2]
 payload = {
-    "CFBundleName": "MiniCon 0.2.21 Dev",
-    "CFBundleDisplayName": "MiniCon 0.2.21 Dev",
-    "CFBundleIdentifier": "com.partnernetsoftware.minicon.dev-0-2-21",
+    "CFBundleName": f"MiniCon {version} Dev",
+    "CFBundleDisplayName": f"MiniCon {version} Dev",
+    "CFBundleIdentifier": f"com.partnernetsoftware.minicon.dev-{version.replace('.', '-')}",
     "CFBundleExecutable": "minicon",
     "CFBundleIconFile": "minicon",
     "CFBundlePackageType": "APPL",
-    "CFBundleShortVersionString": "0.2.21",
-    "CFBundleVersion": "0.2.21",
+    "CFBundleShortVersionString": version,
+    "CFBundleVersion": version,
     "LSMinimumSystemVersion": "11.0",
     "NSHighResolutionCapable": True,
+    "NSAppTransportSecurity": {"NSAllowsArbitraryLoadsInWebContent": True},
 }
 with open(sys.argv[1], "wb") as output:
     plistlib.dump(payload, output, sort_keys=True)
@@ -124,6 +127,7 @@ case "$mode" in
         skip_feature_value=false
       else
         case "$argument" in
+          --lib) ;; # Already selected by the separately owned fork below.
           --) libtest_args=true; fork_args+=("$argument") ;;
           --features|-F) skip_feature_value=true ;;
           --features=*|-F?*) ;;

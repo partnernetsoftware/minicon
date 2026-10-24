@@ -59,7 +59,8 @@ def main() -> int:
     env["MINICON_BROWSER_HTTP_PROXY"] = f"http://127.0.0.1:{proxy.server_port}"
     env.pop("MINICON_BROWSER_HTTPS_PROXY", None)
     env["MINICON_BROWSER_NO_PROXY"] = "bypass.example.test"
-    env["WEBVIEW2_USER_DATA_FOLDER"] = str(output / "profile")
+    env["MINICON_BROWSER_PROFILE_ROOT"] = str(output / "profile")
+    env.pop("WEBVIEW2_USER_DATA_FOLDER", None)
     env.pop("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", None)
     env["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
         '--host-resolver-rules="MAP bypass.example.test 127.0.0.1"'

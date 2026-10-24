@@ -23,6 +23,53 @@ use crate::{BrowserProxy, PanelSlot};
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(target_os = "macos")]
+fn macos_proxy_endpoint(
+    proxy: &BrowserProxy,
+    available: bool,
+) -> Result<Option<(String, String)>, String> {
+    let parse = |value: &Option<String>| {
+        value
+            .as_ref()
+            .map(|raw| {
+                crate::parse_http_proxy_endpoint(raw)
+                    .ok_or_else(|| "browser-proxy-invalid".to_owned())
+            })
+            .transpose()
+    };
+    let http = parse(&proxy.http)?;
+    let https = parse(&proxy.https)?;
+    let endpoint = match (http, https) {
+        (Some(http), Some(https)) if http != https => {
+            return Err("browser-proxy-unsupported".to_owned());
+        }
+        (Some(one), _) | (_, Some(one)) => Some(one),
+        (None, None) => None,
+    };
+    if endpoint.is_some() && !available {
+        return Err("browser-proxy-unsupported".to_owned());
+    }
+    Ok(endpoint)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_proxy_available() -> bool {
+    use objc2::{
+        class, msg_send,
+        runtime::{AnyObject, Bool},
+        sel,
+    };
+    // WebKit's proxyConfigurations setter is available on macOS 14+. Check
+    // before wry calls the newer Network HTTP-CONNECT proxy functions.
+    let store: *mut AnyObject = unsafe { msg_send![class!(WKWebsiteDataStore), defaultDataStore] };
+    if store.is_null() {
+        return false;
+    }
+    let available: Bool =
+        unsafe { msg_send![store, respondsToSelector: sel!(setProxyConfigurations:)] };
+    available.as_bool()
+}
+
+#[cfg(target_os = "macos")]
 mod macos_shortcuts;
 
 #[derive(Clone, Debug, Default)]
@@ -35,6 +82,16 @@ pub struct NativePageState {
     pub changed: bool,
     pub error: Option<String>,
     pub shortcuts: Vec<char>,
+}
+
+fn start_navigation(state: &mut NativePageState, url: &str) {
+    if url.len() <= 8192 {
+        state.url = url.to_owned();
+    }
+    state.title.clear();
+    state.error = None;
+    state.loading = true;
+    state.changed = true;
 }
 
 const HOME_HTML: &str = r#"<!doctype html>
@@ -165,7 +222,18 @@ impl NativePageHost {
         let local_origin = Rc::new(RefCell::new(None::<String>));
         let navigation_origin = local_origin.clone();
         let native_wake = wake.clone();
-        let mut builder = WebViewBuilder::new()
+        #[cfg(windows)]
+        let windows_arguments = windows_proxy_arguments(proxy)?;
+        #[cfg(windows)]
+        let mut windows_context = windows_page_context(windows_arguments.as_deref())?;
+        #[cfg(windows)]
+        let builder = match windows_context.as_mut() {
+            Some(context) => WebViewBuilder::new_with_web_context(context),
+            None => WebViewBuilder::new(),
+        };
+        #[cfg(not(windows))]
+        let builder = WebViewBuilder::new();
+        let mut builder = builder
             .with_html(HOME_HTML)
             .with_bounds(bounds(slot))
             .with_focused(false)
@@ -198,25 +266,25 @@ impl NativePageHost {
                     false
                 } else {
                     let mut state = navigation_state.borrow_mut();
-                    state.error = None;
-                    state.loading = true;
-                    if next.len() <= 8192 {
-                        state.url.clone_from(&next);
-                    }
-                    state.changed = true;
+                    start_navigation(&mut state, &next);
                     navigation_wake();
                     true
                 }
             });
         #[cfg(target_os = "macos")]
-        if let Some((host, port)) = crate::wry_proxy_endpoint(proxy) {
+        if let Some((host, port)) = macos_proxy_endpoint(proxy, macos_proxy_available())? {
             builder = builder
+                // A fresh private store prevents the old view's proxy from
+                // contaminating a later view after the field is cleared.
+                .with_incognito(true)
                 .with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host, port }));
         }
         #[cfg(windows)]
-        if let Some(arguments) = windows_proxy_arguments(proxy)? {
+        if let Some(arguments) = windows_arguments {
             use wry::WebViewBuilderExtWindows;
-            builder = builder.with_additional_browser_args(arguments);
+            builder = builder
+                .with_additional_browser_args(arguments)
+                .with_incognito(true);
         }
         let webview = builder
             .build_as_child(&parent)
@@ -280,7 +348,7 @@ impl NativePageHost {
         if canonical != url {
             return Err("not-http".to_owned());
         }
-        self.state.borrow_mut().error = None;
+        start_navigation(&mut self.state.borrow_mut(), url);
         *self.local_origin.borrow_mut() = if crate::webview_must_bypass_proxy(url) {
             url.strip_prefix("http://").map(|rest| {
                 let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
@@ -289,9 +357,14 @@ impl NativePageHost {
         } else {
             None
         };
-        self.webview
-            .load_url(url)
-            .map_err(|_| "browser-native-load-failed".to_owned())
+        self.webview.load_url(url).map_err(|_| {
+            let reason = "browser-native-load-failed".to_owned();
+            let mut state = self.state.borrow_mut();
+            state.loading = false;
+            state.error = Some(reason.clone());
+            state.changed = true;
+            reason
+        })
     }
 
     pub fn set_slot(&self, slot: PanelSlot) -> Result<(), String> {
@@ -301,7 +374,7 @@ impl NativePageHost {
     }
 
     pub fn set_visible(&self, visible: bool) -> Result<(), String> {
-        apply_visibility(
+        let result = apply_visibility(
             visible,
             || {
                 self.webview
@@ -313,7 +386,26 @@ impl NativePageHost {
                     .set_visible(show)
                     .map_err(|_| "browser-native-visibility-failed".to_owned())
             },
-        )
+        );
+        #[cfg(target_os = "macos")]
+        if visible && result.is_ok() {
+            use wry::WebViewExtMacOS;
+            let view: objc2::rc::Retained<objc2_app_kit::NSView> =
+                self.webview.webview().into_super().into_super();
+            // Keep a replacement WK child above the parent software surface.
+            // A loaded page otherwise stays blank until a tab hide/show cycle.
+            // SAFETY: the GUI thread owns this live child and its parent
+            // window; neither can be removed during this synchronous call.
+            if let Some(parent) = unsafe { view.superview() } {
+                parent.addSubview_positioned_relativeTo(
+                    &view,
+                    objc2_app_kit::NSWindowOrderingMode::Above,
+                    None,
+                );
+            }
+            view.setNeedsDisplay(true);
+        }
+        result
     }
 }
 
@@ -389,7 +481,7 @@ fn install_windows_events(
         webview
             .webview()
             .add_NavigationCompleted(
-                &NavigationCompletedEventHandler::create(Box::new(move |_, args| {
+                &NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
                     let Some(args) = args else {
                         return Ok(());
                     };
@@ -397,6 +489,19 @@ fn install_windows_events(
                     args.IsSuccess(&mut success)?;
                     let mut state = state.borrow_mut();
                     state.error = if success.as_bool() {
+                        // Read the committed document as well as title-change
+                        // notifications: redirects may deliver those before the
+                        // final navigation-start callback resets stale state.
+                        if let Some(sender) = sender {
+                            let mut title = Default::default();
+                            if sender.DocumentTitle(&mut title).is_ok() {
+                                state.title = webview2_com::take_pwstr(title)
+                                    .chars()
+                                    .filter(|c| !c.is_control())
+                                    .take(256)
+                                    .collect();
+                            }
+                        }
                         None
                     } else {
                         let mut status = Default::default();
@@ -413,6 +518,32 @@ fn install_windows_events(
             .map_err(|_| "browser-native-load-events-failed".to_owned())?;
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn windows_page_context(arguments: Option<&str>) -> Result<Option<wry::WebContext>, String> {
+    use sha2::Digest;
+    let root = std::env::var_os("MINICON_BROWSER_PROFILE_ROOT")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from);
+    // WebView2 environments with different options cannot share a data folder,
+    // even while the previous view's browser process is still shutting down.
+    // Key all native arguments, including bypass rules; never put endpoints in
+    // directory names. Equal options reuse one cache rather than accumulating
+    // a new folder on every apply. Product lifetime/choice rules: PRD 25.01.
+    let path = match arguments {
+        Some(arguments) => {
+            let key = crate::base64url(&sha2::Sha256::digest(arguments.as_bytes()));
+            root.unwrap_or_else(|| std::env::temp_dir().join("minicon-webview2-proxy"))
+                .join(key)
+        }
+        None => match root {
+            Some(root) => root.join("direct"),
+            None => return Ok(None),
+        },
+    };
+    std::fs::create_dir_all(&path).map_err(|_| "browser-native-profile-unavailable".to_owned())?;
+    Ok(Some(wry::WebContext::new(Some(path))))
 }
 
 #[cfg(windows)]
@@ -492,6 +623,61 @@ fn bounds(slot: PanelSlot) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_proxy_validation_fails_closed_when_unavailable_invalid_or_split() {
+        let proxy =
+            crate::proxy_override(&BrowserProxy::default(), "http://127.0.0.1:8890").unwrap();
+        assert_eq!(
+            macos_proxy_endpoint(&proxy, true).unwrap(),
+            Some(("127.0.0.1".into(), "8890".into()))
+        );
+        assert_eq!(
+            macos_proxy_endpoint(&proxy, false),
+            Err("browser-proxy-unsupported".into())
+        );
+        assert_eq!(
+            macos_proxy_endpoint(&BrowserProxy::default(), false).unwrap(),
+            None
+        );
+        assert_eq!(
+            macos_proxy_endpoint(
+                &BrowserProxy {
+                    http: Some("invalid".into()),
+                    ..BrowserProxy::default()
+                },
+                true
+            ),
+            Err("browser-proxy-invalid".into())
+        );
+        assert_eq!(
+            macos_proxy_endpoint(
+                &BrowserProxy {
+                    http: Some("http://one.test:80".into()),
+                    https: Some("http://two.test:80".into()),
+                    no_proxy: None
+                },
+                true
+            ),
+            Err("browser-proxy-unsupported".into())
+        );
+    }
+
+    #[test]
+    fn new_navigation_replaces_stale_error_title_and_url_before_a_native_callback() {
+        let mut state = NativePageState {
+            url: "http://localhost/old".into(),
+            title: "Earlier page".into(),
+            error: Some("browser-navigation-error-7".into()),
+            ..Default::default()
+        };
+        start_navigation(&mut state, "http://localhost/retry");
+        assert_eq!(state.url, "http://localhost/retry");
+        assert!(state.title.is_empty());
+        assert!(state.error.is_none());
+        assert!(state.loading && state.changed);
+    }
 
     #[test]
     fn home_is_a_bounded_first_party_smoke_surface() {

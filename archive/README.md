@@ -71,3 +71,10 @@ not as requirements:
   the 0x7B pitfall, and a "how to place a new tool" four-question method.
   Gathered while reproducing the console-agent CJK rendering bug in an emulated
   x86 Windows guest under UTM on Apple Silicon.
+
+- `research/host-ui-frames/v0.2.22.png` — preserved Q1 host-UI diagnostic frame
+  from the public 0.2.22 source. Current generation/output ownership is in
+  [PRD 25 Host UI](../prd/PRD_02_25_con_workspace.md#host-ui).
+
+- [Public 0.2.22 browser captures](research/browser-v0.2.22/README.md) — original
+  page/proxy and failure pixels; release history owns provenance and scope.

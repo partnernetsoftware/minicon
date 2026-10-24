@@ -11,6 +11,30 @@ use super::NativePageState;
 
 pub(super) struct ShortcutMonitor(Retained<AnyObject>);
 
+fn reserved_shortcut(
+    character: char,
+    control: bool,
+    command: bool,
+    shift: bool,
+    option: bool,
+) -> Option<char> {
+    if option {
+        return None;
+    }
+    if (control || command) && character == 'L' {
+        return Some('L');
+    }
+    if command && !control && !shift {
+        return match character {
+            '[' => Some('<'),
+            ']' => Some('>'),
+            'R' => Some('R'),
+            _ => None,
+        };
+    }
+    (control && shift && "TODNWBHIPG[],".contains(character)).then_some(character)
+}
+
 impl ShortcutMonitor {
     pub(super) fn install(
         webview: &WebView,
@@ -48,6 +72,7 @@ impl ShortcutMonitor {
                 let control = flags.contains(NSEventModifierFlags::Control);
                 let command = flags.contains(NSEventModifierFlags::Command);
                 let shift = flags.contains(NSEventModifierFlags::Shift);
+                let option = flags.contains(NSEventModifierFlags::Option);
                 let character = match event.keyCode() {
                     // Shift changes these logical characters to {, } and <.
                     // Keep the same physical punctuation as the host chords.
@@ -69,11 +94,10 @@ impl ShortcutMonitor {
                         character.to_ascii_uppercase()
                     }
                 };
-                let reserved = ((control || command) && character == 'L')
-                    || (control && shift && "TODNWBHIPG[],".contains(character));
-                if !reserved {
+                let Some(shortcut) = reserved_shortcut(character, control, command, shift, option)
+                else {
                     return original;
-                }
+                };
                 if event.r#type() == NSEventType::KeyDown {
                     // Re-entrant native callbacks must never panic on a
                     // RefCell borrow, and repeated keys cannot grow the queue.
@@ -81,7 +105,7 @@ impl ShortcutMonitor {
                         return std::ptr::null_mut();
                     };
                     if state.shortcuts.len() < 16 {
-                        state.shortcuts.push(character);
+                        state.shortcuts.push(shortcut);
                         state.changed = true;
                         drop(state);
                         wake();
@@ -109,5 +133,27 @@ impl Drop for ShortcutMonitor {
         // This token came from addLocalMonitor and the GUI drops the native
         // page on the same main thread that created it.
         unsafe { NSEvent::removeMonitor(&self.0) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mac_navigation_keys_are_distinct_from_host_tab_shortcuts() {
+        for (key, action) in [('[', '<'), (']', '>'), ('R', 'R')] {
+            assert_eq!(
+                reserved_shortcut(key, false, true, false, false),
+                Some(action)
+            );
+            assert_eq!(reserved_shortcut(key, false, false, false, false), None);
+            assert_eq!(reserved_shortcut(key, false, true, false, true), None);
+        }
+        assert_eq!(reserved_shortcut('[', true, false, true, false), Some('['));
+        assert_eq!(reserved_shortcut(']', true, false, true, false), Some(']'));
+        assert_eq!(reserved_shortcut('L', false, true, false, false), Some('L'));
+        assert_eq!(reserved_shortcut('L', true, false, false, false), Some('L'));
+        assert_eq!(reserved_shortcut('C', false, true, false, false), None);
     }
 }

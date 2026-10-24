@@ -53,9 +53,9 @@ recorded, carried here so the archive stays optional reading:
   supported-OS list. `old-windows.html` has not changed since 2026-09-29 and its
   sample output still reads `minicon 0.1.2` — refresh it or date the sample. The
   pages have no generator; that gap is already recorded as deliberately not done
-  in `plan/plan-repo-hygiene.md`.
+  in `plan/archive/plan-repo-hygiene-2026-10-24.md`.
 
-### Native command-line installation after 0.2.21
+### Deferred native command-line installation
 
 The accepted product/distribution priority is owned by
 [PRD 23](PRD_02_23_minicon.md#distribution-priority). After 0.2.21 is publicly
@@ -2003,8 +2003,13 @@ session 2, Active, 1024x768) and MiniCon's GUI journeys run on it:
 it is not, and every routine round that stays off the Mac keeps it cool.
 
 `scripts/round.sh` is the one entry point: pre-flight, build, route, one
-receipt with per-stage timings. A cell whose backend cannot answer is
-BLOCKED, never a silent pass.
+receipt with per-stage timings. Its generated Markdown timing view lives
+beside that receipt under `MINICON_ROUND_OUT` (default ignored `target-six/`),
+so a development round does not rewrite tracked planning context. Only PASS
+stage timings form a performance baseline; elapsed time for a failed or BLOCKED
+stage measures an unanswered obligation, rather than a comparable target. The previous
+view remains in [the historical snapshot](../plan/archive/round-baseline-2026-10-24.md).
+A cell whose backend cannot answer is BLOCKED, never a silent pass.
 
 Transport facts that cost a round each to learn. The first two are **already
 solved in code**, not open problems: `scripts/round.sh` uploads the locally
@@ -2147,3 +2152,29 @@ only what each step changed.
 | strict sub-1-MiB policy | 560,128 | Official `con-release` custom-std unwind/trace-only artifact on 2026-08-12; 488,447 bytes below the machine ceiling of 1,048,575 bytes |
 | Win32 live-resize retained-DIB fast path | 532,480 → 533,504 | +1,024 accepted for the large 16-step raster/full-frame reduction, not reported as a size gain; 9,216 over budget. The shared event contract also compiles on Linux x64 and Windows ARM64 |
 | supplementary-plane outline glyphs | 560,128 → 561,152 | official `con-release` custom-std unwind/trace-only PE; +1,024 accepted for bounded format-12 UCS-4 mapping on the selected native GDI face, still 487,424 bytes below the strict 1 MiB ceiling |
+
+### Local qualification resource budget
+
+The local six-cell controller exposes `MINICON_BUILD_JOBS` and
+`MINICON_CARGO_JOBS_PER_CELL`; select and name the schedule for the host's
+available resources. Native deadline/RSS observations must not be confused with
+concurrent compiler load. Retain the assertions and record failed evidence;
+rescheduling is a new scoped run, not a relabeled pass. The 0.2.22 actual-source
+closeout and cold-build screenshot observation remain in
+[its release history](archive/v0.2.22-release-history.md).
+
+Historical measurement preserved from the pre-closeout controller comments:
+on a 14-core host, five groups with two Cargo jobs each saturated scheduling
+headroom; the RSS court observed 17.70 MiB against its 16 MiB ceiling, while
+isolated reruns held about 9 MiB. Two groups made that recorded run clean and
+motivated the core-aware default. This is a retained historical observation,
+not new-source timing/RSS evidence; do not reuse it to qualify another source.
+The controller keeps the executable default, validation and fan-out algorithm;
+this owner keeps its reason and measurement.
+
+- [_] **Stapler network retry automation.** The 0.2.22 closeout records another
+  Accepted notarization followed by a ticket-download network failure (exit 68).
+  A bounded same-source replacement succeeded. Review a bounded controller retry
+  in future delivery work; preserve staple validation, Gatekeeper and exact-byte
+  receipts. Actual runs and the independent Windows evidence remain in the
+  release history above; source must stay frozen during an active chain.

@@ -1,3 +1,6 @@
+> Archived on 2026-10-24. Incomplete proposal, not a shipped version or a completion claim. Open inventory/selection/composition/measurement/lifetime obligations remain in [PRD 33](../../prd/PRD_02_33_test_orchestration.md).
+> The original status and observations below are preserved as history.
+
 # v0.2.16 — targeted feedback with complete release qualification
 
 Design prepared after the 0.2.15 release. Implementation is partial:
@@ -5,10 +8,10 @@ fixture-lifetime work and a small explicit-profile selector are in use;
 complete inventory, automatic changed-path execution, consumer matrix and
 comparable measurement remain planned.
 The owning behavior specification is
-[test orchestration](../prd/PRD_02_33_test_orchestration.md). The existing
-[reuse map](../prd/PRD_02_28_shared_core.md),
-[native dev court](../prd/PRD_02_32_dev_loop_crosscheck.md) and
-[delivery contract](../prd/PRD_02_27_con_delivery.md) retain their authority.
+[test orchestration](../../prd/PRD_02_33_test_orchestration.md). The existing
+[reuse map](../../prd/PRD_02_28_shared_core.md),
+[native dev court](../../prd/PRD_02_32_dev_loop_crosscheck.md) and
+[delivery contract](../../prd/PRD_02_27_con_delivery.md) retain their authority.
 
 ## Outcome tree DAG
 

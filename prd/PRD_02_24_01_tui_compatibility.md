@@ -95,7 +95,7 @@ Outcome: modern interactive TUIs remain readable and usable through sustained up
         evidence: versioned independent sessions, pane/PNG pairs and hashed local receipt below
         safe failure: first Grok screenshot pending remains unexplained; no candidate-quality pass
         dependency: feature-enabled retail-profile build; non-goal: desktop compositor or full TUI acceptance
-    └── [-] candidate-quality three-agent matrix → plan/plan-v0.2.17.md
+    └── [-] candidate-quality three-agent matrix → scoped native acceptance below
         invariant: every claimed backend preserves valid text, style and settled layout through repeated interaction
         evidence: bounded source/wire/state/pixel traces, deterministic fixtures and versioned real sessions
         safe failure: leave a failed backend explicitly limited; never infer a broad pass from another provider
@@ -690,3 +690,8 @@ The protocol family is ANSI/DEC VT with selected xterm-style extensions. A
 backend replacement, shared parser facade or parser name alone cannot establish
 modern TUI compatibility. The acceptance result must name which wire, screen,
 presentation and lifecycle requirements actually passed.
+
+The incomplete [0.2.17 proposal](../plan/archive/plan-v0.2.17.md) is historical.
+Its TRACE/REPAIR/STYLE/ACCEPT and versioned three-agent acceptance obligations
+remain owned here; Windows provider and portable-session gates remain with
+PRD 34/35. Archiving the proposal does not qualify or abandon those paths.

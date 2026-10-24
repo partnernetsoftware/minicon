@@ -118,6 +118,10 @@ minicon --status                 # what this machine gave it
 minicon --help                   # everything else
 ```
 
+Choose **New → Browser** to preview a local URL beside your terminal. If the
+service is unavailable, start it in the terminal and choose **Retry**; use
+**Edit address** to correct the URL. Click a terminal tab to resume your draft.
+
 | Key | |
 | --- | --- |
 | `Ctrl+Shift+T` | new terminal |
@@ -129,6 +133,7 @@ minicon --help                   # everything else
 | `Ctrl+Shift+I` | focus terminal input, or the browser address field |
 | `Ctrl+L` / `Cmd+L` | in the browser tab, edit its address; Enter navigates and Escape returns to the page |
 | `Ctrl+Shift+P` | cycle the color theme (Neutral / Docs / Paper) |
+| `Cmd+[` / `Cmd+]` / `Cmd+R` | on macOS, browser Back / Forward / Reload |
 | `Ctrl+Shift+,` | open or close the settings panel |
 | `Ctrl+Shift+G` | toggle the grid crosshair |
 | `Ctrl+Shift+H` | open or close the sent-history panel |
@@ -171,7 +176,7 @@ alternate screen to avoid it, e.g. `grok --no-alt-screen` (or its
 ```
 
 On macOS, the canonical dev build also assembles the unsigned local-test wrapper
-`target/debug/MiniCon 0.2.21 Dev.app`; it has a distinct development bundle id
+`target/debug/MiniCon 0.2.22 Dev.app`; its version follows `Cargo.toml` and it has a distinct development bundle id
 so it cannot be confused with an installed release during UI qualification.
 The executable under test remains `target/debug/minicon`.
 
@@ -199,6 +204,12 @@ Rust 1.97. Linux needs `libxkbcommon.so.0` and `libwayland-client.so.0` (no
   LTD, with an RFC 3161 timestamp. Verify a Windows download with
   `scripts/inspect-authenticode.ps1`. Details in
   [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+
+The editable proxy dropdown beside a Browser address accepts an HTTP proxy
+(for example `http://127.0.0.1:8890`). Enter applies and reloads the page,
+resetting its session/history; Escape cancels editing. Manage saved choices
+in **Settings → Web**; **Console** keeps the terminal settings. Select
+**Use configured proxy** to clear the override.
 
 ---
 

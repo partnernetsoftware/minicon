@@ -1,3 +1,6 @@
+> Archived on 2026-10-24. Early 0.3.x-only design input, still blocked under PRD 31; never accepted 0.2.x implementation scope. Preserve the mockup reasoning and requirements without making this a current entrypoint.
+> The original status and observations below are preserved as history.
+
 # plan-newagent-config
 
 ## Scope decision

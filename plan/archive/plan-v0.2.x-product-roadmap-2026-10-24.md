@@ -1,0 +1,187 @@
+> Archived on 2026-10-24. Superseded roadmap; current sequence remains at the live roadmap path. Historical version ordering is not current scope.
+> The original status and observations below are preserved as history.
+
+# MiniCon 0.2.x product roadmap
+
+Status: product sequence, updated 2026-10-24. v0.2.21 is the latest published
+version; [its release history](../../prd/archive/v0.2.21-release-history.md) owns
+the exact source, artifact and Promotion receipts. Unfinished 0.2.16
+test-orchestration and 0.2.17 agent-quality gates remain open after that
+bounded release rather than becoming shipped claims.
+Explicit edit/integration test profiles are now available; changed-path
+selection remains plan-only until its dependency coverage is qualified.
+The later version assignments below are proposed release gates, not dates.
+If a gate is missed, carry its named gap forward or split a patch release;
+do not turn a version number into evidence.
+
+MiniCon's product promise remains one small local terminal executable with
+independent tabs, a dedicated composer and bounded local control. The next
+0.2.x outcome is a terminal that users can trust with a modern interactive
+CLI, while another product can reuse the terminal mechanism without taking
+MiniCon's GUI or policy. The reported 0.2.14 Claude Code screen corruption is
+the highest-priority user symptom. Current-source comparisons with Claude Code
+2.1.304, Grok Build 1.0.62 and Codex CLI 0.162.1 reproduce Unicode, spacing,
+redraw and resize failures in the default Windows path. The input low-surrogate
+loss is fixed; output loss and live TUI defects remain open in
+[the compatibility owner](../../prd/PRD_02_24_01_tui_compatibility.md#report-and-current-evidence).
+The explicit Rust backend preserves these scoped journeys. A current-source
+0.2.18 retail-profile three-agent interaction also preserved Unicode and
+layout through a narrow/wide/narrow resize and follow-up; one earlier Grok
+screenshot request remained pending. This is a promising user-selectable route,
+not yet a qualified default or packaged preview.
+
+Overnight design (not a release gate): built-in wry browser as
+first-class tabs (no tray; peer to terminal tabs; panel composition later) —
+[plan-browser-tabs.md](../plan-browser-tabs.md) (OAuth/proxy hook, dashboard,
+file preview, wasm; terminal Ctrl+click / open-browser → wry browser tab,
+never OS default browser). Old path
+[plan-wry-tray-browser.md](plan-wry-tray-browser.md) is a pointer only.
+
+Behavior owners: [modern TUI compatibility](../../prd/PRD_02_24_01_tui_compatibility.md),
+[Windows backend](../../prd/PRD_02_34_windows_console_backend.md),
+[terminal library](../../prd/PRD_02_35_terminal_library.md),
+[workspace settings](../../prd/PRD_02_25_con_workspace.md),
+[reuse map](../../prd/PRD_02_28_shared_core.md),
+[test orchestration](../../prd/PRD_02_33_test_orchestration.md), and
+[delivery](../../prd/PRD_02_27_con_delivery.md). This plan owns sequencing and
+release decisions; each owner retains its behavior and evidence record.
+
+## Users and priority
+
+| User/job | Current friction | 0.2.x product priority |
+| --- | --- | --- |
+| Interactive CLI and harness user | A dense redraw can make the screen hard to read or trust. | P0: reproduce and correct the visible defect, then keep input, resize and exit usable through the same journey. |
+| Ordinary shell user | Native console compatibility and orphaned helpers can turn one failed tab into a product reliability problem. | P0: keep the stable default, qualify an owned Windows preview with real programs and bounded teardown. |
+| Developer/integrator | Terminal pieces exist in several crates and a full test run costs too much during a narrow edit. | P1: make focused feedback reliable, then prove a small independent consumer of the terminal library. |
+
+The product order follows the user's visible failure first, then provider
+independence and reusable contracts. A new setting earns a place only after
+its behavior can be explained and tested: `TERM`, protocol capabilities and
+native backend selection are separate controls.
+Triage the TUI report immediately, in parallel with 0.2.16 tooling. A confirmed
+P0 fix may ship as an earlier patch with the current full release gates; the
+test-runner redesign must not delay a user-visible repair.
+
+## Product outcome tree
+
+```text
+Outcome: a dependable, portable MiniCon terminal with a reusable engine
+├── [v] 0.2.15 — explicit crate/reuse boundaries and published baseline
+│   evidence: 0.2.15 release history; non-goal: claiming modern TUI acceptance
+├── [-] 0.2.16 — fast, trustworthy development feedback
+│   invariant: targeted suites save time while full release obligations remain visible
+│   evidence: planned/observed test identities, mutation catches, cost comparison
+│   safe failure: unknown dependency selects full; missing court is BLOCKED
+│   dependency: PRD 33 and existing 0.2.16 plan; non-goal: feature expansion
+├── [_] 0.2.17 — readable modern agent sessions on a named selectable provider
+│   invariant: valid text, settled layout and presented pixels agree during repeated use
+│   evidence: three versioned agents, independent fixtures and source/wire/state/pixel traces
+│   safe failure: narrow the release claim when the classic path or preview fails a cell
+│   dependency: PRD 24.01 and plan-v0.2.17; full gate remains required without 0.2.16 profiles
+│   non-goal: automatic provider-default change or declaring every TUI fixed
+├── [v] 0.2.18 — publish a bounded, explicit owned Windows backend preview
+│   invariant: selected sessions use the actual Rust provider and clean up their own tree
+│   evidence: signed six-cell Candidate, explicit x64 selection and scoped app/shell courts
+│   safe failure: reject unavailable selection; preserve stable product default and open gaps
+│   dependency: PRD 34 and the 0.2.17 scoped app court; non-goal: global conhost removal
+├── [v] 0.2.19 — reusable terminal contract across OS and ISA (bounded scope shipped)
+│   evidence: [release history](../../prd/archive/v0.2.19-release-history.md) —
+│     session contract vocabulary console-owned, unix PTY home with five-cell
+│     native runtime passes, seam consolidation, validated `term` override
+│   narrowed claims: the portable session trait awaits both-provider
+│     demonstration (PRD 35); no profile menu shipped; osx-x86_64 throughput
+│     bound and the TERM runtime probe stay open by name (carried debt)
+│   non-goal: automatic platform-crate merger (unchanged)
+├── [v] 0.2.20 — evidence-based Windows default and product-cost decision (decided: rust-console default)
+    invariant: any default change improves user journeys without hidden regression
+    evidence: exact-artifact real apps, reliability, latency/RSS and rollback courts
+    safe failure: retain explicit preview if a gate is missing
+    dependency: all preceding gates and PRD 27; non-goal: a date-driven switch
+    shipped: [release history](../../prd/archive/v0.2.20-release-history.md); plan
+    archived at [plan-v0.2.20](plan-v0.2.20.md) — {BUG} attribution,
+    {BACKEND-KEY}, {MOUSE}, exact-artifact {COURTS}, bounded {CRASH} hunt, then
+    the decision; per-tab process cost (3 agent-path vs 1 rust-console) is
+    already measured in PRD 24
+    └── [v] owner-reported file-tool output misalignment — attributed to the
+        classic-path wire; the rust-console default renders the court
+        correctly. Record owned by PRD 24.01 and the
+        [0.2.20 release history](../../prd/archive/v0.2.20-release-history.md)
+└── [v] 0.2.21 — console courts and the native browser workspace
+    invariant: console and browser capabilities retain their independently scoped native evidence; product behavior and adapter boundaries belong to PRD 25/28/35
+    evidence: the 0.2.21 release history owns source, artifact and published qualification scope
+    safe failure: a basic native page journey does not certify proxy modes, provider OAuth or physical page-focus interception; G4/G6 remain carried debt
+    dependency: PRD 25, PRD 27, PRD 28, PRD 31 and PRD 35; non-goal: 1:N panels, dashboard or page-heap attribution of G4
+    plan: [archived 0.2.21 plan](plan-v0.2.21.md)
+```
+
+```mermaid
+flowchart LR
+    PAIN["Claude / Grok / Codex default-path corruption"] --> TRACE["versioned reproduction and byte / state / pixel trace"]
+    TEST["0.2.16 targeted feedback and full qualification"] --> FIX
+    TRACE --> FIX["0.2.17 diagnosed default fixes + qualified explicit choice"]
+    FIX --> APP["three-agent acceptance on named provider"]
+    APP --> PREVIEW["0.2.18 broader Rust Windows preview"]
+    WIN["PRD 34 native API and lifetime courts"] --> PREVIEW
+    PREVIEW --> CONTRACT["0.2.19 independent terminal consumer"]
+    POSIX["macOS / Linux native PTY inventory"] --> CONTRACT
+    CONTRACT --> PROFILE["qualified capability / TERM profiles"]
+    APP & PREVIEW & CONTRACT & PROFILE --> DECIDE["0.2.20 default and cost decision"]
+    DECIDE -->|"gate met"| RELEASE["exact signed artifact promotion / PRD 27"]
+    DECIDE -->|"gate missing"| KEEP["stable default + explicit preview; named open gap"]
+    RELEASE --> COURT["0.2.21 console courts + browser content panel"]
+```
+
+## Version decisions and acceptance
+
+| Version | User-facing result | Release acceptance and decision |
+| --- | --- | --- |
+| 0.2.16 — developer feedback | Changes to one module get relevant tests promptly; integration and release still show every required court. | Implement the existing [0.2.16 plan](plan-v0.2.16.md): inventory, bounded fixture lifetime, explained selection, deduplicated composition and measured cold/warm cost. A mutation of an impacted dependency must fail its selected profile. `l3`/`all` still reaches the canonical full local gate; signing and artifact courts remain separate. Ship this before adding a larger compatibility matrix. |
+| 0.2.17 — modern agent quality | A user can select a named provider that keeps Claude Code, Grok Build and Codex CLI readable and usable through repeated output and resize. | Follow [the dedicated 0.2.17 plan](plan-v0.2.17.md): locate each failure across original output, backend wire, shared state and pixels; fix representable classic-path defects, qualify Unicode/SGR color fixtures and repeated real-agent sessions, and include an explicit Rust selection in the exact Windows candidate only if its native/lifecycle courts pass. State failed default-path behavior and provider-specific coverage. A developer-only feature is not a user-facing result; no default promotion or positive 2026 claim without its separate gate. |
+| 0.2.18 — bounded Windows backend preview | The packaged explicit Rust choice is available while the classic backend remains default. | [Published with exact signed Candidate, Defender and no-rebuild Promotion](../../prd/archive/v0.2.18-release-history.md). Windows x64 current-source shell/agent journeys and direct common-library consumption are scoped passes. Exact-Candidate visible three-agent acceptance, Rust runtime on Windows ARM64, broader native API coverage, source/wire attribution and latency/RSS remain open. Carry them to the next qualification decision; the published version makes no broad compatibility or default-promotion claim. |
+| 0.2.19 — integrated terminal library | Shipped 2026-10-21 with a bounded claim: the session contract vocabulary is console-owned with one type identity through the platform facade, the POSIX PTY mechanism has one home with five-cell native runtime passes, four drifted product decisions were unified, and a validated advanced `term` override applies to new sessions only. | [Release history](../../prd/archive/v0.2.19-release-history.md) owns the receipts; [the archived plan](plan-v0.2.19.md) records leaf outcomes. The claim was narrowed exactly as this row's safe failure required: the portable session trait awaits both-provider demonstration (PRD 35 integration acceptance), no compatibility-profile menu shipped (no second profile has capability evidence), and the osx-x86_64 throughput bound plus the TERM child-environment probe stay open by name in carried debt. |
+| 0.2.20 — default decision and product cost | The owned Rust console is the Windows default, with a one-word rollback to the console agent. | [Published 2026-10-22](../../prd/archive/v0.2.20-release-history.md), source `bd881e3`. The decision and its narrowed claim live there. G4 and G6 shipped still open. |
+| 0.2.21 — console courts and the native browser workspace | A native browser content panel shares the terminal tab tree, with address/history controls, bounded load failures and completed shutdown responses. | [Published with scoped native and exact-artifact evidence](../../prd/archive/v0.2.21-release-history.md); the owner's explicit publication instruction released the replacement UX gate. Proxy/OAuth and platform-specific input gaps retain their own open scope. The [archived plan](plan-v0.2.21.md) preserves earlier decisions and failures. |
+
+These version numbers express priority and dependencies. The skipped 0.2.17
+number did not deliver its full modern-agent gate. The public 0.2.18 release
+provides a bounded explicit preview without changing the Windows default or
+claiming that the three-agent use case is solved.
+0.2.19 may ship the common contract before every adapter is consolidated.
+0.2.20 did switch the Windows default; its release history owns the narrowed
+claim. 0.2.21 does not pick up that release's open paste and disconnect
+defects. It runs the portable console library on every shipped cell, fails
+Linux when a Linux-only path diverges, and keeps the browser content panel
+(`minicon-web`) beside the terminal panel.
+
+## Cross-version product rules
+
+1. Treat terminal identity, native backend and UI rendering as separate choices.
+   The current code starts child sessions with `TERM=xterm-256color` and
+   `COLORTERM=truecolor`; the `vt100` crate name is an implementation detail.
+   Until the capability contract is qualified, retain this default and do not
+   offer a misleading menu of VT100/VT220/kitty emulation claims.
+2. Diagnose a visible defect at four observable boundaries: original child
+   bytes/native API calls, PTY wire, parsed/presented terminal state and actual
+   GUI pixels. One passing SDK test does not close a user-visible TUI report.
+3. Keep reuse inside the terminal domain: `minicon-console` owns common
+   stream/screen mechanisms and its Windows service; `minicon-platform` owns
+   capability adaptation; MiniCon owns tabs, settings, backend choice and UX.
+   AgenTerm adopts an immutable revision only after its own consumer evidence.
+4. Run focused developer profiles while editing, integration profiles before a
+   candidate and the complete exact-source/artifact release chain before
+   publication. Every released OS/ISA/provider claim names the runtime cell;
+   unavailable evidence stays BLOCKED.
+5. Keep MiniCon's authority local. Agent management, Fleet, persistent service,
+   plugin marketplace and MiniCon-driven update orchestration belong outside
+   this roadmap. The Win+R administrator checkbox belongs to WinMgr, not a new
+   MiniCon launcher.
+
+## Review cadence and evidence
+
+At each version candidate, review one product scorecard: reproducible TUI
+defects, session failures and orphaned processes, input-to-frame latency under
+declared load, total host/helper RSS, package size, cold/warm test feedback
+cost, and matrix coverage by OS × ISA × backend × application. Record baseline,
+target and observed value in the owning PRD or release receipt; do not invent a
+cross-machine threshold from one developer host. The release decision includes
+the named unresolved cells and an explicit keep/change backend choice.

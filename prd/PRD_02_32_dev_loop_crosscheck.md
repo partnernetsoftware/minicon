@@ -226,7 +226,7 @@ that actually compiles the code:
 
 `minicon_blackbox::controlled_wheel_moves_the_real_scrollback_offset_up_then_down`
 historically failed on this Windows host for at least three releases:
-`plan/plan-repo-hygiene.md` records it against the pristine tree, and
+`plan/archive/plan-repo-hygiene-2026-10-24.md` records it against the pristine tree, and
 `prd/archive/v0.2.6-release-history.md` lists it as that release's one
 pre-existing local-gate failure. Re-checked 2026-10-14 by A/B — it fails both at
 the pre-0.2.8 commit `486cdd9` (viewport moves 2 lines) and on `main` (0–2), so

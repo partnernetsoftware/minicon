@@ -86,7 +86,7 @@ pub struct Layout {
     /// Informational bar along the bottom of the terminal side. Carved from
     /// the terminal height, it never overlaps the sidebar or composer.
     pub status: Rect,
-    /// Opens a new root terminal; the primary header action (left).
+    /// Opens the Terminal / Browser creation menu; primary header action.
     pub new_root: Rect,
     /// Opens the settings panel. Help, language, font size and theme all live
     /// inside that panel.
@@ -119,11 +119,18 @@ pub struct Layout {
 impl Layout {
     /// Browser pages have navigation chrome and no terminal composer.
     pub fn browser_toolbar(self, scale: f64) -> Rect {
+        let rows = if self.composer.width >= dip(640.0, scale) {
+            1.0
+        } else if self.composer.width >= dip(320.0, scale) {
+            2.0
+        } else {
+            3.0
+        };
         Rect {
             x: self.composer.x,
             y: 0,
             width: self.composer.width,
-            height: dip(44.0, scale).min(self.status.y + self.status.height),
+            height: dip(44.0 * rows, scale).min(self.status.y + self.status.height),
         }
     }
 
@@ -142,12 +149,174 @@ impl Layout {
 
     pub fn browser_address(self, scale: f64) -> Rect {
         let toolbar = self.browser_toolbar(scale);
-        let inset = dip(112.0, scale).min(toolbar.width);
+        let very_narrow = toolbar.width < dip(320.0, scale);
+        let inset = dip(if very_narrow { 8.0 } else { 112.0 }, scale).min(toolbar.width);
+        let x = toolbar.x + inset;
+        let y = dip(if very_narrow { 50.0 } else { 6.0 }, scale).min(toolbar.height);
+        let right = if toolbar.width >= dip(640.0, scale) {
+            self.browser_proxy(scale).x.saturating_sub(dip(8.0, scale))
+        } else {
+            toolbar
+                .x
+                .saturating_add(toolbar.width)
+                .saturating_sub(dip(8.0, scale))
+        };
         Rect {
-            x: toolbar.x + inset,
-            y: dip(6.0, scale),
-            width: toolbar.width.saturating_sub(inset + dip(8.0, scale)),
-            height: dip(32.0, scale).min(toolbar.height),
+            x,
+            y,
+            width: right.saturating_sub(x),
+            height: dip(32.0, scale).min(toolbar.height.saturating_sub(y)),
+        }
+    }
+
+    /// An independent, optional proxy editor. Narrow content columns keep the
+    /// full editable width by moving it onto a second or third toolbar row.
+    pub fn browser_proxy(self, scale: f64) -> Rect {
+        let toolbar = self.browser_toolbar(scale);
+        let pad = dip(8.0, scale).min(toolbar.width / 2);
+        let wide = toolbar.width >= dip(640.0, scale);
+        let row = if wide {
+            0.0
+        } else if toolbar.width >= dip(320.0, scale) {
+            44.0
+        } else {
+            88.0
+        };
+        let width = if wide {
+            dip(240.0, scale)
+        } else {
+            toolbar.width.saturating_sub(pad.saturating_mul(2))
+        };
+        let x = if wide {
+            toolbar
+                .x
+                .saturating_add(toolbar.width)
+                .saturating_sub(pad)
+                .saturating_sub(width)
+        } else {
+            toolbar.x.saturating_add(pad)
+        };
+        let y = dip(row + 6.0, scale).min(toolbar.height);
+        Rect {
+            x,
+            y,
+            width,
+            height: dip(32.0, scale).min(toolbar.height.saturating_sub(y)),
+        }
+    }
+
+    /// Creation stays in the sidebar when expanded; the collapsed rail opens
+    /// the same readable menu over the content column instead of clipping it.
+    pub fn new_tab_menu(self, scale: f64) -> Rect {
+        let frame_width = self
+            .sidebar
+            .width
+            .saturating_add(self.composer.width)
+            .saturating_add(self.panel.width);
+        let pad = dip(8.0, scale).min(frame_width / 2);
+        let x = pad;
+        let y = self
+            .new_root
+            .y
+            .saturating_add(self.new_root.height)
+            .saturating_add(dip(4.0, scale))
+            .min(self.sidebar.height);
+        let desired = if self.sidebar_collapsed {
+            dip(216.0, scale)
+        } else {
+            self.sidebar.width.saturating_sub(pad.saturating_mul(2))
+        };
+        Rect {
+            x,
+            y,
+            width: desired.min(frame_width.saturating_sub(x).saturating_sub(pad)),
+            height: dip(96.0, scale).min(self.sidebar.height.saturating_sub(y)),
+        }
+    }
+
+    pub fn new_terminal_action(self, scale: f64) -> Rect {
+        self.new_tab_menu_action(scale, false)
+    }
+
+    pub fn new_browser_action(self, scale: f64) -> Rect {
+        self.new_tab_menu_action(scale, true)
+    }
+
+    fn new_tab_menu_action(self, scale: f64, second: bool) -> Rect {
+        let menu = self.new_tab_menu(scale);
+        let pad = dip(8.0, scale).min(menu.width / 2).min(menu.height / 4);
+        let row = menu.height.saturating_sub(pad.saturating_mul(2)) / 2;
+        Rect {
+            x: menu.x.saturating_add(pad),
+            y: menu
+                .y
+                .saturating_add(pad)
+                .saturating_add(if second { row } else { 0 }),
+            width: menu.width.saturating_sub(pad.saturating_mul(2)),
+            height: row,
+        }
+    }
+
+    pub fn browser_recovery_card(self, scale: f64) -> Rect {
+        let Some(page) = self.browser_page(scale) else {
+            return Rect::default();
+        };
+        let pad = dip(16.0, scale).min(page.width / 4).min(page.height / 4);
+        let width = dip(480.0, scale).min(page.width.saturating_sub(pad.saturating_mul(2)));
+        let height = dip(212.0, scale).min(page.height.saturating_sub(pad.saturating_mul(2)));
+        Rect {
+            x: page.x.saturating_add(page.width.saturating_sub(width) / 2),
+            y: page
+                .y
+                .saturating_add(dip(40.0, scale).min(page.height.saturating_sub(height) / 2)),
+            width,
+            height,
+        }
+    }
+
+    pub fn browser_retry(self, scale: f64) -> Rect {
+        self.browser_recovery_action(scale, false)
+    }
+
+    pub fn browser_edit_address(self, scale: f64) -> Rect {
+        self.browser_recovery_action(scale, true)
+    }
+
+    fn browser_recovery_action(self, scale: f64, second: bool) -> Rect {
+        let card = self.browser_recovery_card(scale);
+        let pad = dip(16.0, scale).min(card.width / 4).min(card.height / 8);
+        let gap = dip(8.0, scale).min(card.width / 8).min(card.height / 8);
+        let height = dip(32.0, scale).min(card.height / 4);
+        let stacked = card.width < dip(300.0, scale);
+        let width = if stacked {
+            card.width.saturating_sub(pad.saturating_mul(2))
+        } else {
+            card.width
+                .saturating_sub(pad.saturating_mul(2))
+                .saturating_sub(gap)
+                / 2
+        };
+        Rect {
+            x: card
+                .x
+                .saturating_add(pad)
+                .saturating_add(if second && !stacked {
+                    width.saturating_add(gap)
+                } else {
+                    0
+                }),
+            y: card
+                .y
+                .saturating_add(card.height)
+                .saturating_sub(pad)
+                .saturating_sub(height)
+                .saturating_sub(if stacked && !second {
+                    height.saturating_add(gap)
+                } else {
+                    0
+                }),
+            width,
+            height,
         }
     }
 
@@ -393,7 +562,7 @@ impl Layout {
                 Rect {
                     x: pad,
                     y: tool_y,
-                    width: tool_size,
+                    width: dip(100.0, scale).min(settings.x.saturating_sub(pad.saturating_mul(2))),
                     height: tool_size,
                 },
                 settings,
@@ -1164,11 +1333,34 @@ pub fn status_hit(layout: Layout, x: u32, y: u32) -> StatusHit {
 /// length. Reserving one less let the final line spill into whatever followed.
 pub const SETTINGS_SHORTCUT_LINES: u32 = 16;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SettingsSection {
+    #[default]
+    Console,
+    Web,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WebSettingsLayout {
+    pub panel: Rect,
+    pub routes: [Rect; 2],
+    pub proxy_input: Rect,
+    pub proxy_add: Rect,
+    pub proxy_rows: [Rect; 8],
+    pub proxy_remove: [Rect; 8],
+    pub visible_rows: usize,
+    pub list_start: usize,
+    pub previous: Rect,
+    pub next: Rect,
+    pub notice: Rect,
+}
+
 /// Geometry of the settings panel and its interactive controls. Computed on
 /// demand from the `Layout` + scale so paint and hit-testing agree exactly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SettingsLayout {
     pub panel: Rect,
+    pub routes: [Rect; 2],
     /// Interface-language options: English, Simplified, Traditional (in order).
     pub language: [Rect; 3],
     pub font_down: Rect,
@@ -1198,6 +1390,7 @@ pub struct SettingsLayout {
 /// 1=Docs 2=Paper 3=Dark) so this module stays free of the host-UI theme type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SettingsHit {
+    Route(SettingsSection),
     Outside,
     Panel,
     Language(UiLanguage),
@@ -1214,6 +1407,153 @@ pub enum SettingsHit {
 }
 
 impl Layout {
+    fn settings_routes(self, panel: Rect, scale: f64) -> [Rect; 2] {
+        let route_width = panel.width.min(dip(SIDEBAR_WIDTH_DIP, scale));
+        let pad = dip(12.0, scale).min(route_width / 4);
+        let width = route_width.saturating_sub(pad * 3) / 2;
+        std::array::from_fn(|i| Rect {
+            x: panel.x + pad + i as u32 * (width + pad),
+            y: panel.y + dip(8.0, scale),
+            width,
+            height: dip(28.0, scale).min(panel.height.saturating_sub(dip(8.0, scale))),
+        })
+    }
+
+    pub fn settings_route(self, section: SettingsSection, scale: f64) -> Rect {
+        self.settings_panel(scale).routes[usize::from(section == SettingsSection::Web)]
+    }
+
+    pub fn web_settings(self, scale: f64, list_start: usize) -> WebSettingsLayout {
+        let total_width = self.status.x + self.status.width;
+        let bottom = self.status.y;
+        let panel = Rect {
+            x: 0,
+            y: self.tree_header_height,
+            width: dip(480.0, scale).min(total_width),
+            height: bottom.saturating_sub(self.tree_header_height),
+        };
+        let pad = dip(12.0, scale).min(panel.width / 4);
+        let inner = panel.width.saturating_sub(pad * 2);
+        let row_h = dip(32.0, scale);
+        let compact = panel.height < dip(300.0, scale);
+        let list_stride = dip(if compact { 32.0 } else { 40.0 }, scale);
+        let row = |y: u32| Rect {
+            x: pad,
+            y,
+            width: inner,
+            height: row_h.min(bottom.saturating_sub(y)),
+        };
+        let notice = Rect {
+            height: dip(if compact { 24.0 } else { 48.0 }, scale)
+                .min(panel.height.saturating_sub(dip(48.0, scale))),
+            ..row(panel.y + dip(48.0, scale))
+        };
+        let input_y = notice.y + notice.height + dip(8.0, scale);
+        let add_width = dip(64.0, scale).min(inner / 3);
+        let proxy_input = Rect {
+            width: inner.saturating_sub(add_width + dip(8.0, scale)),
+            ..row(input_y)
+        };
+        let proxy_add = Rect {
+            x: pad + inner - add_width,
+            width: add_width,
+            ..row(input_y)
+        };
+        let list_y = input_y + row_h + dip(if compact { 20.0 } else { 40.0 }, scale);
+        let pager_y = bottom.saturating_sub(row_h + pad).max(list_y);
+        let visible_rows = ((pager_y.saturating_sub(list_y) / list_stride.max(1)) as usize).min(8);
+        let list_start = list_start.min(8usize.saturating_sub(visible_rows.max(1)));
+        let proxy_rows = std::array::from_fn(|i| {
+            if i < visible_rows {
+                row(list_y + i as u32 * list_stride)
+            } else {
+                Rect {
+                    x: pad,
+                    y: bottom,
+                    width: 0,
+                    height: 0,
+                }
+            }
+        });
+        let proxy_remove = proxy_rows.map(|r| Rect {
+            x: r.x + r.width.saturating_sub(row_h),
+            width: row_h.min(r.width),
+            ..r
+        });
+        let previous = Rect {
+            width: inner / 2,
+            ..row(pager_y)
+        };
+        let next = Rect {
+            x: pad + inner / 2,
+            width: inner - inner / 2,
+            ..row(pager_y)
+        };
+        WebSettingsLayout {
+            panel,
+            routes: self.settings_routes(panel, scale),
+            proxy_input,
+            proxy_add,
+            proxy_rows,
+            proxy_remove,
+            visible_rows,
+            list_start,
+            previous,
+            next,
+            notice,
+        }
+    }
+
+    pub fn browser_proxy_dropdown(self, scale: f64) -> Rect {
+        let r = self.browser_proxy(scale);
+        let width = dip(32.0, scale).min(r.width);
+        Rect {
+            x: r.x + r.width - width,
+            width,
+            ..r
+        }
+    }
+
+    pub fn browser_proxy_text(self, scale: f64) -> Rect {
+        let r = self.browser_proxy(scale);
+        Rect {
+            width: r
+                .width
+                .saturating_sub(self.browser_proxy_dropdown(scale).width),
+            ..r
+        }
+    }
+
+    pub fn browser_proxy_choices(self, scale: f64) -> Rect {
+        let field = self.browser_proxy(scale);
+        let frame_right = self.status.x + self.status.width;
+        let width = dip(320.0, scale).max(field.width).min(frame_right);
+        let y = field.y + field.height;
+        Rect {
+            x: (field.x + field.width).saturating_sub(width),
+            y,
+            width,
+            height: dip(32.0 * 9.0, scale).min(self.status.y.saturating_sub(y)),
+        }
+    }
+
+    pub fn browser_proxy_choice(self, index: usize, scale: f64) -> Rect {
+        let menu = self.browser_proxy_choices(scale);
+        let row_h = (menu.height / 9).min(dip(32.0, scale));
+        if index >= 9 {
+            return Rect {
+                width: 0,
+                height: 0,
+                ..menu
+            };
+        }
+        Rect {
+            y: menu.y + index as u32 * row_h,
+            height: row_h,
+            ..menu
+        }
+    }
+
     /// Compute the settings panel geometry. Anchored under the header on the
     /// sidebar side, never a centered modal.
     #[must_use]
@@ -1224,9 +1564,17 @@ impl Layout {
         let row_h = dip(28.0, scale);
         let label_h = dip(20.0, scale);
         let line_h = dip(20.0, scale);
+        let panel_width = self
+            .sidebar
+            .width
+            .max(dip(SIDEBAR_WIDTH_DIP, scale))
+            .min(self.status.x + self.status.width);
         let inner_x = self.sidebar.x.saturating_add(pad);
-        let inner_w = self.sidebar.width.saturating_sub(pad.saturating_mul(2));
-        let top = self.tree_header_height.saturating_add(pad);
+        let inner_w = panel_width.saturating_sub(pad.saturating_mul(2));
+        let top = self
+            .tree_header_height
+            .saturating_add(pad)
+            .saturating_add(dip(40.0, scale));
 
         // three equal cells across the inner width, for a labelled control row.
         let cell_gap = dip(6.0, scale);
@@ -1302,11 +1650,12 @@ impl Layout {
         let panel = Rect {
             x: self.sidebar.x,
             y: self.tree_header_height,
-            width: self.sidebar.width,
+            width: panel_width,
             height: panel_bottom.saturating_sub(self.tree_header_height),
         };
         SettingsLayout {
             panel,
+            routes: self.settings_routes(panel, scale),
             language,
             font_down,
             font_reset,
@@ -1472,6 +1821,15 @@ pub fn history_hit(layout: Layout, x: u32, y: u32, scale: f64) -> HistoryHit {
 #[must_use]
 pub fn settings_hit(layout: Layout, x: u32, y: u32, scale: f64) -> SettingsHit {
     let s = layout.settings_panel(scale);
+    for (index, rect) in s.routes.iter().enumerate() {
+        if rect.contains(x, y) {
+            return SettingsHit::Route(if index == 0 {
+                SettingsSection::Console
+            } else {
+                SettingsSection::Web
+            });
+        }
+    }
     if !s.panel.contains(x, y) {
         return SettingsHit::Outside;
     }
@@ -1654,6 +2012,198 @@ mod tests {
         (1000, 700, 1.75),
         (900, 1600, 3.0),
     ];
+
+    #[test]
+    fn web_proxy_settings_page_keeps_controls_and_pagination_inside_panel() {
+        for scale in [1.0, 1.5, 2.0] {
+            for (width, height) in [(420.0, 360.0), (800.0, 600.0), (1200.0, 900.0)] {
+                let layout = Layout::new(dip(width, scale), dip(height, scale), scale);
+                for offset in [0, 3, 7] {
+                    let s = layout.web_settings(scale, offset);
+                    assert!(s.visible_rows > 0);
+                    assert!(s.list_start + s.visible_rows <= 8);
+                    for rect in s
+                        .routes
+                        .into_iter()
+                        .chain([s.proxy_input, s.proxy_add, s.previous, s.next])
+                        .chain(s.proxy_rows.into_iter().take(s.visible_rows))
+                    {
+                        assert!(rect.width > 0 && rect.height > 0);
+                        assert!(rect.x >= s.panel.x && rect.y >= s.panel.y);
+                        assert!(rect.x + rect.width <= s.panel.x + s.panel.width);
+                        assert!(rect.y + rect.height <= s.panel.y + s.panel.height);
+                    }
+                    assert!(s.proxy_input.x + s.proxy_input.width <= s.proxy_add.x);
+                    for index in 0..s.visible_rows {
+                        assert!(s.proxy_remove[index].x >= s.proxy_rows[index].x);
+                        assert!(
+                            s.proxy_remove[index].x + s.proxy_remove[index].width
+                                <= s.proxy_rows[index].x + s.proxy_rows[index].width
+                        );
+                    }
+                }
+                let console = layout.settings_panel(scale);
+                assert_eq!(
+                    console.routes,
+                    layout.web_settings(scale, 0).routes,
+                    "route targets must stay in place when switching pages"
+                );
+                let rail = Layout::collapsed(dip(width, scale), dip(height, scale), scale);
+                let rail_web = rail.web_settings(scale, 0);
+                assert!(
+                    rail_web.visible_rows > 0,
+                    "collapsed short windows still expose a saved option"
+                );
+                assert!(rail.settings_panel(scale).panel.width >= dip(SIDEBAR_WIDTH_DIP, scale));
+                assert!(console.routes[1].y + console.routes[1].height < console.language[0].y);
+                assert_eq!(
+                    settings_hit(
+                        layout,
+                        console.routes[1].x + 1,
+                        console.routes[1].y + 1,
+                        scale
+                    ),
+                    SettingsHit::Route(SettingsSection::Web)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn browser_proxy_choices_have_distinct_dropdown_and_nine_actions() {
+        for scale in [1.0, 1.5, 2.0] {
+            for (width, height) in [(420.0, 360.0), (800.0, 600.0), (1200.0, 900.0)] {
+                let layout = Layout::new(dip(width, scale), dip(height, scale), scale);
+                let text = layout.browser_proxy_text(scale);
+                let dropdown = layout.browser_proxy_dropdown(scale);
+                assert_eq!(text.x + text.width, dropdown.x);
+                assert_eq!(dropdown.width, dip(32.0, scale));
+                let menu = layout.browser_proxy_choices(scale);
+                for index in 0..9 {
+                    let row = layout.browser_proxy_choice(index, scale);
+                    assert!(row.height > 0);
+                    assert!(row.y >= menu.y && row.y + row.height <= menu.y + menu.height);
+                    if index > 0 {
+                        let previous = layout.browser_proxy_choice(index - 1, scale);
+                        assert_eq!(previous.y + previous.height, row.y);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn browser_proxy_and_address_are_independent_and_inside_the_toolbar() {
+        for &(width, height, scale) in LAYOUT_SWEEP {
+            for collapsed in [false, true] {
+                let layout =
+                    Layout::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, collapsed);
+                let toolbar = layout.browser_toolbar(scale);
+                let address = layout.browser_address(scale);
+                let proxy = layout.browser_proxy(scale);
+                for rect in [address, proxy] {
+                    assert!(rect.width > 0 && rect.height > 0);
+                    assert!(rect.x >= toolbar.x && rect.y >= toolbar.y);
+                    assert!(rect.x + rect.width <= toolbar.x + toolbar.width);
+                    assert!(rect.y + rect.height <= toolbar.y + toolbar.height);
+                }
+                assert!(
+                    address.x + address.width <= proxy.x || address.y + address.height <= proxy.y
+                );
+                if let Some(page) = layout.browser_page(scale) {
+                    assert_eq!(page.y, toolbar.y + toolbar.height);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn browser_proxy_reflows_without_shrinking_the_editable_proxy_text() {
+        for scale in [1.0, 1.5, 2.0] {
+            let wide = Layout::new(dip(960.0, scale), dip(600.0, scale), scale);
+            assert_eq!(wide.browser_toolbar(scale).height, dip(44.0, scale));
+            assert_eq!(wide.browser_proxy(scale).width, dip(240.0, scale));
+            assert_eq!(wide.browser_proxy(scale).y, wide.browser_address(scale).y);
+            let narrow = Layout::new(dip(800.0, scale), dip(600.0, scale), scale);
+            assert_eq!(narrow.browser_toolbar(scale).height, dip(88.0, scale));
+            assert!(narrow.browser_proxy(scale).y > narrow.browser_address(scale).y);
+            let smallest = Layout::new(dip(420.0, scale), dip(600.0, scale), scale);
+            assert_eq!(smallest.browser_toolbar(scale).height, dip(132.0, scale));
+            assert_eq!(
+                smallest.browser_address(scale).x,
+                smallest.browser_proxy(scale).x
+            );
+            assert_eq!(
+                smallest.browser_address(scale).width,
+                smallest.browser_proxy(scale).width
+            );
+            assert!(smallest.browser_address(scale).width >= dip(180.0, scale));
+        }
+    }
+
+    #[test]
+    fn creation_menu_actions_are_separate_and_stay_inside_the_window() {
+        for &(width, height, scale) in LAYOUT_SWEEP {
+            for collapsed in [false, true] {
+                let layout =
+                    Layout::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, collapsed);
+                let menu = layout.new_tab_menu(scale);
+                let terminal = layout.new_terminal_action(scale);
+                let browser = layout.new_browser_action(scale);
+                assert!(menu.x + menu.width <= width && menu.y + menu.height <= height);
+                assert!(terminal.width > 0 && terminal.height > 0);
+                assert!(browser.width > 0 && browser.height > 0);
+                for rect in [terminal, browser] {
+                    assert!(rect.x >= menu.x && rect.y >= menu.y);
+                    assert!(rect.x + rect.width <= menu.x + menu.width);
+                    assert!(rect.y + rect.height <= menu.y + menu.height);
+                }
+                assert!(terminal.y + terminal.height <= browser.y);
+                if !collapsed {
+                    assert!(menu.x + menu.width <= layout.sidebar.width);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn browser_recovery_actions_fit_the_page_and_stack_when_narrow() {
+        for &(width, height, scale) in LAYOUT_SWEEP {
+            for collapsed in [false, true] {
+                let layout =
+                    Layout::with_sidebar(width, height, scale, SIDEBAR_WIDTH_DIP, collapsed);
+                let Some(page) = layout.browser_page(scale) else {
+                    continue;
+                };
+                let card = layout.browser_recovery_card(scale);
+                let retry = layout.browser_retry(scale);
+                let edit = layout.browser_edit_address(scale);
+                assert!(card.x >= page.x && card.y >= page.y);
+                assert!(card.x + card.width <= page.x + page.width);
+                assert!(card.y + card.height <= page.y + page.height);
+                for rect in [retry, edit] {
+                    assert!(rect.width > 0 && rect.height > 0);
+                    assert!(rect.x >= card.x && rect.y >= card.y);
+                    assert!(rect.x + rect.width <= card.x + card.width);
+                    assert!(rect.y + rect.height <= card.y + card.height);
+                }
+                assert!(retry.y + retry.height <= edit.y || retry.x + retry.width <= edit.x);
+                if card.width < dip(300.0, scale) {
+                    assert_eq!(retry.x, edit.x);
+                    assert!(retry.y + retry.height < edit.y);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn expanded_creation_entry_reserves_space_for_its_visible_label() {
+        for &(width, height, scale) in LAYOUT_SWEEP {
+            let layout = Layout::new(width, height, scale);
+            assert!(layout.new_root.width >= dip(80.0, scale));
+            assert!(layout.new_root.x + layout.new_root.width <= layout.settings.x);
+        }
+    }
 
     /// Every invariant the expanded sidebar has, the rail has too. Collapsing is
     /// a geometry change, and the sweep is what stops it from being a geometry
@@ -2269,7 +2819,15 @@ mod tests {
                 // A window too short for even the fixed sections truncates the
                 // list to nothing and clamps the panel; that is honest, so the
                 // containment claims below only apply when the sections fit.
-                if s.updates_status_y.saturating_add(line) > layout.composer.y.saturating_sub(0) {
+                if s.updates_cost_y.saturating_add(line) > layout.composer.y {
+                    assert_eq!(
+                        s.shortcut_lines, 0,
+                        "short settings must reserve fixed sections before shortcut help"
+                    );
+                    assert_eq!(
+                        bottom, layout.composer.y,
+                        "short settings must remain bounded"
+                    );
                     continue;
                 }
                 for rect in s.update {
